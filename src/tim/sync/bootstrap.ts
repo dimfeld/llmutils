@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import { ensureLocalNode, getOrCreateClockRow } from '../db/sync_schema.js';
+import { edgeClockPartWins, getEdgeClock, writeEdgeAddClock } from './edge_clock.js';
 import { formatHlc, formatOpId, type Hlc } from './hlc.js';
 import {
   getLocalGenerator,
@@ -437,15 +438,29 @@ export function bootstrapSyncMetadata(
         )
         .all() as Array<{ plan_uuid: string; depends_on_uuid: string }>;
       for (const dependency of dependencies) {
+        const bootstrapClock = getBootstrap();
+        const edgeKey = `${dependency.plan_uuid}->${dependency.depends_on_uuid}`;
+        const current = getEdgeClock(db, 'plan_dependency', edgeKey);
         if (
-          insertSyntheticOpIfMissing(
-            db,
-            getBootstrap,
-            'plan_dependency',
-            `${dependency.plan_uuid}->${dependency.depends_on_uuid}`,
-            'add_edge',
-            { planUuid: dependency.plan_uuid, dependsOnUuid: dependency.depends_on_uuid }
+          edgeClockPartWins(
+            bootstrapClock.hlc,
+            bootstrapClock.nodeId,
+            current?.add_hlc ?? null,
+            current?.add_node_id ?? null
           )
+        ) {
+          writeEdgeAddClock(db, {
+            entityType: 'plan_dependency',
+            edgeKey,
+            hlc: bootstrapClock.hlc,
+            nodeId: bootstrapClock.nodeId,
+          });
+        }
+        if (
+          insertSyntheticOpIfMissing(db, getBootstrap, 'plan_dependency', edgeKey, 'add_edge', {
+            planUuid: dependency.plan_uuid,
+            dependsOnUuid: dependency.depends_on_uuid,
+          })
         ) {
           stats.syntheticOpsInserted += 1;
         }
@@ -457,18 +472,29 @@ export function bootstrapSyncMetadata(
         .prepare('SELECT plan_uuid, tag FROM plan_tag ORDER BY plan_uuid, tag')
         .all() as Array<{ plan_uuid: string; tag: string }>;
       for (const tag of tags) {
+        const bootstrapClock = getBootstrap();
+        const edgeKey = `${tag.plan_uuid}#${tag.tag}`;
+        const current = getEdgeClock(db, 'plan_tag', edgeKey);
         if (
-          insertSyntheticOpIfMissing(
-            db,
-            getBootstrap,
-            'plan_tag',
-            `${tag.plan_uuid}#${tag.tag}`,
-            'add_edge',
-            {
-              planUuid: tag.plan_uuid,
-              tag: tag.tag,
-            }
+          edgeClockPartWins(
+            bootstrapClock.hlc,
+            bootstrapClock.nodeId,
+            current?.add_hlc ?? null,
+            current?.add_node_id ?? null
           )
+        ) {
+          writeEdgeAddClock(db, {
+            entityType: 'plan_tag',
+            edgeKey,
+            hlc: bootstrapClock.hlc,
+            nodeId: bootstrapClock.nodeId,
+          });
+        }
+        if (
+          insertSyntheticOpIfMissing(db, getBootstrap, 'plan_tag', edgeKey, 'add_edge', {
+            planUuid: tag.plan_uuid,
+            tag: tag.tag,
+          })
         ) {
           stats.syntheticOpsInserted += 1;
         }

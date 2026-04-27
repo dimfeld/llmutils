@@ -16,6 +16,7 @@ import { createReviewIssue, softDeleteReviewIssue } from '../db/plan_review_issu
 import { getOrCreateProject } from '../db/project.js';
 import { deleteProjectSetting, setProjectSetting } from '../db/project_settings.js';
 import type { SyncFieldClockRow, SyncOpLogRow, SyncTombstoneRow } from '../db/sync_schema.js';
+import { edgeClockIsPresent, getEdgeClock } from './edge_clock.js';
 
 function opRows(db: Database): SyncOpLogRow[] {
   return db
@@ -176,10 +177,8 @@ describe('sync op emission', () => {
     const edgeOps = opRows(db).filter((op) => op.entity_type === 'plan_dependency');
     expect(edgeOps.map((op) => op.op_type)).toEqual(['add_edge', 'remove_edge']);
     expect(
-      db
-        .prepare('SELECT * FROM sync_tombstone WHERE entity_type = ? AND entity_id = ?')
-        .get('plan_dependency', 'plan-sync-edges->dep-plan')
-    ).not.toBeNull();
+      edgeClockIsPresent(getEdgeClock(db, 'plan_dependency', 'plan-sync-edges->dep-plan'))
+    ).toBe(false);
 
     const issue = createReviewIssue(db, {
       planUuid: 'plan-sync-edges',

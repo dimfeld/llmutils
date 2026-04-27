@@ -1,5 +1,7 @@
 import type { Database } from 'bun:sqlite';
 
+import { getOrCreateClockRow } from '../db/sync_schema.js';
+
 interface CursorFloorRow {
   peer_count: number;
   missing_cursor_count: number;
@@ -77,4 +79,17 @@ export function getCompactionFloorSeq(db: Database): number {
     return 0;
   }
   return Math.max(0, Math.min(...candidates));
+}
+
+export function getCompactedThroughSeq(db: Database): number {
+  const row = getOrCreateClockRow(db);
+  return Math.max(0, row.compacted_through_seq ?? 0);
+}
+
+export function setCompactedThroughSeq(db: Database, seq: number): void {
+  if (!Number.isSafeInteger(seq) || seq < 0) {
+    throw new Error(`Invalid compacted-through seq: ${seq}`);
+  }
+  getOrCreateClockRow(db);
+  db.prepare('UPDATE sync_clock SET compacted_through_seq = ? WHERE id = 1').run(seq);
 }

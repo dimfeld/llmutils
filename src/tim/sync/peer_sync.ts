@@ -58,6 +58,18 @@ export interface PeerSyncResult {
   pushChunks: number;
 }
 
+export class ResyncRequiredError extends Error {
+  constructor(
+    readonly compactedThroughSeq: number,
+    readonly currentHighWaterSeq: number
+  ) {
+    super(
+      `Peer requires snapshot resync: compacted through seq ${compactedThroughSeq}, current high-water seq ${currentHighWaterSeq}`
+    );
+    this.name = 'ResyncRequiredError';
+  }
+}
+
 function normalizeBatchSize(batchSize: number | undefined): number {
   const resolved = batchSize ?? DEFAULT_PEER_SYNC_BATCH_SIZE;
   if (!Number.isInteger(resolved) || resolved < 1) {

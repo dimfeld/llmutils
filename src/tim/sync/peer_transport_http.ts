@@ -2,11 +2,13 @@ import type { Database } from 'bun:sqlite';
 import { timingSafeEqual } from 'node:crypto';
 
 import { getOpLogChunkAfter, setPeerCursor } from '../db/sync_schema.js';
+import { getCompactedThroughSeq } from './compaction.js';
 import type { SyncOpRecord } from './op_apply.js';
 import { compareHlc, type Hlc } from './hlc.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import {
   applyPeerOpsWithPending,
+  ResyncRequiredError,
   runPeerSync,
   type PeerSyncOptions,
   type PeerSyncResult,
@@ -223,6 +225,13 @@ function parseCursorSeq(seqText: string | null | undefined): number {
   return Number.isSafeInteger(seq) && seq >= 0 && String(seq) === seqText ? seq : 0;
 }
 
+function currentHighWaterSeq(db: Database): number {
+  const row = db.prepare('SELECT max(seq) AS seq FROM sync_op_log').get() as {
+    seq: number | null;
+  };
+  return row.seq ?? 0;
+}
+
 function snapshotAlreadyKnownOpIds(
   db: Database,
   peerNodeId: string,
@@ -285,6 +294,15 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
 }
 
 function httpError(endpoint: string, response: Response, body: unknown): Error {
+  if (
+    response.status === 409 &&
+    isObject(body) &&
+    body.error === 'resync_required' &&
+    typeof body.compactedThroughSeq === 'number' &&
+    typeof body.currentHighWaterSeq === 'number'
+  ) {
+    return new ResyncRequiredError(body.compactedThroughSeq, body.currentHighWaterSeq);
+  }
   const message =
     isObject(body) && typeof body.error === 'string' ? body.error : response.statusText;
   return new Error(`Peer sync ${endpoint} failed with HTTP ${response.status}: ${message}`);
@@ -385,6 +403,18 @@ export function createPeerSyncHttpHandler(
         // Pull is read-only from the server's perspective. The pulling client
         // advances its local pull-from-server cursor after successful apply.
         const afterSeq = url.searchParams.get('after_seq') ?? url.searchParams.get('after_op_id');
+        const parsedAfterSeq = parseCursorSeq(afterSeq);
+        const compactedThroughSeq = getCompactedThroughSeq(db);
+        if (parsedAfterSeq > 0 && parsedAfterSeq < compactedThroughSeq) {
+          return jsonResponse(
+            {
+              error: 'resync_required',
+              compactedThroughSeq,
+              currentHighWaterSeq: currentHighWaterSeq(db),
+            },
+            { status: 409 }
+          );
+        }
         const chunk = getOpLogChunkAfter(db, afterSeq, asLimit(url));
         return jsonResponse(chunk);
       }

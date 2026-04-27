@@ -3,6 +3,7 @@ import type { Database } from 'bun:sqlite';
 import { getProjectById } from '../db/project.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import { ensureLocalNode } from '../db/sync_schema.js';
+import { writeEdgeAddClock, writeEdgeRemoveClock } from './edge_clock.js';
 import { formatHlc, formatOpId, HlcGenerator, type Hlc } from './hlc.js';
 
 export type SyncEntityType =
@@ -347,9 +348,16 @@ export function emitPlanDelete(db: Database, planUuid: string): EmittedSyncOpera
     .prepare('SELECT depends_on_uuid FROM plan_dependency WHERE plan_uuid = ?')
     .all(planUuid) as Array<{ depends_on_uuid: string }>;
   for (const dependency of dependencies) {
-    emitChild('plan_dependency', `${planUuid}->${dependency.depends_on_uuid}`, {
+    const entityId = `${planUuid}->${dependency.depends_on_uuid}`;
+    const child = emitChild('plan_dependency', entityId, {
       planUuid,
       dependsOnUuid: dependency.depends_on_uuid,
+    });
+    writeEdgeRemoveClock(db, {
+      entityType: 'plan_dependency',
+      edgeKey: entityId,
+      hlc: child.hlc,
+      nodeId: child.nodeId,
     });
   }
 
@@ -357,7 +365,14 @@ export function emitPlanDelete(db: Database, planUuid: string): EmittedSyncOpera
     tag: string;
   }>;
   for (const tag of tags) {
-    emitChild('plan_tag', `${planUuid}#${tag.tag}`, { planUuid, tag: tag.tag });
+    const entityId = `${planUuid}#${tag.tag}`;
+    const child = emitChild('plan_tag', entityId, { planUuid, tag: tag.tag });
+    writeEdgeRemoveClock(db, {
+      entityType: 'plan_tag',
+      edgeKey: entityId,
+      hlc: child.hlc,
+      nodeId: child.nodeId,
+    });
   }
 
   return emitted;
@@ -515,6 +530,12 @@ export function emitDependencyAdd(
   const entityId = `${planUuid}->${dependsOnUuid}`;
   const emitted = tickLocal(db);
   insertOp(db, emitted, 'plan_dependency', entityId, 'add_edge', { planUuid, dependsOnUuid });
+  writeEdgeAddClock(db, {
+    entityType: 'plan_dependency',
+    edgeKey: entityId,
+    hlc: emitted.hlc,
+    nodeId: emitted.nodeId,
+  });
   return emitted;
 }
 
@@ -526,7 +547,12 @@ export function emitDependencyRemove(
   const entityId = `${planUuid}->${dependsOnUuid}`;
   const emitted = tickLocal(db);
   insertOp(db, emitted, 'plan_dependency', entityId, 'remove_edge', { planUuid, dependsOnUuid });
-  insertTombstone(db, emitted, 'plan_dependency', entityId);
+  writeEdgeRemoveClock(db, {
+    entityType: 'plan_dependency',
+    edgeKey: entityId,
+    hlc: emitted.hlc,
+    nodeId: emitted.nodeId,
+  });
   return emitted;
 }
 
@@ -534,6 +560,12 @@ export function emitTagAdd(db: Database, planUuid: string, tag: string): Emitted
   const entityId = `${planUuid}#${tag}`;
   const emitted = tickLocal(db);
   insertOp(db, emitted, 'plan_tag', entityId, 'add_edge', { planUuid, tag });
+  writeEdgeAddClock(db, {
+    entityType: 'plan_tag',
+    edgeKey: entityId,
+    hlc: emitted.hlc,
+    nodeId: emitted.nodeId,
+  });
   return emitted;
 }
 
@@ -541,7 +573,12 @@ export function emitTagRemove(db: Database, planUuid: string, tag: string): Emit
   const entityId = `${planUuid}#${tag}`;
   const emitted = tickLocal(db);
   insertOp(db, emitted, 'plan_tag', entityId, 'remove_edge', { planUuid, tag });
-  insertTombstone(db, emitted, 'plan_tag', entityId);
+  writeEdgeRemoveClock(db, {
+    entityType: 'plan_tag',
+    edgeKey: entityId,
+    hlc: emitted.hlc,
+    nodeId: emitted.nodeId,
+  });
   return emitted;
 }
 

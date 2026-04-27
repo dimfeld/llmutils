@@ -1269,6 +1269,190 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 37,
+    up: (db: Database): void => {
+      const clockColumns = db.prepare("PRAGMA table_info('sync_clock')").all() as Array<{
+        name: string;
+      }>;
+      if (!clockColumns.some((column) => column.name === 'compacted_through_seq')) {
+        db.run(
+          'ALTER TABLE sync_clock ADD COLUMN compacted_through_seq INTEGER NOT NULL DEFAULT 0'
+        );
+      }
+
+      db.run(`
+        CREATE TABLE IF NOT EXISTS sync_edge_clock (
+          entity_type TEXT NOT NULL CHECK(entity_type IN ('plan_dependency', 'plan_tag')),
+          edge_key TEXT NOT NULL,
+          add_hlc TEXT,
+          add_node_id TEXT,
+          remove_hlc TEXT,
+          remove_node_id TEXT,
+          updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+          PRIMARY KEY(entity_type, edge_key)
+        );
+      `);
+
+      const localNode = db.prepare('SELECT node_id FROM sync_node WHERE is_local = 1').get() as {
+        node_id: string;
+      } | null;
+      const fallbackNodeId = localNode?.node_id ?? randomUUID();
+      const fallbackClock = db
+        .prepare('SELECT physical_ms, logical FROM sync_clock WHERE id = 1')
+        .get() as { physical_ms: number; logical: number } | null;
+      const fallbackHlc = `${(fallbackClock?.physical_ms ?? Date.now()).toString().padStart(16, '0')}.${(
+        fallbackClock?.logical ?? 0
+      )
+        .toString()
+        .padStart(8, '0')}`;
+
+      const upsertAdd = db.prepare(`
+        INSERT INTO sync_edge_clock (
+          entity_type,
+          edge_key,
+          add_hlc,
+          add_node_id,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ${SQL_NOW_ISO_UTC})
+        ON CONFLICT(entity_type, edge_key) DO UPDATE SET
+          add_hlc = CASE
+            WHEN sync_edge_clock.add_hlc IS NULL
+              OR excluded.add_hlc > sync_edge_clock.add_hlc
+              OR (excluded.add_hlc = sync_edge_clock.add_hlc AND excluded.add_node_id > sync_edge_clock.add_node_id)
+            THEN excluded.add_hlc ELSE sync_edge_clock.add_hlc END,
+          add_node_id = CASE
+            WHEN sync_edge_clock.add_hlc IS NULL
+              OR excluded.add_hlc > sync_edge_clock.add_hlc
+              OR (excluded.add_hlc = sync_edge_clock.add_hlc AND excluded.add_node_id > sync_edge_clock.add_node_id)
+            THEN excluded.add_node_id ELSE sync_edge_clock.add_node_id END,
+          updated_at = ${SQL_NOW_ISO_UTC}
+      `);
+      const upsertRemove = db.prepare(`
+        INSERT INTO sync_edge_clock (
+          entity_type,
+          edge_key,
+          remove_hlc,
+          remove_node_id,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ${SQL_NOW_ISO_UTC})
+        ON CONFLICT(entity_type, edge_key) DO UPDATE SET
+          remove_hlc = CASE
+            WHEN sync_edge_clock.remove_hlc IS NULL
+              OR excluded.remove_hlc > sync_edge_clock.remove_hlc
+              OR (excluded.remove_hlc = sync_edge_clock.remove_hlc AND excluded.remove_node_id > sync_edge_clock.remove_node_id)
+            THEN excluded.remove_hlc ELSE sync_edge_clock.remove_hlc END,
+          remove_node_id = CASE
+            WHEN sync_edge_clock.remove_hlc IS NULL
+              OR excluded.remove_hlc > sync_edge_clock.remove_hlc
+              OR (excluded.remove_hlc = sync_edge_clock.remove_hlc AND excluded.remove_node_id > sync_edge_clock.remove_node_id)
+            THEN excluded.remove_node_id ELSE sync_edge_clock.remove_node_id END,
+          updated_at = ${SQL_NOW_ISO_UTC}
+      `);
+      const latestOp = db.prepare(`
+        SELECT
+          printf('%016d.%08d', hlc_physical_ms, hlc_logical) AS hlc,
+          node_id
+        FROM sync_op_log
+        WHERE entity_type = ?
+          AND entity_id = ?
+          AND op_type = ?
+        ORDER BY hlc_physical_ms DESC, hlc_logical DESC, node_id DESC, local_counter DESC
+        LIMIT 1
+      `);
+
+      const dependencies = db
+        .prepare(
+          'SELECT plan_uuid, depends_on_uuid FROM plan_dependency ORDER BY plan_uuid, depends_on_uuid'
+        )
+        .all() as Array<{ plan_uuid: string; depends_on_uuid: string }>;
+      for (const dependency of dependencies) {
+        const edgeKey = `${dependency.plan_uuid}->${dependency.depends_on_uuid}`;
+        const add = latestOp.get('plan_dependency', edgeKey, 'add_edge') as {
+          hlc: string;
+          node_id: string;
+        } | null;
+        upsertAdd.run(
+          'plan_dependency',
+          edgeKey,
+          add?.hlc ?? fallbackHlc,
+          add?.node_id ?? fallbackNodeId
+        );
+      }
+
+      const tags = db
+        .prepare('SELECT plan_uuid, tag FROM plan_tag ORDER BY plan_uuid, tag')
+        .all() as Array<{
+        plan_uuid: string;
+        tag: string;
+      }>;
+      for (const tag of tags) {
+        const edgeKey = `${tag.plan_uuid}#${tag.tag}`;
+        const add = latestOp.get('plan_tag', edgeKey, 'add_edge') as {
+          hlc: string;
+          node_id: string;
+        } | null;
+        upsertAdd.run('plan_tag', edgeKey, add?.hlc ?? fallbackHlc, add?.node_id ?? fallbackNodeId);
+      }
+
+      const removals = db
+        .prepare(
+          `
+            SELECT entity_type, entity_id, hlc_physical_ms, hlc_logical, node_id
+            FROM sync_op_log
+            WHERE entity_type IN ('plan_dependency', 'plan_tag')
+              AND op_type IN ('remove_edge', 'delete')
+            ORDER BY hlc_physical_ms, hlc_logical, node_id, local_counter
+          `
+        )
+        .all() as Array<{
+        entity_type: string;
+        entity_id: string;
+        hlc_physical_ms: number;
+        hlc_logical: number;
+        node_id: string;
+      }>;
+      for (const removal of removals) {
+        upsertRemove.run(
+          removal.entity_type,
+          removal.entity_id,
+          `${removal.hlc_physical_ms.toString().padStart(16, '0')}.${removal.hlc_logical
+            .toString()
+            .padStart(8, '0')}`,
+          removal.node_id
+        );
+      }
+
+      const legacyEdgeTombstones = db
+        .prepare(
+          `
+            SELECT entity_type, entity_id, hlc_physical_ms, hlc_logical, node_id
+            FROM sync_tombstone
+            WHERE entity_type IN ('plan_dependency', 'plan_tag')
+            ORDER BY hlc_physical_ms, hlc_logical, node_id
+          `
+        )
+        .all() as Array<{
+        entity_type: string;
+        entity_id: string;
+        hlc_physical_ms: number;
+        hlc_logical: number;
+        node_id: string;
+      }>;
+      for (const tombstone of legacyEdgeTombstones) {
+        upsertRemove.run(
+          tombstone.entity_type,
+          tombstone.entity_id,
+          `${tombstone.hlc_physical_ms.toString().padStart(16, '0')}.${tombstone.hlc_logical
+            .toString()
+            .padStart(8, '0')}`,
+          tombstone.node_id
+        );
+      }
+
+      db.run("DELETE FROM sync_tombstone WHERE entity_type IN ('plan_dependency', 'plan_tag')");
+    },
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;

@@ -22,6 +22,7 @@ export interface SyncClockRow {
   local_counter: number;
   updated_at: string;
   bootstrap_completed_at: string | null;
+  compacted_through_seq: number;
 }
 
 export interface SyncOpLogRow {
@@ -70,6 +71,16 @@ export interface SyncTombstoneRow {
   hlc_logical: number;
   node_id: string;
   created_at: string;
+}
+
+export interface SyncEdgeClockRow {
+  entity_type: 'plan_dependency' | 'plan_tag';
+  edge_key: string;
+  add_hlc: string | null;
+  add_node_id: string | null;
+  remove_hlc: string | null;
+  remove_node_id: string | null;
+  updated_at: string;
 }
 
 export interface SyncPendingOpRow {

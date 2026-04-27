@@ -20,6 +20,7 @@ import { formatOpId } from './hlc.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import { HLC_MIN_PHYSICAL_MS } from './op_validation.js';
 import { applyPeerOpsWithPending, runPeerSync, type PeerTransport } from './peer_sync.js';
+import { setCompactedThroughSeq } from './compaction.js';
 import {
   createHttpPeerTransport,
   createPeerSyncHttpHandler,
@@ -370,6 +371,29 @@ describe('HTTP peer sync transport', () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: 'Invalid peer_node_id' });
+  });
+
+  test('HTTP pull reports resync_required when cursor is behind compacted history', async () => {
+    upsertPlan(dbB, projectB, { uuid: id('compacted-plan'), planId: 80, title: 'Compacted' });
+    setCompactedThroughSeq(dbB, 2);
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+    const url = new URL('http://peer.test/sync/pull');
+    url.searchParams.set('peer_node_id', getLocalNodeId(dbA));
+    url.searchParams.set('after_seq', '1');
+
+    const response = await handler(
+      new Request(url, {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret-token' },
+      })
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: 'resync_required',
+      compactedThroughSeq: 2,
+      currentHighWaterSeq: expect.any(Number),
+    });
   });
 
   test('HTTP push from an unregistered caller registers as transient, not main', async () => {

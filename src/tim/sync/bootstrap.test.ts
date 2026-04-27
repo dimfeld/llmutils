@@ -11,6 +11,7 @@ import { runMigrations } from '../db/migrations.js';
 import type { SyncFieldClockRow, SyncOpLogRow } from '../db/sync_schema.js';
 import { applyRemoteOps, type SyncOpRecord } from './op_apply.js';
 import { bootstrapSyncMetadata } from './bootstrap.js';
+import { edgeClockIsPresent, getEdgeClock } from './edge_clock.js';
 import { formatHlc, type Hlc } from './hlc.js';
 
 const PROJECT_IDENTITY = 'github.com__owner__repo';
@@ -266,6 +267,14 @@ describe('sync metadata bootstrap', () => {
     expect(clock(db, 'plan_task', TASK_LEGACY_UUID, 'done')).not.toBeNull();
     expect(clock(db, 'plan_review_issue', ISSUE_LEGACY_UUID, 'content')).not.toBeNull();
     expect(clock(db, 'project_setting', `${PROJECT_IDENTITY}:featured`, 'value')).not.toBeNull();
+    expect(
+      edgeClockIsPresent(
+        getEdgeClock(db, 'plan_dependency', `${PLAN_LEGACY_UUID}->${PLAN_DEPENDENCY_UUID}`)
+      )
+    ).toBe(true);
+    expect(edgeClockIsPresent(getEdgeClock(db, 'plan_tag', `${PLAN_LEGACY_UUID}#backend`))).toBe(
+      true
+    );
 
     expect(
       db

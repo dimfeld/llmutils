@@ -9,6 +9,15 @@ import {
 } from '../db/sync_schema.js';
 import { compareHlc, formatHlc, type Hlc } from './hlc.js';
 import {
+  edgeClockIsPresent,
+  edgeClockPartWins,
+  getEdgeClock,
+  opLogRowHlc,
+  writeEdgeAddClock,
+  writeEdgeRemoveClock,
+  type SyncEdgeEntityType,
+} from './edge_clock.js';
+import {
   getLocalGenerator,
   PLAN_LWW_FIELD_NAMES,
   PLAN_TASK_LWW_FIELD_NAMES,
@@ -653,19 +662,24 @@ function tombstonePlanChildren(db: Database, op: SyncOpRecord): void {
     .prepare('SELECT depends_on_uuid FROM plan_dependency WHERE plan_uuid = ?')
     .all(planUuid) as Array<{ depends_on_uuid: string }>;
   for (const dependency of dependencies) {
-    insertSyntheticTombstone(
-      db,
-      op,
-      'plan_dependency',
-      `${planUuid}->${dependency.depends_on_uuid}`
-    );
+    writeEdgeRemoveClock(db, {
+      entityType: 'plan_dependency',
+      edgeKey: `${planUuid}->${dependency.depends_on_uuid}`,
+      hlc: opHlc(op),
+      nodeId: op.node_id,
+    });
   }
 
   const tags = db.prepare('SELECT tag FROM plan_tag WHERE plan_uuid = ?').all(planUuid) as Array<{
     tag: string;
   }>;
   for (const tag of tags) {
-    insertSyntheticTombstone(db, op, 'plan_tag', `${planUuid}#${tag.tag}`);
+    writeEdgeRemoveClock(db, {
+      entityType: 'plan_tag',
+      edgeKey: `${planUuid}#${tag.tag}`,
+      hlc: opHlc(op),
+      nodeId: op.node_id,
+    });
   }
 }
 
@@ -718,7 +732,23 @@ function applyEntityDelete(db: Database, op: SyncOpRecord): SkippedSyncOp | null
   } else if (op.entity_type === 'plan_dependency') {
     const payload = parsePayload(op);
     if (isSkippedSyncOp(payload)) return payload;
-    insertTombstone(db, op);
+    const current = getEdgeClock(db, 'plan_dependency', op.entity_id);
+    if (
+      !edgeClockPartWins(
+        opHlc(op),
+        op.node_id,
+        current?.remove_hlc ?? null,
+        current?.remove_node_id ?? null
+      )
+    ) {
+      return permanentSkip(op, 'stale dependency edge delete clock');
+    }
+    writeEdgeRemoveClock(db, {
+      entityType: 'plan_dependency',
+      edgeKey: op.entity_id,
+      hlc: opHlc(op),
+      nodeId: op.node_id,
+    });
     if (typeof payload.planUuid === 'string' && typeof payload.dependsOnUuid === 'string') {
       db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?').run(
         payload.planUuid,
@@ -728,7 +758,23 @@ function applyEntityDelete(db: Database, op: SyncOpRecord): SkippedSyncOp | null
   } else if (op.entity_type === 'plan_tag') {
     const payload = parsePayload(op);
     if (isSkippedSyncOp(payload)) return payload;
-    insertTombstone(db, op);
+    const current = getEdgeClock(db, 'plan_tag', op.entity_id);
+    if (
+      !edgeClockPartWins(
+        opHlc(op),
+        op.node_id,
+        current?.remove_hlc ?? null,
+        current?.remove_node_id ?? null
+      )
+    ) {
+      return permanentSkip(op, 'stale tag edge delete clock');
+    }
+    writeEdgeRemoveClock(db, {
+      entityType: 'plan_tag',
+      edgeKey: op.entity_id,
+      hlc: opHlc(op),
+      nodeId: op.node_id,
+    });
     if (typeof payload.planUuid === 'string' && typeof payload.tag === 'string') {
       db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ? AND tag = ?').run(
         payload.planUuid,
@@ -739,48 +785,75 @@ function applyEntityDelete(db: Database, op: SyncOpRecord): SkippedSyncOp | null
   return null;
 }
 
-function latestAddEdge(db: Database, op: SyncOpRecord): SyncOpLogRow | null {
-  return db
-    .prepare(
-      `
-        SELECT *
-        FROM sync_op_log
-        WHERE entity_type = ?
-          AND entity_id = ?
-          AND op_type = 'add_edge'
-        ORDER BY hlc_physical_ms DESC, hlc_logical DESC, node_id DESC, local_counter DESC
-        LIMIT 1
-      `
-    )
-    .get(op.entity_type, op.entity_id) as SyncOpLogRow | null;
+function applyEdgeClockOp(
+  db: Database,
+  op: SyncOpRecord,
+  entityType: SyncEdgeEntityType
+): SkippedSyncOp | null {
+  const current = getEdgeClock(db, entityType, op.entity_id);
+  const incomingHlc = opLogRowHlc(op);
+  if (op.op_type === 'add_edge') {
+    if (
+      !edgeClockPartWins(
+        incomingHlc,
+        op.node_id,
+        current?.add_hlc ?? null,
+        current?.add_node_id ?? null
+      )
+    ) {
+      return permanentSkip(op, 'stale edge add clock');
+    }
+    writeEdgeAddClock(db, {
+      entityType,
+      edgeKey: op.entity_id,
+      hlc: incomingHlc,
+      nodeId: op.node_id,
+    });
+  } else if (op.op_type === 'remove_edge') {
+    if (
+      !edgeClockPartWins(
+        incomingHlc,
+        op.node_id,
+        current?.remove_hlc ?? null,
+        current?.remove_node_id ?? null
+      )
+    ) {
+      return permanentSkip(op, 'stale edge remove clock');
+    }
+    writeEdgeRemoveClock(db, {
+      entityType,
+      edgeKey: op.entity_id,
+      hlc: incomingHlc,
+      nodeId: op.node_id,
+    });
+  }
+  return null;
 }
 
 function applyDependencyEdge(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
   const payload = parsePayload(op);
   if (isSkippedSyncOp(payload)) return payload;
   if (typeof payload.planUuid !== 'string' || typeof payload.dependsOnUuid !== 'string') {
-    return { opId: op.op_id, reason: 'dependency edge op missing planUuid or dependsOnUuid' };
+    return permanentSkip(op, 'dependency edge op missing planUuid or dependsOnUuid');
   }
-  if (op.op_type === 'remove_edge') {
-    insertTombstone(db, op);
+  if (op.entity_id !== `${payload.planUuid}->${payload.dependsOnUuid}`) {
+    return permanentSkip(op, 'dependency edge op entity_id does not match payload');
   }
-  const add = latestAddEdge(db, op);
-  const remove = db
-    .prepare('SELECT * FROM sync_tombstone WHERE entity_type = ? AND entity_id = ?')
-    .get(op.entity_type, op.entity_id) as SyncTombstoneRow | null;
-  const present =
-    add !== null &&
-    remoteWins({ physicalMs: add.hlc_physical_ms, logical: add.hlc_logical }, add.node_id, remove);
-  if (present) {
+  if (op.op_type === 'add_edge') {
     if (
       hasTombstone(db, 'plan', payload.planUuid) ||
       hasTombstone(db, 'plan', payload.dependsOnUuid)
     ) {
-      return { opId: op.op_id, reason: 'parent plan tombstoned; dropping dependency edge' };
+      return permanentSkip(op, 'parent plan tombstoned; dropping dependency edge');
     }
     if (!planExists(db, payload.planUuid) || !planExists(db, payload.dependsOnUuid)) {
       return deferredSkip(op, 'dependency edge references missing parent plan; deferring');
     }
+  }
+  const edgeSkip = applyEdgeClockOp(db, op, 'plan_dependency');
+  if (edgeSkip) return edgeSkip;
+  const present = edgeClockIsPresent(getEdgeClock(db, 'plan_dependency', op.entity_id));
+  if (present) {
     db.prepare(
       'INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)'
     ).run(payload.planUuid, payload.dependsOnUuid);
@@ -797,25 +870,23 @@ function applyTagEdge(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
   const payload = parsePayload(op);
   if (isSkippedSyncOp(payload)) return payload;
   if (typeof payload.planUuid !== 'string' || typeof payload.tag !== 'string') {
-    return { opId: op.op_id, reason: 'tag edge op missing planUuid or tag' };
+    return permanentSkip(op, 'tag edge op missing planUuid or tag');
   }
-  if (op.op_type === 'remove_edge') {
-    insertTombstone(db, op);
+  if (op.entity_id !== `${payload.planUuid}#${payload.tag}`) {
+    return permanentSkip(op, 'tag edge op entity_id does not match payload');
   }
-  const add = latestAddEdge(db, op);
-  const remove = db
-    .prepare('SELECT * FROM sync_tombstone WHERE entity_type = ? AND entity_id = ?')
-    .get(op.entity_type, op.entity_id) as SyncTombstoneRow | null;
-  const present =
-    add !== null &&
-    remoteWins({ physicalMs: add.hlc_physical_ms, logical: add.hlc_logical }, add.node_id, remove);
-  if (present) {
+  if (op.op_type === 'add_edge') {
     if (hasTombstone(db, 'plan', payload.planUuid)) {
-      return { opId: op.op_id, reason: 'parent plan tombstoned; dropping tag edge' };
+      return permanentSkip(op, 'parent plan tombstoned; dropping tag edge');
     }
     if (!planExists(db, payload.planUuid)) {
       return deferredSkip(op, 'tag edge references missing parent plan; deferring');
     }
+  }
+  const edgeSkip = applyEdgeClockOp(db, op, 'plan_tag');
+  if (edgeSkip) return edgeSkip;
+  const present = edgeClockIsPresent(getEdgeClock(db, 'plan_tag', op.entity_id));
+  if (present) {
     db.prepare('INSERT OR IGNORE INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run(
       payload.planUuid,
       payload.tag

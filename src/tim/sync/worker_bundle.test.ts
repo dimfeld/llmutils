@@ -18,6 +18,7 @@ import {
 import { getOrCreateProject } from '../db/project.js';
 import { getProjectSetting, setProjectSetting } from '../db/project_settings.js';
 import { getWorkerLease } from '../db/sync_schema.js';
+import { edgeClockIsPresent, getEdgeClock } from './edge_clock.js';
 import { getLocalNodeId } from './node_identity.js';
 import { createHttpPeerTransport, createPeerSyncHttpHandler } from './peer_transport_http.js';
 import {
@@ -106,6 +107,20 @@ describe('worker sync bundles', () => {
           .get(id('plan-target')) as { count: number }
       ).count
     ).toBeGreaterThan(0);
+    expect(bundle.edgeClocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entity_type: 'plan_tag',
+          edge_key: `${id('plan-target')}#sync`,
+        }),
+      ])
+    );
+    expect(workerDb.prepare('SELECT count(*) AS count FROM sync_edge_clock').get()).toMatchObject({
+      count: expect.any(Number),
+    });
+    expect(
+      edgeClockIsPresent(getEdgeClock(workerDb, 'plan_tag', `${id('plan-target')}#sync`))
+    ).toBe(true);
 
     const workerProjectId = getOrCreateProject(workerDb, 'github.com__owner__repo').id;
     appendPlanTask(workerDb, id('plan-target'), {

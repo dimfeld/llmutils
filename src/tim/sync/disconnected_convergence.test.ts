@@ -220,13 +220,26 @@ function syncStateDump(db: Database): Record<string, unknown[]> {
         ORDER BY entity_type, entity_id
       `
     ),
+    sync_edge_clock: dumpRows(
+      db,
+      `
+        SELECT entity_type, edge_key, add_hlc, add_node_id, remove_hlc, remove_node_id
+        FROM sync_edge_clock
+        ORDER BY entity_type, edge_key
+      `
+    ),
   };
 }
 
 function appStateDump(
   db: Database
-): Omit<Record<string, unknown[]>, 'sync_field_clock' | 'sync_tombstone'> {
-  const { sync_field_clock: _clocks, sync_tombstone: _tombstones, ...state } = syncStateDump(db);
+): Omit<Record<string, unknown[]>, 'sync_field_clock' | 'sync_tombstone' | 'sync_edge_clock'> {
+  const {
+    sync_field_clock: _clocks,
+    sync_tombstone: _tombstones,
+    sync_edge_clock: _edgeClocks,
+    ...state
+  } = syncStateDump(db);
   return state;
 }
 

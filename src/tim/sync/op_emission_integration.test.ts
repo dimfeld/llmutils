@@ -21,6 +21,7 @@ import {
 import { getOrCreateProject } from '../db/project.js';
 import { deleteProjectSetting, setProjectSetting } from '../db/project_settings.js';
 import type { SyncFieldClockRow, SyncOpLogRow, SyncTombstoneRow } from '../db/sync_schema.js';
+import { edgeClockIsPresent, getEdgeClock } from './edge_clock.js';
 
 function opRows(db: Database): SyncOpLogRow[] {
   return db
@@ -304,11 +305,11 @@ describe('sync op emission – integration coverage', () => {
     expect(tags.map((t) => t.tag)).toContain('backend');
   });
 
-  test('tag tombstone is written on remove', () => {
+  test('tag edge clock is removed on remove', () => {
     upsertPlan(db, projectId, { uuid: 'plan-tags2', planId: 7, tags: ['frontend'] });
     upsertPlan(db, projectId, { uuid: 'plan-tags2', planId: 7, tags: [] });
 
-    expect(tombstone(db, 'plan_tag', 'plan-tags2#frontend')).not.toBeNull();
+    expect(edgeClockIsPresent(getEdgeClock(db, 'plan_tag', 'plan-tags2#frontend'))).toBe(false);
   });
 
   // ---------------------------------------------------------------------------

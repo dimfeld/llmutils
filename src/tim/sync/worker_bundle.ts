@@ -21,6 +21,7 @@ import {
   type SyncTombstoneRow,
   type SyncWorkerLeaseRow,
 } from '../db/sync_schema.js';
+import type { SyncEdgeClockRow } from './edge_clock.js';
 import { formatHlc, HlcGenerator, parseHlc } from './hlc.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import { getProjectSyncIdentity } from './op_emission.js';
@@ -62,6 +63,7 @@ export interface WorkerBundle {
   tags: PlanTagRow[];
   projectSettings: ProjectSetting[];
   fieldClocks: SyncFieldClockRow[];
+  edgeClocks: SyncEdgeClockRow[];
   tombstones: SyncTombstoneRow[];
   sync: WorkerBundleSync;
 }
@@ -291,6 +293,10 @@ function filterEntityMetadata<T extends { entity_type: string; entity_id: string
   return rows.filter((row) => entityIds.has(`${row.entity_type}:${row.entity_id}`));
 }
 
+function filterEdgeClocks(rows: SyncEdgeClockRow[], entityIds: Set<string>): SyncEdgeClockRow[] {
+  return rows.filter((row) => entityIds.has(`${row.entity_type}:${row.edge_key}`));
+}
+
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map(stableJson).join(',')}]`;
@@ -420,6 +426,20 @@ function assertWorkerImportPreconditions(
       );
     }
   }
+  for (const edgeClock of bundle.edgeClocks) {
+    const existing = db
+      .prepare('SELECT * FROM sync_edge_clock WHERE entity_type = ? AND edge_key = ?')
+      .get(edgeClock.entity_type, edgeClock.edge_key) as SyncEdgeClockRow | null;
+    const matches = rowMatches(
+      existing as unknown as Record<string, unknown> | null,
+      edgeClock as unknown as Record<string, unknown>
+    );
+    if (!matches) {
+      throw new Error(
+        `Cannot import worker bundle over existing edge clock ${edgeClock.entity_type}:${edgeClock.edge_key}`
+      );
+    }
+  }
 }
 
 function metadataEntityIdsForPlanSlice(
@@ -444,6 +464,24 @@ function metadataEntityIdsForPlanSlice(
     .prepare(`SELECT uuid FROM plan_review_issue WHERE plan_uuid IN (${placeholders})`)
     .all(...planUuids) as Array<{ uuid: string }>;
   for (const issue of issueRows) ids.add(`plan_review_issue:${issue.uuid}`);
+
+  const edgeClockRows = db
+    .prepare(
+      "SELECT entity_type, edge_key FROM sync_edge_clock WHERE entity_type IN ('plan_dependency', 'plan_tag')"
+    )
+    .all() as Array<{
+    entity_type: string;
+    edge_key: string;
+  }>;
+  for (const edgeClock of edgeClockRows) {
+    const referencesSlicePlan =
+      edgeClock.entity_type === 'plan_dependency'
+        ? edgeClock.edge_key.split('->').some((part) => planUuidSet.has(part))
+        : planUuidSet.has(edgeClock.edge_key.split('#', 1)[0] ?? '');
+    if (referencesSlicePlan) {
+      ids.add(`${edgeClock.entity_type}:${edgeClock.edge_key}`);
+    }
+  }
 
   const tombstones = db
     .prepare('SELECT entity_type, entity_id FROM sync_tombstone')
@@ -567,6 +605,14 @@ export function exportWorkerBundle(db: Database, options: ExportWorkerBundleOpti
       db.prepare('SELECT * FROM sync_field_clock').all() as SyncFieldClockRow[],
       entityIds
     );
+    const edgeClocks = filterEdgeClocks(
+      db
+        .prepare(
+          "SELECT * FROM sync_edge_clock WHERE entity_type IN ('plan_dependency', 'plan_tag')"
+        )
+        .all() as SyncEdgeClockRow[],
+      entityIds
+    );
     const tombstones = filterEntityMetadata(
       db.prepare('SELECT * FROM sync_tombstone').all() as SyncTombstoneRow[],
       entityIds
@@ -584,6 +630,7 @@ export function exportWorkerBundle(db: Database, options: ExportWorkerBundleOpti
       tags,
       projectSettings,
       fieldClocks,
+      edgeClocks,
       tombstones,
       sync: {
         issuingNodeId,
@@ -947,6 +994,39 @@ function importFieldClocks(db: Database, clocks: SyncFieldClockRow[]): void {
   }
 }
 
+function importEdgeClocks(db: Database, clocks: SyncEdgeClockRow[]): void {
+  const insert = db.prepare(
+    `
+      INSERT INTO sync_edge_clock (
+        entity_type,
+        edge_key,
+        add_hlc,
+        add_node_id,
+        remove_hlc,
+        remove_node_id,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(entity_type, edge_key) DO UPDATE SET
+        add_hlc = excluded.add_hlc,
+        add_node_id = excluded.add_node_id,
+        remove_hlc = excluded.remove_hlc,
+        remove_node_id = excluded.remove_node_id,
+        updated_at = excluded.updated_at
+    `
+  );
+  for (const clock of clocks) {
+    insert.run(
+      clock.entity_type,
+      clock.edge_key,
+      clock.add_hlc,
+      clock.add_node_id,
+      clock.remove_hlc,
+      clock.remove_node_id,
+      clock.updated_at
+    );
+  }
+}
+
 function importTombstones(db: Database, tombstones: SyncTombstoneRow[]): void {
   const insert = db.prepare(
     `
@@ -1014,6 +1094,7 @@ export function importWorkerBundle(db: Database, bundle: WorkerBundle): void {
     importEdges(db, nextBundle.dependencies, nextBundle.tags);
     importProjectSettings(db, projectId, nextBundle.projectSettings);
     importFieldClocks(db, nextBundle.fieldClocks);
+    importEdgeClocks(db, nextBundle.edgeClocks ?? []);
     importTombstones(db, nextBundle.tombstones);
     createWorkerLease(db, {
       workerNodeId: nextBundle.worker.nodeId,

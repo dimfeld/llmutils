@@ -18,6 +18,7 @@ import { createReviewIssue, listReviewIssuesForPlan } from '../db/plan_review_is
 import { getProjectSetting, setProjectSetting } from '../db/project_settings.js';
 import { getOrCreateProject } from '../db/project.js';
 import { applyRemoteOps, type SyncOpRecord } from './op_apply.js';
+import { edgeClockIsPresent, getEdgeClock } from './edge_clock.js';
 import { formatHlc, type Hlc } from './hlc.js';
 import { HLC_MIN_PHYSICAL_MS } from './op_validation.js';
 
@@ -335,6 +336,27 @@ describe('sync op application', () => {
     );
     expect(applyRemoteOps(db, [addDep, removeDep]).errors).toEqual([]);
     expect(getPlanDependenciesByUuid(db, id('plan-edge'))).toEqual([]);
+    expect(
+      edgeClockIsPresent(
+        getEdgeClock(db, 'plan_dependency', `${id('plan-edge')}->${id('dep-edge')}`)
+      )
+    ).toBe(false);
+
+    const staleDepAdd = makeOp(
+      'remote-b',
+      { physicalMs: 900, logical: 0 },
+      1,
+      'plan_dependency',
+      `${id('plan-edge')}->${id('dep-edge')}`,
+      'add_edge',
+      { planUuid: id('plan-edge'), dependsOnUuid: id('dep-edge') }
+    );
+    const staleDepResult = applyRemoteOps(db, [staleDepAdd]);
+    expect(staleDepResult.errors).toEqual([]);
+    expect(staleDepResult.skipped).toEqual([
+      expect.objectContaining({ opId: staleDepAdd.op_id, kind: 'permanent' }),
+    ]);
+    expect(getPlanDependenciesByUuid(db, id('plan-edge'))).toEqual([]);
 
     const staleRemoveTag = makeOp(
       'remote-a',
@@ -358,6 +380,38 @@ describe('sync op application', () => {
     expect(getPlanTagsByUuid(db, id('plan-edge'))).toEqual([
       { plan_uuid: id('plan-edge'), tag: 'backend' },
     ]);
+    expect(edgeClockIsPresent(getEdgeClock(db, 'plan_tag', `${id('plan-edge')}#backend`))).toBe(
+      true
+    );
+
+    const removeTag = makeOp(
+      'remote-a',
+      { physicalMs: 3000, logical: 0 },
+      5,
+      'plan_tag',
+      `${id('plan-edge')}#backend`,
+      'remove_edge',
+      { planUuid: id('plan-edge'), tag: 'backend' }
+    );
+    const staleTagAdd = makeOp(
+      'remote-b',
+      { physicalMs: 1500, logical: 0 },
+      2,
+      'plan_tag',
+      `${id('plan-edge')}#backend`,
+      'add_edge',
+      { planUuid: id('plan-edge'), tag: 'backend' }
+    );
+    expect(applyRemoteOps(db, [removeTag]).errors).toEqual([]);
+    const staleTagResult = applyRemoteOps(db, [staleTagAdd]);
+    expect(staleTagResult.errors).toEqual([]);
+    expect(staleTagResult.skipped).toEqual([
+      expect.objectContaining({ opId: staleTagAdd.op_id, kind: 'permanent' }),
+    ]);
+    expect(getPlanTagsByUuid(db, id('plan-edge'))).toEqual([]);
+    expect(edgeClockIsPresent(getEdgeClock(db, 'plan_tag', `${id('plan-edge')}#backend`))).toBe(
+      false
+    );
   });
 
   test('round-trips real emitted plan, task, and dependency ops between databases', async () => {
@@ -996,7 +1050,7 @@ describe('sync op application', () => {
     // Apply a remote delete plan op
     const deleteOp = makeOp(
       'remote-a',
-      { physicalMs: 8000, logical: 0 },
+      { physicalMs: Date.now() + 50_000, logical: 0 },
       1,
       'plan',
       id('plan-cascade-all'),
@@ -1022,13 +1076,14 @@ describe('sync op application', () => {
     // Review issue must be tombstoned
     expect(hasSyncTombstone('plan_review_issue', issueUuid)).toBe(true);
 
-    // Dependency edge must be tombstoned
     expect(
-      hasSyncTombstone('plan_dependency', `${id('plan-cascade-all')}->${id('plan-dep-src')}`)
-    ).toBe(true);
-
-    // Tag edge must be tombstoned
-    expect(hasSyncTombstone('plan_tag', `${id('plan-cascade-all')}#mytag`)).toBe(true);
+      edgeClockIsPresent(
+        getEdgeClock(db, 'plan_dependency', `${id('plan-cascade-all')}->${id('plan-dep-src')}`)
+      )
+    ).toBe(false);
+    expect(
+      edgeClockIsPresent(getEdgeClock(db, 'plan_tag', `${id('plan-cascade-all')}#mytag`))
+    ).toBe(false);
   });
 
   test('stale add_edge for tombstoned plan is skipped, op_log row persists for dedup', () => {
