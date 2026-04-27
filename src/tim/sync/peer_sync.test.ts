@@ -401,6 +401,78 @@ describe('HTTP peer sync transport', () => {
     });
   });
 
+  test('HTTP pull reports resync_required for fresh peer after compaction', async () => {
+    upsertPlan(dbB, projectB, { uuid: id('compacted-fresh-plan'), planId: 81, title: 'Fresh' });
+    setCompactedThroughSeq(dbB, 1);
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+    const url = new URL('http://peer.test/sync/pull');
+    url.searchParams.set('peer_node_id', getLocalNodeId(dbA));
+
+    const response = await handler(
+      new Request(url, {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret-token' },
+      })
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'resync_required',
+      compactedThroughSeq: 1,
+    });
+  });
+
+  test('HTTP pull reports resync_required when cursor equals compacted history', async () => {
+    upsertPlan(dbB, projectB, { uuid: id('compacted-equal-plan'), planId: 82, title: 'Equal' });
+    setCompactedThroughSeq(dbB, 1);
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+    const url = new URL('http://peer.test/sync/pull');
+    url.searchParams.set('peer_node_id', getLocalNodeId(dbA));
+    url.searchParams.set('after_seq', '1');
+
+    const response = await handler(
+      new Request(url, {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret-token' },
+      })
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'resync_required',
+      compactedThroughSeq: 1,
+    });
+  });
+
+  test('HTTP pull pages from numeric cursor above compacted history even when cursor row is gone', async () => {
+    for (let i = 1; i <= 4; i++) {
+      upsertPlan(dbB, projectB, {
+        uuid: id(`compacted-gap-plan-${i}`),
+        planId: 90 + i,
+        title: `Gap ${i}`,
+      });
+    }
+    setCompactedThroughSeq(dbB, 2);
+    dbB.prepare('DELETE FROM sync_op_log WHERE seq = 3').run();
+
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+    const url = new URL('http://peer.test/sync/pull');
+    url.searchParams.set('peer_node_id', getLocalNodeId(dbA));
+    url.searchParams.set('after_seq', '3');
+
+    const response = await handler(
+      new Request(url, {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret-token' },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as OpLogChunk;
+    expect(body.ops.every((op) => Number(op.seq) > 3)).toBe(true);
+    expect(body.ops.length).toBeGreaterThan(0);
+  });
+
   test('HTTP transport surfaces ResyncRequiredError when cursor is behind compacted history', async () => {
     upsertPlan(dbB, projectB, { uuid: id('resync-plan'), planId: 90, title: 'Resync' });
     // Advance the cursor for A so it looks like A already pulled seq=1

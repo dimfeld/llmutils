@@ -91,5 +91,7 @@ export function setCompactedThroughSeq(db: Database, seq: number): void {
     throw new Error(`Invalid compacted-through seq: ${seq}`);
   }
   getOrCreateClockRow(db);
-  db.prepare('UPDATE sync_clock SET compacted_through_seq = ? WHERE id = 1').run(seq);
+  db.prepare(
+    'UPDATE sync_clock SET compacted_through_seq = ? WHERE id = 1 AND compacted_through_seq <= ?'
+  ).run(seq, seq);
 }

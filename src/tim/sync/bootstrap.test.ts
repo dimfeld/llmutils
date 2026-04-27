@@ -530,11 +530,7 @@ describe('sync metadata bootstrap', () => {
     runMigrations(db);
 
     // Active dependency: must have add clock and be present.
-    const activeClock = getEdgeClock(
-      db,
-      'plan_dependency',
-      `${activePlanUuid}->${depPlanUuid}`
-    );
+    const activeClock = getEdgeClock(db, 'plan_dependency', `${activePlanUuid}->${depPlanUuid}`);
     expect(activeClock).not.toBeNull();
     expect(activeClock?.add_hlc).not.toBeNull();
     expect(edgeClockIsPresent(activeClock)).toBe(true);

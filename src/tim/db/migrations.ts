@@ -1301,6 +1301,8 @@ const migrations: Migration[] = [
       const fallbackClock = db
         .prepare('SELECT physical_ms, logical FROM sync_clock WHERE id = 1')
         .get() as { physical_ms: number; logical: number } | null;
+      // Earlier migrations create the singleton sync_clock row; Date.now() is
+      // only a defensive fallback for hand-edited or partially migrated DBs.
       const fallbackHlc = `${(fallbackClock?.physical_ms ?? Date.now()).toString().padStart(16, '0')}.${(
         fallbackClock?.logical ?? 0
       )

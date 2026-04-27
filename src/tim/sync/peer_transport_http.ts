@@ -405,7 +405,7 @@ export function createPeerSyncHttpHandler(
         const afterSeq = url.searchParams.get('after_seq') ?? url.searchParams.get('after_op_id');
         const parsedAfterSeq = parseCursorSeq(afterSeq);
         const compactedThroughSeq = getCompactedThroughSeq(db);
-        if (parsedAfterSeq > 0 && parsedAfterSeq < compactedThroughSeq) {
+        if (compactedThroughSeq > 0 && parsedAfterSeq <= compactedThroughSeq) {
           return jsonResponse(
             {
               error: 'resync_required',

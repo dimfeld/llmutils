@@ -191,16 +191,12 @@ export function getOrCreateClockRow(db: Database): SyncClockRow {
   return row;
 }
 
-function cursorPartsForSeq(db: Database, seqText: string): SyncOpLogRow {
+function parseSeqCursor(seqText: string): number {
   const seq = Number.parseInt(seqText, 10);
   if (!Number.isInteger(seq) || seq < 0 || String(seq) !== seqText) {
     throw new Error(`Invalid sync op seq cursor: ${seqText}`);
   }
-  const row = db.prepare('SELECT * FROM sync_op_log WHERE seq = ?').get(seq) as SyncOpLogRow | null;
-  if (!row) {
-    throw new Error(`Unknown sync op seq cursor: ${seqText}`);
-  }
-  return row;
+  return seq;
 }
 
 function normalizeLimit(limit: number): number {
@@ -219,7 +215,7 @@ export function getOpLogChunkAfter(
   const fetchLimit = safeLimit + 1;
   let cursorSeq = 0;
   if (afterSeq) {
-    cursorSeq = cursorPartsForSeq(db, afterSeq).seq;
+    cursorSeq = parseSeqCursor(afterSeq);
   }
 
   const rows = db

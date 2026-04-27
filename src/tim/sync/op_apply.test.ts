@@ -1086,6 +1086,92 @@ describe('sync op application', () => {
     ).toBe(false);
   });
 
+  test('remote plan delete removes incoming dependency edges and records remove clock', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: id('plan-incoming-src'), planId: 72 });
+    upsertPlan(db, projectId, { uuid: id('plan-incoming-deleted'), planId: 73 });
+    upsertPlanDependencies(db, id('plan-incoming-src'), [id('plan-incoming-deleted')]);
+    const edgeKey = `${id('plan-incoming-src')}->${id('plan-incoming-deleted')}`;
+    const deleteHlc = { physicalMs: Date.now() + 50_000, logical: 0 };
+
+    const deleteOp = makeOp(
+      'remote-a',
+      deleteHlc,
+      2,
+      'plan',
+      id('plan-incoming-deleted'),
+      'delete',
+      {}
+    );
+
+    expect(applyRemoteOps(db, [deleteOp]).errors).toEqual([]);
+    expect(getPlanDependenciesByUuid(db, id('plan-incoming-src'))).toEqual([]);
+    expect(edgeClockIsPresent(getEdgeClock(db, 'plan_dependency', edgeKey))).toBe(false);
+    expect(getEdgeClock(db, 'plan_dependency', edgeKey)?.remove_hlc).toBe(formatHlc(deleteHlc));
+  });
+
+  test('stale plan delete cascade does not clobber newer dependency remove clock', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: id('plan-delete-clock-src'), planId: 74 });
+    upsertPlan(db, projectId, { uuid: id('plan-delete-clock-dep'), planId: 75 });
+    upsertPlanDependencies(db, id('plan-delete-clock-src'), [id('plan-delete-clock-dep')]);
+    const edgeKey = `${id('plan-delete-clock-src')}->${id('plan-delete-clock-dep')}`;
+    db.prepare('DELETE FROM sync_edge_clock WHERE entity_type = ? AND edge_key = ?').run(
+      'plan_dependency',
+      edgeKey
+    );
+
+    const newerRemove = makeOp(
+      'remote-a',
+      { physicalMs: 100, logical: 0 },
+      1,
+      'plan_dependency',
+      edgeKey,
+      'remove_edge',
+      { planUuid: id('plan-delete-clock-src'), dependsOnUuid: id('plan-delete-clock-dep') }
+    );
+    expect(applyRemoteOps(db, [newerRemove]).errors).toEqual([]);
+
+    // Simulate stale live edge state from a pre-Task-11 database. The cascade must
+    // still respect the newer remove clock already stored in sync_edge_clock.
+    db.prepare(
+      'INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)'
+    ).run(id('plan-delete-clock-src'), id('plan-delete-clock-dep'));
+
+    const olderPlanDelete = makeOp(
+      'remote-b',
+      { physicalMs: 50, logical: 0 },
+      1,
+      'plan',
+      id('plan-delete-clock-src'),
+      'delete',
+      {}
+    );
+    expect(applyRemoteOps(db, [olderPlanDelete]).errors).toEqual([]);
+
+    const clockAfterDelete = getEdgeClock(db, 'plan_dependency', edgeKey);
+    expect(clockAfterDelete?.remove_hlc).toBe(formatHlc(testHlc(100)));
+    expect(clockAfterDelete?.remove_node_id).toBe(fixtureNodeId('remote-a'));
+
+    const middleAdd = makeOp(
+      'remote-c',
+      { physicalMs: 75, logical: 0 },
+      1,
+      'plan_dependency',
+      edgeKey,
+      'add_edge',
+      { planUuid: id('plan-delete-clock-src'), dependsOnUuid: id('plan-delete-clock-dep') }
+    );
+    const addResult = applyRemoteOps(db, [middleAdd]);
+
+    expect(addResult.errors).toEqual([]);
+    expect(addResult.skipped).toEqual([
+      expect.objectContaining({ opId: middleAdd.op_id, kind: 'permanent' }),
+    ]);
+    expect(getEdgeClock(db, 'plan_dependency', edgeKey)?.remove_hlc).toBe(formatHlc(testHlc(100)));
+    expect(edgeClockIsPresent(getEdgeClock(db, 'plan_dependency', edgeKey))).toBe(false);
+  });
+
   test('stale add_edge for tombstoned plan is skipped, op_log row persists for dedup', () => {
     const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
     upsertPlan(db, projectId, { uuid: id('plan-edge-deleted'), planId: 90 });

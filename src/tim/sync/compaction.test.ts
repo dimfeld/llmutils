@@ -6,7 +6,11 @@ import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from '../db/database.js';
 import { createWorkerLease, setPeerCursor } from '../db/sync_schema.js';
-import { getCompactionFloorSeq } from './compaction.js';
+import {
+  getCompactedThroughSeq,
+  getCompactionFloorSeq,
+  setCompactedThroughSeq,
+} from './compaction.js';
 import { registerPeerNode } from './node_identity.js';
 
 describe('sync compaction metadata floor', () => {
@@ -25,6 +29,13 @@ describe('sync compaction metadata floor', () => {
 
   test('returns 0 when no durable peers or active worker leases exist', () => {
     expect(getCompactionFloorSeq(db)).toBe(0);
+  });
+
+  test('compacted-through watermark only moves forward', () => {
+    setCompactedThroughSeq(db, 5);
+    setCompactedThroughSeq(db, 3);
+
+    expect(getCompactedThroughSeq(db)).toBe(5);
   });
 
   test('uses the minimum push cursor across durable main peers', () => {

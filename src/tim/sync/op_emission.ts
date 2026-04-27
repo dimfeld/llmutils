@@ -345,12 +345,18 @@ export function emitPlanDelete(db: Database, planUuid: string): EmittedSyncOpera
   }
 
   const dependencies = db
-    .prepare('SELECT depends_on_uuid FROM plan_dependency WHERE plan_uuid = ?')
-    .all(planUuid) as Array<{ depends_on_uuid: string }>;
+    .prepare(
+      `
+        SELECT plan_uuid, depends_on_uuid
+        FROM plan_dependency
+        WHERE plan_uuid = ? OR depends_on_uuid = ?
+      `
+    )
+    .all(planUuid, planUuid) as Array<{ plan_uuid: string; depends_on_uuid: string }>;
   for (const dependency of dependencies) {
-    const entityId = `${planUuid}->${dependency.depends_on_uuid}`;
+    const entityId = `${dependency.plan_uuid}->${dependency.depends_on_uuid}`;
     const child = emitChild('plan_dependency', entityId, {
-      planUuid,
+      planUuid: dependency.plan_uuid,
       dependsOnUuid: dependency.depends_on_uuid,
     });
     writeEdgeRemoveClock(db, {
@@ -360,6 +366,10 @@ export function emitPlanDelete(db: Database, planUuid: string): EmittedSyncOpera
       nodeId: child.nodeId,
     });
   }
+  db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? OR depends_on_uuid = ?').run(
+    planUuid,
+    planUuid
+  );
 
   const tags = db.prepare('SELECT tag FROM plan_tag WHERE plan_uuid = ?').all(planUuid) as Array<{
     tag: string;
@@ -374,6 +384,7 @@ export function emitPlanDelete(db: Database, planUuid: string): EmittedSyncOpera
       nodeId: child.nodeId,
     });
   }
+  db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(planUuid);
 
   return emitted;
 }

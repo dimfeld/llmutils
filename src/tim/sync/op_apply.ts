@@ -10,7 +10,6 @@ import {
 import { compareHlc, formatHlc, type Hlc } from './hlc.js';
 import {
   edgeClockIsPresent,
-  edgeClockPartWins,
   getEdgeClock,
   opLogRowHlc,
   writeEdgeAddClock,
@@ -659,16 +658,26 @@ function tombstonePlanChildren(db: Database, op: SyncOpRecord): void {
   }
 
   const dependencies = db
-    .prepare('SELECT depends_on_uuid FROM plan_dependency WHERE plan_uuid = ?')
-    .all(planUuid) as Array<{ depends_on_uuid: string }>;
+    .prepare(
+      `
+        SELECT plan_uuid, depends_on_uuid
+        FROM plan_dependency
+        WHERE plan_uuid = ? OR depends_on_uuid = ?
+      `
+    )
+    .all(planUuid, planUuid) as Array<{ plan_uuid: string; depends_on_uuid: string }>;
   for (const dependency of dependencies) {
     writeEdgeRemoveClock(db, {
       entityType: 'plan_dependency',
-      edgeKey: `${planUuid}->${dependency.depends_on_uuid}`,
+      edgeKey: `${dependency.plan_uuid}->${dependency.depends_on_uuid}`,
       hlc: opHlc(op),
       nodeId: op.node_id,
     });
   }
+  db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? OR depends_on_uuid = ?').run(
+    planUuid,
+    planUuid
+  );
 
   const tags = db.prepare('SELECT tag FROM plan_tag WHERE plan_uuid = ?').all(planUuid) as Array<{
     tag: string;
@@ -681,6 +690,7 @@ function tombstonePlanChildren(db: Database, op: SyncOpRecord): void {
       nodeId: op.node_id,
     });
   }
+  db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(planUuid);
 }
 
 function applyEntityDelete(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
@@ -732,23 +742,15 @@ function applyEntityDelete(db: Database, op: SyncOpRecord): SkippedSyncOp | null
   } else if (op.entity_type === 'plan_dependency') {
     const payload = parsePayload(op);
     if (isSkippedSyncOp(payload)) return payload;
-    const current = getEdgeClock(db, 'plan_dependency', op.entity_id);
-    if (
-      !edgeClockPartWins(
-        opHlc(op),
-        op.node_id,
-        current?.remove_hlc ?? null,
-        current?.remove_node_id ?? null
-      )
-    ) {
-      return permanentSkip(op, 'stale dependency edge delete clock');
-    }
-    writeEdgeRemoveClock(db, {
+    const wroteClock = writeEdgeRemoveClock(db, {
       entityType: 'plan_dependency',
       edgeKey: op.entity_id,
       hlc: opHlc(op),
       nodeId: op.node_id,
     });
+    if (!wroteClock) {
+      return permanentSkip(op, 'stale dependency edge delete clock');
+    }
     if (typeof payload.planUuid === 'string' && typeof payload.dependsOnUuid === 'string') {
       db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?').run(
         payload.planUuid,
@@ -758,23 +760,15 @@ function applyEntityDelete(db: Database, op: SyncOpRecord): SkippedSyncOp | null
   } else if (op.entity_type === 'plan_tag') {
     const payload = parsePayload(op);
     if (isSkippedSyncOp(payload)) return payload;
-    const current = getEdgeClock(db, 'plan_tag', op.entity_id);
-    if (
-      !edgeClockPartWins(
-        opHlc(op),
-        op.node_id,
-        current?.remove_hlc ?? null,
-        current?.remove_node_id ?? null
-      )
-    ) {
-      return permanentSkip(op, 'stale tag edge delete clock');
-    }
-    writeEdgeRemoveClock(db, {
+    const wroteClock = writeEdgeRemoveClock(db, {
       entityType: 'plan_tag',
       edgeKey: op.entity_id,
       hlc: opHlc(op),
       nodeId: op.node_id,
     });
+    if (!wroteClock) {
+      return permanentSkip(op, 'stale tag edge delete clock');
+    }
     if (typeof payload.planUuid === 'string' && typeof payload.tag === 'string') {
       db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ? AND tag = ?').run(
         payload.planUuid,
@@ -790,42 +784,27 @@ function applyEdgeClockOp(
   op: SyncOpRecord,
   entityType: SyncEdgeEntityType
 ): SkippedSyncOp | null {
-  const current = getEdgeClock(db, entityType, op.entity_id);
   const incomingHlc = opLogRowHlc(op);
   if (op.op_type === 'add_edge') {
-    if (
-      !edgeClockPartWins(
-        incomingHlc,
-        op.node_id,
-        current?.add_hlc ?? null,
-        current?.add_node_id ?? null
-      )
-    ) {
+    const wroteClock = writeEdgeAddClock(db, {
+      entityType,
+      edgeKey: op.entity_id,
+      hlc: incomingHlc,
+      nodeId: op.node_id,
+    });
+    if (!wroteClock) {
       return permanentSkip(op, 'stale edge add clock');
     }
-    writeEdgeAddClock(db, {
+  } else if (op.op_type === 'remove_edge') {
+    const wroteClock = writeEdgeRemoveClock(db, {
       entityType,
       edgeKey: op.entity_id,
       hlc: incomingHlc,
       nodeId: op.node_id,
     });
-  } else if (op.op_type === 'remove_edge') {
-    if (
-      !edgeClockPartWins(
-        incomingHlc,
-        op.node_id,
-        current?.remove_hlc ?? null,
-        current?.remove_node_id ?? null
-      )
-    ) {
+    if (!wroteClock) {
       return permanentSkip(op, 'stale edge remove clock');
     }
-    writeEdgeRemoveClock(db, {
-      entityType,
-      edgeKey: op.entity_id,
-      hlc: incomingHlc,
-      nodeId: op.node_id,
-    });
   }
   return null;
 }

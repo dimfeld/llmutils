@@ -54,7 +54,18 @@ export function edgeClockPartWins(
   return compareClockParts(incomingHlc, incomingNodeId, parseHlc(storedHlc), storedNodeId) > 0;
 }
 
-export function writeEdgeAddClock(db: Database, input: EdgeClockInput): void {
+export function writeEdgeAddClock(db: Database, input: EdgeClockInput): boolean {
+  const current = getEdgeClock(db, input.entityType, input.edgeKey);
+  if (
+    !edgeClockPartWins(
+      input.hlc,
+      input.nodeId,
+      current?.add_hlc ?? null,
+      current?.add_node_id ?? null
+    )
+  ) {
+    return false;
+  }
   db.prepare(
     `
       INSERT INTO sync_edge_clock (
@@ -72,9 +83,21 @@ export function writeEdgeAddClock(db: Database, input: EdgeClockInput): void {
         updated_at = ${SQL_NOW_ISO_UTC}
     `
   ).run(input.entityType, input.edgeKey, formatHlc(input.hlc), input.nodeId);
+  return true;
 }
 
-export function writeEdgeRemoveClock(db: Database, input: EdgeClockInput): void {
+export function writeEdgeRemoveClock(db: Database, input: EdgeClockInput): boolean {
+  const current = getEdgeClock(db, input.entityType, input.edgeKey);
+  if (
+    !edgeClockPartWins(
+      input.hlc,
+      input.nodeId,
+      current?.remove_hlc ?? null,
+      current?.remove_node_id ?? null
+    )
+  ) {
+    return false;
+  }
   db.prepare(
     `
       INSERT INTO sync_edge_clock (
@@ -92,6 +115,7 @@ export function writeEdgeRemoveClock(db: Database, input: EdgeClockInput): void 
         updated_at = ${SQL_NOW_ISO_UTC}
     `
   ).run(input.entityType, input.edgeKey, formatHlc(input.hlc), input.nodeId);
+  return true;
 }
 
 export function edgeClockIsPresent(clock: SyncEdgeClockRow | null): boolean {
