@@ -839,7 +839,14 @@ describe('worker sync bundles', () => {
       planId: 1,
       title: 'Local project plan updated by worker',
       status: 'in_progress',
-      tasks: [{ uuid: workerTaskUuid, title: 'Worker-added task', description: 'Added by worker in local project', done: false }],
+      tasks: [
+        {
+          uuid: workerTaskUuid,
+          title: 'Worker-added task',
+          description: 'Added by worker in local project',
+          done: false,
+        },
+      ],
     });
 
     // Return worker ops to main.
