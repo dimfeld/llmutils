@@ -3,7 +3,7 @@ import type { Database } from 'bun:sqlite';
 import type { PlanDependencyRow, PlanRow, PlanTagRow, PlanTaskRow } from '../db/plan.js';
 import type { PlanReviewIssueRow } from '../db/plan_review_issue.js';
 import type { Project } from '../db/project.js';
-import { getOrCreateProject } from '../db/project.js';
+import { getOrCreateProjectByIdentity } from '../db/project.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import {
   getOrCreateClockRow,
@@ -312,7 +312,7 @@ function applyTombstoneEffect(db: Database, tombstone: SyncTombstoneRow): void {
     if (separator <= 0) return;
     const projectIdentity = tombstone.entity_id.slice(0, separator);
     const setting = tombstone.entity_id.slice(separator + 1);
-    const project = getOrCreateProject(db, projectIdentity);
+    const project = getOrCreateProjectByIdentity(db, projectIdentity);
     db.prepare('DELETE FROM project_setting WHERE project_id = ? AND setting = ?').run(
       project.id,
       setting
@@ -359,7 +359,8 @@ function updateWinningFields(
 }
 
 function upsertProject(db: Database, project: SnapshotProject): number {
-  const created = getOrCreateProject(db, project.identity, {
+  const created = getOrCreateProjectByIdentity(db, project.identity, {
+    syncUuid: project.row.sync_uuid,
     remoteUrl: project.row.remote_url,
     lastGitRoot: project.row.last_git_root,
     externalConfigPath: project.row.external_config_path,
@@ -664,7 +665,7 @@ function importProjectSettings(
     if (hasTombstone(db, 'project_setting', entityId)) continue;
     const clock = fieldClock(clocks, 'project_setting', entityId, PROJECT_SETTING_LWW_FIELD_NAME);
     if (!clock || !incomingFieldClockWins(db, clock)) continue;
-    const project = getOrCreateProject(db, setting.projectIdentity);
+    const project = getOrCreateProjectByIdentity(db, setting.projectIdentity);
     db.prepare(
       'INSERT OR REPLACE INTO project_setting (project_id, setting, value) VALUES (?, ?, ?)'
     ).run(project.id, setting.setting, setting.value);

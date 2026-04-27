@@ -105,6 +105,9 @@ export async function collectExternalStorageDirectories(
 
   for (const project of projects) {
     const repositoryName = project.repository_id;
+    if (!repositoryName) {
+      continue;
+    }
     const repositoryPath = path.join(baseDir, repositoryName);
     if (!(await directoryExists(repositoryPath))) {
       continue;

@@ -7,10 +7,12 @@ import * as path from 'node:path';
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
   getOrCreateProject,
+  getOrCreateProjectByIdentity,
   getProject,
   listProjects,
   reserveNextPlanId,
   updateProject,
+  getProjectSyncUuid,
 } from './project.js';
 
 describe('tim db/project', () => {
@@ -38,6 +40,9 @@ describe('tim db/project', () => {
     });
 
     expect(project.repository_id).toBe('repo-1');
+    expect(project.sync_uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    );
     expect(project.remote_url).toBe('https://example.com/repo-1.git');
     expect(project.highest_plan_id).toBe(8);
 
@@ -51,6 +56,42 @@ describe('tim db/project', () => {
 
     expect(second.id).toBe(first.id);
     expect(second.highest_plan_id).toBe(4);
+    expect(second.sync_uuid).toBe(first.sync_uuid);
+  });
+
+  test('getProjectSyncUuid returns sync_uuid and throws if missing', () => {
+    const project = getOrCreateProject(db, 'repo-sync-uuid');
+    expect(getProjectSyncUuid(db, project.id)).toBe(project.sync_uuid);
+
+    db.prepare('UPDATE project SET sync_uuid = NULL WHERE id = ?').run(project.id);
+    expect(() => getProjectSyncUuid(db, project.id)).toThrow(/missing sync_uuid/);
+  });
+
+  test('getOrCreateProjectByIdentity creates and finds repository identity projects', () => {
+    const first = getOrCreateProjectByIdentity(db, 'github.com__owner__repo', {
+      highestPlanId: 7,
+    });
+    const second = getOrCreateProjectByIdentity(db, 'github.com__owner__repo', {
+      highestPlanId: 99,
+    });
+
+    expect(first.repository_id).toBe('github.com__owner__repo');
+    expect(first.sync_uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    );
+    expect(second.id).toBe(first.id);
+    expect(second.highest_plan_id).toBe(7);
+  });
+
+  test('getOrCreateProjectByIdentity creates and finds sync UUID identity projects', () => {
+    const syncUuid = crypto.randomUUID();
+    const first = getOrCreateProjectByIdentity(db, syncUuid, { highestPlanId: 3 });
+    const second = getOrCreateProjectByIdentity(db, syncUuid, { highestPlanId: 9 });
+
+    expect(first.repository_id).toBeNull();
+    expect(first.sync_uuid).toBe(syncUuid);
+    expect(second.id).toBe(first.id);
+    expect(second.highest_plan_id).toBe(3);
   });
 
   test('getProject returns null for non-existent repository', () => {

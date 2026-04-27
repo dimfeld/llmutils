@@ -11,7 +11,7 @@ import {
   upsertPlanDependencies,
   upsertPlanTasks,
 } from '../db/plan.js';
-import { getOrCreateProject } from '../db/project.js';
+import { getOrCreateProject, getOrCreateProjectByIdentity } from '../db/project.js';
 import {
   deleteProjectSetting,
   getProjectSetting,
@@ -148,11 +148,13 @@ function syncStateDump(db: Database): Record<string, unknown[]> {
       db,
       `
         SELECT
+          COALESCE(project.repository_id, project.sync_uuid) AS project_identity,
           uuid, title, goal, note, details, status, priority, branch, simple, tdd,
           discovered_from, issue, pull_request, assigned_to, base_branch, base_commit,
           base_change_id, temp, docs, changed_files, plan_generated_at, docs_updated_at,
           lessons_applied_at, parent_uuid, epic
         FROM plan
+        INNER JOIN project ON project.id = plan.project_id
         ORDER BY uuid
       `
     ),
@@ -192,10 +194,10 @@ function syncStateDump(db: Database): Record<string, unknown[]> {
     project_setting: dumpRows(
       db,
       `
-        SELECT p.repository_id, ps.setting, ps.value
+        SELECT COALESCE(p.repository_id, p.sync_uuid) AS project_identity, ps.setting, ps.value
         FROM project_setting ps
         INNER JOIN project p ON p.id = ps.project_id
-        ORDER BY p.repository_id, ps.setting
+        ORDER BY project_identity, ps.setting
       `
     ),
     sync_field_clock: dumpRows(
@@ -265,6 +267,16 @@ function createBasePlan(node: TestNode, uuid = id('plan-shared')): void {
   });
 }
 
+function projectIdBySyncUuid(db: Database, syncUuid: string): number {
+  const row = db.prepare('SELECT id FROM project WHERE sync_uuid = ?').get(syncUuid) as {
+    id: number;
+  } | null;
+  if (!row) {
+    throw new Error(`Missing project with sync_uuid ${syncUuid}`);
+  }
+  return row.id;
+}
+
 describe('disconnected sync convergence', () => {
   beforeEach(() => {
     nodes = [];
@@ -293,6 +305,97 @@ describe('disconnected sync convergence', () => {
     expect(getPeerCursor(a.db, b.nodeId, 'push')?.last_op_id).not.toBeNull();
     expect(getPeerCursor(b.db, a.nodeId, 'pull')?.last_op_id).not.toBeNull();
     expect(getPeerCursor(b.db, a.nodeId, 'push')?.last_op_id).not.toBeNull();
+    assertDbsConverged(a.db, b.db);
+  });
+
+  test('independent local-only projects keep distinct sync UUID identities', async () => {
+    const a = createMainNode('A');
+    const b = createMainNode('B');
+    const localAIdentity = randomUUID();
+    const localBIdentity = randomUUID();
+    const localA = getOrCreateProjectByIdentity(a.db, localAIdentity);
+    const localB = getOrCreateProjectByIdentity(b.db, localBIdentity);
+
+    upsertPlan(a.db, localA.id, {
+      uuid: id('local-project-plan-a'),
+      planId: 1,
+      title: 'Local A plan',
+    });
+    setProjectSetting(a.db, localA.id, 'abbreviation', 'LPA');
+    upsertPlan(b.db, localB.id, {
+      uuid: id('local-project-plan-b'),
+      planId: 1,
+      title: 'Local B plan',
+    });
+    setProjectSetting(b.db, localB.id, 'abbreviation', 'LPB');
+
+    await bidirectionalSync(a, b);
+
+    for (const node of [a, b]) {
+      const localAProjectId = projectIdBySyncUuid(node.db, localAIdentity);
+      const localBProjectId = projectIdBySyncUuid(node.db, localBIdentity);
+      expect(localAProjectId).not.toBe(localBProjectId);
+      expect(getProjectSetting(node.db, localAProjectId, 'abbreviation')).toBe('LPA');
+      expect(getProjectSetting(node.db, localBProjectId, 'abbreviation')).toBe('LPB');
+      expect(getPlanByUuid(node.db, id('local-project-plan-a'))?.project_id).toBe(localAProjectId);
+      expect(getPlanByUuid(node.db, id('local-project-plan-b'))?.project_id).toBe(localBProjectId);
+    }
+    assertDbsConverged(a.db, b.db);
+  });
+
+  test('local-only projects remain distinct across multiple sync rounds with interleaved edits', async () => {
+    const a = createMainNode('A');
+    const b = createMainNode('B');
+    const localAIdentity = randomUUID();
+    const localBIdentity = randomUUID();
+    const localA = getOrCreateProjectByIdentity(a.db, localAIdentity);
+    const localB = getOrCreateProjectByIdentity(b.db, localBIdentity);
+
+    upsertPlan(a.db, localA.id, { uuid: id('multi-round-plan-a'), planId: 1, title: 'A plan v1' });
+    upsertPlan(b.db, localB.id, { uuid: id('multi-round-plan-b'), planId: 1, title: 'B plan v1' });
+
+    // Round 1: initial sync.
+    await bidirectionalSync(a, b);
+
+    // After round 1 both nodes know both projects; edit each independently.
+    const localAOnA = projectIdBySyncUuid(a.db, localAIdentity);
+    const localBOnB = projectIdBySyncUuid(b.db, localBIdentity);
+    upsertPlan(a.db, localAOnA, {
+      uuid: id('multi-round-plan-a'),
+      planId: 1,
+      title: 'A plan v2 from A',
+    });
+    setProjectSetting(a.db, localAOnA, 'color', 'red');
+
+    const localBOnA = projectIdBySyncUuid(a.db, localBIdentity);
+    upsertPlan(a.db, localBOnA, {
+      uuid: id('multi-round-plan-b'),
+      planId: 1,
+      title: 'B plan edited by A',
+    });
+
+    // Round 2: sync changes.
+    await bidirectionalSync(a, b);
+
+    for (const node of [a, b]) {
+      const localAId = projectIdBySyncUuid(node.db, localAIdentity);
+      const localBId = projectIdBySyncUuid(node.db, localBIdentity);
+
+      // Projects must remain distinct.
+      expect(localAId).not.toBe(localBId);
+
+      // Plans must sit in the correct project.
+      expect(getPlanByUuid(node.db, id('multi-round-plan-a'))?.project_id).toBe(localAId);
+      expect(getPlanByUuid(node.db, id('multi-round-plan-b'))?.project_id).toBe(localBId);
+
+      // Latest edits must have propagated.
+      expect(getPlanByUuid(node.db, id('multi-round-plan-a'))?.title).toBe('A plan v2 from A');
+      expect(getPlanByUuid(node.db, id('multi-round-plan-b'))?.title).toBe('B plan edited by A');
+
+      // Setting on project A must not bleed into project B.
+      expect(getProjectSetting(node.db, localAId, 'color')).toBe('red');
+      expect(getProjectSetting(node.db, localBId, 'color')).toBeNull();
+    }
     assertDbsConverged(a.db, b.db);
   });
 

@@ -15,7 +15,7 @@ import {
   upsertPlanDependencies,
   upsertPlanTasks,
 } from '../db/plan.js';
-import { getOrCreateProject } from '../db/project.js';
+import { getOrCreateProject, getOrCreateProjectByIdentity } from '../db/project.js';
 import { getProjectSetting, setProjectSetting } from '../db/project_settings.js';
 import { getWorkerLease } from '../db/sync_schema.js';
 import { edgeClockIsPresent, getEdgeClock } from './edge_clock.js';
@@ -800,5 +800,66 @@ describe('worker sync bundles', () => {
 
     // Derived presence on the worker must match the main DB: absent.
     expect(edgeClockIsPresent(workerEdgeClock)).toBe(false);
+  });
+
+  test('worker bundle round-trip preserves local-only project sync identity end-to-end', () => {
+    // Set up main node with a local-only project (no repository_id).
+    const syncUuid = randomUUID();
+    const localProjectId = getOrCreateProjectByIdentity(mainDb, syncUuid).id;
+    const planUuid = randomUUID();
+    upsertPlan(mainDb, localProjectId, {
+      uuid: planUuid,
+      planId: 1,
+      title: 'Local project plan',
+      status: 'pending',
+    });
+    setProjectSetting(mainDb, localProjectId, 'abbreviation', 'LOC');
+
+    // Export the bundle.
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: planUuid,
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+
+    // Identity must be the sync UUID, not a local-project-${id} fallback.
+    expect(bundle.project.identity).toBe(syncUuid);
+
+    // Import into a fresh worker DB.
+    importWorkerBundle(workerDb, bundle);
+
+    // Worker DB must have a project with the correct sync_uuid and null repository_id.
+    const workerProject = getOrCreateProjectByIdentity(workerDb, syncUuid);
+    expect(workerProject.repository_id).toBeNull();
+    expect(workerProject.sync_uuid).toBe(syncUuid);
+
+    // Worker updates the plan (including a new task).
+    const workerTaskUuid = randomUUID();
+    upsertPlan(workerDb, workerProject.id, {
+      uuid: planUuid,
+      planId: 1,
+      title: 'Local project plan updated by worker',
+      status: 'in_progress',
+      tasks: [{ uuid: workerTaskUuid, title: 'Worker-added task', description: 'Added by worker in local project', done: false }],
+    });
+
+    // Return worker ops to main.
+    const { ops } = exportWorkerOps(workerDb);
+    expect(ops.length).toBeGreaterThan(0);
+
+    const result = applyWorkerOps(mainDb, ops, { workerNodeId: bundle.worker.nodeId });
+    expect(result.errors).toEqual([]);
+
+    // Verify changes landed on the correct local project.
+    const updatedPlan = getPlanByUuid(mainDb, planUuid);
+    expect(updatedPlan).not.toBeNull();
+    expect(updatedPlan?.project_id).toBe(localProjectId);
+    expect(updatedPlan?.title).toBe('Local project plan updated by worker');
+    expect(updatedPlan?.status).toBe('in_progress');
+
+    const tasks = getPlanTasksByUuid(mainDb, planUuid);
+    expect(tasks.some((t) => t.uuid === workerTaskUuid)).toBe(true);
+
+    // Project setting from before must still be intact.
+    expect(getProjectSetting(mainDb, localProjectId, 'abbreviation')).toBe('LOC');
   });
 });

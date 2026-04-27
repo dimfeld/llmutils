@@ -71,9 +71,18 @@ export const PROJECT_SETTING_LWW_FIELD_NAME = 'value';
 export function getProjectSyncIdentity(db: Database, projectId: number): string {
   const project = getProjectById(db, projectId);
   if (!project) {
-    return `local-project-${projectId}`;
+    throw new Error(`getProjectSyncIdentity: project ${projectId} not found`);
   }
-  return project.repository_id || `local-project-${project.id}`;
+  if (project.repository_id) {
+    return project.repository_id;
+  }
+  if (!project.sync_uuid) {
+    throw new Error(
+      `getProjectSyncIdentity: project ${projectId} has neither repository_id nor sync_uuid; ` +
+        `migration v39 must run before sync emission.`
+    );
+  }
+  return project.sync_uuid;
 }
 
 const generatorCache = new WeakMap<Database, { nodeId: string; generator: HlcGenerator }>();

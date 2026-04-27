@@ -234,9 +234,6 @@ function parsedSettingValue(value: string): unknown {
 }
 
 function projectIdentityForRow(db: Database, projectId: number): string {
-  if (!tableExists(db, 'project')) {
-    return `local-project-${projectId}`;
-  }
   return getProjectSyncIdentity(db, projectId);
 }
 
@@ -330,6 +327,9 @@ export function bootstrapSyncMetadata(
   options: BootstrapOptions = {}
 ): BootstrapStats {
   if (!options.force && getBootstrapCompletedAt(db) !== null) {
+    return emptyStats();
+  }
+  if (!tableExists(db, 'project')) {
     return emptyStats();
   }
 

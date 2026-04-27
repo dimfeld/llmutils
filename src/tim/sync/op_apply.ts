@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
-import { getOrCreateProject, getProjectById } from '../db/project.js';
+import { getOrCreateProjectByIdentity, getProjectById } from '../db/project.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import {
   type SyncFieldClockRow,
@@ -324,7 +324,7 @@ function projectIdForIdentity(db: Database, projectIdentity: unknown): number | 
   if (typeof projectIdentity !== 'string' || projectIdentity.length === 0) {
     return null;
   }
-  return getOrCreateProject(db, projectIdentity).id;
+  return getOrCreateProjectByIdentity(db, projectIdentity).id;
 }
 
 function allocatePlanId(db: Database, projectId: number, planIdHint: unknown): number {

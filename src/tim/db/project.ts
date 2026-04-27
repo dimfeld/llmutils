@@ -1,9 +1,11 @@
 import type { Database } from 'bun:sqlite';
+import { randomUUID } from 'node:crypto';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 export interface Project {
   id: number;
-  repository_id: string;
+  repository_id: string | null;
+  sync_uuid: string;
   remote_url: string | null;
   last_git_root: string | null;
   external_config_path: string | null;
@@ -15,6 +17,7 @@ export interface Project {
 }
 
 export interface CreateProjectOptions {
+  syncUuid?: string | null;
   remoteUrl?: string | null;
   lastGitRoot?: string | null;
   externalConfigPath?: string | null;
@@ -34,6 +37,12 @@ export interface UpdateProjectOptions {
 function mapRowToProject(row: unknown): Project | null {
   return (row as Project | null) ?? null;
 }
+
+// `getOrCreateProjectByIdentity` uses this regex to distinguish a `sync_uuid` identity
+// from a repository identity. Safe today because the only repository identity format
+// (`github.com__owner__repo`) cannot match a UUID. If a future identity scheme is
+// UUID-shaped, that code path needs an explicit identity-kind tag instead.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function getProject(db: Database, repositoryId: string): Project | null {
   const row = db
@@ -64,6 +73,7 @@ export function getOrCreateProject(
         `
         INSERT OR IGNORE INTO project (
           repository_id,
+          sync_uuid,
           remote_url,
           last_git_root,
           external_config_path,
@@ -72,10 +82,11 @@ export function getOrCreateProject(
           highest_plan_id,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
       `
       ).run(
         repoId,
+        createOptions.syncUuid ?? randomUUID(),
         createOptions.remoteUrl ?? null,
         createOptions.lastGitRoot ?? null,
         createOptions.externalConfigPath ?? null,
@@ -94,6 +105,89 @@ export function getOrCreateProject(
   );
 
   return createOrGet.immediate(repositoryId, options);
+}
+
+export function getProjectSyncUuid(db: Database, projectId: number): string {
+  const row = db.prepare('SELECT sync_uuid FROM project WHERE id = ?').get(projectId) as {
+    sync_uuid: string | null;
+  } | null;
+  if (!row) {
+    throw new Error(`getProjectSyncUuid: project ${projectId} not found`);
+  }
+  if (!row.sync_uuid) {
+    throw new Error(
+      `getProjectSyncUuid: project ${projectId} is missing sync_uuid; migration v39 must run first`
+    );
+  }
+  return row.sync_uuid;
+}
+
+export function getOrCreateProjectByIdentity(
+  db: Database,
+  identity: string,
+  options: CreateProjectOptions = {}
+): Project {
+  const createOrGet = db.transaction(
+    (projectIdentity: string, createOptions: CreateProjectOptions): Project => {
+      const byRepository = getProject(db, projectIdentity);
+      if (byRepository) {
+        return byRepository;
+      }
+
+      const bySyncUuid = db
+        .prepare('SELECT * FROM project WHERE sync_uuid = ?')
+        .get(projectIdentity) as Record<string, unknown> | null;
+      const existingBySyncUuid = mapRowToProject(bySyncUuid);
+      if (existingBySyncUuid) {
+        return existingBySyncUuid;
+      }
+
+      const identityIsUuid = UUID_RE.test(projectIdentity);
+      const repositoryId = identityIsUuid ? null : projectIdentity;
+      const syncUuid = identityIsUuid ? projectIdentity : (createOptions.syncUuid ?? randomUUID());
+      db.prepare(
+        `
+        INSERT INTO project (
+          repository_id,
+          sync_uuid,
+          remote_url,
+          last_git_root,
+          external_config_path,
+          external_tasks_dir,
+          remote_label,
+          highest_plan_id,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+      `
+      ).run(
+        repositoryId,
+        syncUuid,
+        createOptions.remoteUrl ?? null,
+        createOptions.lastGitRoot ?? null,
+        createOptions.externalConfigPath ?? null,
+        createOptions.externalTasksDir ?? null,
+        createOptions.remoteLabel ?? null,
+        createOptions.highestPlanId ?? 0
+      );
+
+      const project = identityIsUuid
+        ? mapRowToProject(
+            db.prepare('SELECT * FROM project WHERE sync_uuid = ?').get(projectIdentity) as Record<
+              string,
+              unknown
+            > | null
+          )
+        : getProject(db, projectIdentity);
+      if (!project) {
+        throw new Error(`Failed to create or fetch project for sync identity ${projectIdentity}`);
+      }
+
+      return project;
+    }
+  );
+
+  return createOrGet.immediate(identity, options);
 }
 
 export function updateProject(

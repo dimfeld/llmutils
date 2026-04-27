@@ -136,7 +136,9 @@ export async function refreshProjectPrs(
     throw new Error(`Project ${projectId} not found`);
   }
 
-  const ownerRepo = parseOwnerRepoFromRepositoryId(project.repository_id);
+  const ownerRepo = project.repository_id
+    ? parseOwnerRepoFromRepositoryId(project.repository_id)
+    : null;
   if (!ownerRepo) {
     throw new Error(`Project ${projectId} does not have a GitHub repository id`);
   }

@@ -3,7 +3,12 @@ import type { Database } from 'bun:sqlite';
 import { randomUUID } from 'node:crypto';
 
 import { openDatabase } from '../db/database.js';
-import { getOrCreateProject, type Project } from '../db/project.js';
+import {
+  getOrCreateProject,
+  getOrCreateProjectByIdentity,
+  getProjectById,
+  type Project,
+} from '../db/project.js';
 import {
   getPlanByUuid,
   getPlanDependenciesByUuid,
@@ -12,7 +17,7 @@ import {
   upsertPlanDependencies,
 } from '../db/plan.js';
 import { getProjectSetting, setProjectSetting } from '../db/project_settings.js';
-import { getPeerCursor, setPeerCursor } from '../db/sync_schema.js';
+import { getOpLogChunkAfter, getPeerCursor, setPeerCursor } from '../db/sync_schema.js';
 import type { SyncFieldClockRow, SyncTombstoneRow } from '../db/sync_schema.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import {
@@ -27,7 +32,7 @@ import {
   setCompactedThroughSeq,
 } from './compaction.js';
 import { retireMainPeer } from './node_lifecycle.js';
-import { runPeerSync } from './peer_sync.js';
+import { applyPeerOpsWithPending, runPeerSync } from './peer_sync.js';
 import {
   createHttpPeerTransport,
   createPeerSyncHttpHandler,
@@ -515,24 +520,20 @@ describe('snapshot: project settings and plan id allocation', () => {
   });
 
   test('local project settings use the sync identity and carry their field clock', () => {
-    dbA
-      .prepare(
-        "INSERT INTO project (repository_id, highest_plan_id, created_at, updated_at) VALUES ('', 0, datetime('now'), datetime('now'))"
-      )
-      .run();
-    const localProjectId = (
-      dbA.prepare("SELECT id FROM project WHERE repository_id = ''").get() as { id: number }
-    ).id;
-    setProjectSetting(dbA, localProjectId, 'abbreviation', 'LOC');
+    const syncUuid = randomUUID();
+    const localProject = getOrCreateProjectByIdentity(dbA, syncUuid);
+    setProjectSetting(dbA, localProject.id, 'abbreviation', 'LOC');
 
     const nodeA = getLocalNodeId(dbA);
     const snapshot = buildPeerSnapshot(dbA);
     const setting = snapshot.projectSettings.find((row) => row.setting === 'abbreviation');
-    expect(setting?.projectIdentity).toBe(`local-project-${localProjectId}`);
+    expect(setting?.projectIdentity).toBe(syncUuid);
 
     applyPeerSnapshot(dbB, nodeA, snapshot);
 
-    const receivedProject = getOrCreateProject(dbB, `local-project-${localProjectId}`);
+    const receivedProject = getOrCreateProjectByIdentity(dbB, syncUuid);
+    expect(receivedProject.repository_id).toBeNull();
+    expect(receivedProject.sync_uuid).toBe(syncUuid);
     expect(getProjectSetting(dbB, receivedProject.id, 'abbreviation')).toBe('LOC');
     expect(
       dbB
@@ -541,6 +542,44 @@ describe('snapshot: project settings and plan id allocation', () => {
         )
         .get(`${setting!.projectIdentity}:abbreviation`)
     ).not.toBeNull();
+  });
+
+  test('snapshot resync preserves local project sync UUID for later op sync', async () => {
+    const syncUuid = randomUUID();
+    const localProject = getOrCreateProjectByIdentity(dbA, syncUuid);
+    const nodeA = getLocalNodeId(dbA);
+    const nodeB = getLocalNodeId(dbB);
+
+    upsertPlan(dbA, localProject.id, {
+      uuid: id('snapshot-local-project-plan'),
+      planId: 1,
+      title: 'Local snapshot plan',
+    });
+    applyPeerSnapshot(dbB, nodeA, buildPeerSnapshot(dbA));
+
+    const receivedProject = getOrCreateProjectByIdentity(dbB, syncUuid);
+    expect(receivedProject.repository_id).toBeNull();
+    expect(receivedProject.sync_uuid).toBe(syncUuid);
+
+    setProjectSetting(dbA, localProject.id, 'abbreviation', 'LOC');
+    registerPeerNode(dbB, { nodeId: nodeA, nodeType: 'main' });
+    await runPeerSync(dbB, nodeA, {
+      async pullChunk(afterSeq, limit) {
+        return getOpLogChunkAfter(dbA, afterSeq, limit);
+      },
+      async pushChunk(ops) {
+        const result = applyPeerOpsWithPending(dbA, nodeB, ops);
+        return { applied: result.applied, skipped: result.skipped.length };
+      },
+      async snapshot() {
+        return buildPeerSnapshot(dbA);
+      },
+    });
+
+    const afterSyncProject = getProjectById(dbB, receivedProject.id);
+    expect(afterSyncProject?.sync_uuid).toBe(syncUuid);
+    expect(afterSyncProject?.repository_id).toBeNull();
+    expect(getProjectSetting(dbB, receivedProject.id, 'abbreviation')).toBe('LOC');
   });
 
   test('snapshot import allocates a local plan_id when the sender hint collides', () => {

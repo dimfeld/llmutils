@@ -1157,6 +1157,7 @@ const migrations: Migration[] = [
   {
     version: 33,
     up: (db: Database): void => {
+      ensureProjectSyncUuidColumn(db);
       db.run(`
         CREATE TABLE IF NOT EXISTS sync_edge_clock (
           entity_type TEXT NOT NULL CHECK(entity_type IN ('plan_dependency', 'plan_tag')),
@@ -1575,9 +1576,125 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 39,
+    requiresFkOff: true,
+    up: (db: Database): void => {
+      const projectTable = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'project'")
+        .get() as { 1: number } | null;
+      if (!projectTable) {
+        return;
+      }
+      const projectColumns = db.prepare("PRAGMA table_info('project')").all() as Array<{
+        name: string;
+        notnull: number;
+      }>;
+      const hasSyncUuid = projectColumns.some((column) => column.name === 'sync_uuid');
+      const repositoryColumn = projectColumns.find((column) => column.name === 'repository_id');
+      const repositoryIsNotNull = repositoryColumn?.notnull === 1;
+
+      if (!hasSyncUuid || repositoryIsNotNull) {
+        db.run(`
+          CREATE TABLE project_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            repository_id TEXT UNIQUE,
+            sync_uuid TEXT,
+            remote_url TEXT,
+            last_git_root TEXT,
+            external_config_path TEXT,
+            external_tasks_dir TEXT,
+            remote_label TEXT,
+            highest_plan_id INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+            updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+          );
+        `);
+
+        const rows = db.prepare('SELECT * FROM project ORDER BY id').all() as Array<{
+          id: number;
+          repository_id: string | null;
+          sync_uuid?: string | null;
+          remote_url: string | null;
+          last_git_root: string | null;
+          external_config_path: string | null;
+          external_tasks_dir: string | null;
+          remote_label: string | null;
+          highest_plan_id: number;
+          created_at: string;
+          updated_at: string;
+        }>;
+        const insert = db.prepare(`
+          INSERT INTO project_new (
+            id,
+            repository_id,
+            sync_uuid,
+            remote_url,
+            last_git_root,
+            external_config_path,
+            external_tasks_dir,
+            remote_label,
+            highest_plan_id,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const row of rows) {
+          insert.run(
+            row.id,
+            row.repository_id,
+            row.sync_uuid ?? randomUUID(),
+            row.remote_url,
+            row.last_git_root,
+            row.external_config_path,
+            row.external_tasks_dir,
+            row.remote_label,
+            row.highest_plan_id,
+            row.created_at,
+            row.updated_at
+          );
+        }
+
+        db.run('DROP TABLE project');
+        db.run('ALTER TABLE project_new RENAME TO project');
+      } else {
+        ensureProjectSyncUuidColumn(db);
+      }
+
+      db.run(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_project_sync_uuid
+        ON project(sync_uuid)
+        WHERE sync_uuid IS NOT NULL;
+      `);
+    },
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;
+
+function ensureProjectSyncUuidColumn(db: Database): void {
+  const projectTable = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'project'")
+    .get() as { 1: number } | null;
+  if (!projectTable) {
+    return;
+  }
+  const projectColumns = db.prepare("PRAGMA table_info('project')").all() as Array<{
+    name: string;
+  }>;
+  if (!projectColumns.some((column) => column.name === 'sync_uuid')) {
+    db.run('ALTER TABLE project ADD COLUMN sync_uuid TEXT');
+  }
+  const rows = db
+    .prepare('SELECT id FROM project WHERE sync_uuid IS NULL ORDER BY id')
+    .all() as Array<{
+    id: number;
+  }>;
+  const update = db.prepare('UPDATE project SET sync_uuid = ? WHERE id = ?');
+  for (const row of rows) {
+    update.run(randomUUID(), row.id);
+  }
+}
 
 function getCurrentVersion(db: Database): number {
   const row = db

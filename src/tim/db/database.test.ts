@@ -28,7 +28,8 @@ function seedSchemaVersionNine(db: Database): void {
 
     CREATE TABLE project (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      repository_id TEXT NOT NULL UNIQUE,
+      repository_id TEXT UNIQUE,
+      sync_uuid TEXT,
       remote_url TEXT,
       last_git_root TEXT,
       external_config_path TEXT,
@@ -912,6 +913,67 @@ describe('tim db/database', () => {
       expect(count2?.count).toBe(1);
     } finally {
       db2.close(false);
+    }
+  });
+
+  test('runMigrations v39 backfills unique project sync UUIDs', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db = new Database(dbPath);
+
+    try {
+      db.exec(`
+        CREATE TABLE schema_version (
+          version INTEGER NOT NULL DEFAULT 0,
+          import_completed INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO schema_version (version, import_completed) VALUES (38, 1);
+
+        CREATE TABLE project (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          repository_id TEXT NOT NULL UNIQUE,
+          remote_url TEXT,
+          last_git_root TEXT,
+          external_config_path TEXT,
+          external_tasks_dir TEXT,
+          remote_label TEXT,
+          highest_plan_id INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+      `);
+      db.prepare(
+        `INSERT INTO project (repository_id, highest_plan_id, created_at, updated_at)
+         VALUES (?, 0, ?, ?), (?, 0, ?, ?), (?, 0, ?, ?)`
+      ).run(
+        'repo-v39-a',
+        '2026-01-01T00:00:00Z',
+        '2026-01-01T00:00:00Z',
+        'repo-v39-b',
+        '2026-01-01T00:00:00Z',
+        '2026-01-01T00:00:00Z',
+        'repo-v39-c',
+        '2026-01-01T00:00:00Z',
+        '2026-01-01T00:00:00Z'
+      );
+
+      runMigrations(db);
+
+      const rows = db
+        .prepare('SELECT repository_id, sync_uuid FROM project ORDER BY repository_id')
+        .all() as Array<{ repository_id: string; sync_uuid: string | null }>;
+      expect(rows).toHaveLength(3);
+      const syncUuids = rows.map((row) => row.sync_uuid);
+      expect(syncUuids.every((syncUuid) => typeof syncUuid === 'string')).toBe(true);
+      expect(new Set(syncUuids).size).toBe(3);
+      const repositoryColumn = (
+        db.prepare("PRAGMA table_info('project')").all() as Array<{
+          name: string;
+          notnull: number;
+        }>
+      ).find((column) => column.name === 'repository_id');
+      expect(repositoryColumn?.notnull).toBe(0);
+    } finally {
+      db.close(false);
     }
   });
 

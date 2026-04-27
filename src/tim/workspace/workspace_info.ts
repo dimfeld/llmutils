@@ -62,7 +62,7 @@ export function workspaceRowToInfo(
   return {
     taskId: row.task_id ?? path.basename(row.workspace_path),
     originalPlanFilePath: row.original_plan_file_path ?? undefined,
-    repositoryId: repositoryId ?? project?.repository_id,
+    repositoryId: repositoryId ?? project?.repository_id ?? undefined,
     workspacePath: row.workspace_path,
     branch: row.branch ?? undefined,
     createdAt: row.created_at,

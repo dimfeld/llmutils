@@ -139,8 +139,11 @@ export async function fetchOpenPullRequests(
 }
 
 export function parseOwnerRepoFromRepositoryId(
-  repositoryId: string
+  repositoryId: string | null | undefined
 ): { owner: string; repo: string } | null {
+  if (!repositoryId) {
+    return null;
+  }
   const parts = repositoryId.split('__');
   if (parts.length < 3) {
     return null;

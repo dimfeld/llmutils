@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { PlanDependencyRow, PlanRow, PlanTagRow, PlanTaskRow } from '../db/plan.js';
 import type { PlanReviewIssueRow } from '../db/plan_review_issue.js';
 import type { Project } from '../db/project.js';
-import { getOrCreateProject } from '../db/project.js';
+import { getOrCreateProjectByIdentity } from '../db/project.js';
 import type { ProjectSetting } from '../db/project_settings.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import {
@@ -696,7 +696,8 @@ function writeIssuerPeer(db: Database, bundle: WorkerBundle): void {
 
 function importProject(db: Database, bundle: WorkerBundle): number {
   const source = bundle.project.row;
-  return getOrCreateProject(db, bundle.project.identity, {
+  return getOrCreateProjectByIdentity(db, bundle.project.identity, {
+    syncUuid: source.sync_uuid,
     remoteUrl: source.remote_url,
     lastGitRoot: source.last_git_root,
     externalConfigPath: source.external_config_path,

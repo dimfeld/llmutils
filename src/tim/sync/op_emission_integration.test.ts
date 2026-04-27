@@ -18,10 +18,11 @@ import {
   listReviewIssuesForPlan,
   reconcileReviewIssuesForPlan,
 } from '../db/plan_review_issue.js';
-import { getOrCreateProject } from '../db/project.js';
+import { getOrCreateProject, getOrCreateProjectByIdentity } from '../db/project.js';
 import { deleteProjectSetting, setProjectSetting } from '../db/project_settings.js';
 import type { SyncFieldClockRow, SyncOpLogRow, SyncTombstoneRow } from '../db/sync_schema.js';
 import { edgeClockIsPresent, getEdgeClock } from './edge_clock.js';
+import { getProjectSyncIdentity } from './op_emission.js';
 
 function opRows(db: Database): SyncOpLogRow[] {
   return db
@@ -378,6 +379,27 @@ describe('sync op emission – integration coverage', () => {
     const ops = opRowsFor(db, 'project_setting', 'github.com__owner__repo:abbreviation');
     expect(ops).toHaveLength(1);
     expect(ops[0]!.op_type).toBe('update_fields');
+  });
+
+  test('local project settings use sync_uuid as project sync identity', () => {
+    const syncUuid = crypto.randomUUID();
+    const localProject = getOrCreateProjectByIdentity(db, syncUuid);
+
+    expect(getProjectSyncIdentity(db, localProject.id)).toBe(syncUuid);
+    setProjectSetting(db, localProject.id, 'abbreviation', 'LOC');
+
+    const ops = opRowsFor(db, 'project_setting', `${syncUuid}:abbreviation`);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.op_type).toBe('update_fields');
+  });
+
+  test('project sync identity throws when both repository_id and sync_uuid are missing', () => {
+    const localProject = getOrCreateProjectByIdentity(db, crypto.randomUUID());
+    db.prepare('UPDATE project SET sync_uuid = NULL WHERE id = ?').run(localProject.id);
+
+    expect(() => getProjectSyncIdentity(db, localProject.id)).toThrow(
+      /neither repository_id nor sync_uuid/
+    );
   });
 
   test('project settings delete writes tombstone and sets field clock deleted=1', () => {
