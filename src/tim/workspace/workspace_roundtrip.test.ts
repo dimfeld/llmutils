@@ -44,6 +44,7 @@ vi.mock('./workspace_info.js', () => ({
 }));
 
 vi.mock('../plan_materialize.js', () => ({
+  ensureMaterializeDir: vi.fn(async () => '/tmp/workspace/.tim/plans'),
   MATERIALIZED_DIR: '.tim/plans',
 }));
 
@@ -85,6 +86,7 @@ import {
   patchWorkspaceInfo,
 } from './workspace_info.js';
 import { readdir as readdirMock, rm as rmMock } from 'node:fs/promises';
+import { ensureMaterializeDir } from '../plan_materialize.js';
 
 describe('runPostExecutionWorkspaceSync', () => {
   const mockCommitAll = vi.mocked(commitAll);
@@ -514,6 +516,7 @@ describe('runPostExecutionWorkspaceSync', () => {
 describe('runPreExecutionWorkspaceSync', () => {
   const mockCaptureRepositoryState = vi.mocked(captureRepositoryState);
   const mockPullWorkspaceRefIfExists = vi.mocked(pullWorkspaceRefIfExists);
+  const mockEnsureMaterializeDir = vi.mocked(ensureMaterializeDir);
   const mockReaddir = vi.mocked(readdirMock);
   const mockRm = vi.mocked(rmMock);
 
@@ -526,11 +529,12 @@ describe('runPreExecutionWorkspaceSync', () => {
       diffHash: 'hash',
     });
     mockPullWorkspaceRefIfExists.mockResolvedValue(true);
+    mockEnsureMaterializeDir.mockResolvedValue('/tmp/workspace/.tim/plans');
     mockReaddir.mockResolvedValue([] as any);
     mockRm.mockResolvedValue(undefined);
   });
 
-  test('pulls from origin and captures state after pull', async () => {
+  test('refreshes git excludes, pulls from origin, and captures state after pull', async () => {
     const { runPreExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
     const context = {
       executionWorkspacePath: '/tmp/workspace',
@@ -540,10 +544,14 @@ describe('runPreExecutionWorkspaceSync', () => {
     await runPreExecutionWorkspaceSync(context);
 
     expect(mockReaddir).not.toHaveBeenCalled();
+    expect(mockEnsureMaterializeDir).toHaveBeenCalledWith('/tmp/workspace');
     expect(mockPullWorkspaceRefIfExists).toHaveBeenCalledWith(
       '/tmp/workspace',
       'task-123',
       'origin'
+    );
+    expect(mockEnsureMaterializeDir.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPullWorkspaceRefIfExists.mock.invocationCallOrder[0]
     );
     expect(mockCaptureRepositoryState).toHaveBeenCalledWith('/tmp/workspace');
     expect(context.preExecutionState).toEqual({
@@ -564,6 +572,7 @@ describe('runPreExecutionWorkspaceSync', () => {
 
     await runPreExecutionWorkspaceSync(context);
 
+    expect(mockEnsureMaterializeDir).toHaveBeenCalledWith('/tmp/workspace');
     expect(mockPullWorkspaceRefIfExists).not.toHaveBeenCalled();
     expect(mockCaptureRepositoryState).toHaveBeenCalledWith('/tmp/workspace');
     expect(context.preExecutionState).toEqual({

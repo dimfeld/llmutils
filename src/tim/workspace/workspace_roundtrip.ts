@@ -22,7 +22,12 @@ import {
   pushWorkspaceRefToRemote,
   setWorkspaceBookmarkToCurrent,
 } from '../commands/workspace.js';
-import { MATERIALIZED_DIR, materializePlan, materializeRelatedPlans } from '../plan_materialize.js';
+import {
+  ensureMaterializeDir,
+  MATERIALIZED_DIR,
+  materializePlan,
+  materializeRelatedPlans,
+} from '../plan_materialize.js';
 import { warn } from '../../logging.js';
 
 export interface WorkspaceRoundTripContext {
@@ -79,6 +84,8 @@ export async function prepareWorkspaceRoundTrip(options: {
 export async function runPreExecutionWorkspaceSync(
   context: WorkspaceRoundTripContext
 ): Promise<void> {
+  await ensureMaterializeDir(context.executionWorkspacePath);
+
   if (!context.branchCreatedDuringSetup) {
     await pullWorkspaceRefIfExists(context.executionWorkspacePath, context.refName, 'origin');
   }
