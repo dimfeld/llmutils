@@ -159,6 +159,12 @@ function appendMissingSegments(
   return { details: updated, newSegments };
 }
 
+function hasSelectableIssueContent(issueData: IssueWithComments): boolean {
+  return Boolean(
+    issueData.issue.body?.trim() || issueData.comments.some((comment) => comment.body?.trim())
+  );
+}
+
 async function getPreferredProjectLinearApiKey(projectId?: number): Promise<string | undefined> {
   if (projectId === undefined) {
     return undefined;
@@ -327,7 +333,7 @@ export async function createPlansFromIssue(
       }
       pendingWrites.push({ plan: updatedPlan, filePath: null });
     } else {
-      if (parentExtracted.length === 0) {
+      if (parentExtracted.length === 0 && hasSelectableIssueContent(issueData)) {
         throw new Error('Select at least one parent content item with non-empty text to import.');
       }
       parentPlanId = await reserveImportedPlanStartId(repoRoot, 1);
@@ -354,9 +360,12 @@ export async function createPlansFromIssue(
     const hasAnyContent =
       parentExtracted.length > 0 ||
       [...childExtracted.values()].some((content) => content.length > 0);
+    const hasSelectableContent =
+      hasSelectableIssueContent(issueData) ||
+      selectedChildIndices.some((index) => hasSelectableIssueContent(children[index]));
     const needsNewPlans =
       !existingParentPlan || selectedChildIndices.some((index) => !existingChildren.get(index));
-    if (needsNewPlans && !hasAnyContent) {
+    if (needsNewPlans && !hasAnyContent && hasSelectableContent) {
       throw new Error('Select at least one parent or subissue content item to import.');
     }
 

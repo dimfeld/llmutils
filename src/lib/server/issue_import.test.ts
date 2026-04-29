@@ -699,23 +699,44 @@ describe('issue_import server helpers', () => {
       expect(pendingWrites?.[0]?.plan.details).toContain('## Subissue 2: Child');
     });
 
-    test('throws when single mode has no non-empty selected content', async () => {
+    test('creates a title-only plan when single mode has no selectable content', async () => {
       const issueData = makeIssue(1, 'Parent', {
         body: '   ',
         comments: ['  '],
       });
       const selected: SelectedIssueContent = {
-        selectedParentContent: [0, 1],
+        selectedParentContent: [],
         selectedChildIndices: [],
         selectedChildContent: {},
       };
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValue(41);
+      vi.mocked(writeImportedPlansToDbTransactionally).mockResolvedValue([
+        {
+          plan: {
+            id: 41,
+            uuid: 'uuid-parent',
+          } as never,
+          filePath: null,
+        },
+      ]);
 
-      await expect(createPlansFromIssue(7, issueData, 'single', selected)).rejects.toThrow(
-        'Select at least one parent content item'
+      const result = await createPlansFromIssue(7, issueData, 'single', selected);
+
+      expect(result).toEqual({ planUuid: 'uuid-parent' });
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 1);
+      expect(createStubPlanFromIssue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          issue: expect.objectContaining({
+            title: 'Parent',
+            html_url: issueData.issue.htmlUrl,
+          }),
+          plan: '',
+        }),
+        41
       );
     });
 
-    test('throws when separate mode has no selected non-empty content', async () => {
+    test('creates title-only parent and child plans when separate mode has no selectable content', async () => {
       const child = makeIssue(2, 'Child', { body: ' ', comments: ['   '] });
       const parent = makeIssue(1, 'Parent', {
         body: ' ',
@@ -723,16 +744,23 @@ describe('issue_import server helpers', () => {
         children: [child],
       });
       const selected: SelectedIssueContent = {
-        selectedParentContent: [0],
+        selectedParentContent: [],
         selectedChildIndices: [0],
         selectedChildContent: {
           0: [0, 1],
         },
       };
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValue(200);
+      vi.mocked(writeImportedPlansToDbTransactionally).mockResolvedValue([
+        { plan: { id: 201, uuid: 'uuid-child' } as never, filePath: null },
+        { plan: { id: 200, uuid: 'uuid-parent' } as never, filePath: null },
+      ]);
 
-      await expect(createPlansFromIssue(7, parent, 'separate', selected)).rejects.toThrow(
-        'Select at least one parent or subissue content item'
-      );
+      const result = await createPlansFromIssue(7, parent, 'separate', selected);
+
+      expect(result).toEqual({ planUuid: 'uuid-parent' });
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 2);
+      expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledTimes(1);
     });
 
     test('creates empty child plan when selected subissue has only empty content', async () => {
