@@ -3,6 +3,7 @@ import { ConsoleAdapter } from './console.js';
 import type {
   HeadlessOutputMessage,
   HeadlessPlanContentMessage,
+  HeadlessPlanTask,
   HeadlessServerMessage,
   HeadlessSessionInfo,
 } from './headless_protocol.js';
@@ -56,6 +57,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   private destroyed = false;
   private nextOutputSequence = 1;
   private latestPlanContent: string | null = null;
+  private latestPlanTasks: HeadlessPlanTask[] = [];
   private pendingPrompts: Map<string, PendingPromptRequest> = new Map();
   private userInputHandler?: (content: string) => void;
   private endSessionHandler?: () => void;
@@ -130,8 +132,9 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.enqueueTunnelMessage({ type: 'structured', message });
   }
 
-  sendPlanContent(content: string): void {
+  sendPlanContent(content: string, tasks: HeadlessPlanTask[] = []): void {
     this.latestPlanContent = content;
+    this.latestPlanTasks = tasks;
     if (this.destroyed || !this.sessionServer) {
       return;
     }
@@ -139,6 +142,7 @@ export class HeadlessAdapter implements LoggerAdapter {
     const message: HeadlessPlanContentMessage = {
       type: 'plan_content',
       content,
+      tasks,
     };
     this.sessionServer.broadcast(message);
   }
@@ -315,6 +319,7 @@ export class HeadlessAdapter implements LoggerAdapter {
       server.sendTo(connectionId, {
         type: 'plan_content',
         content: this.latestPlanContent,
+        tasks: this.latestPlanTasks,
       });
     }
     server.sendTo(connectionId, { type: 'replay_start' });

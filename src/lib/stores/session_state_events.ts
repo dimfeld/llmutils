@@ -167,6 +167,7 @@ export function applySessionEvent<TEventName extends SessionClientEventName>(
         setSession(state, {
           ...session,
           planContent: event.payload.planContent,
+          planTasks: event.payload.planTasks,
         });
       }
       break;

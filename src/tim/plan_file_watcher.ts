@@ -1,10 +1,22 @@
 import { watch, watchFile, unwatchFile, type FSWatcher } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import * as yaml from 'yaml';
 
 import { warn } from '../logging.js';
 
 const PLAN_WATCH_DEBOUNCE_MS = 300;
+
+export interface WatchedPlanTask {
+  title: string;
+  description: string;
+  done: boolean;
+}
+
+export interface WatchedPlanContent {
+  content: string;
+  tasks: WatchedPlanTask[];
+}
 
 export interface PlanFileWatcher {
   /** Stop watching and emit any final content synchronously if possible. */
@@ -13,10 +25,43 @@ export interface PlanFileWatcher {
   closeAndFlush(): Promise<void>;
 }
 
-export function stripPlanFrontmatter(content: string): string | null {
+function isWatchedPlanTask(task: unknown): task is WatchedPlanTask {
+  if (typeof task !== 'object' || task === null || Array.isArray(task)) {
+    return false;
+  }
+
+  const record = task as Record<string, unknown>;
+  return (
+    typeof record.title === 'string' &&
+    typeof record.description === 'string' &&
+    typeof record.done === 'boolean'
+  );
+}
+
+function parsePlanTasks(frontMatter: string): WatchedPlanTask[] {
+  let parsed: unknown;
+  try {
+    parsed = yaml.parse(frontMatter, { uniqueKeys: false });
+  } catch {
+    return [];
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return [];
+  }
+
+  const tasks = (parsed as Record<string, unknown>).tasks;
+  if (!Array.isArray(tasks)) {
+    return [];
+  }
+
+  return tasks.filter(isWatchedPlanTask);
+}
+
+export function parseWatchedPlanContent(content: string): WatchedPlanContent | null {
   const normalized = content.replaceAll('\r\n', '\n');
   if (!normalized.startsWith('---\n')) {
-    return normalized.trim();
+    return { content: normalized.trim(), tasks: [] };
   }
 
   const endDelimiterIndex = normalized.indexOf('\n---\n', 4);
@@ -25,12 +70,19 @@ export function stripPlanFrontmatter(content: string): string | null {
     return null;
   }
 
-  return normalized.substring(endDelimiterIndex + 5).trim();
+  return {
+    content: normalized.substring(endDelimiterIndex + 5).trim(),
+    tasks: parsePlanTasks(normalized.substring(4, endDelimiterIndex)),
+  };
+}
+
+export function stripPlanFrontmatter(content: string): string | null {
+  return parseWatchedPlanContent(content)?.content ?? null;
 }
 
 export function watchPlanFile(
   filePath: string,
-  onContent: (content: string) => void
+  onContent: (content: WatchedPlanContent) => void
 ): PlanFileWatcher {
   const parentDir = path.dirname(filePath);
   const targetBasename = path.basename(filePath);
@@ -41,12 +93,13 @@ export function watchPlanFile(
 
   async function readAndEmit(): Promise<void> {
     try {
-      const nextContent = stripPlanFrontmatter(await readFile(filePath, 'utf8'));
-      if (nextContent === null || nextContent === lastContent) {
+      const nextContent = parseWatchedPlanContent(await readFile(filePath, 'utf8'));
+      const serializedContent = nextContent === null ? null : JSON.stringify(nextContent);
+      if (nextContent === null || serializedContent === lastContent) {
         return;
       }
 
-      lastContent = nextContent;
+      lastContent = serializedContent;
       onContent(nextContent);
     } catch (err) {
       const error = err as NodeJS.ErrnoException;

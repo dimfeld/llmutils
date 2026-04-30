@@ -3,7 +3,12 @@ import { mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { stripPlanFrontmatter, watchPlanFile } from './plan_file_watcher.js';
+import {
+  parseWatchedPlanContent,
+  stripPlanFrontmatter,
+  watchPlanFile,
+  type WatchedPlanContent,
+} from './plan_file_watcher.js';
 
 async function waitFor(condition: () => boolean, timeoutMs = 4000): Promise<void> {
   const startedAt = Date.now();
@@ -37,13 +42,13 @@ describe('watchPlanFile', () => {
       ['---', 'id: 302', 'title: Example', '---', '', '# Body', '', 'Current text'].join('\n')
     );
 
-    const contents: string[] = [];
+    const contents: WatchedPlanContent[] = [];
     const watcher = watchPlanFile(planPath, (content) => {
       contents.push(content);
     });
 
     await waitFor(() => contents.length === 1);
-    expect(contents[0]).toBe('# Body\n\nCurrent text');
+    expect(contents[0]).toEqual({ content: '# Body\n\nCurrent text', tasks: [] });
 
     await writeFile(
       planPath,
@@ -51,7 +56,7 @@ describe('watchPlanFile', () => {
     );
 
     await waitFor(() => contents.length === 2);
-    expect(contents[1]).toBe('# Body\n\nUpdated text');
+    expect(contents[1]).toEqual({ content: '# Body\n\nUpdated text', tasks: [] });
 
     watcher.close();
   });
@@ -60,7 +65,7 @@ describe('watchPlanFile', () => {
     const planPath = path.join(tempDir, '302.plan.md');
     await writeFile(planPath, ['---', 'id: 302', '---', '', 'first'].join('\n'));
 
-    const contents: string[] = [];
+    const contents: WatchedPlanContent[] = [];
     const watcher = watchPlanFile(planPath, (content) => {
       contents.push(content);
     });
@@ -72,7 +77,7 @@ describe('watchPlanFile', () => {
     await writeFile(planPath, ['---', 'id: 302', '---', '', 'final'].join('\n'));
 
     await waitFor(() => contents.length === 2);
-    expect(contents).toEqual(['first', 'final']);
+    expect(contents.map((content) => content.content)).toEqual(['first', 'final']);
 
     watcher.close();
   });
@@ -81,7 +86,7 @@ describe('watchPlanFile', () => {
     const planPath = path.join(tempDir, '302.plan.md');
     await writeFile(planPath, ['---', 'id: 302', '---', '', 'first'].join('\n'));
 
-    const contents: string[] = [];
+    const contents: WatchedPlanContent[] = [];
     const watcher = watchPlanFile(planPath, (content) => {
       contents.push(content);
     });
@@ -92,14 +97,14 @@ describe('watchPlanFile', () => {
     await writeFile(planPath, ['---', 'id: 302', '---', '', 'second'].join('\n'));
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    expect(contents).toEqual(['first']);
+    expect(contents).toEqual([{ content: 'first', tasks: [] }]);
   });
 
   test('keeps emitting after atomic-save replacement via rename', async () => {
     const planPath = path.join(tempDir, '302.plan.md');
     await writeFile(planPath, ['---', 'id: 302', '---', '', 'first'].join('\n'));
 
-    const contents: string[] = [];
+    const contents: WatchedPlanContent[] = [];
     const watcher = watchPlanFile(planPath, (content) => {
       contents.push(content);
     });
@@ -111,12 +116,12 @@ describe('watchPlanFile', () => {
     await rename(replacementPath, planPath);
 
     await waitFor(() => contents.length === 2);
-    expect(contents[1]).toBe('second');
+    expect(contents[1]).toEqual({ content: 'second', tasks: [] });
 
     await writeFile(planPath, ['---', 'id: 302', '---', '', 'third'].join('\n'));
 
     await waitFor(() => contents.length === 3);
-    expect(contents[2]).toBe('third');
+    expect(contents[2]).toEqual({ content: 'third', tasks: [] });
 
     watcher.close();
   });
@@ -125,13 +130,40 @@ describe('watchPlanFile', () => {
     expect(stripPlanFrontmatter('\n# Body\n\nText\n')).toBe('# Body\n\nText');
   });
 
+  test('parses tasks from plan frontmatter without reading markdown content', () => {
+    expect(
+      parseWatchedPlanContent(
+        [
+          '---',
+          'id: 302',
+          'tasks:',
+          '  - title: First',
+          '    description: Do first thing',
+          '    done: false',
+          '  - title: Second',
+          '    description: Do second thing',
+          '    done: true',
+          '---',
+          '',
+          '- This markdown list is not a structured task',
+        ].join('\n')
+      )
+    ).toEqual({
+      content: '- This markdown list is not a structured task',
+      tasks: [
+        { title: 'First', description: 'Do first thing', done: false },
+        { title: 'Second', description: 'Do second thing', done: true },
+      ],
+    });
+  });
+
   test('returns null for incomplete frontmatter (mid-write)', () => {
     expect(stripPlanFrontmatter(['---', 'id: 302', 'title: Missing end'].join('\n'))).toBeNull();
   });
 
   test('returns an inert watcher when the plan file does not exist yet', async () => {
     const planPath = path.join(tempDir, 'missing.plan.md');
-    const contents: string[] = [];
+    const contents: WatchedPlanContent[] = [];
 
     const watcher = watchPlanFile(planPath, (content) => {
       contents.push(content);

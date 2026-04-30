@@ -46,6 +46,7 @@ function createSession(connectionId = 'conn-1'): SessionData {
     status: 'active',
     projectId: null,
     planContent: null,
+    planTasks: [],
     messages: [
       createMessage({ id: `${connectionId}-0`, body: { type: 'text', text: 'existing' } }),
     ],
@@ -335,12 +336,14 @@ describe('applySessionEvent', () => {
       {
         connectionId: session.connectionId,
         planContent: '# current plan',
+        planTasks: [{ title: 'Task', description: 'Do it', done: false }],
       },
       state
     );
 
     const updated = state.sessions.get(session.connectionId);
     expect(updated?.planContent).toBe('# current plan');
+    expect(updated?.planTasks).toEqual([{ title: 'Task', description: 'Do it', done: false }]);
     expect(updated?.messages).toBe(previousMessages);
   });
 

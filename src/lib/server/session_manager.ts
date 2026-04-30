@@ -104,12 +104,19 @@ export interface ActivePrompt {
   timeoutMs?: number;
 }
 
+export interface SessionPlanTask {
+  title: string;
+  description: string;
+  done: boolean;
+}
+
 export interface SessionData {
   connectionId: string;
   sessionInfo: HeadlessSessionInfo;
   status: SessionStatus;
   projectId: number | null;
   planContent: string | null;
+  planTasks: SessionPlanTask[];
   messages: DisplayMessage[];
   activePrompts: ActivePrompt[];
   isReplaying: boolean;
@@ -137,7 +144,11 @@ export interface SessionManagerEvents {
   'session:update': { session: SessionData };
   'session:disconnect': { session: SessionData };
   'session:message': { connectionId: string; message: DisplayMessage };
-  'session:plan-content': { connectionId: string; planContent: string };
+  'session:plan-content': {
+    connectionId: string;
+    planContent: string;
+    planTasks: SessionPlanTask[];
+  };
   'session:prompt': { connectionId: string; prompt: ActivePrompt };
   'session:prompt-cleared': { connectionId: string; requestId: string };
   'session:dismissed': { connectionId: string };
@@ -368,6 +379,7 @@ export class SessionManager {
       status: 'active',
       projectId: null,
       planContent: null,
+      planTasks: [],
       messages: [],
       activePrompts: [],
       isReplaying: false,
@@ -477,10 +489,12 @@ export class SessionManager {
       }
       case 'plan_content':
         session.planContent = message.content;
+        session.planTasks = message.tasks ?? [];
         this.syncSessionPlanIndex(session);
         this.emit('session:plan-content', {
           connectionId,
           planContent: message.content,
+          planTasks: session.planTasks,
         });
         return;
       case 'output': {
@@ -543,6 +557,7 @@ export class SessionManager {
         status: 'notification',
         projectId: this.resolveProjectId(payload.gitRemote),
         planContent: null,
+        planTasks: [],
         messages: [],
         activePrompts: [],
         isReplaying: false,
@@ -986,6 +1001,7 @@ export class SessionManager {
     return {
       ...session,
       sessionInfo: { ...session.sessionInfo },
+      planTasks: session.planTasks.map((task) => ({ ...task })),
       messages: messages.map((message) => ({ ...message, body: cloneBody(message.body) })),
       activePrompts: !session.isReplaying ? session.activePrompts.map(cloneActivePrompt) : [],
     };
@@ -996,6 +1012,7 @@ export class SessionManager {
     return {
       ...session,
       sessionInfo: { ...session.sessionInfo },
+      planTasks: session.planTasks.map((task) => ({ ...task })),
       messages: [],
       activePrompts: !session.isReplaying ? session.activePrompts.map(cloneActivePrompt) : [],
     };

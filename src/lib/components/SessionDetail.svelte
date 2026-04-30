@@ -625,7 +625,7 @@
         class="min-h-0 min-w-0 border-b border-border lg:w-1/2 lg:border-r lg:border-b-0"
         style="flex: 1 1 0%;"
       >
-        <PlanContentPane content={session.planContent} />
+        <PlanContentPane content={session.planContent} tasks={session.planTasks} />
       </div>
     </div>
   {:else}

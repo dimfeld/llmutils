@@ -49,6 +49,7 @@ function makeSession(overrides: Partial<SessionData> & { connectionId: string })
     status: 'active',
     projectId: 1,
     planContent: null,
+    planTasks: [],
     messages: [],
     activePrompts: [],
     isReplaying: false,

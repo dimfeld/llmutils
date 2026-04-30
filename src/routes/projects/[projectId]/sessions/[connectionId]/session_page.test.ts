@@ -74,6 +74,7 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
     status: overrides.status ?? 'active',
     projectId: overrides.projectId ?? 3,
     planContent: overrides.planContent ?? null,
+    planTasks: overrides.planTasks ?? [],
     messages: overrides.messages ?? [],
     activePrompts: overrides.activePrompts ?? [],
     isReplaying: overrides.isReplaying ?? false,

@@ -329,8 +329,8 @@ export async function handleChatCommand(
 
         const loggerAdapter = getLoggerAdapter();
         if (currentPlanFile && loggerAdapter instanceof HeadlessAdapter) {
-          planWatcher = watchPlanFile(currentPlanFile, (content) => {
-            loggerAdapter.sendPlanContent(content);
+          planWatcher = watchPlanFile(currentPlanFile, ({ content, tasks }) => {
+            loggerAdapter.sendPlanContent(content, tasks);
           });
         }
 

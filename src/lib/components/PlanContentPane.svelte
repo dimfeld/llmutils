@@ -1,12 +1,47 @@
 <script lang="ts">
   import { renderMarkdown } from '$lib/utils/markdown_parser.js';
+  import type { SessionPlanTask } from '$lib/types/session.js';
 
-  let { content }: { content: string | null } = $props();
+  let { content, tasks = [] }: { content: string | null; tasks?: SessionPlanTask[] } = $props();
 
   let renderedContent = $derived(content === null ? null : renderMarkdown(content));
+  let completedTaskCount = $derived(tasks.filter((task) => task.done).length);
 </script>
 
-<div class="flex h-full min-h-0 flex-col overflow-y-auto bg-gray-900 p-4 text-sm text-gray-200">
+<div class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto bg-gray-900 p-4 text-sm text-gray-200">
+  {#if tasks.length > 0}
+    <section class="plan-tasks" aria-label="Plan tasks">
+      <div class="mb-2 flex items-center justify-between gap-3">
+        <h3 class="text-xs font-semibold tracking-normal text-gray-100 uppercase">Tasks</h3>
+        <span class="shrink-0 text-xs text-gray-400 tabular-nums">
+          {completedTaskCount}/{tasks.length}
+        </span>
+      </div>
+      <ol class="space-y-2">
+        {#each tasks as task, index (`${index}-${task.title}`)}
+          <li class="flex gap-2 rounded border border-gray-800 bg-gray-950/40 p-2">
+            <span
+              class="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border text-[10px] leading-none {task.done
+                ? 'border-emerald-500 bg-emerald-500 text-gray-950'
+                : 'border-gray-600 text-transparent'}"
+              aria-label={task.done ? 'Done' : 'Not done'}
+            >
+              ✓
+            </span>
+            <div class="min-w-0">
+              <div class="font-medium break-words text-gray-100">{task.title}</div>
+              {#if task.description}
+                <div class="mt-1 whitespace-pre-wrap break-words text-xs text-gray-400">
+                  {task.description}
+                </div>
+              {/if}
+            </div>
+          </li>
+        {/each}
+      </ol>
+    </section>
+  {/if}
+
   {#if renderedContent}
     <div class="plan-content" tabindex="0" role="region" aria-label="Plan content">
       {@html renderedContent}

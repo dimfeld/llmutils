@@ -572,6 +572,7 @@ describe('lib/server/session_manager', () => {
     manager.handleWebSocketMessage('conn-1', {
       type: 'plan_content',
       content: '# live plan body',
+      tasks: [{ title: 'Task', description: 'Do it', done: false }],
     });
     manager.handleWebSocketMessage('conn-1', {
       type: 'output',
@@ -632,6 +633,7 @@ describe('lib/server/session_manager', () => {
     expect(onPlanContent).toHaveBeenCalledWith({
       connectionId: 'conn-1',
       planContent: '# live plan body',
+      planTasks: [{ title: 'Task', description: 'Do it', done: false }],
     });
     expect(onDisconnect).toHaveBeenCalledWith(
       expect.objectContaining({

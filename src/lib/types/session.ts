@@ -141,12 +141,19 @@ export interface HeadlessSessionInfo {
   terminalType?: string;
 }
 
+export interface SessionPlanTask {
+  title: string;
+  description: string;
+  done: boolean;
+}
+
 export interface SessionData {
   connectionId: string;
   sessionInfo: HeadlessSessionInfo;
   status: SessionStatus;
   projectId: number | null;
   planContent: string | null;
+  planTasks: SessionPlanTask[];
   messages: DisplayMessage[];
   activePrompts: ActivePrompt[];
   isReplaying: boolean;
@@ -187,6 +194,7 @@ export interface SessionMessageEvent {
 export interface SessionPlanContentEvent {
   connectionId: string;
   planContent: string;
+  planTasks: SessionPlanTask[];
 }
 
 export interface SessionPromptEvent {

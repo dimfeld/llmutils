@@ -53,6 +53,10 @@ export function parseHeadlessMessage(payload: string): HeadlessMessage | null {
     return null;
   }
 
+  if (parsed.type === 'plan_content' && parsed.tasks != null && !Array.isArray(parsed.tasks)) {
+    return null;
+  }
+
   return parsed as unknown as HeadlessMessage;
 }
 

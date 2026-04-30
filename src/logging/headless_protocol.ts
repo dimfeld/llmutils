@@ -40,6 +40,13 @@ export interface HeadlessReplayEndMessage {
 export interface HeadlessPlanContentMessage {
   type: 'plan_content';
   content: string;
+  tasks?: HeadlessPlanTask[];
+}
+
+export interface HeadlessPlanTask {
+  title: string;
+  description: string;
+  done: boolean;
 }
 
 export interface HeadlessSessionEndedMessage {

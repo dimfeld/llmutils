@@ -162,7 +162,7 @@ describe('HeadlessAdapter', () => {
       gitRemote: 'git@example.com:repo.git',
       sessionId: expect.any(String),
     });
-    expect(messages[1]).toEqual({ type: 'plan_content', content: '# latest plan' });
+    expect(messages[1]).toEqual({ type: 'plan_content', content: '# latest plan', tasks: [] });
     expect(messages[2]).toEqual({ type: 'replay_start' });
     expect(messages[3]).toMatchObject({ type: 'output', seq: 1 });
     expect(messages[4]).toMatchObject({ type: 'output', seq: 2 });
@@ -249,6 +249,7 @@ describe('HeadlessAdapter', () => {
     expect(messages).toContainEqual({
       type: 'plan_content',
       content: '## updated plan',
+      tasks: [],
     });
 
     ws.close();
@@ -278,6 +279,7 @@ describe('HeadlessAdapter', () => {
       {
         type: 'plan_content',
         content: '# second version',
+        tasks: [],
       },
     ]);
 
