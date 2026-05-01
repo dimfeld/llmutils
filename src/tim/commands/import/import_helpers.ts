@@ -7,9 +7,7 @@ import { needArrayOrUndefined } from '../../../common/cli.js';
 import type { PlanSchema } from '../../planSchema.js';
 import {
   applyPlanWritePostCommitUpdates,
-  getPlanWriteLegacyReason,
   routePlanWriteIntoBatch,
-  writePlansLegacyDirectTransactionally,
 } from '../../plans.js';
 import { loadEffectiveConfig } from '../../configLoader.js';
 import { resolveWriteMode, usesPlanIdReserve } from '../../sync/write_mode.js';
@@ -48,8 +46,6 @@ export async function writeImportedPlansToDbTransactionally(
     }
 
     if (!nextPlan.uuid) {
-      // Use || (not ??) so empty-string legacy UUIDs generate a fresh UUID rather than
-      // inheriting the legacy placeholder, allowing directUpsertPlanLegacy to replace it.
       nextPlan.uuid = idToUuid.get(nextPlan.id) || crypto.randomUUID();
     }
     idToUuid.set(nextPlan.id, nextPlan.uuid);
@@ -61,62 +57,30 @@ export async function writeImportedPlansToDbTransactionally(
   });
 
   const config = await loadEffectiveConfig(undefined, { cwd: repoRoot, quiet: true });
-  const writeMode = resolveWriteMode(config);
   const returnedWrites = preparedWrites.filter((entry) => !entry.syncOnly);
-  let legacyReason: string | null = null;
-  for (const entry of preparedWrites) {
-    legacyReason = getPlanWriteLegacyReason(
+  const batch = await beginSyncBatch(db, config);
+  const pendingRows = new Map(context.rows.map((row) => [row.uuid, row]));
+  const pendingPlans = new Map<number, PlanSchema>();
+  const postCommitUpdates = preparedWrites.flatMap((entry) => {
+    const existingRow = pendingRows.get(entry.plan.uuid!) ?? null;
+    const updates = routePlanWriteIntoBatch(
+      batch,
       db,
+      config,
       context.projectId,
       entry.plan,
       idToUuid,
-      context.rows
+      {
+        existingRow,
+        currentPlan: pendingPlans.get(entry.plan.id!),
+      }
     );
-    if (legacyReason) {
-      break;
-    }
-  }
-
-  if (legacyReason && writeMode !== 'local-operation') {
-    throw new Error(`Cannot import plans with sync-routed writes: ${legacyReason}`);
-  }
-
-  if (legacyReason) {
-    writePlansLegacyDirectTransactionally(
-      db,
-      context.projectId,
-      preparedWrites.map((entry) => entry.plan),
-      idToUuid,
-      context.rows
-    );
-  } else {
-    const batch = await beginSyncBatch(db, config);
-    const pendingRows = new Map(context.rows.map((row) => [row.uuid, row]));
-    const pendingPlans = new Map<number, PlanSchema>();
-    const postCommitUpdates = preparedWrites.flatMap((entry) => {
-      const existingRow = pendingRows.get(entry.plan.uuid!) ?? null;
-      const updates = routePlanWriteIntoBatch(
-        batch,
-        db,
-        config,
-        context.projectId,
-        entry.plan,
-        idToUuid,
-        {
-          existingRow,
-          currentPlan: pendingPlans.get(entry.plan.id!),
-        }
-      );
-      pendingRows.set(
-        entry.plan.uuid!,
-        planToPendingRow(context.projectId, entry.plan, existingRow)
-      );
-      pendingPlans.set(entry.plan.id!, structuredClone(entry.plan));
-      return updates;
-    });
-    await batch.commit();
-    applyPlanWritePostCommitUpdates(db, postCommitUpdates);
-  }
+    pendingRows.set(entry.plan.uuid!, planToPendingRow(context.projectId, entry.plan, existingRow));
+    pendingPlans.set(entry.plan.id!, structuredClone(entry.plan));
+    return updates;
+  });
+  await batch.commit();
+  applyPlanWritePostCommitUpdates(db, postCommitUpdates);
 
   return returnedWrites;
 }

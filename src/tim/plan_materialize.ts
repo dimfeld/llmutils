@@ -18,18 +18,12 @@ import {
   getPlansByProject,
   getPlanTagsByUuid,
   getPlanTasksByUuid,
-  type PlanTaskRow,
   type PlanRow,
 } from './db/plan.js';
 import { syncPlanToDb } from './db/plan_sync.js';
 import { getOrCreateProject } from './db/project.js';
 import { SQL_NOW_ISO_UTC } from './db/sql_utils.js';
-import {
-  generatePlanFileContent,
-  getPlanWriteLegacyReason,
-  readPlanFile,
-  writePlansLegacyDirectTransactionally,
-} from './plans.js';
+import { generatePlanFileContent, readPlanFile } from './plans.js';
 import {
   normalizeContainerToEpic,
   phaseSchema,
@@ -54,7 +48,6 @@ import {
 } from './sync/operations.js';
 import { beginSyncBatch, getProjectUuidForId } from './sync/write_router.js';
 import type { SyncPlanListName, SyncReviewIssueValue } from './sync/types.js';
-import { resolveWriteMode } from './sync/write_mode.js';
 import { DEFAULT_WORKSPACE_CLONE_LOCATION } from './workspace/workspace_paths.js';
 
 export const MATERIALIZED_DIR = path.join('.tim', 'plans');
@@ -446,46 +439,6 @@ function asArray<T>(value: T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
 }
 
-function sameTaskIdentityByIndexAndTitle(
-  shadowTask: TaskSchema | undefined,
-  fileTask: TaskSchema
-): shadowTask is TaskSchema & { uuid: string } {
-  return Boolean(shadowTask?.uuid && !fileTask.uuid && shadowTask.title === fileTask.title);
-}
-
-function hydrateTaskUuidsFromDb(tasks: TaskSchema[], dbTasks: PlanTaskRow[]): boolean {
-  let wroteTaskUuids = false;
-  const usedTaskUuids = new Set(tasks.map((task) => task.uuid).filter(Boolean) as string[]);
-
-  for (const [index, task] of tasks.entries()) {
-    if (task.uuid) continue;
-
-    const indexedTitleMatch = dbTasks.find(
-      (candidate) =>
-        candidate.uuid &&
-        candidate.task_index === index &&
-        candidate.title === task.title &&
-        !usedTaskUuids.has(candidate.uuid)
-    );
-
-    const titleMatches = dbTasks.filter(
-      (candidate) =>
-        Boolean(candidate.uuid) &&
-        candidate.title === task.title &&
-        !usedTaskUuids.has(candidate.uuid!)
-    );
-    const matchedTask = indexedTitleMatch ?? (titleMatches.length === 1 ? titleMatches[0] : null);
-
-    if (!matchedTask?.uuid) continue;
-
-    task.uuid = matchedTask.uuid;
-    wroteTaskUuids = true;
-    usedTaskUuids.add(matchedTask.uuid);
-  }
-
-  return wroteTaskUuids;
-}
-
 function diffTasks(shadowTasks: TaskSchema[], fileTasks: TaskSchema[]): TaskDiff {
   const shadowByUuid = new Map<string, TaskSchema>();
   for (const task of shadowTasks) {
@@ -499,11 +452,6 @@ function diffTasks(shadowTasks: TaskSchema[], fileTasks: TaskSchema[]): TaskDiff
   const matched: MatchedTask[] = [];
   let wroteTaskUuids = false;
 
-  // Legacy-hydration fallback: only treat a uuidless file task as a rename of the same-index
-  // shadow task when the entire file is uuidless. With any uuid present in the file, the list
-  // shape is verifiable and a uuidless task at a different title is treated as add+remove.
-  const allFileTasksUuidless = fileTasks.every((task) => !task.uuid);
-
   for (const [index, fileTask] of fileTasks.entries()) {
     if (fileTask.uuid) {
       const shadowTask = shadowByUuid.get(fileTask.uuid);
@@ -513,20 +461,6 @@ function diffTasks(shadowTasks: TaskSchema[], fileTasks: TaskSchema[]): TaskDiff
       } else {
         added.push({ task: fileTask, index });
       }
-      continue;
-    }
-
-    const shadowTask = shadowTasks[index];
-    const matchesByIndexAndTitle = sameTaskIdentityByIndexAndTitle(shadowTask, fileTask);
-    const matchesByLegacyHydration =
-      allFileTasksUuidless && shadowTasks.length === fileTasks.length && Boolean(shadowTask?.uuid);
-    const shadowTaskUuid =
-      matchesByIndexAndTitle || matchesByLegacyHydration ? (shadowTask?.uuid ?? null) : null;
-    if (shadowTaskUuid) {
-      fileTask.uuid = shadowTaskUuid;
-      wroteTaskUuids = true;
-      usedShadowUuids.add(shadowTaskUuid);
-      matched.push({ shadow: shadowTask, file: fileTask });
       continue;
     }
 
@@ -800,9 +734,6 @@ async function routeMaterializedPlanChanges(
 
   let wroteTaskUuids = false;
   if (changedFields.has('tasks')) {
-    const dbTasks = getPlanTasksByUuid(db, planUuid);
-    hydrateTaskUuidsFromDb(shadowPlan.tasks, dbTasks);
-    wroteTaskUuids = hydrateTaskUuidsFromDb(filePlan.tasks, dbTasks) || wroteTaskUuids;
     const taskDiff = diffTasks(shadowPlan.tasks, filePlan.tasks);
     wroteTaskUuids = taskDiff.wroteTaskUuids || wroteTaskUuids;
 
@@ -924,28 +855,6 @@ async function syncMaterializedPlanFromDbBaseline(
   changedFields: Set<EditablePlanField>,
   options: { preserveUpdatedAt?: string }
 ): Promise<{ wroteTaskUuids: boolean }> {
-  const legacyReason = getPlanWriteLegacyReason(
-    db,
-    context.projectId,
-    filePlan,
-    context.planIdToUuid,
-    context.rows
-  );
-  if (legacyReason) {
-    const mode = resolveWriteMode(config);
-    if (mode !== 'local-operation') {
-      throw new Error(`Cannot sync materialized legacy plan through ${mode}: ${legacyReason}`);
-    }
-    writePlansLegacyDirectTransactionally(
-      db,
-      context.projectId,
-      [filePlan],
-      context.planIdToUuid,
-      context.rows
-    );
-    return { wroteTaskUuids: false };
-  }
-
   const result = await routeMaterializedPlanChanges(
     db,
     config,

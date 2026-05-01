@@ -13,12 +13,9 @@ import type { PlanSchema, PlanSchemaInput } from '$tim/planSchema.js';
 import { planRowToSchemaInput } from '$tim/plans_db.js';
 import {
   applyPlanWritePostCommitUpdates,
-  getPlanWriteLegacyReason,
   preparePlanForWrite,
   routePlanWriteIntoBatch,
-  writePlansLegacyDirectTransactionally,
 } from '$tim/plans.js';
-import { resolveWriteMode } from '$tim/sync/write_mode.js';
 import {
   beginSyncBatch,
   getProjectUuidForId,
@@ -55,37 +52,12 @@ export async function writeSinglePlanMutationAtomically(
   options: {
     legacyErrorMessage: string;
     extraBatchOperations?: ExtraPlanBatchOperation[];
-    legacyPlanInput?: PlanSchema;
     precondition?: () => void;
   }
 ): Promise<void> {
   const rows = getPlansByProject(db, planRow.project_id);
   const idToUuid = new Map(rows.map((row) => [row.plan_id, row.uuid]));
   const currentPlan = loadPlanSchemaFromRow(db, planRow);
-  const rawNextPlan = nextPlanInput as PlanSchema;
-  const rawLegacyReason = getPlanWriteLegacyReason(
-    db,
-    planRow.project_id,
-    rawNextPlan,
-    idToUuid,
-    rows
-  );
-
-  if (rawLegacyReason) {
-    if (resolveWriteMode(config) !== 'local-operation') {
-      throw new Error(`${options.legacyErrorMessage}: ${rawLegacyReason}`);
-    }
-    writePlansLegacyDirectTransactionally(
-      db,
-      planRow.project_id,
-      [options.legacyPlanInput ?? rawNextPlan],
-      idToUuid,
-      rows,
-      { precondition: options.precondition }
-    );
-    return;
-  }
-
   const nextPlan = preparePlanForWrite(nextPlanInput);
   const existingRow = getPlanByUuid(db, nextPlan.uuid!);
   const batch = await beginSyncBatch(db, config, { precondition: options.precondition });

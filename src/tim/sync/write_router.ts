@@ -350,15 +350,12 @@ export async function beginSyncBatch(
 
 export type SyncBatchHandle = Awaited<ReturnType<typeof beginSyncBatch>>;
 
-function requireProjectUuid(project: { uuid: string | null } | null, label: string): string {
-  if (!project?.uuid) {
-    throw new Error(`${label} does not have a sync UUID`);
+export function getProjectUuidForId(db: Database, projectId: number): string {
+  const project = getProjectById(db, projectId);
+  if (!project) {
+    throw new Error(`Project ${projectId} not found`);
   }
   return project.uuid;
-}
-
-export function getProjectUuidForId(db: Database, projectId: number): string {
-  return requireProjectUuid(getProjectById(db, projectId), `Project ${projectId}`);
 }
 
 export function getProjectIdForUuid(db: Database, projectUuid: string): number {

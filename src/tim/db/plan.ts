@@ -128,10 +128,9 @@ function replacePlanTasks(
       .filter((task): task is PlanTaskRow & { uuid: string } => typeof task.uuid === 'string')
       .map((task) => [task.uuid, task])
   );
-  const existingByIndex = new Map(existingTasks.map((task) => [task.task_index, task]));
 
   const normalizedTasks = tasks.map((task, index) => {
-    const existing = task.uuid ? existingByUuid.get(task.uuid) : existingByIndex.get(index);
+    const existing = task.uuid ? existingByUuid.get(task.uuid) : undefined;
     const done = task.done ? 1 : 0;
     const unchanged =
       existing &&
@@ -141,7 +140,7 @@ function replacePlanTasks(
       existing.task_index === index;
 
     return {
-      uuid: task.uuid ?? existing?.uuid ?? crypto.randomUUID(),
+      uuid: task.uuid ?? crypto.randomUUID(),
       title: task.title,
       description: task.description,
       done,

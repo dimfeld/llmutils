@@ -610,6 +610,14 @@ syncCommand
     await handleSyncResolveCommand(conflictId, options, command).catch(handleCommandError);
   });
 
+syncCommand
+  .command('backfill-uuids')
+  .description('Add UUIDs to DB plan and plan task rows whose uuid column is NULL')
+  .action(async () => {
+    const { handleBackfillUuidsCommand } = await import('./commands/backfill-uuids.js');
+    await handleBackfillUuidsCommand().catch(handleCommandError);
+  });
+
 program
   .command('materialize <planId>')
   .description('Materialize a plan from the database to .tim/plans/ for editing')

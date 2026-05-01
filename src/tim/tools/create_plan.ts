@@ -7,11 +7,9 @@ import {
 } from '../plan_materialize.js';
 import {
   applyPlanWritePostCommitUpdates,
-  getPlanWriteLegacyReason,
   preparePlanForWrite,
   resolvePlanByNumericId,
   routePlanWriteIntoBatch,
-  writePlansLegacyDirectTransactionally,
 } from '../plans.js';
 import { validateTags } from '../utils/tags.js';
 import { ensureReferences } from '../utils/references.js';
@@ -125,7 +123,6 @@ export async function createPlanTool(
   const idToUuid = new Map(projectContext.planIdToUuid).set(nextId, updatedPlan.uuid!);
   const preparedNewPlan = preparePlanForWrite(updatedPlan);
   let preparedParent: PlanSchema | null = null;
-  let legacyParent: PlanSchema | null = null;
   let parentExistingRow: PlanRow | null = null;
   let parentCurrentForDiff: PlanSchema | undefined;
 
@@ -158,10 +155,10 @@ export async function createPlanTool(
       const { updatedPlan: referencedParent } = ensureReferences(updatedParent, {
         planIdToUuid: idToUuid,
       });
-      legacyParent = preparePlanForWrite(referencedParent);
+      const nextPreparedParent = preparePlanForWrite(referencedParent);
 
       if (parentNeedsStatus) {
-        preparedParent = legacyParent;
+        preparedParent = nextPreparedParent;
         parentExistingRow = freshParentRow;
         parentCurrentForDiff = parentNeedsDependency
           ? {
@@ -177,60 +174,33 @@ export async function createPlanTool(
     }
   }
 
-  const routedPlans = [preparedNewPlan, ...(preparedParent ? [preparedParent] : [])];
-  const legacyPlans = [preparedNewPlan, ...(legacyParent ? [legacyParent] : [])];
-  const legacyReason = legacyPlans
-    .map((routedPlan) =>
-      getPlanWriteLegacyReason(
-        db,
-        projectContext.projectId,
-        routedPlan,
-        idToUuid,
-        projectContext.rows
-      )
-    )
-    .find((reason): reason is string => reason !== null);
-
-  if (legacyReason) {
-    if (writeMode !== 'local-operation') {
-      throw new Error(`Cannot create child plan with sync-routed writes: ${legacyReason}`);
-    }
-    writePlansLegacyDirectTransactionally(
+  const batch = await beginSyncBatch(db, context.config);
+  const postCommitUpdates = [
+    ...routePlanWriteIntoBatch(
+      batch,
       db,
+      context.config,
       projectContext.projectId,
-      legacyPlans,
-      idToUuid,
-      projectContext.rows
-    );
-  } else {
-    const batch = await beginSyncBatch(db, context.config);
-    const postCommitUpdates = [
-      ...routePlanWriteIntoBatch(
-        batch,
-        db,
-        context.config,
-        projectContext.projectId,
-        preparedNewPlan,
-        idToUuid
-      ),
-      ...(preparedParent
-        ? routePlanWriteIntoBatch(
-            batch,
-            db,
-            context.config,
-            projectContext.projectId,
-            preparedParent,
-            idToUuid,
-            {
-              existingRow: parentExistingRow,
-              currentPlan: parentCurrentForDiff,
-            }
-          )
-        : []),
-    ];
-    await batch.commit();
-    applyPlanWritePostCommitUpdates(db, postCommitUpdates);
-  }
+      preparedNewPlan,
+      idToUuid
+    ),
+    ...(preparedParent
+      ? routePlanWriteIntoBatch(
+          batch,
+          db,
+          context.config,
+          projectContext.projectId,
+          preparedParent,
+          idToUuid,
+          {
+            existingRow: parentExistingRow,
+            currentPlan: parentCurrentForDiff,
+          }
+        )
+      : []),
+  ];
+  await batch.commit();
+  applyPlanWritePostCommitUpdates(db, postCommitUpdates);
 
   // Re-materialize parent file after transaction if it existed
   if (parentPlan && parentMaterializedExists) {

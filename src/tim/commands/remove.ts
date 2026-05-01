@@ -16,19 +16,16 @@ import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import {
   applyPlanWritePostCommitUpdates,
-  getPlanWriteLegacyReason,
   preparePlanForWrite,
   resolvePlanByNumericId,
   routePlanWriteIntoBatch,
   writePlanFile,
-  writePlansLegacyDirectTransactionally,
 } from '../plans.js';
 import { invertPlanIdToUuidMap, loadPlansFromDb, planRowForTransaction } from '../plans_db.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ensureReferences } from '../utils/references.js';
 import { addPlanDeleteToBatch, beginSyncBatch, getProjectUuidForId } from '../sync/write_router.js';
-import { resolveWriteMode } from '../sync/write_mode.js';
 
 interface RemoveCommandOptions {
   force?: boolean;
@@ -163,7 +160,6 @@ export async function handleRemoveCommand(
   const db = getDatabase();
   const projectUuid = getProjectUuidForId(db, context.projectId);
   const idToUuid = new Map(context.planIdToUuid);
-  const writeMode = resolveWriteMode(config);
   const preparedAffectedPlans: PlanSchema[] = [];
   for (const [planId, plan] of affectedPlans.entries()) {
     const row = getPlanByPlanId(db, context.projectId, planId);
@@ -174,51 +170,18 @@ export async function handleRemoveCommand(
     preparedAffectedPlans.push(preparePlanForWrite(updatedPlan));
   }
 
-  const targetLegacyReason =
-    targetResolutions
-      .map((target) =>
-        getPlanWriteLegacyReason(db, context.projectId, target.plan, idToUuid, context.rows)
-      )
-      .find((reason): reason is string => reason !== null) ?? null;
-  const affectedLegacyReason =
-    preparedAffectedPlans
-      .map((plan) => getPlanWriteLegacyReason(db, context.projectId, plan, idToUuid, context.rows))
-      .find((reason): reason is string => reason !== null) ?? null;
-  const legacyReason = targetLegacyReason ?? affectedLegacyReason;
-
-  if (legacyReason) {
-    if (writeMode !== 'local-operation') {
-      throw new Error(`Cannot remove plans with sync-routed writes: ${legacyReason}`);
-    }
-    writePlansLegacyDirectTransactionally(
-      db,
-      context.projectId,
-      preparedAffectedPlans,
-      idToUuid,
-      context.rows,
-      {
-        deletePlanUuids: targetResolutions
-          .map((target) => target.plan.uuid)
-          .filter((uuid): uuid is string => typeof uuid === 'string' && uuid.length > 0),
-        deletePlanIds: targetResolutions
-          .filter((target) => !target.plan.uuid)
-          .map((target) => target.plan.id),
-      }
-    );
-  } else {
-    const batch = await beginSyncBatch(db, config);
-    const postCommitUpdates = preparedAffectedPlans.flatMap((plan) =>
-      routePlanWriteIntoBatch(batch, db, config, context.projectId, plan, idToUuid)
-    );
-    for (const target of targetResolutions) {
-      addPlanDeleteToBatch(batch, projectUuid, {
-        planUuid: target.plan.uuid!,
-        baseRevision: target.plan.revision,
-      });
-    }
-    await batch.commit();
-    applyPlanWritePostCommitUpdates(db, postCommitUpdates);
+  const batch = await beginSyncBatch(db, config);
+  const postCommitUpdates = preparedAffectedPlans.flatMap((plan) =>
+    routePlanWriteIntoBatch(batch, db, config, context.projectId, plan, idToUuid)
+  );
+  for (const target of targetResolutions) {
+    addPlanDeleteToBatch(batch, projectUuid, {
+      planUuid: target.plan.uuid!,
+      baseRevision: target.plan.revision,
+    });
   }
+  await batch.commit();
+  applyPlanWritePostCommitUpdates(db, postCommitUpdates);
 
   const refreshedContext = await resolveProjectContext(repoRoot, repository);
   for (const [planId, outputPath] of affectedOutputPaths.entries()) {

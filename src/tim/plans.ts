@@ -53,8 +53,6 @@ import {
   getProjectUuidForId,
   type SyncBatchHandle,
 } from './sync/write_router.js';
-import { SyncUuidSchema } from './sync/entity_keys.js';
-import { resolveWriteMode } from './sync/write_mode.js';
 
 export class NoFrontmatterError extends Error {
   constructor(filePath: string) {
@@ -407,8 +405,8 @@ export async function collectDependenciesInOrder(
 /**
  * Reads and parses a plan file from disk.
  *
- * UUIDs remain absent when absent on disk so DB writes can distinguish older
- * UUID-less files from newly inserted plans/tasks with explicit identities.
+ * UUIDs remain absent when absent on disk; write paths assign new identities
+ * when they persist plans or tasks.
  */
 export async function readPlanFile(filePath: string): Promise<PlanWithLegacyMetadata> {
   const absolutePath = resolve(filePath);
@@ -540,70 +538,6 @@ function validatePlanForWrite(
   return {
     ...result.data,
     uuid: result.data.uuid,
-  };
-}
-
-function hydrateMissingTaskUuidsFromExistingDb(
-  db: ReturnType<typeof getDatabase>,
-  input: PlanSchemaInput,
-  planUuid: string | undefined
-): PlanSchemaInput {
-  if (!planUuid || !input.tasks.some((task) => !task.uuid)) {
-    return input;
-  }
-
-  const existingTasks = getPlanTasksByUuid(db, planUuid);
-  if (existingTasks.length === 0) {
-    return input;
-  }
-
-  const existingByIndex = new Map(existingTasks.map((task) => [task.task_index, task]));
-  const existingByTitle = new Map<string, typeof existingTasks>();
-  for (const task of existingTasks) {
-    const list = existingByTitle.get(task.title);
-    if (list) {
-      list.push(task);
-    } else {
-      existingByTitle.set(task.title, [task]);
-    }
-  }
-
-  const claimed = new Set<string>();
-  for (const task of input.tasks) {
-    if (task.uuid) {
-      claimed.add(task.uuid);
-    }
-  }
-
-  return {
-    ...input,
-    tasks: input.tasks.map((task, index) => {
-      if (task.uuid) {
-        return task;
-      }
-
-      const byIndex = existingByIndex.get(index);
-      let fallback: (typeof existingTasks)[number] | undefined;
-      if (byIndex && byIndex.uuid && !claimed.has(byIndex.uuid)) {
-        fallback = byIndex;
-      } else {
-        const byTitle = existingByTitle.get(task.title);
-        if (byTitle) {
-          fallback = byTitle.find((candidate) => candidate.uuid && !claimed.has(candidate.uuid));
-        }
-      }
-
-      if (!fallback?.uuid) {
-        return task;
-      }
-
-      claimed.add(fallback.uuid);
-      return {
-        ...task,
-        uuid: fallback.uuid,
-        revision: fallback.revision,
-      };
-    }),
   };
 }
 
@@ -779,72 +713,6 @@ export type PlanWritePostCommitUpdate = {
   baseChangeId: string | null;
 };
 
-function hasValidSyncUuid(value: string | null | undefined): value is string {
-  return typeof value === 'string' && SyncUuidSchema.safeParse(value).success;
-}
-
-function hasLegacyTaskRows(db: ReturnType<typeof getDatabase>, planUuid: string): boolean {
-  return getPlanTasksByUuid(db, planUuid).some((row) => !hasValidSyncUuid(row.uuid));
-}
-
-function hasLegacyReferenceUuids(input: ReturnType<typeof toPlanUpsertInput>): boolean {
-  if (input.parentUuid != null && !hasValidSyncUuid(input.parentUuid)) {
-    return true;
-  }
-  return input.dependencyUuids.some((uuid) => !hasValidSyncUuid(uuid));
-}
-
-function hasLegacyStoredReferenceUuids(
-  db: ReturnType<typeof getDatabase>,
-  existingRow: PlanRow
-): boolean {
-  if (existingRow.parent_uuid != null && !hasValidSyncUuid(existingRow.parent_uuid)) {
-    return true;
-  }
-  return getPlanDependenciesByUuid(db, existingRow.uuid).some(
-    (dependency) => !hasValidSyncUuid(dependency.depends_on_uuid)
-  );
-}
-
-export function getPlanWriteLegacyReason(
-  db: ReturnType<typeof getDatabase>,
-  projectId: number,
-  plan: PlanSchema,
-  idToUuid: Map<number, string>,
-  rows?: PlanRow[]
-): string | null {
-  if (!plan.uuid) {
-    return `plan ${plan.id} has no UUID`;
-  }
-  if (!hasValidSyncUuid(plan.uuid)) {
-    return `plan ${plan.id} has an invalid sync UUID`;
-  }
-
-  const existingRow = getPlanByUuid(db, plan.uuid);
-  const legacyUuidlessRow =
-    existingRow === null
-      ? (rows ?? getPlansByProject(db, projectId)).find(
-          (row) => row.plan_id === plan.id && row.uuid === ''
-        )
-      : null;
-  if (legacyUuidlessRow) {
-    return `existing DB row for plan ${plan.id} has no UUID`;
-  }
-
-  const upsertInput = toPlanUpsertInput(plan, idToUuid);
-  if (existingRow && hasLegacyTaskRows(db, plan.uuid)) {
-    return `plan ${plan.id} contains legacy task rows without UUIDs`;
-  }
-  if (hasLegacyReferenceUuids(upsertInput)) {
-    return `plan ${plan.id} references legacy parent or dependency plans without UUIDs`;
-  }
-  if (existingRow && hasLegacyStoredReferenceUuids(db, existingRow)) {
-    return `plan ${plan.id} references legacy parent or dependency plans without UUIDs`;
-  }
-
-  return null;
-}
-
 export function applyPlanWritePostCommitUpdates(
   db: ReturnType<typeof getDatabase>,
   updates: PlanWritePostCommitUpdate[],
@@ -858,151 +726,6 @@ export function applyPlanWritePostCommitUpdates(
       });
     }
   }
-}
-
-function directUpsertPlanLegacyInTransaction(
-  db: ReturnType<typeof getDatabase>,
-  projectId: number,
-  input: ReturnType<typeof toPlanUpsertInput>,
-  options: {
-    legacyUuidlessRow?: PlanRow | null;
-    existingRow?: PlanRow | null;
-    skipUpdatedAt?: boolean;
-  } = {}
-): void {
-  // SYNC-EXEMPT: legacy local databases can contain pre-sync plan/task rows
-  // without UUIDs. Preserve that upgrade path with one atomic whole-plan write
-  // instead of mixing ad hoc migration writes into the operation batch path.
-  const preservedUpdatedAt =
-    options.skipUpdatedAt === true
-      ? (options.existingRow?.updated_at ?? options.legacyUuidlessRow?.updated_at ?? null)
-      : null;
-  if (options.legacyUuidlessRow) {
-    db.prepare('DELETE FROM plan WHERE uuid = ?').run(options.legacyUuidlessRow.uuid);
-  }
-  upsertPlanInTransaction(db, projectId, {
-    ...input,
-    forceOverwrite: true,
-  });
-  if (preservedUpdatedAt !== null) {
-    db.prepare('UPDATE plan SET updated_at = ? WHERE uuid = ?').run(preservedUpdatedAt, input.uuid);
-  }
-}
-
-function directUpsertPlanLegacy(
-  db: ReturnType<typeof getDatabase>,
-  projectId: number,
-  input: ReturnType<typeof toPlanUpsertInput>,
-  options: {
-    legacyUuidlessRow?: PlanRow | null;
-    existingRow?: PlanRow | null;
-    skipUpdatedAt?: boolean;
-  } = {}
-): void {
-  const writeLegacy = db.transaction(
-    (
-      nextProjectId: number,
-      nextInput: ReturnType<typeof toPlanUpsertInput>,
-      legacyUuidlessRow: PlanRow | null,
-      existingRow: PlanRow | null,
-      skipUpdatedAt: boolean
-    ): void => {
-      directUpsertPlanLegacyInTransaction(db, nextProjectId, nextInput, {
-        legacyUuidlessRow,
-        existingRow,
-        skipUpdatedAt,
-      });
-    }
-  );
-  writeLegacy.immediate(
-    projectId,
-    input,
-    options.legacyUuidlessRow ?? null,
-    options.existingRow ?? null,
-    options.skipUpdatedAt === true
-  );
-}
-
-export function writePlansLegacyDirectTransactionally(
-  db: ReturnType<typeof getDatabase>,
-  projectId: number,
-  plans: PlanSchema[],
-  idToUuid: Map<number, string>,
-  rows?: PlanRow[],
-  options: {
-    skipUpdatedAt?: boolean;
-    deletePlanUuids?: string[];
-    deletePlanIds?: number[];
-    precondition?: () => void;
-  } = {}
-): void {
-  const writes = plans.map((plan) => {
-    const existingRow = getPlanByUuid(db, plan.uuid!);
-    const legacyUuidlessRow =
-      existingRow === null
-        ? (rows ?? getPlansByProject(db, projectId)).find(
-            (row) => row.plan_id === plan.id && row.uuid === ''
-          )
-        : null;
-    return {
-      input: toPlanUpsertInput(plan, idToUuid),
-      existingRow,
-      legacyUuidlessRow,
-    };
-  });
-
-  const writeLegacyPlans = db.transaction(
-    (
-      nextProjectId: number,
-      nextWrites: typeof writes,
-      skipUpdatedAt: boolean,
-      deletePlanUuids: string[],
-      deletePlanIds: number[]
-    ): void => {
-      options.precondition?.();
-      for (const write of nextWrites) {
-        directUpsertPlanLegacyInTransaction(db, nextProjectId, write.input, {
-          existingRow: write.existingRow,
-          legacyUuidlessRow: write.legacyUuidlessRow,
-          skipUpdatedAt,
-        });
-      }
-      for (const planUuid of deletePlanUuids) {
-        // SYNC-EXEMPT: legacy-direct maintenance for local pre-sync rows mirrors
-        // plan.delete's local cleanup without emitting UUID-keyed sync operations.
-        db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? OR depends_on_uuid = ?').run(
-          planUuid,
-          planUuid
-        );
-        db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(planUuid);
-        db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(planUuid);
-        db.prepare('DELETE FROM assignment WHERE project_id = ? AND plan_uuid = ?').run(
-          nextProjectId,
-          planUuid
-        );
-        db.prepare('DELETE FROM plan WHERE project_id = ? AND uuid = ?').run(
-          nextProjectId,
-          planUuid
-        );
-      }
-      for (const planId of deletePlanIds) {
-        // SYNC-EXEMPT: empty-UUID legacy rows cannot be addressed by operation
-        // payloads, so remove them by numeric ID inside the same local transaction.
-        db.prepare('DELETE FROM plan WHERE project_id = ? AND plan_id = ? AND uuid = ?').run(
-          nextProjectId,
-          planId,
-          ''
-        );
-      }
-    }
-  );
-  writeLegacyPlans.immediate(
-    projectId,
-    writes,
-    options.skipUpdatedAt === true,
-    options.deletePlanUuids ?? [],
-    options.deletePlanIds ?? []
-  );
 }
 
 export function routePlanWriteIntoBatch(
@@ -1071,16 +794,6 @@ export function routePlanWriteIntoBatch(
     }
     return postCommitUpdates;
   } else {
-    if (!options.currentPlan && hasLegacyTaskRows(db, plan.uuid!)) {
-      throw new Error(
-        `Cannot route plan ${plan.id} through sync operations because it contains legacy task rows without UUIDs`
-      );
-    }
-    if (!options.currentPlan && hasLegacyStoredReferenceUuids(db, existingRow)) {
-      throw new Error(
-        `Cannot route plan ${plan.id} through sync operations because it references legacy parent or dependency plans without UUIDs`
-      );
-    }
     const current =
       options.currentPlan ?? planRowForTransaction(existingRow, invertPlanIdToUuidMap(idToUuid));
     currentForLists = current;
@@ -1372,59 +1085,7 @@ async function writeValidatedPlanToDb(
   }
   idToUuid.set(plan.id, plan.uuid);
   const { updatedPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });
-  const upsertInput = toPlanUpsertInput(updatedPlan, idToUuid);
   const config = await loadConfigForPlanWrite(options);
-  const mode = resolveWriteMode(config);
-
-  const existingRow = getPlanByUuid(db, updatedPlan.uuid!);
-  const legacyUuidlessRow =
-    existingRow === null
-      ? (projectContext?.rows ?? getPlansByProject(db, projectId)).find(
-          (row) => row.plan_id === updatedPlan.id && row.uuid === ''
-        )
-      : null;
-
-  if (legacyUuidlessRow) {
-    if (mode !== 'local-operation') {
-      throw new Error(
-        `Cannot route plan ${updatedPlan.id} through sync operations because the existing DB row has no UUID`
-      );
-    }
-    directUpsertPlanLegacy(db, projectId, upsertInput, {
-      legacyUuidlessRow,
-      skipUpdatedAt: options?.skipUpdatedAt,
-    });
-    return updatedPlan;
-  }
-
-  if (existingRow && hasLegacyTaskRows(db, updatedPlan.uuid!)) {
-    if (mode !== 'local-operation') {
-      throw new Error(
-        `Cannot route plan ${updatedPlan.id} through sync operations because it contains legacy task rows without UUIDs`
-      );
-    }
-    directUpsertPlanLegacy(db, projectId, upsertInput, {
-      existingRow,
-      skipUpdatedAt: options?.skipUpdatedAt,
-    });
-    return updatedPlan;
-  }
-
-  if (
-    hasLegacyReferenceUuids(upsertInput) ||
-    (existingRow && hasLegacyStoredReferenceUuids(db, existingRow))
-  ) {
-    if (mode !== 'local-operation') {
-      throw new Error(
-        `Cannot route plan ${updatedPlan.id} through sync operations because it references legacy parent or dependency plans without UUIDs`
-      );
-    }
-    directUpsertPlanLegacy(db, projectId, upsertInput, {
-      existingRow,
-      skipUpdatedAt: options?.skipUpdatedAt,
-    });
-    return updatedPlan;
-  }
 
   await routeValidatedPlanToDb(db, config, projectId, updatedPlan, idToUuid, {
     skipUpdatedAt: options?.skipUpdatedAt,
@@ -1455,12 +1116,7 @@ export async function writePlanToDb(
   }
 ): Promise<PlanSchema> {
   const existingUuid = await findExistingPlanUuid(input, options);
-  const hydratedInput = hydrateMissingTaskUuidsFromExistingDb(
-    getDatabase(),
-    existingUuid ? { ...input, uuid: existingUuid } : input,
-    existingUuid
-  );
-  let plan = validatePlanForWrite(hydratedInput, options);
+  let plan = validatePlanForWrite(existingUuid ? { ...input, uuid: existingUuid } : input, options);
   return writeValidatedPlanToDb(plan, {
     ...options,
   });
@@ -1494,12 +1150,7 @@ export async function writePlanFile(
       options?.cwdForIdentity ?? (absolutePath ? path.dirname(absolutePath) : undefined),
     context: options?.context,
   });
-  const hydratedInput = hydrateMissingTaskUuidsFromExistingDb(
-    getDatabase(),
-    existingUuid ? { ...input, uuid: existingUuid } : input,
-    existingUuid
-  );
-  let plan = validatePlanForWrite(hydratedInput, options);
+  let plan = validatePlanForWrite(existingUuid ? { ...input, uuid: existingUuid } : input, options);
   const skipDb = options?.skipDb ?? false;
   const skipFile = options?.skipFile ?? !absolutePath;
 
