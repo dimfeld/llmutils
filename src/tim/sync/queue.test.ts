@@ -163,6 +163,14 @@ function operationRow(operationUuid: string) {
   };
 }
 
+function operationPlanRefs(operationUuid: string) {
+  return db
+    .prepare(
+      'SELECT plan_uuid, role FROM sync_operation_plan_ref WHERE operation_uuid = ? ORDER BY role, plan_uuid'
+    )
+    .all(operationUuid) as Array<{ plan_uuid: string; role: string }>;
+}
+
 function taskOrder(planUuid = PLAN_UUID) {
   return getPlanTasksByUuid(db, planUuid).map((task) => [task.uuid, task.task_index]);
 }
@@ -961,13 +969,12 @@ describe('persistent-node sync queue', () => {
     expect(getAssignment(db, project.id, PLAN_UUID)).toBeNull();
   });
 
-  test('mergeCanonicalRefresh rejects pending plan operations through indexed payload plan UUID', async () => {
+  test('mergeCanonicalRefresh rejects pending plan operations through plan refs', async () => {
     seedPlan();
     const pending = enqueue(await tagOp('local-tag'));
-    const indexed = db
-      .prepare('SELECT payload_plan_uuid FROM sync_operation WHERE operation_uuid = ?')
-      .get(pending.operationUuid) as { payload_plan_uuid: string | null };
-    expect(indexed.payload_plan_uuid).toBe(PLAN_UUID);
+    expect(operationPlanRefs(pending.operationUuid)).toEqual([
+      { plan_uuid: PLAN_UUID, role: 'target' },
+    ]);
 
     mergeCanonicalRefresh(db, {
       type: 'plan_deleted',
@@ -990,18 +997,15 @@ describe('persistent-node sync queue', () => {
     );
 
     const row = db
-      .prepare(
-        'SELECT payload_plan_uuid, payload_task_uuid FROM sync_operation WHERE operation_uuid = ?'
-      )
+      .prepare('SELECT payload_task_uuid FROM sync_operation WHERE operation_uuid = ?')
       .get(op.operationUuid) as {
-      payload_plan_uuid: string | null;
       payload_task_uuid: string | null;
     };
-    expect(row.payload_plan_uuid).toBe(PLAN_UUID);
     expect(row.payload_task_uuid).toBe(TASK_UUID);
+    expect(operationPlanRefs(op.operationUuid)).toEqual([{ plan_uuid: PLAN_UUID, role: 'target' }]);
   });
 
-  test('enqueueOperation populates null payload indexes for project_setting operations', async () => {
+  test('enqueueOperation does not populate plan refs or task index for project_setting operations', async () => {
     const op = enqueue(
       await setProjectSettingOperation(
         { projectUuid: PROJECT_UUID, setting: 'color', value: 'blue' },
@@ -1010,26 +1014,73 @@ describe('persistent-node sync queue', () => {
     );
 
     const row = db
-      .prepare(
-        'SELECT payload_plan_uuid, payload_task_uuid FROM sync_operation WHERE operation_uuid = ?'
-      )
+      .prepare('SELECT payload_task_uuid FROM sync_operation WHERE operation_uuid = ?')
       .get(op.operationUuid) as {
-      payload_plan_uuid: string | null;
       payload_task_uuid: string | null;
     };
-    expect(row.payload_plan_uuid).toBeNull();
     expect(row.payload_task_uuid).toBeNull();
+    expect(operationPlanRefs(op.operationUuid)).toEqual([]);
+  });
+
+  test('enqueueOperation populates all semantic plan refs for graph operations', async () => {
+    seedPlan();
+    seedPlan(db, OTHER_PLAN_UUID, 2, TASK_UUID_2);
+    const newParentUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const previousParentUuid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const newPlanUuid = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    seedPlan(db, newParentUuid, 3, TASK_UUID_3);
+    seedPlan(db, previousParentUuid, 4, TASK_UUID_4);
+
+    const dependencyOp = enqueue(
+      await addPlanDependencyOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, dependsOnPlanUuid: OTHER_PLAN_UUID },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(operationPlanRefs(dependencyOp.operationUuid)).toEqual([
+      { plan_uuid: OTHER_PLAN_UUID, role: 'depends_on' },
+      { plan_uuid: PLAN_UUID, role: 'target' },
+    ]);
+
+    const parentOp = enqueue(
+      await setPlanParentOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, newParentUuid, previousParentUuid },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(operationPlanRefs(parentOp.operationUuid)).toEqual([
+      { plan_uuid: newParentUuid, role: 'new_parent' },
+      { plan_uuid: previousParentUuid, role: 'previous_parent' },
+      { plan_uuid: PLAN_UUID, role: 'target' },
+    ]);
+
+    const createOp = enqueue(
+      await createPlanOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: newPlanUuid,
+          numericPlanId: 11,
+          title: 'Created offline',
+          parentUuid: OTHER_PLAN_UUID,
+          dependencies: [PLAN_UUID],
+        },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(operationPlanRefs(createOp.operationUuid)).toEqual([
+      { plan_uuid: PLAN_UUID, role: 'dependency' },
+      { plan_uuid: OTHER_PLAN_UUID, role: 'parent' },
+      { plan_uuid: newPlanUuid, role: 'target' },
+    ]);
   });
 
   test('mergeCanonicalRefresh never_existed for plan rejects queued ops and deletes local plan', async () => {
     seedPlan();
     const op = enqueue(await tagOp('optimistic-tag'));
 
-    // Confirm payload_plan_uuid is indexed
-    const indexed = db
-      .prepare('SELECT payload_plan_uuid FROM sync_operation WHERE operation_uuid = ?')
-      .get(op.operationUuid) as { payload_plan_uuid: string | null };
-    expect(indexed.payload_plan_uuid).toBe(PLAN_UUID);
+    expect(operationPlanRefs(op.operationUuid)).toEqual([{ plan_uuid: PLAN_UUID, role: 'target' }]);
 
     mergeCanonicalRefresh(db, {
       type: 'never_existed',
@@ -1040,7 +1091,89 @@ describe('persistent-node sync queue', () => {
 
     // Plan is removed locally (never existed on main)
     expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
-    // The queued op is rejected via indexed payload_plan_uuid lookup
+    // The queued op is rejected via indexed plan-ref lookup
+    expect(operationRow(op.operationUuid).status).toBe('rejected');
+  });
+
+  test('mergeCanonicalRefresh plan_deleted rejects queued dependency ops that only reference the deleted plan as depends_on', async () => {
+    seedPlan();
+    seedPlan(db, OTHER_PLAN_UUID, 2, TASK_UUID_2);
+    const op = enqueue(
+      await addPlanDependencyOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, dependsOnPlanUuid: OTHER_PLAN_UUID },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(operationPlanRefs(op.operationUuid)).toContainEqual({
+      plan_uuid: OTHER_PLAN_UUID,
+      role: 'depends_on',
+    });
+
+    mergeCanonicalRefresh(db, {
+      type: 'plan_deleted',
+      projectUuid: PROJECT_UUID,
+      planUuid: OTHER_PLAN_UUID,
+      deletedAt: '2026-01-02T00:00:00.000Z',
+    });
+
+    expect(operationRow(op.operationUuid).status).toBe('rejected');
+  });
+
+  test('mergeCanonicalRefresh never_existed rejects queued parent ops that only reference the missing plan as new_parent', async () => {
+    seedPlan();
+    const parentUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    seedPlan(db, parentUuid, 2, TASK_UUID_2);
+    const op = enqueue(
+      await setPlanParentOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, newParentUuid: parentUuid },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(operationPlanRefs(op.operationUuid)).toContainEqual({
+      plan_uuid: parentUuid,
+      role: 'new_parent',
+    });
+
+    mergeCanonicalRefresh(db, {
+      type: 'never_existed',
+      entityKey: `plan:${parentUuid}`,
+      targetType: 'plan',
+      planUuid: parentUuid,
+    });
+
+    expect(operationRow(op.operationUuid).status).toBe('rejected');
+  });
+
+  test('mergeCanonicalRefresh plan_deleted rejects queued creates that only reference the deleted plan in dependencies', async () => {
+    seedPlan();
+    seedPlan(db, OTHER_PLAN_UUID, 2, TASK_UUID_2);
+    const newPlanUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const op = enqueue(
+      await createPlanOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: newPlanUuid,
+          numericPlanId: 11,
+          title: 'New dependent plan',
+          dependencies: [OTHER_PLAN_UUID],
+        },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(operationPlanRefs(op.operationUuid)).toContainEqual({
+      plan_uuid: OTHER_PLAN_UUID,
+      role: 'dependency',
+    });
+
+    mergeCanonicalRefresh(db, {
+      type: 'plan_deleted',
+      projectUuid: PROJECT_UUID,
+      planUuid: OTHER_PLAN_UUID,
+      deletedAt: '2026-01-02T00:00:00.000Z',
+    });
+
     expect(operationRow(op.operationUuid).status).toBe('rejected');
   });
 
@@ -1097,7 +1230,7 @@ describe('persistent-node sync queue', () => {
     expect(followUpKeys).toEqual([`plan:${PLAN_UUID}`]);
   });
 
-  test('mergeCanonicalRefresh never_existed rejects pending plan.promote_task ops via target_key/payload_plan_uuid', async () => {
+  test('mergeCanonicalRefresh never_existed rejects pending plan.promote_task ops via target_key/plan refs', async () => {
     seedPlan();
     const newPlanUuid = '99999999-9999-4999-8999-999999999999';
     const promoteOp = await promotePlanTaskOperation(
@@ -1112,20 +1245,11 @@ describe('persistent-node sync queue', () => {
     );
     enqueue(promoteOp);
 
-    // payload_plan_uuid falls back to newPlanUuid; sourcePlanUuid lives in
-    // payload_secondary_plan_uuid.
-    const indexed = db
-      .prepare(
-        'SELECT payload_plan_uuid, payload_secondary_plan_uuid, target_key FROM sync_operation WHERE operation_uuid = ?'
-      )
-      .get(promoteOp.operationUuid) as {
-      payload_plan_uuid: string | null;
-      payload_secondary_plan_uuid: string | null;
-      target_key: string;
-    };
-    expect(indexed.payload_plan_uuid).toBe(newPlanUuid);
-    expect(indexed.payload_secondary_plan_uuid).toBe(PLAN_UUID);
-    expect(indexed.target_key).toBe(`plan:${newPlanUuid}`);
+    expect(operationPlanRefs(promoteOp.operationUuid)).toEqual([
+      { plan_uuid: newPlanUuid, role: 'new_plan' },
+      { plan_uuid: PLAN_UUID, role: 'source' },
+      { plan_uuid: newPlanUuid, role: 'target' },
+    ]);
 
     mergeCanonicalRefresh(db, {
       type: 'never_existed',
@@ -1138,7 +1262,7 @@ describe('persistent-node sync queue', () => {
     expect(operationRow(promoteOp.operationUuid).status).toBe('rejected');
   });
 
-  test('mergeCanonicalRefresh plan_deleted for source plan rejects pending plan.promote_task ops via payload_secondary_plan_uuid', async () => {
+  test('mergeCanonicalRefresh plan_deleted for source plan rejects pending plan.promote_task ops via plan refs', async () => {
     seedPlan();
     const newPlanUuid = '88888888-8888-4888-8888-888888888888';
     const promoteOp = await promotePlanTaskOperation(
@@ -1226,7 +1350,7 @@ describe('persistent-node sync queue', () => {
     );
   });
 
-  test('mergeCanonicalRefresh never_existed for source plan rejects pending plan.promote_task ops via payload_secondary_plan_uuid', async () => {
+  test('mergeCanonicalRefresh never_existed for source plan rejects pending plan.promote_task ops via plan refs', async () => {
     seedPlan();
     const newPlanUuid = '77777777-7777-4777-8777-777777777777';
     const promoteOp = await promotePlanTaskOperation(

@@ -856,6 +856,73 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 30,
+    up: `
+      CREATE TABLE sync_operation_plan_ref (
+        operation_uuid TEXT NOT NULL REFERENCES sync_operation(operation_uuid) ON DELETE CASCADE,
+        project_uuid TEXT NOT NULL,
+        plan_uuid TEXT NOT NULL,
+        role TEXT NOT NULL,
+        PRIMARY KEY (operation_uuid, plan_uuid, role)
+      );
+      CREATE INDEX idx_sync_operation_plan_ref_plan_uuid
+        ON sync_operation_plan_ref(plan_uuid);
+      CREATE INDEX idx_sync_operation_plan_ref_project_plan
+        ON sync_operation_plan_ref(project_uuid, plan_uuid);
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.planUuid'), 'target'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.planUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.newPlanUuid'), 'target'
+      FROM sync_operation
+      WHERE operation_type = 'plan.promote_task'
+        AND JSON_EXTRACT(payload, '$.newPlanUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.sourcePlanUuid'), 'source'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.sourcePlanUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.newPlanUuid'), 'new_plan'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.newPlanUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.parentUuid'), 'parent'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.parentUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.newParentUuid'), 'new_parent'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.newParentUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.previousParentUuid'), 'previous_parent'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.previousParentUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.dependsOnPlanUuid'), 'depends_on'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.dependsOnPlanUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT so.operation_uuid, so.project_uuid, je.value, 'dependency'
+      FROM sync_operation AS so, json_each(JSON_EXTRACT(so.payload, '$.dependencies')) AS je
+      WHERE JSON_EXTRACT(so.payload, '$.dependencies') IS NOT NULL;
+
+      DROP INDEX idx_sync_operation_payload_plan_uuid;
+      DROP INDEX idx_sync_operation_payload_secondary_plan_uuid;
+      ALTER TABLE sync_operation DROP COLUMN payload_plan_uuid;
+      ALTER TABLE sync_operation DROP COLUMN payload_secondary_plan_uuid;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

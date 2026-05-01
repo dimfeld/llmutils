@@ -350,7 +350,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(29);
+    expect(version?.version).toBe(30);
     expect(version?.import_completed).toBe(1);
 
     const tables = db
@@ -429,9 +429,20 @@ describe('tim db/database', () => {
       .all()
       .map((row) => row.name);
     expect(syncOperationColumns).toContain('batch_id');
-    expect(syncOperationColumns).toContain('payload_plan_uuid');
-    expect(syncOperationColumns).toContain('payload_secondary_plan_uuid');
+    expect(syncOperationColumns).not.toContain('payload_plan_uuid');
+    expect(syncOperationColumns).not.toContain('payload_secondary_plan_uuid');
     expect(syncOperationColumns).toContain('payload_task_uuid');
+
+    const syncOperationPlanRefColumns = db
+      .query<{ name: string }, []>("PRAGMA table_info('sync_operation_plan_ref')")
+      .all()
+      .map((row) => row.name);
+    expect(syncOperationPlanRefColumns).toEqual([
+      'operation_uuid',
+      'project_uuid',
+      'plan_uuid',
+      'role',
+    ]);
 
     const indices = db
       .query<{ name: string }, []>(
@@ -461,10 +472,12 @@ describe('tim db/database', () => {
     expect(indices).toContain('idx_sync_operation_project_status');
     expect(indices).toContain('idx_sync_operation_status_updated');
     expect(indices).toContain('idx_sync_operation_batch_id');
-    expect(indices).toContain('idx_sync_operation_payload_plan_uuid');
-    expect(indices).toContain('idx_sync_operation_payload_secondary_plan_uuid');
+    expect(indices).not.toContain('idx_sync_operation_payload_plan_uuid');
+    expect(indices).not.toContain('idx_sync_operation_payload_secondary_plan_uuid');
     expect(indices).toContain('idx_sync_operation_payload_task_uuid');
     expect(indices).toContain('idx_sync_operation_target_key');
+    expect(indices).toContain('idx_sync_operation_plan_ref_plan_uuid');
+    expect(indices).toContain('idx_sync_operation_plan_ref_project_plan');
     expect(indices).toContain('idx_sync_conflict_project_status');
     expect(indices).toContain('idx_sync_sequence_project_sequence');
 
@@ -484,7 +497,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(29);
+    expect(version?.version).toBe(30);
     expect(version?.import_completed).toBe(1);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')
@@ -615,7 +628,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(29);
+      expect(schemaVersion?.version).toBe(30);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -769,7 +782,7 @@ describe('tim db/database', () => {
           []
         >('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
         .get();
-      expect(schemaVersion?.version).toBe(29);
+      expect(schemaVersion?.version).toBe(30);
 
       const checkRows = db
         .query<
@@ -1087,7 +1100,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(29);
+      ).toBe(30);
       expect(db.query<{ uuid: string }, []>('SELECT uuid FROM project').get()?.uuid).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
       );
@@ -1114,6 +1127,158 @@ describe('tim db/database', () => {
         .all()
         .map((column) => column.name);
       expect(pendingRollbackColumns).toEqual(['entity_key', 'created_at']);
+    } finally {
+      db.close(false);
+    }
+  });
+
+  test('runMigrations backfills normalized sync operation plan references from schema version 29', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db = new Database(dbPath);
+
+    try {
+      db.exec(`
+        CREATE TABLE schema_version (
+          version INTEGER NOT NULL DEFAULT 0,
+          import_completed INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO schema_version (version, import_completed) VALUES (29, 1);
+
+        CREATE TABLE sync_operation (
+          operation_uuid TEXT PRIMARY KEY,
+          project_uuid TEXT NOT NULL,
+          origin_node_id TEXT NOT NULL,
+          batch_id TEXT,
+          local_sequence INTEGER NOT NULL,
+          target_type TEXT NOT NULL,
+          target_key TEXT NOT NULL,
+          operation_type TEXT NOT NULL,
+          base_revision INTEGER,
+          base_hash TEXT,
+          payload TEXT NOT NULL,
+          payload_plan_uuid TEXT,
+          payload_secondary_plan_uuid TEXT,
+          payload_task_uuid TEXT,
+          status TEXT NOT NULL,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          acked_at TEXT,
+          ack_metadata TEXT,
+          batch_atomic INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX idx_sync_operation_payload_plan_uuid
+          ON sync_operation(payload_plan_uuid);
+        CREATE INDEX idx_sync_operation_payload_secondary_plan_uuid
+          ON sync_operation(payload_secondary_plan_uuid);
+        CREATE INDEX idx_sync_operation_payload_task_uuid
+          ON sync_operation(payload_task_uuid);
+        CREATE INDEX idx_sync_operation_target_key
+          ON sync_operation(target_key);
+      `);
+
+      const insertOperation = db.prepare(`
+        INSERT INTO sync_operation (
+          operation_uuid, project_uuid, origin_node_id, local_sequence, target_type,
+          target_key, operation_type, payload, status, created_at, updated_at
+        ) VALUES (?, ?, 'node-a', ?, 'plan', ?, ?, ?, 'queued', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+      `);
+      const projectUuid = '11111111-1111-4111-8111-111111111111';
+      const planUuid = '22222222-2222-4222-8222-222222222222';
+      const dependencyUuid = '33333333-3333-4333-8333-333333333333';
+      const parentUuid = '44444444-4444-4444-8444-444444444444';
+      const newParentUuid = '55555555-5555-4555-8555-555555555555';
+      const previousParentUuid = '66666666-6666-4666-8666-666666666666';
+      const sourcePlanUuid = '77777777-7777-4777-8777-777777777777';
+      const newPlanUuid = '88888888-8888-4888-8888-888888888888';
+
+      insertOperation.run(
+        'op-create',
+        projectUuid,
+        0,
+        `plan:${planUuid}`,
+        'plan.create',
+        JSON.stringify({
+          type: 'plan.create',
+          planUuid,
+          title: 'Created',
+          parentUuid,
+          dependencies: [dependencyUuid],
+        })
+      );
+      insertOperation.run(
+        'op-dependency',
+        projectUuid,
+        1,
+        `plan:${planUuid}`,
+        'plan.add_dependency',
+        JSON.stringify({ type: 'plan.add_dependency', planUuid, dependsOnPlanUuid: dependencyUuid })
+      );
+      insertOperation.run(
+        'op-parent',
+        projectUuid,
+        2,
+        `plan:${planUuid}`,
+        'plan.set_parent',
+        JSON.stringify({
+          type: 'plan.set_parent',
+          planUuid,
+          newParentUuid,
+          previousParentUuid,
+        })
+      );
+      insertOperation.run(
+        'op-promote',
+        projectUuid,
+        3,
+        `plan:${newPlanUuid}`,
+        'plan.promote_task',
+        JSON.stringify({
+          type: 'plan.promote_task',
+          sourcePlanUuid,
+          taskUuid: '99999999-9999-4999-8999-999999999999',
+          newPlanUuid,
+          title: 'Promoted',
+          parentUuid,
+          dependencies: [dependencyUuid],
+        })
+      );
+
+      runMigrations(db);
+
+      expect(
+        db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
+      ).toBe(30);
+      const syncOperationColumns = db
+        .query<{ name: string }, []>("PRAGMA table_info('sync_operation')")
+        .all()
+        .map((row) => row.name);
+      expect(syncOperationColumns).not.toContain('payload_plan_uuid');
+      expect(syncOperationColumns).not.toContain('payload_secondary_plan_uuid');
+      expect(syncOperationColumns).toContain('payload_task_uuid');
+
+      const refs = db
+        .query<
+          { operation_uuid: string; plan_uuid: string; role: string },
+          []
+        >('SELECT operation_uuid, plan_uuid, role FROM sync_operation_plan_ref ORDER BY operation_uuid, role, plan_uuid')
+        .all();
+      expect(refs).toEqual([
+        { operation_uuid: 'op-create', plan_uuid: dependencyUuid, role: 'dependency' },
+        { operation_uuid: 'op-create', plan_uuid: parentUuid, role: 'parent' },
+        { operation_uuid: 'op-create', plan_uuid: planUuid, role: 'target' },
+        { operation_uuid: 'op-dependency', plan_uuid: dependencyUuid, role: 'depends_on' },
+        { operation_uuid: 'op-dependency', plan_uuid: planUuid, role: 'target' },
+        { operation_uuid: 'op-parent', plan_uuid: newParentUuid, role: 'new_parent' },
+        { operation_uuid: 'op-parent', plan_uuid: previousParentUuid, role: 'previous_parent' },
+        { operation_uuid: 'op-parent', plan_uuid: planUuid, role: 'target' },
+        { operation_uuid: 'op-promote', plan_uuid: dependencyUuid, role: 'dependency' },
+        { operation_uuid: 'op-promote', plan_uuid: newPlanUuid, role: 'new_plan' },
+        { operation_uuid: 'op-promote', plan_uuid: parentUuid, role: 'parent' },
+        { operation_uuid: 'op-promote', plan_uuid: sourcePlanUuid, role: 'source' },
+        { operation_uuid: 'op-promote', plan_uuid: newPlanUuid, role: 'target' },
+      ]);
     } finally {
       db.close(false);
     }
