@@ -17,6 +17,7 @@ import {
 } from './types.js';
 import { shiftTaskIndexesAfterDelete, shiftTaskIndexesForInsert } from './task_indexes.js';
 import { getSyncOperationPayloadIndexes } from './payload_indexes.js';
+import { optimisticSnapshotKeysForOperation } from './rejected_refresh.js';
 
 /**
  * Persistent-node durable queue contract:
@@ -692,15 +693,16 @@ export function pruneAcknowledgedOperations(
  * narrow for Task 6: a single plan with tasks/dependencies/tags/list fields or
  * a single project setting.
  */
-export function mergeCanonicalRefresh(db: Database, snapshot: CanonicalSnapshot): void {
+export function mergeCanonicalRefresh(db: Database, snapshot: CanonicalSnapshot): string[] {
   const parsedSnapshot = CanonicalSnapshotSchema.parse(snapshot);
-  const merge = db.transaction((nextSnapshot: CanonicalSnapshot): void => {
-    writeCanonicalSnapshot(db, nextSnapshot);
+  const merge = db.transaction((nextSnapshot: CanonicalSnapshot): string[] => {
+    const followUpKeys = writeCanonicalSnapshot(db, nextSnapshot);
     for (const operation of pendingOperationsForSnapshot(db, nextSnapshot)) {
       applyLocalOptimisticInTransaction(db, operation);
     }
+    return followUpKeys;
   });
-  merge.immediate(parsedSnapshot);
+  return merge.immediate(parsedSnapshot);
 }
 
 export function allocateLocalSequence(db: Database, originNodeId: string): number {
@@ -1137,10 +1139,9 @@ function applyOptimisticProjectSetting(
   ).run(project.id, op.setting, JSON.stringify(op.value), originNodeId);
 }
 
-function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): void {
+function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): string[] {
   if (snapshot.type === 'never_existed') {
-    writeNeverExistedSnapshot(db, snapshot);
-    return;
+    return writeNeverExistedSnapshot(db, snapshot);
   }
 
   if (snapshot.type === 'plan_deleted') {
@@ -1162,6 +1163,22 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): void
     // sourcePlanUuid is the deleted plan; the primary branch covers their
     // newPlanUuid; target_key covers any future op kinds whose target is the
     // deleted plan but whose payload doesn't carry the UUID under either column.
+    const followUpKeys = collectRejectedOperationSnapshotKeys(
+      db,
+      `
+        SELECT operation_uuid, payload
+        FROM sync_operation
+        WHERE project_uuid = ?
+          AND status IN ('queued', 'failed_retryable')
+          AND (
+            target_key = ?
+            OR payload_plan_uuid = ?
+            OR payload_secondary_plan_uuid = ?
+          )
+      `,
+      [snapshot.projectUuid, `plan:${snapshot.planUuid}`, snapshot.planUuid, snapshot.planUuid],
+      `plan:${snapshot.planUuid}`
+    );
     db.prepare(
       `
         UPDATE sync_operation
@@ -1183,20 +1200,20 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): void
       snapshot.planUuid,
       snapshot.planUuid
     );
-    return;
+    return followUpKeys;
   }
 
   if (snapshot.type === 'project_setting') {
     const project = getProjectByUuid(db, snapshot.projectUuid);
     if (!project) {
-      return;
+      return [];
     }
     if (snapshot.deleted) {
       db.prepare('DELETE FROM project_setting WHERE project_id = ? AND setting = ?').run(
         project.id,
         snapshot.setting
       );
-      return;
+      return [];
     }
     db.prepare(
       `
@@ -1216,12 +1233,12 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): void
       snapshot.updatedAt ?? null,
       snapshot.updatedByNode ?? null
     );
-    return;
+    return [];
   }
 
   const project = getProjectByUuid(db, snapshot.projectUuid);
   if (!project) {
-    return;
+    return [];
   }
   const localPlan = db
     .prepare('SELECT base_commit, base_change_id FROM plan WHERE uuid = ?')
@@ -1277,9 +1294,13 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): void
   if (ASSIGNMENT_CLEANUP_STATUSES.has(snapshot.plan.status)) {
     removeAssignment(db, project.id, snapshot.plan.uuid);
   }
+  return [];
 }
 
-function writeNeverExistedSnapshot(db: Database, snapshot: CanonicalNeverExistedSnapshot): void {
+function writeNeverExistedSnapshot(
+  db: Database,
+  snapshot: CanonicalNeverExistedSnapshot
+): string[] {
   if (snapshot.targetType === 'plan') {
     db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? OR depends_on_uuid = ?').run(
       snapshot.planUuid,
@@ -1288,13 +1309,13 @@ function writeNeverExistedSnapshot(db: Database, snapshot: CanonicalNeverExisted
     db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(snapshot.planUuid);
     db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(snapshot.planUuid);
     db.prepare('DELETE FROM plan WHERE uuid = ?').run(snapshot.planUuid);
-    rejectPendingOperationsForNeverExistedPlan(
+    const followUpKeys = rejectPendingOperationsForNeverExistedPlan(
       db,
       snapshot.entityKey,
       snapshot.planUuid,
       `Target plan ${snapshot.planUuid} never existed on the main node`
     );
-    return;
+    return followUpKeys;
   }
 
   const task = getTask(db, snapshot.taskUuid);
@@ -1302,7 +1323,7 @@ function writeNeverExistedSnapshot(db: Database, snapshot: CanonicalNeverExisted
     db.prepare('DELETE FROM plan_task WHERE uuid = ?').run(snapshot.taskUuid);
     shiftTaskIndexesAfterDelete(db, task.plan_uuid, task.task_index);
   }
-  rejectPendingOperationsForNeverExistedTask(
+  return rejectPendingOperationsForNeverExistedTask(
     db,
     snapshot.entityKey,
     snapshot.taskUuid,
@@ -1315,10 +1336,25 @@ function rejectPendingOperationsForNeverExistedPlan(
   entityKey: string,
   planUuid: string,
   message: string
-): void {
+): string[] {
   // All three branches hit indexes; SQLite uses OR-via-UNION. The secondary
   // branch covers `plan.promote_task` ops whose sourcePlanUuid is the
   // never-existed plan.
+  const followUpKeys = collectRejectedOperationSnapshotKeys(
+    db,
+    `
+      SELECT operation_uuid, payload
+      FROM sync_operation
+      WHERE status IN ('queued', 'failed_retryable')
+        AND (
+          target_key = ?
+          OR payload_plan_uuid = ?
+          OR payload_secondary_plan_uuid = ?
+        )
+    `,
+    [entityKey, planUuid, planUuid],
+    entityKey
+  );
   db.prepare(
     `
       UPDATE sync_operation
@@ -1333,6 +1369,7 @@ function rejectPendingOperationsForNeverExistedPlan(
         )
     `
   ).run(message, entityKey, planUuid, planUuid);
+  return followUpKeys;
 }
 
 function rejectPendingOperationsForNeverExistedTask(
@@ -1340,9 +1377,23 @@ function rejectPendingOperationsForNeverExistedTask(
   entityKey: string,
   taskUuid: string,
   message: string
-): void {
+): string[] {
   // Both branches hit indexes (idx_sync_operation_target_key and
   // idx_sync_operation_payload_task_uuid), so SQLite uses OR-via-UNION.
+  const followUpKeys = collectRejectedOperationSnapshotKeys(
+    db,
+    `
+      SELECT operation_uuid, payload
+      FROM sync_operation
+      WHERE status IN ('queued', 'failed_retryable')
+        AND (
+          target_key = ?
+          OR payload_task_uuid = ?
+        )
+    `,
+    [entityKey, taskUuid],
+    entityKey
+  );
   db.prepare(
     `
       UPDATE sync_operation
@@ -1356,6 +1407,29 @@ function rejectPendingOperationsForNeverExistedTask(
         )
     `
   ).run(message, entityKey, taskUuid);
+  return followUpKeys;
+}
+
+function collectRejectedOperationSnapshotKeys(
+  db: Database,
+  query: string,
+  params: string[],
+  excludedEntityKey: string
+): string[] {
+  const rows = db.prepare(query).all(...params) as Array<{
+    operation_uuid: string;
+    payload: string;
+  }>;
+  const keys = new Set<string>();
+  for (const row of rows) {
+    const op = assertValidPayload(JSON.parse(row.payload) as unknown);
+    for (const key of optimisticSnapshotKeysForOperation(op)) {
+      if (key !== excludedEntityKey) {
+        keys.add(key);
+      }
+    }
+  }
+  return [...keys];
 }
 
 function removeAssignmentForPlan(db: Database, projectUuid: string, planUuid: string): void {
