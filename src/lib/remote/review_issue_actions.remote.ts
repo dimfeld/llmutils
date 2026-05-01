@@ -6,8 +6,8 @@ import * as z from 'zod';
 import { getServerContext } from '$lib/server/init.js';
 import {
   loadPlanSchemaFromRow,
-  writeSinglePlanMutationAtomically,
-} from '$lib/server/atomic_plan_write.js';
+  writeSinglePlanMutationViaBatch,
+} from '$lib/server/plan_batch_write.js';
 import { createTaskFromIssue } from '$tim/commands/review.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import { getReviewById, getReviewIssues, type ReviewIssueRow } from '$tim/db/review.js';
@@ -101,7 +101,7 @@ export const convertReviewIssueToTask = command(
       ],
     };
 
-    await writeSinglePlanMutationAtomically(db, config, plan, nextPlan, {
+    await writeSinglePlanMutationViaBatch(db, config, plan, nextPlan, {
       precondition: () => {
         const latestPlan = getPlanByUuid(db, planUuid);
         if (!latestPlan) {
@@ -143,7 +143,7 @@ export const clearReviewIssues = command(planUuidSchema, async ({ planUuid }) =>
   if (issues.length === 0) {
     return;
   }
-  await writeSinglePlanMutationAtomically(
+  await writeSinglePlanMutationViaBatch(
     db,
     config,
     plan,
@@ -217,7 +217,7 @@ export const addReviewIssueToPlanTask = command(
     const descriptionWithSource = `${newTask.description ?? ''}\n\n${duplicateMarker}`;
     const currentPlan = loadPlanSchemaFromRow(db, plan);
 
-    await writeSinglePlanMutationAtomically(
+    await writeSinglePlanMutationViaBatch(
       db,
       config,
       plan,

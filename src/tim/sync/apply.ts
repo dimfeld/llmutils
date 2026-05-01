@@ -1432,6 +1432,9 @@ function applyConflictResolutionPayload(
   options: ResolveSyncConflictOptions,
   conflictReason: string
 ): Mutation[] {
+  // Conflict resolution is a new local decision on the main node. It
+  // intentionally uses wall-clock updated_at values and does not accept
+  // ApplyOperationOptions/source timestamps from the original operation.
   if (conflictReason === 'tombstoned_target') {
     throw new Error(
       'Tombstoned-target conflicts can only be resolved with --apply-current (discard); the target plan or task no longer exists. To recover the deleted entity, recreate it first via the appropriate command.'
@@ -1505,6 +1508,7 @@ function applyResolvedPlanText(
   if (current === value) {
     return [];
   }
+  // Resolution time is the authoritative update time for conflict resolution.
   db.prepare(
     `UPDATE plan SET ${column} = ?, revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
   ).run(value, envelope.op.planUuid);
@@ -1529,6 +1533,7 @@ function applyResolvedTaskText(
     value,
     envelope.op.taskUuid
   );
+  // Resolution time is the authoritative owning-plan update time.
   bumpPlan(db, envelope.op.planUuid);
   return [taskMutation(db, envelope.op.taskUuid), planMutation(db, envelope.op.planUuid)];
 }

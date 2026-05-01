@@ -11,8 +11,8 @@ import {
 } from '$lib/server/db_queries.js';
 import {
   loadPlanSchemaFromRow,
-  writeSinglePlanMutationAtomically,
-} from '$lib/server/atomic_plan_write.js';
+  writeSinglePlanMutationViaBatch,
+} from '$lib/server/plan_batch_write.js';
 import { clearLaunchLock, isPlanLaunching, setLaunchLock } from '$lib/server/launch_lock.js';
 import { spawnPrFixProcess, spawnPrReviewGuideProcess } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
@@ -90,7 +90,7 @@ export const convertThreadToTask = command(
     const descriptionWithSource = `${newTask.description ?? ''}\n\n[source:review-thread:${threadId}]`;
 
     const currentPlan = loadPlanSchemaFromRow(db, plan);
-    await writeSinglePlanMutationAtomically(
+    await writeSinglePlanMutationViaBatch(
       db,
       config,
       plan,

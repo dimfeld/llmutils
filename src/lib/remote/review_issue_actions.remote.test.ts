@@ -110,17 +110,20 @@ describe('review issue remote actions', () => {
       'Add a focused integration test'
     );
     seedPlan({
-      uuid: 'plan-convert',
+      uuid: '00000000-0000-4000-8000-000000000256',
       planId: 256,
       status: 'needs_review',
       tasks: [{ title: 'Existing task', description: 'Already there', done: false }],
       reviewIssues: [issue, makeIssue('minor', 'style', 'Leftover issue')],
     });
 
-    await invokeCommand(convertReviewIssueToTask, { planUuid: 'plan-convert', issueIndex: 0 });
+    await invokeCommand(convertReviewIssueToTask, {
+      planUuid: '00000000-0000-4000-8000-000000000256',
+      issueIndex: 0,
+    });
 
-    const plan = getPlanByUuid(currentDb, 'plan-convert');
-    const tasks = getPlanTasksByUuid(currentDb, 'plan-convert');
+    const plan = getPlanByUuid(currentDb, '00000000-0000-4000-8000-000000000256');
+    const tasks = getPlanTasksByUuid(currentDb, '00000000-0000-4000-8000-000000000256');
     const createdTask = createTaskFromIssue(issue);
 
     expect(plan?.status).toBe('in_progress');
@@ -284,14 +287,14 @@ describe('review issue remote actions', () => {
 
   test('clearReviewIssues clears the saved review issue list', async () => {
     seedPlan({
-      uuid: 'plan-clear',
+      uuid: '00000000-0000-4000-8000-000000000258',
       planId: 258,
       reviewIssues: [makeIssue('major', 'bug', 'First'), makeIssue('minor', 'style', 'Second')],
     });
 
-    await invokeCommand(clearReviewIssues, { planUuid: 'plan-clear' });
+    await invokeCommand(clearReviewIssues, { planUuid: '00000000-0000-4000-8000-000000000258' });
 
-    const plan = getPlanByUuid(currentDb, 'plan-clear');
+    const plan = getPlanByUuid(currentDb, '00000000-0000-4000-8000-000000000258');
 
     expect(plan?.review_issues).toBeNull();
   });
@@ -386,7 +389,7 @@ describe('review issue remote actions', () => {
       )
     );
     seedPlan({
-      uuid: 'plan-task',
+      uuid: '00000000-0000-4000-8000-000000000259',
       planId: 259,
       status: 'needs_review',
       tasks: [{ title: 'Existing task', description: 'Already there', done: false }],
@@ -400,16 +403,16 @@ describe('review issue remote actions', () => {
       draft: false,
       lastFetchedAt: '2026-03-20T00:00:00.000Z',
     });
-    linkPlanToPr(currentDb, 'plan-task', prStatus.status.id);
+    linkPlanToPr(currentDb, '00000000-0000-4000-8000-000000000259', prStatus.status.id);
 
     await invokeCommand(addReviewIssueToPlanTask, {
       reviewId: review.id,
       issueId: issue.id,
-      planUuid: 'plan-task',
+      planUuid: '00000000-0000-4000-8000-000000000259',
     });
 
-    const plan = getPlanByUuid(currentDb, 'plan-task');
-    const tasks = getPlanTasksByUuid(currentDb, 'plan-task');
+    const plan = getPlanByUuid(currentDb, '00000000-0000-4000-8000-000000000259');
+    const tasks = getPlanTasksByUuid(currentDb, '00000000-0000-4000-8000-000000000259');
     const createdTask = createTaskFromIssue({
       severity: issue.severity,
       category: issue.category,

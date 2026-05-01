@@ -27,7 +27,7 @@ export function resolveWriteMode(config: TimConfig | undefined): WriteMode {
     return 'sync-main';
   }
 
-  if (config?.sync?.role === 'persistent' && !resolveSyncConfig(config).disabled) {
+  if (config?.sync?.role === 'persistent' && resolveSyncConfig(config).enabled) {
     return 'sync-persistent';
   }
 
