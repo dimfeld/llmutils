@@ -5,7 +5,7 @@ import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
 import { getPlanByUuid, getPlanTagsByUuid, getPlanTasksByUuid, upsertPlan } from '../db/plan.js';
 import { SyncFifoGapError, SyncValidationError } from './errors.js';
-import { applyBatch, applyOperation } from './apply.js';
+import { applyBatch, applyOperation, setApplyBatchOperationHookForTesting } from './apply.js';
 import { mergeCanonicalRefresh } from './queue.js';
 import { loadCanonicalSnapshot } from './server.js';
 import {
@@ -301,6 +301,63 @@ describe('main-node sync apply engine', () => {
         )
         .get(duplicateSequence.operationUuid, sibling.operationUuid)
     ).toMatchObject({ count: 0 });
+  });
+
+  test('batch rollback preserves non-validation cause error and chains sibling errors', async () => {
+    seedPlan();
+    const cause = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'cause' },
+      {
+        operationUuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        originNodeId: NODE_A,
+        localSequence: 1,
+      }
+    );
+    const sibling = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'sibling' },
+      {
+        operationUuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        originNodeId: NODE_A,
+        localSequence: 2,
+      }
+    );
+    const originalError = new Error('synthetic non-validation rejection');
+
+    setApplyBatchOperationHookForTesting((index) => {
+      if (index !== 0) {
+        return;
+      }
+      return {
+        status: 'rejected',
+        sequenceIds: [],
+        invalidations: [],
+        acknowledged: true,
+        error: originalError,
+      };
+    });
+    try {
+      const result = applyBatch(
+        db,
+        createBatchEnvelope({
+          batchId: 'dddddddd-dddd-4ddd-8ddd-ddddddddddde',
+          originNodeId: NODE_A,
+          operations: [cause, sibling],
+        })
+      );
+
+      expect(result.status).toBe('rejected');
+      expect(result.error).toBe(originalError);
+      expect(result.results[0].error).toBe(originalError);
+      expect(result.results[1].error).toBeInstanceOf(SyncValidationError);
+      expect(result.results[1].error?.message).toBe(
+        'Operation rolled back because its batch did not commit'
+      );
+      expect(result.results[1].error?.cause).toBe(originalError);
+    } finally {
+      setApplyBatchOperationHookForTesting(null);
+    }
   });
 
   test('batch rejects duplicate operation UUIDs before applying', async () => {

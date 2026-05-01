@@ -4,8 +4,9 @@ import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject } from '../db/project.js';
 import { getTimNodeCursor, insertSyncOperation, upsertTimNode } from '../db/sync_tables.js';
 import { addPlanTagOperation } from './operations.js';
-import { markOperationAcked, markOperationSending } from './queue.js';
+import { enqueueBatch, markOperationAcked, markOperationSending } from './queue.js';
 import { createSyncRunner, flushPendingOperationsOnce } from './runner.js';
+import { createBatchEnvelope } from './types.js';
 
 const clientMocks = vi.hoisted(() => ({
   httpCatchUp: vi.fn(),
@@ -165,6 +166,51 @@ describe('sync runner', () => {
     expect(operationStatus(db, op.operationUuid)).toBe('acked');
     expect(clientMocks.httpFlushOperations).toHaveBeenCalledTimes(1);
     expect(getTimNodeCursor(db, NODE_ID).last_known_sequence_id).toBe(0);
+  });
+
+  test('flushPendingOperationsOnce only marks unprocessed rows retryable when a later frame fails', async () => {
+    const db = createRunnerDb();
+    const batched = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'batched' },
+      { originNodeId: NODE_ID, localSequence: 0 }
+    );
+    enqueueBatch(
+      db,
+      createBatchEnvelope({
+        batchId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        originNodeId: NODE_ID,
+        operations: [batched],
+      })
+    );
+    const later = await insertQueuedTagOperation(db, 'later', 1);
+    clientMocks.httpFlushBatch.mockResolvedValue({
+      ok: true,
+      value: {
+        results: [
+          {
+            operationId: batched.operationUuid,
+            status: 'applied',
+            sequenceIds: [100],
+            invalidations: [],
+          },
+        ],
+        currentSequenceId: 100,
+      },
+    });
+    clientMocks.httpFlushOperations.mockRejectedValue(new Error('second frame failed'));
+
+    await expect(
+      flushPendingOperationsOnce({
+        db,
+        serverUrl: 'http://127.0.0.1:9',
+        nodeId: NODE_ID,
+        token: 'token',
+      })
+    ).rejects.toThrow('second frame failed');
+
+    expect(operationStatus(db, batched.operationUuid)).toBe('acked');
+    expect(operationStatus(db, later.operationUuid)).toBe('failed_retryable');
   });
 
   test('markOperationAcked tolerates operations already acked by another transport', async () => {

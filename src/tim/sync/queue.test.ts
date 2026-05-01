@@ -151,6 +151,16 @@ function opRows() {
   }>;
 }
 
+function operationRow(operationUuid: string) {
+  return db.prepare('SELECT * FROM sync_operation WHERE operation_uuid = ?').get(operationUuid) as {
+    operation_uuid: string;
+    status: string;
+    attempts: number;
+    last_error: string | null;
+    ack_metadata: string | null;
+  };
+}
+
 function taskOrder(planUuid = PLAN_UUID) {
   return getPlanTasksByUuid(db, planUuid).map((task) => [task.uuid, task.task_index]);
 }
@@ -515,6 +525,68 @@ describe('persistent-node sync queue', () => {
     expect(() => markOperationSending(db, op.operationUuid)).toThrow(
       /Illegal sync_operation transition acked -> sending/
     );
+  });
+
+  test('terminal result transitions absorb rows reset to failed_retryable during recovery', async () => {
+    seedPlan();
+    const acked = enqueue(await tagOp('acked-after-reset'));
+    const conflicted = enqueue(await tagOp('conflict-after-reset'));
+    const rejected = enqueue(await tagOp('rejected-after-reset'));
+
+    for (const operation of [acked, conflicted, rejected]) {
+      markOperationSending(db, operation.operationUuid);
+    }
+    const reset = resetSendingOperations(db);
+    expect(reset.map((row) => row.status)).toEqual([
+      'failed_retryable',
+      'failed_retryable',
+      'failed_retryable',
+    ]);
+
+    markOperationAcked(db, acked.operationUuid, { sequenceIds: [1], invalidations: ['plan:x'] });
+    markOperationConflict(db, conflicted.operationUuid, 'conflict-1', {
+      sequenceIds: [],
+      invalidations: [],
+    });
+    markOperationRejected(db, rejected.operationUuid, 'bad operation', {
+      sequenceIds: [],
+      invalidations: [],
+    });
+
+    const ackedRow = operationRow(acked.operationUuid);
+    expect(ackedRow.status).toBe('acked');
+    expect(ackedRow.attempts).toBe(0);
+    expect(JSON.parse(ackedRow.ack_metadata ?? '{}')).toEqual({
+      sequenceIds: [1],
+      invalidations: ['plan:x'],
+    });
+    expect(operationRow(conflicted.operationUuid).status).toBe('conflict');
+    expect(JSON.parse(operationRow(conflicted.operationUuid).ack_metadata ?? '{}')).toEqual({
+      sequenceIds: [],
+      invalidations: [],
+      conflictId: 'conflict-1',
+    });
+    const rejectedRow = operationRow(rejected.operationUuid);
+    expect(rejectedRow.status).toBe('rejected');
+    expect(rejectedRow.last_error).toBe('bad operation');
+    expect(JSON.parse(rejectedRow.ack_metadata ?? '{}')).toEqual({
+      sequenceIds: [],
+      invalidations: [],
+      error: 'bad operation',
+    });
+  });
+
+  test('markOperationAcked still tolerates already terminal rows without overwriting metadata', async () => {
+    seedPlan();
+    const op = enqueue(await tagOp('already-terminal'));
+    markOperationSending(db, op.operationUuid);
+    markOperationAcked(db, op.operationUuid, { sequenceIds: [1] });
+
+    expect(() => markOperationAcked(db, op.operationUuid, { sequenceIds: [2] })).not.toThrow();
+    expect(operationRow(op.operationUuid).status).toBe('acked');
+    expect(JSON.parse(operationRow(op.operationUuid).ack_metadata ?? '{}')).toEqual({
+      sequenceIds: [1],
+    });
   });
 
   test('listPendingOperations returns queued and failed_retryable in origin sequence order', async () => {
