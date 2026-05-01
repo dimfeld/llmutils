@@ -109,6 +109,68 @@ describe('sync transport server and clients', () => {
     ws.close();
   });
 
+  test('rejects WebSocket hello with cursor past current server sequence and preserves history', async () => {
+    const mainDb = createDb();
+    insertSequences(mainDb, 5);
+    const server = startTestServer(mainDb);
+    const ws = await openWebSocket(server);
+
+    ws.send(
+      JSON.stringify({
+        type: 'hello',
+        nodeId: NODE_A,
+        token: TOKEN,
+        lastKnownSequenceId: 999,
+      })
+    );
+
+    expect(await waitForMessage(ws)).toMatchObject({ type: 'error', code: 'invalid_cursor' });
+    // No tim_node_cursor row was ever written for NODE_A, so its missing cursor
+    // protects all five sequences from peer-based pruning.
+    expect(pruneSyncSequence(mainDb, { retentionMaxAgeMs: 365 * 24 * 60 * 60 * 1000 })).toBe(0);
+    expect(sequenceIds(mainDb)).toEqual([1, 2, 3, 4, 5]);
+    ws.close();
+  });
+
+  test('rejects WebSocket catch_up_request with cursor past current server sequence and preserves history', async () => {
+    const mainDb = createDb();
+    insertSequences(mainDb, 5);
+    const server = startTestServer(mainDb);
+    const ws = await authenticatedWebSocket(server, NODE_A);
+
+    // Authenticated hello with no lastKnownSequenceId leaves cursor at 0.
+    expect(getTimNodeCursor(mainDb, NODE_A).last_known_sequence_id).toBe(0);
+
+    ws.send(JSON.stringify({ type: 'catch_up_request', sinceSequenceId: 999 }));
+
+    expect(await waitForMessage(ws)).toMatchObject({ type: 'error', code: 'invalid_cursor' });
+    // Cursor untouched; retention still protected by NODE_A's cursor=0.
+    expect(getTimNodeCursor(mainDb, NODE_A).last_known_sequence_id).toBe(0);
+    expect(pruneSyncSequence(mainDb, { retentionMaxAgeMs: 365 * 24 * 60 * 60 * 1000 })).toBe(0);
+    expect(sequenceIds(mainDb)).toEqual([1, 2, 3, 4, 5]);
+    ws.close();
+  });
+
+  test('rejects HTTP catch-up sinceSequenceId past current server sequence and preserves history', async () => {
+    const mainDb = createDb();
+    insertSequences(mainDb, 5);
+    const server = startTestServer(mainDb);
+
+    const url = new URL('/internal/sync/catch-up', serverUrl(server));
+    url.searchParams.set('sinceSequenceId', '999');
+    const response = await fetch(url, {
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        'x-tim-node-id': NODE_A,
+      },
+    });
+
+    expect(response.status).toBe(400);
+    // No cursor row ever written; retention still protected.
+    expect(pruneSyncSequence(mainDb, { retentionMaxAgeMs: 365 * 24 * 60 * 60 * 1000 })).toBe(0);
+    expect(sequenceIds(mainDb)).toEqual([1, 2, 3, 4, 5]);
+  });
+
   test('rejects protocol frames before hello', async () => {
     const server = startTestServer(createDb());
     const ws = await openWebSocket(server);

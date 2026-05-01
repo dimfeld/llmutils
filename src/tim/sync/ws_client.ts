@@ -36,6 +36,7 @@ export interface SyncClientOptions {
   reconnect?: boolean;
   minReconnectDelayMs?: number;
   maxReconnectDelayMs?: number;
+  snapshotRequestTimeoutMs?: number;
 }
 
 export interface SyncClientStatus {
@@ -90,6 +91,7 @@ class WebSocketSyncClient implements SyncClient {
     {
       resolve: (snapshots: CanonicalSnapshot[]) => void;
       reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
     }
   >();
   private catchUpWaiter: {
@@ -153,7 +155,16 @@ class WebSocketSyncClient implements SyncClient {
     await this.waitUntilConnected();
     const requestId = crypto.randomUUID();
     return new Promise<CanonicalSnapshot[]>((resolve, reject) => {
-      this.snapshotWaiters.set(requestId, { resolve, reject });
+      const timer = setTimeout(() => {
+        const waiter = this.snapshotWaiters.get(requestId);
+        if (!waiter) {
+          return;
+        }
+        this.snapshotWaiters.delete(requestId);
+        clearTimeout(waiter.timer);
+        waiter.reject(new Error('Sync snapshot request timed out'));
+      }, this.options.snapshotRequestTimeoutMs ?? 30_000);
+      this.snapshotWaiters.set(requestId, { resolve, reject, timer });
       this.send({ type: 'snapshot_request', requestId, entityKeys: [...new Set(keys)] });
     });
   }
@@ -228,6 +239,7 @@ class WebSocketSyncClient implements SyncClient {
           this.reconnectAttempts = 0;
           this.events.emit('connected', frame);
           this.startFlushLoop();
+          resetSendingOperations(this.options.db, { originNodeId: this.options.nodeId });
           await this.catchUpFrom(getTimNodeCursor(this.options.db, this.options.nodeId));
           await this.flushPending();
           return;
@@ -251,8 +263,7 @@ class WebSocketSyncClient implements SyncClient {
           this.events.emit('invalidated', frame);
           return;
         case 'snapshot_response':
-          this.snapshotWaiters.get(frame.requestId)?.resolve(frame.snapshots);
-          this.snapshotWaiters.delete(frame.requestId);
+          this.resolveSnapshotWaiter(frame.requestId, frame.snapshots);
           return;
         case 'ping':
           this.send({ type: 'pong' });
@@ -529,9 +540,20 @@ class WebSocketSyncClient implements SyncClient {
 
   private rejectSnapshotWaiters(error: Error): void {
     for (const waiter of this.snapshotWaiters.values()) {
+      clearTimeout(waiter.timer);
       waiter.reject(error);
     }
     this.snapshotWaiters.clear();
+  }
+
+  private resolveSnapshotWaiter(requestId: string, snapshots: CanonicalSnapshot[]): void {
+    const waiter = this.snapshotWaiters.get(requestId);
+    if (!waiter) {
+      return;
+    }
+    this.snapshotWaiters.delete(requestId);
+    clearTimeout(waiter.timer);
+    waiter.resolve(snapshots);
   }
 }
 

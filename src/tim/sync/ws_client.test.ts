@@ -99,6 +99,56 @@ describe('sync WebSocket client', () => {
     expect(row.status).toBe('acked');
   });
 
+  test('reconnect hello_ack resets crash-stranded sending operations before flushing', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    seedPlan(localDb);
+    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
+    const port = await getAvailablePort();
+    let server = startServer(mainDb, port);
+    const client = createSyncClient({
+      db: localDb,
+      serverUrl: `http://127.0.0.1:${port}`,
+      nodeId: NODE_A,
+      token: TOKEN,
+      minReconnectDelayMs: 10,
+      maxReconnectDelayMs: 20,
+    });
+    clients.push(client);
+    client.start();
+    await waitFor(() => client.getStatus().connected);
+
+    server.stop();
+    servers.splice(servers.indexOf(server), 1);
+    await waitFor(() => !client.getStatus().connected);
+
+    const op = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'recover-on-reconnect' },
+      { originNodeId: NODE_A, localSequence: 999 }
+    );
+    const queued = enqueueOperation(localDb, op).operation;
+    markOperationSending(localDb, queued.operationUuid);
+    expect(
+      localDb
+        .prepare('SELECT status FROM sync_operation WHERE operation_uuid = ?')
+        .get(queued.operationUuid)
+    ).toMatchObject({ status: 'sending' });
+
+    server = startServer(mainDb, port);
+
+    await waitFor(() => {
+      const row = localDb
+        .prepare('SELECT status FROM sync_operation WHERE operation_uuid = ?')
+        .get(queued.operationUuid) as { status: string };
+      return row.status === 'acked';
+    }, 3000);
+    expect(getPlanTagsByUuid(mainDb, PLAN_UUID).map((tag) => tag.tag)).toEqual([
+      'recover-on-reconnect',
+    ]);
+  });
+
   test('flushes operations enqueued after the live connection is established', async () => {
     const mainDb = createDb();
     const localDb = createDb();
@@ -245,6 +295,88 @@ describe('sync WebSocket client', () => {
 
     await waitFor(() => getPlanTagsByUuid(localDb, PLAN_UUID).some((tag) => tag.tag === 'raced'));
     await expect(publicRequest).resolves.toHaveLength(1);
+  });
+
+  test('snapshot requests time out and remove their waiter', async () => {
+    const localDb = createDb();
+    seedPlan(localDb);
+    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
+    const server = startUnresponsiveSnapshotServer();
+    const client = createSyncClient({
+      db: localDb,
+      serverUrl: `http://127.0.0.1:${server.port}`,
+      nodeId: NODE_A,
+      token: TOKEN,
+      reconnect: false,
+      snapshotRequestTimeoutMs: 20,
+    });
+    clients.push(client);
+    client.start();
+    await waitFor(() => client.getStatus().connected);
+
+    await expect(client.requestSnapshots([`plan:${PLAN_UUID}`])).rejects.toThrow(
+      'Sync snapshot request timed out'
+    );
+    expect(snapshotWaiterCount(client)).toBe(0);
+  });
+
+  test('late snapshot_response with unknown requestId does not crash client', async () => {
+    const localDb = createDb();
+    seedPlan(localDb);
+    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
+    const server = startLateSnapshotServer();
+    const client = createSyncClient({
+      db: localDb,
+      serverUrl: `http://127.0.0.1:${server.port}`,
+      nodeId: NODE_A,
+      token: TOKEN,
+      reconnect: false,
+      snapshotRequestTimeoutMs: 30,
+    });
+    clients.push(client);
+    client.start();
+    await waitFor(() => client.getStatus().connected);
+
+    // The request will time out before the server responds; after timeout the
+    // waiter is removed.  The late response arriving later must not crash.
+    const errors: Error[] = [];
+    client.on('error', (err) => errors.push(err as Error));
+
+    await expect(client.requestSnapshots([`plan:${PLAN_UUID}`])).rejects.toThrow(
+      'Sync snapshot request timed out'
+    );
+    expect(snapshotWaiterCount(client)).toBe(0);
+
+    // Give the server time to send the late response and the client time to
+    // process it.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Client should still be healthy — no crash, no unhandled error events.
+    expect(errors).toHaveLength(0);
+    expect(client.getStatus().connected).toBe(true);
+  });
+
+  test('snapshot responses resolve before timeout and clear their waiter', async () => {
+    const localDb = createDb();
+    seedPlan(localDb);
+    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
+    const server = startImmediateSnapshotServer();
+    const client = createSyncClient({
+      db: localDb,
+      serverUrl: `http://127.0.0.1:${server.port}`,
+      nodeId: NODE_A,
+      token: TOKEN,
+      reconnect: false,
+      snapshotRequestTimeoutMs: 1000,
+    });
+    clients.push(client);
+    client.start();
+    await waitFor(() => client.getStatus().connected);
+
+    await expect(client.requestSnapshots([`plan:${PLAN_UUID}`])).resolves.toMatchObject([
+      { type: 'plan', plan: { tags: ['immediate'] } },
+    ]);
+    expect(snapshotWaiterCount(client)).toBe(0);
   });
 
   test('rejects waiters and reconnects after a malformed snapshot response during flush', async () => {
@@ -556,14 +688,165 @@ function seedPlan(db: Database): void {
   });
 }
 
-function startServer(db: Database): SyncServerHandle {
+function startServer(db: Database, port = 0): SyncServerHandle {
   const server = startSyncServer({
     db,
     mainNodeId: 'main-node',
     allowedNodes: [{ nodeId: NODE_A, tokenHash: hashToken(TOKEN) }],
-    port: 0,
+    port,
   });
   servers.push(server);
+  return server;
+}
+
+function startLateSnapshotServer(): { port: number; stop(force?: boolean): void } {
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch(request, serverRef) {
+      if (new URL(request.url).pathname !== '/sync/ws') {
+        return new Response('Not Found\n', { status: 404 });
+      }
+      if (serverRef.upgrade(request)) {
+        return;
+      }
+      return new Response('WebSocket upgrade failed\n', { status: 400 });
+    },
+    websocket: {
+      message(ws, rawMessage) {
+        const frame = JSON.parse(rawToString(rawMessage)) as SyncClientFrame;
+        if (frame.type === 'hello') {
+          ws.send(
+            JSON.stringify({
+              type: 'hello_ack',
+              mainNodeId: 'main-node',
+              currentSequenceId: 0,
+            })
+          );
+          return;
+        }
+        if (frame.type === 'catch_up_request') {
+          ws.send(
+            JSON.stringify({
+              type: 'catch_up_response',
+              invalidations: [],
+              currentSequenceId: 0,
+            })
+          );
+          return;
+        }
+        if (frame.type === 'snapshot_request') {
+          // Delay beyond the client's snapshotRequestTimeoutMs (30ms in the
+          // test) so the waiter has already been removed when the response
+          // arrives.
+          setTimeout(() => {
+            ws.send(
+              JSON.stringify({
+                type: 'snapshot_response',
+                requestId: frame.requestId,
+                snapshots: [planSnapshotWithTag('late')],
+              })
+            );
+          }, 200);
+        }
+      },
+    },
+  });
+  rawServers.push(server);
+  return server;
+}
+
+function startUnresponsiveSnapshotServer(): { port: number; stop(force?: boolean): void } {
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch(request, serverRef) {
+      if (new URL(request.url).pathname !== '/sync/ws') {
+        return new Response('Not Found\n', { status: 404 });
+      }
+      if (serverRef.upgrade(request)) {
+        return;
+      }
+      return new Response('WebSocket upgrade failed\n', { status: 400 });
+    },
+    websocket: {
+      message(ws, rawMessage) {
+        const frame = JSON.parse(rawToString(rawMessage)) as SyncClientFrame;
+        if (frame.type === 'hello') {
+          ws.send(
+            JSON.stringify({
+              type: 'hello_ack',
+              mainNodeId: 'main-node',
+              currentSequenceId: 0,
+            })
+          );
+          return;
+        }
+        if (frame.type === 'catch_up_request') {
+          ws.send(
+            JSON.stringify({
+              type: 'catch_up_response',
+              invalidations: [],
+              currentSequenceId: 0,
+            })
+          );
+        }
+      },
+    },
+  });
+  rawServers.push(server);
+  return server;
+}
+
+function startImmediateSnapshotServer(): { port: number; stop(force?: boolean): void } {
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch(request, serverRef) {
+      if (new URL(request.url).pathname !== '/sync/ws') {
+        return new Response('Not Found\n', { status: 404 });
+      }
+      if (serverRef.upgrade(request)) {
+        return;
+      }
+      return new Response('WebSocket upgrade failed\n', { status: 400 });
+    },
+    websocket: {
+      message(ws, rawMessage) {
+        const frame = JSON.parse(rawToString(rawMessage)) as SyncClientFrame;
+        if (frame.type === 'hello') {
+          ws.send(
+            JSON.stringify({
+              type: 'hello_ack',
+              mainNodeId: 'main-node',
+              currentSequenceId: 0,
+            })
+          );
+          return;
+        }
+        if (frame.type === 'catch_up_request') {
+          ws.send(
+            JSON.stringify({
+              type: 'catch_up_response',
+              invalidations: [],
+              currentSequenceId: 0,
+            })
+          );
+          return;
+        }
+        if (frame.type === 'snapshot_request') {
+          ws.send(
+            JSON.stringify({
+              type: 'snapshot_response',
+              requestId: frame.requestId,
+              snapshots: [planSnapshotWithTag('immediate')],
+            })
+          );
+        }
+      },
+    },
+  });
+  rawServers.push(server);
   return server;
 }
 
@@ -919,6 +1202,34 @@ function planSnapshotWithTags(tags: string[]) {
       tags,
     },
   };
+}
+
+function snapshotWaiterCount(client: SyncClient): number {
+  return (
+    client as unknown as {
+      snapshotWaiters: Map<string, unknown>;
+    }
+  ).snapshotWaiters.size;
+}
+
+async function getAvailablePort(): Promise<number> {
+  const server = Bun.listen({
+    hostname: '127.0.0.1',
+    port: 0,
+    socket: {
+      open() {},
+      close() {},
+      drain() {},
+      data() {},
+      error() {},
+      end() {},
+      timeout() {},
+      connectError() {},
+    },
+  });
+  const { port } = server;
+  server.stop(true);
+  return port;
 }
 
 async function waitFor(condition: () => boolean, timeoutMs = 2000): Promise<void> {
