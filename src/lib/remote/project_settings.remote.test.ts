@@ -501,6 +501,64 @@ describe('project settings remote actions', () => {
     expect(getProjectSetting(currentDb, projectId, 'color')).toBe('#e74c3c');
   });
 
+  test('empty settings array is a no-op and does not error', async () => {
+    await expect(
+      invokeCommand(updateProjectSettings, {
+        projectId,
+        settings: [],
+      })
+    ).resolves.toBeUndefined();
+  });
+
+  test('mixed set and delete in one batch both apply', async () => {
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'color',
+      value: '#e74c3c',
+      baseRevision: 0,
+    });
+
+    await expect(
+      invokeCommand(updateProjectSettings, {
+        projectId,
+        settings: [
+          { setting: 'abbreviation', value: 'AB', baseRevision: 0 },
+          // empty string triggers delete
+          { setting: 'color', value: '', baseRevision: 1 },
+        ],
+      })
+    ).resolves.toBeUndefined();
+
+    expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBe('AB');
+    expect(getProjectSetting(currentDb, projectId, 'color')).toBeNull();
+  });
+
+  test('mixed set and delete in one batch both roll back when delete has stale revision', async () => {
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'color',
+      value: '#e74c3c',
+      baseRevision: 0,
+    });
+
+    await expect(
+      invokeCommand(updateProjectSettings, {
+        projectId,
+        settings: [
+          { setting: 'abbreviation', value: 'AB', baseRevision: 0 },
+          // stale revision for delete — should conflict and roll back abbreviation too
+          { setting: 'color', value: '', baseRevision: 0 },
+        ],
+      })
+    ).rejects.toMatchObject({
+      name: 'SyncWriteConflictError',
+    });
+
+    // Neither setting should have changed
+    expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBeNull();
+    expect(getProjectSetting(currentDb, projectId, 'color')).toBe('#e74c3c');
+  });
+
   test('rejects a batch before writing any settings when one value is invalid', async () => {
     await invokeCommand(updateProjectSetting, {
       projectId,
