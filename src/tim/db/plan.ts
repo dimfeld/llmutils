@@ -1,6 +1,8 @@
 import type { Database } from 'bun:sqlite';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
+import type { TimConfig } from '../configSchema.js';
 import type { PlanSchema } from '../planSchema.js';
+import { getProjectById } from './project.js';
 
 export interface PlanRow {
   uuid: string;
@@ -632,8 +634,37 @@ export function getPlansByParentUuid(
     .all(projectId, parentUuid) as PlanRow[];
 }
 
-export function setPlanBranch(db: Database, planUuid: string, branch: string): void {
-  db.prepare(`UPDATE plan SET branch = ? WHERE uuid = ?`).run(branch, planUuid);
+async function setSyncedPlanScalar(
+  db: Database,
+  config: TimConfig,
+  planUuid: string,
+  field: 'branch' | 'base_branch',
+  value: string | null
+): Promise<void> {
+  const plan = getPlanByUuid(db, planUuid);
+  if (!plan) {
+    return;
+  }
+  const project = getProjectById(db, plan.project_id);
+  if (!project) {
+    return;
+  }
+  const { writePlanSetScalar } = await import('../sync/write_router.js');
+  await writePlanSetScalar(db, config, project.uuid, {
+    planUuid,
+    field,
+    value,
+    baseRevision: plan.revision,
+  });
+}
+
+export async function setPlanBranch(
+  db: Database,
+  config: TimConfig,
+  planUuid: string,
+  branch: string
+): Promise<void> {
+  await setSyncedPlanScalar(db, config, planUuid, 'branch', branch);
 }
 
 export type PlanBaseTrackingUpdate = {
@@ -642,18 +673,30 @@ export type PlanBaseTrackingUpdate = {
   baseChangeId?: string | null;
 };
 
-export function setPlanBaseTracking(
+export async function setPlanBaseTracking(
   db: Database,
+  config: TimConfig,
   planUuid: string,
   update: PlanBaseTrackingUpdate
-): void {
+): Promise<void> {
+  await setPlanBaseTrackingInternal(db, config, planUuid, update);
+}
+
+async function setPlanBaseTrackingInternal(
+  db: Database,
+  config: TimConfig,
+  planUuid: string,
+  update: PlanBaseTrackingUpdate
+): Promise<void> {
+  if (update.baseBranch !== undefined) {
+    await setSyncedPlanScalar(db, config, planUuid, 'base_branch', update.baseBranch ?? null);
+  }
+
+  // baseCommit and baseChangeId are intentionally local-only machine tracking fields.
+  // branch/baseBranch are synced canonical fields and route through the sync write router.
   const updates: string[] = [];
   const values: Array<string | null> = [];
 
-  if (update.baseBranch !== undefined) {
-    updates.push('base_branch = ?');
-    values.push(update.baseBranch ?? null);
-  }
   if (update.baseCommit !== undefined) {
     updates.push('base_commit = ?');
     values.push(update.baseCommit ?? null);
@@ -670,7 +713,13 @@ export function setPlanBaseTracking(
   db.prepare(`UPDATE plan SET ${updates.join(', ')} WHERE uuid = ?`).run(...values, planUuid);
 }
 
-export function clearPlanBaseTracking(db: Database, planUuid: string): void {
+export async function clearPlanBaseTracking(
+  db: Database,
+  config: TimConfig,
+  planUuid: string
+): Promise<void> {
+  await setSyncedPlanScalar(db, config, planUuid, 'base_branch', null);
+  // baseCommit/baseChangeId are local-only and should not emit sync operations.
   db.prepare(
     `UPDATE plan
      SET base_branch = NULL,

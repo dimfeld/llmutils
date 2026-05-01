@@ -13,6 +13,7 @@ import {
   type SyncOperationEnvelope,
   type SyncOperationPayload,
 } from './types.js';
+import { getSyncOperationPayloadIndexes } from './payload_indexes.js';
 import { shiftTaskIndexesAfterDelete, shiftTaskIndexesForInsert } from './task_indexes.js';
 
 export type ApplyOperationStatus =
@@ -719,7 +720,7 @@ function insertReceivedOperation(
     'baseRevision' in envelope.op && typeof envelope.op.baseRevision === 'number'
       ? envelope.op.baseRevision
       : null;
-  db.prepare(
+  const insert = db.prepare(
     `
       INSERT INTO sync_operation (
         operation_uuid,
@@ -732,6 +733,8 @@ function insertReceivedOperation(
         base_revision,
         base_hash,
         payload,
+        payload_plan_uuid,
+        payload_task_uuid,
         status,
         attempts,
         last_error,
@@ -741,9 +744,11 @@ function insertReceivedOperation(
         ack_metadata,
         batch_id,
         batch_atomic
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'received', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'received', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
     `
-  ).run(
+  );
+  const indexes = getSyncOperationPayloadIndexes(envelope.op);
+  insert.run(
     envelope.operationUuid,
     envelope.projectUuid,
     envelope.originNodeId,
@@ -753,6 +758,8 @@ function insertReceivedOperation(
     envelope.op.type,
     baseRevision,
     payload,
+    indexes.payloadPlanUuid,
+    indexes.payloadTaskUuid,
     envelope.createdAt,
     batchId ?? null,
     batchAtomic ? 1 : 0

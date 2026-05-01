@@ -16,6 +16,7 @@ import {
   type SyncOperationPayload,
 } from './types.js';
 import { shiftTaskIndexesAfterDelete, shiftTaskIndexesForInsert } from './task_indexes.js';
+import { getSyncOperationPayloadIndexes } from './payload_indexes.js';
 
 /**
  * Persistent-node durable queue contract:
@@ -47,6 +48,8 @@ export interface SyncOperationQueueRow {
   base_revision: number | null;
   base_hash: string | null;
   payload: string;
+  payload_plan_uuid: string | null;
+  payload_task_uuid: string | null;
   status: QueueOperationStatus;
   attempts: number;
   last_error: string | null;
@@ -752,7 +755,7 @@ function insertQueuedOperation(
     'baseRevision' in operation.op && typeof operation.op.baseRevision === 'number'
       ? operation.op.baseRevision
       : null;
-  db.prepare(
+  const insert = db.prepare(
     `
       INSERT INTO sync_operation (
         operation_uuid,
@@ -765,6 +768,8 @@ function insertQueuedOperation(
         base_revision,
         base_hash,
         payload,
+        payload_plan_uuid,
+        payload_task_uuid,
         status,
         attempts,
         last_error,
@@ -774,9 +779,12 @@ function insertQueuedOperation(
         ack_metadata,
         batch_id,
         batch_atomic
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'queued', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'queued', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
     `
-  ).run(
+  );
+  const payload = JSON.stringify(operation.op);
+  const indexes = getSyncOperationPayloadIndexes(operation.op);
+  insert.run(
     operation.operationUuid,
     operation.projectUuid,
     operation.originNodeId,
@@ -785,7 +793,9 @@ function insertQueuedOperation(
     operation.targetKey,
     operation.op.type,
     baseRevision,
-    JSON.stringify(operation.op),
+    payload,
+    indexes.payloadPlanUuid,
+    indexes.payloadTaskUuid,
     operation.createdAt,
     batchId ?? null,
     batchAtomic ? 1 : 0
@@ -1153,17 +1163,14 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): void
           AND status IN ('queued', 'failed_retryable')
           AND (
             target_key = ?
-            OR payload LIKE ?
+            OR payload_plan_uuid = ?
           )
       `
     ).run(
       `Target plan ${snapshot.planUuid} was deleted on the main node`,
       snapshot.projectUuid,
       `plan:${snapshot.planUuid}`,
-      // This LIKE depends on JSON.stringify's compact double-quoted output.
-      // All payloads are inserted that way; switch to json_extract if alternate
-      // serialization or pretty-printing is introduced.
-      `%"planUuid":"${snapshot.planUuid}"%`
+      snapshot.planUuid
     );
     return;
   }
@@ -1273,7 +1280,8 @@ function writeNeverExistedSnapshot(db: Database, snapshot: CanonicalNeverExisted
     rejectPendingOperationsForNeverExistedEntity(
       db,
       snapshot.entityKey,
-      `%"planUuid":"${snapshot.planUuid}"%`,
+      'payload_plan_uuid',
+      snapshot.planUuid,
       `Target plan ${snapshot.planUuid} never existed on the main node`
     );
     return;
@@ -1287,7 +1295,8 @@ function writeNeverExistedSnapshot(db: Database, snapshot: CanonicalNeverExisted
   rejectPendingOperationsForNeverExistedEntity(
     db,
     snapshot.entityKey,
-    `%"taskUuid":"${snapshot.taskUuid}"%`,
+    'payload_task_uuid',
+    snapshot.taskUuid,
     `Target task ${snapshot.taskUuid} never existed on the main node`
   );
 }
@@ -1295,7 +1304,8 @@ function writeNeverExistedSnapshot(db: Database, snapshot: CanonicalNeverExisted
 function rejectPendingOperationsForNeverExistedEntity(
   db: Database,
   entityKey: string,
-  payloadLike: string,
+  payloadColumn: 'payload_plan_uuid' | 'payload_task_uuid',
+  payloadUuid: string,
   message: string
 ): void {
   db.prepare(
@@ -1307,10 +1317,10 @@ function rejectPendingOperationsForNeverExistedEntity(
       WHERE status IN ('queued', 'failed_retryable')
         AND (
           target_key = ?
-          OR payload LIKE ?
+          OR ${payloadColumn} = ?
         )
     `
-  ).run(message, entityKey, payloadLike);
+  ).run(message, entityKey, payloadUuid);
 }
 
 function removeAssignmentForPlan(db: Database, projectUuid: string, planUuid: string): void {

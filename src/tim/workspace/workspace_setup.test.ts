@@ -2422,6 +2422,7 @@ describe('setupWorkspace', () => {
       );
       expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
         expect.anything(),
+        expect.anything(),
         'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
         expect.objectContaining({ baseCommit: fakeCommitHash })
       );
@@ -2490,11 +2491,13 @@ describe('setupWorkspace', () => {
       // setPlanBaseTracking should have been called with the computed merge-base commit
       expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
         expect.anything(),
+        expect.anything(),
         'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
         expect.objectContaining({ baseCommit: fakeCommitHash })
       );
       // baseBranch was sourced from plan field (not parent), so baseBranch should NOT be in the update
       expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalledWith(
+        expect.anything(),
         expect.anything(),
         expect.anything(),
         expect.objectContaining({ baseBranch: expect.any(String) })
@@ -2611,6 +2614,7 @@ describe('setupWorkspace', () => {
       // For parent-derived baseBranch, both baseBranch and baseCommit should be persisted
       expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
         expect.anything(),
+        expect.anything(),
         '20720720-2072-4072-8072-207207207207',
         expect.objectContaining({
           baseBranch: 'feature/parent-branch',
@@ -2668,12 +2672,13 @@ describe('setupWorkspace', () => {
       // For parent-derived baseBranch with null merge-base, only baseBranch should be persisted
       expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
         expect.anything(),
+        expect.anything(),
         '20920920-2092-4092-8092-209209209209',
         expect.objectContaining({ baseBranch: 'feature/parent-branch-2' })
       );
       // baseCommit should NOT be in the call (null merge-base means we can't compute it)
       const calls = vi.mocked(setPlanBaseTracking).mock.calls;
-      const update = calls[0]?.[2] as Record<string, unknown>;
+      const update = calls[0]?.[3] as Record<string, unknown>;
       expect(update).not.toHaveProperty('baseCommit');
 
       await WorkspaceLock.releaseLock(baseDir, { force: true });
@@ -2731,6 +2736,7 @@ describe('setupWorkspace', () => {
       expect(result.baseDir).toBe(baseDir);
       // The base branch should be the GENERATED name from the parent plan, not undefined
       expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
         expect.anything(),
         '21521521-2152-4152-8152-215215215215',
         expect.objectContaining({
@@ -2808,6 +2814,7 @@ describe('setupWorkspace', () => {
       expect(getJjChangeIdSpy).toHaveBeenCalledWith(baseDir, fakeCommitHash);
       // Tracking update should include both baseCommit and baseChangeId
       expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
         expect.anything(),
         '21221221-2122-4122-8122-212212212212',
         expect.objectContaining({
