@@ -615,6 +615,7 @@ const migrations: Migration[] = [
         ON branch_merge_requirement_check(branch_merge_requirement_source_id);
     `,
   },
+  // Version 23 omitted
   {
     version: 24,
     up: `
