@@ -346,12 +346,13 @@ describe('tim db/database', () => {
 
     const version = db
       .query<
-        { version: number; import_completed: number },
+        { version: number; import_completed: number; bootstrap_completed: number },
         []
-      >('SELECT version, import_completed FROM schema_version')
+      >('SELECT version, import_completed, bootstrap_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(30);
+    expect(version?.version).toBe(31);
     expect(version?.import_completed).toBe(1);
+    expect(version?.bootstrap_completed).toBe(0);
 
     const tables = db
       .query<{ name: string }, []>(
@@ -480,6 +481,8 @@ describe('tim db/database', () => {
     expect(indices).toContain('idx_sync_operation_plan_ref_project_plan');
     expect(indices).toContain('idx_sync_conflict_project_status');
     expect(indices).toContain('idx_sync_sequence_project_sequence');
+    expect(indices).toContain('idx_sync_sequence_bootstrap_target_unique');
+    expect(indices).toContain('idx_sync_sequence_operation_target_unique');
 
     db.close(false);
   });
@@ -493,12 +496,13 @@ describe('tim db/database', () => {
     const db2 = openDatabase(dbPath);
     const version = db2
       .query<
-        { version: number; import_completed: number },
+        { version: number; import_completed: number; bootstrap_completed: number },
         []
-      >('SELECT version, import_completed FROM schema_version')
+      >('SELECT version, import_completed, bootstrap_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(30);
+    expect(version?.version).toBe(31);
     expect(version?.import_completed).toBe(1);
+    expect(version?.bootstrap_completed).toBe(0);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')
       .get();
@@ -628,7 +632,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(30);
+      expect(schemaVersion?.version).toBe(31);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -782,7 +786,7 @@ describe('tim db/database', () => {
           []
         >('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
         .get();
-      expect(schemaVersion?.version).toBe(30);
+      expect(schemaVersion?.version).toBe(31);
 
       const checkRows = db
         .query<
@@ -1100,7 +1104,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(30);
+      ).toBe(31);
       expect(db.query<{ uuid: string }, []>('SELECT uuid FROM project').get()?.uuid).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
       );
@@ -1176,6 +1180,18 @@ describe('tim db/database', () => {
           ON sync_operation(payload_task_uuid);
         CREATE INDEX idx_sync_operation_target_key
           ON sync_operation(target_key);
+
+        CREATE TABLE sync_sequence (
+          sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_uuid TEXT NOT NULL,
+          target_type TEXT NOT NULL,
+          target_key TEXT NOT NULL,
+          revision INTEGER,
+          operation_uuid TEXT,
+          origin_node_id TEXT,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_sync_sequence_project_sequence ON sync_sequence(project_uuid, sequence);
       `);
 
       const insertOperation = db.prepare(`
@@ -1249,7 +1265,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(30);
+      ).toBe(31);
       const syncOperationColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('sync_operation')")
         .all()

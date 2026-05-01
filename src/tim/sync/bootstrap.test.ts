@@ -88,6 +88,17 @@ describe('bootstrapSyncMetadata', () => {
     expect(first).toEqual({ plansSeeded: 1, settingsSeeded: 1 });
     expect(second).toEqual({ plansSeeded: 0, settingsSeeded: 0 });
     expect(syncSequenceCount()).toBe(countAfterFirst);
+    expect(isBootstrapCompleted()).toBe(true);
+  });
+
+  test('short-circuits after bootstrap has completed', () => {
+    seedPlan();
+
+    expect(bootstrapSyncMetadata(db)).toEqual({ plansSeeded: 1, settingsSeeded: 0 });
+    seedSecondPlan();
+
+    expect(bootstrapSyncMetadata(db)).toEqual({ plansSeeded: 0, settingsSeeded: 0 });
+    expect(syncSequenceRows().map((row) => row.target_key)).toEqual([planKey(PLAN_UUID)]);
   });
 
   test('skips entities already represented in sync_sequence and seeds missing entities', async () => {
@@ -123,6 +134,67 @@ describe('bootstrapSyncMetadata', () => {
 
     expect(before).toBe(0);
     expect(after).toBeGreaterThan(before);
+  });
+
+  test('rejects duplicate bootstrap sync_sequence rows at the database layer', () => {
+    seedPlan();
+    bootstrapSyncMetadata(db);
+
+    expect(() =>
+      db
+        .prepare(
+          `
+            INSERT INTO sync_sequence (
+              project_uuid,
+              target_type,
+              target_key,
+              revision,
+              operation_uuid,
+              origin_node_id,
+              created_at
+            ) VALUES (?, ?, ?, ?, NULL, NULL, ?)
+          `
+        )
+        .run(PROJECT_UUID, 'plan', planKey(PLAN_UUID), 1, '2026-01-01T00:00:00Z')
+    ).toThrow();
+  });
+
+  test('rejects duplicate operation target sync_sequence rows at the database layer', () => {
+    const insert = db.prepare(
+      `
+        INSERT INTO sync_sequence (
+          project_uuid,
+          target_type,
+          target_key,
+          revision,
+          operation_uuid,
+          origin_node_id,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `
+    );
+
+    insert.run(
+      PROJECT_UUID,
+      'plan',
+      planKey(PLAN_UUID),
+      1,
+      '77777777-7777-4777-8777-777777777777',
+      NODE_A,
+      '2026-01-01T00:00:00Z'
+    );
+
+    expect(() =>
+      insert.run(
+        PROJECT_UUID,
+        'plan',
+        planKey(PLAN_UUID),
+        1,
+        '77777777-7777-4777-8777-777777777777',
+        NODE_A,
+        '2026-01-01T00:00:01Z'
+      )
+    ).toThrow();
   });
 });
 
@@ -200,4 +272,11 @@ function getSettingRevision(setting: string): number {
     throw new Error(`Missing setting ${setting}`);
   }
   return row.revision;
+}
+
+function isBootstrapCompleted(): boolean {
+  const row = db.prepare('SELECT bootstrap_completed FROM schema_version').get() as {
+    bootstrap_completed: number;
+  };
+  return row.bootstrap_completed === 1;
 }

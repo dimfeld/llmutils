@@ -924,6 +924,36 @@ const migrations: Migration[] = [
       ALTER TABLE sync_operation DROP COLUMN payload_secondary_plan_uuid;
     `,
   },
+  {
+    version: 31,
+    up: `
+      DELETE FROM sync_sequence
+      WHERE operation_uuid IS NULL
+        AND sequence NOT IN (
+          SELECT MIN(sequence)
+          FROM sync_sequence
+          WHERE operation_uuid IS NULL
+          GROUP BY project_uuid, target_type, target_key
+        );
+
+      DELETE FROM sync_sequence
+      WHERE operation_uuid IS NOT NULL
+        AND sequence NOT IN (
+          SELECT MIN(sequence)
+          FROM sync_sequence
+          WHERE operation_uuid IS NOT NULL
+          GROUP BY operation_uuid, target_type, target_key
+        );
+
+      CREATE UNIQUE INDEX idx_sync_sequence_bootstrap_target_unique
+        ON sync_sequence(project_uuid, target_type, target_key)
+        WHERE operation_uuid IS NULL;
+
+      CREATE UNIQUE INDEX idx_sync_sequence_operation_target_unique
+        ON sync_sequence(operation_uuid, target_type, target_key)
+        WHERE operation_uuid IS NOT NULL;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {
@@ -937,7 +967,8 @@ export function runMigrations(db: Database): void {
   db.run(`
     CREATE TABLE IF NOT EXISTS schema_version (
       version INTEGER NOT NULL DEFAULT 0,
-      import_completed INTEGER NOT NULL DEFAULT 0
+      import_completed INTEGER NOT NULL DEFAULT 0,
+      bootstrap_completed INTEGER NOT NULL DEFAULT 0
     );
   `);
   const schemaVersionColumns = db.prepare("PRAGMA table_info('schema_version')").all() as Array<{
@@ -949,19 +980,27 @@ export function runMigrations(db: Database): void {
   if (!hasImportCompleted) {
     db.run('ALTER TABLE schema_version ADD COLUMN import_completed INTEGER NOT NULL DEFAULT 0');
   }
+  const hasBootstrapCompleted = schemaVersionColumns.some(
+    (column) => column.name === 'bootstrap_completed'
+  );
+  if (!hasBootstrapCompleted) {
+    db.run('ALTER TABLE schema_version ADD COLUMN bootstrap_completed INTEGER NOT NULL DEFAULT 0');
+  }
 
   let currentVersion = getCurrentVersion(db);
-  const importCompletedRow = db
-    .prepare('SELECT import_completed FROM schema_version ORDER BY rowid DESC LIMIT 1')
-    .get() as { import_completed?: number } | null;
-  const importCompleted = importCompletedRow?.import_completed ?? 0;
+  const schemaVersionRow = db
+    .prepare(
+      'SELECT import_completed, bootstrap_completed FROM schema_version ORDER BY rowid DESC LIMIT 1'
+    )
+    .get() as { import_completed?: number; bootstrap_completed?: number } | null;
+  const importCompleted = schemaVersionRow?.import_completed ?? 0;
+  const bootstrapCompleted = schemaVersionRow?.bootstrap_completed ?? 0;
 
   const persistVersion = (version: number): void => {
     db.run('DELETE FROM schema_version');
-    db.prepare('INSERT INTO schema_version (version, import_completed) VALUES (?, ?)').run(
-      version,
-      importCompleted
-    );
+    db.prepare(
+      'INSERT INTO schema_version (version, import_completed, bootstrap_completed) VALUES (?, ?, ?)'
+    ).run(version, importCompleted, bootstrapCompleted);
   };
 
   for (const migration of migrations) {
@@ -991,7 +1030,9 @@ export function runMigrations(db: Database): void {
 
   if (currentVersion === 0) {
     db.transaction(() => {
-      db.prepare('INSERT INTO schema_version (version, import_completed) VALUES (0, 0)').run();
+      db.prepare(
+        'INSERT INTO schema_version (version, import_completed, bootstrap_completed) VALUES (0, 0, 0)'
+      ).run();
     }).immediate();
   }
 }
