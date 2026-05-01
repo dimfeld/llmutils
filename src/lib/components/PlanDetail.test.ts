@@ -32,6 +32,26 @@ vi.mock('./PrStatusSection.svelte', () => ({
   default: () => '',
 }));
 
+vi.mock('./CopyButton.svelte', () => ({
+  default: () => '',
+}));
+
+vi.mock('./ActionButtonWithDropdown.svelte', () => ({
+  default: (
+    payload: { push: (content: string) => void },
+    props: {
+      primary: { label: string };
+      menuItems?: Array<{ label: string }>;
+    }
+  ) => {
+    payload.push(`<div data-testid="action-config"><button>${props.primary.label}</button>`);
+    for (const item of props.menuItems ?? []) {
+      payload.push(`<button>${item.label}</button>`);
+    }
+    payload.push('</div>');
+  },
+}));
+
 vi.mock('$lib/stores/session_state.svelte.js', () => ({
   useSessionManager: () => ({
     sessions: new Map(),
@@ -121,6 +141,7 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
     dependencyUuids: [],
     tasks: [],
     taskCounts: { done: 0, total: 0 },
+    reviewIssueCount: 0,
     dependencies: [],
     assignment: null,
     parent: null,
@@ -179,6 +200,72 @@ describe('PlanDetail', () => {
     // Should show "Finish" button (not "Update Docs") since finish work is done
     expect(body).toContain('Finish');
     expect(body).not.toContain('Update Docs');
+  });
+
+  test('shows Run Agent without Generate for a taskless simple plan', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          status: 'pending',
+          displayStatus: 'pending',
+          simple: true,
+          tasks: [],
+          taskCounts: { done: 0, total: 0 },
+          prStatuses: [],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('Run Agent');
+    expect(body).not.toContain('Generate');
+  });
+
+  test('keeps Run Agent as primary for a simple plan with incomplete tasks', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          status: 'in_progress',
+          displayStatus: 'in_progress',
+          simple: true,
+          tasks: [
+            {
+              id: 1,
+              taskIndex: 0,
+              title: 'Implement the change',
+              description: '',
+              done: false,
+            },
+          ],
+          taskCounts: { done: 0, total: 1 },
+          prStatuses: [],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('Run Agent');
+    expect(body).not.toContain('Generate');
+  });
+
+  test('keeps Generate primary and Run Agent in the dropdown for a taskless non-simple plan', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          status: 'pending',
+          displayStatus: 'pending',
+          simple: false,
+          tasks: [],
+          taskCounts: { done: 0, total: 0 },
+          prStatuses: [],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('<div data-testid="action-config"><button>Generate</button>');
+    expect(body).toContain('Run Agent');
+    expect(body.indexOf('Generate')).toBeLessThan(body.indexOf('Run Agent'));
   });
 
   test('shows note content when plan has a note', () => {

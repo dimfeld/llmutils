@@ -87,6 +87,7 @@
   let hasIncompleteTasks = $derived(plan.taskCounts.done < plan.taskCounts.total);
   let tasksOpen = $derived(plan.taskCounts.done < plan.taskCounts.total);
   let isBlocked = $derived(plan.displayStatus === 'blocked');
+  let isSimplePlan = $derived(plan.simple === true);
 
   let actionConfig = $derived.by(() => {
     // needs_review plans and taskless epics: show "Finish" as primary button
@@ -178,10 +179,16 @@
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
     } else if (showGenerateWithAgent) {
-      primary = generateItem;
-      menuItems.push(agentItem);
-      if (isEligibleForRebase) menuItems.push(rebaseItem);
-      if (isEligibleForCreatePr) menuItems.push(createPrItem);
+      if (isSimplePlan) {
+        primary = agentItem;
+        if (isEligibleForRebase) menuItems.push(rebaseItem);
+        if (isEligibleForCreatePr) menuItems.push(createPrItem);
+      } else {
+        primary = generateItem;
+        menuItems.push(agentItem);
+        if (isEligibleForRebase) menuItems.push(rebaseItem);
+        if (isEligibleForCreatePr) menuItems.push(createPrItem);
+      }
     } else {
       // showChatOnly
       primary = chatItem;
@@ -624,7 +631,7 @@
               >
                 {#if chatAction.starting}
                   <span
-                    class="inline-block animate-spin rounded-full border-2 border-white border-t-transparent h-2 w-2"
+                    class="inline-block h-2 w-2 animate-spin rounded-full border-2 border-white border-t-transparent"
                   ></span>
                   {chatAction.startingLabel}
                 {:else}

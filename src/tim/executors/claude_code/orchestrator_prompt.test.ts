@@ -138,7 +138,9 @@ describe('orchestrator_prompt subagent commands', () => {
         subagentExecutor: 'dynamic',
       });
       expect(out).toContain('Subagent Executor Selection');
-      expect(out).toContain('Prefer claude-code for frontend tasks, codex-cli for backend tasks. When choosing executors for implementer and tester, prefer using the same executor for both to maintain consistency and leverage the same strengths.');
+      expect(out).toContain(
+        'Prefer claude-code for frontend tasks, codex-cli for backend tasks. When choosing executors for implementer and tester, prefer using the same executor for both to maintain consistency and leverage the same strengths.'
+      );
       expect(out).toContain('-x codex-cli');
       expect(out).toContain('-x claude-code');
       // Commands should not have fixed executor flag
@@ -149,7 +151,9 @@ describe('orchestrator_prompt subagent commands', () => {
     it('includes dynamic executor guidance when subagentExecutor is not set', () => {
       const out = wrapWithOrchestration('Context', '42', { batchMode: false });
       expect(out).toContain('Subagent Executor Selection');
-      expect(out).toContain('Prefer claude-code for frontend tasks, codex-cli for backend tasks. When choosing executors for implementer and tester, prefer using the same executor for both to maintain consistency and leverage the same strengths.');
+      expect(out).toContain(
+        'Prefer claude-code for frontend tasks, codex-cli for backend tasks. When choosing executors for implementer and tester, prefer using the same executor for both to maintain consistency and leverage the same strengths.'
+      );
     });
 
     it('uses custom dynamic instructions when provided', () => {
@@ -221,7 +225,9 @@ describe('orchestrator_prompt subagent commands', () => {
         subagentExecutor: 'dynamic',
       });
       expect(out).toContain('Subagent Executor Selection');
-      expect(out).toContain('Prefer claude-code for frontend tasks, codex-cli for backend tasks. When choosing executors for implementer and tester, prefer using the same executor for both to maintain consistency and leverage the same strengths.');
+      expect(out).toContain(
+        'Prefer claude-code for frontend tasks, codex-cli for backend tasks. When choosing executors for implementer and tester, prefer using the same executor for both to maintain consistency and leverage the same strengths.'
+      );
     });
 
     it('uses custom dynamic instructions when provided', () => {

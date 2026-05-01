@@ -40,6 +40,10 @@ export interface SelectedIssueContent {
   selectedChildContent: Record<number, number[]>;
 }
 
+export interface CreatePlansFromIssueOptions {
+  simple?: boolean;
+}
+
 export interface IssueTrackerStatus {
   available: boolean;
   trackerType: 'github' | 'linear';
@@ -263,7 +267,8 @@ export async function createPlansFromIssue(
   projectId: number,
   issueData: IssueWithComments,
   mode: IssueImportMode,
-  selectedContent: SelectedIssueContent
+  selectedContent: SelectedIssueContent,
+  options?: CreatePlansFromIssueOptions
 ): Promise<{ planUuid: string }> {
   const { db } = await getServerContext();
   const repoRoot = getPreferredProjectGitRoot(db, projectId);
@@ -273,6 +278,11 @@ export async function createPlansFromIssue(
 
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
   const { plans: allPlans } = loadPlansFromDb(repoRoot, repository.repositoryId);
+  const simple = options?.simple === true;
+  const createImportedStubPlan = (issueInstruction: IssueInstructionData, planId: number) =>
+    simple
+      ? createStubPlanFromIssue(issueInstruction, planId, { simple })
+      : createStubPlanFromIssue(issueInstruction, planId);
 
   const children = issueData.children ?? [];
   const normalizedParentContent = normalizeSelectionIndexes(
@@ -313,9 +323,10 @@ export async function createPlansFromIssue(
         JSON.stringify(currentPlan.rmfilter) !== JSON.stringify(rmprOptions.rmfilter);
       const titleChanged = currentPlan.title !== issueData.issue.title;
       const hasNewContent = newSegments.length > 0;
+      const simpleChanged = simple && currentPlan.simple !== true;
 
       parentPlanId = currentPlan.id;
-      if (!titleChanged && !rmfilterChanged && !hasNewContent) {
+      if (!titleChanged && !rmfilterChanged && !hasNewContent && !simpleChanged) {
         if (!currentPlan.uuid) {
           throw new Error('Failed to determine imported plan UUID');
         }
@@ -331,13 +342,16 @@ export async function createPlansFromIssue(
       if (rmprOptions?.rmfilter) {
         updatedPlan.rmfilter = rmprOptions.rmfilter;
       }
+      if (simpleChanged) {
+        updatedPlan.simple = true;
+      }
       pendingWrites.push({ plan: updatedPlan, filePath: null });
     } else {
       if (parentExtracted.length === 0 && hasSelectableIssueContent(issueData)) {
         throw new Error('Select at least one parent content item with non-empty text to import.');
       }
       parentPlanId = await reserveImportedPlanStartId(repoRoot, 1);
-      const parentPlan = createStubPlanFromIssue(parentInstruction, parentPlanId);
+      const parentPlan = createImportedStubPlan(parentInstruction, parentPlanId);
       pendingWrites.push({ plan: parentPlan, filePath: null });
     }
   } else if (mode === 'separate') {
@@ -388,7 +402,8 @@ export async function createPlansFromIssue(
       );
       const titleChanged = currentParentPlan.title !== issueData.issue.title;
       const hasNewContent = newSegments.length > 0;
-      shouldWriteParent = titleChanged || hasNewContent;
+      const simpleChanged = simple && currentParentPlan.simple !== true;
+      shouldWriteParent = titleChanged || hasNewContent || simpleChanged;
       if (shouldWriteParent) {
         parentPlan = {
           ...currentParentPlan,
@@ -396,13 +411,16 @@ export async function createPlansFromIssue(
           details: updatedDetails,
           updatedAt: new Date().toISOString(),
         };
+        if (simpleChanged) {
+          parentPlan.simple = true;
+        }
       } else {
         parentPlan = currentParentPlan;
       }
     } else {
       parentPlanId = nextPlanId;
       nextPlanId++;
-      parentPlan = createStubPlanFromIssue(parentInstruction, parentPlanId);
+      parentPlan = createImportedStubPlan(parentInstruction, parentPlanId);
       shouldWriteParent = true;
     }
 
@@ -431,7 +449,8 @@ export async function createPlansFromIssue(
         const titleChanged = currentChildPlan.title !== childIssue.issue.title;
         const hasNewContent = newSegments.length > 0;
         const parentChanged = currentChildPlan.parent !== parentPlanId;
-        shouldWriteChild = titleChanged || hasNewContent || parentChanged;
+        const simpleChanged = simple && currentChildPlan.simple !== true;
+        shouldWriteChild = titleChanged || hasNewContent || parentChanged || simpleChanged;
         if (shouldWriteChild) {
           childPlan = {
             ...currentChildPlan,
@@ -440,13 +459,16 @@ export async function createPlansFromIssue(
             parent: parentPlanId,
             updatedAt: new Date().toISOString(),
           };
+          if (simpleChanged) {
+            childPlan.simple = true;
+          }
         } else {
           childPlan = currentChildPlan;
         }
       } else {
         childPlanId = nextPlanId;
         nextPlanId++;
-        childPlan = createStubPlanFromIssue(childInstruction, childPlanId);
+        childPlan = createImportedStubPlan(childInstruction, childPlanId);
         childPlan.parent = parentPlanId;
         shouldWriteChild = true;
       }
@@ -522,7 +544,8 @@ export async function createPlansFromIssue(
         updatedIssueUrls.some((url, index) => url !== (currentParentPlan.issue ?? [])[index]);
       const titleChanged = currentParentPlan.title !== issueData.issue.title;
       const hasNewContent = newSegments.length > 0;
-      if (!titleChanged && !hasNewContent && !issueUrlsChanged) {
+      const simpleChanged = simple && currentParentPlan.simple !== true;
+      if (!titleChanged && !hasNewContent && !issueUrlsChanged && !simpleChanged) {
         if (!currentParentPlan.uuid) {
           throw new Error('Failed to determine imported plan UUID');
         }
@@ -536,13 +559,16 @@ export async function createPlansFromIssue(
         issue: updatedIssueUrls,
         updatedAt: new Date().toISOString(),
       };
+      if (simpleChanged) {
+        parentPlan.simple = true;
+      }
       pendingWrites.push({ plan: parentPlan, filePath: null });
     } else {
       if (mergedDetailsSegments.length === 0) {
         throw new Error('Select at least one parent or subissue content item to import.');
       }
       parentPlanId = await reserveImportedPlanStartId(repoRoot, 1);
-      const parentPlan = createStubPlanFromIssue(parentInstruction, parentPlanId);
+      const parentPlan = createImportedStubPlan(parentInstruction, parentPlanId);
       parentPlan.details = mergedDetailsSegments.join('\n\n');
       parentPlan.issue = [...mergedIssueUrls];
       pendingWrites.push({ plan: parentPlan, filePath: null });

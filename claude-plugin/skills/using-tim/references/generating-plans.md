@@ -29,6 +29,7 @@ echo '{"title": "Followup work title", "dependsOn": [<original-plan-id>]}' | tim
 ```
 
 **Important guidelines for followup plans:**
+
 - Do **not** mark the original plan as an epic
 - Do **not** set the original plan as the parent of the new plan
 - **Do** use `dependsOn` (or `--depends-on` with `tim add`) so the new plan is sequenced after the original
