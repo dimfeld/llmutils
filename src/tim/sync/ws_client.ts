@@ -1,17 +1,16 @@
 import { EventEmitter } from 'node:events';
 import type { Database } from 'bun:sqlite';
-import { warn } from '../../logging.js';
 import { getTimNodeCursor, updateTimNodeCursor, type TimNodeCursorRow } from '../db/sync_tables.js';
 import {
   listPendingOperations,
   markOperationFailedRetryable,
   markOperationSending,
-  mergeCanonicalRefresh,
   resetSendingOperations,
   subscribeToQueueChanges,
   type CanonicalSnapshot,
   type SyncOperationQueueRow,
 } from './queue.js';
+import { fetchAndMergeSnapshotsUntilConvergence } from './follow_up_fetch.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
 import { rejectedOperationSnapshotKeys } from './rejected_refresh.js';
 import {
@@ -462,34 +461,9 @@ class WebSocketSyncClient implements SyncClient {
   }
 
   private async fetchAndMergeSnapshots(keys: string[]): Promise<void> {
-    let pendingKeys = [...new Set(keys)];
-    const fetchedKeys = new Set<string>();
-    const maxPasses = 5;
-    for (let pass = 0; pass < maxPasses && pendingKeys.length > 0; pass += 1) {
-      const keysForPass = pendingKeys.filter((key) => !fetchedKeys.has(key));
-      pendingKeys = [];
-      if (keysForPass.length === 0) {
-        return;
-      }
-      for (const key of keysForPass) {
-        fetchedKeys.add(key);
-      }
-      const snapshots = await this.requestSnapshots(keysForPass);
-      const nextKeys = new Set<string>();
-      for (const snapshot of snapshots) {
-        for (const key of mergeCanonicalRefresh(this.options.db, snapshot)) {
-          if (!fetchedKeys.has(key)) {
-            nextKeys.add(key);
-          }
-        }
-      }
-      pendingKeys = [...nextKeys];
-    }
-    if (pendingKeys.length > 0) {
-      warn(`Stopped sync snapshot follow-up after ${maxPasses} passes`, {
-        remainingKeys: pendingKeys,
-      });
-    }
+    await fetchAndMergeSnapshotsUntilConvergence(this.options.db, keys, (keysForPass) =>
+      this.requestSnapshots(keysForPass)
+    );
   }
 
   private handleDisconnect(): void {
