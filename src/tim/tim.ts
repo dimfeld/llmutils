@@ -620,7 +620,7 @@ syncCommand
 
 syncCommand
   .command('backfill-uuids')
-  .description('Add UUIDs to DB plan and plan task rows whose uuid column is NULL')
+  .description('Add UUIDs to DB project, plan, and plan task rows whose uuid column is NULL')
   .action(async () => {
     const { handleBackfillUuidsCommand } = await import('./commands/backfill-uuids.js');
     await handleBackfillUuidsCommand().catch(handleCommandError);
