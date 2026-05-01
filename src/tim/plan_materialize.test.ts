@@ -546,6 +546,22 @@ Details
     expect(saved?.title).toBe('Force sync test');
   });
 
+  test('syncMaterializedPlan with force=true routes writes through sync operations', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Force sync operation test';
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { force: true, config: persistentSyncConfig() });
+
+    expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Force sync operation test');
+    const rows = syncOperationRows();
+    expect(rows.map((row) => row.status)).toEqual(rows.map(() => 'queued'));
+    expect(rows.map((row) => row.operation_type)).toContain('plan.patch_text');
+  });
+
   test('syncMaterializedPlan re-materializes the primary file from DB state even when no file changes are detected', async () => {
     const { db, project } = await seedProject();
     const planPath = await materializePlan(3, repoDir);
