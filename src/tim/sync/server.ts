@@ -15,6 +15,7 @@ import { applyBatch, applyOperation, type ApplyOperationResult } from './apply.j
 import { SyncFifoGapError, SyncValidationError } from './errors.js';
 import type { CanonicalSnapshot } from './queue.js';
 import type { SyncOperationEnvelope } from './types.js';
+import { bootstrapSyncMetadata } from './bootstrap.js';
 import {
   parseClientFrame,
   SyncBatchFrameSchema,
@@ -65,6 +66,7 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
   const connections = new Map<string, SyncServerConnection>();
   const helloTimers = new Map<string, ReturnType<typeof setTimeout>>();
   seedAllowedPersistentNodes(options.db, options.allowedNodes);
+  bootstrapSyncMetadata(options.db);
 
   function send(ws: BunServerWebSocket, frame: SyncServerFrame): void {
     ws.send(JSON.stringify(frame));

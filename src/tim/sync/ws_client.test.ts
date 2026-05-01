@@ -22,7 +22,7 @@ import {
   subscribeToQueueChanges,
 } from './queue.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
-import { startSyncServer, type SyncServerHandle } from './server.js';
+import { getCurrentSequenceId, startSyncServer, type SyncServerHandle } from './server.js';
 import { createBatchEnvelope } from './types.js';
 import { createSyncClient, rowsToFlushFrames, type SyncClient } from './ws_client.js';
 import type { SyncClientFrame, SyncSnapshotRequestFrame } from './ws_protocol.js';
@@ -201,6 +201,7 @@ describe('sync WebSocket client', () => {
     seedPlan(localDb);
     upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
     const server = startServer(mainDb);
+    const bootstrappedSequenceId = getCurrentSequenceId(mainDb);
     const client = createSyncClient({
       db: localDb,
       serverUrl: `http://${server.hostname}:${server.port}`,
@@ -224,7 +225,7 @@ describe('sync WebSocket client', () => {
     );
     expect(getPlanTagsByUuid(mainDb, PLAN_UUID).map((tag) => tag.tag)).toEqual(['post-hello']);
     expect(getPlanTagsByUuid(localDb, PLAN_UUID).map((tag) => tag.tag)).toEqual(['post-hello']);
-    expect(getTimNodeCursor(localDb, NODE_A).last_known_sequence_id).toBe(0);
+    expect(getTimNodeCursor(localDb, NODE_A).last_known_sequence_id).toBe(bootstrappedSequenceId);
   });
 
   test('flushes operations enqueued while a previous flush is still in flight', async () => {

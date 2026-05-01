@@ -592,6 +592,14 @@ syncCommand
   });
 
 syncCommand
+  .command('bootstrap')
+  .description('Seed catch-up metadata for existing main-node sync data')
+  .action(async (options, command) => {
+    const { handleSyncBootstrapCommand } = await import('./commands/sync.js');
+    await handleSyncBootstrapCommand(options, command).catch(handleCommandError);
+  });
+
+syncCommand
   .command('conflicts')
   .description('List open main-node sync conflicts')
   .action(async (options, command) => {

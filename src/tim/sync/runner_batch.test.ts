@@ -20,7 +20,7 @@ import {
 import { hashToken } from './auth.js';
 import { createBatchEnvelope } from './types.js';
 import { flushPendingOperationsOnce } from './runner.js';
-import { startSyncServer, type SyncServerHandle } from './server.js';
+import { getCurrentSequenceId, startSyncServer, type SyncServerHandle } from './server.js';
 import { enqueueBatch } from './queue.js';
 
 const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
@@ -56,6 +56,7 @@ describe('sync runner atomic batch HTTP fallback', () => {
       port: 0,
     });
     servers.push(server);
+    const bootstrappedSequenceCount = getCurrentSequenceId(mainDb);
     const tag = await addPlanTagOperation(
       PROJECT_UUID,
       { planUuid: PLAN_UUID, tag: 'must-rollback' },
@@ -81,7 +82,7 @@ describe('sync runner atomic batch HTTP fallback', () => {
 
     expect(getPlanTagsByUuid(mainDb, PLAN_UUID)).toEqual([]);
     expect(getPlanTagsByUuid(localDb, PLAN_UUID)).toEqual([]);
-    expect(countRows(mainDb, 'sync_sequence')).toBe(0);
+    expect(countRows(mainDb, 'sync_sequence')).toBe(bootstrappedSequenceCount);
     expect(
       localDb
         .prepare('SELECT status FROM sync_operation ORDER BY local_sequence')
