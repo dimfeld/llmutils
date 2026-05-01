@@ -177,6 +177,53 @@ describe('sync WebSocket client', () => {
     ).toEqual(['in-flight-a', 'in-flight-b']);
   });
 
+  test('does not advance to the next flush frame for an unrelated op_result', async () => {
+    const localDb = createDb();
+    seedPlan(localDb);
+    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
+    const first = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'frame-one' },
+      { originNodeId: NODE_A, localSequence: 0 }
+    );
+    const second = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'frame-two' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    const third = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'frame-three' },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    enqueueOperation(localDb, first);
+    enqueueBatch(
+      localDb,
+      createBatchEnvelope({ originNodeId: NODE_A, operations: [second, third] })
+    );
+    const server = startMismatchedOpResultServer(third.operationUuid);
+    const client = createSyncClient({
+      db: localDb,
+      serverUrl: `http://127.0.0.1:${server.port}`,
+      nodeId: NODE_A,
+      token: TOKEN,
+      reconnect: false,
+    });
+    clients.push(client);
+
+    client.start();
+    await waitFor(() => client.getStatus().connected);
+    await client.flushNow();
+
+    expect(server.receivedBatchBeforeRealOpResult()).toBe(false);
+    expect(
+      localDb
+        .prepare('SELECT status FROM sync_operation ORDER BY local_sequence')
+        .all()
+        .map((row) => (row as { status: string }).status)
+    ).toEqual(['acked', 'acked', 'acked']);
+  });
+
   test('applies an invalidate while another snapshot request is in flight', async () => {
     const localDb = createDb();
     seedPlan(localDb);
@@ -723,6 +770,112 @@ function startErrorFrameServer(): { port: number; stop(force?: boolean): void } 
   });
   rawServers.push(server);
   return server;
+}
+
+function startMismatchedOpResultServer(unrelatedOperationId: string): {
+  port: number;
+  stop(force?: boolean): void;
+  receivedBatchBeforeRealOpResult(): boolean;
+} {
+  let sequenceId = 0;
+  let sentRealOpResult = false;
+  let receivedBatchEarly = false;
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch(request, serverRef) {
+      if (new URL(request.url).pathname !== '/sync/ws') {
+        return new Response('Not Found\n', { status: 404 });
+      }
+      if (serverRef.upgrade(request)) {
+        return;
+      }
+      return new Response('WebSocket upgrade failed\n', { status: 400 });
+    },
+    websocket: {
+      message(ws, rawMessage) {
+        const frame = JSON.parse(rawToString(rawMessage)) as SyncClientFrame;
+        if (frame.type === 'hello') {
+          ws.send(
+            JSON.stringify({
+              type: 'hello_ack',
+              mainNodeId: 'main-node',
+              currentSequenceId: sequenceId,
+            })
+          );
+          return;
+        }
+        if (frame.type === 'catch_up_request') {
+          ws.send(
+            JSON.stringify({
+              type: 'catch_up_response',
+              invalidations: [],
+              currentSequenceId: sequenceId,
+            })
+          );
+          return;
+        }
+        if (frame.type === 'op_batch') {
+          sequenceId += 1;
+          ws.send(
+            JSON.stringify({
+              type: 'op_result',
+              results: [
+                {
+                  operationId: unrelatedOperationId,
+                  status: 'applied',
+                  sequenceIds: [sequenceId],
+                  invalidations: [],
+                },
+              ],
+            })
+          );
+          setTimeout(() => {
+            sentRealOpResult = true;
+            ws.send(
+              JSON.stringify({
+                type: 'op_result',
+                results: frame.operations.map((operation) => ({
+                  operationId: operation.operationUuid,
+                  status: 'applied',
+                  sequenceIds: [sequenceId],
+                  invalidations: [],
+                })),
+              })
+            );
+          }, 50);
+          return;
+        }
+        if (frame.type === 'batch') {
+          if (!sentRealOpResult) {
+            receivedBatchEarly = true;
+          }
+          sequenceId += 1;
+          ws.send(
+            JSON.stringify({
+              type: 'batch_result',
+              batchId: frame.batch.batchId,
+              status: 'applied',
+              results: frame.batch.operations.map((operation) => ({
+                operationId: operation.operationUuid,
+                status: 'applied',
+                sequenceIds: [sequenceId],
+                invalidations: [],
+              })),
+              sequenceIds: [sequenceId],
+              invalidations: [],
+            })
+          );
+        }
+      },
+    },
+  });
+  rawServers.push(server);
+  return {
+    port: server.port,
+    stop: (force?: boolean) => server.stop(force),
+    receivedBatchBeforeRealOpResult: () => receivedBatchEarly,
+  };
 }
 
 function planSnapshotWithTag(tag: string) {
