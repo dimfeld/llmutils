@@ -1,5 +1,9 @@
 import type { Database } from 'bun:sqlite';
-import { mergeCanonicalRefresh, type CanonicalSnapshot } from './queue.js';
+import {
+  getPendingRollbackKeys,
+  mergeCanonicalRefresh,
+  type CanonicalSnapshot,
+} from './queue.js';
 
 // Safety bound on follow-up passes. Each pass strictly grows `fetchedKeys`,
 // so termination is guaranteed by the finite count of synced entities; this
@@ -49,4 +53,17 @@ export async function fetchAndMergeSnapshotsUntilConvergence(
       `${pendingKeys.length} entity keys still pending. This indicates a runaway in ` +
       `optimistic-rollback fan-out and should be investigated.`
   );
+}
+
+export async function drainPendingRollbacks(
+  db: Database,
+  fetchSnapshots: SnapshotFetcher
+): Promise<void> {
+  const keys = getPendingRollbackKeys(db);
+  if (keys.length === 0) {
+    return;
+  }
+  // Pending rollback keys are durable retry markers. If fetching fails here,
+  // the rows remain in sync_pending_rollback and the next sync run retries.
+  await fetchAndMergeSnapshotsUntilConvergence(db, keys, fetchSnapshots);
 }
