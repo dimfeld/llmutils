@@ -115,6 +115,28 @@ function ackMetadata(operationUuid: string): Record<string, unknown> {
   return row ? (JSON.parse(row.ack_metadata) as Record<string, unknown>) : {};
 }
 
+function operationRows(): Array<{
+  operation_uuid: string;
+  local_sequence: number;
+  status: string;
+  attempts: number;
+  last_error: string | null;
+}> {
+  return db
+    .prepare(
+      `SELECT operation_uuid, local_sequence, status, attempts, last_error
+       FROM sync_operation
+       ORDER BY local_sequence`
+    )
+    .all() as Array<{
+    operation_uuid: string;
+    local_sequence: number;
+    status: string;
+    attempts: number;
+    last_error: string | null;
+  }>;
+}
+
 describe('main-node sync apply engine', () => {
   test('batch rolls back every mutation when a later operation is invalid', async () => {
     const create = await createPlanOperation(
@@ -149,8 +171,27 @@ describe('main-node sync apply engine', () => {
 
     expect(result.status).toBe('rejected');
     expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
-    expect(countRows('sync_operation')).toBe(0);
+    expect(operationRows()).toMatchObject([
+      {
+        operation_uuid: create.operationUuid,
+        local_sequence: 1,
+        status: 'rejected',
+        attempts: 1,
+      },
+      {
+        operation_uuid: invalidDependency.operationUuid,
+        local_sequence: 2,
+        status: 'rejected',
+        attempts: 1,
+      },
+    ]);
+    expect(operationRows()[1]!.last_error).toContain(`Unknown plan ${OTHER_PLAN_UUID}`);
     expect(countRows('sync_sequence')).toBe(0);
+
+    const replay = applyBatch(db, batch);
+    expect(replay.status).toBe('rejected');
+    expect(replay.results.map((item) => item.status)).toEqual(['rejected', 'rejected']);
+    expect(countRows('sync_operation')).toBe(2);
   });
 
   test('batch commits applied operations and accepted conflicts together', async () => {
@@ -220,6 +261,23 @@ describe('main-node sync apply engine', () => {
     expect(result.results.map((item) => item.status)).toEqual(['rejected', 'conflict']);
     expect(result.results[1].conflictId).toBeUndefined();
     expect(result.results[1].error?.message).toContain('Atomic batch aborted');
+    expect(operationRows().slice(1)).toMatchObject([
+      {
+        operation_uuid: abbreviation.operationUuid,
+        local_sequence: 2,
+        status: 'rejected',
+        attempts: 1,
+      },
+      {
+        operation_uuid: staleColor.operationUuid,
+        local_sequence: 3,
+        status: 'rejected',
+        attempts: 1,
+      },
+    ]);
+    expect(operationRows()[2]!.last_error).toBe(
+      'Atomic batch aborted: conflict diagnosed but not persisted'
+    );
     expect(countRows('sync_conflict')).toBe(0);
     expect(
       db.prepare('SELECT value, revision FROM project_setting WHERE setting = ?').get('color')
@@ -231,6 +289,18 @@ describe('main-node sync apply engine', () => {
       db.prepare('SELECT value FROM project_setting WHERE setting = ?').get('abbreviation')
     ).toBeNull();
     expect(countRows('sync_sequence')).toBe(1);
+
+    const replay = applyBatch(
+      db,
+      createBatchEnvelope({
+        batchId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac',
+        originNodeId: NODE_A,
+        atomic: true,
+        operations: [abbreviation, staleColor],
+      })
+    );
+    expect(replay.status).toBe('rejected');
+    expect(replay.results.map((item) => item.status)).toEqual(['rejected', 'rejected']);
   });
 
   test('non-atomic batch still commits applied operations when a later operation conflicts', async () => {
@@ -322,6 +392,66 @@ describe('main-node sync apply engine', () => {
     expect(result.error).toBeInstanceOf(SyncFifoGapError);
     expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
     expect(countRows('sync_operation')).toBe(0);
+  });
+
+  test('atomic batch rejection persists FIFO floor so later operations can advance', async () => {
+    seedPlan();
+    const prior = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'prior' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    expect(applyOperation(db, prior).status).toBe('applied');
+    const invalidDependency = await addPlanDependencyOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, dependsOnPlanUuid: OTHER_PLAN_UUID },
+      {
+        operationUuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        originNodeId: NODE_A,
+        localSequence: 2,
+      }
+    );
+    const sibling = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'sibling' },
+      {
+        operationUuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        originNodeId: NODE_A,
+        localSequence: 3,
+      }
+    );
+
+    const result = applyBatch(
+      db,
+      createBatchEnvelope({
+        batchId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccd',
+        originNodeId: NODE_A,
+        atomic: true,
+        operations: [invalidDependency, sibling],
+      })
+    );
+
+    expect(result.status).toBe('rejected');
+    expect(operationRows().map((row) => [row.local_sequence, row.status])).toEqual([
+      [1, 'applied'],
+      [2, 'rejected'],
+      [3, 'rejected'],
+    ]);
+    const next = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'next' },
+      {
+        operationUuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        originNodeId: NODE_A,
+        localSequence: 4,
+      }
+    );
+    expect(applyOperation(db, next).status).toBe('applied');
+    expect(
+      getPlanTagsByUuid(db, PLAN_UUID)
+        .map((row) => row.tag)
+        .sort()
+    ).toEqual(['next', 'prior']);
   });
 
   test('batch rolls back via SyncValidationError catch path on duplicate-sequence collision and marks all results rejected', async () => {
