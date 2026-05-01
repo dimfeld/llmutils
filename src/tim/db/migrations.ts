@@ -847,6 +847,15 @@ const migrations: Migration[] = [
         ON sync_operation(target_key);
     `,
   },
+  {
+    version: 29,
+    up: `
+      CREATE TABLE sync_pending_rollback (
+        entity_key TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

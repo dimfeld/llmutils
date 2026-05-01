@@ -33,6 +33,7 @@ import {
 import {
   enqueueBatch,
   enqueueOperation,
+  getPendingRollbackKeys,
   getSyncConflictSummary,
   getSyncQueueSummary,
   listPendingOperations,
@@ -1196,6 +1197,37 @@ describe('persistent-node sync queue', () => {
     expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
   });
 
+  test('mergeCanonicalRefresh records pending_rollback for follow-up keys when rejecting promote_task', async () => {
+    seedPlan();
+    const newPlanUuid = '88888888-8888-4888-8888-888888888880';
+    const promoteOp = await promotePlanTaskOperation(
+      PROJECT_UUID,
+      {
+        sourcePlanUuid: PLAN_UUID,
+        taskUuid: TASK_UUID,
+        newPlanUuid,
+        title: 'Promoted task',
+      },
+      { originNodeId: NODE_A, localSequence: 778 }
+    );
+    enqueue(promoteOp);
+
+    const followUpKeys = mergeCanonicalRefresh(db, {
+      type: 'plan_deleted',
+      projectUuid: PROJECT_UUID,
+      planUuid: PLAN_UUID,
+      deletedAt: new Date().toISOString(),
+    });
+
+    expect(operationRow(promoteOp.operationUuid).status).toBe('rejected');
+    expect(followUpKeys).toEqual(
+      expect.arrayContaining([`plan:${newPlanUuid}`, `task:${TASK_UUID}`])
+    );
+    expect(getPendingRollbackKeys(db)).toEqual(
+      expect.arrayContaining([`plan:${newPlanUuid}`, `task:${TASK_UUID}`])
+    );
+  });
+
   test('mergeCanonicalRefresh never_existed for source plan rejects pending plan.promote_task ops via payload_secondary_plan_uuid', async () => {
     seedPlan();
     const newPlanUuid = '77777777-7777-4777-8777-777777777777';
@@ -1286,6 +1318,41 @@ describe('persistent-node sync queue', () => {
 
     expect(operationRow(promoteOp.operationUuid).status).toBe('rejected');
     expect(getPlanByUuid(db, newPlanUuid)).toBeNull();
+  });
+
+  test('mergeCanonicalRefresh clears pending_rollback when the followed-up entity snapshot is merged', async () => {
+    seedPlan();
+    const newPlanUuid = '77777777-7777-4777-8777-777777777770';
+    const promoteOp = await promotePlanTaskOperation(
+      PROJECT_UUID,
+      {
+        sourcePlanUuid: PLAN_UUID,
+        taskUuid: TASK_UUID,
+        newPlanUuid,
+        title: 'Promoted task',
+      },
+      { originNodeId: NODE_A, localSequence: 781 }
+    );
+    enqueue(promoteOp);
+
+    mergeCanonicalRefresh(db, {
+      type: 'plan_deleted',
+      projectUuid: PROJECT_UUID,
+      planUuid: PLAN_UUID,
+      deletedAt: new Date().toISOString(),
+    });
+    expect(getPendingRollbackKeys(db)).toContain(`plan:${newPlanUuid}`);
+
+    mergeCanonicalRefresh(db, {
+      type: 'never_existed',
+      entityKey: `plan:${newPlanUuid}`,
+      targetType: 'plan',
+      planUuid: newPlanUuid,
+    });
+
+    expect(operationRow(promoteOp.operationUuid).status).toBe('rejected');
+    expect(getPlanByUuid(db, newPlanUuid)).toBeNull();
+    expect(getPendingRollbackKeys(db)).not.toContain(`plan:${newPlanUuid}`);
   });
 
   test('mergeCanonicalRefresh removes local assignments for cleanup-status plan snapshots', () => {

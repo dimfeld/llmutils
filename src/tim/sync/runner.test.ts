@@ -12,6 +12,7 @@ import {
 import {
   enqueueBatch,
   enqueueOperation,
+  getPendingRollbackKeys,
   markOperationAcked,
   markOperationSending,
 } from './queue.js';
@@ -319,6 +320,98 @@ describe('sync runner', () => {
     );
     expect(operationStatus(db, promoteOp.operationUuid)).toBe('rejected');
     expect(getPlanByUuid(db, newPlanUuid)).toBeNull();
+  });
+
+  test('runSyncCatchUpOnce drains pending rollback keys on next run after a follow-up fetch failure', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    const newPlanUuid = '44444444-4444-4444-8444-444444444445';
+    const promoteOp = await promotePlanTaskOperation(
+      PROJECT_UUID,
+      {
+        sourcePlanUuid: PLAN_UUID,
+        taskUuid: TASK_UUID,
+        newPlanUuid,
+        title: 'Promoted task',
+      },
+      { originNodeId: NODE_ID, localSequence: 999 }
+    );
+    enqueueOperation(db, promoteOp);
+    expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
+
+    clientMocks.httpCatchUp.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        invalidations: [{ sequenceId: 1, entityKeys: [`plan:${PLAN_UUID}`] }],
+        currentSequenceId: 1,
+      },
+    });
+    clientMocks.httpFetchSnapshots
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          snapshots: [
+            {
+              type: 'plan_deleted',
+              projectUuid: PROJECT_UUID,
+              planUuid: PLAN_UUID,
+              deletedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          currentSequenceId: 1,
+        },
+      })
+      .mockRejectedValueOnce(new Error('follow-up fetch failed'));
+
+    await expect(
+      runSyncCatchUpOnce({
+        db,
+        serverUrl: 'http://127.0.0.1:9',
+        nodeId: NODE_ID,
+        token: 'token',
+      })
+    ).rejects.toThrow('follow-up fetch failed');
+
+    expect(operationStatus(db, promoteOp.operationUuid)).toBe('rejected');
+    expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
+    expect(getPendingRollbackKeys(db)).toEqual(
+      expect.arrayContaining([`plan:${newPlanUuid}`, `task:${TASK_UUID}`])
+    );
+
+    clientMocks.httpCatchUp.mockResolvedValueOnce({
+      ok: true,
+      value: { invalidations: [], currentSequenceId: 1 },
+    });
+    clientMocks.httpFetchSnapshots.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        snapshots: [
+          {
+            type: 'never_existed',
+            entityKey: `plan:${newPlanUuid}`,
+            targetType: 'plan',
+            planUuid: newPlanUuid,
+          },
+          {
+            type: 'never_existed',
+            entityKey: `task:${TASK_UUID}`,
+            targetType: 'task',
+            taskUuid: TASK_UUID,
+          },
+        ],
+        currentSequenceId: 1,
+      },
+    });
+
+    await runSyncCatchUpOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+    });
+
+    expect(getPlanByUuid(db, newPlanUuid)).toBeNull();
+    expect(getPendingRollbackKeys(db)).toEqual([]);
   });
 
   test('runSyncCatchUpOnce bounds recursive never_existed follow-up snapshots', async () => {

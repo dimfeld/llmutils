@@ -6,6 +6,7 @@ import { removeAssignment } from '../db/assignment.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import { upsertPlanInTransaction, type PlanRow, type PlanTaskRow } from '../db/plan.js';
 import { getProjectByUuid } from '../db/project.js';
+import { planKey, projectSettingKey, taskKey } from './entity_keys.js';
 import {
   assertValidEnvelope,
   assertValidBatchEnvelope,
@@ -687,6 +688,34 @@ export function pruneAcknowledgedOperations(
   return result.changes;
 }
 
+export function recordPendingRollbackKeys(db: Database, keys: string[]): void {
+  const uniqueKeys = [...new Set(keys)];
+  if (uniqueKeys.length === 0) {
+    return;
+  }
+  const insert = db.prepare(
+    `
+      INSERT OR IGNORE INTO sync_pending_rollback (entity_key, created_at)
+      VALUES (?, ${SQL_NOW_ISO_UTC})
+    `
+  );
+  for (const key of uniqueKeys) {
+    insert.run(key);
+  }
+}
+
+export function clearPendingRollbackKey(db: Database, key: string): void {
+  db.prepare('DELETE FROM sync_pending_rollback WHERE entity_key = ?').run(key);
+}
+
+export function getPendingRollbackKeys(db: Database): string[] {
+  return (
+    db
+      .prepare('SELECT entity_key FROM sync_pending_rollback ORDER BY created_at, entity_key')
+      .all() as Array<{ entity_key: string }>
+  ).map((row) => row.entity_key);
+}
+
 /**
  * Applies one canonical entity snapshot from the main node, then layers this
  * node's still-active optimistic operations back on top. Scope is intentionally
@@ -1140,8 +1169,11 @@ function applyOptimisticProjectSetting(
 }
 
 function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): string[] {
+  const snapshotEntityKey = entityKeyForSnapshot(snapshot);
   if (snapshot.type === 'never_existed') {
-    return writeNeverExistedSnapshot(db, snapshot);
+    const followUpKeys = writeNeverExistedSnapshot(db, snapshot);
+    clearPendingRollbackKey(db, snapshotEntityKey);
+    return followUpKeys;
   }
 
   if (snapshot.type === 'plan_deleted') {
@@ -1200,6 +1232,8 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
       snapshot.planUuid,
       snapshot.planUuid
     );
+    recordPendingRollbackKeys(db, followUpKeys);
+    clearPendingRollbackKey(db, snapshotEntityKey);
     return followUpKeys;
   }
 
@@ -1213,6 +1247,7 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
         project.id,
         snapshot.setting
       );
+      clearPendingRollbackKey(db, snapshotEntityKey);
       return [];
     }
     db.prepare(
@@ -1233,6 +1268,7 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
       snapshot.updatedAt ?? null,
       snapshot.updatedByNode ?? null
     );
+    clearPendingRollbackKey(db, snapshotEntityKey);
     return [];
   }
 
@@ -1294,7 +1330,21 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
   if (ASSIGNMENT_CLEANUP_STATUSES.has(snapshot.plan.status)) {
     removeAssignment(db, project.id, snapshot.plan.uuid);
   }
+  clearPendingRollbackKey(db, snapshotEntityKey);
   return [];
+}
+
+function entityKeyForSnapshot(snapshot: CanonicalSnapshot): string {
+  if (snapshot.type === 'plan_deleted') {
+    return planKey(snapshot.planUuid);
+  }
+  if (snapshot.type === 'never_existed') {
+    return snapshot.targetType === 'plan' ? planKey(snapshot.planUuid) : taskKey(snapshot.taskUuid);
+  }
+  if (snapshot.type === 'project_setting') {
+    return projectSettingKey(snapshot.projectUuid, snapshot.setting);
+  }
+  return planKey(snapshot.plan.uuid);
 }
 
 function writeNeverExistedSnapshot(
@@ -1315,6 +1365,7 @@ function writeNeverExistedSnapshot(
       snapshot.planUuid,
       `Target plan ${snapshot.planUuid} never existed on the main node`
     );
+    recordPendingRollbackKeys(db, followUpKeys);
     return followUpKeys;
   }
 
@@ -1323,12 +1374,14 @@ function writeNeverExistedSnapshot(
     db.prepare('DELETE FROM plan_task WHERE uuid = ?').run(snapshot.taskUuid);
     shiftTaskIndexesAfterDelete(db, task.plan_uuid, task.task_index);
   }
-  return rejectPendingOperationsForNeverExistedTask(
+  const followUpKeys = rejectPendingOperationsForNeverExistedTask(
     db,
     snapshot.entityKey,
     snapshot.taskUuid,
     `Target task ${snapshot.taskUuid} never existed on the main node`
   );
+  recordPendingRollbackKeys(db, followUpKeys);
+  return followUpKeys;
 }
 
 function rejectPendingOperationsForNeverExistedPlan(
