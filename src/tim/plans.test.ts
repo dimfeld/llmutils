@@ -1024,6 +1024,49 @@ tasks:
     ]);
   });
 
+  test('writePlanFile preserves duplicate list-field parity through operation routing', async () => {
+    const nodeId = 'plans-local-operation-list-duplicates-node';
+    const uuid = '83838383-8383-4383-8383-838383838384';
+    const config = { sync: { nodeId } } as TimConfig;
+
+    await writePlanFile(
+      null,
+      {
+        id: 8300,
+        uuid,
+        title: 'Local operation duplicate lists',
+        goal: 'Preserve multiplicity for list diffs',
+        docs: ['docs/a.md', 'docs/a.md'],
+        changedFiles: ['src/a.ts'],
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir, config }
+    );
+
+    await writePlanFile(
+      null,
+      {
+        id: 8300,
+        uuid,
+        title: 'Local operation duplicate lists',
+        goal: 'Preserve multiplicity for list diffs',
+        docs: ['docs/a.md'],
+        changedFiles: ['src/a.ts', 'src/a.ts'],
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir, config }
+    );
+
+    const resolved = await resolvePlanByNumericId(8300, repoDir);
+    expect(resolved.plan.docs).toEqual(['docs/a.md']);
+    expect(resolved.plan.changedFiles).toEqual(['src/a.ts', 'src/a.ts']);
+    expect(syncOperationRowsForNode(nodeId).map((row) => row.operation_type)).toEqual([
+      'plan.create',
+      'plan.remove_list_item',
+      'plan.add_list_item',
+    ]);
+  });
+
   test('writePlanFile persists a global nodeId when local-operation config has none', async () => {
     const configPath = join(process.env.XDG_CONFIG_HOME!, 'tim', 'config.yml');
     await rm(configPath, { force: true });

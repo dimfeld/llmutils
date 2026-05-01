@@ -1368,6 +1368,29 @@ describe('main-node sync apply engine', () => {
     expect(countRows('sync_sequence')).toBe(1);
   });
 
+  test('plan.add_list_item appends one item per distinct operation', async () => {
+    seedPlan();
+    const issue = { severity: 'minor' as const, category: 'style', content: 'Lint error' };
+    const first = await addPlanListItemOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, list: 'reviewIssues', value: issue },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    const second = await addPlanListItemOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, list: 'reviewIssues', value: issue },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+
+    applyOperation(db, first);
+    applyOperation(db, second);
+    applyOperation(db, second); // replay
+
+    const plan = getPlanByUuid(db, PLAN_UUID);
+    expect(JSON.parse(plan?.review_issues ?? '[]')).toEqual([issue, issue]);
+    expect(countRows('sync_sequence')).toBe(2);
+  });
+
   test('plan.update_task_text merges cleanly', async () => {
     seedPlan();
     const op = await updatePlanTaskTextOperation(

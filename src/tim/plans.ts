@@ -732,11 +732,15 @@ function routePlanListDiff<T extends string | NonNullable<PlanSchema['reviewIssu
 ): void {
   const currentItems = asArray(current);
   const nextItems = asArray(next);
-  const nextKeys = new Set(nextItems.map(jsonKey));
-  const currentKeys = new Set(currentItems.map(jsonKey));
+  const currentCounts = countListItems(currentItems);
+  const nextCounts = countListItems(nextItems);
 
   for (const item of currentItems) {
-    if (!nextKeys.has(jsonKey(item))) {
+    const key = jsonKey(item);
+    const nextCount = nextCounts.get(key) ?? 0;
+    if (nextCount > 0) {
+      nextCounts.set(key, nextCount - 1);
+    } else {
       addPlanListRemoveToBatch(batch, projectUuid, {
         planUuid,
         list: list as never,
@@ -745,7 +749,11 @@ function routePlanListDiff<T extends string | NonNullable<PlanSchema['reviewIssu
     }
   }
   for (const item of nextItems) {
-    if (!currentKeys.has(jsonKey(item))) {
+    const key = jsonKey(item);
+    const currentCount = currentCounts.get(key) ?? 0;
+    if (currentCount > 0) {
+      currentCounts.set(key, currentCount - 1);
+    } else {
       addPlanListAddToBatch(batch, projectUuid, {
         planUuid,
         list: list as never,
@@ -753,6 +761,15 @@ function routePlanListDiff<T extends string | NonNullable<PlanSchema['reviewIssu
       });
     }
   }
+}
+
+function countListItems<T>(items: T[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const key = jsonKey(item);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
 }
 
 export type PlanWritePostCommitUpdate = {

@@ -927,9 +927,7 @@ function applyLocalOptimisticInTransaction(db: Database, operation: SyncOperatio
         const index = current.findIndex((item) => JSON.stringify(item) === valueText);
         const next =
           op.type === 'plan.add_list_item'
-            ? index === -1
-              ? [...current, op.value]
-              : current
+            ? [...current, op.value]
             : index === -1
               ? current
               : current.filter((_, itemIndex) => itemIndex !== index);

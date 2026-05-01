@@ -1225,9 +1225,7 @@ function applyListItem(
   const index = current.findIndex((item) => JSON.stringify(item) === valueText);
   const next =
     envelope.op.type === 'plan.add_list_item'
-      ? index === -1
-        ? [...current, envelope.op.value]
-        : current
+      ? [...current, envelope.op.value]
       : index === -1
         ? current
         : current.filter((_, itemIndex) => itemIndex !== index);
