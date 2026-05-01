@@ -214,7 +214,6 @@ export async function flushPendingOperationsOnce(
             );
       unwrapRetryable(flush);
       await applyOperationResultsOverHttp(options, flush.value.results);
-      updateTimNodeCursor(options.db, options.nodeId, flush.value.currentSequenceId);
     }
   } catch (err) {
     for (const row of sendingRows) {
@@ -229,13 +228,9 @@ async function applyOperationResultsOverHttp(
   results: SyncOperationResult[]
 ): Promise<void> {
   const keys = new Set<string>();
-  let maxSequenceId = 0;
   for (const result of results) {
     for (const key of result.invalidations ?? []) {
       keys.add(key);
-    }
-    for (const sequenceId of result.sequenceIds ?? []) {
-      maxSequenceId = Math.max(maxSequenceId, sequenceId);
     }
   }
   for (const key of rejectedOperationSnapshotKeys(options.db, results)) {
@@ -243,9 +238,6 @@ async function applyOperationResultsOverHttp(
   }
   await fetchAndMergeSnapshots(options, [...keys]);
   applyOperationResultTransitions(options.db, results);
-  if (maxSequenceId > 0) {
-    updateTimNodeCursor(options.db, options.nodeId, maxSequenceId);
-  }
 }
 
 async function applyInvalidationsOverHttp(
@@ -273,7 +265,6 @@ async function fetchAndMergeSnapshots(options: SyncRunnerOptions, keys: string[]
   for (const snapshot of response.value.snapshots) {
     mergeCanonicalRefresh(options.db, snapshot);
   }
-  updateTimNodeCursor(options.db, options.nodeId, response.value.currentSequenceId);
 }
 
 function unwrapRetryable<T>(result: HttpSyncResult<T>): asserts result is { ok: true; value: T } {

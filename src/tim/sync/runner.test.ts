@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject } from '../db/project.js';
-import { insertSyncOperation, upsertTimNode } from '../db/sync_tables.js';
+import { getTimNodeCursor, insertSyncOperation, upsertTimNode } from '../db/sync_tables.js';
 import { addPlanTagOperation } from './operations.js';
 import { markOperationAcked, markOperationSending } from './queue.js';
 import { createSyncRunner, flushPendingOperationsOnce } from './runner.js';
@@ -144,11 +144,11 @@ describe('sync runner', () => {
           {
             operationId: op.operationUuid,
             status: 'applied',
-            sequenceIds: [],
+            sequenceIds: [99],
             invalidations: [],
           },
         ],
-        currentSequenceId: 0,
+        currentSequenceId: 99,
       },
     });
 
@@ -164,6 +164,7 @@ describe('sync runner', () => {
 
     expect(operationStatus(db, op.operationUuid)).toBe('acked');
     expect(clientMocks.httpFlushOperations).toHaveBeenCalledTimes(1);
+    expect(getTimNodeCursor(db, NODE_ID).last_known_sequence_id).toBe(0);
   });
 
   test('markOperationAcked tolerates operations already acked by another transport', async () => {

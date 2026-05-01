@@ -372,14 +372,10 @@ class WebSocketSyncClient implements SyncClient {
   ): Promise<void> {
     const results = frame.results;
     const snapshotKeys = new Set<string>();
-    let maxSequenceId = 0;
     const transitions = [...results];
     for (const result of transitions) {
       for (const key of result.invalidations ?? []) {
         snapshotKeys.add(key);
-      }
-      for (const sequenceId of result.sequenceIds ?? []) {
-        maxSequenceId = Math.max(maxSequenceId, sequenceId);
       }
     }
     for (const key of rejectedOperationSnapshotKeys(this.options.db, transitions)) {
@@ -393,9 +389,6 @@ class WebSocketSyncClient implements SyncClient {
       }
     }
     applyOperationResultTransitions(this.options.db, transitions);
-    if (maxSequenceId > 0) {
-      updateTimNodeCursor(this.options.db, this.options.nodeId, maxSequenceId);
-    }
     if (this.flushWaiter?.matches(frame)) {
       this.flushWaiter.resolve();
       this.flushWaiter = null;
