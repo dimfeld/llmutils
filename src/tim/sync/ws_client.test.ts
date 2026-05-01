@@ -2,10 +2,14 @@ import { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject } from '../db/project.js';
-import { getPlanTagsByUuid, upsertPlan } from '../db/plan.js';
+import { getPlanTagsByUuid, getPlanTasksByUuid, upsertPlan } from '../db/plan.js';
 import { getTimNodeCursor, upsertTimNode } from '../db/sync_tables.js';
 import { hashToken } from './auth.js';
-import { addPlanDependencyOperation, addPlanTagOperation } from './operations.js';
+import {
+  addPlanDependencyOperation,
+  addPlanTagOperation,
+  addPlanTaskOperation,
+} from './operations.js';
 import {
   enqueueBatch,
   enqueueOperation,
@@ -377,6 +381,50 @@ describe('sync WebSocket client', () => {
       { type: 'plan', plan: { tags: ['immediate'] } },
     ]);
     expect(snapshotWaiterCount(client)).toBe(0);
+  });
+
+  test('fetchAndMergeSnapshots bounds never_existed follow-up snapshots', async () => {
+    const localDb = createDb();
+    seedPlan(localDb);
+    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
+    const addedTaskUuid = '55555555-5555-4555-8555-555555555555';
+    const op = await addPlanTaskOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, taskUuid: addedTaskUuid, title: 'Optimistic task' },
+      { originNodeId: NODE_A, localSequence: 999 }
+    );
+    enqueueOperation(localDb, op);
+    expect(getPlanTasksByUuid(localDb, PLAN_UUID).map((task) => task.uuid)).toContain(
+      addedTaskUuid
+    );
+    const client = createSyncClient({
+      db: localDb,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_A,
+      token: TOKEN,
+      reconnect: false,
+    });
+    const requestSnapshots = vi.fn().mockResolvedValue([
+      {
+        type: 'never_existed',
+        entityKey: `task:${addedTaskUuid}`,
+        targetType: 'task',
+        taskUuid: addedTaskUuid,
+      },
+    ]);
+    (client as unknown as { requestSnapshots: typeof requestSnapshots }).requestSnapshots =
+      requestSnapshots;
+
+    await (
+      client as unknown as { fetchAndMergeSnapshots(keys: string[]): Promise<void> }
+    ).fetchAndMergeSnapshots([`task:${addedTaskUuid}`]);
+
+    expect(requestSnapshots).toHaveBeenCalledTimes(2);
+    expect(requestSnapshots.mock.calls[0]?.[0]).toEqual([`task:${addedTaskUuid}`]);
+    expect(requestSnapshots.mock.calls[1]?.[0]).toEqual([`plan:${PLAN_UUID}`]);
+    expect(getPlanTasksByUuid(localDb, PLAN_UUID).map((task) => task.uuid)).not.toContain(
+      addedTaskUuid
+    );
   });
 
   test('rejects waiters and reconnects after a malformed snapshot response during flush', async () => {
