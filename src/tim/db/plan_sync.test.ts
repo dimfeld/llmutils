@@ -128,13 +128,13 @@ describe('tim db/plan_sync', () => {
   test('syncPlanToDb rejects plans missing UUID identity', async () => {
     await expect(
       syncPlanToDb(
-      {
-        id: 44,
-        title: 'No uuid',
-        goal: 'Skip this',
-        tasks: [],
-      },
-      { config: buildTestConfig(tasksDir) }
+        {
+          id: 44,
+          title: 'No uuid',
+          goal: 'Skip this',
+          tasks: [],
+        },
+        { config: buildTestConfig(tasksDir) }
       )
     ).rejects.toThrow('Plan must have a UUID before syncing to DB');
 
