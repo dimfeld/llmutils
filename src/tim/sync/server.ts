@@ -174,6 +174,14 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
             authenticated: true,
           });
           if (frame.lastKnownSequenceId !== undefined) {
+            if (!isValidClientCursor(options.db, frame.lastKnownSequenceId)) {
+              closeWithError(
+                ws,
+                'invalid_cursor',
+                `lastKnownSequenceId ${frame.lastKnownSequenceId} exceeds current server sequence`
+              );
+              return;
+            }
             updateTimNodeCursor(options.db, frame.nodeId, frame.lastKnownSequenceId);
           }
           send(ws, {
@@ -282,6 +290,12 @@ async function handleHttpRequest(
     if (!Number.isInteger(sinceSequenceId) || sinceSequenceId < 0) {
       return jsonResponse({ error: 'Invalid sinceSequenceId' }, { status: 400 });
     }
+    if (!isValidClientCursor(options.db, sinceSequenceId)) {
+      return jsonResponse(
+        { error: `sinceSequenceId ${sinceSequenceId} exceeds current server sequence` },
+        { status: 400 }
+      );
+    }
     updateTimNodeCursor(options.db, nodeId, sinceSequenceId);
     return jsonResponse({
       invalidations: loadCatchUpInvalidations(options.db, sinceSequenceId),
@@ -316,6 +330,16 @@ function handleAuthenticatedFrame(
     case 'pong':
       return;
     case 'catch_up_request':
+      if (!isValidClientCursor(options.db, frame.sinceSequenceId)) {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            code: 'invalid_cursor',
+            message: `sinceSequenceId ${frame.sinceSequenceId} exceeds current server sequence`,
+          } satisfies SyncServerFrame)
+        );
+        return;
+      }
       if (authenticatedNodeId) {
         updateTimNodeCursor(options.db, authenticatedNodeId, frame.sinceSequenceId);
       }
@@ -408,6 +432,13 @@ function seedAllowedPersistentNodes(db: Database, allowedNodes: SyncAllowedNodeC
       tokenHash: node.tokenHash ?? null,
     });
   }
+}
+
+function isValidClientCursor(db: Database, value: number): boolean {
+  // Reject impossible client cursors (claimed knowledge of sequences the server
+  // has never emitted). Accepting them would silently advance the stored peer
+  // cursor and let retention prune sequences the peer never received.
+  return value <= getCurrentSequenceId(db);
 }
 
 function validateOperationOrigins(
