@@ -16,8 +16,6 @@ import { resolveSyncConfig } from './config.js';
  *   src/tim/plan_materialize.ts for machine-local baseCommit/baseChangeId state.
  * - alignTaskOrderWithMaterializedFileLocalOnly in src/tim/plan_materialize.ts
  *   for shadow-missing materialized recovery until task reorder ops exist.
- * - Per-wrapper fallback in src/tim/sync/write_router.ts for non-UUID rows,
- *   preserving the upgrade path for old local databases.
  *
  * Role checks outside this module should be limited to sync networking/config
  * behavior. Plan ID allocation should go through usesPlanIdReserve().

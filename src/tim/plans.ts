@@ -724,8 +724,6 @@ function updatePlanBaseTrackingLocalOnly(
 
 function routePlanListDiff<T extends string | NonNullable<PlanSchema['reviewIssues']>[number]>(
   batch: SyncBatchHandle,
-  db: ReturnType<typeof getDatabase>,
-  config: TimConfig,
   projectUuid: string,
   planUuid: string,
   list: 'issue' | 'pullRequest' | 'docs' | 'changedFiles' | 'reviewIssues',
@@ -739,7 +737,7 @@ function routePlanListDiff<T extends string | NonNullable<PlanSchema['reviewIssu
 
   for (const item of currentItems) {
     if (!nextKeys.has(jsonKey(item))) {
-      addPlanListRemoveToBatch(batch, db, config, projectUuid, {
+      addPlanListRemoveToBatch(batch, projectUuid, {
         planUuid,
         list: list as never,
         value: item as never,
@@ -1193,7 +1191,7 @@ export function routePlanWriteIntoBatch(
       }
       const currentTask = currentTasksByUuid.get(task.uuid);
       if (!currentTask) {
-        addPlanAddTaskToBatch(batch, db, config, projectUuid, {
+        addPlanAddTaskToBatch(batch, projectUuid, {
           planUuid: plan.uuid!,
           taskUuid: task.uuid,
           title: task.title,
@@ -1237,8 +1235,6 @@ export function routePlanWriteIntoBatch(
 
   routePlanListDiff(
     batch,
-    db,
-    config,
     projectUuid,
     plan.uuid!,
     'issue',
@@ -1247,8 +1243,6 @@ export function routePlanWriteIntoBatch(
   );
   routePlanListDiff(
     batch,
-    db,
-    config,
     projectUuid,
     plan.uuid!,
     'pullRequest',
@@ -1257,8 +1251,6 @@ export function routePlanWriteIntoBatch(
   );
   routePlanListDiff(
     batch,
-    db,
-    config,
     projectUuid,
     plan.uuid!,
     'docs',
@@ -1267,8 +1259,6 @@ export function routePlanWriteIntoBatch(
   );
   routePlanListDiff(
     batch,
-    db,
-    config,
     projectUuid,
     plan.uuid!,
     'changedFiles',
@@ -1277,8 +1267,6 @@ export function routePlanWriteIntoBatch(
   );
   routePlanListDiff(
     batch,
-    db,
-    config,
     projectUuid,
     plan.uuid!,
     'reviewIssues',
