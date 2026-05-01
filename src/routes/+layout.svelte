@@ -181,9 +181,7 @@
       Skip to main content
     </a>
     <header class="flex items-center justify-between bg-gray-800 px-4 py-2 dark:bg-gray-900">
-      <a href={resolve('/')} class="text-lg font-semibold text-white" title="Home">
-        tim
-      </a>
+      <a href={resolve('/')} class="text-lg font-semibold text-white" title="Home"> tim </a>
       <div class="flex items-center gap-2">
         <TabNav {projectId} {showSessionsAttentionDot} />
         <Tooltip.Root>

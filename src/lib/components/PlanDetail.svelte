@@ -624,7 +624,7 @@
               >
                 {#if chatAction.starting}
                   <span
-                    class="inline-block animate-spin rounded-full border-2 border-white border-t-transparent h-2 w-2"
+                    class="inline-block h-2 w-2 animate-spin rounded-full border-2 border-white border-t-transparent"
                   ></span>
                   {chatAction.startingLabel}
                 {:else}
