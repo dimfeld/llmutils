@@ -206,41 +206,41 @@ export function applyBatch(
     return apply.immediate();
   } catch (error) {
     if (error instanceof BatchAbort) {
-      // Rejection rows written by operations inside this transaction roll back with
-      // the batch; the returned batch_result is the durable rejection signal.
       const status =
         error.result.status === 'deferred'
           ? 'deferred'
           : error.result.status === 'conflict'
             ? 'conflict'
             : 'rejected';
+      const results = rolledBackBatchResults(batch.operations, error.result, error.causeIndex);
+      persistRolledBackBatchRejections(db, batch, results, normalizedPayloads);
       return {
         batchId: batch.batchId,
         status,
-        results: rolledBackBatchResults(batch.operations, error.result, error.causeIndex),
+        results,
         invalidations: [],
         sequenceIds: [],
         error: error.result.error,
       };
     }
     if (error instanceof SyncValidationError || error instanceof SyncFifoGapError) {
-      // Rejection rows written by operations inside this transaction roll back with
-      // the batch; the returned batch_result is the durable rejection signal.
       const status = error instanceof SyncFifoGapError ? 'deferred' : 'rejected';
+      const results = rolledBackBatchResults(
+        batch.operations,
+        {
+          status,
+          sequenceIds: [],
+          invalidations: [],
+          acknowledged: status === 'rejected',
+          error,
+        } as ApplyOperationResult,
+        batch.operations.findIndex((operation) => operation.operationUuid === error.operationUuid)
+      );
+      persistRolledBackBatchRejections(db, batch, results, normalizedPayloads);
       return {
         batchId: batch.batchId,
         status,
-        results: rolledBackBatchResults(
-          batch.operations,
-          {
-            status,
-            sequenceIds: [],
-            invalidations: [],
-            acknowledged: status === 'rejected',
-            error,
-          } as ApplyOperationResult,
-          batch.operations.findIndex((operation) => operation.operationUuid === error.operationUuid)
-        ),
+        results,
         invalidations: [],
         sequenceIds: [],
         error,
@@ -444,6 +444,24 @@ function aggregateBatchResult(batchId: string, results: ApplyOperationResult[]):
   };
 }
 
+function aggregateRecordedBatchResult(
+  batchId: string,
+  results: ApplyOperationResult[]
+): ApplyBatchResult {
+  const rejected = results.find((result) => result.status === 'rejected');
+  if (rejected) {
+    return {
+      batchId,
+      status: 'rejected',
+      results,
+      invalidations: [],
+      sequenceIds: [],
+      error: rejected.error,
+    };
+  }
+  return aggregateBatchResult(batchId, results);
+}
+
 function rolledBackBatchResults(
   operations: SyncOperationEnvelope[],
   cause: ApplyOperationResult,
@@ -473,17 +491,9 @@ function rolledBackBatchResults(
       return cause;
     }
     // V1 trade-off: when the cause is rejected or an atomic conflict aborts,
-    // we mark siblings terminal
-    // 'rejected' rather than retryable. The naive "retry siblings" approach
-    // strands them indefinitely on the main node — applyBatch rolls back the
-    // cause's rejection/conflict record, so the FIFO floor never advances past
-    // the cause's sequence. A detached sibling at sequence N+2 then trips
-    // SyncFifoGapError waiting for the never-recorded N+1. The 'deferred'
-    // path (SyncFifoGapError on the whole batch) keeps siblings retryable
-    // because the entire batch is replayed atomically once the gap fills.
-    // Follow-up work (durably persisting rejection across the rollback,
-    // or reassigning sequences on the persistent node) is needed before
-    // siblings can safely retry independently.
+    // we mark siblings terminal 'rejected' rather than retryable. applyBatch
+    // durably persists those rejection rows after rollback so the per-origin
+    // FIFO floor advances past the whole aborted batch.
     const error = new SyncValidationError(
       'Operation rolled back because its batch did not commit',
       {
@@ -511,6 +521,54 @@ function operationUuidFromError(error: Error | undefined): string | undefined {
   return undefined;
 }
 
+function persistRolledBackBatchRejections(
+  db: Database,
+  batch: SyncOperationBatchEnvelope,
+  results: ApplyOperationResult[],
+  normalizedPayloads: string[]
+): void {
+  if (results.every((result) => result.status === 'deferred')) {
+    return;
+  }
+
+  const persist = db.transaction((): void => {
+    for (const [index, operation] of batch.operations.entries()) {
+      const result = results[index];
+      if (!result || result.status === 'deferred') {
+        continue;
+      }
+      const existing = getOperationRow(db, operation.operationUuid);
+      if (!existing) {
+        insertReceivedOperation(
+          db,
+          operation,
+          normalizedPayloads[index]!,
+          batch.batchId,
+          batch.atomic === true
+        );
+      } else if (existing.batch_id !== batch.batchId) {
+        continue;
+      }
+      const message =
+        result.status === 'conflict'
+          ? 'Atomic batch aborted: conflict diagnosed but not persisted'
+          : (result.error?.message ?? 'Operation rejected because its atomic batch rolled back');
+      // Atomic conflict aborts roll back the sync_conflict row, so the durable
+      // operation record is a rejection rather than status='conflict'.
+      rejectOperation(db, operation.operationUuid, message);
+    }
+  });
+
+  try {
+    persist.immediate();
+  } catch (error) {
+    console.error(
+      `[sync] failed to persist rolled-back batch rejection records for ${batch.batchId}:`,
+      error
+    );
+  }
+}
+
 function getBatchReplayResult(
   db: Database,
   batch: SyncOperationBatchEnvelope
@@ -535,7 +593,7 @@ function getBatchReplayResult(
     (row): row is NonNullable<typeof row> => !!row && TERMINAL_OPERATION_STATUSES.has(row.status)
   );
   if (rows.every((row) => row && TERMINAL_OPERATION_STATUSES.has(row.status))) {
-    return aggregateBatchResult(
+    return aggregateRecordedBatchResult(
       batch.batchId,
       rows.map((row) => resultFromRecordedOperation(db, row!))
     );
@@ -668,6 +726,7 @@ function getOperationRow(db: Database, operationUuid: string) {
   return db.prepare('SELECT * FROM sync_operation WHERE operation_uuid = ?').get(operationUuid) as {
     operation_uuid: string;
     status: string;
+    last_error: string | null;
     ack_metadata: string | null;
     target_key: string;
     batch_id: string | null;
@@ -676,7 +735,13 @@ function getOperationRow(db: Database, operationUuid: string) {
 
 function resultFromRecordedOperation(
   db: Database,
-  row: { operation_uuid: string; status: string; ack_metadata: string | null; target_key: string }
+  row: {
+    operation_uuid: string;
+    status: string;
+    ack_metadata: string | null;
+    target_key: string;
+    last_error?: string | null;
+  }
 ): ApplyOperationResult {
   const metadata = row.ack_metadata
     ? (JSON.parse(row.ack_metadata) as Record<string, unknown>)
@@ -695,6 +760,19 @@ function resultFromRecordedOperation(
       .get(row.operation_uuid) as { conflict_id: string } | null;
     conflictId = conflict?.conflict_id;
   }
+  const errorMessage =
+    typeof metadata.error === 'string'
+      ? metadata.error
+      : row.last_error
+        ? row.last_error
+        : undefined;
+  const error =
+    row.status === 'rejected' && errorMessage
+      ? new SyncValidationError(errorMessage, {
+          operationUuid: row.operation_uuid,
+          issues: [],
+        })
+      : undefined;
   return {
     status: row.status as ApplyOperationStatus,
     sequenceId: sequenceIds.at(-1),
@@ -706,6 +784,7 @@ function resultFromRecordedOperation(
     resolvedNumericPlanId,
     acknowledged:
       row.status === 'applied' || row.status === 'conflict' || row.status === 'rejected',
+    error,
   };
 }
 
@@ -1827,6 +1906,7 @@ function rejectOperation(db: Database, operationUuid: string, message: string): 
     `
       UPDATE sync_operation
       SET status = 'rejected',
+          attempts = attempts + 1,
           last_error = ?,
           updated_at = ${SQL_NOW_ISO_UTC},
           acked_at = ${SQL_NOW_ISO_UTC},
