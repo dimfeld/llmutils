@@ -22,7 +22,9 @@ import {
   SyncServerFrameSchema,
   type SyncCatchUpInvalidation,
   type SyncClientFrame,
+  type SyncBatchResultFrame,
   type SyncOperationResult,
+  type SyncOpResultFrame,
   type SyncServerFrame,
 } from './ws_protocol.js';
 
@@ -95,6 +97,7 @@ class WebSocketSyncClient implements SyncClient {
     reject: (error: Error) => void;
   } | null = null;
   private flushWaiter: {
+    matches: (frame: SyncOpResultFrame | SyncBatchResultFrame) => boolean;
     resolve: () => void;
     reject: (error: Error) => void;
   } | null = null;
@@ -235,10 +238,10 @@ class WebSocketSyncClient implements SyncClient {
           this.catchUpWaiter = null;
           return;
         case 'op_result':
-          await this.handleOperationResults(frame.results);
+          await this.handleOperationResults(frame);
           return;
         case 'batch_result':
-          await this.handleOperationResults(frame.results);
+          await this.handleOperationResults(frame);
           return;
         case 'invalidate':
           await this.applyInvalidations([
@@ -331,7 +334,7 @@ class WebSocketSyncClient implements SyncClient {
       }
       for (const frame of rowsToFlushFrames(this.options.db, sendingRows)) {
         await new Promise<void>((resolve, reject) => {
-          this.flushWaiter = { resolve, reject };
+          this.setFlushWaiter(this.createFlushWaiter(frame, resolve, reject));
           this.send(frame);
         });
       }
@@ -364,7 +367,10 @@ class WebSocketSyncClient implements SyncClient {
     this.flushSafetyTimer = null;
   }
 
-  private async handleOperationResults(results: SyncOperationResult[]): Promise<void> {
+  private async handleOperationResults(
+    frame: SyncOpResultFrame | SyncBatchResultFrame
+  ): Promise<void> {
+    const results = frame.results;
     const snapshotKeys = new Set<string>();
     let maxSequenceId = 0;
     const transitions = [...results];
@@ -390,8 +396,42 @@ class WebSocketSyncClient implements SyncClient {
     if (maxSequenceId > 0) {
       updateTimNodeCursor(this.options.db, this.options.nodeId, maxSequenceId);
     }
-    this.flushWaiter?.resolve();
-    this.flushWaiter = null;
+    if (this.flushWaiter?.matches(frame)) {
+      this.flushWaiter.resolve();
+      this.flushWaiter = null;
+    }
+  }
+
+  private createFlushWaiter(
+    frame: SyncFlushFrame,
+    resolve: () => void,
+    reject: (error: Error) => void
+  ): NonNullable<WebSocketSyncClient['flushWaiter']> {
+    if (frame.type === 'batch') {
+      return {
+        matches: (resultFrame) =>
+          resultFrame.type === 'batch_result' && resultFrame.batchId === frame.batch.batchId,
+        resolve,
+        reject,
+      };
+    }
+
+    const operationIds = new Set(frame.operations.map((operation) => operation.operationUuid));
+    return {
+      matches: (resultFrame) => {
+        if (resultFrame.type !== 'op_result' || resultFrame.results.length !== operationIds.size) {
+          return false;
+        }
+        return resultFrame.results.every((result) => operationIds.has(result.operationId));
+      },
+      resolve,
+      reject,
+    };
+  }
+
+  private setFlushWaiter(waiter: NonNullable<WebSocketSyncClient['flushWaiter']>): void {
+    this.flushWaiter?.reject(new Error('Sync flush waiter replaced before matching result'));
+    this.flushWaiter = waiter;
   }
 
   private async applyInvalidations(invalidations: SyncCatchUpInvalidation[]): Promise<void> {
