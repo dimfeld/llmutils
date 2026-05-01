@@ -232,72 +232,50 @@ async function routeSyncBatchWithMode(
     return { mode: 'queued', batch: result.batch, result };
   }
 
-  let batch: SyncOperationBatchEnvelope | null = null;
-  let result: ApplyBatchResult;
-  const applyLocalBatch = db.transaction((): ApplyBatchResult => {
-    options.precondition?.();
-    const localSequenceStart = allocateLocalSequenceRange(
-      db,
-      originNodeId,
-      input.operations.length
-    );
-    const operations = input.operations.map((operation, index) => ({
-      ...operation,
-      originNodeId,
-      localSequence: localSequenceStart + index,
-    }));
-    batch = createBatchEnvelope({
-      originNodeId,
-      reason: input.reason ?? options.reason,
-      atomic: input.atomic ?? options.atomic,
-      operations,
-    });
-    const applied = applyBatch(db, batch, {
-      ...options.applyOptions,
-      localMainNodeId: originNodeId,
-      preserveRequestedPlanIds: mode === 'local-operation',
-      cleanupAssignmentsOnStatusChange: mode !== 'local-operation',
-    });
-    if (applied.status !== 'applied') {
-      throw new LocalBatchNotApplied(applied);
-    }
-    const conflict = applied.results.find(
-      (item): item is ApplyOperationResult & { status: 'conflict' } => item.status === 'conflict'
-    );
-    if (conflict && !batch.atomic && !options.acceptConflict) {
-      throw new LocalBatchConflict(conflict, applied.results.indexOf(conflict));
-    }
-    return applied;
+  options.precondition?.();
+  const localSequenceStart = allocateLocalSequenceRange(db, originNodeId, input.operations.length);
+  const operations = input.operations.map((operation, index) => ({
+    ...operation,
+    originNodeId,
+    localSequence: localSequenceStart + index,
+  }));
+  const batch = createBatchEnvelope({
+    originNodeId,
+    reason: input.reason ?? options.reason,
+    atomic: input.atomic ?? options.atomic,
+    operations,
   });
-  try {
-    result = applyLocalBatch.immediate();
-  } catch (error) {
-    if (error instanceof LocalBatchNotApplied) {
-      result = error.result;
-    } else if (error instanceof LocalBatchConflict) {
-      const operation = batch!.operations[error.operationIndex];
-      throw new SyncWriteConflictError(
-        `Sync batch write for ${operation.targetKey} was accepted as an unresolved conflict`,
-        {
-          operationUuid: operation.operationUuid,
-          targetKey: operation.targetKey,
-          conflictId: error.result.conflictId,
-        }
-      );
-    } else {
-      throw error;
-    }
+
+  const result = applyBatch(db, batch, {
+    ...options.applyOptions,
+    localMainNodeId: originNodeId,
+    preserveRequestedPlanIds: mode === 'local-operation',
+    cleanupAssignmentsOnStatusChange: mode !== 'local-operation',
+  });
+  const conflict = result.results.find(
+    (item): item is ApplyOperationResult & { status: 'conflict' } => item.status === 'conflict'
+  );
+  if (result.status === 'applied' && conflict && !batch.atomic && !options.acceptConflict) {
+    const operation = batch.operations[result.results.indexOf(conflict)];
+    throw new SyncWriteConflictError(
+      `Sync batch write for ${operation.targetKey} was accepted as an unresolved conflict`,
+      {
+        operationUuid: operation.operationUuid,
+        targetKey: operation.targetKey,
+        conflictId: conflict.conflictId,
+      }
+    );
   }
   if (result.status === 'applied') {
     return {
       mode: 'applied',
-      batch: batch!,
+      batch,
       result: result as ApplyBatchResult & { status: 'applied' },
     };
   }
   if (result.status === 'conflict') {
     const conflictIndex = result.results.findIndex((item) => item.status === 'conflict');
-    const conflictOperation = batch!.operations[Math.max(0, conflictIndex)];
+    const conflictOperation = batch.operations[Math.max(0, conflictIndex)];
     throw new SyncWriteConflictError(
       result.error?.message ?? `Sync batch write for ${conflictOperation.targetKey} conflicted`,
       {
@@ -310,31 +288,14 @@ async function routeSyncBatchWithMode(
   const failedIndex = result.results.findIndex(
     (item) => item.status === 'rejected' || item.status === 'deferred'
   );
-  const failedOperation = batch!.operations[Math.max(0, failedIndex)];
-  const reason = result.error?.message ?? `Sync batch ${batch!.batchId} was ${result.status}`;
+  const failedOperation = batch.operations[Math.max(0, failedIndex)];
+  const reason = result.error?.message ?? `Sync batch ${batch.batchId} was ${result.status}`;
   throw new SyncWriteRejectedError(reason, {
     operationUuid: failedOperation.operationUuid,
     targetKey: failedOperation.targetKey,
     reason,
     cause: result.error,
   });
-}
-
-class LocalBatchNotApplied extends Error {
-  constructor(readonly result: ApplyBatchResult) {
-    super(`Sync batch ${result.batchId} was ${result.status}`);
-    this.name = 'LocalBatchNotApplied';
-  }
-}
-
-class LocalBatchConflict extends Error {
-  constructor(
-    readonly result: ApplyOperationResult & { status: 'conflict' },
-    readonly operationIndex: number
-  ) {
-    super('Sync batch accepted an unresolved conflict');
-    this.name = 'LocalBatchConflict';
-  }
 }
 
 export async function beginSyncBatch(

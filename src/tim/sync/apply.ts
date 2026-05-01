@@ -157,6 +157,14 @@ export function applyOperation(
   return result;
 }
 
+/**
+ * Applies a sync batch with its own transaction boundary.
+ *
+ * Important: callers must not wrap this function in an outer SQLite transaction.
+ * When a batch rolls back, this function persists terminal rejection rows in a
+ * follow-up transaction so replay/FIFO state remains durable. An outer rollback
+ * would erase those follow-up rows and break the replay contract.
+ */
 export function applyBatch(
   db: Database,
   batchInput: SyncOperationBatchEnvelope,
@@ -290,14 +298,12 @@ function applyOperationInTransaction(
   if (!existing) {
     // Check for duplicate localSequence before inserting to avoid SQLiteError from the
     // UNIQUE(origin_node_id, local_sequence) constraint.
-    const duplicateSeq = db
-      .prepare(
-        `SELECT operation_uuid FROM sync_operation
-         WHERE origin_node_id = ? AND local_sequence = ? AND operation_uuid <> ? LIMIT 1`
-      )
-      .get(nextEnvelope.originNodeId, nextEnvelope.localSequence, nextEnvelope.operationUuid) as {
-      operation_uuid: string;
-    } | null;
+    const duplicateSeq = getOperationByOriginSequence(
+      db,
+      nextEnvelope.originNodeId,
+      nextEnvelope.localSequence,
+      nextEnvelope.operationUuid
+    );
     if (duplicateSeq) {
       throw validationError(
         nextEnvelope,
@@ -472,13 +478,11 @@ function rolledBackBatchResults(
   return operations.map((operation, index) => {
     if (index === causeIndex) {
       if (cause.status === 'conflict') {
-        const error = new SyncValidationError(
-          'Atomic batch aborted: stale base revision (conflict diagnosed but not persisted)',
-          {
-            operationUuid: operation.operationUuid,
-            issues: [],
-          }
-        );
+        const message = atomicConflictAbortMessage(cause.error);
+        const error = new SyncValidationError(message, {
+          operationUuid: operation.operationUuid,
+          issues: [],
+        });
         if (cause.error) {
           error.cause = cause.error;
         }
@@ -539,6 +543,20 @@ function persistRolledBackBatchRejections(
       }
       const existing = getOperationRow(db, operation.operationUuid);
       if (!existing) {
+        const duplicateSequence = getOperationByOriginSequence(
+          db,
+          operation.originNodeId,
+          operation.localSequence,
+          operation.operationUuid
+        );
+        if (duplicateSequence) {
+          // The per-origin sequence slot already belongs to another operation.
+          // We cannot persist this operation UUID without violating FIFO identity;
+          // the colliding row is the durable record for that sequence. Siblings
+          // with distinct sequence slots are still recorded so the aborted batch
+          // is replay-safe where storage is possible.
+          continue;
+        }
         insertReceivedOperation(
           db,
           operation,
@@ -551,7 +569,7 @@ function persistRolledBackBatchRejections(
       }
       const message =
         result.status === 'conflict'
-          ? 'Atomic batch aborted: conflict diagnosed but not persisted'
+          ? atomicConflictAbortMessage(result.error)
           : (result.error?.message ?? 'Operation rejected because its atomic batch rolled back');
       // Atomic conflict aborts roll back the sync_conflict row, so the durable
       // operation record is a rejection rather than status='conflict'.
@@ -559,14 +577,32 @@ function persistRolledBackBatchRejections(
     }
   });
 
-  try {
-    persist.immediate();
-  } catch (error) {
-    console.error(
-      `[sync] failed to persist rolled-back batch rejection records for ${batch.batchId}:`,
-      error
-    );
-  }
+  persist.immediate();
+}
+
+function atomicConflictAbortMessage(cause: Error | undefined): string {
+  return cause
+    ? `Atomic batch aborted: conflict diagnosed but not persisted: ${cause.message}`
+    : 'Atomic batch aborted: conflict diagnosed but not persisted';
+}
+
+function getOperationByOriginSequence(
+  db: Database,
+  originNodeId: string,
+  localSequence: number,
+  excludingOperationUuid: string
+): { operation_uuid: string; status: string } | null {
+  return db
+    .prepare(
+      `SELECT operation_uuid, status
+       FROM sync_operation
+       WHERE origin_node_id = ? AND local_sequence = ? AND operation_uuid <> ?
+       LIMIT 1`
+    )
+    .get(originNodeId, localSequence, excludingOperationUuid) as {
+    operation_uuid: string;
+    status: string;
+  } | null;
 }
 
 function getBatchReplayResult(
@@ -848,18 +884,12 @@ function insertReceivedOperation(
 }
 
 function checkFifo(db: Database, envelope: SyncOperationEnvelope): SyncFifoGapError | null {
-  const duplicateSequence = db
-    .prepare(
-      `
-        SELECT operation_uuid
-        FROM sync_operation
-        WHERE origin_node_id = ? AND local_sequence = ? AND operation_uuid <> ?
-        LIMIT 1
-      `
-    )
-    .get(envelope.originNodeId, envelope.localSequence, envelope.operationUuid) as {
-    operation_uuid: string;
-  } | null;
+  const duplicateSequence = getOperationByOriginSequence(
+    db,
+    envelope.originNodeId,
+    envelope.localSequence,
+    envelope.operationUuid
+  );
   if (duplicateSequence) {
     throw validationError(
       envelope,
