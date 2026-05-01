@@ -17,6 +17,7 @@ import { resolveSyncConflict } from '../sync/apply.js';
 import { getCurrentSequenceId } from '../sync/server.js';
 import { flushPendingOperationsOnce, runSyncCatchUpOnce } from '../sync/runner.js';
 import { resetSendingOperations } from '../sync/queue.js';
+import { bootstrapSyncMetadata } from '../sync/bootstrap.js';
 import type { Database } from 'bun:sqlite';
 import type { TimConfig } from '../configSchema.js';
 
@@ -210,6 +211,19 @@ export async function handleSyncCatchUpCommand(
   const context = await resolvePersistentRunnerContext(command, deps);
   await runSyncCatchUpOnce(context.runnerOptions);
   log('Sync catch-up completed.');
+}
+
+export async function handleSyncBootstrapCommand(
+  _options: Record<string, never>,
+  command: Command,
+  deps: SyncNodeCommandDeps = {}
+): Promise<void> {
+  const { db, sync } = await resolveCommandContext(command, deps);
+  requireMainNode(sync, 'tim sync bootstrap');
+  const result = bootstrapSyncMetadata(db);
+  log(
+    `Bootstrapped sync metadata: ${result.plansSeeded} ${pluralize(result.plansSeeded, 'plan')}, ${result.tasksSeeded} ${pluralize(result.tasksSeeded, 'task')}, ${result.settingsSeeded} ${pluralize(result.settingsSeeded, 'project setting')}.`
+  );
 }
 
 export async function handleSyncConflictsCommand(

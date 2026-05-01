@@ -29,7 +29,12 @@ import {
 import { createBatchEnvelope } from './types.js';
 import { pruneSyncSequence } from './retention.js';
 import { createSyncRunner } from './runner.js';
-import { loadCanonicalSnapshot, startSyncServer, type SyncServerHandle } from './server.js';
+import {
+  getCurrentSequenceId,
+  loadCanonicalSnapshot,
+  startSyncServer,
+  type SyncServerHandle,
+} from './server.js';
 import { createSyncClient, type SyncClient } from './ws_client.js';
 import type { SyncFrame } from './ws_protocol.js';
 
@@ -246,6 +251,19 @@ describe('sync transport server and clients', () => {
       type: 'plan',
       plan: { uuid: PLAN_UUID, tags: ['offline'] },
     });
+  });
+
+  test('startup bootstraps existing plans so catch-up from zero can discover them', async () => {
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const server = startTestServer(mainDb);
+
+    const catchUp = await httpCatchUp(serverUrl(server), TOKEN, NODE_A, 0);
+
+    expect(catchUp.ok).toBe(true);
+    expect(catchUp.ok && catchUp.value.invalidations.flatMap((item) => item.entityKeys)).toContain(
+      `plan:${PLAN_UUID}`
+    );
   });
 
   test('HTTP fallback rejects operation batches from spoofed origin nodes', async () => {
@@ -490,6 +508,7 @@ describe('sync transport server and clients', () => {
     seedPlan(localDb);
     upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
     const server = startTestServer(mainDb);
+    const bootstrappedSequenceId = getCurrentSequenceId(mainDb);
     const op = await addPlanTagOperation(
       PROJECT_UUID,
       { planUuid: PLAN_UUID, tag: 'client-flush' },
@@ -512,7 +531,7 @@ describe('sync transport server and clients', () => {
 
     expect(getPlanTagsByUuid(mainDb, PLAN_UUID).map((tag) => tag.tag)).toEqual(['client-flush']);
     expect(getPlanTagsByUuid(localDb, PLAN_UUID).map((tag) => tag.tag)).toEqual(['client-flush']);
-    expect(getTimNodeCursor(localDb, NODE_A).last_known_sequence_id).toBe(0);
+    expect(getTimNodeCursor(localDb, NODE_A).last_known_sequence_id).toBe(bootstrappedSequenceId);
   });
 
   test('connected peers apply deleted-plan invalidations from WebSocket broadcasts', async () => {
