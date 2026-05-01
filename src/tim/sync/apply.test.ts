@@ -186,12 +186,21 @@ describe('main-node sync apply engine', () => {
       },
     ]);
     expect(operationRows()[1]!.last_error).toContain(`Unknown plan ${OTHER_PLAN_UUID}`);
+    expect(operationRows()[0]!.last_error).toBe(
+      'Operation rolled back because its batch did not commit'
+    );
     expect(countRows('sync_sequence')).toBe(0);
 
+    // Make the originally-invalid dependency valid before replay. A real replay
+    // must return the persisted rejection rows instead of re-running validation
+    // against this changed canonical state.
+    seedPlan(OTHER_PLAN_UUID, 2, TASK_UUID_2);
     const replay = applyBatch(db, batch);
     expect(replay.status).toBe('rejected');
     expect(replay.results.map((item) => item.status)).toEqual(['rejected', 'rejected']);
     expect(countRows('sync_operation')).toBe(2);
+    expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
+    expect(countRows('plan_dependency')).toBe(0);
   });
 
   test('batch commits applied operations and accepted conflicts together', async () => {
@@ -437,6 +446,9 @@ describe('main-node sync apply engine', () => {
       [2, 'rejected'],
       [3, 'rejected'],
     ]);
+    expect(operationRows()[2]!.last_error).toBe(
+      'Operation rolled back because its batch did not commit'
+    );
     const next = await addPlanTagOperation(
       PROJECT_UUID,
       { planUuid: PLAN_UUID, tag: 'next' },
