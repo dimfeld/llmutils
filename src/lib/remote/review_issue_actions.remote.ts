@@ -88,7 +88,6 @@ export const convertReviewIssueToTask = command(
     const expectedIssuesJson = JSON.stringify(issues);
     const newTask = createTaskFromIssue(issue);
     const currentPlan = loadPlanSchemaFromRow(db, plan);
-    const remainingIssues = issues.filter((_, index) => index !== issueIndex);
     const nextPlan = {
       ...currentPlan,
       status: plan.status === 'in_progress' ? currentPlan.status : 'in_progress',
@@ -128,10 +127,6 @@ export const convertReviewIssueToTask = command(
           );
         },
       ],
-      legacyPlanInput: {
-        ...nextPlan,
-        reviewIssues: remainingIssues.length > 0 ? remainingIssues : undefined,
-      },
       legacyErrorMessage: 'Cannot convert review issue to task with sync-routed writes',
     });
   }

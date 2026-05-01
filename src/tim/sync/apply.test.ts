@@ -1108,6 +1108,49 @@ describe('main-node sync apply engine', () => {
     });
   });
 
+  test('plan.create clears a plan tombstone so task ops can apply after resurrect', async () => {
+    seedPlan();
+    const del = await deletePlanOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    applyOperation(db, del);
+
+    const resurrect = await createPlanOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        numericPlanId: 30,
+        title: 'Resurrected plan',
+      },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    expect(applyOperation(db, resurrect).status).toBe('applied');
+    expect(
+      db
+        .prepare('SELECT * FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+        .get('plan', `plan:${PLAN_UUID}`)
+    ).toBeNull();
+
+    const add = await addPlanTaskOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        taskUuid: TASK_UUID_2,
+        title: 'Task after resurrect',
+        description: '',
+      },
+      { originNodeId: NODE_A, localSequence: 3 }
+    );
+    const result = applyOperation(db, add);
+
+    expect(result.status).toBe('applied');
+    expect(result.conflictId).toBeUndefined();
+    expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).toContain(TASK_UUID_2);
+    expect(countRows('sync_conflict')).toBe(0);
+  });
+
   test('plan.update_task_text against a task whose owning plan is tombstoned creates a sync_conflict', async () => {
     seedPlan();
     const del = await deletePlanOperation(
@@ -1368,7 +1411,7 @@ describe('main-node sync apply engine', () => {
     expect(countRows('sync_sequence')).toBe(1);
   });
 
-  test('plan.add_list_item appends one item per distinct operation', async () => {
+  test('plan.add_list_item does not duplicate an existing logical item', async () => {
     seedPlan();
     const issue = { severity: 'minor' as const, category: 'style', content: 'Lint error' };
     const first = await addPlanListItemOperation(
@@ -1387,8 +1430,34 @@ describe('main-node sync apply engine', () => {
     applyOperation(db, second); // replay
 
     const plan = getPlanByUuid(db, PLAN_UUID);
-    expect(JSON.parse(plan?.review_issues ?? '[]')).toEqual([issue, issue]);
-    expect(countRows('sync_sequence')).toBe(2);
+    expect(JSON.parse(plan?.review_issues ?? '[]')).toEqual([issue]);
+    expect(countRows('sync_sequence')).toBe(1);
+  });
+
+  test('plan.add_list_item compares object values with canonical key ordering', async () => {
+    seedPlan();
+    const existingIssue = { content: 'Fix this', category: 'bug', severity: 'major' };
+    db.prepare('UPDATE plan SET review_issues = ? WHERE uuid = ?').run(
+      JSON.stringify([existingIssue]),
+      PLAN_UUID
+    );
+    const op = await addPlanListItemOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        list: 'reviewIssues',
+        value: { severity: 'major', category: 'bug', content: 'Fix this' },
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    const result = applyOperation(db, op);
+
+    expect(result.status).toBe('applied');
+    expect(JSON.parse(getPlanByUuid(db, PLAN_UUID)?.review_issues ?? '[]')).toEqual([
+      existingIssue,
+    ]);
+    expect(countRows('sync_sequence')).toBe(0);
   });
 
   test('plan.update_task_text merges cleanly', async () => {

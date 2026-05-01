@@ -17,6 +17,21 @@ export interface ProjectSettingWithMetadata {
   updatedByNode: string | null;
 }
 
+function canonicalJsonStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJsonStringify(item)).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b)
+    );
+    return `{${entries
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJsonStringify(item)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
 export function getProjectSetting(db: Database, projectId: number, setting: string): unknown {
   const row = db
     .prepare('SELECT value FROM project_setting WHERE project_id = ? AND setting = ?')
@@ -120,6 +135,27 @@ export function setProjectSetting(
       nextValue: unknown,
       updatedByNode: string | null
     ): void => {
+      const nextValueJson = JSON.stringify(nextValue);
+      const existing = db
+        .prepare(
+          `
+            SELECT value, updated_by_node
+            FROM project_setting
+            WHERE project_id = ? AND setting = ?
+          `
+        )
+        .get(nextProjectId, nextSetting) as Pick<
+        ProjectSetting,
+        'value' | 'updated_by_node'
+      > | null;
+      if (
+        existing &&
+        canonicalJsonStringify(JSON.parse(existing.value)) === canonicalJsonStringify(nextValue) &&
+        existing.updated_by_node === updatedByNode
+      ) {
+        return;
+      }
+
       db.prepare(
         `
           INSERT INTO project_setting (
@@ -136,7 +172,7 @@ export function setProjectSetting(
             updated_at = ${SQL_NOW_ISO_UTC},
             updated_by_node = excluded.updated_by_node
         `
-      ).run(nextProjectId, nextSetting, JSON.stringify(nextValue), updatedByNode);
+      ).run(nextProjectId, nextSetting, nextValueJson, updatedByNode);
     }
   );
 

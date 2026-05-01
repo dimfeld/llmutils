@@ -91,6 +91,21 @@ const LIST_COLUMNS = {
   changedFiles: 'changed_files',
   reviewIssues: 'review_issues',
 } as const;
+
+function canonicalJsonStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJsonStringify(item)).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b)
+    );
+    return `{${entries
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJsonStringify(item)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
 const ASSIGNMENT_CLEANUP_STATUSES = new Set(['done', 'needs_review', 'cancelled']);
 const PLAN_UPDATED_AT_ASSIGNMENT = `updated_at = CASE WHEN ? THEN updated_at ELSE COALESCE(?, ${SQL_NOW_ISO_UTC}) END`;
 
@@ -308,7 +323,7 @@ function applyOperationInTransaction(
         : null;
     const ownerTombstone = ownerPlanUuid ? getTombstone(db, 'plan', `plan:${ownerPlanUuid}`) : null;
     const tombstone = selfTombstone ?? ownerTombstone;
-    if (tombstone && !targetExists(db, nextEnvelope.op)) {
+    if (tombstone && nextEnvelope.op.type !== 'plan.create' && !targetExists(db, nextEnvelope.op)) {
       if (nextEnvelope.op.type === 'plan.delete' || nextEnvelope.op.type === 'plan.remove_task') {
         markOperationApplied(db, nextEnvelope.operationUuid, [], []);
         return {
@@ -932,6 +947,12 @@ function applyPlanCreate(
       'INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)'
     ).run(op.planUuid, dependencyUuid);
   }
+  db.prepare('DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?').run(
+    'plan',
+    `plan:${op.planUuid}`
+  );
+  // Task tombstones do not store the owning plan UUID, so only the resurrected plan tombstone can
+  // be cleared without scanning operation payloads.
   const mutations: Mutation[] = [
     { targetType: 'plan', targetKey: envelope.targetKey, revision: 1 },
   ];
@@ -1221,11 +1242,13 @@ function applyListItem(
   const plan = requirePlan(db, project, envelope.op.planUuid, envelope);
   const column = LIST_COLUMNS[envelope.op.list];
   const current = parseJsonArray(plan[column]);
-  const valueText = JSON.stringify(envelope.op.value);
-  const index = current.findIndex((item) => JSON.stringify(item) === valueText);
+  const valueText = canonicalJsonStringify(envelope.op.value);
+  const index = current.findIndex((item) => canonicalJsonStringify(item) === valueText);
   const next =
     envelope.op.type === 'plan.add_list_item'
-      ? [...current, envelope.op.value]
+      ? index === -1
+        ? [...current, envelope.op.value]
+        : current
       : index === -1
         ? current
         : current.filter((_, itemIndex) => itemIndex !== index);
