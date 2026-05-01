@@ -730,7 +730,9 @@ describe('sync WebSocket client', () => {
     expect(statuses).toEqual(['failed_retryable', 'failed_retryable', 'failed_retryable']);
     // The catch should not surface an Illegal-transition error.
     for (const err of errors) {
-      expect(String((err as Error)?.message ?? err)).not.toContain('Illegal sync_operation transition');
+      expect(String((err as Error)?.message ?? err)).not.toContain(
+        'Illegal sync_operation transition'
+      );
     }
   });
 });
