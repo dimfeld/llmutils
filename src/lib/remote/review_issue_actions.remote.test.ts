@@ -59,14 +59,17 @@ describe('review issue remote actions', () => {
 
   test('removeReviewIssue removes the targeted issue and keeps the rest', async () => {
     seedPlan({
-      uuid: 'plan-remove',
+      uuid: '00000000-0000-4000-8000-000000000156',
       planId: 254,
       reviewIssues: [makeIssue('major', 'bug', 'First'), makeIssue('minor', 'style', 'Second')],
     });
 
-    await invokeCommand(removeReviewIssue, { planUuid: 'plan-remove', issueIndex: 0 });
+    await invokeCommand(removeReviewIssue, {
+      planUuid: '00000000-0000-4000-8000-000000000156',
+      issueIndex: 0,
+    });
 
-    const plan = getPlanByUuid(currentDb, 'plan-remove');
+    const plan = getPlanByUuid(currentDb, '00000000-0000-4000-8000-000000000156');
 
     expect(JSON.parse(plan?.review_issues ?? '[]')).toEqual([
       makeIssue('minor', 'style', 'Second'),
@@ -291,6 +294,34 @@ describe('review issue remote actions', () => {
     const plan = getPlanByUuid(currentDb, 'plan-clear');
 
     expect(plan?.review_issues).toBeNull();
+  });
+
+  test('clearReviewIssues clears duplicate identical review issues through routed operations', async () => {
+    const issue = makeIssue('major', 'bug', 'Duplicated clear issue', 'src/clear.ts', 9);
+    seedPlan({
+      uuid: '00000000-0000-4000-8000-000000000155',
+      planId: 269,
+      reviewIssues: [issue, issue],
+    });
+
+    await invokeCommand(clearReviewIssues, {
+      planUuid: '00000000-0000-4000-8000-000000000155',
+    });
+
+    const plan = getPlanByUuid(currentDb, '00000000-0000-4000-8000-000000000155');
+    expect(plan?.review_issues).toBeNull();
+    expect(queuedOperationRows()).toEqual([
+      {
+        operation_type: 'plan.remove_list_item',
+        status: 'applied',
+        batch_id: expect.any(String),
+      },
+      {
+        operation_type: 'plan.remove_list_item',
+        status: 'applied',
+        batch_id: expect.any(String),
+      },
+    ]);
   });
 
   test('clearReviewIssues rolls back all removals when the batch fails', async () => {
