@@ -1460,6 +1460,31 @@ describe('main-node sync apply engine', () => {
     expect(countRows('sync_sequence')).toBe(0);
   });
 
+  test('plan.remove_list_item matches stored item using canonical key ordering', async () => {
+    seedPlan();
+    const storedIssue = { content: 'Fix this', category: 'bug', severity: 'major' as const };
+    db.prepare('UPDATE plan SET review_issues = ? WHERE uuid = ?').run(
+      JSON.stringify([storedIssue]),
+      PLAN_UUID
+    );
+
+    const op = await removePlanListItemOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        list: 'reviewIssues',
+        value: { severity: 'major' as const, category: 'bug', content: 'Fix this' },
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    const result = applyOperation(db, op);
+
+    expect(result.status).toBe('applied');
+    expect(JSON.parse(getPlanByUuid(db, PLAN_UUID)?.review_issues ?? 'null')).toBeNull();
+    expect(countRows('sync_sequence')).toBe(1);
+  });
+
   test('plan.update_task_text merges cleanly', async () => {
     seedPlan();
     const op = await updatePlanTaskTextOperation(
