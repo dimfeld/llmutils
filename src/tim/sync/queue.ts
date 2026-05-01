@@ -19,6 +19,7 @@ import {
 import { shiftTaskIndexesAfterDelete, shiftTaskIndexesForInsert } from './task_indexes.js';
 import { getSyncOperationPayloadIndexes } from './payload_indexes.js';
 import { optimisticSnapshotKeysForOperation } from './rejected_refresh.js';
+import { getSyncOperationPlanRefs } from './plan_refs.js';
 
 /**
  * Persistent-node durable queue contract:
@@ -50,7 +51,6 @@ export interface SyncOperationQueueRow {
   base_revision: number | null;
   base_hash: string | null;
   payload: string;
-  payload_plan_uuid: string | null;
   payload_task_uuid: string | null;
   status: QueueOperationStatus;
   attempts: number;
@@ -682,10 +682,13 @@ export function pruneAcknowledgedOperations(
   options: PruneAcknowledgedOptions = {}
 ): number {
   const olderThan = options.olderThan ?? new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const result = db
-    .prepare(`DELETE FROM sync_operation WHERE status = 'acked' AND acked_at < ?`)
-    .run(olderThan.toISOString());
-  return result.changes;
+  const row = db
+    .prepare(`SELECT COUNT(*) AS count FROM sync_operation WHERE status = 'acked' AND acked_at < ?`)
+    .get(olderThan.toISOString()) as { count: number };
+  db.prepare(`DELETE FROM sync_operation WHERE status = 'acked' AND acked_at < ?`).run(
+    olderThan.toISOString()
+  );
+  return row.count;
 }
 
 export function recordPendingRollbackKeys(db: Database, keys: string[]): void {
@@ -799,8 +802,6 @@ function insertQueuedOperation(
         base_revision,
         base_hash,
         payload,
-        payload_plan_uuid,
-        payload_secondary_plan_uuid,
         payload_task_uuid,
         status,
         attempts,
@@ -811,7 +812,7 @@ function insertQueuedOperation(
         ack_metadata,
         batch_id,
         batch_atomic
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'queued', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'queued', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
     `
   );
   const payload = JSON.stringify(operation.op);
@@ -826,13 +827,29 @@ function insertQueuedOperation(
     operation.op.type,
     baseRevision,
     payload,
-    indexes.payloadPlanUuid,
-    indexes.payloadSecondaryPlanUuid,
     indexes.payloadTaskUuid,
     operation.createdAt,
     batchId ?? null,
     batchAtomic ? 1 : 0
   );
+  insertOperationPlanRefs(db, operation.operationUuid, operation.projectUuid, operation.op);
+}
+
+function insertOperationPlanRefs(
+  db: Database,
+  operationUuid: string,
+  projectUuid: string,
+  payload: SyncOperationPayload
+): void {
+  const insertPlanRef = db.prepare(
+    `
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      VALUES (?, ?, ?, ?)
+    `
+  );
+  for (const ref of getSyncOperationPlanRefs(payload)) {
+    insertPlanRef.run(operationUuid, projectUuid, ref.planUuid, ref.role);
+  }
 }
 
 function applyLocalOptimisticInTransaction(db: Database, operation: SyncOperationEnvelope): void {
@@ -1188,13 +1205,9 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
       removeAssignment(db, project.id, snapshot.planUuid);
     }
     db.prepare('DELETE FROM plan WHERE uuid = ?').run(snapshot.planUuid);
-    // All three branches of the OR hit indexes (idx_sync_operation_target_key,
-    // idx_sync_operation_payload_plan_uuid, idx_sync_operation_payload_secondary_plan_uuid),
-    // so SQLite can satisfy this with OR-via-UNION lookups instead of scanning.
-    // The secondary branch covers multi-plan ops like `plan.promote_task` whose
-    // sourcePlanUuid is the deleted plan; the primary branch covers their
-    // newPlanUuid; target_key covers any future op kinds whose target is the
-    // deleted plan but whose payload doesn't carry the UUID under either column.
+    // Both branches hit indexes: target_key covers the named target directly, while
+    // sync_operation_plan_ref covers every plan UUID an operation semantically
+    // references, including dependency and parent arrays.
     const followUpKeys = collectRejectedOperationSnapshotKeys(
       db,
       `
@@ -1204,11 +1217,12 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
           AND status IN ('queued', 'failed_retryable')
           AND (
             target_key = ?
-            OR payload_plan_uuid = ?
-            OR payload_secondary_plan_uuid = ?
+            OR operation_uuid IN (
+              SELECT operation_uuid FROM sync_operation_plan_ref WHERE plan_uuid = ?
+            )
           )
       `,
-      [snapshot.projectUuid, `plan:${snapshot.planUuid}`, snapshot.planUuid, snapshot.planUuid],
+      [snapshot.projectUuid, `plan:${snapshot.planUuid}`, snapshot.planUuid],
       `plan:${snapshot.planUuid}`
     );
     db.prepare(
@@ -1221,15 +1235,15 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
           AND status IN ('queued', 'failed_retryable')
           AND (
             target_key = ?
-            OR payload_plan_uuid = ?
-            OR payload_secondary_plan_uuid = ?
+            OR operation_uuid IN (
+              SELECT operation_uuid FROM sync_operation_plan_ref WHERE plan_uuid = ?
+            )
           )
       `
     ).run(
       `Target plan ${snapshot.planUuid} was deleted on the main node`,
       snapshot.projectUuid,
       `plan:${snapshot.planUuid}`,
-      snapshot.planUuid,
       snapshot.planUuid
     );
     recordPendingRollbackKeys(db, followUpKeys);
@@ -1390,9 +1404,9 @@ function rejectPendingOperationsForNeverExistedPlan(
   planUuid: string,
   message: string
 ): string[] {
-  // All three branches hit indexes; SQLite uses OR-via-UNION. The secondary
-  // branch covers `plan.promote_task` ops whose sourcePlanUuid is the
-  // never-existed plan.
+  // Both branches hit indexes. target_key is retained as defense-in-depth for
+  // future plan-targeted op kinds; sync_operation_plan_ref is the exhaustive
+  // reference table for known operation payloads.
   const followUpKeys = collectRejectedOperationSnapshotKeys(
     db,
     `
@@ -1401,11 +1415,12 @@ function rejectPendingOperationsForNeverExistedPlan(
       WHERE status IN ('queued', 'failed_retryable')
         AND (
           target_key = ?
-          OR payload_plan_uuid = ?
-          OR payload_secondary_plan_uuid = ?
+          OR operation_uuid IN (
+            SELECT operation_uuid FROM sync_operation_plan_ref WHERE plan_uuid = ?
+          )
         )
     `,
-    [entityKey, planUuid, planUuid],
+    [entityKey, planUuid],
     entityKey
   );
   db.prepare(
@@ -1417,11 +1432,12 @@ function rejectPendingOperationsForNeverExistedPlan(
       WHERE status IN ('queued', 'failed_retryable')
         AND (
           target_key = ?
-          OR payload_plan_uuid = ?
-          OR payload_secondary_plan_uuid = ?
+          OR operation_uuid IN (
+            SELECT operation_uuid FROM sync_operation_plan_ref WHERE plan_uuid = ?
+          )
         )
     `
-  ).run(message, entityKey, planUuid, planUuid);
+  ).run(message, entityKey, planUuid);
   return followUpKeys;
 }
 

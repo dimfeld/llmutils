@@ -137,6 +137,14 @@ function operationRows(): Array<{
   }>;
 }
 
+function operationPlanRefs(operationUuid: string) {
+  return db
+    .prepare(
+      'SELECT plan_uuid, role FROM sync_operation_plan_ref WHERE operation_uuid = ? ORDER BY role, plan_uuid'
+    )
+    .all(operationUuid) as Array<{ plan_uuid: string; role: string }>;
+}
+
 describe('main-node sync apply engine', () => {
   test('batch rolls back every mutation when a later operation is invalid', async () => {
     const create = await createPlanOperation(
@@ -239,6 +247,22 @@ describe('main-node sync apply engine', () => {
     expect(getPlanTagsByUuid(db, PLAN_UUID).map((row) => row.tag)).toEqual(['sync']);
     expect(countRows('sync_conflict')).toBe(1);
     expect(countRows('sync_sequence')).toBe(1);
+  });
+
+  test('applyOperation records normalized plan refs for received operations', async () => {
+    seedPlan();
+    seedPlan(OTHER_PLAN_UUID, 2, TASK_UUID_2);
+    const op = await addPlanDependencyOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, dependsOnPlanUuid: OTHER_PLAN_UUID },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    expect(applyOperation(db, op).status).toBe('applied');
+    expect(operationPlanRefs(op.operationUuid)).toEqual([
+      { plan_uuid: OTHER_PLAN_UUID, role: 'depends_on' },
+      { plan_uuid: PLAN_UUID, role: 'target' },
+    ]);
   });
 
   test('atomic batch rolls back applied operations when a later operation conflicts', async () => {

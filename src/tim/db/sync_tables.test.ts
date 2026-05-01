@@ -91,6 +91,7 @@ describe('sync_tables helpers', () => {
 
   describe('insertSyncOperation / getSyncOperation / listSyncOperationsByStatus', () => {
     const PROJECT_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const PLAN_UUID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
     function makeOperation(
       overrides: {
@@ -107,11 +108,11 @@ describe('sync_tables helpers', () => {
         origin_node_id: overrides.originNodeId ?? 'node-1',
         local_sequence: overrides.localSequence ?? 1,
         target_type: 'plan',
-        target_key: 'plan:some-plan-uuid',
+        target_key: `plan:${PLAN_UUID}`,
         operation_type: 'plan.add_tag',
         base_revision: null,
         base_hash: null,
-        payload: JSON.stringify({ tag: 'backend' }),
+        payload: JSON.stringify({ type: 'plan.add_tag', planUuid: PLAN_UUID, tag: 'backend' }),
         status: overrides.status ?? 'queued',
         last_error: null,
         acked_at: null,
@@ -135,6 +136,14 @@ describe('sync_tables helpers', () => {
 
       const fetched = getSyncOperation(db, op.operation_uuid);
       expect(fetched).toEqual(op);
+      expect(
+        db
+          .query<
+            { plan_uuid: string; role: string },
+            [string]
+          >('SELECT plan_uuid, role FROM sync_operation_plan_ref WHERE operation_uuid = ?')
+          .all(op.operation_uuid)
+      ).toEqual([{ plan_uuid: PLAN_UUID, role: 'target' }]);
     });
 
     test('returns null for unknown operation UUID', () => {

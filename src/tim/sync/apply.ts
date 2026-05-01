@@ -15,6 +15,7 @@ import {
 } from './types.js';
 import { getSyncOperationPayloadIndexes } from './payload_indexes.js';
 import { shiftTaskIndexesAfterDelete, shiftTaskIndexesForInsert } from './task_indexes.js';
+import { getSyncOperationPlanRefs } from './plan_refs.js';
 
 export type ApplyOperationStatus =
   | 'applied'
@@ -848,8 +849,6 @@ function insertReceivedOperation(
         base_revision,
         base_hash,
         payload,
-        payload_plan_uuid,
-        payload_secondary_plan_uuid,
         payload_task_uuid,
         status,
         attempts,
@@ -860,7 +859,7 @@ function insertReceivedOperation(
         ack_metadata,
         batch_id,
         batch_atomic
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'received', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'received', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
     `
   );
   const indexes = getSyncOperationPayloadIndexes(envelope.op);
@@ -874,13 +873,20 @@ function insertReceivedOperation(
     envelope.op.type,
     baseRevision,
     payload,
-    indexes.payloadPlanUuid,
-    indexes.payloadSecondaryPlanUuid,
     indexes.payloadTaskUuid,
     envelope.createdAt,
     batchId ?? null,
     batchAtomic ? 1 : 0
   );
+  const insertPlanRef = db.prepare(
+    `
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      VALUES (?, ?, ?, ?)
+    `
+  );
+  for (const ref of getSyncOperationPlanRefs(envelope.op)) {
+    insertPlanRef.run(envelope.operationUuid, envelope.projectUuid, ref.planUuid, ref.role);
+  }
 }
 
 function checkFifo(db: Database, envelope: SyncOperationEnvelope): SyncFifoGapError | null {

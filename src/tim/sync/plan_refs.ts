@@ -1,0 +1,90 @@
+import { SyncOperationPayloadSchema, type SyncOperationPayload } from './types.js';
+
+export type SyncOperationPlanRefRole =
+  | 'target'
+  | 'source'
+  | 'new_plan'
+  | 'parent'
+  | 'new_parent'
+  | 'previous_parent'
+  | 'depends_on'
+  | 'dependency';
+
+export interface SyncOperationPlanRef {
+  planUuid: string;
+  role: SyncOperationPlanRefRole;
+}
+
+export function getSyncOperationPlanRefs(
+  payload: SyncOperationPayload | string
+): SyncOperationPlanRef[] {
+  const parsed =
+    typeof payload === 'string'
+      ? SyncOperationPayloadSchema.parse(JSON.parse(payload) as unknown)
+      : payload;
+  const refs: SyncOperationPlanRef[] = [];
+  const addRef = (planUuid: string | null | undefined, role: SyncOperationPlanRefRole): void => {
+    if (planUuid) {
+      refs.push({ planUuid, role });
+    }
+  };
+
+  switch (parsed.type) {
+    case 'plan.create':
+      addRef(parsed.planUuid, 'target');
+      addRef(parsed.parentUuid, 'parent');
+      for (const dependency of parsed.dependencies) {
+        addRef(dependency, 'dependency');
+      }
+      break;
+    case 'plan.set_scalar':
+    case 'plan.patch_text':
+    case 'plan.add_task':
+    case 'plan.update_task_text':
+    case 'plan.mark_task_done':
+    case 'plan.remove_task':
+    case 'plan.add_tag':
+    case 'plan.remove_tag':
+    case 'plan.add_list_item':
+    case 'plan.remove_list_item':
+    case 'plan.delete':
+      addRef(parsed.planUuid, 'target');
+      break;
+    case 'plan.add_dependency':
+    case 'plan.remove_dependency':
+      addRef(parsed.planUuid, 'target');
+      addRef(parsed.dependsOnPlanUuid, 'depends_on');
+      break;
+    case 'plan.set_parent':
+      addRef(parsed.planUuid, 'target');
+      addRef(parsed.newParentUuid, 'new_parent');
+      addRef(parsed.previousParentUuid, 'previous_parent');
+      break;
+    case 'plan.promote_task':
+      addRef(parsed.newPlanUuid, 'target');
+      addRef(parsed.sourcePlanUuid, 'source');
+      addRef(parsed.newPlanUuid, 'new_plan');
+      addRef(parsed.parentUuid, 'parent');
+      for (const dependency of parsed.dependencies) {
+        addRef(dependency, 'dependency');
+      }
+      break;
+    case 'project_setting.set':
+    case 'project_setting.delete':
+      break;
+    default: {
+      const exhaustive: never = parsed;
+      return exhaustive;
+    }
+  }
+
+  const seen = new Set<string>();
+  return refs.filter((ref) => {
+    const key = `${ref.planUuid}:${ref.role}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}

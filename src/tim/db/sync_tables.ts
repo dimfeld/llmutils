@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 import { getSyncOperationPayloadIndexes } from '../sync/payload_indexes.js';
+import { getSyncOperationPlanRefs } from '../sync/plan_refs.js';
 
 export type TimNodeRole = 'main' | 'persistent' | 'ephemeral';
 
@@ -24,8 +25,6 @@ export interface SyncOperationRow {
   base_revision: number | null;
   base_hash: string | null;
   payload: string;
-  payload_plan_uuid: string | null;
-  payload_secondary_plan_uuid: string | null;
   payload_task_uuid: string | null;
   status: string;
   attempts: number;
@@ -185,12 +184,7 @@ export function insertSyncOperation(
   db: Database,
   operation: Omit<
     SyncOperationRow,
-    | 'created_at'
-    | 'updated_at'
-    | 'attempts'
-    | 'payload_plan_uuid'
-    | 'payload_secondary_plan_uuid'
-    | 'payload_task_uuid'
+    'created_at' | 'updated_at' | 'attempts' | 'payload_task_uuid'
   > & {
     attempts?: number;
     created_at?: string;
@@ -211,8 +205,6 @@ export function insertSyncOperation(
           base_revision,
           base_hash,
           payload,
-          payload_plan_uuid,
-          payload_secondary_plan_uuid,
           payload_task_uuid,
           status,
           attempts,
@@ -221,7 +213,7 @@ export function insertSyncOperation(
           updated_at,
           acked_at,
           ack_metadata
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}), ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}), ?, ?)
       `
     );
     const indexes = getSyncOperationPayloadIndexes(nextOperation.payload);
@@ -236,8 +228,6 @@ export function insertSyncOperation(
       nextOperation.base_revision,
       nextOperation.base_hash,
       nextOperation.payload,
-      indexes.payloadPlanUuid,
-      indexes.payloadSecondaryPlanUuid,
       indexes.payloadTaskUuid,
       nextOperation.status,
       nextOperation.attempts ?? 0,
@@ -246,6 +236,12 @@ export function insertSyncOperation(
       nextOperation.updated_at ?? null,
       nextOperation.acked_at,
       nextOperation.ack_metadata
+    );
+    insertSyncOperationPlanRefs(
+      db,
+      nextOperation.operation_uuid,
+      nextOperation.project_uuid,
+      nextOperation.payload
     );
 
     const row = getSyncOperation(db, nextOperation.operation_uuid);
@@ -256,6 +252,23 @@ export function insertSyncOperation(
   });
 
   return insert.immediate(operation);
+}
+
+export function insertSyncOperationPlanRefs(
+  db: Database,
+  operationUuid: string,
+  projectUuid: string,
+  payload: string
+): void {
+  const insertPlanRef = db.prepare(
+    `
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      VALUES (?, ?, ?, ?)
+    `
+  );
+  for (const ref of getSyncOperationPlanRefs(payload)) {
+    insertPlanRef.run(operationUuid, projectUuid, ref.planUuid, ref.role);
+  }
 }
 
 export function getSyncOperation(db: Database, operationUuid: string): SyncOperationRow | null {
