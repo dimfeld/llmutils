@@ -66,6 +66,7 @@ const importIssueSchema = z.object({
   selectedParentContent: z.array(z.number().int().nonnegative()),
   selectedChildIndices: z.array(z.number().int().nonnegative()),
   selectedChildContent: z.record(z.string(), z.array(z.number().int().nonnegative())),
+  simple: z.boolean().optional(),
 });
 
 export const importIssue = command(
@@ -77,6 +78,7 @@ export const importIssue = command(
     selectedParentContent,
     selectedChildIndices,
     selectedChildContent,
+    simple,
   }) => {
     const { db } = await getServerContext();
     const project = getProjectById(db, projectId);
@@ -84,13 +86,19 @@ export const importIssue = command(
       error(404, 'Project not found');
     }
 
-    return await createPlansFromIssueOnServer(projectId, issueData, mode as IssueImportMode, {
-      selectedParentContent,
-      selectedChildIndices,
-      selectedChildContent: Object.fromEntries(
-        Object.entries(selectedChildContent).map(([key, value]) => [Number(key), value])
-      ),
-    });
+    return await createPlansFromIssueOnServer(
+      projectId,
+      issueData,
+      mode as IssueImportMode,
+      {
+        selectedParentContent,
+        selectedChildIndices,
+        selectedChildContent: Object.fromEntries(
+          Object.entries(selectedChildContent).map(([key, value]) => [Number(key), value])
+        ),
+      },
+      { simple }
+    );
   }
 );
 

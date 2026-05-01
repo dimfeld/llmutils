@@ -533,7 +533,8 @@ export async function getInstructionsFromIssue(
  */
 export function createStubPlanFromIssue(
   issueData: IssueInstructionData,
-  planId: number
+  planId: number,
+  options?: { simple?: boolean }
 ): PlanSchema {
   const now = new Date().toISOString();
 
@@ -560,6 +561,10 @@ export function createStubPlanFromIssue(
   // Add rmfilter arguments if they were parsed from the issue
   if (issueData.rmprOptions && issueData.rmprOptions.rmfilter) {
     stubPlan.rmfilter = issueData.rmprOptions.rmfilter;
+  }
+
+  if (options?.simple === true) {
+    stubPlan.simple = true;
   }
 
   return stubPlan;
