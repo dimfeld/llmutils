@@ -86,6 +86,7 @@ class WebSocketSyncClient implements SyncClient {
   private unsubscribeQueueChanges: (() => void) | null = null;
   private flushPromise: Promise<void> | null = null;
   private flushDirty = false;
+  private flushProcessedOperationUuids: Set<string> | null = null;
   private readonly snapshotWaiters = new Map<
     string,
     {
@@ -339,6 +340,8 @@ class WebSocketSyncClient implements SyncClient {
       return;
     }
     const sendingRows: SyncOperationQueueRow[] = [];
+    const processed = new Set<string>();
+    this.flushProcessedOperationUuids = processed;
     try {
       for (const row of pendingRows) {
         sendingRows.push(markOperationSending(this.options.db, row.operation_uuid));
@@ -351,10 +354,20 @@ class WebSocketSyncClient implements SyncClient {
       }
     } catch (err) {
       this.flushWaiter = null;
+      // Skip rows whose results already arrived in an earlier frame and were
+      // transitioned out of `sending` by handleOperationResults. Marking them
+      // failed_retryable here would either trip the illegal-transition assertion
+      // (failed_retryable -> failed_retryable) or silently no-op via
+      // tolerateTerminal, masking the real failure.
       for (const row of sendingRows) {
+        if (processed.has(row.operation_uuid)) {
+          continue;
+        }
         markOperationFailedRetryable(this.options.db, row.operation_uuid, err);
       }
       throw err;
+    } finally {
+      this.flushProcessedOperationUuids = null;
     }
   }
 
@@ -400,6 +413,11 @@ class WebSocketSyncClient implements SyncClient {
       }
     }
     applyOperationResultTransitions(this.options.db, transitions);
+    if (this.flushProcessedOperationUuids) {
+      for (const result of transitions) {
+        this.flushProcessedOperationUuids.add(result.operationId);
+      }
+    }
     if (this.flushWaiter?.matches(frame)) {
       this.flushWaiter.resolve();
       this.flushWaiter = null;

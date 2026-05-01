@@ -665,6 +665,74 @@ describe('sync WebSocket client', () => {
 
     externalUnsub();
   });
+
+  test('partial frame failure does not clobber rows already transitioned by earlier results', async () => {
+    const localDb = createDb();
+    seedPlan(localDb);
+    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
+
+    const server = startDeferThenErrorServer();
+    const client = createSyncClient({
+      db: localDb,
+      serverUrl: `http://127.0.0.1:${server.port}`,
+      nodeId: NODE_A,
+      token: TOKEN,
+      reconnect: false,
+    });
+    clients.push(client);
+    client.start();
+    await waitFor(() => client.getStatus().connected);
+
+    const first = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'first-frame' },
+      { originNodeId: NODE_A, localSequence: 0 }
+    );
+    const second = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'second-frame-a' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    const third = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'second-frame-b' },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    const errors: unknown[] = [];
+    client.on('error', (err) => errors.push(err));
+
+    enqueueOperation(localDb, first);
+    enqueueBatch(
+      localDb,
+      createBatchEnvelope({ originNodeId: NODE_A, operations: [second, third] })
+    );
+
+    // Wait for the auto-flush triggered by enqueue to complete and transition
+    // every row to a terminal/retryable state.
+    await waitFor(
+      () =>
+        (
+          localDb
+            .prepare("SELECT COUNT(*) AS count FROM sync_operation WHERE status = 'sending'")
+            .get() as { count: number }
+        ).count === 0,
+      3000
+    );
+
+    const statuses = localDb
+      .prepare('SELECT status FROM sync_operation ORDER BY local_sequence')
+      .all()
+      .map((row) => (row as { status: string }).status);
+    // First-frame row was deferred -> failed_retryable by handleOperationResults.
+    // Without the fix, the catch in flushPendingInternal would call
+    // markOperationFailedRetryable on the already-failed row, throwing
+    // "Illegal sync_operation transition failed_retryable -> failed_retryable".
+    expect(statuses).toEqual(['failed_retryable', 'failed_retryable', 'failed_retryable']);
+    // The catch should not surface an Illegal-transition error.
+    for (const err of errors) {
+      expect(String((err as Error)?.message ?? err)).not.toContain('Illegal sync_operation transition');
+    }
+  });
 });
 
 function createDb(): Database {
@@ -1159,6 +1227,78 @@ function startMismatchedOpResultServer(unrelatedOperationId: string): {
     port: server.port,
     stop: (force?: boolean) => server.stop(force),
     receivedBatchBeforeRealOpResult: () => receivedBatchEarly,
+  };
+}
+
+function startDeferThenErrorServer(): { port: number; stop(force?: boolean): void } {
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch(request, serverRef) {
+      if (new URL(request.url).pathname !== '/sync/ws') {
+        return new Response('Not Found\n', { status: 404 });
+      }
+      if (serverRef.upgrade(request)) {
+        return;
+      }
+      return new Response('WebSocket upgrade failed\n', { status: 400 });
+    },
+    websocket: {
+      message(ws, rawMessage) {
+        const frame = JSON.parse(rawToString(rawMessage)) as SyncClientFrame;
+        if (frame.type === 'hello') {
+          ws.send(
+            JSON.stringify({
+              type: 'hello_ack',
+              mainNodeId: 'main-node',
+              currentSequenceId: 0,
+            })
+          );
+          return;
+        }
+        if (frame.type === 'catch_up_request') {
+          ws.send(
+            JSON.stringify({
+              type: 'catch_up_response',
+              invalidations: [],
+              currentSequenceId: 0,
+            })
+          );
+          return;
+        }
+        if (frame.type === 'op_batch') {
+          // Defer the first-frame ops so the client transitions them to
+          // failed_retryable before sending the next frame.
+          ws.send(
+            JSON.stringify({
+              type: 'op_result',
+              results: frame.operations.map((operation) => ({
+                operationId: operation.operationUuid,
+                status: 'deferred',
+                sequenceIds: [],
+                invalidations: [],
+                error: 'simulated defer',
+              })),
+            })
+          );
+          return;
+        }
+        if (frame.type === 'batch') {
+          ws.send(
+            JSON.stringify({
+              type: 'error',
+              code: 'simulated_batch_error',
+              message: 'Simulated batch processing error',
+            })
+          );
+        }
+      },
+    },
+  });
+  rawServers.push(server);
+  return {
+    port: server.port,
+    stop: (force?: boolean) => server.stop(force),
   };
 }
 
