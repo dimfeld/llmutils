@@ -532,8 +532,6 @@ describe('sync runner', () => {
     expect(clientMocks.httpFetchSnapshots.mock.calls[0]?.[3]).toEqual([`task:${addedTaskUuid}`]);
     expect(clientMocks.httpFetchSnapshots.mock.calls[1]?.[3]).toEqual([`plan:${PLAN_UUID}`]);
     expect(operationStatus(db, addTaskOp.operationUuid)).toBe('rejected');
-    expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).not.toContain(
-      addedTaskUuid
-    );
+    expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).not.toContain(addedTaskUuid);
   });
 });

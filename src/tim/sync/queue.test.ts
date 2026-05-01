@@ -1093,9 +1093,7 @@ describe('persistent-node sync queue', () => {
     });
 
     expect(operationRow(op.operationUuid).status).toBe('rejected');
-    expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).not.toContain(
-      addedTaskUuid
-    );
+    expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).not.toContain(addedTaskUuid);
     expect(followUpKeys).toEqual([`plan:${PLAN_UUID}`]);
   });
 
