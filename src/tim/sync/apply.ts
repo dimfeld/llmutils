@@ -178,18 +178,19 @@ export function applyBatch(
   const apply = db.transaction((): ApplyBatchResult => {
     const results: ApplyOperationResult[] = [];
     for (const [index, operation] of batch.operations.entries()) {
-      const result = applyOperationInTransaction(
-        db,
-        operation,
-        originalPayloads[index],
-        normalizedPayloads[index],
-        options,
-        batch.batchId
-      );
+      const result =
+        applyBatchOperationHookForTesting?.(index, operation) ??
+        applyOperationInTransaction(
+          db,
+          operation,
+          originalPayloads[index],
+          normalizedPayloads[index],
+          options,
+          batch.batchId
+        );
       results.push(result);
-      applyBatchOperationHookForTesting?.(index, operation);
       if (result.status === 'rejected' || result.status === 'deferred') {
-        throw new BatchAbort(result, results);
+        throw new BatchAbort(result, results, results.length - 1);
       }
     }
     return aggregateBatchResult(batch.batchId, results);
@@ -205,7 +206,7 @@ export function applyBatch(
       return {
         batchId: batch.batchId,
         status,
-        results: rolledBackBatchResults(batch.operations, error.result),
+        results: rolledBackBatchResults(batch.operations, error.result, error.causeIndex),
         invalidations: [],
         sequenceIds: [],
         error: error.result.error,
@@ -218,13 +219,17 @@ export function applyBatch(
       return {
         batchId: batch.batchId,
         status,
-        results: rolledBackBatchResults(batch.operations, {
-          status,
-          sequenceIds: [],
-          invalidations: [],
-          acknowledged: status === 'rejected',
-          error,
-        } as ApplyOperationResult),
+        results: rolledBackBatchResults(
+          batch.operations,
+          {
+            status,
+            sequenceIds: [],
+            invalidations: [],
+            acknowledged: status === 'rejected',
+            error,
+          } as ApplyOperationResult,
+          batch.operations.findIndex((operation) => operation.operationUuid === error.operationUuid)
+        ),
         invalidations: [],
         sequenceIds: [],
         error,
@@ -235,11 +240,11 @@ export function applyBatch(
 }
 
 let applyBatchOperationHookForTesting:
-  | ((index: number, operation: SyncOperationEnvelope) => void)
+  | ((index: number, operation: SyncOperationEnvelope) => ApplyOperationResult | void)
   | null = null;
 
 export function setApplyBatchOperationHookForTesting(
-  hook: ((index: number, operation: SyncOperationEnvelope) => void) | null
+  hook: ((index: number, operation: SyncOperationEnvelope) => ApplyOperationResult | void) | null
 ): void {
   applyBatchOperationHookForTesting = hook;
 }
@@ -409,7 +414,8 @@ function applyOperationInTransaction(
 class BatchAbort extends Error {
   constructor(
     readonly result: ApplyOperationResult,
-    readonly priorResults: ApplyOperationResult[]
+    readonly priorResults: ApplyOperationResult[],
+    readonly causeIndex: number
   ) {
     super(result.error?.message ?? `Batch aborted by ${result.status} operation`);
     this.name = 'BatchAbort';
@@ -428,10 +434,13 @@ function aggregateBatchResult(batchId: string, results: ApplyOperationResult[]):
 
 function rolledBackBatchResults(
   operations: SyncOperationEnvelope[],
-  cause: ApplyOperationResult
+  cause: ApplyOperationResult,
+  causeIndex = operations.findIndex(
+    (operation) => operation.operationUuid === operationUuidFromError(cause.error)
+  )
 ): ApplyOperationResult[] {
-  return operations.map((operation) => {
-    if (operation.operationUuid === operationUuidFromError(cause.error)) {
+  return operations.map((operation, index) => {
+    if (index === causeIndex) {
       return cause;
     }
     // V1 trade-off: when the cause is rejected we mark siblings terminal
@@ -445,15 +454,22 @@ function rolledBackBatchResults(
     // Follow-up work (durably persisting rejection across the rollback,
     // or reassigning sequences on the persistent node) is needed before
     // siblings can safely retry independently.
+    const error = new SyncValidationError(
+      'Operation rolled back because its batch did not commit',
+      {
+        operationUuid: operation.operationUuid,
+        issues: [],
+      }
+    );
+    if (cause.error) {
+      error.cause = cause.error;
+    }
     return {
       status: cause.status === 'deferred' ? 'deferred' : 'rejected',
       sequenceIds: [],
       invalidations: [],
       acknowledged: false,
-      error: new SyncValidationError('Operation rolled back because its batch did not commit', {
-        operationUuid: operation.operationUuid,
-        issues: [],
-      }),
+      error,
     };
   });
 }

@@ -387,7 +387,7 @@ export function markOperationAcked(
   ackMetadata: unknown
 ): SyncOperationQueueRow {
   return transitionOperation(db, operationUuid, {
-    from: ['sending'],
+    from: ['sending', 'failed_retryable'],
     to: 'acked',
     ackMetadata,
     acked: true,
@@ -402,7 +402,7 @@ export function markOperationConflict(
   ackMetadata: unknown
 ): SyncOperationQueueRow {
   return transitionOperation(db, operationUuid, {
-    from: ['sending'],
+    from: ['sending', 'failed_retryable'],
     to: 'conflict',
     ackMetadata: { ...(isRecord(ackMetadata) ? ackMetadata : {}), conflictId },
     acked: true,
@@ -417,7 +417,7 @@ export function markOperationRejected(
   ackMetadata: unknown
 ): SyncOperationQueueRow {
   return transitionOperation(db, operationUuid, {
-    from: ['sending'],
+    from: ['sending', 'failed_retryable'],
     to: 'rejected',
     lastError: reason,
     ackMetadata: { ...(isRecord(ackMetadata) ? ackMetadata : {}), error: reason },

@@ -198,6 +198,7 @@ export async function flushPendingOperationsOnce(
   }
 
   const sendingRows: SyncOperationQueueRow[] = [];
+  const processedOperationUuids = new Set<string>();
   try {
     for (const row of pendingRows) {
       sendingRows.push(markOperationSending(options.db, row.operation_uuid));
@@ -213,10 +214,17 @@ export async function flushPendingOperationsOnce(
               frame.operations
             );
       unwrapRetryable(flush);
+      const resultOperationUuids = flush.value.results.map((result) => result.operationId);
       await applyOperationResultsOverHttp(options, flush.value.results);
+      for (const operationUuid of resultOperationUuids) {
+        processedOperationUuids.add(operationUuid);
+      }
     }
   } catch (err) {
     for (const row of sendingRows) {
+      if (processedOperationUuids.has(row.operation_uuid)) {
+        continue;
+      }
       markOperationFailedRetryable(options.db, row.operation_uuid, err);
     }
     throw err;
