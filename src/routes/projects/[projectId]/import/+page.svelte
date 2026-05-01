@@ -53,6 +53,7 @@
   let identifierInput = $state<HTMLInputElement | null>(null);
   let pasting = $state(false);
   let mode: ImportMode = $state('single');
+  let simpleMode = $state(false);
   let fetching = $state(false);
   let fetchError: string | null = $state(null);
 
@@ -172,6 +173,7 @@
         selectedParentContent,
         selectedChildIndices,
         selectedChildContent,
+        simple: simpleMode,
       });
       await goto(`/projects/${params.projectId}/plans/${result.planUuid}`);
     } catch (err) {
@@ -252,6 +254,18 @@
                 </div>
               {/if}
             </RadioGroup>
+          </div>
+
+          <div class="space-y-2">
+            <label class="flex items-center gap-2">
+              <Checkbox bind:checked={simpleMode} id="simple-mode" />
+              <span class="text-sm font-medium text-foreground">
+                Simple plan (skip generation)
+              </span>
+            </label>
+            <p class="ml-6 text-sm text-muted-foreground">
+              Run the agent directly without going through plan generation.
+            </p>
           </div>
         </div>
       </div>
