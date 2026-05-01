@@ -6,7 +6,16 @@ import { getServerContext } from '$lib/server/init.js';
 import { PROJECT_COLOR_PALETTE } from '$lib/stores/project.svelte.js';
 import { branchPrefixSchema } from '$tim/branch_prefix.js';
 import { getProjectById } from '$tim/db/project.js';
-import { writeProjectSettingDelete, writeProjectSettingSet } from '$tim/sync/write_router.js';
+import {
+  deleteProjectSettingOperation,
+  setProjectSettingOperation,
+} from '$tim/sync/operations.js';
+import {
+  beginSyncBatch,
+  getProjectUuidForId,
+  writeProjectSettingDelete,
+  writeProjectSettingSet,
+} from '$tim/sync/write_router.js';
 
 const settingValueSchemas: Record<string, z.ZodType> = {
   featured: z.boolean(),
@@ -125,26 +134,36 @@ export const updateProjectSettings = command(
       validateProjectSettingUpdate(setting, value, baseRevision)
     );
 
+    const projectUuid = getProjectUuidForId(db, projectId);
+    const batch = await beginSyncBatch(db, config, { reason: 'project_settings_update' });
     for (const nextSetting of validatedUpdates) {
       if (nextSetting.clear) {
-        await writeProjectSettingDelete(
-          db,
-          config,
-          projectId,
-          nextSetting.setting,
-          nextSetting.baseRevision
+        batch.add((options) =>
+          deleteProjectSettingOperation(
+            {
+              projectUuid,
+              setting: nextSetting.setting,
+              baseRevision: nextSetting.baseRevision,
+            },
+            options
+          )
         );
         continue;
       }
 
-      await writeProjectSettingSet(
-        db,
-        config,
-        projectId,
-        nextSetting.setting,
-        nextSetting.value,
-        nextSetting.baseRevision
+      batch.add((options) =>
+        setProjectSettingOperation(
+          {
+            projectUuid,
+            setting: nextSetting.setting,
+            value: nextSetting.value,
+            baseRevision: nextSetting.baseRevision,
+          },
+          options
+        )
       );
     }
+
+    await batch.commit();
   }
 );
