@@ -284,7 +284,7 @@ describe('main-node sync apply engine', () => {
         attempts: 1,
       },
     ]);
-    expect(operationRows()[2]!.last_error).toBe(
+    expect(operationRows()[2]!.last_error).toContain(
       'Atomic batch aborted: conflict diagnosed but not persisted'
     );
     expect(countRows('sync_conflict')).toBe(0);
@@ -511,7 +511,19 @@ describe('main-node sync apply engine', () => {
         .map((row) => row.tag)
         .sort()
     ).toEqual(['applied']);
-    expect(countRows('sync_operation')).toBe(1);
+    expect(countRows('sync_operation')).toBe(2);
+    expect(operationRows()).toMatchObject([
+      {
+        operation_uuid: applied.operationUuid,
+        local_sequence: 1,
+        status: 'applied',
+      },
+      {
+        operation_uuid: sibling.operationUuid,
+        local_sequence: 2,
+        status: 'rejected',
+      },
+    ]);
     expect(
       db
         .prepare(
@@ -519,7 +531,88 @@ describe('main-node sync apply engine', () => {
            WHERE operation_uuid IN (?, ?)`
         )
         .get(duplicateSequence.operationUuid, sibling.operationUuid)
-    ).toMatchObject({ count: 0 });
+    ).toMatchObject({ count: 1 });
+
+    const replay = applyBatch(
+      db,
+      createBatchEnvelope({
+        batchId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        originNodeId: NODE_A,
+        operations: [duplicateSequence, sibling],
+      })
+    );
+    expect(replay.status).toBe('rejected');
+    expect(
+      getPlanTagsByUuid(db, PLAN_UUID)
+        .map((row) => row.tag)
+        .sort()
+    ).toEqual(['applied']);
+  });
+
+  test('rolled-back batch persistence errors surface to caller', async () => {
+    seedPlan();
+    const cause = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'cause' },
+      {
+        operationUuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaad',
+        originNodeId: NODE_A,
+        localSequence: 1,
+      }
+    );
+    const sibling = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'sibling' },
+      {
+        operationUuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbd',
+        originNodeId: NODE_A,
+        localSequence: 2,
+      }
+    );
+    const originalTransaction = db.transaction.bind(db);
+    const persistError = new Error('persist failed');
+    let transactionCalls = 0;
+    const transactionSpy = vi.spyOn(db, 'transaction').mockImplementation(((fn: unknown) => {
+      transactionCalls += 1;
+      if (transactionCalls === 2) {
+        return {
+          immediate() {
+            throw persistError;
+          },
+        };
+      }
+      return originalTransaction(fn as Parameters<typeof originalTransaction>[0]);
+    }) as typeof db.transaction);
+    setApplyBatchOperationHookForTesting((index) => {
+      if (index !== 0) {
+        return;
+      }
+      return {
+        status: 'rejected',
+        sequenceIds: [],
+        invalidations: [],
+        acknowledged: true,
+        error: new SyncValidationError('synthetic rejection', {
+          operationUuid: cause.operationUuid,
+          issues: [],
+        }),
+      };
+    });
+    try {
+      expect(() =>
+        applyBatch(
+          db,
+          createBatchEnvelope({
+            batchId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddf',
+            originNodeId: NODE_A,
+            operations: [cause, sibling],
+          })
+        )
+      ).toThrow(persistError);
+    } finally {
+      setApplyBatchOperationHookForTesting(null);
+      transactionSpy.mockRestore();
+    }
   });
 
   test('batch rollback preserves non-validation cause error and chains sibling errors', async () => {

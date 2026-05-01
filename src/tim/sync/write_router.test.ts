@@ -15,6 +15,7 @@ import {
   setPlanScalarOperation,
 } from './operations.js';
 import type { SyncOperationEnvelope } from './types.js';
+import { createBatchEnvelope } from './types.js';
 import { listPendingOperations } from './queue.js';
 import { rowsToFlushFrames } from './ws_client.js';
 import { SyncWriteConflictError, SyncWriteRejectedError } from './errors.js';
@@ -58,6 +59,16 @@ function syncOperationRows() {
       'SELECT operation_type, status, origin_node_id FROM sync_operation ORDER BY local_sequence'
     )
     .all() as Array<{ operation_type: string; status: string; origin_node_id: string }>;
+}
+
+function syncOperationBatchId(): string {
+  const row = db
+    .prepare('SELECT batch_id FROM sync_operation WHERE batch_id IS NOT NULL LIMIT 1')
+    .get() as { batch_id: string } | null;
+  if (!row?.batch_id) {
+    throw new Error('Expected a sync_operation batch_id');
+  }
+  return row.batch_id;
 }
 
 function sequenceCount(): number {
@@ -113,7 +124,7 @@ describe('sync write router', () => {
     ).rejects.toBeInstanceOf(SyncWriteRejectedError);
   });
 
-  test('main-local failed batch does not leak allocated local sequence values', async () => {
+  test('main-local failed batch persists durable rejection rows', async () => {
     const config = { sync: { role: 'main', nodeId: NODE_ID } } as TimConfig;
     const valid = await addPlanTagOperation(
       PROJECT_UUID,
@@ -130,12 +141,30 @@ describe('sync write router', () => {
       routeSyncBatch(db, config, { originNodeId: NODE_ID, operations: [valid, invalid] })
     ).rejects.toBeInstanceOf(SyncWriteRejectedError);
 
+    expect(syncOperationRows()).toEqual([
+      { operation_type: 'plan.add_tag', status: 'rejected', origin_node_id: NODE_ID },
+      { operation_type: 'plan.add_dependency', status: 'rejected', origin_node_id: NODE_ID },
+    ]);
     expect(
       db.prepare('SELECT next_sequence FROM tim_node_sequence WHERE node_id = ?').get(NODE_ID)
-    ).toBeNull();
+    ).toEqual({ next_sequence: 2 });
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({ revision: 1 });
+    const replay = applyBatch(
+      db,
+      createBatchEnvelope({
+        batchId: syncOperationBatchId(),
+        originNodeId: NODE_ID,
+        operations: [
+          { ...valid, originNodeId: NODE_ID, localSequence: 0 },
+          { ...invalid, originNodeId: NODE_ID, localSequence: 1 },
+        ],
+      })
+    );
+    expect(replay.status).toBe('rejected');
+    expect(replay.results.map((item) => item.status)).toEqual(['rejected', 'rejected']);
   });
 
-  test('main-local conflicted batch rolls back when conflict is not accepted', async () => {
+  test('main-local atomic conflicted batch persists durable rejection rows', async () => {
     const config = { sync: { role: 'main', nodeId: NODE_ID } } as TimConfig;
     db.prepare('UPDATE plan SET details = ?, revision = revision + 1 WHERE uuid = ?').run(
       'main edit\n',
@@ -165,7 +194,11 @@ describe('sync write router', () => {
     );
 
     await expect(
-      routeSyncBatch(db, config, { originNodeId: NODE_ID, operations: [status, conflict] })
+      routeSyncBatch(db, config, {
+        originNodeId: NODE_ID,
+        atomic: true,
+        operations: [status, conflict],
+      })
     ).rejects.toBeInstanceOf(SyncWriteConflictError);
 
     expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
@@ -173,9 +206,26 @@ describe('sync write router', () => {
       details: 'main edit\n',
       revision: before.revision,
     });
-    expect(syncOperationRows()).toEqual([]);
+    expect(syncOperationRows()).toEqual([
+      { operation_type: 'plan.set_scalar', status: 'rejected', origin_node_id: NODE_ID },
+      { operation_type: 'plan.patch_text', status: 'rejected', origin_node_id: NODE_ID },
+    ]);
     expect(syncConflictCount()).toBe(0);
-    expect(nodeSequenceRow()).toBeNull();
+    expect(nodeSequenceRow()).toEqual({ next_sequence: 2 });
+    const replay = applyBatch(
+      db,
+      createBatchEnvelope({
+        batchId: syncOperationBatchId(),
+        originNodeId: NODE_ID,
+        atomic: true,
+        operations: [
+          { ...status, originNodeId: NODE_ID, localSequence: 0 },
+          { ...conflict, originNodeId: NODE_ID, localSequence: 1 },
+        ],
+      })
+    );
+    expect(replay.status).toBe('rejected');
+    expect(replay.results.map((item) => item.status)).toEqual(['rejected', 'rejected']);
   });
 
   test('main-local conflicted batch persists when conflict is accepted', async () => {
