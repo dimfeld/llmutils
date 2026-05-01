@@ -360,6 +360,119 @@ describe('main-node sync apply engine', () => {
     }
   });
 
+  test('secondary catch path: SyncValidationError thrown from hook preserves cause error and chains siblings', async () => {
+    seedPlan();
+    const cause = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'cause' },
+      {
+        operationUuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac',
+        originNodeId: NODE_A,
+        localSequence: 1,
+      }
+    );
+    const sibling = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'sibling' },
+      {
+        operationUuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbc',
+        originNodeId: NODE_A,
+        localSequence: 2,
+      }
+    );
+    const thrownError = new SyncValidationError('synthetic thrown validation error', {
+      operationUuid: cause.operationUuid,
+      issues: [],
+    });
+
+    // Hook THROWS (not returns) so the error escapes the transaction directly
+    // and hits the secondary catch path (lines 215-236) rather than BatchAbort.
+    setApplyBatchOperationHookForTesting((index) => {
+      if (index === 0) {
+        throw thrownError;
+      }
+    });
+    try {
+      const result = applyBatch(
+        db,
+        createBatchEnvelope({
+          batchId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeef',
+          originNodeId: NODE_A,
+          operations: [cause, sibling],
+        })
+      );
+
+      expect(result.status).toBe('rejected');
+      expect(result.error).toBe(thrownError);
+      // Cause's slot must retain the original thrown error, not a generic "rolled back" message.
+      expect(result.results[0].error).toBe(thrownError);
+      // Sibling's slot is a generic rollback error with .cause chained back to the original.
+      expect(result.results[1].error).toBeInstanceOf(SyncValidationError);
+      expect(result.results[1].error?.message).toBe(
+        'Operation rolled back because its batch did not commit'
+      );
+      expect(result.results[1].error?.cause).toBe(thrownError);
+      // No tags should have been applied.
+      expect(getPlanTagsByUuid(db, PLAN_UUID)).toEqual([]);
+    } finally {
+      setApplyBatchOperationHookForTesting(null);
+    }
+  });
+
+  test('secondary catch path: SyncFifoGapError thrown from hook produces deferred status', async () => {
+    seedPlan();
+    const cause = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'gap-cause' },
+      {
+        operationUuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccf',
+        originNodeId: NODE_A,
+        localSequence: 5,
+      }
+    );
+    const sibling = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'gap-sibling' },
+      {
+        operationUuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddf',
+        originNodeId: NODE_A,
+        localSequence: 6,
+      }
+    );
+    const thrownGapError = new SyncFifoGapError('synthetic thrown gap error', {
+      operationUuid: cause.operationUuid,
+      originNodeId: NODE_A,
+      localSequence: 5,
+      expectedSequence: 1,
+    });
+
+    setApplyBatchOperationHookForTesting((index) => {
+      if (index === 0) {
+        throw thrownGapError;
+      }
+    });
+    try {
+      const result = applyBatch(
+        db,
+        createBatchEnvelope({
+          batchId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          originNodeId: NODE_A,
+          operations: [cause, sibling],
+        })
+      );
+
+      expect(result.status).toBe('deferred');
+      expect(result.error).toBe(thrownGapError);
+      expect(result.results[0].status).toBe('deferred');
+      expect(result.results[0].error).toBe(thrownGapError);
+      expect(result.results[1].status).toBe('deferred');
+      expect(result.results[1].error?.cause).toBe(thrownGapError);
+      expect(getPlanTagsByUuid(db, PLAN_UUID)).toEqual([]);
+    } finally {
+      setApplyBatchOperationHookForTesting(null);
+    }
+  });
+
   test('batch rejects duplicate operation UUIDs before applying', async () => {
     seedPlan();
     const first = await addPlanTagOperation(
