@@ -263,8 +263,9 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('Generate');
+    expect(body).toContain('<div data-testid="action-config"><button>Generate</button>');
     expect(body).toContain('Run Agent');
+    expect(body.indexOf('Generate')).toBeLessThan(body.indexOf('Run Agent'));
   });
 
   test('shows note content when plan has a note', () => {
