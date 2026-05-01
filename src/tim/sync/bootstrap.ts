@@ -21,6 +21,15 @@ interface SettingBootstrapRow {
 
 export function bootstrapSyncMetadata(db: Database): BootstrapResult {
   const runBootstrap = db.transaction((): BootstrapResult => {
+    const bootstrapCompleted = (
+      db
+        .prepare('SELECT bootstrap_completed FROM schema_version ORDER BY rowid DESC LIMIT 1')
+        .get() as { bootstrap_completed?: number } | null
+    )?.bootstrap_completed;
+    if (bootstrapCompleted === 1) {
+      return { plansSeeded: 0, settingsSeeded: 0 };
+    }
+
     // Per-task sync_sequence rows are intentionally not seeded: server.ts's
     // loadTaskSnapshot redirects to loadPlanSnapshot, so a task: invalidation
     // would just trigger another fetch of the same plan snapshot the plan:
@@ -35,7 +44,7 @@ export function bootstrapSyncMetadata(db: Database): BootstrapResult {
     );
 
     const insertSequence = db.prepare(`
-      INSERT INTO sync_sequence (
+      INSERT OR IGNORE INTO sync_sequence (
         project_uuid,
         target_type,
         target_key,
@@ -47,10 +56,12 @@ export function bootstrapSyncMetadata(db: Database): BootstrapResult {
       VALUES (?, ?, ?, ?, NULL, NULL, ${SQL_NOW_ISO_UTC})
     `);
 
-    return {
+    const result = {
       plansSeeded: bootstrapPlans(db, insertSequence, existingTargetKeys),
       settingsSeeded: bootstrapProjectSettings(db, insertSequence, existingTargetKeys),
     };
+    db.prepare('UPDATE schema_version SET bootstrap_completed = 1').run();
+    return result;
   });
 
   return runBootstrap.immediate();
@@ -81,9 +92,9 @@ function bootstrapPlans(
     if (existingTargetKeys.has(targetKey)) {
       continue;
     }
-    insertSequence.run(row.project_uuid, 'plan', targetKey, row.revision);
+    const result = insertSequence.run(row.project_uuid, 'plan', targetKey, row.revision);
     existingTargetKeys.add(targetKey);
-    inserted += 1;
+    inserted += result.changes;
   }
   return inserted;
 }
@@ -113,9 +124,9 @@ function bootstrapProjectSettings(
     if (existingTargetKeys.has(targetKey)) {
       continue;
     }
-    insertSequence.run(row.project_uuid, 'project_setting', targetKey, row.revision);
+    const result = insertSequence.run(row.project_uuid, 'project_setting', targetKey, row.revision);
     existingTargetKeys.add(targetKey);
-    inserted += 1;
+    inserted += result.changes;
   }
   return inserted;
 }
