@@ -1072,6 +1072,32 @@ describe('persistent-node sync queue', () => {
     expect(operationRow(op.operationUuid).status).toBe('rejected');
   });
 
+  test('mergeCanonicalRefresh never_existed for optimistic add_task returns owning plan follow-up key', async () => {
+    seedPlan();
+    const addedTaskUuid = TASK_UUID_2;
+    const op = enqueue(
+      await addPlanTaskOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, taskUuid: addedTaskUuid, title: 'Optimistic task' },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).toContain(addedTaskUuid);
+
+    const followUpKeys = mergeCanonicalRefresh(db, {
+      type: 'never_existed',
+      entityKey: `task:${addedTaskUuid}`,
+      targetType: 'task',
+      taskUuid: addedTaskUuid,
+    });
+
+    expect(operationRow(op.operationUuid).status).toBe('rejected');
+    expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).not.toContain(
+      addedTaskUuid
+    );
+    expect(followUpKeys).toEqual([`plan:${PLAN_UUID}`]);
+  });
+
   test('mergeCanonicalRefresh never_existed rejects pending plan.promote_task ops via target_key/payload_plan_uuid', async () => {
     seedPlan();
     const newPlanUuid = '99999999-9999-4999-8999-999999999999';

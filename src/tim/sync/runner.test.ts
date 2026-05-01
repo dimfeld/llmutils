@@ -1,10 +1,14 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { runMigrations } from '../db/migrations.js';
-import { getPlanByUuid, upsertPlan } from '../db/plan.js';
+import { getPlanByUuid, getPlanTasksByUuid, upsertPlan } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 import { getTimNodeCursor, insertSyncOperation, upsertTimNode } from '../db/sync_tables.js';
-import { addPlanTagOperation, promotePlanTaskOperation } from './operations.js';
+import {
+  addPlanTagOperation,
+  addPlanTaskOperation,
+  promotePlanTaskOperation,
+} from './operations.js';
 import {
   enqueueBatch,
   enqueueOperation,
@@ -315,5 +319,55 @@ describe('sync runner', () => {
     );
     expect(operationStatus(db, promoteOp.operationUuid)).toBe('rejected');
     expect(getPlanByUuid(db, newPlanUuid)).toBeNull();
+  });
+
+  test('runSyncCatchUpOnce bounds recursive never_existed follow-up snapshots', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    const addedTaskUuid = '55555555-5555-4555-8555-555555555555';
+    const addTaskOp = await addPlanTaskOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, taskUuid: addedTaskUuid, title: 'Optimistic task' },
+      { originNodeId: NODE_ID, localSequence: 999 }
+    );
+    enqueueOperation(db, addTaskOp);
+    expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).toContain(addedTaskUuid);
+
+    clientMocks.httpCatchUp.mockResolvedValue({
+      ok: true,
+      value: {
+        invalidations: [{ sequenceId: 1, entityKeys: [`task:${addedTaskUuid}`] }],
+        currentSequenceId: 1,
+      },
+    });
+    clientMocks.httpFetchSnapshots.mockResolvedValue({
+      ok: true,
+      value: {
+        snapshots: [
+          {
+            type: 'never_existed',
+            entityKey: `task:${addedTaskUuid}`,
+            targetType: 'task',
+            taskUuid: addedTaskUuid,
+          },
+        ],
+        currentSequenceId: 1,
+      },
+    });
+
+    await runSyncCatchUpOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+    });
+
+    expect(clientMocks.httpFetchSnapshots).toHaveBeenCalledTimes(2);
+    expect(clientMocks.httpFetchSnapshots.mock.calls[0]?.[3]).toEqual([`task:${addedTaskUuid}`]);
+    expect(clientMocks.httpFetchSnapshots.mock.calls[1]?.[3]).toEqual([`plan:${PLAN_UUID}`]);
+    expect(operationStatus(db, addTaskOp.operationUuid)).toBe('rejected');
+    expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).not.toContain(
+      addedTaskUuid
+    );
   });
 });
