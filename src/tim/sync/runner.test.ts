@@ -414,6 +414,79 @@ describe('sync runner', () => {
     expect(getPendingRollbackKeys(db)).toEqual([]);
   });
 
+  test('runSyncCatchUpOnce clears task-keyed pending rollback when server omits the task snapshot', async () => {
+    // The real sync server's loadTaskSnapshot returns the owning plan snapshot
+    // when the task exists, and returns null (omits the entry) when the task
+    // is tombstoned. In neither case does it return a task-keyed snapshot. The
+    // pending rollback row for `task:<uuid>` must be cleared by the requested
+    // key after a successful fetch pass, not by the returned snapshot's own
+    // entity key.
+    const db = createRunnerDb();
+    seedPlan(db);
+    const newPlanUuid = '44444444-4444-4444-8444-444444444446';
+    const promoteOp = await promotePlanTaskOperation(
+      PROJECT_UUID,
+      {
+        sourcePlanUuid: PLAN_UUID,
+        taskUuid: TASK_UUID,
+        newPlanUuid,
+        title: 'Promoted task',
+      },
+      { originNodeId: NODE_ID, localSequence: 1001 }
+    );
+    enqueueOperation(db, promoteOp);
+
+    clientMocks.httpCatchUp.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        invalidations: [{ sequenceId: 1, entityKeys: [`plan:${PLAN_UUID}`] }],
+        currentSequenceId: 1,
+      },
+    });
+    clientMocks.httpFetchSnapshots
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          snapshots: [
+            {
+              type: 'plan_deleted',
+              projectUuid: PROJECT_UUID,
+              planUuid: PLAN_UUID,
+              deletedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          currentSequenceId: 1,
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          // Mimic real loadCanonicalSnapshot: only the optimistic plan comes
+          // back as never_existed; the task-keyed request gets no entry
+          // (server treats source-plan deletion as task tombstone, returns null).
+          snapshots: [
+            {
+              type: 'never_existed',
+              entityKey: `plan:${newPlanUuid}`,
+              targetType: 'plan',
+              planUuid: newPlanUuid,
+            },
+          ],
+          currentSequenceId: 1,
+        },
+      });
+
+    await runSyncCatchUpOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+    });
+
+    expect(getPlanByUuid(db, newPlanUuid)).toBeNull();
+    expect(getPendingRollbackKeys(db)).toEqual([]);
+  });
+
   test('runSyncCatchUpOnce bounds recursive never_existed follow-up snapshots', async () => {
     const db = createRunnerDb();
     seedPlan(db);
