@@ -43,6 +43,7 @@ task.yml
 .rmplan.lock
 rmplan-*
 !rmplan-usage
+.tim/config/*.local.yml
 .rmfilter/config/*.local.yml
 .rmfilter/reviews
 .*.bun-build
