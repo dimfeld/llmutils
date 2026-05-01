@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import {
+  clearPendingRollbackKey,
   getPendingRollbackKeys,
   mergeCanonicalRefresh,
   type CanonicalSnapshot,
@@ -45,6 +46,16 @@ export async function fetchAndMergeSnapshotsUntilConvergence(
           nextKeys.add(key);
         }
       }
+    }
+    // Clear pending rollback markers by the requested keys, not by the
+    // returned snapshots' own keys. The server may answer a `task:<uuid>`
+    // request with a plan-keyed snapshot (when the task exists, owning plan
+    // is returned) or with no snapshot (when the task is tombstoned). Either
+    // way the request has been resolved and the rollback marker has done its
+    // job. Per-snapshot clears in `writeCanonicalSnapshot` remain as
+    // defense-in-depth for keys that come back exactly as requested.
+    for (const key of keysForPass) {
+      clearPendingRollbackKey(db, key);
     }
     pendingKeys = [...nextKeys];
   }
