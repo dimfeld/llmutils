@@ -19,24 +19,45 @@
       </div>
       <ol class="space-y-2">
         {#each tasks as task, index (`${index}-${task.title}`)}
-          <li class="flex gap-2 rounded border border-gray-800 bg-gray-950/40 p-2">
-            <span
-              class="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border text-[10px] leading-none {task.done
-                ? 'border-emerald-500 bg-emerald-500 text-gray-950'
-                : 'border-gray-600 text-transparent'}"
-              aria-label={task.done ? 'Done' : 'Not done'}
-            >
-              ✓
-            </span>
-            <div class="min-w-0">
-              <div class="font-medium break-words text-gray-100">{task.title}</div>
-              {#if task.description}
-                <div class="mt-1 whitespace-pre-wrap break-words text-xs text-gray-400">
-                  {task.description}
-                </div>
-              {/if}
-            </div>
-          </li>
+          {#if task.done}
+            <li class="task-item task-item--done rounded border border-gray-800 bg-gray-950/40 p-2">
+              <details class="group">
+                <summary class="flex cursor-pointer gap-2 list-none items-start">
+                  <span
+                    class="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border border-emerald-500 bg-emerald-500 text-[10px] leading-none text-gray-950"
+                    aria-label="Done"
+                  >
+                    ✓
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="font-medium break-words text-gray-100">{task.title}</div>
+                  </div>
+                </summary>
+                {#if task.description}
+                  <div class="mt-2 pl-6 whitespace-pre-wrap break-words text-xs text-gray-400">
+                    {task.description}
+                  </div>
+                {/if}
+              </details>
+            </li>
+          {:else}
+            <li class="flex gap-2 rounded border border-gray-800 bg-gray-950/40 p-2">
+              <span
+                class="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border text-[10px] leading-none border-gray-600 text-transparent"
+                aria-label="Not done"
+              >
+                ✓
+              </span>
+              <div class="min-w-0">
+                <div class="font-medium break-words text-gray-100">{task.title}</div>
+                {#if task.description}
+                  <div class="mt-1 whitespace-pre-wrap break-words text-xs text-gray-400">
+                    {task.description}
+                  </div>
+                {/if}
+              </div>
+            </li>
+          {/if}
         {/each}
       </ol>
     </section>
@@ -140,5 +161,17 @@
 
   .plan-content :global(li::marker) {
     color: rgb(100 116 139);
+  }
+
+  .task-item :global(summary::-webkit-details-marker) {
+    display: none;
+  }
+
+  .task-item :global(summary::marker) {
+    content: '';
+  }
+
+  .task-item :global(summary) {
+    list-style: none;
   }
 </style>
