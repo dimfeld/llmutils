@@ -3,8 +3,7 @@ import type { TimConfig } from '../configSchema.js';
 import { getProjectById, getProjectByUuid } from '../db/project.js';
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
 import type { PlanRow } from '../db/plan.js';
-import { getPlanByUuid, getPlanTasksByUuid, insertPlanTask } from '../db/plan.js';
-import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
+import { getPlanByUuid, getPlanTasksByUuid } from '../db/plan.js';
 import {
   applyBatch,
   applyOperation,
@@ -13,7 +12,6 @@ import {
   type ApplyOperationResult,
 } from './apply.js';
 import { getLocalNodeId } from './config.js';
-import { SyncUuidSchema } from './entity_keys.js';
 import {
   SyncFifoGapError,
   SyncValidationError,
@@ -100,81 +98,6 @@ export interface RouteSyncBatchOptions extends RouteSyncOperationOptions {
 
 function shouldQueueOperation(mode: WriteMode): boolean {
   return mode === 'sync-persistent';
-}
-
-function shouldUseLegacyLocalFallback(
-  mode: WriteMode,
-  ...entityIds: Array<string | null | undefined>
-): boolean {
-  return (
-    mode === 'local-operation' &&
-    entityIds.some((id) => id != null && !SyncUuidSchema.safeParse(id).success)
-  );
-}
-
-function bumpLegacyPlan(db: Database, planUuid: string): void {
-  db.prepare(
-    `UPDATE plan SET revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-  ).run(planUuid);
-}
-
-function legacySetPlanStatus(db: Database, planUuid: string, status: PlanRow['status']): void {
-  db.prepare(
-    `UPDATE plan SET status = ?, revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-  ).run(status, planUuid);
-}
-
-function legacyAddTask(db: Database, input: Parameters<typeof addPlanTaskOperation>[1]): void {
-  const taskIndex =
-    input.taskIndex ??
-    (
-      db
-        .prepare(
-          'SELECT COALESCE(MAX(task_index), -1) + 1 AS next_index FROM plan_task WHERE plan_uuid = ?'
-        )
-        .get(input.planUuid) as { next_index: number }
-    ).next_index;
-  insertPlanTask(db, input.planUuid, {
-    taskIndex,
-    title: input.title,
-    description: input.description ?? '',
-    done: input.done ?? false,
-    uuid: input.taskUuid,
-  });
-  bumpLegacyPlan(db, input.planUuid);
-}
-
-function legacyRemoveListItem(
-  db: Database,
-  input:
-    | { planUuid: string; list: 'reviewIssues'; value: SyncReviewIssueValue }
-    | { planUuid: string; list: Exclude<SyncPlanListName, 'reviewIssues'>; value: string }
-): void {
-  const column =
-    input.list === 'issue'
-      ? 'issue'
-      : input.list === 'pullRequest'
-        ? 'pull_request'
-        : input.list === 'docs'
-          ? 'docs'
-          : input.list === 'changedFiles'
-            ? 'changed_files'
-            : 'review_issues';
-  const row = db
-    .prepare(`SELECT ${column} AS value FROM plan WHERE uuid = ?`)
-    .get(input.planUuid) as { value: string | null } | null;
-  if (!row) {
-    throw new Error(`Plan ${input.planUuid} not found`);
-  }
-  const current = row.value ? (JSON.parse(row.value) as unknown[]) : [];
-  const removeValue = JSON.stringify(input.value);
-  const next = current.filter((item) => JSON.stringify(item) !== removeValue);
-  if (next.length === current.length) {
-    return;
-  }
-  db.prepare(
-    `UPDATE plan SET ${column} = ?, revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-  ).run(next.length > 0 ? JSON.stringify(next) : null, input.planUuid);
 }
 
 export async function routeSyncOperation(
@@ -494,13 +417,6 @@ export async function writePlanSetStatus(
   status: PlanRow['status'],
   baseRevision?: number
 ): Promise<SyncWriteResult> {
-  const mode = resolveWriteMode(config);
-  if (shouldUseLegacyLocalFallback(mode, planUuid)) {
-    // SYNC-EXEMPT: legacy local-only databases/tests may contain pre-sync non-UUID
-    // plan IDs. Configured sync nodes still require operation-schema-valid UUIDs.
-    legacySetPlanStatus(db, planUuid, status);
-    return { mode: 'legacy' };
-  }
   return writePlanSetScalar(db, config, projectUuid, {
     planUuid,
     field: 'status',
@@ -540,7 +456,7 @@ export async function writePlanPatchTextFromCurrent(
   if (!plan) {
     throw new Error(`Plan ${planUuid} not found`);
   }
-  const current = ((plan[field] ?? '') as string).toString();
+  const current = (plan[field] ?? '').toString();
   return writePlanPatchText(db, config, projectUuid, {
     planUuid,
     field,
@@ -556,13 +472,6 @@ export async function writePlanAddTask(
   projectUuid: string,
   input: Parameters<typeof addPlanTaskOperation>[1]
 ): Promise<SyncWriteResult> {
-  const mode = resolveWriteMode(config);
-  if (shouldUseLegacyLocalFallback(mode, input.planUuid, input.taskUuid)) {
-    // SYNC-EXEMPT: legacy local-only databases/tests may contain pre-sync non-UUID
-    // plan IDs. Configured sync nodes still require operation-schema-valid UUIDs.
-    legacyAddTask(db, input);
-    return { mode: 'legacy' };
-  }
   return routeSyncOperation(db, config, (options) =>
     addPlanTaskOperation(projectUuid, input, options)
   );
@@ -570,18 +479,9 @@ export async function writePlanAddTask(
 
 export function addPlanAddTaskToBatch(
   batch: SyncBatchHandle,
-  db: Database,
-  config: TimConfig,
   projectUuid: string,
   input: Parameters<typeof addPlanTaskOperation>[1]
-): SyncWriteResult | void {
-  const mode = resolveWriteMode(config);
-  if (shouldUseLegacyLocalFallback(mode, input.planUuid, input.taskUuid)) {
-    // SYNC-EXEMPT: legacy local-only databases/tests may contain pre-sync non-UUID
-    // plan IDs. Configured sync nodes still require operation-schema-valid UUIDs.
-    legacyAddTask(db, input);
-    return { mode: 'legacy' };
-  }
+): void {
   batch.add((options) => addPlanTaskOperation(projectUuid, input, options));
 }
 
@@ -617,7 +517,7 @@ export async function writePlanUpdateTaskTextFromCurrent(
   if (!task) {
     throw new Error(`Task ${taskUuid} not found in plan ${planUuid}`);
   }
-  const current = ((task[field] ?? '') as string).toString();
+  const current = (task[field] ?? '').toString();
   return writePlanUpdateTaskText(db, config, projectUuid, {
     planUuid,
     taskUuid,
@@ -773,13 +673,6 @@ export async function writePlanListRemove(
     | { planUuid: string; list: 'reviewIssues'; value: SyncReviewIssueValue }
     | { planUuid: string; list: Exclude<SyncPlanListName, 'reviewIssues'>; value: string }
 ): Promise<SyncWriteResult> {
-  const mode = resolveWriteMode(config);
-  if (shouldUseLegacyLocalFallback(mode, input.planUuid)) {
-    // SYNC-EXEMPT: legacy local-only databases/tests may contain pre-sync non-UUID
-    // plan IDs. Configured sync nodes still require operation-schema-valid UUIDs.
-    legacyRemoveListItem(db, input);
-    return { mode: 'legacy' };
-  }
   return routeSyncOperation(db, config, (options) =>
     removePlanListItemOperation(projectUuid, input as never, options)
   );
@@ -787,20 +680,11 @@ export async function writePlanListRemove(
 
 export function addPlanListRemoveToBatch(
   batch: SyncBatchHandle,
-  db: Database,
-  config: TimConfig,
   projectUuid: string,
   input:
     | { planUuid: string; list: 'reviewIssues'; value: SyncReviewIssueValue }
     | { planUuid: string; list: Exclude<SyncPlanListName, 'reviewIssues'>; value: string }
-): SyncWriteResult | void {
-  const mode = resolveWriteMode(config);
-  if (shouldUseLegacyLocalFallback(mode, input.planUuid)) {
-    // SYNC-EXEMPT: legacy local-only databases/tests may contain pre-sync non-UUID
-    // plan IDs. Configured sync nodes still require operation-schema-valid UUIDs.
-    legacyRemoveListItem(db, input);
-    return { mode: 'legacy' };
-  }
+): void {
   batch.add((options) => removePlanListItemOperation(projectUuid, input as never, options));
 }
 

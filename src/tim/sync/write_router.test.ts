@@ -2,7 +2,6 @@ import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'vitest';
 import type { TimConfig } from '../configSchema.js';
 import { runMigrations } from '../db/migrations.js';
-import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
 import { getPlanByUuid, upsertPlan } from '../db/plan.js';
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
@@ -504,27 +503,13 @@ describe('sync write router', () => {
     expect(sequenceCount()).toBe(0);
   });
 
-  test('local-operation mode falls back to legacy SQL for empty plan UUIDs', async () => {
+  test('local-operation mode rejects empty plan UUIDs', async () => {
     const config = { sync: { nodeId: NODE_ID } } as TimConfig;
-    // Insert a legacy non-UUID plan row directly.
-    db.prepare(
-      `INSERT INTO plan (project_id, uuid, plan_id, title, status, revision, created_at, updated_at)
-       VALUES (?, '', 999, 'Legacy plan', 'pending', 0, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})`
-    ).run(project.id);
 
-    const before = db
-      .prepare('SELECT status, revision FROM plan WHERE uuid = ? AND plan_id = 999')
-      .get('') as { status: string; revision: number };
+    await expect(writePlanSetStatus(db, config, PROJECT_UUID, '', 'in_progress')).rejects.toThrow(
+      'Invalid plan UUID'
+    );
 
-    const result = await writePlanSetStatus(db, config, PROJECT_UUID, '', 'in_progress');
-
-    expect(result.mode).toBe('legacy');
-    const after = db
-      .prepare('SELECT status, revision FROM plan WHERE uuid = ? AND plan_id = 999')
-      .get('') as { status: string; revision: number };
-    expect(after.status).toBe('in_progress');
-    expect(after.revision).toBe(before.revision + 1);
-    // No operation envelope should have been emitted.
     expect(syncOperationRows()).toEqual([]);
     expect(sequenceCount()).toBe(0);
   });
