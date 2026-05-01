@@ -434,6 +434,15 @@ function jsonKey(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function countListItems<T>(items: T[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const key = jsonKey(item);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
 function asArray<T>(value: T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
 }
@@ -515,11 +524,15 @@ async function routeMaterializedListDiff<T extends string | SyncReviewIssueValue
 ): Promise<void> {
   const shadowItems = asArray(shadowValues);
   const fileItems = asArray(fileValues);
-  const shadowKeys = new Set(shadowItems.map(jsonKey));
-  const fileKeys = new Set(fileItems.map(jsonKey));
+  const shadowCounts = countListItems(shadowItems);
+  const fileCounts = countListItems(fileItems);
 
   for (const item of shadowItems) {
-    if (!fileKeys.has(jsonKey(item))) {
+    const key = jsonKey(item);
+    const fileCount = fileCounts.get(key) ?? 0;
+    if (fileCount > 0) {
+      fileCounts.set(key, fileCount - 1);
+    } else {
       batch.add((options) =>
         removePlanListItemOperation(
           projectUuid,
@@ -530,7 +543,11 @@ async function routeMaterializedListDiff<T extends string | SyncReviewIssueValue
     }
   }
   for (const item of fileItems) {
-    if (!shadowKeys.has(jsonKey(item))) {
+    const key = jsonKey(item);
+    const shadowCount = shadowCounts.get(key) ?? 0;
+    if (shadowCount > 0) {
+      shadowCounts.set(key, shadowCount - 1);
+    } else {
       batch.add((options) =>
         addPlanListItemOperation(
           projectUuid,

@@ -833,6 +833,49 @@ Details
     ]);
   });
 
+  test('syncMaterializedPlan preserves duplicate list item additions', async () => {
+    await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.docs = ['docs/primary.md', 'docs/primary.md'];
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    expect(syncOperationRows().map((row) => JSON.parse(row.payload))).toContainEqual(
+      expect.objectContaining({
+        type: 'plan.add_list_item',
+        list: 'docs',
+        value: 'docs/primary.md',
+      })
+    );
+  });
+
+  test('syncMaterializedPlan preserves duplicate list item removals', async () => {
+    const { db, project } = await seedProject();
+    db.prepare('UPDATE plan SET docs = ? WHERE project_id = ? AND plan_id = ?').run(
+      JSON.stringify(['docs/primary.md', 'docs/primary.md']),
+      project.id,
+      3
+    );
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.docs = ['docs/primary.md'];
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    expect(syncOperationRows().map((row) => JSON.parse(row.payload))).toContainEqual(
+      expect.objectContaining({
+        type: 'plan.remove_list_item',
+        list: 'docs',
+        value: 'docs/primary.md',
+      })
+    );
+  });
+
   test('syncMaterializedPlan honors preserveUpdatedAt through the shadow-diff op path', async () => {
     const { db } = await seedProject();
     const planPath = await materializePlan(3, repoDir);
