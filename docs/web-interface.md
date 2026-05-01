@@ -503,6 +503,7 @@ The dialog stays open with per-button spinners during launch. Dismissal is preve
 ### Button Layout by Plan State
 
 - **No tasks (stub plan, non-terminal)**: Generate is primary button; dropdown contains "Run Agent" and "Chat"
+- **No tasks, `plan.simple === true` (non-terminal)**: Run Agent is primary (emerald); Generate is omitted entirely — not as primary, not in the dropdown. Simple plans skip the generation step.
 - **Incomplete tasks (non-terminal)**: Run Agent is primary button; dropdown contains "Chat"
 - **All tasks complete OR terminal status**: Standalone "Chat" button (violet themed)
 
@@ -545,6 +546,7 @@ An "Import Issue" link button appears in the plans layout sidebar (`+layout.svel
 - Text input for issue ID, URL, or branch name
 - Radio group for import mode: "Single issue", "With subissues (separate plans)", "With subissues (merged into one plan)"
 - Subissue modes are hidden when the tracker doesn't support hierarchical fetching (e.g. GitHub)
+- "Simple plan (skip generation)" checkbox: when checked, every plan created by the import (parent and any subissue children, regardless of mode) is persisted with `simple: true`. Re-importing into an existing plan with the box checked sets `simple: true` on that plan; leaving it unchecked never clears an existing `simple: true` (opt-in only). State persists across Step 1 ↔ Step 2 navigation.
 - "Fetch Issue" button calls the `fetchIssueForImport` query with loading spinner and error display
 
 **Step 2 — Content Selection:**
@@ -569,7 +571,7 @@ The web import reuses the CLI's duplicate-detection behavior. When importing an 
 
 - **`checkIssueTrackerStatus`** (`query`): Returns tracker availability, type, display name, and hierarchical support for a project
 - **`fetchIssueForImport`** (`query`): Takes identifier string, mode, and projectId. Fetches issue data from the configured tracker API. Returns `IssueWithComments` data for the selection UI
-- **`importIssue`** (`command`): Takes already-fetched issue data, selected content indices, and import mode. Creates plans transactionally and returns the parent plan UUID for redirect
+- **`importIssue`** (`command`): Takes already-fetched issue data, selected content indices, import mode, and an optional `simple` flag. Creates plans transactionally and returns the parent plan UUID for redirect. When `simple: true`, the flag is propagated to all newly-created stubs and applied as an opt-in update to existing plans matched by issue URL.
 
 ### Server-Side Logic
 
@@ -577,7 +579,7 @@ The web import reuses the CLI's duplicate-detection behavior. When importing an 
 
 - **`getIssueTrackerStatus(gitRoot)`**: Checks tracker configuration and capabilities
 - **`fetchIssueForImport(identifier, mode, gitRoot)`**: Parses identifier, creates tracker client via factory, fetches issue (with or without children)
-- **`createPlansFromIssue(projectId, issueData, mode, selectedContent)`**: Reserves plan IDs, builds plans via `createStubPlanFromIssue()`, writes to DB via `writeImportedPlansToDbTransactionally()`. Handles all three modes (single, separate, merged) with proper parent-child relationships and dependencies
+- **`createPlansFromIssue(projectId, issueData, mode, selectedContent, options?)`**: Reserves plan IDs, builds plans via `createStubPlanFromIssue()`, writes to DB via `writeImportedPlansToDbTransactionally()`. Handles all three modes (single, separate, merged) with proper parent-child relationships and dependencies. Accepts `options.simple` which is forwarded to every `createStubPlanFromIssue()` call and, for existing-plan update branches in all three modes, sets `simple: true` on the existing plan when not already set (treated as a content change so the no-op early-return doesn't skip the write). The flag is opt-in only — never set back to `false`.
 
 ### Shared Import Helpers
 
