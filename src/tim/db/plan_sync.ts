@@ -276,16 +276,8 @@ function preserveExistingTaskMetadata(
       })
       .map((task) => [task.uuid, task])
   );
-  const existingByIndex = new Map(existingTasks.map((task) => [task.task_index, task]));
-  const existingByTitle = new Map(existingTasks.map((task) => [task.title, task]));
-
-  return tasks.map((task, index) => {
-    // A task UUID present in a plan file is treated as an explicit identity.
-    // Only UUID-less tasks may inherit identity from the existing DB row by
-    // index/title, which covers older files that predate task UUIDs.
-    const fallback = task.uuid
-      ? existingByUuid.get(task.uuid)
-      : (existingByIndex.get(index) ?? existingByTitle.get(task.title));
+  return tasks.map((task) => {
+    const fallback = task.uuid ? existingByUuid.get(task.uuid) : undefined;
     if (!fallback) {
       return task;
     }
@@ -308,8 +300,11 @@ export async function syncPlanToDb(
   plan: PlanSchemaInput,
   options: PlanSyncOptions = {}
 ): Promise<void> {
-  if (!plan.uuid || typeof plan.id !== 'number') {
-    return;
+  if (!plan.uuid) {
+    throw new Error('Plan must have a UUID before syncing to DB');
+  }
+  if (typeof plan.id !== 'number') {
+    throw new Error('Plan must have a numeric ID before syncing to DB');
   }
 
   try {

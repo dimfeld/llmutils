@@ -125,8 +125,9 @@ describe('tim db/plan_sync', () => {
     expect(getPlanTasksByUuid(db, savedPlan!.uuid)).toHaveLength(1);
   });
 
-  test('syncPlanToDb ignores plans without UUID', async () => {
-    await syncPlanToDb(
+  test('syncPlanToDb rejects plans missing UUID identity', async () => {
+    await expect(
+      syncPlanToDb(
       {
         id: 44,
         title: 'No uuid',
@@ -134,7 +135,8 @@ describe('tim db/plan_sync', () => {
         tasks: [],
       },
       { config: buildTestConfig(tasksDir) }
-    );
+      )
+    ).rejects.toThrow('Plan must have a UUID before syncing to DB');
 
     const db = getDatabase();
     const count = db.prepare('SELECT COUNT(*) as count FROM plan').get() as { count: number };

@@ -21,12 +21,10 @@ import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { prioritySchema, statusSchema, type PlanSchema } from '../planSchema.js';
 import {
   applyPlanWritePostCommitUpdates,
-  getPlanWriteLegacyReason,
   preparePlanForWrite,
   resolvePlanByNumericId,
   routePlanWriteIntoBatch,
   writePlanFile,
-  writePlansLegacyDirectTransactionally,
 } from '../plans.js';
 import { beginSyncBatch } from '../sync/write_router.js';
 import { resolveWriteMode, usesPlanIdReserve } from '../sync/write_mode.js';
@@ -275,37 +273,12 @@ export async function handleAddCommand(
     }
 
     const routedPlans = [updatedNewPlan, ...(referencedParent ? [referencedParent] : [])];
-    const legacyReason = routedPlans
-      .map((routedPlan) =>
-        getPlanWriteLegacyReason(
-          db,
-          projectContext.projectId,
-          routedPlan,
-          idToUuid,
-          projectContext.rows
-        )
-      )
-      .find((reason): reason is string => reason !== null);
-
-    if (legacyReason) {
-      if (writeMode !== 'local-operation') {
-        throw new Error(`Cannot add child plan with sync-routed writes: ${legacyReason}`);
-      }
-      writePlansLegacyDirectTransactionally(
-        db,
-        projectContext.projectId,
-        routedPlans,
-        idToUuid,
-        projectContext.rows
-      );
-    } else {
-      const batch = await beginSyncBatch(db, config);
-      const postCommitUpdates = routedPlans.flatMap((routedPlan) =>
-        routePlanWriteIntoBatch(batch, db, config, projectContext.projectId, routedPlan, idToUuid)
-      );
-      await batch.commit();
-      applyPlanWritePostCommitUpdates(db, postCommitUpdates);
-    }
+    const batch = await beginSyncBatch(db, config);
+    const postCommitUpdates = routedPlans.flatMap((routedPlan) =>
+      routePlanWriteIntoBatch(batch, db, config, projectContext.projectId, routedPlan, idToUuid)
+    );
+    await batch.commit();
+    applyPlanWritePostCommitUpdates(db, postCommitUpdates);
 
     if (parentMaterializedExists) {
       const freshContext = await resolveProjectContext(repoRoot);

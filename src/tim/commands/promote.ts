@@ -13,13 +13,11 @@ import { resolveRepoRoot } from '../plan_repo_root.js';
 import { resolveProjectContext } from '../plan_materialize.js';
 import {
   applyPlanWritePostCommitUpdates,
-  getPlanWriteLegacyReason,
   parsePlanIdFromCliArg,
   preparePlanForWrite,
   resolvePlanByNumericId,
   routePlanWriteIntoBatch,
   writePlanFile,
-  writePlansLegacyDirectTransactionally,
 } from '../plans.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
 import { beginSyncBatch } from '../sync/write_router.js';
@@ -147,29 +145,12 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
       ),
       ensureReferences(updatedOriginalPlan, { planIdToUuid: idToUuid }).updatedPlan,
     ].map((plan) => preparePlanForWrite(plan));
-    const legacyReason = routedPlans
-      .map((plan) => getPlanWriteLegacyReason(db, context.projectId, plan, idToUuid, context.rows))
-      .find((reason): reason is string => reason !== null);
-
-    if (legacyReason) {
-      if (writeMode !== 'local-operation') {
-        throw new Error(`Cannot promote tasks with sync-routed writes: ${legacyReason}`);
-      }
-      writePlansLegacyDirectTransactionally(
-        db,
-        context.projectId,
-        routedPlans,
-        idToUuid,
-        context.rows
-      );
-    } else {
-      const batch = await beginSyncBatch(db, config);
-      const postCommitUpdates = routedPlans.flatMap((plan) =>
-        routePlanWriteIntoBatch(batch, db, config, context.projectId, plan, idToUuid)
-      );
-      await batch.commit();
-      applyPlanWritePostCommitUpdates(db, postCommitUpdates);
-    }
+    const batch = await beginSyncBatch(db, config);
+    const postCommitUpdates = routedPlans.flatMap((plan) =>
+      routePlanWriteIntoBatch(batch, db, config, context.projectId, plan, idToUuid)
+    );
+    await batch.commit();
+    applyPlanWritePostCommitUpdates(db, postCommitUpdates);
 
     context = await resolveProjectContext(repoRoot);
     const outputPath = await resolveWritablePath(originalRow, repoRoot);

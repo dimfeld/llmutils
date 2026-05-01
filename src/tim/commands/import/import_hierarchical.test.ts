@@ -19,9 +19,7 @@ vi.mock('../../plans.js', () => ({
   getMaxNumericPlanId: vi.fn(),
   readPlanFile: vi.fn(),
   resolvePlanByNumericId: vi.fn(),
-  getPlanWriteLegacyReason: vi.fn(),
   routePlanWriteIntoBatch: vi.fn(),
-  writePlansLegacyDirectTransactionally: vi.fn(),
   applyPlanWritePostCommitUpdates: vi.fn(),
 }));
 
@@ -101,7 +99,6 @@ import {
   getMaxNumericPlanId,
   readPlanFile,
   resolvePlanByNumericId,
-  getPlanWriteLegacyReason,
   routePlanWriteIntoBatch,
 } from '../../plans.js';
 import { beginSyncBatch } from '../../sync/write_router.js';
@@ -251,7 +248,6 @@ describe('Hierarchical Linear Import', () => {
 
     mockBatchCommit = vi.fn().mockResolvedValue(undefined);
     vi.mocked(beginSyncBatch).mockResolvedValue({ commit: mockBatchCommit } as never);
-    vi.mocked(getPlanWriteLegacyReason).mockReturnValue(null);
     vi.mocked(routePlanWriteIntoBatch).mockReturnValue([]);
 
     vi.mocked(toPlanUpsertInput).mockImplementation((plan: PlanSchema) => ({

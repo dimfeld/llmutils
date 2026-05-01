@@ -20,14 +20,12 @@ import type { PlanSchema, Priority } from '../planSchema.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import {
   applyPlanWritePostCommitUpdates,
-  getPlanWriteLegacyReason,
   preparePlanForWrite,
   readPlanFile,
   resolvePlanByNumericId,
   resolvePlanByUuid,
   routePlanWriteIntoBatch,
   writePlanFile,
-  writePlansLegacyDirectTransactionally,
 } from '../plans.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
 import { checkAndMarkParentDone } from '../plans/parent_cascade.js';
@@ -36,7 +34,6 @@ import { ensureReferences } from '../utils/references.js';
 import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
 import { generateBranchNameFromPlan } from './branch.js';
 import { beginSyncBatch } from '../sync/write_router.js';
-import { resolveWriteMode } from '../sync/write_mode.js';
 
 export interface SetOptions {
   priority?: Priority;
@@ -362,21 +359,16 @@ export async function handleSetCommand(
     plan.updatedAt = new Date().toISOString();
     const db = getDatabase();
     const idToUuid = new Map(context.planIdToUuid);
-    const writeMode = resolveWriteMode(config);
 
     const childRow = getPlanByPlanId(db, context.projectId, plan.id);
     if (!childRow) {
       throw new Error(`Plan ${plan.id} not found`);
     }
     const { updatedPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });
-    // In routed (op-batch) mode, old/new parent dependency edits are persisted by
-    // applyPlanSetParent's side effect (it updates plan_dependency for both parents
-    // and bumps their updated_at). They are intentionally NOT routed via
-    // routePlanWriteIntoBatch unless an additional explicit edit is needed
-    // (e.g. flipping the new parent's status). The legacy-direct path has no such
-    // side effect, so legacyPlans must include explicit old/new parent entries.
+    // applyPlanSetParent updates plan_dependency for both parents and bumps
+    // their updated_at, so parent plans only need explicit routing when an
+    // additional edit is needed, such as flipping the new parent's status.
     const routedPlans: PlanSchema[] = [preparePlanForWrite(updatedPlan)];
-    const legacyPlans: PlanSchema[] = [...routedPlans];
     const routeOptions = new Map<
       string,
       { existingRow?: PlanRow | null; currentPlan?: PlanSchema }
@@ -387,15 +379,6 @@ export async function handleSetCommand(
       if (!oldParentRow) {
         throw new Error(`Plan ${oldParentIdToUpdate} not found`);
       }
-      const oldParentPlan = planRowForTransaction(oldParentRow, invertPlanIdToUuidMap(idToUuid));
-      oldParentPlan.dependencies = (oldParentPlan.dependencies ?? []).filter(
-        (dep) => dep !== plan.id
-      );
-      oldParentPlan.updatedAt = new Date().toISOString();
-      const { updatedPlan: updatedOldParent } = ensureReferences(oldParentPlan, {
-        planIdToUuid: idToUuid,
-      });
-      legacyPlans.push(preparePlanForWrite(updatedOldParent));
     }
 
     if (newParentIdToUpdate !== undefined) {
@@ -423,45 +406,22 @@ export async function handleSetCommand(
           },
         });
       }
-      const { updatedPlan: legacyNewParent } = ensureReferences(newParentPlan, {
-        planIdToUuid: idToUuid,
-      });
-      legacyPlans.push(preparePlanForWrite(legacyNewParent));
     }
 
-    const legacyReason = legacyPlans
-      .map((routedPlan) =>
-        getPlanWriteLegacyReason(db, context.projectId, routedPlan, idToUuid, context.rows)
-      )
-      .find((reason): reason is string => reason !== null);
-
-    if (legacyReason) {
-      if (writeMode !== 'local-operation') {
-        throw new Error(`Cannot set plan parent with sync-routed writes: ${legacyReason}`);
-      }
-      writePlansLegacyDirectTransactionally(
+    const batch = await beginSyncBatch(db, config);
+    const postCommitUpdates = routedPlans.flatMap((routedPlan) =>
+      routePlanWriteIntoBatch(
+        batch,
         db,
+        config,
         context.projectId,
-        legacyPlans,
+        routedPlan,
         idToUuid,
-        context.rows
-      );
-    } else {
-      const batch = await beginSyncBatch(db, config);
-      const postCommitUpdates = routedPlans.flatMap((routedPlan) =>
-        routePlanWriteIntoBatch(
-          batch,
-          db,
-          config,
-          context.projectId,
-          routedPlan,
-          idToUuid,
-          routeOptions.get(routedPlan.uuid!) ?? {}
-        )
-      );
-      await batch.commit();
-      applyPlanWritePostCommitUpdates(db, postCommitUpdates);
-    }
+        routeOptions.get(routedPlan.uuid!) ?? {}
+      )
+    );
+    await batch.commit();
+    applyPlanWritePostCommitUpdates(db, postCommitUpdates);
 
     const freshContext = await resolveProjectContext(repoRoot);
     const refreshedPlan = (

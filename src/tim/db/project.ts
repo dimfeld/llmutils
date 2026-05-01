@@ -3,7 +3,7 @@ import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 export interface Project {
   id: number;
-  uuid: string | null;
+  uuid: string;
   repository_id: string;
   remote_url: string | null;
   last_git_root: string | null;

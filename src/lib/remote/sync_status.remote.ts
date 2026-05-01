@@ -162,9 +162,6 @@ export const getProjectSettingsSyncStatus = query(
     if (!project) {
       error(404, 'Project not found');
     }
-    if (!project.uuid) {
-      return { pending: 0, sending: 0, failedRetryable: 0, conflict: 0, rejected: 0 };
-    }
     const resolved = resolveSyncConfig(config);
     const targetKeyPrefix = `project_setting:${project.uuid}:`;
     // See getGlobalSyncStatus for origin-filter rationale.

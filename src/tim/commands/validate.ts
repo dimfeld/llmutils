@@ -16,16 +16,12 @@ import {
   ensureReferences,
   verifyReferences,
   fixReferenceMismatches,
-  detectMissingUuids,
   detectReferenceIssues,
   type ReferenceVerificationResult,
-  fixMissingUuids,
   ensureAllReferences,
   fixReferenceIssues,
   type ReferenceFixResult,
   type ReferenceIssue,
-  type UuidFixResult,
-  type UuidIssue,
 } from '../utils/references.js';
 interface ValidationResult {
   filename: string;
@@ -758,67 +754,19 @@ export async function handleValidateCommand(
     );
   }
 
-  // UUID validation and fixing
-  let uuidIssues: UuidIssue[] = [];
-  let uuidFixResult: UuidFixResult | null = null;
   let uuidToId = new Map<string, number>();
   let idToUuid = new Map<number, string>();
 
   if (planMap) {
-    console.log(chalk.blue.bold('Checking for missing UUIDs...'));
-    uuidIssues = detectMissingUuids(planMap);
-
-    if (uuidIssues.length > 0) {
-      console.log(
-        chalk.yellow.bold(
-          `\nFound ${uuidIssues.length} plan${uuidIssues.length === 1 ? '' : 's'} without UUIDs.`
-        )
-      );
-
-      if (options.fix === false) {
-        console.log(chalk.yellow('--no-fix flag specified, will report as validation errors.\n'));
-      } else {
-        console.log(chalk.blue('Auto-generating UUIDs...'));
-        uuidFixResult = await fixMissingUuids(uuidIssues, planMap, identityCwd);
-
-        if (uuidFixResult.generated.length > 0) {
-          console.log(
-            chalk.green(
-              `✓ Generated ${uuidFixResult.generated.length} UUID${uuidFixResult.generated.length === 1 ? '' : 's'}\n`
-            )
-          );
-
-          // Reload plans to get the new UUIDs
-          const reloadedPlans = await loadValidationPlanState(
-            searchDir,
-            pathContext.gitRoot,
-            repository.repositoryId,
-            planFiles
-          );
-          planMap = reloadedPlans.planMap;
-          uuidToId = reloadedPlans.uuidToId;
-          idToUuid = reloadedPlans.idToUuid;
-        }
-
-        if (uuidFixResult.errors.length > 0) {
-          console.log(chalk.red.bold('Errors during UUID generation:'));
-          uuidFixResult.errors.forEach((error) => {
-            console.log(chalk.red(`  • ${error}`));
-          });
-          console.log();
-        }
-      }
-    } else {
-      // Load UUID maps even if no missing UUIDs
-      const planResults = await loadValidationPlanState(
-        searchDir,
-        pathContext.gitRoot,
-        repository.repositoryId,
-        planFiles
-      );
-      uuidToId = planResults.uuidToId;
-      idToUuid = planResults.idToUuid;
-    }
+    const planResults = await loadValidationPlanState(
+      searchDir,
+      pathContext.gitRoot,
+      repository.repositoryId,
+      planFiles
+    );
+    uuidToId = planResults.uuidToId;
+    idToUuid = planResults.idToUuid;
+    planMap = planResults.planMap;
   }
 
   // Reference validation and fixing
@@ -1195,17 +1143,6 @@ export async function handleValidateCommand(
     );
     console.log(
       `  ${chalk.yellow(`⚠ ${obsoleteKeyIssues.length} plan${obsoleteKeyIssues.length === 1 ? '' : 's'} with ${totalObsoleteTasks} task${totalObsoleteTasks === 1 ? '' : 's'} containing obsolete keys (not fixed due to --no-fix)`)}`
-    );
-  }
-
-  const generatedUuidCount = uuidFixResult?.generated.length ?? 0;
-  if (generatedUuidCount > 0) {
-    console.log(
-      `  ${chalk.green(`✓ Generated ${generatedUuidCount} UUID${generatedUuidCount === 1 ? '' : 's'}`)}`
-    );
-  } else if (uuidIssues.length > 0 && options.fix === false) {
-    console.log(
-      `  ${chalk.yellow(`⚠ ${uuidIssues.length} plan${uuidIssues.length === 1 ? '' : 's'} missing UUID${uuidIssues.length === 1 ? '' : 's'} (not fixed due to --no-fix)`)}`
     );
   }
 
