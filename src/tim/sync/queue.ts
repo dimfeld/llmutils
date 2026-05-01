@@ -55,6 +55,7 @@ export interface SyncOperationQueueRow {
   acked_at: string | null;
   ack_metadata: string | null;
   batch_id: string | null;
+  batch_atomic: number;
 }
 
 /**
@@ -350,7 +351,7 @@ export function enqueueBatch(
     );
     const batch = assertValidBatchEnvelope({ ...input, operations });
     for (const operation of operations) {
-      insertQueuedOperation(db, operation, batch.batchId);
+      insertQueuedOperation(db, operation, batch.batchId, batch.atomic === true);
       applyLocalOptimisticInTransaction(db, operation);
     }
     return {
@@ -744,7 +745,8 @@ function addQueueMetadata(db: Database, operationInput: QueueableOperation): Que
 function insertQueuedOperation(
   db: Database,
   operation: SyncOperationEnvelope,
-  batchId?: string
+  batchId?: string,
+  batchAtomic = false
 ): void {
   const baseRevision =
     'baseRevision' in operation.op && typeof operation.op.baseRevision === 'number'
@@ -770,8 +772,9 @@ function insertQueuedOperation(
         updated_at,
         acked_at,
         ack_metadata,
-        batch_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'queued', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?)
+        batch_id,
+        batch_atomic
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'queued', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
     `
   ).run(
     operation.operationUuid,
@@ -784,7 +787,8 @@ function insertQueuedOperation(
     baseRevision,
     JSON.stringify(operation.op),
     operation.createdAt,
-    batchId ?? null
+    batchId ?? null,
+    batchAtomic ? 1 : 0
   );
 }
 

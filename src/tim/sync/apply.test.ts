@@ -191,6 +191,81 @@ describe('main-node sync apply engine', () => {
     expect(countRows('sync_sequence')).toBe(1);
   });
 
+  test('atomic batch rolls back applied operations when a later operation conflicts', async () => {
+    const seedColor = await setProjectSettingOperation(
+      { projectUuid: PROJECT_UUID, setting: 'color', value: 'blue' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    applyOperation(db, seedColor);
+    const abbreviation = await setProjectSettingOperation(
+      { projectUuid: PROJECT_UUID, setting: 'abbreviation', value: 'AB', baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    const staleColor = await setProjectSettingOperation(
+      { projectUuid: PROJECT_UUID, setting: 'color', value: 'red', baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 3 }
+    );
+
+    const result = applyBatch(
+      db,
+      createBatchEnvelope({
+        batchId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac',
+        originNodeId: NODE_A,
+        atomic: true,
+        operations: [abbreviation, staleColor],
+      })
+    );
+
+    expect(result.status).toBe('conflict');
+    expect(result.results.map((item) => item.status)).toEqual(['rejected', 'conflict']);
+    expect(result.results[1].conflictId).toBeUndefined();
+    expect(result.results[1].error?.message).toContain('Atomic batch aborted');
+    expect(countRows('sync_conflict')).toBe(0);
+    expect(db.prepare('SELECT value, revision FROM project_setting WHERE setting = ?').get('color')).toEqual({
+      value: '"blue"',
+      revision: 1,
+    });
+    expect(
+      db.prepare('SELECT value FROM project_setting WHERE setting = ?').get('abbreviation')
+    ).toBeNull();
+    expect(countRows('sync_sequence')).toBe(1);
+  });
+
+  test('non-atomic batch still commits applied operations when a later operation conflicts', async () => {
+    const seedColor = await setProjectSettingOperation(
+      { projectUuid: PROJECT_UUID, setting: 'color', value: 'blue' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    applyOperation(db, seedColor);
+    const abbreviation = await setProjectSettingOperation(
+      { projectUuid: PROJECT_UUID, setting: 'abbreviation', value: 'AB', baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    const staleColor = await setProjectSettingOperation(
+      { projectUuid: PROJECT_UUID, setting: 'color', value: 'red', baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 3 }
+    );
+
+    const result = applyBatch(
+      db,
+      createBatchEnvelope({
+        batchId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaad',
+        originNodeId: NODE_A,
+        operations: [abbreviation, staleColor],
+      })
+    );
+
+    expect(result.status).toBe('applied');
+    expect(result.results.map((item) => item.status)).toEqual(['applied', 'conflict']);
+    expect(countRows('sync_conflict')).toBe(1);
+    expect(db.prepare('SELECT value FROM project_setting WHERE setting = ?').get('color')).toEqual({
+      value: '"blue"',
+    });
+    expect(
+      db.prepare('SELECT value FROM project_setting WHERE setting = ?').get('abbreviation')
+    ).toEqual({ value: '"AB"' });
+  });
+
   test('batch replay returns recorded results without applying twice', async () => {
     seedPlan();
     const firstTag = await addPlanTagOperation(

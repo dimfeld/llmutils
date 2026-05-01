@@ -816,6 +816,12 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 27,
+    up: `
+      ALTER TABLE sync_operation ADD COLUMN batch_atomic INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

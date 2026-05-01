@@ -45,7 +45,7 @@ export interface ApplyOperationOptions {
 
 export interface ApplyBatchResult {
   batchId: string;
-  status: 'applied' | 'rejected' | 'deferred';
+  status: 'applied' | 'rejected' | 'deferred' | 'conflict';
   results: ApplyOperationResult[];
   invalidations: TargetKey[];
   sequenceIds: number[];
@@ -186,10 +186,15 @@ export function applyBatch(
           originalPayloads[index],
           normalizedPayloads[index],
           options,
-          batch.batchId
+          batch.batchId,
+          batch.atomic === true
         );
       results.push(result);
-      if (result.status === 'rejected' || result.status === 'deferred') {
+      if (
+        result.status === 'rejected' ||
+        result.status === 'deferred' ||
+        (batch.atomic === true && result.status === 'conflict')
+      ) {
         throw new BatchAbort(result, results, results.length - 1);
       }
     }
@@ -202,7 +207,12 @@ export function applyBatch(
     if (error instanceof BatchAbort) {
       // Rejection rows written by operations inside this transaction roll back with
       // the batch; the returned batch_result is the durable rejection signal.
-      const status = error.result.status === 'deferred' ? 'deferred' : 'rejected';
+      const status =
+        error.result.status === 'deferred'
+          ? 'deferred'
+          : error.result.status === 'conflict'
+            ? 'conflict'
+            : 'rejected';
       return {
         batchId: batch.batchId,
         status,
@@ -268,7 +278,8 @@ function applyOperationInTransaction(
   originalPayload: string,
   normalizedPayload: string,
   options: ApplyOperationOptions = {},
-  batchId?: string
+  batchId?: string,
+  batchAtomic = false
 ): ApplyOperationResult {
   const existing = getOperationRow(db, nextEnvelope.operationUuid);
   if (existing && TERMINAL_OPERATION_STATUSES.has(existing.status)) {
@@ -292,7 +303,7 @@ function applyOperationInTransaction(
         `localSequence ${nextEnvelope.localSequence} is already used by ${duplicateSeq.operation_uuid}`
       );
     }
-    insertReceivedOperation(db, nextEnvelope, normalizedPayload, batchId);
+    insertReceivedOperation(db, nextEnvelope, normalizedPayload, batchId, batchAtomic);
   }
 
   const project = db
@@ -441,13 +452,31 @@ function rolledBackBatchResults(
 ): ApplyOperationResult[] {
   return operations.map((operation, index) => {
     if (index === causeIndex) {
+      if (cause.status === 'conflict') {
+        const error = new SyncValidationError(
+          'Atomic batch aborted: stale base revision (conflict diagnosed but not persisted)',
+          {
+            operationUuid: operation.operationUuid,
+            issues: [],
+          }
+        );
+        if (cause.error) {
+          error.cause = cause.error;
+        }
+        return {
+          ...cause,
+          conflictId: undefined,
+          error,
+        };
+      }
       return cause;
     }
-    // V1 trade-off: when the cause is rejected we mark siblings terminal
+    // V1 trade-off: when the cause is rejected or an atomic conflict aborts,
+    // we mark siblings terminal
     // 'rejected' rather than retryable. The naive "retry siblings" approach
     // strands them indefinitely on the main node — applyBatch rolls back the
-    // cause's rejection record, so the FIFO floor never advances past the
-    // cause's sequence. A detached sibling at sequence N+2 then trips
+    // cause's rejection/conflict record, so the FIFO floor never advances past
+    // the cause's sequence. A detached sibling at sequence N+2 then trips
     // SyncFifoGapError waiting for the never-recorded N+1. The 'deferred'
     // path (SyncFifoGapError on the whole batch) keeps siblings retryable
     // because the entire batch is replayed atomically once the gap fills.
@@ -683,7 +712,8 @@ function insertReceivedOperation(
   db: Database,
   envelope: SyncOperationEnvelope,
   payload: string,
-  batchId?: string
+  batchId?: string,
+  batchAtomic = false
 ): void {
   const baseRevision =
     'baseRevision' in envelope.op && typeof envelope.op.baseRevision === 'number'
@@ -709,8 +739,9 @@ function insertReceivedOperation(
         updated_at,
         acked_at,
         ack_metadata,
-        batch_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'received', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?)
+        batch_id,
+        batch_atomic
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'received', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
     `
   ).run(
     envelope.operationUuid,
@@ -723,7 +754,8 @@ function insertReceivedOperation(
     baseRevision,
     payload,
     envelope.createdAt,
-    batchId ?? null
+    batchId ?? null,
+    batchAtomic ? 1 : 0
   );
 }
 

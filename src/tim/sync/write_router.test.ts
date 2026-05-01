@@ -5,15 +5,18 @@ import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
 import { getPlanByUuid, upsertPlan } from '../db/plan.js';
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
+import { applyBatch, applyOperation } from './apply.js';
 import {
   addPlanDependencyOperation,
   addPlanTagOperation,
   addPlanTaskOperation,
   patchPlanTextOperation,
+  setProjectSettingOperation,
   setPlanScalarOperation,
 } from './operations.js';
 import type { SyncOperationEnvelope } from './types.js';
 import { listPendingOperations } from './queue.js';
+import { rowsToFlushFrames } from './ws_client.js';
 import { SyncWriteConflictError, SyncWriteRejectedError } from './errors.js';
 import {
   beginSyncBatch,
@@ -501,6 +504,68 @@ describe('sync write router', () => {
     expect(syncOperationRows().every((row) => row.status === 'queued')).toBe(true);
     expect(listPendingOperations(db)).toHaveLength(1);
     expect(sequenceCount()).toBe(0);
+  });
+
+  test('persistent atomic batch remains atomic when replayed on the main node', async () => {
+    const mainDb = new Database(':memory:');
+    runMigrations(mainDb);
+    getOrCreateProject(mainDb, 'github.com__example__repo', {
+      uuid: PROJECT_UUID,
+      highestPlanId: 10,
+    });
+    const seedColor = await setProjectSettingOperation(
+      { projectUuid: PROJECT_UUID, setting: 'color', value: 'blue' },
+      { originNodeId: 'main-node', localSequence: 0 }
+    );
+    applyOperation(mainDb, seedColor);
+
+    const config = {
+      sync: {
+        role: 'persistent',
+        nodeId: NODE_ID,
+        mainUrl: 'http://127.0.0.1:9999',
+        nodeToken: 'secret-token',
+        offline: true,
+      },
+    } as TimConfig;
+    const batch = await beginSyncBatch(db, config, { atomic: true });
+    batch.add((options) =>
+      setProjectSettingOperation(
+        { projectUuid: PROJECT_UUID, setting: 'abbreviation', value: 'AB', baseRevision: 0 },
+        options
+      )
+    );
+    batch.add((options) =>
+      setProjectSettingOperation(
+        { projectUuid: PROJECT_UUID, setting: 'color', value: 'red', baseRevision: 0 },
+        options
+      )
+    );
+    await batch.commit();
+
+    const frames = rowsToFlushFrames(db, listPendingOperations(db, { originNodeId: NODE_ID }));
+    expect(frames).toHaveLength(1);
+    expect(frames[0].type).toBe('batch');
+    if (frames[0].type !== 'batch') {
+      throw new Error('expected batch frame');
+    }
+    expect(frames[0].batch.atomic).toBe(true);
+
+    const result = applyBatch(mainDb, frames[0].batch);
+
+    expect(result.status).toBe('conflict');
+    expect(
+      mainDb.prepare('SELECT value FROM project_setting WHERE setting = ?').get('color')
+    ).toEqual({
+      value: '"blue"',
+    });
+    expect(
+      mainDb.prepare('SELECT value FROM project_setting WHERE setting = ?').get('abbreviation')
+    ).toBeNull();
+    expect(
+      mainDb.prepare('SELECT COUNT(*) AS count FROM sync_conflict').get()
+    ).toMatchObject({ count: 0 });
+    mainDb.close(false);
   });
 
   test('local-operation mode rejects empty plan UUIDs', async () => {

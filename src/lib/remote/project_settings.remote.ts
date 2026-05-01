@@ -135,7 +135,10 @@ export const updateProjectSettings = command(
     );
 
     const projectUuid = getProjectUuidForId(db, projectId);
-    const batch = await beginSyncBatch(db, config, { reason: 'project_settings_update' });
+    const batch = await beginSyncBatch(db, config, {
+      reason: 'project_settings_update',
+      atomic: true,
+    });
     for (const nextSetting of validatedUpdates) {
       if (nextSetting.clear) {
         batch.add((options) =>
