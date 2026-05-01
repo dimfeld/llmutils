@@ -1,0 +1,16 @@
+Implemented Task 10 and committed it with jj:
+
+`8b010a42 Batch project settings sync writes`
+
+What changed:
+- `updateProjectSettings()` now builds one sync batch via `beginSyncBatch()` and commits all setting set/delete operations together.
+- Added a regression test proving a stale `baseRevision` in one setting rolls back the other setting changes in the same multi-save.
+
+Verification:
+- `bun run check` passed
+- `bun run lint` passed (`lint disabled for now`)
+- `bun run test src/lib/remote/project_settings.remote.test.ts` passed: 27 tests
+
+Plan changes needed: none.
+
+Note: `jj status` is clean, but jj still reports an existing bookmark conflict for `251-review-comment-actions`; I did not touch it.
