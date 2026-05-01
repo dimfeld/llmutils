@@ -47,6 +47,22 @@ describe('createStubPlanFromIssue', () => {
     expect(result.project).toBeUndefined();
     expect(result.id).toBe(2);
     expect(result.title).toBe('Test Issue without Project');
+    expect(result.simple).toBeUndefined();
+  });
+
+  test('sets simple only when requested', () => {
+    const issueData: IssueInstructionData = {
+      issue: {
+        title: 'Simple issue',
+        html_url: 'https://linear.app/company/issue/TEAM-126',
+      },
+      plan: 'Small fix',
+      suggestedFileName: 'simple-issue.md',
+    };
+
+    expect(createStubPlanFromIssue(issueData, 4).simple).toBeUndefined();
+    expect(createStubPlanFromIssue(issueData, 5, { simple: false }).simple).toBeUndefined();
+    expect(createStubPlanFromIssue(issueData, 6, { simple: true }).simple).toBe(true);
   });
 
   test('creates plan with project when project has no description', () => {

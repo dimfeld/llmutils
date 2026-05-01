@@ -176,7 +176,7 @@ describe('issue_import server helpers', () => {
       repository_id: 'repo-id',
       last_git_root: '/tmp/repo',
     } as never);
-    vi.mocked(createStubPlanFromIssue).mockImplementation((issueInstruction, planId) => ({
+    vi.mocked(createStubPlanFromIssue).mockImplementation((issueInstruction, planId, options) => ({
       id: planId,
       title: issueInstruction.issue.title,
       goal: `Implement: ${issueInstruction.issue.title}`,
@@ -186,6 +186,7 @@ describe('issue_import server helpers', () => {
       tasks: [],
       createdAt: '2024-01-01T00:00:00.000Z',
       updatedAt: '2024-01-01T00:00:00.000Z',
+      ...(options?.simple === true ? { simple: true } : {}),
     }));
     vi.mocked(getRepositoryIdentity).mockResolvedValue({
       repositoryId: 'repo-id',
@@ -361,6 +362,232 @@ describe('issue_import server helpers', () => {
   });
 
   describe('createPlansFromIssue', () => {
+    test('creates a simple plan in single mode when requested', async () => {
+      const issueData = makeIssue(1, 'Parent', { body: 'Parent body' });
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValue(41);
+
+      const result = await createPlansFromIssue(
+        7,
+        issueData,
+        'single',
+        {
+          selectedParentContent: [0],
+          selectedChildIndices: [],
+          selectedChildContent: {},
+        },
+        { simple: true }
+      );
+
+      expect(result).toEqual({ planUuid: 'uuid-41' });
+      expect(createStubPlanFromIssue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          issue: expect.objectContaining({ title: 'Parent' }),
+        }),
+        41,
+        { simple: true }
+      );
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(pendingWrites).toHaveLength(1);
+      expect(pendingWrites?.[0]?.plan.simple).toBe(true);
+    });
+
+    test('creates simple parent and child plans in separate mode when requested', async () => {
+      const childA = makeIssue(2, 'Child A', { body: 'Child A body' });
+      const childB = makeIssue(3, 'Child B', { body: 'Child B body' });
+      const parent = makeIssue(1, 'Parent', {
+        body: 'Parent body',
+        children: [childA, childB],
+      });
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValue(100);
+
+      await createPlansFromIssue(
+        7,
+        parent,
+        'separate',
+        {
+          selectedParentContent: [0],
+          selectedChildIndices: [0, 1],
+          selectedChildContent: {
+            0: [0],
+            1: [0],
+          },
+        },
+        { simple: true }
+      );
+
+      expect(createStubPlanFromIssue).toHaveBeenCalledTimes(3);
+      for (const call of vi.mocked(createStubPlanFromIssue).mock.calls) {
+        expect(call[2]).toEqual({ simple: true });
+      }
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(pendingWrites).toHaveLength(3);
+      expect(pendingWrites?.map((entry) => entry.plan.simple)).toEqual([true, true, true]);
+      expect(pendingWrites?.map((entry) => entry.plan.id).sort((a, b) => a - b)).toEqual([
+        100, 101, 102,
+      ]);
+    });
+
+    test('creates a simple plan in merged mode when requested', async () => {
+      const child = makeIssue(2, 'Child', { body: 'Child body' });
+      const parent = makeIssue(1, 'Parent', {
+        body: 'Parent body',
+        children: [child],
+      });
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValue(50);
+
+      await createPlansFromIssue(
+        7,
+        parent,
+        'merged',
+        {
+          selectedParentContent: [0],
+          selectedChildIndices: [0],
+          selectedChildContent: {
+            0: [0],
+          },
+        },
+        { simple: true }
+      );
+
+      expect(createStubPlanFromIssue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          issue: expect.objectContaining({ title: 'Parent' }),
+        }),
+        50,
+        { simple: true }
+      );
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(pendingWrites).toHaveLength(1);
+      expect(pendingWrites?.[0]?.plan.simple).toBe(true);
+      expect(pendingWrites?.[0]?.plan.details).toContain('## Subissue 2: Child');
+    });
+
+    test('does not set simple on new imported plans when omitted or false', async () => {
+      const omittedIssue = makeIssue(1, 'Omitted simple', { body: 'Body' });
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValueOnce(41);
+
+      await createPlansFromIssue(7, omittedIssue, 'single', {
+        selectedParentContent: [0],
+        selectedChildIndices: [],
+        selectedChildContent: {},
+      });
+
+      let pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(createStubPlanFromIssue).toHaveBeenLastCalledWith(expect.anything(), 41);
+      expect(pendingWrites?.[0]?.plan.simple).toBeUndefined();
+
+      vi.mocked(createStubPlanFromIssue).mockClear();
+      vi.mocked(writeImportedPlansToDbTransactionally).mockClear();
+      const falseIssue = makeIssue(2, 'False simple', { body: 'Body' });
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValueOnce(42);
+
+      await createPlansFromIssue(
+        7,
+        falseIssue,
+        'single',
+        {
+          selectedParentContent: [0],
+          selectedChildIndices: [],
+          selectedChildContent: {},
+        },
+        { simple: false }
+      );
+
+      pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(createStubPlanFromIssue).toHaveBeenLastCalledWith(expect.anything(), 42);
+      expect(pendingWrites?.[0]?.plan.simple).toBeUndefined();
+    });
+
+    test('sets simple on an unchanged existing single plan and writes the update', async () => {
+      const issueData = makeIssue(1, 'Parent', {
+        body: 'Parent body',
+        comments: ['Existing comment'],
+        htmlUrl: 'https://tracker.test/issues/1',
+      });
+      const existingPlan: PlanSchema = {
+        id: 41,
+        uuid: 'uuid-existing-41',
+        title: 'Parent',
+        goal: 'goal',
+        details: 'Parent body\n\nExisting comment',
+        status: 'pending',
+        issue: ['https://tracker.test/issues/1'],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([[41, existingPlan]]),
+        duplicates: {},
+      });
+      vi.mocked(resolvePlanByNumericId).mockResolvedValue({
+        plan: existingPlan,
+        planPath: null,
+      });
+
+      const result = await createPlansFromIssue(
+        7,
+        issueData,
+        'single',
+        {
+          selectedParentContent: [0, 1],
+          selectedChildIndices: [],
+          selectedChildContent: {},
+        },
+        { simple: true }
+      );
+
+      expect(result).toEqual({ planUuid: 'uuid-existing-41' });
+      expect(reserveImportedPlanStartId).not.toHaveBeenCalled();
+      expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledTimes(1);
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(pendingWrites).toHaveLength(1);
+      expect(pendingWrites?.[0]?.plan).toMatchObject({
+        id: 41,
+        title: 'Parent',
+        simple: true,
+      });
+    });
+
+    test('does not clear simple on an unchanged existing single plan when omitted', async () => {
+      const issueData = makeIssue(1, 'Parent', {
+        body: 'Parent body',
+        htmlUrl: 'https://tracker.test/issues/1',
+      });
+      const existingPlan: PlanSchema = {
+        id: 41,
+        uuid: 'uuid-existing-41',
+        title: 'Parent',
+        goal: 'goal',
+        details: 'Parent body',
+        status: 'pending',
+        issue: ['https://tracker.test/issues/1'],
+        tasks: [],
+        simple: true,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([[41, existingPlan]]),
+        duplicates: {},
+      });
+      vi.mocked(resolvePlanByNumericId).mockResolvedValue({
+        plan: existingPlan,
+        planPath: null,
+      });
+
+      const result = await createPlansFromIssue(7, issueData, 'single', {
+        selectedParentContent: [0],
+        selectedChildIndices: [],
+        selectedChildContent: {},
+      });
+
+      expect(result).toEqual({ planUuid: 'uuid-existing-41' });
+      expect(writeImportedPlansToDbTransactionally).not.toHaveBeenCalled();
+      expect(reserveImportedPlanStartId).not.toHaveBeenCalled();
+      expect(existingPlan.simple).toBe(true);
+    });
+
     test('creates a single imported plan from selected parent content', async () => {
       const issueData = makeIssue(1, 'Parent', {
         body: 'Parent body',
