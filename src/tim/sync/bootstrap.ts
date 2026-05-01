@@ -28,9 +28,9 @@ export function bootstrapSyncMetadata(db: Database): BootstrapResult {
     // and keeps first-connect bandwidth O(plans) instead of O(plans + tasks).
     const existingTargetKeys = new Set(
       (
-        db
-          .prepare('SELECT DISTINCT target_key FROM sync_sequence')
-          .all() as Array<{ target_key: string }>
+        db.prepare('SELECT DISTINCT target_key FROM sync_sequence').all() as Array<{
+          target_key: string;
+        }>
       ).map((row) => row.target_key)
     );
 
