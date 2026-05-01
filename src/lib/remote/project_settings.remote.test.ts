@@ -5,15 +5,17 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { invokeCommand } from '$lib/test-utils/invoke_command.js';
+import type { TimConfig } from '$tim/configSchema.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { getProjectSetting } from '$tim/db/project_settings.js';
 
 let currentDb: Database;
+let currentConfig: TimConfig;
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
-    config: {} as never,
+    config: currentConfig,
     db: currentDb,
   }),
 }));
@@ -30,6 +32,7 @@ describe('project settings remote actions', () => {
 
   beforeEach(() => {
     currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
+    currentConfig = {} as TimConfig;
     projectId = getOrCreateProject(currentDb, 'repo-project-settings-remote', {
       remoteUrl: 'https://example.com/repo-project-settings-remote.git',
       lastGitRoot: '/tmp/repo-project-settings-remote',
@@ -557,6 +560,42 @@ describe('project settings remote actions', () => {
     // Neither setting should have changed
     expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBeNull();
     expect(getProjectSetting(currentDb, projectId, 'color')).toBe('#e74c3c');
+  });
+
+  test('persistent-mode multi-setting save queues one atomic batch', async () => {
+    currentConfig = {
+      sync: {
+        role: 'persistent',
+        nodeId: 'persistent-project-settings-test',
+        mainUrl: 'http://127.0.0.1:8124',
+        nodeToken: 'secret-token',
+        offline: true,
+      },
+    } as TimConfig;
+
+    await expect(
+      invokeCommand(updateProjectSettings, {
+        projectId,
+        settings: [
+          { setting: 'featured', value: true, baseRevision: 0 },
+          { setting: 'abbreviation', value: 'AB', baseRevision: 0 },
+        ],
+      })
+    ).resolves.toBeUndefined();
+
+    const rows = currentDb
+      .prepare(
+        `SELECT batch_id, batch_atomic, status
+         FROM sync_operation
+         ORDER BY local_sequence`
+      )
+      .all() as Array<{ batch_id: string | null; batch_atomic: number; status: string }>;
+
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((row) => row.batch_id)).size).toBe(1);
+    expect(rows.every((row) => row.batch_id !== null)).toBe(true);
+    expect(rows.every((row) => row.batch_atomic === 1)).toBe(true);
+    expect(rows.every((row) => row.status === 'queued')).toBe(true);
   });
 
   test('rejects a batch before writing any settings when one value is invalid', async () => {

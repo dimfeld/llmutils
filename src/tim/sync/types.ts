@@ -413,6 +413,7 @@ export const SyncOperationBatchEnvelopeSchema = z
     createdAt: SyncIsoTimestampSchema,
     operations: z.array(SyncOperationEnvelopeSchema).min(1),
     reason: z.string().min(1).optional(),
+    atomic: z.boolean().optional(),
   })
   .superRefine((batch, ctx) => {
     const projectUuids = new Set<string>();
@@ -561,6 +562,7 @@ export function createBatchEnvelope(input: {
   createdAt?: string;
   operations: SyncOperationEnvelope[];
   reason?: string;
+  atomic?: boolean;
 }): SyncOperationBatchEnvelope {
   return assertValidBatchEnvelope({
     batchId: input.batchId ?? randomUUID(),
@@ -568,6 +570,7 @@ export function createBatchEnvelope(input: {
     createdAt: input.createdAt ?? new Date().toISOString(),
     operations: input.operations,
     reason: input.reason,
+    atomic: input.atomic,
   });
 }
 

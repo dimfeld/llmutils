@@ -520,7 +520,22 @@ export function applySyncBatchAndBroadcast(
   return result;
 }
 
-function operationResult(operationId: string, result: ApplyOperationResult): SyncOperationResult {
+function operationResult(
+  operationId: string,
+  result: ApplyOperationResult,
+  options: { forceRejected?: boolean } = {}
+): SyncOperationResult {
+  if (options.forceRejected) {
+    return {
+      operationId,
+      status: 'rejected',
+      sequenceIds: result.sequenceIds.length > 0 ? result.sequenceIds : undefined,
+      invalidations: result.invalidations.length > 0 ? result.invalidations : undefined,
+      error:
+        result.error?.message ??
+        'Operation rejected because its atomic batch did not commit on the main node',
+    };
+  }
   return {
     operationId,
     status: result.status,
@@ -540,7 +555,9 @@ function batchResultFrame(
     batchId: result.batchId,
     status: result.status,
     results: result.results.map((operationResultValue, index) =>
-      operationResult(batch.operations[index].operationUuid, operationResultValue)
+      operationResult(batch.operations[index].operationUuid, operationResultValue, {
+        forceRejected: result.status === 'conflict',
+      })
     ),
     sequenceIds: result.sequenceIds.length > 0 ? result.sequenceIds : undefined,
     invalidations: result.invalidations.length > 0 ? result.invalidations : undefined,

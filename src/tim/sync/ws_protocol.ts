@@ -44,7 +44,7 @@ export const SyncOpResultFrameSchema = z.object({
 export const SyncBatchResultFrameSchema = z.object({
   type: z.literal('batch_result'),
   batchId: z.string().min(1),
-  status: z.enum(['applied', 'rejected', 'deferred']),
+  status: z.enum(['applied', 'rejected', 'deferred', 'conflict']),
   results: z.array(SyncOperationResultSchema),
   sequenceIds: z.array(SyncSequenceIdSchema).optional(),
   invalidations: z.array(z.string().min(1)).optional(),

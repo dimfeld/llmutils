@@ -93,6 +93,7 @@ export interface RouteSyncOperationOptions {
 
 export interface RouteSyncBatchOptions extends RouteSyncOperationOptions {
   reason?: string;
+  atomic?: boolean;
   precondition?: () => void;
 }
 
@@ -194,6 +195,7 @@ export async function routeSyncBatch(
   input: {
     originNodeId?: string;
     reason?: string;
+    atomic?: boolean;
     operations: SyncOperationEnvelope[];
   },
   options: RouteSyncBatchOptions = {}
@@ -209,6 +211,7 @@ async function routeSyncBatchWithMode(
   input: {
     originNodeId?: string;
     reason?: string;
+    atomic?: boolean;
     operations: SyncOperationEnvelope[];
   },
   options: RouteSyncBatchOptions = {}
@@ -222,6 +225,7 @@ async function routeSyncBatchWithMode(
     const batch = createBatchEnvelope({
       originNodeId,
       reason: input.reason ?? options.reason,
+      atomic: input.atomic ?? options.atomic,
       operations: input.operations,
     });
     const result = enqueueBatch(db, batch, { precondition: options.precondition });
@@ -245,6 +249,7 @@ async function routeSyncBatchWithMode(
     batch = createBatchEnvelope({
       originNodeId,
       reason: input.reason ?? options.reason,
+      atomic: input.atomic ?? options.atomic,
       operations,
     });
     const applied = applyBatch(db, batch, {
@@ -259,7 +264,7 @@ async function routeSyncBatchWithMode(
     const conflict = applied.results.find(
       (item): item is ApplyOperationResult & { status: 'conflict' } => item.status === 'conflict'
     );
-    if (conflict && !options.acceptConflict) {
+    if (conflict && !batch.atomic && !options.acceptConflict) {
       throw new LocalBatchConflict(conflict, applied.results.indexOf(conflict));
     }
     return applied;
@@ -289,6 +294,18 @@ async function routeSyncBatchWithMode(
       batch: batch!,
       result: result as ApplyBatchResult & { status: 'applied' },
     };
+  }
+  if (result.status === 'conflict') {
+    const conflictIndex = result.results.findIndex((item) => item.status === 'conflict');
+    const conflictOperation = batch!.operations[Math.max(0, conflictIndex)];
+    throw new SyncWriteConflictError(
+      result.error?.message ?? `Sync batch write for ${conflictOperation.targetKey} conflicted`,
+      {
+        operationUuid: conflictOperation.operationUuid,
+        targetKey: conflictOperation.targetKey,
+        conflictId: result.results[conflictIndex]?.conflictId,
+      }
+    );
   }
   const failedIndex = result.results.findIndex(
     (item) => item.status === 'rejected' || item.status === 'deferred'
@@ -341,7 +358,7 @@ export async function beginSyncBatch(
         db,
         config,
         mode,
-        { originNodeId, reason: options.reason, operations },
+        { originNodeId, reason: options.reason, atomic: options.atomic, operations },
         options
       );
     },

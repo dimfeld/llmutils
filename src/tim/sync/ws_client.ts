@@ -642,6 +642,7 @@ function rowsToBatchEnvelope(
     originNodeId: rows[0].origin_node_id,
     createdAt: rows[0].created_at,
     operations: rows.map(rowToEnvelope),
+    atomic: rows.some((row) => row.batch_atomic === 1),
   });
 }
 
