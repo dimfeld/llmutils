@@ -827,4 +827,121 @@ describe('tim db/plan', () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
     );
   });
+
+  test('setPlanBranch on a persistent node enqueues a plan.set_scalar op and applies optimistically', async () => {
+    const planUuid = '55555555-5555-4555-8555-555555555555';
+    const config = {
+      ...getDefaultConfig(),
+      sync: {
+        role: 'persistent' as const,
+        nodeId: 'persistent-node-id-branch',
+        mainUrl: 'http://localhost:9999',
+        nodeToken: 'test-token',
+      },
+    };
+
+    upsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 700,
+      title: 'Branch sync test',
+    });
+
+    expect(getPlanByUuid(db, planUuid)?.branch).toBeNull();
+
+    await setPlanBranch(db, config, planUuid, 'feature/sync-branch');
+
+    // Optimistic apply: local DB reflects the change immediately
+    expect(getPlanByUuid(db, planUuid)?.branch).toBe('feature/sync-branch');
+
+    // A plan.set_scalar op is enqueued (not directly applied to main)
+    const ops = db
+      .prepare("SELECT operation_type, payload FROM sync_operation WHERE status = 'queued'")
+      .all() as Array<{ operation_type: string; payload: string }>;
+    expect(ops).toHaveLength(1);
+    expect(ops[0].operation_type).toBe('plan.set_scalar');
+    const payload = JSON.parse(ops[0].payload);
+    expect(payload.field).toBe('branch');
+    expect(payload.planUuid).toBe(planUuid);
+    expect(payload.value).toBe('feature/sync-branch');
+  });
+
+  test('setPlanBaseTracking with baseBranch on a persistent node enqueues sync op but not for baseCommit/baseChangeId', async () => {
+    const planUuid = '66666666-6666-4666-8666-666666666666';
+    const config = {
+      ...getDefaultConfig(),
+      sync: {
+        role: 'persistent' as const,
+        nodeId: 'persistent-node-id-base',
+        mainUrl: 'http://localhost:9999',
+        nodeToken: 'test-token',
+      },
+    };
+
+    upsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 701,
+      title: 'Base tracking sync test',
+    });
+
+    await setPlanBaseTracking(db, config, planUuid, {
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      baseChangeId: 'change-id',
+    });
+
+    // All fields appear in local DB immediately via optimistic apply
+    const plan = getPlanByUuid(db, planUuid);
+    expect(plan?.base_branch).toBe('main');
+    expect(plan?.base_commit).toBe('abc123');
+    expect(plan?.base_change_id).toBe('change-id');
+
+    // Only baseBranch emits a sync op; baseCommit and baseChangeId are local-only
+    const ops = db
+      .prepare("SELECT operation_type, payload FROM sync_operation WHERE status = 'queued'")
+      .all() as Array<{ operation_type: string; payload: string }>;
+    expect(ops).toHaveLength(1);
+    expect(ops[0].operation_type).toBe('plan.set_scalar');
+    const payload = JSON.parse(ops[0].payload);
+    expect(payload.field).toBe('base_branch');
+    expect(payload.value).toBe('main');
+  });
+
+  test('clearPlanBaseTracking on a persistent node enqueues sync op for base_branch only', async () => {
+    const planUuid = '77777777-7777-4777-8777-777777777777';
+    const config = {
+      ...getDefaultConfig(),
+      sync: {
+        role: 'persistent' as const,
+        nodeId: 'persistent-node-id-clear',
+        mainUrl: 'http://localhost:9999',
+        nodeToken: 'test-token',
+      },
+    };
+
+    upsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 702,
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      baseChangeId: 'change-1',
+    });
+
+    await clearPlanBaseTracking(db, config, planUuid);
+
+    // All fields cleared in local DB
+    const plan = getPlanByUuid(db, planUuid);
+    expect(plan?.base_branch).toBeNull();
+    expect(plan?.base_commit).toBeNull();
+    expect(plan?.base_change_id).toBeNull();
+
+    // Only one sync op emitted (for base_branch = null); baseCommit/baseChangeId are local-only
+    const ops = db
+      .prepare("SELECT operation_type, payload FROM sync_operation WHERE status = 'queued'")
+      .all() as Array<{ operation_type: string; payload: string }>;
+    expect(ops).toHaveLength(1);
+    expect(ops[0].operation_type).toBe('plan.set_scalar');
+    const payload = JSON.parse(ops[0].payload);
+    expect(payload.field).toBe('base_branch');
+    expect(payload.value).toBeNull();
+  });
 });
