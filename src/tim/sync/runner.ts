@@ -265,13 +265,39 @@ async function applyInvalidationsOverHttp(
 }
 
 async function fetchAndMergeSnapshots(options: SyncRunnerOptions, keys: string[]): Promise<void> {
-  if (keys.length === 0) {
-    return;
+  let pendingKeys = [...new Set(keys)];
+  const fetchedKeys = new Set<string>();
+  const maxPasses = 5;
+  for (let pass = 0; pass < maxPasses && pendingKeys.length > 0; pass += 1) {
+    const keysForPass = pendingKeys.filter((key) => !fetchedKeys.has(key));
+    pendingKeys = [];
+    if (keysForPass.length === 0) {
+      return;
+    }
+    for (const key of keysForPass) {
+      fetchedKeys.add(key);
+    }
+    const response = await httpFetchSnapshots(
+      options.serverUrl,
+      options.token,
+      options.nodeId,
+      keysForPass
+    );
+    unwrapRetryable(response);
+    const nextKeys = new Set<string>();
+    for (const snapshot of response.value.snapshots) {
+      for (const key of mergeCanonicalRefresh(options.db, snapshot)) {
+        if (!fetchedKeys.has(key)) {
+          nextKeys.add(key);
+        }
+      }
+    }
+    pendingKeys = [...nextKeys];
   }
-  const response = await httpFetchSnapshots(options.serverUrl, options.token, options.nodeId, keys);
-  unwrapRetryable(response);
-  for (const snapshot of response.value.snapshots) {
-    mergeCanonicalRefresh(options.db, snapshot);
+  if (pendingKeys.length > 0) {
+    warn(`Stopped sync snapshot follow-up after ${maxPasses} passes`, {
+      remainingKeys: pendingKeys,
+    });
   }
 }
 

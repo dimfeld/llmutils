@@ -1,11 +1,17 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { runMigrations } from '../db/migrations.js';
+import { getPlanByUuid, upsertPlan } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 import { getTimNodeCursor, insertSyncOperation, upsertTimNode } from '../db/sync_tables.js';
-import { addPlanTagOperation } from './operations.js';
-import { enqueueBatch, markOperationAcked, markOperationSending } from './queue.js';
-import { createSyncRunner, flushPendingOperationsOnce } from './runner.js';
+import { addPlanTagOperation, promotePlanTaskOperation } from './operations.js';
+import {
+  enqueueBatch,
+  enqueueOperation,
+  markOperationAcked,
+  markOperationSending,
+} from './queue.js';
+import { createSyncRunner, flushPendingOperationsOnce, runSyncCatchUpOnce } from './runner.js';
 import { createBatchEnvelope } from './types.js';
 
 const clientMocks = vi.hoisted(() => ({
@@ -28,6 +34,7 @@ vi.mock('./client.js', async () => {
 
 const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
 const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
+const TASK_UUID = '33333333-3333-4333-8333-333333333333';
 const NODE_ID = 'persistent-a';
 
 beforeEach(() => {
@@ -50,6 +57,21 @@ function createRunnerDb(): Database {
     highestPlanId: 10,
   });
   return db;
+}
+
+function seedPlan(db: Database): void {
+  const project = getOrCreateProject(db, 'github.com__example__repo', {
+    uuid: PROJECT_UUID,
+    highestPlanId: 10,
+  });
+  upsertPlan(db, project.id, {
+    uuid: PLAN_UUID,
+    planId: 1,
+    title: 'Source plan',
+    status: 'pending',
+    tasks: [{ uuid: TASK_UUID, title: 'Task one', description: 'Promote me' }],
+    forceOverwrite: true,
+  });
 }
 
 async function insertQueuedTagOperation(db: Database, tag: string, localSequence = 0) {
@@ -223,5 +245,75 @@ describe('sync runner', () => {
       markOperationAcked(db, op.operationUuid, { sequenceIds: [1], invalidations: ['second'] })
     ).not.toThrow();
     expect(operationStatus(db, op.operationUuid)).toBe('acked');
+  });
+
+  test('runSyncCatchUpOnce fetches follow-up snapshots for locally rejected optimistic ops', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    const newPlanUuid = '44444444-4444-4444-8444-444444444444';
+    const promoteOp = await promotePlanTaskOperation(
+      PROJECT_UUID,
+      {
+        sourcePlanUuid: PLAN_UUID,
+        taskUuid: TASK_UUID,
+        newPlanUuid,
+        title: 'Promoted task',
+      },
+      { originNodeId: NODE_ID, localSequence: 999 }
+    );
+    enqueueOperation(db, promoteOp);
+    expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
+
+    clientMocks.httpCatchUp.mockResolvedValue({
+      ok: true,
+      value: {
+        invalidations: [{ sequenceId: 1, entityKeys: [`plan:${PLAN_UUID}`] }],
+        currentSequenceId: 1,
+      },
+    });
+    clientMocks.httpFetchSnapshots
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          snapshots: [
+            {
+              type: 'plan_deleted',
+              projectUuid: PROJECT_UUID,
+              planUuid: PLAN_UUID,
+              deletedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          currentSequenceId: 1,
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          snapshots: [
+            {
+              type: 'never_existed',
+              entityKey: `plan:${newPlanUuid}`,
+              targetType: 'plan',
+              planUuid: newPlanUuid,
+            },
+          ],
+          currentSequenceId: 1,
+        },
+      });
+
+    await runSyncCatchUpOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+    });
+
+    expect(clientMocks.httpFetchSnapshots).toHaveBeenCalledTimes(2);
+    expect(clientMocks.httpFetchSnapshots.mock.calls[0]?.[3]).toEqual([`plan:${PLAN_UUID}`]);
+    expect(clientMocks.httpFetchSnapshots.mock.calls[1]?.[3]).toEqual(
+      expect.arrayContaining([`plan:${newPlanUuid}`, `task:${TASK_UUID}`])
+    );
+    expect(operationStatus(db, promoteOp.operationUuid)).toBe('rejected');
+    expect(getPlanByUuid(db, newPlanUuid)).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { Database } from 'bun:sqlite';
+import { warn } from '../../logging.js';
 import { getTimNodeCursor, updateTimNodeCursor, type TimNodeCursorRow } from '../db/sync_tables.js';
 import {
   listPendingOperations,
@@ -406,12 +407,7 @@ class WebSocketSyncClient implements SyncClient {
       snapshotKeys.add(key);
     }
 
-    if (snapshotKeys.size > 0) {
-      const snapshots = await this.requestSnapshots([...snapshotKeys]);
-      for (const snapshot of snapshots) {
-        mergeCanonicalRefresh(this.options.db, snapshot);
-      }
-    }
+    await this.fetchAndMergeSnapshots([...snapshotKeys]);
     applyOperationResultTransitions(this.options.db, transitions);
     if (this.flushProcessedOperationUuids) {
       for (const result of transitions) {
@@ -458,15 +454,41 @@ class WebSocketSyncClient implements SyncClient {
 
   private async applyInvalidations(invalidations: SyncCatchUpInvalidation[]): Promise<void> {
     const keys = [...new Set(invalidations.flatMap((item) => item.entityKeys))];
-    if (keys.length > 0) {
-      const snapshots = await this.requestSnapshots(keys);
-      for (const snapshot of snapshots) {
-        mergeCanonicalRefresh(this.options.db, snapshot);
-      }
-    }
+    await this.fetchAndMergeSnapshots(keys);
     const sequenceId = Math.max(0, ...invalidations.map((item) => item.sequenceId));
     if (sequenceId > 0) {
       updateTimNodeCursor(this.options.db, this.options.nodeId, sequenceId);
+    }
+  }
+
+  private async fetchAndMergeSnapshots(keys: string[]): Promise<void> {
+    let pendingKeys = [...new Set(keys)];
+    const fetchedKeys = new Set<string>();
+    const maxPasses = 5;
+    for (let pass = 0; pass < maxPasses && pendingKeys.length > 0; pass += 1) {
+      const keysForPass = pendingKeys.filter((key) => !fetchedKeys.has(key));
+      pendingKeys = [];
+      if (keysForPass.length === 0) {
+        return;
+      }
+      for (const key of keysForPass) {
+        fetchedKeys.add(key);
+      }
+      const snapshots = await this.requestSnapshots(keysForPass);
+      const nextKeys = new Set<string>();
+      for (const snapshot of snapshots) {
+        for (const key of mergeCanonicalRefresh(this.options.db, snapshot)) {
+          if (!fetchedKeys.has(key)) {
+            nextKeys.add(key);
+          }
+        }
+      }
+      pendingKeys = [...nextKeys];
+    }
+    if (pendingKeys.length > 0) {
+      warn(`Stopped sync snapshot follow-up after ${maxPasses} passes`, {
+        remainingKeys: pendingKeys,
+      });
     }
   }
 
