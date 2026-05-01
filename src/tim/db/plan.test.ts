@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { getDefaultConfig } from '../configSchema.js';
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
   deletePlan,
@@ -149,7 +150,7 @@ describe('tim db/plan', () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0]?.task_index).toBe(0);
     expect(tasks[0]?.title).toBe('task c');
-    expect(tasks[0]?.revision).toBe(2);
+    expect(tasks[0]?.revision).toBe(1);
 
     const updatedDeps = db
       .prepare(
@@ -318,35 +319,40 @@ describe('tim db/plan', () => {
     expect(found?.base_change_id).toBeNull();
   });
 
-  test('setPlanBaseTracking updates only provided fields and clearPlanBaseTracking clears all', () => {
+  test('setPlanBaseTracking updates only provided fields and clearPlanBaseTracking clears all', async () => {
+    const planUuid = '11111111-1111-4111-8111-111111111111';
+    const config = {
+      ...getDefaultConfig(),
+      sync: { disabled: true, nodeId: '22222222-2222-4222-8222-222222222222' },
+    };
     upsertPlan(db, projectId, {
-      uuid: 'plan-base-tracking',
+      uuid: planUuid,
       planId: 83,
       baseBranch: 'feature/base',
       baseCommit: 'commit-1',
       baseChangeId: 'change-1',
     });
 
-    setPlanBaseTracking(db, 'plan-base-tracking', {
+    await setPlanBaseTracking(db, config, planUuid, {
       baseCommit: 'commit-2',
     });
 
-    let found = getPlanByUuid(db, 'plan-base-tracking');
+    let found = getPlanByUuid(db, planUuid);
     expect(found?.base_branch).toBe('feature/base');
     expect(found?.base_commit).toBe('commit-2');
     expect(found?.base_change_id).toBe('change-1');
 
-    setPlanBaseTracking(db, 'plan-base-tracking', {
+    await setPlanBaseTracking(db, config, planUuid, {
       baseBranch: 'feature/other',
       baseChangeId: null,
     });
-    found = getPlanByUuid(db, 'plan-base-tracking');
+    found = getPlanByUuid(db, planUuid);
     expect(found?.base_branch).toBe('feature/other');
     expect(found?.base_commit).toBe('commit-2');
     expect(found?.base_change_id).toBeNull();
 
-    clearPlanBaseTracking(db, 'plan-base-tracking');
-    found = getPlanByUuid(db, 'plan-base-tracking');
+    await clearPlanBaseTracking(db, config, planUuid);
+    found = getPlanByUuid(db, planUuid);
     expect(found?.base_branch).toBeNull();
     expect(found?.base_commit).toBeNull();
     expect(found?.base_change_id).toBeNull();
@@ -781,24 +787,37 @@ describe('tim db/plan', () => {
     expect(deps.map((d) => d.depends_on_uuid)).toEqual(['dep-plan-x']);
   });
 
-  test('local-only branch and base tracking updates do not bump plan revision', () => {
+  test('baseCommit and baseChangeId tracking updates are local-only', async () => {
+    const planUuid = '33333333-3333-4333-8333-333333333333';
+    const config = {
+      ...getDefaultConfig(),
+      sync: { disabled: true, nodeId: '44444444-4444-4444-8444-444444444444' },
+    };
     upsertPlan(db, projectId, {
-      uuid: 'plan-local-tracking',
+      uuid: planUuid,
       planId: 606,
       title: 'Local tracking',
     });
 
-    expect(getPlanByUuid(db, 'plan-local-tracking')?.revision).toBe(1);
+    expect(getPlanByUuid(db, planUuid)?.revision).toBe(1);
 
-    setPlanBranch(db, 'plan-local-tracking', 'feature/local');
-    setPlanBaseTracking(db, 'plan-local-tracking', {
+    await setPlanBranch(db, config, planUuid, 'feature/local');
+    await setPlanBaseTracking(db, config, planUuid, {
       baseBranch: 'main',
       baseCommit: 'abc123',
       baseChangeId: 'change-id',
     });
-    clearPlanBaseTracking(db, 'plan-local-tracking');
 
-    expect(getPlanByUuid(db, 'plan-local-tracking')?.revision).toBe(1);
+    expect(getPlanByUuid(db, planUuid)?.revision).toBe(3);
+
+    await setPlanBaseTracking(db, config, planUuid, {
+      baseCommit: 'def456',
+      baseChangeId: 'next-change-id',
+    });
+    expect(getPlanByUuid(db, planUuid)?.revision).toBe(3);
+
+    await clearPlanBaseTracking(db, config, planUuid);
+    expect(getPlanByUuid(db, planUuid)?.revision).toBe(4);
   });
 
   test('getOrCreateProject assigns a UUID on creation', () => {

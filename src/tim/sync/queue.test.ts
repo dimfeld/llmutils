@@ -959,6 +959,24 @@ describe('persistent-node sync queue', () => {
     expect(getAssignment(db, project.id, PLAN_UUID)).toBeNull();
   });
 
+  test('mergeCanonicalRefresh rejects pending plan operations through indexed payload plan UUID', async () => {
+    seedPlan();
+    const pending = enqueue(await tagOp('local-tag'));
+    const indexed = db
+      .prepare('SELECT payload_plan_uuid FROM sync_operation WHERE operation_uuid = ?')
+      .get(pending.operationUuid) as { payload_plan_uuid: string | null };
+    expect(indexed.payload_plan_uuid).toBe(PLAN_UUID);
+
+    mergeCanonicalRefresh(db, {
+      type: 'plan_deleted',
+      projectUuid: PROJECT_UUID,
+      planUuid: PLAN_UUID,
+      deletedAt: '2026-01-02T00:00:00.000Z',
+    });
+
+    expect(operationRow(pending.operationUuid).status).toBe('rejected');
+  });
+
   test('mergeCanonicalRefresh removes local assignments for cleanup-status plan snapshots', () => {
     const cases = [
       { planUuid: PLAN_UUID, taskUuid: TASK_UUID, planId: 1, status: 'done' },

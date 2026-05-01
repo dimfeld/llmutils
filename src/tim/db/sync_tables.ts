@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
+import { getSyncOperationPayloadIndexes } from '../sync/payload_indexes.js';
 
 export type TimNodeRole = 'main' | 'persistent' | 'ephemeral';
 
@@ -23,6 +24,8 @@ export interface SyncOperationRow {
   base_revision: number | null;
   base_hash: string | null;
   payload: string;
+  payload_plan_uuid: string | null;
+  payload_task_uuid: string | null;
   status: string;
   attempts: number;
   last_error: string | null;
@@ -179,14 +182,17 @@ export function updateTimNodeCursor(
 
 export function insertSyncOperation(
   db: Database,
-  operation: Omit<SyncOperationRow, 'created_at' | 'updated_at' | 'attempts'> & {
+  operation: Omit<
+    SyncOperationRow,
+    'created_at' | 'updated_at' | 'attempts' | 'payload_plan_uuid' | 'payload_task_uuid'
+  > & {
     attempts?: number;
     created_at?: string;
     updated_at?: string;
   }
 ): SyncOperationRow {
   const insert = db.transaction((nextOperation: typeof operation): SyncOperationRow => {
-    db.prepare(
+    const statement = db.prepare(
       `
         INSERT INTO sync_operation (
           operation_uuid,
@@ -199,6 +205,8 @@ export function insertSyncOperation(
           base_revision,
           base_hash,
           payload,
+          payload_plan_uuid,
+          payload_task_uuid,
           status,
           attempts,
           last_error,
@@ -206,9 +214,11 @@ export function insertSyncOperation(
           updated_at,
           acked_at,
           ack_metadata
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}), ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}), ?, ?)
       `
-    ).run(
+    );
+    const indexes = getSyncOperationPayloadIndexes(nextOperation.payload);
+    statement.run(
       nextOperation.operation_uuid,
       nextOperation.project_uuid,
       nextOperation.origin_node_id,
@@ -219,6 +229,8 @@ export function insertSyncOperation(
       nextOperation.base_revision,
       nextOperation.base_hash,
       nextOperation.payload,
+      indexes.payloadPlanUuid,
+      indexes.payloadTaskUuid,
       nextOperation.status,
       nextOperation.attempts ?? 0,
       nextOperation.last_error,

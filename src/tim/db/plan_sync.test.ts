@@ -196,7 +196,7 @@ describe('tim db/plan_sync', () => {
       { config }
     );
 
-    clearPlanBaseTracking(getDatabase(), planUuid);
+    await clearPlanBaseTracking(getDatabase(), config, planUuid);
 
     // Simulate stale plan file values — all three should be preserved as null from DB.
     await syncPlanToDb(
