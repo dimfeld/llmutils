@@ -50,9 +50,15 @@ vi.mock('../../../logging/tunnel_protocol.js', () => ({
   TIM_OUTPUT_SOCKET: 'TIM_OUTPUT_SOCKET',
 }));
 
+vi.mock('../../../common/subprocess_monitor.ts', () => ({
+  startSubprocessMonitor: vi.fn(() => ({ stop: vi.fn() })),
+  normalizeSubprocessMonitorRules: vi.fn(() => []),
+}));
+
 import { spawnAndLogOutput } from '../../../common/process.js';
 import { createCodexStdoutFormatter } from './format.js';
 import { executeCodexStep } from './codex_runner.js';
+import { startSubprocessMonitor } from '../../../common/subprocess_monitor.js';
 
 describe('executeCodexStep retries', () => {
   beforeEach(() => {
@@ -112,5 +118,117 @@ describe('executeCodexStep retries', () => {
     );
 
     expect(vi.mocked(spawnAndLogOutput)).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('executeCodexStep subprocess monitor wiring', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function setupSuccessfulSpawn(fakePid = 42) {
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (_args: string[], opts: any) => {
+      if (opts?.formatStdout) {
+        opts.formatStdout('chunk');
+      }
+      opts?.onSpawn?.(fakePid);
+      return { exitCode: 0, stdout: '', stderr: '', signal: null, killedByInactivity: false };
+    });
+
+    vi.mocked(createCodexStdoutFormatter).mockReturnValue({
+      formatChunk: () => '',
+      getFinalAgentMessage: () => 'done',
+      getFailedAgentMessage: () => undefined,
+      getThreadId: () => undefined,
+      getSessionId: () => undefined,
+    } as any);
+  }
+
+  test('starts monitor when subprocessMonitor.rules is non-empty', async () => {
+    setupSuccessfulSpawn(99);
+
+    const timConfig = {
+      subprocessMonitor: {
+        rules: [{ match: 'pnpm test', timeoutSeconds: 60 }],
+      },
+    } as any;
+
+    await executeCodexStep('prompt', '/tmp', timConfig);
+
+    expect(vi.mocked(startSubprocessMonitor)).toHaveBeenCalledOnce();
+    const callArg = vi.mocked(startSubprocessMonitor).mock.calls[0][0];
+    expect(callArg.rootPid).toBe(99);
+    expect(callArg.rules).toEqual([{ match: 'pnpm test', timeoutSeconds: 60 }]);
+  });
+
+  test('does not start monitor when subprocessMonitor.rules is empty', async () => {
+    setupSuccessfulSpawn();
+
+    const timConfig = {
+      subprocessMonitor: {
+        rules: [],
+      },
+    } as any;
+
+    await executeCodexStep('prompt', '/tmp', timConfig);
+
+    expect(vi.mocked(startSubprocessMonitor)).not.toHaveBeenCalled();
+  });
+
+  test('does not start monitor when subprocessMonitor is not configured', async () => {
+    setupSuccessfulSpawn();
+
+    await executeCodexStep('prompt', '/tmp', {} as any);
+
+    expect(vi.mocked(startSubprocessMonitor)).not.toHaveBeenCalled();
+  });
+
+  test('stops monitor in finally block even when codex fails', async () => {
+    const mockStop = vi.fn();
+    vi.mocked(startSubprocessMonitor).mockReturnValue({ stop: mockStop });
+
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (_args: string[], opts: any) => {
+      opts?.onSpawn?.(55);
+      return { exitCode: 1, stdout: '', stderr: '', signal: null, killedByInactivity: false };
+    });
+
+    vi.mocked(createCodexStdoutFormatter).mockReturnValue({
+      formatChunk: () => '',
+      getFinalAgentMessage: () => undefined,
+      getFailedAgentMessage: () => undefined,
+      getThreadId: () => undefined,
+      getSessionId: () => undefined,
+    } as any);
+
+    const timConfig = {
+      subprocessMonitor: {
+        rules: [{ match: 'pnpm test', timeoutSeconds: 60 }],
+      },
+    } as any;
+
+    // Three failed attempts but monitor stop should be called each attempt
+    await expect(executeCodexStep('prompt', '/tmp', timConfig)).rejects.toThrow(
+      /failed after 3 attempts/i
+    );
+
+    // stop() should be called once per attempt (3 retries)
+    expect(mockStop).toHaveBeenCalledTimes(3);
+  });
+
+  test('passes pollIntervalSeconds to monitor when configured', async () => {
+    setupSuccessfulSpawn(77);
+
+    const timConfig = {
+      subprocessMonitor: {
+        pollIntervalSeconds: 10,
+        rules: [{ match: 'vitest run', timeoutSeconds: 300 }],
+      },
+    } as any;
+
+    await executeCodexStep('prompt', '/tmp', timConfig);
+
+    expect(vi.mocked(startSubprocessMonitor)).toHaveBeenCalledOnce();
+    const callArg = vi.mocked(startSubprocessMonitor).mock.calls[0][0];
+    expect(callArg.pollIntervalSeconds).toBe(10);
   });
 });

@@ -180,6 +180,69 @@ describe('configSchema', () => {
     });
   });
 
+  describe('subprocessMonitor configuration', () => {
+    test('accepts string, string array, and regex matchers', () => {
+      const result = timConfigSchema.parse({
+        subprocessMonitor: {
+          pollIntervalSeconds: 2,
+          rules: [
+            {
+              match: 'pnpm test',
+              timeoutSeconds: 600,
+              description: 'tests',
+            },
+            {
+              match: ['vitest run', { regex: String.raw`bun\s+run\s+test`, flags: 'i' }],
+              timeoutSeconds: 300,
+            },
+          ],
+        },
+      });
+
+      expect(result.subprocessMonitor?.pollIntervalSeconds).toBe(2);
+      expect(result.subprocessMonitor?.rules).toHaveLength(2);
+      expect(result.subprocessMonitor?.rules?.[1]?.match).toEqual([
+        'vitest run',
+        { regex: String.raw`bun\s+run\s+test`, flags: 'i' },
+      ]);
+    });
+
+    test('is optional and does not apply zod defaults', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.subprocessMonitor).toBeUndefined();
+    });
+
+    test('rejects invalid rules', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          subprocessMonitor: {
+            rules: [{ match: 'pnpm test', timeoutSeconds: 0 }],
+          },
+        })
+      ).toThrow();
+    });
+
+    test('rejects empty string matcher', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          subprocessMonitor: {
+            rules: [{ match: '', timeoutSeconds: 60 }],
+          },
+        })
+      ).toThrow();
+    });
+
+    test('rejects empty regex matcher', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          subprocessMonitor: {
+            rules: [{ match: { regex: '' }, timeoutSeconds: 60 }],
+          },
+        })
+      ).toThrow();
+    });
+  });
+
   describe('updateDocs.mode', () => {
     test('accepts all valid modes', () => {
       for (const mode of [

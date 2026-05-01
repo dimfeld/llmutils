@@ -175,6 +175,25 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
     }
   }
 
+  // Handle subprocessMonitor.rules: concatenate rule arrays while scalar fields use local override.
+  if (localConfig.subprocessMonitor !== undefined) {
+    if (mainConfig.subprocessMonitor && localConfig.subprocessMonitor) {
+      const mergedSubprocessMonitor: NonNullable<TimConfig['subprocessMonitor']> = {
+        ...mainConfig.subprocessMonitor,
+        ...localConfig.subprocessMonitor,
+      };
+      if (mainConfig.subprocessMonitor.rules || localConfig.subprocessMonitor.rules) {
+        mergedSubprocessMonitor.rules = [
+          ...(mainConfig.subprocessMonitor.rules ?? []),
+          ...(localConfig.subprocessMonitor.rules ?? []),
+        ];
+      }
+      merged.subprocessMonitor = mergedSubprocessMonitor;
+    } else {
+      merged.subprocessMonitor = localConfig.subprocessMonitor;
+    }
+  }
+
   return merged;
 }
 

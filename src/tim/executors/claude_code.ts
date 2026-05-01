@@ -3,9 +3,14 @@ import * as clipboard from '../../common/clipboard.ts';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { debugLog, log, sendStructured, error } from '../../logging.ts';
+import { debugLog, log, sendStructured, error, warn } from '../../logging.ts';
 import { createLineSplitter, debug, spawnWithStreamingIO } from '../../common/process.ts';
 import { getGitRoot, getUsingJj, getWorkingCopyStatus } from '../../common/git.ts';
+import {
+  normalizeSubprocessMonitorRules,
+  startSubprocessMonitor,
+  type SubprocessMonitorHandle,
+} from '../../common/subprocess_monitor.js';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { TimConfig } from '../configSchema.ts';
 import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types.ts';
@@ -495,6 +500,7 @@ export class ClaudeCodeExecutor implements Executor {
     const result = await runClaudeSubprocess({
       prompt: contextContent + '\n\nBe sure to provide the structured output with your response',
       cwd: gitRoot,
+      timConfig: this.timConfig,
       claudeCodeOptions: {
         ...this.options,
         reasoningEffort:
@@ -573,6 +579,13 @@ export class ClaudeCodeExecutor implements Executor {
         throw new Error('Prompt content is required for review mode');
       }
       return this.executeReviewMode(contextContent, planInfo);
+    }
+
+    // Validate subprocess monitor rules up front, before any resource allocation,
+    // so a bad regex fails cleanly without leaking permissions MCP or tunnel resources.
+    const subprocessMonitorRules = this.timConfig.subprocessMonitor?.rules;
+    if (subprocessMonitorRules?.length) {
+      normalizeSubprocessMonitorRules(subprocessMonitorRules);
     }
 
     let promptContent = contextContent;
@@ -694,6 +707,7 @@ export class ClaudeCodeExecutor implements Executor {
     // Other modes (bare, planning, review) also don't use agent definitions.
 
     let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
+    let monitorHandle: SubprocessMonitorHandle | undefined;
     try {
       const args = ['claude', '--permission-mode', 'auto'];
 
@@ -891,6 +905,15 @@ export class ClaudeCodeExecutor implements Executor {
         },
       });
 
+      if (subprocessMonitorRules?.length) {
+        monitorHandle = startSubprocessMonitor({
+          rootPid: streaming.pid,
+          rules: subprocessMonitorRules,
+          pollIntervalSeconds: this.timConfig.subprocessMonitor?.pollIntervalSeconds,
+          logger: { warn },
+        });
+      }
+
       terminalInputResult = executeWithTerminalInput({
         streaming,
         prompt: promptContent,
@@ -974,6 +997,7 @@ export class ClaudeCodeExecutor implements Executor {
 
       return; // Explicitly return void for 'none' or undefined captureOutput
     } finally {
+      monitorHandle?.stop();
       terminalInputResult?.cleanup();
 
       // Close the tunnel server if it was created

@@ -23,6 +23,7 @@ interface Harness {
   connectionCreateMock: ReturnType<typeof vi.fn>;
   connection: {
     isAlive: boolean;
+    pid: number;
     threadStart: ReturnType<typeof vi.fn>;
     turnStart: ReturnType<typeof vi.fn>;
     turnSteer: ReturnType<typeof vi.fn>;
@@ -30,6 +31,8 @@ interface Harness {
     readRateLimits: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
   };
+  startSubprocessMonitorMock: ReturnType<typeof vi.fn>;
+  normalizeSubprocessMonitorRulesMock: ReturnType<typeof vi.fn>;
   formatter: {
     handleNotification: ReturnType<typeof vi.fn>;
     getThreadId: ReturnType<typeof vi.fn>;
@@ -96,6 +99,7 @@ async function createHarness(options?: {
 
   const connection = {
     isAlive: true,
+    pid: 4242,
     threadStart: vi.fn(async () => ({ threadId: 'thread-1' })),
     turnStart: vi.fn(async () => ({ turnId: 'turn-1' })),
     turnSteer: vi.fn(async () => ({ turnId: 'turn-1' })),
@@ -103,6 +107,9 @@ async function createHarness(options?: {
     readRateLimits: vi.fn(async () => ({})),
     close: vi.fn(async () => {}),
   };
+
+  const startSubprocessMonitorMock = vi.fn(() => ({ stop: vi.fn() }));
+  const normalizeSubprocessMonitorRulesMock = vi.fn(() => []);
 
   const connectionCreateMock = vi.fn(async (createOptions: any) => {
     connectionCreateOptions.current = createOptions;
@@ -164,6 +171,11 @@ async function createHarness(options?: {
     },
   }));
 
+  vi.doMock('../../../common/subprocess_monitor.ts', () => ({
+    startSubprocessMonitor: startSubprocessMonitorMock,
+    normalizeSubprocessMonitorRules: normalizeSubprocessMonitorRulesMock,
+  }));
+
   vi.doMock('./app_server_approval.ts', () => ({
     createApprovalHandler: createApprovalHandlerMock,
   }));
@@ -215,6 +227,8 @@ async function createHarness(options?: {
     loggerAdapter,
     connectionCreateOptions,
     connectionHandlers,
+    startSubprocessMonitorMock,
+    normalizeSubprocessMonitorRulesMock,
   };
 
   return harness;
@@ -736,5 +750,91 @@ describe('executeCodexStepViaAppServer', () => {
           call[0].content === 'gui input'
       )
     ).toBe(false);
+  });
+
+  describe('subprocess monitor wiring', () => {
+    test('starts monitor with connection.pid when subprocessMonitor.rules is non-empty', async () => {
+      const harness = await createHarness();
+
+      harness.connection.turnStart.mockImplementationOnce(async () => {
+        harness.connectionHandlers.onNotification?.('item/completed', {
+          item: { type: 'agentMessage', text: 'ok' },
+        });
+        harness.connectionHandlers.onNotification?.('turn/completed', {
+          turn: { status: 'completed' },
+        });
+        return { turnId: 'turn-1' };
+      });
+
+      const monitorStop = vi.fn();
+      harness.startSubprocessMonitorMock.mockReturnValueOnce({ stop: monitorStop });
+
+      await harness.executeCodexStepViaAppServer('do work', '/repo', {
+        subprocessMonitor: {
+          rules: [{ match: 'pnpm test', timeoutSeconds: 60 }],
+          pollIntervalSeconds: 7,
+        },
+      });
+
+      expect(harness.startSubprocessMonitorMock).toHaveBeenCalledOnce();
+      const callArg = harness.startSubprocessMonitorMock.mock.calls[0][0];
+      expect(callArg.rootPid).toBe(harness.connection.pid);
+      expect(callArg.rules).toEqual([{ match: 'pnpm test', timeoutSeconds: 60 }]);
+      expect(callArg.pollIntervalSeconds).toBe(7);
+      expect(monitorStop).toHaveBeenCalledOnce();
+    });
+
+    test('does not start monitor when subprocessMonitor.rules is empty or missing', async () => {
+      const harness = await createHarness();
+
+      harness.connection.turnStart.mockImplementationOnce(async () => {
+        harness.connectionHandlers.onNotification?.('item/completed', {
+          item: { type: 'agentMessage', text: 'ok' },
+        });
+        harness.connectionHandlers.onNotification?.('turn/completed', {
+          turn: { status: 'completed' },
+        });
+        return { turnId: 'turn-1' };
+      });
+
+      await harness.executeCodexStepViaAppServer('do work', '/repo', {});
+
+      expect(harness.startSubprocessMonitorMock).not.toHaveBeenCalled();
+
+      harness.connection.turnStart.mockImplementationOnce(async () => {
+        harness.connectionHandlers.onNotification?.('item/completed', {
+          item: { type: 'agentMessage', text: 'ok' },
+        });
+        harness.connectionHandlers.onNotification?.('turn/completed', {
+          turn: { status: 'completed' },
+        });
+        return { turnId: 'turn-2' };
+      });
+
+      await harness.executeCodexStepViaAppServer('do work', '/repo', {
+        subprocessMonitor: { rules: [] },
+      });
+
+      expect(harness.startSubprocessMonitorMock).not.toHaveBeenCalled();
+    });
+
+    test('validates monitor rules before allocating tunnel resources', async () => {
+      const harness = await createHarness({ tunnelActive: false });
+
+      harness.normalizeSubprocessMonitorRulesMock.mockImplementationOnce(() => {
+        throw new Error('bad regex');
+      });
+
+      await expect(
+        harness.executeCodexStepViaAppServer('do work', '/repo', {
+          subprocessMonitor: {
+            rules: [{ match: { regex: '(' }, timeoutSeconds: 60 }],
+          },
+        })
+      ).rejects.toThrow(/bad regex/);
+
+      expect(harness.connectionCreateMock).not.toHaveBeenCalled();
+      expect(harness.createTunnelServerMock).not.toHaveBeenCalled();
+    });
   });
 });

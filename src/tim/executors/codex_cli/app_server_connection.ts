@@ -189,6 +189,10 @@ export class CodexAppServerConnection {
     return this.alive;
   }
 
+  get pid(): number {
+    return this.proc.pid;
+  }
+
   async threadStart(params: ThreadStartParams): Promise<ThreadResult> {
     const raw = await this.sendRequest('thread/start', params);
     const threadId = extractNestedId(raw, 'thread', 'threadId');

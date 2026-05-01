@@ -271,9 +271,39 @@ Important config areas:
 - `requireBranchPrefix` - fail branch-creating flows if no prefix is configured
 - `githubUsername` - avoids an API call when classifying PRs
 - `lifecycle.commands` - start/stop dev servers or services around agent runs
+- `subprocessMonitor` - opt-in timeouts for stuck Claude/Codex tool subprocesses
 - `updateDocs` and `applyLessons` - control finalization behavior
 
 The web UI **Settings** tab stores per-project settings in SQLite. The project-level branch prefix there takes precedence over the config file value.
+
+## Subprocess Monitor
+
+Agent sessions can get stuck when Claude Code or Codex starts a long-running tool command, such as `pnpm test`, and that command hangs. `subprocessMonitor` lets the main tim process watch descendants of the Claude/Codex executor and kill matching commands that exceed a configured timeout, returning control to the coding agent.
+
+The monitor is opt-in. If `subprocessMonitor.rules` is empty or unset, no monitor runs.
+
+```yaml
+subprocessMonitor:
+  pollIntervalSeconds: 5
+  rules:
+    - match: ['pnpm test', 'bun run test']
+      timeoutSeconds: 600
+      description: Test commands
+    - match:
+        - vitest run
+        - regex: 'pnpm\s+.*test'
+          flags: i
+      timeoutSeconds: 300
+      description: Vitest and pnpm tests
+```
+
+String matchers are case-sensitive `String.includes()` checks against the full command line. Regex matchers use `{ regex: string, flags?: string }`; allowed flags are `i`, `s`, `m`, `u`, and `v`. Stateful flags `g` and `y` are rejected when the monitor rules are normalized before an executor starts, and empty string or regex matchers are rejected.
+
+If a process matches multiple rules, the shortest `timeoutSeconds` wins. Rule arrays concatenate across global, repo, and local config files; `pollIntervalSeconds` is a scalar and follows the usual local override behavior.
+
+When a timeout is exceeded, tim sends `SIGTERM`, waits 5 seconds, then sends `SIGKILL` if the process is still alive. Each kill logs a structured warning with the PID, rule label, elapsed time, timeout, and command line.
+
+Target leaf commands, such as `vitest run` or `pnpm test`, rather than broad process names like `node` or `bash`. The root executor PID is excluded automatically, but descendant shells are not. The monitor only runs during agent sessions that spawn Claude Code or Codex executors.
 
 ## Known Issues and Workarounds
 

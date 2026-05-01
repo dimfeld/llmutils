@@ -53,6 +53,27 @@ export const lifecycleCommandSchema = z.object({
     ),
 });
 
+export const subprocessMonitorMatcherSchema = z.union([
+  z.string().min(1),
+  z
+    .object({
+      regex: z.string().min(1),
+      flags: z.string().optional(),
+    })
+    .strict(),
+]);
+
+export const subprocessMonitorRuleSchema = z
+  .object({
+    match: z.union([
+      subprocessMonitorMatcherSchema,
+      z.array(subprocessMonitorMatcherSchema).min(1),
+    ]),
+    timeoutSeconds: z.number().int().positive(),
+    description: z.string().optional(),
+  })
+  .strict();
+
 /**
  * Schema for notification command configuration.
  */
@@ -158,6 +179,14 @@ export const timConfigSchema = z
       })
       .optional()
       .describe('Lifecycle commands to run before and after tim command execution'),
+    subprocessMonitor: z
+      .object({
+        pollIntervalSeconds: z.number().int().positive().optional(),
+        rules: z.array(subprocessMonitorRuleSchema).optional(),
+      })
+      .strict()
+      .optional()
+      .describe('Opt-in timeout rules for subprocesses spawned by agent executors'),
     headless: z
       .object({
         url: z.string().optional().describe('WebSocket URL for headless output streaming'),
@@ -606,6 +635,8 @@ export type TimConfigInput = z.input<typeof timConfigSchema>;
 export type PostApplyCommand = z.output<typeof postApplyCommandSchema>;
 export type LifecycleCommand = z.infer<typeof lifecycleCommandSchema>;
 export type NotificationCommand = z.output<typeof notificationCommandSchema>;
+export type SubprocessMonitorMatcher = z.output<typeof subprocessMonitorMatcherSchema>;
+export type SubprocessMonitorRule = z.output<typeof subprocessMonitorRuleSchema>;
 
 /**
  * Returns a default configuration object.

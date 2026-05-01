@@ -133,6 +133,8 @@ export type SpawnAndLogOutputOptions = {
   initialInactivityTimeoutMs?: number;
   /** Callback invoked when the process is killed due to inactivity. */
   onInactivityKill?: (signal: NodeJS.Signals) => void;
+  /** Callback invoked immediately after the process has been spawned. */
+  onSpawn?: (pid: number) => void;
   /** When true, the SIGTSTP handler will not re-send SIGTSTP to actually suspend the process.
    * Used in tests to avoid suspending the test runner. */
   _skipSelfSuspend?: boolean;
@@ -147,6 +149,7 @@ export type SpawnAndLogOutputResult = {
 };
 
 export type StreamingProcess = {
+  pid: number;
   stdin: FileSink;
   result: Promise<SpawnAndLogOutputResult>;
   kill: (signal?: NodeJS.Signals) => void;
@@ -341,6 +344,7 @@ export async function spawnWithStreamingIO(
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  options?.onSpawn?.(proc.pid);
 
   if (!proc.stdin) {
     throw new Error('Failed to create stdin pipe for spawned process');
@@ -348,6 +352,7 @@ export async function spawnWithStreamingIO(
   const outputProcessing = setupOutputProcessing(proc, options);
 
   return {
+    pid: proc.pid,
     stdin: proc.stdin,
     result: outputProcessing.result,
     kill: outputProcessing.kill,
@@ -373,6 +378,7 @@ export async function spawnAndLogOutput(
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  options?.onSpawn?.(proc.pid);
 
   return setupOutputProcessing(proc, options).result;
 }

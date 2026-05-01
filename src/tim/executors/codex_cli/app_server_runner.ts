@@ -10,6 +10,11 @@ import { createTunnelServer, type TunnelServer } from '../../../logging/tunnel_s
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
 import { CodexAppServerConnection } from './app_server_connection';
+import {
+  normalizeSubprocessMonitorRules,
+  startSubprocessMonitor,
+  type SubprocessMonitorHandle,
+} from '../../../common/subprocess_monitor';
 import { createApprovalHandler } from './app_server_approval';
 import { createAppServerFormatter } from './app_server_format';
 import type { CodexStepOptions } from './codex_runner';
@@ -110,6 +115,13 @@ export async function executeCodexStepViaAppServer(
   timConfig: TimConfig,
   options?: CodexStepOptions
 ): Promise<string> {
+  // Validate subprocess monitor rules up front, before any resource allocation,
+  // so a bad regex fails cleanly without leaking tunnel servers or temp dirs.
+  const subprocessMonitorRules = timConfig?.subprocessMonitor?.rules;
+  if (subprocessMonitorRules?.length) {
+    normalizeSubprocessMonitorRules(subprocessMonitorRules);
+  }
+
   const maxAttempts = 3;
   const initialInactivityTimeoutMs = 60 * 1000; // 1 minute before first output
   const inactivityTimeoutMs = getInactivityTimeoutMs(options);
@@ -166,6 +178,7 @@ export async function executeCodexStepViaAppServer(
   });
 
   let connection: CodexAppServerConnection | undefined;
+  let monitorHandle: SubprocessMonitorHandle | undefined;
   let activeInputQueue: UserInputQueue | undefined;
   let threadId: string | undefined;
   let currentTurnId: string | undefined;
@@ -368,6 +381,15 @@ export async function executeCodexStepViaAppServer(
       },
       onServerRequest: approvalHandler,
     });
+
+    if (subprocessMonitorRules?.length) {
+      monitorHandle = startSubprocessMonitor({
+        rootPid: connection.pid,
+        rules: subprocessMonitorRules,
+        pollIntervalSeconds: timConfig?.subprocessMonitor?.pollIntervalSeconds,
+        logger: { warn },
+      });
+    }
 
     const threadResult = await connection.threadStart({
       cwd,
@@ -735,6 +757,7 @@ export async function executeCodexStepViaAppServer(
   } finally {
     clearInactivityTimer();
     activeInputQueue?.close();
+    monitorHandle?.stop();
 
     if (connection) {
       try {

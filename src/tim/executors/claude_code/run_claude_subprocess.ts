@@ -12,8 +12,13 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { debugLog, error, log, sendStructured } from '../../../logging.js';
+import { debugLog, error, log, sendStructured, warn } from '../../../logging.js';
 import { createLineSplitter, spawnWithStreamingIO } from '../../../common/process.js';
+import {
+  normalizeSubprocessMonitorRules,
+  startSubprocessMonitor,
+  type SubprocessMonitorHandle,
+} from '../../../common/subprocess_monitor.js';
 import {
   extractStructuredMessages,
   formatJsonMessage,
@@ -30,6 +35,7 @@ import { getDatabase } from '../../db/database.js';
 import { getPermissions } from '../../db/permission.js';
 import { getOrCreateProject } from '../../db/project.js';
 import { setupPermissionsMcp } from './permissions_mcp_setup.js';
+import type { TimConfig } from '../../configSchema.js';
 
 const DEFAULT_CLAUDE_MODEL = 'opus';
 
@@ -151,6 +157,9 @@ export interface RunClaudeSubprocessOptions {
   /** Claude Code executor options */
   claudeCodeOptions: ClaudeCodeSubprocessOptions;
 
+  /** Effective tim configuration for subprocess monitoring and related runtime behavior. */
+  timConfig?: TimConfig;
+
   /** Whether the caller is running in non-interactive mode */
   noninteractive: boolean;
 
@@ -250,6 +259,13 @@ export async function runClaudeSubprocess(
   const initialInactivityTimeoutMs = options.initialInactivityTimeoutMs ?? 2 * 60 * 1000;
   const trackedFiles = options.trackedFiles ?? new Set<string>();
 
+  // Validate subprocess monitor rules up front, before any resource allocation,
+  // so a bad regex fails cleanly without leaking permissions MCP or tunnel resources.
+  const subprocessMonitorRules = options.timConfig?.subprocessMonitor?.rules;
+  if (subprocessMonitorRules?.length) {
+    normalizeSubprocessMonitorRules(subprocessMonitorRules);
+  }
+
   // Resolve allowAllTools
   let allowAllTools = claudeCodeOptions.allowAllTools;
   if (allowAllTools == null) {
@@ -321,6 +337,7 @@ export async function runClaudeSubprocess(
   let seenResultMessage = false;
   let killedByTimeout = false;
   let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
+  let monitorHandle: SubprocessMonitorHandle | undefined;
 
   try {
     const args = ['claude', '--no-session-persistence', '--permission-mode', 'auto'];
@@ -437,6 +454,15 @@ export async function runClaudeSubprocess(
       },
     });
 
+    if (subprocessMonitorRules?.length) {
+      monitorHandle = startSubprocessMonitor({
+        rootPid: streaming.pid,
+        rules: subprocessMonitorRules,
+        pollIntervalSeconds: options.timConfig?.subprocessMonitor?.pollIntervalSeconds,
+        logger: { warn },
+      });
+    }
+
     terminalInputResult = executeWithTerminalInput({
       streaming,
       prompt,
@@ -459,6 +485,7 @@ export async function runClaudeSubprocess(
       killedByInactivity: result.killedByInactivity ?? false,
     };
   } finally {
+    monitorHandle?.stop();
     terminalInputResult?.cleanup();
     tunnelServer?.close();
     // Clean up tunnel temp dir if we created a separate one (not reusing permissions MCP dir)

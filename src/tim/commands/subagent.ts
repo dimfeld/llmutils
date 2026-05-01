@@ -245,6 +245,7 @@ async function executeWithClaude(
   const result = await runClaudeSubprocess({
     prompt,
     cwd,
+    timConfig,
     claudeCodeOptions,
     noninteractive: isNoninteractive,
     model,

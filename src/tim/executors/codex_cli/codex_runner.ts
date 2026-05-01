@@ -3,6 +3,11 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import type { TimConfig } from '../../configSchema';
 import { spawnAndLogOutput } from '../../../common/process';
+import {
+  normalizeSubprocessMonitorRules,
+  startSubprocessMonitor,
+  type SubprocessMonitorHandle,
+} from '../../../common/subprocess_monitor';
 import { error, warn, debugLog } from '../../../logging';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { createCodexStdoutFormatter } from './format';
@@ -48,6 +53,13 @@ export async function executeCodexStep(
 
   if (isCodexAppServerEnabled()) {
     return executeCodexStepViaAppServer(prompt, cwd, timConfig, options);
+  }
+
+  // Validate subprocess monitor rules up front, before any resource allocation,
+  // so a bad regex fails cleanly without leaking tunnel servers or temp dirs.
+  const subprocessMonitorRules = timConfig.subprocessMonitor?.rules;
+  if (subprocessMonitorRules?.length) {
+    normalizeSubprocessMonitorRules(subprocessMonitorRules);
   }
 
   const inactivityOverride = Number.parseInt(process.env.CODEX_OUTPUT_TIMEOUT_MS || '', 10);
@@ -132,25 +144,41 @@ export async function executeCodexStep(
         );
       }
 
-      const result = await spawnAndLogOutput(attemptArgs, {
-        cwd,
-        env: {
-          TIM_EXECUTOR: 'codex',
-          AGENT: process.env.AGENT || '1',
-          TIM_NOTIFY_SUPPRESS: '1',
-          ...tunnelEnv,
-        },
-        formatStdout: formatter ? (chunk: string) => formatter.formatChunk(chunk) : undefined,
-        inactivityTimeoutMs,
-        initialInactivityTimeoutMs: 60 * 1000, // 1 minute before first output
-        onInactivityKill: () => {
-          const minutes = Math.round(inactivityTimeoutMs / 60000);
-          warn(
-            `Codex produced no output for ${minutes} minute${minutes === 1 ? '' : 's'}; terminating attempt ${attempt}/${maxAttempts}.`
-          );
-        },
-        // stderr is not JSON – print as-is
-      });
+      let monitorHandle: SubprocessMonitorHandle | undefined;
+      let result: Awaited<ReturnType<typeof spawnAndLogOutput>>;
+      try {
+        result = await spawnAndLogOutput(attemptArgs, {
+          cwd,
+          env: {
+            TIM_EXECUTOR: 'codex',
+            AGENT: process.env.AGENT || '1',
+            TIM_NOTIFY_SUPPRESS: '1',
+            ...tunnelEnv,
+          },
+          formatStdout: formatter ? (chunk: string) => formatter.formatChunk(chunk) : undefined,
+          inactivityTimeoutMs,
+          initialInactivityTimeoutMs: 60 * 1000, // 1 minute before first output
+          onInactivityKill: () => {
+            const minutes = Math.round(inactivityTimeoutMs / 60000);
+            warn(
+              `Codex produced no output for ${minutes} minute${minutes === 1 ? '' : 's'}; terminating attempt ${attempt}/${maxAttempts}.`
+            );
+          },
+          onSpawn: (pid) => {
+            if (subprocessMonitorRules?.length) {
+              monitorHandle = startSubprocessMonitor({
+                rootPid: pid,
+                rules: subprocessMonitorRules,
+                pollIntervalSeconds: timConfig.subprocessMonitor?.pollIntervalSeconds,
+                logger: { warn },
+              });
+            }
+          },
+          // stderr is not JSON – print as-is
+        });
+      } finally {
+        monitorHandle?.stop();
+      }
 
       const { exitCode, signal, killedByInactivity } = result;
 

@@ -22,6 +22,7 @@ vi.mock('../../common/git.ts', async (importOriginal) => {
   return {
     ...actual,
     getGitRoot: vi.fn(),
+    getUsingJj: vi.fn().mockResolvedValue(false),
   };
 });
 

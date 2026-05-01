@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 
 function createStreamingProcessMock(overrides?: {
+  pid?: number;
   exitCode?: number;
   stdout?: string;
   stderr?: string;
@@ -12,6 +13,7 @@ function createStreamingProcessMock(overrides?: {
   stdin?: { write: (...args: any[]) => any; end: (...args: any[]) => any };
 }) {
   return {
+    pid: overrides?.pid ?? 12345,
     stdin:
       overrides?.stdin ??
       ({
@@ -518,6 +520,201 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     expect(recordedArgs).toHaveLength(1);
     expect(recordedArgs[0]).not.toContain('--add-dir');
+  });
+});
+
+describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
+  const tempDir = '/tmp/claude-monitor-test';
+
+  afterEach(() => {
+    vi.doUnmock('../../common/git.ts');
+    vi.doUnmock('../../common/process.ts');
+    vi.doUnmock('../../common/subprocess_monitor.js');
+    vi.doUnmock('../../logging/tunnel_client.js');
+    vi.doUnmock('../../logging/tunnel_server.js');
+    vi.doUnmock('../../logging/tunnel_prompt_handler.js');
+    vi.doUnmock('../../logging/tunnel_protocol.js');
+    vi.doUnmock('./claude_code/permissions_mcp_setup.js');
+    vi.doUnmock('./claude_code/terminal_input_lifecycle.ts');
+  });
+
+  async function setupHarness(options?: {
+    timConfig?: any;
+    streaming?: ReturnType<typeof createStreamingProcessMock>;
+    normalizeThrows?: Error;
+    tunnelActive?: boolean;
+  }) {
+    const streaming = options?.streaming ?? createStreamingProcessMock({ pid: 24680 });
+    const spawnWithStreamingIOMock = vi.fn(async () => streaming);
+    const startSubprocessMonitorMock = vi.fn(() => ({ stop: vi.fn() }));
+    const normalizeSubprocessMonitorRulesMock = vi.fn(() => []);
+    const getGitRootMock = vi.fn(async () => tempDir);
+    const createTunnelServerMock = vi.fn(async () => ({ close: vi.fn() }));
+    const setupPermissionsMcpMock = vi.fn(async () => ({
+      tempDir: `${tempDir}/mcp`,
+      mcpConfigFile: `${tempDir}/mcp/config.json`,
+      cleanup: vi.fn(async () => {}),
+    }));
+    const executeWithTerminalInputMock = vi.fn(({ streaming: spawnedStreaming }: any) => ({
+      resultPromise: spawnedStreaming.result,
+      cleanup: vi.fn(),
+      sendFollowUpMessage: vi.fn(),
+      closeStdin: vi.fn(),
+      onResultMessage: vi.fn(),
+    }));
+
+    if (options?.normalizeThrows) {
+      normalizeSubprocessMonitorRulesMock.mockImplementationOnce(() => {
+        throw options.normalizeThrows;
+      });
+    }
+
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: getGitRootMock,
+      getUsingJj: vi.fn(async () => false),
+      getWorkingCopyStatus: vi.fn(async () => ''),
+    }));
+
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: spawnWithStreamingIOMock,
+      createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
+      debug: false,
+    }));
+
+    vi.doMock('../../common/subprocess_monitor.js', () => ({
+      startSubprocessMonitor: startSubprocessMonitorMock,
+      normalizeSubprocessMonitorRules: normalizeSubprocessMonitorRulesMock,
+    }));
+
+    vi.doMock('../../logging/tunnel_client.js', () => ({
+      isTunnelActive: () => options?.tunnelActive ?? true,
+      TunnelAdapter: class {},
+    }));
+
+    vi.doMock('../../logging/tunnel_server.js', () => ({
+      createTunnelServer: createTunnelServerMock,
+    }));
+
+    vi.doMock('../../logging/tunnel_prompt_handler.js', () => ({
+      createPromptRequestHandler: vi.fn(() => vi.fn()),
+    }));
+
+    vi.doMock('../../logging/tunnel_protocol.js', () => ({
+      TIM_OUTPUT_SOCKET: 'TIM_OUTPUT_SOCKET',
+    }));
+
+    vi.doMock('./claude_code/permissions_mcp_setup.js', () => ({
+      setupPermissionsMcp: setupPermissionsMcpMock,
+    }));
+
+    vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
+      executeWithTerminalInput: executeWithTerminalInputMock,
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
+    const executor = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir } as any,
+      options?.timConfig ?? ({} as any)
+    );
+
+    const execute = () =>
+      executor.execute('CTX', {
+        planId: '',
+        planTitle: 'T',
+        planFilePath: '',
+        executionMode: 'normal',
+      });
+
+    return {
+      execute,
+      streaming,
+      spawnWithStreamingIOMock,
+      startSubprocessMonitorMock,
+      normalizeSubprocessMonitorRulesMock,
+      getGitRootMock,
+      createTunnelServerMock,
+      setupPermissionsMcpMock,
+      executeWithTerminalInputMock,
+    };
+  }
+
+  test('validates monitor rules before allocating tunnel or permissions resources', async () => {
+    const harness = await setupHarness({
+      tunnelActive: false,
+      normalizeThrows: new Error('bad regex'),
+      timConfig: {
+        subprocessMonitor: {
+          rules: [{ match: { regex: '(' }, timeoutSeconds: 60 }],
+        },
+      },
+    });
+
+    await expect(harness.execute()).rejects.toThrow(/bad regex/);
+
+    expect(harness.normalizeSubprocessMonitorRulesMock).toHaveBeenCalledOnce();
+    expect(harness.getGitRootMock).not.toHaveBeenCalled();
+    expect(harness.setupPermissionsMcpMock).not.toHaveBeenCalled();
+    expect(harness.createTunnelServerMock).not.toHaveBeenCalled();
+    expect(harness.spawnWithStreamingIOMock).not.toHaveBeenCalled();
+  });
+
+  test('starts and stops monitor with spawned Claude PID when rules are configured', async () => {
+    const monitorStop = vi.fn();
+    const harness = await setupHarness({
+      timConfig: {
+        subprocessMonitor: {
+          rules: [{ match: 'pnpm test', timeoutSeconds: 60 }],
+          pollIntervalSeconds: 7,
+        },
+      },
+    });
+    harness.startSubprocessMonitorMock.mockReturnValueOnce({ stop: monitorStop });
+
+    await harness.execute();
+
+    expect(harness.startSubprocessMonitorMock).toHaveBeenCalledOnce();
+    const callArg = harness.startSubprocessMonitorMock.mock.calls[0][0];
+    expect(callArg.rootPid).toBe(harness.streaming.pid);
+    expect(callArg.rules).toEqual([{ match: 'pnpm test', timeoutSeconds: 60 }]);
+    expect(callArg.pollIntervalSeconds).toBe(7);
+    expect(monitorStop).toHaveBeenCalledOnce();
+  });
+
+  test('does not start monitor when subprocessMonitor rules are missing or empty', async () => {
+    const missingRulesHarness = await setupHarness({ timConfig: {} });
+
+    await missingRulesHarness.execute();
+
+    expect(missingRulesHarness.startSubprocessMonitorMock).not.toHaveBeenCalled();
+
+    vi.resetModules();
+
+    const emptyRulesHarness = await setupHarness({
+      timConfig: { subprocessMonitor: { rules: [] } },
+    });
+
+    await emptyRulesHarness.execute();
+
+    expect(emptyRulesHarness.startSubprocessMonitorMock).not.toHaveBeenCalled();
+  });
+
+  test('stops monitor in finally when Claude execution fails', async () => {
+    const monitorStop = vi.fn();
+    const harness = await setupHarness({
+      streaming: createStreamingProcessMock({ pid: 13579, exitCode: 1 }),
+      timConfig: {
+        subprocessMonitor: {
+          rules: [{ match: 'pnpm test', timeoutSeconds: 60 }],
+        },
+      },
+    });
+    harness.startSubprocessMonitorMock.mockReturnValueOnce({ stop: monitorStop });
+
+    await expect(harness.execute()).rejects.toThrow(/Claude exited with non-zero exit code/);
+
+    expect(harness.startSubprocessMonitorMock).toHaveBeenCalledOnce();
+    expect(monitorStop).toHaveBeenCalledOnce();
   });
 });
 

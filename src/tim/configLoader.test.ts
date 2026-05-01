@@ -704,6 +704,46 @@ autoexamples:
       expect(config.subagents?.tester?.model?.claude).toBe('local-haiku'); // from local
     });
 
+    test('loadEffectiveConfig concatenates subprocess monitor rules and overrides poll interval', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        `
+subprocessMonitor:
+  pollIntervalSeconds: 10
+  rules:
+    - match: "pnpm test"
+      timeoutSeconds: 600
+      description: "repo tests"
+`
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        `
+subprocessMonitor:
+  pollIntervalSeconds: 2
+  rules:
+    - match:
+        - "vitest run"
+        - regex: "bun\\\\s+run\\\\s+test"
+          flags: "i"
+      timeoutSeconds: 300
+      description: "local tests"
+`
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.subprocessMonitor?.pollIntervalSeconds).toBe(2);
+      expect(config.subprocessMonitor?.rules?.map((rule) => rule.description)).toEqual([
+        'repo tests',
+        'local tests',
+      ]);
+    });
+
     test('loadConfig parses lifecycle commands', async () => {
       const configPath = path.join(configDir, 'tim.yml');
       await fs.writeFile(
