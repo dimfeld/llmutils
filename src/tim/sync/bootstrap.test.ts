@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
 import { setProjectSetting } from '../db/project_settings.js';
-import { getPlanByUuid, getPlanTasksByUuid, upsertPlan } from '../db/plan.js';
+import { getPlanByUuid, upsertPlan } from '../db/plan.js';
 import { applyOperation } from './apply.js';
 import { bootstrapSyncMetadata } from './bootstrap.js';
-import { planKey, projectSettingKey, taskKey } from './entity_keys.js';
+import { planKey, projectSettingKey } from './entity_keys.js';
 import { createPlanOperation } from './operations.js';
 import { getCurrentSequenceId } from './server.js';
 
@@ -34,28 +34,27 @@ describe('bootstrapSyncMetadata', () => {
   test('returns zero counts and inserts nothing for an empty database', () => {
     const result = bootstrapSyncMetadata(db);
 
-    expect(result).toEqual({ plansSeeded: 0, tasksSeeded: 0, settingsSeeded: 0 });
+    expect(result).toEqual({ plansSeeded: 0, settingsSeeded: 0 });
     expect(syncSequenceRows()).toEqual([]);
   });
 
-  test('seeds existing plans, tasks, and project settings into sync_sequence', () => {
+  test('seeds existing plans and project settings into sync_sequence', () => {
     seedPlan();
     setProjectSetting(db, project.id, 'color', 'blue');
     setProjectSetting(db, project.id, 'branchPrefix', 'sync');
 
     const result = bootstrapSyncMetadata(db);
 
-    expect(result).toEqual({ plansSeeded: 1, tasksSeeded: 2, settingsSeeded: 2 });
+    expect(result).toEqual({ plansSeeded: 1, settingsSeeded: 2 });
     const rows = syncSequenceRows();
     expect(rows.map((row) => row.target_key).sort()).toEqual(
       [
         planKey(PLAN_UUID),
-        taskKey(TASK_UUID),
-        taskKey(TASK_UUID_2),
         projectSettingKey(PROJECT_UUID, 'branchPrefix'),
         projectSettingKey(PROJECT_UUID, 'color'),
       ].sort()
     );
+    expect(rows.filter((row) => row.target_type === 'task')).toEqual([]);
     expect(rows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -63,14 +62,6 @@ describe('bootstrapSyncMetadata', () => {
           target_type: 'plan',
           target_key: planKey(PLAN_UUID),
           revision: getPlanByUuid(db, PLAN_UUID)?.revision,
-          operation_uuid: null,
-          origin_node_id: null,
-        }),
-        expect.objectContaining({
-          project_uuid: PROJECT_UUID,
-          target_type: 'task',
-          target_key: taskKey(TASK_UUID),
-          revision: getTaskRevision(TASK_UUID),
           operation_uuid: null,
           origin_node_id: null,
         }),
@@ -94,8 +85,8 @@ describe('bootstrapSyncMetadata', () => {
     const countAfterFirst = syncSequenceCount();
     const second = bootstrapSyncMetadata(db);
 
-    expect(first).toEqual({ plansSeeded: 1, tasksSeeded: 2, settingsSeeded: 1 });
-    expect(second).toEqual({ plansSeeded: 0, tasksSeeded: 0, settingsSeeded: 0 });
+    expect(first).toEqual({ plansSeeded: 1, settingsSeeded: 1 });
+    expect(second).toEqual({ plansSeeded: 0, settingsSeeded: 0 });
     expect(syncSequenceCount()).toBe(countAfterFirst);
   });
 
@@ -115,7 +106,7 @@ describe('bootstrapSyncMetadata', () => {
 
     const result = bootstrapSyncMetadata(db);
 
-    expect(result).toEqual({ plansSeeded: 1, tasksSeeded: 2, settingsSeeded: 0 });
+    expect(result).toEqual({ plansSeeded: 1, settingsSeeded: 0 });
     const planRows = syncSequenceRows().filter((row) => row.target_type === 'plan');
     expect(planRows.map((row) => row.target_key).sort()).toEqual(
       [planKey(PLAN_UUID), planKey(SECOND_PLAN_UUID)].sort()
@@ -193,14 +184,6 @@ function syncSequenceRows(): Array<{
 function syncSequenceCount(): number {
   return (db.prepare('SELECT COUNT(*) AS count FROM sync_sequence').get() as { count: number })
     .count;
-}
-
-function getTaskRevision(taskUuid: string): number {
-  const task = getPlanTasksByUuid(db, PLAN_UUID).find((row) => row.uuid === taskUuid);
-  if (!task) {
-    throw new Error(`Missing task ${taskUuid}`);
-  }
-  return task.revision;
 }
 
 function getSettingRevision(setting: string): number {

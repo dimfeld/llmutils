@@ -1,22 +1,15 @@
 import type { Database, Statement } from 'bun:sqlite';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
-import { planKey, projectSettingKey, taskKey } from './entity_keys.js';
+import { planKey, projectSettingKey } from './entity_keys.js';
 
 export interface BootstrapResult {
   plansSeeded: number;
-  tasksSeeded: number;
   settingsSeeded: number;
 }
 
 interface PlanBootstrapRow {
   project_uuid: string;
   plan_uuid: string;
-  revision: number | null;
-}
-
-interface TaskBootstrapRow {
-  project_uuid: string;
-  task_uuid: string;
   revision: number | null;
 }
 
@@ -28,6 +21,19 @@ interface SettingBootstrapRow {
 
 export function bootstrapSyncMetadata(db: Database): BootstrapResult {
   const runBootstrap = db.transaction((): BootstrapResult => {
+    // Per-task sync_sequence rows are intentionally not seeded: server.ts's
+    // loadTaskSnapshot redirects to loadPlanSnapshot, so a task: invalidation
+    // would just trigger another fetch of the same plan snapshot the plan:
+    // invalidation already covers. Seeding the plan row alone is sufficient
+    // and keeps first-connect bandwidth O(plans) instead of O(plans + tasks).
+    const existingTargetKeys = new Set(
+      (
+        db
+          .prepare('SELECT DISTINCT target_key FROM sync_sequence')
+          .all() as Array<{ target_key: string }>
+      ).map((row) => row.target_key)
+    );
+
     const insertSequence = db.prepare(`
       INSERT INTO sync_sequence (
         project_uuid,
@@ -38,25 +44,23 @@ export function bootstrapSyncMetadata(db: Database): BootstrapResult {
         origin_node_id,
         created_at
       )
-      SELECT ?, ?, ?, ?, NULL, NULL, ${SQL_NOW_ISO_UTC}
-      WHERE NOT EXISTS (
-        SELECT 1
-        FROM sync_sequence
-        WHERE target_key = ?
-      )
+      VALUES (?, ?, ?, ?, NULL, NULL, ${SQL_NOW_ISO_UTC})
     `);
 
     return {
-      plansSeeded: bootstrapPlans(db, insertSequence),
-      tasksSeeded: bootstrapTasks(db, insertSequence),
-      settingsSeeded: bootstrapProjectSettings(db, insertSequence),
+      plansSeeded: bootstrapPlans(db, insertSequence, existingTargetKeys),
+      settingsSeeded: bootstrapProjectSettings(db, insertSequence, existingTargetKeys),
     };
   });
 
   return runBootstrap.immediate();
 }
 
-function bootstrapPlans(db: Database, insertSequence: Statement): number {
+function bootstrapPlans(
+  db: Database,
+  insertSequence: Statement,
+  existingTargetKeys: Set<string>
+): number {
   const rows = db
     .prepare(
       `
@@ -65,6 +69,7 @@ function bootstrapPlans(db: Database, insertSequence: Statement): number {
                plan.revision AS revision
         FROM plan
         JOIN project ON project.id = plan.project_id
+        WHERE project.uuid IS NOT NULL
         ORDER BY plan.uuid
       `
     )
@@ -73,48 +78,21 @@ function bootstrapPlans(db: Database, insertSequence: Statement): number {
   let inserted = 0;
   for (const row of rows) {
     const targetKey = planKey(row.plan_uuid);
-    inserted += insertSequence.run(
-      row.project_uuid,
-      'plan',
-      targetKey,
-      row.revision,
-      targetKey
-    ).changes;
+    if (existingTargetKeys.has(targetKey)) {
+      continue;
+    }
+    insertSequence.run(row.project_uuid, 'plan', targetKey, row.revision);
+    existingTargetKeys.add(targetKey);
+    inserted += 1;
   }
   return inserted;
 }
 
-function bootstrapTasks(db: Database, insertSequence: Statement): number {
-  const rows = db
-    .prepare(
-      `
-        SELECT project.uuid AS project_uuid,
-               plan_task.uuid AS task_uuid,
-               plan_task.revision AS revision
-        FROM plan_task
-        JOIN plan ON plan.uuid = plan_task.plan_uuid
-        JOIN project ON project.id = plan.project_id
-        WHERE plan_task.uuid IS NOT NULL
-        ORDER BY plan_task.uuid
-      `
-    )
-    .all() as TaskBootstrapRow[];
-
-  let inserted = 0;
-  for (const row of rows) {
-    const targetKey = taskKey(row.task_uuid);
-    inserted += insertSequence.run(
-      row.project_uuid,
-      'task',
-      targetKey,
-      row.revision,
-      targetKey
-    ).changes;
-  }
-  return inserted;
-}
-
-function bootstrapProjectSettings(db: Database, insertSequence: Statement): number {
+function bootstrapProjectSettings(
+  db: Database,
+  insertSequence: Statement,
+  existingTargetKeys: Set<string>
+): number {
   const rows = db
     .prepare(
       `
@@ -123,6 +101,7 @@ function bootstrapProjectSettings(db: Database, insertSequence: Statement): numb
                project_setting.revision AS revision
         FROM project_setting
         JOIN project ON project.id = project_setting.project_id
+        WHERE project.uuid IS NOT NULL
         ORDER BY project.uuid, project_setting.setting
       `
     )
@@ -131,13 +110,12 @@ function bootstrapProjectSettings(db: Database, insertSequence: Statement): numb
   let inserted = 0;
   for (const row of rows) {
     const targetKey = projectSettingKey(row.project_uuid, row.setting);
-    inserted += insertSequence.run(
-      row.project_uuid,
-      'project_setting',
-      targetKey,
-      row.revision,
-      targetKey
-    ).changes;
+    if (existingTargetKeys.has(targetKey)) {
+      continue;
+    }
+    insertSequence.run(row.project_uuid, 'project_setting', targetKey, row.revision);
+    existingTargetKeys.add(targetKey);
+    inserted += 1;
   }
   return inserted;
 }

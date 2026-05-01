@@ -11,6 +11,7 @@ import { getPlanByUuid, getPlanTagsByUuid, getPlanTasksByUuid, upsertPlan } from
 import { getProjectSettingWithMetadata, setProjectSetting } from '../db/project_settings.js';
 import { insertSyncConflict, insertSyncOperation, getSyncConflict } from '../db/sync_tables.js';
 import {
+  handleSyncBootstrapCommand,
   handleSyncConflictsCommand,
   handleSyncResolveCommand,
   handleSyncStatusCommand,
@@ -314,6 +315,30 @@ describe('tim sync CLI node commands', () => {
         'Last known main-node sequence: 42',
       ])
     );
+  });
+
+  test('sync bootstrap rejects on persistent role and seeds existing data on main', async () => {
+    seedPlan();
+    setProjectSetting(db, project.id, 'color', 'blue');
+
+    await expect(
+      handleSyncBootstrapCommand({}, command, { db, config: config('persistent') })
+    ).rejects.toThrow('only valid on the main sync node');
+
+    await handleSyncBootstrapCommand({}, command, { db, config: config('main') });
+
+    const messages = mockLog.mock.calls.map((call) => String(call[0]));
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/Bootstrapped sync metadata: 1 plan, 1 project setting\./),
+      ])
+    );
+    const planRows = db
+      .prepare(
+        "SELECT target_key FROM sync_sequence WHERE target_type = 'plan' AND target_key = ?"
+      )
+      .all(`plan:${PLAN_UUID}`) as Array<{ target_key: string }>;
+    expect(planRows).toHaveLength(1);
   });
 
   test('sync conflicts lists open conflicts on main and rejects on persistent', async () => {

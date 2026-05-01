@@ -66,6 +66,11 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
   const connections = new Map<string, SyncServerConnection>();
   const helloTimers = new Map<string, ReturnType<typeof setTimeout>>();
   seedAllowedPersistentNodes(options.db, options.allowedNodes);
+  // Main-node only: startSyncServer is only invoked for role === 'main' (see
+  // sync_service.ts). Bootstrapping seeds canonical sync_sequence rows for
+  // pre-sync data so fresh peers can discover existing plans/settings on
+  // initial catch-up. Persistent nodes must NOT self-seed; they receive
+  // canonical state from the main node.
   bootstrapSyncMetadata(options.db);
 
   function send(ws: BunServerWebSocket, frame: SyncServerFrame): void {
