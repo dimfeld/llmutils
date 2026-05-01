@@ -38,7 +38,9 @@ describe('backfill-uuids command helpers', () => {
   });
 
   test('backfills NULL project, plan, and task UUIDs', () => {
-    db.prepare(`INSERT INTO project (uuid, repository_id) VALUES (NULL, 'repo-null-project')`).run();
+    db.prepare(
+      `INSERT INTO project (uuid, repository_id) VALUES (NULL, 'repo-null-project')`
+    ).run();
     const projectId = (
       db.prepare('SELECT id FROM project WHERE repository_id = ?').get('repo-null-project') as {
         id: number;

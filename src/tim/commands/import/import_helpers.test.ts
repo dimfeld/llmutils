@@ -228,5 +228,4 @@ describe('import_helpers', () => {
 
     expect([...urls].sort()).toEqual(['https://issue/1', 'https://issue/2', 'https://issue/3']);
   });
-
 });

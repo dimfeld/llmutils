@@ -5,10 +5,7 @@ import { ensureReferences } from '../../utils/references.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
 import { needArrayOrUndefined } from '../../../common/cli.js';
 import type { PlanSchema } from '../../planSchema.js';
-import {
-  applyPlanWritePostCommitUpdates,
-  routePlanWriteIntoBatch,
-} from '../../plans.js';
+import { applyPlanWritePostCommitUpdates, routePlanWriteIntoBatch } from '../../plans.js';
 import { loadEffectiveConfig } from '../../configLoader.js';
 import { resolveWriteMode, usesPlanIdReserve } from '../../sync/write_mode.js';
 import { beginSyncBatch } from '../../sync/write_router.js';
