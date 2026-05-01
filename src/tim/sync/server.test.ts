@@ -168,8 +168,10 @@ describe('sync transport server and clients', () => {
 
     const first = await httpFlushOperations(serverUrl(server), TOKEN, NODE_A, [op]);
     expect(first.ok).toBe(true);
+    expect(getTimNodeCursor(mainDb, NODE_A).last_known_sequence_id).toBe(0);
     const second = await httpFlushOperations(serverUrl(server), TOKEN, NODE_A, [op]);
     expect(second.ok).toBe(true);
+    expect(getTimNodeCursor(mainDb, NODE_A).last_known_sequence_id).toBe(0);
     expect(getPlanTagsByUuid(mainDb, PLAN_UUID).map((tag) => tag.tag)).toEqual(['offline']);
 
     const catchUp = await httpCatchUp(serverUrl(server), TOKEN, NODE_A, 0);
@@ -448,7 +450,7 @@ describe('sync transport server and clients', () => {
 
     expect(getPlanTagsByUuid(mainDb, PLAN_UUID).map((tag) => tag.tag)).toEqual(['client-flush']);
     expect(getPlanTagsByUuid(localDb, PLAN_UUID).map((tag) => tag.tag)).toEqual(['client-flush']);
-    expect(getTimNodeCursor(localDb, NODE_A).last_known_sequence_id).toBeGreaterThan(0);
+    expect(getTimNodeCursor(localDb, NODE_A).last_known_sequence_id).toBe(0);
   });
 
   test('connected peers apply deleted-plan invalidations from WebSocket broadcasts', async () => {
@@ -633,6 +635,7 @@ describe('sync transport server and clients', () => {
         .map((t) => t.tag)
         .sort()
     ).toEqual(['batch-tag-one', 'batch-tag-two']);
+    expect(getTimNodeCursor(mainDb, NODE_A).last_known_sequence_id).toBe(0);
     sender.close();
   });
 

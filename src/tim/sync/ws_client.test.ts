@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject } from '../db/project.js';
 import { getPlanTagsByUuid, upsertPlan } from '../db/plan.js';
-import { upsertTimNode } from '../db/sync_tables.js';
+import { getTimNodeCursor, upsertTimNode } from '../db/sync_tables.js';
 import { hashToken } from './auth.js';
 import { addPlanDependencyOperation, addPlanTagOperation } from './operations.js';
 import {
@@ -129,6 +129,7 @@ describe('sync WebSocket client', () => {
     );
     expect(getPlanTagsByUuid(mainDb, PLAN_UUID).map((tag) => tag.tag)).toEqual(['post-hello']);
     expect(getPlanTagsByUuid(localDb, PLAN_UUID).map((tag) => tag.tag)).toEqual(['post-hello']);
+    expect(getTimNodeCursor(localDb, NODE_A).last_known_sequence_id).toBe(0);
   });
 
   test('flushes operations enqueued while a previous flush is still in flight', async () => {

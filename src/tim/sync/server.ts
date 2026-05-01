@@ -244,7 +244,6 @@ async function handleHttpRequest(
       }
       const result = applySyncBatchAndBroadcast(options.db, frame.batch, broadcast);
       const resultFrame = batchResultFrame(frame.batch, result);
-      updateCursorFromOperationResults(options.db, nodeId, resultFrame.results);
       return jsonResponse({
         ...resultFrame,
         currentSequenceId: getCurrentSequenceId(options.db),
@@ -256,7 +255,6 @@ async function handleHttpRequest(
       return jsonResponse({ error: originError }, { status: 400 });
     }
     const results = applyOperationBatchAndBroadcast(options.db, frame.operations, broadcast);
-    updateCursorFromOperationResults(options.db, nodeId, results);
     return jsonResponse({
       results,
       currentSequenceId: getCurrentSequenceId(options.db),
@@ -368,7 +366,6 @@ function handleAuthenticatedFrame(
         broadcast,
         connectionId
       );
-      updateCursorFromOperationResults(options.db, authenticatedNodeId, results);
       ws.send(JSON.stringify({ type: 'op_result', results } satisfies SyncServerFrame));
       return;
     }
@@ -396,7 +393,6 @@ function handleAuthenticatedFrame(
       }
       const result = applySyncBatchAndBroadcast(options.db, frame.batch, broadcast, connectionId);
       const resultFrame = batchResultFrame(frame.batch, result);
-      updateCursorFromOperationResults(options.db, authenticatedNodeId, resultFrame.results);
       ws.send(JSON.stringify(resultFrame satisfies SyncServerFrame));
       return;
     }
@@ -411,17 +407,6 @@ function seedAllowedPersistentNodes(db: Database, allowedNodes: SyncAllowedNodeC
       label: node.label ?? null,
       tokenHash: node.tokenHash ?? null,
     });
-  }
-}
-
-function updateCursorFromOperationResults(
-  db: Database,
-  nodeId: string,
-  results: SyncOperationResult[]
-): void {
-  const maxSequenceId = Math.max(0, ...results.flatMap((result) => result.sequenceIds ?? []));
-  if (maxSequenceId > 0) {
-    updateTimNodeCursor(db, nodeId, maxSequenceId);
   }
 }
 
