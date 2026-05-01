@@ -8,11 +8,11 @@ import {
   httpFlushOperations,
   type HttpSyncResult,
 } from './client.js';
+import { fetchAndMergeSnapshotsUntilConvergence } from './follow_up_fetch.js';
 import {
   listPendingOperations,
   markOperationFailedRetryable,
   markOperationSending,
-  mergeCanonicalRefresh,
   resetSendingOperations,
   type SyncOperationQueueRow,
 } from './queue.js';
@@ -265,18 +265,7 @@ async function applyInvalidationsOverHttp(
 }
 
 async function fetchAndMergeSnapshots(options: SyncRunnerOptions, keys: string[]): Promise<void> {
-  let pendingKeys = [...new Set(keys)];
-  const fetchedKeys = new Set<string>();
-  const maxPasses = 5;
-  for (let pass = 0; pass < maxPasses && pendingKeys.length > 0; pass += 1) {
-    const keysForPass = pendingKeys.filter((key) => !fetchedKeys.has(key));
-    pendingKeys = [];
-    if (keysForPass.length === 0) {
-      return;
-    }
-    for (const key of keysForPass) {
-      fetchedKeys.add(key);
-    }
+  await fetchAndMergeSnapshotsUntilConvergence(options.db, keys, async (keysForPass) => {
     const response = await httpFetchSnapshots(
       options.serverUrl,
       options.token,
@@ -284,21 +273,8 @@ async function fetchAndMergeSnapshots(options: SyncRunnerOptions, keys: string[]
       keysForPass
     );
     unwrapRetryable(response);
-    const nextKeys = new Set<string>();
-    for (const snapshot of response.value.snapshots) {
-      for (const key of mergeCanonicalRefresh(options.db, snapshot)) {
-        if (!fetchedKeys.has(key)) {
-          nextKeys.add(key);
-        }
-      }
-    }
-    pendingKeys = [...nextKeys];
-  }
-  if (pendingKeys.length > 0) {
-    warn(`Stopped sync snapshot follow-up after ${maxPasses} passes`, {
-      remainingKeys: pendingKeys,
-    });
-  }
+    return response.value.snapshots;
+  });
 }
 
 function unwrapRetryable<T>(result: HttpSyncResult<T>): asserts result is { ok: true; value: T } {
