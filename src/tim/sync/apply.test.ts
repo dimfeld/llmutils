@@ -221,7 +221,9 @@ describe('main-node sync apply engine', () => {
     expect(result.results[1].conflictId).toBeUndefined();
     expect(result.results[1].error?.message).toContain('Atomic batch aborted');
     expect(countRows('sync_conflict')).toBe(0);
-    expect(db.prepare('SELECT value, revision FROM project_setting WHERE setting = ?').get('color')).toEqual({
+    expect(
+      db.prepare('SELECT value, revision FROM project_setting WHERE setting = ?').get('color')
+    ).toEqual({
       value: '"blue"',
       revision: 1,
     });
