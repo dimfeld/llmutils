@@ -334,9 +334,7 @@ describe('tim sync CLI node commands', () => {
       ])
     );
     const planRows = db
-      .prepare(
-        "SELECT target_key FROM sync_sequence WHERE target_type = 'plan' AND target_key = ?"
-      )
+      .prepare("SELECT target_key FROM sync_sequence WHERE target_type = 'plan' AND target_key = ?")
       .all(`plan:${PLAN_UUID}`) as Array<{ target_key: string }>;
     expect(planRows).toHaveLength(1);
   });
