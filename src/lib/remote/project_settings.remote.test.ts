@@ -469,6 +469,38 @@ describe('project settings remote actions', () => {
     expect(getProjectSetting(currentDb, projectId, 'branchPrefix')).toBe('di/');
   });
 
+  test('stale baseRevision in a batch rolls back other setting changes', async () => {
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'featured',
+      value: true,
+      baseRevision: 0,
+    });
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'color',
+      value: '#e74c3c',
+      baseRevision: 0,
+    });
+
+    await expect(
+      invokeCommand(updateProjectSettings, {
+        projectId,
+        settings: [
+          { setting: 'abbreviation', value: 'AB', baseRevision: 0 },
+          { setting: 'featured', value: false, baseRevision: 0 },
+          { setting: 'color', value: '', baseRevision: 1 },
+        ],
+      })
+    ).rejects.toMatchObject({
+      name: 'SyncWriteConflictError',
+    });
+
+    expect(getProjectSetting(currentDb, projectId, 'featured')).toBe(true);
+    expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBeNull();
+    expect(getProjectSetting(currentDb, projectId, 'color')).toBe('#e74c3c');
+  });
+
   test('rejects a batch before writing any settings when one value is invalid', async () => {
     await invokeCommand(updateProjectSetting, {
       projectId,
