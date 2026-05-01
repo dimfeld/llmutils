@@ -826,16 +826,25 @@ const migrations: Migration[] = [
     version: 28,
     up: `
       ALTER TABLE sync_operation ADD COLUMN payload_plan_uuid TEXT;
+      ALTER TABLE sync_operation ADD COLUMN payload_secondary_plan_uuid TEXT;
       ALTER TABLE sync_operation ADD COLUMN payload_task_uuid TEXT;
 
       UPDATE sync_operation
-      SET payload_plan_uuid = JSON_EXTRACT(payload, '$.planUuid'),
+      SET payload_plan_uuid = COALESCE(
+            JSON_EXTRACT(payload, '$.planUuid'),
+            JSON_EXTRACT(payload, '$.newPlanUuid')
+          ),
+          payload_secondary_plan_uuid = JSON_EXTRACT(payload, '$.sourcePlanUuid'),
           payload_task_uuid = JSON_EXTRACT(payload, '$.taskUuid');
 
       CREATE INDEX idx_sync_operation_payload_plan_uuid
         ON sync_operation(payload_plan_uuid);
+      CREATE INDEX idx_sync_operation_payload_secondary_plan_uuid
+        ON sync_operation(payload_secondary_plan_uuid);
       CREATE INDEX idx_sync_operation_payload_task_uuid
         ON sync_operation(payload_task_uuid);
+      CREATE INDEX idx_sync_operation_target_key
+        ON sync_operation(target_key);
     `,
   },
 ];
