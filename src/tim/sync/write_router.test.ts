@@ -562,9 +562,9 @@ describe('sync write router', () => {
     expect(
       mainDb.prepare('SELECT value FROM project_setting WHERE setting = ?').get('abbreviation')
     ).toBeNull();
-    expect(
-      mainDb.prepare('SELECT COUNT(*) AS count FROM sync_conflict').get()
-    ).toMatchObject({ count: 0 });
+    expect(mainDb.prepare('SELECT COUNT(*) AS count FROM sync_conflict').get()).toMatchObject({
+      count: 0,
+    });
     mainDb.close(false);
   });
 

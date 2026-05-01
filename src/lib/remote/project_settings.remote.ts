@@ -6,10 +6,7 @@ import { getServerContext } from '$lib/server/init.js';
 import { PROJECT_COLOR_PALETTE } from '$lib/stores/project.svelte.js';
 import { branchPrefixSchema } from '$tim/branch_prefix.js';
 import { getProjectById } from '$tim/db/project.js';
-import {
-  deleteProjectSettingOperation,
-  setProjectSettingOperation,
-} from '$tim/sync/operations.js';
+import { deleteProjectSettingOperation, setProjectSettingOperation } from '$tim/sync/operations.js';
 import {
   beginSyncBatch,
   getProjectUuidForId,
