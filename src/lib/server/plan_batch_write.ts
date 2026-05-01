@@ -44,7 +44,16 @@ export function loadPlanSchemaFromRow(db: Database, row: PlanRow): PlanSchema {
   return planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId);
 }
 
-export async function writeSinglePlanMutationAtomically(
+/**
+ * Commits one plan mutation through the sync batch machinery.
+ *
+ * The DB-side sync batch commits atomically inside one immediate transaction.
+ * applyPlanWritePostCommitUpdates runs after batch.commit() and is not part of
+ * that DB transaction; if it throws, the DB write remains applied while file
+ * rematerialization may be skipped. Callers that need strict file/DB atomicity
+ * must add their own compensating behavior.
+ */
+export async function writeSinglePlanMutationViaBatch(
   db: Database,
   config: TimConfig,
   planRow: PlanRow,

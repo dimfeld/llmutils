@@ -160,20 +160,20 @@ describe('convertThreadToTask', () => {
 
     const { prStatusId } = seedPlanWithThread({
       projectId,
-      planUuid: 'plan-thread-convert',
+      planUuid: '00000000-0000-4000-8000-000000000301',
       planId: 300,
       status: 'needs_review',
       thread,
     });
 
     await invokeCommand(convertThreadToTask, {
-      planUuid: 'plan-thread-convert',
+      planUuid: '00000000-0000-4000-8000-000000000301',
       prStatusId,
       threadId: 'PRRT_thread1',
     });
 
-    const plan = getPlanByUuid(currentDb, 'plan-thread-convert');
-    const tasks = getPlanTasksByUuid(currentDb, 'plan-thread-convert');
+    const plan = getPlanByUuid(currentDb, '00000000-0000-4000-8000-000000000301');
+    const tasks = getPlanTasksByUuid(currentDb, '00000000-0000-4000-8000-000000000301');
 
     expect(plan?.status).toBe('in_progress');
     expect(tasks).toHaveLength(1);
@@ -207,7 +207,7 @@ describe('convertThreadToTask', () => {
 
     const { prStatusId } = seedPlanWithThread({
       projectId,
-      planUuid: 'plan-thread-append',
+      planUuid: '00000000-0000-4000-8000-000000000302',
       planId: 301,
       tasks: [
         { title: 'Existing task 1', description: 'Already here', done: false },
@@ -217,12 +217,12 @@ describe('convertThreadToTask', () => {
     });
 
     await invokeCommand(convertThreadToTask, {
-      planUuid: 'plan-thread-append',
+      planUuid: '00000000-0000-4000-8000-000000000302',
       prStatusId,
       threadId: 'PRRT_thread2',
     });
 
-    const tasks = getPlanTasksByUuid(currentDb, 'plan-thread-append');
+    const tasks = getPlanTasksByUuid(currentDb, '00000000-0000-4000-8000-000000000302');
     expect(tasks).toHaveLength(3);
     expect(tasks[2].task_index).toBe(2);
     expect(tasks[2].title).toBe('Address review: src/utils.ts:10');
@@ -384,20 +384,20 @@ describe('convertThreadToTask', () => {
 
     const { prStatusId } = seedPlanWithThread({
       projectId,
-      planUuid: 'plan-duplicate-thread',
+      planUuid: '00000000-0000-4000-8000-000000000303',
       planId: 305,
       thread,
     });
 
     await invokeCommand(convertThreadToTask, {
-      planUuid: 'plan-duplicate-thread',
+      planUuid: '00000000-0000-4000-8000-000000000303',
       prStatusId,
       threadId: 'PRRT_thread4',
     });
 
     await expect(
       invokeCommand(convertThreadToTask, {
-        planUuid: 'plan-duplicate-thread',
+        planUuid: '00000000-0000-4000-8000-000000000303',
         prStatusId,
         threadId: 'PRRT_thread4',
       })
@@ -406,7 +406,7 @@ describe('convertThreadToTask', () => {
       body: { message: 'This thread has already been converted to a task' },
     });
 
-    const tasks = getPlanTasksByUuid(currentDb, 'plan-duplicate-thread');
+    const tasks = getPlanTasksByUuid(currentDb, '00000000-0000-4000-8000-000000000303');
     expect(tasks).toHaveLength(1);
     expect(tasks[0].description).toContain('[source:review-thread:PRRT_thread4]');
   });
@@ -463,7 +463,7 @@ describe('convertThreadToTask', () => {
     const prUrl = 'https://github.com/owner/repo/pull/142';
     const { prStatusId } = seedPlanWithThread({
       projectId,
-      planUuid: 'plan-pull-request-fallback',
+      planUuid: '00000000-0000-4000-8000-000000000305',
       planId: 306,
       pullRequest: [prUrl],
       createPlanPrLink: false,
@@ -485,12 +485,12 @@ describe('convertThreadToTask', () => {
     });
 
     await invokeCommand(convertThreadToTask, {
-      planUuid: 'plan-pull-request-fallback',
+      planUuid: '00000000-0000-4000-8000-000000000305',
       prStatusId,
       threadId: 'PRRT_fallback',
     });
 
-    const tasks = getPlanTasksByUuid(currentDb, 'plan-pull-request-fallback');
+    const tasks = getPlanTasksByUuid(currentDb, '00000000-0000-4000-8000-000000000305');
     expect(tasks).toHaveLength(1);
     expect(tasks[0].title).toBe('Address review: src/fallback.ts:22');
     expect(tasks[0].description).toContain('[source:review-thread:PRRT_fallback]');
@@ -563,7 +563,7 @@ describe('convertThreadToTask', () => {
 
     const { prStatusId } = seedPlanWithThread({
       projectId,
-      planUuid: 'plan-source-marker-duplicate',
+      planUuid: '00000000-0000-4000-8000-000000000306',
       planId: 308,
       thread: firstThread,
     });
@@ -579,14 +579,14 @@ describe('convertThreadToTask', () => {
     });
 
     await invokeCommand(convertThreadToTask, {
-      planUuid: 'plan-source-marker-duplicate',
+      planUuid: '00000000-0000-4000-8000-000000000306',
       prStatusId,
       threadId: 'PRRT_same_line_1',
     });
 
     await expect(
       invokeCommand(convertThreadToTask, {
-        planUuid: 'plan-source-marker-duplicate',
+        planUuid: '00000000-0000-4000-8000-000000000306',
         prStatusId,
         threadId: 'PRRT_same_line_1',
       })
@@ -596,12 +596,12 @@ describe('convertThreadToTask', () => {
     });
 
     await invokeCommand(convertThreadToTask, {
-      planUuid: 'plan-source-marker-duplicate',
+      planUuid: '00000000-0000-4000-8000-000000000306',
       prStatusId,
       threadId: 'PRRT_same_line_2',
     });
 
-    const tasks = getPlanTasksByUuid(currentDb, 'plan-source-marker-duplicate');
+    const tasks = getPlanTasksByUuid(currentDb, '00000000-0000-4000-8000-000000000306');
     expect(tasks).toHaveLength(2);
     expect(tasks[0].title).toBe('Address review: src/shared.ts:33');
     expect(tasks[1].title).toBe('Address review: src/shared.ts:33');
@@ -627,19 +627,19 @@ describe('convertThreadToTask', () => {
 
     const { prStatusId } = seedPlanWithThread({
       projectId,
-      planUuid: 'plan-already-progress',
+      planUuid: '00000000-0000-4000-8000-000000000307',
       planId: 303,
       status: 'in_progress',
       thread,
     });
 
     await invokeCommand(convertThreadToTask, {
-      planUuid: 'plan-already-progress',
+      planUuid: '00000000-0000-4000-8000-000000000307',
       prStatusId,
       threadId: 'PRRT_thread3',
     });
 
-    const plan = getPlanByUuid(currentDb, 'plan-already-progress');
+    const plan = getPlanByUuid(currentDb, '00000000-0000-4000-8000-000000000307');
     expect(plan?.status).toBe('in_progress');
   });
 

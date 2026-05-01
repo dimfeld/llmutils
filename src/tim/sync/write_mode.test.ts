@@ -8,6 +8,10 @@ import {
 } from './write_mode.js';
 
 describe('write mode resolver', () => {
+  test('resolves undefined config as local-operation', () => {
+    expect(resolveWriteMode(undefined)).toBe('local-operation');
+  });
+
   test('resolves no sync config as local-operation', () => {
     expect(resolveWriteMode({} as TimConfig)).toBe('local-operation');
   });
@@ -37,6 +41,30 @@ describe('write mode resolver', () => {
     ).toBe('sync-persistent');
   });
 
+  test('resolves persistent role without mainUrl as local-operation', () => {
+    expect(
+      resolveWriteMode({
+        sync: {
+          role: 'persistent',
+          nodeId: 'persistent-node',
+          nodeToken: 'secret',
+        },
+      } as TimConfig)
+    ).toBe('local-operation');
+  });
+
+  test('resolves persistent role without token as local-operation', () => {
+    expect(
+      resolveWriteMode({
+        sync: {
+          role: 'persistent',
+          nodeId: 'persistent-node',
+          mainUrl: 'http://127.0.0.1:29999',
+        },
+      } as TimConfig)
+    ).toBe('local-operation');
+  });
+
   test('resolves disabled persistent role as local-operation', () => {
     expect(
       resolveWriteMode({
@@ -49,6 +77,20 @@ describe('write mode resolver', () => {
         },
       } as TimConfig)
     ).toBe('local-operation');
+  });
+
+  test('resolves offline persistent role with valid config as sync-persistent', () => {
+    expect(
+      resolveWriteMode({
+        sync: {
+          role: 'persistent',
+          nodeId: 'persistent-node',
+          mainUrl: 'http://127.0.0.1:29999',
+          nodeToken: 'secret',
+          offline: true,
+        },
+      } as TimConfig)
+    ).toBe('sync-persistent');
   });
 
   test('does not return legacy-direct from the resolver', () => {
