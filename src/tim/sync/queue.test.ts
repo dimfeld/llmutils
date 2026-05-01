@@ -22,6 +22,7 @@ import {
   deleteProjectSettingOperation,
   markPlanTaskDoneOperation,
   patchPlanTextOperation,
+  promotePlanTaskOperation,
   removePlanDependencyOperation,
   removePlanTagOperation,
   setPlanParentOperation,
@@ -991,7 +992,10 @@ describe('persistent-node sync queue', () => {
       .prepare(
         'SELECT payload_plan_uuid, payload_task_uuid FROM sync_operation WHERE operation_uuid = ?'
       )
-      .get(op.operationUuid) as { payload_plan_uuid: string | null; payload_task_uuid: string | null };
+      .get(op.operationUuid) as {
+      payload_plan_uuid: string | null;
+      payload_task_uuid: string | null;
+    };
     expect(row.payload_plan_uuid).toBe(PLAN_UUID);
     expect(row.payload_task_uuid).toBe(TASK_UUID);
   });
@@ -1008,7 +1012,10 @@ describe('persistent-node sync queue', () => {
       .prepare(
         'SELECT payload_plan_uuid, payload_task_uuid FROM sync_operation WHERE operation_uuid = ?'
       )
-      .get(op.operationUuid) as { payload_plan_uuid: string | null; payload_task_uuid: string | null };
+      .get(op.operationUuid) as {
+      payload_plan_uuid: string | null;
+      payload_task_uuid: string | null;
+    };
     expect(row.payload_plan_uuid).toBeNull();
     expect(row.payload_task_uuid).toBeNull();
   });
@@ -1063,6 +1070,98 @@ describe('persistent-node sync queue', () => {
     expect(getPlanTasksByUuid(db, PLAN_UUID)).toHaveLength(0);
     // The queued op is rejected via indexed payload_task_uuid lookup
     expect(operationRow(op.operationUuid).status).toBe('rejected');
+  });
+
+  test('mergeCanonicalRefresh never_existed rejects pending plan.promote_task ops via target_key/payload_plan_uuid', async () => {
+    seedPlan();
+    const newPlanUuid = '99999999-9999-4999-8999-999999999999';
+    const promoteOp = await promotePlanTaskOperation(
+      PROJECT_UUID,
+      {
+        sourcePlanUuid: PLAN_UUID,
+        taskUuid: TASK_UUID,
+        newPlanUuid,
+        title: 'Promoted task',
+      },
+      { originNodeId: NODE_A, localSequence: 777 }
+    );
+    enqueue(promoteOp);
+
+    // payload_plan_uuid falls back to newPlanUuid; sourcePlanUuid lives in
+    // payload_secondary_plan_uuid.
+    const indexed = db
+      .prepare(
+        'SELECT payload_plan_uuid, payload_secondary_plan_uuid, target_key FROM sync_operation WHERE operation_uuid = ?'
+      )
+      .get(promoteOp.operationUuid) as {
+      payload_plan_uuid: string | null;
+      payload_secondary_plan_uuid: string | null;
+      target_key: string;
+    };
+    expect(indexed.payload_plan_uuid).toBe(newPlanUuid);
+    expect(indexed.payload_secondary_plan_uuid).toBe(PLAN_UUID);
+    expect(indexed.target_key).toBe(`plan:${newPlanUuid}`);
+
+    mergeCanonicalRefresh(db, {
+      type: 'never_existed',
+      entityKey: `plan:${newPlanUuid}`,
+      targetType: 'plan',
+      planUuid: newPlanUuid,
+    });
+
+    // The queued promote op is rejected because the new plan never existed on main
+    expect(operationRow(promoteOp.operationUuid).status).toBe('rejected');
+  });
+
+  test('mergeCanonicalRefresh plan_deleted for source plan rejects pending plan.promote_task ops via payload_secondary_plan_uuid', async () => {
+    seedPlan();
+    const newPlanUuid = '88888888-8888-4888-8888-888888888888';
+    const promoteOp = await promotePlanTaskOperation(
+      PROJECT_UUID,
+      {
+        sourcePlanUuid: PLAN_UUID,
+        taskUuid: TASK_UUID,
+        newPlanUuid,
+        title: 'Promoted task',
+      },
+      { originNodeId: NODE_A, localSequence: 778 }
+    );
+    enqueue(promoteOp);
+
+    mergeCanonicalRefresh(db, {
+      type: 'plan_deleted',
+      projectUuid: PROJECT_UUID,
+      planUuid: PLAN_UUID,
+      deletedAt: new Date().toISOString(),
+    });
+
+    // The queued promote op is rejected because its sourcePlanUuid was deleted
+    expect(operationRow(promoteOp.operationUuid).status).toBe('rejected');
+  });
+
+  test('mergeCanonicalRefresh never_existed for source plan rejects pending plan.promote_task ops via payload_secondary_plan_uuid', async () => {
+    seedPlan();
+    const newPlanUuid = '77777777-7777-4777-8777-777777777777';
+    const promoteOp = await promotePlanTaskOperation(
+      PROJECT_UUID,
+      {
+        sourcePlanUuid: PLAN_UUID,
+        taskUuid: TASK_UUID,
+        newPlanUuid,
+        title: 'Promoted task',
+      },
+      { originNodeId: NODE_A, localSequence: 779 }
+    );
+    enqueue(promoteOp);
+
+    mergeCanonicalRefresh(db, {
+      type: 'never_existed',
+      entityKey: `plan:${PLAN_UUID}`,
+      targetType: 'plan',
+      planUuid: PLAN_UUID,
+    });
+
+    expect(operationRow(promoteOp.operationUuid).status).toBe('rejected');
   });
 
   test('mergeCanonicalRefresh removes local assignments for cleanup-status plan snapshots', () => {

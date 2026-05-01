@@ -734,6 +734,7 @@ function insertReceivedOperation(
         base_hash,
         payload,
         payload_plan_uuid,
+        payload_secondary_plan_uuid,
         payload_task_uuid,
         status,
         attempts,
@@ -744,7 +745,7 @@ function insertReceivedOperation(
         ack_metadata,
         batch_id,
         batch_atomic
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'received', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'received', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
     `
   );
   const indexes = getSyncOperationPayloadIndexes(envelope.op);
@@ -759,6 +760,7 @@ function insertReceivedOperation(
     baseRevision,
     payload,
     indexes.payloadPlanUuid,
+    indexes.payloadSecondaryPlanUuid,
     indexes.payloadTaskUuid,
     envelope.createdAt,
     batchId ?? null,

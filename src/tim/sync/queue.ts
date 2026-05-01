@@ -769,6 +769,7 @@ function insertQueuedOperation(
         base_hash,
         payload,
         payload_plan_uuid,
+        payload_secondary_plan_uuid,
         payload_task_uuid,
         status,
         attempts,
@@ -779,7 +780,7 @@ function insertQueuedOperation(
         ack_metadata,
         batch_id,
         batch_atomic
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'queued', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'queued', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
     `
   );
   const payload = JSON.stringify(operation.op);
@@ -795,6 +796,7 @@ function insertQueuedOperation(
     baseRevision,
     payload,
     indexes.payloadPlanUuid,
+    indexes.payloadSecondaryPlanUuid,
     indexes.payloadTaskUuid,
     operation.createdAt,
     batchId ?? null,
@@ -1153,6 +1155,13 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): void
       removeAssignment(db, project.id, snapshot.planUuid);
     }
     db.prepare('DELETE FROM plan WHERE uuid = ?').run(snapshot.planUuid);
+    // All three branches of the OR hit indexes (idx_sync_operation_target_key,
+    // idx_sync_operation_payload_plan_uuid, idx_sync_operation_payload_secondary_plan_uuid),
+    // so SQLite can satisfy this with OR-via-UNION lookups instead of scanning.
+    // The secondary branch covers multi-plan ops like `plan.promote_task` whose
+    // sourcePlanUuid is the deleted plan; the primary branch covers their
+    // newPlanUuid; target_key covers any future op kinds whose target is the
+    // deleted plan but whose payload doesn't carry the UUID under either column.
     db.prepare(
       `
         UPDATE sync_operation
@@ -1164,12 +1173,14 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): void
           AND (
             target_key = ?
             OR payload_plan_uuid = ?
+            OR payload_secondary_plan_uuid = ?
           )
       `
     ).run(
       `Target plan ${snapshot.planUuid} was deleted on the main node`,
       snapshot.projectUuid,
       `plan:${snapshot.planUuid}`,
+      snapshot.planUuid,
       snapshot.planUuid
     );
     return;
@@ -1277,10 +1288,9 @@ function writeNeverExistedSnapshot(db: Database, snapshot: CanonicalNeverExisted
     db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(snapshot.planUuid);
     db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(snapshot.planUuid);
     db.prepare('DELETE FROM plan WHERE uuid = ?').run(snapshot.planUuid);
-    rejectPendingOperationsForNeverExistedEntity(
+    rejectPendingOperationsForNeverExistedPlan(
       db,
       snapshot.entityKey,
-      'payload_plan_uuid',
       snapshot.planUuid,
       `Target plan ${snapshot.planUuid} never existed on the main node`
     );
@@ -1292,22 +1302,23 @@ function writeNeverExistedSnapshot(db: Database, snapshot: CanonicalNeverExisted
     db.prepare('DELETE FROM plan_task WHERE uuid = ?').run(snapshot.taskUuid);
     shiftTaskIndexesAfterDelete(db, task.plan_uuid, task.task_index);
   }
-  rejectPendingOperationsForNeverExistedEntity(
+  rejectPendingOperationsForNeverExistedTask(
     db,
     snapshot.entityKey,
-    'payload_task_uuid',
     snapshot.taskUuid,
     `Target task ${snapshot.taskUuid} never existed on the main node`
   );
 }
 
-function rejectPendingOperationsForNeverExistedEntity(
+function rejectPendingOperationsForNeverExistedPlan(
   db: Database,
   entityKey: string,
-  payloadColumn: 'payload_plan_uuid' | 'payload_task_uuid',
-  payloadUuid: string,
+  planUuid: string,
   message: string
 ): void {
+  // All three branches hit indexes; SQLite uses OR-via-UNION. The secondary
+  // branch covers `plan.promote_task` ops whose sourcePlanUuid is the
+  // never-existed plan.
   db.prepare(
     `
       UPDATE sync_operation
@@ -1317,10 +1328,34 @@ function rejectPendingOperationsForNeverExistedEntity(
       WHERE status IN ('queued', 'failed_retryable')
         AND (
           target_key = ?
-          OR ${payloadColumn} = ?
+          OR payload_plan_uuid = ?
+          OR payload_secondary_plan_uuid = ?
         )
     `
-  ).run(message, entityKey, payloadUuid);
+  ).run(message, entityKey, planUuid, planUuid);
+}
+
+function rejectPendingOperationsForNeverExistedTask(
+  db: Database,
+  entityKey: string,
+  taskUuid: string,
+  message: string
+): void {
+  // Both branches hit indexes (idx_sync_operation_target_key and
+  // idx_sync_operation_payload_task_uuid), so SQLite uses OR-via-UNION.
+  db.prepare(
+    `
+      UPDATE sync_operation
+      SET status = 'rejected',
+          last_error = ?,
+          updated_at = ${SQL_NOW_ISO_UTC}
+      WHERE status IN ('queued', 'failed_retryable')
+        AND (
+          target_key = ?
+          OR payload_task_uuid = ?
+        )
+    `
+  ).run(message, entityKey, taskUuid);
 }
 
 function removeAssignmentForPlan(db: Database, projectUuid: string, planUuid: string): void {

@@ -25,6 +25,7 @@ export interface SyncOperationRow {
   base_hash: string | null;
   payload: string;
   payload_plan_uuid: string | null;
+  payload_secondary_plan_uuid: string | null;
   payload_task_uuid: string | null;
   status: string;
   attempts: number;
@@ -184,7 +185,12 @@ export function insertSyncOperation(
   db: Database,
   operation: Omit<
     SyncOperationRow,
-    'created_at' | 'updated_at' | 'attempts' | 'payload_plan_uuid' | 'payload_task_uuid'
+    | 'created_at'
+    | 'updated_at'
+    | 'attempts'
+    | 'payload_plan_uuid'
+    | 'payload_secondary_plan_uuid'
+    | 'payload_task_uuid'
   > & {
     attempts?: number;
     created_at?: string;
@@ -206,6 +212,7 @@ export function insertSyncOperation(
           base_hash,
           payload,
           payload_plan_uuid,
+          payload_secondary_plan_uuid,
           payload_task_uuid,
           status,
           attempts,
@@ -214,7 +221,7 @@ export function insertSyncOperation(
           updated_at,
           acked_at,
           ack_metadata
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}), ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}), ?, ?)
       `
     );
     const indexes = getSyncOperationPayloadIndexes(nextOperation.payload);
@@ -230,6 +237,7 @@ export function insertSyncOperation(
       nextOperation.base_hash,
       nextOperation.payload,
       indexes.payloadPlanUuid,
+      indexes.payloadSecondaryPlanUuid,
       indexes.payloadTaskUuid,
       nextOperation.status,
       nextOperation.attempts ?? 0,

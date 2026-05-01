@@ -688,11 +688,9 @@ async function setPlanBaseTrackingInternal(
   planUuid: string,
   update: PlanBaseTrackingUpdate
 ): Promise<void> {
-  if (update.baseBranch !== undefined) {
-    await setSyncedPlanScalar(db, config, planUuid, 'base_branch', update.baseBranch ?? null);
-  }
-
   // baseCommit and baseChangeId are intentionally local-only machine tracking fields.
+  // Apply them first so that if the sync-routed baseBranch write fails afterward,
+  // the local-only columns are still in a consistent state with each other.
   // branch/baseBranch are synced canonical fields and route through the sync write router.
   const updates: string[] = [];
   const values: Array<string | null> = [];
@@ -706,11 +704,13 @@ async function setPlanBaseTrackingInternal(
     values.push(update.baseChangeId ?? null);
   }
 
-  if (updates.length === 0) {
-    return;
+  if (updates.length > 0) {
+    db.prepare(`UPDATE plan SET ${updates.join(', ')} WHERE uuid = ?`).run(...values, planUuid);
   }
 
-  db.prepare(`UPDATE plan SET ${updates.join(', ')} WHERE uuid = ?`).run(...values, planUuid);
+  if (update.baseBranch !== undefined) {
+    await setSyncedPlanScalar(db, config, planUuid, 'base_branch', update.baseBranch ?? null);
+  }
 }
 
 export async function clearPlanBaseTracking(
@@ -718,15 +718,15 @@ export async function clearPlanBaseTracking(
   config: TimConfig,
   planUuid: string
 ): Promise<void> {
-  await setSyncedPlanScalar(db, config, planUuid, 'base_branch', null);
-  // baseCommit/baseChangeId are local-only and should not emit sync operations.
+  // baseCommit/baseChangeId are local-only; apply them first so a sync-routing
+  // failure on the baseBranch clear leaves the local-only columns consistent.
   db.prepare(
     `UPDATE plan
-     SET base_branch = NULL,
-         base_commit = NULL,
+     SET base_commit = NULL,
          base_change_id = NULL
      WHERE uuid = ?`
   ).run(planUuid);
+  await setSyncedPlanScalar(db, config, planUuid, 'base_branch', null);
 }
 
 export function getPlanByPlanId(db: Database, projectId: number, planId: number): PlanRow | null {

@@ -430,6 +430,7 @@ describe('tim db/database', () => {
       .map((row) => row.name);
     expect(syncOperationColumns).toContain('batch_id');
     expect(syncOperationColumns).toContain('payload_plan_uuid');
+    expect(syncOperationColumns).toContain('payload_secondary_plan_uuid');
     expect(syncOperationColumns).toContain('payload_task_uuid');
 
     const indices = db
@@ -461,7 +462,9 @@ describe('tim db/database', () => {
     expect(indices).toContain('idx_sync_operation_status_updated');
     expect(indices).toContain('idx_sync_operation_batch_id');
     expect(indices).toContain('idx_sync_operation_payload_plan_uuid');
+    expect(indices).toContain('idx_sync_operation_payload_secondary_plan_uuid');
     expect(indices).toContain('idx_sync_operation_payload_task_uuid');
+    expect(indices).toContain('idx_sync_operation_target_key');
     expect(indices).toContain('idx_sync_conflict_project_status');
     expect(indices).toContain('idx_sync_sequence_project_sequence');
 
