@@ -20,7 +20,6 @@ import {
   getPlanTasksByUuid,
   type PlanRow,
 } from './db/plan.js';
-import { syncPlanToDb } from './db/plan_sync.js';
 import { getOrCreateProject } from './db/project.js';
 import { SQL_NOW_ISO_UTC } from './db/sql_utils.js';
 import { generatePlanFileContent, readPlanFile } from './plans.js';
@@ -1408,13 +1407,18 @@ export async function syncMaterializedPlan(
       await Bun.write(shadowPath, content);
     }
   } else if (options.force) {
-    await syncPlanToDb(mergedPlan, {
-      baseDir: repoRoot,
-      cwdForIdentity: repoRoot,
-      idToUuid: resolvedContext.planIdToUuid,
-      throwOnError: true,
-      force: options.force,
-    });
+    const config = await loadConfigForMaterializedSync(repoRoot, options);
+    const forceChanges = diffPlanFields(dbPlan, mergedPlan);
+    await syncMaterializedPlanFromDbBaseline(
+      getDatabase(),
+      config,
+      resolvedContext,
+      canonicalRow,
+      dbPlan,
+      mergedPlan,
+      forceChanges.changedFields,
+      { preserveUpdatedAt: options.preserveUpdatedAt }
+    );
   }
 
   if (!options.skipRematerialize) {

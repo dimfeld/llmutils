@@ -17,7 +17,7 @@ import {
   isInGitRepository,
 } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { readPlanFile, setPlanStatusById } from '../plans.js';
+import { readPlanFile, setPlanStatusById, writePlanToDb } from '../plans.js';
 import { generateAlphanumericId } from '../id_utils.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import {
@@ -29,7 +29,6 @@ import {
 import { deleteWorkspace, recordWorkspace } from '../db/workspace.js';
 import { getOrCreateProject } from '../db/project.js';
 import { getDatabase } from '../db/database.js';
-import { syncPlanToDb } from '../db/plan_sync.js';
 import {
   formatWorkspacePath,
   getCombinedTitleFromSummary,
@@ -843,9 +842,9 @@ async function tryReuseExistingWorkspace(
       if (existingWorkspacePlan) {
         try {
           const existingPlan = await readPlanFile(targetPlanFilePathInWorkspace);
-          await syncPlanToDb(existingPlan, {
+          await writePlanToDb(existingPlan, {
             cwdForIdentity: options.mainRepoRoot,
-            throwOnError: true,
+            config,
           });
         } catch (error) {
           warn(

@@ -26,7 +26,6 @@ import { getDefaultConfig } from '../../configSchema.js';
 import { getDatabase } from '../../db/database.js';
 import { getPlanByUuid } from '../../db/plan.js';
 import { getProjectUuidForId, writePlanSetScalar } from '../../sync/write_router.js';
-import { syncPlanToDb } from '../../db/plan_sync.js';
 import { getCombinedTitleFromSummary } from '../../display_utils.js';
 import {
   buildExecutorAndLog,
@@ -39,6 +38,7 @@ import {
   readPlanFile,
   resolvePlanByNumericId,
   setPlanStatusById,
+  writePlanToDb,
   writePlanFile,
 } from '../../plans.js';
 import { findNextActionableItem } from '../../plans/find_next.js';
@@ -1422,10 +1422,9 @@ export async function timAgent(
           updatedPlan.branch = recordedBranch;
         }
         lastKnownPlan = updatedPlan;
-        await syncPlanToDb(updatedPlan, {
+        await writePlanToDb(updatedPlan, {
           cwdForIdentity: currentBaseDir,
-          force: true,
-          throwOnError: true,
+          config,
         });
       } catch (err) {
         const syncError = err instanceof Error ? err : new Error(String(err));

@@ -8,8 +8,7 @@ import { getLoggerAdapter } from '../../logging/adapter.js';
 import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { log, warn, error } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { syncPlanToDb } from '../db/plan_sync.js';
-import { resolvePlanByNumericId } from '../plans.js';
+import { resolvePlanByNumericId, writePlanToDb } from '../plans.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
 import { readPlanFile } from '../plans.js';
@@ -362,10 +361,9 @@ export async function handleGenerateCommand(
           log(chalk.green('✓ Committed changes'));
         }
 
-        await syncPlanToDb(updatedPlan, {
+        await writePlanToDb(updatedPlan, {
           cwdForIdentity: currentBaseDir,
-          force: true,
-          throwOnError: true,
+          config,
         });
       } catch (err) {
         generationError = err;
