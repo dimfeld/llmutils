@@ -249,9 +249,11 @@ async function applyOperationResultsOverHttp(
   }
   const rejectionKeys = rejectedOperationSnapshotKeys(options.db, results);
   if (rejectionKeys.length > 0) {
-    options.db.transaction(() => {
-      recordPendingRollbackKeys(options.db, rejectionKeys);
-    }).immediate();
+    options.db
+      .transaction(() => {
+        recordPendingRollbackKeys(options.db, rejectionKeys);
+      })
+      .immediate();
   }
   for (const key of rejectionKeys) {
     keys.add(key);

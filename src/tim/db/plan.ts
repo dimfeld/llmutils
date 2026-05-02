@@ -102,6 +102,27 @@ export interface UpsertPlanInput {
   tags?: string[];
 }
 
+type PlanTableSet = {
+  plan: 'plan' | 'plan_canonical';
+  task: 'plan_task' | 'task_canonical';
+  dependency: 'plan_dependency' | 'plan_dependency_canonical';
+  tag: 'plan_tag' | 'plan_tag_canonical';
+};
+
+const PROJECTION_PLAN_TABLES: PlanTableSet = {
+  plan: 'plan',
+  task: 'plan_task',
+  dependency: 'plan_dependency',
+  tag: 'plan_tag',
+};
+
+const CANONICAL_PLAN_TABLES: PlanTableSet = {
+  plan: 'plan_canonical',
+  task: 'task_canonical',
+  dependency: 'plan_dependency_canonical',
+  tag: 'plan_tag_canonical',
+};
+
 function parseTimestamp(value: string | null | undefined): number | null {
   if (!value) {
     return null;
@@ -113,8 +134,46 @@ function parseTimestamp(value: string | null | undefined): number | null {
   return parsed;
 }
 
-function replacePlanTasks(
+function getPlanTasksByUuidFromTable(
   db: Database,
+  table: PlanTableSet['task'],
+  planUuid: string
+): PlanTaskRow[] {
+  return db
+    .prepare(`SELECT * FROM ${table} WHERE plan_uuid = ? ORDER BY task_index, id`)
+    .all(planUuid) as PlanTaskRow[];
+}
+
+function getPlanDependenciesByUuidFromTable(
+  db: Database,
+  table: PlanTableSet['dependency'],
+  planUuid: string
+): PlanDependencyRow[] {
+  return db
+    .prepare(
+      `
+      SELECT plan_uuid, depends_on_uuid
+      FROM ${table}
+      WHERE plan_uuid = ?
+      ORDER BY depends_on_uuid
+    `
+    )
+    .all(planUuid) as PlanDependencyRow[];
+}
+
+function getPlanTagsByUuidFromTable(
+  db: Database,
+  table: PlanTableSet['tag'],
+  planUuid: string
+): PlanTagRow[] {
+  return db
+    .prepare(`SELECT * FROM ${table} WHERE plan_uuid = ? ORDER BY tag`)
+    .all(planUuid) as PlanTagRow[];
+}
+
+function replacePlanTasksInTable(
+  db: Database,
+  table: PlanTableSet['task'],
   planUuid: string,
   tasks: Array<{
     uuid?: string;
@@ -124,7 +183,7 @@ function replacePlanTasks(
     revision?: number;
   }>
 ): boolean {
-  const existingTasks = getPlanTasksByUuid(db, planUuid);
+  const existingTasks = getPlanTasksByUuidFromTable(db, table, planUuid);
   const existingByUuid = new Map(
     existingTasks
       .filter((task): task is PlanTaskRow & { uuid: string } => typeof task.uuid === 'string')
@@ -169,7 +228,7 @@ function replacePlanTasks(
     return false;
   }
 
-  db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(planUuid);
+  db.prepare(`DELETE FROM ${table} WHERE plan_uuid = ?`).run(planUuid);
 
   if (normalizedTasks.length === 0) {
     return true;
@@ -177,7 +236,7 @@ function replacePlanTasks(
 
   const insertTask = db.prepare(
     `
-    INSERT INTO plan_task (
+    INSERT INTO ${table} (
       uuid,
       plan_uuid,
       task_index,
@@ -203,13 +262,14 @@ function replacePlanTasks(
   return true;
 }
 
-function replacePlanDependencies(
+function replacePlanDependenciesInTable(
   db: Database,
+  table: PlanTableSet['dependency'],
   planUuid: string,
   dependencyUuids: string[]
 ): boolean {
   const nextDependencyUuids = [...new Set(dependencyUuids)].sort();
-  const existingDependencyUuids = getPlanDependenciesByUuid(db, planUuid).map(
+  const existingDependencyUuids = getPlanDependenciesByUuidFromTable(db, table, planUuid).map(
     (dependency) => dependency.depends_on_uuid
   );
   if (
@@ -221,7 +281,7 @@ function replacePlanDependencies(
     return false;
   }
 
-  db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ?').run(planUuid);
+  db.prepare(`DELETE FROM ${table} WHERE plan_uuid = ?`).run(planUuid);
 
   if (nextDependencyUuids.length === 0) {
     return true;
@@ -229,7 +289,7 @@ function replacePlanDependencies(
 
   const insertDependency = db.prepare(
     `
-    INSERT INTO plan_dependency (
+    INSERT INTO ${table} (
       plan_uuid,
       depends_on_uuid
     ) VALUES (?, ?)
@@ -242,9 +302,14 @@ function replacePlanDependencies(
   return true;
 }
 
-function replacePlanTags(db: Database, planUuid: string, tags: string[]): boolean {
+function replacePlanTagsInTable(
+  db: Database,
+  table: PlanTableSet['tag'],
+  planUuid: string,
+  tags: string[]
+): boolean {
   const nextTags = [...new Set(tags)].sort();
-  const existingTags = getPlanTagsByUuid(db, planUuid).map((tag) => tag.tag);
+  const existingTags = getPlanTagsByUuidFromTable(db, table, planUuid).map((tag) => tag.tag);
   if (
     existingTags.length === nextTags.length &&
     existingTags.every((tag, index) => tag === nextTags[index])
@@ -252,7 +317,7 @@ function replacePlanTags(db: Database, planUuid: string, tags: string[]): boolea
     return false;
   }
 
-  db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(planUuid);
+  db.prepare(`DELETE FROM ${table} WHERE plan_uuid = ?`).run(planUuid);
 
   if (nextTags.length === 0) {
     return true;
@@ -260,7 +325,7 @@ function replacePlanTags(db: Database, planUuid: string, tags: string[]): boolea
 
   const insertTag = db.prepare(
     `
-    INSERT INTO plan_tag (
+    INSERT INTO ${table} (
       plan_uuid,
       tag
     ) VALUES (?, ?)
@@ -341,12 +406,21 @@ function planRowMatches(existing: PlanRow, values: PlanWriteValues): boolean {
   );
 }
 
-export function upsertPlanInTransaction(
+function getPlanByUuidFromTable(
   db: Database,
+  table: PlanTableSet['plan'],
+  uuid: string
+): PlanRow | null {
+  return (db.prepare(`SELECT * FROM ${table} WHERE uuid = ?`).get(uuid) as PlanRow | null) ?? null;
+}
+
+function upsertPlanRowInTransaction(
+  db: Database,
+  tables: PlanTableSet,
   projectId: number,
   input: UpsertPlanInput
 ): PlanRow {
-  const existing = getPlanByUuid(db, input.uuid);
+  const existing = getPlanByUuidFromTable(db, tables.plan, input.uuid);
   const incomingTimestamp = parseTimestamp(input.sourceUpdatedAt);
   const effectiveUpdatedAt = incomingTimestamp === null ? null : (input.sourceUpdatedAt ?? null);
   const incomingCreatedAt = parseTimestamp(input.sourceCreatedAt);
@@ -368,7 +442,7 @@ export function upsertPlanInTransaction(
   if (!existing) {
     db.prepare(
       `
-      INSERT INTO plan (
+      INSERT INTO ${tables.plan} (
         uuid,
         project_id,
         plan_id,
@@ -438,7 +512,7 @@ export function upsertPlanInTransaction(
     planRowChanged = true;
     db.prepare(
       `
-      UPDATE plan SET
+      UPDATE ${tables.plan} SET
         project_id = ?,
         plan_id = ?,
         title = ?,
@@ -503,17 +577,22 @@ export function upsertPlanInTransaction(
     );
   }
 
-  const tasksChanged = replacePlanTasks(db, input.uuid, input.tasks ?? []);
-  const dependenciesChanged = replacePlanDependencies(db, input.uuid, input.dependencyUuids ?? []);
-  const tagsChanged = replacePlanTags(db, input.uuid, input.tags ?? []);
+  const tasksChanged = replacePlanTasksInTable(db, tables.task, input.uuid, input.tasks ?? []);
+  const dependenciesChanged = replacePlanDependenciesInTable(
+    db,
+    tables.dependency,
+    input.uuid,
+    input.dependencyUuids ?? []
+  );
+  const tagsChanged = replacePlanTagsInTable(db, tables.tag, input.uuid, input.tags ?? []);
 
   if (!planRowChanged && (tasksChanged || dependenciesChanged || tagsChanged) && existing) {
     db.prepare(
-      `UPDATE plan SET revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
+      `UPDATE ${tables.plan} SET revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
     ).run(input.uuid);
   }
 
-  const row = getPlanByUuid(db, input.uuid);
+  const row = getPlanByUuidFromTable(db, tables.plan, input.uuid);
   if (!row) {
     throw new Error(`Failed to upsert plan ${input.uuid}`);
   }
@@ -521,10 +600,26 @@ export function upsertPlanInTransaction(
   return row;
 }
 
+export function upsertProjectionPlanInTransaction(
+  db: Database,
+  projectId: number,
+  input: UpsertPlanInput
+): PlanRow {
+  return upsertPlanRowInTransaction(db, PROJECTION_PLAN_TABLES, projectId, input);
+}
+
+export function upsertCanonicalPlanInTransaction(
+  db: Database,
+  projectId: number,
+  input: UpsertPlanInput
+): PlanRow {
+  return upsertPlanRowInTransaction(db, CANONICAL_PLAN_TABLES, projectId, input);
+}
+
 export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInput): PlanRow {
   const upsertInTransaction = db.transaction(
     (nextProjectId: number, nextInput: UpsertPlanInput): PlanRow =>
-      upsertPlanInTransaction(db, nextProjectId, nextInput)
+      upsertProjectionPlanInTransaction(db, nextProjectId, nextInput)
   );
 
   return upsertInTransaction.immediate(projectId, input);
@@ -552,7 +647,7 @@ export function upsertPlanTasks(
         revision?: number;
       }>
     ): void => {
-      if (replacePlanTasks(db, nextPlanUuid, nextTasks)) {
+      if (replacePlanTasksInTable(db, PROJECTION_PLAN_TABLES.task, nextPlanUuid, nextTasks)) {
         db.prepare(
           `UPDATE plan SET revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
         ).run(nextPlanUuid);
@@ -563,8 +658,9 @@ export function upsertPlanTasks(
   upsertTasksInTransaction.immediate(planUuid, tasks);
 }
 
-export function insertPlanTask(
+function insertPlanTaskIntoTable(
   db: Database,
+  table: PlanTableSet['task'],
   planUuid: string,
   task: {
     taskIndex: number;
@@ -576,7 +672,7 @@ export function insertPlanTask(
 ): void {
   db.prepare(
     `
-    INSERT INTO plan_task (
+    INSERT INTO ${table} (
       uuid,
       plan_uuid,
       task_index,
@@ -596,6 +692,34 @@ export function insertPlanTask(
   );
 }
 
+export function insertProjectionPlanTask(
+  db: Database,
+  planUuid: string,
+  task: {
+    taskIndex: number;
+    title: string;
+    description: string;
+    done?: boolean;
+    uuid?: string;
+  }
+): void {
+  insertPlanTaskIntoTable(db, PROJECTION_PLAN_TABLES.task, planUuid, task);
+}
+
+export function insertCanonicalPlanTask(
+  db: Database,
+  planUuid: string,
+  task: {
+    taskIndex: number;
+    title: string;
+    description: string;
+    done?: boolean;
+    uuid?: string;
+  }
+): void {
+  insertPlanTaskIntoTable(db, CANONICAL_PLAN_TABLES.task, planUuid, task);
+}
+
 export function upsertPlanDependencies(
   db: Database,
   planUuid: string,
@@ -603,7 +727,14 @@ export function upsertPlanDependencies(
 ): void {
   const upsertDependenciesInTransaction = db.transaction(
     (nextPlanUuid: string, nextDependencyUuids: string[]): void => {
-      if (replacePlanDependencies(db, nextPlanUuid, nextDependencyUuids)) {
+      if (
+        replacePlanDependenciesInTable(
+          db,
+          PROJECTION_PLAN_TABLES.dependency,
+          nextPlanUuid,
+          nextDependencyUuids
+        )
+      ) {
         db.prepare(
           `UPDATE plan SET revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
         ).run(nextPlanUuid);

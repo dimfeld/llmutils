@@ -17,6 +17,8 @@ export interface ProjectSettingWithMetadata {
   updatedByNode: string | null;
 }
 
+type ProjectSettingTable = 'project_setting' | 'project_setting_canonical';
+
 function canonicalJsonStringify(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map((item) => canonicalJsonStringify(item)).join(',')}]`;
@@ -30,6 +32,124 @@ function canonicalJsonStringify(value: unknown): string {
       .join(',')}}`;
   }
   return JSON.stringify(value);
+}
+
+function getProjectSettingRow(
+  db: Database,
+  table: ProjectSettingTable,
+  projectId: number,
+  setting: string
+): ProjectSetting | null {
+  return (
+    (db
+      .prepare(
+        `
+          SELECT project_id, setting, value, revision, updated_at, updated_by_node
+          FROM ${table}
+          WHERE project_id = ? AND setting = ?
+        `
+      )
+      .get(projectId, setting) as ProjectSetting | null) ?? null
+  );
+}
+
+export function writeProjectionProjectSettingRow(
+  db: Database,
+  projectId: number,
+  setting: string,
+  value: unknown,
+  options: { updatedByNode?: string | null } = {}
+): boolean {
+  return writeProjectSettingRow(db, 'project_setting', projectId, setting, value, options);
+}
+
+export function writeCanonicalProjectSettingRow(
+  db: Database,
+  projectId: number,
+  setting: string,
+  value: unknown,
+  options: { updatedByNode?: string | null } = {}
+): boolean {
+  return writeProjectSettingRow(
+    db,
+    'project_setting_canonical',
+    projectId,
+    setting,
+    value,
+    options
+  );
+}
+
+function writeProjectSettingRow(
+  db: Database,
+  table: ProjectSettingTable,
+  projectId: number,
+  setting: string,
+  value: unknown,
+  options: { updatedByNode?: string | null } = {}
+): boolean {
+  if (value === undefined) {
+    throw new Error('Cannot set a project setting to undefined. Use deleteProjectSetting instead.');
+  }
+
+  const nextValueJson = JSON.stringify(value);
+  const updatedByNode = options.updatedByNode ?? null;
+  const existing = getProjectSettingRow(db, table, projectId, setting);
+  if (
+    existing &&
+    canonicalJsonStringify(JSON.parse(existing.value)) === canonicalJsonStringify(value) &&
+    existing.updated_by_node === updatedByNode
+  ) {
+    return false;
+  }
+
+  db.prepare(
+    `
+      INSERT INTO ${table} (
+        project_id,
+        setting,
+        value,
+        revision,
+        updated_at,
+        updated_by_node
+      ) VALUES (?, ?, ?, 1, ${SQL_NOW_ISO_UTC}, ?)
+      ON CONFLICT(project_id, setting) DO UPDATE SET
+        value = excluded.value,
+        revision = ${table}.revision + 1,
+        updated_at = ${SQL_NOW_ISO_UTC},
+        updated_by_node = excluded.updated_by_node
+    `
+  ).run(projectId, setting, nextValueJson, updatedByNode);
+  return true;
+}
+
+export function deleteProjectionProjectSettingRow(
+  db: Database,
+  projectId: number,
+  setting: string
+): boolean {
+  return deleteProjectSettingRow(db, 'project_setting', projectId, setting);
+}
+
+export function deleteCanonicalProjectSettingRow(
+  db: Database,
+  projectId: number,
+  setting: string
+): boolean {
+  return deleteProjectSettingRow(db, 'project_setting_canonical', projectId, setting);
+}
+
+function deleteProjectSettingRow(
+  db: Database,
+  table: ProjectSettingTable,
+  projectId: number,
+  setting: string
+): boolean {
+  const result = db
+    .prepare(`DELETE FROM ${table} WHERE project_id = ? AND setting = ?`)
+    .run(projectId, setting);
+
+  return result.changes > 0;
 }
 
 export function getProjectSetting(db: Database, projectId: number, setting: string): unknown {
@@ -124,10 +244,6 @@ export function setProjectSetting(
   value: unknown,
   options: { updatedByNode?: string | null } = {}
 ): void {
-  if (value === undefined) {
-    throw new Error('Cannot set a project setting to undefined. Use deleteProjectSetting instead.');
-  }
-
   const setInTransaction = db.transaction(
     (
       nextProjectId: number,
@@ -135,44 +251,9 @@ export function setProjectSetting(
       nextValue: unknown,
       updatedByNode: string | null
     ): void => {
-      const nextValueJson = JSON.stringify(nextValue);
-      const existing = db
-        .prepare(
-          `
-            SELECT value, updated_by_node
-            FROM project_setting
-            WHERE project_id = ? AND setting = ?
-          `
-        )
-        .get(nextProjectId, nextSetting) as Pick<
-        ProjectSetting,
-        'value' | 'updated_by_node'
-      > | null;
-      if (
-        existing &&
-        canonicalJsonStringify(JSON.parse(existing.value)) === canonicalJsonStringify(nextValue) &&
-        existing.updated_by_node === updatedByNode
-      ) {
-        return;
-      }
-
-      db.prepare(
-        `
-          INSERT INTO project_setting (
-            project_id,
-            setting,
-            value,
-            revision,
-            updated_at,
-            updated_by_node
-          ) VALUES (?, ?, ?, 1, ${SQL_NOW_ISO_UTC}, ?)
-          ON CONFLICT(project_id, setting) DO UPDATE SET
-            value = excluded.value,
-            revision = project_setting.revision + 1,
-            updated_at = ${SQL_NOW_ISO_UTC},
-            updated_by_node = excluded.updated_by_node
-        `
-      ).run(nextProjectId, nextSetting, nextValueJson, updatedByNode);
+      writeProjectionProjectSettingRow(db, nextProjectId, nextSetting, nextValue, {
+        updatedByNode,
+      });
     }
   );
 
@@ -182,11 +263,7 @@ export function setProjectSetting(
 export function deleteProjectSetting(db: Database, projectId: number, setting: string): boolean {
   const deleteInTransaction = db.transaction(
     (nextProjectId: number, nextSetting: string): boolean => {
-      const result = db
-        .prepare('DELETE FROM project_setting WHERE project_id = ? AND setting = ?')
-        .run(nextProjectId, nextSetting);
-
-      return result.changes > 0;
+      return deleteProjectionProjectSettingRow(db, nextProjectId, nextSetting);
     }
   );
 

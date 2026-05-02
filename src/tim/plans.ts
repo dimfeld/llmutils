@@ -9,7 +9,6 @@ import {
   getPlansByProject,
   getPlanTagsByUuid,
   getPlanTasksByUuid,
-  upsertPlanInTransaction,
   type PlanRow,
 } from './db/plan.js';
 import { getDatabase } from './db/database.js';

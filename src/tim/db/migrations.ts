@@ -951,7 +951,91 @@ const migrations: Migration[] = [
 
       CREATE UNIQUE INDEX idx_sync_sequence_operation_target_unique
         ON sync_sequence(operation_uuid, target_type, target_key)
-        WHERE operation_uuid IS NOT NULL;
+      WHERE operation_uuid IS NOT NULL;
+    `,
+  },
+  {
+    version: 32,
+    up: `
+      CREATE TABLE plan_canonical (
+        uuid TEXT NOT NULL PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        plan_id INTEGER NOT NULL,
+        title TEXT,
+        goal TEXT,
+        details TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending', 'in_progress', 'done', 'cancelled', 'deferred', 'needs_review')),
+        priority TEXT
+          CHECK(priority IN ('low', 'medium', 'high', 'urgent', 'maybe') OR priority IS NULL),
+        branch TEXT,
+        simple INTEGER,
+        tdd INTEGER,
+        discovered_from INTEGER,
+        issue TEXT,
+        pull_request TEXT,
+        assigned_to TEXT,
+        base_branch TEXT,
+        temp INTEGER,
+        docs TEXT,
+        changed_files TEXT,
+        plan_generated_at TEXT,
+        review_issues TEXT,
+        parent_uuid TEXT,
+        epic INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        docs_updated_at TEXT,
+        lessons_applied_at TEXT,
+        note TEXT,
+        base_commit TEXT,
+        base_change_id TEXT,
+        revision INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX idx_plan_canonical_project_id ON plan_canonical(project_id);
+      CREATE INDEX idx_plan_canonical_project_plan_id ON plan_canonical(project_id, plan_id);
+      CREATE INDEX idx_plan_canonical_parent_uuid ON plan_canonical(parent_uuid);
+
+      CREATE TABLE task_canonical (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_uuid TEXT NOT NULL REFERENCES plan_canonical(uuid) ON DELETE CASCADE,
+        task_index INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0,
+        uuid TEXT,
+        revision INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(plan_uuid, task_index)
+      );
+      CREATE INDEX idx_task_canonical_plan_uuid ON task_canonical(plan_uuid);
+      CREATE UNIQUE INDEX idx_task_canonical_uuid_unique ON task_canonical(uuid);
+
+      CREATE TABLE plan_dependency_canonical (
+        plan_uuid TEXT NOT NULL REFERENCES plan_canonical(uuid) ON DELETE CASCADE,
+        depends_on_uuid TEXT NOT NULL,
+        PRIMARY KEY(plan_uuid, depends_on_uuid)
+      );
+
+      CREATE TABLE plan_tag_canonical (
+        plan_uuid TEXT NOT NULL REFERENCES plan_canonical(uuid) ON DELETE CASCADE,
+        tag TEXT NOT NULL,
+        PRIMARY KEY(plan_uuid, tag)
+      );
+      CREATE INDEX idx_plan_tag_canonical_plan_uuid ON plan_tag_canonical(plan_uuid);
+
+      CREATE TABLE project_setting_canonical (
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        setting TEXT NOT NULL,
+        value TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT,
+        updated_by_node TEXT,
+        PRIMARY KEY (project_id, setting)
+      );
+
+      -- TODO(plan 339 task 13): drop sync_pending_rollback after the rollback writers
+      -- and tests are removed. Keeping it in this migration preserves the current
+      -- sync test/runtime behavior while foundational projection schema lands.
     `,
   },
 ];

@@ -1,5 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
+import type { PlanDependencyRow, PlanRow, PlanTagRow, PlanTaskRow } from './plan.js';
+import type { ProjectSetting } from './project_settings.js';
 import { getSyncOperationPayloadIndexes } from '../sync/payload_indexes.js';
 import { getSyncOperationPlanRefs } from '../sync/plan_refs.js';
 
@@ -84,6 +86,12 @@ export interface TimNodeCursorRow {
   last_known_sequence_id: number;
   updated_at: string;
 }
+
+export type CanonicalPlanRow = PlanRow;
+export type CanonicalTaskRow = PlanTaskRow;
+export type CanonicalPlanDependencyRow = PlanDependencyRow;
+export type CanonicalPlanTagRow = PlanTagRow;
+export type CanonicalProjectSettingRow = ProjectSetting;
 
 export function upsertTimNode(
   db: Database,

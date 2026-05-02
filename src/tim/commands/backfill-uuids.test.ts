@@ -13,12 +13,7 @@ function createMigratedDatabase(): Database {
   return db;
 }
 
-function insertProject(
-  db: Database,
-  id: number,
-  repositoryId: string,
-  uuid: string | null
-): void {
+function insertProject(db: Database, id: number, repositoryId: string, uuid: string | null): void {
   db.prepare(
     `INSERT INTO project (
       id,
@@ -73,21 +68,21 @@ function insertTask(
 }
 
 function getProjectUuids(db: Database): Array<string | null> {
-  return (db.prepare('SELECT uuid FROM project ORDER BY id').all() as Array<{ uuid: string | null }>).map(
-    (row) => row.uuid
-  );
+  return (
+    db.prepare('SELECT uuid FROM project ORDER BY id').all() as Array<{ uuid: string | null }>
+  ).map((row) => row.uuid);
 }
 
 function getPlanUuids(db: Database): Array<string | null> {
-  return (db.prepare('SELECT uuid FROM plan ORDER BY plan_id').all() as Array<{ uuid: string | null }>).map(
-    (row) => row.uuid
-  );
+  return (
+    db.prepare('SELECT uuid FROM plan ORDER BY plan_id').all() as Array<{ uuid: string | null }>
+  ).map((row) => row.uuid);
 }
 
 function getTaskUuids(db: Database): Array<string | null> {
-  return (db.prepare('SELECT uuid FROM plan_task ORDER BY id').all() as Array<{ uuid: string | null }>).map(
-    (row) => row.uuid
-  );
+  return (
+    db.prepare('SELECT uuid FROM plan_task ORDER BY id').all() as Array<{ uuid: string | null }>
+  ).map((row) => row.uuid);
 }
 
 function expectUniqueIndexes(db: Database): void {
@@ -95,13 +90,17 @@ function expectUniqueIndexes(db: Database): void {
     name: string;
     unique: number;
   }>;
-  expect(projectIndexes.some((index) => index.name === 'idx_project_uuid_unique' && index.unique === 1)).toBe(true);
+  expect(
+    projectIndexes.some((index) => index.name === 'idx_project_uuid_unique' && index.unique === 1)
+  ).toBe(true);
 
   const taskIndexes = db.prepare("PRAGMA index_list('plan_task')").all() as Array<{
     name: string;
     unique: number;
   }>;
-  expect(taskIndexes.some((index) => index.name === 'idx_plan_task_uuid_unique' && index.unique === 1)).toBe(true);
+  expect(
+    taskIndexes.some((index) => index.name === 'idx_plan_task_uuid_unique' && index.unique === 1)
+  ).toBe(true);
 }
 
 describe('backfill-uuids command helpers', () => {

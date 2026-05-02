@@ -4,7 +4,7 @@ import * as z from 'zod/v4';
 import { warn } from '../../logging.js';
 import { removeAssignment } from '../db/assignment.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
-import { upsertPlanInTransaction, type PlanRow, type PlanTaskRow } from '../db/plan.js';
+import { upsertProjectionPlanInTransaction, type PlanRow, type PlanTaskRow } from '../db/plan.js';
 import { getProjectByUuid } from '../db/project.js';
 import { planKey, projectSettingKey, taskKey } from './entity_keys.js';
 import {
@@ -1328,7 +1328,7 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
     base_commit: string | null;
     base_change_id: string | null;
   } | null;
-  upsertPlanInTransaction(db, project.id, {
+  upsertProjectionPlanInTransaction(db, project.id, {
     uuid: snapshot.plan.uuid,
     planId: snapshot.plan.planId,
     title: snapshot.plan.title,

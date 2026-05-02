@@ -251,9 +251,7 @@ describe('sync runner', () => {
         { originNodeId: NODE_ID, localSequence: 0 }
       )
     );
-    expect(getPlanTagsByUuid(db, PLAN_UUID).map((row) => row.tag)).toEqual([
-      'optimistic-rejected',
-    ]);
+    expect(getPlanTagsByUuid(db, PLAN_UUID).map((row) => row.tag)).toEqual(['optimistic-rejected']);
     clientMocks.httpFlushOperations.mockResolvedValue({
       ok: true,
       value: {
@@ -279,9 +277,7 @@ describe('sync runner', () => {
     ).rejects.toThrow('snapshot fetch failed');
 
     expect(getPendingRollbackKeys(db)).toEqual([`plan:${PLAN_UUID}`]);
-    expect(getPlanTagsByUuid(db, PLAN_UUID).map((row) => row.tag)).toEqual([
-      'optimistic-rejected',
-    ]);
+    expect(getPlanTagsByUuid(db, PLAN_UUID).map((row) => row.tag)).toEqual(['optimistic-rejected']);
   });
 
   test('markOperationAcked tolerates operations already acked by another transport', async () => {
