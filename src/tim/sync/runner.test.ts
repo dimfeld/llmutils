@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { runMigrations } from '../db/migrations.js';
-import { getPlanByUuid, getPlanTasksByUuid, upsertPlan } from '../db/plan.js';
+import { getPlanByUuid, getPlanTagsByUuid, getPlanTasksByUuid, upsertPlan } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 import { getTimNodeCursor, insertSyncOperation, upsertTimNode } from '../db/sync_tables.js';
 import {
@@ -238,6 +238,50 @@ describe('sync runner', () => {
 
     expect(operationStatus(db, batched.operationUuid)).toBe('acked');
     expect(operationStatus(db, later.operationUuid)).toBe('failed_retryable');
+  });
+
+  test('flushPendingOperationsOnce records rollback keys before rejected HTTP snapshot fetches', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    const queued = enqueueOperation(
+      db,
+      await addPlanTagOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, tag: 'optimistic-rejected' },
+        { originNodeId: NODE_ID, localSequence: 0 }
+      )
+    );
+    expect(getPlanTagsByUuid(db, PLAN_UUID).map((row) => row.tag)).toEqual([
+      'optimistic-rejected',
+    ]);
+    clientMocks.httpFlushOperations.mockResolvedValue({
+      ok: true,
+      value: {
+        results: [
+          {
+            operationId: queued.operation.operationUuid,
+            status: 'rejected',
+            error: 'main rejected operation',
+          },
+        ],
+        currentSequenceId: 0,
+      },
+    });
+    clientMocks.httpFetchSnapshots.mockRejectedValue(new Error('snapshot fetch failed'));
+
+    await expect(
+      flushPendingOperationsOnce({
+        db,
+        serverUrl: 'http://127.0.0.1:9',
+        nodeId: NODE_ID,
+        token: 'token',
+      })
+    ).rejects.toThrow('snapshot fetch failed');
+
+    expect(getPendingRollbackKeys(db)).toEqual([`plan:${PLAN_UUID}`]);
+    expect(getPlanTagsByUuid(db, PLAN_UUID).map((row) => row.tag)).toEqual([
+      'optimistic-rejected',
+    ]);
   });
 
   test('markOperationAcked tolerates operations already acked by another transport', async () => {
