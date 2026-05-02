@@ -150,6 +150,16 @@ describe('rebuildPlanProjection', () => {
     ]);
   });
 
+  test('folds add_tag operation over canonical and advances projected revision', async () => {
+    writeCanonicalPlan({ revision: 3, title: 'Canonical', tags: [] });
+    await enqueuePlanAddTag('sync', 1);
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({ revision: 4 });
+    expect(getPlanTagsByUuid(db, PLAN_UUID)).toEqual([{ plan_uuid: PLAN_UUID, tag: 'sync' }]);
+  });
+
   test('creates projection from ghost canonical plus plan.create operation', async () => {
     await enqueueOperation(
       db,
@@ -781,7 +791,7 @@ describe('rebuildPlanProjection', () => {
   test('canonical update for one field preserves pending edit on another field', async () => {
     writeCanonicalPlan({ revision: 1, title: 'Plan', status: 'pending' });
     // Enqueue a status change
-    await enqueuePlanSetScalar('status', 'in_progress', 1, 1);
+    await enqueuePlanSetScalar('status', 'in_progress', 1, 1, 'pending');
 
     // Simulate canonical update arriving (e.g. title changed on main node)
     writeCanonicalPlan({ revision: 2, title: 'Updated by main' });
@@ -795,6 +805,21 @@ describe('rebuildPlanProjection', () => {
       title: 'Updated by main',
       status: 'in_progress',
       revision: 3,
+    });
+  });
+
+  test('canonical update for same scalar field skips stale pending edit', async () => {
+    writeCanonicalPlan({ revision: 1, title: 'Plan', status: 'pending' });
+    await enqueuePlanSetScalar('status', 'in_progress', 1, 1, 'pending');
+
+    writeCanonicalPlan({ revision: 2, title: 'Plan', status: 'needs_review' });
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+      title: 'Plan',
+      status: 'needs_review',
+      revision: 2,
     });
   });
 
@@ -1207,13 +1232,14 @@ async function enqueuePlanSetScalar(
   field: 'status',
   value: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred' | 'needs_review',
   baseRevision?: number,
-  localSequence = 1
+  localSequence = 1,
+  baseValue?: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred' | 'needs_review'
 ) {
   return enqueueOperation(
     db,
     await setPlanScalarOperation(
       PROJECT_UUID,
-      { planUuid: PLAN_UUID, field, value, baseRevision },
+      { planUuid: PLAN_UUID, field, value, baseRevision, baseValue },
       { originNodeId: NODE_A, localSequence }
     )
   ).operation;

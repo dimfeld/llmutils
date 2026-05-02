@@ -2449,13 +2449,11 @@ export function applyOperationToPrecondition(message: string): never {
 /**
  * Adapter-based operation fold used by both canonical apply and projection
  * rebuilds. Canonical apply uses strict CAS against the entity revision.
- * Projection replay is more permissive for plan-scoped ops: an op is skipped
- * only when its base revision is from the future relative to the replay state.
- * That keeps unrelated canonical updates from erasing still-active local edits.
- *
- * The v1 plan operation payloads do not carry old scalar/list values, so the
- * projection adapter cannot reliably diagnose same-field stale conflicts during
- * replay. The main node remains the rejection authority through strict CAS.
+ * Projection replay uses field-aware stale checks: future revisions are skipped,
+ * equal revisions apply normally, and stale revisions apply only when the op's
+ * target field/sub-entity still matches the pre-state recorded in the payload.
+ * This preserves unrelated pending edits over newer canonical snapshots without
+ * letting stale same-field writes overwrite canonical state.
  */
 export function applyOperationTo(
   adapter: ApplyOperationToAdapter,
@@ -2479,16 +2477,14 @@ function applyOperationToUnchecked(
 ): Mutation[] {
   const op = envelope.op;
   if ('baseRevision' in op && typeof op.baseRevision === 'number') {
-    const planUuid =
-      op.type === 'plan.promote_task' ? op.sourcePlanUuid : 'planUuid' in op ? op.planUuid : null;
-    if (planUuid) {
-      const plan = adapter.getPlan(planUuid);
+    const baseTarget = getBaseRevisionTarget(adapter, op);
+    if (baseTarget) {
       const isStale =
         adapter.baseRevisionMode === 'projection'
-          ? op.baseRevision > (plan?.revision ?? -1)
-          : !plan || plan.revision !== op.baseRevision;
+          ? shouldSkipProjectionBaseRevision(adapter, op, baseTarget)
+          : !baseTarget.exists || baseTarget.revision !== op.baseRevision;
       if (isStale) {
-        applyOperationToPrecondition(`Stale base revision for plan ${planUuid}`);
+        applyOperationToPrecondition(`Stale base revision for plan ${baseTarget.planUuid}`);
       }
     }
   }
@@ -2617,6 +2613,148 @@ function applyOperationToUnchecked(
       return exhaustive;
     }
   }
+}
+
+type BaseRevisionTarget = {
+  planUuid: string;
+  revision: number;
+  exists: boolean;
+};
+
+function getBaseRevisionTarget(
+  adapter: ApplyOperationToAdapter,
+  op: Extract<SyncOperationPayload, { baseRevision?: number }>
+): BaseRevisionTarget | null {
+  switch (op.type) {
+    case 'plan.update_task_text':
+    case 'plan.remove_task': {
+      const task = adapter.getTasks(op.planUuid).find((item) => item.uuid === op.taskUuid);
+      return {
+        planUuid: op.planUuid,
+        revision: task?.revision ?? -1,
+        exists: task !== undefined,
+      };
+    }
+    case 'plan.promote_task': {
+      const plan = adapter.getPlan(op.sourcePlanUuid);
+      return {
+        planUuid: op.sourcePlanUuid,
+        revision: plan?.revision ?? -1,
+        exists: plan !== null,
+      };
+    }
+    case 'plan.set_scalar':
+    case 'plan.patch_text':
+    case 'plan.delete':
+    case 'plan.set_parent': {
+      const plan = adapter.getPlan(op.planUuid);
+      return {
+        planUuid: op.planUuid,
+        revision: plan?.revision ?? -1,
+        exists: plan !== null,
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+function shouldSkipProjectionBaseRevision(
+  adapter: ApplyOperationToAdapter,
+  op: Extract<SyncOperationPayload, { baseRevision?: number }>,
+  target: BaseRevisionTarget
+): boolean {
+  if (typeof op.baseRevision !== 'number') {
+    return false;
+  }
+  if (!target.exists || op.baseRevision > target.revision) {
+    return true;
+  }
+  if (op.baseRevision === target.revision) {
+    return false;
+  }
+
+  switch (op.type) {
+    case 'plan.set_scalar':
+      return !projectionScalarPrestateMatches(adapter, op);
+    case 'plan.patch_text':
+      return !projectionPlanTextPrestateMatches(adapter, op);
+    case 'plan.update_task_text':
+      return !projectionTaskTextPrestateMatches(adapter, op);
+    case 'plan.remove_task':
+      return false;
+    case 'plan.set_parent':
+      return !projectionParentPrestateMatches(adapter, op);
+    case 'plan.delete':
+    case 'plan.promote_task':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function projectionScalarPrestateMatches(
+  adapter: ApplyOperationToAdapter,
+  op: Extract<SyncOperationPayload, { type: 'plan.set_scalar' }>
+): boolean {
+  if (!('baseValue' in op) || op.baseValue === undefined) {
+    return false;
+  }
+  const plan = adapter.getPlan(op.planUuid);
+  if (!plan) {
+    return false;
+  }
+  const current = (plan as unknown as Record<string, unknown>)[op.field];
+  const expected = normalizePlanScalarAdapterValue(adapter, op.field, op.baseValue);
+  return current === expected;
+}
+
+function projectionPlanTextPrestateMatches(
+  adapter: ApplyOperationToAdapter,
+  op: Extract<SyncOperationPayload, { type: 'plan.patch_text' }>
+): boolean {
+  const plan = adapter.getPlan(op.planUuid);
+  if (!plan) {
+    return false;
+  }
+  const column = PLAN_TEXT_COLUMNS[op.field];
+  return ((plan[column] ?? '') as string).toString() === op.base;
+}
+
+function projectionTaskTextPrestateMatches(
+  adapter: ApplyOperationToAdapter,
+  op: Extract<SyncOperationPayload, { type: 'plan.update_task_text' }>
+): boolean {
+  const task = adapter.getTasks(op.planUuid).find((item) => item.uuid === op.taskUuid);
+  if (!task) {
+    return false;
+  }
+  const column = TASK_TEXT_COLUMNS[op.field];
+  return (task[column] ?? '').toString() === op.base;
+}
+
+function projectionParentPrestateMatches(
+  adapter: ApplyOperationToAdapter,
+  op: Extract<SyncOperationPayload, { type: 'plan.set_parent' }>
+): boolean {
+  if (!('previousParentUuid' in op)) {
+    return false;
+  }
+  return (adapter.getPlan(op.planUuid)?.parent_uuid ?? null) === (op.previousParentUuid ?? null);
+}
+
+function normalizePlanScalarAdapterValue(
+  adapter: ApplyOperationToAdapter,
+  field: Extract<SyncOperationPayload, { type: 'plan.set_scalar' }>['field'],
+  value: Extract<SyncOperationPayload, { type: 'plan.set_scalar' }>['value']
+): unknown {
+  if (field === 'epic') {
+    return value ? 1 : 0;
+  }
+  if (field === 'discovered_from') {
+    return adapter.resolveLocalPlanId(value as string | null);
+  }
+  return value;
 }
 
 function clonePlanWithBump(

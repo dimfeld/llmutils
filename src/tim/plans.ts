@@ -845,6 +845,7 @@ export function routePlanWriteIntoBatch(
           planUuid: plan.uuid!,
           field,
           value: nextValue,
+          baseValue: currentValue,
           baseRevision: existingRow.revision,
         });
       }

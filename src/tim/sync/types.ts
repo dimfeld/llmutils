@@ -117,6 +117,9 @@ export const SyncPlanSetScalarPayloadSchema = z
       'lessons_applied_at',
     ]),
     value: z.union([prioritySchema, statusSchema, z.string(), z.number(), z.boolean(), z.null()]),
+    baseValue: z
+      .union([prioritySchema, statusSchema, z.string(), z.number(), z.boolean(), z.null()])
+      .optional(),
     ...baseRevisionShape,
   })
   .superRefine((payload, ctx) => {
