@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import type { PlanDependencyRow, PlanRow, PlanTagRow, PlanTaskRow } from '../db/plan.js';
 import {
   deleteProjectionProjectSettingRow,
   type ProjectSetting,
@@ -7,6 +8,13 @@ import {
 import { getProjectById, getProjectByUuid } from '../db/project.js';
 import { projectSettingKey } from './entity_keys.js';
 import { assertValidPayload, type SyncOperationPayload } from './types.js';
+import type { SyncOperationEnvelope } from './types.js';
+import {
+  applyOperationTo,
+  type ApplyOperationToAdapter,
+  type ApplyOperationToPlan,
+  type ApplyOperationToTask,
+} from './apply.js';
 
 /*
  * Persistent-node projection invariant:
@@ -39,6 +47,17 @@ interface ActiveProjectSettingOperationRow {
   payload: string;
   origin_node_id: string;
   local_sequence: number;
+}
+
+interface ActivePlanOperationRow {
+  project_uuid: string;
+  operation_uuid: string;
+  origin_node_id: string;
+  local_sequence: number;
+  target_type: string;
+  target_key: string;
+  created_at: string;
+  payload: string;
 }
 
 interface FoldedProjectSettingProjection {
@@ -150,4 +169,358 @@ function foldProjectSettingProjection(
   }
 
   return { present, value, revision: runningRevision, updatedByNode };
+}
+
+export function rebuildPlanProjection(db: Database, planUuid: string): void {
+  const canonical = readCanonicalPlanState(db, planUuid);
+  const activeRows = readActivePlanOperationRows(db, planUuid);
+  const existingProjection = db
+    .prepare('SELECT base_commit, base_change_id FROM plan WHERE uuid = ?')
+    .get(planUuid) as Pick<PlanRow, 'base_commit' | 'base_change_id'> | null;
+
+  if (!canonical.plan && activeRows.length === 0) {
+    deleteProjectionPlanState(db, planUuid);
+    return;
+  }
+
+  const projectUuid = canonical.projectUuid ?? activeRows[0]?.project_uuid;
+  if (!projectUuid) {
+    deleteProjectionPlanState(db, planUuid);
+    return;
+  }
+  const project = getProjectByUuid(db, projectUuid);
+  if (!project) {
+    deleteProjectionPlanState(db, planUuid);
+    return;
+  }
+
+  const adapter = new ProjectionPlanAdapter(db, project, canonical);
+  for (const row of activeRows) {
+    const op = assertValidPayload(JSON.parse(row.payload));
+    applyOperationTo(
+      adapter,
+      {
+        operationUuid: row.operation_uuid,
+        projectUuid: row.project_uuid,
+        originNodeId: row.origin_node_id,
+        localSequence: row.local_sequence,
+        createdAt: row.created_at,
+        targetType: row.target_type as SyncOperationEnvelope['targetType'],
+        targetKey: row.target_key,
+        op,
+      },
+      { cleanupAssignmentsOnStatusChange: false }
+    );
+  }
+
+  const nextPlan = adapter.getPlan(planUuid);
+  if (!nextPlan) {
+    deleteProjectionPlanState(db, planUuid);
+    return;
+  }
+  writeProjectionPlanState(db, planUuid, {
+    plan: {
+      ...nextPlan,
+      base_commit: existingProjection?.base_commit ?? nextPlan.base_commit,
+      base_change_id: existingProjection?.base_change_id ?? nextPlan.base_change_id,
+    },
+    tasks: adapter.getTasks(planUuid),
+    dependencies: adapter.getDependencies(planUuid),
+    tags: adapter.getTags(planUuid),
+  });
+}
+
+interface PlanState {
+  projectUuid: string | null;
+  plan: ApplyOperationToPlan | null;
+  tasks: ApplyOperationToTask[];
+  dependencies: PlanDependencyRow[];
+  tags: PlanTagRow[];
+}
+
+function readCanonicalPlanState(db: Database, planUuid: string): PlanState {
+  const tombstone = db
+    .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+    .get('plan', `plan:${planUuid}`);
+  if (tombstone) {
+    return { projectUuid: null, plan: null, tasks: [], dependencies: [], tags: [] };
+  }
+  const plan = db
+    .prepare('SELECT * FROM plan_canonical WHERE uuid = ?')
+    .get(planUuid) as PlanRow | null;
+  if (!plan) {
+    return { projectUuid: null, plan: null, tasks: [], dependencies: [], tags: [] };
+  }
+  const project = getProjectById(db, plan.project_id);
+  return {
+    projectUuid: project?.uuid ?? null,
+    plan,
+    tasks: db
+      .prepare('SELECT * FROM task_canonical WHERE plan_uuid = ? ORDER BY task_index, id')
+      .all(planUuid) as PlanTaskRow[],
+    dependencies: db
+      .prepare(
+        'SELECT plan_uuid, depends_on_uuid FROM plan_dependency_canonical WHERE plan_uuid = ? ORDER BY depends_on_uuid'
+      )
+      .all(planUuid) as PlanDependencyRow[],
+    tags: db
+      .prepare('SELECT plan_uuid, tag FROM plan_tag_canonical WHERE plan_uuid = ? ORDER BY tag')
+      .all(planUuid) as PlanTagRow[],
+  };
+}
+
+function readActivePlanOperationRows(db: Database, planUuid: string): ActivePlanOperationRow[] {
+  return db
+    .prepare(
+      `
+        SELECT o.project_uuid, o.operation_uuid, o.origin_node_id, o.local_sequence,
+               o.target_type, o.target_key, o.created_at, o.payload
+        FROM sync_operation_plan_ref ref
+        JOIN sync_operation o ON o.operation_uuid = ref.operation_uuid
+        WHERE ref.plan_uuid = ?
+          AND o.status IN (${ACTIVE_PROJECTION_OPERATION_STATUSES.map(() => '?').join(', ')})
+        ORDER BY o.origin_node_id, o.local_sequence
+      `
+    )
+    .all(planUuid, ...ACTIVE_PROJECTION_OPERATION_STATUSES) as ActivePlanOperationRow[];
+}
+
+class ProjectionPlanAdapter implements ApplyOperationToAdapter {
+  readonly skipPreconditionFailures = true;
+  readonly project: { id: number; uuid: string };
+
+  private plans = new Map<string, ApplyOperationToPlan | null>();
+  private tasks = new Map<string, ApplyOperationToTask[]>();
+  private dependencies = new Map<string, PlanDependencyRow[]>();
+  private tags = new Map<string, PlanTagRow[]>();
+
+  constructor(
+    private readonly db: Database,
+    project: { id: number; uuid: string },
+    initial: PlanState
+  ) {
+    this.project = project;
+    if (initial.plan) {
+      this.plans.set(initial.plan.uuid, { ...initial.plan });
+      this.tasks.set(
+        initial.plan.uuid,
+        initial.tasks.map((task) => ({ ...task }))
+      );
+      this.dependencies.set(
+        initial.plan.uuid,
+        initial.dependencies.map((dependency) => ({ ...dependency }))
+      );
+      this.tags.set(
+        initial.plan.uuid,
+        initial.tags.map((tag) => ({ ...tag }))
+      );
+    }
+  }
+
+  getPlan(planUuid: string): ApplyOperationToPlan | null {
+    if (!this.plans.has(planUuid)) {
+      this.loadCanonicalPlan(planUuid);
+    }
+    const plan = this.plans.get(planUuid) ?? null;
+    return plan ? { ...plan } : null;
+  }
+
+  setPlan(plan: ApplyOperationToPlan): void {
+    this.plans.set(plan.uuid, { ...plan });
+    if (!this.tasks.has(plan.uuid)) {
+      this.tasks.set(plan.uuid, []);
+    }
+    if (!this.dependencies.has(plan.uuid)) {
+      this.dependencies.set(plan.uuid, []);
+    }
+    if (!this.tags.has(plan.uuid)) {
+      this.tags.set(plan.uuid, []);
+    }
+  }
+
+  deletePlan(planUuid: string): void {
+    this.plans.set(planUuid, null);
+    this.tasks.set(planUuid, []);
+    this.dependencies.set(planUuid, []);
+    this.tags.set(planUuid, []);
+  }
+
+  getTasks(planUuid: string): ApplyOperationToTask[] {
+    this.ensurePlanCollectionsLoaded(planUuid);
+    return (this.tasks.get(planUuid) ?? []).map((task) => ({ ...task }));
+  }
+
+  setTasks(planUuid: string, tasks: ApplyOperationToTask[]): void {
+    this.tasks.set(
+      planUuid,
+      tasks.map((task) => ({ ...task }))
+    );
+  }
+
+  getDependencies(planUuid: string): PlanDependencyRow[] {
+    this.ensurePlanCollectionsLoaded(planUuid);
+    return (this.dependencies.get(planUuid) ?? []).map((dependency) => ({ ...dependency }));
+  }
+
+  setDependencies(planUuid: string, dependencies: PlanDependencyRow[]): void {
+    this.dependencies.set(
+      planUuid,
+      dependencies.map((dependency) => ({ ...dependency }))
+    );
+  }
+
+  getTags(planUuid: string): PlanTagRow[] {
+    this.ensurePlanCollectionsLoaded(planUuid);
+    return (this.tags.get(planUuid) ?? []).map((tag) => ({ ...tag }));
+  }
+
+  setTags(planUuid: string, tags: PlanTagRow[]): void {
+    this.tags.set(
+      planUuid,
+      tags.map((tag) => ({ ...tag }))
+    );
+  }
+
+  resolveLocalPlanId(planUuid: string | null | undefined): number | null {
+    if (!planUuid) {
+      return null;
+    }
+    return this.getPlan(planUuid)?.plan_id ?? null;
+  }
+
+  resolvePlanCreateNumericPlanId(requestedPlanId: number | undefined): number {
+    if (requestedPlanId !== undefined) {
+      return requestedPlanId;
+    }
+    const maxLoaded = Math.max(
+      0,
+      ...[...this.plans.values()]
+        .filter((plan): plan is ApplyOperationToPlan => !!plan)
+        .map((plan) => plan.plan_id)
+    );
+    const row = this.db
+      .prepare('SELECT COALESCE(MAX(plan_id), 0) AS max_plan_id FROM plan WHERE project_id = ?')
+      .get(this.project.id) as { max_plan_id: number };
+    return Math.max(maxLoaded, row.max_plan_id) + 1;
+  }
+
+  private ensurePlanCollectionsLoaded(planUuid: string): void {
+    if (!this.plans.has(planUuid)) {
+      this.loadCanonicalPlan(planUuid);
+    }
+  }
+
+  private loadCanonicalPlan(planUuid: string): void {
+    const state = readCanonicalPlanState(this.db, planUuid);
+    this.plans.set(planUuid, state.plan ? { ...state.plan } : null);
+    this.tasks.set(
+      planUuid,
+      state.tasks.map((task) => ({ ...task }))
+    );
+    this.dependencies.set(
+      planUuid,
+      state.dependencies.map((dependency) => ({ ...dependency }))
+    );
+    this.tags.set(
+      planUuid,
+      state.tags.map((tag) => ({ ...tag }))
+    );
+  }
+}
+
+function deleteProjectionPlanState(db: Database, planUuid: string): void {
+  db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? OR depends_on_uuid = ?').run(
+    planUuid,
+    planUuid
+  );
+  db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(planUuid);
+  db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(planUuid);
+  db.prepare('DELETE FROM plan WHERE uuid = ?').run(planUuid);
+}
+
+function writeProjectionPlanState(
+  db: Database,
+  planUuid: string,
+  state: {
+    plan: ApplyOperationToPlan;
+    tasks: ApplyOperationToTask[];
+    dependencies: PlanDependencyRow[];
+    tags: PlanTagRow[];
+  }
+): void {
+  deleteProjectionPlanState(db, planUuid);
+  db.prepare(
+    `
+      INSERT INTO plan (
+        uuid, project_id, plan_id, title, goal, note, details, status, priority,
+        branch, simple, tdd, discovered_from, issue, pull_request, assigned_to,
+        base_branch, base_commit, base_change_id, temp, docs, changed_files,
+        plan_generated_at, review_issues, docs_updated_at, lessons_applied_at,
+        parent_uuid, epic, revision, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    state.plan.uuid,
+    state.plan.project_id,
+    state.plan.plan_id,
+    state.plan.title,
+    state.plan.goal,
+    state.plan.note,
+    state.plan.details,
+    state.plan.status,
+    state.plan.priority,
+    state.plan.branch,
+    state.plan.simple,
+    state.plan.tdd,
+    state.plan.discovered_from,
+    state.plan.issue,
+    state.plan.pull_request,
+    state.plan.assigned_to,
+    state.plan.base_branch,
+    state.plan.base_commit,
+    state.plan.base_change_id,
+    state.plan.temp,
+    state.plan.docs,
+    state.plan.changed_files,
+    state.plan.plan_generated_at,
+    state.plan.review_issues,
+    state.plan.docs_updated_at,
+    state.plan.lessons_applied_at,
+    state.plan.parent_uuid,
+    state.plan.epic,
+    state.plan.revision,
+    state.plan.created_at,
+    state.plan.updated_at
+  );
+
+  const insertTask = db.prepare(
+    `
+      INSERT INTO plan_task (uuid, plan_uuid, task_index, title, description, done, revision)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `
+  );
+  for (const task of state.tasks.sort((a, b) => a.task_index - b.task_index)) {
+    insertTask.run(
+      task.uuid ?? crypto.randomUUID(),
+      planUuid,
+      task.task_index,
+      task.title,
+      task.description,
+      task.done,
+      task.revision
+    );
+  }
+
+  const insertDependency = db.prepare(
+    'INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)'
+  );
+  for (const dependency of state.dependencies) {
+    insertDependency.run(dependency.plan_uuid, dependency.depends_on_uuid);
+  }
+
+  const insertTag = db.prepare('INSERT OR IGNORE INTO plan_tag (plan_uuid, tag) VALUES (?, ?)');
+  for (const tag of state.tags) {
+    insertTag.run(tag.plan_uuid, tag.tag);
+  }
 }
