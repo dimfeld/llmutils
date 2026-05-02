@@ -64,9 +64,17 @@ export function writeProjectionProjectSettingRow(
   projectId: number,
   setting: string,
   value: unknown,
-  options: { updatedByNode?: string | null } = {}
+  options: { revision?: number; updatedByNode?: string | null } = {}
 ): boolean {
-  return writeProjectSettingRow(db, 'project_setting', projectId, setting, value, options, 'auto');
+  return writeProjectSettingRow(
+    db,
+    'project_setting',
+    projectId,
+    setting,
+    value,
+    options,
+    typeof options.revision === 'number' ? 'explicit' : 'auto'
+  );
 }
 
 export function writeCanonicalProjectSettingRow(
@@ -100,7 +108,7 @@ function writeProjectSettingRow(
     throw new Error('Cannot set a project setting to undefined. Use deleteProjectSetting instead.');
   }
   if (revisionMode === 'explicit' && typeof options.revision !== 'number') {
-    throw new Error('Canonical project setting writes require an explicit revision');
+    throw new Error('Explicit project setting writes require a revision');
   }
 
   const nextValueJson = JSON.stringify(value);

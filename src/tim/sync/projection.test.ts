@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'vitest';
+import type { TimConfig } from '../configSchema.js';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
 import {
@@ -7,6 +8,8 @@ import {
   writeCanonicalProjectSettingRow,
 } from '../db/project_settings.js';
 import { setProjectSettingOperation, deleteProjectSettingOperation } from './operations.js';
+import { assertValidPayload } from './types.js';
+import { writeProjectSettingSet } from './write_router.js';
 import {
   enqueueOperation,
   markOperationAcked,
@@ -43,6 +46,22 @@ describe('rebuildProjectSettingProjection', () => {
 
     expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
       value: 'blue',
+      revision: 4,
+      updatedByNode: 'main',
+    });
+  });
+
+  test('copies canonical revision when there are no active operations', () => {
+    writeCanonicalProjectSettingRow(db, project.id, 'color', 'blue', {
+      revision: 5,
+      updatedByNode: 'main',
+    });
+
+    rebuildProjectSettingProjection(db, project.id, 'color');
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
+      value: 'blue',
+      revision: 5,
       updatedByNode: 'main',
     });
   });
@@ -58,6 +77,23 @@ describe('rebuildProjectSettingProjection', () => {
 
     expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
       value: 'green',
+      revision: 5,
+      updatedByNode: NODE_A,
+    });
+  });
+
+  test('increments projection revision for one matching set operation over canonical', async () => {
+    writeCanonicalProjectSettingRow(db, project.id, 'color', 'blue', {
+      revision: 5,
+      updatedByNode: 'main',
+    });
+    await enqueueSet('color', 'green', 5);
+
+    rebuildProjectSettingProjection(db, project.id, 'color');
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
+      value: 'green',
+      revision: 6,
       updatedByNode: NODE_A,
     });
   });
@@ -83,6 +119,7 @@ describe('rebuildProjectSettingProjection', () => {
     rebuildProjectSettingProjection(db, project.id, 'featured');
 
     expect(getProjectSettingWithMetadata(db, project.id, 'featured')?.value).toBe(true);
+    expect(getProjectSettingWithMetadata(db, project.id, 'featured')?.revision).toBe(1);
   });
 
   test('projects a set operation against absent canonical after local projection is cleared', async () => {
@@ -120,6 +157,7 @@ describe('rebuildProjectSettingProjection', () => {
 
     expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
       value: 'blue',
+      revision: 5,
       updatedByNode: 'main',
     });
   });
@@ -163,6 +201,47 @@ describe('rebuildProjectSettingProjection', () => {
     rebuildProjectSettingProjection(db, project.id, 'color');
 
     expect(getProjectSettingWithMetadata(db, project.id, 'color')?.value).toBe('orange');
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')?.revision).toBe(7);
+  });
+
+  test('persistent latest write uses projected revision and remains visible locally', async () => {
+    const config = {
+      sync: {
+        role: 'persistent',
+        nodeId: NODE_A,
+        mainUrl: 'http://127.0.0.1:9999',
+        nodeToken: 'secret-token',
+        offline: true,
+      },
+    } as TimConfig;
+    writeCanonicalProjectSettingRow(db, project.id, 'color', 'blue', {
+      revision: 5,
+      updatedByNode: 'main',
+    });
+    rebuildProjectSettingProjection(db, project.id, 'color');
+
+    const result = await writeProjectSettingSet(db, config, project.id, 'color', 'green', 'latest');
+
+    expect(result.mode).toBe('queued');
+    const row = db
+      .prepare(
+        `
+          SELECT payload
+          FROM sync_operation
+          WHERE operation_uuid = ?
+        `
+      )
+      .get(result.operation.operationUuid) as { payload: string };
+    const payload = assertValidPayload(JSON.parse(row.payload));
+    expect(payload).toMatchObject({
+      type: 'project_setting.set',
+      baseRevision: 5,
+    });
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
+      value: 'green',
+      revision: 6,
+      updatedByNode: NODE_A,
+    });
   });
 
   test('applies operation with undefined baseRevision regardless of canonical revision', async () => {

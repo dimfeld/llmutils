@@ -44,6 +44,7 @@ interface ActiveProjectSettingOperationRow {
 interface FoldedProjectSettingProjection {
   present: boolean;
   value: unknown;
+  revision: number;
   updatedByNode: string | null;
 }
 
@@ -97,6 +98,7 @@ export function rebuildProjectSettingProjection(
     return;
   }
   writeProjectionProjectSettingRow(db, projectId, setting, folded.value, {
+    revision: folded.revision,
     updatedByNode: folded.updatedByNode,
   });
 }
@@ -147,5 +149,5 @@ function foldProjectSettingProjection(
     runningRevision += 1;
   }
 
-  return { present, value, updatedByNode };
+  return { present, value, revision: runningRevision, updatedByNode };
 }
