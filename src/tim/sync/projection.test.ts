@@ -5,6 +5,8 @@ import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
 import {
   getPlanByUuid,
+  getPlanDependenciesByUuid,
+  getPlanTagsByUuid,
   getPlanTasksByUuid,
   upsertCanonicalPlanInTransaction,
   upsertProjectionPlanInTransaction,
@@ -14,12 +16,24 @@ import {
   writeCanonicalProjectSettingRow,
 } from '../db/project_settings.js';
 import {
+  addPlanDependencyOperation,
+  addPlanListItemOperation,
   addPlanTagOperation,
   addPlanTaskOperation,
   createPlanOperation,
+  deletePlanOperation,
   deleteProjectSettingOperation,
+  markPlanTaskDoneOperation,
+  patchPlanTextOperation,
+  promotePlanTaskOperation,
+  removePlanDependencyOperation,
+  removePlanListItemOperation,
+  removePlanTagOperation,
+  removePlanTaskOperation,
+  setPlanParentOperation,
   setPlanScalarOperation,
   setProjectSettingOperation,
+  updatePlanTaskTextOperation,
 } from './operations.js';
 import { assertValidPayload } from './types.js';
 import { writeProjectSettingSet } from './write_router.js';
@@ -164,6 +178,494 @@ describe('rebuildPlanProjection', () => {
       base_commit: 'abc123',
       base_change_id: 'change-1',
     });
+  });
+
+  // ── All 16 plan operation types ────────────────────────────────────────────
+
+  test('patch_text: updates plan text field via three-way merge', async () => {
+    writeCanonicalPlan({ revision: 2, title: 'Original title' });
+    await enqueueOperation(
+      db,
+      await patchPlanTextOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, field: 'title', base: 'Original title', new: 'Updated title' },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+      title: 'Updated title',
+      revision: 3,
+    });
+  });
+
+  test('update_task_text: updates task title via three-way merge', async () => {
+    writeCanonicalPlan({
+      revision: 3,
+      title: 'Plan',
+      tasks: [{ uuid: TASK_UUID, title: 'Old task', description: '', done: false, revision: 1 }],
+    });
+    await enqueueOperation(
+      db,
+      await updatePlanTaskTextOperation(
+        PROJECT_UUID,
+        {
+          planUuid: PLAN_UUID,
+          taskUuid: TASK_UUID,
+          field: 'title',
+          base: 'Old task',
+          new: 'New task',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    const tasks = getPlanTasksByUuid(db, PLAN_UUID);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]).toMatchObject({ title: 'New task', revision: 2 });
+    expect(getPlanByUuid(db, PLAN_UUID)?.revision).toBe(4);
+  });
+
+  test('mark_task_done: marks a task as done in the projection', async () => {
+    writeCanonicalPlan({
+      revision: 2,
+      title: 'Plan',
+      tasks: [{ uuid: TASK_UUID, title: 'A task', description: '', done: false, revision: 1 }],
+    });
+    await enqueueOperation(
+      db,
+      await markPlanTaskDoneOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, taskUuid: TASK_UUID, done: true },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanTasksByUuid(db, PLAN_UUID)[0]).toMatchObject({ done: 1 });
+    expect(getPlanByUuid(db, PLAN_UUID)?.revision).toBe(3);
+  });
+
+  test('remove_task: removes the task from the projection', async () => {
+    writeCanonicalPlan({
+      revision: 2,
+      title: 'Plan',
+      tasks: [{ uuid: TASK_UUID, title: 'To remove', description: '', done: false, revision: 1 }],
+    });
+    await enqueueOperation(
+      db,
+      await removePlanTaskOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, taskUuid: TASK_UUID },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanTasksByUuid(db, PLAN_UUID)).toHaveLength(0);
+    expect(getPlanByUuid(db, PLAN_UUID)?.revision).toBe(3);
+  });
+
+  test('add_dependency: adds dependency row in projection', async () => {
+    const DEP_UUID = '44444444-4444-4444-8444-444444444444';
+    writeCanonicalPlan({ revision: 1, title: 'Plan' });
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: DEP_UUID,
+      planId: 20,
+      title: 'Dep plan',
+      status: 'pending',
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
+    await enqueueOperation(
+      db,
+      await addPlanDependencyOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, dependsOnPlanUuid: DEP_UUID },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    const deps = getPlanDependenciesByUuid(db, PLAN_UUID);
+    expect(deps).toHaveLength(1);
+    expect(deps[0].depends_on_uuid).toBe(DEP_UUID);
+  });
+
+  test('remove_dependency: removes dependency from projection', async () => {
+    const DEP_UUID = '44444444-4444-4444-8444-444444444444';
+    writeCanonicalPlan({ revision: 1, title: 'Plan', dependencyUuids: [DEP_UUID] });
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: DEP_UUID,
+      planId: 20,
+      title: 'Dep plan',
+      status: 'pending',
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
+    await enqueueOperation(
+      db,
+      await removePlanDependencyOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, dependsOnPlanUuid: DEP_UUID },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanDependenciesByUuid(db, PLAN_UUID)).toHaveLength(0);
+  });
+
+  test('remove_tag: removes tag from projection', async () => {
+    writeCanonicalPlan({ revision: 2, title: 'Plan', tags: ['sync', 'active'] });
+    await enqueueOperation(
+      db,
+      await removePlanTagOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, tag: 'active' },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    const tags = getPlanTagsByUuid(db, PLAN_UUID);
+    expect(tags.map((t) => t.tag)).toEqual(['sync']);
+  });
+
+  test('add_list_item: appends to docs list in projection', async () => {
+    writeCanonicalPlan({ revision: 2, title: 'Plan' });
+    await enqueueOperation(
+      db,
+      await addPlanListItemOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, list: 'docs', value: 'README.md' },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    const plan = getPlanByUuid(db, PLAN_UUID);
+    expect(JSON.parse(plan?.docs ?? '[]')).toEqual(['README.md']);
+    expect(plan?.revision).toBe(3);
+  });
+
+  test('remove_list_item: removes from docs list in projection', async () => {
+    writeCanonicalPlan({ revision: 2, title: 'Plan', docs: ['README.md', 'SPEC.md'] });
+    await enqueueOperation(
+      db,
+      await removePlanListItemOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, list: 'docs', value: 'README.md' },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    const plan = getPlanByUuid(db, PLAN_UUID);
+    expect(JSON.parse(plan?.docs ?? '[]')).toEqual(['SPEC.md']);
+  });
+
+  test('plan.delete: removes all projection rows', async () => {
+    writeCanonicalPlan({
+      revision: 3,
+      title: 'To delete',
+      tasks: [{ uuid: TASK_UUID, title: 'Task', description: '', done: false, revision: 1 }],
+      tags: ['tag1'],
+    });
+    // Build an initial projection so there are rows to delete
+    rebuildPlanProjection(db, PLAN_UUID);
+    expect(getPlanByUuid(db, PLAN_UUID)).not.toBeNull();
+
+    await enqueueOperation(
+      db,
+      await deletePlanOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
+    expect(getPlanTasksByUuid(db, PLAN_UUID)).toEqual([]);
+    expect(getPlanTagsByUuid(db, PLAN_UUID)).toEqual([]);
+  });
+
+  test('set_parent: updates parent_uuid on the projection plan', async () => {
+    const PARENT_UUID = '55555555-5555-4555-8555-555555555555';
+    writeCanonicalPlan({ revision: 2, title: 'Child' });
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: PARENT_UUID,
+      planId: 30,
+      title: 'Parent',
+      status: 'pending',
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
+    await enqueueOperation(
+      db,
+      await setPlanParentOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, newParentUuid: PARENT_UUID },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)?.parent_uuid).toBe(PARENT_UUID);
+    expect(getPlanByUuid(db, PLAN_UUID)?.revision).toBe(3);
+  });
+
+  test('promote_task: creates destination plan and marks source task done', async () => {
+    const NEW_PLAN_UUID = '66666666-6666-4666-8666-666666666666';
+    writeCanonicalPlan({
+      revision: 2,
+      title: 'Source',
+      tasks: [{ uuid: TASK_UUID, title: 'Promotable', description: '', done: false, revision: 1 }],
+    });
+    await enqueueOperation(
+      db,
+      await promotePlanTaskOperation(
+        PROJECT_UUID,
+        {
+          sourcePlanUuid: PLAN_UUID,
+          taskUuid: TASK_UUID,
+          newPlanUuid: NEW_PLAN_UUID,
+          numericPlanId: 99,
+          title: 'Promoted plan',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+    rebuildPlanProjection(db, NEW_PLAN_UUID);
+
+    // Source: task marked done, plan revision bumped
+    const sourceTasks = getPlanTasksByUuid(db, PLAN_UUID);
+    expect(sourceTasks[0]).toMatchObject({ uuid: TASK_UUID, done: 1 });
+    expect(getPlanByUuid(db, PLAN_UUID)?.revision).toBe(3);
+
+    // Destination: new plan created from ghost canonical
+    const dest = getPlanByUuid(db, NEW_PLAN_UUID);
+    expect(dest).not.toBeNull();
+    expect(dest?.title).toBe('Promoted plan');
+    expect(dest?.plan_id).toBe(99);
+  });
+
+  // ── Silent-skip invariant ───────────────────────────────────────────────────
+
+  test('stale baseRevision on set_scalar is silently skipped without mutating operation status', async () => {
+    writeCanonicalPlan({ revision: 5, title: 'Plan', status: 'pending' });
+    const op = await enqueueOperation(
+      db,
+      await setPlanScalarOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, field: 'status', value: 'in_progress', baseRevision: 4 },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    // Projection unchanged — stale op skipped
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({ status: 'pending', revision: 5 });
+    // Status not mutated by projector
+    const row = db
+      .prepare('SELECT status FROM sync_operation WHERE operation_uuid = ?')
+      .get(op.operation.operationUuid) as { status: string };
+    expect(row.status).toBe('queued');
+  });
+
+  test('missing task on mark_task_done is silently skipped', async () => {
+    const MISSING_TASK = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    writeCanonicalPlan({ revision: 2, title: 'Plan' });
+    await enqueueOperation(
+      db,
+      await markPlanTaskDoneOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, taskUuid: MISSING_TASK, done: true },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    // Should not throw
+    expect(() => rebuildPlanProjection(db, PLAN_UUID)).not.toThrow();
+    // Plan still intact
+    expect(getPlanByUuid(db, PLAN_UUID)).not.toBeNull();
+  });
+
+  test('add_dependency with missing dep plan is silently skipped', async () => {
+    const MISSING_DEP = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    writeCanonicalPlan({ revision: 1, title: 'Plan' });
+    await enqueueOperation(
+      db,
+      await addPlanDependencyOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, dependsOnPlanUuid: MISSING_DEP },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    expect(() => rebuildPlanProjection(db, PLAN_UUID)).not.toThrow();
+    expect(getPlanDependenciesByUuid(db, PLAN_UUID)).toHaveLength(0);
+  });
+
+  test('tombstoned plan with no active ops deletes projection across all tables', () => {
+    writeCanonicalPlan({
+      revision: 3,
+      title: 'Deleted',
+      tasks: [{ uuid: TASK_UUID, title: 'Task', description: '', done: false, revision: 1 }],
+      tags: ['old-tag'],
+    });
+    rebuildPlanProjection(db, PLAN_UUID);
+    expect(getPlanByUuid(db, PLAN_UUID)).not.toBeNull();
+
+    db.prepare(
+      "INSERT INTO sync_tombstone (entity_type, entity_key, project_uuid, deletion_operation_uuid, deleted_revision, deleted_at, origin_node_id) VALUES ('plan', ?, ?, ?, ?, datetime('now'), ?)"
+    ).run(`plan:${PLAN_UUID}`, PROJECT_UUID, crypto.randomUUID(), 4, 'main');
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
+    expect(getPlanTasksByUuid(db, PLAN_UUID)).toEqual([]);
+    expect(getPlanTagsByUuid(db, PLAN_UUID)).toEqual([]);
+    expect(getPlanDependenciesByUuid(db, PLAN_UUID)).toEqual([]);
+  });
+
+  test('patch_text with stale baseRevision is silently skipped', async () => {
+    writeCanonicalPlan({ revision: 5, title: 'Original' });
+    await enqueueOperation(
+      db,
+      await patchPlanTextOperation(
+        PROJECT_UUID,
+        {
+          planUuid: PLAN_UUID,
+          field: 'title',
+          base: 'Original',
+          new: 'Updated',
+          baseRevision: 4,
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    // Projection unchanged — stale op skipped
+    expect(getPlanByUuid(db, PLAN_UUID)?.title).toBe('Original');
+  });
+
+  // ── Running revision discipline ─────────────────────────────────────────────
+
+  test('three sequential ops produce revision = canonical + 3', async () => {
+    writeCanonicalPlan({ revision: 10, title: 'Plan', status: 'pending' });
+    await enqueuePlanSetScalar('status', 'in_progress', 10, 1);
+    await enqueuePlanSetScalar('status', 'needs_review', 11, 2);
+    await enqueuePlanSetScalar('status', 'done', 12, 3);
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)?.revision).toBe(13);
+  });
+
+  test('skipped op does not advance the projection revision', async () => {
+    writeCanonicalPlan({ revision: 5, title: 'Plan', status: 'pending' });
+    // Stale base — skipped
+    await enqueuePlanSetScalar('status', 'in_progress', 4, 1);
+    // Correct base — applied
+    await enqueuePlanSetScalar('status', 'in_progress', 5, 2);
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)?.revision).toBe(6);
+  });
+
+  // ── Cross-field pending edits preserved after canonical update ──────────────
+
+  test('canonical update for one field preserves pending edit on another field', async () => {
+    writeCanonicalPlan({ revision: 1, title: 'Plan', status: 'pending' });
+    // Enqueue a status change
+    await enqueuePlanSetScalar('status', 'in_progress', 1, 1);
+
+    // Simulate canonical update arriving (e.g. title changed on main node)
+    writeCanonicalPlan({ revision: 2, title: 'Updated by main' });
+
+    // Rebuild — canonical rev is now 2, pending op has baseRevision: 1
+    // The op should be skipped (stale) but the title update from canonical should appear
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+      title: 'Updated by main',
+      status: 'pending',
+      revision: 2,
+    });
+  });
+
+  test('promote_task: source task skipped silently when tombstoned and op collapses projection', async () => {
+    const NEW_PLAN_UUID = '77777777-7777-4777-8777-777777777777';
+    writeCanonicalPlan({
+      revision: 2,
+      title: 'Source',
+      tasks: [{ uuid: TASK_UUID, title: 'Promotable', description: '', done: false, revision: 1 }],
+    });
+    await enqueueOperation(
+      db,
+      await promotePlanTaskOperation(
+        PROJECT_UUID,
+        {
+          sourcePlanUuid: PLAN_UUID,
+          taskUuid: TASK_UUID,
+          newPlanUuid: NEW_PLAN_UUID,
+          numericPlanId: 88,
+          title: 'Promoted',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+    // Build initial projection
+    rebuildPlanProjection(db, PLAN_UUID);
+    rebuildPlanProjection(db, NEW_PLAN_UUID);
+    expect(getPlanByUuid(db, NEW_PLAN_UUID)).not.toBeNull();
+
+    // Mark the op terminal (rejected) — projection should collapse
+    const opRow = db
+      .prepare(
+        "SELECT operation_uuid FROM sync_operation WHERE operation_type = 'plan.promote_task' LIMIT 1"
+      )
+      .get() as { operation_uuid: string };
+    markOperationSending(db, opRow.operation_uuid);
+    markOperationRejected(db, opRow.operation_uuid, 'precondition failed', {});
+
+    // Rebuild after rejection — op no longer active, projection should reflect canonical only
+    rebuildPlanProjection(db, PLAN_UUID);
+    rebuildPlanProjection(db, NEW_PLAN_UUID);
+
+    // Source task should not be marked done
+    const sourceTasks = getPlanTasksByUuid(db, PLAN_UUID);
+    expect(sourceTasks[0]).toMatchObject({ done: 0 });
+
+    // Destination plan should disappear (no canonical + no active ops)
+    expect(getPlanByUuid(db, NEW_PLAN_UUID)).toBeNull();
   });
 });
 
@@ -471,6 +973,7 @@ function writeCanonicalPlan(
     tasks: input.tasks ?? [],
     dependencyUuids: input.dependencyUuids ?? [],
     tags: input.tags ?? [],
+    docs: input.docs,
   });
 }
 
