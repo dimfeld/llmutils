@@ -4,7 +4,12 @@ import * as z from 'zod/v4';
 import { warn } from '../../logging.js';
 import { removeAssignment } from '../db/assignment.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
-import { upsertProjectionPlanInTransaction, type PlanRow, type PlanTaskRow } from '../db/plan.js';
+import {
+  upsertCanonicalPlanInTransaction,
+  upsertProjectionPlanInTransaction,
+  type PlanRow,
+  type PlanTaskRow,
+} from '../db/plan.js';
 import { getProjectByUuid } from '../db/project.js';
 import {
   deleteCanonicalProjectSettingRow,
@@ -23,12 +28,13 @@ import {
 import { shiftTaskIndexesAfterDelete, shiftTaskIndexesForInsert } from './task_indexes.js';
 import { getSyncOperationPayloadIndexes } from './payload_indexes.js';
 import { optimisticSnapshotKeysForOperation } from './rejected_refresh.js';
-import { getSyncOperationPlanRefs, type SyncOperationPlanRefRole } from './plan_refs.js';
+import { getSyncOperationPlanRefs, PROJECTION_REBUILD_PLAN_REF_ROLES } from './plan_refs.js';
 import {
   rebuildPlanProjectionInTransaction,
   rebuildProjectSettingProjection,
   rebuildProjectSettingProjectionForPayload,
 } from './projection.js';
+import { recordSyncTombstone } from './conflicts.js';
 
 /**
  * Persistent-node durable queue contract:
@@ -772,13 +778,7 @@ export function getPendingRollbackKeys(db: Database): string[] {
 export function mergeCanonicalRefresh(db: Database, snapshot: CanonicalSnapshot): string[] {
   const parsedSnapshot = CanonicalSnapshotSchema.parse(snapshot);
   const merge = db.transaction((nextSnapshot: CanonicalSnapshot): string[] => {
-    const followUpKeys = writeCanonicalSnapshot(db, nextSnapshot);
-    if (nextSnapshot.type !== 'project_setting') {
-      for (const operation of pendingOperationsForSnapshot(db, nextSnapshot)) {
-        applyLocalOptimisticInTransaction(db, operation);
-      }
-    }
-    return followUpKeys;
+    return writeCanonicalSnapshot(db, nextSnapshot);
   });
   return merge.immediate(parsedSnapshot);
 }
@@ -943,15 +943,6 @@ type ProjectSettingPayload = Extract<
   { type: 'project_setting.set' | 'project_setting.delete' }
 >;
 
-const PROJECTION_REBUILD_PLAN_REF_ROLES = new Set<SyncOperationPlanRefRole>([
-  'target',
-  'parent',
-  'new_parent',
-  'previous_parent',
-  'source',
-  'new_plan',
-]);
-
 function getAffectedProjectionPlanUuids(db: Database, payload: SyncOperationPayload): string[] {
   if (payload.type === 'project_setting.set' || payload.type === 'project_setting.delete') {
     return [];
@@ -969,7 +960,10 @@ function getAffectedProjectionPlanUuids(db: Database, payload: SyncOperationPayl
   return [...affected];
 }
 
-function getInboundProjectionOwnerPlanUuids(db: Database, deletedPlanUuid: string): string[] {
+export function getInboundProjectionOwnerPlanUuids(
+  db: Database,
+  deletedPlanUuid: string
+): string[] {
   const rows = db
     .prepare(
       `
@@ -1349,60 +1343,24 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
 
   if (snapshot.type === 'plan_deleted') {
     const project = getProjectByUuid(db, snapshot.projectUuid);
-    db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? OR depends_on_uuid = ?').run(
-      snapshot.planUuid,
-      snapshot.planUuid
-    );
-    db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(snapshot.planUuid);
-    db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(snapshot.planUuid);
+    deleteCanonicalPlanState(db, snapshot.planUuid);
     if (project) {
+      recordSyncTombstone(db, {
+        entityType: 'plan',
+        entityKey: planKey(snapshot.planUuid),
+        projectUuid: snapshot.projectUuid,
+        deletionOperationUuid:
+          snapshot.deletedBySequenceId === undefined
+            ? `canonical-delete:${snapshot.planUuid}`
+            : `canonical-sequence:${snapshot.deletedBySequenceId}`,
+        deletedRevision: null,
+        originNodeId: 'main',
+      });
       removeAssignment(db, project.id, snapshot.planUuid);
     }
-    db.prepare('DELETE FROM plan WHERE uuid = ?').run(snapshot.planUuid);
-    // Both branches hit indexes: target_key covers the named target directly, while
-    // sync_operation_plan_ref covers every plan UUID an operation semantically
-    // references, including dependency and parent arrays.
-    const followUpKeys = collectRejectedOperationSnapshotKeys(
-      db,
-      `
-        SELECT operation_uuid, payload
-        FROM sync_operation
-        WHERE project_uuid = ?
-          AND status IN ('queued', 'failed_retryable')
-          AND (
-            target_key = ?
-            OR operation_uuid IN (
-              SELECT operation_uuid FROM sync_operation_plan_ref WHERE plan_uuid = ?
-            )
-          )
-      `,
-      [snapshot.projectUuid, `plan:${snapshot.planUuid}`, snapshot.planUuid],
-      `plan:${snapshot.planUuid}`
-    );
-    db.prepare(
-      `
-        UPDATE sync_operation
-        SET status = 'rejected',
-            last_error = ?,
-            updated_at = ${SQL_NOW_ISO_UTC}
-        WHERE project_uuid = ?
-          AND status IN ('queued', 'failed_retryable')
-          AND (
-            target_key = ?
-            OR operation_uuid IN (
-              SELECT operation_uuid FROM sync_operation_plan_ref WHERE plan_uuid = ?
-            )
-          )
-      `
-    ).run(
-      `Target plan ${snapshot.planUuid} was deleted on the main node`,
-      snapshot.projectUuid,
-      `plan:${snapshot.planUuid}`,
-      snapshot.planUuid
-    );
-    recordPendingRollbackKeys(db, followUpKeys);
+    rebuildPlanProjectionInTransaction(db, snapshot.planUuid);
     clearPendingRollbackKey(db, snapshotEntityKey);
-    return followUpKeys;
+    return [];
   }
 
   if (snapshot.type === 'project_setting') {
@@ -1430,13 +1388,7 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
   if (!project) {
     return [];
   }
-  const localPlan = db
-    .prepare('SELECT base_commit, base_change_id FROM plan WHERE uuid = ?')
-    .get(snapshot.plan.uuid) as {
-    base_commit: string | null;
-    base_change_id: string | null;
-  } | null;
-  upsertProjectionPlanInTransaction(db, project.id, {
+  upsertCanonicalPlanInTransaction(db, project.id, {
     uuid: snapshot.plan.uuid,
     planId: snapshot.plan.planId,
     title: snapshot.plan.title,
@@ -1448,7 +1400,7 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
     branch: snapshot.plan.branch,
     simple: snapshot.plan.simple,
     tdd: snapshot.plan.tdd,
-    discoveredFrom: resolveLocalPlanId(db, project.id, snapshot.plan.discoveredFrom),
+    discoveredFrom: resolveCanonicalPlanId(db, project.id, snapshot.plan.discoveredFrom),
     parentUuid: snapshot.plan.parentUuid,
     epic: snapshot.plan.epic,
     revision: snapshot.plan.revision,
@@ -1456,8 +1408,8 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
     pullRequest: snapshot.plan.pullRequest,
     assignedTo: snapshot.plan.assignedTo,
     baseBranch: snapshot.plan.baseBranch,
-    baseCommit: localPlan?.base_commit ?? null,
-    baseChangeId: localPlan?.base_change_id ?? null,
+    baseCommit: null,
+    baseChangeId: null,
     temp: snapshot.plan.temp,
     docs: snapshot.plan.docs,
     changedFiles: snapshot.plan.changedFiles,
@@ -1474,13 +1426,11 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
     tags: snapshot.plan.tags,
     forceOverwrite: true,
   });
-  db.prepare('UPDATE plan SET revision = ? WHERE uuid = ?').run(
-    snapshot.plan.revision,
-    snapshot.plan.uuid
+  db.prepare('DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?').run(
+    'plan',
+    planKey(snapshot.plan.uuid)
   );
-  for (const task of snapshot.plan.tasks) {
-    db.prepare('UPDATE plan_task SET revision = ? WHERE uuid = ?').run(task.revision, task.uuid);
-  }
+  rebuildPlanProjectionInTransaction(db, snapshot.plan.uuid);
   if (ASSIGNMENT_CLEANUP_STATUSES.has(snapshot.plan.status)) {
     removeAssignment(db, project.id, snapshot.plan.uuid);
   }
@@ -1506,21 +1456,20 @@ function writeNeverExistedSnapshot(
   snapshot: CanonicalNeverExistedSnapshot
 ): string[] {
   if (snapshot.targetType === 'plan') {
-    db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? OR depends_on_uuid = ?').run(
-      snapshot.planUuid,
-      snapshot.planUuid
-    );
-    db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(snapshot.planUuid);
-    db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(snapshot.planUuid);
-    db.prepare('DELETE FROM plan WHERE uuid = ?').run(snapshot.planUuid);
-    const followUpKeys = rejectPendingOperationsForNeverExistedPlan(
-      db,
-      snapshot.entityKey,
-      snapshot.planUuid,
-      `Target plan ${snapshot.planUuid} never existed on the main node`
-    );
-    recordPendingRollbackKeys(db, followUpKeys);
-    return followUpKeys;
+    const projectUuid = resolveProjectUuidForPlanTombstone(db, snapshot.planUuid);
+    deleteCanonicalPlanState(db, snapshot.planUuid);
+    if (projectUuid) {
+      recordSyncTombstone(db, {
+        entityType: 'plan',
+        entityKey: planKey(snapshot.planUuid),
+        projectUuid,
+        deletionOperationUuid: `canonical-never-existed:${snapshot.planUuid}`,
+        deletedRevision: null,
+        originNodeId: 'main',
+      });
+    }
+    rebuildPlanProjectionInTransaction(db, snapshot.planUuid);
+    return [];
   }
 
   const task = getTask(db, snapshot.taskUuid);
@@ -1536,6 +1485,53 @@ function writeNeverExistedSnapshot(
   );
   recordPendingRollbackKeys(db, followUpKeys);
   return followUpKeys;
+}
+
+function deleteCanonicalPlanState(db: Database, planUuid: string): void {
+  db.prepare(
+    'DELETE FROM plan_dependency_canonical WHERE plan_uuid = ? OR depends_on_uuid = ?'
+  ).run(planUuid, planUuid);
+  db.prepare('DELETE FROM plan_tag_canonical WHERE plan_uuid = ?').run(planUuid);
+  db.prepare('DELETE FROM task_canonical WHERE plan_uuid = ?').run(planUuid);
+  db.prepare('DELETE FROM plan_canonical WHERE uuid = ?').run(planUuid);
+}
+
+function resolveCanonicalPlanId(
+  db: Database,
+  projectId: number | null,
+  planUuid: string | null | undefined
+): number | null {
+  if (!projectId || !planUuid) {
+    return null;
+  }
+  const row = db
+    .prepare('SELECT plan_id FROM plan_canonical WHERE project_id = ? AND uuid = ?')
+    .get(projectId, planUuid) as { plan_id: number } | null;
+  return row?.plan_id ?? null;
+}
+
+function resolveProjectUuidForPlanTombstone(db: Database, planUuid: string): string | null {
+  const row = db
+    .prepare(
+      `
+        SELECT p.uuid AS project_uuid
+        FROM plan_canonical pc
+        JOIN project p ON p.id = pc.project_id
+        WHERE pc.uuid = ?
+        UNION
+        SELECT p.uuid AS project_uuid
+        FROM plan pl
+        JOIN project p ON p.id = pl.project_id
+        WHERE pl.uuid = ?
+        UNION
+        SELECT project_uuid
+        FROM sync_operation_plan_ref
+        WHERE plan_uuid = ?
+        LIMIT 1
+      `
+    )
+    .get(planUuid, planUuid, planUuid) as { project_uuid: string } | null;
+  return row?.project_uuid ?? null;
 }
 
 function rejectPendingOperationsForNeverExistedPlan(

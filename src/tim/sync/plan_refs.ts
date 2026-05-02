@@ -16,6 +16,15 @@ export interface SyncOperationPlanRef {
   role: SyncOperationPlanRefRole;
 }
 
+export const PROJECTION_REBUILD_PLAN_REF_ROLES = new Set<SyncOperationPlanRefRole>([
+  'target',
+  'parent',
+  'new_parent',
+  'previous_parent',
+  'source',
+  'new_plan',
+]);
+
 export function getSyncOperationPlanRefs(
   payload: SyncOperationPayload | string
 ): SyncOperationPlanRef[] {

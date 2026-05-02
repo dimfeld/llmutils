@@ -4,9 +4,14 @@ import {
   markOperationConflict,
   markOperationFailedRetryable,
   markOperationRejected,
+  getInboundProjectionOwnerPlanUuids,
   type SyncOperationQueueRow,
 } from './queue.js';
-import { rebuildProjectSettingProjectionForPayload } from './projection.js';
+import {
+  rebuildPlanProjectionInTransaction,
+  rebuildProjectSettingProjectionForPayload,
+} from './projection.js';
+import { PROJECTION_REBUILD_PLAN_REF_ROLES } from './plan_refs.js';
 import { assertValidPayload, type SyncOperationPayload } from './types.js';
 import type { SyncOperationResult } from './ws_protocol.js';
 
@@ -20,6 +25,7 @@ export function applyOperationResultTransitions(
   options: ApplyOperationResultTransitionsOptions = {}
 ): void {
   const transition = db.transaction((nextResults: SyncOperationResult[]): void => {
+    const planRebuilds = new Set<string>();
     const projectSettingRebuilds = new Map<string, ProjectSettingRebuildTarget>();
     for (const [index, result] of nextResults.entries()) {
       const ackMetadata = {
@@ -28,13 +34,17 @@ export function applyOperationResultTransitions(
       };
       switch (result.status) {
         case 'applied':
-          collectProjectSettingProjectionRebuild(
+          collectProjectionRebuilds(
+            db,
+            planRebuilds,
             projectSettingRebuilds,
             markOperationAcked(db, result.operationId, ackMetadata)
           );
           break;
         case 'conflict':
-          collectProjectSettingProjectionRebuild(
+          collectProjectionRebuilds(
+            db,
+            planRebuilds,
             projectSettingRebuilds,
             markOperationConflict(
               db,
@@ -45,7 +55,9 @@ export function applyOperationResultTransitions(
           );
           break;
         case 'rejected':
-          collectProjectSettingProjectionRebuild(
+          collectProjectionRebuilds(
+            db,
+            planRebuilds,
             projectSettingRebuilds,
             markOperationRejected(
               db,
@@ -66,6 +78,9 @@ export function applyOperationResultTransitions(
       }
       options.afterTransition?.(result, index);
     }
+    for (const planUuid of planRebuilds) {
+      rebuildPlanProjectionInTransaction(db, planUuid);
+    }
     for (const target of projectSettingRebuilds.values()) {
       rebuildProjectSettingProjectionForPayload(db, target.payload);
     }
@@ -78,6 +93,19 @@ interface ProjectSettingRebuildTarget {
     SyncOperationPayload,
     { type: 'project_setting.set' | 'project_setting.delete' }
   >;
+}
+
+function collectProjectionRebuilds(
+  db: Database,
+  planTargets: Set<string>,
+  targets: Map<string, ProjectSettingRebuildTarget>,
+  row: SyncOperationQueueRow
+): void {
+  if (row.operation_type.startsWith('plan.')) {
+    collectPlanProjectionRebuilds(db, planTargets, row);
+    return;
+  }
+  collectProjectSettingProjectionRebuild(targets, row);
 }
 
 function collectProjectSettingProjectionRebuild(
@@ -94,5 +122,34 @@ function collectProjectSettingProjectionRebuild(
   if (payload.type === 'project_setting.set' || payload.type === 'project_setting.delete') {
     const key = `${payload.projectUuid}:${payload.setting}`;
     targets.set(key, { payload });
+  }
+}
+
+function collectPlanProjectionRebuilds(
+  db: Database,
+  targets: Set<string>,
+  row: SyncOperationQueueRow
+): void {
+  const rolePlaceholders = [...PROJECTION_REBUILD_PLAN_REF_ROLES].map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `
+        SELECT DISTINCT plan_uuid
+        FROM sync_operation_plan_ref
+        WHERE operation_uuid = ?
+          AND role IN (${rolePlaceholders})
+        ORDER BY plan_uuid
+      `
+    )
+    .all(row.operation_uuid, ...PROJECTION_REBUILD_PLAN_REF_ROLES) as Array<{ plan_uuid: string }>;
+  for (const planRef of rows) {
+    targets.add(planRef.plan_uuid);
+  }
+
+  const payload = assertValidPayload(JSON.parse(row.payload));
+  if (payload.type === 'plan.delete') {
+    for (const ownerPlanUuid of getInboundProjectionOwnerPlanUuids(db, payload.planUuid)) {
+      targets.add(ownerPlanUuid);
+    }
   }
 }
