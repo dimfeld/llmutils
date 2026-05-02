@@ -4,11 +4,10 @@ import {
   markOperationConflict,
   markOperationFailedRetryable,
   markOperationRejected,
-  getInboundProjectionOwnerPlanUuids,
+  rebuildPlanProjectionAndInboundOwnersInTransaction,
   type SyncOperationQueueRow,
 } from './queue.js';
 import {
-  rebuildPlanProjectionInTransaction,
   rebuildProjectSettingProjectionForPayload,
 } from './projection.js';
 import { PROJECTION_REBUILD_PLAN_REF_ROLES } from './plan_refs.js';
@@ -79,7 +78,7 @@ export function applyOperationResultTransitions(
       options.afterTransition?.(result, index);
     }
     for (const planUuid of planRebuilds) {
-      rebuildPlanProjectionInTransaction(db, planUuid);
+      rebuildPlanProjectionAndInboundOwnersInTransaction(db, planUuid);
     }
     for (const target of projectSettingRebuilds.values()) {
       rebuildProjectSettingProjectionForPayload(db, target.payload);
@@ -148,8 +147,6 @@ function collectPlanProjectionRebuilds(
 
   const payload = assertValidPayload(JSON.parse(row.payload));
   if (payload.type === 'plan.delete') {
-    for (const ownerPlanUuid of getInboundProjectionOwnerPlanUuids(db, payload.planUuid)) {
-      targets.add(ownerPlanUuid);
-    }
+    targets.add(payload.planUuid);
   }
 }

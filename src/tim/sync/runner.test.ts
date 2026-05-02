@@ -252,7 +252,7 @@ describe('sync runner', () => {
     expect(operationStatus(db, later.operationUuid)).toBe('failed_retryable');
   });
 
-  test('flushPendingOperationsOnce records rollback keys before rejected HTTP snapshot fetches', async () => {
+  test('flushPendingOperationsOnce rejects plan op by rebuilding projection without rollback fetches', async () => {
     const db = createRunnerDb();
     seedPlan(db);
     const queued = enqueueOperation(
@@ -277,19 +277,17 @@ describe('sync runner', () => {
         currentSequenceId: 0,
       },
     });
-    clientMocks.httpFetchSnapshots.mockRejectedValue(new Error('snapshot fetch failed'));
+    await flushPendingOperationsOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+    });
 
-    await expect(
-      flushPendingOperationsOnce({
-        db,
-        serverUrl: 'http://127.0.0.1:9',
-        nodeId: NODE_ID,
-        token: 'token',
-      })
-    ).rejects.toThrow('snapshot fetch failed');
-
-    expect(getPendingRollbackKeys(db)).toEqual([`plan:${PLAN_UUID}`]);
-    expect(getPlanTagsByUuid(db, PLAN_UUID).map((row) => row.tag)).toEqual(['optimistic-rejected']);
+    expect(clientMocks.httpFetchSnapshots).not.toHaveBeenCalled();
+    expect(getPendingRollbackKeys(db)).toEqual([]);
+    expect(operationStatus(db, queued.operation.operationUuid)).toBe('rejected');
+    expect(getPlanTagsByUuid(db, PLAN_UUID).map((row) => row.tag)).toEqual([]);
   });
 
   test('markOperationAcked tolerates operations already acked by another transport', async () => {
@@ -477,7 +475,7 @@ describe('sync runner', () => {
     expect(getPlanTasksByUuid(db, PLAN_UUID).find((t) => t.uuid === TASK_UUID)?.done).toBe(0);
   });
 
-  test('runSyncCatchUpOnce bounds recursive never_existed follow-up snapshots', async () => {
+  test('runSyncCatchUpOnce applies task never_existed without recursive rollback fetches', async () => {
     const db = createRunnerDb();
     seedPlan(db);
     const addedTaskUuid = '55555555-5555-4555-8555-555555555555';
@@ -518,10 +516,10 @@ describe('sync runner', () => {
       token: 'token',
     });
 
-    expect(clientMocks.httpFetchSnapshots).toHaveBeenCalledTimes(2);
+    expect(clientMocks.httpFetchSnapshots).toHaveBeenCalledTimes(1);
     expect(clientMocks.httpFetchSnapshots.mock.calls[0]?.[3]).toEqual([`task:${addedTaskUuid}`]);
-    expect(clientMocks.httpFetchSnapshots.mock.calls[1]?.[3]).toEqual([`plan:${PLAN_UUID}`]);
-    expect(operationStatus(db, addTaskOp.operationUuid)).toBe('rejected');
+    expect(operationStatus(db, addTaskOp.operationUuid)).toBe('queued');
+    expect(getPendingRollbackKeys(db)).toEqual([]);
     expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).not.toContain(addedTaskUuid);
   });
 });

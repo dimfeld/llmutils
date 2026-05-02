@@ -990,6 +990,19 @@ export function getInboundProjectionOwnerPlanUuids(
   return rows.map((row) => row.plan_uuid);
 }
 
+export function rebuildPlanProjectionAndInboundOwnersInTransaction(
+  db: Database,
+  planUuid: string
+): void {
+  const rebuildPlanUuids = new Set([planUuid]);
+  for (const ownerPlanUuid of getInboundProjectionOwnerPlanUuids(db, planUuid)) {
+    rebuildPlanUuids.add(ownerPlanUuid);
+  }
+  for (const rebuildPlanUuid of rebuildPlanUuids) {
+    rebuildPlanProjectionInTransaction(db, rebuildPlanUuid);
+  }
+}
+
 function applyLocalOptimisticInTransaction(db: Database, operation: SyncOperationEnvelope): void {
   const op = assertValidPayload(operation.op);
   switch (op.type) {
@@ -1358,7 +1371,7 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
       });
       removeAssignment(db, project.id, snapshot.planUuid);
     }
-    rebuildPlanProjectionInTransaction(db, snapshot.planUuid);
+    rebuildPlanProjectionAndInboundOwnersInTransaction(db, snapshot.planUuid);
     clearPendingRollbackKey(db, snapshotEntityKey);
     return [];
   }
@@ -1430,6 +1443,12 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
     'plan',
     planKey(snapshot.plan.uuid)
   );
+  const clearTaskTombstone = db.prepare(
+    'DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?'
+  );
+  for (const task of snapshot.plan.tasks) {
+    clearTaskTombstone.run('task', taskKey(task.uuid));
+  }
   rebuildPlanProjectionInTransaction(db, snapshot.plan.uuid);
   if (ASSIGNMENT_CLEANUP_STATUSES.has(snapshot.plan.status)) {
     removeAssignment(db, project.id, snapshot.plan.uuid);
@@ -1468,23 +1487,30 @@ function writeNeverExistedSnapshot(
         originNodeId: 'main',
       });
     }
-    rebuildPlanProjectionInTransaction(db, snapshot.planUuid);
+    rebuildPlanProjectionAndInboundOwnersInTransaction(db, snapshot.planUuid);
     return [];
   }
 
-  const task = getTask(db, snapshot.taskUuid);
-  if (task) {
-    db.prepare('DELETE FROM plan_task WHERE uuid = ?').run(snapshot.taskUuid);
-    shiftTaskIndexesAfterDelete(db, task.plan_uuid, task.task_index);
+  const ownerPlanUuid = resolveOwningPlanUuidForTaskNeverExisted(db, snapshot.taskUuid);
+  const projectUuid =
+    ownerPlanUuid === null ? resolveProjectUuidForTaskNeverExisted(db, snapshot.taskUuid) : null;
+  db.prepare('DELETE FROM task_canonical WHERE uuid = ?').run(snapshot.taskUuid);
+  const ownerProjectUuid =
+    ownerPlanUuid === null ? projectUuid : resolveProjectUuidForPlanTombstone(db, ownerPlanUuid);
+  if (ownerProjectUuid) {
+    recordSyncTombstone(db, {
+      entityType: 'task',
+      entityKey: taskKey(snapshot.taskUuid),
+      projectUuid: ownerProjectUuid,
+      deletionOperationUuid: `canonical-never-existed:${snapshot.taskUuid}`,
+      deletedRevision: null,
+      originNodeId: 'main',
+    });
   }
-  const followUpKeys = rejectPendingOperationsForNeverExistedTask(
-    db,
-    snapshot.entityKey,
-    snapshot.taskUuid,
-    `Target task ${snapshot.taskUuid} never existed on the main node`
-  );
-  recordPendingRollbackKeys(db, followUpKeys);
-  return followUpKeys;
+  if (ownerPlanUuid) {
+    rebuildPlanProjectionInTransaction(db, ownerPlanUuid);
+  }
+  return [];
 }
 
 function deleteCanonicalPlanState(db: Database, planUuid: string): void {
@@ -1532,6 +1558,74 @@ function resolveProjectUuidForPlanTombstone(db: Database, planUuid: string): str
     )
     .get(planUuid, planUuid, planUuid) as { project_uuid: string } | null;
   return row?.project_uuid ?? null;
+}
+
+function resolveOwningPlanUuidForTaskNeverExisted(
+  db: Database,
+  taskUuid: string
+): string | null {
+  const row = db
+    .prepare(
+      `
+        SELECT plan_uuid
+        FROM task_canonical
+        WHERE uuid = ?
+        UNION
+        SELECT plan_uuid
+        FROM plan_task
+        WHERE uuid = ?
+        LIMIT 1
+      `
+    )
+    .get(taskUuid, taskUuid) as { plan_uuid: string } | null;
+  if (row?.plan_uuid) {
+    return row.plan_uuid;
+  }
+
+  for (const op of activeOperationsReferencingTask(db, taskUuid)) {
+    const planUuid = planUuidFromTaskPayload(op);
+    if (planUuid) {
+      return planUuid;
+    }
+  }
+  return null;
+}
+
+function resolveProjectUuidForTaskNeverExisted(db: Database, taskUuid: string): string | null {
+  for (const op of activeOperationsReferencingTask(db, taskUuid)) {
+    if (op.project_uuid) {
+      return op.project_uuid;
+    }
+  }
+  return null;
+}
+
+function activeOperationsReferencingTask(
+  db: Database,
+  taskUuid: string
+): Array<{ project_uuid: string; payload: string }> {
+  return db
+    .prepare(
+      `
+        SELECT project_uuid, payload
+        FROM sync_operation
+        WHERE payload_task_uuid = ?
+          AND status IN ('queued', 'sending', 'failed_retryable')
+        ORDER BY origin_node_id, local_sequence
+      `
+    )
+    .all(taskUuid) as Array<{ project_uuid: string; payload: string }>;
+}
+
+function planUuidFromTaskPayload(row: { payload: string }): string | null {
+  const payload = assertValidPayload(JSON.parse(row.payload));
+  if (!('taskUuid' in payload)) {
+    return null;
+  }
+  if (payload.type === 'plan.promote_task') {
+    return payload.sourcePlanUuid;
+  }
+  return 'planUuid' in payload ? payload.planUuid : null;
 }
 
 function rejectPendingOperationsForNeverExistedPlan(

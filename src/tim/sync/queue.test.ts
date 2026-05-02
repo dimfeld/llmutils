@@ -1484,7 +1484,7 @@ describe('persistent-node sync queue', () => {
     expect(operationRow(promoteOp.operationUuid).status).toBe('queued');
   });
 
-  test('mergeCanonicalRefresh never_existed for task rejects queued ops and deletes local task', async () => {
+  test('mergeCanonicalRefresh never_existed for task rebuilds projection without rejecting queued ops', async () => {
     seedPlan();
     const op = enqueue(
       await markPlanTaskDoneOperation(
@@ -1507,13 +1507,13 @@ describe('persistent-node sync queue', () => {
       taskUuid: TASK_UUID,
     });
 
-    // Task is removed locally (never existed on main)
     expect(getPlanTasksByUuid(db, PLAN_UUID)).toHaveLength(0);
-    // The queued op is rejected via indexed payload_task_uuid lookup
-    expect(operationRow(op.operationUuid).status).toBe('rejected');
+    expect(operationRow(op.operationUuid).status).toBe('queued');
+    expect(getPendingRollbackKeys(db)).toEqual([]);
+    expect(getSyncTombstone(db, 'task', `task:${TASK_UUID}`)).not.toBeNull();
   });
 
-  test('mergeCanonicalRefresh never_existed for optimistic add_task returns owning plan follow-up key', async () => {
+  test('mergeCanonicalRefresh never_existed for optimistic add_task rebuilds owning plan projection', async () => {
     seedPlan();
     const addedTaskUuid = TASK_UUID_2;
     const op = enqueue(
@@ -1532,10 +1532,60 @@ describe('persistent-node sync queue', () => {
       taskUuid: addedTaskUuid,
     });
 
-    expect(operationRow(op.operationUuid).status).toBe('rejected');
+    expect(operationRow(op.operationUuid).status).toBe('queued');
     expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).not.toContain(addedTaskUuid);
-    expect(followUpKeys).toEqual([`plan:${PLAN_UUID}`]);
+    expect(followUpKeys).toEqual([]);
+    expect(getPendingRollbackKeys(db)).toEqual([]);
+    expect(getSyncTombstone(db, 'task', `task:${addedTaskUuid}`)).not.toBeNull();
   });
+
+  test.each(['plan_deleted', 'never_existed'] as const)(
+    'mergeCanonicalRefresh %s rebuilds inbound owner projections',
+    (snapshotType) => {
+      const deletedPlanUuid = OTHER_PLAN_UUID;
+      const childPlanUuid = '99999999-9999-4999-8999-999999999998';
+      seedPlan(db, PLAN_UUID, 1, TASK_UUID);
+      seedPlan(db, deletedPlanUuid, 2, TASK_UUID_2);
+      seedPlan(db, childPlanUuid, 3, TASK_UUID_3);
+      db.prepare(
+        'INSERT INTO plan_dependency_canonical (plan_uuid, depends_on_uuid) VALUES (?, ?)'
+      ).run(PLAN_UUID, deletedPlanUuid);
+      db.prepare('INSERT INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)').run(
+        PLAN_UUID,
+        deletedPlanUuid
+      );
+      db.prepare('UPDATE plan_canonical SET parent_uuid = ? WHERE uuid = ?').run(
+        deletedPlanUuid,
+        childPlanUuid
+      );
+      db.prepare('UPDATE plan SET parent_uuid = ? WHERE uuid = ?').run(
+        deletedPlanUuid,
+        childPlanUuid
+      );
+
+      mergeCanonicalRefresh(
+        db,
+        snapshotType === 'plan_deleted'
+          ? {
+              type: 'plan_deleted',
+              projectUuid: PROJECT_UUID,
+              planUuid: deletedPlanUuid,
+              deletedAt: new Date().toISOString(),
+            }
+          : {
+              type: 'never_existed',
+              entityKey: `plan:${deletedPlanUuid}`,
+              targetType: 'plan',
+              planUuid: deletedPlanUuid,
+            }
+      );
+
+      expect(
+        getPlanDependenciesByUuid(db, PLAN_UUID).map((dependency) => dependency.depends_on_uuid)
+      ).not.toContain(deletedPlanUuid);
+      expect(getPlanByUuid(db, childPlanUuid)?.parent_uuid).toBeNull();
+    }
+  );
 
   test('mergeCanonicalRefresh never_existed for promoted destination leaves promote op queued', async () => {
     seedPlan();

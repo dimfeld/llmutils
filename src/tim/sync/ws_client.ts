@@ -16,7 +16,6 @@ import {
   fetchAndMergeSnapshotsUntilConvergence,
 } from './follow_up_fetch.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
-import { rejectedOperationSnapshotKeys } from './rejected_refresh.js';
 import {
   createBatchEnvelope,
   type SyncOperationBatchEnvelope,
@@ -407,10 +406,6 @@ class WebSocketSyncClient implements SyncClient {
         snapshotKeys.add(key);
       }
     }
-    for (const key of rejectedOperationSnapshotKeys(this.options.db, transitions)) {
-      snapshotKeys.add(key);
-    }
-
     await this.fetchAndMergeSnapshots([...snapshotKeys]);
     applyOperationResultTransitions(this.options.db, transitions);
     if (hasTerminalOperationResults(transitions)) {

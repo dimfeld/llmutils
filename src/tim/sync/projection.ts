@@ -267,7 +267,9 @@ function readCanonicalPlanState(
     : {
         ...planRow,
         parent_uuid:
-          planRow.parent_uuid && locallyDeletedPlanUuids.has(planRow.parent_uuid)
+          planRow.parent_uuid &&
+          (locallyDeletedPlanUuids.has(planRow.parent_uuid) ||
+            hasPlanTombstone(db, planRow.parent_uuid))
             ? null
             : planRow.parent_uuid,
       };
@@ -283,7 +285,11 @@ function readCanonicalPlanState(
           'SELECT plan_uuid, depends_on_uuid FROM plan_dependency_canonical WHERE plan_uuid = ? ORDER BY depends_on_uuid'
         )
         .all(planUuid) as PlanDependencyRow[]
-    ).filter((dependency) => !locallyDeletedPlanUuids.has(dependency.depends_on_uuid)),
+    ).filter(
+      (dependency) =>
+        !locallyDeletedPlanUuids.has(dependency.depends_on_uuid) &&
+        !hasPlanTombstone(db, dependency.depends_on_uuid)
+    ),
     tags: db
       .prepare('SELECT plan_uuid, tag FROM plan_tag_canonical WHERE plan_uuid = ? ORDER BY tag')
       .all(planUuid) as PlanTagRow[],
@@ -315,6 +321,14 @@ function hasPlanTombstone(db: Database, planUuid: string): boolean {
     db
       .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
       .get('plan', `plan:${planUuid}`)
+  );
+}
+
+function hasTaskTombstone(db: Database, taskUuid: string): boolean {
+  return Boolean(
+    db
+      .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+      .get('task', `task:${taskUuid}`)
   );
 }
 
@@ -380,6 +394,9 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
   }
 
   getTaskByUuid(taskUuid: string): ApplyOperationToTask | null {
+    if (hasTaskTombstone(this.db, taskUuid)) {
+      return { uuid: taskUuid } as ApplyOperationToTask;
+    }
     for (const tasks of this.tasks.values()) {
       const task = tasks.find((item) => item.uuid === taskUuid);
       if (task) {

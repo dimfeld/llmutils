@@ -431,7 +431,7 @@ describe('sync WebSocket client', () => {
     expect(snapshotWaiterCount(client)).toBe(0);
   });
 
-  test('fetchAndMergeSnapshots bounds never_existed follow-up snapshots', async () => {
+  test('fetchAndMergeSnapshots applies task never_existed without follow-up rollback fetches', async () => {
     const localDb = createDb();
     seedPlan(localDb);
     upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
@@ -467,9 +467,12 @@ describe('sync WebSocket client', () => {
       client as unknown as { fetchAndMergeSnapshots(keys: string[]): Promise<void> }
     ).fetchAndMergeSnapshots([`task:${addedTaskUuid}`]);
 
-    expect(requestSnapshots).toHaveBeenCalledTimes(2);
+    expect(requestSnapshots).toHaveBeenCalledTimes(1);
     expect(requestSnapshots.mock.calls[0]?.[0]).toEqual([`task:${addedTaskUuid}`]);
-    expect(requestSnapshots.mock.calls[1]?.[0]).toEqual([`plan:${PLAN_UUID}`]);
+    expect(
+      listPendingOperations(localDb).find((row) => row.operation_uuid === op.operationUuid)?.status
+    ).toBe('queued');
+    expect(getPendingRollbackKeys(localDb)).toEqual([]);
     expect(getPlanTasksByUuid(localDb, PLAN_UUID).map((task) => task.uuid)).not.toContain(
       addedTaskUuid
     );

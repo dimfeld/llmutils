@@ -17,12 +17,10 @@ import {
   markOperationFailedRetryable,
   markOperationSending,
   prunePlanRefsForTerminalOps,
-  recordPendingRollbackKeys,
   resetSendingOperations,
   type SyncOperationQueueRow,
 } from './queue.js';
 import { pruneSyncSequence } from './retention.js';
-import { rejectedOperationSnapshotKeys } from './rejected_refresh.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
 import { createSyncClient, rowsToFlushFrames, type SyncClient } from './ws_client.js';
 import type { SyncOperationResult } from './ws_protocol.js';
@@ -247,17 +245,6 @@ async function applyOperationResultsOverHttp(
     for (const key of result.invalidations ?? []) {
       keys.add(key);
     }
-  }
-  const rejectionKeys = rejectedOperationSnapshotKeys(options.db, results);
-  if (rejectionKeys.length > 0) {
-    options.db
-      .transaction(() => {
-        recordPendingRollbackKeys(options.db, rejectionKeys);
-      })
-      .immediate();
-  }
-  for (const key of rejectionKeys) {
-    keys.add(key);
   }
   await fetchAndMergeSnapshots(options, [...keys]);
   applyOperationResultTransitions(options.db, results);
