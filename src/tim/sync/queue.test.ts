@@ -53,6 +53,7 @@ import {
   type QueueableOperation,
 } from './queue.js';
 import { createSyncConflict } from './conflicts.js';
+import { applyOperationResultTransitions } from './result_transitions.js';
 import { createBatchEnvelope } from './types.js';
 
 const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
@@ -1195,6 +1196,38 @@ describe('persistent-node sync queue', () => {
     expect(operationRow(op.operationUuid).status).toBe('queued');
     // Canonical tombstone written so projector knows the plan never existed
     expect(getSyncTombstone(db, 'plan', `plan:${PLAN_UUID}`)).not.toBeNull();
+  });
+
+  test('add_task against never_existed parent stays active and later rejection is a no-op projection rebuild', async () => {
+    seedPlan();
+    const op = enqueue(
+      await addPlanTaskOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, taskUuid: TASK_UUID_2, title: 'Optimistic task' },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).toContain(TASK_UUID_2);
+
+    mergeCanonicalRefresh(db, {
+      type: 'never_existed',
+      entityKey: `plan:${PLAN_UUID}`,
+      targetType: 'plan',
+      planUuid: PLAN_UUID,
+    });
+
+    expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
+    expect(getPlanTasksByUuid(db, PLAN_UUID)).toEqual([]);
+    expect(operationRow(op.operationUuid).status).toBe('queued');
+
+    markOperationSending(db, op.operationUuid);
+    applyOperationResultTransitions(db, [
+      { operationId: op.operationUuid, status: 'rejected', error: 'missing parent plan' },
+    ]);
+
+    expect(operationRow(op.operationUuid).status).toBe('rejected');
+    expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
+    expect(getPlanTasksByUuid(db, PLAN_UUID)).toEqual([]);
   });
 
   test('mergeCanonicalRefresh plan_deleted does not reject ops that only reference the deleted plan as depends_on', async () => {

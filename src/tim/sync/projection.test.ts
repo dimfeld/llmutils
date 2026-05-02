@@ -1118,6 +1118,72 @@ describe('rebuildPlanProjection', () => {
     });
   });
 
+  test('canonical plan update preserves multiple pending scalar edits on different fields', async () => {
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: PLAN_UUID,
+      planId: 12,
+      title: 'Plan',
+      status: 'pending',
+      priority: 'low',
+      branch: 'main',
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
+    await enqueueOperation(
+      db,
+      await setPlanScalarOperation(
+        PROJECT_UUID,
+        {
+          planUuid: PLAN_UUID,
+          field: 'status',
+          value: 'in_progress',
+          baseValue: 'pending',
+          baseRevision: 1,
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+    await enqueueOperation(
+      db,
+      await setPlanScalarOperation(
+        PROJECT_UUID,
+        {
+          planUuid: PLAN_UUID,
+          field: 'priority',
+          value: 'urgent',
+          baseValue: 'low',
+          baseRevision: 1,
+        },
+        { originNodeId: NODE_A, localSequence: 2 }
+      )
+    );
+
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: PLAN_UUID,
+      planId: 12,
+      title: 'Updated by main',
+      status: 'pending',
+      priority: 'low',
+      branch: 'release',
+      revision: 2,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+      title: 'Updated by main',
+      branch: 'release',
+      status: 'in_progress',
+      priority: 'urgent',
+      revision: 4,
+    });
+  });
+
   test('promote_task: source task skipped silently when tombstoned and op collapses projection', async () => {
     const NEW_PLAN_UUID = '77777777-7777-4777-8777-777777777777';
     writeCanonicalPlan({
@@ -1163,6 +1229,25 @@ describe('rebuildPlanProjection', () => {
 
     // Destination plan should disappear (no canonical + no active ops)
     expect(getPlanByUuid(db, NEW_PLAN_UUID)).toBeNull();
+  });
+
+  test('plan projection still includes active operation after sending is reset to failed_retryable', async () => {
+    writeCanonicalPlan({ revision: 4, title: 'Canonical', tags: [] });
+    const op = await enqueuePlanAddTag('recover-after-restart');
+    markOperationSending(db, op.operationUuid);
+
+    rebuildPlanProjection(db, PLAN_UUID);
+    expect(getPlanTagsByUuid(db, PLAN_UUID).map((tag) => tag.tag)).toEqual([
+      'recover-after-restart',
+    ]);
+
+    markOperationFailedRetryable(db, op.operationUuid, 'process restarted');
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(operationStatus(op.operationUuid)).toBe('failed_retryable');
+    expect(getPlanTagsByUuid(db, PLAN_UUID).map((tag) => tag.tag)).toEqual([
+      'recover-after-restart',
+    ]);
   });
 });
 
