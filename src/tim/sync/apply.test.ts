@@ -490,6 +490,58 @@ describe('main-node sync apply engine', () => {
     ).toEqual(['next', 'prior']);
   });
 
+  test('partial batch replay persists missing operation rejections so FIFO can advance', async () => {
+    seedPlan();
+    const first = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'first' },
+      {
+        operationUuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        originNodeId: NODE_A,
+        localSequence: 1,
+      }
+    );
+    const missing = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'missing' },
+      {
+        operationUuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        originNodeId: NODE_A,
+        localSequence: 2,
+      }
+    );
+    const batch = createBatchEnvelope({
+      batchId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccd',
+      originNodeId: NODE_A,
+      operations: [first, missing],
+    });
+
+    expect(applyBatch(db, batch).status).toBe('applied');
+    db.prepare('DELETE FROM sync_operation WHERE operation_uuid = ?').run(missing.operationUuid);
+
+    const replay = applyBatch(db, batch);
+
+    expect(replay.status).toBe('rejected');
+    expect(operationRows().map((row) => [row.local_sequence, row.status])).toEqual([
+      [1, 'applied'],
+      [2, 'rejected'],
+    ]);
+    expect(operationRows()[1]!.last_error).toBe(
+      'Operation rolled back because its batch did not commit'
+    );
+
+    const next = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'next' },
+      {
+        operationUuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        originNodeId: NODE_A,
+        localSequence: 3,
+      }
+    );
+    expect(applyOperation(db, next).status).toBe('applied');
+  });
+
   test('batch rolls back via SyncValidationError catch path on duplicate-sequence collision and marks all results rejected', async () => {
     seedPlan();
     const applied = await addPlanTagOperation(
