@@ -7,7 +7,8 @@ import {
   getPlanDependenciesByUuid,
   getPlanTagsByUuid,
   getPlanTasksByUuid,
-  upsertPlan,
+  upsertCanonicalPlanInTransaction,
+  upsertProjectionPlanInTransaction,
 } from '../db/plan.js';
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
 import { getTimNode, getTimNodeCursor, upsertTimNode } from '../db/sync_tables.js';
@@ -865,15 +866,21 @@ function seedPlan(db: Database): void {
     uuid: PROJECT_UUID,
     highestPlanId: 10,
   });
-  upsertPlan(db, project.id, {
+  const plan = {
     uuid: PLAN_UUID,
     planId: 1,
     title: 'Sync plan',
     details: 'details',
     status: 'pending',
+    revision: 1,
     tasks: [{ uuid: TASK_UUID, title: 'Task one', description: 'Do it' }],
     forceOverwrite: true,
+  };
+  upsertCanonicalPlanInTransaction(db, project.id, {
+    ...plan,
+    tasks: plan.tasks.map((task) => ({ ...task, revision: 1 })),
   });
+  upsertProjectionPlanInTransaction(db, project.id, plan);
 }
 
 function seedSecondPlan(db: Database): void {
@@ -881,15 +888,21 @@ function seedSecondPlan(db: Database): void {
     uuid: SECOND_PROJECT_UUID,
     highestPlanId: 10,
   });
-  upsertPlan(db, project.id, {
+  const plan = {
     uuid: SECOND_PLAN_UUID,
     planId: 1,
     title: 'Second sync plan',
     details: 'second details',
     status: 'pending',
+    revision: 1,
     tasks: [{ uuid: SECOND_TASK_UUID, title: 'Second task', description: 'Do it too' }],
     forceOverwrite: true,
+  };
+  upsertCanonicalPlanInTransaction(db, project.id, {
+    ...plan,
+    tasks: plan.tasks.map((task) => ({ ...task, revision: 1 })),
   });
+  upsertProjectionPlanInTransaction(db, project.id, plan);
 }
 
 function expectPlanGone(db: Database, planUuid: string): void {

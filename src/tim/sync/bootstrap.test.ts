@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
 import { setProjectSetting } from '../db/project_settings.js';
-import { getPlanByUuid, upsertPlan } from '../db/plan.js';
+import {
+  getPlanByUuid,
+  upsertCanonicalPlanInTransaction,
+  upsertProjectionPlanInTransaction,
+  type UpsertPlanInput,
+} from '../db/plan.js';
 import { applyOperation } from './apply.js';
 import { bootstrapSyncMetadata } from './bootstrap.js';
 import { planKey, projectSettingKey } from './entity_keys.js';
@@ -199,7 +204,7 @@ describe('bootstrapSyncMetadata', () => {
 });
 
 function seedPlan(): void {
-  upsertPlan(db, project.id, {
+  seedPlanRow({
     uuid: PLAN_UUID,
     planId: 1,
     title: 'Bootstrap plan',
@@ -214,7 +219,7 @@ function seedPlan(): void {
 }
 
 function seedSecondPlan(): void {
-  upsertPlan(db, project.id, {
+  seedPlanRow({
     uuid: SECOND_PLAN_UUID,
     planId: 2,
     title: 'Unsequenced plan',
@@ -223,6 +228,16 @@ function seedSecondPlan(): void {
     tasks: [{ uuid: SECOND_TASK_UUID, title: 'Fresh task', description: 'Do later' }],
     forceOverwrite: true,
   });
+}
+
+function seedPlanRow(input: UpsertPlanInput): void {
+  const withRevision = {
+    revision: input.revision ?? 1,
+    ...input,
+    tasks: input.tasks?.map((task) => ({ revision: task.revision ?? 1, ...task })),
+  };
+  upsertCanonicalPlanInTransaction(db, project.id, withRevision);
+  upsertProjectionPlanInTransaction(db, project.id, input);
 }
 
 function syncSequenceRows(): Array<{

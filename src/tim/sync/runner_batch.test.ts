@@ -7,7 +7,8 @@ import {
   getPlanDependenciesByUuid,
   getPlanTagsByUuid,
   getPlanTasksByUuid,
-  upsertPlan,
+  upsertCanonicalPlanInTransaction,
+  upsertProjectionPlanInTransaction,
 } from '../db/plan.js';
 import { upsertTimNode } from '../db/sync_tables.js';
 import {
@@ -374,14 +375,20 @@ function seedPlan(db: Database, planUuid = PLAN_UUID, planId = 1, withTask = fal
     uuid: PROJECT_UUID,
     highestPlanId: 10,
   });
-  upsertPlan(db, project.id, {
+  const plan = {
     uuid: planUuid,
     planId,
     title: 'Runner batch plan',
     status: 'pending',
+    revision: 1,
     tasks: withTask ? [{ uuid: TASK_UUID, title: 'Original task', description: 'source' }] : [],
     forceOverwrite: true,
+  };
+  upsertCanonicalPlanInTransaction(db, project.id, {
+    ...plan,
+    tasks: plan.tasks.map((task) => ({ ...task, revision: 1 })),
   });
+  upsertProjectionPlanInTransaction(db, project.id, plan);
 }
 
 function countRows(db: Database, table: string): number {

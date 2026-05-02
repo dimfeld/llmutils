@@ -178,6 +178,147 @@ describe('rebuildPlanProjection', () => {
     });
   });
 
+  test('plan.create projection uses the numericPlanId persisted on enqueue', async () => {
+    await enqueueOperation(
+      db,
+      await createPlanOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          title: 'Local create',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    rebuildPlanProjection(db, PLAN_UUID);
+    const firstPlanId = getPlanByUuid(db, PLAN_UUID)?.plan_id;
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)?.plan_id).toBe(firstPlanId);
+    expect(firstPlanId).toBe(11);
+    const row = db
+      .prepare("SELECT payload FROM sync_operation WHERE operation_type = 'plan.create'")
+      .get() as { payload: string };
+    expect(JSON.parse(row.payload)).toMatchObject({ numericPlanId: firstPlanId });
+  });
+
+  test('projection skips add_dependency that would create a cycle without changing op status', async () => {
+    const dependencyPlanUuid = '77777777-7777-4777-8777-777777777777';
+    writeCanonicalPlan({
+      revision: 1,
+      title: 'Target',
+      dependencyUuids: [dependencyPlanUuid],
+    });
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: dependencyPlanUuid,
+      planId: 13,
+      title: 'Dependency',
+      status: 'pending',
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
+    const operation = await addPlanDependencyOperation(
+      PROJECT_UUID,
+      { planUuid: dependencyPlanUuid, dependsOnPlanUuid: PLAN_UUID },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    enqueueOperation(db, operation);
+
+    rebuildPlanProjection(db, dependencyPlanUuid);
+
+    expect(getPlanDependenciesByUuid(db, dependencyPlanUuid)).toEqual([]);
+    expect(operationStatus(operation.operationUuid)).toBe('queued');
+  });
+
+  test('projection skips set_parent that would create a dependency cycle', async () => {
+    const parentUuid = '77777777-7777-4777-8777-777777777777';
+    writeCanonicalPlan({
+      revision: 1,
+      title: 'Child',
+      dependencyUuids: [parentUuid],
+    });
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: parentUuid,
+      planId: 13,
+      title: 'Parent',
+      status: 'pending',
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
+    const operation = await setPlanParentOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, newParentUuid: parentUuid, baseRevision: 1 },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    enqueueOperation(db, operation);
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)?.parent_uuid).toBeNull();
+    expect(operationStatus(operation.operationUuid)).toBe('queued');
+  });
+
+  test('projection skips add_task with a duplicate canonical task UUID', async () => {
+    const otherPlanUuid = '77777777-7777-4777-8777-777777777777';
+    writeCanonicalPlan({ revision: 1, title: 'Target' });
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: otherPlanUuid,
+      planId: 13,
+      title: 'Other',
+      status: 'pending',
+      revision: 1,
+      tasks: [{ uuid: TASK_UUID, title: 'Existing', description: '', revision: 1 }],
+      dependencyUuids: [],
+      tags: [],
+    });
+    const operation = await addPlanTaskOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, taskUuid: TASK_UUID, title: 'Duplicate' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    enqueueOperation(db, operation);
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanTasksByUuid(db, PLAN_UUID)).toEqual([]);
+    expect(operationStatus(operation.operationUuid)).toBe('queued');
+  });
+
+  test('projection skips plan.create with a duplicate canonical task UUID', async () => {
+    const otherPlanUuid = '77777777-7777-4777-8777-777777777777';
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: otherPlanUuid,
+      planId: 13,
+      title: 'Other',
+      status: 'pending',
+      revision: 1,
+      tasks: [{ uuid: TASK_UUID, title: 'Existing', description: '', revision: 1 }],
+      dependencyUuids: [],
+      tags: [],
+    });
+    const operation = await createPlanOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        numericPlanId: 42,
+        title: 'Duplicate task create',
+        tasks: [{ taskUuid: TASK_UUID, title: 'Duplicate', description: '' }],
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    enqueueOperation(db, operation);
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
+    expect(operationStatus(operation.operationUuid)).toBe('queued');
+  });
+
   test('skips add_task against tombstoned canonical and deletes projection', async () => {
     writeCanonicalPlan({ revision: 2, title: 'Deleted canonical' });
     upsertProjectionPlanInTransaction(db, project.id, {
@@ -1052,6 +1193,14 @@ function writeCanonicalPlan(
     tags: input.tags ?? [],
     docs: input.docs,
   });
+}
+
+function operationStatus(operationUuid: string): string {
+  return (
+    db.prepare('SELECT status FROM sync_operation WHERE operation_uuid = ?').get(operationUuid) as {
+      status: string;
+    }
+  ).status;
 }
 
 async function enqueuePlanSetScalar(

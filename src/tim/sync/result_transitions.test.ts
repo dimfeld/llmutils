@@ -2,7 +2,10 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'vitest';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
-import { upsertPlan } from '../db/plan.js';
+import {
+  upsertCanonicalPlanInTransaction,
+  upsertProjectionPlanInTransaction,
+} from '../db/plan.js';
 import {
   getProjectSettingWithMetadata,
   writeCanonicalProjectSettingRow,
@@ -212,14 +215,20 @@ function createDb(): Database {
 
 function seedPlan(db: Database): void {
   const project = seedProject(db);
-  upsertPlan(db, project.id, {
+  const plan = {
     uuid: PLAN_UUID,
     planId: 1,
     title: 'Sync plan',
     status: 'pending',
+    revision: 1,
     tasks: [{ uuid: TASK_UUID, title: 'Task one', description: 'Do it' }],
     forceOverwrite: true,
+  };
+  upsertCanonicalPlanInTransaction(db, project.id, {
+    ...plan,
+    tasks: plan.tasks.map((task) => ({ ...task, revision: 1 })),
   });
+  upsertProjectionPlanInTransaction(db, project.id, plan);
 }
 
 function seedProject(db: Database): Project {

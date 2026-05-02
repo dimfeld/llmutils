@@ -16,13 +16,29 @@ import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject } from '../db/project.js';
-import { getPlanByUuid, getPlanTasksByUuid, upsertPlan } from '../db/plan.js';
+import {
+  getPlanByUuid,
+  getPlanTasksByUuid,
+  upsertCanonicalPlanInTransaction,
+  upsertProjectionPlanInTransaction,
+  type UpsertPlanInput,
+} from '../db/plan.js';
 import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import { checkAndMarkParentDone } from '../plans/parent_cascade.js';
 import { resetSendingOperations, listPendingOperations } from './queue.js';
 import { writePlanRemoveTask } from './write_router.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { TimConfig } from '../configSchema.js';
+
+function upsertPlanForSyncTest(db: Database, projectId: number, input: UpsertPlanInput): void {
+  const withRevision = {
+    revision: input.revision ?? 1,
+    ...input,
+    tasks: input.tasks?.map((task) => ({ revision: task.revision ?? 1, ...task })),
+  };
+  upsertCanonicalPlanInTransaction(db, projectId, withRevision);
+  upsertProjectionPlanInTransaction(db, projectId, input);
+}
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -546,7 +562,7 @@ describe('write_router integration: parent cascade no double-emit', () => {
     projectId = project.id;
 
     // Epic parent — in_progress with no tasks (so hasUnfinishedTasks = false)
-    upsertPlan(db, projectId, {
+    upsertPlanForSyncTest(db, projectId, {
       uuid: PARENT_UUID,
       planId: 1,
       title: 'Parent Epic',
@@ -556,7 +572,7 @@ describe('write_router integration: parent cascade no double-emit', () => {
     });
 
     // Two children, both done
-    upsertPlan(db, projectId, {
+    upsertPlanForSyncTest(db, projectId, {
       uuid: CHILD1_UUID,
       planId: 2,
       title: 'Child 1',
@@ -564,7 +580,7 @@ describe('write_router integration: parent cascade no double-emit', () => {
       parentUuid: PARENT_UUID,
       forceOverwrite: true,
     });
-    upsertPlan(db, projectId, {
+    upsertPlanForSyncTest(db, projectId, {
       uuid: CHILD2_UUID,
       planId: 3,
       title: 'Child 2',
@@ -628,7 +644,7 @@ describe('write_router integration: plan.remove_task index shifting', () => {
       uuid: PROJECT_UUID,
     });
 
-    upsertPlan(db, project.id, {
+    upsertPlanForSyncTest(db, project.id, {
       uuid: PLAN_UUID,
       planId: 1,
       title: 'Remove Task Plan',

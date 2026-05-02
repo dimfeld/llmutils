@@ -11,6 +11,7 @@ import { assertValidPayload, type SyncOperationPayload } from './types.js';
 import type { SyncOperationEnvelope } from './types.js';
 import {
   applyOperationTo,
+  applyOperationToPrecondition,
   type ApplyOperationToAdapter,
   type ApplyOperationToPlan,
   type ApplyOperationToTask,
@@ -333,6 +334,20 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
     return plan ? { ...plan } : null;
   }
 
+  getTaskByUuid(taskUuid: string): ApplyOperationToTask | null {
+    for (const tasks of this.tasks.values()) {
+      const task = tasks.find((item) => item.uuid === taskUuid);
+      if (task) {
+        return { ...task };
+      }
+    }
+    const task =
+      (this.db.prepare('SELECT * FROM task_canonical WHERE uuid = ?').get(taskUuid) as
+        | ApplyOperationToTask
+        | null) ?? null;
+    return task ? { ...task } : null;
+  }
+
   setPlan(plan: ApplyOperationToPlan): void {
     this.plans.set(plan.uuid, { ...plan });
     if (!this.tasks.has(plan.uuid)) {
@@ -400,16 +415,7 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
     if (requestedPlanId !== undefined) {
       return requestedPlanId;
     }
-    const maxLoaded = Math.max(
-      0,
-      ...[...this.plans.values()]
-        .filter((plan): plan is ApplyOperationToPlan => !!plan)
-        .map((plan) => plan.plan_id)
-    );
-    const row = this.db
-      .prepare('SELECT COALESCE(MAX(plan_id), 0) AS max_plan_id FROM plan WHERE project_id = ?')
-      .get(this.project.id) as { max_plan_id: number };
-    return Math.max(maxLoaded, row.max_plan_id) + 1;
+    applyOperationToPrecondition('plan.create projection requires numericPlanId');
   }
 
   private ensurePlanCollectionsLoaded(planUuid: string): void {

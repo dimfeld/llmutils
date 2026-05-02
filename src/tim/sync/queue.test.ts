@@ -8,7 +8,9 @@ import {
   getPlanDependenciesByUuid,
   getPlanTagsByUuid,
   getPlanTasksByUuid,
+  upsertCanonicalPlanInTransaction,
   upsertPlan,
+  upsertProjectionPlanInTransaction,
 } from '../db/plan.js';
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
 import { applyOperation } from './apply.js';
@@ -88,15 +90,21 @@ function seedPlan(targetDb = db, uuid = PLAN_UUID, planId = 1, taskUuid = TASK_U
       uuid: PROJECT_UUID,
       highestPlanId: 10,
     }) ?? project;
-  upsertPlan(targetDb, targetProject.id, {
+  const plan = {
     uuid,
     planId,
     title: `Plan ${planId}`,
     details: 'alpha\nbeta\ngamma\n',
     status: 'pending',
+    revision: 1,
     tasks: [{ uuid: taskUuid, title: 'Task one', description: 'old description' }],
     forceOverwrite: true,
+  };
+  upsertCanonicalPlanInTransaction(targetDb, targetProject.id, {
+    ...plan,
+    tasks: plan.tasks.map((task) => ({ ...task, revision: 1 })),
   });
+  upsertProjectionPlanInTransaction(targetDb, targetProject.id, plan);
 }
 
 function seedAssignment(planUuid = PLAN_UUID): void {

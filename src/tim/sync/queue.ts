@@ -774,6 +774,22 @@ export function allocateLocalSequenceRange(
 
 function addQueueMetadata(db: Database, operationInput: QueueableOperation): QueueableOperation {
   if (
+    (operationInput.op.type === 'plan.create' || operationInput.op.type === 'plan.promote_task') &&
+    operationInput.op.numericPlanId === undefined
+  ) {
+    const project = getProjectByUuid(db, operationInput.projectUuid);
+    if (!project) {
+      return operationInput;
+    }
+    return {
+      ...operationInput,
+      op: {
+        ...operationInput.op,
+        numericPlanId: reserveOptimisticPlanId(db, project.id),
+      },
+    };
+  }
+  if (
     operationInput.op.type !== 'plan.set_parent' ||
     operationInput.op.previousParentUuid !== undefined
   ) {

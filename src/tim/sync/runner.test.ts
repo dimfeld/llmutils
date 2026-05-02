@@ -1,7 +1,13 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { runMigrations } from '../db/migrations.js';
-import { getPlanByUuid, getPlanTagsByUuid, getPlanTasksByUuid, upsertPlan } from '../db/plan.js';
+import {
+  getPlanByUuid,
+  getPlanTagsByUuid,
+  getPlanTasksByUuid,
+  upsertCanonicalPlanInTransaction,
+  upsertProjectionPlanInTransaction,
+} from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 import { getTimNodeCursor, insertSyncOperation, upsertTimNode } from '../db/sync_tables.js';
 import {
@@ -69,14 +75,20 @@ function seedPlan(db: Database): void {
     uuid: PROJECT_UUID,
     highestPlanId: 10,
   });
-  upsertPlan(db, project.id, {
+  const plan = {
     uuid: PLAN_UUID,
     planId: 1,
     title: 'Source plan',
     status: 'pending',
+    revision: 1,
     tasks: [{ uuid: TASK_UUID, title: 'Task one', description: 'Promote me' }],
     forceOverwrite: true,
+  };
+  upsertCanonicalPlanInTransaction(db, project.id, {
+    ...plan,
+    tasks: plan.tasks.map((task) => ({ ...task, revision: 1 })),
   });
+  upsertProjectionPlanInTransaction(db, project.id, plan);
 }
 
 async function insertQueuedTagOperation(db: Database, tag: string, localSequence = 0) {

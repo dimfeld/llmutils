@@ -7,7 +7,13 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { clearConfigCache } from '../configLoader.js';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
-import { getPlanByUuid, getPlanTagsByUuid, getPlanTasksByUuid, upsertPlan } from '../db/plan.js';
+import {
+  getPlanByUuid,
+  getPlanTagsByUuid,
+  getPlanTasksByUuid,
+  upsertCanonicalPlanInTransaction,
+  upsertProjectionPlanInTransaction,
+} from '../db/plan.js';
 import { getProjectSettingWithMetadata, setProjectSetting } from '../db/project_settings.js';
 import { insertSyncConflict, insertSyncOperation, getSyncConflict } from '../db/sync_tables.js';
 import {
@@ -80,15 +86,21 @@ beforeEach(() => {
 });
 
 function seedPlan(details = 'alpha\nbeta\ngamma\n'): void {
-  upsertPlan(db, project.id, {
+  const plan = {
     uuid: PLAN_UUID,
     planId: 1,
     title: 'Plan',
     details,
     status: 'pending',
+    revision: 1,
     tasks: [{ uuid: TASK_UUID, title: 'Task one', description: 'Task description' }],
     forceOverwrite: true,
+  };
+  upsertCanonicalPlanInTransaction(db, project.id, {
+    ...plan,
+    tasks: plan.tasks.map((task) => ({ ...task, revision: 1 })),
   });
+  upsertProjectionPlanInTransaction(db, project.id, plan);
 }
 
 async function createTextConflict(): Promise<string> {

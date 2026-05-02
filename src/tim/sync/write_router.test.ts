@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import type { TimConfig } from '../configSchema.js';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
-import { getPlanByUuid, upsertPlan } from '../db/plan.js';
+import {
+  getPlanByUuid,
+  upsertCanonicalPlanInTransaction,
+  upsertProjectionPlanInTransaction,
+} from '../db/plan.js';
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
 import { applyBatch, applyOperation } from './apply.js';
 import {
@@ -44,13 +48,16 @@ beforeEach(() => {
     uuid: PROJECT_UUID,
     highestPlanId: 10,
   });
-  upsertPlan(db, project.id, {
+  const plan = {
     uuid: PLAN_UUID,
     planId: 1,
     title: 'Router test plan',
     status: 'pending',
+    revision: 1,
     forceOverwrite: true,
-  });
+  };
+  upsertCanonicalPlanInTransaction(db, project.id, plan);
+  upsertProjectionPlanInTransaction(db, project.id, plan);
 });
 
 function syncOperationRows() {
@@ -170,6 +177,10 @@ describe('sync write router', () => {
       'main edit\n',
       PLAN_UUID
     );
+    db.prepare('UPDATE plan_canonical SET details = ?, revision = revision + 1 WHERE uuid = ?').run(
+      'main edit\n',
+      PLAN_UUID
+    );
     const before = getPlanByUuid(db, PLAN_UUID)!;
     const status = await setPlanScalarOperation(
       PROJECT_UUID,
@@ -177,7 +188,6 @@ describe('sync write router', () => {
         planUuid: PLAN_UUID,
         field: 'status',
         value: 'in_progress',
-        baseRevision: before.revision,
       },
       { originNodeId: NODE_ID, localSequence: 0 }
     );
@@ -188,7 +198,7 @@ describe('sync write router', () => {
         field: 'details',
         base: 'base text\n',
         new: 'incoming edit\n',
-        baseRevision: before.revision,
+        baseRevision: before.revision + 1,
       },
       { originNodeId: NODE_ID, localSequence: 1 }
     );
@@ -234,6 +244,10 @@ describe('sync write router', () => {
       'main edit\n',
       PLAN_UUID
     );
+    db.prepare('UPDATE plan_canonical SET details = ?, revision = revision + 1 WHERE uuid = ?').run(
+      'main edit\n',
+      PLAN_UUID
+    );
     const before = getPlanByUuid(db, PLAN_UUID)!;
     const status = await setPlanScalarOperation(
       PROJECT_UUID,
@@ -241,7 +255,6 @@ describe('sync write router', () => {
         planUuid: PLAN_UUID,
         field: 'status',
         value: 'in_progress',
-        baseRevision: before.revision,
       },
       { originNodeId: NODE_ID, localSequence: 0 }
     );
@@ -252,7 +265,7 @@ describe('sync write router', () => {
         field: 'details',
         base: 'base text\n',
         new: 'incoming edit\n',
-        baseRevision: before.revision,
+        baseRevision: before.revision + 1,
       },
       { originNodeId: NODE_ID, localSequence: 1 }
     );

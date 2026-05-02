@@ -3,9 +3,22 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { getAssignment, importAssignment } from '../db/assignment.js';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
-import { getPlanByUuid, getPlanTagsByUuid, getPlanTasksByUuid, upsertPlan } from '../db/plan.js';
+import {
+  getPlanByUuid,
+  getPlanTagsByUuid,
+  getPlanTasksByUuid,
+  upsertCanonicalPlanInTransaction,
+  upsertPlan,
+  upsertProjectionPlanInTransaction,
+  type UpsertPlanInput,
+} from '../db/plan.js';
 import { SyncFifoGapError, SyncValidationError } from './errors.js';
-import { applyBatch, applyOperation, setApplyBatchOperationHookForTesting } from './apply.js';
+import {
+  applyBatch,
+  applyOperation,
+  resolveSyncConflict,
+  setApplyBatchOperationHookForTesting,
+} from './apply.js';
 import { mergeCanonicalRefresh } from './queue.js';
 import { loadCanonicalSnapshot } from './server.js';
 import {
@@ -53,7 +66,7 @@ beforeEach(() => {
 });
 
 function seedPlan(uuid = PLAN_UUID, planId = 1, taskUuid = TASK_UUID): void {
-  upsertPlan(db, project.id, {
+  seedPlanRow({
     uuid,
     planId,
     title: `Plan ${planId}`,
@@ -62,6 +75,70 @@ function seedPlan(uuid = PLAN_UUID, planId = 1, taskUuid = TASK_UUID): void {
     tasks: [{ uuid: taskUuid, title: 'Task one', description: 'old description' }],
     forceOverwrite: true,
   });
+}
+
+function seedPlanRow(input: UpsertPlanInput): void {
+  const withRevision = {
+    revision: input.revision ?? 1,
+    ...input,
+    tasks: input.tasks?.map((task) => ({ revision: task.revision ?? 1, ...task })),
+  };
+  upsertCanonicalPlanInTransaction(db, project.id, withRevision);
+  upsertProjectionPlanInTransaction(db, project.id, input);
+}
+
+function mirrorProjectionPlanToCanonical(planUuid = PLAN_UUID): void {
+  db.prepare('DELETE FROM plan_dependency_canonical WHERE plan_uuid = ? OR depends_on_uuid = ?').run(
+    planUuid,
+    planUuid
+  );
+  db.prepare('DELETE FROM plan_tag_canonical WHERE plan_uuid = ?').run(planUuid);
+  db.prepare('DELETE FROM task_canonical WHERE plan_uuid = ?').run(planUuid);
+  db.prepare('DELETE FROM plan_canonical WHERE uuid = ?').run(planUuid);
+  db.prepare(
+    `
+      INSERT INTO plan_canonical (
+        uuid, project_id, plan_id, title, goal, note, details, status, priority,
+        branch, simple, tdd, discovered_from, issue, pull_request, assigned_to,
+        base_branch, base_commit, base_change_id, temp, docs, changed_files,
+        plan_generated_at, review_issues, docs_updated_at, lessons_applied_at,
+        parent_uuid, epic, revision, created_at, updated_at
+      )
+      SELECT
+        uuid, project_id, plan_id, title, goal, note, details, status, priority,
+        branch, simple, tdd, discovered_from, issue, pull_request, assigned_to,
+        base_branch, base_commit, base_change_id, temp, docs, changed_files,
+        plan_generated_at, review_issues, docs_updated_at, lessons_applied_at,
+        parent_uuid, epic, revision, created_at, updated_at
+      FROM plan
+      WHERE uuid = ?
+    `
+  ).run(planUuid);
+  db.prepare(
+    `
+      INSERT INTO task_canonical (uuid, plan_uuid, task_index, title, description, done, revision)
+      SELECT uuid, plan_uuid, task_index, title, description, done, revision
+      FROM plan_task
+      WHERE plan_uuid = ?
+    `
+  ).run(planUuid);
+  db.prepare(
+    `
+      INSERT OR IGNORE INTO plan_dependency_canonical (plan_uuid, depends_on_uuid)
+      SELECT plan_uuid, depends_on_uuid
+      FROM plan_dependency
+      WHERE plan_uuid = ?
+        AND EXISTS (SELECT 1 FROM plan_canonical WHERE uuid = plan_dependency.depends_on_uuid)
+    `
+  ).run(planUuid);
+  db.prepare(
+    `
+      INSERT OR IGNORE INTO plan_tag_canonical (plan_uuid, tag)
+      SELECT plan_uuid, tag
+      FROM plan_tag
+      WHERE plan_uuid = ?
+    `
+  ).run(planUuid);
 }
 
 function seedAssignment(planUuid = PLAN_UUID): void {
@@ -217,6 +294,7 @@ describe('main-node sync apply engine', () => {
       'alpha\nmain edit\ngamma\n',
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical();
     const tag = await addPlanTagOperation(
       PROJECT_UUID,
       { planUuid: PLAN_UUID, tag: 'sync' },
@@ -297,9 +375,9 @@ describe('main-node sync apply engine', () => {
 
     expect(result.status).toBe('conflict');
     expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('pending');
-    expect(db.prepare('SELECT status FROM plan_canonical WHERE uuid = ?').get(PLAN_UUID)).toEqual(
-      null
-    );
+    expect(db.prepare('SELECT status FROM plan_canonical WHERE uuid = ?').get(PLAN_UUID)).toEqual({
+      status: 'pending',
+    });
     expect(
       db.prepare('SELECT reason FROM sync_conflict WHERE operation_uuid = ?').get(op.operationUuid)
     ).toEqual({ reason: 'stale_revision' });
@@ -312,6 +390,7 @@ describe('main-node sync apply engine', () => {
       OTHER_PLAN_UUID,
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical(OTHER_PLAN_UUID);
     const op = await addPlanDependencyOperation(
       PROJECT_UUID,
       { planUuid: PLAN_UUID, dependsOnPlanUuid: OTHER_PLAN_UUID },
@@ -1209,7 +1288,7 @@ describe('main-node sync apply engine', () => {
     ).toEqual({ count: 1 });
   });
 
-  test('plan.create with pre-existing parent dependency edge does not bump parent or add parent sequence', async () => {
+  test('plan.create ignores projection-only parent dependency edge during canonical apply', async () => {
     seedPlan(OTHER_PLAN_UUID, 2);
     db.prepare('INSERT INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)').run(
       OTHER_PLAN_UUID,
@@ -1230,9 +1309,13 @@ describe('main-node sync apply engine', () => {
     const result = applyOperation(db, op);
 
     expect(result.status).toBe('applied');
-    expect(result.invalidations).toEqual([`plan:${PLAN_UUID}`]);
-    expect(sequenceTargets()).toEqual([`plan:${PLAN_UUID}`]);
-    expect(getPlanByUuid(db, OTHER_PLAN_UUID)?.revision).toBe(parentBefore);
+    expect(result.invalidations.sort()).toEqual(
+      [`plan:${OTHER_PLAN_UUID}`, `plan:${PLAN_UUID}`].sort()
+    );
+    expect(sequenceTargets().sort()).toEqual(
+      [`plan:${OTHER_PLAN_UUID}`, `plan:${PLAN_UUID}`].sort()
+    );
+    expect(getPlanByUuid(db, OTHER_PLAN_UUID)?.revision).toBe((parentBefore ?? 0) + 1);
   });
 
   test('FIFO gap defers later operations from the same node', async () => {
@@ -1381,6 +1464,7 @@ describe('main-node sync apply engine', () => {
     db.prepare(
       "UPDATE plan SET details = details || 'delta\n', revision = revision + 1 WHERE uuid = ?"
     ).run(PLAN_UUID);
+    mirrorProjectionPlanToCanonical();
     const clean = await patchPlanTextOperation(
       PROJECT_UUID,
       {
@@ -1402,6 +1486,7 @@ describe('main-node sync apply engine', () => {
       'A\nC\nD\n',
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical();
     const op = await patchPlanTextOperation(
       PROJECT_UUID,
       {
@@ -1424,6 +1509,7 @@ describe('main-node sync apply engine', () => {
       'Z\nA\nC\n',
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical();
     const op = await patchPlanTextOperation(
       PROJECT_UUID,
       {
@@ -1446,6 +1532,7 @@ describe('main-node sync apply engine', () => {
       'alpha\nbeta\ngamma\ndelta\n',
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical();
     const op = await patchPlanTextOperation(
       PROJECT_UUID,
       {
@@ -1468,6 +1555,7 @@ describe('main-node sync apply engine', () => {
       'main changed\n',
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical();
     const beforeRevision = getPlanByUuid(db, PLAN_UUID)?.revision;
     const op = await patchPlanTextOperation(
       PROJECT_UUID,
@@ -1493,6 +1581,7 @@ describe('main-node sync apply engine', () => {
       'A\ncurrent tail\n',
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical();
     const op = await patchPlanTextOperation(
       PROJECT_UUID,
       {
@@ -1515,6 +1604,7 @@ describe('main-node sync apply engine', () => {
       'alpha\nmain edit\ngamma\n',
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical();
     const op = await patchPlanTextOperation(
       PROJECT_UUID,
       {
@@ -1589,7 +1679,7 @@ describe('main-node sync apply engine', () => {
   });
 
   test('rejected plan.create leaves no new canonical rows for cyclic parent dependency', async () => {
-    upsertPlan(db, project.id, {
+    seedPlanRow({
       uuid: OTHER_PLAN_UUID,
       planId: 2,
       title: 'Parent',
@@ -1835,7 +1925,7 @@ describe('main-node sync apply engine', () => {
 
   test('graph operation targeting tombstoned plan rejects', async () => {
     seedPlan();
-    upsertPlan(db, project.id, {
+    seedPlanRow({
       uuid: OTHER_PLAN_UUID,
       planId: 2,
       title: 'Other',
@@ -1907,6 +1997,7 @@ describe('main-node sync apply engine', () => {
     db.prepare(
       'INSERT INTO plan_task (uuid, plan_uuid, task_index, title, description, done, revision) VALUES (?, ?, ?, ?, ?, 0, 1)'
     ).run(TASK_UUID_3, PLAN_UUID, 1, 'Second task', '');
+    mirrorProjectionPlanToCanonical();
     const op = await addPlanTaskOperation(
       PROJECT_UUID,
       {
@@ -1935,6 +2026,7 @@ describe('main-node sync apply engine', () => {
     db.prepare(
       'INSERT INTO plan_task (uuid, plan_uuid, task_index, title, description, done, revision) VALUES (?, ?, ?, ?, ?, 0, 1)'
     ).run(TASK_UUID_3, PLAN_UUID, 2, 'Third task', '');
+    mirrorProjectionPlanToCanonical();
     const op = await addPlanTaskOperation(
       PROJECT_UUID,
       {
@@ -1962,6 +2054,7 @@ describe('main-node sync apply engine', () => {
       PLAN_UUID,
       'old-tag'
     );
+    mirrorProjectionPlanToCanonical();
 
     const op = await removePlanTagOperation(
       PROJECT_UUID,
@@ -1977,7 +2070,7 @@ describe('main-node sync apply engine', () => {
 
   test('plan.remove_dependency applies and is idempotent', async () => {
     seedPlan();
-    upsertPlan(db, project.id, {
+    seedPlanRow({
       uuid: OTHER_PLAN_UUID,
       planId: 2,
       title: 'Other',
@@ -1988,6 +2081,7 @@ describe('main-node sync apply engine', () => {
       PLAN_UUID,
       OTHER_PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical();
 
     const op = await removePlanDependencyOperation(
       PROJECT_UUID,
@@ -2011,6 +2105,7 @@ describe('main-node sync apply engine', () => {
       JSON.stringify([issue]),
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical();
 
     const op = await removePlanListItemOperation(
       PROJECT_UUID,
@@ -2055,6 +2150,7 @@ describe('main-node sync apply engine', () => {
       JSON.stringify([existingIssue]),
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical();
     const op = await addPlanListItemOperation(
       PROJECT_UUID,
       {
@@ -2081,6 +2177,7 @@ describe('main-node sync apply engine', () => {
       JSON.stringify([storedIssue]),
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical();
 
     const op = await removePlanListItemOperation(
       PROJECT_UUID,
@@ -2128,6 +2225,10 @@ describe('main-node sync apply engine', () => {
       'main-node edit',
       TASK_UUID
     );
+    db.prepare('UPDATE task_canonical SET description = ?, revision = revision + 1 WHERE uuid = ?').run(
+      'main-node edit',
+      TASK_UUID
+    );
 
     const op = await updatePlanTaskTextOperation(
       PROJECT_UUID,
@@ -2154,9 +2255,50 @@ describe('main-node sync apply engine', () => {
     expect(countRows('sync_sequence')).toBe(0); // no canonical change
   });
 
+  test('resolving a plan text conflict writes canonical and projection rows', async () => {
+    seedPlan();
+    db.prepare('UPDATE plan SET details = ?, revision = revision + 1 WHERE uuid = ?').run(
+      'main-node edit',
+      PLAN_UUID
+    );
+    db.prepare('UPDATE plan_canonical SET details = ?, revision = revision + 1 WHERE uuid = ?').run(
+      'main-node edit',
+      PLAN_UUID
+    );
+    const op = await patchPlanTextOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        field: 'details',
+        base: 'alpha\nbeta\ngamma\n',
+        new: 'incoming edit',
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    const result = applyOperation(db, op);
+    const conflict = db.prepare('SELECT conflict_id FROM sync_conflict').get() as {
+      conflict_id: string;
+    };
+    const resolved = resolveSyncConflict(db, conflict.conflict_id, {
+      mode: 'manual',
+      manualValue: 'resolved text',
+      resolvedByNode: NODE_B,
+    });
+
+    expect(result.status).toBe('conflict');
+    expect(resolved.status).toBe('resolved_applied');
+    expect(db.prepare('SELECT details FROM plan WHERE uuid = ?').get(PLAN_UUID)).toEqual({
+      details: 'resolved text',
+    });
+    expect(db.prepare('SELECT details FROM plan_canonical WHERE uuid = ?').get(PLAN_UUID)).toEqual({
+      details: 'resolved text',
+    });
+  });
+
   test('plan.set_parent updates parent_uuid and dependency edges', async () => {
     seedPlan();
-    upsertPlan(db, project.id, {
+    seedPlanRow({
       uuid: OTHER_PLAN_UUID,
       planId: 2,
       title: 'Parent plan',
@@ -2184,7 +2326,7 @@ describe('main-node sync apply engine', () => {
   });
 
   test('plan.create with parent also listed in dependencies rejects cyclically', async () => {
-    upsertPlan(db, project.id, {
+    seedPlanRow({
       uuid: OTHER_PLAN_UUID,
       planId: 2,
       title: 'Parent',
@@ -2210,7 +2352,7 @@ describe('main-node sync apply engine', () => {
 
   test('set_parent rejects when child already depends on the new parent via plan_dependency', async () => {
     seedPlan();
-    upsertPlan(db, project.id, {
+    seedPlanRow({
       uuid: OTHER_PLAN_UUID,
       planId: 2,
       title: 'Parent plan',
@@ -2221,6 +2363,7 @@ describe('main-node sync apply engine', () => {
       PLAN_UUID,
       OTHER_PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical();
     const before = canonicalCounts();
 
     const op = await setPlanParentOperation(
@@ -2236,14 +2379,14 @@ describe('main-node sync apply engine', () => {
 
   test('plan.set_parent removes old parent dependency when changing parent', async () => {
     seedPlan();
-    upsertPlan(db, project.id, {
+    seedPlanRow({
       uuid: OTHER_PLAN_UUID,
       planId: 2,
       title: 'Old parent',
       status: 'pending',
       forceOverwrite: true,
     });
-    upsertPlan(db, project.id, {
+    seedPlanRow({
       uuid: THIRD_PLAN_UUID,
       planId: 3,
       title: 'New parent',
@@ -2284,7 +2427,7 @@ describe('main-node sync apply engine', () => {
 
   test('plan.add_dependency cycle detection rejects circular deps', async () => {
     seedPlan();
-    upsertPlan(db, project.id, {
+    seedPlanRow({
       uuid: OTHER_PLAN_UUID,
       planId: 2,
       title: 'Other',
@@ -2451,6 +2594,7 @@ describe('main-node sync apply engine', () => {
     db.prepare(
       'INSERT INTO plan_task (uuid, plan_uuid, task_index, title, description, done, revision) VALUES (?, ?, ?, ?, ?, 0, 1)'
     ).run(TASK_UUID_2, PLAN_UUID, 1, 'Second task', '');
+    mirrorProjectionPlanToCanonical();
 
     const del = await deletePlanOperation(
       PROJECT_UUID,
@@ -2474,14 +2618,14 @@ describe('main-node sync apply engine', () => {
 
   test('plan.delete bumps and sequences every surviving dependent plan', async () => {
     seedPlan(PLAN_UUID, 1);
-    upsertPlan(db, project.id, {
+    seedPlanRow({
       uuid: OTHER_PLAN_UUID,
       planId: 2,
       title: 'Dependent one',
       status: 'pending',
       forceOverwrite: true,
     });
-    upsertPlan(db, project.id, {
+    seedPlanRow({
       uuid: THIRD_PLAN_UUID,
       planId: 3,
       title: 'Dependent two',
@@ -2496,6 +2640,8 @@ describe('main-node sync apply engine', () => {
       THIRD_PLAN_UUID,
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical(OTHER_PLAN_UUID);
+    mirrorProjectionPlanToCanonical(THIRD_PLAN_UUID);
     const otherBefore = getPlanByUuid(db, OTHER_PLAN_UUID)?.revision;
     const thirdBefore = getPlanByUuid(db, THIRD_PLAN_UUID)?.revision;
     const op = await deletePlanOperation(
@@ -2530,6 +2676,7 @@ describe('main-node sync apply engine', () => {
     db.prepare(
       'INSERT INTO plan_task (uuid, plan_uuid, task_index, title, description, done, revision) VALUES (?, ?, ?, ?, ?, 0, 1)'
     ).run(TASK_UUID_2, PLAN_UUID, 1, 'Second task', '');
+    mirrorProjectionPlanToCanonical();
     const op = await deletePlanOperation(
       PROJECT_UUID,
       { planUuid: PLAN_UUID },
@@ -2554,7 +2701,7 @@ describe('main-node sync apply engine', () => {
 
   test('plan.delete is idempotent on replay without resequencing dependents', async () => {
     seedPlan(PLAN_UUID, 1);
-    upsertPlan(db, project.id, {
+    seedPlanRow({
       uuid: OTHER_PLAN_UUID,
       planId: 2,
       title: 'Dependent one',
@@ -2565,6 +2712,7 @@ describe('main-node sync apply engine', () => {
       OTHER_PLAN_UUID,
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical(OTHER_PLAN_UUID);
     const op = await deletePlanOperation(
       PROJECT_UUID,
       { planUuid: PLAN_UUID },
@@ -2675,6 +2823,7 @@ describe('main-node sync apply engine', () => {
       'conflicting edit\n',
       PLAN_UUID
     );
+    mirrorProjectionPlanToCanonical();
     const conflictOp = await patchPlanTextOperation(
       PROJECT_UUID,
       {
