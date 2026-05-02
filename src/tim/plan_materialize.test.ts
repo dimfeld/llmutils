@@ -231,9 +231,11 @@ describe('tim plan_materialize', () => {
     const discoveredFromUuid =
       row.discovered_from === null
         ? null
-        : ((db
-            .prepare('SELECT uuid FROM plan WHERE project_id = ? AND plan_id = ?')
-            .get(row.project_id, row.discovered_from) as { uuid: string } | null)?.uuid ?? null);
+        : ((
+            db
+              .prepare('SELECT uuid FROM plan WHERE project_id = ? AND plan_id = ?')
+              .get(row.project_id, row.discovered_from) as { uuid: string } | null
+          )?.uuid ?? null);
     return {
       type: 'plan',
       projectUuid,

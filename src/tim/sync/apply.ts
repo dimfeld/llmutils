@@ -2763,7 +2763,9 @@ function clonePlanWithBump(
     ...plan,
     ...patch,
     revision: (patch.revision as number | undefined) ?? plan.revision + 1,
-    updated_at: options.sourceUpdatedAt ?? new Date().toISOString(),
+    updated_at: options.skipUpdatedAt
+      ? plan.updated_at
+      : (options.sourceUpdatedAt ?? new Date().toISOString()),
   };
 }
 
@@ -3282,9 +3284,11 @@ function applyOperationToListItem(
   const current = parseJsonArray(plan[column]);
   const valueText = canonicalJsonStringify(envelope.op.value);
   const index = current.findIndex((item) => canonicalJsonStringify(item) === valueText);
+  // Primitive (string) list items allow duplicates; object items deduplicate on identity.
+  const isPrimitive = typeof envelope.op.value !== 'object' || envelope.op.value === null;
   const next =
     envelope.op.type === 'plan.add_list_item'
-      ? index === -1
+      ? isPrimitive || index === -1
         ? [...current, envelope.op.value]
         : current
       : index === -1

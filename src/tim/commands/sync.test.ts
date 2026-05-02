@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { clearAllTimCaches } from '../../testing.js';
-import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { closeDatabaseForTesting, getDatabase, getDefaultDatabasePath } from '../db/database.js';
 import { getPlansByProject } from '../db/plan.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { getProject } from '../db/project.js';
@@ -46,6 +46,10 @@ describe('tim sync command', () => {
   beforeEach(async () => {
     clearAllTimCaches();
     closeDatabaseForTesting();
+    const dbPath = getDefaultDatabasePath();
+    await fs.rm(dbPath, { force: true });
+    await fs.rm(`${dbPath}-wal`, { force: true });
+    await fs.rm(`${dbPath}-shm`, { force: true });
     clearPlanSyncContext();
 
     originalCwd = process.cwd();
