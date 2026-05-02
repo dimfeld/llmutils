@@ -376,10 +376,9 @@ describe('applyOperationResultTransitions', () => {
       PLAN_UUID
     );
     db.prepare('UPDATE plan SET parent_uuid = ? WHERE uuid = ?').run(PREV_PARENT_UUID, PLAN_UUID);
-    db.prepare('INSERT INTO plan_dependency_canonical (plan_uuid, depends_on_uuid) VALUES (?, ?)').run(
-      PREV_PARENT_UUID,
-      PLAN_UUID
-    );
+    db.prepare(
+      'INSERT INTO plan_dependency_canonical (plan_uuid, depends_on_uuid) VALUES (?, ?)'
+    ).run(PREV_PARENT_UUID, PLAN_UUID);
     db.prepare('INSERT INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)').run(
       PREV_PARENT_UUID,
       PLAN_UUID
@@ -400,9 +399,9 @@ describe('applyOperationResultTransitions', () => {
     markOperationSending(db, queued.operationUuid);
 
     // After enqueue, projection reflects the set_parent: new parent has the dep, prev parent lost it
-    expect(
-      getPlanDependenciesByUuid(db, NEW_PARENT_UUID).map((d) => d.depends_on_uuid)
-    ).toContain(PLAN_UUID);
+    expect(getPlanDependenciesByUuid(db, NEW_PARENT_UUID).map((d) => d.depends_on_uuid)).toContain(
+      PLAN_UUID
+    );
     expect(
       getPlanDependenciesByUuid(db, PREV_PARENT_UUID).map((d) => d.depends_on_uuid)
     ).not.toContain(PLAN_UUID);
@@ -415,9 +414,9 @@ describe('applyOperationResultTransitions', () => {
     expect(
       getPlanDependenciesByUuid(db, NEW_PARENT_UUID).map((d) => d.depends_on_uuid)
     ).not.toContain(PLAN_UUID);
-    expect(
-      getPlanDependenciesByUuid(db, PREV_PARENT_UUID).map((d) => d.depends_on_uuid)
-    ).toContain(PLAN_UUID);
+    expect(getPlanDependenciesByUuid(db, PREV_PARENT_UUID).map((d) => d.depends_on_uuid)).toContain(
+      PLAN_UUID
+    );
     // Target plan's parent_uuid reverts to canonical
     expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({ parent_uuid: PREV_PARENT_UUID });
   });

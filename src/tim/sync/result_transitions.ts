@@ -7,9 +7,7 @@ import {
   rebuildPlanProjectionAndInboundOwnersInTransaction,
   type SyncOperationQueueRow,
 } from './queue.js';
-import {
-  rebuildProjectSettingProjectionForPayload,
-} from './projection.js';
+import { rebuildProjectSettingProjectionForPayload } from './projection.js';
 import { PROJECTION_REBUILD_PLAN_REF_ROLES } from './plan_refs.js';
 import { assertValidPayload, type SyncOperationPayload } from './types.js';
 import type { SyncOperationResult } from './ws_protocol.js';

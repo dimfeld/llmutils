@@ -1560,10 +1560,7 @@ function resolveProjectUuidForPlanTombstone(db: Database, planUuid: string): str
   return row?.project_uuid ?? null;
 }
 
-function resolveOwningPlanUuidForTaskNeverExisted(
-  db: Database,
-  taskUuid: string
-): string | null {
+function resolveOwningPlanUuidForTaskNeverExisted(db: Database, taskUuid: string): string | null {
   const row = db
     .prepare(
       `
