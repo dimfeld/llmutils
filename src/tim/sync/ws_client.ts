@@ -5,13 +5,15 @@ import {
   listPendingOperations,
   markOperationFailedRetryable,
   markOperationSending,
-  prunePlanRefsForTerminalOps,
   resetSendingOperations,
   subscribeToQueueChanges,
   type SyncOperationQueueRow,
 } from './queue.js';
 import { mergeCanonicalRefresh, type CanonicalSnapshot } from './snapshots.js';
-import { applyOperationResultTransitions } from './result_transitions.js';
+import {
+  applyInvalidationsWithSnapshots,
+  applyOperationResultsWithSnapshots,
+} from './result_application.js';
 import {
   createBatchEnvelope,
   type SyncOperationBatchEnvelope,
@@ -394,18 +396,12 @@ class WebSocketSyncClient implements SyncClient {
     frame: SyncOpResultFrame | SyncBatchResultFrame
   ): Promise<void> {
     const results = frame.results;
-    const snapshotKeys = new Set<string>();
     const transitions = [...results];
-    for (const result of transitions) {
-      for (const key of result.invalidations ?? []) {
-        snapshotKeys.add(key);
-      }
-    }
-    await this.fetchAndMergeSnapshots([...snapshotKeys]);
-    applyOperationResultTransitions(this.options.db, transitions);
-    if (hasTerminalOperationResults(transitions)) {
-      prunePlanRefsForTerminalOps(this.options.db);
-    }
+    await applyOperationResultsWithSnapshots({
+      db: this.options.db,
+      results: transitions,
+      fetchSnapshots: (keys) => this.requestSnapshots(keys),
+    });
     if (this.flushProcessedOperationUuids) {
       for (const result of transitions) {
         this.flushProcessedOperationUuids.add(result.operationId);
@@ -450,23 +446,22 @@ class WebSocketSyncClient implements SyncClient {
   }
 
   private async applyInvalidations(invalidations: SyncCatchUpInvalidation[]): Promise<void> {
-    const keys = [...new Set(invalidations.flatMap((item) => item.entityKeys))];
-    await this.fetchAndMergeSnapshots(keys);
-    const sequenceId = Math.max(0, ...invalidations.map((item) => item.sequenceId));
+    const sequenceId = await applyInvalidationsWithSnapshots({
+      db: this.options.db,
+      invalidations,
+      fetchSnapshots: (keys) => this.requestSnapshots(keys),
+    });
     if (sequenceId > 0) {
       updateTimNodeCursor(this.options.db, this.options.nodeId, sequenceId);
     }
   }
 
-  private async fetchAndMergeSnapshots(keys: string[]): Promise<void> {
-    const uniqueKeys = [...new Set(keys)];
-    if (uniqueKeys.length === 0) {
-      return;
-    }
-    const snapshots = await this.requestSnapshots(uniqueKeys);
+  private async fetchAndMergeSnapshots(keys: string[]): Promise<CanonicalSnapshot[]> {
+    const snapshots = await this.requestSnapshots([...new Set(keys)]);
     for (const snapshot of snapshots) {
       mergeCanonicalRefresh(this.options.db, snapshot);
     }
+    return snapshots;
   }
 
   private handleDisconnect(): void {
@@ -572,13 +567,6 @@ class WebSocketSyncClient implements SyncClient {
     clearTimeout(waiter.timer);
     waiter.resolve(snapshots);
   }
-}
-
-function hasTerminalOperationResults(results: SyncOperationResult[]): boolean {
-  return results.some(
-    (result) =>
-      result.status === 'applied' || result.status === 'conflict' || result.status === 'rejected'
-  );
 }
 
 function rowToEnvelope(row: SyncOperationQueueRow): SyncOperationEnvelope {

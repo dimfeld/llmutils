@@ -12,13 +12,14 @@ import {
   listPendingOperations,
   markOperationFailedRetryable,
   markOperationSending,
-  prunePlanRefsForTerminalOps,
   resetSendingOperations,
   type SyncOperationQueueRow,
 } from './queue.js';
-import { mergeCanonicalRefresh } from './snapshots.js';
 import { pruneSyncSequence } from './retention.js';
-import { applyOperationResultTransitions } from './result_transitions.js';
+import {
+  applyInvalidationsWithSnapshots,
+  applyOperationResultsWithSnapshots,
+} from './result_application.js';
 import { createSyncClient, rowsToFlushFrames, type SyncClient } from './ws_client.js';
 import type { SyncOperationResult } from './ws_protocol.js';
 
@@ -235,44 +236,31 @@ async function applyOperationResultsOverHttp(
   options: SyncRunnerOptions,
   results: SyncOperationResult[]
 ): Promise<void> {
-  const keys = new Set<string>();
-  for (const result of results) {
-    for (const key of result.invalidations ?? []) {
-      keys.add(key);
-    }
-  }
-  await fetchAndMergeSnapshots(options, [...keys]);
-  applyOperationResultTransitions(options.db, results);
-  if (
-    results.some(
-      (result) =>
-        result.status === 'applied' || result.status === 'conflict' || result.status === 'rejected'
-    )
-  ) {
-    prunePlanRefsForTerminalOps(options.db);
-  }
+  await applyOperationResultsWithSnapshots({
+    db: options.db,
+    results,
+    fetchSnapshots: (keys) => fetchSnapshotsOverHttp(options, keys),
+  });
 }
 
 async function applyInvalidationsOverHttp(
   options: SyncRunnerOptions,
   invalidations: Array<{ sequenceId: number; entityKeys: string[] }>
 ): Promise<void> {
-  await fetchAndMergeSnapshots(options, [
-    ...new Set(invalidations.flatMap((invalidation) => invalidation.entityKeys)),
-  ]);
-  const maxSequenceId = Math.max(
-    0,
-    ...invalidations.map((invalidation) => invalidation.sequenceId)
-  );
+  const maxSequenceId = await applyInvalidationsWithSnapshots({
+    db: options.db,
+    invalidations,
+    fetchSnapshots: (keys) => fetchSnapshotsOverHttp(options, keys),
+  });
   if (maxSequenceId > 0) {
     updateTimNodeCursor(options.db, options.nodeId, maxSequenceId);
   }
 }
 
-async function fetchAndMergeSnapshots(options: SyncRunnerOptions, keys: string[]): Promise<void> {
+async function fetchSnapshotsOverHttp(options: SyncRunnerOptions, keys: string[]) {
   const uniqueKeys = [...new Set(keys)];
   if (uniqueKeys.length === 0) {
-    return;
+    return [];
   }
   const response = await httpFetchSnapshots(
     options.serverUrl,
@@ -281,9 +269,7 @@ async function fetchAndMergeSnapshots(options: SyncRunnerOptions, keys: string[]
     uniqueKeys
   );
   unwrapRetryable(response);
-  for (const snapshot of response.value.snapshots) {
-    mergeCanonicalRefresh(options.db, snapshot);
-  }
+  return response.value.snapshots;
 }
 
 function unwrapRetryable<T>(result: HttpSyncResult<T>): asserts result is { ok: true; value: T } {
