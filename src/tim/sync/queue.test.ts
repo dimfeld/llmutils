@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { getAssignment, importAssignment } from '../db/assignment.js';
 import { runMigrations } from '../db/migrations.js';
-import { getOrCreateProject, type Project } from '../db/project.js';
+import { getOrCreateProject, getProjectByUuid, type Project } from '../db/project.js';
 import {
   getPlanByUuid,
   getPlanDependenciesByUuid,
@@ -453,6 +453,7 @@ describe('persistent-node sync queue', () => {
   test('optimistic plan.create allocates after project highest_plan_id when plan rows lag', async () => {
     db.prepare('UPDATE project SET highest_plan_id = 7 WHERE id = ?').run(project.id);
     const planUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const secondPlanUuid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     const op = await createPlanOperation(
       {
         projectUuid: PROJECT_UUID,
@@ -461,10 +462,21 @@ describe('persistent-node sync queue', () => {
       },
       { originNodeId: NODE_A, localSequence: 999 }
     );
+    const secondOp = await createPlanOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: secondPlanUuid,
+        title: 'Second offline plan',
+      },
+      { originNodeId: NODE_A, localSequence: 1000 }
+    );
 
     enqueue(op);
+    enqueue(secondOp);
 
     expect(getPlanByUuid(db, planUuid)?.plan_id).toBe(8);
+    expect(getPlanByUuid(db, secondPlanUuid)?.plan_id).toBe(9);
+    expect(getProjectByUuid(db, PROJECT_UUID)?.highest_plan_id).toBe(9);
   });
 
   test('optimistic add_task inserts at the beginning without task_index collisions', async () => {

@@ -1080,19 +1080,7 @@ function applyOptimisticPlanCreate(
     return;
   }
   const numericPlanId =
-    op.numericPlanId ??
-    (
-      db
-        .prepare(
-          `
-            SELECT max(
-              COALESCE((SELECT MAX(plan_id) FROM plan WHERE project_id = ?), 0),
-              COALESCE((SELECT highest_plan_id FROM project WHERE id = ?), 0)
-            ) + 1 AS next_id
-          `
-        )
-        .get(project.id, project.id) as { next_id: number }
-    ).next_id;
+    op.numericPlanId ?? reserveOptimisticPlanId(db, project.id);
   db.prepare(
     `
       INSERT INTO plan (
@@ -1154,6 +1142,28 @@ function applyOptimisticPlanCreate(
   if (op.parentUuid && getPlan(db, op.parentUuid)) {
     ensureParentDependencyEdge(db, op.parentUuid, op.planUuid);
   }
+  setProjectHighestPlanId(db, project.id, numericPlanId);
+}
+
+function reserveOptimisticPlanId(db: Database, projectId: number): number {
+  const row = db
+    .prepare(
+      `
+        SELECT max(
+          COALESCE((SELECT MAX(plan_id) FROM plan WHERE project_id = ?), 0),
+          COALESCE((SELECT highest_plan_id FROM project WHERE id = ?), 0)
+        ) + 1 AS next_id
+      `
+    )
+    .get(projectId, projectId) as { next_id: number };
+  setProjectHighestPlanId(db, projectId, row.next_id);
+  return row.next_id;
+}
+
+function setProjectHighestPlanId(db: Database, projectId: number, planId: number): void {
+  db.prepare(
+    `UPDATE project SET highest_plan_id = max(highest_plan_id, ?), updated_at = ${SQL_NOW_ISO_UTC} WHERE id = ?`
+  ).run(planId, projectId);
 }
 
 function applyOptimisticProjectSetting(
