@@ -1,5 +1,4 @@
 import type { Database } from 'bun:sqlite';
-import * as diff from 'diff';
 import * as z from 'zod/v4';
 import { warn } from '../../logging.js';
 import { refreshExistingPrimaryMaterializedPlans } from '../materialized_projection_refresh.js';
@@ -7,9 +6,7 @@ import { removeAssignment } from '../db/assignment.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import {
   upsertCanonicalPlanInTransaction,
-  upsertProjectionPlanInTransaction,
   type PlanRow,
-  type PlanTaskRow,
 } from '../db/plan.js';
 import { getProjectByUuid } from '../db/project.js';
 import {
@@ -26,7 +23,6 @@ import {
   type SyncOperationEnvelope,
   type SyncOperationPayload,
 } from './types.js';
-import { shiftTaskIndexesAfterDelete, shiftTaskIndexesForInsert } from './task_indexes.js';
 import { getSyncOperationPayloadIndexes } from './payload_indexes.js';
 import { getSyncOperationPlanRefs, PROJECTION_REBUILD_PLAN_REF_ROLES } from './plan_refs.js';
 import {
@@ -196,25 +192,7 @@ export type CanonicalSnapshot =
   | CanonicalNeverExistedSnapshot
   | CanonicalProjectSettingSnapshot;
 
-const PLAN_TEXT_COLUMNS = {
-  title: 'title',
-  goal: 'goal',
-  note: 'note',
-  details: 'details',
-} as const;
-const TASK_TEXT_COLUMNS = {
-  title: 'title',
-  description: 'description',
-} as const;
-const LIST_COLUMNS = {
-  issue: 'issue',
-  pullRequest: 'pull_request',
-  docs: 'docs',
-  changedFiles: 'changed_files',
-  reviewIssues: 'review_issues',
-} as const;
 const ASSIGNMENT_CLEANUP_STATUSES = new Set(['done', 'needs_review', 'cancelled']);
-let warnedMalformedJsonList = false;
 
 const queueChangeListeners = new Set<() => void>();
 
@@ -403,14 +381,6 @@ export function enqueueBatch(
   const result = enqueue.immediate(batchInput);
   notifyQueueChanged();
   return result;
-}
-
-export function applyLocalOptimistic(db: Database, operationInput: SyncOperationEnvelope): void {
-  const operation = assertValidEnvelope(operationInput);
-  const apply = db.transaction((nextOperation: SyncOperationEnvelope): void => {
-    rebuildQueuedOperationProjectionInTransaction(db, nextOperation);
-  });
-  apply.immediate(operation);
 }
 
 export function markOperationSending(db: Database, operationUuid: string): SyncOperationQueueRow {
@@ -980,307 +950,6 @@ export function rebuildPlanProjectionAndInboundOwnersInTransaction(
   return [...rebuildPlanUuids];
 }
 
-function applyLocalOptimisticInTransaction(db: Database, operation: SyncOperationEnvelope): void {
-  const op = assertValidPayload(operation.op);
-  switch (op.type) {
-    case 'plan.create':
-      applyOptimisticPlanCreate(db, operation.projectUuid, op);
-      break;
-    case 'plan.set_scalar':
-      updatePlanIfExists(db, op.planUuid, (plan) => {
-        const project =
-          op.field === 'discovered_from' ? getProjectByUuid(db, operation.projectUuid) : null;
-        const value =
-          op.field === 'epic'
-            ? op.value
-              ? 1
-              : 0
-            : op.field === 'discovered_from'
-              ? resolveLocalPlanId(db, project?.id ?? null, op.value as string | null)
-              : op.value;
-        db.prepare(
-          `UPDATE plan SET ${op.field} = ?, revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-        ).run(value, op.planUuid);
-        if (
-          op.field === 'status' &&
-          typeof value === 'string' &&
-          plan.status !== value &&
-          ASSIGNMENT_CLEANUP_STATUSES.has(value)
-        ) {
-          removeAssignmentForPlan(db, operation.projectUuid, op.planUuid);
-        }
-      });
-      break;
-    case 'plan.patch_text':
-      updatePlanIfExists(db, op.planUuid, (plan) => {
-        const column = PLAN_TEXT_COLUMNS[op.field];
-        const current = ((plan[column] ?? '') as string).toString();
-        const next = mergeText(current, op.base, op.new);
-        if (next === null) {
-          return;
-        }
-        if (next !== current) {
-          db.prepare(
-            `UPDATE plan SET ${column} = ?, revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-          ).run(next, op.planUuid);
-        }
-      });
-      break;
-    case 'plan.add_task':
-      updatePlanIfExists(db, op.planUuid, () => {
-        if (getTask(db, op.taskUuid)) {
-          return;
-        }
-        const index =
-          op.taskIndex ??
-          (
-            db
-              .prepare(
-                'SELECT COALESCE(MAX(task_index), -1) + 1 AS next_index FROM plan_task WHERE plan_uuid = ?'
-              )
-              .get(op.planUuid) as { next_index: number }
-          ).next_index;
-        shiftTaskIndexesForInsert(db, op.planUuid, index);
-        db.prepare(
-          'INSERT INTO plan_task (uuid, plan_uuid, task_index, title, description, done, revision) VALUES (?, ?, ?, ?, ?, ?, 1)'
-        ).run(op.taskUuid, op.planUuid, index, op.title, op.description ?? '', op.done ? 1 : 0);
-        bumpPlan(db, op.planUuid);
-      });
-      break;
-    case 'plan.update_task_text':
-      updateTaskIfExists(db, op.planUuid, op.taskUuid, (task) => {
-        const column = TASK_TEXT_COLUMNS[op.field];
-        const current = (task[column] ?? '').toString();
-        const next = mergeText(current, op.base, op.new);
-        if (next === null) {
-          return;
-        }
-        if (next !== current) {
-          db.prepare(
-            `UPDATE plan_task SET ${column} = ?, revision = revision + 1 WHERE uuid = ?`
-          ).run(next, op.taskUuid);
-          bumpPlan(db, op.planUuid);
-        }
-      });
-      break;
-    case 'plan.mark_task_done':
-      updateTaskIfExists(db, op.planUuid, op.taskUuid, (task) => {
-        const done = op.done ? 1 : 0;
-        if (task.done !== done) {
-          db.prepare('UPDATE plan_task SET done = ?, revision = revision + 1 WHERE uuid = ?').run(
-            done,
-            op.taskUuid
-          );
-          bumpPlan(db, op.planUuid);
-        }
-      });
-      break;
-    case 'plan.remove_task':
-      updateTaskIfExists(db, op.planUuid, op.taskUuid, (task) => {
-        db.prepare('DELETE FROM plan_task WHERE uuid = ?').run(op.taskUuid);
-        shiftTaskIndexesAfterDelete(db, op.planUuid, task.task_index);
-        bumpPlan(db, op.planUuid);
-      });
-      break;
-    case 'plan.add_dependency':
-    case 'plan.remove_dependency':
-      updatePlanIfExists(db, op.planUuid, () => {
-        if (!getPlan(db, op.dependsOnPlanUuid)) {
-          return;
-        }
-        const result =
-          op.type === 'plan.add_dependency'
-            ? db
-                .prepare(
-                  'INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)'
-                )
-                .run(op.planUuid, op.dependsOnPlanUuid)
-            : db
-                .prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?')
-                .run(op.planUuid, op.dependsOnPlanUuid);
-        if (result.changes > 0) {
-          bumpPlan(db, op.planUuid);
-        }
-      });
-      break;
-    case 'plan.add_tag':
-    case 'plan.remove_tag':
-      updatePlanIfExists(db, op.planUuid, () => {
-        const result =
-          op.type === 'plan.add_tag'
-            ? db
-                .prepare('INSERT OR IGNORE INTO plan_tag (plan_uuid, tag) VALUES (?, ?)')
-                .run(op.planUuid, op.tag)
-            : db
-                .prepare('DELETE FROM plan_tag WHERE plan_uuid = ? AND tag = ?')
-                .run(op.planUuid, op.tag);
-        if (result.changes > 0) {
-          bumpPlan(db, op.planUuid);
-        }
-      });
-      break;
-    case 'plan.add_list_item':
-    case 'plan.remove_list_item':
-      updatePlanIfExists(db, op.planUuid, (plan) => {
-        const column = LIST_COLUMNS[op.list];
-        const current = parseJsonArray(plan[column]);
-        const valueText = JSON.stringify(op.value);
-        const index = current.findIndex((item) => JSON.stringify(item) === valueText);
-        const next =
-          op.type === 'plan.add_list_item'
-            ? [...current, op.value]
-            : index === -1
-              ? current
-              : current.filter((_, itemIndex) => itemIndex !== index);
-        if (next !== current) {
-          db.prepare(
-            `UPDATE plan SET ${column} = ?, revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-          ).run(next.length === 0 ? null : JSON.stringify(next), op.planUuid);
-        }
-      });
-      break;
-    case 'plan.delete':
-      db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? OR depends_on_uuid = ?').run(
-        op.planUuid,
-        op.planUuid
-      );
-      db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(op.planUuid);
-      db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(op.planUuid);
-      db.prepare('DELETE FROM plan WHERE uuid = ?').run(op.planUuid);
-      break;
-    case 'project_setting.set':
-    case 'project_setting.delete':
-      applyOptimisticProjectSetting(db, op);
-      break;
-    case 'plan.set_parent':
-      updatePlanIfExists(db, op.planUuid, (plan) => {
-        if (op.newParentUuid && !getPlan(db, op.newParentUuid)) {
-          return;
-        }
-        if (plan.parent_uuid !== op.newParentUuid) {
-          db.prepare(
-            `UPDATE plan SET parent_uuid = ?, revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-          ).run(op.newParentUuid, op.planUuid);
-        }
-        removeOtherParentDependencyEdges(db, op.newParentUuid, op.planUuid);
-        if (op.newParentUuid) {
-          ensureParentDependencyEdge(db, op.newParentUuid, op.planUuid);
-        }
-      });
-      break;
-    case 'plan.promote_task':
-      updateTaskIfExists(db, op.sourcePlanUuid, op.taskUuid, () => {
-        if (!getPlan(db, op.newPlanUuid)) {
-          applyOptimisticPlanCreate(db, operation.projectUuid, {
-            type: 'plan.create',
-            planUuid: op.newPlanUuid,
-            numericPlanId: op.numericPlanId,
-            title: op.title,
-            details: op.description,
-            parentUuid: op.parentUuid,
-            issue: [],
-            pullRequest: [],
-            docs: [],
-            changedFiles: [],
-            reviewIssues: [],
-            tags: op.tags,
-            dependencies: op.dependencies,
-            tasks: [],
-          });
-        }
-        db.prepare('UPDATE plan_task SET done = 1, revision = revision + 1 WHERE uuid = ?').run(
-          op.taskUuid
-        );
-        bumpPlan(db, op.sourcePlanUuid);
-      });
-      break;
-    default: {
-      const exhaustive: never = op;
-      return exhaustive;
-    }
-  }
-}
-
-function applyOptimisticPlanCreate(
-  db: Database,
-  projectUuid: string,
-  op: Extract<SyncOperationPayload, { type: 'plan.create' }>
-): void {
-  const project = getProjectByUuid(db, projectUuid);
-  if (!project) {
-    return;
-  }
-  if (getPlan(db, op.planUuid)) {
-    if (op.parentUuid && getPlan(db, op.parentUuid)) {
-      ensureParentDependencyEdge(db, op.parentUuid, op.planUuid);
-    }
-    return;
-  }
-  const numericPlanId = op.numericPlanId ?? reserveOptimisticPlanId(db, project.id);
-  db.prepare(
-    `
-      INSERT INTO plan (
-        uuid, project_id, plan_id, title, goal, note, details, status, priority,
-        branch, simple, tdd, discovered_from, issue, pull_request, assigned_to,
-        base_branch, base_commit, base_change_id, temp, docs, changed_files,
-        plan_generated_at, review_issues, docs_updated_at, lessons_applied_at,
-        parent_uuid, epic, revision, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1,
-        ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
-    `
-  ).run(
-    op.planUuid,
-    project.id,
-    numericPlanId,
-    op.title,
-    op.goal ?? null,
-    op.note ?? null,
-    op.details ?? null,
-    op.status ?? 'pending',
-    op.priority ?? null,
-    op.branch ?? null,
-    typeof op.simple === 'boolean' ? (op.simple ? 1 : 0) : null,
-    typeof op.tdd === 'boolean' ? (op.tdd ? 1 : 0) : null,
-    resolveLocalPlanId(db, project.id, op.discoveredFrom),
-    JSON.stringify(op.issue),
-    JSON.stringify(op.pullRequest),
-    op.assignedTo ?? null,
-    op.baseBranch ?? null,
-    typeof op.temp === 'boolean' ? (op.temp ? 1 : 0) : null,
-    JSON.stringify(op.docs),
-    JSON.stringify(op.changedFiles),
-    op.planGeneratedAt ?? null,
-    JSON.stringify(op.reviewIssues),
-    op.docsUpdatedAt ?? null,
-    op.lessonsAppliedAt ?? null,
-    op.parentUuid ?? null,
-    op.epic ? 1 : 0
-  );
-  op.tasks.forEach((task, index) => {
-    db.prepare(
-      'INSERT INTO plan_task (uuid, plan_uuid, task_index, title, description, done, revision) VALUES (?, ?, ?, ?, ?, ?, 1)'
-    ).run(task.taskUuid, op.planUuid, index, task.title, task.description, task.done ? 1 : 0);
-  });
-  for (const tag of new Set(op.tags)) {
-    db.prepare('INSERT OR IGNORE INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run(
-      op.planUuid,
-      tag
-    );
-  }
-  for (const dependencyUuid of new Set(op.dependencies)) {
-    if (getPlan(db, dependencyUuid)) {
-      db.prepare(
-        'INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)'
-      ).run(op.planUuid, dependencyUuid);
-    }
-  }
-  if (op.parentUuid && getPlan(db, op.parentUuid)) {
-    ensureParentDependencyEdge(db, op.parentUuid, op.planUuid);
-  }
-  setProjectHighestPlanId(db, project.id, numericPlanId);
-}
-
 function reserveOptimisticPlanId(db: Database, projectId: number): number {
   const row = db
     .prepare(
@@ -1300,27 +969,6 @@ function setProjectHighestPlanId(db: Database, projectId: number, planId: number
   db.prepare(
     `UPDATE project SET highest_plan_id = max(highest_plan_id, ?), updated_at = ${SQL_NOW_ISO_UTC} WHERE id = ?`
   ).run(planId, projectId);
-}
-
-function resolveLocalPlanId(
-  db: Database,
-  projectId: number | null,
-  planUuid: string | null | undefined
-): number | null {
-  if (!projectId || !planUuid) {
-    return null;
-  }
-  const row = db
-    .prepare('SELECT plan_id FROM plan WHERE project_id = ? AND uuid = ?')
-    .get(projectId, planUuid) as { plan_id: number } | null;
-  return row?.plan_id ?? null;
-}
-
-function applyOptimisticProjectSetting(
-  db: Database,
-  op: Extract<SyncOperationPayload, { type: 'project_setting.set' | 'project_setting.delete' }>
-): void {
-  rebuildProjectSettingProjectionForPayload(db, op);
 }
 
 function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): string[] {
@@ -1589,97 +1237,6 @@ function removeAssignmentForPlan(db: Database, projectUuid: string, planUuid: st
   removeAssignment(db, project.id, planUuid);
 }
 
-function pendingOperationsForSnapshot(
-  db: Database,
-  snapshot: CanonicalSnapshot
-): SyncOperationEnvelope[] {
-  if (snapshot.type === 'plan_deleted' || snapshot.type === 'never_existed') {
-    return [];
-  }
-  const rows = db
-    .prepare(
-      `
-        SELECT *
-        FROM sync_operation
-        WHERE project_uuid = ?
-          AND status IN ('queued', 'failed_retryable')
-        ORDER BY origin_node_id, local_sequence
-      `
-    )
-    .all(snapshot.projectUuid) as SyncOperationQueueRow[];
-  return rows
-    .map(rowToEnvelope)
-    .filter((operation) => operationAffectsSnapshot(operation, snapshot));
-}
-
-function operationAffectsSnapshot(
-  operation: SyncOperationEnvelope,
-  snapshot: CanonicalSnapshot
-): boolean {
-  if (snapshot.type === 'project_setting') {
-    return operation.targetKey === `project_setting:${snapshot.projectUuid}:${snapshot.setting}`;
-  }
-  if (snapshot.type === 'plan_deleted' || snapshot.type === 'never_existed') {
-    return false;
-  }
-  const planUuid = snapshot.plan.uuid;
-  const op = operation.op;
-  if (affectedPlanUuids(op).has(planUuid)) {
-    return true;
-  }
-  if (op.type === 'plan.set_parent' && snapshot.plan.dependencyUuids?.includes(op.planUuid)) {
-    return true;
-  }
-  if (op.type === 'plan.delete' && snapshot.plan.dependencyUuids.includes(op.planUuid)) {
-    return true;
-  }
-  if (operation.targetType === 'task') {
-    const task = getTaskByUuidFromSnapshot(snapshot, op);
-    return task !== null;
-  }
-  return false;
-}
-
-function affectedPlanUuids(op: SyncOperationPayload): Set<string> {
-  const uuids = new Set<string>();
-  if ('planUuid' in op) {
-    uuids.add(op.planUuid);
-  }
-  switch (op.type) {
-    case 'plan.create':
-      if (op.parentUuid) {
-        uuids.add(op.parentUuid);
-      }
-      break;
-    case 'plan.set_parent':
-      if (op.newParentUuid) {
-        uuids.add(op.newParentUuid);
-      }
-      if (op.previousParentUuid) {
-        uuids.add(op.previousParentUuid);
-      }
-      break;
-    case 'plan.promote_task':
-      uuids.add(op.sourcePlanUuid);
-      uuids.add(op.newPlanUuid);
-      if (op.parentUuid) {
-        uuids.add(op.parentUuid);
-      }
-      break;
-  }
-  return uuids;
-}
-
-function getTaskByUuidFromSnapshot(
-  snapshot: CanonicalPlanSnapshot,
-  op: SyncOperationPayload
-): string | null {
-  if (!('taskUuid' in op)) {
-    return null;
-  }
-  return snapshot.plan.tasks?.some((task) => task.uuid === op.taskUuid) ? op.taskUuid : null;
-}
-
 function rowToEnvelope(row: SyncOperationQueueRow): SyncOperationEnvelope {
   const op = assertValidPayload(JSON.parse(row.payload) as unknown);
   const target = deriveTargetKey(op);
@@ -1762,114 +1319,8 @@ function requireOperationRow(db: Database, operationUuid: string): SyncOperation
   return row;
 }
 
-function updatePlanIfExists(db: Database, planUuid: string, fn: (plan: PlanRow) => void): void {
-  const plan = getPlan(db, planUuid);
-  if (!plan) {
-    return;
-  }
-  fn(plan);
-}
-
-function updateTaskIfExists(
-  db: Database,
-  planUuid: string,
-  taskUuid: string,
-  fn: (task: PlanTaskRow) => void
-): void {
-  const task = getTask(db, taskUuid);
-  if (!task || task.plan_uuid !== planUuid) {
-    return;
-  }
-  fn(task);
-}
-
 function getPlan(db: Database, planUuid: string): PlanRow | null {
   return (db.prepare('SELECT * FROM plan WHERE uuid = ?').get(planUuid) as PlanRow | null) ?? null;
-}
-
-function getTask(db: Database, taskUuid: string): PlanTaskRow | null {
-  return (
-    (db.prepare('SELECT * FROM plan_task WHERE uuid = ?').get(taskUuid) as PlanTaskRow | null) ??
-    null
-  );
-}
-
-function bumpPlan(db: Database, planUuid: string): void {
-  db.prepare(
-    `UPDATE plan SET revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-  ).run(planUuid);
-}
-
-function ensureParentDependencyEdge(db: Database, parentUuid: string, childUuid: string): void {
-  const result = db
-    .prepare('INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)')
-    .run(parentUuid, childUuid);
-  if (result.changes > 0) {
-    bumpPlan(db, parentUuid);
-  }
-}
-
-function removeParentDependencyEdge(db: Database, parentUuid: string, childUuid: string): void {
-  const result = db
-    .prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?')
-    .run(parentUuid, childUuid);
-  if (result.changes > 0) {
-    bumpPlan(db, parentUuid);
-  }
-}
-
-function removeOtherParentDependencyEdges(
-  db: Database,
-  desiredParentUuid: string | null,
-  childUuid: string
-): void {
-  // V1 stores parent edges and explicit dependency edges in the same table, so
-  // optimistic parent replay cannot distinguish them. A future schema can add
-  // an edge-kind column, or refresh layering can replay queued add_dependency
-  // ops after this reset, to preserve explicit incoming edges locally.
-  const rows = db
-    .prepare(
-      `SELECT plan_uuid
-       FROM plan_dependency
-       WHERE depends_on_uuid = ?
-         AND (? IS NULL OR plan_uuid <> ?)`
-    )
-    .all(childUuid, desiredParentUuid, desiredParentUuid) as Array<{ plan_uuid: string }>;
-  for (const row of rows) {
-    removeParentDependencyEdge(db, row.plan_uuid, childUuid);
-  }
-}
-
-function mergeText(current: string, base: string, incoming: string): string | null {
-  if (base === incoming || current === incoming) {
-    return current;
-  }
-  if (current === base) {
-    return incoming;
-  }
-  const patch = diff.createPatch('field', base, incoming, '', '', { context: 3 });
-  const merged = diff.applyPatch(current, patch, { fuzzFactor: 0 });
-  return merged === false ? null : merged;
-}
-
-function parseJsonArray(value: unknown): unknown[] {
-  if (!value) {
-    return [];
-  }
-  try {
-    const parsed = JSON.parse(String(value)) as unknown;
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    if (!warnedMalformedJsonList) {
-      warnedMalformedJsonList = true;
-      console.warn(
-        `Ignoring malformed plan JSON list value during optimistic sync apply: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    }
-    return [];
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
