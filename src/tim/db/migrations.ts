@@ -996,6 +996,8 @@ const migrations: Migration[] = [
       CREATE INDEX idx_plan_canonical_project_plan_id ON plan_canonical(project_id, plan_id);
       CREATE INDEX idx_plan_canonical_parent_uuid ON plan_canonical(parent_uuid);
 
+      -- task_canonical intentionally mirrors plan_task.uuid's nullable column
+      -- plus unique index quirk. SQLite permits multiple NULLs in a UNIQUE index.
       CREATE TABLE task_canonical (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         plan_uuid TEXT NOT NULL REFERENCES plan_canonical(uuid) ON DELETE CASCADE,
@@ -1033,9 +1035,10 @@ const migrations: Migration[] = [
         PRIMARY KEY (project_id, setting)
       );
 
-      -- TODO(plan 339 task 13): drop sync_pending_rollback after the rollback writers
-      -- and tests are removed. Keeping it in this migration preserves the current
-      -- sync test/runtime behavior while foundational projection schema lands.
+      -- TODO(plan 339 follow-up task "Drop sync_pending_rollback table"): drop
+      -- sync_pending_rollback after task 13 removes rollback writers/readers.
+      -- Keeping it in this migration preserves current sync test/runtime behavior
+      -- while foundational projection schema lands.
     `,
   },
 ];

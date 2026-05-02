@@ -1,6 +1,11 @@
 import type { Database } from 'bun:sqlite';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
+// Canonical helpers write the main-node-confirmed mirror table and require an
+// explicit revision from that canonical source. Projection helpers write the
+// user-visible working table and keep the legacy local revision bump behavior.
+// Sync-aware code must route writes through sync/write_router.ts.
+
 export interface ProjectSetting {
   project_id: number;
   setting: string;
@@ -18,6 +23,7 @@ export interface ProjectSettingWithMetadata {
 }
 
 type ProjectSettingTable = 'project_setting' | 'project_setting_canonical';
+type RevisionWriteMode = 'auto' | 'explicit';
 
 function canonicalJsonStringify(value: unknown): string {
   if (Array.isArray(value)) {
@@ -60,7 +66,7 @@ export function writeProjectionProjectSettingRow(
   value: unknown,
   options: { updatedByNode?: string | null } = {}
 ): boolean {
-  return writeProjectSettingRow(db, 'project_setting', projectId, setting, value, options);
+  return writeProjectSettingRow(db, 'project_setting', projectId, setting, value, options, 'auto');
 }
 
 export function writeCanonicalProjectSettingRow(
@@ -68,7 +74,7 @@ export function writeCanonicalProjectSettingRow(
   projectId: number,
   setting: string,
   value: unknown,
-  options: { updatedByNode?: string | null } = {}
+  options: { revision: number; updatedByNode?: string | null }
 ): boolean {
   return writeProjectSettingRow(
     db,
@@ -76,7 +82,8 @@ export function writeCanonicalProjectSettingRow(
     projectId,
     setting,
     value,
-    options
+    options,
+    'explicit'
   );
 }
 
@@ -86,19 +93,25 @@ function writeProjectSettingRow(
   projectId: number,
   setting: string,
   value: unknown,
-  options: { updatedByNode?: string | null } = {}
+  options: { revision?: number; updatedByNode?: string | null } = {},
+  revisionMode: RevisionWriteMode
 ): boolean {
   if (value === undefined) {
     throw new Error('Cannot set a project setting to undefined. Use deleteProjectSetting instead.');
   }
+  if (revisionMode === 'explicit' && typeof options.revision !== 'number') {
+    throw new Error('Canonical project setting writes require an explicit revision');
+  }
 
   const nextValueJson = JSON.stringify(value);
   const updatedByNode = options.updatedByNode ?? null;
+  const nextRevision = revisionMode === 'explicit' ? options.revision! : 1;
   const existing = getProjectSettingRow(db, table, projectId, setting);
   if (
     existing &&
     canonicalJsonStringify(JSON.parse(existing.value)) === canonicalJsonStringify(value) &&
-    existing.updated_by_node === updatedByNode
+    existing.updated_by_node === updatedByNode &&
+    (revisionMode === 'auto' || existing.revision === nextRevision)
   ) {
     return false;
   }
@@ -112,14 +125,14 @@ function writeProjectSettingRow(
         revision,
         updated_at,
         updated_by_node
-      ) VALUES (?, ?, ?, 1, ${SQL_NOW_ISO_UTC}, ?)
+      ) VALUES (?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ?)
       ON CONFLICT(project_id, setting) DO UPDATE SET
         value = excluded.value,
-        revision = ${table}.revision + 1,
+        revision = ${revisionMode === 'explicit' ? 'excluded.revision' : `${table}.revision + 1`},
         updated_at = ${SQL_NOW_ISO_UTC},
         updated_by_node = excluded.updated_by_node
     `
-  ).run(projectId, setting, nextValueJson, updatedByNode);
+  ).run(projectId, setting, nextValueJson, nextRevision, updatedByNode);
   return true;
 }
 
@@ -237,6 +250,11 @@ export function getProjectSettingsWithMetadata(
   return settings;
 }
 
+/**
+ * @deprecated Writes the projection table directly. Sync-aware code MUST go
+ * through write_router.ts. New non-sync callers should pick the explicit
+ * projection or canonical variants.
+ */
 export function setProjectSetting(
   db: Database,
   projectId: number,
@@ -260,6 +278,11 @@ export function setProjectSetting(
   setInTransaction.immediate(projectId, setting, value, options.updatedByNode ?? null);
 }
 
+/**
+ * @deprecated Writes the projection table directly. Sync-aware code MUST go
+ * through write_router.ts. New non-sync callers should pick the explicit
+ * projection or canonical variants.
+ */
 export function deleteProjectSetting(db: Database, projectId: number, setting: string): boolean {
   const deleteInTransaction = db.transaction(
     (nextProjectId: number, nextSetting: string): boolean => {

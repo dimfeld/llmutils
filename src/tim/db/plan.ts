@@ -4,6 +4,11 @@ import type { TimConfig } from '../configSchema.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getProjectById } from './project.js';
 
+// Canonical helpers write the main-node-confirmed mirror tables and require
+// explicit revisions from that canonical source. Projection helpers write the
+// user-visible working tables and keep the legacy local revision bump behavior.
+// Sync-aware code must route writes through sync/write_router.ts.
+
 export interface PlanRow {
   uuid: string;
   project_id: number;
@@ -102,12 +107,25 @@ export interface UpsertPlanInput {
   tags?: string[];
 }
 
+export type UpsertCanonicalPlanInput = Omit<UpsertPlanInput, 'revision' | 'tasks'> & {
+  revision: number;
+  tasks?: Array<{
+    uuid?: string;
+    title: string;
+    description: string;
+    done?: boolean;
+    revision: number;
+  }>;
+};
+
 type PlanTableSet = {
   plan: 'plan' | 'plan_canonical';
   task: 'plan_task' | 'task_canonical';
   dependency: 'plan_dependency' | 'plan_dependency_canonical';
   tag: 'plan_tag' | 'plan_tag_canonical';
 };
+
+type RevisionWriteMode = 'auto' | 'explicit';
 
 const PROJECTION_PLAN_TABLES: PlanTableSet = {
   plan: 'plan',
@@ -181,7 +199,8 @@ function replacePlanTasksInTable(
     description: string;
     done?: boolean;
     revision?: number;
-  }>
+  }>,
+  revisionMode: RevisionWriteMode
 ): boolean {
   const existingTasks = getPlanTasksByUuidFromTable(db, table, planUuid);
   const existingByUuid = new Map(
@@ -199,13 +218,23 @@ function replacePlanTasksInTable(
       existing.description === task.description &&
       existing.done === done &&
       existing.task_index === index;
+    if (revisionMode === 'explicit' && typeof task.revision !== 'number') {
+      throw new Error('Canonical task writes require an explicit revision');
+    }
 
     return {
       uuid: task.uuid ?? crypto.randomUUID(),
       title: task.title,
       description: task.description,
       done,
-      revision: existing ? (unchanged ? existing.revision : existing.revision + 1) : 1,
+      revision:
+        revisionMode === 'explicit'
+          ? (task.revision ?? 1)
+          : existing
+            ? unchanged
+              ? existing.revision
+              : existing.revision + 1
+            : 1,
     };
   });
 
@@ -418,7 +447,8 @@ function upsertPlanRowInTransaction(
   db: Database,
   tables: PlanTableSet,
   projectId: number,
-  input: UpsertPlanInput
+  input: UpsertPlanInput,
+  revisionMode: RevisionWriteMode
 ): PlanRow {
   const existing = getPlanByUuidFromTable(db, tables.plan, input.uuid);
   const incomingTimestamp = parseTimestamp(input.sourceUpdatedAt);
@@ -437,6 +467,10 @@ function upsertPlanRowInTransaction(
   }
 
   const values = planWriteValues(projectId, input);
+  const explicitRevision = revisionMode === 'explicit' ? input.revision : undefined;
+  if (revisionMode === 'explicit' && typeof explicitRevision !== 'number') {
+    throw new Error('Canonical plan writes require an explicit revision');
+  }
   let planRowChanged = false;
 
   if (!existing) {
@@ -474,7 +508,7 @@ function upsertPlanRowInTransaction(
         revision,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
     `
     ).run(
       input.uuid,
@@ -505,10 +539,14 @@ function upsertPlanRowInTransaction(
       values.lessons_applied_at,
       values.parent_uuid,
       values.epic,
+      explicitRevision ?? 1,
       effectiveCreatedAt,
       effectiveUpdatedAt
     );
-  } else if (!planRowMatches(existing, values)) {
+  } else if (
+    !planRowMatches(existing, values) ||
+    (revisionMode === 'explicit' && existing.revision !== explicitRevision)
+  ) {
     planRowChanged = true;
     db.prepare(
       `
@@ -540,7 +578,7 @@ function upsertPlanRowInTransaction(
         lessons_applied_at = ?,
         parent_uuid = ?,
         epic = ?,
-        revision = revision + 1,
+        revision = ?,
         updated_at = COALESCE(?, ${SQL_NOW_ISO_UTC})
       WHERE uuid = ?
     `
@@ -572,12 +610,19 @@ function upsertPlanRowInTransaction(
       values.lessons_applied_at,
       values.parent_uuid,
       values.epic,
+      explicitRevision ?? existing.revision + 1,
       effectiveUpdatedAt,
       input.uuid
     );
   }
 
-  const tasksChanged = replacePlanTasksInTable(db, tables.task, input.uuid, input.tasks ?? []);
+  const tasksChanged = replacePlanTasksInTable(
+    db,
+    tables.task,
+    input.uuid,
+    input.tasks ?? [],
+    revisionMode
+  );
   const dependenciesChanged = replacePlanDependenciesInTable(
     db,
     tables.dependency,
@@ -586,7 +631,12 @@ function upsertPlanRowInTransaction(
   );
   const tagsChanged = replacePlanTagsInTable(db, tables.tag, input.uuid, input.tags ?? []);
 
-  if (!planRowChanged && (tasksChanged || dependenciesChanged || tagsChanged) && existing) {
+  if (
+    revisionMode === 'auto' &&
+    !planRowChanged &&
+    (tasksChanged || dependenciesChanged || tagsChanged) &&
+    existing
+  ) {
     db.prepare(
       `UPDATE ${tables.plan} SET revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
     ).run(input.uuid);
@@ -605,17 +655,22 @@ export function upsertProjectionPlanInTransaction(
   projectId: number,
   input: UpsertPlanInput
 ): PlanRow {
-  return upsertPlanRowInTransaction(db, PROJECTION_PLAN_TABLES, projectId, input);
+  return upsertPlanRowInTransaction(db, PROJECTION_PLAN_TABLES, projectId, input, 'auto');
 }
 
 export function upsertCanonicalPlanInTransaction(
   db: Database,
   projectId: number,
-  input: UpsertPlanInput
+  input: UpsertCanonicalPlanInput
 ): PlanRow {
-  return upsertPlanRowInTransaction(db, CANONICAL_PLAN_TABLES, projectId, input);
+  return upsertPlanRowInTransaction(db, CANONICAL_PLAN_TABLES, projectId, input, 'explicit');
 }
 
+/**
+ * @deprecated Writes the projection table directly. Sync-aware code MUST go
+ * through write_router.ts. New non-sync callers should pick the explicit
+ * projection or canonical variants.
+ */
 export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInput): PlanRow {
   const upsertInTransaction = db.transaction(
     (nextProjectId: number, nextInput: UpsertPlanInput): PlanRow =>
@@ -625,6 +680,11 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
   return upsertInTransaction.immediate(projectId, input);
 }
 
+/**
+ * @deprecated Writes the projection table directly. Sync-aware code MUST go
+ * through write_router.ts. New non-sync callers should pick the explicit
+ * projection or canonical variants.
+ */
 export function upsertPlanTasks(
   db: Database,
   planUuid: string,
@@ -647,9 +707,11 @@ export function upsertPlanTasks(
         revision?: number;
       }>
     ): void => {
-      if (replacePlanTasksInTable(db, PROJECTION_PLAN_TABLES.task, nextPlanUuid, nextTasks)) {
+      if (
+        replacePlanTasksInTable(db, PROJECTION_PLAN_TABLES.task, nextPlanUuid, nextTasks, 'auto')
+      ) {
         db.prepare(
-          `UPDATE plan SET revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
+          `UPDATE ${PROJECTION_PLAN_TABLES.plan} SET revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
         ).run(nextPlanUuid);
       }
     }
@@ -668,6 +730,7 @@ function insertPlanTaskIntoTable(
     description: string;
     done?: boolean;
     uuid?: string;
+    revision?: number;
   }
 ): void {
   db.prepare(
@@ -680,7 +743,7 @@ function insertPlanTaskIntoTable(
       description,
       done,
       revision
-    ) VALUES (?, ?, ?, ?, ?, ?, 1)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
   `
   ).run(
     task.uuid ?? crypto.randomUUID(),
@@ -688,7 +751,8 @@ function insertPlanTaskIntoTable(
     task.taskIndex,
     task.title,
     task.description,
-    task.done ? 1 : 0
+    task.done ? 1 : 0,
+    task.revision ?? 1
   );
 }
 
@@ -715,11 +779,20 @@ export function insertCanonicalPlanTask(
     description: string;
     done?: boolean;
     uuid?: string;
+    revision: number;
   }
 ): void {
+  if (typeof task.revision !== 'number') {
+    throw new Error('Canonical task writes require an explicit revision');
+  }
   insertPlanTaskIntoTable(db, CANONICAL_PLAN_TABLES.task, planUuid, task);
 }
 
+/**
+ * @deprecated Writes the projection table directly. Sync-aware code MUST go
+ * through write_router.ts. New non-sync callers should pick the explicit
+ * projection or canonical variants.
+ */
 export function upsertPlanDependencies(
   db: Database,
   planUuid: string,
@@ -736,7 +809,7 @@ export function upsertPlanDependencies(
         )
       ) {
         db.prepare(
-          `UPDATE plan SET revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
+          `UPDATE ${PROJECTION_PLAN_TABLES.plan} SET revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
         ).run(nextPlanUuid);
       }
     }
@@ -939,6 +1012,11 @@ export function getPlanTagsByProject(db: Database, projectId: number): PlanTagRo
     .all(projectId) as PlanTagRow[];
 }
 
+/**
+ * @deprecated Writes the projection table directly. Sync-aware code MUST go
+ * through write_router.ts. New non-sync callers should pick the explicit
+ * projection or canonical variants.
+ */
 export function deletePlan(db: Database, uuid: string): boolean {
   const result = db.prepare('DELETE FROM plan WHERE uuid = ?').run(uuid);
   return result.changes > 0;
