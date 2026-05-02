@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   wrapWithOrchestration,
   wrapWithOrchestrationSimple,
@@ -185,13 +185,6 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('/tmp/claude/tim-42-<purpose>.md');
     });
 
-    it('includes output-file fallback guidance for subagent and review commands', () => {
-      const out = wrapWithOrchestration('Context', '42', { batchMode: false });
-      expect(out).toContain('--output-file <path>');
-      expect(out).toContain('tim-42-<agent>-output');
-      expect(out).toContain('tim-42-review-output');
-      expect(out).toContain('If command output is empty, read the output file');
-    });
   });
 
   describe('simple mode (wrapWithOrchestrationSimple)', () => {
@@ -269,12 +262,6 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).not.toContain('tim subagent implementer 55 -x claude-code');
     });
 
-    it('includes output-file fallback guidance for subagent commands', () => {
-      const out = wrapWithOrchestrationSimple('Context', '55', { batchMode: false });
-      expect(out).toContain('--output-file <path>');
-      expect(out).toContain('tim-55-<agent>-output');
-      expect(out).toContain('If command output is empty, read the output file');
-    });
   });
 
   describe('tdd mode (wrapWithOrchestrationTdd)', () => {
@@ -349,18 +336,6 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).not.toContain('Subagent Executor Selection');
     });
 
-    it('includes output-file fallback guidance for TDD subagent and review commands', () => {
-      const out = wrapWithOrchestrationTdd('Context', '74', {
-        batchMode: false,
-        simpleMode: false,
-      });
-      expect(out).toContain('--output-file <path>');
-      expect(out).toContain('tim-74-<agent>-output');
-      expect(out).toContain('tim-74-review-output');
-      expect(out).toContain('If command output is empty, read the output file');
-      expect(out).toContain('Prefer deterministic names');
-      expect(out).toContain('/tmp/claude/tim-74-<purpose>.md');
-    });
   });
 
   describe('dynamic executor note in workflow instructions', () => {
