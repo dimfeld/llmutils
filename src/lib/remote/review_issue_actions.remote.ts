@@ -14,7 +14,6 @@ import { getReviewById, getReviewIssues, type ReviewIssueRow } from '$tim/db/rev
 import { getLinkedPlansByPrUrl } from '$tim/db/pr_status.js';
 import type { PlanSchema } from '$tim/planSchema.js';
 import type { ReviewIssue as ReviewFormatterIssue } from '$tim/formatters/review_formatter.js';
-import { removePlanListItemOperation } from '$tim/sync/operations.js';
 import { getProjectUuidForId, writePlanListRemove } from '$tim/sync/write_router.js';
 
 function parseReviewIssuesJson(
@@ -86,11 +85,13 @@ export const convertReviewIssueToTask = command(
 
     const issue = issues[issueIndex];
     const expectedIssuesJson = JSON.stringify(issues);
+    const nextReviewIssues = issues.filter((_, index) => index !== issueIndex);
     const newTask = createTaskFromIssue(issue);
     const currentPlan = loadPlanSchemaFromRow(db, plan);
     const nextPlan = {
       ...currentPlan,
       status: plan.status === 'in_progress' ? currentPlan.status : 'in_progress',
+      reviewIssues: nextReviewIssues.length > 0 ? nextReviewIssues : undefined,
       tasks: [
         ...(currentPlan.tasks ?? []),
         {
@@ -112,21 +113,6 @@ export const convertReviewIssueToTask = command(
           error(409, 'Review issues changed; refresh and try again');
         }
       },
-      extraBatchOperations: [
-        ({ batch, projectUuid }) => {
-          batch.add((options) =>
-            removePlanListItemOperation(
-              projectUuid,
-              {
-                planUuid,
-                list: 'reviewIssues',
-                value: issue,
-              },
-              options
-            )
-          );
-        },
-      ],
       legacyErrorMessage: 'Cannot convert review issue to task with sync-routed writes',
     });
   }

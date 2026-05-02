@@ -218,17 +218,17 @@ describe('review issue remote actions', () => {
 
     expect(queuedOperationRows()).toEqual([
       {
-        operation_type: 'plan.remove_list_item',
-        status: 'queued',
-        batch_id: expect.any(String),
-      },
-      {
         operation_type: 'plan.set_scalar',
         status: 'queued',
         batch_id: expect.any(String),
       },
       {
         operation_type: 'plan.add_task',
+        status: 'queued',
+        batch_id: expect.any(String),
+      },
+      {
+        operation_type: 'plan.remove_list_item',
         status: 'queued',
         batch_id: expect.any(String),
       },

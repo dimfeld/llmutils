@@ -69,7 +69,10 @@ export async function writeSinglePlanMutationViaBatch(
   const currentPlan = loadPlanSchemaFromRow(db, planRow);
   const nextPlan = preparePlanForWrite(nextPlanInput);
   const existingRow = getPlanByUuid(db, nextPlan.uuid!);
-  const batch = await beginSyncBatch(db, config, { precondition: options.precondition });
+  const batch = await beginSyncBatch(db, config, {
+    precondition: options.precondition,
+    atomic: true,
+  });
   const projectUuid = getProjectUuidForId(db, planRow.project_id);
   for (const addOperation of options.extraBatchOperations ?? []) {
     addOperation({ batch, projectUuid });

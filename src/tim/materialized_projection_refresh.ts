@@ -13,7 +13,7 @@ import {
 } from './db/plan.js';
 import { getProjectById } from './db/project.js';
 import { generatePlanFileContent } from './plans.js';
-import { normalizeContainerToEpic, phaseSchema, type PlanSchema } from './planSchema.js';
+import type { PlanSchema } from './planSchema.js';
 import { planRowToSchemaInput } from './plans_db.js';
 
 const MATERIALIZED_DIR = path.join('.tim', 'plans');
@@ -118,7 +118,6 @@ function isPrimaryMaterializedPlanDirty(filePath: string): boolean {
   }
 
   try {
-    readShadowPlanFileSync(shadowPath);
     return readFileSync(filePath, 'utf8') !== readFileSync(shadowPath, 'utf8');
   } catch {
     return true;
@@ -227,45 +226,3 @@ function readMaterializedFrontmatterSync(filePath: string): Record<string, unkno
   }
 }
 
-function readShadowPlanFileSync(filePath: string): PlanSchema {
-  const content = readFileSync(filePath, 'utf8');
-
-  if (!content.startsWith('---\n')) {
-    throw new Error(`Shadow plan file ${filePath} has no frontmatter`);
-  }
-
-  const endDelimiterIndex = content.indexOf('\n---\n', 4);
-  if (endDelimiterIndex === -1) {
-    throw new Error(`Shadow plan file ${filePath} has no closing frontmatter delimiter`);
-  }
-
-  const frontMatter = content.substring(4, endDelimiterIndex);
-  const markdownBody = content.substring(endDelimiterIndex + 5).trim();
-  const parsed = yaml.parse(frontMatter, {
-    uniqueKeys: false,
-  });
-  const planData =
-    parsed && typeof parsed === 'object'
-      ? normalizeContainerToEpic(parsed as Record<string, unknown>)
-      : {};
-
-  if (markdownBody) {
-    if (planData.details) {
-      planData.details = `${planData.details}\n\n${markdownBody}`;
-    } else {
-      planData.details = markdownBody;
-    }
-  } else {
-    planData.details ??= '';
-  }
-
-  const result = phaseSchema.safeParse(planData);
-  if (!result.success) {
-    const errors = result.error.issues
-      .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
-      .join('\n');
-    throw new Error(`Invalid shadow plan file ${filePath}:\n${errors}`);
-  }
-
-  return normalizeContainerToEpic(result.data);
-}
