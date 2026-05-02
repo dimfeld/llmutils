@@ -11,17 +11,17 @@ type Mutation = {
   revision: number | null;
 };
 
-const PLAN_TEXT_COLUMNS = {
+export const PLAN_TEXT_COLUMNS = {
   title: 'title',
   goal: 'goal',
   note: 'note',
   details: 'details',
 } as const;
-const TASK_TEXT_COLUMNS = {
+export const TASK_TEXT_COLUMNS = {
   title: 'title',
   description: 'description',
 } as const;
-const LIST_COLUMNS = {
+export const LIST_COLUMNS = {
   issue: 'issue',
   pullRequest: 'pull_request',
   docs: 'docs',
@@ -29,7 +29,7 @@ const LIST_COLUMNS = {
   reviewIssues: 'review_issues',
 } as const;
 
-function canonicalJsonStringify(value: unknown): string {
+export function canonicalJsonStringify(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map((item) => canonicalJsonStringify(item)).join(',')}]`;
   }
@@ -44,7 +44,7 @@ function canonicalJsonStringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function mergeText(current: string, base: string, incoming: string): string | null {
+export function mergeText(current: string, base: string, incoming: string): string | null {
   // Contract: no-op patches keep the current value, clean patches from base to
   // incoming are applied to current, and failed patch application means conflict.
   if (base === incoming) {
@@ -61,7 +61,7 @@ function mergeText(current: string, base: string, incoming: string): string | nu
   return merged === false ? null : merged;
 }
 
-function parseJsonArray(value: string | null): unknown[] {
+export function parseJsonArray(value: string | null): unknown[] {
   if (!value) {
     return [];
   }
@@ -96,10 +96,29 @@ export interface ApplyOperationToAdapter {
   onTaskDeleted?(taskUuid: string, revision: number): void;
 }
 
-export class ApplyOperationToPreconditionError extends Error {}
+export type ApplyOperationToPreconditionCode =
+  | 'stale_revision'
+  | 'text_merge_failed'
+  | 'unknown_entity'
+  | 'duplicate_entity'
+  | 'cycle'
+  | 'invalid_operation';
 
-export function applyOperationToPrecondition(message: string): never {
-  throw new ApplyOperationToPreconditionError(message);
+export class ApplyOperationToPreconditionError extends Error {
+  constructor(
+    message: string,
+    readonly code: ApplyOperationToPreconditionCode = 'invalid_operation'
+  ) {
+    super(message);
+    this.name = 'ApplyOperationToPreconditionError';
+  }
+}
+
+export function applyOperationToPrecondition(
+  message: string,
+  code?: ApplyOperationToPreconditionCode
+): never {
+  throw new ApplyOperationToPreconditionError(message, code);
 }
 
 /**
@@ -144,7 +163,10 @@ function applyOperationToUnchecked(
           ? shouldSkipProjectionBaseRevision(adapter, op, baseTarget)
           : !baseTarget.exists || baselineRevision !== op.baseRevision;
       if (isStale) {
-        applyOperationToPrecondition(`Stale base revision for plan ${baseTarget.planUuid}`);
+        applyOperationToPrecondition(
+          `Stale base revision for plan ${baseTarget.planUuid}`,
+          'stale_revision'
+        );
       }
     }
   }
@@ -468,7 +490,7 @@ export function requireAdapterPlan(
 ): ApplyOperationToPlan {
   const plan = adapter.getPlan(planUuid);
   if (!plan || plan.project_id !== adapter.project.id) {
-    applyOperationToPrecondition(`Unknown plan ${planUuid}`);
+    applyOperationToPrecondition(`Unknown plan ${planUuid}`, 'unknown_entity');
   }
   return plan;
 }
@@ -480,7 +502,7 @@ export function requireAdapterTask(
 ): ApplyOperationToTask {
   const task = adapter.getTasks(planUuid).find((item) => item.uuid === taskUuid);
   if (!task) {
-    applyOperationToPrecondition(`Unknown task ${taskUuid}`);
+    applyOperationToPrecondition(`Unknown task ${taskUuid}`, 'unknown_entity');
   }
   return task;
 }
@@ -783,7 +805,7 @@ function applyOperationToPlanText(
   const current = ((plan[column] ?? '') as string).toString();
   const merged = mergeText(current, envelope.op.base, envelope.op.new);
   if (merged === null) {
-    applyOperationToPrecondition('text merge failed');
+    applyOperationToPrecondition('text merge failed', 'text_merge_failed');
   }
   if (merged === current) {
     return [];
@@ -844,7 +866,7 @@ function applyOperationToTaskText(
   const current = task[column] ?? '';
   const merged = mergeText(current, envelope.op.base, envelope.op.new);
   if (merged === null) {
-    applyOperationToPrecondition('text merge failed');
+    applyOperationToPrecondition('text merge failed', 'text_merge_failed');
   }
   if (merged === current) {
     return [];

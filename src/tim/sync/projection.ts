@@ -16,6 +16,7 @@ import {
   type ApplyOperationToPlan,
   type ApplyOperationToTask,
 } from './apply.js';
+import { BasePlanStateAdapter } from './plan_state_adapter.js';
 import { QUEUE_ACTIVE_STATUSES, sqlPlaceholders, type QueueActiveStatus } from './statuses.js';
 
 /*
@@ -345,15 +346,9 @@ function readActivePlanOperationRows(db: Database, planUuid: string): ActivePlan
     .all(planUuid, ...ACTIVE_PROJECTION_OPERATION_STATUSES) as ActivePlanOperationRow[];
 }
 
-class ProjectionPlanAdapter implements ApplyOperationToAdapter {
+class ProjectionPlanAdapter extends BasePlanStateAdapter implements ApplyOperationToAdapter {
   readonly skipPreconditionFailures = true;
   readonly baseRevisionMode = 'projection';
-  readonly project: { id: number; uuid: string };
-
-  private plans = new Map<string, ApplyOperationToPlan | null>();
-  private tasks = new Map<string, ApplyOperationToTask[]>();
-  private dependencies = new Map<string, PlanDependencyRow[]>();
-  private tags = new Map<string, PlanTagRow[]>();
   private loadingPendingPlanCreates = new Set<string>();
   private attemptedPendingPlanCreates = new Set<string>();
 
@@ -363,128 +358,56 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
     initial: PlanState,
     private readonly locallyDeletedPlanUuids: ReadonlySet<string>
   ) {
-    this.project = project;
+    super(project);
     if (initial.plan) {
-      this.plans.set(initial.plan.uuid, { ...initial.plan });
-      this.tasks.set(
-        initial.plan.uuid,
-        initial.tasks.map((task) => ({ ...task }))
-      );
-      this.dependencies.set(
-        initial.plan.uuid,
-        initial.dependencies.map((dependency) => ({ ...dependency }))
-      );
-      this.tags.set(
-        initial.plan.uuid,
-        initial.tags.map((tag) => ({ ...tag }))
-      );
+      this.setLoadedPlanState(initial.plan.uuid, initial);
     }
   }
 
-  getPlan(planUuid: string): ApplyOperationToPlan | null {
+  override getPlan(planUuid: string): ApplyOperationToPlan | null {
     if (this.locallyDeletedPlanUuids.has(planUuid)) {
       return null;
     }
-    if (!this.plans.has(planUuid)) {
-      this.loadCanonicalPlan(planUuid);
-    }
+    const plan = super.getPlan(planUuid);
     if (
-      !this.plans.get(planUuid) &&
+      !plan &&
       !this.loadingPendingPlanCreates.has(planUuid) &&
       !this.attemptedPendingPlanCreates.has(planUuid)
     ) {
       this.loadActivePendingPlanCreate(planUuid);
+      return super.getPlan(planUuid);
     }
-    const plan = this.plans.get(planUuid) ?? null;
-    return plan ? { ...plan } : null;
+    return plan;
   }
 
-  getPlanForCreateDuplicateCheck(planUuid: string): ApplyOperationToPlan | null {
+  override getPlanForCreateDuplicateCheck(planUuid: string): ApplyOperationToPlan | null {
     if (this.locallyDeletedPlanUuids.has(planUuid)) {
       return null;
     }
-    if (!this.plans.has(planUuid)) {
-      this.loadCanonicalPlan(planUuid);
-    }
+    this.ensureLoaded(planUuid);
     const plan = this.plans.get(planUuid) ?? null;
     return plan ? { ...plan } : null;
   }
 
-  getTaskByUuid(taskUuid: string): ApplyOperationToTask | null {
+  override getTaskByUuid(taskUuid: string): ApplyOperationToTask | null {
     if (hasTaskTombstone(this.db, taskUuid)) {
       return { uuid: taskUuid } as ApplyOperationToTask;
     }
-    for (const tasks of this.tasks.values()) {
-      const task = tasks.find((item) => item.uuid === taskUuid);
-      if (task) {
-        return { ...task };
-      }
-    }
-    const task =
-      (this.db
-        .prepare('SELECT * FROM task_canonical WHERE uuid = ?')
-        .get(taskUuid) as ApplyOperationToTask | null) ?? null;
-    return task ? { ...task } : null;
+    return super.getTaskByUuid(taskUuid);
   }
 
-  setPlan(plan: ApplyOperationToPlan): void {
-    if (this.locallyDeletedPlanUuids.has(plan.uuid)) {
-      return;
-    }
-    this.plans.set(plan.uuid, { ...plan });
-    if (!this.tasks.has(plan.uuid)) {
-      this.tasks.set(plan.uuid, []);
-    }
-    if (!this.dependencies.has(plan.uuid)) {
-      this.dependencies.set(plan.uuid, []);
-    }
-    if (!this.tags.has(plan.uuid)) {
-      this.tags.set(plan.uuid, []);
+  override setPlan(plan: ApplyOperationToPlan): void {
+    if (!this.locallyDeletedPlanUuids.has(plan.uuid)) {
+      super.setPlan(plan);
     }
   }
 
-  deletePlan(planUuid: string): void {
-    this.plans.set(planUuid, null);
-    this.tasks.set(planUuid, []);
-    this.dependencies.set(planUuid, []);
-    this.tags.set(planUuid, []);
-  }
-
-  getTasks(planUuid: string): ApplyOperationToTask[] {
-    this.ensurePlanCollectionsLoaded(planUuid);
-    return (this.tasks.get(planUuid) ?? []).map((task) => ({ ...task }));
-  }
-
-  setTasks(planUuid: string, tasks: ApplyOperationToTask[]): void {
-    this.tasks.set(
+  override setDependencies(planUuid: string, dependencies: PlanDependencyRow[]): void {
+    super.setDependencies(
       planUuid,
-      tasks.map((task) => ({ ...task }))
-    );
-  }
-
-  getDependencies(planUuid: string): PlanDependencyRow[] {
-    this.ensurePlanCollectionsLoaded(planUuid);
-    return (this.dependencies.get(planUuid) ?? []).map((dependency) => ({ ...dependency }));
-  }
-
-  setDependencies(planUuid: string, dependencies: PlanDependencyRow[]): void {
-    this.dependencies.set(
-      planUuid,
-      dependencies
-        .filter((dependency) => !this.locallyDeletedPlanUuids.has(dependency.depends_on_uuid))
-        .map((dependency) => ({ ...dependency }))
-    );
-  }
-
-  getTags(planUuid: string): PlanTagRow[] {
-    this.ensurePlanCollectionsLoaded(planUuid);
-    return (this.tags.get(planUuid) ?? []).map((tag) => ({ ...tag }));
-  }
-
-  setTags(planUuid: string, tags: PlanTagRow[]): void {
-    this.tags.set(
-      planUuid,
-      tags.map((tag) => ({ ...tag }))
+      dependencies.filter(
+        (dependency) => !this.locallyDeletedPlanUuids.has(dependency.depends_on_uuid)
+      )
     );
   }
 
@@ -512,27 +435,19 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
     applyOperationToPrecondition('plan.create projection requires numericPlanId');
   }
 
-  private ensurePlanCollectionsLoaded(planUuid: string): void {
-    if (!this.plans.has(planUuid)) {
-      this.loadCanonicalPlan(planUuid);
-    }
+  protected loadPlanState(planUuid: string): void {
+    this.setLoadedPlanState(
+      planUuid,
+      readCanonicalPlanState(this.db, planUuid, this.locallyDeletedPlanUuids)
+    );
   }
 
-  private loadCanonicalPlan(planUuid: string): void {
-    const state = readCanonicalPlanState(this.db, planUuid, this.locallyDeletedPlanUuids);
-    this.plans.set(planUuid, state.plan ? { ...state.plan } : null);
-    this.tasks.set(
-      planUuid,
-      state.tasks.map((task) => ({ ...task }))
-    );
-    this.dependencies.set(
-      planUuid,
-      state.dependencies.map((dependency) => ({ ...dependency }))
-    );
-    this.tags.set(
-      planUuid,
-      state.tags.map((tag) => ({ ...tag }))
-    );
+  protected readTaskByUuid(taskUuid: string): ApplyOperationToTask | null {
+    const task =
+      (this.db
+        .prepare('SELECT * FROM task_canonical WHERE uuid = ?')
+        .get(taskUuid) as ApplyOperationToTask | null) ?? null;
+    return task ? { ...task } : null;
   }
 
   private loadActivePendingPlanCreate(planUuid: string): void {

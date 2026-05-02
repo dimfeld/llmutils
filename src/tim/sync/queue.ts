@@ -12,7 +12,7 @@ import {
   type SyncOperationEnvelope,
   type SyncOperationPayload,
 } from './types.js';
-import { getSyncOperationPlanRefs, getSyncOperationPayloadIndexes } from './operation_metadata.js';
+import { insertSyncOperationRow } from './operation_rows.js';
 import {
   collectProjectionTargetsForPayload,
   createProjectionRebuildTargets,
@@ -561,71 +561,7 @@ function insertQueuedOperation(
   batchId?: string,
   batchAtomic = false
 ): void {
-  const baseRevision =
-    'baseRevision' in operation.op && typeof operation.op.baseRevision === 'number'
-      ? operation.op.baseRevision
-      : null;
-  const insert = db.prepare(
-    `
-      INSERT INTO sync_operation (
-        operation_uuid,
-        project_uuid,
-        origin_node_id,
-        local_sequence,
-        target_type,
-        target_key,
-        operation_type,
-        base_revision,
-        base_hash,
-        payload,
-        payload_task_uuid,
-        status,
-        attempts,
-        last_error,
-        created_at,
-        updated_at,
-        acked_at,
-        ack_metadata,
-        batch_id,
-        batch_atomic
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'queued', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
-    `
-  );
-  const payload = JSON.stringify(operation.op);
-  const indexes = getSyncOperationPayloadIndexes(operation.op);
-  insert.run(
-    operation.operationUuid,
-    operation.projectUuid,
-    operation.originNodeId,
-    operation.localSequence,
-    operation.targetType,
-    operation.targetKey,
-    operation.op.type,
-    baseRevision,
-    payload,
-    indexes.payloadTaskUuid,
-    operation.createdAt,
-    batchId ?? null,
-    batchAtomic ? 1 : 0
-  );
-  insertOperationPlanRefs(db, operation.operationUuid, operation.projectUuid, operation.op);
-}
-
-function insertOperationPlanRefs(
-  db: Database,
-  operationUuid: string,
-  projectUuid: string,
-  payload: SyncOperationPayload
-): void {
-  const insertPlanRef = db.prepare(
-    `
-      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
-      VALUES (?, ?, ?, ?)
-    `
-  );
-  for (const ref of getSyncOperationPlanRefs(payload)) {
-    insertPlanRef.run(operationUuid, projectUuid, ref.planUuid, ref.role);
-  }
+  insertSyncOperationRow(db, operation, { status: 'queued', batchId, batchAtomic });
 }
 
 function rebuildQueuedOperationProjectionInTransaction(

@@ -1,5 +1,4 @@
 import type { Database } from 'bun:sqlite';
-import * as diff from 'diff';
 import { removeAssignment } from '../db/assignment.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import type { PlanDependencyRow, PlanRow, PlanTagRow, PlanTaskRow } from '../db/plan.js';
@@ -19,13 +18,8 @@ import {
   type SyncOperationEnvelope,
   type SyncOperationPayload,
 } from './types.js';
-import {
-  getBaseRevisionPlanUuid,
-  getBaseRevisionTaskUuid,
-  getSyncOperationPayloadIndexes,
-  getSyncOperationPlanRefs,
-} from './operation_metadata.js';
-import { shiftTaskIndexesAfterDelete, shiftTaskIndexesForInsert } from './task_indexes.js';
+import { getBaseRevisionPlanUuid, getBaseRevisionTaskUuid } from './operation_metadata.js';
+import { insertSyncOperationRow } from './operation_rows.js';
 import type {
   ApplyBatchResult,
   ApplyOperationOptions,
@@ -49,12 +43,15 @@ import {
   applyOperationTo,
   applyOperationToPrecondition,
   clonePlanWithBump,
+  PLAN_TEXT_COLUMNS,
   requireAdapterPlan,
   requireAdapterTask,
+  TASK_TEXT_COLUMNS,
   type ApplyOperationToAdapter,
   type ApplyOperationToPlan,
   type ApplyOperationToTask,
 } from './operation_fold.js';
+import { BasePlanStateAdapter } from './plan_state_adapter.js';
 
 type ProjectRow = { id: number; uuid: string };
 
@@ -65,44 +62,7 @@ type Mutation = {
 };
 
 const TERMINAL_OPERATION_STATUSES = new Set(['applied', 'conflict', 'rejected']);
-const PLAN_TEXT_COLUMNS = {
-  title: 'title',
-  goal: 'goal',
-  note: 'note',
-  details: 'details',
-} as const;
-const TASK_TEXT_COLUMNS = {
-  title: 'title',
-  description: 'description',
-} as const;
-const LIST_COLUMNS = {
-  issue: 'issue',
-  pullRequest: 'pull_request',
-  docs: 'docs',
-  changedFiles: 'changed_files',
-  reviewIssues: 'review_issues',
-} as const;
-
-function canonicalJsonStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJsonStringify(item)).join(',')}]`;
-  }
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
-      a.localeCompare(b)
-    );
-    return `{${entries
-      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJsonStringify(item)}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
 const ASSIGNMENT_CLEANUP_STATUSES = new Set(['done', 'needs_review', 'cancelled']);
-const PLAN_UPDATED_AT_ASSIGNMENT = `updated_at = CASE WHEN ? THEN updated_at ELSE COALESCE(?, ${SQL_NOW_ISO_UTC}) END`;
-
-function planUpdatedAtArgs(options: ApplyOperationOptions): [number, string | null] {
-  return [options.skipUpdatedAt === true ? 1 : 0, options.sourceUpdatedAt ?? null];
-}
 
 export function applyOperation(
   db: Database,
@@ -926,61 +886,10 @@ function insertReceivedOperation(
   batchId?: string,
   batchAtomic = false
 ): void {
-  const baseRevision =
-    'baseRevision' in envelope.op && typeof envelope.op.baseRevision === 'number'
-      ? envelope.op.baseRevision
-      : null;
-  const insert = db.prepare(
-    `
-      INSERT INTO sync_operation (
-        operation_uuid,
-        project_uuid,
-        origin_node_id,
-        local_sequence,
-        target_type,
-        target_key,
-        operation_type,
-        base_revision,
-        base_hash,
-        payload,
-        payload_task_uuid,
-        status,
-        attempts,
-        last_error,
-        created_at,
-        updated_at,
-        acked_at,
-        ack_metadata,
-        batch_id,
-        batch_atomic
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'received', 0, NULL, ?, ${SQL_NOW_ISO_UTC}, NULL, NULL, ?, ?)
-    `
-  );
-  const indexes = getSyncOperationPayloadIndexes(envelope.op);
-  insert.run(
-    envelope.operationUuid,
-    envelope.projectUuid,
-    envelope.originNodeId,
-    envelope.localSequence,
-    envelope.targetType,
-    envelope.targetKey,
-    envelope.op.type,
-    baseRevision,
-    payload,
-    indexes.payloadTaskUuid,
-    envelope.createdAt,
-    batchId ?? null,
-    batchAtomic ? 1 : 0
-  );
-  const insertPlanRef = db.prepare(
-    `
-      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
-      VALUES (?, ?, ?, ?)
-    `
-  );
-  for (const ref of getSyncOperationPlanRefs(envelope.op)) {
-    insertPlanRef.run(envelope.operationUuid, envelope.projectUuid, ref.planUuid, ref.role);
+  if (payload !== JSON.stringify(envelope.op)) {
+    throw new Error('insertReceivedOperation payload does not match normalized envelope payload');
   }
+  insertSyncOperationRow(db, envelope, { status: 'received', batchId, batchAtomic });
 }
 
 function checkFifo(db: Database, envelope: SyncOperationEnvelope): SyncFifoGapError | null {
@@ -1098,7 +1007,6 @@ function applyCanonicalPlanPayload(
   normalizedPayload: string,
   options: ApplyOperationOptions
 ): Mutation[] {
-  validateCanonicalPlanOperation(db, project, envelope, options.atomicBatchPlanBaseRevisions);
   const adapter = new CanonicalPlanAdapter(db, project, envelope);
   const priorStatus =
     envelope.op.type === 'plan.set_scalar' && envelope.op.field === 'status'
@@ -1120,7 +1028,7 @@ function applyCanonicalPlanPayload(
     return [...mutations, ...adapter.extraMutations()];
   } catch (error) {
     if (error instanceof ApplyOperationToPreconditionError) {
-      if (error.message === 'text merge failed') {
+      if (error.code === 'text_merge_failed') {
         const conflictId = createTextMergeConflict(
           db,
           adapter,
@@ -1131,665 +1039,31 @@ function applyCanonicalPlanPayload(
         markOperationConflict(db, envelope.operationUuid, conflictId);
         throw new ConflictAccepted(conflictId);
       }
+      if (error.code === 'stale_revision') {
+        const currentValue = currentBaseRevision(adapter, envelope.op);
+        if (currentValue !== null) {
+          const conflictId = createSyncConflict(db, {
+            envelope,
+            originalPayload,
+            normalizedPayload,
+            fieldPath: conflictFieldPath(envelope.op),
+            baseValue:
+              'baseRevision' in envelope.op && typeof envelope.op.baseRevision === 'number'
+                ? envelope.op.baseRevision
+                : null,
+            incomingValue: conflictIncomingValue(envelope.op),
+            attemptedPatch: conflictPatch(envelope.op),
+            currentValue,
+            reason: 'stale_revision',
+          });
+          markOperationConflict(db, envelope.operationUuid, conflictId);
+          throw new ConflictAccepted(conflictId);
+        }
+      }
       throw validationError(envelope, error.message);
     }
     throw error;
   }
-}
-
-function validateCanonicalPlanOperation(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope,
-  atomicBatchPlanBaseRevisions?: Map<string, number>
-): void {
-  const op = envelope.op;
-  // Task-targeted ops carry the task's revision in `baseRevision`, not the
-  // plan's, so the plan-level CAS check below would compare apples to oranges.
-  // Those ops are validated by the adapter-driven CAS in applyOperationToUnchecked
-  // which targets the task's revision correctly.
-  const opCarriesTaskBaseRevision =
-    op.type === 'plan.update_task_text' || op.type === 'plan.remove_task';
-  if ('baseRevision' in op && typeof op.baseRevision === 'number' && !opCarriesTaskBaseRevision) {
-    const planUuid =
-      op.type === 'plan.promote_task' ? op.sourcePlanUuid : 'planUuid' in op ? op.planUuid : null;
-    if (planUuid) {
-      const plan = getCanonicalPlan(db, planUuid);
-      if (!plan || plan.project_id !== project.id) {
-        throw validationError(envelope, `Unknown plan ${planUuid}`);
-      }
-      const baselineRevision = atomicBatchPlanBaseRevisions?.get(planUuid) ?? plan.revision;
-      if (baselineRevision !== op.baseRevision) {
-        const conflictId = createSyncConflict(db, {
-          envelope,
-          originalPayload: JSON.stringify(op),
-          normalizedPayload: JSON.stringify(op),
-          fieldPath: conflictFieldPath(op),
-          baseValue: op.baseRevision,
-          incomingValue: conflictIncomingValue(op),
-          attemptedPatch: conflictPatch(op),
-          currentValue: plan?.revision ?? null,
-          reason: 'stale_revision',
-        });
-        markOperationConflict(db, envelope.operationUuid, conflictId);
-        throw new ConflictAccepted(conflictId);
-      }
-    }
-  }
-  switch (op.type) {
-    case 'plan.create': {
-      if (op.dependencies.some((dependencyUuid) => dependencyUuid === op.planUuid)) {
-        throw validationError(envelope, 'Adding dependency would create a cycle');
-      }
-      for (const dependencyUuid of new Set(op.dependencies)) {
-        requireCanonicalPlan(db, project, dependencyUuid, envelope);
-        if (
-          dependencyReachesInTable(db, 'plan_dependency_canonical', dependencyUuid, op.planUuid)
-        ) {
-          throw validationError(envelope, 'Adding dependency would create a cycle');
-        }
-        if (
-          op.parentUuid &&
-          (dependencyUuid === op.parentUuid ||
-            dependencyReachesInTable(
-              db,
-              'plan_dependency_canonical',
-              dependencyUuid,
-              op.parentUuid
-            ))
-        ) {
-          throw validationError(envelope, 'Setting parent would create a dependency cycle');
-        }
-      }
-      if (op.parentUuid) {
-        requireCanonicalPlan(db, project, op.parentUuid, envelope);
-        validateParentEdgeInTables(
-          db,
-          envelope,
-          'plan_canonical',
-          'plan_dependency_canonical',
-          op.parentUuid,
-          op.planUuid
-        );
-      }
-      if (op.discoveredFrom) {
-        requireCanonicalPlan(db, project, op.discoveredFrom, envelope);
-      }
-      const taskUuids = new Set<string>();
-      for (const task of op.tasks) {
-        if (taskUuids.has(task.taskUuid)) {
-          throw validationError(envelope, 'Duplicate task UUIDs in plan.create');
-        }
-        const existingTask = db
-          .prepare('SELECT uuid FROM task_canonical WHERE uuid = ?')
-          .get(task.taskUuid);
-        if (existingTask) {
-          throw validationError(envelope, 'Duplicate task UUIDs in plan.create');
-        }
-        taskUuids.add(task.taskUuid);
-      }
-      return;
-    }
-    case 'plan.set_scalar':
-      if (op.field === 'discovered_from' && typeof op.value === 'string') {
-        requireCanonicalPlan(db, project, op.value, envelope);
-      }
-      return;
-    case 'plan.add_dependency':
-      if (
-        op.planUuid === op.dependsOnPlanUuid ||
-        dependencyReachesInTable(db, 'plan_dependency_canonical', op.dependsOnPlanUuid, op.planUuid)
-      ) {
-        throw validationError(envelope, 'Adding dependency would create a cycle');
-      }
-      return;
-    case 'plan.set_parent':
-      if (op.newParentUuid) {
-        requireCanonicalPlan(db, project, op.newParentUuid, envelope);
-        validateParentEdgeInTables(
-          db,
-          envelope,
-          'plan_canonical',
-          'plan_dependency_canonical',
-          op.newParentUuid,
-          op.planUuid
-        );
-      }
-      return;
-    case 'plan.promote_task':
-      if (op.parentUuid) {
-        requireCanonicalPlan(db, project, op.parentUuid, envelope);
-        validateParentEdgeInTables(
-          db,
-          envelope,
-          'plan_canonical',
-          'plan_dependency_canonical',
-          op.parentUuid,
-          op.newPlanUuid
-        );
-      }
-      for (const dependencyUuid of new Set(op.dependencies)) {
-        requireCanonicalPlan(db, project, dependencyUuid, envelope);
-        if (
-          dependencyUuid === op.newPlanUuid ||
-          dependencyReachesInTable(db, 'plan_dependency_canonical', dependencyUuid, op.newPlanUuid)
-        ) {
-          throw validationError(envelope, 'Adding dependency would create a cycle');
-        }
-      }
-      return;
-    default:
-      return;
-  }
-}
-
-function applyPlanCreate(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & { op: Extract<SyncOperationPayload, { type: 'plan.create' }> },
-  options: ApplyOperationOptions = {}
-): Mutation[] {
-  const op = envelope.op;
-  const existing = getPlan(db, op.planUuid);
-  if (existing) {
-    return [];
-  }
-  if (op.parentUuid) {
-    requirePlan(db, project, op.parentUuid, envelope);
-  }
-  if (op.discoveredFrom) {
-    requirePlan(db, project, op.discoveredFrom, envelope);
-  }
-  for (const dependencyUuid of new Set(op.dependencies)) {
-    requirePlan(db, project, dependencyUuid, envelope);
-    if (dependencyUuid === op.planUuid || dependencyReaches(db, dependencyUuid, op.planUuid)) {
-      throw validationError(envelope, 'Adding dependency would create a cycle');
-    }
-    if (
-      op.parentUuid &&
-      (dependencyUuid === op.parentUuid || dependencyReaches(db, dependencyUuid, op.parentUuid))
-    ) {
-      throw validationError(envelope, 'Setting parent would create a dependency cycle');
-    }
-  }
-  if (op.parentUuid) {
-    validateParentEdge(db, envelope, op.parentUuid, op.planUuid);
-  }
-  const taskUuids = new Set<string>();
-  for (const task of op.tasks) {
-    if (taskUuids.has(task.taskUuid)) {
-      throw validationError(envelope, 'Duplicate task UUIDs in plan.create');
-    }
-    taskUuids.add(task.taskUuid);
-  }
-  const resolved = resolvePlanCreateNumericPlanId(
-    db,
-    project.id,
-    op.numericPlanId,
-    options.preserveRequestedPlanIds === true
-  );
-  const numericPlanId = resolved.numericPlanId;
-  db.prepare(
-    `
-      INSERT INTO plan (
-        uuid, project_id, plan_id, title, goal, note, details, status, priority,
-        branch, simple, tdd, discovered_from, issue, pull_request, assigned_to,
-        base_branch, base_commit, base_change_id, temp, docs, changed_files,
-        plan_generated_at, review_issues, docs_updated_at, lessons_applied_at,
-        parent_uuid, epic, revision, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1,
-        COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
-    `
-  ).run(
-    op.planUuid,
-    project.id,
-    numericPlanId,
-    op.title,
-    op.goal ?? null,
-    op.note ?? null,
-    op.details ?? null,
-    op.status ?? 'pending',
-    op.priority ?? null,
-    op.branch ?? null,
-    typeof op.simple === 'boolean' ? (op.simple ? 1 : 0) : null,
-    typeof op.tdd === 'boolean' ? (op.tdd ? 1 : 0) : null,
-    resolveLocalPlanId(db, project.id, op.discoveredFrom),
-    JSON.stringify(op.issue),
-    JSON.stringify(op.pullRequest),
-    op.assignedTo ?? null,
-    op.baseBranch ?? null,
-    typeof op.temp === 'boolean' ? (op.temp ? 1 : 0) : null,
-    JSON.stringify(op.docs),
-    JSON.stringify(op.changedFiles),
-    op.planGeneratedAt ?? null,
-    JSON.stringify(op.reviewIssues),
-    op.docsUpdatedAt ?? null,
-    op.lessonsAppliedAt ?? null,
-    op.parentUuid ?? null,
-    op.epic ? 1 : 0,
-    options.sourceCreatedAt ?? null,
-    options.sourceUpdatedAt ?? null
-  );
-  op.tasks.forEach((task, index) => {
-    db.prepare(
-      `
-        INSERT INTO plan_task (uuid, plan_uuid, task_index, title, description, done, revision)
-        VALUES (?, ?, ?, ?, ?, ?, 1)
-      `
-    ).run(task.taskUuid, op.planUuid, index, task.title, task.description, task.done ? 1 : 0);
-  });
-  for (const tag of new Set(op.tags)) {
-    db.prepare('INSERT OR IGNORE INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run(
-      op.planUuid,
-      tag
-    );
-  }
-  for (const dependencyUuid of new Set(op.dependencies)) {
-    db.prepare(
-      'INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)'
-    ).run(op.planUuid, dependencyUuid);
-  }
-  db.prepare('DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?').run(
-    'plan',
-    `plan:${op.planUuid}`
-  );
-  // Task tombstones do not store the owning plan UUID, so only the resurrected plan tombstone can
-  // be cleared without scanning operation payloads.
-  const mutations: Mutation[] = [
-    { targetType: 'plan', targetKey: envelope.targetKey, revision: 1 },
-  ];
-  if (op.parentUuid) {
-    const result = db
-      .prepare('INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)')
-      .run(op.parentUuid, op.planUuid);
-    if (result.changes > 0) {
-      bumpPlan(db, op.parentUuid);
-      mutations.push(planMutation(db, op.parentUuid));
-    }
-  }
-  setProjectHighestPlanId(db, project.id, numericPlanId);
-  return mutations;
-}
-
-function applyPlanScalar(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & {
-    op: Extract<SyncOperationPayload, { type: 'plan.set_scalar' }>;
-  },
-  options: ApplyOperationOptions = {}
-): Mutation[] {
-  const plan = requirePlan(db, project, envelope.op.planUuid, envelope);
-  const column = envelope.op.field;
-  if (envelope.op.field === 'discovered_from' && typeof envelope.op.value === 'string') {
-    requirePlan(db, project, envelope.op.value, envelope);
-  }
-  const value =
-    envelope.op.field === 'epic'
-      ? envelope.op.value
-        ? 1
-        : 0
-      : envelope.op.field === 'discovered_from'
-        ? resolveLocalPlanId(db, project.id, envelope.op.value as string | null)
-        : envelope.op.value;
-  if ((plan as unknown as Record<string, unknown>)[column] === value) {
-    return [];
-  }
-  db.prepare(
-    `UPDATE plan SET ${column} = ?, revision = revision + 1, ${PLAN_UPDATED_AT_ASSIGNMENT} WHERE uuid = ?`
-  ).run(value, ...planUpdatedAtArgs(options), envelope.op.planUuid);
-  if (
-    column === 'status' &&
-    typeof value === 'string' &&
-    plan.status !== value &&
-    ASSIGNMENT_CLEANUP_STATUSES.has(value) &&
-    options.cleanupAssignmentsOnStatusChange !== false
-  ) {
-    removeAssignment(db, project.id, envelope.op.planUuid);
-  }
-  return [planMutation(db, envelope.op.planUuid)];
-}
-
-function resolveLocalPlanId(
-  db: Database,
-  projectId: number,
-  planUuid: string | null | undefined
-): number | null {
-  if (!planUuid) {
-    return null;
-  }
-  const row = db
-    .prepare('SELECT plan_id FROM plan WHERE project_id = ? AND uuid = ?')
-    .get(projectId, planUuid) as { plan_id: number } | null;
-  return row?.plan_id ?? null;
-}
-
-function applyPlanText(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & {
-    op: Extract<SyncOperationPayload, { type: 'plan.patch_text' }>;
-  },
-  originalPayload: string,
-  normalizedPayload: string,
-  options: ApplyOperationOptions = {}
-): Mutation[] {
-  const plan = requirePlan(db, project, envelope.op.planUuid, envelope);
-  const column = PLAN_TEXT_COLUMNS[envelope.op.field];
-  const current = ((plan[column] ?? '') as string).toString();
-  const merged = mergeText(current, envelope.op.base, envelope.op.new);
-  if (merged === null) {
-    const conflictId = createSyncConflict(db, {
-      envelope,
-      originalPayload,
-      normalizedPayload,
-      fieldPath: envelope.op.field,
-      baseValue: envelope.op.base,
-      incomingValue: envelope.op.new,
-      attemptedPatch: envelope.op.patch ?? null,
-      currentValue: current,
-      reason: 'text_merge_failed',
-    });
-    markOperationConflict(db, envelope.operationUuid, conflictId);
-    throw new ConflictAccepted(conflictId);
-  }
-  if (merged === current) {
-    return [];
-  }
-  db.prepare(
-    `UPDATE plan SET ${column} = ?, revision = revision + 1, ${PLAN_UPDATED_AT_ASSIGNMENT} WHERE uuid = ?`
-  ).run(merged, ...planUpdatedAtArgs(options), envelope.op.planUuid);
-  return [planMutation(db, envelope.op.planUuid)];
-}
-
-function applyAddTask(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & {
-    op: Extract<SyncOperationPayload, { type: 'plan.add_task' }>;
-  },
-  options: ApplyOperationOptions = {}
-): Mutation[] {
-  requirePlan(db, project, envelope.op.planUuid, envelope);
-  const existing = getTask(db, envelope.op.taskUuid);
-  if (existing) {
-    return [];
-  }
-  const index =
-    envelope.op.taskIndex ??
-    (
-      db
-        .prepare(
-          'SELECT COALESCE(MAX(task_index), -1) + 1 AS next_index FROM plan_task WHERE plan_uuid = ?'
-        )
-        .get(envelope.op.planUuid) as { next_index: number }
-    ).next_index;
-  shiftTaskIndexesForInsert(db, envelope.op.planUuid, index);
-  db.prepare(
-    'INSERT INTO plan_task (uuid, plan_uuid, task_index, title, description, done, revision) VALUES (?, ?, ?, ?, ?, ?, 1)'
-  ).run(
-    envelope.op.taskUuid,
-    envelope.op.planUuid,
-    index,
-    envelope.op.title,
-    envelope.op.description ?? '',
-    envelope.op.done ? 1 : 0
-  );
-  bumpPlan(db, envelope.op.planUuid, options);
-  return [planMutation(db, envelope.op.planUuid), taskMutation(db, envelope.op.taskUuid)];
-}
-
-function applyTaskText(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & {
-    op: Extract<SyncOperationPayload, { type: 'plan.update_task_text' }>;
-  },
-  originalPayload: string,
-  normalizedPayload: string,
-  options: ApplyOperationOptions = {}
-): Mutation[] {
-  requirePlan(db, project, envelope.op.planUuid, envelope);
-  const task = requireTask(db, envelope.op.taskUuid, envelope.op.planUuid, envelope);
-  const column = TASK_TEXT_COLUMNS[envelope.op.field];
-  const current = task[column] ?? '';
-  const merged = mergeText(current, envelope.op.base, envelope.op.new);
-  if (merged === null) {
-    const conflictId = createSyncConflict(db, {
-      envelope,
-      originalPayload,
-      normalizedPayload,
-      fieldPath: envelope.op.field,
-      baseValue: envelope.op.base,
-      incomingValue: envelope.op.new,
-      attemptedPatch: envelope.op.patch ?? null,
-      currentValue: current,
-      reason: 'text_merge_failed',
-    });
-    markOperationConflict(db, envelope.operationUuid, conflictId);
-    throw new ConflictAccepted(conflictId);
-  }
-  if (merged === current) {
-    return [];
-  }
-  db.prepare(`UPDATE plan_task SET ${column} = ?, revision = revision + 1 WHERE uuid = ?`).run(
-    merged,
-    envelope.op.taskUuid
-  );
-  bumpPlan(db, envelope.op.planUuid, options);
-  return [taskMutation(db, envelope.op.taskUuid), planMutation(db, envelope.op.planUuid)];
-}
-
-function applyMarkTaskDone(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & {
-    op: Extract<SyncOperationPayload, { type: 'plan.mark_task_done' }>;
-  },
-  options: ApplyOperationOptions = {}
-): Mutation[] {
-  requirePlan(db, project, envelope.op.planUuid, envelope);
-  const task = requireTask(db, envelope.op.taskUuid, envelope.op.planUuid, envelope);
-  const done = envelope.op.done ? 1 : 0;
-  if (task.done === done) {
-    return [];
-  }
-  db.prepare('UPDATE plan_task SET done = ?, revision = revision + 1 WHERE uuid = ?').run(
-    done,
-    envelope.op.taskUuid
-  );
-  bumpPlan(db, envelope.op.planUuid, options);
-  return [taskMutation(db, envelope.op.taskUuid), planMutation(db, envelope.op.planUuid)];
-}
-
-function applyRemoveTask(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & {
-    op: Extract<SyncOperationPayload, { type: 'plan.remove_task' }>;
-  },
-  options: ApplyOperationOptions = {}
-): Mutation[] {
-  requirePlan(db, project, envelope.op.planUuid, envelope);
-  const task = getTask(db, envelope.op.taskUuid);
-  if (!task) {
-    return [];
-  }
-  if (task.plan_uuid !== envelope.op.planUuid) {
-    throw validationError(
-      envelope,
-      `Task ${envelope.op.taskUuid} is not in plan ${envelope.op.planUuid}`
-    );
-  }
-  recordSyncTombstone(db, {
-    entityType: 'task',
-    entityKey: envelope.targetKey,
-    projectUuid: envelope.projectUuid,
-    deletionOperationUuid: envelope.operationUuid,
-    deletedRevision: task.revision,
-    originNodeId: envelope.originNodeId,
-  });
-  db.prepare('DELETE FROM plan_task WHERE uuid = ?').run(envelope.op.taskUuid);
-  shiftTaskIndexesAfterDelete(db, envelope.op.planUuid, task.task_index);
-  bumpPlan(db, envelope.op.planUuid, options);
-  return [
-    { targetType: 'task', targetKey: envelope.targetKey, revision: task.revision + 1 },
-    planMutation(db, envelope.op.planUuid),
-  ];
-}
-
-function applyDependency(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & {
-    op: Extract<SyncOperationPayload, { type: 'plan.add_dependency' | 'plan.remove_dependency' }>;
-  },
-  options: ApplyOperationOptions = {}
-): Mutation[] {
-  requirePlan(db, project, envelope.op.planUuid, envelope);
-  requirePlan(db, project, envelope.op.dependsOnPlanUuid, envelope);
-  if (envelope.op.type === 'plan.add_dependency') {
-    if (
-      envelope.op.planUuid === envelope.op.dependsOnPlanUuid ||
-      dependencyReaches(db, envelope.op.dependsOnPlanUuid, envelope.op.planUuid)
-    ) {
-      throw validationError(envelope, 'Adding dependency would create a cycle');
-    }
-    const result = db
-      .prepare('INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)')
-      .run(envelope.op.planUuid, envelope.op.dependsOnPlanUuid);
-    if (result.changes === 0) {
-      return [];
-    }
-  } else {
-    const result = db
-      .prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?')
-      .run(envelope.op.planUuid, envelope.op.dependsOnPlanUuid);
-    if (result.changes === 0) {
-      return [];
-    }
-  }
-  bumpPlan(db, envelope.op.planUuid, options);
-  return [planMutation(db, envelope.op.planUuid)];
-}
-
-function applyTag(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & {
-    op: Extract<SyncOperationPayload, { type: 'plan.add_tag' | 'plan.remove_tag' }>;
-  },
-  options: ApplyOperationOptions = {}
-): Mutation[] {
-  requirePlan(db, project, envelope.op.planUuid, envelope);
-  const result =
-    envelope.op.type === 'plan.add_tag'
-      ? db
-          .prepare('INSERT OR IGNORE INTO plan_tag (plan_uuid, tag) VALUES (?, ?)')
-          .run(envelope.op.planUuid, envelope.op.tag)
-      : db
-          .prepare('DELETE FROM plan_tag WHERE plan_uuid = ? AND tag = ?')
-          .run(envelope.op.planUuid, envelope.op.tag);
-  if (result.changes === 0) {
-    return [];
-  }
-  bumpPlan(db, envelope.op.planUuid, options);
-  return [planMutation(db, envelope.op.planUuid)];
-}
-
-function applyListItem(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & {
-    op: Extract<SyncOperationPayload, { type: 'plan.add_list_item' | 'plan.remove_list_item' }>;
-  },
-  options: ApplyOperationOptions = {}
-): Mutation[] {
-  const plan = requirePlan(db, project, envelope.op.planUuid, envelope);
-  const column = LIST_COLUMNS[envelope.op.list];
-  const current = parseJsonArray(plan[column]);
-  const valueText = canonicalJsonStringify(envelope.op.value);
-  const index = current.findIndex((item) => canonicalJsonStringify(item) === valueText);
-  const next =
-    envelope.op.type === 'plan.add_list_item'
-      ? index === -1
-        ? [...current, envelope.op.value]
-        : current
-      : index === -1
-        ? current
-        : current.filter((_, itemIndex) => itemIndex !== index);
-  if (next === current) {
-    return [];
-  }
-  db.prepare(
-    `UPDATE plan SET ${column} = ?, revision = revision + 1, ${PLAN_UPDATED_AT_ASSIGNMENT} WHERE uuid = ?`
-  ).run(
-    next.length === 0 ? null : JSON.stringify(next),
-    ...planUpdatedAtArgs(options),
-    envelope.op.planUuid
-  );
-  return [planMutation(db, envelope.op.planUuid)];
-}
-
-function applyPlanDelete(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & { op: Extract<SyncOperationPayload, { type: 'plan.delete' }> }
-): Mutation[] {
-  const plan = requirePlan(db, project, envelope.op.planUuid, envelope);
-  const tasks = db
-    .prepare('SELECT uuid, revision FROM plan_task WHERE plan_uuid = ?')
-    .all(envelope.op.planUuid) as Array<{ uuid: string; revision: number }>;
-  const dependents = db
-    .prepare(
-      `
-        SELECT DISTINCT plan_uuid
-        FROM plan_dependency
-        WHERE depends_on_uuid = ?
-          AND plan_uuid <> ?
-      `
-    )
-    .all(envelope.op.planUuid, envelope.op.planUuid) as Array<{ plan_uuid: string }>;
-  recordSyncTombstone(db, {
-    entityType: 'plan',
-    entityKey: envelope.targetKey,
-    projectUuid: envelope.projectUuid,
-    deletionOperationUuid: envelope.operationUuid,
-    deletedRevision: plan.revision + 1,
-    originNodeId: envelope.originNodeId,
-  });
-  for (const task of tasks) {
-    recordSyncTombstone(db, {
-      entityType: 'task',
-      entityKey: `task:${task.uuid}`,
-      projectUuid: envelope.projectUuid,
-      deletionOperationUuid: envelope.operationUuid,
-      deletedRevision: task.revision + 1,
-      originNodeId: envelope.originNodeId,
-    });
-  }
-  const mutations: Mutation[] = [
-    { targetType: 'plan', targetKey: envelope.targetKey, revision: plan.revision + 1 },
-    ...tasks.map((task) => ({
-      targetType: 'task',
-      targetKey: `task:${task.uuid}`,
-      revision: task.revision + 1,
-    })),
-  ];
-  for (const dependent of dependents) {
-    bumpPlan(db, dependent.plan_uuid);
-    mutations.push(planMutation(db, dependent.plan_uuid));
-  }
-  db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? OR depends_on_uuid = ?').run(
-    envelope.op.planUuid,
-    envelope.op.planUuid
-  );
-  db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(envelope.op.planUuid);
-  db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(envelope.op.planUuid);
-  removeAssignment(db, project.id, envelope.op.planUuid);
-  db.prepare('DELETE FROM plan WHERE uuid = ?').run(envelope.op.planUuid);
-  return mutations;
 }
 
 function applyProjectSetting(
@@ -2007,50 +1281,6 @@ function applyResolvedPlanOperationWithCanonicalAdapter(
   return [...mutations, ...adapter.extraMutations()];
 }
 
-function applyResolvedPlanText(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & {
-    op: Extract<SyncOperationPayload, { type: 'plan.patch_text' }>;
-  },
-  value: string
-): Mutation[] {
-  const plan = requirePlan(db, project, envelope.op.planUuid, envelope);
-  const column = PLAN_TEXT_COLUMNS[envelope.op.field];
-  const current = ((plan[column] ?? '') as string).toString();
-  if (current === value) {
-    return [];
-  }
-  // Resolution time is the authoritative update time for conflict resolution.
-  db.prepare(
-    `UPDATE plan SET ${column} = ?, revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-  ).run(value, envelope.op.planUuid);
-  return [planMutation(db, envelope.op.planUuid)];
-}
-
-function applyResolvedTaskText(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & {
-    op: Extract<SyncOperationPayload, { type: 'plan.update_task_text' }>;
-  },
-  value: string
-): Mutation[] {
-  requirePlan(db, project, envelope.op.planUuid, envelope);
-  const task = requireTask(db, envelope.op.taskUuid, envelope.op.planUuid, envelope);
-  const column = TASK_TEXT_COLUMNS[envelope.op.field];
-  if ((task[column] ?? '') === value) {
-    return [];
-  }
-  db.prepare(`UPDATE plan_task SET ${column} = ?, revision = revision + 1 WHERE uuid = ?`).run(
-    value,
-    envelope.op.taskUuid
-  );
-  // Resolution time is the authoritative owning-plan update time.
-  bumpPlan(db, envelope.op.planUuid);
-  return [taskMutation(db, envelope.op.taskUuid), planMutation(db, envelope.op.planUuid)];
-}
-
 function applyResolvedProjectSetting(
   db: Database,
   project: ProjectRow,
@@ -2112,102 +1342,8 @@ function applyResolvedProjectSetting(
   ];
 }
 
-function applySetParent(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & {
-    op: Extract<SyncOperationPayload, { type: 'plan.set_parent' }>;
-  },
-  options: ApplyOperationOptions = {}
-): Mutation[] {
-  const plan = requirePlan(db, project, envelope.op.planUuid, envelope);
-  if (envelope.op.newParentUuid) {
-    requirePlan(db, project, envelope.op.newParentUuid, envelope);
-    validateParentEdge(db, envelope, envelope.op.newParentUuid, envelope.op.planUuid);
-  }
-  if (plan.parent_uuid === envelope.op.newParentUuid) {
-    return [];
-  }
-  const mutations: Mutation[] = [];
-  const oldParentUuid = plan.parent_uuid;
-  db.prepare(
-    `UPDATE plan SET parent_uuid = ?, revision = revision + 1, ${PLAN_UPDATED_AT_ASSIGNMENT} WHERE uuid = ?`
-  ).run(envelope.op.newParentUuid, ...planUpdatedAtArgs(options), envelope.op.planUuid);
-  mutations.push(planMutation(db, envelope.op.planUuid));
-  if (oldParentUuid) {
-    const result = db
-      .prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?')
-      .run(oldParentUuid, envelope.op.planUuid);
-    if (result.changes > 0) {
-      bumpPlan(db, oldParentUuid);
-      mutations.push(planMutation(db, oldParentUuid));
-    }
-  }
-  if (envelope.op.newParentUuid) {
-    const result = db
-      .prepare('INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)')
-      .run(envelope.op.newParentUuid, envelope.op.planUuid);
-    if (result.changes > 0) {
-      bumpPlan(db, envelope.op.newParentUuid);
-      mutations.push(planMutation(db, envelope.op.newParentUuid));
-    }
-  }
-  return mutations;
-}
-
-function applyPromoteTask(
-  db: Database,
-  project: ProjectRow,
-  envelope: SyncOperationEnvelope & {
-    op: Extract<SyncOperationPayload, { type: 'plan.promote_task' }>;
-  },
-  options: ApplyOperationOptions = {}
-): Mutation[] {
-  requirePlan(db, project, envelope.op.sourcePlanUuid, envelope);
-  requireTask(db, envelope.op.taskUuid, envelope.op.sourcePlanUuid, envelope);
-  if (getPlan(db, envelope.op.newPlanUuid)) {
-    return [];
-  }
-  const createEnvelope = {
-    ...envelope,
-    targetKey: `plan:${envelope.op.newPlanUuid}`,
-    op: {
-      type: 'plan.create' as const,
-      planUuid: envelope.op.newPlanUuid,
-      numericPlanId: envelope.op.numericPlanId,
-      title: envelope.op.title,
-      details: envelope.op.description,
-      parentUuid: envelope.op.parentUuid,
-      issue: [],
-      pullRequest: [],
-      docs: [],
-      changedFiles: [],
-      reviewIssues: [],
-      tags: envelope.op.tags,
-      dependencies: envelope.op.dependencies,
-      tasks: [],
-    },
-  };
-  const mutations = applyPlanCreate(db, project, createEnvelope, options);
-  db.prepare(
-    'UPDATE plan_task SET done = 1, revision = revision + 1 WHERE uuid = ? AND done <> 1'
-  ).run(envelope.op.taskUuid);
-  bumpPlan(db, envelope.op.sourcePlanUuid, options);
-  mutations.push(
-    taskMutation(db, envelope.op.taskUuid),
-    planMutation(db, envelope.op.sourcePlanUuid)
-  );
-  return mutations;
-}
-
-class CanonicalPlanAdapter implements ApplyOperationToAdapter {
+class CanonicalPlanAdapter extends BasePlanStateAdapter implements ApplyOperationToAdapter {
   readonly baseRevisionMode = 'strict';
-  readonly project: ProjectRow;
-
-  private plans = new Map<string, ApplyOperationToPlan | null>();
-  private tasks = new Map<string, ApplyOperationToTask[]>();
-  private dependencies = new Map<string, PlanDependencyRow[]>();
-  private tags = new Map<string, PlanTagRow[]>();
   private touchedPlans = new Set<string>();
   private additionalMutations: Mutation[] = [];
   private maxResolvedPlanId = 0;
@@ -2217,90 +1353,7 @@ class CanonicalPlanAdapter implements ApplyOperationToAdapter {
     project: ProjectRow,
     private readonly envelope: SyncOperationEnvelope
   ) {
-    this.project = project;
-  }
-
-  getPlan(planUuid: string): ApplyOperationToPlan | null {
-    if (!this.plans.has(planUuid)) {
-      this.loadPlan(planUuid);
-    }
-    const plan = this.plans.get(planUuid) ?? null;
-    return plan ? { ...plan } : null;
-  }
-
-  getTaskByUuid(taskUuid: string): ApplyOperationToTask | null {
-    for (const tasks of this.tasks.values()) {
-      const task = tasks.find((item) => item.uuid === taskUuid);
-      if (task) {
-        return { ...task };
-      }
-    }
-    const task =
-      (this.db
-        .prepare('SELECT * FROM task_canonical WHERE uuid = ?')
-        .get(taskUuid) as ApplyOperationToTask | null) ?? null;
-    return task ? { ...task } : null;
-  }
-
-  setPlan(plan: ApplyOperationToPlan): void {
-    this.plans.set(plan.uuid, { ...plan });
-    this.touchedPlans.add(plan.uuid);
-    if (!this.tasks.has(plan.uuid)) {
-      this.tasks.set(plan.uuid, []);
-    }
-    if (!this.dependencies.has(plan.uuid)) {
-      this.dependencies.set(plan.uuid, []);
-    }
-    if (!this.tags.has(plan.uuid)) {
-      this.tags.set(plan.uuid, []);
-    }
-  }
-
-  deletePlan(planUuid: string): void {
-    this.plans.set(planUuid, null);
-    this.tasks.set(planUuid, []);
-    this.dependencies.set(planUuid, []);
-    this.tags.set(planUuid, []);
-    this.touchedPlans.add(planUuid);
-  }
-
-  getTasks(planUuid: string): ApplyOperationToTask[] {
-    this.ensureLoaded(planUuid);
-    return (this.tasks.get(planUuid) ?? []).map((task) => ({ ...task }));
-  }
-
-  setTasks(planUuid: string, tasks: ApplyOperationToTask[]): void {
-    this.tasks.set(
-      planUuid,
-      tasks.map((task) => ({ ...task }))
-    );
-    this.touchedPlans.add(planUuid);
-  }
-
-  getDependencies(planUuid: string): PlanDependencyRow[] {
-    this.ensureLoaded(planUuid);
-    return (this.dependencies.get(planUuid) ?? []).map((dependency) => ({ ...dependency }));
-  }
-
-  setDependencies(planUuid: string, dependencies: PlanDependencyRow[]): void {
-    this.dependencies.set(
-      planUuid,
-      dependencies.map((dependency) => ({ ...dependency }))
-    );
-    this.touchedPlans.add(planUuid);
-  }
-
-  getTags(planUuid: string): PlanTagRow[] {
-    this.ensureLoaded(planUuid);
-    return (this.tags.get(planUuid) ?? []).map((tag) => ({ ...tag }));
-  }
-
-  setTags(planUuid: string, tags: PlanTagRow[]): void {
-    this.tags.set(
-      planUuid,
-      tags.map((tag) => ({ ...tag }))
-    );
-    this.touchedPlans.add(planUuid);
+    super(project);
   }
 
   resolveLocalPlanId(planUuid: string | null | undefined): number | null {
@@ -2439,21 +1492,25 @@ class CanonicalPlanAdapter implements ApplyOperationToAdapter {
     return this.additionalMutations;
   }
 
-  private ensureLoaded(planUuid: string): void {
-    if (!this.plans.has(planUuid)) {
-      this.loadPlan(planUuid);
-    }
+  protected onPlanStateTouched(planUuid: string): void {
+    this.touchedPlans.add(planUuid);
   }
 
-  private loadPlan(planUuid: string): void {
-    const plan = getCanonicalPlanOnly(this.db, planUuid);
-    this.plans.set(planUuid, plan ? { ...plan } : null);
-    this.tasks.set(planUuid, readTasksFromTable(this.db, 'task_canonical', planUuid));
-    this.dependencies.set(
-      planUuid,
-      readDependenciesFromTable(this.db, 'plan_dependency_canonical', planUuid)
-    );
-    this.tags.set(planUuid, readTagsFromTable(this.db, 'plan_tag_canonical', planUuid));
+  protected loadPlanState(planUuid: string): void {
+    this.setLoadedPlanState(planUuid, {
+      plan: getCanonicalPlanOnly(this.db, planUuid),
+      tasks: readTasksFromTable(this.db, 'task_canonical', planUuid),
+      dependencies: readDependenciesFromTable(this.db, 'plan_dependency_canonical', planUuid),
+      tags: readTagsFromTable(this.db, 'plan_tag_canonical', planUuid),
+    });
+  }
+
+  protected readTaskByUuid(taskUuid: string): ApplyOperationToTask | null {
+    const task =
+      (this.db
+        .prepare('SELECT * FROM task_canonical WHERE uuid = ?')
+        .get(taskUuid) as ApplyOperationToTask | null) ?? null;
+    return task ? { ...task } : null;
   }
 }
 
@@ -2471,28 +1528,11 @@ type TaskTableName = 'plan_task' | 'task_canonical';
 type DependencyTableName = 'plan_dependency' | 'plan_dependency_canonical';
 type TagTableName = 'plan_tag' | 'plan_tag_canonical';
 
-function getCanonicalPlan(db: Database, planUuid: string): PlanRow | null {
-  return getCanonicalPlanOnly(db, planUuid);
-}
-
 function getCanonicalPlanOnly(db: Database, planUuid: string): PlanRow | null {
   return (
     (db.prepare('SELECT * FROM plan_canonical WHERE uuid = ?').get(planUuid) as PlanRow | null) ??
     null
   );
-}
-
-function requireCanonicalPlan(
-  db: Database,
-  project: ProjectRow,
-  planUuid: string,
-  envelope: SyncOperationEnvelope
-): PlanRow {
-  const plan = getCanonicalPlan(db, planUuid);
-  if (!plan || plan.project_id !== project.id) {
-    throw validationError(envelope, `Unknown plan ${planUuid}`);
-  }
-  return plan;
 }
 
 function readTasksFromTable(
@@ -2670,72 +1710,6 @@ function replacePlanCollectionsInTableSet(
   }
 }
 
-function dependencyReachesInTable(
-  db: Database,
-  table: DependencyTableName,
-  startPlanUuid: string,
-  targetPlanUuid: string
-): boolean {
-  const visited = new Set<string>();
-  const stack = [startPlanUuid];
-  while (stack.length > 0) {
-    const current = stack.pop()!;
-    if (current === targetPlanUuid) {
-      return true;
-    }
-    if (visited.has(current)) {
-      continue;
-    }
-    visited.add(current);
-    const rows = db
-      .prepare(`SELECT depends_on_uuid FROM ${table} WHERE plan_uuid = ?`)
-      .all(current) as Array<{ depends_on_uuid: string }>;
-    stack.push(...rows.map((row) => row.depends_on_uuid));
-  }
-  return false;
-}
-
-function validateParentEdgeInTables(
-  db: Database,
-  envelope: SyncOperationEnvelope,
-  planTable: PlanTableName,
-  dependencyTable: DependencyTableName,
-  parentUuid: string,
-  childUuid: string
-): void {
-  if (
-    parentUuid === childUuid ||
-    parentChainReachesInTable(db, planTable, parentUuid, childUuid) ||
-    dependencyReachesInTable(db, dependencyTable, childUuid, parentUuid)
-  ) {
-    throw validationError(envelope, 'Setting parent would create a cycle');
-  }
-}
-
-function parentChainReachesInTable(
-  db: Database,
-  table: PlanTableName,
-  startParentUuid: string,
-  targetPlanUuid: string
-): boolean {
-  let current: string | null = startParentUuid;
-  const visited = new Set<string>();
-  while (current) {
-    if (current === targetPlanUuid) {
-      return true;
-    }
-    if (visited.has(current)) {
-      return false;
-    }
-    visited.add(current);
-    const row = db.prepare(`SELECT parent_uuid FROM ${table} WHERE uuid = ?`).get(current) as {
-      parent_uuid: string | null;
-    } | null;
-    current = row?.parent_uuid ?? null;
-  }
-  return false;
-}
-
 function createTextMergeConflict(
   db: Database,
   adapter: ApplyOperationToAdapter,
@@ -2775,6 +1749,28 @@ function createTextMergeConflict(
     });
   }
   throw validationError(envelope, 'text merge failed');
+}
+
+function currentBaseRevision(
+  adapter: ApplyOperationToAdapter,
+  op: SyncOperationPayload
+): number | null {
+  switch (op.type) {
+    case 'plan.update_task_text':
+    case 'plan.remove_task':
+      return (
+        adapter.getTasks(op.planUuid).find((task) => task.uuid === op.taskUuid)?.revision ?? null
+      );
+    case 'plan.promote_task':
+      return adapter.getPlan(op.sourcePlanUuid)?.revision ?? null;
+    case 'plan.set_scalar':
+    case 'plan.patch_text':
+    case 'plan.delete':
+    case 'plan.set_parent':
+      return adapter.getPlan(op.planUuid)?.revision ?? null;
+    default:
+      return null;
+  }
 }
 
 function resolvedNumericPlanIdForOperation(
@@ -2908,37 +1904,11 @@ function getPlan(db: Database, planUuid: string): PlanRow | null {
   return (db.prepare('SELECT * FROM plan WHERE uuid = ?').get(planUuid) as PlanRow | null) ?? null;
 }
 
-function requirePlan(
-  db: Database,
-  project: ProjectRow,
-  planUuid: string,
-  envelope: SyncOperationEnvelope
-): PlanRow {
-  const plan = getPlan(db, planUuid);
-  if (!plan || plan.project_id !== project.id) {
-    throw validationError(envelope, `Unknown plan ${planUuid}`);
-  }
-  return plan;
-}
-
 function getTask(db: Database, taskUuid: string): PlanTaskRow | null {
   return (
     (db.prepare('SELECT * FROM plan_task WHERE uuid = ?').get(taskUuid) as PlanTaskRow | null) ??
     null
   );
-}
-
-function requireTask(
-  db: Database,
-  taskUuid: string,
-  planUuid: string,
-  envelope: SyncOperationEnvelope
-): PlanTaskRow {
-  const task = getTask(db, taskUuid);
-  if (!task || task.plan_uuid !== planUuid) {
-    throw validationError(envelope, `Unknown task ${taskUuid}`);
-  }
-  return task;
 }
 
 function targetExists(db: Database, op: SyncOperationPayload): boolean {
@@ -3005,51 +1975,6 @@ function conflictPatch(op: SyncOperationPayload): string | null {
   return 'patch' in op ? (op.patch ?? null) : null;
 }
 
-function mergeText(current: string, base: string, incoming: string): string | null {
-  // Contract: no-op patches keep the current value, clean patches from base to
-  // incoming are applied to current, and failed patch application means conflict.
-  if (base === incoming) {
-    return current;
-  }
-  if (current === incoming) {
-    return current;
-  }
-  if (current === base) {
-    return incoming;
-  }
-  const patch = diff.createPatch('field', base, incoming, '', '', { context: 3 });
-  const merged = diff.applyPatch(current, patch, { fuzzFactor: 0 });
-  return merged === false ? null : merged;
-}
-
-function parseJsonArray(value: string | null): unknown[] {
-  if (!value) {
-    return [];
-  }
-  const parsed = JSON.parse(value) as unknown;
-  return Array.isArray(parsed) ? parsed : [];
-}
-
-function bumpPlan(db: Database, planUuid: string, options: ApplyOperationOptions = {}): void {
-  db.prepare(
-    `UPDATE plan SET revision = revision + 1, ${PLAN_UPDATED_AT_ASSIGNMENT} WHERE uuid = ?`
-  ).run(...planUpdatedAtArgs(options), planUuid);
-}
-
-function planMutation(db: Database, planUuid: string): Mutation {
-  const row = db.prepare('SELECT revision FROM plan WHERE uuid = ?').get(planUuid) as {
-    revision: number;
-  };
-  return { targetType: 'plan', targetKey: `plan:${planUuid}`, revision: row.revision };
-}
-
-function taskMutation(db: Database, taskUuid: string): Mutation {
-  const row = db.prepare('SELECT revision FROM plan_task WHERE uuid = ?').get(taskUuid) as {
-    revision: number;
-  };
-  return { targetType: 'task', targetKey: `task:${taskUuid}`, revision: row.revision };
-}
-
 function reserveMainNodePlanId(db: Database, projectId: number): number {
   // Use max(highest_plan_id, MAX(plan_id)) + 1 so we never reuse an ID already
   // reserved by `reserveNextPlanId` (which bumps highest_plan_id ahead of any
@@ -3105,64 +2030,6 @@ function setProjectHighestPlanId(db: Database, projectId: number, planId: number
   db.prepare(
     `UPDATE project SET highest_plan_id = max(highest_plan_id, ?), updated_at = ${SQL_NOW_ISO_UTC} WHERE id = ?`
   ).run(planId, projectId);
-}
-
-function dependencyReaches(db: Database, startPlanUuid: string, targetPlanUuid: string): boolean {
-  const visited = new Set<string>();
-  const stack = [startPlanUuid];
-  while (stack.length > 0) {
-    const current = stack.pop()!;
-    if (current === targetPlanUuid) {
-      return true;
-    }
-    if (visited.has(current)) {
-      continue;
-    }
-    visited.add(current);
-    const rows = db
-      .prepare('SELECT depends_on_uuid FROM plan_dependency WHERE plan_uuid = ?')
-      .all(current) as Array<{ depends_on_uuid: string }>;
-    stack.push(...rows.map((row) => row.depends_on_uuid));
-  }
-  return false;
-}
-
-function validateParentEdge(
-  db: Database,
-  envelope: SyncOperationEnvelope,
-  parentUuid: string,
-  childUuid: string
-): void {
-  if (
-    parentUuid === childUuid ||
-    parentChainReaches(db, parentUuid, childUuid) ||
-    dependencyReaches(db, childUuid, parentUuid)
-  ) {
-    throw validationError(envelope, 'Setting parent would create a cycle');
-  }
-}
-
-function parentChainReaches(
-  db: Database,
-  startParentUuid: string,
-  targetPlanUuid: string
-): boolean {
-  let current: string | null = startParentUuid;
-  const visited = new Set<string>();
-  while (current) {
-    if (current === targetPlanUuid) {
-      return true;
-    }
-    if (visited.has(current)) {
-      return false;
-    }
-    visited.add(current);
-    const row = db.prepare('SELECT parent_uuid FROM plan WHERE uuid = ?').get(current) as {
-      parent_uuid: string | null;
-    } | null;
-    current = row?.parent_uuid ?? null;
-  }
-  return false;
 }
 
 function validationError(envelope: SyncOperationEnvelope, message: string): SyncValidationError {
