@@ -268,9 +268,9 @@ export function getProjectSettingsWithMetadata(
 }
 
 /**
- * @deprecated Writes the projection table directly. Sync-aware code MUST go
- * through write_router.ts. New non-sync callers should pick the explicit
- * projection or canonical variants.
+ * @deprecated Sync-aware code MUST go through write_router.ts. This legacy
+ * helper writes projection state and mirrors it to canonical for local/main
+ * setup paths where canonical and projection are equivalent.
  */
 export function setProjectSetting(
   db: Database,
@@ -289,6 +289,20 @@ export function setProjectSetting(
       writeProjectionProjectSettingRow(db, nextProjectId, nextSetting, nextValue, {
         updatedByNode,
       });
+      const row = getProjectSettingRow(db, 'project_setting', nextProjectId, nextSetting);
+      if (row) {
+        writeCanonicalProjectSettingRow(
+          db,
+          nextProjectId,
+          nextSetting,
+          JSON.parse(row.value) as unknown,
+          {
+            revision: row.revision,
+            updatedAt: row.updated_at,
+            updatedByNode: row.updated_by_node,
+          }
+        );
+      }
     }
   );
 
@@ -296,14 +310,16 @@ export function setProjectSetting(
 }
 
 /**
- * @deprecated Writes the projection table directly. Sync-aware code MUST go
- * through write_router.ts. New non-sync callers should pick the explicit
- * projection or canonical variants.
+ * @deprecated Sync-aware code MUST go through write_router.ts. This legacy
+ * helper deletes projection state and mirrors the deletion to canonical for
+ * local/main setup paths where canonical and projection are equivalent.
  */
 export function deleteProjectSetting(db: Database, projectId: number, setting: string): boolean {
   const deleteInTransaction = db.transaction(
     (nextProjectId: number, nextSetting: string): boolean => {
-      return deleteProjectionProjectSettingRow(db, nextProjectId, nextSetting);
+      const changed = deleteProjectionProjectSettingRow(db, nextProjectId, nextSetting);
+      deleteCanonicalProjectSettingRow(db, nextProjectId, nextSetting);
+      return changed;
     }
   );
 

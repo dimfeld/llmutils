@@ -18,6 +18,7 @@ import {
   getPlansByProject,
   getPlanTagsByUuid,
   getPlanTasksByUuid,
+  mirrorProjectionPlanToCanonicalInTransaction,
   type PlanRow,
 } from './db/plan.js';
 import { getOrCreateProject } from './db/project.js';
@@ -46,6 +47,7 @@ import {
   updatePlanTaskTextOperation,
 } from './sync/operations.js';
 import { beginSyncBatch, getProjectUuidForId } from './sync/write_router.js';
+import { resolveWriteMode } from './sync/write_mode.js';
 import type { SyncPlanListName, SyncReviewIssueValue } from './sync/types.js';
 import { DEFAULT_WORKSPACE_CLONE_LOCATION } from './workspace/workspace_paths.js';
 
@@ -563,20 +565,22 @@ async function routeMaterializedPlanChanges(
   db: Database,
   config: TimConfig,
   context: ProjectContext,
-  canonicalRow: PlanRow,
+  projectionRow: PlanRow,
   shadowPlan: PlanSchema,
   filePlan: PlanSchema,
   changedFields: Set<EditablePlanField>
 ): Promise<{ wroteTaskUuids: boolean }> {
   const projectUuid = getProjectUuidForId(db, context.projectId);
-  const planUuid = canonicalRow.uuid;
-  // All ops in this batch use the canonical revision at batch-build time.
-  // Currently safe because applyOperation enforces baseRevision CAS only on
-  // project_setting ops; plan ops carry it advisorily. If plan-side CAS is added
-  // later, applyBatch must rewrite later ops' baseRevision to the post-mutation
-  // value, or this site must do so before sending.
-  const baseRevision = canonicalRow.revision;
-  const batch = await beginSyncBatch(db, config, { reason: 'materialize_sync' });
+  const planUuid = projectionRow.uuid;
+  if (resolveWriteMode(config) !== 'sync-persistent') {
+    mirrorProjectionPlanToCanonicalInTransaction(db, context.projectId, planUuid);
+  }
+  // File-derived plan batches are composed from one visible projection revision,
+  // but each operation bumps plan revision when applied on local/main nodes.
+  // Leave plan CAS uncapped here; text ops still carry base/new text for merge
+  // conflict detection, and persistent nodes project the queued local intent.
+  const baseRevision = undefined;
+  const batch = await beginSyncBatch(db, config, { reason: 'materialize_sync', atomic: true });
   let baseTrackingUpdate: { baseCommit: string | null; baseChangeId: string | null } | null = null;
 
   for (const field of ['title', 'goal', 'note', 'details'] as const) {
@@ -613,7 +617,14 @@ async function routeMaterializedPlanChanges(
     ['branch', toNullable(filePlan.branch)],
     ['simple', filePlan.simple === true],
     ['tdd', filePlan.tdd === true],
-    ['discovered_from', toNullable(filePlan.discoveredFrom)],
+    [
+      'discovered_from',
+      filePlan.discoveredFrom
+        ? resolvePlanUuidForMaterializedId(context, filePlan.discoveredFrom, 'discoveredFrom', {
+            missing: 'skip',
+          })
+        : null,
+    ],
     ['assigned_to', toNullable(filePlan.assignedTo)],
     ['base_branch', toNullable(filePlan.baseBranch)],
     ['temp', filePlan.temp === true],
@@ -762,9 +773,7 @@ async function routeMaterializedPlanChanges(
           {
             planUuid,
             taskUuid,
-            // Task revision is not round-tripped through materialized YAML yet;
-            // v1 task ops from file sync are intentionally uncapped CAS.
-            baseRevision: task.revision,
+            baseRevision,
           },
           options
         )
@@ -807,9 +816,7 @@ async function routeMaterializedPlanChanges(
               field: 'title',
               base: shadow.title,
               new: file.title,
-              // Task revision is not round-tripped through materialized YAML yet;
-              // v1 task ops from file sync are intentionally uncapped CAS.
-              baseRevision: shadow.revision,
+              baseRevision,
             },
             options
           )
@@ -825,9 +832,7 @@ async function routeMaterializedPlanChanges(
               field: 'description',
               base: shadow.description ?? '',
               new: file.description ?? '',
-              // Task revision is not round-tripped through materialized YAML yet;
-              // v1 task ops from file sync are intentionally uncapped CAS.
-              baseRevision: shadow.revision,
+              baseRevision,
             },
             options
           )
@@ -865,7 +870,7 @@ async function syncMaterializedPlanFromDbBaseline(
   db: Database,
   config: TimConfig,
   context: ProjectContext,
-  canonicalRow: PlanRow,
+  projectionRow: PlanRow,
   dbPlan: PlanSchema,
   filePlan: PlanSchema,
   changedFields: Set<EditablePlanField>,
@@ -875,7 +880,7 @@ async function syncMaterializedPlanFromDbBaseline(
     db,
     config,
     context,
-    canonicalRow,
+    projectionRow,
     dbPlan,
     filePlan,
     changedFields
@@ -885,7 +890,7 @@ async function syncMaterializedPlanFromDbBaseline(
   if (options.preserveUpdatedAt) {
     db.prepare('UPDATE plan SET updated_at = ? WHERE uuid = ?').run(
       options.preserveUpdatedAt,
-      canonicalRow.uuid
+      projectionRow.uuid
     );
   }
   return result;
@@ -982,6 +987,8 @@ export async function materializePlan(
   await ensureMaterializeDir(repoRoot);
 
   const resolvedContext = options.context ?? (await resolveProjectContext(repoRoot));
+  // Materialized files are user-facing state, so they render from the working
+  // projection tables. Canonical sync state stays behind the projector boundary.
   const row = getPlanByPlanId(getDatabase(), resolvedContext.projectId, planId);
   if (!row) {
     throw new Error(`Plan ${planId} was not found in the database for ${repoRoot}`);
@@ -1300,8 +1307,8 @@ export async function syncMaterializedPlan(
       `Materialized plan at ${filePath} contains UUID ${fileUuid}, expected ${pathPlanRow.uuid}`
     );
   }
-  const canonicalRow = getPlanByUuid(getDatabase(), fileUuid);
-  if (!canonicalRow) {
+  const projectionRow = getPlanByUuid(getDatabase(), fileUuid);
+  if (!projectionRow) {
     if (pathPlanRow) {
       throw new Error(
         `Materialized plan at ${filePath} contains UUID ${fileUuid}, expected ${pathPlanRow.uuid}`
@@ -1311,13 +1318,13 @@ export async function syncMaterializedPlan(
       `Plan ${fileUuid} from materialized file ${filePath} was not found in the database for ${repoRoot}`
     );
   }
-  if (canonicalRow.project_id !== resolvedContext.projectId) {
+  if (projectionRow.project_id !== resolvedContext.projectId) {
     throw new Error(
-      `Materialized plan ${filePath} belongs to project ${canonicalRow.project_id}, expected ${resolvedContext.projectId}`
+      `Materialized plan ${filePath} belongs to project ${projectionRow.project_id}, expected ${resolvedContext.projectId}`
     );
   }
-  await validateMaterializedFileUuid(filePath, canonicalRow.uuid);
-  const hasNumericIdDrift = canonicalRow.plan_id !== planId;
+  await validateMaterializedFileUuid(filePath, projectionRow.uuid);
+  const hasNumericIdDrift = projectionRow.plan_id !== planId;
 
   const plan = await readPlanFile(filePath);
   const shadowPath = getShadowPlanPath(repoRoot, planId);
@@ -1339,7 +1346,7 @@ export async function syncMaterializedPlan(
   if (
     !options.force &&
     !plan.updatedAt &&
-    canonicalRow.updated_at &&
+    projectionRow.updated_at &&
     !shadowPlan &&
     !shadowCorrupt
   ) {
@@ -1365,10 +1372,10 @@ export async function syncMaterializedPlan(
     return filePath;
   }
 
-  const dbPlan = getPlanSchemaFromRow(canonicalRow, resolvedContext.uuidToPlanId);
+  const dbPlan = getPlanSchemaFromRow(projectionRow, resolvedContext.uuidToPlanId);
   const mergedPlan = options.force ? plan : mergePlanWithShadow(dbPlan, shadowPlan, plan);
   if (hasNumericIdDrift) {
-    mergedPlan.id = canonicalRow.plan_id;
+    mergedPlan.id = projectionRow.plan_id;
   }
   if (options.preserveUpdatedAt && (options.force || !shadowPlan || changes?.hasChanges)) {
     mergedPlan.updatedAt = options.preserveUpdatedAt;
@@ -1381,7 +1388,7 @@ export async function syncMaterializedPlan(
       getDatabase(),
       config,
       resolvedContext,
-      canonicalRow,
+      projectionRow,
       shadowPlan,
       plan,
       changes.changedFields
@@ -1391,7 +1398,7 @@ export async function syncMaterializedPlan(
     if (options.preserveUpdatedAt) {
       getDatabase()
         .prepare('UPDATE plan SET updated_at = ? WHERE uuid = ?')
-        .run(options.preserveUpdatedAt, canonicalRow.uuid);
+        .run(options.preserveUpdatedAt, projectionRow.uuid);
     }
     if (wroteTaskUuids && options.skipRematerialize) {
       // Non-skip sync persists UUIDs through the normal post-sync rematerialization.
@@ -1404,7 +1411,7 @@ export async function syncMaterializedPlan(
       getDatabase(),
       config,
       resolvedContext,
-      canonicalRow,
+      projectionRow,
       dbPlan,
       mergedPlan,
       dbBaselineChanges.changedFields,
@@ -1412,7 +1419,7 @@ export async function syncMaterializedPlan(
     );
     const reorderedTasks = alignTaskOrderWithMaterializedFileLocalOnly(
       getDatabase(),
-      canonicalRow.uuid,
+      projectionRow.uuid,
       mergedPlan.tasks
     );
     if (options.skipRematerialize) {
@@ -1430,7 +1437,7 @@ export async function syncMaterializedPlan(
       getDatabase(),
       config,
       resolvedContext,
-      canonicalRow,
+      projectionRow,
       dbPlan,
       mergedPlan,
       forceChanges.changedFields,
@@ -1444,7 +1451,7 @@ export async function syncMaterializedPlan(
         repoRoot,
         filePath,
         planId,
-        canonicalRow.uuid,
+        projectionRow.uuid,
         resolvedContext.repository
       );
     } else {

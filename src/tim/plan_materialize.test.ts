@@ -30,6 +30,7 @@ import { generatePlanFileContent, readPlanFile, writePlanFile } from './plans.js
 import { handleCleanupMaterializedCommand } from './commands/cleanup-materialized.js';
 import { handleMaterializeCommand } from './commands/materialize.js';
 import { handleSyncCommand } from './commands/sync.js';
+import { type CanonicalPlanSnapshot, mergeCanonicalRefresh } from './sync/queue.js';
 
 async function initializeGitRepository(repoDir: string): Promise<void> {
   await Bun.$`git init`.cwd(repoDir).quiet();
@@ -203,6 +204,78 @@ describe('tim plan_materialize', () => {
     return getDatabase()
       .prepare('SELECT operation_type, status, payload FROM sync_operation ORDER BY local_sequence')
       .all() as Array<{ operation_type: string; status: string; payload: string }>;
+  }
+
+  function nullableBoolean(value: number | null): boolean | null {
+    return value === null ? null : Boolean(value);
+  }
+
+  function parseStringArray(value: string | null): string[] | null {
+    return value ? (JSON.parse(value) as string[]) : null;
+  }
+
+  function parseUnknownArray(value: string | null): unknown[] | null {
+    return value ? (JSON.parse(value) as unknown[]) : null;
+  }
+
+  function projectionPlanSnapshot(
+    projectUuid: string,
+    planUuid: string,
+    overrides: Partial<CanonicalPlanSnapshot['plan']> = {}
+  ): CanonicalPlanSnapshot {
+    const db = getDatabase();
+    const row = getPlanByUuid(db, planUuid);
+    if (!row) {
+      throw new Error(`Missing plan ${planUuid}`);
+    }
+    const discoveredFromUuid =
+      row.discovered_from === null
+        ? null
+        : ((db
+            .prepare('SELECT uuid FROM plan WHERE project_id = ? AND plan_id = ?')
+            .get(row.project_id, row.discovered_from) as { uuid: string } | null)?.uuid ?? null);
+    return {
+      type: 'plan',
+      projectUuid,
+      plan: {
+        uuid: row.uuid,
+        planId: row.plan_id,
+        title: row.title,
+        goal: row.goal,
+        note: row.note,
+        details: row.details,
+        status: row.status,
+        priority: row.priority,
+        branch: row.branch,
+        simple: nullableBoolean(row.simple),
+        tdd: nullableBoolean(row.tdd),
+        discoveredFrom: discoveredFromUuid,
+        issue: parseStringArray(row.issue),
+        pullRequest: parseStringArray(row.pull_request),
+        assignedTo: row.assigned_to,
+        baseBranch: row.base_branch,
+        temp: nullableBoolean(row.temp),
+        docs: parseStringArray(row.docs),
+        changedFiles: parseStringArray(row.changed_files),
+        planGeneratedAt: row.plan_generated_at,
+        reviewIssues: parseUnknownArray(row.review_issues),
+        parentUuid: row.parent_uuid,
+        epic: Boolean(row.epic),
+        revision: row.revision,
+        tasks: getPlanTasksByUuid(db, planUuid).map((task) => ({
+          uuid: task.uuid ?? crypto.randomUUID(),
+          title: task.title,
+          description: task.description,
+          done: Boolean(task.done),
+          revision: task.revision,
+        })),
+        dependencyUuids: getPlanDependenciesByUuid(db, planUuid).map(
+          (dependency) => dependency.depends_on_uuid
+        ),
+        tags: getPlanTagsByUuid(db, planUuid).map((tag) => tag.tag),
+        ...overrides,
+      },
+    };
   }
 
   test('materializePlan writes the primary plan and materializeRelatedPlans writes references', async () => {
@@ -644,6 +717,90 @@ Details
       new: 'Persistent file title',
     });
     expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Persistent file title');
+  });
+
+  test('syncMaterializedPlan projects queued file edits and re-renders from projection', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Projected materialized title';
+    editedPlan.tasks.push({
+      title: 'projected task',
+      description: 'visible before canonical ack',
+      done: false,
+    });
+    await fs.writeFile(planPath, generatePlanFileContent(editedPlan), 'utf8');
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    expect(syncOperationRows().map((row) => [row.operation_type, row.status])).toEqual([
+      ['plan.patch_text', 'queued'],
+      ['plan.add_task', 'queued'],
+    ]);
+    expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Projected materialized title');
+    expect(
+      getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333').map((task) => task.title)
+    ).toContain('projected task');
+    expect(
+      (
+        db
+          .prepare('SELECT title FROM plan_canonical WHERE uuid = ?')
+          .get('33333333-3333-4333-8333-333333333333') as { title: string }
+      ).title
+    ).toBe('Primary plan');
+    expect(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS count FROM task_canonical WHERE plan_uuid = ? AND title = ?')
+          .get('33333333-3333-4333-8333-333333333333', 'projected task') as { count: number }
+      ).count
+    ).toBe(0);
+
+    const rematerializedPlan = await readPlanFile(planPath);
+    expect(rematerializedPlan.title).toBe('Projected materialized title');
+    expect(rematerializedPlan.tasks.at(-1)).toMatchObject({
+      title: 'projected task',
+      description: 'visible before canonical ack',
+    });
+    expect(rematerializedPlan.tasks.at(-1)?.uuid).toBeDefined();
+    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
+      await fs.readFile(planPath, 'utf8')
+    );
+  });
+
+  test('materializePlan renders canonical refresh overlaid with pending file edits', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Pending materialized title';
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+    expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Pending materialized title');
+
+    mergeCanonicalRefresh(
+      db,
+      projectionPlanSnapshot(project.uuid, '33333333-3333-4333-8333-333333333333', {
+        title: 'Primary plan',
+        priority: 'urgent',
+        revision: 2,
+      })
+    );
+
+    const projectedRow = getPlanByPlanId(db, project.id, 3);
+    expect(projectedRow?.title).toBe('Pending materialized title');
+    expect(projectedRow?.priority).toBe('urgent');
+
+    await materializePlan(3, repoDir);
+
+    const renderedPlan = await readPlanFile(planPath);
+    expect(renderedPlan.title).toBe('Pending materialized title');
+    expect(renderedPlan.priority).toBe('urgent');
+    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
+      await fs.readFile(planPath, 'utf8')
+    );
   });
 
   test('syncMaterializedPlan queues new task operations and writes generated task UUIDs back', async () => {
@@ -1352,9 +1509,7 @@ Details
     newerPlan.updatedAt = '2026-03-25T00:00:00.000Z';
     await writePlanFile(planPath, newerPlan, { skipDb: true, skipUpdatedAt: true });
 
-    await expect(syncMaterializedPlan(3, repoDir)).rejects.toThrow(
-      'was accepted as an unresolved conflict'
-    );
+    await expect(syncMaterializedPlan(3, repoDir)).rejects.toThrow('conflicted');
 
     const saved = getPlanByPlanId(db, project.id, 3);
     expect(saved?.title).toBe('Older title from DB');
@@ -1721,7 +1876,7 @@ Details
       branch: 'feature/round-trip',
       simple: 0,
       tdd: 0,
-      discovered_from: 101,
+      discovered_from: null,
       issue:
         '["https://github.com/example/repo/issues/3","https://github.com/example/repo/issues/7"]',
       pull_request: '["https://github.com/example/repo/pull/31"]',
@@ -1779,7 +1934,6 @@ Details
       status: 'done',
       priority: 'medium',
       branch: 'feature/round-trip',
-      discoveredFrom: 101,
       issue: [
         'https://github.com/example/repo/issues/3',
         'https://github.com/example/repo/issues/7',

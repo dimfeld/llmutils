@@ -666,24 +666,102 @@ export function upsertCanonicalPlanInTransaction(
   return upsertPlanRowInTransaction(db, CANONICAL_PLAN_TABLES, projectId, input, 'explicit');
 }
 
+function nullableBoolean(value: number | null): boolean | null {
+  return value === null ? null : Boolean(value);
+}
+
+function parseJsonArray<T>(value: string | null): T[] | null {
+  return value ? (JSON.parse(value) as T[]) : null;
+}
+
+export function mirrorProjectionPlanToCanonicalInTransaction(
+  db: Database,
+  projectId: number,
+  planUuid: string
+): PlanRow {
+  const row = getPlanByUuidFromTable(db, PROJECTION_PLAN_TABLES.plan, planUuid);
+  if (!row) {
+    throw new Error(`Cannot mirror missing projection plan ${planUuid}`);
+  }
+  const tasks = getPlanTasksByUuidFromTable(db, PROJECTION_PLAN_TABLES.task, planUuid).map(
+    (task) => ({
+      uuid: task.uuid ?? undefined,
+      title: task.title,
+      description: task.description,
+      done: task.done === 1,
+      revision: task.revision,
+    })
+  );
+  const dependencyUuids = getPlanDependenciesByUuidFromTable(
+    db,
+    PROJECTION_PLAN_TABLES.dependency,
+    planUuid
+  ).map((dependency) => dependency.depends_on_uuid);
+  const tags = getPlanTagsByUuidFromTable(db, PROJECTION_PLAN_TABLES.tag, planUuid).map(
+    (tag) => tag.tag
+  );
+
+  return upsertCanonicalPlanInTransaction(db, projectId, {
+    uuid: row.uuid,
+    planId: row.plan_id,
+    title: row.title,
+    goal: row.goal,
+    note: row.note,
+    details: row.details,
+    sourceCreatedAt: row.created_at,
+    sourceUpdatedAt: row.updated_at,
+    sourceDocsUpdatedAt: row.docs_updated_at,
+    sourceLessonsAppliedAt: row.lessons_applied_at,
+    status: row.status,
+    priority: row.priority,
+    branch: row.branch,
+    simple: nullableBoolean(row.simple),
+    tdd: nullableBoolean(row.tdd),
+    discoveredFrom: row.discovered_from,
+    issue: parseJsonArray<string>(row.issue),
+    pullRequest: parseJsonArray<string>(row.pull_request),
+    assignedTo: row.assigned_to,
+    baseBranch: row.base_branch,
+    baseCommit: null,
+    baseChangeId: null,
+    temp: nullableBoolean(row.temp),
+    docs: parseJsonArray<string>(row.docs),
+    changedFiles: parseJsonArray<string>(row.changed_files),
+    planGeneratedAt: row.plan_generated_at,
+    reviewIssues: parseJsonArray<NonNullable<PlanSchema['reviewIssues']>[number]>(
+      row.review_issues
+    ),
+    parentUuid: row.parent_uuid,
+    epic: Boolean(row.epic),
+    revision: row.revision,
+    tasks,
+    dependencyUuids,
+    tags,
+    forceOverwrite: true,
+  });
+}
+
 /**
- * @deprecated Writes the projection table directly. Sync-aware code MUST go
- * through write_router.ts. New non-sync callers should pick the explicit
- * projection or canonical variants.
+ * @deprecated Sync-aware code MUST go through write_router.ts. This legacy
+ * helper writes projection state and mirrors it to canonical for local/main
+ * setup paths where canonical and projection are equivalent.
  */
 export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInput): PlanRow {
   const upsertInTransaction = db.transaction(
-    (nextProjectId: number, nextInput: UpsertPlanInput): PlanRow =>
-      upsertProjectionPlanInTransaction(db, nextProjectId, nextInput)
+    (nextProjectId: number, nextInput: UpsertPlanInput): PlanRow => {
+      const row = upsertProjectionPlanInTransaction(db, nextProjectId, nextInput);
+      mirrorProjectionPlanToCanonicalInTransaction(db, nextProjectId, row.uuid);
+      return row;
+    }
   );
 
   return upsertInTransaction.immediate(projectId, input);
 }
 
 /**
- * @deprecated Writes the projection table directly. Sync-aware code MUST go
- * through write_router.ts. New non-sync callers should pick the explicit
- * projection or canonical variants.
+ * @deprecated Sync-aware code MUST go through write_router.ts. This legacy
+ * helper writes projection state and mirrors it to canonical for local/main
+ * setup paths where canonical and projection are equivalent.
  */
 export function upsertPlanTasks(
   db: Database,
@@ -713,6 +791,10 @@ export function upsertPlanTasks(
         db.prepare(
           `UPDATE ${PROJECTION_PLAN_TABLES.plan} SET revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
         ).run(nextPlanUuid);
+      }
+      const row = getPlanByUuidFromTable(db, PROJECTION_PLAN_TABLES.plan, nextPlanUuid);
+      if (row) {
+        mirrorProjectionPlanToCanonicalInTransaction(db, row.project_id, nextPlanUuid);
       }
     }
   );
@@ -789,9 +871,9 @@ export function insertCanonicalPlanTask(
 }
 
 /**
- * @deprecated Writes the projection table directly. Sync-aware code MUST go
- * through write_router.ts. New non-sync callers should pick the explicit
- * projection or canonical variants.
+ * @deprecated Sync-aware code MUST go through write_router.ts. This legacy
+ * helper writes projection state and mirrors it to canonical for local/main
+ * setup paths where canonical and projection are equivalent.
  */
 export function upsertPlanDependencies(
   db: Database,
@@ -811,6 +893,10 @@ export function upsertPlanDependencies(
         db.prepare(
           `UPDATE ${PROJECTION_PLAN_TABLES.plan} SET revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
         ).run(nextPlanUuid);
+      }
+      const row = getPlanByUuidFromTable(db, PROJECTION_PLAN_TABLES.plan, nextPlanUuid);
+      if (row) {
+        mirrorProjectionPlanToCanonicalInTransaction(db, row.project_id, nextPlanUuid);
       }
     }
   );
@@ -1013,13 +1099,17 @@ export function getPlanTagsByProject(db: Database, projectId: number): PlanTagRo
 }
 
 /**
- * @deprecated Writes the projection table directly. Sync-aware code MUST go
- * through write_router.ts. New non-sync callers should pick the explicit
- * projection or canonical variants.
+ * @deprecated Sync-aware code MUST go through write_router.ts. This legacy
+ * helper deletes projection state and mirrors the deletion to canonical for
+ * local/main setup paths where canonical and projection are equivalent.
  */
 export function deletePlan(db: Database, uuid: string): boolean {
-  const result = db.prepare('DELETE FROM plan WHERE uuid = ?').run(uuid);
-  return result.changes > 0;
+  const deleteInTransaction = db.transaction((nextUuid: string): boolean => {
+    const result = db.prepare('DELETE FROM plan WHERE uuid = ?').run(nextUuid);
+    db.prepare('DELETE FROM plan_canonical WHERE uuid = ?').run(nextUuid);
+    return result.changes > 0;
+  });
+  return deleteInTransaction.immediate(uuid);
 }
 
 export function getPlansNotInSet(db: Database, projectId: number, uuids: Set<string>): PlanRow[] {
