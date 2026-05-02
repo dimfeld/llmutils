@@ -57,15 +57,22 @@ export async function writeImportedPlansToDbTransactionally(
   const config = await loadEffectiveConfig(undefined, { cwd: repoRoot, quiet: true });
   const writeMode = resolveWriteMode(config);
   const returnedWrites = preparedWrites.filter((entry) => !entry.syncOnly);
+  let precondition: (() => void) | undefined;
   if (hasLegacyUuidlessRow(context.rows, preparedWrites)) {
     if (writeMode === 'local-operation') {
       writeImportedPlansViaLegacyTransaction(db, context.projectId, preparedWrites, idToUuid);
       return returnedWrites;
     }
-    removeUuidlessLegacyPlanRows(db, context.projectId, preparedWrites);
+    precondition = () => {
+      removeUuidlessLegacyPlanRowsInTransaction(db, context.projectId, preparedWrites);
+    };
   }
 
-  const batch = await beginSyncBatch(db, config, { atomic: true });
+  const batch = await beginSyncBatch(
+    db,
+    config,
+    precondition ? { atomic: true, precondition } : { atomic: true }
+  );
   const pendingRows = new Map(context.rows.map((row) => [row.uuid, row]));
   const pendingPlans = new Map<number, PlanSchema>();
   const postCommitUpdates = preparedWrites.flatMap((entry) => {
@@ -121,22 +128,14 @@ function writeImportedPlansViaLegacyTransaction(
   writeAll.immediate(projectId, writes, idToUuid);
 }
 
-function removeUuidlessLegacyPlanRows(
+function removeUuidlessLegacyPlanRowsInTransaction(
   db: ReturnType<typeof getDatabase>,
   projectId: number,
   writes: Array<{ plan: PlanSchema; filePath: string | null; syncOnly?: boolean }>
 ): void {
-  const removeAll = db.transaction(
-    (
-      nextProjectId: number,
-      nextWrites: Array<{ plan: PlanSchema; filePath: string | null; syncOnly?: boolean }>
-    ) => {
-      for (const entry of nextWrites) {
-        removeUuidlessLegacyPlanRow(db, nextProjectId, entry.plan.id!);
-      }
-    }
-  );
-  removeAll.immediate(projectId, writes);
+  for (const entry of writes) {
+    removeUuidlessLegacyPlanRow(db, projectId, entry.plan.id!);
+  }
 }
 
 function removeUuidlessLegacyPlanRow(

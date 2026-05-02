@@ -286,4 +286,49 @@ describe('writeImportedPlansToDbTransactionally legacy-data path', () => {
       db.prepare('SELECT COUNT(*) AS count FROM plan_canonical WHERE plan_id = ?').get(1)
     ).toEqual({ count: 0 });
   });
+
+  test('sync-persistent legacy purge rolls back when sync batch commit fails', async () => {
+    await fs.mkdir(path.join(tempDir, 'xdg-config', 'tim'), { recursive: true });
+    await fs.writeFile(
+      path.join(tempDir, 'xdg-config', 'tim', 'config.yml'),
+      yaml.stringify({
+        sync: {
+          role: 'persistent',
+          nodeId: NODE_ID,
+          mainUrl: 'http://127.0.0.1:29999',
+          nodeToken: 'secret',
+          offline: true,
+        },
+      })
+    );
+    clearAllTimCaches();
+    clearPlanSyncContext();
+
+    const initContext = await resolveProjectContext(tempDir);
+    const db = getDatabase();
+
+    db.prepare(
+      `INSERT INTO plan (uuid, project_id, plan_id, title, status, created_at, updated_at)
+       VALUES ('', ?, 1, 'Legacy Plan', 'pending', datetime('now'), datetime('now'))`
+    ).run(initContext.projectId);
+    db.prepare(
+      `CREATE TRIGGER fail_import_sync_operation_insert
+       BEFORE INSERT ON sync_operation
+       BEGIN
+         SELECT RAISE(FAIL, 'injected sync batch failure');
+       END`
+    ).run();
+
+    await expect(
+      writeImportedPlansToDbTransactionally(tempDir, [{ plan: makePlan(1), filePath: null }])
+    ).rejects.toThrow('injected sync batch failure');
+
+    const legacyRow = getPlanByPlanId(db, initContext.projectId, 1);
+    expect(legacyRow).not.toBeNull();
+    expect(legacyRow!.uuid).toBe('');
+    expect(legacyRow!.title).toBe('Legacy Plan');
+    expect(db.prepare('SELECT COUNT(*) AS count FROM sync_operation').get()).toEqual({
+      count: 0,
+    });
+  });
 });
