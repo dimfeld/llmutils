@@ -172,7 +172,6 @@ class DefaultSyncRunner implements SyncRunner {
   private async runOnceInternal(): Promise<void> {
     await runSyncCatchUpOnce(this.options);
     await flushPendingOperationsOnce(this.options);
-    prunePlanRefsForTerminalOps(this.options.db);
   }
 }
 
@@ -262,6 +261,14 @@ async function applyOperationResultsOverHttp(
   }
   await fetchAndMergeSnapshots(options, [...keys]);
   applyOperationResultTransitions(options.db, results);
+  if (
+    results.some(
+      (result) =>
+        result.status === 'applied' || result.status === 'conflict' || result.status === 'rejected'
+    )
+  ) {
+    prunePlanRefsForTerminalOps(options.db);
+  }
 }
 
 async function applyInvalidationsOverHttp(

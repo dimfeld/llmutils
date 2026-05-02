@@ -1017,9 +1017,7 @@ describe('persistent-node sync queue', () => {
     );
 
     expect(getPlanByUuid(db, deletedUuid)).toBeNull();
-    expect(getPlanDependenciesByUuid(db, dependentUuid)).toEqual([
-      { plan_uuid: dependentUuid, depends_on_uuid: deletedUuid },
-    ]);
+    expect(getPlanDependenciesByUuid(db, dependentUuid)).toEqual([]);
 
     mergeCanonicalRefresh(
       db,

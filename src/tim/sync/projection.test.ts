@@ -722,6 +722,67 @@ describe('rebuildPlanProjection', () => {
     expect(dest?.plan_id).toBe(99);
   });
 
+  test('enqueuing plan.delete removes inbound dependency and parent references from other projections', async () => {
+    const PLAN_A_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const PLAN_B_UUID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const PLAN_C_UUID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: PLAN_B_UUID,
+      planId: 21,
+      title: 'Deleted target',
+      status: 'pending',
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: PLAN_A_UUID,
+      planId: 22,
+      title: 'Dependency owner',
+      status: 'pending',
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [PLAN_B_UUID],
+      tags: [],
+    });
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: PLAN_C_UUID,
+      planId: 23,
+      title: 'Child plan',
+      status: 'pending',
+      parentUuid: PLAN_B_UUID,
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
+    rebuildPlanProjection(db, PLAN_B_UUID);
+    rebuildPlanProjection(db, PLAN_A_UUID);
+    rebuildPlanProjection(db, PLAN_C_UUID);
+
+    expect(getPlanDependenciesByUuid(db, PLAN_A_UUID).map((dep) => dep.depends_on_uuid)).toContain(
+      PLAN_B_UUID
+    );
+    expect(getPlanByUuid(db, PLAN_C_UUID)?.parent_uuid).toBe(PLAN_B_UUID);
+
+    await enqueueOperation(
+      db,
+      await deletePlanOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_B_UUID },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    expect(
+      getPlanDependenciesByUuid(db, PLAN_A_UUID).map((dep) => dep.depends_on_uuid)
+    ).not.toContain(PLAN_B_UUID);
+    expect(getPlanByUuid(db, PLAN_C_UUID)?.parent_uuid).toBeNull();
+    expect(getPlanByUuid(db, PLAN_B_UUID)).toBeNull();
+  });
+
   test('promote_task: creates destination plan and marks source task done', async () => {
     const NEW_PLAN_UUID = '66666666-6666-4666-8666-666666666666';
     writeCanonicalPlan({
