@@ -1858,6 +1858,26 @@ describe('persistent-node sync queue', () => {
     });
   });
 
+  test('project setting projection persists after resetSendingOperations (restart recovery)', async () => {
+    const op = enqueue(
+      await setProjectSettingOperation(
+        { projectUuid: PROJECT_UUID, setting: 'color', value: 'green' },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    markOperationSending(db, op.operationUuid);
+
+    // Simulate process restart: stranded sending ops become failed_retryable
+    resetSendingOperations(db);
+
+    // Projection should still show the pending value because failed_retryable is active
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
+      value: 'green',
+      updatedByNode: NODE_A,
+    });
+    expect(canonicalProjectSettingValue('color')).toBeNull();
+  });
+
   test('project setting enqueue updates projection while canonical remains unchanged', async () => {
     enqueue(
       await setProjectSettingOperation(

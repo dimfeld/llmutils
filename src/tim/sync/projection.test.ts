@@ -11,6 +11,7 @@ import {
   enqueueOperation,
   markOperationAcked,
   markOperationConflict,
+  markOperationFailedRetryable,
   markOperationRejected,
   markOperationSending,
 } from './queue.js';
@@ -135,6 +136,20 @@ describe('rebuildProjectSettingProjection', () => {
     });
     const op = await enqueueSet('color', 'green');
     markOperationSending(db, op.operationUuid);
+
+    rebuildProjectSettingProjection(db, project.id, 'color');
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')?.value).toBe('green');
+  });
+
+  test('includes failed_retryable operations in rebuild (post-restart state)', async () => {
+    writeCanonicalProjectSettingRow(db, project.id, 'color', 'blue', {
+      revision: 4,
+      updatedByNode: 'main',
+    });
+    const op = await enqueueSet('color', 'green');
+    markOperationSending(db, op.operationUuid);
+    markOperationFailedRetryable(db, op.operationUuid, 'network error');
 
     rebuildProjectSettingProjection(db, project.id, 'color');
 
