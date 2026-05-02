@@ -1521,7 +1521,7 @@ describe('persistent-node sync queue', () => {
     );
     expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).toContain(addedTaskUuid);
 
-    const followUpKeys = mergeCanonicalRefresh(db, {
+    mergeCanonicalRefresh(db, {
       type: 'never_existed',
       entityKey: `task:${addedTaskUuid}`,
       targetType: 'task',
@@ -1530,7 +1530,6 @@ describe('persistent-node sync queue', () => {
 
     expect(operationRow(op.operationUuid).status).toBe('queued');
     expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).not.toContain(addedTaskUuid);
-    expect(followUpKeys).toEqual([]);
     expect(getSyncTombstone(db, 'task', `task:${addedTaskUuid}`)).not.toBeNull();
   });
 
@@ -1655,7 +1654,7 @@ describe('persistent-node sync queue', () => {
     enqueue(promoteOp);
     expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
 
-    const followUpKeys = mergeCanonicalRefresh(db, {
+    mergeCanonicalRefresh(db, {
       type: 'plan_deleted',
       projectUuid: PROJECT_UUID,
       planUuid: PLAN_UUID,
@@ -1663,7 +1662,6 @@ describe('persistent-node sync queue', () => {
     });
 
     expect(operationRow(promoteOp.operationUuid).status).toBe('queued');
-    expect(followUpKeys).toEqual([]);
     expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
   });
 
@@ -1682,7 +1680,7 @@ describe('persistent-node sync queue', () => {
     );
     enqueue(promoteOp);
 
-    const followUpKeys = mergeCanonicalRefresh(db, {
+    mergeCanonicalRefresh(db, {
       type: 'plan_deleted',
       projectUuid: PROJECT_UUID,
       planUuid: PLAN_UUID,
@@ -1690,7 +1688,6 @@ describe('persistent-node sync queue', () => {
     });
 
     expect(operationRow(promoteOp.operationUuid).status).toBe('queued');
-    expect(followUpKeys).toEqual([]);
   });
 
   test('mergeCanonicalRefresh never_existed for source plan leaves pending plan.promote_task queued', async () => {
@@ -1734,7 +1731,7 @@ describe('persistent-node sync queue', () => {
     enqueue(promoteOp);
     expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
 
-    const followUpKeys = mergeCanonicalRefresh(db, {
+    mergeCanonicalRefresh(db, {
       type: 'never_existed',
       entityKey: `plan:${newPlanUuid}`,
       targetType: 'plan',
@@ -1742,7 +1739,6 @@ describe('persistent-node sync queue', () => {
     });
 
     expect(operationRow(promoteOp.operationUuid).status).toBe('queued');
-    expect(followUpKeys).toEqual([]);
     expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
   });
 
@@ -1762,13 +1758,12 @@ describe('persistent-node sync queue', () => {
     enqueue(promoteOp);
     expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
 
-    const followUpKeys = mergeCanonicalRefresh(db, {
+    mergeCanonicalRefresh(db, {
       type: 'plan_deleted',
       projectUuid: PROJECT_UUID,
       planUuid: PLAN_UUID,
       deletedAt: new Date().toISOString(),
     });
-    expect(followUpKeys).toEqual([]);
     expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
 
     mergeCanonicalRefresh(db, {

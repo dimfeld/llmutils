@@ -1299,9 +1299,10 @@ describe('tim db/database', () => {
       expect(syncOperationColumns).toContain('payload_task_uuid');
 
       const refs = db
-        .query<{ operation_uuid: string; plan_uuid: string; role: string }, []>(
-          'SELECT operation_uuid, plan_uuid, role FROM sync_operation_plan_ref ORDER BY operation_uuid, role, plan_uuid'
-        )
+        .query<
+          { operation_uuid: string; plan_uuid: string; role: string },
+          []
+        >('SELECT operation_uuid, plan_uuid, role FROM sync_operation_plan_ref ORDER BY operation_uuid, role, plan_uuid')
         .all();
       expect(refs).toEqual([
         { operation_uuid: 'op-create', plan_uuid: dependencyUuid, role: 'dependency' },

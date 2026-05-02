@@ -7,8 +7,6 @@ interface Migration {
   requiresFkOff?: boolean;
 }
 
-const REMOVED_ROLLBACK_TABLE = ['sync', 'pending', 'rollback'].join('_');
-
 const migrations: Migration[] = [
   {
     version: 1,
@@ -1037,7 +1035,7 @@ const migrations: Migration[] = [
   },
   {
     version: 33,
-    up: `DROP TABLE IF EXISTS ${REMOVED_ROLLBACK_TABLE};`,
+    up: `DROP TABLE IF EXISTS sync_pending_rollback;`,
   },
 ];
 
