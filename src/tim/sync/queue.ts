@@ -12,8 +12,8 @@ import {
   type SyncOperationEnvelope,
   type SyncOperationPayload,
 } from './types.js';
-import { getSyncOperationPlanRefs } from './plan_refs.js';
 import {
+  getSyncOperationPlanRefs,
   getProjectionPlanRefUuids,
   getSyncOperationPayloadIndexes,
   isProjectSettingOperation,
@@ -22,6 +22,13 @@ import {
   rebuildPlanProjectionInTransaction,
   rebuildProjectSettingProjectionForPayload,
 } from './projection.js';
+import {
+  isTerminalQueueStatus,
+  QUEUE_FLUSHABLE_STATUSES,
+  QUEUE_TERMINAL_STATUSES,
+  sqlPlaceholders,
+  type QueueOperationStatus,
+} from './statuses.js';
 
 /**
  * Persistent-node durable queue contract:
@@ -33,14 +40,6 @@ import {
  *   failed_retryable operations. In-flight `sending` rows are handled by the
  *   transport retry/reset path, not by snapshot layering.
  */
-
-export type QueueOperationStatus =
-  | 'queued'
-  | 'sending'
-  | 'acked'
-  | 'conflict'
-  | 'rejected'
-  | 'failed_retryable';
 
 export interface SyncOperationQueueRow {
   operation_uuid: string;
@@ -94,8 +93,6 @@ export interface ListPendingOperationOptions {
 export interface PruneAcknowledgedOptions {
   olderThan?: Date;
 }
-
-const TERMINAL_OPERATION_STATUSES = ['acked', 'conflict', 'rejected'] as const;
 
 const queueChangeListeners = new Set<() => void>();
 
@@ -454,7 +451,7 @@ export function listPendingOperations(
   db: Database,
   options: ListPendingOperationOptions = {}
 ): SyncOperationQueueRow[] {
-  const clauses = [`status IN ('queued', 'failed_retryable')`];
+  const clauses = [`status IN (${sqlPlaceholders(QUEUE_FLUSHABLE_STATUSES)})`];
   const params: string[] = [];
   const originNodeId = options.originNodeId ?? inferSingleLocalNodeId(db);
   if (options.projectUuid) {
@@ -474,7 +471,7 @@ export function listPendingOperations(
         ORDER BY origin_node_id, local_sequence
       `
     )
-    .all(...params) as SyncOperationQueueRow[];
+    .all(...QUEUE_FLUSHABLE_STATUSES, ...params) as SyncOperationQueueRow[];
 }
 
 function inferSingleLocalNodeId(db: Database): string | null {
@@ -508,11 +505,11 @@ export function prunePlanRefsForTerminalOps(db: Database): number {
       WHERE operation_uuid IN (
         SELECT operation_uuid
         FROM sync_operation
-        WHERE status IN (${TERMINAL_OPERATION_STATUSES.map(() => '?').join(', ')})
+        WHERE status IN (${sqlPlaceholders(QUEUE_TERMINAL_STATUSES)})
       )
     `
     )
-    .run(...TERMINAL_OPERATION_STATUSES);
+    .run(...QUEUE_TERMINAL_STATUSES);
   return result.changes;
 }
 
@@ -786,7 +783,7 @@ function transitionOperation(
   const change = db.transaction((nextOperationUuid: string): SyncOperationQueueRow => {
     const row = requireOperationRow(db, nextOperationUuid);
     if (!transition.from.includes(row.status)) {
-      if (transition.tolerateTerminal && isTerminalOperationStatus(row.status)) {
+      if (transition.tolerateTerminal && isTerminalQueueStatus(row.status)) {
         warn(
           `Ignoring sync_operation transition ${row.status} -> ${transition.to} for ${nextOperationUuid}; operation is already terminal`
         );
@@ -820,10 +817,6 @@ function transitionOperation(
     return requireOperationRow(db, nextOperationUuid);
   });
   return change.immediate(operationUuid);
-}
-
-function isTerminalOperationStatus(status: QueueOperationStatus): boolean {
-  return status === 'acked' || status === 'conflict' || status === 'rejected';
 }
 
 function requireOperationRow(db: Database, operationUuid: string): SyncOperationQueueRow {

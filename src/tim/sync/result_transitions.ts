@@ -9,7 +9,7 @@ import {
   type SyncOperationQueueRow,
 } from './queue.js';
 import { rebuildProjectSettingProjectionForPayload } from './projection.js';
-import { PROJECTION_REBUILD_PLAN_REF_ROLES } from './plan_refs.js';
+import { PROJECTION_REBUILD_PLAN_REF_ROLES } from './operation_metadata.js';
 import { assertValidPayload, type SyncOperationPayload } from './types.js';
 import type { SyncOperationResult } from './ws_protocol.js';
 

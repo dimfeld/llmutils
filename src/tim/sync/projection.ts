@@ -16,6 +16,7 @@ import {
   type ApplyOperationToPlan,
   type ApplyOperationToTask,
 } from './apply.js';
+import { QUEUE_ACTIVE_STATUSES, sqlPlaceholders, type QueueActiveStatus } from './statuses.js';
 
 /*
  * Persistent-node projection invariant:
@@ -31,13 +32,9 @@ import {
  * projection rebuilds instead of applying operation-specific rollback logic.
  */
 
-export const ACTIVE_PROJECTION_OPERATION_STATUSES = [
-  'queued',
-  'sending',
-  'failed_retryable',
-] as const;
+export const ACTIVE_PROJECTION_OPERATION_STATUSES = QUEUE_ACTIVE_STATUSES;
 
-export type ActiveProjectionOperationStatus = (typeof ACTIVE_PROJECTION_OPERATION_STATUSES)[number];
+export type ActiveProjectionOperationStatus = QueueActiveStatus;
 
 type ProjectSettingPayload = Extract<
   SyncOperationPayload,
@@ -103,7 +100,7 @@ export function rebuildProjectSettingProjection(
         FROM sync_operation
         WHERE target_key = ?
           AND operation_type IN ('project_setting.set', 'project_setting.delete')
-          AND status IN (${ACTIVE_PROJECTION_OPERATION_STATUSES.map(() => '?').join(', ')})
+          AND status IN (${sqlPlaceholders(ACTIVE_PROJECTION_OPERATION_STATUSES)})
         ORDER BY origin_node_id, local_sequence
       `
     )
@@ -303,7 +300,7 @@ function readLocallyDeletedPlanUuids(db: Database): Set<string> {
         SELECT target_key
         FROM sync_operation
         WHERE operation_type = 'plan.delete'
-          AND status IN (${ACTIVE_PROJECTION_OPERATION_STATUSES.map(() => '?').join(', ')})
+          AND status IN (${sqlPlaceholders(ACTIVE_PROJECTION_OPERATION_STATUSES)})
       `
     )
     .all(...ACTIVE_PROJECTION_OPERATION_STATUSES) as Array<{ target_key: string }>;
@@ -341,7 +338,7 @@ function readActivePlanOperationRows(db: Database, planUuid: string): ActivePlan
         FROM sync_operation_plan_ref ref
         JOIN sync_operation o ON o.operation_uuid = ref.operation_uuid
         WHERE ref.plan_uuid = ?
-          AND o.status IN (${ACTIVE_PROJECTION_OPERATION_STATUSES.map(() => '?').join(', ')})
+          AND o.status IN (${sqlPlaceholders(ACTIVE_PROJECTION_OPERATION_STATUSES)})
         ORDER BY o.origin_node_id, o.local_sequence
       `
     )
@@ -554,7 +551,7 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
           FROM sync_operation
           WHERE operation_type = 'plan.create'
             AND target_key = ?
-            AND status IN (${ACTIVE_PROJECTION_OPERATION_STATUSES.map(() => '?').join(', ')})
+            AND status IN (${sqlPlaceholders(ACTIVE_PROJECTION_OPERATION_STATUSES)})
           ORDER BY origin_node_id, local_sequence
           LIMIT 1
         `

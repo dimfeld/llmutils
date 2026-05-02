@@ -2,8 +2,10 @@ import type { Database } from 'bun:sqlite';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 import type { PlanDependencyRow, PlanRow, PlanTagRow, PlanTaskRow } from './plan.js';
 import type { ProjectSetting } from './project_settings.js';
-import { getSyncOperationPayloadIndexes } from '../sync/payload_indexes.js';
-import { getSyncOperationPlanRefs } from '../sync/plan_refs.js';
+import {
+  getSyncOperationPayloadIndexes,
+  getSyncOperationPlanRefs,
+} from '../sync/operation_metadata.js';
 
 export type TimNodeRole = 'main' | 'persistent' | 'ephemeral';
 
