@@ -17,12 +17,13 @@ import {
   addPlanTaskOperation,
   createPlanOperation,
   promotePlanTaskOperation,
+  setPlanScalarOperation,
 } from './operations.js';
 import { hashToken } from './auth.js';
 import { createBatchEnvelope } from './types.js';
 import { flushPendingOperationsOnce } from './runner.js';
 import { getCurrentSequenceId, startSyncServer, type SyncServerHandle } from './server.js';
-import { enqueueBatch } from './queue.js';
+import { enqueueBatch, enqueueOperation, markOperationSending } from './queue.js';
 
 const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
 const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
@@ -282,10 +283,23 @@ describe('sync runner atomic batch HTTP fallback', () => {
       localDb,
       createBatchEnvelope({ originNodeId: NODE_ID, operations: [promote, invalidDependency] })
     );
+    const followUp = await setPlanScalarOperation(
+      PROJECT_UUID,
+      {
+        planUuid: NEW_PLAN_UUID,
+        field: 'status',
+        value: 'in_progress',
+      },
+      { originNodeId: NODE_ID, localSequence: 2 }
+    );
+    enqueueOperation(localDb, followUp);
+    markOperationSending(localDb, followUp.operationUuid);
     expect(getPlanByUuid(localDb, NEW_PLAN_UUID)).not.toBeNull();
+    expect(getPlanByUuid(localDb, NEW_PLAN_UUID)).toMatchObject({ status: 'in_progress' });
     expect(getPlanTasksByUuid(localDb, PLAN_UUID).map((task) => Boolean(task.done))).toEqual([
       true,
     ]);
+    expect(countRows(localDb, 'sync_tombstone')).toBe(0);
 
     await flushPendingOperationsOnce({
       db: localDb,
@@ -302,6 +316,37 @@ describe('sync runner atomic batch HTTP fallback', () => {
         done: Boolean(task.done),
       }))
     ).toEqual([{ uuid: TASK_UUID, title: 'Original task', done: false }]);
+    expectProjectionPlanFullyAbsent(localDb, NEW_PLAN_UUID);
+    expect(operationStatus(localDb, promote.operationUuid)).toBe('rejected');
+    expect(operationStatus(localDb, invalidDependency.operationUuid)).toBe('rejected');
+    expect(operationStatus(localDb, followUp.operationUuid)).toBe('sending');
+    expect(countRows(localDb, 'sync_tombstone')).toBe(0);
+    expect(tableExists(localDb, 'sync_pending_rollback')).toBe(false);
+
+    const corrected = await addPlanTaskOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        taskUuid: NEW_TASK_UUID,
+        title: 'Corrected follow-up task',
+        taskIndex: 1,
+      },
+      { originNodeId: NODE_ID, localSequence: 3 }
+    );
+    enqueueOperation(localDb, corrected);
+
+    expectProjectionPlanFullyAbsent(localDb, NEW_PLAN_UUID);
+    expect(
+      getPlanTasksByUuid(localDb, PLAN_UUID).map((task) => ({
+        uuid: task.uuid,
+        taskIndex: task.task_index,
+        title: task.title,
+        done: Boolean(task.done),
+      }))
+    ).toEqual([
+      { uuid: TASK_UUID, taskIndex: 0, title: 'Original task', done: false },
+      { uuid: NEW_TASK_UUID, taskIndex: 1, title: 'Corrected follow-up task', done: false },
+    ]);
   });
 
   test('rejected plan.add_task removes the optimistic task while keeping the owning plan', async () => {
@@ -393,4 +438,34 @@ function seedPlan(db: Database, planUuid = PLAN_UUID, planId = 1, withTask = fal
 
 function countRows(db: Database, table: string): number {
   return (db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count;
+}
+
+function operationStatus(db: Database, operationUuid: string): string | null {
+  return (
+    (
+      db
+        .prepare('SELECT status FROM sync_operation WHERE operation_uuid = ?')
+        .get(operationUuid) as { status: string } | null
+    )?.status ?? null
+  );
+}
+
+function tableExists(db: Database, table: string): boolean {
+  return Boolean(
+    db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(table)
+  );
+}
+
+function expectProjectionPlanFullyAbsent(db: Database, planUuid: string): void {
+  expect(getPlanByUuid(db, planUuid)).toBeNull();
+  expect(getPlanTasksByUuid(db, planUuid)).toEqual([]);
+  expect(getPlanTagsByUuid(db, planUuid)).toEqual([]);
+  expect(getPlanDependenciesByUuid(db, planUuid)).toEqual([]);
+  expect(
+    db
+      .prepare('SELECT COUNT(*) AS count FROM plan_dependency WHERE depends_on_uuid = ?')
+      .get(planUuid)
+  ).toMatchObject({ count: 0 });
 }
