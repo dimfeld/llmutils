@@ -823,6 +823,64 @@ describe('rebuildPlanProjection', () => {
     });
   });
 
+  test.each(['simple', 'tdd', 'temp', 'epic'] as const)(
+    'canonical update preserves pending boolean scalar edit (%s)',
+    async (field) => {
+      // Canonical at revision 1 with field = false (stored as 0).
+      upsertCanonicalPlanInTransaction(db, project.id, {
+        uuid: PLAN_UUID,
+        planId: 12,
+        title: 'Plan',
+        status: 'pending',
+        revision: 1,
+        tasks: [],
+        dependencyUuids: [],
+        tags: [],
+        [field]: false,
+      });
+
+      // Pending op flips the boolean field, baseValue captures the false pre-state
+      // and baseRevision is 1.
+      await enqueueOperation(
+        db,
+        await setPlanScalarOperation(
+          PROJECT_UUID,
+          {
+            planUuid: PLAN_UUID,
+            field,
+            value: true,
+            baseValue: false,
+            baseRevision: 1,
+          },
+          { originNodeId: NODE_A, localSequence: 1 }
+        )
+      );
+
+      // Canonical advances to revision 2 with an unrelated title change; the
+      // boolean field is unchanged.
+      upsertCanonicalPlanInTransaction(db, project.id, {
+        uuid: PLAN_UUID,
+        planId: 12,
+        title: 'Updated by main',
+        status: 'pending',
+        revision: 2,
+        tasks: [],
+        dependencyUuids: [],
+        tags: [],
+        [field]: false,
+      });
+
+      rebuildPlanProjection(db, PLAN_UUID);
+
+      // The pending boolean edit must survive the unrelated canonical advance.
+      expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+        title: 'Updated by main',
+        [field]: 1,
+        revision: 3,
+      });
+    }
+  );
+
   test('canonical plan update preserves pending task text edit when task is unchanged', async () => {
     writeCanonicalPlan({
       revision: 1,

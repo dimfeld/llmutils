@@ -2748,7 +2748,10 @@ function normalizePlanScalarAdapterValue(
   field: Extract<SyncOperationPayload, { type: 'plan.set_scalar' }>['field'],
   value: Extract<SyncOperationPayload, { type: 'plan.set_scalar' }>['value']
 ): unknown {
-  if (field === 'epic') {
+  if (field === 'epic' || field === 'simple' || field === 'tdd' || field === 'temp') {
+    if (value === null || value === undefined) {
+      return null;
+    }
     return value ? 1 : 0;
   }
   if (field === 'discovered_from') {
