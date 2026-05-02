@@ -19,9 +19,13 @@ import {
   type SyncOperationEnvelope,
   type SyncOperationPayload,
 } from './types.js';
-import { getSyncOperationPayloadIndexes } from './payload_indexes.js';
+import {
+  getBaseRevisionPlanUuid,
+  getBaseRevisionTaskUuid,
+  getSyncOperationPayloadIndexes,
+  getSyncOperationPlanRefs,
+} from './operation_metadata.js';
 import { shiftTaskIndexesAfterDelete, shiftTaskIndexesForInsert } from './task_indexes.js';
-import { getSyncOperationPlanRefs } from './plan_refs.js';
 
 export type ApplyOperationStatus =
   | 'applied'
@@ -302,19 +306,7 @@ function captureAtomicBatchPlanBaseRevisions(
 ): Map<string, number> {
   const planUuids = new Set<string>();
   for (const operation of batch.operations) {
-    const op = operation.op;
-    if (
-      !('baseRevision' in op) ||
-      typeof (op as { baseRevision?: unknown }).baseRevision !== 'number'
-    ) {
-      continue;
-    }
-    const planUuid =
-      op.type === 'plan.promote_task'
-        ? op.sourcePlanUuid
-        : 'planUuid' in op && typeof (op as { planUuid?: unknown }).planUuid === 'string'
-          ? (op as { planUuid: string }).planUuid
-          : null;
+    const planUuid = getBaseRevisionPlanUuid(operation.op);
     if (planUuid) {
       planUuids.add(planUuid);
     }
@@ -339,12 +331,9 @@ function captureAtomicBatchTaskBaseRevisions(
 ): Map<string, number> {
   const taskUuids = new Set<string>();
   for (const operation of batch.operations) {
-    const op = operation.op;
-    if (
-      (op.type === 'plan.update_task_text' || op.type === 'plan.remove_task') &&
-      typeof op.baseRevision === 'number'
-    ) {
-      taskUuids.add(op.taskUuid);
+    const taskUuid = getBaseRevisionTaskUuid(operation.op);
+    if (taskUuid) {
+      taskUuids.add(taskUuid);
     }
   }
   const baseline = new Map<string, number>();

@@ -23,8 +23,12 @@ import {
   type SyncOperationEnvelope,
   type SyncOperationPayload,
 } from './types.js';
-import { getSyncOperationPayloadIndexes } from './payload_indexes.js';
-import { getSyncOperationPlanRefs, PROJECTION_REBUILD_PLAN_REF_ROLES } from './plan_refs.js';
+import { getSyncOperationPlanRefs } from './plan_refs.js';
+import {
+  getProjectionPlanRefUuids,
+  getSyncOperationPayloadIndexes,
+  isProjectSettingOperation,
+} from './operation_metadata.js';
 import {
   rebuildPlanProjectionInTransaction,
   rebuildProjectSettingProjection,
@@ -355,10 +359,7 @@ export function enqueueBatch(
     for (const operation of operations) {
       insertQueuedOperation(db, operation, batch.batchId, batch.atomic === true);
       collectAffectedProjectionPlanUuids(db, affectedPlanUuids, operation.op);
-      if (
-        operation.op.type === 'project_setting.set' ||
-        operation.op.type === 'project_setting.delete'
-      ) {
+      if (isProjectSettingOperation(operation.op)) {
         affectedProjectSettings.set(
           `${operation.op.projectUuid}:${operation.op.setting}`,
           operation.op
@@ -865,7 +866,7 @@ function rebuildQueuedOperationProjectionInTransaction(
   operation: SyncOperationEnvelope
 ): void {
   const op = assertValidPayload(operation.op);
-  if (op.type === 'project_setting.set' || op.type === 'project_setting.delete') {
+  if (isProjectSettingOperation(op)) {
     rebuildProjectSettingProjectionForPayload(db, op);
     return;
   }
@@ -890,14 +891,10 @@ type ProjectSettingPayload = Extract<
 >;
 
 function getAffectedProjectionPlanUuids(db: Database, payload: SyncOperationPayload): string[] {
-  if (payload.type === 'project_setting.set' || payload.type === 'project_setting.delete') {
+  if (isProjectSettingOperation(payload)) {
     return [];
   }
-  const affected = new Set(
-    getSyncOperationPlanRefs(payload)
-      .filter((ref) => PROJECTION_REBUILD_PLAN_REF_ROLES.has(ref.role))
-      .map((ref) => ref.planUuid)
-  );
+  const affected = new Set(getProjectionPlanRefUuids(payload));
   if (payload.type === 'plan.delete') {
     for (const ownerPlanUuid of getInboundProjectionOwnerPlanUuids(db, payload.planUuid)) {
       affected.add(ownerPlanUuid);
