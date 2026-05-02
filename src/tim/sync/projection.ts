@@ -172,6 +172,13 @@ function foldProjectSettingProjection(
 }
 
 export function rebuildPlanProjection(db: Database, planUuid: string): void {
+  const rebuild = db.transaction((nextPlanUuid: string): void => {
+    rebuildPlanProjectionInTransaction(db, nextPlanUuid);
+  });
+  rebuild.immediate(planUuid);
+}
+
+function rebuildPlanProjectionInTransaction(db: Database, planUuid: string): void {
   const canonical = readCanonicalPlanState(db, planUuid);
   const activeRows = readActivePlanOperationRows(db, planUuid);
   const existingProjection = db
@@ -287,6 +294,7 @@ function readActivePlanOperationRows(db: Database, planUuid: string): ActivePlan
 
 class ProjectionPlanAdapter implements ApplyOperationToAdapter {
   readonly skipPreconditionFailures = true;
+  readonly baseRevisionMode = 'projection';
   readonly project: { id: number; uuid: string };
 
   private plans = new Map<string, ApplyOperationToPlan | null>();
@@ -429,10 +437,10 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
 }
 
 function deleteProjectionPlanState(db: Database, planUuid: string): void {
-  db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? OR depends_on_uuid = ?').run(
-    planUuid,
-    planUuid
-  );
+  // Dependency rows are owned by their source plan. Rebuilding or deleting this
+  // plan must not remove inbound edges from other plans; those projections are
+  // rebuilt independently from their own canonical + active operation state.
+  db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ?').run(planUuid);
   db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(planUuid);
   db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(planUuid);
   db.prepare('DELETE FROM plan WHERE uuid = ?').run(planUuid);
@@ -501,8 +509,11 @@ function writeProjectionPlanState(
     `
   );
   for (const task of state.tasks.sort((a, b) => a.task_index - b.task_index)) {
+    if (!task.uuid) {
+      throw new Error('task missing uuid in projection write');
+    }
     insertTask.run(
-      task.uuid ?? crypto.randomUUID(),
+      task.uuid,
       planUuid,
       task.task_index,
       task.title,

@@ -85,6 +85,41 @@ describe('rebuildPlanProjection', () => {
     });
   });
 
+  test('rebuilding a dependency target preserves inbound projection edges owned by other plans', () => {
+    const dependencyPlanUuid = '77777777-7777-4777-8777-777777777777';
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: PLAN_UUID,
+      planId: 12,
+      title: 'Dependent',
+      status: 'pending',
+      revision: 1,
+      dependencyUuids: [dependencyPlanUuid],
+      tasks: [],
+      tags: [],
+    });
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: dependencyPlanUuid,
+      planId: 13,
+      title: 'Dependency',
+      status: 'pending',
+      revision: 1,
+      dependencyUuids: [],
+      tasks: [],
+      tags: [],
+    });
+
+    rebuildPlanProjection(db, PLAN_UUID);
+    expect(getPlanDependenciesByUuid(db, PLAN_UUID)).toEqual([
+      { plan_uuid: PLAN_UUID, depends_on_uuid: dependencyPlanUuid },
+    ]);
+
+    rebuildPlanProjection(db, dependencyPlanUuid);
+
+    expect(getPlanDependenciesByUuid(db, PLAN_UUID)).toEqual([
+      { plan_uuid: PLAN_UUID, depends_on_uuid: dependencyPlanUuid },
+    ]);
+  });
+
   test('folds one set_scalar operation over canonical and advances projected revision', async () => {
     writeCanonicalPlan({ revision: 4, title: 'Canonical', status: 'pending' });
     await enqueuePlanSetScalar('status', 'in_progress', 4);
@@ -474,20 +509,20 @@ describe('rebuildPlanProjection', () => {
 
   // ── Silent-skip invariant ───────────────────────────────────────────────────
 
-  test('stale baseRevision on set_scalar is silently skipped without mutating operation status', async () => {
+  test('future baseRevision on set_scalar is silently skipped without mutating operation status', async () => {
     writeCanonicalPlan({ revision: 5, title: 'Plan', status: 'pending' });
     const op = await enqueueOperation(
       db,
       await setPlanScalarOperation(
         PROJECT_UUID,
-        { planUuid: PLAN_UUID, field: 'status', value: 'in_progress', baseRevision: 4 },
+        { planUuid: PLAN_UUID, field: 'status', value: 'in_progress', baseRevision: 6 },
         { originNodeId: NODE_A, localSequence: 1 }
       )
     );
 
     rebuildPlanProjection(db, PLAN_UUID);
 
-    // Projection unchanged — stale op skipped
+    // Projection unchanged — future-base op skipped
     expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({ status: 'pending', revision: 5 });
     // Status not mutated by projector
     const row = db
@@ -552,7 +587,7 @@ describe('rebuildPlanProjection', () => {
     expect(getPlanDependenciesByUuid(db, PLAN_UUID)).toEqual([]);
   });
 
-  test('patch_text with stale baseRevision is silently skipped', async () => {
+  test('patch_text with future baseRevision is silently skipped', async () => {
     writeCanonicalPlan({ revision: 5, title: 'Original' });
     await enqueueOperation(
       db,
@@ -563,7 +598,7 @@ describe('rebuildPlanProjection', () => {
           field: 'title',
           base: 'Original',
           new: 'Updated',
-          baseRevision: 4,
+          baseRevision: 6,
         },
         { originNodeId: NODE_A, localSequence: 1 }
       )
@@ -571,7 +606,7 @@ describe('rebuildPlanProjection', () => {
 
     rebuildPlanProjection(db, PLAN_UUID);
 
-    // Projection unchanged — stale op skipped
+    // Projection unchanged — future-base op skipped
     expect(getPlanByUuid(db, PLAN_UUID)?.title).toBe('Original');
   });
 
@@ -610,13 +645,55 @@ describe('rebuildPlanProjection', () => {
     // Simulate canonical update arriving (e.g. title changed on main node)
     writeCanonicalPlan({ revision: 2, title: 'Updated by main' });
 
-    // Rebuild — canonical rev is now 2, pending op has baseRevision: 1
-    // The op should be skipped (stale) but the title update from canonical should appear
+    // Rebuild — canonical rev is now 2, pending op has baseRevision: 1.
+    // The title update from canonical and the unrelated pending status edit
+    // should both remain visible.
     rebuildPlanProjection(db, PLAN_UUID);
 
     expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
       title: 'Updated by main',
-      status: 'pending',
+      status: 'in_progress',
+      revision: 3,
+    });
+  });
+
+  test('canonical plan update preserves pending task text edit when task is unchanged', async () => {
+    writeCanonicalPlan({
+      revision: 1,
+      title: 'Plan',
+      tasks: [{ uuid: TASK_UUID, title: 'Task', description: 'old', done: false, revision: 1 }],
+    });
+    await enqueueOperation(
+      db,
+      await updatePlanTaskTextOperation(
+        PROJECT_UUID,
+        {
+          planUuid: PLAN_UUID,
+          taskUuid: TASK_UUID,
+          field: 'description',
+          base: 'old',
+          new: 'local edit',
+          baseRevision: 1,
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    writeCanonicalPlan({
+      revision: 2,
+      title: 'Updated by main',
+      tasks: [{ uuid: TASK_UUID, title: 'Task', description: 'old', done: false, revision: 1 }],
+    });
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+      title: 'Updated by main',
+      revision: 3,
+    });
+    expect(getPlanTasksByUuid(db, PLAN_UUID)[0]).toMatchObject({
+      uuid: TASK_UUID,
+      description: 'local edit',
       revision: 2,
     });
   });

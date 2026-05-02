@@ -1010,44 +1010,29 @@ function applyPayload(
   const op = envelope.op;
   switch (op.type) {
     case 'plan.create':
-      return applyPlanCreate(db, project, { ...envelope, op }, options);
     case 'plan.set_scalar':
-      return applyPlanScalar(db, project, { ...envelope, op }, options);
     case 'plan.patch_text':
-      return applyPlanText(
-        db,
-        project,
-        { ...envelope, op },
-        originalPayload,
-        normalizedPayload,
-        options
-      );
     case 'plan.add_task':
-      return applyAddTask(db, project, { ...envelope, op }, options);
     case 'plan.update_task_text':
-      return applyTaskText(
-        db,
-        project,
-        { ...envelope, op },
-        originalPayload,
-        normalizedPayload,
-        options
-      );
     case 'plan.mark_task_done':
-      return applyMarkTaskDone(db, project, { ...envelope, op }, options);
     case 'plan.remove_task':
-      return applyRemoveTask(db, project, { ...envelope, op }, options);
     case 'plan.add_dependency':
     case 'plan.remove_dependency':
-      return applyDependency(db, project, { ...envelope, op }, options);
     case 'plan.add_tag':
     case 'plan.remove_tag':
-      return applyTag(db, project, { ...envelope, op }, options);
     case 'plan.add_list_item':
     case 'plan.remove_list_item':
-      return applyListItem(db, project, { ...envelope, op }, options);
     case 'plan.delete':
-      return applyPlanDelete(db, project, { ...envelope, op });
+    case 'plan.set_parent':
+    case 'plan.promote_task':
+      return applyCanonicalPlanPayload(
+        db,
+        project,
+        { ...envelope, op },
+        originalPayload,
+        normalizedPayload,
+        options
+      );
     case 'project_setting.set':
     case 'project_setting.delete':
       return applyProjectSetting(
@@ -1057,14 +1042,188 @@ function applyPayload(
         originalPayload,
         normalizedPayload
       );
-    case 'plan.set_parent':
-      return applySetParent(db, project, { ...envelope, op }, options);
-    case 'plan.promote_task':
-      return applyPromoteTask(db, project, { ...envelope, op }, options);
     default: {
       const exhaustive: never = op;
       return exhaustive;
     }
+  }
+}
+
+function applyCanonicalPlanPayload(
+  db: Database,
+  project: ProjectRow,
+  envelope: SyncOperationEnvelope,
+  originalPayload: string,
+  normalizedPayload: string,
+  options: ApplyOperationOptions
+): Mutation[] {
+  validateCanonicalPlanOperation(db, project, envelope);
+  const adapter = new CanonicalPlanAdapter(db, project, envelope);
+  const priorStatus =
+    envelope.op.type === 'plan.set_scalar' && envelope.op.field === 'status'
+      ? adapter.getPlan(envelope.op.planUuid)?.status
+      : null;
+  try {
+    const mutations = applyOperationTo(adapter, envelope, options);
+    if (
+      envelope.op.type === 'plan.set_scalar' &&
+      envelope.op.field === 'status' &&
+      typeof envelope.op.value === 'string' &&
+      priorStatus !== envelope.op.value &&
+      ASSIGNMENT_CLEANUP_STATUSES.has(envelope.op.value) &&
+      options.cleanupAssignmentsOnStatusChange !== false
+    ) {
+      removeAssignment(db, project.id, envelope.op.planUuid);
+    }
+    adapter.flush();
+    return [...mutations, ...adapter.extraMutations()];
+  } catch (error) {
+    if (error instanceof ApplyOperationToPreconditionError) {
+      if (error.message === 'text merge failed') {
+        const conflictId = createTextMergeConflict(
+          db,
+          adapter,
+          envelope,
+          originalPayload,
+          normalizedPayload
+        );
+        markOperationConflict(db, envelope.operationUuid, conflictId);
+        throw new ConflictAccepted(conflictId);
+      }
+      throw validationError(envelope, error.message);
+    }
+    throw error;
+  }
+}
+
+function validateCanonicalPlanOperation(
+  db: Database,
+  project: ProjectRow,
+  envelope: SyncOperationEnvelope
+): void {
+  const op = envelope.op;
+  if ('baseRevision' in op && typeof op.baseRevision === 'number') {
+    const planUuid =
+      op.type === 'plan.promote_task' ? op.sourcePlanUuid : 'planUuid' in op ? op.planUuid : null;
+    if (planUuid) {
+      const plan = getCanonicalPlan(db, planUuid);
+      if (!plan || plan.project_id !== project.id) {
+        throw validationError(envelope, `Unknown plan ${planUuid}`);
+      }
+      if (plan.revision !== op.baseRevision) {
+        const conflictId = createSyncConflict(db, {
+          envelope,
+          originalPayload: JSON.stringify(op),
+          normalizedPayload: JSON.stringify(op),
+          fieldPath: conflictFieldPath(op),
+          baseValue: op.baseRevision,
+          incomingValue: conflictIncomingValue(op),
+          attemptedPatch: conflictPatch(op),
+          currentValue: plan?.revision ?? null,
+          reason: 'stale_revision',
+        });
+        markOperationConflict(db, envelope.operationUuid, conflictId);
+        throw new ConflictAccepted(conflictId);
+      }
+    }
+  }
+
+  switch (op.type) {
+    case 'plan.create': {
+      if (op.dependencies.some((dependencyUuid) => dependencyUuid === op.planUuid)) {
+        throw validationError(envelope, 'Adding dependency would create a cycle');
+      }
+      for (const dependencyUuid of new Set(op.dependencies)) {
+        requireCanonicalPlan(db, project, dependencyUuid, envelope);
+        if (dependencyReachesInTable(db, 'plan_dependency', dependencyUuid, op.planUuid)) {
+          throw validationError(envelope, 'Adding dependency would create a cycle');
+        }
+        if (
+          op.parentUuid &&
+          (dependencyUuid === op.parentUuid ||
+            dependencyReachesInTable(db, 'plan_dependency', dependencyUuid, op.parentUuid))
+        ) {
+          throw validationError(envelope, 'Setting parent would create a dependency cycle');
+        }
+      }
+      if (op.parentUuid) {
+        requireCanonicalPlan(db, project, op.parentUuid, envelope);
+        validateParentEdgeInTables(
+          db,
+          envelope,
+          'plan',
+          'plan_dependency',
+          op.parentUuid,
+          op.planUuid
+        );
+      }
+      if (op.discoveredFrom) {
+        requireCanonicalPlan(db, project, op.discoveredFrom, envelope);
+      }
+      const taskUuids = new Set<string>();
+      for (const task of op.tasks) {
+        if (taskUuids.has(task.taskUuid)) {
+          throw validationError(envelope, 'Duplicate task UUIDs in plan.create');
+        }
+        taskUuids.add(task.taskUuid);
+      }
+      return;
+    }
+    case 'plan.set_scalar':
+      if (op.field === 'discovered_from' && typeof op.value === 'string') {
+        requireCanonicalPlan(db, project, op.value, envelope);
+      }
+      return;
+    case 'plan.add_dependency':
+      if (
+        op.planUuid === op.dependsOnPlanUuid ||
+        dependencyReachesInTable(
+          db,
+          'plan_dependency',
+          op.dependsOnPlanUuid,
+          op.planUuid
+        )
+      ) {
+        throw validationError(envelope, 'Adding dependency would create a cycle');
+      }
+      return;
+    case 'plan.set_parent':
+      if (op.newParentUuid) {
+        requireCanonicalPlan(db, project, op.newParentUuid, envelope);
+        validateParentEdgeInTables(
+          db,
+          envelope,
+          'plan',
+          'plan_dependency',
+          op.newParentUuid,
+          op.planUuid
+        );
+      }
+      return;
+    case 'plan.promote_task':
+      if (op.parentUuid) {
+        requireCanonicalPlan(db, project, op.parentUuid, envelope);
+        validateParentEdgeInTables(
+          db,
+          envelope,
+          'plan',
+          'plan_dependency',
+          op.parentUuid,
+          op.newPlanUuid
+        );
+      }
+      for (const dependencyUuid of new Set(op.dependencies)) {
+        requireCanonicalPlan(db, project, dependencyUuid, envelope);
+        if (
+          dependencyUuid === op.newPlanUuid ||
+          dependencyReachesInTable(db, 'plan_dependency', dependencyUuid, op.newPlanUuid)
+        ) {
+          throw validationError(envelope, 'Adding dependency would create a cycle');
+        }
+      }
+      return;
+    default:
+      return;
   }
 }
 
@@ -1921,6 +2080,7 @@ export type ApplyOperationToTask = Omit<PlanTaskRow, 'id'> & { id?: number };
 export interface ApplyOperationToAdapter {
   readonly project: ProjectRow;
   readonly skipPreconditionFailures?: boolean;
+  readonly baseRevisionMode?: 'strict' | 'projection';
   getPlan(planUuid: string): ApplyOperationToPlan | null;
   setPlan(plan: ApplyOperationToPlan): void;
   deletePlan(planUuid: string): void;
@@ -1939,6 +2099,247 @@ export interface ApplyOperationToAdapter {
   onTaskDeleted?(taskUuid: string, revision: number): void;
 }
 
+class CanonicalPlanAdapter implements ApplyOperationToAdapter {
+  readonly baseRevisionMode = 'strict';
+  readonly project: ProjectRow;
+
+  private plans = new Map<string, ApplyOperationToPlan | null>();
+  private tasks = new Map<string, ApplyOperationToTask[]>();
+  private dependencies = new Map<string, PlanDependencyRow[]>();
+  private tags = new Map<string, PlanTagRow[]>();
+  private touchedPlans = new Set<string>();
+  private additionalMutations: Mutation[] = [];
+  private maxResolvedPlanId = 0;
+
+  constructor(
+    private readonly db: Database,
+    project: ProjectRow,
+    private readonly envelope: SyncOperationEnvelope
+  ) {
+    this.project = project;
+  }
+
+  getPlan(planUuid: string): ApplyOperationToPlan | null {
+    if (!this.plans.has(planUuid)) {
+      this.loadPlan(planUuid);
+    }
+    const plan = this.plans.get(planUuid) ?? null;
+    return plan ? { ...plan } : null;
+  }
+
+  setPlan(plan: ApplyOperationToPlan): void {
+    this.plans.set(plan.uuid, { ...plan });
+    this.touchedPlans.add(plan.uuid);
+    if (!this.tasks.has(plan.uuid)) {
+      this.tasks.set(plan.uuid, []);
+    }
+    if (!this.dependencies.has(plan.uuid)) {
+      this.dependencies.set(plan.uuid, []);
+    }
+    if (!this.tags.has(plan.uuid)) {
+      this.tags.set(plan.uuid, []);
+    }
+  }
+
+  deletePlan(planUuid: string): void {
+    this.plans.set(planUuid, null);
+    this.tasks.set(planUuid, []);
+    this.dependencies.set(planUuid, []);
+    this.tags.set(planUuid, []);
+    this.touchedPlans.add(planUuid);
+  }
+
+  getTasks(planUuid: string): ApplyOperationToTask[] {
+    this.ensureLoaded(planUuid);
+    return (this.tasks.get(planUuid) ?? []).map((task) => ({ ...task }));
+  }
+
+  setTasks(planUuid: string, tasks: ApplyOperationToTask[]): void {
+    this.tasks.set(
+      planUuid,
+      tasks.map((task) => ({ ...task }))
+    );
+    this.touchedPlans.add(planUuid);
+  }
+
+  getDependencies(planUuid: string): PlanDependencyRow[] {
+    this.ensureLoaded(planUuid);
+    return (this.dependencies.get(planUuid) ?? []).map((dependency) => ({ ...dependency }));
+  }
+
+  setDependencies(planUuid: string, dependencies: PlanDependencyRow[]): void {
+    this.dependencies.set(
+      planUuid,
+      dependencies.map((dependency) => ({ ...dependency }))
+    );
+    this.touchedPlans.add(planUuid);
+  }
+
+  getTags(planUuid: string): PlanTagRow[] {
+    this.ensureLoaded(planUuid);
+    return (this.tags.get(planUuid) ?? []).map((tag) => ({ ...tag }));
+  }
+
+  setTags(planUuid: string, tags: PlanTagRow[]): void {
+    this.tags.set(
+      planUuid,
+      tags.map((tag) => ({ ...tag }))
+    );
+    this.touchedPlans.add(planUuid);
+  }
+
+  resolveLocalPlanId(planUuid: string | null | undefined): number | null {
+    if (!planUuid) {
+      return null;
+    }
+    return this.getPlan(planUuid)?.plan_id ?? null;
+  }
+
+  resolvePlanCreateNumericPlanId(
+    requestedPlanId: number | undefined,
+    preserveRequestedPlanIds?: boolean
+  ): number {
+    const resolved = resolvePlanCreateNumericPlanId(
+      this.db,
+      this.project.id,
+      requestedPlanId,
+      preserveRequestedPlanIds === true
+    );
+    this.maxResolvedPlanId = Math.max(this.maxResolvedPlanId, resolved.numericPlanId);
+    return resolved.numericPlanId;
+  }
+
+  onPlanDeleted(planUuid: string): void {
+    const plan = this.plans.get(planUuid);
+    const revision = plan ? plan.revision + 1 : 1;
+    recordSyncTombstone(this.db, {
+      entityType: 'plan',
+      entityKey: `plan:${planUuid}`,
+      projectUuid: this.envelope.projectUuid,
+      deletionOperationUuid: this.envelope.operationUuid,
+      deletedRevision: revision,
+      originNodeId: this.envelope.originNodeId,
+    });
+    for (const task of this.getTasks(planUuid)) {
+      if (!task.uuid) {
+        continue;
+      }
+      recordSyncTombstone(this.db, {
+        entityType: 'task',
+        entityKey: `task:${task.uuid}`,
+        projectUuid: this.envelope.projectUuid,
+        deletionOperationUuid: this.envelope.operationUuid,
+        deletedRevision: task.revision + 1,
+        originNodeId: this.envelope.originNodeId,
+      });
+    }
+    const dependents = this.db
+      .prepare(
+        `
+          SELECT DISTINCT plan_uuid
+          FROM plan_dependency
+          WHERE depends_on_uuid = ?
+            AND plan_uuid <> ?
+        `
+      )
+      .all(planUuid, planUuid) as Array<{ plan_uuid: string }>;
+    for (const dependent of dependents) {
+      const dependencies = this.getDependencies(dependent.plan_uuid);
+      const next = dependencies.filter((dependency) => dependency.depends_on_uuid !== planUuid);
+      if (next.length !== dependencies.length) {
+        this.setDependencies(dependent.plan_uuid, next);
+        const dependentPlan = this.getPlan(dependent.plan_uuid);
+        if (dependentPlan) {
+          this.setPlan(clonePlanWithBump(dependentPlan, {}));
+          this.additionalMutations.push({
+            targetType: 'plan',
+            targetKey: `plan:${dependent.plan_uuid}`,
+            revision: dependentPlan.revision + 1,
+          });
+        }
+      }
+    }
+    removeAssignment(this.db, this.project.id, planUuid);
+  }
+
+  onTaskDeleted(taskUuid: string, revision: number): void {
+    recordSyncTombstone(this.db, {
+      entityType: 'task',
+      entityKey: `task:${taskUuid}`,
+      projectUuid: this.envelope.projectUuid,
+      deletionOperationUuid: this.envelope.operationUuid,
+      deletedRevision: revision + 1,
+      originNodeId: this.envelope.originNodeId,
+    });
+  }
+
+  flush(): void {
+    for (const planUuid of this.touchedPlans) {
+      const plan = this.plans.get(planUuid) ?? null;
+      if (!plan) {
+        deletePlanFromTableSet(this.db, 'plan_canonical', 'task_canonical', planUuid);
+        deletePlanFromTableSet(this.db, 'plan', 'plan_task', planUuid);
+        continue;
+      }
+      writePlanToTableSet(this.db, 'plan_canonical', 'task_canonical', plan);
+      writePlanToTableSet(this.db, 'plan', 'plan_task', plan);
+      replacePlanCollectionsInTableSet(
+        this.db,
+        'plan_dependency_canonical',
+        'plan_tag_canonical',
+        planUuid,
+        this.dependencies.get(planUuid) ?? [],
+        this.tags.get(planUuid) ?? []
+      );
+      replacePlanCollectionsInTableSet(
+        this.db,
+        'plan_dependency',
+        'plan_tag',
+        planUuid,
+        this.dependencies.get(planUuid) ?? [],
+        this.tags.get(planUuid) ?? []
+      );
+      replaceTasksInTable(this.db, 'task_canonical', planUuid, this.tasks.get(planUuid) ?? []);
+      replaceTasksInTable(this.db, 'plan_task', planUuid, this.tasks.get(planUuid) ?? []);
+      this.db.prepare('DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?').run(
+        'plan',
+        `plan:${planUuid}`
+      );
+    }
+    if (this.maxResolvedPlanId > 0) {
+      setProjectHighestPlanId(this.db, this.project.id, this.maxResolvedPlanId);
+    }
+  }
+
+  extraMutations(): Mutation[] {
+    return this.additionalMutations;
+  }
+
+  private ensureLoaded(planUuid: string): void {
+    if (!this.plans.has(planUuid)) {
+      this.loadPlan(planUuid);
+    }
+  }
+
+  private loadPlan(planUuid: string): void {
+    const canonicalPlan = getCanonicalPlanOnly(this.db, planUuid);
+    const projectionPlan = getPlan(this.db, planUuid);
+    const useProjection =
+      !!projectionPlan && (!canonicalPlan || projectionPlan.revision > canonicalPlan.revision);
+    const plan = useProjection ? projectionPlan : canonicalPlan;
+    const taskTable = useProjection ? 'plan_task' : 'task_canonical';
+    const dependencyTable = useProjection ? 'plan_dependency' : 'plan_dependency_canonical';
+    const tagTable = useProjection ? 'plan_tag' : 'plan_tag_canonical';
+    this.plans.set(planUuid, plan ? { ...plan } : null);
+    this.tasks.set(planUuid, readTasksFromTable(this.db, taskTable, planUuid));
+    this.dependencies.set(
+      planUuid,
+      readDependenciesFromTable(this.db, dependencyTable, planUuid)
+    );
+    this.tags.set(planUuid, readTagsFromTable(this.db, tagTable, planUuid));
+  }
+}
+
 class ApplyOperationToPreconditionError extends Error {}
 
 function applyOperationToPrecondition(message: string): never {
@@ -1946,9 +2347,15 @@ function applyOperationToPrecondition(message: string): never {
 }
 
 /**
- * Adapter-based operation fold used by projection rebuilds. It intentionally
- * avoids DB access; callers provide the state adapter. The existing main-node
- * apply path remains `applyOperation()` above.
+ * Adapter-based operation fold used by both canonical apply and projection
+ * rebuilds. Canonical apply uses strict CAS against the entity revision.
+ * Projection replay is more permissive for plan-scoped ops: an op is skipped
+ * only when its base revision is from the future relative to the replay state.
+ * That keeps unrelated canonical updates from erasing still-active local edits.
+ *
+ * The v1 plan operation payloads do not carry old scalar/list values, so the
+ * projection adapter cannot reliably diagnose same-field stale conflicts during
+ * replay. The main node remains the rejection authority through strict CAS.
  */
 export function applyOperationTo(
   adapter: ApplyOperationToAdapter,
@@ -1976,7 +2383,11 @@ function applyOperationToUnchecked(
       op.type === 'plan.promote_task' ? op.sourcePlanUuid : 'planUuid' in op ? op.planUuid : null;
     if (planUuid) {
       const plan = adapter.getPlan(planUuid);
-      if (!plan || plan.revision !== op.baseRevision) {
+      const isStale =
+        adapter.baseRevisionMode === 'projection'
+          ? op.baseRevision > (plan?.revision ?? -1)
+          : !plan || plan.revision !== op.baseRevision;
+      if (isStale) {
         applyOperationToPrecondition(`Stale base revision for plan ${planUuid}`);
       }
     }
@@ -2097,7 +2508,9 @@ function applyOperationToUnchecked(
       );
     case 'project_setting.set':
     case 'project_setting.delete':
-      return [];
+      throw new Error(
+        'applyOperationTo does not handle project_setting.*; use rebuildProjectSettingProjection instead'
+      );
     default: {
       const exhaustive: never = op;
       return exhaustive;
@@ -2623,6 +3036,322 @@ function applyOperationToPromoteTask(
     }
   );
   return mutations;
+}
+
+type PlanTableName = 'plan' | 'plan_canonical';
+type TaskTableName = 'plan_task' | 'task_canonical';
+type DependencyTableName = 'plan_dependency' | 'plan_dependency_canonical';
+type TagTableName = 'plan_tag' | 'plan_tag_canonical';
+
+function getCanonicalPlan(db: Database, planUuid: string): PlanRow | null {
+  const canonical = getCanonicalPlanOnly(db, planUuid);
+  const projection = getPlan(db, planUuid);
+  if (projection && (!canonical || projection.revision > canonical.revision)) {
+    return projection;
+  }
+  return canonical ?? projection;
+}
+
+function getCanonicalPlanOnly(db: Database, planUuid: string): PlanRow | null {
+  return (
+    (db.prepare('SELECT * FROM plan_canonical WHERE uuid = ?').get(planUuid) as PlanRow | null) ??
+    null
+  );
+}
+
+function requireCanonicalPlan(
+  db: Database,
+  project: ProjectRow,
+  planUuid: string,
+  envelope: SyncOperationEnvelope
+): PlanRow {
+  const plan = getCanonicalPlan(db, planUuid);
+  if (!plan || plan.project_id !== project.id) {
+    throw validationError(envelope, `Unknown plan ${planUuid}`);
+  }
+  return plan;
+}
+
+function readTasksFromTable(
+  db: Database,
+  table: TaskTableName,
+  planUuid: string
+): ApplyOperationToTask[] {
+  return db
+    .prepare(`SELECT * FROM ${table} WHERE plan_uuid = ? ORDER BY task_index, id`)
+    .all(planUuid) as ApplyOperationToTask[];
+}
+
+function readDependenciesFromTable(
+  db: Database,
+  table: DependencyTableName,
+  planUuid: string
+): PlanDependencyRow[] {
+  return db
+    .prepare(`SELECT plan_uuid, depends_on_uuid FROM ${table} WHERE plan_uuid = ?`)
+    .all(planUuid) as PlanDependencyRow[];
+}
+
+function readTagsFromTable(db: Database, table: TagTableName, planUuid: string): PlanTagRow[] {
+  return db.prepare(`SELECT plan_uuid, tag FROM ${table} WHERE plan_uuid = ?`).all(planUuid) as
+    | PlanTagRow[]
+    | [];
+}
+
+function deletePlanFromTableSet(
+  db: Database,
+  planTable: PlanTableName,
+  taskTable: TaskTableName,
+  planUuid: string
+): void {
+  const dependencyTable = planTable === 'plan' ? 'plan_dependency' : 'plan_dependency_canonical';
+  const tagTable = planTable === 'plan' ? 'plan_tag' : 'plan_tag_canonical';
+  db.prepare(`DELETE FROM ${dependencyTable} WHERE plan_uuid = ? OR depends_on_uuid = ?`).run(
+    planUuid,
+    planUuid
+  );
+  db.prepare(`DELETE FROM ${tagTable} WHERE plan_uuid = ?`).run(planUuid);
+  db.prepare(`DELETE FROM ${taskTable} WHERE plan_uuid = ?`).run(planUuid);
+  db.prepare(`DELETE FROM ${planTable} WHERE uuid = ?`).run(planUuid);
+}
+
+function writePlanToTableSet(
+  db: Database,
+  table: PlanTableName,
+  taskTable: TaskTableName,
+  plan: ApplyOperationToPlan
+): void {
+  void taskTable;
+  db.prepare(
+    `
+      INSERT INTO ${table} (
+        uuid, project_id, plan_id, title, goal, note, details, status, priority,
+        branch, simple, tdd, discovered_from, issue, pull_request, assigned_to,
+        base_branch, base_commit, base_change_id, temp, docs, changed_files,
+        plan_generated_at, review_issues, docs_updated_at, lessons_applied_at,
+        parent_uuid, epic, revision, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(uuid) DO UPDATE SET
+        project_id = excluded.project_id,
+        plan_id = excluded.plan_id,
+        title = excluded.title,
+        goal = excluded.goal,
+        note = excluded.note,
+        details = excluded.details,
+        status = excluded.status,
+        priority = excluded.priority,
+        branch = excluded.branch,
+        simple = excluded.simple,
+        tdd = excluded.tdd,
+        discovered_from = excluded.discovered_from,
+        issue = excluded.issue,
+        pull_request = excluded.pull_request,
+        assigned_to = excluded.assigned_to,
+        base_branch = excluded.base_branch,
+        base_commit = excluded.base_commit,
+        base_change_id = excluded.base_change_id,
+        temp = excluded.temp,
+        docs = excluded.docs,
+        changed_files = excluded.changed_files,
+        plan_generated_at = excluded.plan_generated_at,
+        review_issues = excluded.review_issues,
+        docs_updated_at = excluded.docs_updated_at,
+        lessons_applied_at = excluded.lessons_applied_at,
+        parent_uuid = excluded.parent_uuid,
+        epic = excluded.epic,
+        revision = excluded.revision,
+        updated_at = excluded.updated_at
+    `
+  ).run(
+    plan.uuid,
+    plan.project_id,
+    plan.plan_id,
+    plan.title,
+    plan.goal,
+    plan.note,
+    plan.details,
+    plan.status,
+    plan.priority,
+    plan.branch,
+    plan.simple,
+    plan.tdd,
+    plan.discovered_from,
+    plan.issue,
+    plan.pull_request,
+    plan.assigned_to,
+    plan.base_branch,
+    plan.base_commit,
+    plan.base_change_id,
+    plan.temp,
+    plan.docs,
+    plan.changed_files,
+    plan.plan_generated_at,
+    plan.review_issues,
+    plan.docs_updated_at,
+    plan.lessons_applied_at,
+    plan.parent_uuid,
+    plan.epic,
+    plan.revision,
+    plan.created_at,
+    plan.updated_at
+  );
+}
+
+function replaceTasksInTable(
+  db: Database,
+  table: TaskTableName,
+  planUuid: string,
+  tasks: ApplyOperationToTask[]
+): void {
+  db.prepare(`DELETE FROM ${table} WHERE plan_uuid = ?`).run(planUuid);
+  const insert = db.prepare(
+    `INSERT INTO ${table} (uuid, plan_uuid, task_index, title, description, done, revision)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  );
+  for (const task of tasks.sort((a, b) => a.task_index - b.task_index)) {
+    if (!task.uuid) {
+      throw new Error('task missing uuid in canonical apply write');
+    }
+    insert.run(
+      task.uuid,
+      planUuid,
+      task.task_index,
+      task.title,
+      task.description,
+      task.done,
+      task.revision
+    );
+  }
+}
+
+function replacePlanCollectionsInTableSet(
+  db: Database,
+  dependencyTable: DependencyTableName,
+  tagTable: TagTableName,
+  planUuid: string,
+  dependencies: PlanDependencyRow[],
+  tags: PlanTagRow[]
+): void {
+  db.prepare(`DELETE FROM ${dependencyTable} WHERE plan_uuid = ?`).run(planUuid);
+  const insertDependency = db.prepare(
+    `INSERT OR IGNORE INTO ${dependencyTable} (plan_uuid, depends_on_uuid) VALUES (?, ?)`
+  );
+  for (const dependency of dependencies) {
+    insertDependency.run(dependency.plan_uuid, dependency.depends_on_uuid);
+  }
+  db.prepare(`DELETE FROM ${tagTable} WHERE plan_uuid = ?`).run(planUuid);
+  const insertTag = db.prepare(`INSERT OR IGNORE INTO ${tagTable} (plan_uuid, tag) VALUES (?, ?)`);
+  for (const tag of tags) {
+    insertTag.run(tag.plan_uuid, tag.tag);
+  }
+}
+
+function dependencyReachesInTable(
+  db: Database,
+  table: DependencyTableName,
+  startPlanUuid: string,
+  targetPlanUuid: string
+): boolean {
+  const visited = new Set<string>();
+  const stack = [startPlanUuid];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    if (current === targetPlanUuid) {
+      return true;
+    }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+    const rows = db
+      .prepare(`SELECT depends_on_uuid FROM ${table} WHERE plan_uuid = ?`)
+      .all(current) as Array<{ depends_on_uuid: string }>;
+    stack.push(...rows.map((row) => row.depends_on_uuid));
+  }
+  return false;
+}
+
+function validateParentEdgeInTables(
+  db: Database,
+  envelope: SyncOperationEnvelope,
+  planTable: PlanTableName,
+  dependencyTable: DependencyTableName,
+  parentUuid: string,
+  childUuid: string
+): void {
+  if (
+    parentUuid === childUuid ||
+    parentChainReachesInTable(db, planTable, parentUuid, childUuid) ||
+    dependencyReachesInTable(db, dependencyTable, childUuid, parentUuid)
+  ) {
+    throw validationError(envelope, 'Setting parent would create a cycle');
+  }
+}
+
+function parentChainReachesInTable(
+  db: Database,
+  table: PlanTableName,
+  startParentUuid: string,
+  targetPlanUuid: string
+): boolean {
+  let current: string | null = startParentUuid;
+  const visited = new Set<string>();
+  while (current) {
+    if (current === targetPlanUuid) {
+      return true;
+    }
+    if (visited.has(current)) {
+      return false;
+    }
+    visited.add(current);
+    const row = db.prepare(`SELECT parent_uuid FROM ${table} WHERE uuid = ?`).get(current) as {
+      parent_uuid: string | null;
+    } | null;
+    current = row?.parent_uuid ?? null;
+  }
+  return false;
+}
+
+function createTextMergeConflict(
+  db: Database,
+  adapter: ApplyOperationToAdapter,
+  envelope: SyncOperationEnvelope,
+  originalPayload: string,
+  normalizedPayload: string
+): string {
+  const op = envelope.op;
+  if (op.type === 'plan.patch_text') {
+    const plan = adapter.getPlan(op.planUuid);
+    const column = PLAN_TEXT_COLUMNS[op.field];
+    return createSyncConflict(db, {
+      envelope,
+      originalPayload,
+      normalizedPayload,
+      fieldPath: op.field,
+      baseValue: op.base,
+      incomingValue: op.new,
+      attemptedPatch: op.patch ?? null,
+      currentValue: plan ? ((plan[column] ?? '') as string).toString() : null,
+      reason: 'text_merge_failed',
+    });
+  }
+  if (op.type === 'plan.update_task_text') {
+    const task = adapter.getTasks(op.planUuid).find((item) => item.uuid === op.taskUuid);
+    const column = TASK_TEXT_COLUMNS[op.field];
+    return createSyncConflict(db, {
+      envelope,
+      originalPayload,
+      normalizedPayload,
+      fieldPath: op.field,
+      baseValue: op.base,
+      incomingValue: op.new,
+      attemptedPatch: op.patch ?? null,
+      currentValue: task ? (task[column] ?? '') : null,
+      reason: 'text_merge_failed',
+    });
+  }
+  throw validationError(envelope, 'text merge failed');
 }
 
 function resolvedNumericPlanIdForOperation(

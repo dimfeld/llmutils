@@ -265,6 +265,62 @@ describe('main-node sync apply engine', () => {
     ]);
   });
 
+  test('canonical adapter writes canonical and projection rows for plan operations', async () => {
+    seedPlan();
+    const op = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'canonical' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    const result = applyOperation(db, op);
+
+    expect(result.status).toBe('applied');
+    expect(getPlanTagsByUuid(db, PLAN_UUID).map((row) => row.tag)).toEqual(['canonical']);
+    expect(
+      db.prepare('SELECT tag FROM plan_tag_canonical WHERE plan_uuid = ?').all(PLAN_UUID)
+    ).toEqual([{ tag: 'canonical' }]);
+    expect(
+      db.prepare('SELECT revision FROM plan_canonical WHERE uuid = ?').get(PLAN_UUID)
+    ).toEqual({ revision: 2 });
+  });
+
+  test('canonical adapter rejects stale CAS as a conflict without mutating canonical rows', async () => {
+    seedPlan();
+    const op = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'status', value: 'in_progress', baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    const result = applyOperation(db, op);
+
+    expect(result.status).toBe('conflict');
+    expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('pending');
+    expect(db.prepare('SELECT status FROM plan_canonical WHERE uuid = ?').get(PLAN_UUID)).toEqual(
+      null
+    );
+    expect(
+      db.prepare('SELECT reason FROM sync_conflict WHERE operation_uuid = ?').get(op.operationUuid)
+    ).toEqual({ reason: 'stale_revision' });
+  });
+
+  test('canonical adapter preserves cycle validation for dependency operations', async () => {
+    seedPlan();
+    seedPlan(OTHER_PLAN_UUID, 2, TASK_UUID_2);
+    db.prepare('INSERT INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)').run(
+      OTHER_PLAN_UUID,
+      PLAN_UUID
+    );
+    const op = await addPlanDependencyOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, dependsOnPlanUuid: OTHER_PLAN_UUID },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    expect(() => applyOperation(db, op)).toThrow(SyncValidationError);
+  });
+
   test('atomic batch rolls back applied operations when a later operation conflicts', async () => {
     const seedColor = await setProjectSettingOperation(
       { projectUuid: PROJECT_UUID, setting: 'color', value: 'blue' },
@@ -1271,7 +1327,7 @@ describe('main-node sync apply engine', () => {
     ]);
   });
 
-  test('set-like operations apply even with stale baseRevision and no-op replay does not add sequence', async () => {
+  test('set-like operations with stale baseRevision conflict and no-op replay does not add sequence', async () => {
     seedPlan();
     const statusOp = await setPlanScalarOperation(
       PROJECT_UUID,
@@ -1288,8 +1344,8 @@ describe('main-node sync apply engine', () => {
     applyOperation(db, tagOp);
     applyOperation(db, tagOp);
 
-    expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('in_progress');
-    expect(countRows('sync_sequence')).toBe(2);
+    expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('pending');
+    expect(countRows('sync_sequence')).toBe(1);
   });
 
   test('unknown project and unknown non-create plan reject with SyncValidationError', async () => {
