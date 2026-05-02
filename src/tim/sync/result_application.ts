@@ -1,7 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import {
-  prunePlanRefsForTerminalOps,
-} from './queue.js';
+import { prunePlanRefsForTerminalOps } from './queue.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
 import { mergeCanonicalRefresh, type CanonicalSnapshot } from './snapshots.js';
 import type { SyncCatchUpInvalidation, SyncOperationResult } from './ws_protocol.js';
@@ -35,7 +33,9 @@ export async function applyOperationResultsWithSnapshots(
 export async function applyInvalidationsWithSnapshots(
   options: ApplyInvalidationsWithSnapshotsOptions
 ): Promise<number> {
-  const snapshots = await options.fetchSnapshots(snapshotKeysFromInvalidations(options.invalidations));
+  const snapshots = await options.fetchSnapshots(
+    snapshotKeysFromInvalidations(options.invalidations)
+  );
   for (const snapshot of snapshots) {
     mergeCanonicalRefresh(options.db, snapshot);
   }
@@ -43,15 +43,11 @@ export async function applyInvalidationsWithSnapshots(
 }
 
 function snapshotKeysFromResults(results: SyncOperationResult[]): string[] {
-  return [
-    ...new Set(results.flatMap((result) => result.invalidations ?? [])),
-  ];
+  return [...new Set(results.flatMap((result) => result.invalidations ?? []))];
 }
 
 function snapshotKeysFromInvalidations(invalidations: SyncCatchUpInvalidation[]): string[] {
-  return [
-    ...new Set(invalidations.flatMap((invalidation) => invalidation.entityKeys)),
-  ];
+  return [...new Set(invalidations.flatMap((invalidation) => invalidation.entityKeys))];
 }
 
 function hasTerminalOperationResults(results: SyncOperationResult[]): boolean {

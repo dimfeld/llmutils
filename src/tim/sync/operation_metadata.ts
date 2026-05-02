@@ -20,6 +20,34 @@ export interface SyncOperationPayloadIndexes {
   payloadTaskUuid: string | null;
 }
 
+type SyncOperationType = SyncOperationPayload['type'];
+type SyncOperationEntity = 'plan' | 'project_setting';
+type BaseRevisionTargetKind = 'plan' | 'task' | 'source_plan' | null;
+
+export const SYNC_OPERATION_METADATA = {
+  'plan.create': { entity: 'plan', baseRevisionTarget: null },
+  'plan.set_scalar': { entity: 'plan', baseRevisionTarget: 'plan' },
+  'plan.patch_text': { entity: 'plan', baseRevisionTarget: 'plan' },
+  'plan.add_task': { entity: 'plan', baseRevisionTarget: null },
+  'plan.update_task_text': { entity: 'plan', baseRevisionTarget: 'task' },
+  'plan.mark_task_done': { entity: 'plan', baseRevisionTarget: null },
+  'plan.remove_task': { entity: 'plan', baseRevisionTarget: 'task' },
+  'plan.add_dependency': { entity: 'plan', baseRevisionTarget: null },
+  'plan.remove_dependency': { entity: 'plan', baseRevisionTarget: null },
+  'plan.add_tag': { entity: 'plan', baseRevisionTarget: null },
+  'plan.remove_tag': { entity: 'plan', baseRevisionTarget: null },
+  'plan.add_list_item': { entity: 'plan', baseRevisionTarget: null },
+  'plan.remove_list_item': { entity: 'plan', baseRevisionTarget: null },
+  'plan.delete': { entity: 'plan', baseRevisionTarget: 'plan' },
+  'plan.set_parent': { entity: 'plan', baseRevisionTarget: 'plan' },
+  'plan.promote_task': { entity: 'plan', baseRevisionTarget: 'source_plan' },
+  'project_setting.set': { entity: 'project_setting', baseRevisionTarget: null },
+  'project_setting.delete': { entity: 'project_setting', baseRevisionTarget: null },
+} as const satisfies Record<
+  SyncOperationType,
+  { entity: SyncOperationEntity; baseRevisionTarget: BaseRevisionTargetKind }
+>;
+
 export const PROJECTION_REBUILD_PLAN_REF_ROLES = new Set<SyncOperationPlanRefRole>([
   'target',
   'parent',
@@ -43,7 +71,7 @@ export function isProjectSettingOperation(
   SyncOperationPayload,
   { type: 'project_setting.set' | 'project_setting.delete' }
 > {
-  return payload.type === 'project_setting.set' || payload.type === 'project_setting.delete';
+  return SYNC_OPERATION_METADATA[payload.type].entity === 'project_setting';
 }
 
 export function isPlanOperation(
@@ -60,7 +88,8 @@ export function getSyncOperationPayloadIndexes(
 ): SyncOperationPayloadIndexes {
   const parsed = parseSyncOperationPayload(payload);
   return {
-    payloadTaskUuid: 'taskUuid' in parsed && typeof parsed.taskUuid === 'string' ? parsed.taskUuid : null,
+    payloadTaskUuid:
+      'taskUuid' in parsed && typeof parsed.taskUuid === 'string' ? parsed.taskUuid : null,
   };
 }
 
@@ -151,22 +180,21 @@ export function getBaseRevisionPlanUuid(payload: SyncOperationPayload): string |
   if (!('baseRevision' in payload) || typeof payload.baseRevision !== 'number') {
     return null;
   }
-  if (payload.type === 'plan.promote_task') {
-    return payload.sourcePlanUuid;
+  switch (SYNC_OPERATION_METADATA[payload.type].baseRevisionTarget) {
+    case 'source_plan':
+      return payload.type === 'plan.promote_task' ? payload.sourcePlanUuid : null;
+    case 'plan':
+      return 'planUuid' in payload ? payload.planUuid : null;
+    default:
+      return null;
   }
-  if (
-    payload.type !== 'plan.update_task_text' &&
-    payload.type !== 'plan.remove_task' &&
-    'planUuid' in payload
-  ) {
-    return payload.planUuid;
-  }
-  return null;
 }
 
 export function getBaseRevisionTaskUuid(payload: SyncOperationPayload): string | null {
   if (
-    (payload.type === 'plan.update_task_text' || payload.type === 'plan.remove_task') &&
+    SYNC_OPERATION_METADATA[payload.type].baseRevisionTarget === 'task' &&
+    'taskUuid' in payload &&
+    'baseRevision' in payload &&
     typeof payload.baseRevision === 'number'
   ) {
     return payload.taskUuid;

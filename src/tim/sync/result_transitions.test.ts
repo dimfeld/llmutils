@@ -21,11 +21,7 @@ import {
   setPlanParentOperation,
   setProjectSettingOperation,
 } from './operations.js';
-import {
-  enqueueBatch,
-  enqueueOperation,
-  markOperationSending,
-} from './queue.js';
+import { enqueueBatch, enqueueOperation, markOperationSending } from './queue.js';
 import { mergeCanonicalRefresh } from './snapshots.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
 import { createBatchEnvelope } from './types.js';

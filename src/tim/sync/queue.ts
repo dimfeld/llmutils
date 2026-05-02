@@ -12,16 +12,12 @@ import {
   type SyncOperationEnvelope,
   type SyncOperationPayload,
 } from './types.js';
+import { getSyncOperationPlanRefs, getSyncOperationPayloadIndexes } from './operation_metadata.js';
 import {
-  getSyncOperationPlanRefs,
-  getProjectionPlanRefUuids,
-  getSyncOperationPayloadIndexes,
-  isProjectSettingOperation,
-} from './operation_metadata.js';
-import {
-  rebuildPlanProjectionInTransaction,
-  rebuildProjectSettingProjectionForPayload,
-} from './projection.js';
+  collectProjectionTargetsForPayload,
+  createProjectionRebuildTargets,
+  rebuildProjectionTargetsInTransaction,
+} from './projection_targets.js';
 import {
   isTerminalQueueStatus,
   QUEUE_FLUSHABLE_STATUSES,
@@ -155,24 +151,12 @@ export function enqueueBatch(
       )
     );
     const batch = assertValidBatchEnvelope({ ...input, operations });
-    const affectedPlanUuids = new Set<string>();
-    const affectedProjectSettings = new Map<string, ProjectSettingPayload>();
+    const rebuildTargets = createProjectionRebuildTargets();
     for (const operation of operations) {
       insertQueuedOperation(db, operation, batch.batchId, batch.atomic === true);
-      collectAffectedProjectionPlanUuids(db, affectedPlanUuids, operation.op);
-      if (isProjectSettingOperation(operation.op)) {
-        affectedProjectSettings.set(
-          `${operation.op.projectUuid}:${operation.op.setting}`,
-          operation.op
-        );
-      }
+      collectProjectionTargetsForPayload(db, rebuildTargets, operation.op);
     }
-    for (const planUuid of affectedPlanUuids) {
-      rebuildPlanProjectionInTransaction(db, planUuid);
-    }
-    for (const payload of affectedProjectSettings.values()) {
-      rebuildProjectSettingProjectionForPayload(db, payload);
-    }
+    rebuildProjectionTargetsInTransaction(db, rebuildTargets);
     return {
       batch,
       rows: operations.map((operation) => requireOperationRow(db, operation.operationUuid)),
@@ -649,85 +633,9 @@ function rebuildQueuedOperationProjectionInTransaction(
   operation: SyncOperationEnvelope
 ): void {
   const op = assertValidPayload(operation.op);
-  if (isProjectSettingOperation(op)) {
-    rebuildProjectSettingProjectionForPayload(db, op);
-    return;
-  }
-  for (const planUuid of getAffectedProjectionPlanUuids(db, op)) {
-    rebuildPlanProjectionInTransaction(db, planUuid);
-  }
-}
-
-function collectAffectedProjectionPlanUuids(
-  db: Database,
-  target: Set<string>,
-  payload: SyncOperationPayload
-): void {
-  for (const planUuid of getAffectedProjectionPlanUuids(db, payload)) {
-    target.add(planUuid);
-  }
-}
-
-type ProjectSettingPayload = Extract<
-  SyncOperationPayload,
-  { type: 'project_setting.set' | 'project_setting.delete' }
->;
-
-function getAffectedProjectionPlanUuids(db: Database, payload: SyncOperationPayload): string[] {
-  if (isProjectSettingOperation(payload)) {
-    return [];
-  }
-  const affected = new Set(getProjectionPlanRefUuids(payload));
-  if (payload.type === 'plan.delete') {
-    for (const ownerPlanUuid of getInboundProjectionOwnerPlanUuids(db, payload.planUuid)) {
-      affected.add(ownerPlanUuid);
-    }
-  }
-  return [...affected];
-}
-
-export function getInboundProjectionOwnerPlanUuids(
-  db: Database,
-  deletedPlanUuid: string
-): string[] {
-  const rows = db
-    .prepare(
-      `
-        SELECT plan_uuid
-        FROM plan_dependency
-        WHERE depends_on_uuid = ?
-        UNION
-        SELECT uuid AS plan_uuid
-        FROM plan
-        WHERE parent_uuid = ?
-        UNION
-        SELECT plan_uuid
-        FROM plan_dependency_canonical
-        WHERE depends_on_uuid = ?
-        UNION
-        SELECT uuid AS plan_uuid
-        FROM plan_canonical
-        WHERE parent_uuid = ?
-      `
-    )
-    .all(deletedPlanUuid, deletedPlanUuid, deletedPlanUuid, deletedPlanUuid) as Array<{
-    plan_uuid: string;
-  }>;
-  return rows.map((row) => row.plan_uuid);
-}
-
-export function rebuildPlanProjectionAndInboundOwnersInTransaction(
-  db: Database,
-  planUuid: string
-): string[] {
-  const rebuildPlanUuids = new Set([planUuid]);
-  for (const ownerPlanUuid of getInboundProjectionOwnerPlanUuids(db, planUuid)) {
-    rebuildPlanUuids.add(ownerPlanUuid);
-  }
-  for (const rebuildPlanUuid of rebuildPlanUuids) {
-    rebuildPlanProjectionInTransaction(db, rebuildPlanUuid);
-  }
-  return [...rebuildPlanUuids];
+  const rebuildTargets = createProjectionRebuildTargets();
+  collectProjectionTargetsForPayload(db, rebuildTargets, op);
+  rebuildProjectionTargetsInTransaction(db, rebuildTargets);
 }
 
 function reserveOptimisticPlanId(db: Database, projectId: number): number {

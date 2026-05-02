@@ -1,10 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import * as z from 'zod/v4';
 import { removeAssignment } from '../db/assignment.js';
-import {
-  upsertCanonicalPlanInTransaction,
-  type PlanRow,
-} from '../db/plan.js';
+import { upsertCanonicalPlanInTransaction, type PlanRow } from '../db/plan.js';
 import { getProjectByUuid } from '../db/project.js';
 import {
   deleteCanonicalProjectSettingRow,
@@ -13,9 +10,7 @@ import {
 import { refreshExistingPrimaryMaterializedPlans } from '../materialized_projection_refresh.js';
 import { recordSyncTombstone } from './conflicts.js';
 import { planKey, taskKey } from './entity_keys.js';
-import {
-  rebuildPlanProjectionAndInboundOwnersInTransaction,
-} from './queue.js';
+import { rebuildPlanProjectionAndInboundOwnersInTransaction } from './projection_targets.js';
 import {
   rebuildPlanProjectionInTransaction,
   rebuildProjectSettingProjection,

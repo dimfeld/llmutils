@@ -370,6 +370,22 @@ function addProjectOperationToBatch<Input>(
   batch.add((options) => build(projectUuid, input, options));
 }
 
+function defineProjectOperationRoutes<Input>(build: ProjectOperationBuilder<Input>) {
+  return {
+    write(
+      db: Database,
+      config: TimConfig,
+      projectUuid: string,
+      input: Input
+    ): Promise<SyncWriteResult> {
+      return writeProjectOperation(db, config, projectUuid, input, build);
+    },
+    addToBatch(batch: SyncBatchHandle, projectUuid: string, input: Input): void {
+      addProjectOperationToBatch(batch, projectUuid, input, build);
+    },
+  };
+}
+
 export async function writePlanCreate(
   db: Database,
   config: TimConfig,
@@ -391,22 +407,9 @@ export function addPlanCreateToBatch(
   batch.add((options) => createPlanOperation(input, options));
 }
 
-export async function writePlanSetScalar(
-  db: Database,
-  config: TimConfig,
-  projectUuid: string,
-  input: Parameters<typeof setPlanScalarOperation>[1]
-): Promise<SyncWriteResult> {
-  return writeProjectOperation(db, config, projectUuid, input, setPlanScalarOperation);
-}
-
-export function addPlanSetScalarToBatch(
-  batch: SyncBatchHandle,
-  projectUuid: string,
-  input: Parameters<typeof setPlanScalarOperation>[1]
-): void {
-  addProjectOperationToBatch(batch, projectUuid, input, setPlanScalarOperation);
-}
+const planSetScalarRoutes = defineProjectOperationRoutes(setPlanScalarOperation);
+export const writePlanSetScalar = planSetScalarRoutes.write;
+export const addPlanSetScalarToBatch = planSetScalarRoutes.addToBatch;
 
 export async function writePlanSetStatus(
   db: Database,
@@ -424,22 +427,9 @@ export async function writePlanSetStatus(
   });
 }
 
-export async function writePlanPatchText(
-  db: Database,
-  config: TimConfig,
-  projectUuid: string,
-  input: Parameters<typeof patchPlanTextOperation>[1]
-): Promise<SyncWriteResult> {
-  return writeProjectOperation(db, config, projectUuid, input, patchPlanTextOperation);
-}
-
-export function addPlanPatchTextToBatch(
-  batch: SyncBatchHandle,
-  projectUuid: string,
-  input: Parameters<typeof patchPlanTextOperation>[1]
-): void {
-  addProjectOperationToBatch(batch, projectUuid, input, patchPlanTextOperation);
-}
+const planPatchTextRoutes = defineProjectOperationRoutes(patchPlanTextOperation);
+export const writePlanPatchText = planPatchTextRoutes.write;
+export const addPlanPatchTextToBatch = planPatchTextRoutes.addToBatch;
 
 export async function writePlanPatchTextFromCurrent(
   db: Database,
@@ -463,39 +453,13 @@ export async function writePlanPatchTextFromCurrent(
   });
 }
 
-export async function writePlanAddTask(
-  db: Database,
-  config: TimConfig,
-  projectUuid: string,
-  input: Parameters<typeof addPlanTaskOperation>[1]
-): Promise<SyncWriteResult> {
-  return writeProjectOperation(db, config, projectUuid, input, addPlanTaskOperation);
-}
+const planAddTaskRoutes = defineProjectOperationRoutes(addPlanTaskOperation);
+export const writePlanAddTask = planAddTaskRoutes.write;
+export const addPlanAddTaskToBatch = planAddTaskRoutes.addToBatch;
 
-export function addPlanAddTaskToBatch(
-  batch: SyncBatchHandle,
-  projectUuid: string,
-  input: Parameters<typeof addPlanTaskOperation>[1]
-): void {
-  addProjectOperationToBatch(batch, projectUuid, input, addPlanTaskOperation);
-}
-
-export async function writePlanUpdateTaskText(
-  db: Database,
-  config: TimConfig,
-  projectUuid: string,
-  input: Parameters<typeof updatePlanTaskTextOperation>[1]
-): Promise<SyncWriteResult> {
-  return writeProjectOperation(db, config, projectUuid, input, updatePlanTaskTextOperation);
-}
-
-export function addPlanUpdateTaskTextToBatch(
-  batch: SyncBatchHandle,
-  projectUuid: string,
-  input: Parameters<typeof updatePlanTaskTextOperation>[1]
-): void {
-  addProjectOperationToBatch(batch, projectUuid, input, updatePlanTaskTextOperation);
-}
+const planUpdateTaskTextRoutes = defineProjectOperationRoutes(updatePlanTaskTextOperation);
+export const writePlanUpdateTaskText = planUpdateTaskTextRoutes.write;
+export const addPlanUpdateTaskTextToBatch = planUpdateTaskTextRoutes.addToBatch;
 
 export async function writePlanUpdateTaskTextFromCurrent(
   db: Database,
@@ -521,107 +485,29 @@ export async function writePlanUpdateTaskTextFromCurrent(
   });
 }
 
-export async function writePlanMarkTaskDone(
-  db: Database,
-  config: TimConfig,
-  projectUuid: string,
-  input: Parameters<typeof markPlanTaskDoneOperation>[1]
-): Promise<SyncWriteResult> {
-  return writeProjectOperation(db, config, projectUuid, input, markPlanTaskDoneOperation);
-}
+const planMarkTaskDoneRoutes = defineProjectOperationRoutes(markPlanTaskDoneOperation);
+export const writePlanMarkTaskDone = planMarkTaskDoneRoutes.write;
+export const addPlanMarkTaskDoneToBatch = planMarkTaskDoneRoutes.addToBatch;
 
-export function addPlanMarkTaskDoneToBatch(
-  batch: SyncBatchHandle,
-  projectUuid: string,
-  input: Parameters<typeof markPlanTaskDoneOperation>[1]
-): void {
-  addProjectOperationToBatch(batch, projectUuid, input, markPlanTaskDoneOperation);
-}
+const planRemoveTaskRoutes = defineProjectOperationRoutes(removePlanTaskOperation);
+export const writePlanRemoveTask = planRemoveTaskRoutes.write;
+export const addPlanRemoveTaskToBatch = planRemoveTaskRoutes.addToBatch;
 
-export async function writePlanRemoveTask(
-  db: Database,
-  config: TimConfig,
-  projectUuid: string,
-  input: Parameters<typeof removePlanTaskOperation>[1]
-): Promise<SyncWriteResult> {
-  return writeProjectOperation(db, config, projectUuid, input, removePlanTaskOperation);
-}
+const planAddDependencyRoutes = defineProjectOperationRoutes(addPlanDependencyOperation);
+export const writePlanAddDependency = planAddDependencyRoutes.write;
+export const addPlanAddDependencyToBatch = planAddDependencyRoutes.addToBatch;
 
-export function addPlanRemoveTaskToBatch(
-  batch: SyncBatchHandle,
-  projectUuid: string,
-  input: Parameters<typeof removePlanTaskOperation>[1]
-): void {
-  addProjectOperationToBatch(batch, projectUuid, input, removePlanTaskOperation);
-}
+const planRemoveDependencyRoutes = defineProjectOperationRoutes(removePlanDependencyOperation);
+export const writePlanRemoveDependency = planRemoveDependencyRoutes.write;
+export const addPlanRemoveDependencyToBatch = planRemoveDependencyRoutes.addToBatch;
 
-export async function writePlanAddDependency(
-  db: Database,
-  config: TimConfig,
-  projectUuid: string,
-  input: Parameters<typeof addPlanDependencyOperation>[1]
-): Promise<SyncWriteResult> {
-  return writeProjectOperation(db, config, projectUuid, input, addPlanDependencyOperation);
-}
+const planAddTagRoutes = defineProjectOperationRoutes(addPlanTagOperation);
+export const writePlanAddTag = planAddTagRoutes.write;
+export const addPlanAddTagToBatch = planAddTagRoutes.addToBatch;
 
-export function addPlanAddDependencyToBatch(
-  batch: SyncBatchHandle,
-  projectUuid: string,
-  input: Parameters<typeof addPlanDependencyOperation>[1]
-): void {
-  addProjectOperationToBatch(batch, projectUuid, input, addPlanDependencyOperation);
-}
-
-export async function writePlanRemoveDependency(
-  db: Database,
-  config: TimConfig,
-  projectUuid: string,
-  input: Parameters<typeof removePlanDependencyOperation>[1]
-): Promise<SyncWriteResult> {
-  return writeProjectOperation(db, config, projectUuid, input, removePlanDependencyOperation);
-}
-
-export function addPlanRemoveDependencyToBatch(
-  batch: SyncBatchHandle,
-  projectUuid: string,
-  input: Parameters<typeof removePlanDependencyOperation>[1]
-): void {
-  addProjectOperationToBatch(batch, projectUuid, input, removePlanDependencyOperation);
-}
-
-export async function writePlanAddTag(
-  db: Database,
-  config: TimConfig,
-  projectUuid: string,
-  input: Parameters<typeof addPlanTagOperation>[1]
-): Promise<SyncWriteResult> {
-  return writeProjectOperation(db, config, projectUuid, input, addPlanTagOperation);
-}
-
-export function addPlanAddTagToBatch(
-  batch: SyncBatchHandle,
-  projectUuid: string,
-  input: Parameters<typeof addPlanTagOperation>[1]
-): void {
-  addProjectOperationToBatch(batch, projectUuid, input, addPlanTagOperation);
-}
-
-export async function writePlanRemoveTag(
-  db: Database,
-  config: TimConfig,
-  projectUuid: string,
-  input: Parameters<typeof removePlanTagOperation>[1]
-): Promise<SyncWriteResult> {
-  return writeProjectOperation(db, config, projectUuid, input, removePlanTagOperation);
-}
-
-export function addPlanRemoveTagToBatch(
-  batch: SyncBatchHandle,
-  projectUuid: string,
-  input: Parameters<typeof removePlanTagOperation>[1]
-): void {
-  addProjectOperationToBatch(batch, projectUuid, input, removePlanTagOperation);
-}
+const planRemoveTagRoutes = defineProjectOperationRoutes(removePlanTagOperation);
+export const writePlanRemoveTag = planRemoveTagRoutes.write;
+export const addPlanRemoveTagToBatch = planRemoveTagRoutes.addToBatch;
 
 export async function writePlanListAdd(
   db: Database,
@@ -652,7 +538,13 @@ export async function writePlanListRemove(
     | { planUuid: string; list: 'reviewIssues'; value: SyncReviewIssueValue }
     | { planUuid: string; list: Exclude<SyncPlanListName, 'reviewIssues'>; value: string }
 ): Promise<SyncWriteResult> {
-  return writeProjectOperation(db, config, projectUuid, input as never, removePlanListItemOperation);
+  return writeProjectOperation(
+    db,
+    config,
+    projectUuid,
+    input as never,
+    removePlanListItemOperation
+  );
 }
 
 export function addPlanListRemoveToBatch(
@@ -665,39 +557,13 @@ export function addPlanListRemoveToBatch(
   addProjectOperationToBatch(batch, projectUuid, input as never, removePlanListItemOperation);
 }
 
-export async function writePlanSetParent(
-  db: Database,
-  config: TimConfig,
-  projectUuid: string,
-  input: Parameters<typeof setPlanParentOperation>[1]
-): Promise<SyncWriteResult> {
-  return writeProjectOperation(db, config, projectUuid, input, setPlanParentOperation);
-}
+const planSetParentRoutes = defineProjectOperationRoutes(setPlanParentOperation);
+export const writePlanSetParent = planSetParentRoutes.write;
+export const addPlanSetParentToBatch = planSetParentRoutes.addToBatch;
 
-export function addPlanSetParentToBatch(
-  batch: SyncBatchHandle,
-  projectUuid: string,
-  input: Parameters<typeof setPlanParentOperation>[1]
-): void {
-  addProjectOperationToBatch(batch, projectUuid, input, setPlanParentOperation);
-}
-
-export async function writePlanDelete(
-  db: Database,
-  config: TimConfig,
-  projectUuid: string,
-  input: Parameters<typeof deletePlanOperation>[1]
-): Promise<SyncWriteResult> {
-  return writeProjectOperation(db, config, projectUuid, input, deletePlanOperation);
-}
-
-export function addPlanDeleteToBatch(
-  batch: SyncBatchHandle,
-  projectUuid: string,
-  input: Parameters<typeof deletePlanOperation>[1]
-): void {
-  addProjectOperationToBatch(batch, projectUuid, input, deletePlanOperation);
-}
+const planDeleteRoutes = defineProjectOperationRoutes(deletePlanOperation);
+export const writePlanDelete = planDeleteRoutes.write;
+export const addPlanDeleteToBatch = planDeleteRoutes.addToBatch;
 
 export async function writePlanPromoteTask(
   db: Database,

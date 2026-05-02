@@ -21,11 +21,7 @@ import {
   deleteProjectSettingOperation,
   setProjectSettingOperation,
 } from './operations.js';
-import {
-  enqueueBatch,
-  enqueueOperation,
-  listPendingOperations,
-} from './queue.js';
+import { enqueueBatch, enqueueOperation, listPendingOperations } from './queue.js';
 import { mergeCanonicalRefresh } from './snapshots.js';
 import { createBatchEnvelope } from './types.js';
 import { pruneSyncSequence } from './retention.js';
