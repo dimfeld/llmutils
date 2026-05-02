@@ -225,4 +225,3 @@ function readMaterializedFrontmatterSync(filePath: string): Record<string, unkno
     return null;
   }
 }
-
