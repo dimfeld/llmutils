@@ -13,6 +13,7 @@ import {
   upsertProjectionPlanInTransaction,
 } from '../db/plan.js';
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
+import { getSyncTombstone } from '../db/sync_tables.js';
 import { applyOperation } from './apply.js';
 import {
   addPlanDependencyOperation,
@@ -1065,6 +1066,8 @@ describe('persistent-node sync queue', () => {
 
     expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
     expect(getAssignment(db, project.id, PLAN_UUID)).toBeNull();
+    // Canonical tombstone written so the projector knows the plan is deleted
+    expect(getSyncTombstone(db, 'plan', `plan:${PLAN_UUID}`)).not.toBeNull();
   });
 
   test('mergeCanonicalRefresh leaves pending plan operations active after plan_deleted snapshots', async () => {
@@ -1193,6 +1196,8 @@ describe('persistent-node sync queue', () => {
     expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
     expect(operationRow(op.operationUuid).status).toBe('queued');
     expect(getPendingRollbackKeys(db)).toEqual([]);
+    // Canonical tombstone written so projector knows the plan never existed
+    expect(getSyncTombstone(db, 'plan', `plan:${PLAN_UUID}`)).not.toBeNull();
   });
 
   test('mergeCanonicalRefresh plan_deleted does not reject ops that only reference the deleted plan as depends_on', async () => {

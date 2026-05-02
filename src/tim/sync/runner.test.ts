@@ -304,7 +304,12 @@ describe('sync runner', () => {
     expect(operationStatus(db, op.operationUuid)).toBe('acked');
   });
 
-  test('runSyncCatchUpOnce fetches follow-up snapshots for locally rejected optimistic ops', async () => {
+  test('plan_deleted canonical merge does not trigger follow-up fetch; active promote_task op keeps destination plan in projection', async () => {
+    // Under the new projection model, plan_deleted writes a canonical tombstone
+    // and rebuilds the source plan's projection. It does NOT reject the pending
+    // promote_task op or generate follow-up snapshot keys. The destination plan
+    // created by the promote_task op stays visible until the main node explicitly
+    // rejects the op via a result transition.
     const db = createRunnerDb();
     seedPlan(db);
     const newPlanUuid = '44444444-4444-4444-8444-444444444444';
@@ -328,35 +333,20 @@ describe('sync runner', () => {
         currentSequenceId: 1,
       },
     });
-    clientMocks.httpFetchSnapshots
-      .mockResolvedValueOnce({
-        ok: true,
-        value: {
-          snapshots: [
-            {
-              type: 'plan_deleted',
-              projectUuid: PROJECT_UUID,
-              planUuid: PLAN_UUID,
-              deletedAt: '2026-01-01T00:00:00.000Z',
-            },
-          ],
-          currentSequenceId: 1,
-        },
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        value: {
-          snapshots: [
-            {
-              type: 'never_existed',
-              entityKey: `plan:${newPlanUuid}`,
-              targetType: 'plan',
-              planUuid: newPlanUuid,
-            },
-          ],
-          currentSequenceId: 1,
-        },
-      });
+    clientMocks.httpFetchSnapshots.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        snapshots: [
+          {
+            type: 'plan_deleted',
+            projectUuid: PROJECT_UUID,
+            planUuid: PLAN_UUID,
+            deletedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+        currentSequenceId: 1,
+      },
+    });
 
     await runSyncCatchUpOnce({
       db,
@@ -365,16 +355,21 @@ describe('sync runner', () => {
       token: 'token',
     });
 
-    expect(clientMocks.httpFetchSnapshots).toHaveBeenCalledTimes(2);
-    expect(clientMocks.httpFetchSnapshots.mock.calls[0]?.[3]).toEqual([`plan:${PLAN_UUID}`]);
-    expect(clientMocks.httpFetchSnapshots.mock.calls[1]?.[3]).toEqual(
-      expect.arrayContaining([`plan:${newPlanUuid}`, `task:${TASK_UUID}`])
-    );
-    expect(operationStatus(db, promoteOp.operationUuid)).toBe('rejected');
-    expect(getPlanByUuid(db, newPlanUuid)).toBeNull();
+    // Only one snapshot fetch — no follow-up keys generated
+    expect(clientMocks.httpFetchSnapshots).toHaveBeenCalledTimes(1);
+    // Source plan tombstoned; projection cleared
+    expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
+    // promote_task op stays active (canonical merge does not reject it)
+    expect(operationStatus(db, promoteOp.operationUuid)).toBe('queued');
+    // Destination plan still in projection because the op is active
+    expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
+    // No pending rollback keys written under the new model
+    expect(getPendingRollbackKeys(db)).toEqual([]);
   });
 
-  test('runSyncCatchUpOnce drains pending rollback keys on next run after a follow-up fetch failure', async () => {
+  test('never_existed for plan does not trigger follow-up fetch; active promote_task op keeps destination plan in projection', async () => {
+    // never_existed behaves like plan_deleted under the new model: tombstones
+    // the canonical store and rebuilds projection without rejecting queued ops.
     const db = createRunnerDb();
     seedPlan(db);
     const newPlanUuid = '44444444-4444-4444-8444-444444444445';
@@ -398,57 +393,15 @@ describe('sync runner', () => {
         currentSequenceId: 1,
       },
     });
-    clientMocks.httpFetchSnapshots
-      .mockResolvedValueOnce({
-        ok: true,
-        value: {
-          snapshots: [
-            {
-              type: 'plan_deleted',
-              projectUuid: PROJECT_UUID,
-              planUuid: PLAN_UUID,
-              deletedAt: '2026-01-01T00:00:00.000Z',
-            },
-          ],
-          currentSequenceId: 1,
-        },
-      })
-      .mockRejectedValueOnce(new Error('follow-up fetch failed'));
-
-    await expect(
-      runSyncCatchUpOnce({
-        db,
-        serverUrl: 'http://127.0.0.1:9',
-        nodeId: NODE_ID,
-        token: 'token',
-      })
-    ).rejects.toThrow('follow-up fetch failed');
-
-    expect(operationStatus(db, promoteOp.operationUuid)).toBe('rejected');
-    expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
-    expect(getPendingRollbackKeys(db)).toEqual(
-      expect.arrayContaining([`plan:${newPlanUuid}`, `task:${TASK_UUID}`])
-    );
-
-    clientMocks.httpCatchUp.mockResolvedValueOnce({
-      ok: true,
-      value: { invalidations: [], currentSequenceId: 1 },
-    });
     clientMocks.httpFetchSnapshots.mockResolvedValueOnce({
       ok: true,
       value: {
         snapshots: [
           {
             type: 'never_existed',
-            entityKey: `plan:${newPlanUuid}`,
+            entityKey: `plan:${PLAN_UUID}`,
             targetType: 'plan',
-            planUuid: newPlanUuid,
-          },
-          {
-            type: 'never_existed',
-            entityKey: `task:${TASK_UUID}`,
-            targetType: 'task',
-            taskUuid: TASK_UUID,
+            planUuid: PLAN_UUID,
           },
         ],
         currentSequenceId: 1,
@@ -462,17 +415,21 @@ describe('sync runner', () => {
       token: 'token',
     });
 
-    expect(getPlanByUuid(db, newPlanUuid)).toBeNull();
+    // Only one snapshot fetch — no follow-up keys generated
+    expect(clientMocks.httpFetchSnapshots).toHaveBeenCalledTimes(1);
+    // Source plan tombstoned; projection cleared
+    expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
+    // promote_task op stays active
+    expect(operationStatus(db, promoteOp.operationUuid)).toBe('queued');
+    // Destination plan still in projection
+    expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
     expect(getPendingRollbackKeys(db)).toEqual([]);
   });
 
-  test('runSyncCatchUpOnce clears task-keyed pending rollback when server omits the task snapshot', async () => {
-    // The real sync server's loadTaskSnapshot returns the owning plan snapshot
-    // when the task exists, and returns null (omits the entry) when the task
-    // is tombstoned. In neither case does it return a task-keyed snapshot. The
-    // pending rollback row for `task:<uuid>` must be cleared by the requested
-    // key after a successful fetch pass, not by the returned snapshot's own
-    // entity key.
+  test('promote_task rejection via result transition collapses destination plan from projection', async () => {
+    // When the main node rejects a promote_task op, applyOperationResultTransitions
+    // rebuilds the projection for all affected plans. The destination plan created
+    // optimistically must disappear, and the source task must be restored.
     const db = createRunnerDb();
     seedPlan(db);
     const newPlanUuid = '44444444-4444-4444-8444-444444444446';
@@ -487,56 +444,37 @@ describe('sync runner', () => {
       { originNodeId: NODE_ID, localSequence: 1001 }
     );
     enqueueOperation(db, promoteOp);
+    expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
+    // promote_task marks source task as done (not removes it)
+    expect(getPlanTasksByUuid(db, PLAN_UUID).find((t) => t.uuid === TASK_UUID)?.done).toBe(1);
 
-    clientMocks.httpCatchUp.mockResolvedValueOnce({
+    clientMocks.httpFlushOperations.mockResolvedValueOnce({
       ok: true,
       value: {
-        invalidations: [{ sequenceId: 1, entityKeys: [`plan:${PLAN_UUID}`] }],
-        currentSequenceId: 1,
+        results: [
+          {
+            operationId: promoteOp.operationUuid,
+            status: 'rejected',
+            error: 'promote not allowed',
+          },
+        ],
+        currentSequenceId: 0,
       },
     });
-    clientMocks.httpFetchSnapshots
-      .mockResolvedValueOnce({
-        ok: true,
-        value: {
-          snapshots: [
-            {
-              type: 'plan_deleted',
-              projectUuid: PROJECT_UUID,
-              planUuid: PLAN_UUID,
-              deletedAt: '2026-01-01T00:00:00.000Z',
-            },
-          ],
-          currentSequenceId: 1,
-        },
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        value: {
-          // Mimic real loadCanonicalSnapshot: only the optimistic plan comes
-          // back as never_existed; the task-keyed request gets no entry
-          // (server treats source-plan deletion as task tombstone, returns null).
-          snapshots: [
-            {
-              type: 'never_existed',
-              entityKey: `plan:${newPlanUuid}`,
-              targetType: 'plan',
-              planUuid: newPlanUuid,
-            },
-          ],
-          currentSequenceId: 1,
-        },
-      });
 
-    await runSyncCatchUpOnce({
+    await flushPendingOperationsOnce({
       db,
       serverUrl: 'http://127.0.0.1:9',
       nodeId: NODE_ID,
       token: 'token',
     });
 
+    // Rejection triggers projection rebuild via applyOperationResultTransitions
+    expect(operationStatus(db, promoteOp.operationUuid)).toBe('rejected');
+    // Destination plan disappears (no active op creates it anymore)
     expect(getPlanByUuid(db, newPlanUuid)).toBeNull();
-    expect(getPendingRollbackKeys(db)).toEqual([]);
+    // Source task reverted to not-done (projection rebuilt from canonical)
+    expect(getPlanTasksByUuid(db, PLAN_UUID).find((t) => t.uuid === TASK_UUID)?.done).toBe(0);
   });
 
   test('runSyncCatchUpOnce bounds recursive never_existed follow-up snapshots', async () => {
