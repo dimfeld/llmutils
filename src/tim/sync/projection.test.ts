@@ -781,6 +781,40 @@ describe('rebuildPlanProjection', () => {
     ).not.toContain(PLAN_B_UUID);
     expect(getPlanByUuid(db, PLAN_C_UUID)?.parent_uuid).toBeNull();
     expect(getPlanByUuid(db, PLAN_B_UUID)).toBeNull();
+
+    await enqueueOperation(
+      db,
+      await setPlanScalarOperation(
+        PROJECT_UUID,
+        {
+          planUuid: PLAN_A_UUID,
+          field: 'status',
+          value: 'in_progress',
+        },
+        { originNodeId: NODE_A, localSequence: 2 }
+      )
+    );
+
+    expect(getPlanByUuid(db, PLAN_A_UUID)?.status).toBe('in_progress');
+    expect(
+      getPlanDependenciesByUuid(db, PLAN_A_UUID).map((dep) => dep.depends_on_uuid)
+    ).not.toContain(PLAN_B_UUID);
+
+    await enqueueOperation(
+      db,
+      await setPlanScalarOperation(
+        PROJECT_UUID,
+        {
+          planUuid: PLAN_C_UUID,
+          field: 'status',
+          value: 'in_progress',
+        },
+        { originNodeId: NODE_A, localSequence: 3 }
+      )
+    );
+
+    expect(getPlanByUuid(db, PLAN_C_UUID)?.status).toBe('in_progress');
+    expect(getPlanByUuid(db, PLAN_C_UUID)?.parent_uuid).toBeNull();
   });
 
   test('promote_task: creates destination plan and marks source task done', async () => {

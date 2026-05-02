@@ -5,6 +5,7 @@ import {
   listPendingOperations,
   markOperationFailedRetryable,
   markOperationSending,
+  prunePlanRefsForTerminalOps,
   resetSendingOperations,
   subscribeToQueueChanges,
   type CanonicalSnapshot,
@@ -412,6 +413,9 @@ class WebSocketSyncClient implements SyncClient {
 
     await this.fetchAndMergeSnapshots([...snapshotKeys]);
     applyOperationResultTransitions(this.options.db, transitions);
+    if (hasTerminalOperationResults(transitions)) {
+      prunePlanRefsForTerminalOps(this.options.db);
+    }
     if (this.flushProcessedOperationUuids) {
       for (const result of transitions) {
         this.flushProcessedOperationUuids.add(result.operationId);
@@ -579,6 +583,13 @@ class WebSocketSyncClient implements SyncClient {
     clearTimeout(waiter.timer);
     waiter.resolve(snapshots);
   }
+}
+
+function hasTerminalOperationResults(results: SyncOperationResult[]): boolean {
+  return results.some(
+    (result) =>
+      result.status === 'applied' || result.status === 'conflict' || result.status === 'rejected'
+  );
 }
 
 function rowToEnvelope(row: SyncOperationQueueRow): SyncOperationEnvelope {

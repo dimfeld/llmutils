@@ -180,7 +180,8 @@ export function rebuildPlanProjection(db: Database, planUuid: string): void {
 }
 
 export function rebuildPlanProjectionInTransaction(db: Database, planUuid: string): void {
-  const canonical = readCanonicalPlanState(db, planUuid);
+  const locallyDeletedPlanUuids = readLocallyDeletedPlanUuids(db);
+  const canonical = readCanonicalPlanState(db, planUuid, locallyDeletedPlanUuids);
   const activeRows = readActivePlanOperationRows(db, planUuid);
   const existingProjection = db
     .prepare('SELECT base_commit, base_change_id FROM plan WHERE uuid = ?')
@@ -202,7 +203,7 @@ export function rebuildPlanProjectionInTransaction(db: Database, planUuid: strin
     return;
   }
 
-  const adapter = new ProjectionPlanAdapter(db, project, canonical);
+  const adapter = new ProjectionPlanAdapter(db, project, canonical, locallyDeletedPlanUuids);
   for (const row of activeRows) {
     const op = assertValidPayload(JSON.parse(row.payload));
     applyOperationTo(
@@ -246,32 +247,67 @@ interface PlanState {
   tags: PlanTagRow[];
 }
 
-function readCanonicalPlanState(db: Database, planUuid: string): PlanState {
+function readCanonicalPlanState(
+  db: Database,
+  planUuid: string,
+  locallyDeletedPlanUuids: ReadonlySet<string> = new Set()
+): PlanState {
   if (hasPlanTombstone(db, planUuid)) {
     return { projectUuid: null, plan: null, tasks: [], dependencies: [], tags: [] };
   }
-  const plan = db
+  const planRow = db
     .prepare('SELECT * FROM plan_canonical WHERE uuid = ?')
     .get(planUuid) as PlanRow | null;
-  if (!plan) {
+  if (!planRow) {
     return { projectUuid: null, plan: null, tasks: [], dependencies: [], tags: [] };
   }
-  const project = getProjectById(db, plan.project_id);
+  const project = getProjectById(db, planRow.project_id);
+  const plan = locallyDeletedPlanUuids.has(planUuid)
+    ? null
+    : {
+        ...planRow,
+        parent_uuid:
+          planRow.parent_uuid && locallyDeletedPlanUuids.has(planRow.parent_uuid)
+            ? null
+            : planRow.parent_uuid,
+      };
   return {
     projectUuid: project?.uuid ?? null,
     plan,
     tasks: db
       .prepare('SELECT * FROM task_canonical WHERE plan_uuid = ? ORDER BY task_index, id')
       .all(planUuid) as PlanTaskRow[],
-    dependencies: db
-      .prepare(
-        'SELECT plan_uuid, depends_on_uuid FROM plan_dependency_canonical WHERE plan_uuid = ? ORDER BY depends_on_uuid'
-      )
-      .all(planUuid) as PlanDependencyRow[],
+    dependencies: (
+      db
+        .prepare(
+          'SELECT plan_uuid, depends_on_uuid FROM plan_dependency_canonical WHERE plan_uuid = ? ORDER BY depends_on_uuid'
+        )
+        .all(planUuid) as PlanDependencyRow[]
+    ).filter((dependency) => !locallyDeletedPlanUuids.has(dependency.depends_on_uuid)),
     tags: db
       .prepare('SELECT plan_uuid, tag FROM plan_tag_canonical WHERE plan_uuid = ? ORDER BY tag')
       .all(planUuid) as PlanTagRow[],
   };
+}
+
+function readLocallyDeletedPlanUuids(db: Database): Set<string> {
+  const rows = db
+    .prepare(
+      `
+        SELECT target_key
+        FROM sync_operation
+        WHERE operation_type = 'plan.delete'
+          AND status IN (${ACTIVE_PROJECTION_OPERATION_STATUSES.map(() => '?').join(', ')})
+      `
+    )
+    .all(...ACTIVE_PROJECTION_OPERATION_STATUSES) as Array<{ target_key: string }>;
+  const deleted = new Set<string>();
+  for (const row of rows) {
+    if (row.target_key.startsWith('plan:')) {
+      deleted.add(row.target_key.slice('plan:'.length));
+    }
+  }
+  return deleted;
 }
 
 function hasPlanTombstone(db: Database, planUuid: string): boolean {
@@ -311,7 +347,8 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
   constructor(
     private readonly db: Database,
     project: { id: number; uuid: string },
-    initial: PlanState
+    initial: PlanState,
+    private readonly locallyDeletedPlanUuids: ReadonlySet<string>
   ) {
     this.project = project;
     if (initial.plan) {
@@ -332,6 +369,9 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
   }
 
   getPlan(planUuid: string): ApplyOperationToPlan | null {
+    if (this.locallyDeletedPlanUuids.has(planUuid)) {
+      return null;
+    }
     if (!this.plans.has(planUuid)) {
       this.loadCanonicalPlan(planUuid);
     }
@@ -354,6 +394,9 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
   }
 
   setPlan(plan: ApplyOperationToPlan): void {
+    if (this.locallyDeletedPlanUuids.has(plan.uuid)) {
+      return;
+    }
     this.plans.set(plan.uuid, { ...plan });
     if (!this.tasks.has(plan.uuid)) {
       this.tasks.set(plan.uuid, []);
@@ -393,7 +436,9 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
   setDependencies(planUuid: string, dependencies: PlanDependencyRow[]): void {
     this.dependencies.set(
       planUuid,
-      dependencies.map((dependency) => ({ ...dependency }))
+      dependencies
+        .filter((dependency) => !this.locallyDeletedPlanUuids.has(dependency.depends_on_uuid))
+        .map((dependency) => ({ ...dependency }))
     );
   }
 
@@ -440,7 +485,7 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
   }
 
   private loadCanonicalPlan(planUuid: string): void {
-    const state = readCanonicalPlanState(this.db, planUuid);
+    const state = readCanonicalPlanState(this.db, planUuid, this.locallyDeletedPlanUuids);
     this.plans.set(planUuid, state.plan ? { ...state.plan } : null);
     this.tasks.set(
       planUuid,

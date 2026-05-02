@@ -367,12 +367,10 @@ export function enqueueBatch(
     );
     const batch = assertValidBatchEnvelope({ ...input, operations });
     const affectedPlanUuids = new Set<string>();
-    const deletedPlanUuids = new Set<string>();
     const affectedProjectSettings = new Map<string, ProjectSettingPayload>();
     for (const operation of operations) {
       insertQueuedOperation(db, operation, batch.batchId, batch.atomic === true);
-      collectAffectedProjectionPlanUuids(affectedPlanUuids, operation.op);
-      collectDeletedProjectionPlanUuids(deletedPlanUuids, operation.op);
+      collectAffectedProjectionPlanUuids(db, affectedPlanUuids, operation.op);
       if (
         operation.op.type === 'project_setting.set' ||
         operation.op.type === 'project_setting.delete'
@@ -385,9 +383,6 @@ export function enqueueBatch(
     }
     for (const planUuid of affectedPlanUuids) {
       rebuildPlanProjectionInTransaction(db, planUuid);
-    }
-    for (const planUuid of deletedPlanUuids) {
-      cleanupDeletedPlanInboundProjectionRefsInTransaction(db, planUuid);
     }
     for (const payload of affectedProjectSettings.values()) {
       rebuildProjectSettingProjectionForPayload(db, payload);
@@ -725,8 +720,9 @@ export function pruneAcknowledgedOperations(
 }
 
 export function prunePlanRefsForTerminalOps(db: Database): number {
-  const result = db.prepare(
-    `
+  const result = db
+    .prepare(
+      `
       DELETE FROM sync_operation_plan_ref
       WHERE operation_uuid IN (
         SELECT operation_uuid
@@ -734,7 +730,8 @@ export function prunePlanRefsForTerminalOps(db: Database): number {
         WHERE status IN (${TERMINAL_OPERATION_STATUSES.map(() => '?').join(', ')})
       )
     `
-  ).run(...TERMINAL_OPERATION_STATUSES);
+    )
+    .run(...TERMINAL_OPERATION_STATUSES);
   return result.changes;
 }
 
@@ -926,19 +923,17 @@ function rebuildQueuedOperationProjectionInTransaction(
     rebuildProjectSettingProjectionForPayload(db, op);
     return;
   }
-  for (const planUuid of getAffectedProjectionPlanUuids(op)) {
+  for (const planUuid of getAffectedProjectionPlanUuids(db, op)) {
     rebuildPlanProjectionInTransaction(db, planUuid);
-  }
-  if (op.type === 'plan.delete') {
-    cleanupDeletedPlanInboundProjectionRefsInTransaction(db, op.planUuid);
   }
 }
 
 function collectAffectedProjectionPlanUuids(
+  db: Database,
   target: Set<string>,
   payload: SyncOperationPayload
 ): void {
-  for (const planUuid of getAffectedProjectionPlanUuids(payload)) {
+  for (const planUuid of getAffectedProjectionPlanUuids(db, payload)) {
     target.add(planUuid);
   }
 }
@@ -947,15 +942,6 @@ type ProjectSettingPayload = Extract<
   SyncOperationPayload,
   { type: 'project_setting.set' | 'project_setting.delete' }
 >;
-
-function collectDeletedProjectionPlanUuids(
-  target: Set<string>,
-  payload: SyncOperationPayload
-): void {
-  if (payload.type === 'plan.delete') {
-    target.add(payload.planUuid);
-  }
-}
 
 const PROJECTION_REBUILD_PLAN_REF_ROLES = new Set<SyncOperationPlanRefRole>([
   'target',
@@ -966,24 +952,25 @@ const PROJECTION_REBUILD_PLAN_REF_ROLES = new Set<SyncOperationPlanRefRole>([
   'new_plan',
 ]);
 
-function getAffectedProjectionPlanUuids(payload: SyncOperationPayload): string[] {
+function getAffectedProjectionPlanUuids(db: Database, payload: SyncOperationPayload): string[] {
   if (payload.type === 'project_setting.set' || payload.type === 'project_setting.delete') {
     return [];
   }
-  return [
-    ...new Set(
-      getSyncOperationPlanRefs(payload)
-        .filter((ref) => PROJECTION_REBUILD_PLAN_REF_ROLES.has(ref.role))
-        .map((ref) => ref.planUuid)
-    ),
-  ];
+  const affected = new Set(
+    getSyncOperationPlanRefs(payload)
+      .filter((ref) => PROJECTION_REBUILD_PLAN_REF_ROLES.has(ref.role))
+      .map((ref) => ref.planUuid)
+  );
+  if (payload.type === 'plan.delete') {
+    for (const ownerPlanUuid of getInboundProjectionOwnerPlanUuids(db, payload.planUuid)) {
+      affected.add(ownerPlanUuid);
+    }
+  }
+  return [...affected];
 }
 
-function cleanupDeletedPlanInboundProjectionRefsInTransaction(
-  db: Database,
-  deletedPlanUuid: string
-): void {
-  const ownerRows = db
+function getInboundProjectionOwnerPlanUuids(db: Database, deletedPlanUuid: string): string[] {
+  const rows = db
     .prepare(
       `
         SELECT plan_uuid
@@ -993,16 +980,20 @@ function cleanupDeletedPlanInboundProjectionRefsInTransaction(
         SELECT uuid AS plan_uuid
         FROM plan
         WHERE parent_uuid = ?
+        UNION
+        SELECT plan_uuid
+        FROM plan_dependency_canonical
+        WHERE depends_on_uuid = ?
+        UNION
+        SELECT uuid AS plan_uuid
+        FROM plan_canonical
+        WHERE parent_uuid = ?
       `
     )
-    .all(deletedPlanUuid, deletedPlanUuid) as Array<{ plan_uuid: string }>;
-
-  for (const { plan_uuid: ownerPlanUuid } of ownerRows) {
-    rebuildPlanProjectionInTransaction(db, ownerPlanUuid);
-  }
-
-  db.prepare('DELETE FROM plan_dependency WHERE depends_on_uuid = ?').run(deletedPlanUuid);
-  db.prepare('UPDATE plan SET parent_uuid = NULL WHERE parent_uuid = ?').run(deletedPlanUuid);
+    .all(deletedPlanUuid, deletedPlanUuid, deletedPlanUuid, deletedPlanUuid) as Array<{
+    plan_uuid: string;
+  }>;
+  return rows.map((row) => row.plan_uuid);
 }
 
 function applyLocalOptimisticInTransaction(db: Database, operation: SyncOperationEnvelope): void {

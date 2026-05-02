@@ -644,6 +644,13 @@ describe('sync WebSocket client', () => {
         .all()
         .map((row) => (row as { status: string }).status)
     ).toEqual(['rejected', 'rejected']);
+    expect(
+      (
+        localDb.prepare('SELECT COUNT(*) AS count FROM sync_operation_plan_ref').get() as {
+          count: number;
+        }
+      ).count
+    ).toBe(0);
   });
 
   test('rowsToFlushFrames refuses to send a partial batch subset', async () => {
