@@ -89,6 +89,13 @@ function collectMissingReferenceIds(plan: PlanSchemaInput): number[] {
     }
   }
 
+  if (
+    typeof plan.discoveredFrom === 'number' &&
+    !planWithReferences.references?.[String(plan.discoveredFrom)]
+  ) {
+    missing.add(plan.discoveredFrom);
+  }
+
   return [...missing];
 }
 
@@ -183,6 +190,7 @@ export function toPlanUpsertInput(
   simple?: boolean | null;
   tdd?: boolean | null;
   discoveredFrom?: number | null;
+  discoveredFromUuid?: string | null;
   issue?: string[] | null;
   pullRequest?: string[] | null;
   assignedTo?: string | null;
@@ -219,6 +227,10 @@ export function toPlanUpsertInput(
         .filter((dependencyUuid): dependencyUuid is string => typeof dependencyUuid === 'string')
     ),
   ];
+  const discoveredFromUuid =
+    typeof plan.discoveredFrom === 'number'
+      ? (getPlanReferenceUuid(plan, plan.discoveredFrom, idToUuid) ?? null)
+      : null;
 
   return {
     planId: plan.id,
@@ -237,6 +249,7 @@ export function toPlanUpsertInput(
     simple: typeof plan.simple === 'boolean' ? plan.simple : null,
     tdd: typeof plan.tdd === 'boolean' ? plan.tdd : null,
     discoveredFrom: plan.discoveredFrom ?? null,
+    discoveredFromUuid,
     issue: plan.issue ?? null,
     pullRequest: plan.pullRequest ?? null,
     assignedTo: plan.assignedTo ?? null,

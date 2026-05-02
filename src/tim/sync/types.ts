@@ -77,7 +77,7 @@ export const SyncPlanCreatePayloadSchema = z.object({
   branch: z.string().nullable().optional(),
   simple: z.boolean().nullable().optional(),
   tdd: z.boolean().nullable().optional(),
-  discoveredFrom: z.number().int().positive().nullable().optional(),
+  discoveredFrom: SyncUuidSchema.nullable().optional(),
   assignedTo: z.string().nullable().optional(),
   baseBranch: z.string().nullable().optional(),
   temp: z.boolean().nullable().optional(),
@@ -142,6 +142,17 @@ export const SyncPlanSetScalarPayloadSchema = z
         code: 'custom',
         path: ['value'],
         message: 'epic value must be boolean',
+      });
+    }
+    if (
+      payload.field === 'discovered_from' &&
+      payload.value !== null &&
+      !SyncUuidSchema.safeParse(payload.value).success
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['value'],
+        message: 'discovered_from value must be a plan UUID or null',
       });
     }
   });

@@ -59,6 +59,7 @@ function planCreateFixture(): PlanSchema {
     assignedTo: 'agent-one',
     temp: true,
     discoveredFrom: 7,
+    references: { '7': '77777777-7777-4777-8777-777777777777' },
     branch: 'feature/sync-create',
     baseBranch: 'main',
     simple: true,
@@ -147,6 +148,7 @@ describe('write_router integration: writePlanFile routing modes', () => {
   let originalCwd: string;
 
   const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
+  const DISCOVERED_FROM_UUID = '77777777-7777-4777-8777-777777777777';
 
   beforeEach(async () => {
     originalCwd = process.cwd();
@@ -225,14 +227,28 @@ describe('write_router integration: writePlanFile routing modes', () => {
 
   // -------------------------------------------------------------------------
   test('local-operation: writePlanFile applies plan.create through the operation log', async () => {
+    await writePlanFile(
+      null,
+      {
+        id: 7,
+        uuid: DISCOVERED_FROM_UUID,
+        title: 'Discovery source',
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: tempDir }
+    );
     const plan = planCreateFixture();
 
     await writePlanFile(null, plan, { cwdForIdentity: tempDir });
 
     const db = getDatabase();
     expectCreatedPlanMetadata(db, plan.uuid!);
-    expect(syncOpRows(db)).toEqual([{ operation_type: 'plan.create', status: 'applied' }]);
-    expect(sequenceCount(db)).toBe(1);
+    expect(syncOpRows(db)).toEqual([
+      { operation_type: 'plan.create', status: 'applied' },
+      { operation_type: 'plan.create', status: 'applied' },
+    ]);
+    expect(sequenceCount(db)).toBe(2);
   });
 
   // -------------------------------------------------------------------------
@@ -290,6 +306,17 @@ describe('write_router integration: writePlanFile routing modes', () => {
       },
     } as TimConfig;
 
+    await writePlanFile(
+      null,
+      {
+        id: 7,
+        uuid: DISCOVERED_FROM_UUID,
+        title: 'Discovery source',
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: tempDir }
+    );
     const plan = planCreateFixture();
     await writePlanFile(null, plan, {
       cwdForIdentity: tempDir,
@@ -298,7 +325,10 @@ describe('write_router integration: writePlanFile routing modes', () => {
 
     const db = getDatabase();
     expectCreatedPlanMetadata(db, plan.uuid!);
-    expect(syncOpRows(db)).toEqual([{ operation_type: 'plan.create', status: 'applied' }]);
+    expect(syncOpRows(db)).toEqual([
+      { operation_type: 'plan.create', status: 'applied' },
+      { operation_type: 'plan.create', status: 'applied' },
+    ]);
   });
 
   // -------------------------------------------------------------------------
@@ -313,6 +343,17 @@ describe('write_router integration: writePlanFile routing modes', () => {
       },
     } as TimConfig;
 
+    await writePlanFile(
+      null,
+      {
+        id: 7,
+        uuid: DISCOVERED_FROM_UUID,
+        title: 'Discovery source',
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: tempDir, config: persistentConfig }
+    );
     const plan = planCreateFixture();
     await writePlanFile(null, plan, {
       cwdForIdentity: tempDir,
@@ -321,15 +362,20 @@ describe('write_router integration: writePlanFile routing modes', () => {
 
     const db = getDatabase();
     expectCreatedPlanMetadata(db, plan.uuid!);
-    expect(syncOpRows(db)).toEqual([{ operation_type: 'plan.create', status: 'queued' }]);
+    expect(syncOpRows(db)).toEqual([
+      { operation_type: 'plan.create', status: 'queued' },
+      { operation_type: 'plan.create', status: 'queued' },
+    ]);
     const payload = db
-      .prepare('SELECT payload FROM sync_operation WHERE operation_type = ?')
-      .get('plan.create') as { payload: string };
+      .prepare(
+        "SELECT payload FROM sync_operation WHERE operation_type = ? AND json_extract(payload, '$.planUuid') = ?"
+      )
+      .get('plan.create', plan.uuid!) as { payload: string };
     expect(JSON.parse(payload.payload)).toMatchObject({
       type: 'plan.create',
       assignedTo: 'agent-one',
       temp: true,
-      discoveredFrom: 7,
+      discoveredFrom: DISCOVERED_FROM_UUID,
       branch: 'feature/sync-create',
       baseBranch: 'main',
       docs: ['docs/sync.md'],

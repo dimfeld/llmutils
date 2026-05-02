@@ -1029,6 +1029,9 @@ function applyPlanCreate(
   if (op.parentUuid) {
     requirePlan(db, project, op.parentUuid, envelope);
   }
+  if (op.discoveredFrom) {
+    requirePlan(db, project, op.discoveredFrom, envelope);
+  }
   for (const dependencyUuid of new Set(op.dependencies)) {
     requirePlan(db, project, dependencyUuid, envelope);
     if (dependencyUuid === op.planUuid || dependencyReaches(db, dependencyUuid, op.planUuid)) {
@@ -1083,7 +1086,7 @@ function applyPlanCreate(
     op.branch ?? null,
     typeof op.simple === 'boolean' ? (op.simple ? 1 : 0) : null,
     typeof op.tdd === 'boolean' ? (op.tdd ? 1 : 0) : null,
-    op.discoveredFrom ?? null,
+    resolveLocalPlanId(db, project.id, op.discoveredFrom),
     JSON.stringify(op.issue),
     JSON.stringify(op.pullRequest),
     op.assignedTo ?? null,
@@ -1151,7 +1154,17 @@ function applyPlanScalar(
 ): Mutation[] {
   const plan = requirePlan(db, project, envelope.op.planUuid, envelope);
   const column = envelope.op.field;
-  const value = envelope.op.field === 'epic' ? (envelope.op.value ? 1 : 0) : envelope.op.value;
+  if (envelope.op.field === 'discovered_from' && typeof envelope.op.value === 'string') {
+    requirePlan(db, project, envelope.op.value, envelope);
+  }
+  const value =
+    envelope.op.field === 'epic'
+      ? envelope.op.value
+        ? 1
+        : 0
+      : envelope.op.field === 'discovered_from'
+        ? resolveLocalPlanId(db, project.id, envelope.op.value as string | null)
+        : envelope.op.value;
   if ((plan as unknown as Record<string, unknown>)[column] === value) {
     return [];
   }
@@ -1168,6 +1181,20 @@ function applyPlanScalar(
     removeAssignment(db, project.id, envelope.op.planUuid);
   }
   return [planMutation(db, envelope.op.planUuid)];
+}
+
+function resolveLocalPlanId(
+  db: Database,
+  projectId: number,
+  planUuid: string | null | undefined
+): number | null {
+  if (!planUuid) {
+    return null;
+  }
+  const row = db
+    .prepare('SELECT plan_id FROM plan WHERE project_id = ? AND uuid = ?')
+    .get(projectId, planUuid) as { plan_id: number } | null;
+  return row?.plan_id ?? null;
 }
 
 function applyPlanText(

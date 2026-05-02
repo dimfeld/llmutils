@@ -7,6 +7,7 @@ export type SyncOperationPlanRefRole =
   | 'parent'
   | 'new_parent'
   | 'previous_parent'
+  | 'discovered_from'
   | 'depends_on'
   | 'dependency';
 
@@ -33,11 +34,11 @@ export function getSyncOperationPlanRefs(
     case 'plan.create':
       addRef(parsed.planUuid, 'target');
       addRef(parsed.parentUuid, 'parent');
+      addRef(parsed.discoveredFrom, 'discovered_from');
       for (const dependency of parsed.dependencies) {
         addRef(dependency, 'dependency');
       }
       break;
-    case 'plan.set_scalar':
     case 'plan.patch_text':
     case 'plan.add_task':
     case 'plan.update_task_text':
@@ -49,6 +50,12 @@ export function getSyncOperationPlanRefs(
     case 'plan.remove_list_item':
     case 'plan.delete':
       addRef(parsed.planUuid, 'target');
+      break;
+    case 'plan.set_scalar':
+      addRef(parsed.planUuid, 'target');
+      if (parsed.field === 'discovered_from' && typeof parsed.value === 'string') {
+        addRef(parsed.value, 'discovered_from');
+      }
       break;
     case 'plan.add_dependency':
     case 'plan.remove_dependency':
