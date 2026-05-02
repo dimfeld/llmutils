@@ -13,7 +13,7 @@ import {
 } from './db/plan.js';
 import { getProjectById } from './db/project.js';
 import { generatePlanFileContent } from './plans.js';
-import type { PlanSchema } from './planSchema.js';
+import { normalizeContainerToEpic, phaseSchema, type PlanSchema } from './planSchema.js';
 import { planRowToSchemaInput } from './plans_db.js';
 
 const MATERIALIZED_DIR = path.join('.tim', 'plans');
@@ -45,6 +45,10 @@ export function refreshExistingPrimaryMaterializedPlans(
 
       const filePath = getMaterializedPlanPath(project.last_git_root, planId);
       if (readMaterializedPlanRoleSync(filePath) !== 'primary') {
+        continue;
+      }
+
+      if (isPrimaryMaterializedPlanDirty(filePath)) {
         continue;
       }
 
@@ -98,10 +102,26 @@ function readMaterializedPlanRoleSync(filePath: string): 'primary' | 'reference'
 }
 
 function unlinkMaterializedPrimary(filePath: string): void {
-  unlinkSync(filePath);
+  if (existsSync(filePath)) {
+    unlinkSync(filePath);
+  }
   const shadowPath = getShadowPlanPathForFile(filePath);
   if (existsSync(shadowPath)) {
     unlinkSync(shadowPath);
+  }
+}
+
+function isPrimaryMaterializedPlanDirty(filePath: string): boolean {
+  const shadowPath = getShadowPlanPathForFile(filePath);
+  if (!existsSync(shadowPath)) {
+    return true;
+  }
+
+  try {
+    readShadowPlanFileSync(shadowPath);
+    return readFileSync(filePath, 'utf8') !== readFileSync(shadowPath, 'utf8');
+  } catch {
+    return true;
   }
 }
 
@@ -150,7 +170,23 @@ function findProjectionProjectIdForPlanUuid(db: Database, planUuid: string): num
       `
     )
     .get(planUuid) as { project_id: number } | null;
-  return ref?.project_id ?? null;
+  if (ref?.project_id) {
+    return ref.project_id;
+  }
+
+  const tombstone = db
+    .prepare(
+      `
+        SELECT p.id AS project_id
+        FROM sync_tombstone t
+        JOIN project p ON p.uuid = t.project_uuid
+        WHERE t.entity_type = 'plan'
+          AND t.entity_key = ?
+        LIMIT 1
+      `
+    )
+    .get(`plan:${planUuid}`) as { project_id: number } | null;
+  return tombstone?.project_id ?? null;
 }
 
 function findPlanIdForExistingMaterialization(repoRoot: string, planUuid: string): number | null {
@@ -189,4 +225,47 @@ function readMaterializedFrontmatterSync(filePath: string): Record<string, unkno
   } catch {
     return null;
   }
+}
+
+function readShadowPlanFileSync(filePath: string): PlanSchema {
+  const content = readFileSync(filePath, 'utf8');
+
+  if (!content.startsWith('---\n')) {
+    throw new Error(`Shadow plan file ${filePath} has no frontmatter`);
+  }
+
+  const endDelimiterIndex = content.indexOf('\n---\n', 4);
+  if (endDelimiterIndex === -1) {
+    throw new Error(`Shadow plan file ${filePath} has no closing frontmatter delimiter`);
+  }
+
+  const frontMatter = content.substring(4, endDelimiterIndex);
+  const markdownBody = content.substring(endDelimiterIndex + 5).trim();
+  const parsed = yaml.parse(frontMatter, {
+    uniqueKeys: false,
+  });
+  const planData =
+    parsed && typeof parsed === 'object'
+      ? normalizeContainerToEpic(parsed as Record<string, unknown>)
+      : {};
+
+  if (markdownBody) {
+    if (planData.details) {
+      planData.details = `${planData.details}\n\n${markdownBody}`;
+    } else {
+      planData.details = markdownBody;
+    }
+  } else {
+    planData.details ??= '';
+  }
+
+  const result = phaseSchema.safeParse(planData);
+  if (!result.success) {
+    const errors = result.error.issues
+      .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
+      .join('\n');
+    throw new Error(`Invalid shadow plan file ${filePath}:\n${errors}`);
+  }
+
+  return normalizeContainerToEpic(result.data);
 }

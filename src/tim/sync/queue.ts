@@ -753,6 +753,8 @@ export function mergeCanonicalRefresh(db: Database, snapshot: CanonicalSnapshot)
     return writeCanonicalSnapshot(db, nextSnapshot);
   });
   const affectedPlanUuids = merge.immediate(parsedSnapshot);
+  // File refresh intentionally runs after the SQLite transaction. A missed or
+  // dirty materialization self-heals on the next explicit materialize/sync pass.
   refreshExistingPrimaryMaterializedPlans(db, affectedPlanUuids);
   return affectedPlanUuids;
 }

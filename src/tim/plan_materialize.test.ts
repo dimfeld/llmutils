@@ -2022,6 +2022,67 @@ Details
     expect((await readPlanFile(planPath)).title).toBe('Canonical title after refresh');
   });
 
+  test.each([
+    [
+      'plan_deleted',
+      (projectUuid: string, planUuid: string) =>
+        ({
+          type: 'plan_deleted',
+          projectUuid,
+          planUuid,
+          deletedAt: '2026-05-01T00:00:00.000Z',
+        }) as const,
+    ],
+    [
+      'never_existed',
+      (_projectUuid: string, planUuid: string) =>
+        ({
+          type: 'never_existed',
+          entityKey: `plan:${planUuid}`,
+          targetType: 'plan',
+          planUuid,
+        }) as const,
+    ],
+  ])(
+    'mergeCanonicalRefresh removes primary materialized file and shadow after %s with no local refs',
+    async (_name, snapshotForPlan) => {
+      const { db, project } = await seedProject();
+      const planPath = await materializePlan(3, repoDir);
+      const shadowPath = getShadowPlanPath(repoDir, 3);
+
+      mergeCanonicalRefresh(
+        db,
+        snapshotForPlan(project.uuid, '33333333-3333-4333-8333-333333333333')
+      );
+
+      await expect(fs.access(planPath)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(fs.access(shadowPath)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(getPlanByPlanId(db, project.id, 3)).toBeNull();
+    }
+  );
+
+  test('mergeCanonicalRefresh leaves dirty primary materialized files untouched', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    const shadowPath = getShadowPlanPath(repoDir, 3);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Unsynced dirty file title';
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    mergeCanonicalRefresh(
+      db,
+      projectionPlanSnapshot(project.uuid, '33333333-3333-4333-8333-333333333333', {
+        title: 'Canonical title after dirty refresh',
+        revision: 10,
+      })
+    );
+
+    expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Canonical title after dirty refresh');
+    expect((await readPlanFile(planPath)).title).toBe('Unsynced dirty file title');
+    expect((await readPlanFile(shadowPath)).title).toBe('Primary plan');
+  });
+
   test('persistent materialized sync does not directly mutate projection for task reorders', async () => {
     const { db } = await seedProject();
     const planPath = await materializePlan(3, repoDir);

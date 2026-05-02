@@ -91,6 +91,8 @@ export function applyOperationResultTransitions(
     return [...planRebuilds];
   });
   const affectedPlanUuids = transition.immediate(results);
+  // File refresh intentionally runs after the SQLite transaction. A missed or
+  // dirty materialization self-heals on the next explicit materialize/sync pass.
   refreshExistingPrimaryMaterializedPlans(db, affectedPlanUuids);
   return affectedPlanUuids;
 }
