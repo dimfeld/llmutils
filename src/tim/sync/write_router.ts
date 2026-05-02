@@ -345,6 +345,31 @@ export function getProjectIdForUuid(db: Database, projectUuid: string): number {
   return project.id;
 }
 
+type ProjectOperationBuilder<Input> = (
+  projectUuid: string,
+  input: Input,
+  options: SyncOperationConstructorOptions
+) => Promise<SyncOperationEnvelope>;
+
+function writeProjectOperation<Input>(
+  db: Database,
+  config: TimConfig,
+  projectUuid: string,
+  input: Input,
+  build: ProjectOperationBuilder<Input>
+): Promise<SyncWriteResult> {
+  return routeSyncOperation(db, config, (options) => build(projectUuid, input, options));
+}
+
+function addProjectOperationToBatch<Input>(
+  batch: SyncBatchHandle,
+  projectUuid: string,
+  input: Input,
+  build: ProjectOperationBuilder<Input>
+): void {
+  batch.add((options) => build(projectUuid, input, options));
+}
+
 export async function writePlanCreate(
   db: Database,
   config: TimConfig,
@@ -372,9 +397,7 @@ export async function writePlanSetScalar(
   projectUuid: string,
   input: Parameters<typeof setPlanScalarOperation>[1]
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    setPlanScalarOperation(projectUuid, input, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input, setPlanScalarOperation);
 }
 
 export function addPlanSetScalarToBatch(
@@ -382,7 +405,7 @@ export function addPlanSetScalarToBatch(
   projectUuid: string,
   input: Parameters<typeof setPlanScalarOperation>[1]
 ): void {
-  batch.add((options) => setPlanScalarOperation(projectUuid, input, options));
+  addProjectOperationToBatch(batch, projectUuid, input, setPlanScalarOperation);
 }
 
 export async function writePlanSetStatus(
@@ -407,9 +430,7 @@ export async function writePlanPatchText(
   projectUuid: string,
   input: Parameters<typeof patchPlanTextOperation>[1]
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    patchPlanTextOperation(projectUuid, input, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input, patchPlanTextOperation);
 }
 
 export function addPlanPatchTextToBatch(
@@ -417,7 +438,7 @@ export function addPlanPatchTextToBatch(
   projectUuid: string,
   input: Parameters<typeof patchPlanTextOperation>[1]
 ): void {
-  batch.add((options) => patchPlanTextOperation(projectUuid, input, options));
+  addProjectOperationToBatch(batch, projectUuid, input, patchPlanTextOperation);
 }
 
 export async function writePlanPatchTextFromCurrent(
@@ -448,9 +469,7 @@ export async function writePlanAddTask(
   projectUuid: string,
   input: Parameters<typeof addPlanTaskOperation>[1]
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    addPlanTaskOperation(projectUuid, input, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input, addPlanTaskOperation);
 }
 
 export function addPlanAddTaskToBatch(
@@ -458,7 +477,7 @@ export function addPlanAddTaskToBatch(
   projectUuid: string,
   input: Parameters<typeof addPlanTaskOperation>[1]
 ): void {
-  batch.add((options) => addPlanTaskOperation(projectUuid, input, options));
+  addProjectOperationToBatch(batch, projectUuid, input, addPlanTaskOperation);
 }
 
 export async function writePlanUpdateTaskText(
@@ -467,9 +486,7 @@ export async function writePlanUpdateTaskText(
   projectUuid: string,
   input: Parameters<typeof updatePlanTaskTextOperation>[1]
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    updatePlanTaskTextOperation(projectUuid, input, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input, updatePlanTaskTextOperation);
 }
 
 export function addPlanUpdateTaskTextToBatch(
@@ -477,7 +494,7 @@ export function addPlanUpdateTaskTextToBatch(
   projectUuid: string,
   input: Parameters<typeof updatePlanTaskTextOperation>[1]
 ): void {
-  batch.add((options) => updatePlanTaskTextOperation(projectUuid, input, options));
+  addProjectOperationToBatch(batch, projectUuid, input, updatePlanTaskTextOperation);
 }
 
 export async function writePlanUpdateTaskTextFromCurrent(
@@ -510,9 +527,7 @@ export async function writePlanMarkTaskDone(
   projectUuid: string,
   input: Parameters<typeof markPlanTaskDoneOperation>[1]
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    markPlanTaskDoneOperation(projectUuid, input, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input, markPlanTaskDoneOperation);
 }
 
 export function addPlanMarkTaskDoneToBatch(
@@ -520,7 +535,7 @@ export function addPlanMarkTaskDoneToBatch(
   projectUuid: string,
   input: Parameters<typeof markPlanTaskDoneOperation>[1]
 ): void {
-  batch.add((options) => markPlanTaskDoneOperation(projectUuid, input, options));
+  addProjectOperationToBatch(batch, projectUuid, input, markPlanTaskDoneOperation);
 }
 
 export async function writePlanRemoveTask(
@@ -529,9 +544,7 @@ export async function writePlanRemoveTask(
   projectUuid: string,
   input: Parameters<typeof removePlanTaskOperation>[1]
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    removePlanTaskOperation(projectUuid, input, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input, removePlanTaskOperation);
 }
 
 export function addPlanRemoveTaskToBatch(
@@ -539,7 +552,7 @@ export function addPlanRemoveTaskToBatch(
   projectUuid: string,
   input: Parameters<typeof removePlanTaskOperation>[1]
 ): void {
-  batch.add((options) => removePlanTaskOperation(projectUuid, input, options));
+  addProjectOperationToBatch(batch, projectUuid, input, removePlanTaskOperation);
 }
 
 export async function writePlanAddDependency(
@@ -548,9 +561,7 @@ export async function writePlanAddDependency(
   projectUuid: string,
   input: Parameters<typeof addPlanDependencyOperation>[1]
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    addPlanDependencyOperation(projectUuid, input, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input, addPlanDependencyOperation);
 }
 
 export function addPlanAddDependencyToBatch(
@@ -558,7 +569,7 @@ export function addPlanAddDependencyToBatch(
   projectUuid: string,
   input: Parameters<typeof addPlanDependencyOperation>[1]
 ): void {
-  batch.add((options) => addPlanDependencyOperation(projectUuid, input, options));
+  addProjectOperationToBatch(batch, projectUuid, input, addPlanDependencyOperation);
 }
 
 export async function writePlanRemoveDependency(
@@ -567,9 +578,7 @@ export async function writePlanRemoveDependency(
   projectUuid: string,
   input: Parameters<typeof removePlanDependencyOperation>[1]
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    removePlanDependencyOperation(projectUuid, input, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input, removePlanDependencyOperation);
 }
 
 export function addPlanRemoveDependencyToBatch(
@@ -577,7 +586,7 @@ export function addPlanRemoveDependencyToBatch(
   projectUuid: string,
   input: Parameters<typeof removePlanDependencyOperation>[1]
 ): void {
-  batch.add((options) => removePlanDependencyOperation(projectUuid, input, options));
+  addProjectOperationToBatch(batch, projectUuid, input, removePlanDependencyOperation);
 }
 
 export async function writePlanAddTag(
@@ -586,9 +595,7 @@ export async function writePlanAddTag(
   projectUuid: string,
   input: Parameters<typeof addPlanTagOperation>[1]
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    addPlanTagOperation(projectUuid, input, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input, addPlanTagOperation);
 }
 
 export function addPlanAddTagToBatch(
@@ -596,7 +603,7 @@ export function addPlanAddTagToBatch(
   projectUuid: string,
   input: Parameters<typeof addPlanTagOperation>[1]
 ): void {
-  batch.add((options) => addPlanTagOperation(projectUuid, input, options));
+  addProjectOperationToBatch(batch, projectUuid, input, addPlanTagOperation);
 }
 
 export async function writePlanRemoveTag(
@@ -605,9 +612,7 @@ export async function writePlanRemoveTag(
   projectUuid: string,
   input: Parameters<typeof removePlanTagOperation>[1]
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    removePlanTagOperation(projectUuid, input, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input, removePlanTagOperation);
 }
 
 export function addPlanRemoveTagToBatch(
@@ -615,7 +620,7 @@ export function addPlanRemoveTagToBatch(
   projectUuid: string,
   input: Parameters<typeof removePlanTagOperation>[1]
 ): void {
-  batch.add((options) => removePlanTagOperation(projectUuid, input, options));
+  addProjectOperationToBatch(batch, projectUuid, input, removePlanTagOperation);
 }
 
 export async function writePlanListAdd(
@@ -626,9 +631,7 @@ export async function writePlanListAdd(
     | { planUuid: string; list: 'reviewIssues'; value: SyncReviewIssueValue }
     | { planUuid: string; list: Exclude<SyncPlanListName, 'reviewIssues'>; value: string }
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    addPlanListItemOperation(projectUuid, input as never, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input as never, addPlanListItemOperation);
 }
 
 export function addPlanListAddToBatch(
@@ -638,7 +641,7 @@ export function addPlanListAddToBatch(
     | { planUuid: string; list: 'reviewIssues'; value: SyncReviewIssueValue }
     | { planUuid: string; list: Exclude<SyncPlanListName, 'reviewIssues'>; value: string }
 ): void {
-  batch.add((options) => addPlanListItemOperation(projectUuid, input as never, options));
+  addProjectOperationToBatch(batch, projectUuid, input as never, addPlanListItemOperation);
 }
 
 export async function writePlanListRemove(
@@ -649,9 +652,7 @@ export async function writePlanListRemove(
     | { planUuid: string; list: 'reviewIssues'; value: SyncReviewIssueValue }
     | { planUuid: string; list: Exclude<SyncPlanListName, 'reviewIssues'>; value: string }
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    removePlanListItemOperation(projectUuid, input as never, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input as never, removePlanListItemOperation);
 }
 
 export function addPlanListRemoveToBatch(
@@ -661,7 +662,7 @@ export function addPlanListRemoveToBatch(
     | { planUuid: string; list: 'reviewIssues'; value: SyncReviewIssueValue }
     | { planUuid: string; list: Exclude<SyncPlanListName, 'reviewIssues'>; value: string }
 ): void {
-  batch.add((options) => removePlanListItemOperation(projectUuid, input as never, options));
+  addProjectOperationToBatch(batch, projectUuid, input as never, removePlanListItemOperation);
 }
 
 export async function writePlanSetParent(
@@ -670,9 +671,7 @@ export async function writePlanSetParent(
   projectUuid: string,
   input: Parameters<typeof setPlanParentOperation>[1]
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    setPlanParentOperation(projectUuid, input, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input, setPlanParentOperation);
 }
 
 export function addPlanSetParentToBatch(
@@ -680,7 +679,7 @@ export function addPlanSetParentToBatch(
   projectUuid: string,
   input: Parameters<typeof setPlanParentOperation>[1]
 ): void {
-  batch.add((options) => setPlanParentOperation(projectUuid, input, options));
+  addProjectOperationToBatch(batch, projectUuid, input, setPlanParentOperation);
 }
 
 export async function writePlanDelete(
@@ -689,9 +688,7 @@ export async function writePlanDelete(
   projectUuid: string,
   input: Parameters<typeof deletePlanOperation>[1]
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    deletePlanOperation(projectUuid, input, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input, deletePlanOperation);
 }
 
 export function addPlanDeleteToBatch(
@@ -699,7 +696,7 @@ export function addPlanDeleteToBatch(
   projectUuid: string,
   input: Parameters<typeof deletePlanOperation>[1]
 ): void {
-  batch.add((options) => deletePlanOperation(projectUuid, input, options));
+  addProjectOperationToBatch(batch, projectUuid, input, deletePlanOperation);
 }
 
 export async function writePlanPromoteTask(
@@ -708,9 +705,7 @@ export async function writePlanPromoteTask(
   projectUuid: string,
   input: Parameters<typeof promotePlanTaskOperation>[1]
 ): Promise<SyncWriteResult> {
-  return routeSyncOperation(db, config, (options) =>
-    promotePlanTaskOperation(projectUuid, input, options)
-  );
+  return writeProjectOperation(db, config, projectUuid, input, promotePlanTaskOperation);
 }
 
 export async function writeProjectSettingSet(
