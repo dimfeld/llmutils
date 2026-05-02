@@ -20,6 +20,7 @@ import {
   setPlanBranch,
   setPlanBaseTracking,
   upsertPlan,
+  upsertCanonicalPlanInTransaction,
   upsertPlanDependencies,
   upsertPlanTasks,
 } from './plan.js';
@@ -331,6 +332,13 @@ describe('tim db/plan', () => {
       baseBranch: 'feature/base',
       baseCommit: 'commit-1',
       baseChangeId: 'change-1',
+    });
+    // Canonical must be populated so that local-operation sync routing works
+    upsertCanonicalPlanInTransaction(db, projectId, {
+      uuid: planUuid,
+      planId: 83,
+      baseBranch: 'feature/base',
+      revision: 1,
     });
 
     await setPlanBaseTracking(db, config, planUuid, {
@@ -798,6 +806,13 @@ describe('tim db/plan', () => {
       planId: 606,
       title: 'Local tracking',
     });
+    // Canonical must be populated so that local-operation applies through the operation engine work
+    upsertCanonicalPlanInTransaction(db, projectId, {
+      uuid: planUuid,
+      planId: 606,
+      title: 'Local tracking',
+      revision: 1,
+    });
 
     expect(getPlanByUuid(db, planUuid)?.revision).toBe(1);
 
@@ -845,6 +860,13 @@ describe('tim db/plan', () => {
       planId: 700,
       title: 'Branch sync test',
     });
+    // Canonical must be populated for the projection rebuild to have a base state
+    upsertCanonicalPlanInTransaction(db, projectId, {
+      uuid: planUuid,
+      planId: 700,
+      title: 'Branch sync test',
+      revision: 1,
+    });
 
     expect(getPlanByUuid(db, planUuid)?.branch).toBeNull();
 
@@ -881,6 +903,13 @@ describe('tim db/plan', () => {
       uuid: planUuid,
       planId: 701,
       title: 'Base tracking sync test',
+    });
+    // Canonical must be populated for the projection rebuild to have a base state
+    upsertCanonicalPlanInTransaction(db, projectId, {
+      uuid: planUuid,
+      planId: 701,
+      title: 'Base tracking sync test',
+      revision: 1,
     });
 
     await setPlanBaseTracking(db, config, planUuid, {
@@ -924,6 +953,13 @@ describe('tim db/plan', () => {
       baseBranch: 'main',
       baseCommit: 'abc123',
       baseChangeId: 'change-1',
+    });
+    // Canonical must be populated for the projection rebuild to have a base state
+    upsertCanonicalPlanInTransaction(db, projectId, {
+      uuid: planUuid,
+      planId: 702,
+      baseBranch: 'main',
+      revision: 1,
     });
 
     await clearPlanBaseTracking(db, config, planUuid);

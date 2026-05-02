@@ -2374,7 +2374,17 @@ class CanonicalPlanAdapter implements ApplyOperationToAdapter {
         continue;
       }
       writePlanToTableSet(this.db, 'plan_canonical', 'task_canonical', plan);
-      writePlanToTableSet(this.db, 'plan', 'plan_task', plan);
+      // base_commit and base_change_id are machine-local tracking fields updated
+      // only via legacy-direct paths. Preserve any existing projection values so
+      // that a sync write (e.g. set_scalar for base_branch) does not clobber them.
+      const existingProjection = this.db
+        .prepare('SELECT base_commit, base_change_id FROM plan WHERE uuid = ?')
+        .get(planUuid) as { base_commit: string | null; base_change_id: string | null } | null;
+      writePlanToTableSet(this.db, 'plan', 'plan_task', {
+        ...plan,
+        base_commit: existingProjection?.base_commit ?? plan.base_commit,
+        base_change_id: existingProjection?.base_change_id ?? plan.base_change_id,
+      });
       replacePlanCollectionsInTableSet(
         this.db,
         'plan_dependency_canonical',

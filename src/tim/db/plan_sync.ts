@@ -8,6 +8,7 @@ import {
   getPlanTasksByUuid,
   getPlansByProject,
   upsertPlan,
+  upsertCanonicalPlanInTransaction,
 } from './plan.js';
 import { getOrCreateProject } from './project.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
@@ -344,9 +345,18 @@ export async function syncPlanToDb(
       upsertInput.baseCommit = null;
       upsertInput.baseChangeId = null;
     }
-    upsertPlan(db, context.projectId, {
+    const projectionRow = upsertPlan(db, context.projectId, {
       ...upsertInput,
       forceOverwrite: options.force === true,
+    });
+    // Mirror to canonical so that subsequent operation-routed writes (e.g.
+    // clearPlanBaseTracking) can find the plan in the canonical store. On a
+    // local or main node, canonical ≡ projection; this keeps them in sync.
+    upsertCanonicalPlanInTransaction(db, context.projectId, {
+      ...upsertInput,
+      revision: projectionRow.revision,
+      forceOverwrite: options.force === true,
+      tasks: upsertInput.tasks.map((t) => ({ ...t, revision: t.revision ?? 1 })),
     });
   } catch (error) {
     if (options.throwOnError) {

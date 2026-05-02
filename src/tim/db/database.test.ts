@@ -1280,6 +1280,16 @@ describe('tim db/database', () => {
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
       ).toBe(33);
+
+      // Migration v33 must have dropped sync_pending_rollback
+      const tables33 = db
+        .query<{ name: string }, []>(
+          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
+        .all()
+        .map((r) => r.name);
+      expect(tables33).not.toContain('sync_pending_rollback');
+
       const syncOperationColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('sync_operation')")
         .all()
@@ -1289,10 +1299,9 @@ describe('tim db/database', () => {
       expect(syncOperationColumns).toContain('payload_task_uuid');
 
       const refs = db
-        .query<
-          { operation_uuid: string; plan_uuid: string; role: string },
-          []
-        >('SELECT operation_uuid, plan_uuid, role FROM sync_operation_plan_ref ORDER BY operation_uuid, role, plan_uuid')
+        .query<{ operation_uuid: string; plan_uuid: string; role: string }, []>(
+          'SELECT operation_uuid, plan_uuid, role FROM sync_operation_plan_ref ORDER BY operation_uuid, role, plan_uuid'
+        )
         .all();
       expect(refs).toEqual([
         { operation_uuid: 'op-create', plan_uuid: dependencyUuid, role: 'dependency' },
@@ -1309,6 +1318,58 @@ describe('tim db/database', () => {
         { operation_uuid: 'op-promote', plan_uuid: sourcePlanUuid, role: 'source' },
         { operation_uuid: 'op-promote', plan_uuid: newPlanUuid, role: 'target' },
       ]);
+    } finally {
+      db.close(false);
+    }
+  });
+
+  test('runMigrations v32→v33 drops sync_pending_rollback table', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db = new Database(dbPath);
+
+    try {
+      // Simulate a v32 database that has sync_pending_rollback populated
+      db.exec(`
+        CREATE TABLE schema_version (
+          version INTEGER NOT NULL DEFAULT 0,
+          import_completed INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO schema_version (version, import_completed) VALUES (32, 1);
+
+        CREATE TABLE sync_pending_rollback (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          entity_type TEXT NOT NULL,
+          entity_key TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        INSERT INTO sync_pending_rollback (entity_type, entity_key, created_at)
+          VALUES ('plan', 'plan:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '2026-01-01T00:00:00.000Z');
+      `);
+
+      // Verify the table exists before migration
+      const tablesBefore = db
+        .query<{ name: string }, []>(
+          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
+        .all()
+        .map((r) => r.name);
+      expect(tablesBefore).toContain('sync_pending_rollback');
+
+      runMigrations(db);
+
+      const version = db
+        .query<{ version: number }, []>('SELECT version FROM schema_version')
+        .get()?.version;
+      expect(version).toBe(33);
+
+      // The table must be gone after migration
+      const tablesAfter = db
+        .query<{ name: string }, []>(
+          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
+        .all()
+        .map((r) => r.name);
+      expect(tablesAfter).not.toContain('sync_pending_rollback');
     } finally {
       db.close(false);
     }
