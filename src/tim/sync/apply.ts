@@ -3,6 +3,12 @@ import * as diff from 'diff';
 import { removeAssignment } from '../db/assignment.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import type { PlanRow, PlanTaskRow } from '../db/plan.js';
+import {
+  deleteCanonicalProjectSettingRow,
+  deleteProjectionProjectSettingRow,
+  writeCanonicalProjectSettingRow,
+  writeProjectionProjectSettingRow,
+} from '../db/project_settings.js';
 import { SyncFifoGapError, SyncValidationError } from './errors.js';
 import { createSyncConflict, recordSyncTombstone } from './conflicts.js';
 import {
@@ -1592,10 +1598,8 @@ function applyProjectSetting(
     if (envelope.op.baseRevision !== undefined && envelope.op.baseRevision !== row.revision) {
       return staleSettingConflict(db, envelope, originalPayload, normalizedPayload, row.value);
     }
-    db.prepare('DELETE FROM project_setting WHERE project_id = ? AND setting = ?').run(
-      project.id,
-      envelope.op.setting
-    );
+    deleteCanonicalProjectSettingRow(db, project.id, envelope.op.setting);
+    deleteProjectionProjectSettingRow(db, project.id, envelope.op.setting);
     return [
       {
         targetType: envelope.targetType,
@@ -1611,22 +1615,16 @@ function applyProjectSetting(
   if (row?.value === nextValue) {
     return [];
   }
-  db.prepare(
-    `
-      INSERT INTO project_setting (project_id, setting, value, revision, updated_at, updated_by_node)
-      VALUES (?, ?, ?, 1, ${SQL_NOW_ISO_UTC}, ?)
-      ON CONFLICT(project_id, setting) DO UPDATE SET
-        value = excluded.value,
-        revision = project_setting.revision + 1,
-        updated_at = ${SQL_NOW_ISO_UTC},
-        updated_by_node = excluded.updated_by_node
-    `
-  ).run(project.id, envelope.op.setting, nextValue, envelope.originNodeId);
-  const updated = db
-    .prepare('SELECT revision FROM project_setting WHERE project_id = ? AND setting = ?')
-    .get(project.id, envelope.op.setting) as { revision: number };
+  const nextRevision = (row?.revision ?? 0) + 1;
+  writeCanonicalProjectSettingRow(db, project.id, envelope.op.setting, envelope.op.value, {
+    revision: nextRevision,
+    updatedByNode: envelope.originNodeId,
+  });
+  writeProjectionProjectSettingRow(db, project.id, envelope.op.setting, envelope.op.value, {
+    updatedByNode: envelope.originNodeId,
+  });
   return [
-    { targetType: envelope.targetType, targetKey: envelope.targetKey, revision: updated.revision },
+    { targetType: envelope.targetType, targetKey: envelope.targetKey, revision: nextRevision },
   ];
 }
 
@@ -1792,10 +1790,8 @@ function applyResolvedProjectSetting(
     if (!row) {
       return [];
     }
-    db.prepare('DELETE FROM project_setting WHERE project_id = ? AND setting = ?').run(
-      project.id,
-      envelope.op.setting
-    );
+    deleteCanonicalProjectSettingRow(db, project.id, envelope.op.setting);
+    deleteProjectionProjectSettingRow(db, project.id, envelope.op.setting);
     return [
       {
         targetType: envelope.targetType,
@@ -1818,22 +1814,16 @@ function applyResolvedProjectSetting(
   if (row?.value === nextValue) {
     return [];
   }
-  db.prepare(
-    `
-      INSERT INTO project_setting (project_id, setting, value, revision, updated_at, updated_by_node)
-      VALUES (?, ?, ?, 1, ${SQL_NOW_ISO_UTC}, ?)
-      ON CONFLICT(project_id, setting) DO UPDATE SET
-        value = excluded.value,
-        revision = project_setting.revision + 1,
-        updated_at = ${SQL_NOW_ISO_UTC},
-        updated_by_node = excluded.updated_by_node
-    `
-  ).run(project.id, envelope.op.setting, nextValue, envelope.originNodeId);
-  const updated = db
-    .prepare('SELECT revision FROM project_setting WHERE project_id = ? AND setting = ?')
-    .get(project.id, envelope.op.setting) as { revision: number };
+  const nextRevision = (row?.revision ?? 0) + 1;
+  writeCanonicalProjectSettingRow(db, project.id, envelope.op.setting, value, {
+    revision: nextRevision,
+    updatedByNode: envelope.originNodeId,
+  });
+  writeProjectionProjectSettingRow(db, project.id, envelope.op.setting, value, {
+    updatedByNode: envelope.originNodeId,
+  });
   return [
-    { targetType: envelope.targetType, targetKey: envelope.targetKey, revision: updated.revision },
+    { targetType: envelope.targetType, targetKey: envelope.targetKey, revision: nextRevision },
   ];
 }
 

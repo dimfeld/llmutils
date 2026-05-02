@@ -1,10 +1,19 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'vitest';
 import { runMigrations } from '../db/migrations.js';
-import { getOrCreateProject } from '../db/project.js';
+import { getOrCreateProject, type Project } from '../db/project.js';
 import { upsertPlan } from '../db/plan.js';
-import { addPlanTagOperation } from './operations.js';
-import { enqueueBatch, markOperationSending } from './queue.js';
+import {
+  getProjectSettingWithMetadata,
+  writeCanonicalProjectSettingRow,
+} from '../db/project_settings.js';
+import { addPlanTagOperation, setProjectSettingOperation } from './operations.js';
+import {
+  enqueueBatch,
+  enqueueOperation,
+  markOperationSending,
+  mergeCanonicalRefresh,
+} from './queue.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
 import { createBatchEnvelope } from './types.js';
 
@@ -108,6 +117,91 @@ describe('applyOperationResultTransitions', () => {
       }))
     );
   });
+
+  test('acked project setting drops pending projection until canonical snapshot arrives', async () => {
+    const db = createDb();
+    const project = seedProject(db);
+    const queued = enqueueOperation(
+      db,
+      await setProjectSettingOperation(
+        { projectUuid: PROJECT_UUID, setting: 'color', value: 'green' },
+        { originNodeId: NODE_A, localSequence: 0 }
+      )
+    ).operation;
+    markOperationSending(db, queued.operationUuid);
+
+    applyOperationResultTransitions(db, [
+      { operationId: queued.operationUuid, status: 'applied', sequenceIds: [1] },
+    ]);
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')).toBeNull();
+
+    mergeCanonicalRefresh(db, {
+      type: 'project_setting',
+      projectUuid: PROJECT_UUID,
+      setting: 'color',
+      value: 'green',
+      revision: 1,
+      updatedByNode: 'main',
+    });
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
+      value: 'green',
+      updatedByNode: 'main',
+    });
+  });
+
+  test('rejected project setting collapses projection back to canonical', async () => {
+    const db = createDb();
+    const project = seedProject(db);
+    writeCanonicalProjectSettingRow(db, project.id, 'color', 'blue', {
+      revision: 4,
+      updatedByNode: 'main',
+    });
+    const queued = enqueueOperation(
+      db,
+      await setProjectSettingOperation(
+        { projectUuid: PROJECT_UUID, setting: 'color', value: 'green' },
+        { originNodeId: NODE_A, localSequence: 0 }
+      )
+    ).operation;
+    markOperationSending(db, queued.operationUuid);
+
+    applyOperationResultTransitions(db, [
+      { operationId: queued.operationUuid, status: 'rejected', error: 'bad setting' },
+    ]);
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
+      value: 'blue',
+      updatedByNode: 'main',
+    });
+  });
+
+  test('conflicted project setting collapses projection back to canonical', async () => {
+    const db = createDb();
+    const project = seedProject(db);
+    writeCanonicalProjectSettingRow(db, project.id, 'color', 'blue', {
+      revision: 4,
+      updatedByNode: 'main',
+    });
+    const queued = enqueueOperation(
+      db,
+      await setProjectSettingOperation(
+        { projectUuid: PROJECT_UUID, setting: 'color', value: 'green' },
+        { originNodeId: NODE_A, localSequence: 0 }
+      )
+    ).operation;
+    markOperationSending(db, queued.operationUuid);
+
+    applyOperationResultTransitions(db, [
+      { operationId: queued.operationUuid, status: 'conflict', conflictId: 'conflict-1' },
+    ]);
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
+      value: 'blue',
+      updatedByNode: 'main',
+    });
+  });
 });
 
 function createDb(): Database {
@@ -117,10 +211,7 @@ function createDb(): Database {
 }
 
 function seedPlan(db: Database): void {
-  const project = getOrCreateProject(db, 'github.com__example__repo', {
-    uuid: PROJECT_UUID,
-    highestPlanId: 10,
-  });
+  const project = seedProject(db);
   upsertPlan(db, project.id, {
     uuid: PLAN_UUID,
     planId: 1,
@@ -128,6 +219,13 @@ function seedPlan(db: Database): void {
     status: 'pending',
     tasks: [{ uuid: TASK_UUID, title: 'Task one', description: 'Do it' }],
     forceOverwrite: true,
+  });
+}
+
+function seedProject(db: Database): Project {
+  return getOrCreateProject(db, 'github.com__example__repo', {
+    uuid: PROJECT_UUID,
+    highestPlanId: 10,
   });
 }
 

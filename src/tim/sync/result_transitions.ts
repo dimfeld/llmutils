@@ -4,7 +4,10 @@ import {
   markOperationConflict,
   markOperationFailedRetryable,
   markOperationRejected,
+  type SyncOperationQueueRow,
 } from './queue.js';
+import { rebuildProjectSettingProjectionForPayload } from './projection.js';
+import { assertValidPayload } from './types.js';
 import type { SyncOperationResult } from './ws_protocol.js';
 
 export interface ApplyOperationResultTransitionsOptions {
@@ -24,22 +27,31 @@ export function applyOperationResultTransitions(
       };
       switch (result.status) {
         case 'applied':
-          markOperationAcked(db, result.operationId, ackMetadata);
+          rebuildProjectSettingProjectionAfterTerminalTransition(
+            db,
+            markOperationAcked(db, result.operationId, ackMetadata)
+          );
           break;
         case 'conflict':
-          markOperationConflict(
+          rebuildProjectSettingProjectionAfterTerminalTransition(
             db,
-            result.operationId,
-            result.conflictId ?? 'unknown-conflict',
-            ackMetadata
+            markOperationConflict(
+              db,
+              result.operationId,
+              result.conflictId ?? 'unknown-conflict',
+              ackMetadata
+            )
           );
           break;
         case 'rejected':
-          markOperationRejected(
+          rebuildProjectSettingProjectionAfterTerminalTransition(
             db,
-            result.operationId,
-            result.error ?? 'Operation rejected by main node',
-            ackMetadata
+            markOperationRejected(
+              db,
+              result.operationId,
+              result.error ?? 'Operation rejected by main node',
+              ackMetadata
+            )
           );
           break;
         case 'deferred':
@@ -55,4 +67,20 @@ export function applyOperationResultTransitions(
     }
   });
   transition.immediate(results);
+}
+
+function rebuildProjectSettingProjectionAfterTerminalTransition(
+  db: Database,
+  row: SyncOperationQueueRow
+): void {
+  if (
+    row.operation_type !== 'project_setting.set' &&
+    row.operation_type !== 'project_setting.delete'
+  ) {
+    return;
+  }
+  const payload = assertValidPayload(JSON.parse(row.payload));
+  if (payload.type === 'project_setting.set' || payload.type === 'project_setting.delete') {
+    rebuildProjectSettingProjectionForPayload(db, payload);
+  }
 }

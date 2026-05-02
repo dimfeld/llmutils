@@ -6,6 +6,10 @@ import { removeAssignment } from '../db/assignment.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import { upsertProjectionPlanInTransaction, type PlanRow, type PlanTaskRow } from '../db/plan.js';
 import { getProjectByUuid } from '../db/project.js';
+import {
+  deleteCanonicalProjectSettingRow,
+  writeCanonicalProjectSettingRow,
+} from '../db/project_settings.js';
 import { planKey, projectSettingKey, taskKey } from './entity_keys.js';
 import {
   assertValidEnvelope,
@@ -20,6 +24,10 @@ import { shiftTaskIndexesAfterDelete, shiftTaskIndexesForInsert } from './task_i
 import { getSyncOperationPayloadIndexes } from './payload_indexes.js';
 import { optimisticSnapshotKeysForOperation } from './rejected_refresh.js';
 import { getSyncOperationPlanRefs } from './plan_refs.js';
+import {
+  rebuildProjectSettingProjection,
+  rebuildProjectSettingProjectionForPayload,
+} from './projection.js';
 
 /**
  * Persistent-node durable queue contract:
@@ -729,8 +737,10 @@ export function mergeCanonicalRefresh(db: Database, snapshot: CanonicalSnapshot)
   const parsedSnapshot = CanonicalSnapshotSchema.parse(snapshot);
   const merge = db.transaction((nextSnapshot: CanonicalSnapshot): string[] => {
     const followUpKeys = writeCanonicalSnapshot(db, nextSnapshot);
-    for (const operation of pendingOperationsForSnapshot(db, nextSnapshot)) {
-      applyLocalOptimisticInTransaction(db, operation);
+    if (nextSnapshot.type !== 'project_setting') {
+      for (const operation of pendingOperationsForSnapshot(db, nextSnapshot)) {
+        applyLocalOptimisticInTransaction(db, operation);
+      }
     }
     return followUpKeys;
   });
@@ -1022,7 +1032,7 @@ function applyLocalOptimisticInTransaction(db: Database, operation: SyncOperatio
       break;
     case 'project_setting.set':
     case 'project_setting.delete':
-      applyOptimisticProjectSetting(db, operation.originNodeId, op);
+      applyOptimisticProjectSetting(db, op);
       break;
     case 'plan.set_parent':
       updatePlanIfExists(db, op.planUuid, (plan) => {
@@ -1190,31 +1200,9 @@ function resolveLocalPlanId(
 
 function applyOptimisticProjectSetting(
   db: Database,
-  originNodeId: string,
   op: Extract<SyncOperationPayload, { type: 'project_setting.set' | 'project_setting.delete' }>
 ): void {
-  const project = getProjectByUuid(db, op.projectUuid);
-  if (!project) {
-    return;
-  }
-  if (op.type === 'project_setting.delete') {
-    db.prepare('DELETE FROM project_setting WHERE project_id = ? AND setting = ?').run(
-      project.id,
-      op.setting
-    );
-    return;
-  }
-  db.prepare(
-    `
-      INSERT INTO project_setting (project_id, setting, value, revision, updated_at, updated_by_node)
-      VALUES (?, ?, ?, 1, ${SQL_NOW_ISO_UTC}, ?)
-      ON CONFLICT(project_id, setting) DO UPDATE SET
-        value = excluded.value,
-        revision = project_setting.revision + 1,
-        updated_at = ${SQL_NOW_ISO_UTC},
-        updated_by_node = excluded.updated_by_node
-    `
-  ).run(project.id, op.setting, JSON.stringify(op.value), originNodeId);
+  rebuildProjectSettingProjectionForPayload(db, op);
 }
 
 function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): string[] {
@@ -1289,31 +1277,17 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
       return [];
     }
     if (snapshot.deleted) {
-      db.prepare('DELETE FROM project_setting WHERE project_id = ? AND setting = ?').run(
-        project.id,
-        snapshot.setting
-      );
+      deleteCanonicalProjectSettingRow(db, project.id, snapshot.setting);
+      rebuildProjectSettingProjection(db, project.id, snapshot.setting);
       clearPendingRollbackKey(db, snapshotEntityKey);
       return [];
     }
-    db.prepare(
-      `
-        INSERT INTO project_setting (project_id, setting, value, revision, updated_at, updated_by_node)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(project_id, setting) DO UPDATE SET
-          value = excluded.value,
-          revision = excluded.revision,
-          updated_at = excluded.updated_at,
-          updated_by_node = excluded.updated_by_node
-      `
-    ).run(
-      project.id,
-      snapshot.setting,
-      JSON.stringify(snapshot.value),
-      snapshot.revision,
-      snapshot.updatedAt ?? null,
-      snapshot.updatedByNode ?? null
-    );
+    writeCanonicalProjectSettingRow(db, project.id, snapshot.setting, snapshot.value, {
+      revision: snapshot.revision,
+      updatedAt: snapshot.updatedAt ?? null,
+      updatedByNode: snapshot.updatedByNode ?? null,
+    });
+    rebuildProjectSettingProjection(db, project.id, snapshot.setting);
     clearPendingRollbackKey(db, snapshotEntityKey);
     return [];
   }

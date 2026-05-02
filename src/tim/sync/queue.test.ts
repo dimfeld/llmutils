@@ -117,6 +117,13 @@ function enqueue(op: QueueableOperation) {
   return enqueueOperation(db, op).operation;
 }
 
+function canonicalProjectSettingValue(setting: string): string | null {
+  const row = db
+    .prepare('SELECT value FROM project_setting_canonical WHERE project_id = ? AND setting = ?')
+    .get(project.id, setting) as { value: string } | null;
+  return row?.value ?? null;
+}
+
 async function tagOp(tag: string, node = NODE_A) {
   return addPlanTagOperation(
     PROJECT_UUID,
@@ -1849,6 +1856,50 @@ describe('persistent-node sync queue', () => {
       value: 'green',
       updatedByNode: NODE_A,
     });
+  });
+
+  test('project setting enqueue updates projection while canonical remains unchanged', async () => {
+    enqueue(
+      await setProjectSettingOperation(
+        { projectUuid: PROJECT_UUID, setting: 'color', value: 'green' },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
+      value: 'green',
+      updatedByNode: NODE_A,
+    });
+    expect(canonicalProjectSettingValue('color')).toBeNull();
+  });
+
+  test('canonical update for unrelated project setting preserves pending edit', async () => {
+    enqueue(
+      await setProjectSettingOperation(
+        { projectUuid: PROJECT_UUID, setting: 'color', value: 'green' },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+
+    mergeCanonicalRefresh(db, {
+      type: 'project_setting',
+      projectUuid: PROJECT_UUID,
+      setting: 'abbreviation',
+      value: 'EX',
+      revision: 2,
+      updatedByNode: 'main',
+    });
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
+      value: 'green',
+      updatedByNode: NODE_A,
+    });
+    expect(getProjectSettingWithMetadata(db, project.id, 'abbreviation')).toMatchObject({
+      value: 'EX',
+      updatedByNode: 'main',
+    });
+    expect(canonicalProjectSettingValue('color')).toBeNull();
+    expect(canonicalProjectSettingValue('abbreviation')).toBe('"EX"');
   });
 
   test('mergeCanonicalRefresh rejects project setting snapshot missing value or revision', () => {

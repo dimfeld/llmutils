@@ -74,7 +74,7 @@ export function writeCanonicalProjectSettingRow(
   projectId: number,
   setting: string,
   value: unknown,
-  options: { revision: number; updatedByNode?: string | null }
+  options: { revision: number; updatedAt?: string | null; updatedByNode?: string | null }
 ): boolean {
   return writeProjectSettingRow(
     db,
@@ -93,7 +93,7 @@ function writeProjectSettingRow(
   projectId: number,
   setting: string,
   value: unknown,
-  options: { revision?: number; updatedByNode?: string | null } = {},
+  options: { revision?: number; updatedAt?: string | null; updatedByNode?: string | null } = {},
   revisionMode: RevisionWriteMode
 ): boolean {
   if (value === undefined) {
@@ -105,12 +105,14 @@ function writeProjectSettingRow(
 
   const nextValueJson = JSON.stringify(value);
   const updatedByNode = options.updatedByNode ?? null;
+  const updatedAtSql = options.updatedAt === undefined ? SQL_NOW_ISO_UTC : '?';
   const nextRevision = revisionMode === 'explicit' ? options.revision! : 1;
   const existing = getProjectSettingRow(db, table, projectId, setting);
   if (
     existing &&
     canonicalJsonStringify(JSON.parse(existing.value)) === canonicalJsonStringify(value) &&
     existing.updated_by_node === updatedByNode &&
+    (options.updatedAt === undefined || existing.updated_at === options.updatedAt) &&
     (revisionMode === 'auto' || existing.revision === nextRevision)
   ) {
     return false;
@@ -125,14 +127,21 @@ function writeProjectSettingRow(
         revision,
         updated_at,
         updated_by_node
-      ) VALUES (?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ?)
+      ) VALUES (?, ?, ?, ?, ${updatedAtSql}, ?)
       ON CONFLICT(project_id, setting) DO UPDATE SET
         value = excluded.value,
         revision = ${revisionMode === 'explicit' ? 'excluded.revision' : `${table}.revision + 1`},
-        updated_at = ${SQL_NOW_ISO_UTC},
+        updated_at = excluded.updated_at,
         updated_by_node = excluded.updated_by_node
     `
-  ).run(projectId, setting, nextValueJson, nextRevision, updatedByNode);
+  ).run(
+    projectId,
+    setting,
+    nextValueJson,
+    nextRevision,
+    ...(options.updatedAt === undefined ? [] : [options.updatedAt]),
+    updatedByNode
+  );
   return true;
 }
 
