@@ -408,7 +408,7 @@ export async function handleSetCommand(
       }
     }
 
-    const batch = await beginSyncBatch(db, config);
+    const batch = await beginSyncBatch(db, config, { atomic: true });
     const postCommitUpdates = routedPlans.flatMap((routedPlan) =>
       routePlanWriteIntoBatch(
         batch,

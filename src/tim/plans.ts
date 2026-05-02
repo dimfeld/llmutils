@@ -1025,6 +1025,7 @@ async function routeValidatedPlanToDb(
   const existingRow = getPlanByUuid(db, plan.uuid!);
   const upsertInput = toPlanUpsertInput(plan, idToUuid);
   const batch = await beginSyncBatch(db, config, {
+    atomic: true,
     applyOptions: {
       skipUpdatedAt: options.skipUpdatedAt,
       sourceCreatedAt: upsertInput.sourceCreatedAt ?? null,

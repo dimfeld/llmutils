@@ -145,7 +145,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
       ),
       ensureReferences(updatedOriginalPlan, { planIdToUuid: idToUuid }).updatedPlan,
     ].map((plan) => preparePlanForWrite(plan));
-    const batch = await beginSyncBatch(db, config);
+    const batch = await beginSyncBatch(db, config, { atomic: true });
     const postCommitUpdates = routedPlans.flatMap((plan) =>
       routePlanWriteIntoBatch(batch, db, config, context.projectId, plan, idToUuid)
     );

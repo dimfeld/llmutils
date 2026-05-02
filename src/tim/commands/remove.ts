@@ -170,7 +170,7 @@ export async function handleRemoveCommand(
     preparedAffectedPlans.push(preparePlanForWrite(updatedPlan));
   }
 
-  const batch = await beginSyncBatch(db, config);
+  const batch = await beginSyncBatch(db, config, { atomic: true });
   const postCommitUpdates = preparedAffectedPlans.flatMap((plan) =>
     routePlanWriteIntoBatch(batch, db, config, context.projectId, plan, idToUuid)
   );

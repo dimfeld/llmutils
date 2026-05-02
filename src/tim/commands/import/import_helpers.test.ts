@@ -144,7 +144,7 @@ describe('import_helpers', () => {
     expect(result[0]?.plan.uuid).toBe('uuid-1');
     expect(result[1]?.plan.uuid).toBe('uuid-random');
     expect(ensureReferences).toHaveBeenCalledTimes(2);
-    expect(beginSyncBatch).toHaveBeenCalledWith(mockDb, expect.any(Object));
+    expect(beginSyncBatch).toHaveBeenCalledWith(mockDb, expect.any(Object), { atomic: true });
     expect(routePlanWriteIntoBatch).toHaveBeenCalledTimes(2);
     expect(vi.mocked(routePlanWriteIntoBatch).mock.calls[0]?.[5]).toEqual(
       expect.any(Map<number, string>)

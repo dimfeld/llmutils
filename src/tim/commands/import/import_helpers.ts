@@ -1,5 +1,6 @@
 import { getDatabase } from '../../db/database.js';
-import type { PlanRow } from '../../db/plan.js';
+import { upsertPlan, type PlanRow } from '../../db/plan.js';
+import { toPlanUpsertInput } from '../../db/plan_sync.js';
 import { previewNextPlanId, reserveNextPlanId } from '../../db/project.js';
 import { ensureReferences } from '../../utils/references.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
@@ -55,7 +56,12 @@ export async function writeImportedPlansToDbTransactionally(
 
   const config = await loadEffectiveConfig(undefined, { cwd: repoRoot, quiet: true });
   const returnedWrites = preparedWrites.filter((entry) => !entry.syncOnly);
-  const batch = await beginSyncBatch(db, config);
+  if (hasLegacyUuidlessRow(context.rows, preparedWrites)) {
+    writeImportedPlansViaLegacyTransaction(db, context.projectId, preparedWrites, idToUuid);
+    return returnedWrites;
+  }
+
+  const batch = await beginSyncBatch(db, config, { atomic: true });
   const pendingRows = new Map(context.rows.map((row) => [row.uuid, row]));
   const pendingPlans = new Map<number, PlanSchema>();
   const postCommitUpdates = preparedWrites.flatMap((entry) => {
@@ -80,6 +86,56 @@ export async function writeImportedPlansToDbTransactionally(
   applyPlanWritePostCommitUpdates(db, postCommitUpdates);
 
   return returnedWrites;
+}
+
+function hasLegacyUuidlessRow(
+  rows: PlanRow[],
+  writes: Array<{ plan: PlanSchema; filePath: string | null; syncOnly?: boolean }>
+): boolean {
+  const writeIds = new Set(writes.map((entry) => entry.plan.id));
+  return rows.some((row) => !row.uuid && writeIds.has(row.plan_id));
+}
+
+function writeImportedPlansViaLegacyTransaction(
+  db: ReturnType<typeof getDatabase>,
+  projectId: number,
+  writes: Array<{ plan: PlanSchema; filePath: string | null; syncOnly?: boolean }>,
+  idToUuid: Map<number, string>
+): void {
+  const writeAll = db.transaction(
+    (
+      nextProjectId: number,
+      nextWrites: Array<{ plan: PlanSchema; filePath: string | null; syncOnly?: boolean }>,
+      nextIdToUuid: Map<number, string>
+    ) => {
+      for (const entry of nextWrites) {
+        removeUuidlessLegacyPlanRow(db, nextProjectId, entry.plan.id!);
+        upsertPlan(db, nextProjectId, toPlanUpsertInput(entry.plan, nextIdToUuid));
+      }
+    }
+  );
+  writeAll.immediate(projectId, writes, idToUuid);
+}
+
+function removeUuidlessLegacyPlanRow(
+  db: ReturnType<typeof getDatabase>,
+  projectId: number,
+  planId: number
+): void {
+  db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run('');
+  db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? OR depends_on_uuid = ?').run('', '');
+  db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run('');
+  db.prepare('DELETE FROM task_canonical WHERE plan_uuid = ?').run('');
+  db.prepare(
+    'DELETE FROM plan_dependency_canonical WHERE plan_uuid = ? OR depends_on_uuid = ?'
+  ).run('', '');
+  db.prepare('DELETE FROM plan_tag_canonical WHERE plan_uuid = ?').run('');
+  db.prepare('DELETE FROM plan_canonical WHERE uuid = ?').run('');
+  db.prepare('DELETE FROM plan WHERE uuid = ? AND project_id = ? AND plan_id = ?').run(
+    '',
+    projectId,
+    planId
+  );
 }
 
 function planToPendingRow(
