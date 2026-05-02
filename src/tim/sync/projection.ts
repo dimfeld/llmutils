@@ -66,12 +66,15 @@ export function rebuildProjectSettingProjection(
   const canonical = db
     .prepare(
       `
-        SELECT value, updated_by_node
+        SELECT value, revision, updated_by_node
         FROM project_setting_canonical
         WHERE project_id = ? AND setting = ?
       `
     )
-    .get(projectId, setting) as Pick<ProjectSetting, 'value' | 'updated_by_node'> | null;
+    .get(projectId, setting) as Pick<
+    ProjectSetting,
+    'value' | 'revision' | 'updated_by_node'
+  > | null;
   const activeRows = db
     .prepare(
       `
@@ -118,24 +121,30 @@ export function rebuildProjectSettingProjectionForPayload(
 }
 
 function foldProjectSettingProjection(
-  canonical: Pick<ProjectSetting, 'value' | 'updated_by_node'> | null,
+  canonical: Pick<ProjectSetting, 'value' | 'revision' | 'updated_by_node'> | null,
   activeRows: ActiveProjectSettingOperationRow[]
 ): FoldedProjectSettingProjection {
   let present = canonical !== null;
   let value = canonical ? (JSON.parse(canonical.value) as unknown) : null;
   let updatedByNode = canonical?.updated_by_node ?? null;
+  let runningRevision = canonical?.revision ?? 0;
 
   for (const row of activeRows) {
     const payload = assertValidPayload(JSON.parse(row.payload)) as ProjectSettingPayload;
+    if (payload.baseRevision !== undefined && payload.baseRevision !== runningRevision) {
+      continue;
+    }
     if (payload.type === 'project_setting.delete') {
       present = false;
       value = null;
       updatedByNode = row.origin_node_id;
+      runningRevision += 1;
       continue;
     }
     present = true;
     value = payload.value;
     updatedByNode = row.origin_node_id;
+    runningRevision += 1;
   }
 
   return { present, value, updatedByNode };

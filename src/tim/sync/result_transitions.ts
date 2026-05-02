@@ -7,7 +7,7 @@ import {
   type SyncOperationQueueRow,
 } from './queue.js';
 import { rebuildProjectSettingProjectionForPayload } from './projection.js';
-import { assertValidPayload } from './types.js';
+import { assertValidPayload, type SyncOperationPayload } from './types.js';
 import type { SyncOperationResult } from './ws_protocol.js';
 
 export interface ApplyOperationResultTransitionsOptions {
@@ -20,6 +20,7 @@ export function applyOperationResultTransitions(
   options: ApplyOperationResultTransitionsOptions = {}
 ): void {
   const transition = db.transaction((nextResults: SyncOperationResult[]): void => {
+    const projectSettingRebuilds = new Map<string, ProjectSettingRebuildTarget>();
     for (const [index, result] of nextResults.entries()) {
       const ackMetadata = {
         sequenceIds: result.sequenceIds ?? [],
@@ -27,14 +28,14 @@ export function applyOperationResultTransitions(
       };
       switch (result.status) {
         case 'applied':
-          rebuildProjectSettingProjectionAfterTerminalTransition(
-            db,
+          collectProjectSettingProjectionRebuild(
+            projectSettingRebuilds,
             markOperationAcked(db, result.operationId, ackMetadata)
           );
           break;
         case 'conflict':
-          rebuildProjectSettingProjectionAfterTerminalTransition(
-            db,
+          collectProjectSettingProjectionRebuild(
+            projectSettingRebuilds,
             markOperationConflict(
               db,
               result.operationId,
@@ -44,8 +45,8 @@ export function applyOperationResultTransitions(
           );
           break;
         case 'rejected':
-          rebuildProjectSettingProjectionAfterTerminalTransition(
-            db,
+          collectProjectSettingProjectionRebuild(
+            projectSettingRebuilds,
             markOperationRejected(
               db,
               result.operationId,
@@ -65,12 +66,22 @@ export function applyOperationResultTransitions(
       }
       options.afterTransition?.(result, index);
     }
+    for (const target of projectSettingRebuilds.values()) {
+      rebuildProjectSettingProjectionForPayload(db, target.payload);
+    }
   });
   transition.immediate(results);
 }
 
-function rebuildProjectSettingProjectionAfterTerminalTransition(
-  db: Database,
+interface ProjectSettingRebuildTarget {
+  payload: Extract<
+    SyncOperationPayload,
+    { type: 'project_setting.set' | 'project_setting.delete' }
+  >;
+}
+
+function collectProjectSettingProjectionRebuild(
+  targets: Map<string, ProjectSettingRebuildTarget>,
   row: SyncOperationQueueRow
 ): void {
   if (
@@ -81,6 +92,7 @@ function rebuildProjectSettingProjectionAfterTerminalTransition(
   }
   const payload = assertValidPayload(JSON.parse(row.payload));
   if (payload.type === 'project_setting.set' || payload.type === 'project_setting.delete') {
-    rebuildProjectSettingProjectionForPayload(db, payload);
+    const key = `${payload.projectUuid}:${payload.setting}`;
+    targets.set(key, { payload });
   }
 }

@@ -109,6 +109,74 @@ describe('rebuildProjectSettingProjection', () => {
     expect(getProjectSettingWithMetadata(db, project.id, 'color')).toBeNull();
   });
 
+  test('skips stale baseRevision on set operation', async () => {
+    writeCanonicalProjectSettingRow(db, project.id, 'color', 'blue', {
+      revision: 5,
+      updatedByNode: 'main',
+    });
+    await enqueueSet('color', 'green', 4);
+
+    rebuildProjectSettingProjection(db, project.id, 'color');
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
+      value: 'blue',
+      updatedByNode: 'main',
+    });
+  });
+
+  test('skips stale baseRevision on delete operation', async () => {
+    writeCanonicalProjectSettingRow(db, project.id, 'color', 'blue', {
+      revision: 5,
+      updatedByNode: 'main',
+    });
+    await enqueueDelete('color', 4);
+
+    rebuildProjectSettingProjection(db, project.id, 'color');
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')).toMatchObject({
+      value: 'blue',
+      updatedByNode: 'main',
+    });
+  });
+
+  test('skips second operation when stale relative to running projected revision', async () => {
+    writeCanonicalProjectSettingRow(db, project.id, 'color', 'blue', {
+      revision: 5,
+      updatedByNode: 'main',
+    });
+    await enqueueSet('color', 'green', 5);
+    await enqueueSet('color', 'orange', 5);
+
+    rebuildProjectSettingProjection(db, project.id, 'color');
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')?.value).toBe('green');
+  });
+
+  test('folds chained baseRevision operations', async () => {
+    writeCanonicalProjectSettingRow(db, project.id, 'color', 'blue', {
+      revision: 5,
+      updatedByNode: 'main',
+    });
+    await enqueueSet('color', 'green', 5);
+    await enqueueSet('color', 'orange', 6);
+
+    rebuildProjectSettingProjection(db, project.id, 'color');
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')?.value).toBe('orange');
+  });
+
+  test('applies operation with undefined baseRevision regardless of canonical revision', async () => {
+    writeCanonicalProjectSettingRow(db, project.id, 'color', 'blue', {
+      revision: 5,
+      updatedByNode: 'main',
+    });
+    await enqueueSet('color', 'green');
+
+    rebuildProjectSettingProjection(db, project.id, 'color');
+
+    expect(getProjectSettingWithMetadata(db, project.id, 'color')?.value).toBe('green');
+  });
+
   test('ignores terminal operations when rebuilding', async () => {
     writeCanonicalProjectSettingRow(db, project.id, 'color', 'blue', {
       revision: 4,
@@ -157,21 +225,21 @@ describe('rebuildProjectSettingProjection', () => {
   });
 });
 
-async function enqueueSet(setting: string, value: unknown) {
+async function enqueueSet(setting: string, value: unknown, baseRevision?: number) {
   return enqueueOperation(
     db,
     await setProjectSettingOperation(
-      { projectUuid: PROJECT_UUID, setting, value },
+      { projectUuid: PROJECT_UUID, setting, value, baseRevision },
       { originNodeId: NODE_A, localSequence: 999 }
     )
   ).operation;
 }
 
-async function enqueueDelete(setting: string) {
+async function enqueueDelete(setting: string, baseRevision?: number) {
   return enqueueOperation(
     db,
     await deleteProjectSettingOperation(
-      { projectUuid: PROJECT_UUID, setting },
+      { projectUuid: PROJECT_UUID, setting, baseRevision },
       { originNodeId: NODE_A, localSequence: 999 }
     )
   ).operation;
