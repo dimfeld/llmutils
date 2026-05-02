@@ -223,3 +223,7 @@ See docs/testing.md for testing strategy
 - TypeScript exhaustive switch statements (with `never` in the default case) only error at compile time. At runtime, unknown values fall through and return `undefined` silently. If runtime safety matters, add a `default` case that throws or returns a fallback — a try/catch around the calling code won't help.
 
 - Registering custom `SIGTERM`/`SIGINT` handlers suppresses Node's default termination behavior. You must call `process.exit()` explicitly in the handler or the process will hang.
+
+- Validation that can throw must run before any resource allocation in the same function. If you allocate first (tunnel servers, temp dirs, spawned children, etc.) and validate after, a thrown error leaks the resources because the surrounding cleanup `finally` hasn't been entered yet. Move config/rule validation to the very top of entry points.
+
+- When wiring a feature into a code path that has both a default and a legacy implementation (e.g. Codex's app-server vs `codex exec`), check both. The default path is what users hit in production but the legacy path often shows up first when grepping; missing the default path means the feature silently doesn't work for most users.
