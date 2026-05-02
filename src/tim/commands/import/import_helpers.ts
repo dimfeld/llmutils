@@ -55,10 +55,14 @@ export async function writeImportedPlansToDbTransactionally(
   });
 
   const config = await loadEffectiveConfig(undefined, { cwd: repoRoot, quiet: true });
+  const writeMode = resolveWriteMode(config);
   const returnedWrites = preparedWrites.filter((entry) => !entry.syncOnly);
   if (hasLegacyUuidlessRow(context.rows, preparedWrites)) {
-    writeImportedPlansViaLegacyTransaction(db, context.projectId, preparedWrites, idToUuid);
-    return returnedWrites;
+    if (writeMode === 'local-operation') {
+      writeImportedPlansViaLegacyTransaction(db, context.projectId, preparedWrites, idToUuid);
+      return returnedWrites;
+    }
+    removeUuidlessLegacyPlanRows(db, context.projectId, preparedWrites);
   }
 
   const batch = await beginSyncBatch(db, config, { atomic: true });
@@ -115,6 +119,24 @@ function writeImportedPlansViaLegacyTransaction(
     }
   );
   writeAll.immediate(projectId, writes, idToUuid);
+}
+
+function removeUuidlessLegacyPlanRows(
+  db: ReturnType<typeof getDatabase>,
+  projectId: number,
+  writes: Array<{ plan: PlanSchema; filePath: string | null; syncOnly?: boolean }>
+): void {
+  const removeAll = db.transaction(
+    (
+      nextProjectId: number,
+      nextWrites: Array<{ plan: PlanSchema; filePath: string | null; syncOnly?: boolean }>
+    ) => {
+      for (const entry of nextWrites) {
+        removeUuidlessLegacyPlanRow(db, nextProjectId, entry.plan.id!);
+      }
+    }
+  );
+  removeAll.immediate(projectId, writes);
 }
 
 function removeUuidlessLegacyPlanRow(

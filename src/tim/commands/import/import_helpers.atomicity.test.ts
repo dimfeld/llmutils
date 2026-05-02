@@ -138,11 +138,14 @@ describe('writeImportedPlansToDbTransactionally atomicity', () => {
 describe('writeImportedPlansToDbTransactionally legacy-data path', () => {
   let tempDir: string;
   let previousXdgConfigHome: string | undefined;
+  let previousTimLoadGlobalConfig: string | undefined;
 
   beforeEach(async () => {
     previousXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    previousTimLoadGlobalConfig = process.env.TIM_LOAD_GLOBAL_CONFIG;
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-import-legacy-'));
     process.env.XDG_CONFIG_HOME = path.join(tempDir, 'xdg-config');
+    delete process.env.TIM_LOAD_GLOBAL_CONFIG;
 
     clearAllTimCaches();
     closeDatabaseForTesting();
@@ -173,6 +176,11 @@ describe('writeImportedPlansToDbTransactionally legacy-data path', () => {
       delete process.env.XDG_CONFIG_HOME;
     } else {
       process.env.XDG_CONFIG_HOME = previousXdgConfigHome;
+    }
+    if (previousTimLoadGlobalConfig === undefined) {
+      delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+    } else {
+      process.env.TIM_LOAD_GLOBAL_CONFIG = previousTimLoadGlobalConfig;
     }
 
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -229,5 +237,53 @@ describe('writeImportedPlansToDbTransactionally legacy-data path', () => {
     expect(row1?.uuid).toBe('');
     // Plan 2 was not written
     expect(getPlanByPlanId(getDatabase(), initContext.projectId, 2)).toBeNull();
+  });
+
+  test('sync-persistent mode removes uuidless legacy row before routing through sync batch', async () => {
+    await fs.mkdir(path.join(tempDir, 'xdg-config', 'tim'), { recursive: true });
+    await fs.writeFile(
+      path.join(tempDir, 'xdg-config', 'tim', 'config.yml'),
+      yaml.stringify({
+        sync: {
+          role: 'persistent',
+          nodeId: NODE_ID,
+          mainUrl: 'http://127.0.0.1:29999',
+          nodeToken: 'secret',
+          offline: true,
+        },
+      })
+    );
+    clearAllTimCaches();
+    clearPlanSyncContext();
+
+    const initContext = await resolveProjectContext(tempDir);
+    const db = getDatabase();
+
+    db.prepare(
+      `INSERT INTO plan (uuid, project_id, plan_id, title, status, created_at, updated_at)
+       VALUES ('', ?, 1, 'Legacy Plan', 'pending', datetime('now'), datetime('now'))`
+    ).run(initContext.projectId);
+
+    await writeImportedPlansToDbTransactionally(tempDir, [{ plan: makePlan(1), filePath: null }]);
+
+    const operations = db
+      .prepare('SELECT operation_type, status FROM sync_operation ORDER BY local_sequence')
+      .all() as Array<{ operation_type: string; status: string }>;
+    expect(operations).toEqual([{ operation_type: 'plan.create', status: 'queued' }]);
+
+    expect(
+      db
+        .prepare('SELECT COUNT(*) AS count FROM plan WHERE uuid = ? AND project_id = ?')
+        .get('', initContext.projectId)
+    ).toEqual({ count: 0 });
+
+    const projectedRow = getPlanByPlanId(db, initContext.projectId, 1);
+    expect(projectedRow).not.toBeNull();
+    expect(projectedRow!.uuid).not.toBe('');
+    expect(projectedRow!.title).toBe('Imported Plan 1');
+
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM plan_canonical WHERE plan_id = ?').get(1)
+    ).toEqual({ count: 0 });
   });
 });
