@@ -173,17 +173,16 @@ export function applyBatch(
 ): ApplyBatchResult {
   const batch = assertValidBatchEnvelope(batchInput);
   assertUniqueBatchOperationUuids(batch);
-  const replay = getBatchReplayResult(db, batch);
-  if (replay) {
-    return replay;
-  }
-
   const originalPayloads = batch.operations.map((operation) =>
     JSON.stringify((operation as { op: unknown }).op)
   );
   const normalizedPayloads = batch.operations.map((operation) =>
     JSON.stringify(assertValidEnvelope(operation).op)
   );
+  const replay = getBatchReplayResult(db, batch, normalizedPayloads);
+  if (replay) {
+    return replay;
+  }
 
   const apply = db.transaction((): ApplyBatchResult => {
     const results: ApplyOperationResult[] = [];
@@ -581,6 +580,49 @@ function persistRolledBackBatchRejections(
   persist.immediate();
 }
 
+function persistMissingBatchReplayRejections(
+  db: Database,
+  batch: SyncOperationBatchEnvelope,
+  rows: Array<ReturnType<typeof getOperationRow>>,
+  results: ApplyOperationResult[],
+  normalizedPayloads: string[]
+): void {
+  const persist = db.transaction((): void => {
+    for (const [index, operation] of batch.operations.entries()) {
+      if (rows[index]) {
+        continue;
+      }
+      const result = results[index];
+      if (!result || result.status === 'deferred') {
+        continue;
+      }
+      const duplicateSequence = getOperationByOriginSequence(
+        db,
+        operation.originNodeId,
+        operation.localSequence,
+        operation.operationUuid
+      );
+      if (duplicateSequence) {
+        continue;
+      }
+      insertReceivedOperation(
+        db,
+        operation,
+        normalizedPayloads[index]!,
+        batch.batchId,
+        batch.atomic === true
+      );
+      rejectOperation(
+        db,
+        operation.operationUuid,
+        result.error?.message ?? 'Operation rejected because its batch replay was partial'
+      );
+    }
+  });
+
+  persist.immediate();
+}
+
 function atomicConflictAbortMessage(cause: Error | undefined): string {
   return cause
     ? `Atomic batch aborted: conflict diagnosed but not persisted: ${cause.message}`
@@ -608,7 +650,8 @@ function getOperationByOriginSequence(
 
 function getBatchReplayResult(
   db: Database,
-  batch: SyncOperationBatchEnvelope
+  batch: SyncOperationBatchEnvelope,
+  normalizedPayloads: string[]
 ): ApplyBatchResult | null {
   const rows = batch.operations.map((operation) => getOperationRow(db, operation.operationUuid));
   const mismatchedBatch = rows.find((row) => row && row.batch_id !== batch.batchId);
@@ -641,10 +684,12 @@ function getBatchReplayResult(
       operationUuid: firstExisting.operation_uuid,
       issues: [],
     });
+    const results = rolledBackBatchResults(batch.operations, rejectedResult(error));
+    persistMissingBatchReplayRejections(db, batch, rows, results, normalizedPayloads);
     return {
       batchId: batch.batchId,
       status: 'rejected',
-      results: rolledBackBatchResults(batch.operations, rejectedResult(error)),
+      results,
       invalidations: [],
       sequenceIds: [],
       error,
@@ -656,10 +701,12 @@ function getBatchReplayResult(
       operationUuid: firstExisting.operation_uuid,
       issues: [],
     });
+    const results = rolledBackBatchResults(batch.operations, rejectedResult(error));
+    persistMissingBatchReplayRejections(db, batch, rows, results, normalizedPayloads);
     return {
       batchId: batch.batchId,
       status: 'rejected',
-      results: rolledBackBatchResults(batch.operations, rejectedResult(error)),
+      results,
       invalidations: [],
       sequenceIds: [],
       error,
