@@ -12,11 +12,11 @@ import {
   listPendingOperations,
   markOperationFailedRetryable,
   markOperationSending,
-  mergeCanonicalRefresh,
   prunePlanRefsForTerminalOps,
   resetSendingOperations,
   type SyncOperationQueueRow,
 } from './queue.js';
+import { mergeCanonicalRefresh } from './snapshots.js';
 import { pruneSyncSequence } from './retention.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
 import { createSyncClient, rowsToFlushFrames, type SyncClient } from './ws_client.js';

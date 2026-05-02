@@ -14,7 +14,7 @@ import { getProjectSettingWithMetadata } from '../db/project_settings.js';
 import { getTimNode, getTimNodeCursor, upsertTimNode } from '../db/sync_tables.js';
 import { hashToken } from './auth.js';
 import { httpCatchUp, httpFetchSnapshots, httpFlushOperations } from './client.js';
-import { CanonicalSnapshotSchema } from './queue.js';
+import { CanonicalSnapshotSchema } from './snapshots.js';
 import {
   addPlanTagOperation,
   deletePlanOperation,
@@ -25,8 +25,8 @@ import {
   enqueueBatch,
   enqueueOperation,
   listPendingOperations,
-  mergeCanonicalRefresh,
 } from './queue.js';
+import { mergeCanonicalRefresh } from './snapshots.js';
 import { createBatchEnvelope } from './types.js';
 import { pruneSyncSequence } from './retention.js';
 import { createSyncRunner } from './runner.js';

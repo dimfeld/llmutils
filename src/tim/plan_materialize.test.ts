@@ -30,7 +30,7 @@ import { generatePlanFileContent, readPlanFile, writePlanFile } from './plans.js
 import { handleCleanupMaterializedCommand } from './commands/cleanup-materialized.js';
 import { handleMaterializeCommand } from './commands/materialize.js';
 import { handleSyncCommand } from './commands/sync.js';
-import { type CanonicalPlanSnapshot, mergeCanonicalRefresh } from './sync/queue.js';
+import { type CanonicalPlanSnapshot, mergeCanonicalRefresh } from './sync/snapshots.js';
 
 async function initializeGitRepository(repoDir: string): Promise<void> {
   await Bun.$`git init`.cwd(repoDir).quiet();

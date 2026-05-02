@@ -1,4 +1,4 @@
-import type { CanonicalSnapshot } from './queue.js';
+import type { CanonicalSnapshot } from './snapshots.js';
 import type { SyncOperationBatchEnvelope, SyncOperationEnvelope } from './types.js';
 import {
   SyncBatchResultFrameSchema,

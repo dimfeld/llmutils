@@ -44,14 +44,13 @@ import {
   markOperationFailedRetryable,
   markOperationRejected,
   markOperationSending,
-  mergeCanonicalRefresh,
   pruneAcknowledgedOperations,
   prunePlanRefsForTerminalOps,
   resetSendingOperations,
   subscribeToQueueChanges,
-  type CanonicalPlanSnapshot,
   type QueueableOperation,
 } from './queue.js';
+import { mergeCanonicalRefresh, type CanonicalPlanSnapshot } from './snapshots.js';
 import { createSyncConflict } from './conflicts.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
 import { createBatchEnvelope } from './types.js';

@@ -13,7 +13,7 @@ import { isSecureTransport } from '../../webhooks/security.js';
 import { verifyNodeToken } from './auth.js';
 import { applyBatch, applyOperation, type ApplyOperationResult } from './apply.js';
 import { SyncFifoGapError, SyncValidationError } from './errors.js';
-import type { CanonicalSnapshot } from './queue.js';
+import type { CanonicalSnapshot } from './snapshots.js';
 import type { SyncOperationEnvelope } from './types.js';
 import { bootstrapSyncMetadata } from './bootstrap.js';
 import {

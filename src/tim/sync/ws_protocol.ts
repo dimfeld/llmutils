@@ -1,5 +1,5 @@
 import * as z from 'zod/v4';
-import { CanonicalSnapshotSchema } from './queue.js';
+import { CanonicalSnapshotSchema } from './snapshots.js';
 import { SyncOperationBatchEnvelopeSchema, SyncOperationEnvelopeSchema } from './types.js';
 
 const SyncSequenceIdSchema = z.number().int().nonnegative();

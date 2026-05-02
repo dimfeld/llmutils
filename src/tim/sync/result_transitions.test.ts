@@ -25,8 +25,8 @@ import {
   enqueueBatch,
   enqueueOperation,
   markOperationSending,
-  mergeCanonicalRefresh,
 } from './queue.js';
+import { mergeCanonicalRefresh } from './snapshots.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
 import { createBatchEnvelope } from './types.js';
 

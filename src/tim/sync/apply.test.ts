@@ -21,7 +21,7 @@ import {
   resolveSyncConflict,
   setApplyBatchOperationHookForTesting,
 } from './apply.js';
-import { mergeCanonicalRefresh } from './queue.js';
+import { mergeCanonicalRefresh } from './snapshots.js';
 import { loadCanonicalSnapshot } from './server.js';
 import {
   addPlanDependencyOperation,

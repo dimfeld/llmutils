@@ -5,13 +5,12 @@ import {
   listPendingOperations,
   markOperationFailedRetryable,
   markOperationSending,
-  mergeCanonicalRefresh,
   prunePlanRefsForTerminalOps,
   resetSendingOperations,
   subscribeToQueueChanges,
-  type CanonicalSnapshot,
   type SyncOperationQueueRow,
 } from './queue.js';
+import { mergeCanonicalRefresh, type CanonicalSnapshot } from './snapshots.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
 import {
   createBatchEnvelope,
