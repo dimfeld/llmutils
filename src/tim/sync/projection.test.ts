@@ -621,6 +621,107 @@ describe('rebuildPlanProjection', () => {
     expect(getPlanByUuid(db, PLAN_UUID)?.revision).toBe(3);
   });
 
+  test('enqueuing set_parent rebuilds both old and new parent dependency edges', async () => {
+    const OLD_PARENT_UUID = '44444444-4444-4444-8444-444444444444';
+    const NEW_PARENT_UUID = '55555555-5555-4555-8555-555555555555';
+
+    // Set up canonical: child with old parent, old parent has child as dep edge, new parent has none
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: PLAN_UUID,
+      planId: 10,
+      title: 'Child',
+      status: 'pending',
+      revision: 1,
+      parentUuid: OLD_PARENT_UUID,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: OLD_PARENT_UUID,
+      planId: 20,
+      title: 'Old Parent',
+      status: 'pending',
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [PLAN_UUID],
+      tags: [],
+    });
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: NEW_PARENT_UUID,
+      planId: 30,
+      title: 'New Parent',
+      status: 'pending',
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
+
+    // Build initial projections matching canonical
+    rebuildPlanProjection(db, PLAN_UUID);
+    rebuildPlanProjection(db, OLD_PARENT_UUID);
+    rebuildPlanProjection(db, NEW_PARENT_UUID);
+
+    // Verify baseline: old parent has child as dep
+    expect(getPlanDependenciesByUuid(db, OLD_PARENT_UUID).map((d) => d.depends_on_uuid)).toContain(
+      PLAN_UUID
+    );
+    expect(getPlanDependenciesByUuid(db, NEW_PARENT_UUID)).toHaveLength(0);
+
+    // Enqueue set_parent — this should rebuild all three plans' projections atomically
+    await enqueueOperation(
+      db,
+      await setPlanParentOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, newParentUuid: NEW_PARENT_UUID },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    // Old parent's projection should no longer have child as a dependency
+    expect(getPlanDependenciesByUuid(db, OLD_PARENT_UUID)).toHaveLength(0);
+    // New parent's projection should now have child as a dependency
+    expect(getPlanDependenciesByUuid(db, NEW_PARENT_UUID).map((d) => d.depends_on_uuid)).toContain(
+      PLAN_UUID
+    );
+    // Child's parent_uuid updated in projection
+    expect(getPlanByUuid(db, PLAN_UUID)?.parent_uuid).toBe(NEW_PARENT_UUID);
+  });
+
+  test('enqueuing promote_task rebuilds both source and destination plan projections without explicit rebuild calls', async () => {
+    const NEW_PLAN_UUID = '66666666-6666-4666-8666-666666666666';
+    writeCanonicalPlan({
+      revision: 2,
+      title: 'Source',
+      tasks: [{ uuid: TASK_UUID, title: 'Promotable', description: '', done: false, revision: 1 }],
+    });
+
+    // Enqueue only — no explicit rebuildPlanProjection calls
+    await enqueueOperation(
+      db,
+      await promotePlanTaskOperation(
+        PROJECT_UUID,
+        {
+          sourcePlanUuid: PLAN_UUID,
+          taskUuid: TASK_UUID,
+          newPlanUuid: NEW_PLAN_UUID,
+          numericPlanId: 99,
+          title: 'Auto-rebuilt plan',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    // Source plan projection updated by enqueueOperation
+    expect(getPlanTasksByUuid(db, PLAN_UUID)[0]).toMatchObject({ uuid: TASK_UUID, done: 1 });
+    // Destination plan projection created by enqueueOperation
+    const dest = getPlanByUuid(db, NEW_PLAN_UUID);
+    expect(dest).not.toBeNull();
+    expect(dest?.title).toBe('Auto-rebuilt plan');
+    expect(dest?.plan_id).toBe(99);
+  });
+
   test('promote_task: creates destination plan and marks source task done', async () => {
     const NEW_PLAN_UUID = '66666666-6666-4666-8666-666666666666';
     writeCanonicalPlan({
