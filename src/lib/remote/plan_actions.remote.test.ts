@@ -1534,10 +1534,14 @@ describe('plan remote actions', () => {
     });
 
     test('rejects in_progress plans', async () => {
-      seedPlan({ uuid: 'quick-finish-in-progress', planId: 5000, status: 'in_progress' });
+      seedPlan({
+        uuid: '11111111-1111-4111-8111-111111111103',
+        planId: 5000,
+        status: 'in_progress',
+      });
 
       await expect(
-        invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-in-progress' })
+        invokeCommand(finishPlanQuick, { planUuid: '11111111-1111-4111-8111-111111111103' })
       ).rejects.toMatchObject({
         status: 400,
         body: { message: 'Plan is not eligible for finish' },
@@ -1546,7 +1550,7 @@ describe('plan remote actions', () => {
 
     test('allows quick finish for taskless epics regardless of status or finish executor needs', async () => {
       seedPlan({
-        uuid: 'quick-finish-taskless-epic',
+        uuid: '11111111-1111-4111-8111-111111111110',
         planId: 5007,
         status: 'pending',
         epic: true,
@@ -1556,21 +1560,21 @@ describe('plan remote actions', () => {
       });
 
       await expect(
-        invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-taskless-epic' })
+        invokeCommand(finishPlanQuick, { planUuid: '11111111-1111-4111-8111-111111111110' })
       ).resolves.toEqual({ status: 'done' });
 
-      expect(getPlanByUuid(currentDb, 'quick-finish-taskless-epic')?.status).toBe('done');
+      expect(getPlanByUuid(currentDb, '11111111-1111-4111-8111-111111111110')?.status).toBe('done');
     });
 
     test('rejects plans where canUpdateDocs is true', async () => {
       seedPlan({
-        uuid: 'quick-finish-needs-executor',
+        uuid: '11111111-1111-4111-8111-111111111104',
         planId: 5001,
         status: 'needs_review',
       });
 
       await expect(
-        invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-needs-executor' })
+        invokeCommand(finishPlanQuick, { planUuid: '11111111-1111-4111-8111-111111111104' })
       ).rejects.toMatchObject({
         status: 400,
         body: { message: 'Plan requires doc updates — use startUpdateDocs instead' },
@@ -1579,21 +1583,21 @@ describe('plan remote actions', () => {
 
     test('persists done status directly in the DB when no executor work is needed', async () => {
       seedPlan({
-        uuid: 'quick-finish-needs-review',
+        uuid: '11111111-1111-4111-8111-111111111105',
         planId: 5002,
         status: 'needs_review',
         docsUpdatedAt: '2026-02-01T00:00:00.000Z',
         lessonsAppliedAt: '2026-02-02T00:00:00.000Z',
       });
 
-      await invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-needs-review' });
+      await invokeCommand(finishPlanQuick, { planUuid: '11111111-1111-4111-8111-111111111105' });
 
-      expect(getPlanByUuid(currentDb, 'quick-finish-needs-review')?.status).toBe('done');
+      expect(getPlanByUuid(currentDb, '11111111-1111-4111-8111-111111111105')?.status).toBe('done');
     });
 
     test('successfully updates done plan status when no executor work needed', async () => {
       seedPlan({
-        uuid: 'quick-finish-done',
+        uuid: '11111111-1111-4111-8111-111111111102',
         planId: 5003,
         status: 'done',
         docsUpdatedAt: '2026-02-01T00:00:00.000Z',
@@ -1601,53 +1605,61 @@ describe('plan remote actions', () => {
       });
 
       await expect(
-        invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-done' })
+        invokeCommand(finishPlanQuick, { planUuid: '11111111-1111-4111-8111-111111111102' })
       ).resolves.toEqual({ status: 'done' });
     });
 
     test('returns { status: "done" } on success', async () => {
       seedPlan({
-        uuid: 'quick-finish-return',
+        uuid: '11111111-1111-4111-8111-111111111109',
         planId: 5004,
         status: 'needs_review',
         docsUpdatedAt: '2026-02-01T00:00:00.000Z',
         lessonsAppliedAt: '2026-02-02T00:00:00.000Z',
       });
 
-      const result = await invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-return' });
+      const result = await invokeCommand(finishPlanQuick, {
+        planUuid: '11111111-1111-4111-8111-111111111109',
+      });
       expect(result).toEqual({ status: 'done' });
     });
 
     test('runs completion side effects after finishing and cascades the parent in the DB', async () => {
       seedPlan({
-        uuid: 'quick-finish-parent',
+        uuid: '11111111-1111-4111-8111-111111111106',
         planId: 5006,
         status: 'in_progress',
         epic: true,
         tasks: [],
       });
       seedPlan({
-        uuid: 'quick-finish-assignment',
+        uuid: '11111111-1111-4111-8111-111111111101',
         planId: 5005,
         status: 'needs_review',
-        parentUuid: 'quick-finish-parent',
+        parentUuid: '11111111-1111-4111-8111-111111111106',
         docsUpdatedAt: '2026-02-01T00:00:00.000Z',
         lessonsAppliedAt: '2026-02-02T00:00:00.000Z',
       });
 
-      claimAssignment(currentDb, projectId, 'quick-finish-assignment', 5005);
-      expect(getAssignment(currentDb, projectId, 'quick-finish-assignment')).not.toBeNull();
+      claimAssignment(currentDb, projectId, '11111111-1111-4111-8111-111111111101', 5005);
+      expect(
+        getAssignment(currentDb, projectId, '11111111-1111-4111-8111-111111111101')
+      ).not.toBeNull();
 
-      await invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-assignment' });
+      await invokeCommand(finishPlanQuick, { planUuid: '11111111-1111-4111-8111-111111111101' });
 
-      expect(getAssignment(currentDb, projectId, 'quick-finish-assignment')).toBeNull();
-      expect(getPlanByUuid(currentDb, 'quick-finish-assignment')?.status).toBe('done');
-      expect(getPlanByUuid(currentDb, 'quick-finish-parent')?.status).toBe('needs_review');
+      expect(
+        getAssignment(currentDb, projectId, '11111111-1111-4111-8111-111111111101')
+      ).toBeNull();
+      expect(getPlanByUuid(currentDb, '11111111-1111-4111-8111-111111111101')?.status).toBe('done');
+      expect(getPlanByUuid(currentDb, '11111111-1111-4111-8111-111111111106')?.status).toBe(
+        'needs_review'
+      );
     });
 
     test('uses per-project config for quick-finish eligibility', async () => {
       seedPlan({
-        uuid: 'quick-finish-project2-missing-docs',
+        uuid: '11111111-1111-4111-8111-111111111108',
         planId: 5006,
         projectId: secondProjectId,
         status: 'needs_review',
@@ -1656,13 +1668,13 @@ describe('plan remote actions', () => {
       });
 
       await expect(
-        invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-project2-missing-docs' })
+        invokeCommand(finishPlanQuick, { planUuid: '11111111-1111-4111-8111-111111111108' })
       ).resolves.toEqual({ status: 'done' });
     });
 
     test('prefers the primary workspace path when loading quick-finish config', async () => {
       seedPlan({
-        uuid: 'quick-finish-primary-workspace',
+        uuid: '11111111-1111-4111-8111-111111111107',
         planId: 5008,
         status: 'needs_review',
       });
@@ -1685,7 +1697,7 @@ describe('plan remote actions', () => {
       });
 
       await expect(
-        invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-primary-workspace' })
+        invokeCommand(finishPlanQuick, { planUuid: '11111111-1111-4111-8111-111111111107' })
       ).resolves.toEqual({ status: 'done' });
       expect(cwdCalls).toEqual(['/tmp/primary-workspace', '/tmp/primary-workspace']);
     });

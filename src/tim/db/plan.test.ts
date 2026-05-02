@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { getDefaultConfig } from '../configSchema.js';
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
   deletePlan,
@@ -16,8 +17,10 @@ import {
   getPlanTasksByProject,
   getPlanTasksByUuid,
   clearPlanBaseTracking,
+  setPlanBranch,
   setPlanBaseTracking,
   upsertPlan,
+  upsertCanonicalPlanInTransaction,
   upsertPlanDependencies,
   upsertPlanTasks,
 } from './plan.js';
@@ -71,6 +74,7 @@ describe('tim db/plan', () => {
     expect(inserted).not.toBeNull();
     expect(inserted?.project_id).toBe(projectId);
     expect(inserted?.plan_id).toBe(10);
+    expect(inserted?.revision).toBe(1);
     expect(inserted?.details).toBe('Initial details');
     expect(inserted?.simple).toBe(1);
     expect(inserted?.tdd).toBe(0);
@@ -86,6 +90,10 @@ describe('tim db/plan', () => {
     let tasks = getPlanTasksByUuid(db, 'plan-1');
     expect(tasks).toHaveLength(2);
     expect(tasks[0]?.task_index).toBe(0);
+    expect(tasks[0]?.uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    expect(tasks[0]?.revision).toBe(1);
     expect(tasks[0]?.title).toBe('task a');
     expect(tasks[1]?.task_index).toBe(1);
     expect(tasks[1]?.done).toBe(1);
@@ -123,6 +131,7 @@ describe('tim db/plan', () => {
     expect(updated).not.toBeNull();
     expect(updated?.project_id).toBe(otherProjectId);
     expect(updated?.plan_id).toBe(20);
+    expect(updated?.revision).toBe(2);
     expect(updated?.details).toBe('Updated details');
     expect(updated?.status).toBe('in_progress');
     expect(updated?.priority).toBe('urgent');
@@ -142,6 +151,7 @@ describe('tim db/plan', () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0]?.task_index).toBe(0);
     expect(tasks[0]?.title).toBe('task c');
+    expect(tasks[0]?.revision).toBe(1);
 
     const updatedDeps = db
       .prepare(
@@ -151,15 +161,47 @@ describe('tim db/plan', () => {
     expect(updatedDeps.map((entry) => entry.depends_on_uuid)).toEqual(['dep-3']);
   });
 
+  test('upsertPlan ignores caller-supplied revisions on insert', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-ignore-revision',
+      planId: 13,
+      revision: 99,
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'task',
+          description: 'desc',
+          done: false,
+          revision: 99,
+        },
+      ],
+    });
+
+    expect(getPlanByUuid(db, 'plan-ignore-revision')?.revision).toBe(1);
+    expect(getPlanTasksByUuid(db, 'plan-ignore-revision')[0]?.revision).toBe(1);
+  });
+
   test('upsertPlanTasks replaces existing task list', () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-tasks',
       planId: 11,
-      tasks: [{ title: 'original', description: 'original', done: false }],
+      tasks: [
+        {
+          uuid: '11111111-1111-4111-8111-111111111111',
+          title: 'original',
+          description: 'original',
+          done: false,
+        },
+      ],
     });
 
     upsertPlanTasks(db, 'plan-tasks', [
-      { title: 'new 1', description: 'd1', done: true },
+      {
+        uuid: '11111111-1111-4111-8111-111111111111',
+        title: 'new 1',
+        description: 'd1',
+        done: true,
+      },
       { title: 'new 2', description: 'd2', done: false },
     ]);
 
@@ -167,6 +209,12 @@ describe('tim db/plan', () => {
     expect(tasks).toHaveLength(2);
     expect(tasks.map((task) => task.title)).toEqual(['new 1', 'new 2']);
     expect(tasks.map((task) => task.task_index)).toEqual([0, 1]);
+    expect(tasks[0]?.uuid).toBe('11111111-1111-4111-8111-111111111111');
+    expect(tasks[0]?.revision).toBe(2);
+    expect(tasks[1]?.uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    expect(getPlanByUuid(db, 'plan-tasks')?.revision).toBe(2);
   });
 
   test('upsertPlanDependencies replaces existing dependencies', () => {
@@ -272,35 +320,47 @@ describe('tim db/plan', () => {
     expect(found?.base_change_id).toBeNull();
   });
 
-  test('setPlanBaseTracking updates only provided fields and clearPlanBaseTracking clears all', () => {
+  test('setPlanBaseTracking updates only provided fields and clearPlanBaseTracking clears all', async () => {
+    const planUuid = '11111111-1111-4111-8111-111111111111';
+    const config = {
+      ...getDefaultConfig(),
+      sync: { disabled: true, nodeId: '22222222-2222-4222-8222-222222222222' },
+    };
     upsertPlan(db, projectId, {
-      uuid: 'plan-base-tracking',
+      uuid: planUuid,
       planId: 83,
       baseBranch: 'feature/base',
       baseCommit: 'commit-1',
       baseChangeId: 'change-1',
     });
+    // Canonical must be populated so that local-operation sync routing works
+    upsertCanonicalPlanInTransaction(db, projectId, {
+      uuid: planUuid,
+      planId: 83,
+      baseBranch: 'feature/base',
+      revision: 1,
+    });
 
-    setPlanBaseTracking(db, 'plan-base-tracking', {
+    await setPlanBaseTracking(db, config, planUuid, {
       baseCommit: 'commit-2',
     });
 
-    let found = getPlanByUuid(db, 'plan-base-tracking');
+    let found = getPlanByUuid(db, planUuid);
     expect(found?.base_branch).toBe('feature/base');
     expect(found?.base_commit).toBe('commit-2');
     expect(found?.base_change_id).toBe('change-1');
 
-    setPlanBaseTracking(db, 'plan-base-tracking', {
+    await setPlanBaseTracking(db, config, planUuid, {
       baseBranch: 'feature/other',
       baseChangeId: null,
     });
-    found = getPlanByUuid(db, 'plan-base-tracking');
+    found = getPlanByUuid(db, planUuid);
     expect(found?.base_branch).toBe('feature/other');
     expect(found?.base_commit).toBe('commit-2');
     expect(found?.base_change_id).toBeNull();
 
-    clearPlanBaseTracking(db, 'plan-base-tracking');
-    found = getPlanByUuid(db, 'plan-base-tracking');
+    await clearPlanBaseTracking(db, config, planUuid);
+    found = getPlanByUuid(db, planUuid);
     expect(found?.base_branch).toBeNull();
     expect(found?.base_commit).toBeNull();
     expect(found?.base_change_id).toBeNull();
@@ -542,5 +602,382 @@ describe('tim db/plan', () => {
     expect(found).not.toBeNull();
     expect(found?.docs_updated_at).toBeNull();
     expect(found?.lessons_applied_at).toBeNull();
+  });
+
+  test('task revision does not bump when the task content is unchanged', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-noop-task',
+      planId: 600,
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'stable task',
+          description: 'stable desc',
+          done: false,
+        },
+      ],
+    });
+
+    const afterFirst = getPlanTasksByUuid(db, 'plan-noop-task');
+    expect(afterFirst[0]?.revision).toBe(1);
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-noop-task',
+      planId: 600,
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'stable task',
+          description: 'stable desc',
+          done: false,
+        },
+      ],
+    });
+
+    const afterSecond = getPlanTasksByUuid(db, 'plan-noop-task');
+    expect(afterSecond[0]?.revision).toBe(1);
+    expect(afterSecond[0]?.uuid).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+  });
+
+  test('upsertPlan does not bump plan revision when content is unchanged', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-noop',
+      planId: 603,
+      title: 'Stable',
+      details: 'Stable details',
+      tags: ['alpha'],
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'stable task',
+          description: 'stable desc',
+          done: false,
+        },
+      ],
+    });
+
+    expect(getPlanByUuid(db, 'plan-noop')?.revision).toBe(1);
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-noop',
+      planId: 603,
+      title: 'Stable',
+      details: 'Stable details',
+      tags: ['alpha'],
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'stable task',
+          description: 'stable desc',
+          done: false,
+        },
+      ],
+    });
+
+    expect(getPlanByUuid(db, 'plan-noop')?.revision).toBe(1);
+    expect(getPlanTasksByUuid(db, 'plan-noop')[0]?.revision).toBe(1);
+  });
+
+  test('replacing identical dependencies and tags does not bump plan revision', () => {
+    upsertPlan(db, projectId, { uuid: 'dep-plan-y', planId: 701 });
+    upsertPlan(db, projectId, {
+      uuid: 'plan-noop-sets',
+      planId: 604,
+      dependencyUuids: ['dep-plan-y'],
+      tags: ['alpha', 'beta'],
+    });
+
+    expect(getPlanByUuid(db, 'plan-noop-sets')?.revision).toBe(1);
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-noop-sets',
+      planId: 604,
+      dependencyUuids: ['dep-plan-y'],
+      tags: ['beta', 'alpha'],
+    });
+
+    expect(getPlanByUuid(db, 'plan-noop-sets')?.revision).toBe(1);
+  });
+
+  test('changing one task bumps that task and plan revision only', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-task-change',
+      planId: 605,
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'changed later',
+          description: 'old',
+          done: false,
+        },
+        {
+          uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          title: 'unchanged',
+          description: 'same',
+          done: false,
+        },
+      ],
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-task-change',
+      planId: 605,
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'changed later',
+          description: 'new',
+          done: false,
+        },
+        {
+          uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          title: 'unchanged',
+          description: 'same',
+          done: false,
+        },
+      ],
+    });
+
+    const tasks = getPlanTasksByUuid(db, 'plan-task-change');
+    expect(getPlanByUuid(db, 'plan-task-change')?.revision).toBe(2);
+    expect(tasks[0]?.revision).toBe(2);
+    expect(tasks[1]?.revision).toBe(1);
+  });
+
+  test('plan revision bumps when only tags change', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-tag-bump',
+      planId: 601,
+      title: 'Tag bump plan',
+      tags: ['alpha'],
+    });
+
+    expect(getPlanByUuid(db, 'plan-tag-bump')?.revision).toBe(1);
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-tag-bump',
+      planId: 601,
+      title: 'Tag bump plan',
+      tags: ['alpha', 'beta'],
+    });
+
+    expect(getPlanByUuid(db, 'plan-tag-bump')?.revision).toBe(2);
+    const tags = getPlanTagsByUuid(db, 'plan-tag-bump');
+    expect(tags.map((t) => t.tag).sort()).toEqual(['alpha', 'beta']);
+  });
+
+  test('plan revision bumps when only dependencies change', () => {
+    upsertPlan(db, projectId, { uuid: 'dep-plan-x', planId: 700 });
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-dep-bump',
+      planId: 602,
+      title: 'Dep bump plan',
+      dependencyUuids: [],
+    });
+
+    expect(getPlanByUuid(db, 'plan-dep-bump')?.revision).toBe(1);
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-dep-bump',
+      planId: 602,
+      title: 'Dep bump plan',
+      dependencyUuids: ['dep-plan-x'],
+    });
+
+    expect(getPlanByUuid(db, 'plan-dep-bump')?.revision).toBe(2);
+
+    const deps = db
+      .prepare(
+        'SELECT depends_on_uuid FROM plan_dependency WHERE plan_uuid = ? ORDER BY depends_on_uuid'
+      )
+      .all('plan-dep-bump') as Array<{ depends_on_uuid: string }>;
+    expect(deps.map((d) => d.depends_on_uuid)).toEqual(['dep-plan-x']);
+  });
+
+  test('baseCommit and baseChangeId tracking updates are local-only', async () => {
+    const planUuid = '33333333-3333-4333-8333-333333333333';
+    const config = {
+      ...getDefaultConfig(),
+      sync: { disabled: true, nodeId: '44444444-4444-4444-8444-444444444444' },
+    };
+    upsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 606,
+      title: 'Local tracking',
+    });
+    // Canonical must be populated so that local-operation applies through the operation engine work
+    upsertCanonicalPlanInTransaction(db, projectId, {
+      uuid: planUuid,
+      planId: 606,
+      title: 'Local tracking',
+      revision: 1,
+    });
+
+    expect(getPlanByUuid(db, planUuid)?.revision).toBe(1);
+
+    await setPlanBranch(db, config, planUuid, 'feature/local');
+    await setPlanBaseTracking(db, config, planUuid, {
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      baseChangeId: 'change-id',
+    });
+
+    expect(getPlanByUuid(db, planUuid)?.revision).toBe(3);
+
+    await setPlanBaseTracking(db, config, planUuid, {
+      baseCommit: 'def456',
+      baseChangeId: 'next-change-id',
+    });
+    expect(getPlanByUuid(db, planUuid)?.revision).toBe(3);
+
+    await clearPlanBaseTracking(db, config, planUuid);
+    expect(getPlanByUuid(db, planUuid)?.revision).toBe(4);
+  });
+
+  test('getOrCreateProject assigns a UUID on creation', () => {
+    const project = getOrCreateProject(db, 'repo-uuid-check');
+    expect(project.uuid).not.toBeNull();
+    expect(project.uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+  });
+
+  test('setPlanBranch on a persistent node enqueues a plan.set_scalar op and applies optimistically', async () => {
+    const planUuid = '55555555-5555-4555-8555-555555555555';
+    const config = {
+      ...getDefaultConfig(),
+      sync: {
+        role: 'persistent' as const,
+        nodeId: 'persistent-node-id-branch',
+        mainUrl: 'http://localhost:9999',
+        nodeToken: 'test-token',
+      },
+    };
+
+    upsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 700,
+      title: 'Branch sync test',
+    });
+    // Canonical must be populated for the projection rebuild to have a base state
+    upsertCanonicalPlanInTransaction(db, projectId, {
+      uuid: planUuid,
+      planId: 700,
+      title: 'Branch sync test',
+      revision: 1,
+    });
+
+    expect(getPlanByUuid(db, planUuid)?.branch).toBeNull();
+
+    await setPlanBranch(db, config, planUuid, 'feature/sync-branch');
+
+    // Optimistic apply: local DB reflects the change immediately
+    expect(getPlanByUuid(db, planUuid)?.branch).toBe('feature/sync-branch');
+
+    // A plan.set_scalar op is enqueued (not directly applied to main)
+    const ops = db
+      .prepare("SELECT operation_type, payload FROM sync_operation WHERE status = 'queued'")
+      .all() as Array<{ operation_type: string; payload: string }>;
+    expect(ops).toHaveLength(1);
+    expect(ops[0].operation_type).toBe('plan.set_scalar');
+    const payload = JSON.parse(ops[0].payload);
+    expect(payload.field).toBe('branch');
+    expect(payload.planUuid).toBe(planUuid);
+    expect(payload.value).toBe('feature/sync-branch');
+  });
+
+  test('setPlanBaseTracking with baseBranch on a persistent node enqueues sync op but not for baseCommit/baseChangeId', async () => {
+    const planUuid = '66666666-6666-4666-8666-666666666666';
+    const config = {
+      ...getDefaultConfig(),
+      sync: {
+        role: 'persistent' as const,
+        nodeId: 'persistent-node-id-base',
+        mainUrl: 'http://localhost:9999',
+        nodeToken: 'test-token',
+      },
+    };
+
+    upsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 701,
+      title: 'Base tracking sync test',
+    });
+    // Canonical must be populated for the projection rebuild to have a base state
+    upsertCanonicalPlanInTransaction(db, projectId, {
+      uuid: planUuid,
+      planId: 701,
+      title: 'Base tracking sync test',
+      revision: 1,
+    });
+
+    await setPlanBaseTracking(db, config, planUuid, {
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      baseChangeId: 'change-id',
+    });
+
+    // All fields appear in local DB immediately via optimistic apply
+    const plan = getPlanByUuid(db, planUuid);
+    expect(plan?.base_branch).toBe('main');
+    expect(plan?.base_commit).toBe('abc123');
+    expect(plan?.base_change_id).toBe('change-id');
+
+    // Only baseBranch emits a sync op; baseCommit and baseChangeId are local-only
+    const ops = db
+      .prepare("SELECT operation_type, payload FROM sync_operation WHERE status = 'queued'")
+      .all() as Array<{ operation_type: string; payload: string }>;
+    expect(ops).toHaveLength(1);
+    expect(ops[0].operation_type).toBe('plan.set_scalar');
+    const payload = JSON.parse(ops[0].payload);
+    expect(payload.field).toBe('base_branch');
+    expect(payload.value).toBe('main');
+  });
+
+  test('clearPlanBaseTracking on a persistent node enqueues sync op for base_branch only', async () => {
+    const planUuid = '77777777-7777-4777-8777-777777777777';
+    const config = {
+      ...getDefaultConfig(),
+      sync: {
+        role: 'persistent' as const,
+        nodeId: 'persistent-node-id-clear',
+        mainUrl: 'http://localhost:9999',
+        nodeToken: 'test-token',
+      },
+    };
+
+    upsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 702,
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      baseChangeId: 'change-1',
+    });
+    // Canonical must be populated for the projection rebuild to have a base state
+    upsertCanonicalPlanInTransaction(db, projectId, {
+      uuid: planUuid,
+      planId: 702,
+      baseBranch: 'main',
+      revision: 1,
+    });
+
+    await clearPlanBaseTracking(db, config, planUuid);
+
+    // All fields cleared in local DB
+    const plan = getPlanByUuid(db, planUuid);
+    expect(plan?.base_branch).toBeNull();
+    expect(plan?.base_commit).toBeNull();
+    expect(plan?.base_change_id).toBeNull();
+
+    // Only one sync op emitted (for base_branch = null); baseCommit/baseChangeId are local-only
+    const ops = db
+      .prepare("SELECT operation_type, payload FROM sync_operation WHERE status = 'queued'")
+      .all() as Array<{ operation_type: string; payload: string }>;
+    expect(ops).toHaveLength(1);
+    expect(ops[0].operation_type).toBe('plan.set_scalar');
+    const payload = JSON.parse(ops[0].payload);
+    expect(payload.field).toBe('base_branch');
+    expect(payload.value).toBeNull();
   });
 });

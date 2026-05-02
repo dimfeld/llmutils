@@ -21,10 +21,47 @@ import {
 } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
 import { materializePlan } from './plan_materialize.js';
+import { getDatabase } from './db/database.js';
+import { loadConfig } from './configLoader.js';
+import type { TimConfig } from './configSchema.js';
 
 async function initializeGitRepository(repoDir: string): Promise<void> {
   await Bun.$`git init`.cwd(repoDir).quiet();
   await Bun.$`git remote add origin https://example.com/acme/plans-tests.git`.cwd(repoDir).quiet();
+}
+
+function syncOperationCount(nodeId?: string): number {
+  if (nodeId) {
+    return (
+      getDatabase()
+        .prepare('SELECT COUNT(*) AS count FROM sync_operation WHERE origin_node_id = ?')
+        .get(nodeId) as { count: number }
+    ).count;
+  }
+  return (
+    getDatabase().prepare('SELECT COUNT(*) AS count FROM sync_operation').get() as {
+      count: number;
+    }
+  ).count;
+}
+
+function syncOperationRowsForNode(nodeId: string): Array<{
+  operation_type: string;
+  status: string;
+  origin_node_id: string;
+}> {
+  return getDatabase()
+    .prepare(
+      `SELECT operation_type, status, origin_node_id
+       FROM sync_operation
+       WHERE origin_node_id = ?
+       ORDER BY local_sequence`
+    )
+    .all(nodeId) as Array<{
+    operation_type: string;
+    status: string;
+    origin_node_id: string;
+  }>;
 }
 
 describe('plans', () => {
@@ -311,6 +348,400 @@ describe('plans', () => {
 
     const updated = await readPlanFile(planPath);
     expect(updated.status).toBe('done');
+  });
+
+  test('writePlanFile strips plan and task revisions from YAML output', async () => {
+    const planPath = join(repoDir, 'revision-stripped.plan.md');
+    await writePlanFile(
+      planPath,
+      {
+        id: 31,
+        uuid: '31313131-3131-4131-8131-313131313131',
+        title: 'Revision stripped',
+        goal: 'Do not expose CAS metadata',
+        revision: 7,
+        tasks: [
+          {
+            uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            title: 'task',
+            description: 'task description',
+            done: false,
+            revision: 4,
+          },
+        ],
+      },
+      { skipDb: true }
+    );
+
+    const content = await Bun.file(planPath).text();
+    expect(content).not.toContain('revision:');
+    const reread = await readPlanFile(planPath);
+    expect(reread.revision).toBeUndefined();
+    expect(reread.tasks[0]?.revision).toBeUndefined();
+    expect(reread.tasks[0]?.uuid).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+  });
+
+  test('writePlanToDb preserves updated_at when skipUpdatedAt is set in local-operation mode', async () => {
+    const uuid = '51515151-5151-4151-8151-515151515151';
+    const originalUpdatedAt = '2024-01-02T03:04:05.000Z';
+    const config = { sync: { nodeId: 'plans-test-node' } } as TimConfig;
+
+    await writePlanToDb(
+      {
+        id: 51,
+        uuid,
+        title: 'Timestamp plan',
+        goal: 'g',
+        updatedAt: originalUpdatedAt,
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir, skipUpdatedAt: true, config }
+    );
+
+    await writePlanToDb(
+      {
+        id: 51,
+        uuid,
+        title: 'Timestamp plan edited',
+        goal: 'g',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir, skipUpdatedAt: true, config }
+    );
+
+    const row = getDatabase()
+      .prepare('SELECT title, updated_at FROM plan WHERE uuid = ?')
+      .get(uuid) as { title: string; updated_at: string };
+    expect(row.title).toBe('Timestamp plan edited');
+    expect(row.updated_at).toBe(originalUpdatedAt);
+  });
+
+  test('writePlanToDb respects source created and updated timestamps on create', async () => {
+    const uuid = '52525252-5252-4252-8252-525252525252';
+    const createdAt = '2024-02-03T04:05:06.000Z';
+    const updatedAt = '2024-02-04T05:06:07.000Z';
+
+    await writePlanToDb(
+      {
+        id: 52,
+        uuid,
+        title: 'Source timestamp plan',
+        goal: 'g',
+        createdAt,
+        updatedAt,
+        tasks: [],
+      },
+      {
+        cwdForIdentity: repoDir,
+        skipUpdatedAt: true,
+        config: { sync: { nodeId: 'plans-test-node' } },
+      }
+    );
+
+    const row = getDatabase()
+      .prepare('SELECT created_at, updated_at FROM plan WHERE uuid = ?')
+      .get(uuid) as { created_at: string; updated_at: string };
+    expect(row.created_at).toBe(createdAt);
+    expect(row.updated_at).toBe(updatedAt);
+  });
+
+  test('writePlanToDb defers base tracking updates until after batch commit succeeds', async () => {
+    const planAUuid = '53535353-5353-4353-8353-535353535353';
+    const planBUuid = '54545454-5454-4454-8454-545454545454';
+    const config = { sync: { nodeId: 'plans-test-node' } } as TimConfig;
+
+    await writePlanToDb(
+      {
+        id: 53,
+        uuid: planAUuid,
+        title: 'Plan A',
+        goal: 'g',
+        baseCommit: 'old-base',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir, config }
+    );
+    await writePlanToDb(
+      {
+        id: 54,
+        uuid: planBUuid,
+        title: 'Plan B',
+        goal: 'g',
+        dependencies: [53],
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir, config }
+    );
+
+    await expect(
+      writePlanToDb(
+        {
+          id: 53,
+          uuid: planAUuid,
+          title: 'Plan A',
+          goal: 'g',
+          baseCommit: 'new-base',
+          dependencies: [54],
+          tasks: [],
+        },
+        { cwdForIdentity: repoDir, config }
+      )
+    ).rejects.toThrow('Adding dependency would create a cycle');
+
+    const row = getDatabase()
+      .prepare('SELECT base_commit FROM plan WHERE uuid = ?')
+      .get(planAUuid) as { base_commit: string | null };
+    expect(row.base_commit).toBe('old-base');
+  });
+
+  test('writePlanFile preserves updated_at when skipUpdatedAt is set', async () => {
+    const uuid = '57575757-5757-4757-8757-575757575757';
+    const originalUpdatedAt = '2024-03-04T05:06:07.000Z';
+    const config = { sync: { nodeId: 'plans-test-node' } } as TimConfig;
+
+    await writePlanFile(
+      null,
+      {
+        id: 57,
+        uuid,
+        title: 'File timestamp plan',
+        goal: 'g',
+        updatedAt: originalUpdatedAt,
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir, skipUpdatedAt: true, config }
+    );
+
+    await writePlanFile(
+      null,
+      {
+        id: 57,
+        uuid,
+        title: 'File timestamp plan edited',
+        goal: 'g',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir, skipUpdatedAt: true, config }
+    );
+
+    const row = getDatabase()
+      .prepare('SELECT title, updated_at FROM plan WHERE uuid = ?')
+      .get(uuid) as { title: string; updated_at: string };
+    expect(row.title).toBe('File timestamp plan edited');
+    expect(row.updated_at).toBe(originalUpdatedAt);
+  });
+
+  test('writePlanFile in local-operation mode emits applied sync operations and preserves DB state', async () => {
+    const nodeId = 'plans-local-operation-writeplanfile-node';
+    const uuid = '83838383-8383-4383-8383-838383838383';
+    const config = { sync: { nodeId } } as TimConfig;
+    const operationCountBefore = syncOperationCount();
+
+    await writePlanFile(
+      null,
+      {
+        id: 83,
+        uuid,
+        title: 'Local operation plan',
+        goal: 'Route ordinary local writes through operations',
+        details: 'local details',
+        note: 'local note',
+        status: 'in_progress',
+        priority: 'high',
+        tasks: [
+          {
+            title: 'Local operation task',
+            description: 'Task written through plan.create',
+            done: true,
+          },
+        ],
+        tags: ['local-operation'],
+      },
+      { cwdForIdentity: repoDir, config }
+    );
+
+    const operationRows = syncOperationRowsForNode(nodeId);
+    expect(operationRows).toEqual([
+      { operation_type: 'plan.create', status: 'applied', origin_node_id: nodeId },
+    ]);
+    expect(syncOperationCount()).toBe(operationCountBefore + 1);
+    expect(
+      getDatabase()
+        .prepare('SELECT next_sequence FROM tim_node_sequence WHERE node_id = ?')
+        .get(nodeId)
+    ).toEqual({ next_sequence: 1 });
+
+    const resolved = await resolvePlanByNumericId(83, repoDir);
+    expect(resolved.plan).toMatchObject({
+      id: 83,
+      uuid,
+      title: 'Local operation plan',
+      goal: 'Route ordinary local writes through operations',
+      details: 'local details',
+      note: 'local note',
+      status: 'in_progress',
+      priority: 'high',
+      tags: ['local-operation'],
+    });
+    expect(resolved.plan.tasks).toMatchObject([
+      {
+        title: 'Local operation task',
+        description: 'Task written through plan.create',
+        done: true,
+      },
+    ]);
+  });
+
+  test('writePlanFile preserves duplicate list-field parity through operation routing', async () => {
+    const nodeId = 'plans-local-operation-list-duplicates-node';
+    const uuid = '83838383-8383-4383-8383-838383838384';
+    const config = { sync: { nodeId } } as TimConfig;
+
+    await writePlanFile(
+      null,
+      {
+        id: 8300,
+        uuid,
+        title: 'Local operation duplicate lists',
+        goal: 'Preserve multiplicity for list diffs',
+        docs: ['docs/a.md', 'docs/a.md'],
+        changedFiles: ['src/a.ts'],
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir, config }
+    );
+
+    await writePlanFile(
+      null,
+      {
+        id: 8300,
+        uuid,
+        title: 'Local operation duplicate lists',
+        goal: 'Preserve multiplicity for list diffs',
+        docs: ['docs/a.md'],
+        changedFiles: ['src/a.ts', 'src/a.ts'],
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir, config }
+    );
+
+    const resolved = await resolvePlanByNumericId(8300, repoDir);
+    expect(resolved.plan.docs).toEqual(['docs/a.md']);
+    expect(resolved.plan.changedFiles).toEqual(['src/a.ts', 'src/a.ts']);
+    expect(syncOperationRowsForNode(nodeId).map((row) => row.operation_type)).toEqual([
+      'plan.create',
+      'plan.remove_list_item',
+      'plan.add_list_item',
+    ]);
+  });
+
+  test('writePlanFile persists a global nodeId when local-operation config has none', async () => {
+    const configPath = join(process.env.XDG_CONFIG_HOME!, 'tim', 'config.yml');
+    await rm(configPath, { force: true });
+
+    await writePlanFile(
+      null,
+      {
+        id: 84,
+        uuid: '84848484-8484-4484-8484-848484848484',
+        title: 'Local operation generated node id',
+        goal: 'Persist sync.nodeId while applying local operations',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir, config: {} as TimConfig }
+    );
+
+    const loaded = await loadConfig(configPath);
+    expect(loaded.sync?.nodeId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    expect(syncOperationRowsForNode(loaded.sync!.nodeId!)).toEqual([
+      {
+        operation_type: 'plan.create',
+        status: 'applied',
+        origin_node_id: loaded.sync!.nodeId!,
+      },
+    ]);
+  });
+
+  test('writePlanFile creates a new DB row with a fresh UUID when the numeric id does not exist in DB', async () => {
+    const config = { sync: { nodeId: 'plans-new-file-row-node' } } as TimConfig;
+    const planPath = join(repoDir, '99.plan.md');
+
+    // Write a new file for a plan that does NOT exist in the DB.
+    await Bun.write(
+      planPath,
+      `---
+id: 99
+title: Brand new plan from file
+goal: g
+tasks: []
+---
+`
+    );
+
+    const plan = await readPlanFile(planPath);
+    expect(plan.uuid).toBeUndefined();
+
+    await writePlanFile(planPath, plan, { cwdForIdentity: repoDir, config });
+
+    const rows = getDatabase()
+      .prepare('SELECT uuid, title FROM plan WHERE plan_id = ?')
+      .all(99) as Array<{ uuid: string; title: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe('Brand new plan from file');
+    // A fresh UUID should have been generated
+    expect(rows[0].uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+  });
+
+  test('writePlanFile preserves parent_uuid linkage when child file is new', async () => {
+    const parentUuid = '70707070-7070-4070-8070-707070707070';
+    const config = { sync: { nodeId: 'plans-new-child-node' } } as TimConfig;
+
+    // Create the parent plan in the DB with a known UUID
+    await writePlanToDb(
+      {
+        id: 70,
+        uuid: parentUuid,
+        title: 'Parent plan',
+        goal: 'parent goal',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir, config }
+    );
+
+    // Write a new child file that references the parent by numeric ID.
+    const childPath = join(repoDir, '701.plan.md');
+    await Bun.write(
+      childPath,
+      `---
+id: 701
+title: New child plan
+goal: child goal
+parent: 70
+tasks: []
+---
+`
+    );
+
+    const childPlan = await readPlanFile(childPath);
+    expect(childPlan.uuid).toBeUndefined();
+
+    await writePlanFile(childPath, childPlan, { cwdForIdentity: repoDir, config });
+
+    const childRow = getDatabase()
+      .prepare('SELECT uuid, title, parent_uuid FROM plan WHERE plan_id = ?')
+      .get(701) as { uuid: string; title: string; parent_uuid: string } | null;
+    expect(childRow).not.toBeNull();
+    expect(childRow!.title).toBe('New child plan');
+    // A fresh UUID should have been generated for the child
+    expect(childRow!.uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    // The parent linkage should be correctly resolved to the parent UUID
+    expect(childRow!.parent_uuid).toBe(parentUuid);
   });
 
   test('setPlanStatusById updates the DB-backed materialized plan', async () => {

@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { getServerContext } from '$lib/server/init.js';
-import { getProjectSettings } from '$tim/db/project_settings.js';
+import { getProjectSettingsWithMetadata } from '$tim/db/project_settings.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
@@ -11,7 +11,20 @@ export const load: PageServerLoad = async ({ params }) => {
   const numericProjectId = Number(params.projectId);
 
   const { db } = await getServerContext();
-  const settings = getProjectSettings(db, numericProjectId);
+  const settingsWithMetadata = getProjectSettingsWithMetadata(db, numericProjectId);
+  const settings = Object.fromEntries(
+    Object.entries(settingsWithMetadata).map(([setting, metadata]) => [setting, metadata.value])
+  );
+  const settingMetadata = Object.fromEntries(
+    Object.entries(settingsWithMetadata).map(([setting, metadata]) => [
+      setting,
+      {
+        revision: metadata.revision,
+        updatedAt: metadata.updatedAt,
+        updatedByNode: metadata.updatedByNode,
+      },
+    ])
+  );
 
-  return { settings };
+  return { settings, settingMetadata };
 };

@@ -771,6 +771,7 @@ describe('handleRebaseCommand', () => {
       // setPlanBaseTracking should have been called to update baseCommit with an actual hash
       expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
         expect.anything(),
+        expect.anything(),
         'plan-263',
         expect.objectContaining({ baseCommit: expect.any(String) })
       );
@@ -796,7 +797,11 @@ describe('handleRebaseCommand', () => {
       // The child branch should now be based on main/trunk
       expect(await isAncestor(repo.workDir, 'origin/main', repo.featureBranch)).toBe(true);
       // clearPlanBaseTracking should have been called since base branch is gone
-      expect(vi.mocked(clearPlanBaseTracking)).toHaveBeenCalledWith(expect.anything(), 'plan-263');
+      expect(vi.mocked(clearPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'plan-263'
+      );
       // setPlanBaseTracking should NOT have been called with baseCommit (we're on trunk)
       expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
     });
@@ -828,6 +833,7 @@ describe('handleRebaseCommand', () => {
       // setPlanBaseTracking should have been called to persist baseBranch and baseCommit
       expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
         expect.anything(),
+        expect.anything(),
         'plan-263',
         expect.objectContaining({ baseBranch: repo.baseBranch, baseCommit: expect.any(String) })
       );
@@ -854,7 +860,11 @@ describe('handleRebaseCommand', () => {
       // Verify the child is now based on main
       expect(await isAncestor(repo.workDir, 'origin/main', repo.featureBranch)).toBe(true);
       // clearPlanBaseTracking should have been called
-      expect(vi.mocked(clearPlanBaseTracking)).toHaveBeenCalledWith(expect.anything(), 'plan-263');
+      expect(vi.mocked(clearPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'plan-263'
+      );
       // setPlanBaseTracking should NOT have been called
       expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
     });
@@ -1007,6 +1017,7 @@ describe('handleRebaseCommand', () => {
       expect(await isAncestor(repo.workDir, 'origin/main', repo.featureBranch)).toBe(true);
       expect(vi.mocked(clearPlanBaseTracking)).toHaveBeenCalledWith(
         expect.objectContaining({}),
+        expect.anything(),
         'plan-263'
       );
       expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
@@ -1040,6 +1051,7 @@ describe('handleRebaseCommand', () => {
       expect(vi.mocked(clearPlanBaseTracking)).not.toHaveBeenCalled();
       expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
         expect.anything(),
+        expect.anything(),
         'plan-263',
         expect.objectContaining({
           baseCommit: expect.any(String),
@@ -1069,7 +1081,11 @@ describe('handleRebaseCommand', () => {
 
       await fetchOrigin(repo.workDir);
       expect(await isAncestor(repo.workDir, 'origin/main', repo.featureBranch)).toBe(true);
-      expect(vi.mocked(clearPlanBaseTracking)).toHaveBeenCalledWith(expect.anything(), 'plan-263');
+      expect(vi.mocked(clearPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'plan-263'
+      );
       expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
     });
 
@@ -1099,6 +1115,7 @@ describe('handleRebaseCommand', () => {
         true
       );
       expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
         expect.anything(),
         'plan-263',
         expect.objectContaining({
@@ -1150,6 +1167,7 @@ describe('handleRebaseCommand', () => {
       ]);
 
       expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
         expect.anything(),
         'plan-263',
         expect.objectContaining({

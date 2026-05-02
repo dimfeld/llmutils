@@ -5,6 +5,7 @@ interface Migration {
   version: number;
   up: string;
   requiresFkOff?: boolean;
+  afterUp?: (db: Database) => void;
 }
 
 const migrations: Migration[] = [
@@ -615,6 +616,7 @@ const migrations: Migration[] = [
         ON branch_merge_requirement_check(branch_merge_requirement_source_id);
     `,
   },
+  // Version 23 omitted
   {
     version: 24,
     up: `
@@ -683,6 +685,361 @@ const migrations: Migration[] = [
         REFERENCES pr_review_submission(id) ON DELETE SET NULL;
     `,
   },
+  {
+    version: 26,
+    up: `
+      ALTER TABLE project ADD COLUMN uuid TEXT;
+      UPDATE project
+      SET uuid = lower(hex(randomblob(4))) || '-' ||
+        lower(hex(randomblob(2))) || '-4' ||
+        substr(lower(hex(randomblob(2))), 2) || '-' ||
+        substr('89ab', (random() & 3) + 1, 1) ||
+        substr(lower(hex(randomblob(2))), 2) || '-' ||
+        lower(hex(randomblob(6)))
+      WHERE uuid IS NULL;
+      CREATE UNIQUE INDEX idx_project_uuid_unique ON project(uuid);
+
+      ALTER TABLE plan ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+
+      ALTER TABLE plan_task ADD COLUMN uuid TEXT;
+      UPDATE plan_task
+      SET uuid = lower(hex(randomblob(4))) || '-' ||
+        lower(hex(randomblob(2))) || '-4' ||
+        substr(lower(hex(randomblob(2))), 2) || '-' ||
+        substr('89ab', (random() & 3) + 1, 1) ||
+        substr(lower(hex(randomblob(2))), 2) || '-' ||
+        lower(hex(randomblob(6)))
+      WHERE uuid IS NULL;
+      CREATE UNIQUE INDEX idx_plan_task_uuid_unique ON plan_task(uuid);
+      ALTER TABLE plan_task ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+
+      ALTER TABLE project_setting ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE project_setting ADD COLUMN updated_at TEXT;
+      UPDATE project_setting SET updated_at = ${SQL_NOW_ISO_UTC} WHERE updated_at IS NULL;
+      ALTER TABLE project_setting ADD COLUMN updated_by_node TEXT;
+
+      CREATE TABLE tim_node (
+        node_id TEXT PRIMARY KEY,
+        role TEXT NOT NULL CHECK(role IN ('main', 'persistent', 'ephemeral')),
+        label TEXT,
+        token_hash TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE sync_operation (
+        operation_uuid TEXT PRIMARY KEY,
+        project_uuid TEXT NOT NULL,
+        origin_node_id TEXT NOT NULL,
+        batch_id TEXT,
+        local_sequence INTEGER NOT NULL,
+        target_type TEXT NOT NULL,
+        target_key TEXT NOT NULL,
+        operation_type TEXT NOT NULL,
+        base_revision INTEGER,
+        base_hash TEXT,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        acked_at TEXT,
+        ack_metadata TEXT
+      );
+      CREATE UNIQUE INDEX idx_sync_operation_origin_sequence
+        ON sync_operation(origin_node_id, local_sequence);
+      CREATE INDEX idx_sync_operation_project_status ON sync_operation(project_uuid, status);
+      CREATE INDEX idx_sync_operation_status_updated ON sync_operation(status, updated_at);
+      CREATE INDEX idx_sync_operation_batch_id ON sync_operation(batch_id);
+
+      CREATE TABLE sync_conflict (
+        conflict_id TEXT PRIMARY KEY,
+        operation_uuid TEXT NOT NULL,
+        project_uuid TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_key TEXT NOT NULL,
+        field_path TEXT,
+        base_value TEXT,
+        base_hash TEXT,
+        incoming_value TEXT,
+        attempted_patch TEXT,
+        current_value TEXT,
+        original_payload TEXT NOT NULL,
+        normalized_payload TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        origin_node_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        resolved_at TEXT,
+        resolution TEXT,
+        resolved_by_node TEXT
+      );
+      CREATE INDEX idx_sync_conflict_project_status ON sync_conflict(project_uuid, status);
+
+      CREATE TABLE sync_tombstone (
+        entity_type TEXT NOT NULL,
+        entity_key TEXT NOT NULL,
+        project_uuid TEXT NOT NULL,
+        deletion_operation_uuid TEXT NOT NULL,
+        deleted_revision INTEGER,
+        deleted_at TEXT NOT NULL,
+        origin_node_id TEXT NOT NULL,
+        PRIMARY KEY (entity_type, entity_key)
+      );
+
+      CREATE TABLE sync_sequence (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_uuid TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_key TEXT NOT NULL,
+        revision INTEGER,
+        operation_uuid TEXT,
+        origin_node_id TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_sync_sequence_project_sequence ON sync_sequence(project_uuid, sequence);
+
+      CREATE TABLE tim_node_sequence (
+        node_id TEXT PRIMARY KEY,
+        next_sequence INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT INTO tim_node_sequence (node_id, next_sequence, updated_at)
+      SELECT origin_node_id, COALESCE(MAX(local_sequence), -1) + 1, ${SQL_NOW_ISO_UTC}
+      FROM sync_operation
+      GROUP BY origin_node_id;
+
+      CREATE TABLE tim_node_cursor (
+        node_id TEXT PRIMARY KEY,
+        last_known_sequence_id INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
+  {
+    version: 27,
+    up: `
+      ALTER TABLE sync_operation ADD COLUMN batch_atomic INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
+  {
+    version: 28,
+    up: `
+      ALTER TABLE sync_operation ADD COLUMN payload_plan_uuid TEXT;
+      ALTER TABLE sync_operation ADD COLUMN payload_secondary_plan_uuid TEXT;
+      ALTER TABLE sync_operation ADD COLUMN payload_task_uuid TEXT;
+
+      UPDATE sync_operation
+      SET payload_plan_uuid = COALESCE(
+            JSON_EXTRACT(payload, '$.planUuid'),
+            JSON_EXTRACT(payload, '$.newPlanUuid')
+          ),
+          payload_secondary_plan_uuid = JSON_EXTRACT(payload, '$.sourcePlanUuid'),
+          payload_task_uuid = JSON_EXTRACT(payload, '$.taskUuid');
+
+      CREATE INDEX idx_sync_operation_payload_plan_uuid
+        ON sync_operation(payload_plan_uuid);
+      CREATE INDEX idx_sync_operation_payload_secondary_plan_uuid
+        ON sync_operation(payload_secondary_plan_uuid);
+      CREATE INDEX idx_sync_operation_payload_task_uuid
+        ON sync_operation(payload_task_uuid);
+      CREATE INDEX idx_sync_operation_target_key
+        ON sync_operation(target_key);
+    `,
+  },
+  {
+    version: 29,
+    up: `
+      SELECT 1;
+    `,
+  },
+  {
+    version: 30,
+    up: `
+      CREATE TABLE sync_operation_plan_ref (
+        operation_uuid TEXT NOT NULL REFERENCES sync_operation(operation_uuid) ON DELETE CASCADE,
+        project_uuid TEXT NOT NULL,
+        plan_uuid TEXT NOT NULL,
+        role TEXT NOT NULL,
+        PRIMARY KEY (operation_uuid, plan_uuid, role)
+      );
+      CREATE INDEX idx_sync_operation_plan_ref_plan_uuid
+        ON sync_operation_plan_ref(plan_uuid);
+      CREATE INDEX idx_sync_operation_plan_ref_project_plan
+        ON sync_operation_plan_ref(project_uuid, plan_uuid);
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.planUuid'), 'target'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.planUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.newPlanUuid'), 'target'
+      FROM sync_operation
+      WHERE operation_type = 'plan.promote_task'
+        AND JSON_EXTRACT(payload, '$.newPlanUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.sourcePlanUuid'), 'source'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.sourcePlanUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.newPlanUuid'), 'new_plan'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.newPlanUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.parentUuid'), 'parent'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.parentUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.newParentUuid'), 'new_parent'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.newParentUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.previousParentUuid'), 'previous_parent'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.previousParentUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT operation_uuid, project_uuid, JSON_EXTRACT(payload, '$.dependsOnPlanUuid'), 'depends_on'
+      FROM sync_operation
+      WHERE JSON_EXTRACT(payload, '$.dependsOnPlanUuid') IS NOT NULL;
+
+      INSERT OR IGNORE INTO sync_operation_plan_ref (operation_uuid, project_uuid, plan_uuid, role)
+      SELECT so.operation_uuid, so.project_uuid, je.value, 'dependency'
+      FROM sync_operation AS so, json_each(JSON_EXTRACT(so.payload, '$.dependencies')) AS je
+      WHERE JSON_EXTRACT(so.payload, '$.dependencies') IS NOT NULL;
+
+      DROP INDEX idx_sync_operation_payload_plan_uuid;
+      DROP INDEX idx_sync_operation_payload_secondary_plan_uuid;
+      ALTER TABLE sync_operation DROP COLUMN payload_plan_uuid;
+      ALTER TABLE sync_operation DROP COLUMN payload_secondary_plan_uuid;
+    `,
+  },
+  {
+    version: 31,
+    up: `
+      DELETE FROM sync_sequence
+      WHERE operation_uuid IS NULL
+        AND sequence NOT IN (
+          SELECT MIN(sequence)
+          FROM sync_sequence
+          WHERE operation_uuid IS NULL
+          GROUP BY project_uuid, target_type, target_key
+        );
+
+      DELETE FROM sync_sequence
+      WHERE operation_uuid IS NOT NULL
+        AND sequence NOT IN (
+          SELECT MIN(sequence)
+          FROM sync_sequence
+          WHERE operation_uuid IS NOT NULL
+          GROUP BY operation_uuid, target_type, target_key
+        );
+
+      CREATE UNIQUE INDEX idx_sync_sequence_bootstrap_target_unique
+        ON sync_sequence(project_uuid, target_type, target_key)
+        WHERE operation_uuid IS NULL;
+
+      CREATE UNIQUE INDEX idx_sync_sequence_operation_target_unique
+        ON sync_sequence(operation_uuid, target_type, target_key)
+      WHERE operation_uuid IS NOT NULL;
+    `,
+  },
+  {
+    version: 32,
+    up: `
+      CREATE TABLE plan_canonical (
+        uuid TEXT NOT NULL PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        plan_id INTEGER NOT NULL,
+        title TEXT,
+        goal TEXT,
+        details TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending', 'in_progress', 'done', 'cancelled', 'deferred', 'needs_review')),
+        priority TEXT
+          CHECK(priority IN ('low', 'medium', 'high', 'urgent', 'maybe') OR priority IS NULL),
+        branch TEXT,
+        simple INTEGER,
+        tdd INTEGER,
+        discovered_from INTEGER,
+        issue TEXT,
+        pull_request TEXT,
+        assigned_to TEXT,
+        base_branch TEXT,
+        temp INTEGER,
+        docs TEXT,
+        changed_files TEXT,
+        plan_generated_at TEXT,
+        review_issues TEXT,
+        parent_uuid TEXT,
+        epic INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        docs_updated_at TEXT,
+        lessons_applied_at TEXT,
+        note TEXT,
+        base_commit TEXT,
+        base_change_id TEXT,
+        revision INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX idx_plan_canonical_project_id ON plan_canonical(project_id);
+      CREATE INDEX idx_plan_canonical_project_plan_id ON plan_canonical(project_id, plan_id);
+      CREATE INDEX idx_plan_canonical_parent_uuid ON plan_canonical(parent_uuid);
+
+      -- task_canonical intentionally mirrors plan_task.uuid's nullable column
+      -- plus unique index quirk. SQLite permits multiple NULLs in a UNIQUE index.
+      CREATE TABLE task_canonical (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_uuid TEXT NOT NULL REFERENCES plan_canonical(uuid) ON DELETE CASCADE,
+        task_index INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0,
+        uuid TEXT,
+        revision INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(plan_uuid, task_index)
+      );
+      CREATE INDEX idx_task_canonical_plan_uuid ON task_canonical(plan_uuid);
+      CREATE UNIQUE INDEX idx_task_canonical_uuid_unique ON task_canonical(uuid);
+
+      CREATE TABLE plan_dependency_canonical (
+        plan_uuid TEXT NOT NULL REFERENCES plan_canonical(uuid) ON DELETE CASCADE,
+        depends_on_uuid TEXT NOT NULL,
+        PRIMARY KEY(plan_uuid, depends_on_uuid)
+      );
+
+      CREATE TABLE plan_tag_canonical (
+        plan_uuid TEXT NOT NULL REFERENCES plan_canonical(uuid) ON DELETE CASCADE,
+        tag TEXT NOT NULL,
+        PRIMARY KEY(plan_uuid, tag)
+      );
+      CREATE INDEX idx_plan_tag_canonical_plan_uuid ON plan_tag_canonical(plan_uuid);
+
+      CREATE TABLE project_setting_canonical (
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        setting TEXT NOT NULL,
+        value TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT,
+        updated_by_node TEXT,
+        PRIMARY KEY (project_id, setting)
+      );
+
+    `,
+    afterUp: backfillCanonicalTables,
+  },
+  {
+    version: 33,
+    up: `DROP TABLE IF EXISTS sync_pending_rollback;`,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {
@@ -692,11 +1049,138 @@ function getCurrentVersion(db: Database): number {
   return row?.version ?? 0;
 }
 
+function tableExists(db: Database, tableName: string): boolean {
+  return Boolean(
+    db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName)
+  );
+}
+
+function tableColumns(db: Database, tableName: string): Set<string> {
+  if (!tableExists(db, tableName)) {
+    return new Set();
+  }
+  return new Set(
+    (
+      db.prepare(`PRAGMA table_info('${tableName}')`).all() as Array<{
+        name: string;
+      }>
+    ).map((column) => column.name)
+  );
+}
+
+function sourceColumn(columns: ReadonlySet<string>, column: string, fallback: string): string {
+  return columns.has(column) ? column : fallback;
+}
+
+function backfillCanonicalTables(db: Database): void {
+  if (tableExists(db, 'plan')) {
+    const columns = tableColumns(db, 'plan');
+    db.run(`
+      INSERT INTO plan_canonical (
+        uuid, project_id, plan_id, title, goal, details, status, priority, branch,
+        simple, tdd, discovered_from, issue, pull_request, assigned_to, base_branch,
+        temp, docs, changed_files, plan_generated_at, review_issues, parent_uuid,
+        epic, created_at, updated_at, docs_updated_at, lessons_applied_at, note,
+        base_commit, base_change_id, revision
+      )
+      SELECT
+        ${sourceColumn(columns, 'uuid', 'NULL')},
+        ${sourceColumn(columns, 'project_id', 'NULL')},
+        ${sourceColumn(columns, 'plan_id', '0')},
+        ${sourceColumn(columns, 'title', 'NULL')},
+        ${sourceColumn(columns, 'goal', 'NULL')},
+        ${sourceColumn(columns, 'details', 'NULL')},
+        ${sourceColumn(columns, 'status', "'pending'")},
+        ${sourceColumn(columns, 'priority', 'NULL')},
+        ${sourceColumn(columns, 'branch', 'NULL')},
+        ${sourceColumn(columns, 'simple', 'NULL')},
+        ${sourceColumn(columns, 'tdd', 'NULL')},
+        ${sourceColumn(columns, 'discovered_from', 'NULL')},
+        ${sourceColumn(columns, 'issue', 'NULL')},
+        ${sourceColumn(columns, 'pull_request', 'NULL')},
+        ${sourceColumn(columns, 'assigned_to', 'NULL')},
+        ${sourceColumn(columns, 'base_branch', 'NULL')},
+        ${sourceColumn(columns, 'temp', 'NULL')},
+        ${sourceColumn(columns, 'docs', 'NULL')},
+        ${sourceColumn(columns, 'changed_files', 'NULL')},
+        ${sourceColumn(columns, 'plan_generated_at', 'NULL')},
+        ${sourceColumn(columns, 'review_issues', 'NULL')},
+        ${sourceColumn(columns, 'parent_uuid', 'NULL')},
+        ${sourceColumn(columns, 'epic', '0')},
+        ${sourceColumn(columns, 'created_at', SQL_NOW_ISO_UTC)},
+        ${sourceColumn(columns, 'updated_at', SQL_NOW_ISO_UTC)},
+        ${sourceColumn(columns, 'docs_updated_at', 'NULL')},
+        ${sourceColumn(columns, 'lessons_applied_at', 'NULL')},
+        ${sourceColumn(columns, 'note', 'NULL')},
+        ${sourceColumn(columns, 'base_commit', 'NULL')},
+        ${sourceColumn(columns, 'base_change_id', 'NULL')},
+        ${sourceColumn(columns, 'revision', '1')}
+      FROM plan
+      WHERE uuid IS NOT NULL AND project_id IS NOT NULL
+    `);
+  }
+
+  if (tableExists(db, 'plan_task')) {
+    const columns = tableColumns(db, 'plan_task');
+    db.run(`
+      INSERT INTO task_canonical (
+        id, plan_uuid, task_index, title, description, done, uuid, revision
+      )
+      SELECT
+        ${sourceColumn(columns, 'id', 'NULL')},
+        ${sourceColumn(columns, 'plan_uuid', 'NULL')},
+        ${sourceColumn(columns, 'task_index', '0')},
+        ${sourceColumn(columns, 'title', "''")},
+        ${sourceColumn(columns, 'description', "''")},
+        ${sourceColumn(columns, 'done', '0')},
+        ${sourceColumn(columns, 'uuid', 'NULL')},
+        ${sourceColumn(columns, 'revision', '1')}
+      FROM plan_task
+      WHERE plan_uuid IS NOT NULL
+    `);
+  }
+
+  if (tableExists(db, 'plan_dependency')) {
+    db.run(`
+      INSERT INTO plan_dependency_canonical (plan_uuid, depends_on_uuid)
+      SELECT plan_uuid, depends_on_uuid
+      FROM plan_dependency
+    `);
+  }
+
+  if (tableExists(db, 'plan_tag')) {
+    db.run(`
+      INSERT INTO plan_tag_canonical (plan_uuid, tag)
+      SELECT plan_uuid, tag
+      FROM plan_tag
+    `);
+  }
+
+  if (tableExists(db, 'project_setting')) {
+    const columns = tableColumns(db, 'project_setting');
+    db.run(`
+      INSERT INTO project_setting_canonical (
+        project_id, setting, value, revision, updated_at, updated_by_node
+      )
+      SELECT
+        ${sourceColumn(columns, 'project_id', 'NULL')},
+        ${sourceColumn(columns, 'setting', 'NULL')},
+        ${sourceColumn(columns, 'value', "''")},
+        ${sourceColumn(columns, 'revision', '1')},
+        ${sourceColumn(columns, 'updated_at', SQL_NOW_ISO_UTC)},
+        ${sourceColumn(columns, 'updated_by_node', 'NULL')}
+      FROM project_setting
+      WHERE project_id IS NOT NULL AND setting IS NOT NULL
+    `);
+  }
+}
+
 export function runMigrations(db: Database): void {
   db.run(`
     CREATE TABLE IF NOT EXISTS schema_version (
       version INTEGER NOT NULL DEFAULT 0,
-      import_completed INTEGER NOT NULL DEFAULT 0
+      import_completed INTEGER NOT NULL DEFAULT 0,
+      bootstrap_completed INTEGER NOT NULL DEFAULT 0
     );
   `);
   const schemaVersionColumns = db.prepare("PRAGMA table_info('schema_version')").all() as Array<{
@@ -708,19 +1192,27 @@ export function runMigrations(db: Database): void {
   if (!hasImportCompleted) {
     db.run('ALTER TABLE schema_version ADD COLUMN import_completed INTEGER NOT NULL DEFAULT 0');
   }
+  const hasBootstrapCompleted = schemaVersionColumns.some(
+    (column) => column.name === 'bootstrap_completed'
+  );
+  if (!hasBootstrapCompleted) {
+    db.run('ALTER TABLE schema_version ADD COLUMN bootstrap_completed INTEGER NOT NULL DEFAULT 0');
+  }
 
   let currentVersion = getCurrentVersion(db);
-  const importCompletedRow = db
-    .prepare('SELECT import_completed FROM schema_version ORDER BY rowid DESC LIMIT 1')
-    .get() as { import_completed?: number } | null;
-  const importCompleted = importCompletedRow?.import_completed ?? 0;
+  const schemaVersionRow = db
+    .prepare(
+      'SELECT import_completed, bootstrap_completed FROM schema_version ORDER BY rowid DESC LIMIT 1'
+    )
+    .get() as { import_completed?: number; bootstrap_completed?: number } | null;
+  const importCompleted = schemaVersionRow?.import_completed ?? 0;
+  const bootstrapCompleted = schemaVersionRow?.bootstrap_completed ?? 0;
 
   const persistVersion = (version: number): void => {
     db.run('DELETE FROM schema_version');
-    db.prepare('INSERT INTO schema_version (version, import_completed) VALUES (?, ?)').run(
-      version,
-      importCompleted
-    );
+    db.prepare(
+      'INSERT INTO schema_version (version, import_completed, bootstrap_completed) VALUES (?, ?, ?)'
+    ).run(version, importCompleted, bootstrapCompleted);
   };
 
   for (const migration of migrations) {
@@ -733,6 +1225,7 @@ export function runMigrations(db: Database): void {
       try {
         db.transaction(() => {
           db.run(migration.up);
+          migration.afterUp?.(db);
           persistVersion(migration.version);
         }).immediate();
       } finally {
@@ -741,6 +1234,7 @@ export function runMigrations(db: Database): void {
     } else {
       db.transaction(() => {
         db.run(migration.up);
+        migration.afterUp?.(db);
         persistVersion(migration.version);
       }).immediate();
     }
@@ -750,7 +1244,9 @@ export function runMigrations(db: Database): void {
 
   if (currentVersion === 0) {
     db.transaction(() => {
-      db.prepare('INSERT INTO schema_version (version, import_completed) VALUES (0, 0)').run();
+      db.prepare(
+        'INSERT INTO schema_version (version, import_completed, bootstrap_completed) VALUES (0, 0, 0)'
+      ).run();
     }).immediate();
   }
 }

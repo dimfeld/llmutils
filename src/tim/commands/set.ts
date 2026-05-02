@@ -6,8 +6,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { getDatabase } from '../db/database.js';
-import { getPlanByPlanId, type PlanRow, upsertPlan } from '../db/plan.js';
-import { toPlanUpsertInput } from '../db/plan_sync.js';
+import { getPlanByPlanId, type PlanRow } from '../db/plan.js';
 import {
   getMaterializedPlanPath,
   materializePlan,
@@ -20,9 +19,12 @@ import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import type { PlanSchema, Priority } from '../planSchema.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import {
+  applyPlanWritePostCommitUpdates,
+  preparePlanForWrite,
   readPlanFile,
   resolvePlanByNumericId,
   resolvePlanByUuid,
+  routePlanWriteIntoBatch,
   writePlanFile,
 } from '../plans.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
@@ -31,6 +33,7 @@ import { resolveWritablePath } from '../plans/resolve_writable_path.js';
 import { ensureReferences } from '../utils/references.js';
 import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
 import { generateBranchNameFromPlan } from './branch.js';
+import { beginSyncBatch } from '../sync/write_router.js';
 
 export interface SetOptions {
   priority?: Priority;
@@ -357,59 +360,68 @@ export async function handleSetCommand(
     const db = getDatabase();
     const idToUuid = new Map(context.planIdToUuid);
 
-    const writePlans = db.transaction(() => {
-      const childRow = getPlanByPlanId(db, context.projectId, plan.id);
-      if (!childRow) {
-        throw new Error(`Plan ${plan.id} not found`);
-      }
-      const { updatedPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });
-      upsertPlan(db, context.projectId, {
-        ...toPlanUpsertInput(updatedPlan, idToUuid),
-        forceOverwrite: true,
-      });
+    const childRow = getPlanByPlanId(db, context.projectId, plan.id);
+    if (!childRow) {
+      throw new Error(`Plan ${plan.id} not found`);
+    }
+    const { updatedPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });
+    // applyPlanSetParent updates plan_dependency for both parents and bumps
+    // their updated_at, so parent plans only need explicit routing when an
+    // additional edit is needed, such as flipping the new parent's status.
+    const routedPlans: PlanSchema[] = [preparePlanForWrite(updatedPlan)];
+    const routeOptions = new Map<
+      string,
+      { existingRow?: PlanRow | null; currentPlan?: PlanSchema }
+    >();
 
-      if (oldParentIdToUpdate !== undefined) {
-        const oldParentRow = getPlanByPlanId(db, context.projectId, oldParentIdToUpdate);
-        if (!oldParentRow) {
-          throw new Error(`Plan ${oldParentIdToUpdate} not found`);
-        }
-        const oldParentPlan = planRowForTransaction(oldParentRow, invertPlanIdToUuidMap(idToUuid));
-        oldParentPlan.dependencies = (oldParentPlan.dependencies ?? []).filter(
-          (dep) => dep !== plan.id
-        );
-        oldParentPlan.updatedAt = new Date().toISOString();
-        const { updatedPlan: updatedOldParent } = ensureReferences(oldParentPlan, {
-          planIdToUuid: idToUuid,
-        });
-        upsertPlan(db, context.projectId, {
-          ...toPlanUpsertInput(updatedOldParent, idToUuid),
-          forceOverwrite: true,
-        });
+    if (oldParentIdToUpdate !== undefined) {
+      const oldParentRow = getPlanByPlanId(db, context.projectId, oldParentIdToUpdate);
+      if (!oldParentRow) {
+        throw new Error(`Plan ${oldParentIdToUpdate} not found`);
       }
+    }
 
-      if (newParentIdToUpdate !== undefined) {
-        const newParentRow = getPlanByPlanId(db, context.projectId, newParentIdToUpdate);
-        if (!newParentRow) {
-          throw new Error(`Plan ${newParentIdToUpdate} not found`);
-        }
-        const newParentPlan = planRowForTransaction(newParentRow, invertPlanIdToUuidMap(idToUuid));
-        const dependencies = new Set(newParentPlan.dependencies ?? []);
-        dependencies.add(plan.id);
-        newParentPlan.dependencies = [...dependencies];
-        if (newParentPlan.status === 'done' || newParentPlan.status === 'needs_review') {
-          newParentPlan.status = 'in_progress';
-        }
-        newParentPlan.updatedAt = new Date().toISOString();
+    if (newParentIdToUpdate !== undefined) {
+      const newParentRow = getPlanByPlanId(db, context.projectId, newParentIdToUpdate);
+      if (!newParentRow) {
+        throw new Error(`Plan ${newParentIdToUpdate} not found`);
+      }
+      const newParentPlan = planRowForTransaction(newParentRow, invertPlanIdToUuidMap(idToUuid));
+      const dependencies = new Set(newParentPlan.dependencies ?? []);
+      dependencies.add(plan.id);
+      newParentPlan.dependencies = [...dependencies];
+      newParentPlan.updatedAt = new Date().toISOString();
+      if (newParentPlan.status === 'done' || newParentPlan.status === 'needs_review') {
+        newParentPlan.status = 'in_progress';
         const { updatedPlan: updatedNewParent } = ensureReferences(newParentPlan, {
           planIdToUuid: idToUuid,
         });
-        upsertPlan(db, context.projectId, {
-          ...toPlanUpsertInput(updatedNewParent, idToUuid),
-          forceOverwrite: true,
+        const preparedNewParent = preparePlanForWrite(updatedNewParent);
+        routedPlans.push(preparedNewParent);
+        routeOptions.set(preparedNewParent.uuid!, {
+          existingRow: newParentRow,
+          currentPlan: {
+            ...planRowForTransaction(newParentRow, invertPlanIdToUuidMap(idToUuid)),
+            dependencies: [...dependencies],
+          },
         });
       }
-    });
-    writePlans.immediate();
+    }
+
+    const batch = await beginSyncBatch(db, config, { atomic: true });
+    const postCommitUpdates = routedPlans.flatMap((routedPlan) =>
+      routePlanWriteIntoBatch(
+        batch,
+        db,
+        config,
+        context.projectId,
+        routedPlan,
+        idToUuid,
+        routeOptions.get(routedPlan.uuid!) ?? {}
+      )
+    );
+    await batch.commit();
+    applyPlanWritePostCommitUpdates(db, postCommitUpdates);
 
     const freshContext = await resolveProjectContext(repoRoot);
     const refreshedPlan = (

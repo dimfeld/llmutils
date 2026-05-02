@@ -59,7 +59,7 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('## Diff Reference Catalog');
     expect(prompt).toContain(DIFF_REFERENCES[0]!.ref);
     expect(prompt).toContain('Write placeholders exactly as `<diff ref="..."/>`');
-    expect(prompt).toContain('Do not write raw ```unified-diff fences yourself');
+    expect(prompt).toContain('Do not write raw diff blocks yourself');
   });
 
   test('buildReviewGuidePrompt includes jj instructions when requested', () => {

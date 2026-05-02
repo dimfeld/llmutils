@@ -4,15 +4,24 @@
 import { log } from '../../logging.js';
 import { parseTaskIds } from '../utils/id_parser.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { getDefaultConfig } from '../configSchema.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getDatabase } from '../db/database.js';
-import { reserveNextPlanId } from '../db/project.js';
-import { getPlanByPlanId, upsertPlan } from '../db/plan.js';
-import { toPlanUpsertInput } from '../db/plan_sync.js';
+import { previewNextPlanId, reserveNextPlanId } from '../db/project.js';
+import { getPlanByPlanId } from '../db/plan.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { resolveProjectContext } from '../plan_materialize.js';
-import { parsePlanIdFromCliArg, resolvePlanByNumericId, writePlanFile } from '../plans.js';
+import {
+  applyPlanWritePostCommitUpdates,
+  parsePlanIdFromCliArg,
+  preparePlanForWrite,
+  resolvePlanByNumericId,
+  routePlanWriteIntoBatch,
+  writePlanFile,
+} from '../plans.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
+import { beginSyncBatch } from '../sync/write_router.js';
+import { resolveWriteMode, usesPlanIdReserve } from '../sync/write_mode.js';
 import { ensureReferences } from '../utils/references.js';
 
 export async function handlePromoteCommand(taskIds: string[], options: any) {
@@ -42,10 +51,11 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
   }
   log(`Will create ${parsedTaskIds.length} new plan(s) from the promoted tasks`);
 
-  const config = await loadEffectiveConfig(options.config);
+  const config = (await loadEffectiveConfig(options.config)) ?? getDefaultConfig();
   const repoRoot = await resolveRepoRoot(options.config, process.cwd());
   const db = getDatabase();
   let context = await resolveProjectContext(repoRoot);
+  const writeMode = resolveWriteMode(config);
 
   for (const [rawPlanId, taskInfo] of tasksByPlan) {
     const planId = parsePlanIdFromCliArg(rawPlanId);
@@ -67,13 +77,21 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
     }
 
     const allTasksPromoted = sortedTaskInfo.length === originalPlan.tasks.length;
-    const { startId } = reserveNextPlanId(
-      db,
-      context.repository.repositoryId,
-      context.maxNumericId,
-      sortedTaskInfo.length,
-      context.repository.remoteUrl
-    );
+    const { startId } = usesPlanIdReserve(writeMode)
+      ? reserveNextPlanId(
+          db,
+          context.repository.repositoryId,
+          context.maxNumericId,
+          sortedTaskInfo.length,
+          context.repository.remoteUrl
+        )
+      : previewNextPlanId(
+          db,
+          context.repository.repositoryId,
+          context.maxNumericId,
+          sortedTaskInfo.length,
+          context.repository.remoteUrl
+        );
 
     const newPlans: PlanSchema[] = [];
     const newPlanIds: number[] = [];
@@ -121,22 +139,18 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
       throw new Error(`Plan ${originalPlan.id} not found`);
     }
 
-    const writePlans = db.transaction(() => {
-      for (const newPlan of newPlans) {
-        const { updatedPlan } = ensureReferences(newPlan, { planIdToUuid: idToUuid });
-        upsertPlan(db, context.projectId, {
-          ...toPlanUpsertInput(updatedPlan, idToUuid),
-          forceOverwrite: true,
-        });
-      }
-
-      const { updatedPlan } = ensureReferences(updatedOriginalPlan, { planIdToUuid: idToUuid });
-      upsertPlan(db, context.projectId, {
-        ...toPlanUpsertInput(updatedPlan, idToUuid),
-        forceOverwrite: true,
-      });
-    });
-    writePlans.immediate();
+    const routedPlans = [
+      ...newPlans.map(
+        (newPlan) => ensureReferences(newPlan, { planIdToUuid: idToUuid }).updatedPlan
+      ),
+      ensureReferences(updatedOriginalPlan, { planIdToUuid: idToUuid }).updatedPlan,
+    ].map((plan) => preparePlanForWrite(plan));
+    const batch = await beginSyncBatch(db, config, { atomic: true });
+    const postCommitUpdates = routedPlans.flatMap((plan) =>
+      routePlanWriteIntoBatch(batch, db, config, context.projectId, plan, idToUuid)
+    );
+    await batch.commit();
+    applyPlanWritePostCommitUpdates(db, postCommitUpdates);
 
     context = await resolveProjectContext(repoRoot);
     const outputPath = await resolveWritablePath(originalRow, repoRoot);

@@ -41,6 +41,7 @@ vi.mock('../plans.js', async (importOriginal) => {
     ...actual,
     readPlanFile: vi.fn(),
     resolvePlanByNumericId: vi.fn(),
+    writePlanToDb: vi.fn(),
   };
 });
 
@@ -104,7 +105,7 @@ import {
   runPreExecutionWorkspaceSync,
   runPostExecutionWorkspaceSync,
 } from '../workspace/workspace_roundtrip.js';
-import { readPlanFile, resolvePlanByNumericId } from '../plans.js';
+import { readPlanFile, resolvePlanByNumericId, writePlanToDb } from '../plans.js';
 import { buildDescriptionFromPlan, getCombinedTitleFromSummary } from '../display_utils.js';
 import {
   getWorkspaceInfoByPath,
@@ -114,7 +115,6 @@ import {
 import { generateBranchNameFromPlan, resolveBranchPrefix } from './branch.js';
 import { getDatabase } from '../db/database.js';
 import { resolveProjectContext } from '../plan_materialize.js';
-import { syncPlanToDb } from '../db/plan_sync.js';
 import { warn as warnFn } from '../../logging.js';
 
 describe('handleChatCommand', () => {
@@ -185,7 +185,7 @@ describe('handleChatCommand', () => {
       projectId: 1,
     } as any);
     vi.mocked(warnFn).mockReturnValue(undefined);
-    vi.mocked(syncPlanToDb).mockResolvedValue(undefined);
+    vi.mocked(writePlanToDb).mockResolvedValue({} as any);
     watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: vi.fn() });
 
     delete process.env.CODEX_USE_APP_SERVER;
@@ -523,12 +523,11 @@ describe('handleChatCommand', () => {
       planTitle: 'Combined test plan',
       issueUrls: ['https://example.com/issues/42'],
     });
-    expect(vi.mocked(syncPlanToDb)).toHaveBeenCalledWith(
+    expect(vi.mocked(writePlanToDb)).toHaveBeenCalledWith(
       expect.objectContaining({ id: 123 }),
       expect.objectContaining({
         cwdForIdentity: '/repo-root/workspaces/task-123',
-        force: true,
-        throwOnError: true,
+        config: expect.any(Object),
       })
     );
   });

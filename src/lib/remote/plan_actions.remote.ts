@@ -24,10 +24,9 @@ import { getSessionManager } from '$lib/server/session_context.js';
 import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { removeAssignment } from '$tim/db/assignment.js';
-import { getPlanByUuid, getPlansByProject, upsertPlan } from '$tim/db/plan.js';
+import { getPlanByUuid } from '$tim/db/plan.js';
 import { checkAndMarkParentDone } from '$tim/plans/parent_cascade.js';
-import { invertPlanIdToUuidMap, planRowForTransaction } from '$tim/plans_db.js';
-import { toPlanUpsertInput } from '$tim/db/plan_sync.js';
+import { getProjectUuidForId, writePlanSetStatus } from '$tim/sync/write_router.js';
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 
 type PlanDetailResult = NonNullable<ReturnType<typeof getPlanDetail>>;
@@ -280,7 +279,7 @@ const finishPlanQuickSchema = z.object({
  * Used when no executor work is needed (docs/lessons already done or disabled).
  */
 export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid }) => {
-  const { db } = await getServerContext();
+  const { db, config } = await getServerContext();
   const plan = getPlanDetail(db, planUuid);
 
   if (!plan) {
@@ -303,22 +302,19 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
   const effectiveConfig = (cwd ? await loadEffectiveConfig(undefined, { cwd }) : {}) as Parameters<
     typeof checkAndMarkParentDone
   >[1];
-  const planRows = getPlansByProject(db, plan.projectId);
-  const planIdToUuid = new Map(planRows.map((row) => [row.plan_id, row.uuid]));
-  const planData = planRowForTransaction(
-    getPlanByUuid(db, planUuid)!,
-    invertPlanIdToUuidMap(planIdToUuid)
+  const planRow = getPlanByUuid(db, planUuid)!;
+  await writePlanSetStatus(
+    db,
+    config,
+    getProjectUuidForId(db, plan.projectId),
+    planUuid,
+    'done',
+    planRow.revision
   );
-  planData.status = 'done';
-  planData.updatedAt = new Date().toISOString();
-  upsertPlan(db, plan.projectId, {
-    ...toPlanUpsertInput(planData, planIdToUuid),
-    forceOverwrite: true,
-  });
 
   removeAssignment(db, plan.projectId, planUuid);
-  if (planData.parent) {
-    await checkAndMarkParentDone(planData.parent, effectiveConfig, {
+  if (plan.parent?.planId) {
+    await checkAndMarkParentDone(plan.parent.planId, effectiveConfig, {
       db,
       projectId: plan.projectId,
     });

@@ -81,6 +81,11 @@ vi.mock('../../db/plan_sync.js', () => ({
   toPlanUpsertInput: vi.fn(),
 }));
 
+vi.mock('../../db/project.js', () => ({
+  previewNextPlanId: vi.fn(() => ({ startId: 1, endId: 1 })),
+  reserveNextPlanId: vi.fn(() => ({ startId: 1, endId: 1 })),
+}));
+
 vi.mock('../../utils/references.js', () => ({
   ensureReferences: vi.fn(),
 }));

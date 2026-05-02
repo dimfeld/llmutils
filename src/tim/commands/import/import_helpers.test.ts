@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { PlanSchema } from '../../planSchema.js';
 import type { PendingImportedPlanWrite } from './import_helpers.js';
 
+vi.mock('../../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
 vi.mock('../../db/database.js', () => ({
   getDatabase: vi.fn(),
 }));
@@ -16,6 +20,7 @@ vi.mock('../../db/plan_sync.js', () => ({
 }));
 
 vi.mock('../../db/project.js', () => ({
+  previewNextPlanId: vi.fn(),
   reserveNextPlanId: vi.fn(),
 }));
 
@@ -27,12 +32,30 @@ vi.mock('../../plan_materialize.js', () => ({
   resolveProjectContext: vi.fn(),
 }));
 
+vi.mock('../../plans.js', () => ({
+  applyPlanWritePostCommitUpdates: vi.fn(),
+  routePlanWriteIntoBatch: vi.fn(() => []),
+  writePlanFile: vi.fn(),
+}));
+
+vi.mock('../../sync/write_router.js', () => ({
+  beginSyncBatch: vi.fn(),
+}));
+
 import { getDatabase } from '../../db/database.js';
 import { upsertPlan } from '../../db/plan.js';
 import { toPlanUpsertInput } from '../../db/plan_sync.js';
-import { reserveNextPlanId } from '../../db/project.js';
+import { previewNextPlanId, reserveNextPlanId } from '../../db/project.js';
 import { ensureReferences } from '../../utils/references.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
+import { loadEffectiveConfig } from '../../configLoader.js';
+import { getDefaultConfig } from '../../configSchema.js';
+import {
+  applyPlanWritePostCommitUpdates,
+  routePlanWriteIntoBatch,
+  writePlanFile,
+} from '../../plans.js';
+import { beginSyncBatch } from '../../sync/write_router.js';
 import {
   getImportedIssueUrlsFromPlans,
   reserveImportedPlanStartId,
@@ -58,10 +81,15 @@ describe('import_helpers', () => {
   const transactionImmediate = vi.fn();
   const transaction = vi.fn();
   const mockDb = { transaction } as never;
+  const batchCommit = vi.fn();
+  const mockBatch = { commit: batchCommit };
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getDatabase).mockReturnValue(mockDb);
+    vi.mocked(beginSyncBatch).mockResolvedValue(mockBatch as never);
+    vi.mocked(routePlanWriteIntoBatch).mockReturnValue([]);
+    vi.mocked(loadEffectiveConfig).mockResolvedValue(getDefaultConfig());
 
     transaction.mockImplementation((fn: () => void) => {
       transactionImmediate.mockImplementation(() => fn());
@@ -116,17 +144,34 @@ describe('import_helpers', () => {
     expect(result[0]?.plan.uuid).toBe('uuid-1');
     expect(result[1]?.plan.uuid).toBe('uuid-random');
     expect(ensureReferences).toHaveBeenCalledTimes(2);
-    expect(upsertPlan).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(toPlanUpsertInput).mock.calls[0]?.[1]).toEqual(
+    expect(beginSyncBatch).toHaveBeenCalledWith(mockDb, expect.any(Object), { atomic: true });
+    expect(routePlanWriteIntoBatch).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(routePlanWriteIntoBatch).mock.calls[0]?.[5]).toEqual(
       expect.any(Map<number, string>)
     );
-    expect(vi.mocked(upsertPlan).mock.calls[0]?.[2]).toMatchObject({
-      forceOverwrite: true,
-    });
-    expect(transaction).toHaveBeenCalledTimes(1);
-    expect(transactionImmediate).toHaveBeenCalledTimes(1);
+    expect(batchCommit).toHaveBeenCalledTimes(1);
+    expect(applyPlanWritePostCommitUpdates).toHaveBeenCalledWith(mockDb, []);
+    expect(writePlanFile).not.toHaveBeenCalled();
+    expect(upsertPlan).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+    expect(transactionImmediate).not.toHaveBeenCalled();
 
     randomUuidSpy.mockRestore();
+  });
+
+  test('writeImportedPlansToDbTransactionally routes syncOnly writes through the same batch', async () => {
+    const pendingWrites: PendingImportedPlanWrite[] = [
+      { plan: makePlan(1), filePath: null, syncOnly: true },
+      { plan: makePlan(2), filePath: null },
+    ];
+
+    const result = await writeImportedPlansToDbTransactionally('/tmp/repo', pendingWrites);
+
+    expect(result.map((entry) => entry.plan.id)).toEqual([2]);
+    expect(writePlanFile).not.toHaveBeenCalled();
+    expect(routePlanWriteIntoBatch).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(routePlanWriteIntoBatch).mock.calls[0]?.[4]).toMatchObject({ id: 1 });
+    expect(vi.mocked(routePlanWriteIntoBatch).mock.calls[1]?.[4]).toMatchObject({ id: 2 });
   });
 
   test('writeImportedPlansToDbTransactionally throws when an imported plan id is missing', async () => {
@@ -155,15 +200,19 @@ describe('import_helpers', () => {
     expect(startId).toBe(50);
   });
 
-  test('reserveImportedPlanStartId falls back to max+1 when reservation throws', async () => {
+  test('reserveImportedPlanStartId propagates reservation errors', async () => {
     vi.mocked(reserveNextPlanId).mockImplementation(() => {
       throw new Error('db down');
     });
     const plans = new Map<number, PlanSchema>([[9, makePlan(9)]]);
 
-    const startId = await reserveImportedPlanStartId('/tmp/repo', 1, plans);
+    await expect(reserveImportedPlanStartId('/tmp/repo', 1, plans)).rejects.toThrow('db down');
+  });
 
-    expect(startId).toBe(10);
+  test('reserveImportedPlanStartId propagates config load errors', async () => {
+    vi.mocked(loadEffectiveConfig).mockRejectedValueOnce(new Error('bad config'));
+
+    await expect(reserveImportedPlanStartId('/tmp/repo', 1)).rejects.toThrow('bad config');
   });
 
   test('getImportedIssueUrlsFromPlans deduplicates issue urls', () => {
