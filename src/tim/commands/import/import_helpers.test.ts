@@ -200,15 +200,13 @@ describe('import_helpers', () => {
     expect(startId).toBe(50);
   });
 
-  test('reserveImportedPlanStartId falls back to max+1 when reservation throws', async () => {
+  test('reserveImportedPlanStartId propagates reservation errors', async () => {
     vi.mocked(reserveNextPlanId).mockImplementation(() => {
       throw new Error('db down');
     });
     const plans = new Map<number, PlanSchema>([[9, makePlan(9)]]);
 
-    const startId = await reserveImportedPlanStartId('/tmp/repo', 1, plans);
-
-    expect(startId).toBe(10);
+    await expect(reserveImportedPlanStartId('/tmp/repo', 1, plans)).rejects.toThrow('db down');
   });
 
   test('reserveImportedPlanStartId propagates config load errors', async () => {
