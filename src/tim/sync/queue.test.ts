@@ -36,7 +36,6 @@ import {
 import {
   enqueueBatch,
   enqueueOperation,
-  getPendingRollbackKeys,
   getSyncConflictSummary,
   getSyncQueueSummary,
   listPendingOperations,
@@ -1085,7 +1084,6 @@ describe('persistent-node sync queue', () => {
     });
 
     expect(operationRow(pending.operationUuid).status).toBe('queued');
-    expect(getPendingRollbackKeys(db)).toEqual([]);
   });
 
   test('enqueueOperation populates payload_task_uuid for task-scoped operations', async () => {
@@ -1195,7 +1193,6 @@ describe('persistent-node sync queue', () => {
 
     expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
     expect(operationRow(op.operationUuid).status).toBe('queued');
-    expect(getPendingRollbackKeys(db)).toEqual([]);
     // Canonical tombstone written so projector knows the plan never existed
     expect(getSyncTombstone(db, 'plan', `plan:${PLAN_UUID}`)).not.toBeNull();
   });
@@ -1509,7 +1506,6 @@ describe('persistent-node sync queue', () => {
 
     expect(getPlanTasksByUuid(db, PLAN_UUID)).toHaveLength(0);
     expect(operationRow(op.operationUuid).status).toBe('queued');
-    expect(getPendingRollbackKeys(db)).toEqual([]);
     expect(getSyncTombstone(db, 'task', `task:${TASK_UUID}`)).not.toBeNull();
   });
 
@@ -1535,7 +1531,6 @@ describe('persistent-node sync queue', () => {
     expect(operationRow(op.operationUuid).status).toBe('queued');
     expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).not.toContain(addedTaskUuid);
     expect(followUpKeys).toEqual([]);
-    expect(getPendingRollbackKeys(db)).toEqual([]);
     expect(getSyncTombstone(db, 'task', `task:${addedTaskUuid}`)).not.toBeNull();
   });
 
@@ -1617,7 +1612,6 @@ describe('persistent-node sync queue', () => {
 
     expect(operationRow(promoteOp.operationUuid).status).toBe('queued');
     expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
-    expect(getPendingRollbackKeys(db)).toEqual([]);
   });
 
   test('mergeCanonicalRefresh plan_deleted for source plan leaves pending plan.promote_task queued', async () => {
@@ -1645,7 +1639,7 @@ describe('persistent-node sync queue', () => {
     expect(operationRow(promoteOp.operationUuid).status).toBe('queued');
   });
 
-  test('mergeCanonicalRefresh plan_deleted for source plan returns no rollback keys for pending promote_task ops', async () => {
+  test('mergeCanonicalRefresh plan_deleted for source plan keeps pending promote_task projection active', async () => {
     seedPlan();
     const newPlanUuid = '88888888-8888-4888-8888-888888888889';
     const promoteOp = await promotePlanTaskOperation(
@@ -1673,7 +1667,7 @@ describe('persistent-node sync queue', () => {
     expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
   });
 
-  test('mergeCanonicalRefresh does not record pending_rollback for plan-side promote_task snapshots', async () => {
+  test('mergeCanonicalRefresh plan-side promote_task snapshots leave operation queued', async () => {
     seedPlan();
     const newPlanUuid = '88888888-8888-4888-8888-888888888880';
     const promoteOp = await promotePlanTaskOperation(
@@ -1697,7 +1691,6 @@ describe('persistent-node sync queue', () => {
 
     expect(operationRow(promoteOp.operationUuid).status).toBe('queued');
     expect(followUpKeys).toEqual([]);
-    expect(getPendingRollbackKeys(db)).toEqual([]);
   });
 
   test('mergeCanonicalRefresh never_existed for source plan leaves pending plan.promote_task queued', async () => {
@@ -1725,7 +1718,7 @@ describe('persistent-node sync queue', () => {
     expect(operationRow(promoteOp.operationUuid).status).toBe('queued');
   });
 
-  test('mergeCanonicalRefresh never_existed for promoted destination returns no rollback keys', async () => {
+  test('mergeCanonicalRefresh never_existed for promoted destination keeps active op projection', async () => {
     seedPlan();
     const newPlanUuid = '77777777-7777-4777-8777-777777777778';
     const promoteOp = await promotePlanTaskOperation(
@@ -1789,7 +1782,7 @@ describe('persistent-node sync queue', () => {
     expect(getPlanByUuid(db, newPlanUuid)).toBeNull();
   });
 
-  test('mergeCanonicalRefresh plan-side snapshots do not write pending rollback rows', async () => {
+  test('mergeCanonicalRefresh plan-side snapshots rebuild projection without rejecting active op', async () => {
     seedPlan();
     const newPlanUuid = '77777777-7777-4777-8777-777777777770';
     const promoteOp = await promotePlanTaskOperation(
@@ -1810,7 +1803,6 @@ describe('persistent-node sync queue', () => {
       planUuid: PLAN_UUID,
       deletedAt: new Date().toISOString(),
     });
-    expect(getPendingRollbackKeys(db)).toEqual([]);
 
     mergeCanonicalRefresh(db, {
       type: 'never_existed',
@@ -1821,7 +1813,6 @@ describe('persistent-node sync queue', () => {
 
     expect(operationRow(promoteOp.operationUuid).status).toBe('queued');
     expect(getPlanByUuid(db, newPlanUuid)).toBeNull();
-    expect(getPendingRollbackKeys(db)).toEqual([]);
   });
 
   test('mergeCanonicalRefresh removes local assignments for cleanup-status plan snapshots', () => {

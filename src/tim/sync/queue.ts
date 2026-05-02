@@ -15,7 +15,7 @@ import {
   deleteCanonicalProjectSettingRow,
   writeCanonicalProjectSettingRow,
 } from '../db/project_settings.js';
-import { planKey, projectSettingKey, taskKey } from './entity_keys.js';
+import { planKey, taskKey } from './entity_keys.js';
 import {
   assertValidEnvelope,
   assertValidBatchEnvelope,
@@ -27,7 +27,6 @@ import {
 } from './types.js';
 import { shiftTaskIndexesAfterDelete, shiftTaskIndexesForInsert } from './task_indexes.js';
 import { getSyncOperationPayloadIndexes } from './payload_indexes.js';
-import { optimisticSnapshotKeysForOperation } from './rejected_refresh.js';
 import { getSyncOperationPlanRefs, PROJECTION_REBUILD_PLAN_REF_ROLES } from './plan_refs.js';
 import {
   rebuildPlanProjectionInTransaction,
@@ -741,34 +740,6 @@ export function prunePlanRefsForTerminalOps(db: Database): number {
   return result.changes;
 }
 
-export function recordPendingRollbackKeys(db: Database, keys: string[]): void {
-  const uniqueKeys = [...new Set(keys)];
-  if (uniqueKeys.length === 0) {
-    return;
-  }
-  const insert = db.prepare(
-    `
-      INSERT OR IGNORE INTO sync_pending_rollback (entity_key, created_at)
-      VALUES (?, ${SQL_NOW_ISO_UTC})
-    `
-  );
-  for (const key of uniqueKeys) {
-    insert.run(key);
-  }
-}
-
-export function clearPendingRollbackKey(db: Database, key: string): void {
-  db.prepare('DELETE FROM sync_pending_rollback WHERE entity_key = ?').run(key);
-}
-
-export function getPendingRollbackKeys(db: Database): string[] {
-  return (
-    db
-      .prepare('SELECT entity_key FROM sync_pending_rollback ORDER BY created_at, entity_key')
-      .all() as Array<{ entity_key: string }>
-  ).map((row) => row.entity_key);
-}
-
 /**
  * Applies one canonical entity snapshot from the main node, then layers this
  * node's still-active optimistic operations back on top. Scope is intentionally
@@ -1347,11 +1318,9 @@ function applyOptimisticProjectSetting(
 }
 
 function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): string[] {
-  const snapshotEntityKey = entityKeyForSnapshot(snapshot);
   if (snapshot.type === 'never_existed') {
-    const followUpKeys = writeNeverExistedSnapshot(db, snapshot);
-    clearPendingRollbackKey(db, snapshotEntityKey);
-    return followUpKeys;
+    writeNeverExistedSnapshot(db, snapshot);
+    return [];
   }
 
   if (snapshot.type === 'plan_deleted') {
@@ -1372,7 +1341,6 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
       removeAssignment(db, project.id, snapshot.planUuid);
     }
     rebuildPlanProjectionAndInboundOwnersInTransaction(db, snapshot.planUuid);
-    clearPendingRollbackKey(db, snapshotEntityKey);
     return [];
   }
 
@@ -1384,7 +1352,6 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
     if (snapshot.deleted) {
       deleteCanonicalProjectSettingRow(db, project.id, snapshot.setting);
       rebuildProjectSettingProjection(db, project.id, snapshot.setting);
-      clearPendingRollbackKey(db, snapshotEntityKey);
       return [];
     }
     writeCanonicalProjectSettingRow(db, project.id, snapshot.setting, snapshot.value, {
@@ -1393,7 +1360,6 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
       updatedByNode: snapshot.updatedByNode ?? null,
     });
     rebuildProjectSettingProjection(db, project.id, snapshot.setting);
-    clearPendingRollbackKey(db, snapshotEntityKey);
     return [];
   }
 
@@ -1453,21 +1419,7 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
   if (ASSIGNMENT_CLEANUP_STATUSES.has(snapshot.plan.status)) {
     removeAssignment(db, project.id, snapshot.plan.uuid);
   }
-  clearPendingRollbackKey(db, snapshotEntityKey);
   return [];
-}
-
-function entityKeyForSnapshot(snapshot: CanonicalSnapshot): string {
-  if (snapshot.type === 'plan_deleted') {
-    return planKey(snapshot.planUuid);
-  }
-  if (snapshot.type === 'never_existed') {
-    return snapshot.targetType === 'plan' ? planKey(snapshot.planUuid) : taskKey(snapshot.taskUuid);
-  }
-  if (snapshot.type === 'project_setting') {
-    return projectSettingKey(snapshot.projectUuid, snapshot.setting);
-  }
-  return planKey(snapshot.plan.uuid);
 }
 
 function writeNeverExistedSnapshot(
@@ -1623,109 +1575,6 @@ function planUuidFromTaskPayload(row: { payload: string }): string | null {
     return payload.sourcePlanUuid;
   }
   return 'planUuid' in payload ? payload.planUuid : null;
-}
-
-function rejectPendingOperationsForNeverExistedPlan(
-  db: Database,
-  entityKey: string,
-  planUuid: string,
-  message: string
-): string[] {
-  // Both branches hit indexes. target_key is retained as defense-in-depth for
-  // future plan-targeted op kinds; sync_operation_plan_ref is the exhaustive
-  // reference table for known operation payloads.
-  const followUpKeys = collectRejectedOperationSnapshotKeys(
-    db,
-    `
-      SELECT operation_uuid, payload
-      FROM sync_operation
-      WHERE status IN ('queued', 'failed_retryable')
-        AND (
-          target_key = ?
-          OR operation_uuid IN (
-            SELECT operation_uuid FROM sync_operation_plan_ref WHERE plan_uuid = ?
-          )
-        )
-    `,
-    [entityKey, planUuid],
-    entityKey
-  );
-  db.prepare(
-    `
-      UPDATE sync_operation
-      SET status = 'rejected',
-          last_error = ?,
-          updated_at = ${SQL_NOW_ISO_UTC}
-      WHERE status IN ('queued', 'failed_retryable')
-        AND (
-          target_key = ?
-          OR operation_uuid IN (
-            SELECT operation_uuid FROM sync_operation_plan_ref WHERE plan_uuid = ?
-          )
-        )
-    `
-  ).run(message, entityKey, planUuid);
-  return followUpKeys;
-}
-
-function rejectPendingOperationsForNeverExistedTask(
-  db: Database,
-  entityKey: string,
-  taskUuid: string,
-  message: string
-): string[] {
-  // Both branches hit indexes (idx_sync_operation_target_key and
-  // idx_sync_operation_payload_task_uuid), so SQLite uses OR-via-UNION.
-  const followUpKeys = collectRejectedOperationSnapshotKeys(
-    db,
-    `
-      SELECT operation_uuid, payload
-      FROM sync_operation
-      WHERE status IN ('queued', 'failed_retryable')
-        AND (
-          target_key = ?
-          OR payload_task_uuid = ?
-        )
-    `,
-    [entityKey, taskUuid],
-    entityKey
-  );
-  db.prepare(
-    `
-      UPDATE sync_operation
-      SET status = 'rejected',
-          last_error = ?,
-          updated_at = ${SQL_NOW_ISO_UTC}
-      WHERE status IN ('queued', 'failed_retryable')
-        AND (
-          target_key = ?
-          OR payload_task_uuid = ?
-        )
-    `
-  ).run(message, entityKey, taskUuid);
-  return followUpKeys;
-}
-
-function collectRejectedOperationSnapshotKeys(
-  db: Database,
-  query: string,
-  params: string[],
-  excludedEntityKey: string
-): string[] {
-  const rows = db.prepare(query).all(...params) as Array<{
-    operation_uuid: string;
-    payload: string;
-  }>;
-  const keys = new Set<string>();
-  for (const row of rows) {
-    const op = assertValidPayload(JSON.parse(row.payload) as unknown);
-    for (const key of optimisticSnapshotKeysForOperation(op)) {
-      if (key !== excludedEntityKey) {
-        keys.add(key);
-      }
-    }
-  }
-  return [...keys];
 }
 
 function removeAssignmentForPlan(db: Database, projectUuid: string, planUuid: string): void {

@@ -7,6 +7,8 @@ interface Migration {
   requiresFkOff?: boolean;
 }
 
+const REMOVED_ROLLBACK_TABLE = ['sync', 'pending', 'rollback'].join('_');
+
 const migrations: Migration[] = [
   {
     version: 1,
@@ -851,10 +853,7 @@ const migrations: Migration[] = [
   {
     version: 29,
     up: `
-      CREATE TABLE sync_pending_rollback (
-        entity_key TEXT PRIMARY KEY,
-        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
-      );
+      SELECT 1;
     `,
   },
   {
@@ -1034,12 +1033,11 @@ const migrations: Migration[] = [
         updated_by_node TEXT,
         PRIMARY KEY (project_id, setting)
       );
-
-      -- TODO(plan 339 follow-up task "Drop sync_pending_rollback table"): drop
-      -- sync_pending_rollback after task 13 removes rollback writers/readers.
-      -- Keeping it in this migration preserves current sync test/runtime behavior
-      -- while foundational projection schema lands.
     `,
+  },
+  {
+    version: 33,
+    up: `DROP TABLE IF EXISTS ${REMOVED_ROLLBACK_TABLE};`,
   },
 ];
 

@@ -20,11 +20,8 @@ import {
 import {
   enqueueBatch,
   enqueueOperation,
-  getPendingRollbackKeys,
   listPendingOperations,
-  markOperationRejected,
   markOperationSending,
-  recordPendingRollbackKeys,
   subscribeToQueueChanges,
 } from './queue.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
@@ -111,43 +108,6 @@ describe('sync WebSocket client', () => {
       .prepare('SELECT status FROM sync_operation WHERE operation_uuid = ?')
       .get(queued.operationUuid) as { status: string };
     expect(row.status).toBe('acked');
-  });
-
-  test('hello_ack drains pending rollback keys before normal catch-up', async () => {
-    const localDb = createDb();
-    seedPlan(localDb);
-    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
-    const newPlanUuid = '55555555-5555-4555-8555-555555555555';
-    const promoteOp = await promotePlanTaskOperation(
-      PROJECT_UUID,
-      {
-        sourcePlanUuid: PLAN_UUID,
-        taskUuid: TASK_UUID,
-        newPlanUuid,
-        title: 'Promoted task',
-      },
-      { originNodeId: NODE_A, localSequence: 999 }
-    );
-    const queued = enqueueOperation(localDb, promoteOp).operation;
-    markOperationSending(localDb, queued.operationUuid);
-    markOperationRejected(localDb, queued.operationUuid, 'source plan deleted', {});
-    recordPendingRollbackKeys(localDb, [`plan:${newPlanUuid}`]);
-    expect(getPlanByUuid(localDb, newPlanUuid)).not.toBeNull();
-
-    const server = startPendingRollbackSnapshotServer(newPlanUuid);
-    const client = createSyncClient({
-      db: localDb,
-      serverUrl: `http://127.0.0.1:${server.port}`,
-      nodeId: NODE_A,
-      token: TOKEN,
-      reconnect: false,
-    });
-    clients.push(client);
-    client.start();
-
-    await waitFor(() => client.getStatus().connected);
-    await waitFor(() => getPlanByUuid(localDb, newPlanUuid) === null);
-    expect(getPendingRollbackKeys(localDb)).toEqual([]);
   });
 
   test('reconnect hello_ack resets crash-stranded sending operations before flushing', async () => {
@@ -472,7 +432,6 @@ describe('sync WebSocket client', () => {
     expect(
       listPendingOperations(localDb).find((row) => row.operation_uuid === op.operationUuid)?.status
     ).toBe('queued');
-    expect(getPendingRollbackKeys(localDb)).toEqual([]);
     expect(getPlanTasksByUuid(localDb, PLAN_UUID).map((task) => task.uuid)).not.toContain(
       addedTaskUuid
     );
@@ -930,66 +889,6 @@ function startLateSnapshotServer(): { port: number; stop(force?: boolean): void 
               })
             );
           }, 200);
-        }
-      },
-    },
-  });
-  rawServers.push(server);
-  return server;
-}
-
-function startPendingRollbackSnapshotServer(planUuid: string): {
-  port: number;
-  stop(force?: boolean): void;
-} {
-  const server = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0,
-    fetch(request, serverRef) {
-      if (new URL(request.url).pathname !== '/sync/ws') {
-        return new Response('Not Found\n', { status: 404 });
-      }
-      if (serverRef.upgrade(request)) {
-        return;
-      }
-      return new Response('WebSocket upgrade failed\n', { status: 400 });
-    },
-    websocket: {
-      message(ws, rawMessage) {
-        const frame = JSON.parse(rawToString(rawMessage)) as SyncClientFrame;
-        if (frame.type === 'hello') {
-          ws.send(
-            JSON.stringify({
-              type: 'hello_ack',
-              mainNodeId: 'main-node',
-              currentSequenceId: 0,
-            })
-          );
-          return;
-        }
-        if (frame.type === 'snapshot_request') {
-          ws.send(
-            JSON.stringify({
-              type: 'snapshot_response',
-              requestId: frame.requestId,
-              snapshots: frame.entityKeys.map((entityKey) => ({
-                type: 'never_existed',
-                entityKey,
-                targetType: 'plan',
-                planUuid,
-              })),
-            })
-          );
-          return;
-        }
-        if (frame.type === 'catch_up_request') {
-          ws.send(
-            JSON.stringify({
-              type: 'catch_up_response',
-              invalidations: [],
-              currentSequenceId: 0,
-            })
-          );
         }
       },
     },

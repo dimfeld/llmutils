@@ -18,7 +18,6 @@ import {
 import {
   enqueueBatch,
   enqueueOperation,
-  getPendingRollbackKeys,
   markOperationAcked,
   markOperationSending,
 } from './queue.js';
@@ -285,7 +284,6 @@ describe('sync runner', () => {
     });
 
     expect(clientMocks.httpFetchSnapshots).not.toHaveBeenCalled();
-    expect(getPendingRollbackKeys(db)).toEqual([]);
     expect(operationStatus(db, queued.operation.operationUuid)).toBe('rejected');
     expect(getPlanTagsByUuid(db, PLAN_UUID).map((row) => row.tag)).toEqual([]);
   });
@@ -361,8 +359,6 @@ describe('sync runner', () => {
     expect(operationStatus(db, promoteOp.operationUuid)).toBe('queued');
     // Destination plan still in projection because the op is active
     expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
-    // No pending rollback keys written under the new model
-    expect(getPendingRollbackKeys(db)).toEqual([]);
   });
 
   test('never_existed for plan does not trigger follow-up fetch; active promote_task op keeps destination plan in projection', async () => {
@@ -421,7 +417,6 @@ describe('sync runner', () => {
     expect(operationStatus(db, promoteOp.operationUuid)).toBe('queued');
     // Destination plan still in projection
     expect(getPlanByUuid(db, newPlanUuid)).not.toBeNull();
-    expect(getPendingRollbackKeys(db)).toEqual([]);
   });
 
   test('promote_task rejection via result transition collapses destination plan from projection', async () => {
@@ -519,7 +514,6 @@ describe('sync runner', () => {
     expect(clientMocks.httpFetchSnapshots).toHaveBeenCalledTimes(1);
     expect(clientMocks.httpFetchSnapshots.mock.calls[0]?.[3]).toEqual([`task:${addedTaskUuid}`]);
     expect(operationStatus(db, addTaskOp.operationUuid)).toBe('queued');
-    expect(getPendingRollbackKeys(db)).toEqual([]);
     expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).not.toContain(addedTaskUuid);
   });
 });

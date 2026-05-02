@@ -5,16 +5,13 @@ import {
   listPendingOperations,
   markOperationFailedRetryable,
   markOperationSending,
+  mergeCanonicalRefresh,
   prunePlanRefsForTerminalOps,
   resetSendingOperations,
   subscribeToQueueChanges,
   type CanonicalSnapshot,
   type SyncOperationQueueRow,
 } from './queue.js';
-import {
-  drainPendingRollbacks,
-  fetchAndMergeSnapshotsUntilConvergence,
-} from './follow_up_fetch.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
 import {
   createBatchEnvelope,
@@ -244,7 +241,6 @@ class WebSocketSyncClient implements SyncClient {
           this.events.emit('connected', frame);
           this.startFlushLoop();
           resetSendingOperations(this.options.db, { originNodeId: this.options.nodeId });
-          await this.drainPendingRollbacks();
           await this.catchUpFrom(getTimNodeCursor(this.options.db, this.options.nodeId));
           await this.flushPending();
           return;
@@ -464,15 +460,14 @@ class WebSocketSyncClient implements SyncClient {
   }
 
   private async fetchAndMergeSnapshots(keys: string[]): Promise<void> {
-    await fetchAndMergeSnapshotsUntilConvergence(this.options.db, keys, (keysForPass) =>
-      this.requestSnapshots(keysForPass)
-    );
-  }
-
-  private async drainPendingRollbacks(): Promise<void> {
-    await drainPendingRollbacks(this.options.db, (keysForPass) =>
-      this.requestSnapshots(keysForPass)
-    );
+    const uniqueKeys = [...new Set(keys)];
+    if (uniqueKeys.length === 0) {
+      return;
+    }
+    const snapshots = await this.requestSnapshots(uniqueKeys);
+    for (const snapshot of snapshots) {
+      mergeCanonicalRefresh(this.options.db, snapshot);
+    }
   }
 
   private handleDisconnect(): void {

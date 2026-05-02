@@ -9,13 +9,10 @@ import {
   type HttpSyncResult,
 } from './client.js';
 import {
-  drainPendingRollbacks,
-  fetchAndMergeSnapshotsUntilConvergence,
-} from './follow_up_fetch.js';
-import {
   listPendingOperations,
   markOperationFailedRetryable,
   markOperationSending,
+  mergeCanonicalRefresh,
   prunePlanRefsForTerminalOps,
   resetSendingOperations,
   type SyncOperationQueueRow,
@@ -174,7 +171,6 @@ class DefaultSyncRunner implements SyncRunner {
 }
 
 export async function runSyncCatchUpOnce(options: SyncRunnerOptions): Promise<void> {
-  await drainPendingRollbacksOverHttp(options);
   const cursor = getTimNodeCursor(options.db, options.nodeId);
   const catchUp = await httpCatchUp(
     options.serverUrl,
@@ -191,7 +187,6 @@ export async function flushPendingOperationsOnce(
   options: SyncRunnerOptions,
   flushOptions: FlushPendingOperationsOnceOptions = {}
 ): Promise<void> {
-  await drainPendingRollbacksOverHttp(options);
   if (flushOptions.recoverStranded) {
     resetSendingOperations(options.db, { originNodeId: options.nodeId });
   }
@@ -275,29 +270,20 @@ async function applyInvalidationsOverHttp(
 }
 
 async function fetchAndMergeSnapshots(options: SyncRunnerOptions, keys: string[]): Promise<void> {
-  await fetchAndMergeSnapshotsUntilConvergence(options.db, keys, async (keysForPass) => {
-    const response = await httpFetchSnapshots(
-      options.serverUrl,
-      options.token,
-      options.nodeId,
-      keysForPass
-    );
-    unwrapRetryable(response);
-    return response.value.snapshots;
-  });
-}
-
-async function drainPendingRollbacksOverHttp(options: SyncRunnerOptions): Promise<void> {
-  await drainPendingRollbacks(options.db, async (keysForPass) => {
-    const response = await httpFetchSnapshots(
-      options.serverUrl,
-      options.token,
-      options.nodeId,
-      keysForPass
-    );
-    unwrapRetryable(response);
-    return response.value.snapshots;
-  });
+  const uniqueKeys = [...new Set(keys)];
+  if (uniqueKeys.length === 0) {
+    return;
+  }
+  const response = await httpFetchSnapshots(
+    options.serverUrl,
+    options.token,
+    options.nodeId,
+    uniqueKeys
+  );
+  unwrapRetryable(response);
+  for (const snapshot of response.value.snapshots) {
+    mergeCanonicalRefresh(options.db, snapshot);
+  }
 }
 
 function unwrapRetryable<T>(result: HttpSyncResult<T>): asserts result is { ok: true; value: T } {

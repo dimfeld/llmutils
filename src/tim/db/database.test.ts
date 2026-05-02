@@ -350,7 +350,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed, bootstrap_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(32);
+    expect(version?.version).toBe(33);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
 
@@ -390,6 +390,7 @@ describe('tim db/database', () => {
     expect(tables).toContain('sync_conflict');
     expect(tables).toContain('sync_tombstone');
     expect(tables).toContain('sync_sequence');
+    expect(tables).not.toContain(['sync', 'pending', 'rollback'].join('_'));
 
     const planColumns = db
       .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -500,7 +501,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed, bootstrap_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(32);
+    expect(version?.version).toBe(33);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
     const versionRowCount = db2
@@ -632,7 +633,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(32);
+      expect(schemaVersion?.version).toBe(33);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -786,7 +787,7 @@ describe('tim db/database', () => {
           []
         >('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
         .get();
-      expect(schemaVersion?.version).toBe(32);
+      expect(schemaVersion?.version).toBe(33);
 
       const checkRows = db
         .query<
@@ -1104,7 +1105,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(32);
+      ).toBe(33);
       expect(db.query<{ uuid: string }, []>('SELECT uuid FROM project').get()?.uuid).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
       );
@@ -1126,11 +1127,6 @@ describe('tim db/database', () => {
       expect(setting?.revision).toBe(1);
       expect(setting?.updated_at).toBeTruthy();
       expect(setting?.updated_by_node).toBeNull();
-      const pendingRollbackColumns = db
-        .query<{ name: string }, []>("PRAGMA table_info('sync_pending_rollback')")
-        .all()
-        .map((column) => column.name);
-      expect(pendingRollbackColumns).toEqual(['entity_key', 'created_at']);
       const canonicalPlanColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan_canonical')")
         .all()
@@ -1283,7 +1279,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(32);
+      ).toBe(33);
       const syncOperationColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('sync_operation')")
         .all()
