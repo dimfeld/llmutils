@@ -287,6 +287,55 @@ describe('writeImportedPlansToDbTransactionally legacy-data path', () => {
     ).toEqual({ count: 0 });
   });
 
+  test('sync-main mode removes uuidless legacy row and applies canonically', async () => {
+    await fs.mkdir(path.join(tempDir, 'xdg-config', 'tim'), { recursive: true });
+    await fs.writeFile(
+      path.join(tempDir, 'xdg-config', 'tim', 'config.yml'),
+      yaml.stringify({
+        sync: {
+          role: 'main',
+          nodeId: NODE_ID,
+          allowedNodes: [],
+        },
+      })
+    );
+    clearAllTimCaches();
+    clearPlanSyncContext();
+
+    const initContext = await resolveProjectContext(tempDir);
+    const db = getDatabase();
+
+    db.prepare(
+      `INSERT INTO plan (uuid, project_id, plan_id, title, status, created_at, updated_at)
+       VALUES ('', ?, 1, 'Legacy Plan', 'pending', datetime('now'), datetime('now'))`
+    ).run(initContext.projectId);
+
+    await writeImportedPlansToDbTransactionally(tempDir, [{ plan: makePlan(1), filePath: null }]);
+
+    const operations = db
+      .prepare('SELECT operation_type, status FROM sync_operation ORDER BY local_sequence')
+      .all() as Array<{ operation_type: string; status: string }>;
+    expect(operations).toEqual([{ operation_type: 'plan.create', status: 'applied' }]);
+
+    expect(
+      db
+        .prepare('SELECT COUNT(*) AS count FROM plan WHERE uuid = ? AND project_id = ?')
+        .get('', initContext.projectId)
+    ).toEqual({ count: 0 });
+
+    const projectedRow = getPlanByPlanId(db, initContext.projectId, 1);
+    expect(projectedRow).not.toBeNull();
+    expect(projectedRow!.uuid).not.toBe('');
+    expect(projectedRow!.title).toBe('Imported Plan 1');
+
+    const canonicalRow = db
+      .prepare('SELECT uuid, title FROM plan_canonical WHERE plan_id = ? AND project_id = ?')
+      .get(1, initContext.projectId) as { uuid: string; title: string } | undefined;
+    expect(canonicalRow).toBeDefined();
+    expect(canonicalRow!.uuid).toBe(projectedRow!.uuid);
+    expect(canonicalRow!.title).toBe('Imported Plan 1');
+  });
+
   test('sync-persistent legacy purge rolls back when sync batch commit fails', async () => {
     await fs.mkdir(path.join(tempDir, 'xdg-config', 'tim'), { recursive: true });
     await fs.writeFile(

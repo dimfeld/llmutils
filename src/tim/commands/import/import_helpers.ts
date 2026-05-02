@@ -119,8 +119,9 @@ function writeImportedPlansViaLegacyTransaction(
       nextWrites: Array<{ plan: PlanSchema; filePath: string | null; syncOnly?: boolean }>,
       nextIdToUuid: Map<number, string>
     ) => {
+      purgeUuidlessLegacyChildRows(db);
       for (const entry of nextWrites) {
-        removeUuidlessLegacyPlanRow(db, nextProjectId, entry.plan.id!);
+        deleteUuidlessLegacyPlanRow(db, nextProjectId, entry.plan.id!);
         upsertPlan(db, nextProjectId, toPlanUpsertInput(entry.plan, nextIdToUuid));
       }
     }
@@ -133,16 +134,13 @@ function removeUuidlessLegacyPlanRowsInTransaction(
   projectId: number,
   writes: Array<{ plan: PlanSchema; filePath: string | null; syncOnly?: boolean }>
 ): void {
+  purgeUuidlessLegacyChildRows(db);
   for (const entry of writes) {
-    removeUuidlessLegacyPlanRow(db, projectId, entry.plan.id!);
+    deleteUuidlessLegacyPlanRow(db, projectId, entry.plan.id!);
   }
 }
 
-function removeUuidlessLegacyPlanRow(
-  db: ReturnType<typeof getDatabase>,
-  projectId: number,
-  planId: number
-): void {
+function purgeUuidlessLegacyChildRows(db: ReturnType<typeof getDatabase>): void {
   db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run('');
   db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? OR depends_on_uuid = ?').run('', '');
   db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run('');
@@ -152,6 +150,13 @@ function removeUuidlessLegacyPlanRow(
   ).run('', '');
   db.prepare('DELETE FROM plan_tag_canonical WHERE plan_uuid = ?').run('');
   db.prepare('DELETE FROM plan_canonical WHERE uuid = ?').run('');
+}
+
+function deleteUuidlessLegacyPlanRow(
+  db: ReturnType<typeof getDatabase>,
+  projectId: number,
+  planId: number
+): void {
   db.prepare('DELETE FROM plan WHERE uuid = ? AND project_id = ? AND plan_id = ?').run(
     '',
     projectId,
