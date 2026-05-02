@@ -323,9 +323,7 @@ async function handleHttpRequest(
   return new Response('Not Found\n', { status: 404 });
 }
 
-type JsonBodyResult =
-  | { ok: true; value: unknown }
-  | { ok: false; status: number; error: string };
+type JsonBodyResult = { ok: true; value: unknown } | { ok: false; status: number; error: string };
 
 async function readJsonBodyWithLimit(request: Request): Promise<JsonBodyResult> {
   const contentLength = request.headers.get('content-length');
@@ -701,7 +699,7 @@ function loadPlanSnapshot(db: Database, planUuid: string): CanonicalSnapshot | n
       branch: plan.branch,
       simple: nullableBoolean(plan.simple),
       tdd: nullableBoolean(plan.tdd),
-      discoveredFrom: plan.discovered_from,
+      discoveredFrom: resolveDiscoveredFromUuid(db, plan.project_id, plan.discovered_from),
       issue: parseStringArray(plan.issue),
       pullRequest: parseStringArray(plan.pull_request),
       assignedTo: plan.assigned_to,
@@ -772,6 +770,20 @@ function loadDeletedPlanSnapshot(db: Database, planUuid: string): CanonicalSnaps
     deletedAt: tombstone.deleted_at,
     deletedBySequenceId: sequence?.sequence,
   };
+}
+
+function resolveDiscoveredFromUuid(
+  db: Database,
+  projectId: number,
+  discoveredFrom: number | null
+): string | null {
+  if (discoveredFrom === null) {
+    return null;
+  }
+  const row = db
+    .prepare('SELECT uuid FROM plan WHERE project_id = ? AND plan_id = ?')
+    .get(projectId, discoveredFrom) as { uuid: string } | null;
+  return row?.uuid ?? null;
 }
 
 function loadTaskSnapshot(db: Database, taskUuid: string): CanonicalSnapshot | null {

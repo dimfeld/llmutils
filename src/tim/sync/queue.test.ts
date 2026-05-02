@@ -1076,6 +1076,7 @@ describe('persistent-node sync queue', () => {
           numericPlanId: 11,
           title: 'Created offline',
           parentUuid: OTHER_PLAN_UUID,
+          discoveredFrom: previousParentUuid,
           dependencies: [PLAN_UUID],
         },
         { originNodeId: NODE_A, localSequence: 999 }
@@ -1083,6 +1084,7 @@ describe('persistent-node sync queue', () => {
     );
     expect(operationPlanRefs(createOp.operationUuid)).toEqual([
       { plan_uuid: PLAN_UUID, role: 'dependency' },
+      { plan_uuid: previousParentUuid, role: 'discovered_from' },
       { plan_uuid: OTHER_PLAN_UUID, role: 'parent' },
       { plan_uuid: newPlanUuid, role: 'target' },
     ]);

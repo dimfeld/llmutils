@@ -120,6 +120,25 @@ describe('sync operation schemas', () => {
     ).toBe(true);
   });
 
+  test('requires discoveredFrom sync references to be UUIDs', () => {
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.create',
+        planUuid: PLAN_UUID,
+        title: 'Child',
+        discoveredFrom: 7,
+      }).success
+    ).toBe(false);
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.create',
+        planUuid: PLAN_UUID,
+        title: 'Child',
+        discoveredFrom: '33333333-3333-4333-8333-333333333333',
+      }).success
+    ).toBe(true);
+  });
+
   test('round-trips JSON without Date objects', () => {
     const envelope = envelopeWithOp({
       type: 'plan.add_tag',

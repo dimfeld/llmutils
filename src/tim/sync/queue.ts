@@ -108,7 +108,7 @@ export interface CanonicalPlanSnapshot {
     branch: string | null;
     simple: boolean | null;
     tdd: boolean | null;
-    discoveredFrom: number | null;
+    discoveredFrom: string | null;
     issue: string[] | null;
     pullRequest: string[] | null;
     assignedTo: string | null;
@@ -235,7 +235,7 @@ const CanonicalPlanSnapshotSchema = z.object({
     branch: z.string().nullable(),
     simple: z.boolean().nullable(),
     tdd: z.boolean().nullable(),
-    discoveredFrom: z.number().nullable(),
+    discoveredFrom: z.string().nullable(),
     issue: z.array(z.string()).nullable(),
     pullRequest: z.array(z.string()).nullable(),
     assignedTo: z.string().nullable(),
@@ -860,7 +860,16 @@ function applyLocalOptimisticInTransaction(db: Database, operation: SyncOperatio
       break;
     case 'plan.set_scalar':
       updatePlanIfExists(db, op.planUuid, (plan) => {
-        const value = op.field === 'epic' ? (op.value ? 1 : 0) : op.value;
+        const project =
+          op.field === 'discovered_from' ? getProjectByUuid(db, operation.projectUuid) : null;
+        const value =
+          op.field === 'epic'
+            ? op.value
+              ? 1
+              : 0
+            : op.field === 'discovered_from'
+              ? resolveLocalPlanId(db, project?.id ?? null, op.value as string | null)
+              : op.value;
         db.prepare(
           `UPDATE plan SET ${op.field} = ?, revision = revision + 1, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
         ).run(value, op.planUuid);
@@ -1079,8 +1088,7 @@ function applyOptimisticPlanCreate(
     }
     return;
   }
-  const numericPlanId =
-    op.numericPlanId ?? reserveOptimisticPlanId(db, project.id);
+  const numericPlanId = op.numericPlanId ?? reserveOptimisticPlanId(db, project.id);
   db.prepare(
     `
       INSERT INTO plan (
@@ -1106,7 +1114,7 @@ function applyOptimisticPlanCreate(
     op.branch ?? null,
     typeof op.simple === 'boolean' ? (op.simple ? 1 : 0) : null,
     typeof op.tdd === 'boolean' ? (op.tdd ? 1 : 0) : null,
-    op.discoveredFrom ?? null,
+    resolveLocalPlanId(db, project.id, op.discoveredFrom),
     JSON.stringify(op.issue),
     JSON.stringify(op.pullRequest),
     op.assignedTo ?? null,
@@ -1164,6 +1172,20 @@ function setProjectHighestPlanId(db: Database, projectId: number, planId: number
   db.prepare(
     `UPDATE project SET highest_plan_id = max(highest_plan_id, ?), updated_at = ${SQL_NOW_ISO_UTC} WHERE id = ?`
   ).run(planId, projectId);
+}
+
+function resolveLocalPlanId(
+  db: Database,
+  projectId: number | null,
+  planUuid: string | null | undefined
+): number | null {
+  if (!projectId || !planUuid) {
+    return null;
+  }
+  const row = db
+    .prepare('SELECT plan_id FROM plan WHERE project_id = ? AND uuid = ?')
+    .get(projectId, planUuid) as { plan_id: number } | null;
+  return row?.plan_id ?? null;
 }
 
 function applyOptimisticProjectSetting(
@@ -1318,7 +1340,7 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
     branch: snapshot.plan.branch,
     simple: snapshot.plan.simple,
     tdd: snapshot.plan.tdd,
-    discoveredFrom: snapshot.plan.discoveredFrom,
+    discoveredFrom: resolveLocalPlanId(db, project.id, snapshot.plan.discoveredFrom),
     parentUuid: snapshot.plan.parentUuid,
     epic: snapshot.plan.epic,
     revision: snapshot.plan.revision,
