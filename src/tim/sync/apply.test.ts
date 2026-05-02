@@ -88,10 +88,9 @@ function seedPlanRow(input: UpsertPlanInput): void {
 }
 
 function mirrorProjectionPlanToCanonical(planUuid = PLAN_UUID): void {
-  db.prepare('DELETE FROM plan_dependency_canonical WHERE plan_uuid = ? OR depends_on_uuid = ?').run(
-    planUuid,
-    planUuid
-  );
+  db.prepare(
+    'DELETE FROM plan_dependency_canonical WHERE plan_uuid = ? OR depends_on_uuid = ?'
+  ).run(planUuid, planUuid);
   db.prepare('DELETE FROM plan_tag_canonical WHERE plan_uuid = ?').run(planUuid);
   db.prepare('DELETE FROM task_canonical WHERE plan_uuid = ?').run(planUuid);
   db.prepare('DELETE FROM plan_canonical WHERE uuid = ?').run(planUuid);
@@ -358,9 +357,9 @@ describe('main-node sync apply engine', () => {
     expect(
       db.prepare('SELECT tag FROM plan_tag_canonical WHERE plan_uuid = ?').all(PLAN_UUID)
     ).toEqual([{ tag: 'canonical' }]);
-    expect(
-      db.prepare('SELECT revision FROM plan_canonical WHERE uuid = ?').get(PLAN_UUID)
-    ).toEqual({ revision: 2 });
+    expect(db.prepare('SELECT revision FROM plan_canonical WHERE uuid = ?').get(PLAN_UUID)).toEqual(
+      { revision: 2 }
+    );
   });
 
   test('canonical adapter rejects stale CAS as a conflict without mutating canonical rows', async () => {
@@ -2225,10 +2224,9 @@ describe('main-node sync apply engine', () => {
       'main-node edit',
       TASK_UUID
     );
-    db.prepare('UPDATE task_canonical SET description = ?, revision = revision + 1 WHERE uuid = ?').run(
-      'main-node edit',
-      TASK_UUID
-    );
+    db.prepare(
+      'UPDATE task_canonical SET description = ?, revision = revision + 1 WHERE uuid = ?'
+    ).run('main-node edit', TASK_UUID);
 
     const op = await updatePlanTaskTextOperation(
       PROJECT_UUID,

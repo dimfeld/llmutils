@@ -2,10 +2,7 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'vitest';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
-import {
-  upsertCanonicalPlanInTransaction,
-  upsertProjectionPlanInTransaction,
-} from '../db/plan.js';
+import { upsertCanonicalPlanInTransaction, upsertProjectionPlanInTransaction } from '../db/plan.js';
 import {
   getProjectSettingWithMetadata,
   writeCanonicalProjectSettingRow,

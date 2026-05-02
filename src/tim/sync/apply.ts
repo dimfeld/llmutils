@@ -1135,12 +1135,7 @@ function validateCanonicalPlanOperation(
       for (const dependencyUuid of new Set(op.dependencies)) {
         requireCanonicalPlan(db, project, dependencyUuid, envelope);
         if (
-          dependencyReachesInTable(
-            db,
-            'plan_dependency_canonical',
-            dependencyUuid,
-            op.planUuid
-          )
+          dependencyReachesInTable(db, 'plan_dependency_canonical', dependencyUuid, op.planUuid)
         ) {
           throw validationError(envelope, 'Adding dependency would create a cycle');
         }
@@ -1194,12 +1189,7 @@ function validateCanonicalPlanOperation(
     case 'plan.add_dependency':
       if (
         op.planUuid === op.dependsOnPlanUuid ||
-        dependencyReachesInTable(
-          db,
-          'plan_dependency_canonical',
-          op.dependsOnPlanUuid,
-          op.planUuid
-        )
+        dependencyReachesInTable(db, 'plan_dependency_canonical', op.dependsOnPlanUuid, op.planUuid)
       ) {
         throw validationError(envelope, 'Adding dependency would create a cycle');
       }
@@ -1233,12 +1223,7 @@ function validateCanonicalPlanOperation(
         requireCanonicalPlan(db, project, dependencyUuid, envelope);
         if (
           dependencyUuid === op.newPlanUuid ||
-          dependencyReachesInTable(
-            db,
-            'plan_dependency_canonical',
-            dependencyUuid,
-            op.newPlanUuid
-          )
+          dependencyReachesInTable(db, 'plan_dependency_canonical', dependencyUuid, op.newPlanUuid)
         ) {
           throw validationError(envelope, 'Adding dependency would create a cycle');
         }
@@ -2228,9 +2213,9 @@ class CanonicalPlanAdapter implements ApplyOperationToAdapter {
       }
     }
     const task =
-      (this.db.prepare('SELECT * FROM task_canonical WHERE uuid = ?').get(taskUuid) as
-        | ApplyOperationToTask
-        | null) ?? null;
+      (this.db
+        .prepare('SELECT * FROM task_canonical WHERE uuid = ?')
+        .get(taskUuid) as ApplyOperationToTask | null) ?? null;
     return task ? { ...task } : null;
   }
 
@@ -2408,10 +2393,9 @@ class CanonicalPlanAdapter implements ApplyOperationToAdapter {
       );
       replaceTasksInTable(this.db, 'task_canonical', planUuid, this.tasks.get(planUuid) ?? []);
       replaceTasksInTable(this.db, 'plan_task', planUuid, this.tasks.get(planUuid) ?? []);
-      this.db.prepare('DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?').run(
-        'plan',
-        `plan:${planUuid}`
-      );
+      this.db
+        .prepare('DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+        .run('plan', `plan:${planUuid}`);
     }
     if (this.maxResolvedPlanId > 0) {
       setProjectHighestPlanId(this.db, this.project.id, this.maxResolvedPlanId);

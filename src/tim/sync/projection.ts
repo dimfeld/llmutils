@@ -342,9 +342,9 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
       }
     }
     const task =
-      (this.db.prepare('SELECT * FROM task_canonical WHERE uuid = ?').get(taskUuid) as
-        | ApplyOperationToTask
-        | null) ?? null;
+      (this.db
+        .prepare('SELECT * FROM task_canonical WHERE uuid = ?')
+        .get(taskUuid) as ApplyOperationToTask | null) ?? null;
     return task ? { ...task } : null;
   }
 
