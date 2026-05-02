@@ -29,6 +29,7 @@ import {
 
 const WS_PATH = '/sync/ws';
 const HELLO_TIMEOUT_MS = 10_000;
+export const SYNC_MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
 
 export interface StartSyncServerOptions {
   db: Database;
@@ -135,6 +136,7 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
     },
     websocket: {
       idleTimeout: 0,
+      maxPayloadLength: SYNC_MAX_PAYLOAD_BYTES,
       open(ws) {
         const connectionId = ws.data.connectionId;
         sockets.set(connectionId, ws);
@@ -151,6 +153,10 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
       },
       message(ws, rawMessage) {
         const connectionId = ws.data.connectionId;
+        if (rawByteLength(rawMessage) > SYNC_MAX_PAYLOAD_BYTES) {
+          closeWithError(ws, 'payload_too_large', 'Sync frame exceeds maximum payload size');
+          return;
+        }
         const text = rawToString(rawMessage);
         let frame: SyncClientFrame;
         try {
@@ -247,7 +253,11 @@ async function handleHttpRequest(
     if (request.method !== 'POST') {
       return new Response('Method Not Allowed\n', { status: 405, headers: { Allow: 'POST' } });
     }
-    const body = (await request.json()) as unknown;
+    const bodyResult = await readJsonBodyWithLimit(request);
+    if (!bodyResult.ok) {
+      return jsonResponse({ error: bodyResult.error }, { status: bodyResult.status });
+    }
+    const body = bodyResult.value;
     if (body && typeof body === 'object' && 'batch' in body) {
       const frame = SyncBatchFrameSchema.parse({ type: 'batch', ...(body as object) });
       const originError = validateOperationOrigins(frame.batch.operations, nodeId);
@@ -311,6 +321,45 @@ async function handleHttpRequest(
   }
 
   return new Response('Not Found\n', { status: 404 });
+}
+
+type JsonBodyResult =
+  | { ok: true; value: unknown }
+  | { ok: false; status: number; error: string };
+
+async function readJsonBodyWithLimit(request: Request): Promise<JsonBodyResult> {
+  const contentLength = request.headers.get('content-length');
+  if (contentLength !== null) {
+    const parsedLength = Number(contentLength);
+    if (
+      !Number.isFinite(parsedLength) ||
+      parsedLength < 0 ||
+      parsedLength > SYNC_MAX_PAYLOAD_BYTES
+    ) {
+      return { ok: false, status: 413, error: 'Sync request body exceeds maximum payload size' };
+    }
+  }
+
+  const text = await request.text();
+  if (Buffer.byteLength(text, 'utf8') > SYNC_MAX_PAYLOAD_BYTES) {
+    return { ok: false, status: 413, error: 'Sync request body exceeds maximum payload size' };
+  }
+
+  try {
+    return { ok: true, value: JSON.parse(text) as unknown };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 400,
+      error: err instanceof Error ? err.message : 'Invalid JSON request body',
+    };
+  }
+}
+
+function rawByteLength(rawMessage: string | Buffer): number {
+  return typeof rawMessage === 'string'
+    ? Buffer.byteLength(rawMessage, 'utf8')
+    : rawMessage.byteLength;
 }
 
 function handleAuthenticatedFrame(

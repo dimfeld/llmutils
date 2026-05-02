@@ -33,6 +33,7 @@ import {
   getCurrentSequenceId,
   loadCanonicalSnapshot,
   startSyncServer,
+  SYNC_MAX_PAYLOAD_BYTES,
   type SyncServerHandle,
 } from './server.js';
 import { createSyncClient, type SyncClient } from './ws_client.js';
@@ -211,6 +212,44 @@ describe('sync transport server and clients', () => {
     next.send(JSON.stringify({ type: 'ping' }));
     expect(await waitForMessage(next)).toEqual({ type: 'pong' });
     next.close();
+  });
+
+  test('rejects oversized WebSocket frames before parsing', async () => {
+    const server = startTestServer(createDb());
+    const ws = await openWebSocket(server);
+    const closePromise = waitForClose(ws);
+
+    ws.send('x'.repeat(SYNC_MAX_PAYLOAD_BYTES + 1));
+
+    const result = await Promise.race([
+      waitForMessage(ws).then((frame) => ({ type: 'message' as const, frame })),
+      closePromise.then(() => ({ type: 'close' as const })),
+    ]);
+    if (result.type === 'message') {
+      expect(result.frame).toMatchObject({ type: 'error', code: 'payload_too_large' });
+    }
+    ws.close();
+  });
+
+  test('rejects oversized HTTP operation bodies before parsing', async () => {
+    const server = startTestServer(createDb());
+    const url = new URL('/internal/sync/operations', serverUrl(server));
+    const body = JSON.stringify({ operations: [], padding: 'x'.repeat(SYNC_MAX_PAYLOAD_BYTES) });
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        'content-type': 'application/json',
+        'x-tim-node-id': NODE_A,
+      },
+      body,
+    });
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Sync request body exceeds maximum payload size',
+    });
   });
 
   test('responds to ping with pong', async () => {
@@ -942,6 +981,12 @@ function waitForMessage(ws: WebSocket): Promise<SyncFrame> {
     ws.addEventListener('error', () => reject(new Error('WebSocket error while waiting')), {
       once: true,
     });
+  });
+}
+
+function waitForClose(ws: WebSocket): Promise<void> {
+  return new Promise((resolve) => {
+    ws.addEventListener('close', () => resolve(), { once: true });
   });
 }
 
