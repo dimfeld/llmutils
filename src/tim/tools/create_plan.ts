@@ -174,7 +174,7 @@ export async function createPlanTool(
     }
   }
 
-  const batch = await beginSyncBatch(db, context.config);
+  const batch = await beginSyncBatch(db, context.config, { atomic: true });
   const postCommitUpdates = [
     ...routePlanWriteIntoBatch(
       batch,

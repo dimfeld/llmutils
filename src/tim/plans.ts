@@ -219,9 +219,11 @@ async function loadPlanSnapshot(
     }
 
     const tasks = getPlanTasksByUuid(db, row.uuid).map((task) => ({
+      uuid: task.uuid ?? undefined,
       title: task.title,
       description: task.description,
       done: task.done === 1,
+      revision: task.revision,
     }));
     const dependencyUuids = getPlanDependenciesByUuid(db, row.uuid).map(
       (dependency) => dependency.depends_on_uuid

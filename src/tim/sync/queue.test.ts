@@ -2307,6 +2307,51 @@ describe('persistent-node sync queue', () => {
     ).toEqual([PLAN_UUID]);
   });
 
+  test('pending parent and child creates in one batch both project with parent relationship', async () => {
+    const parent = await createPlanOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: OTHER_PLAN_UUID,
+        numericPlanId: 11,
+        title: 'Pending parent',
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    const child = await createPlanOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        numericPlanId: 12,
+        title: 'Pending child',
+        parentUuid: OTHER_PLAN_UUID,
+      },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+
+    enqueueBatch(
+      db,
+      createBatchEnvelope({
+        batchId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa201',
+        originNodeId: NODE_A,
+        atomic: true,
+        operations: [parent, child],
+      })
+    );
+
+    expect(getPlanByUuid(db, OTHER_PLAN_UUID)).toMatchObject({
+      title: 'Pending parent',
+      revision: 2,
+    });
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+      title: 'Pending child',
+      parent_uuid: OTHER_PLAN_UUID,
+      revision: 1,
+    });
+    expect(
+      getPlanDependenciesByUuid(db, OTHER_PLAN_UUID).map((dep) => dep.depends_on_uuid)
+    ).toEqual([PLAN_UUID]);
+  });
+
   test('malformed list JSON is treated as empty during optimistic apply', async () => {
     seedPlan();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

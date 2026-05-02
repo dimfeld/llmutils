@@ -452,9 +452,7 @@ function operationStatus(db: Database, operationUuid: string): string | null {
 
 function tableExists(db: Database, table: string): boolean {
   return Boolean(
-    db
-      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
-      .get(table)
+    db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)
   );
 }
 

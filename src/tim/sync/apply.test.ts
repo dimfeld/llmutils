@@ -5,6 +5,7 @@ import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
 import {
   getPlanByUuid,
+  getPlanDependenciesByUuid,
   getPlanTagsByUuid,
   getPlanTasksByUuid,
   upsertCanonicalPlanInTransaction,
@@ -548,6 +549,191 @@ describe('main-node sync apply engine', () => {
     expect(
       db.prepare('SELECT value FROM project_setting WHERE setting = ?').get('abbreviation')
     ).toEqual({ value: '"AB"' });
+  });
+
+  test('atomic batch accepts multiple plan scalar ops with the same pre-batch baseRevision', async () => {
+    seedPlan();
+    const status = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'status', value: 'in_progress', baseRevision: 1 },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    const priority = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'priority', value: 'high', baseRevision: 1 },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+
+    const result = applyBatch(
+      db,
+      createBatchEnvelope({
+        batchId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa101',
+        originNodeId: NODE_A,
+        atomic: true,
+        operations: [status, priority],
+      })
+    );
+
+    expect(result.status).toBe('applied');
+    expect(result.results.map((item) => item.status)).toEqual(['applied', 'applied']);
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+      status: 'in_progress',
+      priority: 'high',
+      revision: 3,
+    });
+  });
+
+  test('atomic batch accepts set_scalar and set_parent with the same pre-batch baseRevision', async () => {
+    seedPlan();
+    seedPlan(OTHER_PLAN_UUID, 2, TASK_UUID_2);
+    const status = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'status', value: 'in_progress', baseRevision: 1 },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    const parent = await setPlanParentOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        newParentUuid: OTHER_PLAN_UUID,
+        previousParentUuid: null,
+        baseRevision: 1,
+      },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+
+    const result = applyBatch(
+      db,
+      createBatchEnvelope({
+        batchId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa102',
+        originNodeId: NODE_A,
+        atomic: true,
+        operations: [status, parent],
+      })
+    );
+
+    expect(result.status).toBe('applied');
+    expect(result.results.map((item) => item.status)).toEqual(['applied', 'applied']);
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+      status: 'in_progress',
+      parent_uuid: OTHER_PLAN_UUID,
+      revision: 3,
+    });
+    expect(
+      getPlanDependenciesByUuid(db, OTHER_PLAN_UUID).map((row) => row.depends_on_uuid)
+    ).toEqual([PLAN_UUID]);
+  });
+
+  test('non-atomic plan batch still conflicts on the second stale same-plan op', async () => {
+    seedPlan();
+    const status = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'status', value: 'in_progress', baseRevision: 1 },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    const priority = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'priority', value: 'high', baseRevision: 1 },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+
+    const result = applyBatch(
+      db,
+      createBatchEnvelope({
+        batchId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa103',
+        originNodeId: NODE_A,
+        operations: [status, priority],
+      })
+    );
+
+    expect(result.status).toBe('applied');
+    expect(result.results.map((item) => item.status)).toEqual(['applied', 'conflict']);
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+      status: 'in_progress',
+      priority: null,
+      revision: 2,
+    });
+    expect(countRows('sync_conflict')).toBe(1);
+  });
+
+  test('atomic batch with stale baseRevision predating the batch rolls back', async () => {
+    seedPlan();
+    const status = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'status', value: 'in_progress', baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    const priority = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'priority', value: 'high', baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+
+    const result = applyBatch(
+      db,
+      createBatchEnvelope({
+        batchId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa104',
+        originNodeId: NODE_A,
+        atomic: true,
+        operations: [status, priority],
+      })
+    );
+
+    expect(result.status).toBe('conflict');
+    expect(result.results.map((item) => item.status)).toEqual(['conflict', 'rejected']);
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+      status: 'pending',
+      priority: null,
+      revision: 1,
+    });
+    expect(countRows('sync_conflict')).toBe(0);
+  });
+
+  test('atomic batch accepts two task text ops with the same pre-batch task baseRevision', async () => {
+    seedPlan();
+    const title = await updatePlanTaskTextOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        taskUuid: TASK_UUID,
+        field: 'title',
+        base: 'Task one',
+        new: 'Renamed task',
+        baseRevision: 1,
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    const description = await updatePlanTaskTextOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        taskUuid: TASK_UUID,
+        field: 'description',
+        base: 'old description',
+        new: 'new description',
+        baseRevision: 1,
+      },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+
+    const result = applyBatch(
+      db,
+      createBatchEnvelope({
+        batchId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa105',
+        originNodeId: NODE_A,
+        atomic: true,
+        operations: [title, description],
+      })
+    );
+
+    const task = getPlanTasksByUuid(db, PLAN_UUID)[0]!;
+    expect(result.status).toBe('applied');
+    expect(result.results.map((item) => item.status)).toEqual(['applied', 'applied']);
+    expect(task).toMatchObject({
+      title: 'Renamed task',
+      description: 'new description',
+      revision: 3,
+    });
   });
 
   test('batch replay returns recorded results without applying twice', async () => {

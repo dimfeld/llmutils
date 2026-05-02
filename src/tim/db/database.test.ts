@@ -1150,6 +1150,132 @@ describe('tim db/database', () => {
     }
   });
 
+  test('runMigrations v32 backfills canonical mirror tables from existing projection rows', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db = new Database(dbPath);
+
+    try {
+      runMigrations(db);
+      db.exec(`
+        DROP TABLE IF EXISTS project_setting_canonical;
+        DROP TABLE IF EXISTS plan_tag_canonical;
+        DROP TABLE IF EXISTS plan_dependency_canonical;
+        DROP TABLE IF EXISTS task_canonical;
+        DROP TABLE IF EXISTS plan_canonical;
+
+        DELETE FROM plan_tag;
+        DELETE FROM plan_dependency;
+        DELETE FROM plan_task;
+        DELETE FROM plan;
+        DELETE FROM project_setting;
+        DELETE FROM project;
+        DELETE FROM schema_version;
+        INSERT INTO schema_version (version, import_completed, bootstrap_completed)
+          VALUES (31, 1, 0);
+
+        INSERT INTO project (
+          id, uuid, repository_id, remote_url, last_git_root, external_config_path,
+          external_tasks_dir, remote_label, highest_plan_id, created_at, updated_at
+        ) VALUES (
+          1, '11111111-1111-4111-8111-111111111111', 'repo-v31', NULL, '/tmp/repo',
+          NULL, NULL, NULL, 2, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z'
+        );
+
+        INSERT INTO plan (
+          uuid, project_id, plan_id, title, goal, note, details, status, priority, branch,
+          simple, tdd, discovered_from, issue, pull_request, assigned_to, base_branch,
+          base_commit, base_change_id, temp, docs, changed_files, plan_generated_at,
+          review_issues, docs_updated_at, lessons_applied_at, parent_uuid, epic,
+          created_at, updated_at, revision
+        ) VALUES
+          (
+            '22222222-2222-4222-8222-222222222222', 1, 1, 'Parent', 'Goal', 'Note',
+            'Details', 'in_progress', 'high', 'branch-a', 1, 0, NULL, '[]', '[]',
+            'agent', 'main', 'abc', 'change-a', 0, '["docs/a.md"]', '[]',
+            '2026-01-03T00:00:00.000Z', '[]', '2026-01-04T00:00:00.000Z',
+            '2026-01-05T00:00:00.000Z', NULL, 1, '2026-01-01T00:00:00.000Z',
+            '2026-01-06T00:00:00.000Z', 7
+          ),
+          (
+            '33333333-3333-4333-8333-333333333333', 1, 2, 'Child', NULL, NULL,
+            NULL, 'pending', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+            '22222222-2222-4222-8222-222222222222', 0, '2026-01-07T00:00:00.000Z',
+            '2026-01-08T00:00:00.000Z', 3
+          );
+
+        INSERT INTO plan_task (
+          id, plan_uuid, task_index, title, description, done, uuid, revision
+        ) VALUES
+          (
+            10, '22222222-2222-4222-8222-222222222222', 0, 'Task A',
+            'Description A', 0, '44444444-4444-4444-8444-444444444444', 5
+          ),
+          (
+            11, '33333333-3333-4333-8333-333333333333', 0, 'Task B',
+            'Description B', 1, '55555555-5555-4555-8555-555555555555', 2
+          );
+
+        INSERT INTO plan_dependency (plan_uuid, depends_on_uuid)
+          VALUES (
+            '22222222-2222-4222-8222-222222222222',
+            '33333333-3333-4333-8333-333333333333'
+          );
+        INSERT INTO plan_tag (plan_uuid, tag)
+          VALUES ('22222222-2222-4222-8222-222222222222', 'sync');
+        INSERT INTO project_setting (
+          project_id, setting, value, revision, updated_at, updated_by_node
+        ) VALUES (
+          1, 'color', '"red"', 4, '2026-01-09T00:00:00.000Z', 'node-a'
+        );
+      `);
+
+      runMigrations(db);
+
+      expect(
+        db
+          .query<
+            { uuid: string; revision: number; updated_at: string; base_commit: string | null },
+            []
+          >('SELECT uuid, revision, updated_at, base_commit FROM plan_canonical ORDER BY plan_id')
+          .all()
+      ).toEqual(
+        db
+          .query<
+            { uuid: string; revision: number; updated_at: string; base_commit: string | null },
+            []
+          >('SELECT uuid, revision, updated_at, base_commit FROM plan ORDER BY plan_id')
+          .all()
+      );
+      expect(
+        db
+          .query<
+            { uuid: string | null; revision: number; done: number },
+            []
+          >('SELECT uuid, revision, done FROM task_canonical ORDER BY id')
+          .all()
+      ).toEqual(
+        db
+          .query<
+            { uuid: string | null; revision: number; done: number },
+            []
+          >('SELECT uuid, revision, done FROM plan_task ORDER BY id')
+          .all()
+      );
+      expect(db.query('SELECT * FROM plan_dependency_canonical').all()).toEqual(
+        db.query('SELECT * FROM plan_dependency').all()
+      );
+      expect(db.query('SELECT * FROM plan_tag_canonical').all()).toEqual(
+        db.query('SELECT * FROM plan_tag').all()
+      );
+      expect(db.query('SELECT * FROM project_setting_canonical').all()).toEqual(
+        db.query('SELECT * FROM project_setting').all()
+      );
+    } finally {
+      db.close(false);
+    }
+  });
+
   test('runMigrations backfills normalized sync operation plan references from schema version 29', () => {
     const dbPath = path.join(tempDir, DATABASE_FILENAME);
     const db = new Database(dbPath);

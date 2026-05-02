@@ -307,6 +307,7 @@ export async function beginSyncBatch(
   const originNodeId = await getLocalNodeId(config);
   const builders: OperationBuilder[] = [];
   return {
+    atomic: options.atomic === true,
     add(builder: OperationBuilder): void {
       builders.push(builder);
     },

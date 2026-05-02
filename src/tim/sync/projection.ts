@@ -357,6 +357,8 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
   private tasks = new Map<string, ApplyOperationToTask[]>();
   private dependencies = new Map<string, PlanDependencyRow[]>();
   private tags = new Map<string, PlanTagRow[]>();
+  private loadingPendingPlanCreates = new Set<string>();
+  private attemptedPendingPlanCreates = new Set<string>();
 
   constructor(
     private readonly db: Database,
@@ -383,6 +385,24 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
   }
 
   getPlan(planUuid: string): ApplyOperationToPlan | null {
+    if (this.locallyDeletedPlanUuids.has(planUuid)) {
+      return null;
+    }
+    if (!this.plans.has(planUuid)) {
+      this.loadCanonicalPlan(planUuid);
+    }
+    if (
+      !this.plans.get(planUuid) &&
+      !this.loadingPendingPlanCreates.has(planUuid) &&
+      !this.attemptedPendingPlanCreates.has(planUuid)
+    ) {
+      this.loadActivePendingPlanCreate(planUuid);
+    }
+    const plan = this.plans.get(planUuid) ?? null;
+    return plan ? { ...plan } : null;
+  }
+
+  getPlanForCreateDuplicateCheck(planUuid: string): ApplyOperationToPlan | null {
     if (this.locallyDeletedPlanUuids.has(planUuid)) {
       return null;
     }
@@ -516,6 +536,66 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
       planUuid,
       state.tags.map((tag) => ({ ...tag }))
     );
+  }
+
+  private loadActivePendingPlanCreate(planUuid: string): void {
+    this.attemptedPendingPlanCreates.add(planUuid);
+    if (this.loadingPendingPlanCreates.has(planUuid)) {
+      return;
+    }
+    if (hasPlanTombstone(this.db, planUuid)) {
+      return;
+    }
+    const row = this.db
+      .prepare(
+        `
+          SELECT project_uuid, operation_uuid, origin_node_id, local_sequence,
+                 target_type, target_key, created_at, payload
+          FROM sync_operation
+          WHERE operation_type = 'plan.create'
+            AND target_key = ?
+            AND status IN (${ACTIVE_PROJECTION_OPERATION_STATUSES.map(() => '?').join(', ')})
+          ORDER BY origin_node_id, local_sequence
+          LIMIT 1
+        `
+      )
+      .get(
+        `plan:${planUuid}`,
+        ...ACTIVE_PROJECTION_OPERATION_STATUSES
+      ) as ActivePlanOperationRow | null;
+    if (!row) {
+      return;
+    }
+
+    const op = assertValidPayload(JSON.parse(row.payload));
+    if (op.type !== 'plan.create') {
+      return;
+    }
+
+    this.loadingPendingPlanCreates.add(planUuid);
+    try {
+      for (const refUuid of [op.parentUuid, op.discoveredFrom, ...op.dependencies].filter(
+        (value): value is string => typeof value === 'string' && value.length > 0
+      )) {
+        this.getPlan(refUuid);
+      }
+      applyOperationTo(
+        this,
+        {
+          operationUuid: row.operation_uuid,
+          projectUuid: row.project_uuid,
+          originNodeId: row.origin_node_id,
+          localSequence: row.local_sequence,
+          createdAt: row.created_at,
+          targetType: row.target_type as SyncOperationEnvelope['targetType'],
+          targetKey: row.target_key,
+          op,
+        },
+        { cleanupAssignmentsOnStatusChange: false }
+      );
+    } finally {
+      this.loadingPendingPlanCreates.delete(planUuid);
+    }
   }
 }
 

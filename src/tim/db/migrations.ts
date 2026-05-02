@@ -5,6 +5,7 @@ interface Migration {
   version: number;
   up: string;
   requiresFkOff?: boolean;
+  afterUp?: (db: Database) => void;
 }
 
 const migrations: Migration[] = [
@@ -1031,7 +1032,9 @@ const migrations: Migration[] = [
         updated_by_node TEXT,
         PRIMARY KEY (project_id, setting)
       );
+
     `,
+    afterUp: backfillCanonicalTables,
   },
   {
     version: 33,
@@ -1044,6 +1047,132 @@ function getCurrentVersion(db: Database): number {
     .prepare('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
     .get() as { version?: number } | null;
   return row?.version ?? 0;
+}
+
+function tableExists(db: Database, tableName: string): boolean {
+  return Boolean(
+    db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName)
+  );
+}
+
+function tableColumns(db: Database, tableName: string): Set<string> {
+  if (!tableExists(db, tableName)) {
+    return new Set();
+  }
+  return new Set(
+    (
+      db.prepare(`PRAGMA table_info('${tableName}')`).all() as Array<{
+        name: string;
+      }>
+    ).map((column) => column.name)
+  );
+}
+
+function sourceColumn(columns: ReadonlySet<string>, column: string, fallback: string): string {
+  return columns.has(column) ? column : fallback;
+}
+
+function backfillCanonicalTables(db: Database): void {
+  if (tableExists(db, 'plan')) {
+    const columns = tableColumns(db, 'plan');
+    db.run(`
+      INSERT INTO plan_canonical (
+        uuid, project_id, plan_id, title, goal, details, status, priority, branch,
+        simple, tdd, discovered_from, issue, pull_request, assigned_to, base_branch,
+        temp, docs, changed_files, plan_generated_at, review_issues, parent_uuid,
+        epic, created_at, updated_at, docs_updated_at, lessons_applied_at, note,
+        base_commit, base_change_id, revision
+      )
+      SELECT
+        ${sourceColumn(columns, 'uuid', 'NULL')},
+        ${sourceColumn(columns, 'project_id', 'NULL')},
+        ${sourceColumn(columns, 'plan_id', '0')},
+        ${sourceColumn(columns, 'title', 'NULL')},
+        ${sourceColumn(columns, 'goal', 'NULL')},
+        ${sourceColumn(columns, 'details', 'NULL')},
+        ${sourceColumn(columns, 'status', "'pending'")},
+        ${sourceColumn(columns, 'priority', 'NULL')},
+        ${sourceColumn(columns, 'branch', 'NULL')},
+        ${sourceColumn(columns, 'simple', 'NULL')},
+        ${sourceColumn(columns, 'tdd', 'NULL')},
+        ${sourceColumn(columns, 'discovered_from', 'NULL')},
+        ${sourceColumn(columns, 'issue', 'NULL')},
+        ${sourceColumn(columns, 'pull_request', 'NULL')},
+        ${sourceColumn(columns, 'assigned_to', 'NULL')},
+        ${sourceColumn(columns, 'base_branch', 'NULL')},
+        ${sourceColumn(columns, 'temp', 'NULL')},
+        ${sourceColumn(columns, 'docs', 'NULL')},
+        ${sourceColumn(columns, 'changed_files', 'NULL')},
+        ${sourceColumn(columns, 'plan_generated_at', 'NULL')},
+        ${sourceColumn(columns, 'review_issues', 'NULL')},
+        ${sourceColumn(columns, 'parent_uuid', 'NULL')},
+        ${sourceColumn(columns, 'epic', '0')},
+        ${sourceColumn(columns, 'created_at', SQL_NOW_ISO_UTC)},
+        ${sourceColumn(columns, 'updated_at', SQL_NOW_ISO_UTC)},
+        ${sourceColumn(columns, 'docs_updated_at', 'NULL')},
+        ${sourceColumn(columns, 'lessons_applied_at', 'NULL')},
+        ${sourceColumn(columns, 'note', 'NULL')},
+        ${sourceColumn(columns, 'base_commit', 'NULL')},
+        ${sourceColumn(columns, 'base_change_id', 'NULL')},
+        ${sourceColumn(columns, 'revision', '1')}
+      FROM plan
+      WHERE uuid IS NOT NULL AND project_id IS NOT NULL
+    `);
+  }
+
+  if (tableExists(db, 'plan_task')) {
+    const columns = tableColumns(db, 'plan_task');
+    db.run(`
+      INSERT INTO task_canonical (
+        id, plan_uuid, task_index, title, description, done, uuid, revision
+      )
+      SELECT
+        ${sourceColumn(columns, 'id', 'NULL')},
+        ${sourceColumn(columns, 'plan_uuid', 'NULL')},
+        ${sourceColumn(columns, 'task_index', '0')},
+        ${sourceColumn(columns, 'title', "''")},
+        ${sourceColumn(columns, 'description', "''")},
+        ${sourceColumn(columns, 'done', '0')},
+        ${sourceColumn(columns, 'uuid', 'NULL')},
+        ${sourceColumn(columns, 'revision', '1')}
+      FROM plan_task
+      WHERE plan_uuid IS NOT NULL
+    `);
+  }
+
+  if (tableExists(db, 'plan_dependency')) {
+    db.run(`
+      INSERT INTO plan_dependency_canonical (plan_uuid, depends_on_uuid)
+      SELECT plan_uuid, depends_on_uuid
+      FROM plan_dependency
+    `);
+  }
+
+  if (tableExists(db, 'plan_tag')) {
+    db.run(`
+      INSERT INTO plan_tag_canonical (plan_uuid, tag)
+      SELECT plan_uuid, tag
+      FROM plan_tag
+    `);
+  }
+
+  if (tableExists(db, 'project_setting')) {
+    const columns = tableColumns(db, 'project_setting');
+    db.run(`
+      INSERT INTO project_setting_canonical (
+        project_id, setting, value, revision, updated_at, updated_by_node
+      )
+      SELECT
+        ${sourceColumn(columns, 'project_id', 'NULL')},
+        ${sourceColumn(columns, 'setting', 'NULL')},
+        ${sourceColumn(columns, 'value', "''")},
+        ${sourceColumn(columns, 'revision', '1')},
+        ${sourceColumn(columns, 'updated_at', SQL_NOW_ISO_UTC)},
+        ${sourceColumn(columns, 'updated_by_node', 'NULL')}
+      FROM project_setting
+      WHERE project_id IS NOT NULL AND setting IS NOT NULL
+    `);
+  }
 }
 
 export function runMigrations(db: Database): void {
@@ -1096,6 +1225,7 @@ export function runMigrations(db: Database): void {
       try {
         db.transaction(() => {
           db.run(migration.up);
+          migration.afterUp?.(db);
           persistVersion(migration.version);
         }).immediate();
       } finally {
@@ -1104,6 +1234,7 @@ export function runMigrations(db: Database): void {
     } else {
       db.transaction(() => {
         db.run(migration.up);
+        migration.afterUp?.(db);
         persistVersion(migration.version);
       }).immediate();
     }

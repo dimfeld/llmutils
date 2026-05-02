@@ -49,6 +49,20 @@ export interface ApplyOperationOptions {
   skipUpdatedAt?: boolean;
   sourceCreatedAt?: string | null;
   sourceUpdatedAt?: string | null;
+  /**
+   * Per-batch baseline plan revisions captured before the batch's first op runs.
+   * Within an atomic batch, multiple operations on the same plan share a single
+   * pre-batch baseRevision; the canonical revision advances as earlier ops apply,
+   * so the per-op CAS check must validate against this baseline rather than the
+   * live canonical revision.
+   */
+  atomicBatchPlanBaseRevisions?: Map<string, number>;
+  /**
+   * Per-batch baseline task revisions captured before the batch's first op runs.
+   * Task text/removal operations carry task revisions in baseRevision, so they
+   * need the same atomic-batch baseline treatment as plan-level operations.
+   */
+  atomicBatchTaskBaseRevisions?: Map<string, number>;
 }
 
 export interface ApplyBatchResult {
@@ -192,6 +206,14 @@ export function applyBatch(
 
   const apply = db.transaction((): ApplyBatchResult => {
     const results: ApplyOperationResult[] = [];
+    const effectiveOptions: ApplyOperationOptions =
+      batch.atomic === true
+        ? {
+            ...options,
+            atomicBatchPlanBaseRevisions: captureAtomicBatchPlanBaseRevisions(db, batch),
+            atomicBatchTaskBaseRevisions: captureAtomicBatchTaskBaseRevisions(db, batch),
+          }
+        : options;
     for (const [index, operation] of batch.operations.entries()) {
       const result =
         applyBatchOperationHookForTesting?.(index, operation) ??
@@ -200,7 +222,7 @@ export function applyBatch(
           operation,
           originalPayloads[index],
           normalizedPayloads[index],
-          options,
+          effectiveOptions,
           batch.batchId,
           batch.atomic === true
         );
@@ -272,6 +294,71 @@ export function setApplyBatchOperationHookForTesting(
   hook: ((index: number, operation: SyncOperationEnvelope) => ApplyOperationResult | void) | null
 ): void {
   applyBatchOperationHookForTesting = hook;
+}
+
+function captureAtomicBatchPlanBaseRevisions(
+  db: Database,
+  batch: SyncOperationBatchEnvelope
+): Map<string, number> {
+  const planUuids = new Set<string>();
+  for (const operation of batch.operations) {
+    const op = operation.op;
+    if (
+      !('baseRevision' in op) ||
+      typeof (op as { baseRevision?: unknown }).baseRevision !== 'number'
+    ) {
+      continue;
+    }
+    const planUuid =
+      op.type === 'plan.promote_task'
+        ? op.sourcePlanUuid
+        : 'planUuid' in op && typeof (op as { planUuid?: unknown }).planUuid === 'string'
+          ? (op as { planUuid: string }).planUuid
+          : null;
+    if (planUuid) {
+      planUuids.add(planUuid);
+    }
+  }
+  const baseline = new Map<string, number>();
+  if (planUuids.size === 0) {
+    return baseline;
+  }
+  const stmt = db.prepare('SELECT revision FROM plan_canonical WHERE uuid = ?');
+  for (const planUuid of planUuids) {
+    const row = stmt.get(planUuid) as { revision: number } | null;
+    if (row) {
+      baseline.set(planUuid, row.revision);
+    }
+  }
+  return baseline;
+}
+
+function captureAtomicBatchTaskBaseRevisions(
+  db: Database,
+  batch: SyncOperationBatchEnvelope
+): Map<string, number> {
+  const taskUuids = new Set<string>();
+  for (const operation of batch.operations) {
+    const op = operation.op;
+    if (
+      (op.type === 'plan.update_task_text' || op.type === 'plan.remove_task') &&
+      typeof op.baseRevision === 'number'
+    ) {
+      taskUuids.add(op.taskUuid);
+    }
+  }
+  const baseline = new Map<string, number>();
+  if (taskUuids.size === 0) {
+    return baseline;
+  }
+  const stmt = db.prepare('SELECT revision FROM task_canonical WHERE uuid = ?');
+  for (const taskUuid of taskUuids) {
+    const row = stmt.get(taskUuid) as { revision: number } | null;
+    if (row) {
+      baseline.set(taskUuid, row.revision);
+    }
+  }
+  return baseline;
 }
 
 function assertUniqueBatchOperationUuids(batch: SyncOperationBatchEnvelope): void {
@@ -1057,7 +1144,7 @@ function applyCanonicalPlanPayload(
   normalizedPayload: string,
   options: ApplyOperationOptions
 ): Mutation[] {
-  validateCanonicalPlanOperation(db, project, envelope);
+  validateCanonicalPlanOperation(db, project, envelope, options.atomicBatchPlanBaseRevisions);
   const adapter = new CanonicalPlanAdapter(db, project, envelope);
   const priorStatus =
     envelope.op.type === 'plan.set_scalar' && envelope.op.field === 'status'
@@ -1099,10 +1186,17 @@ function applyCanonicalPlanPayload(
 function validateCanonicalPlanOperation(
   db: Database,
   project: ProjectRow,
-  envelope: SyncOperationEnvelope
+  envelope: SyncOperationEnvelope,
+  atomicBatchPlanBaseRevisions?: Map<string, number>
 ): void {
   const op = envelope.op;
-  if ('baseRevision' in op && typeof op.baseRevision === 'number') {
+  // Task-targeted ops carry the task's revision in `baseRevision`, not the
+  // plan's, so the plan-level CAS check below would compare apples to oranges.
+  // Those ops are validated by the adapter-driven CAS in applyOperationToUnchecked
+  // which targets the task's revision correctly.
+  const opCarriesTaskBaseRevision =
+    op.type === 'plan.update_task_text' || op.type === 'plan.remove_task';
+  if ('baseRevision' in op && typeof op.baseRevision === 'number' && !opCarriesTaskBaseRevision) {
     const planUuid =
       op.type === 'plan.promote_task' ? op.sourcePlanUuid : 'planUuid' in op ? op.planUuid : null;
     if (planUuid) {
@@ -1110,7 +1204,8 @@ function validateCanonicalPlanOperation(
       if (!plan || plan.project_id !== project.id) {
         throw validationError(envelope, `Unknown plan ${planUuid}`);
       }
-      if (plan.revision !== op.baseRevision) {
+      const baselineRevision = atomicBatchPlanBaseRevisions?.get(planUuid) ?? plan.revision;
+      if (baselineRevision !== op.baseRevision) {
         const conflictId = createSyncConflict(db, {
           envelope,
           originalPayload: JSON.stringify(op),
@@ -2159,6 +2254,7 @@ export interface ApplyOperationToAdapter {
   readonly skipPreconditionFailures?: boolean;
   readonly baseRevisionMode?: 'strict' | 'projection';
   getPlan(planUuid: string): ApplyOperationToPlan | null;
+  getPlanForCreateDuplicateCheck?(planUuid: string): ApplyOperationToPlan | null;
   getTaskByUuid(taskUuid: string): ApplyOperationToTask | null;
   setPlan(plan: ApplyOperationToPlan): void;
   deletePlan(planUuid: string): void;
@@ -2473,10 +2569,14 @@ function applyOperationToUnchecked(
   if ('baseRevision' in op && typeof op.baseRevision === 'number') {
     const baseTarget = getBaseRevisionTarget(adapter, op);
     if (baseTarget) {
+      const baselineRevision =
+        adapter.baseRevisionMode !== 'projection' && baseTarget.exists
+          ? getAtomicBatchBaselineRevision(options, op, baseTarget)
+          : baseTarget.revision;
       const isStale =
         adapter.baseRevisionMode === 'projection'
           ? shouldSkipProjectionBaseRevision(adapter, op, baseTarget)
-          : !baseTarget.exists || baseTarget.revision !== op.baseRevision;
+          : !baseTarget.exists || baselineRevision !== op.baseRevision;
       if (isStale) {
         applyOperationToPrecondition(`Stale base revision for plan ${baseTarget.planUuid}`);
       }
@@ -2611,6 +2711,7 @@ function applyOperationToUnchecked(
 
 type BaseRevisionTarget = {
   planUuid: string;
+  taskUuid?: string;
   revision: number;
   exists: boolean;
 };
@@ -2625,6 +2726,7 @@ function getBaseRevisionTarget(
       const task = adapter.getTasks(op.planUuid).find((item) => item.uuid === op.taskUuid);
       return {
         planUuid: op.planUuid,
+        taskUuid: op.taskUuid,
         revision: task?.revision ?? -1,
         exists: task !== undefined,
       };
@@ -2651,6 +2753,31 @@ function getBaseRevisionTarget(
     default:
       return null;
   }
+}
+
+function getAtomicBatchBaselineRevision(
+  options: ApplyOperationOptions,
+  op: Extract<SyncOperationPayload, { baseRevision?: number }>,
+  target: BaseRevisionTarget
+): number {
+  if (
+    (op.type === 'plan.update_task_text' || op.type === 'plan.remove_task') &&
+    target.taskUuid &&
+    options.atomicBatchTaskBaseRevisions?.has(target.taskUuid)
+  ) {
+    return options.atomicBatchTaskBaseRevisions.get(target.taskUuid)!;
+  }
+  if (
+    (op.type === 'plan.set_scalar' ||
+      op.type === 'plan.patch_text' ||
+      op.type === 'plan.delete' ||
+      op.type === 'plan.set_parent' ||
+      op.type === 'plan.promote_task') &&
+    options.atomicBatchPlanBaseRevisions?.has(target.planUuid)
+  ) {
+    return options.atomicBatchPlanBaseRevisions.get(target.planUuid)!;
+  }
+  return target.revision;
 }
 
 function shouldSkipProjectionBaseRevision(
@@ -2799,7 +2926,7 @@ function validateAdapterPlanOperation(
   const op = envelope.op;
   switch (op.type) {
     case 'plan.create': {
-      if (adapter.getPlan(op.planUuid)) {
+      if (getAdapterPlanForCreateDuplicateCheck(adapter, op.planUuid)) {
         return;
       }
       const taskUuids = new Set<string>();
@@ -2954,7 +3081,7 @@ function applyOperationToPlanCreate(
   options: ApplyOperationOptions
 ): Mutation[] {
   const op = envelope.op;
-  if (adapter.getPlan(op.planUuid)) {
+  if (getAdapterPlanForCreateDuplicateCheck(adapter, op.planUuid)) {
     return [];
   }
   if (op.parentUuid) {
@@ -3046,6 +3173,13 @@ function applyOperationToPlanCreate(
     }
   }
   return mutations;
+}
+
+function getAdapterPlanForCreateDuplicateCheck(
+  adapter: ApplyOperationToAdapter,
+  planUuid: string
+): ApplyOperationToPlan | null {
+  return adapter.getPlanForCreateDuplicateCheck?.(planUuid) ?? adapter.getPlan(planUuid);
 }
 
 function applyOperationToPlanScalar(
