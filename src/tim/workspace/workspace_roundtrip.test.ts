@@ -43,6 +43,10 @@ vi.mock('./workspace_info.js', () => ({
   patchWorkspaceInfo: vi.fn(() => ({})),
 }));
 
+vi.mock('./workspace_manager.js', () => ({
+  symlinkLocalConfigs: vi.fn(async () => {}),
+}));
+
 vi.mock('../plan_materialize.js', () => ({
   ensureMaterializeDir: vi.fn(async () => '/tmp/workspace/.tim/plans'),
   MATERIALIZED_DIR: '.tim/plans',
@@ -85,6 +89,7 @@ import {
   findPrimaryWorkspaceForRepository,
   patchWorkspaceInfo,
 } from './workspace_info.js';
+import { symlinkLocalConfigs } from './workspace_manager.js';
 import { readdir as readdirMock, rm as rmMock } from 'node:fs/promises';
 import { ensureMaterializeDir } from '../plan_materialize.js';
 
@@ -517,6 +522,7 @@ describe('runPreExecutionWorkspaceSync', () => {
   const mockCaptureRepositoryState = vi.mocked(captureRepositoryState);
   const mockPullWorkspaceRefIfExists = vi.mocked(pullWorkspaceRefIfExists);
   const mockEnsureMaterializeDir = vi.mocked(ensureMaterializeDir);
+  const mockSymlinkLocalConfigs = vi.mocked(symlinkLocalConfigs);
   const mockReaddir = vi.mocked(readdirMock);
   const mockRm = vi.mocked(rmMock);
 
@@ -530,6 +536,7 @@ describe('runPreExecutionWorkspaceSync', () => {
     });
     mockPullWorkspaceRefIfExists.mockResolvedValue(true);
     mockEnsureMaterializeDir.mockResolvedValue('/tmp/workspace/.tim/plans');
+    mockSymlinkLocalConfigs.mockResolvedValue(undefined);
     mockReaddir.mockResolvedValue([] as any);
     mockRm.mockResolvedValue(undefined);
   });
@@ -581,6 +588,28 @@ describe('runPreExecutionWorkspaceSync', () => {
       statusOutput: '',
       diffHash: 'hash',
     });
+  });
+
+  test('refreshes local config symlinks from the primary workspace before syncing', async () => {
+    const { runPreExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
+    const context = {
+      executionWorkspacePath: '/tmp/workspace',
+      primaryWorkspacePath: '/tmp/primary',
+      refName: 'task-123',
+    };
+
+    await runPreExecutionWorkspaceSync(context);
+
+    expect(mockSymlinkLocalConfigs).toHaveBeenCalledWith('/tmp/primary', '/tmp/workspace');
+    expect(mockSymlinkLocalConfigs.mock.invocationCallOrder[0]).toBeLessThan(
+      mockEnsureMaterializeDir.mock.invocationCallOrder[0]
+    );
+    expect(mockEnsureMaterializeDir).toHaveBeenCalledWith('/tmp/workspace');
+    expect(mockPullWorkspaceRefIfExists).toHaveBeenCalledWith(
+      '/tmp/workspace',
+      'task-123',
+      'origin'
+    );
   });
 });
 

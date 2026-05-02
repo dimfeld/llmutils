@@ -257,7 +257,7 @@ const LOCAL_CONFIG_FILES = [
  * Create symlinks for local config files from source to target directory.
  * Only creates symlinks for files that exist in the source directory.
  */
-async function symlinkLocalConfigs(sourceDir: string, targetDir: string): Promise<void> {
+export async function symlinkLocalConfigs(sourceDir: string, targetDir: string): Promise<void> {
   for (const relativePath of LOCAL_CONFIG_FILES) {
     const sourcePath = path.join(sourceDir, relativePath);
     const targetPath = path.join(targetDir, relativePath);
@@ -277,6 +277,25 @@ async function symlinkLocalConfigs(sourceDir: string, targetDir: string): Promis
     } catch (error) {
       log(`Failed to create directory for symlink ${relativePath}: ${String(error)}`);
       continue;
+    }
+
+    try {
+      const existingTarget = await fs.lstat(targetPath);
+      if (!existingTarget.isSymbolicLink()) {
+        continue;
+      }
+
+      const currentTarget = await fs.readlink(targetPath);
+      if (currentTarget === sourcePath) {
+        continue;
+      }
+
+      await fs.rm(targetPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        log(`Failed to inspect existing local config ${relativePath}: ${String(error)}`);
+        continue;
+      }
     }
 
     // Create symlink pointing to absolute source path

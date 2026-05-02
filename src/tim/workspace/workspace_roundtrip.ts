@@ -22,6 +22,7 @@ import {
   pushWorkspaceRefToRemote,
   setWorkspaceBookmarkToCurrent,
 } from '../commands/workspace.js';
+import { symlinkLocalConfigs } from './workspace_manager.js';
 import {
   ensureMaterializeDir,
   MATERIALIZED_DIR,
@@ -84,6 +85,10 @@ export async function prepareWorkspaceRoundTrip(options: {
 export async function runPreExecutionWorkspaceSync(
   context: WorkspaceRoundTripContext
 ): Promise<void> {
+  if (context.primaryWorkspacePath) {
+    await symlinkLocalConfigs(context.primaryWorkspacePath, context.executionWorkspacePath);
+  }
+
   await ensureMaterializeDir(context.executionWorkspacePath);
 
   if (!context.branchCreatedDuringSetup) {

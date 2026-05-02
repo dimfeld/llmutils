@@ -32,6 +32,7 @@ import {
   createWorkspace,
   findUniqueBranchName,
   prepareExistingWorkspace,
+  symlinkLocalConfigs,
 } from './workspace_manager.js';
 import { WorkspaceLock } from './workspace_lock.js';
 import type { TimConfig, TimConfigInput } from '../configSchema.js';
@@ -1566,6 +1567,30 @@ describe('createWorkspace', () => {
     await expect(
       fs.stat(path.join(targetClonePath, '.claude', 'settings.local.json'))
     ).rejects.toThrow();
+  });
+
+  test('symlinkLocalConfigs updates stale local config symlinks', async () => {
+    const sourceDirectory = path.join(testTempDir, 'source');
+    const targetDirectory = path.join(testTempDir, 'target');
+    const oldSourceDirectory = path.join(testTempDir, 'old-source');
+    const relativeConfigPath = path.join('.tim', 'config', 'tim.local.yml');
+    const sourceConfigPath = path.join(sourceDirectory, relativeConfigPath);
+    const targetConfigPath = path.join(targetDirectory, relativeConfigPath);
+    const oldSourceConfigPath = path.join(oldSourceDirectory, relativeConfigPath);
+
+    await fs.mkdir(path.dirname(sourceConfigPath), { recursive: true });
+    await fs.mkdir(path.dirname(oldSourceConfigPath), { recursive: true });
+    await fs.mkdir(path.dirname(targetConfigPath), { recursive: true });
+    await fs.writeFile(sourceConfigPath, 'current: true');
+    await fs.writeFile(oldSourceConfigPath, 'old: true');
+    await fs.symlink(oldSourceConfigPath, targetConfigPath);
+
+    await symlinkLocalConfigs(sourceDirectory, targetDirectory);
+
+    const targetStats = await fs.lstat(targetConfigPath);
+    expect(targetStats.isSymbolicLink()).toBe(true);
+    expect(await fs.readlink(targetConfigPath)).toBe(sourceConfigPath);
+    expect(await fs.readFile(targetConfigPath, 'utf-8')).toBe('current: true');
   });
 
   test('createWorkspace copies gitdir pointer when .git is a file', async () => {
