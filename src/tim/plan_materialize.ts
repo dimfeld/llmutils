@@ -572,14 +572,18 @@ async function routeMaterializedPlanChanges(
 ): Promise<{ wroteTaskUuids: boolean }> {
   const projectUuid = getProjectUuidForId(db, context.projectId);
   const planUuid = projectionRow.uuid;
-  if (resolveWriteMode(config) !== 'sync-persistent') {
+  const writeMode = resolveWriteMode(config);
+  if (writeMode !== 'sync-persistent') {
+    // Some deprecated write helpers still mirror projection to canonical after
+    // writing projection state. Pre-mirroring here keeps local/main materialized
+    // sync CAS checks pointed at canonical rows before the batch runs. This is
+    // intentionally outside the batch transaction: in local/main mode canonical
+    // and projection are equivalent, and any transient mismatch self-heals at
+    // the next mirror boundary.
     mirrorProjectionPlanToCanonicalInTransaction(db, context.projectId, planUuid);
   }
-  // File-derived plan batches are composed from one visible projection revision,
-  // but each operation bumps plan revision when applied on local/main nodes.
-  // Leave plan CAS uncapped here; text ops still carry base/new text for merge
-  // conflict detection, and persistent nodes project the queued local intent.
-  const baseRevision = undefined;
+  const baseRevision =
+    writeMode === 'sync-persistent' ? (shadowPlan.revision ?? projectionRow.revision) : undefined;
   const batch = await beginSyncBatch(db, config, { reason: 'materialize_sync', atomic: true });
   let baseTrackingUpdate: { baseCommit: string | null; baseChangeId: string | null } | null = null;
 
@@ -605,32 +609,38 @@ async function routeMaterializedPlanChanges(
     batch.add((options) =>
       setPlanScalarOperation(
         projectUuid,
-        { planUuid, field: 'status', value: filePlan.status, baseRevision },
+        {
+          planUuid,
+          field: 'status',
+          value: filePlan.status,
+          baseValue: shadowPlan.status,
+          baseRevision,
+        },
         options
       )
     );
   }
 
   const scalarPairs = [
-    ['priority', toNullable(filePlan.priority)],
-    ['epic', filePlan.epic === true],
-    ['branch', toNullable(filePlan.branch)],
-    ['simple', filePlan.simple === true],
-    ['tdd', filePlan.tdd === true],
+    ['priority', toNullable(filePlan.priority), toNullable(shadowPlan.priority)],
+    ['epic', filePlan.epic === true, shadowPlan.epic === true],
+    ['branch', toNullable(filePlan.branch), toNullable(shadowPlan.branch)],
+    ['simple', filePlan.simple === true, shadowPlan.simple === true],
+    ['tdd', filePlan.tdd === true, shadowPlan.tdd === true],
+    ['assigned_to', toNullable(filePlan.assignedTo), toNullable(shadowPlan.assignedTo)],
+    ['base_branch', toNullable(filePlan.baseBranch), toNullable(shadowPlan.baseBranch)],
+    ['temp', filePlan.temp === true, shadowPlan.temp === true],
     [
-      'discovered_from',
-      filePlan.discoveredFrom
-        ? resolvePlanUuidForMaterializedId(context, filePlan.discoveredFrom, 'discoveredFrom', {
-            missing: 'skip',
-          })
-        : null,
+      'plan_generated_at',
+      toNullable(filePlan.planGeneratedAt),
+      toNullable(shadowPlan.planGeneratedAt),
     ],
-    ['assigned_to', toNullable(filePlan.assignedTo)],
-    ['base_branch', toNullable(filePlan.baseBranch)],
-    ['temp', filePlan.temp === true],
-    ['plan_generated_at', toNullable(filePlan.planGeneratedAt)],
-    ['docs_updated_at', toNullable(filePlan.docsUpdatedAt)],
-    ['lessons_applied_at', toNullable(filePlan.lessonsAppliedAt)],
+    ['docs_updated_at', toNullable(filePlan.docsUpdatedAt), toNullable(shadowPlan.docsUpdatedAt)],
+    [
+      'lessons_applied_at',
+      toNullable(filePlan.lessonsAppliedAt),
+      toNullable(shadowPlan.lessonsAppliedAt),
+    ],
   ] as const;
   const fieldToPlanField = {
     priority: 'priority',
@@ -638,7 +648,6 @@ async function routeMaterializedPlanChanges(
     branch: 'branch',
     simple: 'simple',
     tdd: 'tdd',
-    discovered_from: 'discoveredFrom',
     assigned_to: 'assignedTo',
     base_branch: 'baseBranch',
     temp: 'temp',
@@ -647,7 +656,7 @@ async function routeMaterializedPlanChanges(
     lessons_applied_at: 'lessonsAppliedAt',
   } as const satisfies Record<(typeof scalarPairs)[number][0], EditablePlanField>;
 
-  for (const [field, value] of scalarPairs) {
+  for (const [field, value, baseValue] of scalarPairs) {
     if (changedFields.has(fieldToPlanField[field])) {
       batch.add((options) =>
         setPlanScalarOperation(
@@ -656,12 +665,42 @@ async function routeMaterializedPlanChanges(
             planUuid,
             field,
             value,
+            baseValue,
             baseRevision,
           },
           options
         )
       );
     }
+  }
+
+  if (changedFields.has('discoveredFrom')) {
+    batch.add((options) =>
+      setPlanScalarOperation(
+        projectUuid,
+        {
+          planUuid,
+          field: 'discovered_from',
+          value: filePlan.discoveredFrom
+            ? resolvePlanUuidForMaterializedId(context, filePlan.discoveredFrom, 'discoveredFrom', {
+                missing: 'throw',
+              })
+            : null,
+          baseValue: shadowPlan.discoveredFrom
+            ? resolvePlanUuidForMaterializedId(
+                context,
+                shadowPlan.discoveredFrom,
+                'discoveredFrom',
+                {
+                  missing: 'skip',
+                }
+              )
+            : null,
+          baseRevision,
+        },
+        options
+      )
+    );
   }
 
   if (changedFields.has('baseCommit') || changedFields.has('baseChangeId')) {
@@ -773,7 +812,7 @@ async function routeMaterializedPlanChanges(
           {
             planUuid,
             taskUuid,
-            baseRevision,
+            baseRevision: task.revision ?? baseRevision,
           },
           options
         )
@@ -816,7 +855,7 @@ async function routeMaterializedPlanChanges(
               field: 'title',
               base: shadow.title,
               new: file.title,
-              baseRevision,
+              baseRevision: shadow.revision ?? baseRevision,
             },
             options
           )
@@ -832,7 +871,7 @@ async function routeMaterializedPlanChanges(
               field: 'description',
               base: shadow.description ?? '',
               new: file.description ?? '',
-              baseRevision,
+              baseRevision: shadow.revision ?? baseRevision,
             },
             options
           )
@@ -1417,11 +1456,14 @@ export async function syncMaterializedPlan(
       dbBaselineChanges.changedFields,
       { preserveUpdatedAt: options.preserveUpdatedAt }
     );
-    const reorderedTasks = alignTaskOrderWithMaterializedFileLocalOnly(
-      getDatabase(),
-      projectionRow.uuid,
-      mergedPlan.tasks
-    );
+    const reorderedTasks =
+      resolveWriteMode(config) === 'sync-persistent'
+        ? false
+        : alignTaskOrderWithMaterializedFileLocalOnly(
+            getDatabase(),
+            projectionRow.uuid,
+            mergedPlan.tasks
+          );
     if (options.skipRematerialize) {
       const shadowPlanForPath = hasNumericIdDrift ? { ...mergedPlan, id: planId } : mergedPlan;
       const content = generatePlanFileContent(shadowPlanForPath);

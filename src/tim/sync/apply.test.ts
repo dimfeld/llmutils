@@ -15,6 +15,7 @@ import {
 import { SyncFifoGapError, SyncValidationError } from './errors.js';
 import {
   applyBatch,
+  clonePlanWithBump,
   applyOperation,
   resolveSyncConflict,
   setApplyBatchOperationHookForTesting,
@@ -62,6 +63,50 @@ beforeEach(() => {
   project = getOrCreateProject(db, 'github.com__example__repo', {
     uuid: PROJECT_UUID,
     highestPlanId: 10,
+  });
+});
+
+describe('apply helpers', () => {
+  test('clonePlanWithBump preserves updated_at when skipUpdatedAt is true', () => {
+    const plan = {
+      uuid: PLAN_UUID,
+      project_id: 1,
+      plan_id: 1,
+      title: 'Plan',
+      goal: null,
+      note: null,
+      details: null,
+      status: 'pending' as const,
+      priority: null,
+      branch: null,
+      simple: null,
+      tdd: null,
+      discovered_from: null,
+      issue: null,
+      pull_request: null,
+      assigned_to: null,
+      base_branch: null,
+      base_commit: null,
+      base_change_id: null,
+      temp: null,
+      docs: null,
+      changed_files: null,
+      plan_generated_at: null,
+      docs_updated_at: null,
+      lessons_applied_at: null,
+      review_issues: null,
+      parent_uuid: null,
+      epic: 0,
+      revision: 7,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-02T00:00:00.000Z',
+    };
+
+    expect(clonePlanWithBump(plan, { title: 'Updated' }, { skipUpdatedAt: true })).toMatchObject({
+      title: 'Updated',
+      revision: 8,
+      updated_at: '2026-01-02T00:00:00.000Z',
+    });
   });
 });
 
@@ -2117,6 +2162,51 @@ describe('main-node sync apply engine', () => {
     const plan = getPlanByUuid(db, PLAN_UUID);
     expect(JSON.parse(plan?.review_issues ?? 'null')).toBeNull();
     expect(countRows('sync_sequence')).toBe(1);
+  });
+
+  test('plan.add_list_item allows duplicate primitive values', async () => {
+    seedPlan();
+    db.prepare('UPDATE plan SET issue = ? WHERE uuid = ?').run(
+      JSON.stringify(['https://example.com/1']),
+      PLAN_UUID
+    );
+    mirrorProjectionPlanToCanonical();
+
+    const op = await addPlanListItemOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, list: 'issue', value: 'https://example.com/1' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    const result = applyOperation(db, op);
+
+    expect(result.status).toBe('applied');
+    expect(JSON.parse(getPlanByUuid(db, PLAN_UUID)?.issue ?? '[]')).toEqual([
+      'https://example.com/1',
+      'https://example.com/1',
+    ]);
+  });
+
+  test('plan.remove_list_item removes one duplicate primitive occurrence', async () => {
+    seedPlan();
+    db.prepare('UPDATE plan SET issue = ? WHERE uuid = ?').run(
+      JSON.stringify(['https://example.com/1', 'https://example.com/1']),
+      PLAN_UUID
+    );
+    mirrorProjectionPlanToCanonical();
+
+    const op = await removePlanListItemOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, list: 'issue', value: 'https://example.com/1' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    const result = applyOperation(db, op);
+
+    expect(result.status).toBe('applied');
+    expect(JSON.parse(getPlanByUuid(db, PLAN_UUID)?.issue ?? '[]')).toEqual([
+      'https://example.com/1',
+    ]);
   });
 
   test('plan.add_list_item does not duplicate an existing logical item', async () => {

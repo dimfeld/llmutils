@@ -2754,7 +2754,7 @@ function normalizePlanScalarAdapterValue(
   return value;
 }
 
-function clonePlanWithBump(
+export function clonePlanWithBump(
   plan: ApplyOperationToPlan,
   patch: Partial<ApplyOperationToPlan>,
   options: ApplyOperationOptions = {}

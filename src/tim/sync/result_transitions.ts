@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { refreshExistingPrimaryMaterializedPlans } from '../materialized_projection_refresh.js';
 import {
   markOperationAcked,
   markOperationConflict,
@@ -20,8 +21,8 @@ export function applyOperationResultTransitions(
   db: Database,
   results: SyncOperationResult[],
   options: ApplyOperationResultTransitionsOptions = {}
-): void {
-  const transition = db.transaction((nextResults: SyncOperationResult[]): void => {
+): string[] {
+  const transition = db.transaction((nextResults: SyncOperationResult[]): string[] => {
     const planRebuilds = new Set<string>();
     const projectSettingRebuilds = new Map<string, ProjectSettingRebuildTarget>();
     for (const [index, result] of nextResults.entries()) {
@@ -75,14 +76,23 @@ export function applyOperationResultTransitions(
       }
       options.afterTransition?.(result, index);
     }
-    for (const planUuid of planRebuilds) {
-      rebuildPlanProjectionAndInboundOwnersInTransaction(db, planUuid);
+    const requestedPlanRebuilds = [...planRebuilds];
+    for (const planUuid of requestedPlanRebuilds) {
+      for (const affectedPlanUuid of rebuildPlanProjectionAndInboundOwnersInTransaction(
+        db,
+        planUuid
+      )) {
+        planRebuilds.add(affectedPlanUuid);
+      }
     }
     for (const target of projectSettingRebuilds.values()) {
       rebuildProjectSettingProjectionForPayload(db, target.payload);
     }
+    return [...planRebuilds];
   });
-  transition.immediate(results);
+  const affectedPlanUuids = transition.immediate(results);
+  refreshExistingPrimaryMaterializedPlans(db, affectedPlanUuids);
+  return affectedPlanUuids;
 }
 
 interface ProjectSettingRebuildTarget {

@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 import * as diff from 'diff';
 import * as z from 'zod/v4';
 import { warn } from '../../logging.js';
+import { refreshExistingPrimaryMaterializedPlans } from '../materialized_projection_refresh.js';
 import { removeAssignment } from '../db/assignment.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import {
@@ -746,12 +747,14 @@ export function prunePlanRefsForTerminalOps(db: Database): number {
  * narrow for Task 6: a single plan with tasks/dependencies/tags/list fields or
  * a single project setting.
  */
-export function mergeCanonicalRefresh(db: Database, snapshot: CanonicalSnapshot): void {
+export function mergeCanonicalRefresh(db: Database, snapshot: CanonicalSnapshot): string[] {
   const parsedSnapshot = CanonicalSnapshotSchema.parse(snapshot);
-  const merge = db.transaction((nextSnapshot: CanonicalSnapshot): void => {
-    writeCanonicalSnapshot(db, nextSnapshot);
+  const merge = db.transaction((nextSnapshot: CanonicalSnapshot): string[] => {
+    return writeCanonicalSnapshot(db, nextSnapshot);
   });
-  merge.immediate(parsedSnapshot);
+  const affectedPlanUuids = merge.immediate(parsedSnapshot);
+  refreshExistingPrimaryMaterializedPlans(db, affectedPlanUuids);
+  return affectedPlanUuids;
 }
 
 export function allocateLocalSequence(db: Database, originNodeId: string): number {
@@ -964,7 +967,7 @@ export function getInboundProjectionOwnerPlanUuids(
 export function rebuildPlanProjectionAndInboundOwnersInTransaction(
   db: Database,
   planUuid: string
-): void {
+): string[] {
   const rebuildPlanUuids = new Set([planUuid]);
   for (const ownerPlanUuid of getInboundProjectionOwnerPlanUuids(db, planUuid)) {
     rebuildPlanUuids.add(ownerPlanUuid);
@@ -972,6 +975,7 @@ export function rebuildPlanProjectionAndInboundOwnersInTransaction(
   for (const rebuildPlanUuid of rebuildPlanUuids) {
     rebuildPlanProjectionInTransaction(db, rebuildPlanUuid);
   }
+  return [...rebuildPlanUuids];
 }
 
 function applyLocalOptimisticInTransaction(db: Database, operation: SyncOperationEnvelope): void {
@@ -1317,10 +1321,9 @@ function applyOptimisticProjectSetting(
   rebuildProjectSettingProjectionForPayload(db, op);
 }
 
-function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): void {
+function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): string[] {
   if (snapshot.type === 'never_existed') {
-    writeNeverExistedSnapshot(db, snapshot);
-    return;
+    return writeNeverExistedSnapshot(db, snapshot);
   }
 
   if (snapshot.type === 'plan_deleted') {
@@ -1340,19 +1343,18 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): void
       });
       removeAssignment(db, project.id, snapshot.planUuid);
     }
-    rebuildPlanProjectionAndInboundOwnersInTransaction(db, snapshot.planUuid);
-    return;
+    return rebuildPlanProjectionAndInboundOwnersInTransaction(db, snapshot.planUuid);
   }
 
   if (snapshot.type === 'project_setting') {
     const project = getProjectByUuid(db, snapshot.projectUuid);
     if (!project) {
-      return;
+      return [];
     }
     if (snapshot.deleted) {
       deleteCanonicalProjectSettingRow(db, project.id, snapshot.setting);
       rebuildProjectSettingProjection(db, project.id, snapshot.setting);
-      return;
+      return [];
     }
     writeCanonicalProjectSettingRow(db, project.id, snapshot.setting, snapshot.value, {
       revision: snapshot.revision,
@@ -1360,12 +1362,12 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): void
       updatedByNode: snapshot.updatedByNode ?? null,
     });
     rebuildProjectSettingProjection(db, project.id, snapshot.setting);
-    return;
+    return [];
   }
 
   const project = getProjectByUuid(db, snapshot.projectUuid);
   if (!project) {
-    return;
+    return [];
   }
   upsertCanonicalPlanInTransaction(db, project.id, {
     uuid: snapshot.plan.uuid,
@@ -1419,9 +1421,13 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): void
   if (ASSIGNMENT_CLEANUP_STATUSES.has(snapshot.plan.status)) {
     removeAssignment(db, project.id, snapshot.plan.uuid);
   }
+  return [snapshot.plan.uuid];
 }
 
-function writeNeverExistedSnapshot(db: Database, snapshot: CanonicalNeverExistedSnapshot): void {
+function writeNeverExistedSnapshot(
+  db: Database,
+  snapshot: CanonicalNeverExistedSnapshot
+): string[] {
   if (snapshot.targetType === 'plan') {
     const projectUuid = resolveProjectUuidForPlanTombstone(db, snapshot.planUuid);
     deleteCanonicalPlanState(db, snapshot.planUuid);
@@ -1435,8 +1441,7 @@ function writeNeverExistedSnapshot(db: Database, snapshot: CanonicalNeverExisted
         originNodeId: 'main',
       });
     }
-    rebuildPlanProjectionAndInboundOwnersInTransaction(db, snapshot.planUuid);
-    return;
+    return rebuildPlanProjectionAndInboundOwnersInTransaction(db, snapshot.planUuid);
   }
 
   const ownerPlanUuid = resolveOwningPlanUuidForTaskNeverExisted(db, snapshot.taskUuid);
@@ -1457,7 +1462,9 @@ function writeNeverExistedSnapshot(db: Database, snapshot: CanonicalNeverExisted
   }
   if (ownerPlanUuid) {
     rebuildPlanProjectionInTransaction(db, ownerPlanUuid);
+    return [ownerPlanUuid];
   }
+  return [];
 }
 
 function deleteCanonicalPlanState(db: Database, planUuid: string): void {

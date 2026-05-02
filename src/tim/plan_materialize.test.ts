@@ -717,6 +717,7 @@ Details
       field: 'title',
       base: 'Primary plan',
       new: 'Persistent file title',
+      baseRevision: 1,
     });
     expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Persistent file title');
   });
@@ -1813,6 +1814,13 @@ Details
 
   test('materialize, sync, and rematerialize preserve all schema-backed fields through a round trip', async () => {
     const { db, project } = await seedProject();
+    upsertPlan(db, project.id, {
+      uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      planId: 101,
+      title: 'Discovered source',
+      goal: 'Discovered source goal',
+      details: 'Discovered source details',
+    });
     const planPath = await materializePlan(3, repoDir);
 
     const editedPlan = await readPlanFile(planPath);
@@ -1878,7 +1886,7 @@ Details
       branch: 'feature/round-trip',
       simple: 0,
       tdd: 0,
-      discovered_from: null,
+      discovered_from: 101,
       issue:
         '["https://github.com/example/repo/issues/3","https://github.com/example/repo/issues/7"]',
       pull_request: '["https://github.com/example/repo/pull/31"]',
@@ -1941,6 +1949,7 @@ Details
         'https://github.com/example/repo/issues/7',
       ],
       pullRequest: ['https://github.com/example/repo/pull/31'],
+      discoveredFrom: 101,
       assignedTo: 'qa-agent',
       baseBranch: 'develop',
       temp: false,
@@ -1983,6 +1992,53 @@ Details
     ).toEqual([
       { title: 'rewrite', description: 'exercise every field', done: true },
       { title: 'verify', description: 'read back from DB and disk', done: false },
+    ]);
+  });
+
+  test('materialized sync rejects unknown discoveredFrom references', async () => {
+    await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.discoveredFrom = 999;
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await expect(syncMaterializedPlan(3, repoDir)).rejects.toThrow(
+      /unknown discoveredFrom plan ID 999/
+    );
+  });
+
+  test('mergeCanonicalRefresh refreshes existing primary materialized files from projection', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    mergeCanonicalRefresh(
+      db,
+      projectionPlanSnapshot(project.uuid, '33333333-3333-4333-8333-333333333333', {
+        title: 'Canonical title after refresh',
+        revision: 10,
+      })
+    );
+
+    expect((await readPlanFile(planPath)).title).toBe('Canonical title after refresh');
+  });
+
+  test('persistent materialized sync does not directly mutate projection for task reorders', async () => {
+    const { db } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    await fs.rm(getShadowPlanPath(repoDir, 3), { force: true });
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.tasks = [...editedPlan.tasks].reverse();
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    expect(
+      getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333').map((task) => task.title)
+    ).toEqual(['implement', 'verify']);
+    expect((await readPlanFile(planPath)).tasks.map((task) => task.title)).toEqual([
+      'implement',
+      'verify',
     ]);
   });
 
