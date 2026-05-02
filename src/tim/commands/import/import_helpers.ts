@@ -140,26 +140,22 @@ export async function reserveImportedPlanStartId(
   const baselineMaxId = Math.max(context.maxNumericId, planMapMaxId);
   const config = await loadEffectiveConfig(undefined, { cwd: repoRoot, quiet: true });
   const writeMode = resolveWriteMode(config);
-  try {
-    const result = usesPlanIdReserve(writeMode)
-      ? reserveNextPlanId(
-          db,
-          context.repository.repositoryId,
-          baselineMaxId,
-          count,
-          context.repository.remoteUrl
-        )
-      : previewNextPlanId(
-          db,
-          context.repository.repositoryId,
-          baselineMaxId,
-          count,
-          context.repository.remoteUrl
-        );
-    return result.startId;
-  } catch {
-    return baselineMaxId + 1;
-  }
+  const result = usesPlanIdReserve(writeMode)
+    ? reserveNextPlanId(
+        db,
+        context.repository.repositoryId,
+        baselineMaxId,
+        count,
+        context.repository.remoteUrl
+      )
+    : previewNextPlanId(
+        db,
+        context.repository.repositoryId,
+        baselineMaxId,
+        count,
+        context.repository.remoteUrl
+      );
+  return result.startId;
 }
 
 export function getImportedIssueUrlsFromPlans(allPlans: Map<number, PlanSchema>): Set<string> {
