@@ -2801,7 +2801,7 @@ function validateAdapterPlanOperation(
         requireAdapterPlan(adapter, op.parentUuid);
         validateAdapterParentEdge(adapter, op.parentUuid, op.planUuid);
       }
-      if (op.discoveredFrom) {
+      if (op.discoveredFrom && adapter.baseRevisionMode !== 'projection') {
         requireAdapterPlan(adapter, op.discoveredFrom);
       }
       if (op.dependencies.some((dependencyUuid) => dependencyUuid === op.planUuid)) {
@@ -2948,7 +2948,7 @@ function applyOperationToPlanCreate(
   if (op.parentUuid) {
     requireAdapterPlan(adapter, op.parentUuid);
   }
-  if (op.discoveredFrom) {
+  if (op.discoveredFrom && adapter.baseRevisionMode !== 'projection') {
     requireAdapterPlan(adapter, op.discoveredFrom);
   }
   for (const dependencyUuid of new Set(op.dependencies)) {

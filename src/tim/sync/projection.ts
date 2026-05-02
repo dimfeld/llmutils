@@ -179,7 +179,7 @@ export function rebuildPlanProjection(db: Database, planUuid: string): void {
   rebuild.immediate(planUuid);
 }
 
-function rebuildPlanProjectionInTransaction(db: Database, planUuid: string): void {
+export function rebuildPlanProjectionInTransaction(db: Database, planUuid: string): void {
   const canonical = readCanonicalPlanState(db, planUuid);
   const activeRows = readActivePlanOperationRows(db, planUuid);
   const existingProjection = db
@@ -247,10 +247,7 @@ interface PlanState {
 }
 
 function readCanonicalPlanState(db: Database, planUuid: string): PlanState {
-  const tombstone = db
-    .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
-    .get('plan', `plan:${planUuid}`);
-  if (tombstone) {
+  if (hasPlanTombstone(db, planUuid)) {
     return { projectUuid: null, plan: null, tasks: [], dependencies: [], tags: [] };
   }
   const plan = db
@@ -275,6 +272,14 @@ function readCanonicalPlanState(db: Database, planUuid: string): PlanState {
       .prepare('SELECT plan_uuid, tag FROM plan_tag_canonical WHERE plan_uuid = ? ORDER BY tag')
       .all(planUuid) as PlanTagRow[],
   };
+}
+
+function hasPlanTombstone(db: Database, planUuid: string): boolean {
+  return Boolean(
+    db
+      .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+      .get('plan', `plan:${planUuid}`)
+  );
 }
 
 function readActivePlanOperationRows(db: Database, planUuid: string): ActivePlanOperationRow[] {
@@ -408,7 +413,17 @@ class ProjectionPlanAdapter implements ApplyOperationToAdapter {
     if (!planUuid) {
       return null;
     }
-    return this.getPlan(planUuid)?.plan_id ?? null;
+    const planId = this.getPlan(planUuid)?.plan_id ?? null;
+    if (planId !== null) {
+      return planId;
+    }
+    if (hasPlanTombstone(this.db, planUuid)) {
+      return null;
+    }
+    const projection = this.db.prepare('SELECT plan_id FROM plan WHERE uuid = ?').get(planUuid) as {
+      plan_id: number;
+    } | null;
+    return projection?.plan_id ?? null;
   }
 
   resolvePlanCreateNumericPlanId(requestedPlanId: number | undefined): number {

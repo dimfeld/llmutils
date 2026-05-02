@@ -25,6 +25,7 @@ import { getSyncOperationPayloadIndexes } from './payload_indexes.js';
 import { optimisticSnapshotKeysForOperation } from './rejected_refresh.js';
 import { getSyncOperationPlanRefs } from './plan_refs.js';
 import {
+  rebuildPlanProjectionInTransaction,
   rebuildProjectSettingProjection,
   rebuildProjectSettingProjectionForPayload,
 } from './projection.js';
@@ -100,6 +101,8 @@ export interface ListPendingOperationOptions {
 export interface PruneAcknowledgedOptions {
   olderThan?: Date;
 }
+
+const TERMINAL_OPERATION_STATUSES = ['acked', 'conflict', 'rejected'] as const;
 
 export interface CanonicalPlanSnapshot {
   type: 'plan';
@@ -331,7 +334,7 @@ export function enqueueOperation(
     const localSequence = allocateLocalSequence(db, nextInput.originNodeId);
     const operation = assertValidEnvelope(addQueueMetadata(db, { ...nextInput, localSequence }));
     insertQueuedOperation(db, operation);
-    applyLocalOptimisticInTransaction(db, operation);
+    rebuildQueuedOperationProjectionInTransaction(db, operation);
     const row = requireOperationRow(db, operation.operationUuid);
     return { row, localSequence, operation };
   });
@@ -363,9 +366,19 @@ export function enqueueBatch(
       )
     );
     const batch = assertValidBatchEnvelope({ ...input, operations });
+    const affectedPlanUuids = new Set<string>();
     for (const operation of operations) {
       insertQueuedOperation(db, operation, batch.batchId, batch.atomic === true);
-      applyLocalOptimisticInTransaction(db, operation);
+      collectAffectedProjectionPlanUuids(affectedPlanUuids, operation.op);
+      if (
+        operation.op.type === 'project_setting.set' ||
+        operation.op.type === 'project_setting.delete'
+      ) {
+        rebuildProjectSettingProjectionForPayload(db, operation.op);
+      }
+    }
+    for (const planUuid of affectedPlanUuids) {
+      rebuildPlanProjectionInTransaction(db, planUuid);
     }
     return {
       batch,
@@ -382,7 +395,7 @@ export function enqueueBatch(
 export function applyLocalOptimistic(db: Database, operationInput: SyncOperationEnvelope): void {
   const operation = assertValidEnvelope(operationInput);
   const apply = db.transaction((nextOperation: SyncOperationEnvelope): void => {
-    applyLocalOptimisticInTransaction(db, nextOperation);
+    rebuildQueuedOperationProjectionInTransaction(db, nextOperation);
   });
   apply.immediate(operation);
 }
@@ -699,6 +712,33 @@ export function pruneAcknowledgedOperations(
   return row.count;
 }
 
+export function prunePlanRefsForTerminalOps(db: Database): number {
+  const row = db
+    .prepare(
+      `
+        SELECT COUNT(*) AS count
+        FROM sync_operation_plan_ref
+        WHERE operation_uuid IN (
+          SELECT operation_uuid
+          FROM sync_operation
+          WHERE status IN (${TERMINAL_OPERATION_STATUSES.map(() => '?').join(', ')})
+        )
+      `
+    )
+    .get(...TERMINAL_OPERATION_STATUSES) as { count: number };
+  db.prepare(
+    `
+      DELETE FROM sync_operation_plan_ref
+      WHERE operation_uuid IN (
+        SELECT operation_uuid
+        FROM sync_operation
+        WHERE status IN (${TERMINAL_OPERATION_STATUSES.map(() => '?').join(', ')})
+      )
+    `
+  ).run(...TERMINAL_OPERATION_STATUSES);
+  return row.count;
+}
+
 export function recordPendingRollbackKeys(db: Database, keys: string[]): void {
   const uniqueKeys = [...new Set(keys)];
   if (uniqueKeys.length === 0) {
@@ -876,6 +916,36 @@ function insertOperationPlanRefs(
   for (const ref of getSyncOperationPlanRefs(payload)) {
     insertPlanRef.run(operationUuid, projectUuid, ref.planUuid, ref.role);
   }
+}
+
+function rebuildQueuedOperationProjectionInTransaction(
+  db: Database,
+  operation: SyncOperationEnvelope
+): void {
+  const op = assertValidPayload(operation.op);
+  if (op.type === 'project_setting.set' || op.type === 'project_setting.delete') {
+    rebuildProjectSettingProjectionForPayload(db, op);
+    return;
+  }
+  for (const planUuid of getAffectedProjectionPlanUuids(op)) {
+    rebuildPlanProjectionInTransaction(db, planUuid);
+  }
+}
+
+function collectAffectedProjectionPlanUuids(
+  target: Set<string>,
+  payload: SyncOperationPayload
+): void {
+  for (const planUuid of getAffectedProjectionPlanUuids(payload)) {
+    target.add(planUuid);
+  }
+}
+
+function getAffectedProjectionPlanUuids(payload: SyncOperationPayload): string[] {
+  if (payload.type === 'project_setting.set' || payload.type === 'project_setting.delete') {
+    return [];
+  }
+  return [...new Set(getSyncOperationPlanRefs(payload).map((ref) => ref.planUuid))];
 }
 
 function applyLocalOptimisticInTransaction(db: Database, operation: SyncOperationEnvelope): void {

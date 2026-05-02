@@ -46,6 +46,7 @@ import {
   markOperationSending,
   mergeCanonicalRefresh,
   pruneAcknowledgedOperations,
+  prunePlanRefsForTerminalOps,
   resetSendingOperations,
   subscribeToQueueChanges,
   type CanonicalPlanSnapshot,
@@ -465,6 +466,23 @@ describe('persistent-node sync queue', () => {
     expect(getProjectSettingWithMetadata(db, project.id, 'color')?.value).toBe('blue');
   });
 
+  test('plan enqueue rebuilds projection without mutating canonical rows', async () => {
+    seedPlan();
+
+    enqueue(await tagOp('projected'));
+
+    expect(getPlanTagsByUuid(db, PLAN_UUID).map((tag) => tag.tag)).toEqual(['projected']);
+    expect(
+      (
+        db
+          .prepare('SELECT tag FROM plan_tag_canonical WHERE plan_uuid = ?')
+          .all(PLAN_UUID) as Array<{
+          tag: string;
+        }>
+      ).map((tag) => tag.tag)
+    ).toEqual([]);
+  });
+
   test('optimistic plan.create allocates after project highest_plan_id when plan rows lag', async () => {
     db.prepare('UPDATE project SET highest_plan_id = 7 WHERE id = ?').run(project.id);
     const planUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -499,6 +517,9 @@ describe('persistent-node sync queue', () => {
     db.prepare(
       'INSERT INTO plan_task (uuid, plan_uuid, task_index, title, description, done, revision) VALUES (?, ?, ?, ?, ?, 0, 1)'
     ).run(TASK_UUID_3, PLAN_UUID, 1, 'Second task', '');
+    db.prepare(
+      'INSERT INTO task_canonical (uuid, plan_uuid, task_index, title, description, done, revision) VALUES (?, ?, ?, ?, ?, 0, 1)'
+    ).run(TASK_UUID_3, PLAN_UUID, 1, 'Second task', '');
 
     enqueue(
       await addPlanTaskOperation(
@@ -522,6 +543,12 @@ describe('persistent-node sync queue', () => {
     ).run(TASK_UUID_2, PLAN_UUID, 1, 'Second task', '');
     db.prepare(
       'INSERT INTO plan_task (uuid, plan_uuid, task_index, title, description, done, revision) VALUES (?, ?, ?, ?, ?, 0, 1)'
+    ).run(TASK_UUID_3, PLAN_UUID, 2, 'Third task', '');
+    db.prepare(
+      'INSERT INTO task_canonical (uuid, plan_uuid, task_index, title, description, done, revision) VALUES (?, ?, ?, ?, ?, 0, 1)'
+    ).run(TASK_UUID_2, PLAN_UUID, 1, 'Second task', '');
+    db.prepare(
+      'INSERT INTO task_canonical (uuid, plan_uuid, task_index, title, description, done, revision) VALUES (?, ?, ?, ?, ?, 0, 1)'
     ).run(TASK_UUID_3, PLAN_UUID, 2, 'Third task', '');
 
     enqueue(
@@ -744,6 +771,34 @@ describe('persistent-node sync queue', () => {
     ).toEqual(['acked', 'conflict', 'rejected', 'failed_retryable']);
   });
 
+  test('terminal transitions keep plan-ref rows until projection-index prune runs', async () => {
+    seedPlan();
+    const acked = enqueue(await tagOp('acked-ref'));
+    const conflict = enqueue(await tagOp('conflict-ref'));
+    const rejected = enqueue(await tagOp('rejected-ref'));
+    const failed = enqueue(await tagOp('failed-ref'));
+
+    for (const op of [acked, conflict, rejected, failed]) {
+      markOperationSending(db, op.operationUuid);
+    }
+    markOperationAcked(db, acked.operationUuid, {});
+    markOperationConflict(db, conflict.operationUuid, 'conflict-1', {});
+    markOperationRejected(db, rejected.operationUuid, 'bad op', {});
+    markOperationFailedRetryable(db, failed.operationUuid, 'network');
+
+    expect(operationPlanRefs(acked.operationUuid)).toHaveLength(1);
+    expect(operationPlanRefs(conflict.operationUuid)).toHaveLength(1);
+    expect(operationPlanRefs(rejected.operationUuid)).toHaveLength(1);
+    expect(operationPlanRefs(failed.operationUuid)).toHaveLength(1);
+
+    expect(prunePlanRefsForTerminalOps(db)).toBe(3);
+
+    expect(operationPlanRefs(acked.operationUuid)).toHaveLength(0);
+    expect(operationPlanRefs(conflict.operationUuid)).toHaveLength(0);
+    expect(operationPlanRefs(rejected.operationUuid)).toHaveLength(0);
+    expect(operationPlanRefs(failed.operationUuid)).toHaveLength(1);
+  });
+
   test('mergeCanonicalRefresh writes canonical state and layers still-pending ops', async () => {
     seedPlan();
     const ackedTag = enqueue(await tagOp('canonical'));
@@ -943,7 +998,7 @@ describe('persistent-node sync queue', () => {
     ]);
   });
 
-  test('mergeCanonicalRefresh reapplies pending plan.delete to dependent snapshots', async () => {
+  test('mergeCanonicalRefresh does not use pending plan.delete as dependent rollback logic', async () => {
     const dependentUuid = PLAN_UUID;
     const deletedUuid = OTHER_PLAN_UUID;
     seedPlan(db, dependentUuid, 1, TASK_UUID);
@@ -962,7 +1017,9 @@ describe('persistent-node sync queue', () => {
     );
 
     expect(getPlanByUuid(db, deletedUuid)).toBeNull();
-    expect(getPlanDependenciesByUuid(db, dependentUuid)).toEqual([]);
+    expect(getPlanDependenciesByUuid(db, dependentUuid)).toEqual([
+      { plan_uuid: dependentUuid, depends_on_uuid: deletedUuid },
+    ]);
 
     mergeCanonicalRefresh(
       db,
@@ -1961,7 +2018,7 @@ describe('persistent-node sync queue', () => {
     const later = enqueue(await tagOp('later'));
 
     expect(later.localSequence).toBe(1);
-    expect(getPlanTagsByUuid(db, PLAN_UUID).map((tag) => tag.tag)).toEqual(['first', 'later']);
+    expect(getPlanTagsByUuid(db, PLAN_UUID).map((tag) => tag.tag)).toEqual(['later']);
     expect(listPendingOperations(db).map((row) => row.operation_uuid)).toEqual([
       later.operationUuid,
     ]);
@@ -2028,7 +2085,7 @@ describe('persistent-node sync queue', () => {
     expect(plan?.priority).toBe('high');
   });
 
-  test('plan.set_scalar optimistic cleanup status removes local assignment', async () => {
+  test('plan.set_scalar projection status does not perform assignment cleanup', async () => {
     seedPlan();
     seedAssignment();
 
@@ -2041,7 +2098,7 @@ describe('persistent-node sync queue', () => {
     );
 
     expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('done');
-    expect(getAssignment(db, project.id, PLAN_UUID)).toBeNull();
+    expect(getAssignment(db, project.id, PLAN_UUID)).not.toBeNull();
   });
 
   test('plan.set_scalar optimistic non-cleanup status preserves local assignment', async () => {
@@ -2100,6 +2157,10 @@ describe('persistent-node sync queue', () => {
       'alpha\nlocal divergent edit\ngamma\n',
       PLAN_UUID
     );
+    db.prepare('UPDATE plan_canonical SET details = ? WHERE uuid = ?').run(
+      'alpha\nlocal divergent edit\ngamma\n',
+      PLAN_UUID
+    );
 
     enqueue(
       await patchPlanTextOperation(
@@ -2120,6 +2181,10 @@ describe('persistent-node sync queue', () => {
   test('optimistic task text merge failure leaves local task text unchanged', async () => {
     seedPlan();
     db.prepare('UPDATE plan_task SET description = ? WHERE uuid = ?').run(
+      'local divergent description',
+      TASK_UUID
+    );
+    db.prepare('UPDATE task_canonical SET description = ? WHERE uuid = ?').run(
       'local divergent description',
       TASK_UUID
     );

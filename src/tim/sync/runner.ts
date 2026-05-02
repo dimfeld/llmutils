@@ -16,6 +16,7 @@ import {
   listPendingOperations,
   markOperationFailedRetryable,
   markOperationSending,
+  prunePlanRefsForTerminalOps,
   recordPendingRollbackKeys,
   resetSendingOperations,
   type SyncOperationQueueRow,
@@ -171,6 +172,7 @@ class DefaultSyncRunner implements SyncRunner {
   private async runOnceInternal(): Promise<void> {
     await runSyncCatchUpOnce(this.options);
     await flushPendingOperationsOnce(this.options);
+    prunePlanRefsForTerminalOps(this.options.db);
   }
 }
 
