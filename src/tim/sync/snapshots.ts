@@ -7,10 +7,12 @@ import {
   deleteCanonicalProjectSettingRow,
   writeCanonicalProjectSettingRow,
 } from '../db/project_settings.js';
-import { refreshExistingPrimaryMaterializedPlans } from '../materialized_projection_refresh.js';
 import { recordSyncTombstone } from './conflicts.js';
 import { planKey, taskKey } from './entity_keys.js';
-import { rebuildPlanProjectionAndInboundOwnersInTransaction } from './projection_targets.js';
+import {
+  rebuildPlanProjectionAndInboundOwnersInTransaction,
+  refreshMaterializedPlansForProjectionRebuilds,
+} from './projection_targets.js';
 import {
   rebuildPlanProjectionInTransaction,
   rebuildProjectSettingProjection,
@@ -210,10 +212,7 @@ export function mergeCanonicalRefresh(db: Database, snapshot: CanonicalSnapshot)
     return writeCanonicalSnapshot(db, nextSnapshot);
   });
   const affectedPlanUuids = merge.immediate(parsedSnapshot);
-  // File refresh intentionally runs after the SQLite transaction. A missed or
-  // dirty materialization self-heals on the next explicit materialize/sync pass.
-  refreshExistingPrimaryMaterializedPlans(db, affectedPlanUuids);
-  return affectedPlanUuids;
+  return refreshMaterializedPlansForProjectionRebuilds(db, affectedPlanUuids);
 }
 
 function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): string[] {

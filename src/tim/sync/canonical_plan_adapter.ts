@@ -1,13 +1,18 @@
 import type { Database } from 'bun:sqlite';
 import { removeAssignment } from '../db/assignment.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
-import type { PlanDependencyRow, PlanRow, PlanTagRow } from '../db/plan.js';
+import {
+  deletePlanStateFromTableSetInTransaction,
+  replacePlanStateInTableSetInTransaction,
+  type PlanDependencyRow,
+  type PlanRow,
+  type PlanTagRow,
+} from '../db/plan.js';
 import { recordSyncTombstone } from './conflicts.js';
 import type { SyncOperationEnvelope } from './types.js';
 import {
   clonePlanWithBump,
   type ApplyOperationToAdapter,
-  type ApplyOperationToPlan,
   type ApplyOperationToTask,
 } from './operation_fold.js';
 import { BasePlanStateAdapter } from './plan_state_adapter.js';
@@ -116,40 +121,39 @@ export class CanonicalPlanAdapter extends BasePlanStateAdapter implements ApplyO
     for (const planUuid of this.touchedPlans) {
       const plan = this.plans.get(planUuid) ?? null;
       if (!plan) {
-        deletePlanFromTableSet(this.db, 'plan_canonical', 'task_canonical', planUuid);
-        deletePlanFromTableSet(this.db, 'plan', 'plan_task', planUuid);
+        deletePlanStateFromTableSetInTransaction(this.db, 'canonical', planUuid, {
+          deleteInboundDependencies: true,
+        });
+        deletePlanStateFromTableSetInTransaction(this.db, 'projection', planUuid, {
+          deleteInboundDependencies: true,
+        });
         continue;
       }
-      writePlanToTableSet(this.db, 'plan_canonical', 'task_canonical', plan);
+      const tasks = this.tasks.get(planUuid) ?? [];
+      const dependencies = this.dependencies.get(planUuid) ?? [];
+      const tags = this.tags.get(planUuid) ?? [];
+      replacePlanStateInTableSetInTransaction(this.db, 'canonical', {
+        plan,
+        tasks,
+        dependencies,
+        tags,
+      });
       // base_commit and base_change_id are machine-local tracking fields updated
       // only via legacy-direct paths. Preserve any existing projection values so
       // that a sync write (e.g. set_scalar for base_branch) does not clobber them.
       const existingProjection = this.db
         .prepare('SELECT base_commit, base_change_id FROM plan WHERE uuid = ?')
         .get(planUuid) as { base_commit: string | null; base_change_id: string | null } | null;
-      writePlanToTableSet(this.db, 'plan', 'plan_task', {
-        ...plan,
-        base_commit: existingProjection?.base_commit ?? plan.base_commit,
-        base_change_id: existingProjection?.base_change_id ?? plan.base_change_id,
+      replacePlanStateInTableSetInTransaction(this.db, 'projection', {
+        plan: {
+          ...plan,
+          base_commit: existingProjection?.base_commit ?? plan.base_commit,
+          base_change_id: existingProjection?.base_change_id ?? plan.base_change_id,
+        },
+        tasks,
+        dependencies,
+        tags,
       });
-      replacePlanCollectionsInTableSet(
-        this.db,
-        'plan_dependency_canonical',
-        'plan_tag_canonical',
-        planUuid,
-        this.dependencies.get(planUuid) ?? [],
-        this.tags.get(planUuid) ?? []
-      );
-      replacePlanCollectionsInTableSet(
-        this.db,
-        'plan_dependency',
-        'plan_tag',
-        planUuid,
-        this.dependencies.get(planUuid) ?? [],
-        this.tags.get(planUuid) ?? []
-      );
-      replaceTasksInTable(this.db, 'task_canonical', planUuid, this.tasks.get(planUuid) ?? []);
-      replaceTasksInTable(this.db, 'plan_task', planUuid, this.tasks.get(planUuid) ?? []);
       this.db
         .prepare('DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
         .run('plan', `plan:${planUuid}`);
@@ -185,8 +189,6 @@ export class CanonicalPlanAdapter extends BasePlanStateAdapter implements ApplyO
   }
 }
 
-type PlanTableName = 'plan' | 'plan_canonical';
-type TaskTableName = 'plan_task' | 'task_canonical';
 type DependencyTableName = 'plan_dependency' | 'plan_dependency_canonical';
 type TagTableName = 'plan_tag' | 'plan_tag_canonical';
 
@@ -199,7 +201,7 @@ function getCanonicalPlanOnly(db: Database, planUuid: string): PlanRow | null {
 
 function readTasksFromTable(
   db: Database,
-  table: TaskTableName,
+  table: 'plan_task' | 'task_canonical',
   planUuid: string
 ): ApplyOperationToTask[] {
   return db
@@ -221,155 +223,6 @@ function readTagsFromTable(db: Database, table: TagTableName, planUuid: string):
   return db.prepare(`SELECT plan_uuid, tag FROM ${table} WHERE plan_uuid = ?`).all(planUuid) as
     | PlanTagRow[]
     | [];
-}
-
-function deletePlanFromTableSet(
-  db: Database,
-  planTable: PlanTableName,
-  taskTable: TaskTableName,
-  planUuid: string
-): void {
-  const dependencyTable = planTable === 'plan' ? 'plan_dependency' : 'plan_dependency_canonical';
-  const tagTable = planTable === 'plan' ? 'plan_tag' : 'plan_tag_canonical';
-  db.prepare(`DELETE FROM ${dependencyTable} WHERE plan_uuid = ? OR depends_on_uuid = ?`).run(
-    planUuid,
-    planUuid
-  );
-  db.prepare(`DELETE FROM ${tagTable} WHERE plan_uuid = ?`).run(planUuid);
-  db.prepare(`DELETE FROM ${taskTable} WHERE plan_uuid = ?`).run(planUuid);
-  db.prepare(`DELETE FROM ${planTable} WHERE uuid = ?`).run(planUuid);
-}
-
-function writePlanToTableSet(
-  db: Database,
-  table: PlanTableName,
-  taskTable: TaskTableName,
-  plan: ApplyOperationToPlan
-): void {
-  void taskTable;
-  db.prepare(
-    `
-      INSERT INTO ${table} (
-        uuid, project_id, plan_id, title, goal, note, details, status, priority,
-        branch, simple, tdd, discovered_from, issue, pull_request, assigned_to,
-        base_branch, base_commit, base_change_id, temp, docs, changed_files,
-        plan_generated_at, review_issues, docs_updated_at, lessons_applied_at,
-        parent_uuid, epic, revision, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(uuid) DO UPDATE SET
-        project_id = excluded.project_id,
-        plan_id = excluded.plan_id,
-        title = excluded.title,
-        goal = excluded.goal,
-        note = excluded.note,
-        details = excluded.details,
-        status = excluded.status,
-        priority = excluded.priority,
-        branch = excluded.branch,
-        simple = excluded.simple,
-        tdd = excluded.tdd,
-        discovered_from = excluded.discovered_from,
-        issue = excluded.issue,
-        pull_request = excluded.pull_request,
-        assigned_to = excluded.assigned_to,
-        base_branch = excluded.base_branch,
-        base_commit = excluded.base_commit,
-        base_change_id = excluded.base_change_id,
-        temp = excluded.temp,
-        docs = excluded.docs,
-        changed_files = excluded.changed_files,
-        plan_generated_at = excluded.plan_generated_at,
-        review_issues = excluded.review_issues,
-        docs_updated_at = excluded.docs_updated_at,
-        lessons_applied_at = excluded.lessons_applied_at,
-        parent_uuid = excluded.parent_uuid,
-        epic = excluded.epic,
-        revision = excluded.revision,
-        updated_at = excluded.updated_at
-    `
-  ).run(
-    plan.uuid,
-    plan.project_id,
-    plan.plan_id,
-    plan.title,
-    plan.goal,
-    plan.note,
-    plan.details,
-    plan.status,
-    plan.priority,
-    plan.branch,
-    plan.simple,
-    plan.tdd,
-    plan.discovered_from,
-    plan.issue,
-    plan.pull_request,
-    plan.assigned_to,
-    plan.base_branch,
-    plan.base_commit,
-    plan.base_change_id,
-    plan.temp,
-    plan.docs,
-    plan.changed_files,
-    plan.plan_generated_at,
-    plan.review_issues,
-    plan.docs_updated_at,
-    plan.lessons_applied_at,
-    plan.parent_uuid,
-    plan.epic,
-    plan.revision,
-    plan.created_at,
-    plan.updated_at
-  );
-}
-
-function replaceTasksInTable(
-  db: Database,
-  table: TaskTableName,
-  planUuid: string,
-  tasks: ApplyOperationToTask[]
-): void {
-  db.prepare(`DELETE FROM ${table} WHERE plan_uuid = ?`).run(planUuid);
-  const insert = db.prepare(
-    `INSERT INTO ${table} (uuid, plan_uuid, task_index, title, description, done, revision)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  );
-  for (const task of tasks.sort((a, b) => a.task_index - b.task_index)) {
-    if (!task.uuid) {
-      throw new Error('task missing uuid in canonical apply write');
-    }
-    insert.run(
-      task.uuid,
-      planUuid,
-      task.task_index,
-      task.title,
-      task.description,
-      task.done,
-      task.revision
-    );
-  }
-}
-
-function replacePlanCollectionsInTableSet(
-  db: Database,
-  dependencyTable: DependencyTableName,
-  tagTable: TagTableName,
-  planUuid: string,
-  dependencies: PlanDependencyRow[],
-  tags: PlanTagRow[]
-): void {
-  db.prepare(`DELETE FROM ${dependencyTable} WHERE plan_uuid = ?`).run(planUuid);
-  const insertDependency = db.prepare(
-    `INSERT OR IGNORE INTO ${dependencyTable} (plan_uuid, depends_on_uuid) VALUES (?, ?)`
-  );
-  for (const dependency of dependencies) {
-    insertDependency.run(dependency.plan_uuid, dependency.depends_on_uuid);
-  }
-  db.prepare(`DELETE FROM ${tagTable} WHERE plan_uuid = ?`).run(planUuid);
-  const insertTag = db.prepare(`INSERT OR IGNORE INTO ${tagTable} (plan_uuid, tag) VALUES (?, ?)`);
-  for (const tag of tags) {
-    insertTag.run(tag.plan_uuid, tag.tag);
-  }
 }
 
 function reserveMainNodePlanId(db: Database, projectId: number): number {

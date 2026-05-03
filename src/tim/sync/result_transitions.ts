@@ -1,5 +1,4 @@
 import type { Database } from 'bun:sqlite';
-import { refreshExistingPrimaryMaterializedPlans } from '../materialized_projection_refresh.js';
 import {
   markOperationAcked,
   markOperationConflict,
@@ -10,6 +9,7 @@ import {
   collectProjectionTargetsForOperationRow,
   createProjectionRebuildTargets,
   rebuildProjectionTargetsInTransaction,
+  refreshMaterializedPlansForProjectionRebuilds,
 } from './projection_targets.js';
 import type { SyncOperationResult } from './ws_protocol.js';
 
@@ -74,9 +74,5 @@ export function applyOperationResultTransitions(
     }
     return rebuildProjectionTargetsInTransaction(db, rebuildTargets);
   });
-  const affectedPlanUuids = transition.immediate(results);
-  // File refresh intentionally runs after the SQLite transaction. A missed or
-  // dirty materialization self-heals on the next explicit materialize/sync pass.
-  refreshExistingPrimaryMaterializedPlans(db, affectedPlanUuids);
-  return affectedPlanUuids;
+  return refreshMaterializedPlansForProjectionRebuilds(db, transition.immediate(results));
 }

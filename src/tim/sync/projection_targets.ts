@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { refreshExistingPrimaryMaterializedPlans } from '../materialized_projection_refresh.js';
 import { getProjectionPlanRefUuids, isProjectSettingOperation } from './operation_metadata.js';
 import {
   rebuildPlanProjectionInTransaction,
@@ -69,6 +70,16 @@ export function rebuildProjectionTargetsInTransaction(
     rebuildProjectSettingProjectionForPayload(db, payload);
   }
   return [...targets.planUuids];
+}
+
+export function refreshMaterializedPlansForProjectionRebuilds(
+  db: Database,
+  affectedPlanUuids: Iterable<string>
+): string[] {
+  // File refresh intentionally runs after the SQLite transaction. A missed or
+  // dirty materialization self-heals on the next explicit materialize/sync pass.
+  refreshExistingPrimaryMaterializedPlans(db, affectedPlanUuids);
+  return [...affectedPlanUuids];
 }
 
 export function getAffectedProjectionPlanUuids(

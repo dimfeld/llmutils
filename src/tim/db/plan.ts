@@ -125,6 +125,8 @@ type PlanTableSet = {
   tag: 'plan_tag' | 'plan_tag_canonical';
 };
 
+export type PlanTableSetKind = 'projection' | 'canonical';
+
 type RevisionWriteMode = 'auto' | 'explicit';
 
 const PROJECTION_PLAN_TABLES: PlanTableSet = {
@@ -140,6 +142,10 @@ const CANONICAL_PLAN_TABLES: PlanTableSet = {
   dependency: 'plan_dependency_canonical',
   tag: 'plan_tag_canonical',
 };
+
+function getPlanTableSet(kind: PlanTableSetKind): PlanTableSet {
+  return kind === 'projection' ? PROJECTION_PLAN_TABLES : CANONICAL_PLAN_TABLES;
+}
 
 function parseTimestamp(value: string | null | undefined): number | null {
   if (!value) {
@@ -365,6 +371,183 @@ function replacePlanTagsInTable(
   }
 
   return true;
+}
+
+export interface ReplacePlanStateInput {
+  plan: PlanRow;
+  tasks: Array<Omit<PlanTaskRow, 'id'> & { id?: number }>;
+  dependencies: PlanDependencyRow[];
+  tags: PlanTagRow[];
+}
+
+export function deletePlanStateFromTableSetInTransaction(
+  db: Database,
+  kind: PlanTableSetKind,
+  planUuid: string,
+  options: { deleteInboundDependencies?: boolean } = {}
+): void {
+  const tables = getPlanTableSet(kind);
+  const dependencyWhere = options.deleteInboundDependencies
+    ? 'plan_uuid = ? OR depends_on_uuid = ?'
+    : 'plan_uuid = ?';
+  db.prepare(`DELETE FROM ${tables.dependency} WHERE ${dependencyWhere}`).run(
+    ...(options.deleteInboundDependencies ? [planUuid, planUuid] : [planUuid])
+  );
+  db.prepare(`DELETE FROM ${tables.tag} WHERE plan_uuid = ?`).run(planUuid);
+  db.prepare(`DELETE FROM ${tables.task} WHERE plan_uuid = ?`).run(planUuid);
+  db.prepare(`DELETE FROM ${tables.plan} WHERE uuid = ?`).run(planUuid);
+}
+
+export function replacePlanStateInTableSetInTransaction(
+  db: Database,
+  kind: PlanTableSetKind,
+  state: ReplacePlanStateInput
+): void {
+  const tables = getPlanTableSet(kind);
+  const plan = state.plan;
+  db.prepare(
+    `
+      INSERT INTO ${tables.plan} (
+        uuid, project_id, plan_id, title, goal, note, details, status, priority,
+        branch, simple, tdd, discovered_from, issue, pull_request, assigned_to,
+        base_branch, base_commit, base_change_id, temp, docs, changed_files,
+        plan_generated_at, review_issues, docs_updated_at, lessons_applied_at,
+        parent_uuid, epic, revision, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(uuid) DO UPDATE SET
+        project_id = excluded.project_id,
+        plan_id = excluded.plan_id,
+        title = excluded.title,
+        goal = excluded.goal,
+        note = excluded.note,
+        details = excluded.details,
+        status = excluded.status,
+        priority = excluded.priority,
+        branch = excluded.branch,
+        simple = excluded.simple,
+        tdd = excluded.tdd,
+        discovered_from = excluded.discovered_from,
+        issue = excluded.issue,
+        pull_request = excluded.pull_request,
+        assigned_to = excluded.assigned_to,
+        base_branch = excluded.base_branch,
+        base_commit = excluded.base_commit,
+        base_change_id = excluded.base_change_id,
+        temp = excluded.temp,
+        docs = excluded.docs,
+        changed_files = excluded.changed_files,
+        plan_generated_at = excluded.plan_generated_at,
+        review_issues = excluded.review_issues,
+        docs_updated_at = excluded.docs_updated_at,
+        lessons_applied_at = excluded.lessons_applied_at,
+        parent_uuid = excluded.parent_uuid,
+        epic = excluded.epic,
+        revision = excluded.revision,
+        updated_at = excluded.updated_at
+    `
+  ).run(
+    plan.uuid,
+    plan.project_id,
+    plan.plan_id,
+    plan.title,
+    plan.goal,
+    plan.note,
+    plan.details,
+    plan.status,
+    plan.priority,
+    plan.branch,
+    plan.simple,
+    plan.tdd,
+    plan.discovered_from,
+    plan.issue,
+    plan.pull_request,
+    plan.assigned_to,
+    plan.base_branch,
+    plan.base_commit,
+    plan.base_change_id,
+    plan.temp,
+    plan.docs,
+    plan.changed_files,
+    plan.plan_generated_at,
+    plan.review_issues,
+    plan.docs_updated_at,
+    plan.lessons_applied_at,
+    plan.parent_uuid,
+    plan.epic,
+    plan.revision,
+    plan.created_at,
+    plan.updated_at
+  );
+
+  replaceExactPlanTasksInTable(db, tables.task, plan.uuid, state.tasks);
+  replaceExactPlanDependenciesInTable(
+    db,
+    tables.dependency,
+    plan.uuid,
+    state.dependencies.map((dependency) => dependency.depends_on_uuid)
+  );
+  replaceExactPlanTagsInTable(
+    db,
+    tables.tag,
+    plan.uuid,
+    state.tags.map((tag) => tag.tag)
+  );
+}
+
+function replaceExactPlanTasksInTable(
+  db: Database,
+  table: PlanTableSet['task'],
+  planUuid: string,
+  tasks: Array<Omit<PlanTaskRow, 'id'> & { id?: number }>
+): void {
+  db.prepare(`DELETE FROM ${table} WHERE plan_uuid = ?`).run(planUuid);
+  const insert = db.prepare(
+    `INSERT INTO ${table} (uuid, plan_uuid, task_index, title, description, done, revision)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  );
+  for (const task of [...tasks].sort((a, b) => a.task_index - b.task_index)) {
+    if (!task.uuid) {
+      throw new Error('task missing uuid in exact plan state write');
+    }
+    insert.run(
+      task.uuid,
+      planUuid,
+      task.task_index,
+      task.title,
+      task.description,
+      task.done,
+      task.revision
+    );
+  }
+}
+
+function replaceExactPlanDependenciesInTable(
+  db: Database,
+  table: PlanTableSet['dependency'],
+  planUuid: string,
+  dependencyUuids: string[]
+): void {
+  db.prepare(`DELETE FROM ${table} WHERE plan_uuid = ?`).run(planUuid);
+  const insert = db.prepare(
+    `INSERT OR IGNORE INTO ${table} (plan_uuid, depends_on_uuid) VALUES (?, ?)`
+  );
+  for (const dependencyUuid of dependencyUuids) {
+    insert.run(planUuid, dependencyUuid);
+  }
+}
+
+function replaceExactPlanTagsInTable(
+  db: Database,
+  table: PlanTableSet['tag'],
+  planUuid: string,
+  tags: string[]
+): void {
+  db.prepare(`DELETE FROM ${table} WHERE plan_uuid = ?`).run(planUuid);
+  const insert = db.prepare(`INSERT OR IGNORE INTO ${table} (plan_uuid, tag) VALUES (?, ?)`);
+  for (const tag of tags) {
+    insert.run(planUuid, tag);
+  }
 }
 
 type PlanWriteValues = {

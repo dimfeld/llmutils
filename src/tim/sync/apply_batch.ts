@@ -309,9 +309,39 @@ function persistRolledBackBatchRejections(
   if (results.every((result) => result.status === 'deferred')) {
     return;
   }
+  persistBatchRejections(db, batch, results, normalizedPayloads, {
+    fallbackMessage: 'Operation rejected because its atomic batch rolled back',
+  });
+}
 
+function persistMissingBatchReplayRejections(
+  db: Database,
+  batch: SyncOperationBatchEnvelope,
+  rows: Array<ReturnType<typeof getOperationRow>>,
+  results: ApplyOperationResult[],
+  normalizedPayloads: string[]
+): void {
+  persistBatchRejections(db, batch, results, normalizedPayloads, {
+    skipExistingRows: rows,
+    fallbackMessage: 'Operation rejected because its batch replay was partial',
+  });
+}
+
+function persistBatchRejections(
+  db: Database,
+  batch: SyncOperationBatchEnvelope,
+  results: ApplyOperationResult[],
+  normalizedPayloads: string[],
+  options: {
+    skipExistingRows?: Array<ReturnType<typeof getOperationRow>>;
+    fallbackMessage: string;
+  }
+): void {
   const persist = db.transaction((): void => {
     for (const [index, operation] of batch.operations.entries()) {
+      if (options.skipExistingRows?.[index]) {
+        continue;
+      }
       const result = results[index];
       if (!result || result.status === 'deferred') {
         continue;
@@ -326,10 +356,7 @@ function persistRolledBackBatchRejections(
         );
         if (duplicateSequence) {
           // The per-origin sequence slot already belongs to another operation.
-          // We cannot persist this operation UUID without violating FIFO identity;
-          // the colliding row is the durable record for that sequence. Siblings
-          // with distinct sequence slots are still recorded so the aborted batch
-          // is replay-safe where storage is possible.
+          // We cannot persist this operation UUID without violating FIFO identity.
           continue;
         }
         insertReceivedOperation(
@@ -342,59 +369,15 @@ function persistRolledBackBatchRejections(
       } else if (existing.batch_id !== batch.batchId) {
         continue;
       }
+      // Atomic conflict aborts roll back the sync_conflict row, so the durable
+      // operation record is a rejection rather than status='conflict'.
       const message =
         result.status === 'conflict'
           ? atomicConflictAbortMessage(result.error)
-          : (result.error?.message ?? 'Operation rejected because its atomic batch rolled back');
-      // Atomic conflict aborts roll back the sync_conflict row, so the durable
-      // operation record is a rejection rather than status='conflict'.
+          : (result.error?.message ?? options.fallbackMessage);
       rejectOperation(db, operation.operationUuid, message);
     }
   });
-
-  persist.immediate();
-}
-
-function persistMissingBatchReplayRejections(
-  db: Database,
-  batch: SyncOperationBatchEnvelope,
-  rows: Array<ReturnType<typeof getOperationRow>>,
-  results: ApplyOperationResult[],
-  normalizedPayloads: string[]
-): void {
-  const persist = db.transaction((): void => {
-    for (const [index, operation] of batch.operations.entries()) {
-      if (rows[index]) {
-        continue;
-      }
-      const result = results[index];
-      if (!result || result.status === 'deferred') {
-        continue;
-      }
-      const duplicateSequence = getOperationByOriginSequence(
-        db,
-        operation.originNodeId,
-        operation.localSequence,
-        operation.operationUuid
-      );
-      if (duplicateSequence) {
-        continue;
-      }
-      insertReceivedOperation(
-        db,
-        operation,
-        normalizedPayloads[index]!,
-        batch.batchId,
-        batch.atomic === true
-      );
-      rejectOperation(
-        db,
-        operation.operationUuid,
-        result.error?.message ?? 'Operation rejected because its batch replay was partial'
-      );
-    }
-  });
-
   persist.immediate();
 }
 

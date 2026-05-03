@@ -1,5 +1,12 @@
 import type { Database } from 'bun:sqlite';
-import type { PlanDependencyRow, PlanRow, PlanTagRow, PlanTaskRow } from '../db/plan.js';
+import {
+  deletePlanStateFromTableSetInTransaction,
+  replacePlanStateInTableSetInTransaction,
+  type PlanDependencyRow,
+  type PlanRow,
+  type PlanTagRow,
+  type PlanTaskRow,
+} from '../db/plan.js';
 import {
   deleteProjectionProjectSettingRow,
   type ProjectSetting,
@@ -225,7 +232,7 @@ export function rebuildPlanProjectionInTransaction(db: Database, planUuid: strin
     deleteProjectionPlanState(db, planUuid);
     return;
   }
-  writeProjectionPlanState(db, planUuid, {
+  writeProjectionPlanState(db, {
     plan: {
       ...nextPlan,
       base_commit: existingProjection?.base_commit ?? nextPlan.base_commit,
@@ -515,15 +522,11 @@ function deleteProjectionPlanState(db: Database, planUuid: string): void {
   // Dependency rows are owned by their source plan. Rebuilding or deleting this
   // plan must not remove inbound edges from other plans; those projections are
   // rebuilt independently from their own canonical + active operation state.
-  db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ?').run(planUuid);
-  db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(planUuid);
-  db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(planUuid);
-  db.prepare('DELETE FROM plan WHERE uuid = ?').run(planUuid);
+  deletePlanStateFromTableSetInTransaction(db, 'projection', planUuid);
 }
 
 function writeProjectionPlanState(
   db: Database,
-  planUuid: string,
   state: {
     plan: ApplyOperationToPlan;
     tasks: ApplyOperationToTask[];
@@ -531,82 +534,5 @@ function writeProjectionPlanState(
     tags: PlanTagRow[];
   }
 ): void {
-  deleteProjectionPlanState(db, planUuid);
-  db.prepare(
-    `
-      INSERT INTO plan (
-        uuid, project_id, plan_id, title, goal, note, details, status, priority,
-        branch, simple, tdd, discovered_from, issue, pull_request, assigned_to,
-        base_branch, base_commit, base_change_id, temp, docs, changed_files,
-        plan_generated_at, review_issues, docs_updated_at, lessons_applied_at,
-        parent_uuid, epic, revision, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `
-  ).run(
-    state.plan.uuid,
-    state.plan.project_id,
-    state.plan.plan_id,
-    state.plan.title,
-    state.plan.goal,
-    state.plan.note,
-    state.plan.details,
-    state.plan.status,
-    state.plan.priority,
-    state.plan.branch,
-    state.plan.simple,
-    state.plan.tdd,
-    state.plan.discovered_from,
-    state.plan.issue,
-    state.plan.pull_request,
-    state.plan.assigned_to,
-    state.plan.base_branch,
-    state.plan.base_commit,
-    state.plan.base_change_id,
-    state.plan.temp,
-    state.plan.docs,
-    state.plan.changed_files,
-    state.plan.plan_generated_at,
-    state.plan.review_issues,
-    state.plan.docs_updated_at,
-    state.plan.lessons_applied_at,
-    state.plan.parent_uuid,
-    state.plan.epic,
-    state.plan.revision,
-    state.plan.created_at,
-    state.plan.updated_at
-  );
-
-  const insertTask = db.prepare(
-    `
-      INSERT INTO plan_task (uuid, plan_uuid, task_index, title, description, done, revision)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `
-  );
-  for (const task of state.tasks.sort((a, b) => a.task_index - b.task_index)) {
-    if (!task.uuid) {
-      throw new Error('task missing uuid in projection write');
-    }
-    insertTask.run(
-      task.uuid,
-      planUuid,
-      task.task_index,
-      task.title,
-      task.description,
-      task.done,
-      task.revision
-    );
-  }
-
-  const insertDependency = db.prepare(
-    'INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)'
-  );
-  for (const dependency of state.dependencies) {
-    insertDependency.run(dependency.plan_uuid, dependency.depends_on_uuid);
-  }
-
-  const insertTag = db.prepare('INSERT OR IGNORE INTO plan_tag (plan_uuid, tag) VALUES (?, ?)');
-  for (const tag of state.tags) {
-    insertTag.run(tag.plan_uuid, tag.tag);
-  }
+  replacePlanStateInTableSetInTransaction(db, 'projection', state);
 }

@@ -324,7 +324,7 @@ export function getShadowPlanPath(repoRoot: string, planId: number): string {
   return path.join(repoRoot, MATERIALIZED_DIR, `.${planId}.plan.md.shadow`);
 }
 
-function getShadowPlanPathForFile(filePath: string): string {
+export function getShadowPlanPathForFile(filePath: string): string {
   return path.join(path.dirname(filePath), `.${path.basename(filePath)}.shadow`);
 }
 
@@ -339,12 +339,12 @@ function parseShadowMaterializedFilename(filename: string): { planId: number } |
   };
 }
 
-function getPlanSchemaFromRow(
+export function getPlanSchemaFromRow(
   row: PlanRow,
   uuidToPlanId: Map<string, number>,
-  materializedAs?: MaterializedPlanRole
+  materializedAs?: MaterializedPlanRole,
+  db: Database = getDatabase()
 ): PlanSchema {
-  const db = getDatabase();
   const tasks = getPlanTasksByUuid(db, row.uuid).map((task) => ({
     uuid: task.uuid ?? undefined,
     title: task.title,
@@ -1227,22 +1227,28 @@ export async function readMaterializedPlanRole(
     throw error;
   }
 
+  return parseMaterializedPlanRoleFromContent(content);
+}
+
+export function parseMaterializedPlanRoleFromContent(content: string): MaterializedPlanRole {
+  const frontmatter = parseMaterializedFrontmatterFromContent(content);
+  return frontmatter?.materializedAs === 'reference' ? 'reference' : 'primary';
+}
+
+export function parseMaterializedFrontmatterFromContent(
+  content: string
+): Record<string, unknown> | null {
   try {
     const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
     if (!frontmatterMatch) {
-      return 'primary';
+      return null;
     }
     const frontmatter = yaml.parse(frontmatterMatch[1]);
-    if (
-      frontmatter &&
-      typeof frontmatter === 'object' &&
-      frontmatter.materializedAs === 'reference'
-    ) {
-      return 'reference';
-    }
-    return 'primary';
+    return frontmatter && typeof frontmatter === 'object'
+      ? (frontmatter as Record<string, unknown>)
+      : null;
   } catch {
-    return 'primary';
+    return null;
   }
 }
 

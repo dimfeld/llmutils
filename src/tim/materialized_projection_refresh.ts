@@ -1,22 +1,18 @@
 import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
-import yaml from 'yaml';
 import type { Database } from 'bun:sqlite';
 import { warn } from '../logging.js';
-import {
-  getPlanByUuid,
-  getPlanDependenciesByUuid,
-  getPlanTagsByUuid,
-  getPlanTasksByUuid,
-  getPlansByProject,
-  type PlanRow,
-} from './db/plan.js';
+import { getPlanByUuid, getPlansByProject, type PlanRow } from './db/plan.js';
 import { getProjectById } from './db/project.js';
 import { generatePlanFileContent } from './plans.js';
-import type { PlanSchema } from './planSchema.js';
-import { planRowToSchemaInput } from './plans_db.js';
-
-const MATERIALIZED_DIR = path.join('.tim', 'plans');
+import {
+  getMaterializedPlanPath,
+  getPlanSchemaFromRow,
+  getShadowPlanPathForFile,
+  MATERIALIZED_DIR,
+  parseMaterializedFrontmatterFromContent,
+  parseMaterializedPlanRoleFromContent,
+} from './plan_materialize.js';
 
 export function refreshExistingPrimaryMaterializedPlans(
   db: Database,
@@ -59,7 +55,9 @@ export function refreshExistingPrimaryMaterializedPlans(
       }
 
       const uuidToPlanId = buildUuidToPlanIdMap(getPlansByProject(db, projectId));
-      const content = generatePlanFileContent(getPlanSchemaFromRow(db, row, uuidToPlanId));
+      const content = generatePlanFileContent(
+        getPlanSchemaFromRow(row, uuidToPlanId, 'primary', db)
+      );
       writeFileSync(filePath, content, 'utf8');
       writeFileSync(getShadowPlanPathForFile(filePath), content, 'utf8');
       refreshedPaths.push(filePath);
@@ -71,31 +69,13 @@ export function refreshExistingPrimaryMaterializedPlans(
   return refreshedPaths;
 }
 
-function getMaterializedPlanPath(repoRoot: string, planId: number): string {
-  return path.join(repoRoot, MATERIALIZED_DIR, `${planId}.plan.md`);
-}
-
-function getShadowPlanPathForFile(filePath: string): string {
-  return path.join(path.dirname(filePath), `.${path.basename(filePath)}.shadow`);
-}
-
 function readMaterializedPlanRoleSync(filePath: string): 'primary' | 'reference' | null {
   if (!existsSync(filePath)) {
     return null;
   }
 
   try {
-    const content = readFileSync(filePath, 'utf8');
-    const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-    if (!frontmatterMatch) {
-      return 'primary';
-    }
-    const frontmatter = yaml.parse(frontmatterMatch[1]);
-    return frontmatter &&
-      typeof frontmatter === 'object' &&
-      frontmatter.materializedAs === 'reference'
-      ? 'reference'
-      : 'primary';
+    return parseMaterializedPlanRoleFromContent(readFileSync(filePath, 'utf8'));
   } catch {
     return 'primary';
   }
@@ -130,29 +110,6 @@ function buildUuidToPlanIdMap(rows: PlanRow[]): Map<string, number> {
     uuidToPlanId.set(row.uuid, row.plan_id);
   }
   return uuidToPlanId;
-}
-
-function getPlanSchemaFromRow(
-  db: Database,
-  row: PlanRow,
-  uuidToPlanId: Map<string, number>
-): PlanSchema {
-  const tasks = getPlanTasksByUuid(db, row.uuid).map((task) => ({
-    uuid: task.uuid ?? undefined,
-    title: task.title,
-    description: task.description,
-    done: task.done === 1,
-    revision: task.revision,
-  }));
-  const dependencyUuids = getPlanDependenciesByUuid(db, row.uuid).map(
-    (dependency) => dependency.depends_on_uuid
-  );
-  const tags = getPlanTagsByUuid(db, row.uuid).map((tag) => tag.tag);
-
-  return {
-    ...planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId),
-    materializedAs: 'primary',
-  };
 }
 
 function findProjectionProjectIdForPlanUuid(db: Database, planUuid: string): number | null {
@@ -212,15 +169,7 @@ function findPlanIdForExistingMaterialization(repoRoot: string, planUuid: string
 
 function readMaterializedFrontmatterSync(filePath: string): Record<string, unknown> | null {
   try {
-    const content = readFileSync(filePath, 'utf8');
-    const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-    if (!frontmatterMatch) {
-      return null;
-    }
-    const frontmatter = yaml.parse(frontmatterMatch[1]);
-    return frontmatter && typeof frontmatter === 'object'
-      ? (frontmatter as Record<string, unknown>)
-      : null;
+    return parseMaterializedFrontmatterFromContent(readFileSync(filePath, 'utf8'));
   } catch {
     return null;
   }
