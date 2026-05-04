@@ -24,7 +24,7 @@ export type NormalizedSubprocessMonitorRule = {
 type NormalizedMatcher =
   | {
       type: 'substring';
-      value: string;
+      value: RegExp;
     }
   | {
       type: 'regex';
@@ -94,6 +94,10 @@ function validateRegexFlags(flags: string | undefined, label: string): void {
   }
 }
 
+function createWordBoundedMatcher(value: string): RegExp {
+  return new RegExp(`\\b${RegExp.escape(value)}\\b`);
+}
+
 export function normalizeSubprocessMonitorRules(
   rules: SubprocessMonitorRule[]
 ): NormalizedSubprocessMonitorRule[] {
@@ -101,7 +105,7 @@ export function normalizeSubprocessMonitorRules(
     const label = ruleLabel(rule);
     const matchers = asMatcherArray(rule.match).map((matcher): NormalizedMatcher => {
       if (typeof matcher === 'string') {
-        return { type: 'substring', value: matcher };
+        return { type: 'substring', value: createWordBoundedMatcher(matcher) };
       }
 
       validateRegexFlags(matcher.flags, label);
@@ -129,7 +133,7 @@ export function findSubprocessMonitorMatch(
 
   for (const rule of rules) {
     const matches = rule.matchers.some((matcher) =>
-      matcher.type === 'substring' ? command.includes(matcher.value) : matcher.value.test(command)
+      matcher.value.test(command)
     );
 
     if (!matches) {

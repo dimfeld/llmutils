@@ -38,6 +38,19 @@ describe('subprocess monitor rule matching', () => {
     });
   });
 
+  test('requires word boundaries for string rules', () => {
+    const rules = normalizeSubprocessMonitorRules([
+      { match: 'pnpm test', timeoutSeconds: 10 },
+    ]);
+
+    expect(findSubprocessMonitorMatch('bash -c pnpm testing', rules)).toBeNull();
+    expect(findSubprocessMonitorMatch('bash -c apnpm test', rules)).toBeNull();
+    expect(findSubprocessMonitorMatch('bash -c pnpm test -- --runInBand', rules)).toEqual({
+      timeoutMs: 10_000,
+      label: 'pnpm test',
+    });
+  });
+
   test('matches an array of string rules', () => {
     const rules = normalizeSubprocessMonitorRules([
       { match: ['vitest run', 'bun run test'], timeoutSeconds: 20 },

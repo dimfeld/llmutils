@@ -297,7 +297,7 @@ subprocessMonitor:
       description: Vitest and pnpm tests
 ```
 
-String matchers are case-sensitive `String.includes()` checks against the full command line. Regex matchers use `{ regex: string, flags?: string }`; allowed flags are `i`, `s`, `m`, `u`, and `v`. Stateful flags `g` and `y` are rejected when the monitor rules are normalized before an executor starts, and empty string or regex matchers are rejected.
+String matchers are case-sensitive checks against the full command line that require word boundaries on both sides of the matched string. Regex matchers use `{ regex: string, flags?: string }`; allowed flags are `i`, `s`, `m`, `u`, and `v`. Stateful flags `g` and `y` are rejected when the monitor rules are normalized before an executor starts, and empty string or regex matchers are rejected.
 
 If a process matches multiple rules, the shortest `timeoutSeconds` wins. Rule arrays concatenate across global, repo, and local config files; `pollIntervalSeconds` is a scalar and follows the usual local override behavior.
 
