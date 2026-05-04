@@ -778,14 +778,7 @@ function applyOperationToPlanScalar(
   options: ApplyOperationOptions
 ): Mutation[] {
   const plan = requireAdapterPlan(adapter, envelope.op.planUuid);
-  const value =
-    envelope.op.field === 'epic'
-      ? envelope.op.value
-        ? 1
-        : 0
-      : envelope.op.field === 'discovered_from'
-        ? adapter.resolveLocalPlanId(envelope.op.value as string | null)
-        : envelope.op.value;
+  const value = normalizePlanScalarAdapterValue(adapter, envelope.op.field, envelope.op.value);
   if ((plan as unknown as Record<string, unknown>)[envelope.op.field] === value) {
     return [];
   }

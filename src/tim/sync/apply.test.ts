@@ -1289,6 +1289,35 @@ describe('main-node sync apply engine', () => {
     expect(getAssignment(db, project.id, PLAN_UUID)).not.toBeNull();
   });
 
+  test.each(['simple', 'tdd', 'temp', 'epic'] as const)(
+    'plan.set_scalar treats false %s as an unchanged boolean',
+    async (field) => {
+      seedPlanRow({
+        uuid: PLAN_UUID,
+        planId: 1,
+        title: 'Boolean scalar plan',
+        status: 'pending',
+        [field]: false,
+        forceOverwrite: true,
+      });
+      const before = getPlanByUuid(db, PLAN_UUID)!;
+      const op = await setPlanScalarOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, field, value: false },
+        { originNodeId: NODE_A, localSequence: 1 }
+      );
+
+      const result = applyOperation(db, op);
+
+      expect(result.status).toBe('applied');
+      expect(result.sequenceIds).toEqual([]);
+      expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+        [field]: 0,
+        revision: before.revision,
+      });
+    }
+  );
+
   test('plan.delete cleans local assignment for deleted plan', async () => {
     seedPlan();
     seedAssignment();

@@ -89,6 +89,48 @@ describe('sync operation schemas', () => {
         value: 'done',
       }).success
     ).toBe(false);
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.set_scalar',
+        planUuid: PLAN_UUID,
+        field: 'simple',
+        value: 'yes',
+      }).success
+    ).toBe(false);
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.set_scalar',
+        planUuid: PLAN_UUID,
+        field: 'branch',
+        value: true,
+      }).success
+    ).toBe(false);
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.set_scalar',
+        planUuid: PLAN_UUID,
+        field: 'docs_updated_at',
+        value: 123,
+      }).success
+    ).toBe(false);
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.set_scalar',
+        planUuid: PLAN_UUID,
+        field: 'temp',
+        value: null,
+        baseValue: 'no',
+      }).success
+    ).toBe(false);
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.set_scalar',
+        planUuid: PLAN_UUID,
+        field: 'temp',
+        value: null,
+        baseValue: false,
+      }).success
+    ).toBe(true);
   });
 
   test('rejects local-only base tracking as synced scalar fields', () => {

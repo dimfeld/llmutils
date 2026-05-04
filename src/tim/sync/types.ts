@@ -123,43 +123,67 @@ export const SyncPlanSetScalarPayloadSchema = z
     ...baseRevisionShape,
   })
   .superRefine((payload, ctx) => {
-    if (
-      payload.field === 'priority' &&
-      !prioritySchema.nullable().safeParse(payload.value).success
-    ) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['value'],
-        message: 'priority value must be a priority or null',
-      });
-    }
-    if (payload.field === 'status' && !statusSchema.safeParse(payload.value).success) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['value'],
-        message: 'status value must be a plan status',
-      });
-    }
-    if (payload.field === 'epic' && typeof payload.value !== 'boolean') {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['value'],
-        message: 'epic value must be boolean',
-      });
-    }
-    if (
-      payload.field === 'discovered_from' &&
-      payload.value !== null &&
-      !SyncUuidSchema.safeParse(payload.value).success
-    ) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['value'],
-        message: 'discovered_from value must be a plan UUID or null',
-      });
+    validatePlanSetScalarFieldValue(payload.field, payload.value, ctx, ['value']);
+    if (payload.baseValue !== undefined) {
+      validatePlanSetScalarFieldValue(payload.field, payload.baseValue, ctx, ['baseValue']);
     }
   });
 export type SyncPlanSetScalarPayload = z.infer<typeof SyncPlanSetScalarPayloadSchema>;
+
+function validatePlanSetScalarFieldValue(
+  field: z.infer<typeof SyncPlanSetScalarPayloadSchema>['field'],
+  value: z.infer<typeof SyncPlanSetScalarPayloadSchema>['value'],
+  ctx: z.RefinementCtx,
+  path: (string | number)[]
+): void {
+  const addIssue = (message: string): void => {
+    ctx.addIssue({ code: 'custom', path, message });
+  };
+
+  switch (field) {
+    case 'priority':
+      if (!prioritySchema.nullable().safeParse(value).success) {
+        addIssue('priority value must be a priority or null');
+      }
+      return;
+    case 'status':
+      if (!statusSchema.safeParse(value).success) {
+        addIssue('status value must be a plan status');
+      }
+      return;
+    case 'epic':
+      if (typeof value !== 'boolean') {
+        addIssue('epic value must be boolean');
+      }
+      return;
+    case 'simple':
+    case 'tdd':
+    case 'temp':
+      if (value !== null && typeof value !== 'boolean') {
+        addIssue(`${field} value must be boolean or null`);
+      }
+      return;
+    case 'discovered_from':
+      if (value !== null && !SyncUuidSchema.safeParse(value).success) {
+        addIssue('discovered_from value must be a plan UUID or null');
+      }
+      return;
+    case 'branch':
+    case 'assigned_to':
+    case 'base_branch':
+    case 'plan_generated_at':
+    case 'docs_updated_at':
+    case 'lessons_applied_at':
+      if (value !== null && typeof value !== 'string') {
+        addIssue(`${field} value must be a string or null`);
+      }
+      return;
+    default: {
+      const exhaustive: never = field;
+      return exhaustive;
+    }
+  }
+}
 
 export const SyncPlanPatchTextPayloadSchema = z.object({
   type: z.literal('plan.patch_text'),
