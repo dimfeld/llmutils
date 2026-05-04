@@ -4,7 +4,7 @@ import type { Database } from 'bun:sqlite';
 import { warn } from '../logging.js';
 import { getPlanByUuid, getPlansByProject, type PlanRow } from './db/plan.js';
 import { getProjectById } from './db/project.js';
-import { generatePlanFileContent } from './plans.js';
+import { generatePlanFileContent, stripPlanRevisionMetadataFromContent } from './plans.js';
 import {
   getMaterializedPlanPath,
   getPlanSchemaFromRow,
@@ -33,13 +33,16 @@ export function refreshExistingPrimaryMaterializedPlans(
         continue;
       }
 
-      const planId =
-        row?.plan_id ?? findPlanIdForExistingMaterialization(project.last_git_root, planUuid);
-      if (planId === null) {
+      const materialization = findPrimaryMaterializationForPlanUuid(
+        project.last_git_root,
+        planUuid,
+        row
+      );
+      if (!materialization) {
         continue;
       }
+      const { filePath, planId } = materialization;
 
-      const filePath = getMaterializedPlanPath(project.last_git_root, planId);
       if (readMaterializedPlanRoleSync(filePath) !== 'primary') {
         continue;
       }
@@ -55,11 +58,15 @@ export function refreshExistingPrimaryMaterializedPlans(
       }
 
       const uuidToPlanId = buildUuidToPlanIdMap(getPlansByProject(db, projectId));
-      const content = generatePlanFileContent(
-        getPlanSchemaFromRow(row, uuidToPlanId, 'primary', db)
-      );
+      const plan = getPlanSchemaFromRow(row, uuidToPlanId, 'primary', db);
+      plan.id = planId;
+      const content = generatePlanFileContent(plan);
       writeFileSync(filePath, content, 'utf8');
-      writeFileSync(getShadowPlanPathForFile(filePath), content, 'utf8');
+      writeFileSync(
+        getShadowPlanPathForFile(filePath),
+        generatePlanFileContent(plan, { preserveRevisionMetadata: true }),
+        'utf8'
+      );
       refreshedPaths.push(filePath);
     } catch (error) {
       warn(`Failed to refresh materialized projection for plan ${planUuid}: ${error as Error}`);
@@ -98,10 +105,32 @@ function isPrimaryMaterializedPlanDirty(filePath: string): boolean {
   }
 
   try {
-    return readFileSync(filePath, 'utf8') !== readFileSync(shadowPath, 'utf8');
+    return (
+      readFileSync(filePath, 'utf8') !==
+      stripPlanRevisionMetadataFromContent(readFileSync(shadowPath, 'utf8'))
+    );
   } catch {
     return true;
   }
+}
+
+function findPrimaryMaterializationForPlanUuid(
+  repoRoot: string,
+  planUuid: string,
+  row: PlanRow | null
+): { filePath: string; planId: number } | null {
+  if (row) {
+    const rowPath = getMaterializedPlanPath(repoRoot, row.plan_id);
+    const frontmatter = existsSync(rowPath) ? readMaterializedFrontmatterSync(rowPath) : null;
+    if (frontmatter?.uuid === planUuid) {
+      return { filePath: rowPath, planId: row.plan_id };
+    }
+  }
+
+  const existingPlanId = findPlanIdForExistingMaterialization(repoRoot, planUuid);
+  return existingPlanId === null
+    ? null
+    : { filePath: getMaterializedPlanPath(repoRoot, existingPlanId), planId: existingPlanId };
 }
 
 function buildUuidToPlanIdMap(rows: PlanRow[]): Map<string, number> {

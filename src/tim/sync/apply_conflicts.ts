@@ -221,7 +221,6 @@ function applyResolvedTaskTextWithCanonicalAdapter(
   value: string
 ): Mutation[] {
   const adapter = new CanonicalPlanAdapter(db, project, envelope);
-  const plan = requireAdapterPlan(adapter, envelope.op.planUuid);
   const task = requireAdapterTask(adapter, envelope.op.taskUuid, envelope.op.planUuid);
   const column = TASK_TEXT_COLUMNS[envelope.op.field];
   const current = task[column] ?? '';
@@ -235,7 +234,7 @@ function applyResolvedTaskTextWithCanonicalAdapter(
       base: current,
       new: value,
       patch: undefined,
-      baseRevision: plan.revision,
+      baseRevision: task.revision,
     },
   });
   adapter.flush();

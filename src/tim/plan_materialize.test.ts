@@ -26,10 +26,16 @@ import {
   syncMaterializedPlan,
   withPlanAutoSync,
 } from './plan_materialize.js';
-import { generatePlanFileContent, readPlanFile, writePlanFile } from './plans.js';
+import {
+  generatePlanFileContent,
+  readPlanFile,
+  stripPlanRevisionMetadataFromContent,
+  writePlanFile,
+} from './plans.js';
 import { handleCleanupMaterializedCommand } from './commands/cleanup-materialized.js';
 import { handleMaterializeCommand } from './commands/materialize.js';
 import { handleSyncCommand } from './commands/sync.js';
+import { refreshExistingPrimaryMaterializedPlans } from './materialized_projection_refresh.js';
 import { type CanonicalPlanSnapshot, mergeCanonicalRefresh } from './sync/snapshots.js';
 
 async function initializeGitRepository(repoDir: string): Promise<void> {
@@ -206,6 +212,12 @@ describe('tim plan_materialize', () => {
       .all() as Array<{ operation_type: string; status: string; payload: string }>;
   }
 
+  async function expectShadowMatchesFile(shadowPath: string, planPath: string): Promise<void> {
+    expect(stripPlanRevisionMetadataFromContent(await fs.readFile(shadowPath, 'utf8'))).toBe(
+      await fs.readFile(planPath, 'utf8')
+    );
+  }
+
   function nullableBoolean(value: number | null): boolean | null {
     return value === null ? null : Boolean(value);
   }
@@ -328,9 +340,7 @@ describe('tim plan_materialize', () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
     );
     expect(materializedPlan.reviewIssues).toHaveLength(1);
-    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
-      await fs.readFile(planPath, 'utf8')
-    );
+    await expectShadowMatchesFile(getShadowPlanPath(repoDir, 3), planPath);
 
     const refPaths = await materializeRelatedPlans(3, repoDir);
     expect(refPaths.sort()).toEqual(
@@ -589,9 +599,7 @@ Details
       temp: false,
       materializedAs: 'primary',
     });
-    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
-      await fs.readFile(planPath, 'utf8')
-    );
+    await expectShadowMatchesFile(getShadowPlanPath(repoDir, 3), planPath);
   });
 
   test('syncMaterializedPlan skips DB writes when the materialized file is unchanged from its shadow', async () => {
@@ -604,6 +612,35 @@ Details
     const after = getPlanByPlanId(db, project.id, 3);
     expect(after).toEqual(before);
     expect(await Bun.file(planPath).exists()).toBe(true);
+  });
+
+  test('materialized shadows preserve plan and task revisions without dirtying the file', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    const shadowPath = getShadowPlanPath(repoDir, 3);
+
+    const fileContent = await fs.readFile(planPath, 'utf8');
+    const shadowContent = await fs.readFile(shadowPath, 'utf8');
+    expect(fileContent).not.toContain('revision:');
+    expect(shadowContent).toContain('revision: 1');
+    expect(stripPlanRevisionMetadataFromContent(shadowContent)).toBe(fileContent);
+
+    db.prepare('UPDATE plan SET revision = ? WHERE project_id = ? AND plan_id = ?').run(
+      10,
+      project.id,
+      3
+    );
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Edited from old revision';
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    expect(JSON.parse(syncOperationRows()[0]!.payload)).toMatchObject({
+      type: 'plan.patch_text',
+      baseRevision: 1,
+    });
   });
 
   test('syncMaterializedPlan with force=true runs the DB sync path', async () => {
@@ -649,9 +686,7 @@ Details
 
     const refreshedPlan = await readPlanFile(planPath);
     expect(refreshedPlan.priority).toBe('urgent');
-    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
-      await fs.readFile(planPath, 'utf8')
-    );
+    await expectShadowMatchesFile(getShadowPlanPath(repoDir, 3), planPath);
   });
 
   test('syncMaterializedPlan preserves DB-only changes for fields untouched in the materialized file', async () => {
@@ -767,9 +802,7 @@ Details
       description: 'visible before canonical ack',
     });
     expect(rematerializedPlan.tasks.at(-1)?.uuid).toBeDefined();
-    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
-      await fs.readFile(planPath, 'utf8')
-    );
+    await expectShadowMatchesFile(getShadowPlanPath(repoDir, 3), planPath);
   });
 
   test('materializePlan renders canonical refresh overlaid with pending file edits', async () => {
@@ -801,9 +834,7 @@ Details
     const renderedPlan = await readPlanFile(planPath);
     expect(renderedPlan.title).toBe('Pending materialized title');
     expect(renderedPlan.priority).toBe('urgent');
-    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
-      await fs.readFile(planPath, 'utf8')
-    );
+    await expectShadowMatchesFile(getShadowPlanPath(repoDir, 3), planPath);
   });
 
   test('syncMaterializedPlan queues new task operations and writes generated task UUIDs back', async () => {
@@ -1151,9 +1182,7 @@ Details
     expect(rematerializedPlan.assignedTo).toBe('web-user');
     expect(rematerializedPlan.details).toBe('Details updated from materialized file');
     expect(rematerializedPlan.tasks.map((task) => task.title)).toContain('shadow merge');
-    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
-      await fs.readFile(planPath, 'utf8')
-    );
+    await expectShadowMatchesFile(getShadowPlanPath(repoDir, 3), planPath);
   });
 
   test('syncMaterializedPlan uses op-batch DB baseline sync when the shadow file is missing', async () => {
@@ -1182,7 +1211,7 @@ Details
     );
     expect(operations.every((row) => row.status === 'applied')).toBe(true);
     expect(await Bun.file(shadowPath).exists()).toBe(true);
-    expect(await fs.readFile(shadowPath, 'utf8')).toBe(await fs.readFile(planPath, 'utf8'));
+    await expectShadowMatchesFile(shadowPath, planPath);
   });
 
   test('syncMaterializedPlan preserves task reorder edits when the shadow file is missing', async () => {
@@ -1225,7 +1254,7 @@ Details
     expect(syncOperationRows().map((row) => row.operation_type)).toEqual(
       expect.arrayContaining(['plan.patch_text', 'plan.set_scalar'])
     );
-    expect(await fs.readFile(shadowPath, 'utf8')).toBe(await fs.readFile(planPath, 'utf8'));
+    await expectShadowMatchesFile(shadowPath, planPath);
   });
 
   test('withPlanAutoSync syncs file edits before DB changes and re-materializes after', async () => {
@@ -1254,9 +1283,7 @@ Details
     const rematerializedPlan = await readPlanFile(planPath);
     expect(rematerializedPlan.title).toBe('Title from materialized file');
     expect(rematerializedPlan.status).toBe('done');
-    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
-      await fs.readFile(planPath, 'utf8')
-    );
+    await expectShadowMatchesFile(getShadowPlanPath(repoDir, 3), planPath);
   });
 
   test('materializePlan throws when the plan does not exist in the repo project', async () => {
@@ -1421,7 +1448,7 @@ Details
     expect(await Bun.file(getMaterializedPlanPath(repoDir, 9)).exists()).toBe(false);
     expect((await readPlanFile(planPath)).id).toBe(3);
     expect((await readPlanFile(planPath)).tags).toContain('x');
-    expect(await fs.readFile(shadowPath, 'utf8')).toBe(await fs.readFile(planPath, 'utf8'));
+    await expectShadowMatchesFile(shadowPath, planPath);
 
     const removeTagPlan = await readPlanFile(planPath);
     removeTagPlan.tags = (removeTagPlan.tags ?? []).filter((tag) => tag !== 'x');
@@ -1437,7 +1464,7 @@ Details
     });
     expect((await readPlanFile(planPath)).id).toBe(3);
     expect((await readPlanFile(planPath)).tags).not.toContain('x');
-    expect(await fs.readFile(shadowPath, 'utf8')).toBe(await fs.readFile(planPath, 'utf8'));
+    await expectShadowMatchesFile(shadowPath, planPath);
   });
 
   test('syncMaterializedPlan writes generated task UUIDs back to the old path after numeric ID drift', async () => {
@@ -1467,7 +1494,7 @@ Details
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
     );
     expect(rematerializedPlan.id).toBe(3);
-    expect(await fs.readFile(shadowPath, 'utf8')).toBe(await fs.readFile(planPath, 'utf8'));
+    await expectShadowMatchesFile(shadowPath, planPath);
 
     await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
 
@@ -1475,6 +1502,34 @@ Details
     expect(
       (await readPlanFile(planPath)).tasks.find((task) => task.title === 'drift task')?.uuid
     ).toBe(addedTask?.uuid);
+  });
+
+  test('projection refresh updates the old materialized path after numeric ID drift', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    const shadowPath = getShadowPlanPath(repoDir, 3);
+
+    db.prepare(
+      'UPDATE plan SET plan_id = ?, title = ?, revision = ? WHERE project_id = ? AND uuid = ?'
+    ).run(
+      9,
+      'Refreshed through uuid fallback',
+      2,
+      project.id,
+      '33333333-3333-4333-8333-333333333333'
+    );
+
+    const refreshed = refreshExistingPrimaryMaterializedPlans(db, [
+      '33333333-3333-4333-8333-333333333333',
+    ]);
+
+    expect(refreshed).toHaveLength(1);
+    expect(await fs.realpath(refreshed[0]!)).toBe(await fs.realpath(planPath));
+    expect(await Bun.file(getMaterializedPlanPath(repoDir, 9)).exists()).toBe(false);
+    expect((await readPlanFile(planPath)).id).toBe(3);
+    expect((await readPlanFile(planPath)).title).toBe('Refreshed through uuid fallback');
+    await expectShadowMatchesFile(shadowPath, planPath);
+    expect(await fs.readFile(shadowPath, 'utf8')).toContain('revision: 2');
   });
 
   test('syncMaterializedPlan skips missing shadow dependency references during diff', async () => {

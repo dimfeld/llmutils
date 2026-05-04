@@ -549,7 +549,10 @@ export function preparePlanForWrite(
   return validatePlanForWrite(input, options);
 }
 
-function cleanPlanForYaml(plan: PlanSchema): {
+function cleanPlanForYaml(
+  plan: PlanSchema,
+  options?: { preserveRevisionMetadata?: boolean }
+): {
   cleanedPlan: Record<string, unknown>;
   details?: string;
 } {
@@ -566,7 +569,9 @@ function cleanPlanForYaml(plan: PlanSchema): {
   delete cleanedPlan.references;
   delete cleanedPlan.project;
   delete cleanedPlan.not_tim;
-  delete cleanedPlan.revision;
+  if (!options?.preserveRevisionMetadata) {
+    delete cleanedPlan.revision;
+  }
 
   if (Array.isArray(cleanedPlan.tasks)) {
     cleanedPlan.tasks = cleanedPlan.tasks.map((task) => {
@@ -574,7 +579,9 @@ function cleanPlanForYaml(plan: PlanSchema): {
         return task;
       }
       const cleanedTask = { ...(task as Record<string, unknown>) };
-      delete cleanedTask.revision;
+      if (!options?.preserveRevisionMetadata) {
+        delete cleanedTask.revision;
+      }
       return cleanedTask;
     });
   }
@@ -1043,8 +1050,11 @@ async function routeValidatedPlanToDb(
   });
 }
 
-export function generatePlanFileContent(plan: PlanSchema): string {
-  const { cleanedPlan, details } = cleanPlanForYaml(plan);
+export function generatePlanFileContent(
+  plan: PlanSchema,
+  options?: { preserveRevisionMetadata?: boolean }
+): string {
+  const { cleanedPlan, details } = cleanPlanForYaml(plan, options);
 
   const schemaLine =
     '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json';
@@ -1063,6 +1073,37 @@ export function generatePlanFileContent(plan: PlanSchema): string {
   }
 
   return fullContent;
+}
+
+export function stripPlanRevisionMetadataFromContent(content: string): string {
+  const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!frontmatterMatch) {
+    return content;
+  }
+
+  const parsed = yaml.parse(frontmatterMatch[1], { uniqueKeys: false });
+  if (!parsed || typeof parsed !== 'object') {
+    return content;
+  }
+
+  const plan = { ...(parsed as Record<string, unknown>) };
+  delete plan.revision;
+  if (Array.isArray(plan.tasks)) {
+    plan.tasks = plan.tasks.map((task) => {
+      if (!task || typeof task !== 'object') {
+        return task;
+      }
+      const cleanedTask = { ...(task as Record<string, unknown>) };
+      delete cleanedTask.revision;
+      return cleanedTask;
+    });
+  }
+
+  const bodyStart = frontmatterMatch[0].length;
+  const body = content.slice(bodyStart);
+  const schemaLine =
+    '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json';
+  return `---\n${schemaLine}\n${yaml.stringify(plan)}---\n${body}`;
 }
 
 async function writeValidatedPlanToDb(

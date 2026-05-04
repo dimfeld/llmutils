@@ -236,7 +236,10 @@ async function materializePlanRow(
 
   await Bun.write(targetPath, content);
   if (materializedAs === 'primary') {
-    await Bun.write(getShadowPlanPathForFile(targetPath), content);
+    await Bun.write(
+      getShadowPlanPathForFile(targetPath),
+      generatePlanFileContent(plan, { preserveRevisionMetadata: true })
+    );
   }
   return targetPath;
 }
@@ -367,7 +370,12 @@ export function diffPlanFields(shadow: PlanSchema, current: PlanSchema): PlanFie
   const changedFields = new Set<EditablePlanField>();
 
   for (const field of EDITABLE_PLAN_FIELDS) {
-    if (!Bun.deepEquals(shadow[field], current[field])) {
+    if (
+      !Bun.deepEquals(
+        normalizeEditableValueForDiff(field, shadow[field]),
+        normalizeEditableValueForDiff(field, current[field])
+      )
+    ) {
       changedFields.add(field);
     }
   }
@@ -376,6 +384,22 @@ export function diffPlanFields(shadow: PlanSchema, current: PlanSchema): PlanFie
     changedFields,
     hasChanges: changedFields.size > 0,
   };
+}
+
+function normalizeEditableValueForDiff(
+  field: EditablePlanField,
+  value: PlanSchema[EditablePlanField]
+): unknown {
+  if (field !== 'tasks' || !Array.isArray(value)) {
+    return value;
+  }
+  return value.map((task) => {
+    if (!task || typeof task !== 'object') {
+      return task;
+    }
+    const { revision, ...editableTask } = task as TaskSchema;
+    return editableTask;
+  });
 }
 
 export function mergePlanWithShadow(
@@ -1476,7 +1500,10 @@ export async function syncMaterializedPlan(
       if (wroteTaskUuids || reorderedTasks) {
         await Bun.write(filePath, content);
       }
-      await Bun.write(shadowPath, content);
+      await Bun.write(
+        shadowPath,
+        generatePlanFileContent(shadowPlanForPath, { preserveRevisionMetadata: true })
+      );
     }
   } else if (options.force) {
     const config = await loadConfigForMaterializedSync(repoRoot, options);

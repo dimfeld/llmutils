@@ -2529,6 +2529,49 @@ describe('main-node sync apply engine', () => {
     expect(countRows('sync_sequence')).toBe(0); // no canonical change
   });
 
+  test('resolving a task text conflict uses the task revision', async () => {
+    seedPlan();
+    db.prepare('UPDATE plan_task SET description = ?, revision = revision + 1 WHERE uuid = ?').run(
+      'main-node edit',
+      TASK_UUID
+    );
+    db.prepare(
+      'UPDATE task_canonical SET description = ?, revision = revision + 1 WHERE uuid = ?'
+    ).run('main-node edit', TASK_UUID);
+
+    const op = await updatePlanTaskTextOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        taskUuid: TASK_UUID,
+        field: 'description',
+        base: 'old description',
+        new: 'remote edit',
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    applyOperation(db, op);
+    const conflict = db.prepare('SELECT conflict_id FROM sync_conflict').get() as {
+      conflict_id: string;
+    };
+
+    const resolved = resolveSyncConflict(db, conflict.conflict_id, {
+      mode: 'manual',
+      manualValue: 'resolved task text',
+      resolvedByNode: NODE_B,
+    });
+
+    expect(resolved.status).toBe('resolved_applied');
+    expect(db.prepare('SELECT description FROM plan_task WHERE uuid = ?').get(TASK_UUID)).toEqual({
+      description: 'resolved task text',
+    });
+    expect(
+      db.prepare('SELECT description FROM task_canonical WHERE uuid = ?').get(TASK_UUID)
+    ).toEqual({
+      description: 'resolved task text',
+    });
+  });
+
   test('resolving a plan text conflict writes canonical and projection rows', async () => {
     seedPlan();
     db.prepare('UPDATE plan SET details = ?, revision = revision + 1 WHERE uuid = ?').run(
