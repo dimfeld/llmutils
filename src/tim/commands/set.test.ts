@@ -396,6 +396,22 @@ describe('tim set command', () => {
     expect(Math.abs(newTime - originalTime)).toBeLessThan(5);
   });
 
+  test('logs the plan title when update completes', async () => {
+    const planPath = await createTestPlan(172, {
+      title: 'Refactor parser',
+    });
+
+    await handleSetCommand(
+      172,
+      {
+        note: 'Updated note text',
+      },
+      globalOpts
+    );
+
+    expect(logSpy).toHaveBeenCalledWith('Plan 172 (Refactor parser) updated successfully');
+  });
+
   test('should add issue URLs', async () => {
     const planPath = await createTestPlan(18);
 

@@ -455,7 +455,9 @@ export async function handleSetCommand(
       await materializePlan(parentId, repoRoot, { context: freshContext });
     }
 
-    log(`Plan ${refreshedPlanWithReferences.id} updated successfully`);
+    log(
+      `Plan ${refreshedPlanWithReferences.id} (${refreshedPlanWithReferences.title || 'Untitled plan'}) updated successfully`
+    );
 
     if (shouldRemoveAssignment) {
       await removePlanAssignment(refreshedPlanWithReferences, repoRoot);
