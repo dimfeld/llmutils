@@ -2077,6 +2077,23 @@ Details
     expect((await readPlanFile(planPath)).title).toBe('Canonical title after refresh');
   });
 
+  test('mergeCanonicalRefresh refreshes materialized inbound owners after referenced plan renumber', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    expect((await readPlanFile(planPath)).dependencies).toEqual([2]);
+
+    mergeCanonicalRefresh(
+      db,
+      projectionPlanSnapshot(project.uuid, '22222222-2222-4222-8222-222222222222', {
+        planId: 9,
+        revision: 10,
+      })
+    );
+
+    expect(getPlanByUuid(db, '22222222-2222-4222-8222-222222222222')?.plan_id).toBe(9);
+    expect((await readPlanFile(planPath)).dependencies).toEqual([9]);
+  });
+
   test.each([
     [
       'plan_deleted',

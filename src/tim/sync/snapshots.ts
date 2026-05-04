@@ -311,11 +311,14 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
   for (const task of snapshot.plan.tasks) {
     clearTaskTombstone.run('task', taskKey(task.uuid));
   }
-  rebuildPlanProjectionInTransaction(db, snapshot.plan.uuid);
+  const affectedPlanUuids = rebuildPlanProjectionAndInboundOwnersInTransaction(
+    db,
+    snapshot.plan.uuid
+  );
   if (ASSIGNMENT_CLEANUP_STATUSES.has(snapshot.plan.status)) {
     removeAssignment(db, project.id, snapshot.plan.uuid);
   }
-  return [snapshot.plan.uuid];
+  return affectedPlanUuids;
 }
 
 function writeNeverExistedSnapshot(
