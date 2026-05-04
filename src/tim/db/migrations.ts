@@ -1033,12 +1033,9 @@ const migrations: Migration[] = [
         PRIMARY KEY (project_id, setting)
       );
 
+      DROP TABLE IF EXISTS sync_pending_rollback;
     `,
     afterUp: backfillCanonicalTables,
-  },
-  {
-    version: 33,
-    up: `DROP TABLE IF EXISTS sync_pending_rollback;`,
   },
 ];
 
