@@ -75,6 +75,7 @@ function isPlanEligibleForChat(plan: ReturnType<typeof getPlanDetail>): plan is 
 }
 
 async function launchTimCommand(
+  commandName: string,
   planUuid: string,
   eligibilityCheck: (plan: ReturnType<typeof getPlanDetail>) => plan is PlanDetailResult,
   eligibilityError: string,
@@ -96,6 +97,9 @@ async function launchTimCommand(
 
   const activeSession = getSessionManager().hasActiveSessionForPlan(plan.uuid);
   if (activeSession.active) {
+    console.info(
+      `[web-ui] Not starting tim ${commandName} for plan ${plan.planId}; session ${activeSession.connectionId ?? 'unknown'} is already running`
+    );
     return {
       status: 'already_running',
       connectionId: activeSession.connectionId,
@@ -103,6 +107,9 @@ async function launchTimCommand(
   }
 
   if (isPlanLaunching(plan.uuid)) {
+    console.info(
+      `[web-ui] Not starting tim ${commandName} for plan ${plan.planId}; launch is already in progress`
+    );
     return {
       status: 'already_running',
     };
@@ -113,6 +120,9 @@ async function launchTimCommand(
     error(400, 'Project does not have a primary workspace');
   }
 
+  console.info(
+    `[web-ui] Starting tim ${commandName} for plan ${plan.planId} in ${primaryWorkspacePath}`
+  );
   setLaunchLock(plan.uuid);
 
   let result;
@@ -124,6 +134,10 @@ async function launchTimCommand(
   }
 
   if (!result.success) {
+    console.error(
+      `[web-ui] tim ${commandName} for plan ${plan.planId} failed to start`,
+      result.error
+    );
     clearLaunchLock(plan.uuid);
     error(500, result.error);
   }
@@ -132,6 +146,11 @@ async function launchTimCommand(
   // clear the launch lock immediately since no session:update event will fire.
   if (result.earlyExit) {
     clearLaunchLock(plan.uuid);
+    console.info(
+      `[web-ui] tim ${commandName} for plan ${plan.planId} exited successfully during startup`
+    );
+  } else {
+    console.info(`[web-ui] tim ${commandName} for plan ${plan.planId} is running detached`);
   }
 
   return {
@@ -157,6 +176,7 @@ async function loadProjectFinishConfig(db: Database, projectId: number): Promise
 
 export const startGenerate = command(startGenerateSchema, async ({ planUuid }) => {
   return launchTimCommand(
+    'generate',
     planUuid,
     isPlanEligibleForGenerate,
     'Plan is not eligible for generate',
@@ -170,6 +190,7 @@ const startAgentSchema = z.object({
 
 export const startAgent = command(startAgentSchema, async ({ planUuid }) => {
   return launchTimCommand(
+    'agent',
     planUuid,
     isPlanEligibleForAgent,
     'Plan is not eligible for agent',
@@ -184,6 +205,7 @@ const startChatSchema = z.object({
 
 export const startChat = command(startChatSchema, async ({ planUuid, executor }) => {
   return launchTimCommand(
+    'chat',
     planUuid,
     isPlanEligibleForChat,
     'Plan is not eligible for chat',
@@ -231,6 +253,7 @@ const startRebaseSchema = z.object({
 
 export const startRebase = command(startRebaseSchema, async ({ planUuid }) => {
   return launchTimCommand(
+    'rebase',
     planUuid,
     isPlanEligibleForRebase,
     'Plan is not eligible for rebase',
@@ -262,6 +285,7 @@ export const startUpdateDocs = command(startUpdateDocsSchema, async ({ planUuid 
   const finishConfig = await loadProjectFinishConfig(db, planRow.project_id);
 
   return launchTimCommand(
+    'update-docs',
     planUuid,
     isPlanEligibleForFinish,
     'Plan is not eligible for finish',
@@ -341,6 +365,7 @@ const startCreatePrSchema = z.object({
 
 export const startCreatePr = command(startCreatePrSchema, async ({ planUuid }) => {
   return launchTimCommand(
+    'pr create',
     planUuid,
     isPlanEligibleForCreatePr,
     'Plan is not eligible for PR creation',

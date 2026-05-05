@@ -30,6 +30,14 @@ interface LogFileInfo {
   path: string;
 }
 
+function describeCommand(args: string[]): string {
+  return ['tim', ...args].join(' ');
+}
+
+function describeTarget(kind: 'plan' | 'pr', id: number): string {
+  return `${kind} ${id}`;
+}
+
 export function formatLogFileName(planId: number, command: string, timestamp = new Date()): string {
   const isoTimestamp = timestamp.toISOString().replace(/[:.]/g, '-');
   return `${planId}-${isoTimestamp}-${command}.log`;
@@ -46,6 +54,7 @@ function createLogFile(command: string, planId: number): LogFileInfo {
 }
 
 async function spawnTimProcess(
+  targetLabel: string,
   planId: number,
   args: string[],
   cwd: string
@@ -55,6 +64,7 @@ async function spawnTimProcess(
 
   try {
     const command = args[0];
+    console.info(`[web-ui] Starting ${describeCommand(args)} for ${targetLabel} in ${cwd}`);
     logFile = createLogFile(command, planId);
     const env = await buildWorkspaceCommandEnv(cwd);
 
@@ -70,6 +80,7 @@ async function spawnTimProcess(
     if (logFile) {
       fs.closeSync(logFile.fd);
     }
+    console.error(`[web-ui] Failed to start ${describeCommand(args)} for ${targetLabel}`, err);
     return {
       success: false,
       error: `Failed to start tim ${args[0]}: ${err as Error}`,
@@ -78,15 +89,24 @@ async function spawnTimProcess(
 
   // The child process owns the fd now, so we can close our copy.
   fs.closeSync(logFile.fd);
+  console.info(
+    `[web-ui] Started ${describeCommand(args)} for ${targetLabel}; waiting ${EARLY_EXIT_CHECK_DELAY_MS}ms for early exit`
+  );
 
   await waitForSpawnWindow();
 
   if (proc.exitCode !== null) {
     // exitCode 0 means the command completed successfully (e.g. a fast rebase with no conflicts).
     if (proc.exitCode === 0) {
+      console.info(
+        `[web-ui] ${describeCommand(args)} for ${targetLabel} exited successfully during startup`
+      );
       return { success: true, planId, earlyExit: true };
     }
     const logContents = fs.readFileSync(logFile.path, 'utf-8').trim();
+    console.warn(
+      `[web-ui] ${describeCommand(args)} for ${targetLabel} exited early with code ${proc.exitCode}; log file: ${logFile.path}`
+    );
     return {
       success: false,
       error: logContents || `tim ${args[0]} exited early with code ${proc.exitCode}`,
@@ -94,6 +114,7 @@ async function spawnTimProcess(
   }
 
   proc.unref();
+  console.info(`[web-ui] ${describeCommand(args)} for ${targetLabel} is running detached`);
   return { success: true, planId };
 }
 
@@ -102,6 +123,7 @@ export async function spawnGenerateProcess(
   cwd: string
 ): Promise<SpawnProcessResult> {
   return spawnTimProcess(
+    describeTarget('plan', planId),
     planId,
     ['generate', String(planId), '--auto-workspace', '--no-terminal-input'],
     cwd
@@ -110,6 +132,7 @@ export async function spawnGenerateProcess(
 
 export async function spawnAgentProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
   return spawnTimProcess(
+    describeTarget('plan', planId),
     planId,
     ['agent', String(planId), '--auto-workspace', '--no-terminal-input'],
     cwd
@@ -122,6 +145,7 @@ export async function spawnChatProcess(
   executor: 'claude' | 'codex'
 ): Promise<SpawnProcessResult> {
   return spawnTimProcess(
+    describeTarget('plan', planId),
     planId,
     [
       'chat',
@@ -138,6 +162,7 @@ export async function spawnChatProcess(
 
 export async function spawnRebaseProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
   return spawnTimProcess(
+    describeTarget('plan', planId),
     planId,
     ['rebase', String(planId), '--auto-workspace', '--no-terminal-input'],
     cwd
@@ -146,6 +171,7 @@ export async function spawnRebaseProcess(planId: number, cwd: string): Promise<S
 
 export async function spawnPrFixProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
   return spawnTimProcess(
+    describeTarget('plan', planId),
     planId,
     ['pr', 'fix', String(planId), '--all', '--auto-workspace', '--no-terminal-input'],
     cwd
@@ -157,6 +183,7 @@ export async function spawnPrCreateProcess(
   cwd: string
 ): Promise<SpawnProcessResult> {
   return spawnTimProcess(
+    describeTarget('plan', planId),
     planId,
     ['pr', 'create', String(planId), '--auto-workspace', '--no-terminal-input'],
     cwd
@@ -168,6 +195,7 @@ export async function spawnUpdateDocsProcess(
   cwd: string
 ): Promise<SpawnProcessResult> {
   return spawnTimProcess(
+    describeTarget('plan', planId),
     planId,
     ['update-docs', String(planId), '--auto-workspace', '--no-terminal-input'],
     cwd
@@ -179,6 +207,7 @@ export async function spawnPrReviewGuideProcess(
   cwd: string
 ): Promise<SpawnProcessResult> {
   return spawnTimProcess(
+    describeTarget('pr', prNumber),
     prNumber,
     ['pr', 'review-guide', String(prNumber), '--auto-workspace'],
     cwd

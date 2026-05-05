@@ -59,6 +59,9 @@ describe('lib/server/plan_actions', () => {
     vi.mocked(fs.openSync).mockReturnValue(7);
     vi.mocked(fs.closeSync).mockImplementation(() => {});
     vi.mocked(fs.readFileSync).mockImplementation(() => '');
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -86,6 +89,15 @@ describe('lib/server/plan_actions', () => {
     expect(options.stderr).toEqual(expect.any(Number));
     expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 189 });
+    expect(vi.mocked(console.info)).toHaveBeenCalledWith(
+      '[web-ui] Starting tim generate 189 --auto-workspace --no-terminal-input for plan 189 in /tmp/primary-workspace'
+    );
+    expect(vi.mocked(console.info)).toHaveBeenCalledWith(
+      '[web-ui] Started tim generate 189 --auto-workspace --no-terminal-input for plan 189; waiting 500ms for early exit'
+    );
+    expect(vi.mocked(console.info)).toHaveBeenCalledWith(
+      '[web-ui] tim generate 189 --auto-workspace --no-terminal-input for plan 189 is running detached'
+    );
   });
 
   test('spawnGenerateProcess returns stderr when the process exits during the early-exit window', async () => {
@@ -136,6 +148,10 @@ describe('lib/server/plan_actions', () => {
       success: false,
       error: 'Failed to start tim generate: Error: spawn failed',
     });
+    expect(vi.mocked(console.error)).toHaveBeenCalledWith(
+      '[web-ui] Failed to start tim generate 191 --auto-workspace --no-terminal-input for plan 191',
+      expect.any(Error)
+    );
   });
 
   test('spawnAgentProcess starts tim agent in detached mode and unrefs it after the early-exit window', async () => {
