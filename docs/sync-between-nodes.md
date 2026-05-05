@@ -151,6 +151,68 @@ sync:
 
 With `offline: true`, local writes are still recorded as sync operations, but the persistent transport does not start. Remove or set `offline: false`, then run `tim sync run` or start the web UI to reconnect.
 
+## Changing the Main Node
+
+The safest way to switch the main node is to move the current main node's `tim` database to the new main machine, then update sync config. This preserves canonical state, sync history, peer cursors, and conflict records.
+
+Do not promote an existing persistent node by only changing its role unless you are intentionally resetting sync. Persistent nodes keep canonical snapshots, but they are not the authoritative source for the main node's full sync sequence history that other peers use for catch-up.
+
+1. Stop writes everywhere.
+
+   Stop the web UI on all machines and avoid `tim` commands that edit plans or project settings during the cutover.
+
+2. Flush each persistent node to the old main:
+
+   ```bash
+   tim sync run
+   tim sync status
+   ```
+
+   Continue only when each persistent node has no queued, sending, or failed retryable operations.
+
+3. Stop the old main web UI.
+
+4. Copy the old main database to the new main:
+
+   ```bash
+   rsync -a ~/.config/tim/tim.db* new-main:~/.config/tim/
+   ```
+
+   Include `tim.db-wal` and `tim.db-shm` if they exist. If all `tim` processes are stopped cleanly first, SQLite should already have checkpointed into `tim.db`, but copying all `tim.db*` files is the safer habit.
+
+5. Configure the new main in `~/.config/tim/config.yml`:
+
+   ```yaml
+   sync:
+     role: main
+     nodeId: new-main
+     serverHost: 0.0.0.0
+     serverPort: 8122
+     allowedNodes:
+       - nodeId: old-main
+         tokenEnv: TIM_SYNC_OLD_MAIN_TOKEN
+       - nodeId: work-laptop
+         tokenEnv: TIM_SYNC_WORK_LAPTOP_TOKEN
+   ```
+
+6. Update every persistent node to point at the new main:
+
+   ```yaml
+   sync:
+     role: persistent
+     nodeId: work-laptop
+     mainUrl: http://new-main-host:8122
+     nodeTokenEnv: TIM_SYNC_NODE_TOKEN
+   ```
+
+7. If the old main should become a peer, change its config to `role: persistent`, set `mainUrl` to the new main, and give it a token accepted by the new main's `allowedNodes`.
+
+8. Start the new main web UI, then start the persistent-node web UIs. Verify on each machine:
+
+   ```bash
+   tim sync status
+   ```
+
 ## Status and Conflicts
 
 On any node:
@@ -192,4 +254,3 @@ Check these first:
 - The main node is reachable at `sync.mainUrl`, including port and protocol.
 - If `serverHost` is not loopback, either terminate HTTPS in front of the sync server or knowingly set `requireSecureTransport: false` for trusted private transport.
 - The web UI is running on both machines for continuous sync, or `tim sync run` is being run manually on persistent nodes.
-
