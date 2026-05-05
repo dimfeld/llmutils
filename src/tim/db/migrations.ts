@@ -1,5 +1,7 @@
 import type { Database } from 'bun:sqlite';
+import { debugLog } from '../../logging.js';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
+import { isForeignKeyConstraintError, logForeignKeyCheck } from './sqlite_debug.js';
 
 interface Migration {
   version: number;
@@ -1070,9 +1072,10 @@ function sourceColumn(columns: ReadonlySet<string>, column: string, fallback: st
 }
 
 function backfillCanonicalTables(db: Database): void {
+  debugLog('[migrations] Starting canonical table backfill');
   if (tableExists(db, 'plan')) {
     const columns = tableColumns(db, 'plan');
-    db.run(`
+    runBackfillStatement(db, 'plan_canonical', `
       INSERT INTO plan_canonical (
         uuid, project_id, plan_id, title, goal, details, status, priority, branch,
         simple, tdd, discovered_from, issue, pull_request, assigned_to, base_branch,
@@ -1119,7 +1122,7 @@ function backfillCanonicalTables(db: Database): void {
 
   if (tableExists(db, 'plan_task')) {
     const columns = tableColumns(db, 'plan_task');
-    db.run(`
+    runBackfillStatement(db, 'task_canonical', `
       INSERT INTO task_canonical (
         id, plan_uuid, task_index, title, description, done, uuid, revision
       )
@@ -1138,7 +1141,7 @@ function backfillCanonicalTables(db: Database): void {
   }
 
   if (tableExists(db, 'plan_dependency')) {
-    db.run(`
+    runBackfillStatement(db, 'plan_dependency_canonical', `
       INSERT INTO plan_dependency_canonical (plan_uuid, depends_on_uuid)
       SELECT plan_uuid, depends_on_uuid
       FROM plan_dependency
@@ -1146,7 +1149,7 @@ function backfillCanonicalTables(db: Database): void {
   }
 
   if (tableExists(db, 'plan_tag')) {
-    db.run(`
+    runBackfillStatement(db, 'plan_tag_canonical', `
       INSERT INTO plan_tag_canonical (plan_uuid, tag)
       SELECT plan_uuid, tag
       FROM plan_tag
@@ -1155,7 +1158,7 @@ function backfillCanonicalTables(db: Database): void {
 
   if (tableExists(db, 'project_setting')) {
     const columns = tableColumns(db, 'project_setting');
-    db.run(`
+    runBackfillStatement(db, 'project_setting_canonical', `
       INSERT INTO project_setting_canonical (
         project_id, setting, value, revision, updated_at, updated_by_node
       )
@@ -1168,7 +1171,23 @@ function backfillCanonicalTables(db: Database): void {
         ${sourceColumn(columns, 'updated_by_node', 'NULL')}
       FROM project_setting
       WHERE project_id IS NOT NULL AND setting IS NOT NULL
-    `);
+      `);
+  }
+
+  debugLog('[migrations] Completed canonical table backfill');
+}
+
+function runBackfillStatement(db: Database, targetTable: string, sql: string): void {
+  try {
+    db.run(sql);
+  } catch (error) {
+    if (isForeignKeyConstraintError(error)) {
+      debugLog(`[migrations] Foreign key constraint failed while backfilling ${targetTable}:`, error);
+      logForeignKeyCheck(db, `[migrations] backfill ${targetTable}`);
+    } else {
+      debugLog(`[migrations] Failed while backfilling ${targetTable}:`, error);
+    }
+    throw error;
   }
 }
 

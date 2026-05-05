@@ -1,5 +1,7 @@
 import type { Database, Statement } from 'bun:sqlite';
+import { debugLog } from '../../logging.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
+import { isForeignKeyConstraintError, logForeignKeyCheck } from '../db/sqlite_debug.js';
 import { planKey, projectSettingKey } from './entity_keys.js';
 
 export interface BootstrapResult {
@@ -20,6 +22,7 @@ interface SettingBootstrapRow {
 }
 
 export function bootstrapSyncMetadata(db: Database): BootstrapResult {
+  debugLog('[sync/bootstrap] Starting sync metadata bootstrap');
   const runBootstrap = db.transaction((): BootstrapResult => {
     const bootstrapCompleted = (
       db
@@ -27,6 +30,7 @@ export function bootstrapSyncMetadata(db: Database): BootstrapResult {
         .get() as { bootstrap_completed?: number } | null
     )?.bootstrap_completed;
     if (bootstrapCompleted === 1) {
+      debugLog('[sync/bootstrap] Bootstrap already completed; skipping');
       return { plansSeeded: 0, settingsSeeded: 0 };
     }
 
@@ -61,6 +65,9 @@ export function bootstrapSyncMetadata(db: Database): BootstrapResult {
       settingsSeeded: bootstrapProjectSettings(db, insertSequence, existingTargetKeys),
     };
     db.prepare('UPDATE schema_version SET bootstrap_completed = 1').run();
+    debugLog(
+      `[sync/bootstrap] Completed bootstrap: plansSeeded=${result.plansSeeded}, settingsSeeded=${result.settingsSeeded}`
+    );
     return result;
   });
 
@@ -92,7 +99,12 @@ function bootstrapPlans(
     if (existingTargetKeys.has(targetKey)) {
       continue;
     }
-    const result = insertSequence.run(row.project_uuid, 'plan', targetKey, row.revision);
+    const result = runBootstrapInsert(insertSequence, db, 'plan', {
+      projectUuid: row.project_uuid,
+      planUuid: row.plan_uuid,
+      targetKey,
+      revision: row.revision,
+    });
     existingTargetKeys.add(targetKey);
     inserted += result.changes;
   }
@@ -124,9 +136,47 @@ function bootstrapProjectSettings(
     if (existingTargetKeys.has(targetKey)) {
       continue;
     }
-    const result = insertSequence.run(row.project_uuid, 'project_setting', targetKey, row.revision);
+    const result = runBootstrapInsert(insertSequence, db, 'project_setting', {
+      projectUuid: row.project_uuid,
+      setting: row.setting,
+      targetKey,
+      revision: row.revision,
+    });
     existingTargetKeys.add(targetKey);
     inserted += result.changes;
   }
   return inserted;
+}
+
+function runBootstrapInsert(
+  insertSequence: Statement,
+  db: Database,
+  targetType: 'plan' | 'project_setting',
+  context: Record<string, unknown>
+): { changes: number } {
+  try {
+    if (targetType === 'plan') {
+      const { projectUuid, targetKey, revision } = context as {
+        projectUuid: string;
+        targetKey: string;
+        revision: number | null;
+      };
+      return insertSequence.run(projectUuid, 'plan', targetKey, revision);
+    }
+
+    const { projectUuid, targetKey, revision } = context as {
+      projectUuid: string;
+      targetKey: string;
+      revision: number | null;
+    };
+    return insertSequence.run(projectUuid, 'project_setting', targetKey, revision);
+  } catch (error) {
+    if (isForeignKeyConstraintError(error)) {
+      debugLog(`[sync/bootstrap] Foreign key constraint failed while inserting ${targetType}`, context);
+      logForeignKeyCheck(db, `[sync/bootstrap] failing insert for ${targetType}`);
+    } else {
+      debugLog(`[sync/bootstrap] Failed while inserting ${targetType}`, context, error);
+    }
+    throw error;
+  }
 }
