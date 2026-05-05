@@ -22,6 +22,7 @@ import {
   addPlanTaskOperation,
   createPlanOperation,
   deletePlanOperation,
+  deleteProjectOperation,
   deleteProjectSettingOperation,
   markPlanTaskDoneOperation,
   patchPlanTextOperation,
@@ -464,6 +465,26 @@ describe('persistent-node sync queue', () => {
     ]);
     expect(getPlanByUuid(db, PLAN_UUID)?.details).toBe('alpha\nbeta updated\ngamma\n');
     expect(getProjectSettingWithMetadata(db, project.id, 'color')?.value).toBe('blue');
+  });
+
+  test('project.delete optimistic apply removes local project state while keeping queue row', async () => {
+    seedPlan();
+
+    const operation = enqueue(
+      await deleteProjectOperation(
+        { projectUuid: PROJECT_UUID },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+
+    expect(getProjectByUuid(db, PROJECT_UUID)).toBeNull();
+    expect(getPlanByUuid(db, PLAN_UUID)).toBeNull();
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM plan_canonical').get() as { count: number }
+    ).toEqual({ count: 0 });
+    expect(listPendingOperations(db).map((row) => row.operation_uuid)).toEqual([
+      operation.operationUuid,
+    ]);
   });
 
   test('plan enqueue rebuilds projection without mutating canonical rows', async () => {

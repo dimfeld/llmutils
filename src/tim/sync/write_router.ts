@@ -25,6 +25,7 @@ import {
   addPlanTaskOperation,
   createPlanOperation,
   deletePlanOperation,
+  deleteProjectOperation,
   deleteProjectSettingOperation,
   markPlanTaskDoneOperation,
   patchPlanTextOperation,
@@ -54,6 +55,7 @@ import type {
   SyncPlanCreatePayload,
   SyncPlanCreateTask,
   SyncPlanListName,
+  SyncProjectDeletePayload,
   SyncReviewIssueValue,
 } from './types.js';
 import { createBatchEnvelope } from './types.js';
@@ -564,6 +566,14 @@ export const addPlanSetParentToBatch = planSetParentRoutes.addToBatch;
 const planDeleteRoutes = defineProjectOperationRoutes(deletePlanOperation);
 export const writePlanDelete = planDeleteRoutes.write;
 export const addPlanDeleteToBatch = planDeleteRoutes.addToBatch;
+
+export async function writeProjectDelete(
+  db: Database,
+  config: TimConfig,
+  input: Omit<SyncProjectDeletePayload, 'type'>
+): Promise<SyncWriteResult> {
+  return routeSyncOperation(db, config, (options) => deleteProjectOperation(input, options));
+}
 
 export async function writePlanPromoteTask(
   db: Database,

@@ -76,6 +76,7 @@ The codebase is organized into several main modules with improved modularity and
 
 - Core functionality: `add.ts`, `agent.ts`, `branch.ts`, `chat.ts`, `finish.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`, `rebase.ts`, `show.ts`
 - Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `pr.ts`, `review_pr.ts`, `validate.ts`, `set.ts`
+- Sync operation changes: read `docs/sync-operations-guide.md` before adding or changing synced plan/project mutations. Commands must route synced state changes through `src/tim/sync/write_router.ts`, not direct SQL shortcuts.
 
 - Database layer: `db/` directory with SQLite-backed storage for assignments, workspaces, permissions, and project metadata
   - `database.ts`: Singleton connection with WAL mode, foreign keys, and auto-migration

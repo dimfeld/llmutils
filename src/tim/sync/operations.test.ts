@@ -7,6 +7,7 @@ import {
   addPlanTaskOperation,
   createPlanOperation,
   deletePlanOperation,
+  deleteProjectOperation,
   deleteProjectSettingOperation,
   markPlanTaskDoneOperation,
   patchPlanTextOperation,
@@ -111,18 +112,22 @@ describe('sync operation constructors', () => {
         { planUuid: PLAN_UUID, baseRevision: 4 },
         { originNodeId: 'override-node', localSequence: 13 }
       ),
+      await deleteProjectOperation(
+        { projectUuid: PROJECT_UUID },
+        { originNodeId: 'override-node', localSequence: 14 }
+      ),
       await setProjectSettingOperation(
         { projectUuid: PROJECT_UUID, setting: 'color', value: 'blue', baseRevision: 1 },
-        { originNodeId: 'override-node', localSequence: 14 }
+        { originNodeId: 'override-node', localSequence: 15 }
       ),
       await deleteProjectSettingOperation(
         { projectUuid: PROJECT_UUID, setting: 'color', baseRevision: 2 },
-        { originNodeId: 'override-node', localSequence: 15 }
+        { originNodeId: 'override-node', localSequence: 16 }
       ),
       await setPlanParentOperation(
         PROJECT_UUID,
         { planUuid: PLAN_UUID, newParentUuid: OTHER_PLAN_UUID },
-        { originNodeId: 'override-node', localSequence: 16 }
+        { originNodeId: 'override-node', localSequence: 17 }
       ),
       await promotePlanTaskOperation(
         PROJECT_UUID,
@@ -133,7 +138,7 @@ describe('sync operation constructors', () => {
           title: 'Promoted plan',
           description: 'From task',
         },
-        { originNodeId: 'override-node', localSequence: 17 }
+        { originNodeId: 'override-node', localSequence: 18 }
       ),
     ];
 
@@ -243,6 +248,13 @@ describe('sync operation constructors', () => {
     );
     expect(settingOp.targetType).toBe('project_setting');
     expect(settingOp.targetKey).toBe(`project_setting:${PROJECT_UUID}:color`);
+
+    const projectOp = await deleteProjectOperation(
+      { projectUuid: PROJECT_UUID },
+      { originNodeId: 'node-a', localSequence: 4 }
+    );
+    expect(projectOp.targetType).toBe('project');
+    expect(projectOp.targetKey).toBe(`project:${PROJECT_UUID}`);
   });
 
   test('set-like constructors do not dedupe values', async () => {

@@ -222,7 +222,9 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
     throw new Error('Sync server did not report a listening port');
   }
 
-  console.info(`[sync] Started main sync server (node=${options.mainNodeId}) on ${hostname}:${server.port}`);
+  console.info(
+    `[sync] Started main sync server (node=${options.mainNodeId}) on ${hostname}:${server.port}`
+  );
 
   return {
     port: server.port,
@@ -663,6 +665,9 @@ export function loadCatchUpInvalidations(
 }
 
 export function loadCanonicalSnapshot(db: Database, entityKey: string): CanonicalSnapshot | null {
+  if (entityKey.startsWith('project:')) {
+    return loadProjectSnapshot(db, entityKey.slice('project:'.length));
+  }
   if (entityKey.startsWith('plan:')) {
     return loadPlanSnapshot(db, entityKey.slice('plan:'.length));
   }
@@ -673,6 +678,34 @@ export function loadCanonicalSnapshot(db: Database, entityKey: string): Canonica
     return loadProjectSettingSnapshot(db, entityKey);
   }
   return null;
+}
+
+function loadProjectSnapshot(db: Database, projectUuid: string): CanonicalSnapshot | null {
+  const project = getProjectByUuid(db, projectUuid);
+  if (project) {
+    return null;
+  }
+  const entityKey = `project:${projectUuid}`;
+  const sequence = db
+    .prepare(
+      `
+        SELECT sequence, created_at
+        FROM sync_sequence
+        WHERE target_key = ?
+        ORDER BY sequence DESC
+        LIMIT 1
+      `
+    )
+    .get(entityKey) as { sequence: number; created_at: string } | null;
+  if (!sequence) {
+    return null;
+  }
+  return {
+    type: 'project_deleted',
+    projectUuid,
+    deletedAt: sequence.created_at,
+    deletedBySequenceId: sequence.sequence,
+  };
 }
 
 function loadPlanSnapshot(db: Database, planUuid: string): CanonicalSnapshot | null {

@@ -1020,6 +1020,28 @@ assignmentsCommand
     await handleAssignmentsShowConflictsCommand(options, command).catch(handleCommandError);
   });
 
+const projectCommand = program.command('project').description('Manage known projects');
+
+projectCommand
+  .command('list')
+  .description('List all known projects')
+  .option('--format <format>', 'Output format: table (default), tsv, json', 'table')
+  .option('--no-header', 'Omit header row (for tsv/table formats)')
+  .action(async (options) => {
+    const { handleProjectListCommand } = await import('./commands/project.js');
+    await handleProjectListCommand(options).catch(handleCommandError);
+  });
+
+projectCommand
+  .command('delete <project>')
+  .alias('rm')
+  .description('Delete a project and all related data')
+  .option('--yes', 'Skip the confirmation prompt')
+  .action(async (projectRef, options, command) => {
+    const { handleProjectDeleteCommand } = await import('./commands/project.js');
+    await handleProjectDeleteCommand(projectRef, options, command).catch(handleCommandError);
+  });
+
 program
   .command('renumber')
   .description('Renumber plans with alphanumeric IDs or ID conflicts to sequential numeric IDs')

@@ -9,6 +9,7 @@ import {
 } from '../db/project_settings.js';
 import { recordSyncTombstone } from './conflicts.js';
 import { planKey, taskKey } from './entity_keys.js';
+import { deleteProjectStateInTransaction } from './project_delete.js';
 import {
   rebuildPlanProjectionAndInboundOwnersInTransaction,
   refreshMaterializedPlansForProjectionRebuilds,
@@ -67,6 +68,13 @@ export interface CanonicalDeletedPlanSnapshot {
   deletedBySequenceId?: number;
 }
 
+export interface CanonicalDeletedProjectSnapshot {
+  type: 'project_deleted';
+  projectUuid: string;
+  deletedAt: string;
+  deletedBySequenceId?: number;
+}
+
 export type CanonicalNeverExistedSnapshot =
   | {
       type: 'never_existed';
@@ -102,6 +110,7 @@ export type CanonicalProjectSettingSnapshot =
 export type CanonicalSnapshot =
   | CanonicalPlanSnapshot
   | CanonicalDeletedPlanSnapshot
+  | CanonicalDeletedProjectSnapshot
   | CanonicalNeverExistedSnapshot
   | CanonicalProjectSettingSnapshot;
 
@@ -157,6 +166,13 @@ const CanonicalDeletedPlanSnapshotSchema = z.object({
   deletedBySequenceId: z.number().int().nonnegative().optional(),
 }) satisfies z.ZodType<CanonicalDeletedPlanSnapshot>;
 
+const CanonicalDeletedProjectSnapshotSchema = z.object({
+  type: z.literal('project_deleted'),
+  projectUuid: z.string(),
+  deletedAt: z.string(),
+  deletedBySequenceId: z.number().int().nonnegative().optional(),
+}) satisfies z.ZodType<CanonicalDeletedProjectSnapshot>;
+
 const CanonicalNeverExistedSnapshotSchema = z.union([
   z.object({
     type: z.literal('never_existed'),
@@ -198,6 +214,7 @@ const CanonicalProjectSettingSnapshotSchema = z.union([
 export const CanonicalSnapshotSchema = z.union([
   CanonicalPlanSnapshotSchema,
   CanonicalDeletedPlanSnapshotSchema,
+  CanonicalDeletedProjectSnapshotSchema,
   CanonicalNeverExistedSnapshotSchema,
   CanonicalProjectSettingSnapshotSchema,
 ]) satisfies z.ZodType<CanonicalSnapshot>;
@@ -238,6 +255,20 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
       removeAssignment(db, project.id, snapshot.planUuid);
     }
     return rebuildPlanProjectionAndInboundOwnersInTransaction(db, snapshot.planUuid);
+  }
+
+  if (snapshot.type === 'project_deleted') {
+    const project = getProjectByUuid(db, snapshot.projectUuid);
+    if (!project) {
+      return [];
+    }
+    const planUuids = (
+      db.prepare('SELECT uuid FROM plan WHERE project_id = ?').all(project.id) as Array<{
+        uuid: string;
+      }>
+    ).map((row) => row.uuid);
+    deleteProjectStateInTransaction(db, project);
+    return planUuids;
   }
 
   if (snapshot.type === 'project_setting') {

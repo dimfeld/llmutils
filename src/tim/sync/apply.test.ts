@@ -30,6 +30,7 @@ import {
   addPlanTaskOperation,
   createPlanOperation,
   deletePlanOperation,
+  deleteProjectOperation,
   deleteProjectSettingOperation,
   markPlanTaskDoneOperation,
   patchPlanTextOperation,
@@ -107,6 +108,41 @@ describe('apply helpers', () => {
       title: 'Updated',
       revision: 8,
       updated_at: '2026-01-02T00:00:00.000Z',
+    });
+  });
+});
+
+describe('project.delete', () => {
+  test('applies through the sync engine and removes project-owned state', async () => {
+    seedPlan();
+    await applyOperation(
+      db,
+      await setProjectSettingOperation(
+        { projectUuid: PROJECT_UUID, setting: 'color', value: 'blue' },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    const operation = await deleteProjectOperation(
+      { projectUuid: PROJECT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    const result = applyOperation(db, operation);
+
+    expect(result.status).toBe('applied');
+    expect(result.invalidations).toEqual([`project:${PROJECT_UUID}`]);
+    expect(countRows('project')).toBe(0);
+    expect(countRows('plan')).toBe(0);
+    expect(countRows('plan_canonical')).toBe(0);
+    expect(countRows('plan_task')).toBe(0);
+    expect(countRows('task_canonical')).toBe(0);
+    expect(countRows('project_setting')).toBe(0);
+    expect(countRows('project_setting_canonical')).toBe(0);
+    expect(countRows('sync_operation')).toBe(2);
+    expect(sequenceTargets()).toContain(`project:${PROJECT_UUID}`);
+    expect(loadCanonicalSnapshot(db, `project:${PROJECT_UUID}`)).toMatchObject({
+      type: 'project_deleted',
+      projectUuid: PROJECT_UUID,
     });
   });
 });

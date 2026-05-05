@@ -14,4 +14,13 @@ describe('assignment command registration in tim.ts', () => {
     expect(source).toContain("assignmentsCommand\n  .command('claim <planId>')");
     expect(source).toContain("assignmentsCommand\n  .command('release <planId>')");
   });
+
+  test('registers project list and delete subcommands', async () => {
+    const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
+    const source = await fs.readFile(sourceFile, 'utf8');
+
+    expect(source).toContain("const projectCommand = program.command('project')");
+    expect(source).toContain("projectCommand\n  .command('list')");
+    expect(source).toContain("projectCommand\n  .command('delete <project>')");
+  });
 });

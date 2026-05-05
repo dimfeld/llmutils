@@ -334,6 +334,12 @@ export const SyncProjectSettingDeletePayloadSchema = z.object({
 });
 export type SyncProjectSettingDeletePayload = z.infer<typeof SyncProjectSettingDeletePayloadSchema>;
 
+export const SyncProjectDeletePayloadSchema = z.object({
+  type: z.literal('project.delete'),
+  projectUuid: SyncUuidSchema,
+});
+export type SyncProjectDeletePayload = z.infer<typeof SyncProjectDeletePayloadSchema>;
+
 export const SyncPlanSetParentPayloadSchema = z.object({
   type: z.literal('plan.set_parent'),
   planUuid: SyncUuidSchema,
@@ -374,6 +380,7 @@ export const SyncOperationPayloadSchema = z.discriminatedUnion('type', [
   SyncPlanAddListItemPayloadSchema,
   SyncPlanRemoveListItemPayloadSchema,
   SyncPlanDeletePayloadSchema,
+  SyncProjectDeletePayloadSchema,
   SyncProjectSettingSetPayloadSchema,
   SyncProjectSettingDeletePayloadSchema,
   SyncPlanSetParentPayloadSchema,
@@ -431,14 +438,15 @@ export const SyncOperationEnvelopeSchema = z
       });
     }
     if (
-      (envelope.op.type === 'project_setting.set' ||
+      (envelope.op.type === 'project.delete' ||
+        envelope.op.type === 'project_setting.set' ||
         envelope.op.type === 'project_setting.delete') &&
       envelope.projectUuid !== envelope.op.projectUuid
     ) {
       ctx.addIssue({
         code: 'custom',
         path: ['projectUuid'],
-        message: 'envelope projectUuid must match project setting operation projectUuid',
+        message: 'envelope projectUuid must match operation projectUuid',
       });
     }
   });
@@ -510,6 +518,7 @@ export const SyncOperationTypeSchema = z.enum([
   'plan.add_list_item',
   'plan.remove_list_item',
   'plan.delete',
+  'project.delete',
   'project_setting.set',
   'project_setting.delete',
   'plan.set_parent',
@@ -519,6 +528,11 @@ export type SyncOperationType = SyncOperationPayload['type'];
 
 export function deriveTargetKey(op: SyncOperationPayload): SyncOperationTarget {
   switch (op.type) {
+    case 'project.delete':
+      return {
+        targetType: 'project',
+        targetKey: projectKey(op.projectUuid),
+      };
     case 'project_setting.set':
     case 'project_setting.delete':
       return {
@@ -556,11 +570,15 @@ export function deriveTargetKey(op: SyncOperationPayload): SyncOperationTarget {
  * envelope-level projectUuid as their canonical project identity.
  */
 export function deriveProjectUuid(op: SyncOperationPayload): string {
-  if (op.type === 'project_setting.set' || op.type === 'project_setting.delete') {
+  if (
+    op.type === 'project.delete' ||
+    op.type === 'project_setting.set' ||
+    op.type === 'project_setting.delete'
+  ) {
     return op.projectUuid;
   }
   throw new Error(
-    `deriveProjectUuid only supports project_setting.* operations; use envelope.projectUuid for ${op.type}`
+    `deriveProjectUuid only supports project/project_setting operations; use envelope.projectUuid for ${op.type}`
   );
 }
 

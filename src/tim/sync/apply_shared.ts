@@ -259,6 +259,8 @@ export function getTask(db: Database, taskUuid: string): PlanTaskRow | null {
 
 export function targetExists(db: Database, op: SyncOperationPayload): boolean {
   switch (op.type) {
+    case 'project.delete':
+      return true;
     case 'project_setting.set':
     case 'project_setting.delete':
       return true;

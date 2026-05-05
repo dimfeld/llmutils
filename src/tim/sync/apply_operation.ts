@@ -6,6 +6,7 @@ import {
   writeCanonicalProjectSettingRow,
   writeProjectionProjectSettingRow,
 } from '../db/project_settings.js';
+import type { Project } from '../db/project.js';
 import { SyncFifoGapError, SyncValidationError } from './errors.js';
 import { createSyncConflict } from './conflicts.js';
 import {
@@ -42,6 +43,7 @@ import {
   type ProjectRow,
   validationError,
 } from './apply_shared.js';
+import { deleteProjectStateInTransaction } from './project_delete.js';
 
 const ASSIGNMENT_CLEANUP_STATUSES = new Set(['done', 'needs_review', 'cancelled']);
 
@@ -50,7 +52,7 @@ export function applyOperation(
   envelopeInput: SyncOperationEnvelope,
   options: ApplyOperationOptions = {}
 ): ApplyOperationResult {
-  // Synced ops are limited to tim-owned plan/project-setting state. PR caches,
+  // Synced ops are limited to tim-owned project/plan/project-setting state. PR caches,
   // webhooks, sessions, workspaces, locks, launch locks, assignments, materialized
   // shadow metadata, and git/source history are excluded; touching them here is a bug.
   const originalPayload = JSON.stringify((envelopeInput as { op: unknown }).op);
@@ -121,9 +123,18 @@ export function applyOperationInTransaction(
   }
 
   const project = db
-    .prepare('SELECT id, uuid FROM project WHERE uuid = ?')
-    .get(nextEnvelope.projectUuid) as ProjectRow | null;
+    .prepare('SELECT * FROM project WHERE uuid = ?')
+    .get(nextEnvelope.projectUuid) as Project | null;
   if (!project) {
+    if (nextEnvelope.op.type === 'project.delete') {
+      markOperationApplied(db, nextEnvelope.operationUuid, [], []);
+      return {
+        status: 'applied',
+        sequenceIds: [],
+        invalidations: [],
+        acknowledged: true,
+      };
+    }
     const error = validationError(nextEnvelope, `Unknown project ${nextEnvelope.projectUuid}`);
     rejectOperation(db, nextEnvelope.operationUuid, error.message);
     return rejectedResult(error);
@@ -295,7 +306,7 @@ function checkFifo(db: Database, envelope: SyncOperationEnvelope): SyncFifoGapEr
 
 function applyPayload(
   db: Database,
-  project: ProjectRow,
+  project: Project,
   envelope: SyncOperationEnvelope,
   originalPayload: string,
   normalizedPayload: string,
@@ -327,6 +338,8 @@ function applyPayload(
         normalizedPayload,
         options
       );
+    case 'project.delete':
+      return applyProjectDelete(db, project, { ...envelope, op });
     case 'project_setting.set':
     case 'project_setting.delete':
       return applyProjectSetting(
@@ -341,6 +354,17 @@ function applyPayload(
       return exhaustive;
     }
   }
+}
+
+function applyProjectDelete(
+  db: Database,
+  project: Project,
+  envelope: SyncOperationEnvelope & {
+    op: Extract<SyncOperationPayload, { type: 'project.delete' }>;
+  }
+): Mutation[] {
+  deleteProjectStateInTransaction(db, project);
+  return [{ targetType: envelope.targetType, targetKey: envelope.targetKey, revision: null }];
 }
 
 function applyCanonicalPlanPayload(

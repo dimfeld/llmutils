@@ -13,6 +13,7 @@ import {
   addPlanTaskOperation,
   createPlanOperation,
   deletePlanOperation,
+  deleteProjectOperation,
   deleteProjectSettingOperation,
   markPlanTaskDoneOperation,
   patchPlanTextOperation,
@@ -137,10 +138,12 @@ describe('sync operation exclusions', () => {
     }
   });
 
-  test('operation types are limited to plan and project setting prefixes', () => {
+  test('operation types are limited to project, plan, and project setting prefixes', () => {
     for (const operationType of SyncOperationTypeSchema.options) {
       expect(
-        operationType.startsWith('plan.') || operationType.startsWith('project_setting.')
+        operationType.startsWith('project.') ||
+          operationType.startsWith('plan.') ||
+          operationType.startsWith('project_setting.')
       ).toBe(true);
       for (const excludedName of excludedNames) {
         expect(operationType).not.toContain(excludedName);
@@ -214,6 +217,7 @@ describe('sync operation exclusions', () => {
         options
       ),
       await deletePlanOperation(PROJECT_UUID, { planUuid: PLAN_UUID }, options),
+      await deleteProjectOperation({ projectUuid: PROJECT_UUID }, options),
       await setPlanParentOperation(
         PROJECT_UUID,
         { planUuid: PLAN_UUID, newParentUuid: OTHER_PLAN_UUID },

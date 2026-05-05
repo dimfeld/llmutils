@@ -11,7 +11,7 @@ import {
   type SyncOperationEnvelope,
 } from './types.js';
 import { SyncValidationError } from './errors.js';
-import { planKey, projectSettingKey, taskKey } from './entity_keys.js';
+import { planKey, projectKey, projectSettingKey, taskKey } from './entity_keys.js';
 import { addPlanTagOperation } from './operations.js';
 
 const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
@@ -440,6 +440,15 @@ describe('sync operation schemas', () => {
     const target = deriveTargetKey(settingOp);
     expect(target.targetType).toBe('project_setting');
     expect(target.targetKey).toBe(projectSettingKey(PROJECT_UUID, 'color'));
+  });
+
+  test('deriveTargetKey returns project key for project delete operations', () => {
+    const target = deriveTargetKey({
+      type: 'project.delete',
+      projectUuid: PROJECT_UUID,
+    });
+    expect(target.targetType).toBe('project');
+    expect(target.targetKey).toBe(projectKey(PROJECT_UUID));
   });
 
   test('deriveTargetKey uses newPlanUuid as target for plan.promote_task', () => {

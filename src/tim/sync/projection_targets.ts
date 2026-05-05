@@ -1,10 +1,16 @@
 import type { Database } from 'bun:sqlite';
 import { refreshExistingPrimaryMaterializedPlans } from '../materialized_projection_refresh.js';
-import { getProjectionPlanRefUuids, isProjectSettingOperation } from './operation_metadata.js';
+import { getProjectByUuid } from '../db/project.js';
+import {
+  getProjectionPlanRefUuids,
+  isProjectOperation,
+  isProjectSettingOperation,
+} from './operation_metadata.js';
 import {
   rebuildPlanProjectionInTransaction,
   rebuildProjectSettingProjectionForPayload,
 } from './projection.js';
+import { deleteProjectStateInTransaction } from './project_delete.js';
 import { assertValidPayload, type SyncOperationPayload } from './types.js';
 
 export type ProjectSettingPayload = Extract<
@@ -15,6 +21,7 @@ export type ProjectSettingPayload = Extract<
 export interface ProjectionRebuildTargets {
   planUuids: Set<string>;
   projectSettings: Map<string, ProjectSettingPayload>;
+  projectUuids: Set<string>;
 }
 
 export interface ProjectionOperationRow {
@@ -27,6 +34,7 @@ export function createProjectionRebuildTargets(): ProjectionRebuildTargets {
   return {
     planUuids: new Set<string>(),
     projectSettings: new Map<string, ProjectSettingPayload>(),
+    projectUuids: new Set<string>(),
   };
 }
 
@@ -37,6 +45,10 @@ export function collectProjectionTargetsForPayload(
 ): void {
   if (isProjectSettingOperation(payload)) {
     targets.projectSettings.set(`${payload.projectUuid}:${payload.setting}`, payload);
+    return;
+  }
+  if (isProjectOperation(payload)) {
+    targets.projectUuids.add(payload.projectUuid);
     return;
   }
   for (const planUuid of getAffectedProjectionPlanUuids(db, payload)) {
@@ -57,6 +69,12 @@ export function rebuildProjectionTargetsInTransaction(
   db: Database,
   targets: ProjectionRebuildTargets
 ): string[] {
+  for (const projectUuid of targets.projectUuids) {
+    const project = getProjectByUuid(db, projectUuid);
+    if (project) {
+      deleteProjectStateInTransaction(db, project);
+    }
+  }
   const requestedPlanRebuilds = [...targets.planUuids];
   for (const planUuid of requestedPlanRebuilds) {
     for (const affectedPlanUuid of rebuildPlanProjectionAndInboundOwnersInTransaction(
@@ -86,7 +104,7 @@ export function getAffectedProjectionPlanUuids(
   db: Database,
   payload: SyncOperationPayload
 ): string[] {
-  if (isProjectSettingOperation(payload)) {
+  if (isProjectOperation(payload) || isProjectSettingOperation(payload)) {
     return [];
   }
   const affected = new Set(getProjectionPlanRefUuids(payload));

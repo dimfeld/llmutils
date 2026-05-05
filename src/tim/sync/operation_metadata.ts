@@ -21,7 +21,7 @@ export interface SyncOperationPayloadIndexes {
 }
 
 type SyncOperationType = SyncOperationPayload['type'];
-type SyncOperationEntity = 'plan' | 'project_setting';
+type SyncOperationEntity = 'project' | 'plan' | 'project_setting';
 type BaseRevisionTargetKind = 'plan' | 'task' | 'source_plan' | null;
 
 export const SYNC_OPERATION_METADATA = {
@@ -41,6 +41,7 @@ export const SYNC_OPERATION_METADATA = {
   'plan.delete': { entity: 'plan', baseRevisionTarget: 'plan' },
   'plan.set_parent': { entity: 'plan', baseRevisionTarget: 'plan' },
   'plan.promote_task': { entity: 'plan', baseRevisionTarget: 'source_plan' },
+  'project.delete': { entity: 'project', baseRevisionTarget: null },
   'project_setting.set': { entity: 'project_setting', baseRevisionTarget: null },
   'project_setting.delete': { entity: 'project_setting', baseRevisionTarget: null },
 } as const satisfies Record<
@@ -74,13 +75,22 @@ export function isProjectSettingOperation(
   return SYNC_OPERATION_METADATA[payload.type].entity === 'project_setting';
 }
 
+export function isProjectOperation(
+  payload: SyncOperationPayload
+): payload is Extract<SyncOperationPayload, { type: 'project.delete' }> {
+  return SYNC_OPERATION_METADATA[payload.type].entity === 'project';
+}
+
 export function isPlanOperation(
   payload: SyncOperationPayload
 ): payload is Exclude<
   SyncOperationPayload,
-  Extract<SyncOperationPayload, { type: 'project_setting.set' | 'project_setting.delete' }>
+  Extract<
+    SyncOperationPayload,
+    { type: 'project.delete' | 'project_setting.set' | 'project_setting.delete' }
+  >
 > {
-  return !isProjectSettingOperation(payload);
+  return !isProjectOperation(payload) && !isProjectSettingOperation(payload);
 }
 
 export function getSyncOperationPayloadIndexes(
@@ -105,6 +115,8 @@ export function getSyncOperationPlanRefs(
   };
 
   switch (parsed.type) {
+    case 'project.delete':
+      break;
     case 'plan.create':
       addRef(parsed.planUuid, 'target');
       addRef(parsed.parentUuid, 'parent');
