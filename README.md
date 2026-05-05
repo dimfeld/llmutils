@@ -322,5 +322,6 @@ Use a unique prefix per developer to prevent accidental PR-to-plan matching from
 - [`docs/import_command.md`](docs/import_command.md) - CLI and web issue import behavior
 - [`docs/linear-integration.md`](docs/linear-integration.md) - Linear setup and supported issue formats
 - [`docs/multi-workspace-workflow.md`](docs/multi-workspace-workflow.md) - workspace assignment, locking, and sync behavior
+- [`docs/sync-between-nodes.md`](docs/sync-between-nodes.md) - setup guide for syncing plans between machines
 - [`docs/web-interface.md`](docs/web-interface.md) - web architecture and UI workflow details
 - [`docs/database.md`](docs/database.md) - SQLite-backed plan storage and materialization
