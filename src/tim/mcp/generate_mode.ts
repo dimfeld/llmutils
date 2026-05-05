@@ -234,6 +234,7 @@ If you determine that the scope of this plan is large enough that it would benef
 2. Different aspects of the work could be worked on in parallel by different agents
 3. The plan has distinct areas of functionality that have minimal interdependencies
 4. Breaking it down would reduce cognitive load and make each plan more focused
+5. You estimate the changes will span more than a few thousand lines of code. Reviewability is important.
 
 When creating multiple plans:
 - Use 'tim add' to create each new plan with appropriate title, goal, details, and priority (see the using-tim skill)
@@ -244,7 +245,7 @@ When creating multiple plans:
 - Each plan should be independently implementable and testable
 - Each plan should deliver real, demonstrable functionality that works end-to-end
 
-IMPORTANT: Do NOT split plans by architectural layers (frontend/backend, UI/API, client/server). Each plan should deliver a complete, working feature that spans all necessary layers. Split by feature areas or functional domains instead, ensuring each plan produces real, testable value.
+If you think splitting is a good idea, make a suggestion and confer with the user on how to do it. The user may prefer to split vertically by functional areas, or horizonstally (e.g. backend vs. frontend), or both.
 
 Only create multiple plans if it genuinely improves the project organization. For smaller or tightly coupled features, a single plan is preferred.`
     : '';
