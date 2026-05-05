@@ -30,6 +30,7 @@ import {
   generatePlanFileContent,
   readPlanFile,
   stripPlanRevisionMetadataFromContent,
+  writePlanToDb,
   writePlanFile,
 } from './plans.js';
 import { handleCleanupMaterializedCommand } from './commands/cleanup-materialized.js';
@@ -552,7 +553,7 @@ Details
     const saved = getPlanByPlanId(db, project.id, 3);
     expect(saved?.title).toBe('Primary plan edited on disk');
     expect(saved?.details).toBe('Primary details updated from file');
-    expect(saved?.temp).toBe(0);
+    expect(saved?.temp).toBeNull();
     expect(saved?.docs).toBe('["docs/primary.md","docs/edited.md"]');
     expect(saved?.changed_files).toBe(
       '["src/tim/plan_materialize.ts","src/tim/plan_materialize.test.ts"]'
@@ -596,9 +597,9 @@ Details
       ],
       tags: ['materialize', 'verified'],
       dependencies: [1, 2],
-      temp: false,
       materializedAs: 'primary',
     });
+    expect(rematerializedPlan.temp).toBeUndefined();
     await expectShadowMatchesFile(getShadowPlanPath(repoDir, 3), planPath);
   });
 
@@ -1939,15 +1940,15 @@ Details
       status: 'done',
       priority: 'medium',
       branch: 'feature/round-trip',
-      simple: 0,
-      tdd: 0,
+      simple: null,
+      tdd: null,
       discovered_from: 101,
       issue:
         '["https://github.com/example/repo/issues/3","https://github.com/example/repo/issues/7"]',
       pull_request: '["https://github.com/example/repo/pull/31"]',
       assigned_to: 'qa-agent',
       base_branch: 'develop',
-      temp: 0,
+      temp: null,
       docs: '["docs/primary.md","docs/round-trip.md"]',
       changed_files:
         '["src/tim/plan_materialize.ts","src/tim/plan_materialize.test.ts","src/tim/commands/materialize.ts"]',
@@ -2007,7 +2008,6 @@ Details
       discoveredFrom: 101,
       assignedTo: 'qa-agent',
       baseBranch: 'develop',
-      temp: false,
       docs: ['docs/primary.md', 'docs/round-trip.md'],
       changedFiles: [
         'src/tim/plan_materialize.ts',
@@ -2038,6 +2038,7 @@ Details
     });
     expect(rematerializedPlan.simple).toBeUndefined();
     expect(rematerializedPlan.tdd).toBeUndefined();
+    expect(rematerializedPlan.temp).toBeUndefined();
     expect(
       rematerializedPlan.tasks.map((task) => ({
         title: task.title,
@@ -2048,6 +2049,41 @@ Details
       { title: 'rewrite', description: 'exercise every field', done: true },
       { title: 'verify', description: 'read back from DB and disk', done: false },
     ]);
+  });
+
+  test('sync-routed plan writes preserve nullable boolean clears from false to null', async () => {
+    const { db, project } = await seedProject();
+    upsertPlan(db, project.id, {
+      uuid: '33333333-3333-4333-8333-333333333333',
+      planId: 3,
+      title: 'Primary plan',
+      goal: 'Primary goal',
+      details: 'Primary details',
+      status: 'in_progress',
+      simple: false,
+      tdd: false,
+      temp: false,
+      forceOverwrite: true,
+    });
+
+    await writePlanToDb(
+      {
+        id: 3,
+        title: 'Primary plan',
+        goal: 'Primary goal',
+        details: 'Primary details',
+        status: 'in_progress',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir, skipUpdatedAt: true }
+    );
+
+    const saved = getPlanByPlanId(db, project.id, 3);
+    expect(saved).toMatchObject({
+      simple: null,
+      tdd: null,
+      temp: null,
+    });
   });
 
   test('materialized sync rejects unknown discoveredFrom references', async () => {

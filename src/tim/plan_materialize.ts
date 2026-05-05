@@ -402,6 +402,10 @@ function normalizeEditableValueForDiff(
   });
 }
 
+function nullablePlanBoolean(value: boolean | undefined): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
 export function mergePlanWithShadow(
   dbPlan: PlanSchema,
   shadowPlan: PlanSchema | null,
@@ -649,11 +653,11 @@ async function routeMaterializedPlanChanges(
     ['priority', toNullable(filePlan.priority), toNullable(shadowPlan.priority)],
     ['epic', filePlan.epic === true, shadowPlan.epic === true],
     ['branch', toNullable(filePlan.branch), toNullable(shadowPlan.branch)],
-    ['simple', filePlan.simple === true, shadowPlan.simple === true],
-    ['tdd', filePlan.tdd === true, shadowPlan.tdd === true],
+    ['simple', nullablePlanBoolean(filePlan.simple), nullablePlanBoolean(shadowPlan.simple)],
+    ['tdd', nullablePlanBoolean(filePlan.tdd), nullablePlanBoolean(shadowPlan.tdd)],
     ['assigned_to', toNullable(filePlan.assignedTo), toNullable(shadowPlan.assignedTo)],
     ['base_branch', toNullable(filePlan.baseBranch), toNullable(shadowPlan.baseBranch)],
-    ['temp', filePlan.temp === true, shadowPlan.temp === true],
+    ['temp', nullablePlanBoolean(filePlan.temp), nullablePlanBoolean(shadowPlan.temp)],
     [
       'plan_generated_at',
       toNullable(filePlan.planGeneratedAt),

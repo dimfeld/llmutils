@@ -714,6 +714,10 @@ function countListItems<T>(items: T[]): Map<string, number> {
   return counts;
 }
 
+function nullableDbBoolean(value: number | null): boolean | null {
+  return value === null ? null : value === 1;
+}
+
 export type PlanWritePostCommitUpdate = {
   kind: 'baseTracking';
   planUuid: string;
@@ -828,8 +832,8 @@ export function routePlanWriteIntoBatch(
       ['priority', current.priority ?? null, upsertInput.priority ?? null],
       ['epic', current.epic === true, upsertInput.epic],
       ['branch', current.branch ?? null, upsertInput.branch ?? null],
-      ['simple', current.simple === true, upsertInput.simple === true],
-      ['tdd', current.tdd === true, upsertInput.tdd === true],
+      ['simple', nullableDbBoolean(existingRow.simple), upsertInput.simple ?? null],
+      ['tdd', nullableDbBoolean(existingRow.tdd), upsertInput.tdd ?? null],
       [
         'discovered_from',
         typeof current.discoveredFrom === 'number'
@@ -839,7 +843,7 @@ export function routePlanWriteIntoBatch(
       ],
       ['assigned_to', current.assignedTo ?? null, upsertInput.assignedTo ?? null],
       ['base_branch', current.baseBranch ?? null, upsertInput.baseBranch ?? null],
-      ['temp', current.temp === true, upsertInput.temp === true],
+      ['temp', nullableDbBoolean(existingRow.temp), upsertInput.temp ?? null],
       ['plan_generated_at', current.planGeneratedAt ?? null, upsertInput.planGeneratedAt ?? null],
       ['docs_updated_at', current.docsUpdatedAt ?? null, upsertInput.sourceDocsUpdatedAt ?? null],
       [
