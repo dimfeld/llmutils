@@ -26,6 +26,11 @@
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
     },
+    "revision": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
     "simple": {
       "type": "boolean"
     },
@@ -65,7 +70,6 @@
     },
     "temp": {
       "description": "A temporary plan that should be deleted after completion",
-      "default": false,
       "type": "boolean"
     },
     "dependencies": {
@@ -166,6 +170,11 @@
       "items": {
         "type": "object",
         "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+          },
           "title": {
             "type": "string"
           },
@@ -175,6 +184,11 @@
           },
           "description": {
             "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
           }
         },
         "required": [
