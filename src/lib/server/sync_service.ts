@@ -67,7 +67,7 @@ export async function startSyncService(
           db,
           retentionMaxAgeMs: resolved.sequenceRetentionDays * 24 * 60 * 60 * 1000,
         });
-        if (resolved.serverPort === undefined || resolved.serverPort === 0) {
+        if (resolved.serverPort === 0) {
           console.warn(
             '[sync] WARNING: main sync server bound to ephemeral port; persistent peers cannot use a stable mainUrl'
           );

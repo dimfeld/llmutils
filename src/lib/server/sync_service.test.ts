@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { TimConfig } from '$tim/configSchema.js';
 import { runMigrations } from '$tim/db/migrations.js';
 import { createSyncRunner, startSyncSequenceRetentionRunner } from '$tim/sync/runner.js';
+import { DEFAULT_SYNC_SERVER_PORT } from '$tim/sync/server.js';
 
 import { startSyncService, type SyncServiceHandle } from './sync_service.js';
 
@@ -91,7 +92,7 @@ describe('sync service lifecycle', () => {
     expect(handle!.role).toBe('main');
     expect(handle).toMatchObject({ hostname: '127.0.0.1' });
     const port = handle!.role === 'main' ? handle!.port : 0;
-    expect(port).toBeGreaterThan(0);
+    expect(port).toBe(DEFAULT_SYNC_SERVER_PORT);
 
     await expect(fetch(`http://127.0.0.1:${port}/healthz`)).resolves.toMatchObject({
       ok: true,

@@ -30,6 +30,7 @@ import {
 const WS_PATH = '/sync/ws';
 const HELLO_TIMEOUT_MS = 10_000;
 export const SYNC_MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
+export const DEFAULT_SYNC_SERVER_PORT = 8122;
 
 export interface StartSyncServerOptions {
   db: Database;
@@ -61,7 +62,7 @@ interface SyncWebSocketData {
 type BunServerWebSocket = import('bun').ServerWebSocket<SyncWebSocketData>;
 
 export function startSyncServer(options: StartSyncServerOptions): SyncServerHandle {
-  const port = options.port ?? 0;
+  const port = options.port ?? DEFAULT_SYNC_SERVER_PORT;
   const hostname = options.hostname ?? '127.0.0.1';
   const sockets = new Map<string, BunServerWebSocket>();
   const connections = new Map<string, SyncServerConnection>();
