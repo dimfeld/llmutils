@@ -6,9 +6,8 @@ import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
-import { syncPlanToDb } from '../db/plan_sync.js';
 import { buildDescriptionFromPlan, getCombinedTitleFromSummary } from '../display_utils.js';
-import { resolvePlanByNumericId } from '../plans.js';
+import { resolvePlanByNumericId, writePlanToDb } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
@@ -342,12 +341,10 @@ export async function handleChatCommand(
         });
 
         if (currentPlanFile) {
-          // force:true is correct here: the executor just wrote this file and it is authoritative
           const updatedPlan = await readPlanFile(currentPlanFile);
-          await syncPlanToDb(updatedPlan, {
+          await writePlanToDb(updatedPlan, {
             cwdForIdentity: currentBaseDir,
-            force: true,
-            throwOnError: true,
+            config,
           });
         }
 

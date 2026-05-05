@@ -6,7 +6,9 @@ import yaml from 'yaml';
 import { getDefaultConfig } from '../configSchema.js';
 import { clearConfigCache } from '../configLoader.js';
 import { closeDatabaseForTesting } from '../db/database.js';
+import { getPlanByPlanId } from '../db/plan.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
+import { setApplyBatchOperationHookForTesting } from '../sync/apply.js';
 
 vi.mock('../../logging.js', () => ({
   log: vi.fn(),
@@ -57,6 +59,7 @@ describe('handlePromoteCommand', () => {
   beforeEach(async () => {
     // Clear mocks
     vi.clearAllMocks();
+    setApplyBatchOperationHookForTesting(null);
 
     // Clear plan cache
     clearConfigCache();
@@ -84,6 +87,7 @@ describe('handlePromoteCommand', () => {
 
   afterEach(async () => {
     vi.clearAllMocks();
+    setApplyBatchOperationHookForTesting(null);
     clearConfigCache();
     closeDatabaseForTesting();
     clearPlanSyncContext();
@@ -147,6 +151,41 @@ describe('handlePromoteCommand', () => {
 
     // Verify logging was called
     expect(logSpy).toHaveBeenCalled();
+  });
+
+  test('sync-enabled main node preserves previewed promoted plan ID without self-renumbering', async () => {
+    const originalPlan: PlanSchema = {
+      id: 10,
+      goal: 'Promote from sync main',
+      details: '',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'Extract promoted work',
+          description: 'Promoted description',
+          steps: [],
+        },
+      ],
+      dependencies: [],
+    };
+
+    await createPlanFile('10', originalPlan);
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      paths: { tasks: tasksDir },
+      sync: {
+        role: 'main',
+        nodeId: 'main-promote-test',
+        allowedNodes: [],
+      },
+    } as any);
+
+    await handlePromoteCommand(['10.1'], { config: configPath });
+
+    const updatedOriginalPlan = (await resolvePlanByNumericId(10, tempDir)).plan;
+    expect(updatedOriginalPlan.dependencies).toEqual([11]);
+    const newPlan = (await resolvePlanByNumericId(11, tempDir)).plan;
+    expect(newPlan.id).toBe(11);
+    expect(newPlan.title).toBe('Extract promoted work');
   });
 
   test('promoted plan carries over tags from original plan', async () => {
@@ -245,6 +284,56 @@ describe('handlePromoteCommand', () => {
 
     // Verify logging was called
     expect(logSpy).toHaveBeenCalled();
+  });
+
+  test('rolls back promoted children and parent update when batched apply fails', async () => {
+    const originalPlan: PlanSchema = {
+      id: 1,
+      title: 'Parent',
+      goal: 'Promote atomically',
+      details: '',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'First promoted task',
+          description: 'First child',
+        },
+        {
+          title: 'Second promoted task',
+          description: 'Second child',
+        },
+        {
+          title: 'Remaining task',
+          description: 'Should stay put',
+        },
+      ],
+      dependencies: [],
+    };
+
+    await createPlanFile('1', originalPlan);
+    setApplyBatchOperationHookForTesting((index) => {
+      if (index === 1) {
+        throw new Error('injected promote batch failure');
+      }
+    });
+
+    await expect(handlePromoteCommand(['1.1-2'], { config: configPath })).rejects.toThrow(
+      'injected promote batch failure'
+    );
+
+    setApplyBatchOperationHookForTesting(null);
+    const parent = (await resolvePlanByNumericId(1, tempDir)).plan;
+    expect(parent.tasks?.map((task) => task.title)).toEqual([
+      'First promoted task',
+      'Second promoted task',
+      'Remaining task',
+    ]);
+    expect(parent.dependencies ?? []).toEqual([]);
+
+    const db = (await import('../db/database.js')).getDatabase();
+    const context = await (await import('../plan_materialize.js')).resolveProjectContext(tempDir);
+    expect(getPlanByPlanId(db, context.projectId, 2)).toBeNull();
+    expect(getPlanByPlanId(db, context.projectId, 3)).toBeNull();
   });
 
   test('writes promoted plans to external storage when configured', async () => {

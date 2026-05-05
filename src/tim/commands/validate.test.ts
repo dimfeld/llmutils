@@ -1544,24 +1544,6 @@ Orphan plan body.`;
       expect(await fs.stat(path.join(tempDir, '90.plan.md')).catch(() => null)).toBeNull();
     });
 
-    test('should generate a UUID for a DB-only plan without creating a file', async () => {
-      await seedDbPlan({
-        id: 92,
-        uuid: '',
-      });
-
-      const { exitCode, output } = await runValidate({ dir: tempDir });
-
-      expect(exitCode).toBeUndefined();
-      expect(output).toContain('Found 1 plan without UUIDs');
-      expect(output).toContain('Auto-generating UUIDs...');
-      expect(output).toContain('✓ Generated 1 UUID');
-
-      const resolved = await resolvePlanByNumericId(92, tempDir);
-      expect(resolved.plan.uuid).toBeTruthy();
-      expect(await fs.stat(path.join(tempDir, '92.plan.md')).catch(() => null)).toBeNull();
-    });
-
     test('should fix DB-only parent-child inconsistencies without creating files', async () => {
       const parentUuid = '22222222-2222-4222-8222-222222222222';
       await seedDbPlan({

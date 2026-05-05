@@ -9,7 +9,7 @@ import {
   getPlansByProject,
   getPlanTagsByUuid,
   getPlanTasksByUuid,
-  upsertPlanInTransaction,
+  upsertProjectionPlanInTransaction,
   type UpsertPlanInput,
 } from '../db/plan.js';
 import { getOrCreateProject, getProject } from '../db/project.js';
@@ -244,7 +244,9 @@ function applyRenumberDbState(
   const applyTransaction = db.transaction(() => {
     for (const [filePath, plan] of planEntries) {
       const filename = dbFilenames.get(filePath) ?? path.basename(filePath);
-      upsertPlanInTransaction(db, project.id, {
+      // SYNC-EXEMPT: renumber is an explicit maintenance/repair command that rewrites
+      // numeric IDs and must remain a single local DB transaction.
+      upsertProjectionPlanInTransaction(db, project.id, {
         ...toPlanUpsertInput(plan, idToUuid),
         forceOverwrite: true,
       });
@@ -324,7 +326,9 @@ function restoreOriginalDbState(repositoryId: string, snapshots: readonly Upsert
   const project = getOrCreateProject(db, repositoryId);
   const restoreTransaction = db.transaction(() => {
     for (const snapshot of snapshots) {
-      upsertPlanInTransaction(db, project.id, { ...snapshot, forceOverwrite: true });
+      // SYNC-EXEMPT: rollback for the renumber maintenance transaction restores
+      // the exact local snapshot captured before file operations.
+      upsertProjectionPlanInTransaction(db, project.id, { ...snapshot, forceOverwrite: true });
     }
   });
   restoreTransaction.immediate();

@@ -23,6 +23,7 @@ vi.mock('../plans.js', async (importOriginal) => {
   return {
     ...actual,
     resolvePlanByNumericId: vi.fn(),
+    writePlanToDb: vi.fn(),
   };
 });
 
@@ -92,13 +93,12 @@ vi.mock('./plan_discovery.js', () => ({
 
 import { handleGenerateCommand } from './generate.js';
 import { generateClaudeCodePlanningPrompt } from '../prompt.js';
-import { readPlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { log, warn } from '../../logging.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import { resolvePlanByNumericId } from '../plans.js';
-import { syncPlanToDb } from '../db/plan_sync.js';
 import { buildPromptText } from './prompts.js';
 import { isAutoClaimEnabled, autoClaimPlan } from '../assignments/auto_claim.js';
 import {
@@ -123,7 +123,7 @@ import { findNextReadyDependencyFromDb, findLatestPlanFromDb } from './plan_disc
 
 const isTunnelActiveSpy = vi.mocked(isTunnelActive);
 const runWithHeadlessAdapterIfEnabledSpy = vi.mocked(runWithHeadlessAdapterIfEnabled);
-const syncPlanToDbSpy = vi.mocked(syncPlanToDb);
+const writePlanToDbSpy = vi.mocked(writePlanToDb);
 const watchPlanFileSpy = vi.mocked(watchPlanFile);
 
 describe('handleGenerateCommand', () => {
@@ -189,7 +189,7 @@ describe('handleGenerateCommand', () => {
         planPath,
       };
     });
-    syncPlanToDbSpy.mockResolvedValue(undefined);
+    writePlanToDbSpy.mockResolvedValue({} as any);
     watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: vi.fn() });
     trackedWorkspacePath = undefined;
     getWorkspaceInfoByPathSpy.mockImplementation((baseDir: string) => {
@@ -272,12 +272,11 @@ describe('handleGenerateCommand', () => {
       planId: '101',
       executionMode: 'planning',
     });
-    expect(syncPlanToDbSpy).toHaveBeenCalledWith(
+    expect(writePlanToDbSpy).toHaveBeenCalledWith(
       expect.objectContaining({ id: 101 }),
       expect.objectContaining({
         cwdForIdentity: tempDir,
-        force: true,
-        throwOnError: true,
+        config: loadedConfig,
       })
     );
   });
@@ -967,7 +966,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     runWithHeadlessAdapterIfEnabledSpy.mockImplementation(async (options: any) =>
       options.callback()
     );
-    syncPlanToDbSpy.mockResolvedValue(undefined);
+    writePlanToDbSpy.mockResolvedValue({} as any);
     vi.mocked(isAutoClaimEnabled).mockReturnValue(false);
     vi.mocked(autoClaimPlan).mockResolvedValue(undefined as any);
     vi.mocked(commitAll).mockResolvedValue(0);

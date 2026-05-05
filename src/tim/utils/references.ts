@@ -8,16 +8,6 @@ type ReferenceLookupSource =
   | Map<number, string>
   | { planIdToUuid: Map<number, string> };
 
-export interface UuidIssue {
-  planId: number;
-  filename: string;
-}
-
-export interface UuidFixResult {
-  generated: Array<{ planId: number; uuid: string; filename: string }>;
-  errors: string[];
-}
-
 export interface ReferenceIssue {
   planId: number;
   filename: string;
@@ -251,59 +241,6 @@ export function fixReferenceMismatches(
   }
 
   return updatedPlan;
-}
-
-/**
- * Detects plans without UUIDs
- */
-export function detectMissingUuids(
-  planMap: Map<number, PlanSchema & { filename: string }>
-): UuidIssue[] {
-  const issues: UuidIssue[] = [];
-
-  for (const [planId, plan] of planMap.entries()) {
-    if (!plan.uuid) {
-      issues.push({ planId, filename: plan.filename });
-    }
-  }
-
-  return issues;
-}
-
-/**
- * Generates UUIDs for plans that don't have them
- */
-export async function fixMissingUuids(
-  issues: UuidIssue[],
-  planMap?: Map<number, PlanSchema & { filename: string }>,
-  cwdForIdentity?: string
-): Promise<UuidFixResult> {
-  const generated: UuidFixResult['generated'] = [];
-  const errors: string[] = [];
-
-  for (const issue of issues) {
-    try {
-      const plan = isExistingPlanFile(issue.filename)
-        ? await readPlanFile(issue.filename)
-        : planMap?.get(issue.planId);
-      if (!plan) {
-        throw new Error(`Plan ${issue.planId} could not be loaded for UUID generation`);
-      }
-      const uuid = crypto.randomUUID();
-      plan.uuid = uuid;
-      await writePlanFix(
-        { ...plan, filename: issue.filename },
-        { skipUpdatedAt: true, cwdForIdentity }
-      );
-      generated.push({ planId: issue.planId, uuid, filename: issue.filename });
-    } catch (error) {
-      errors.push(
-        `Failed to generate UUID for plan ${issue.planId}: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  return { generated, errors };
 }
 
 /**

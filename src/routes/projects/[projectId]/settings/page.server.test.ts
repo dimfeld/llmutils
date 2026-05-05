@@ -61,6 +61,13 @@ describe('projects/[projectId]/settings/+page.server', () => {
       settings: {
         featured: false,
       },
+      settingMetadata: {
+        featured: {
+          revision: 1,
+          updatedAt: expect.any(String),
+          updatedByNode: null,
+        },
+      },
     });
   });
 });

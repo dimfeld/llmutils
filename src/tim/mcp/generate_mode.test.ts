@@ -1060,6 +1060,7 @@ describe('mcpListReadyPlans', () => {
     await Bun.$`git init`.cwd(tmpDir).quiet();
     process.env.XDG_CONFIG_HOME = path.join(tmpDir, '.config');
     clearAllTimCaches();
+    mockGetGitRoot.mockResolvedValue(tmpDir);
     mockGetRepositoryIdentity.mockResolvedValue({
       repositoryId: `repo-${path.basename(tmpDir)}`,
       remoteUrl: 'https://example.com/repo.git',
@@ -1684,7 +1685,9 @@ describe('mcpListReadyPlans', () => {
     const parsed = JSON.parse(result);
 
     const ids = parsed.plans.map((plan: { id: number }) => plan.id).sort();
-    expect(ids).toEqual([10, 11, 12]);
+    // Auto-linking makes parent plans depend on their children, so only the leaf (12)
+    // is ready. Plans 10 and 11 are blocked by their children.
+    expect(ids).toEqual([12]);
   });
 
   test('reloads plan data without manual cache clearing', async () => {
@@ -2198,6 +2201,7 @@ describe('MCP Resources', () => {
     await Bun.$`git init`.cwd(tmpDir).quiet();
     process.env.XDG_CONFIG_HOME = path.join(tmpDir, '.config');
     clearAllTimCaches();
+    mockGetGitRoot.mockResolvedValue(tmpDir);
     mockGetRepositoryIdentity.mockResolvedValue({
       repositoryId: `repo-${path.basename(tmpDir)}`,
       remoteUrl: 'https://example.com/repo.git',

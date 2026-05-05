@@ -118,7 +118,7 @@ Plan materialization writes plan files from DB data to disk at well-known paths,
 
 **CLI entry points**: `tim materialize <planId>` writes the working copy, `tim sync <planId>` syncs a single materialized file back to DB, `tim sync` (no args) scans `.tim/plans/` for all `*.plan.md` files and syncs them all (supports `--verbose` for progress output), and `tim cleanup-materialized` removes stale files.
 
-**`skipDb` / `skipFile` options on `writePlanFile()`**: `skipDb` (aliased as `skipSync` for backward compatibility) prevents the DB write; used by materialization to avoid circular sync when writing a file that was just read from the DB. `skipFile` prevents the file write; used when only the DB needs updating. When `filePath` is null, file writing is automatically skipped.
+**`skipDb` / `skipFile` options on `writePlanFile()`**: `skipDb` prevents the DB write; used by materialization to avoid circular sync when writing a file that was just read from the DB. `skipFile` prevents the file write; used when only the DB needs updating. When `filePath` is null, file writing is automatically skipped.
 
 **UUID safety**: `syncMaterializedPlan()` extracts the UUID from raw file YAML before calling `readPlanFile()`, because `readPlanFile()` auto-generates UUIDs for files missing them (which would corrupt a materialized file with a wrong UUID).
 
@@ -140,7 +140,7 @@ The plan system uses DB-first access: the SQLite database is the source of truth
 **Plan writing** (`src/tim/plans.ts`):
 
 - `writePlanToDb(input, options?)`: Validates, normalizes (fancy quotes, deprecated fields), and writes a plan to the DB in a single transaction (`upsertPlan` + `upsertPlanTasks` + `upsertPlanDependencies` + `upsertPlanTags`). Returns the validated `PlanSchema`. Accepts optional `ProjectContext` to avoid redundant queries.
-- `writePlanFile(filePath, input, options?)`: DB-first write function. `filePath` can be `string | null` — when null, only the DB is written (file write is skipped). When `filePath` is null, either `cwdForIdentity` or `context` must be provided (throws otherwise) so the correct project can be resolved for the DB write. Options: `skipFile` (skip file write), `skipDb`/`skipSync` (skip DB write, used by materialization to avoid circular sync), `skipUpdatedAt`, `cwdForIdentity`, `context`.
+- `writePlanFile(filePath, input, options?)`: DB-first write function. `filePath` can be `string | null` — when null, only the DB is written (file write is skipped). When `filePath` is null, either `cwdForIdentity` or `context` must be provided (throws otherwise) so the correct project can be resolved for the DB write. Options: `skipFile` (skip file write), `skipDb` (skip DB write, used by materialization to avoid circular sync), `skipUpdatedAt`, `cwdForIdentity`, `context`.
 
 **Project context** (`src/tim/plan_materialize.ts`):
 

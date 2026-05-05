@@ -16,6 +16,7 @@
   import { registerDismissedSessionCleanup } from '$lib/stores/ui_state_cleanup.js';
   import CommandBar from '$lib/components/CommandBar.svelte';
   import RateLimitIndicator from '$lib/components/RateLimitIndicator.svelte';
+  import SyncIndicator from '$lib/components/SyncIndicator.svelte';
   import { ModeWatcher, setMode, userPrefersMode } from 'mode-watcher';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Sun from '@lucide/svelte/icons/sun';
@@ -200,6 +201,7 @@
           </Tooltip.Trigger>
           <Tooltip.Content sideOffset={8}>Open current page in new window</Tooltip.Content>
         </Tooltip.Root>
+        <SyncIndicator />
         <RateLimitIndicator />
         <Tooltip.Root>
           <Tooltip.Trigger>

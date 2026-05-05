@@ -254,20 +254,20 @@ export async function handleRebaseCommand(
       if (resolved.plan.uuid) {
         const db = getDatabase();
         if (shouldClearBaseFields) {
-          clearPlanBaseTracking(db, resolved.plan.uuid);
+          await clearPlanBaseTracking(db, effectiveConfig, resolved.plan.uuid);
           log('Cleared base tracking fields (rebased onto trunk).');
         } else if (effectiveBaseBranch) {
           const mergeBase = await getMergeBase(baseDir, effectiveBaseBranch, branchName);
           if (mergeBase) {
             const changeId = isJj ? await getJjChangeId(baseDir, mergeBase) : undefined;
-            setPlanBaseTracking(db, resolved.plan.uuid, {
+            await setPlanBaseTracking(db, effectiveConfig, resolved.plan.uuid, {
               ...(options.base ? { baseBranch: effectiveBaseBranch } : {}),
               baseCommit: mergeBase,
               baseChangeId: changeId,
             });
           } else if (options.base) {
             // Still persist the baseBranch even if merge-base fails
-            setPlanBaseTracking(db, resolved.plan.uuid, {
+            await setPlanBaseTracking(db, effectiveConfig, resolved.plan.uuid, {
               baseBranch: effectiveBaseBranch,
             });
           }

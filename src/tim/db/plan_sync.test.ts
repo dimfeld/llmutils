@@ -125,16 +125,18 @@ describe('tim db/plan_sync', () => {
     expect(getPlanTasksByUuid(db, savedPlan!.uuid)).toHaveLength(1);
   });
 
-  test('syncPlanToDb ignores plans without UUID', async () => {
-    await syncPlanToDb(
-      {
-        id: 44,
-        title: 'No uuid',
-        goal: 'Skip this',
-        tasks: [],
-      },
-      { config: buildTestConfig(tasksDir) }
-    );
+  test('syncPlanToDb rejects plans missing UUID identity', async () => {
+    await expect(
+      syncPlanToDb(
+        {
+          id: 44,
+          title: 'No uuid',
+          goal: 'Skip this',
+          tasks: [],
+        },
+        { config: buildTestConfig(tasksDir) }
+      )
+    ).rejects.toThrow('Plan must have a UUID before syncing to DB');
 
     const db = getDatabase();
     const count = db.prepare('SELECT COUNT(*) as count FROM plan').get() as { count: number };
@@ -194,7 +196,7 @@ describe('tim db/plan_sync', () => {
       { config }
     );
 
-    clearPlanBaseTracking(getDatabase(), planUuid);
+    await clearPlanBaseTracking(getDatabase(), config, planUuid);
 
     // Simulate stale plan file values — all three should be preserved as null from DB.
     await syncPlanToDb(
@@ -380,6 +382,61 @@ describe('tim db/plan_sync', () => {
     expect(savedPlan?.goal).toBe('Updated goal');
     expect(savedPlan?.status).toBe('needs_review');
     expect(savedPlan?.branch).toBe('feature/updated-branch');
+  });
+
+  test('syncPlanToDb preserves explicit new task UUIDs inserted at existing indexes', async () => {
+    const config = buildTestConfig(tasksDir);
+    const planUuid = '96969696-9696-4696-8696-969696969696';
+    const originalTaskUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const insertedTaskUuid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    await syncPlanToDb(
+      {
+        id: 96,
+        uuid: planUuid,
+        title: 'Task identity plan',
+        goal: 'Preserve inserted task identity',
+        tasks: [
+          {
+            uuid: originalTaskUuid,
+            title: 'old task',
+            description: 'old description',
+            done: false,
+          },
+        ],
+      },
+      { config }
+    );
+
+    await syncPlanToDb(
+      {
+        id: 96,
+        uuid: planUuid,
+        title: 'Task identity plan',
+        goal: 'Preserve inserted task identity',
+        tasks: [
+          {
+            uuid: insertedTaskUuid,
+            title: 'new task',
+            description: 'new description',
+            done: false,
+          },
+          {
+            uuid: originalTaskUuid,
+            title: 'old task',
+            description: 'old description',
+            done: false,
+          },
+        ],
+      },
+      { config }
+    );
+
+    const tasks = getPlanTasksByUuid(getDatabase(), planUuid);
+    expect(tasks.map((task) => ({ title: task.title, uuid: task.uuid }))).toEqual([
+      { title: 'new task', uuid: insertedTaskUuid },
+      { title: 'old task', uuid: originalTaskUuid },
+    ]);
   });
 
   test('removePlanFromDb removes the plan and its assignment', async () => {

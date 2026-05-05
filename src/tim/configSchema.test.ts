@@ -110,6 +110,140 @@ describe('configSchema', () => {
     });
   });
 
+  describe('sync configuration', () => {
+    test('accepts missing sync section', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.sync).toBeUndefined();
+    });
+
+    test('accepts valid sync configs for each role', () => {
+      expect(
+        timConfigSchema.parse({
+          sync: {
+            role: 'main',
+            nodeId: 'main-node',
+            serverHost: '0.0.0.0',
+            serverPort: 8124,
+            requireSecureTransport: true,
+          },
+        }).sync?.role
+      ).toBe('main');
+
+      expect(
+        timConfigSchema.parse({
+          sync: {
+            role: 'persistent',
+            nodeId: 'laptop',
+            mainUrl: 'http://localhost:8123',
+            nodeTokenEnv: 'TIM_SYNC_TOKEN',
+          },
+        }).sync?.role
+      ).toBe('persistent');
+
+      expect(
+        timConfigSchema.parse({
+          sync: { role: 'ephemeral', nodeId: 'worker' },
+        }).sync?.role
+      ).toBe('ephemeral');
+    });
+
+    test('rejects nodeToken and nodeTokenEnv together', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          sync: {
+            role: 'persistent',
+            nodeToken: 'plain',
+            nodeTokenEnv: 'TIM_SYNC_TOKEN',
+          },
+        })
+      ).toThrow();
+    });
+
+    test('rejects allowedNodes when role is not main', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          sync: {
+            role: 'persistent',
+            mainUrl: 'http://main.local',
+            nodeToken: 'tok',
+            allowedNodes: [{ nodeId: 'node-a', tokenHash: 'a'.repeat(64) }],
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          sync: {
+            role: 'ephemeral',
+            allowedNodes: [{ nodeId: 'node-a', tokenHash: 'a'.repeat(64) }],
+          },
+        })
+      ).toThrow();
+    });
+
+    test('rejects main-node server bind fields when role is not main', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          sync: {
+            role: 'persistent',
+            mainUrl: 'http://main.local',
+            nodeToken: 'tok',
+            serverHost: '0.0.0.0',
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          sync: {
+            role: 'ephemeral',
+            serverPort: 8124,
+          },
+        })
+      ).toThrow();
+    });
+
+    test('rejects duplicate nodeId in allowedNodes', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          sync: {
+            role: 'main',
+            allowedNodes: [
+              { nodeId: 'node-a', tokenHash: 'a'.repeat(64) },
+              { nodeId: 'node-a', tokenEnv: 'OTHER_TOKEN' },
+            ],
+          },
+        })
+      ).toThrow();
+    });
+
+    test('rejects allowedNodes entries without exactly one token source', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          sync: {
+            role: 'main',
+            allowedNodes: [{ nodeId: 'node-a' }],
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          sync: {
+            role: 'main',
+            allowedNodes: [
+              {
+                nodeId: 'node-a',
+                tokenHash: 'a'.repeat(64),
+                tokenEnv: 'TIM_NODE_A_TOKEN',
+              },
+            ],
+          },
+        })
+      ).toThrow();
+    });
+  });
+
   describe('lifecycle configuration', () => {
     test('accepts lifecycle commands with onlyWorkspaceType', () => {
       const config = {

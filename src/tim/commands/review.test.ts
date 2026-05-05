@@ -3490,7 +3490,7 @@ describe('Auto-selection of branch-specific plans', () => {
         details: 'Local unsynced materialized edits',
         updatedAt: '2026-03-27T10:53:00.000Z',
       },
-      { skipSync: true }
+      { skipDb: true }
     );
 
     vi.mocked(inquirerModule.confirm).mockRejectedValue(

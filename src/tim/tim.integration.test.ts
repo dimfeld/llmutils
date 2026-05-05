@@ -7,7 +7,7 @@ import { readPlanFile, resolvePlanByNumericId, writePlanFile } from './plans.js'
 import type { PlanSchema } from './planSchema.js';
 import { handleAddCommand } from './commands/add.js';
 import { handleAddTaskCommand } from './commands/add-task.js';
-import { handleDoneCommand } from './commands/done.js';
+import { markStepDone } from './plans/mark_done.js';
 import { handleRemoveTaskCommand } from './commands/remove-task.js';
 
 // Handlers that rely on mocked modules are imported dynamically in beforeEach
@@ -174,8 +174,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
     };
     await writePlanFile(path.join(tasksDir, '1.yml'), plan);
 
-    const command = { parent: { opts: () => ({ config: configPath }) } } as any;
-    await handleDoneCommand(1, {}, command);
+    await markStepDone(1, {}, undefined, tempDir, undefined, configPath);
 
     // Verify the task was marked as done
     const updatedPlan = (await resolvePlanByNumericId(1, tempDir)).plan;

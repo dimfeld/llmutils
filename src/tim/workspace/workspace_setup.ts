@@ -158,6 +158,7 @@ async function resolveWorkspaceBranchContext(
 
 async function updateBaseCommitTracking(options: {
   baseDir: string;
+  config: TimConfig;
   planId?: number;
   planUuid?: string;
   planBranch?: string;
@@ -211,7 +212,7 @@ async function updateBaseCommitTracking(options: {
     if (!mergeBase) {
       // Don't overwrite existing tracking with nulls on transient failures
       if (shouldPersistBaseBranch) {
-        setPlanBaseTracking(db, planUuid, { baseBranch });
+        await setPlanBaseTracking(db, options.config, planUuid, { baseBranch });
         await rematerializeBestEffort();
       }
       return;
@@ -226,7 +227,7 @@ async function updateBaseCommitTracking(options: {
     if (shouldPersistBaseBranch) {
       update.baseBranch = baseBranch;
     }
-    setPlanBaseTracking(db, planUuid, update);
+    await setPlanBaseTracking(db, options.config, planUuid, update);
     await rematerializeBestEffort();
   } catch (err) {
     warn(`Failed to update base commit tracking for plan ${planUuid}: ${err as Error}`);
@@ -538,6 +539,7 @@ export async function setupWorkspace(
         const trunkBranch = await getTrunkBranch(workspace.path);
         await updateBaseCommitTracking({
           baseDir: workspace.path,
+          config,
           planId: options.planId,
           planUuid: planData?.uuid ?? options.planUuid,
           planBranch: branchName,
@@ -593,6 +595,7 @@ export async function setupWorkspace(
   const trunkBranch = await getTrunkBranch(baseDir);
   await updateBaseCommitTracking({
     baseDir,
+    config,
     planId: options.planId,
     planUuid: branchContext.planData?.uuid ?? options.planUuid,
     planBranch: branchContext.branchName,

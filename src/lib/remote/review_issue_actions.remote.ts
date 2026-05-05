@@ -1,15 +1,20 @@
 import { command } from '$app/server';
 import { error } from '@sveltejs/kit';
+import type { Database } from 'bun:sqlite';
 import * as z from 'zod';
 
 import { getServerContext } from '$lib/server/init.js';
+import {
+  loadPlanSchemaFromRow,
+  writeSinglePlanMutationViaBatch,
+} from '$lib/server/plan_batch_write.js';
 import { createTaskFromIssue } from '$tim/commands/review.js';
-import { getPlanByUuid, getPlanTasksByUuid } from '$tim/db/plan.js';
+import { getPlanByUuid } from '$tim/db/plan.js';
 import { getReviewById, getReviewIssues, type ReviewIssueRow } from '$tim/db/review.js';
 import { getLinkedPlansByPrUrl } from '$tim/db/pr_status.js';
-import { SQL_NOW_ISO_UTC } from '$tim/db/sql_utils.js';
 import type { PlanSchema } from '$tim/planSchema.js';
 import type { ReviewIssue as ReviewFormatterIssue } from '$tim/formatters/review_formatter.js';
+import { getProjectUuidForId, writePlanListRemove } from '$tim/sync/write_router.js';
 
 function parseReviewIssuesJson(
   reviewIssuesJson: string | null
@@ -46,9 +51,28 @@ const reviewIssueTaskSchema = z.object({
 });
 
 export const removeReviewIssue = command(issueIndexSchema, async ({ planUuid, issueIndex }) => {
-  const { db } = await getServerContext();
+  const { db, config } = await getServerContext();
+  const plan = getPlanByUuid(db, planUuid);
+  if (!plan) {
+    error(404, 'Plan not found');
+  }
 
-  db.transaction(() => {
+  const issues = parseReviewIssuesJson(plan.review_issues);
+  if (issueIndex >= issues.length) {
+    error(400, 'Issue index out of range');
+  }
+
+  await writePlanListRemove(db, config, getProjectUuidForId(db, plan.project_id), {
+    planUuid,
+    list: 'reviewIssues',
+    value: issues[issueIndex],
+  });
+});
+
+export const convertReviewIssueToTask = command(
+  issueIndexSchema,
+  async ({ planUuid, issueIndex }) => {
+    const { db, config } = await getServerContext();
     const plan = getPlanByUuid(db, planUuid);
     if (!plan) {
       error(404, 'Plan not found');
@@ -59,61 +83,64 @@ export const removeReviewIssue = command(issueIndexSchema, async ({ planUuid, is
       error(400, 'Issue index out of range');
     }
 
-    issues.splice(issueIndex, 1);
+    const issue = issues[issueIndex];
+    const expectedIssuesJson = JSON.stringify(issues);
+    const nextReviewIssues = issues.filter((_, index) => index !== issueIndex);
+    const newTask = createTaskFromIssue(issue);
+    const currentPlan = loadPlanSchemaFromRow(db, plan);
+    const nextPlan = {
+      ...currentPlan,
+      status: plan.status === 'in_progress' ? currentPlan.status : 'in_progress',
+      reviewIssues: nextReviewIssues.length > 0 ? nextReviewIssues : undefined,
+      tasks: [
+        ...(currentPlan.tasks ?? []),
+        {
+          title: newTask.title,
+          description: newTask.description ?? '',
+          done: false,
+        },
+      ],
+    };
 
-    db.prepare(
-      `UPDATE plan SET review_issues = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-    ).run(issues.length > 0 ? JSON.stringify(issues) : null, planUuid);
-  }).immediate();
-});
-
-export const convertReviewIssueToTask = command(
-  issueIndexSchema,
-  async ({ planUuid, issueIndex }) => {
-    const { db } = await getServerContext();
-
-    db.transaction(() => {
-      const plan = getPlanByUuid(db, planUuid);
-      if (!plan) {
-        error(404, 'Plan not found');
-      }
-
-      const issues = parseReviewIssuesJson(plan.review_issues);
-      if (issueIndex >= issues.length) {
-        error(400, 'Issue index out of range');
-      }
-
-      const issue = issues[issueIndex];
-      const newTask = createTaskFromIssue(issue);
-
-      const existingTasks = getPlanTasksByUuid(db, planUuid);
-      issues.splice(issueIndex, 1);
-      const nextIndex = existingTasks.length;
-
-      db.prepare(
-        `UPDATE plan SET review_issues = ?, status = 'in_progress', updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-      ).run(issues.length > 0 ? JSON.stringify(issues) : null, planUuid);
-
-      db.prepare(
-        `INSERT INTO plan_task (plan_uuid, task_index, title, description, done) VALUES (?, ?, ?, ?, 0)`
-      ).run(planUuid, nextIndex, newTask.title, newTask.description ?? '');
-    }).immediate();
+    await writeSinglePlanMutationViaBatch(db, config, plan, nextPlan, {
+      precondition: () => {
+        const latestPlan = getPlanByUuid(db, planUuid);
+        if (!latestPlan) {
+          error(404, 'Plan not found');
+        }
+        const latestIssues = parseReviewIssuesJson(latestPlan.review_issues);
+        if (JSON.stringify(latestIssues) !== expectedIssuesJson) {
+          error(409, 'Review issues changed; refresh and try again');
+        }
+      },
+      legacyErrorMessage: 'Cannot convert review issue to task with sync-routed writes',
+    });
   }
 );
 
 export const clearReviewIssues = command(planUuidSchema, async ({ planUuid }) => {
-  const { db } = await getServerContext();
+  const { db, config } = await getServerContext();
+  const plan = getPlanByUuid(db, planUuid);
+  if (!plan) {
+    error(404, 'Plan not found');
+  }
 
-  db.transaction(() => {
-    const plan = getPlanByUuid(db, planUuid);
-    if (!plan) {
-      error(404, 'Plan not found');
+  const issues = parseReviewIssuesJson(plan.review_issues);
+  if (issues.length === 0) {
+    return;
+  }
+  await writeSinglePlanMutationViaBatch(
+    db,
+    config,
+    plan,
+    {
+      ...loadPlanSchemaFromRow(db, plan),
+      reviewIssues: undefined,
+    },
+    {
+      legacyErrorMessage: 'Cannot clear review issues with sync-routed writes',
     }
-
-    db.prepare(
-      `UPDATE plan SET review_issues = NULL, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-    ).run(planUuid);
-  }).immediate();
+  );
 });
 
 export const deleteReviewIssue = command(reviewIssueSchema, async ({ reviewId, issueId }) => {
@@ -148,60 +175,90 @@ function reviewIssueToTask(issue: ReviewIssueRow): ReviewFormatterIssue {
 export const addReviewIssueToPlanTask = command(
   reviewIssueTaskSchema,
   async ({ reviewId, issueId, planUuid }) => {
-    const { db } = await getServerContext();
+    const { db, config } = await getServerContext();
+    const review = getReviewById(db, reviewId);
+    if (!review) {
+      error(404, 'Review not found');
+    }
 
-    db.transaction(() => {
-      const review = getReviewById(db, reviewId);
-      if (!review) {
-        error(404, 'Review not found');
+    const issue = getReviewIssues(db, reviewId).find((row) => row.id === issueId);
+    if (!issue) {
+      error(404, 'Review issue not found');
+    }
+
+    const linkedPlans = getLinkedPlansByPrUrl(db, [review.pr_url]).get(review.pr_url) ?? [];
+    if (linkedPlans.length !== 1 || linkedPlans[0]?.planUuid !== planUuid) {
+      error(400, 'PR is not linked to this plan');
+    }
+
+    const plan = getPlanByUuid(db, planUuid);
+    if (!plan) {
+      error(404, 'Plan not found');
+    }
+
+    const duplicateMarker = `[source:review-issue:${issue.id}]`;
+    assertReviewIssueCanBeAddedToPlanTask(db, reviewId, issueId, planUuid, duplicateMarker);
+
+    const newTask = createTaskFromIssue(reviewIssueToTask(issue));
+    const descriptionWithSource = `${newTask.description ?? ''}\n\n${duplicateMarker}`;
+    const currentPlan = loadPlanSchemaFromRow(db, plan);
+
+    await writeSinglePlanMutationViaBatch(
+      db,
+      config,
+      plan,
+      {
+        ...currentPlan,
+        status: plan.status === 'in_progress' ? currentPlan.status : 'in_progress',
+        tasks: [
+          ...(currentPlan.tasks ?? []),
+          {
+            title: newTask.title,
+            description: descriptionWithSource,
+            done: false,
+          },
+        ],
+      },
+      {
+        precondition: () => {
+          assertReviewIssueCanBeAddedToPlanTask(db, reviewId, issueId, planUuid, duplicateMarker);
+        },
+        legacyErrorMessage: 'Cannot add review issue task with sync-routed writes',
       }
-
-      const issue = getReviewIssues(db, reviewId).find((row) => row.id === issueId);
-      if (!issue) {
-        error(404, 'Review issue not found');
-      }
-
-      const linkedPlans = getLinkedPlansByPrUrl(db, [review.pr_url]).get(review.pr_url) ?? [];
-      if (linkedPlans.length !== 1 || linkedPlans[0]?.planUuid !== planUuid) {
-        error(400, 'PR is not linked to this plan');
-      }
-
-      const plan = getPlanByUuid(db, planUuid);
-      if (!plan) {
-        error(404, 'Plan not found');
-      }
-
-      const duplicateMarker = `[source:review-issue:${issue.id}]`;
-      const existingTask = db
-        .prepare(`SELECT 1 FROM plan_task WHERE plan_uuid = ? AND description LIKE ?`)
-        .get(planUuid, `%${duplicateMarker}%`);
-      if (existingTask) {
-        error(409, 'This review issue has already been converted to a task');
-      }
-
-      const newTask = createTaskFromIssue(reviewIssueToTask(issue));
-      const descriptionWithSource = `${newTask.description ?? ''}\n\n${duplicateMarker}`;
-      const taskIndexRow = db
-        .prepare(
-          `
-            SELECT MAX(task_index) as maxTaskIndex
-            FROM plan_task
-            WHERE plan_uuid = ?
-          `
-        )
-        .get(planUuid) as { maxTaskIndex: number | null };
-      const nextIndex = (taskIndexRow.maxTaskIndex ?? -1) + 1;
-
-      db.prepare(
-        `
-          INSERT INTO plan_task (plan_uuid, task_index, title, description, done)
-          VALUES (?, ?, ?, ?, 0)
-        `
-      ).run(planUuid, nextIndex, newTask.title, descriptionWithSource);
-
-      db.prepare(
-        `UPDATE plan SET status = 'in_progress', updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ? AND status != 'in_progress'`
-      ).run(planUuid);
-    }).immediate();
+    );
   }
 );
+
+function assertReviewIssueCanBeAddedToPlanTask(
+  db: Database,
+  reviewId: number,
+  issueId: number,
+  planUuid: string,
+  duplicateMarker: string
+): void {
+  const review = getReviewById(db, reviewId);
+  if (!review) {
+    error(404, 'Review not found');
+  }
+
+  const issue = getReviewIssues(db, reviewId).find((row) => row.id === issueId);
+  if (!issue) {
+    error(404, 'Review issue not found');
+  }
+
+  const linkedPlans = getLinkedPlansByPrUrl(db, [review.pr_url]).get(review.pr_url) ?? [];
+  if (linkedPlans.length !== 1 || linkedPlans[0]?.planUuid !== planUuid) {
+    error(400, 'PR is not linked to this plan');
+  }
+
+  if (!getPlanByUuid(db, planUuid)) {
+    error(404, 'Plan not found');
+  }
+
+  const existingTask = db
+    .prepare(`SELECT 1 FROM plan_task WHERE plan_uuid = ? AND description LIKE ?`)
+    .get(planUuid, `%${duplicateMarker}%`);
+  if (existingTask) {
+    error(409, 'This review issue has already been converted to a task');
+  }
+}

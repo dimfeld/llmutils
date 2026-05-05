@@ -2,7 +2,14 @@ import * as path from 'node:path';
 import { warn } from '../../logging.js';
 import { removeAssignment } from './assignment.js';
 import { getDatabase } from './database.js';
-import { deletePlan, getPlanByUuid, getPlansByProject, upsertPlan } from './plan.js';
+import {
+  deletePlan,
+  getPlanByUuid,
+  getPlanTasksByUuid,
+  getPlansByProject,
+  upsertPlan,
+  upsertCanonicalPlanInTransaction,
+} from './plan.js';
 import { getOrCreateProject } from './project.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -81,6 +88,13 @@ function collectMissingReferenceIds(plan: PlanSchemaInput): number[] {
     if (!planWithReferences.references?.[String(depId)]) {
       missing.add(depId);
     }
+  }
+
+  if (
+    typeof plan.discoveredFrom === 'number' &&
+    !planWithReferences.references?.[String(plan.discoveredFrom)]
+  ) {
+    missing.add(plan.discoveredFrom);
   }
 
   return [...missing];
@@ -177,6 +191,7 @@ export function toPlanUpsertInput(
   simple?: boolean | null;
   tdd?: boolean | null;
   discoveredFrom?: number | null;
+  discoveredFromUuid?: string | null;
   issue?: string[] | null;
   pullRequest?: string[] | null;
   assignedTo?: string | null;
@@ -190,7 +205,14 @@ export function toPlanUpsertInput(
   reviewIssues?: PlanSchema['reviewIssues'] | null;
   parentUuid?: string | null;
   epic: boolean;
-  tasks: Array<{ title: string; description: string; done?: boolean }>;
+  revision?: number;
+  tasks: Array<{
+    uuid?: string;
+    title: string;
+    description: string;
+    done?: boolean;
+    revision?: number;
+  }>;
   dependencyUuids: string[];
   tags: string[];
 } {
@@ -206,6 +228,10 @@ export function toPlanUpsertInput(
         .filter((dependencyUuid): dependencyUuid is string => typeof dependencyUuid === 'string')
     ),
   ];
+  const discoveredFromUuid =
+    typeof plan.discoveredFrom === 'number'
+      ? (getPlanReferenceUuid(plan, plan.discoveredFrom, idToUuid) ?? null)
+      : null;
 
   return {
     planId: plan.id,
@@ -224,6 +250,7 @@ export function toPlanUpsertInput(
     simple: typeof plan.simple === 'boolean' ? plan.simple : null,
     tdd: typeof plan.tdd === 'boolean' ? plan.tdd : null,
     discoveredFrom: plan.discoveredFrom ?? null,
+    discoveredFromUuid,
     issue: plan.issue ?? null,
     pullRequest: plan.pullRequest ?? null,
     assignedTo: plan.assignedTo ?? null,
@@ -237,14 +264,44 @@ export function toPlanUpsertInput(
     reviewIssues: plan.reviewIssues ?? null,
     parentUuid,
     epic: plan.epic === true,
+    revision: plan.revision,
     tasks: (plan.tasks ?? []).map((task) => ({
+      uuid: task.uuid,
       title: task.title,
       description: task.description ?? '',
       done: task.done,
+      revision: task.revision,
     })),
     dependencyUuids,
     tags: plan.tags ?? [],
   };
+}
+
+function preserveExistingTaskMetadata(
+  db: ReturnType<typeof getDatabase>,
+  planUuid: string,
+  tasks: ReturnType<typeof toPlanUpsertInput>['tasks']
+): ReturnType<typeof toPlanUpsertInput>['tasks'] {
+  const existingTasks = getPlanTasksByUuid(db, planUuid);
+  const existingByUuid = new Map(
+    existingTasks
+      .filter((task): task is (typeof existingTasks)[number] & { uuid: string } => {
+        return typeof task.uuid === 'string' && task.uuid.length > 0;
+      })
+      .map((task) => [task.uuid, task])
+  );
+  return tasks.map((task) => {
+    const fallback = task.uuid ? existingByUuid.get(task.uuid) : undefined;
+    if (!fallback) {
+      return task;
+    }
+
+    return {
+      ...task,
+      uuid: fallback.uuid ?? task.uuid,
+      revision: fallback.revision,
+    };
+  });
 }
 
 export function clearPlanSyncContext(): void {
@@ -257,8 +314,11 @@ export async function syncPlanToDb(
   plan: PlanSchemaInput,
   options: PlanSyncOptions = {}
 ): Promise<void> {
-  if (!plan.uuid || typeof plan.id !== 'number') {
-    return;
+  if (!plan.uuid) {
+    throw new Error('Plan must have a UUID before syncing to DB');
+  }
+  if (typeof plan.id !== 'number') {
+    throw new Error('Plan must have a numeric ID before syncing to DB');
   }
 
   try {
@@ -271,6 +331,7 @@ export async function syncPlanToDb(
     // data cannot resurrect values that were cleared by rebase.
     const existingPlan = getPlanByUuid(db, plan.uuid);
     if (existingPlan) {
+      upsertInput.tasks = preserveExistingTaskMetadata(db, existingPlan.uuid, upsertInput.tasks);
       upsertInput.baseCommit = existingPlan.base_commit ?? null;
       upsertInput.baseChangeId = existingPlan.base_change_id ?? null;
       // baseBranch is user-editable and normally syncs from files. Only preserve
@@ -284,9 +345,18 @@ export async function syncPlanToDb(
       upsertInput.baseCommit = null;
       upsertInput.baseChangeId = null;
     }
-    upsertPlan(db, context.projectId, {
+    const projectionRow = upsertPlan(db, context.projectId, {
       ...upsertInput,
       forceOverwrite: options.force === true,
+    });
+    // Mirror to canonical so that subsequent operation-routed writes (e.g.
+    // clearPlanBaseTracking) can find the plan in the canonical store. On a
+    // local or main node, canonical ≡ projection; this keeps them in sync.
+    upsertCanonicalPlanInTransaction(db, context.projectId, {
+      ...upsertInput,
+      revision: projectionRow.revision,
+      forceOverwrite: options.force === true,
+      tasks: upsertInput.tasks.map((t) => ({ ...t, revision: t.revision ?? 1 })),
     });
   } catch (error) {
     if (options.throwOnError) {

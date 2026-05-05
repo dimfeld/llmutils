@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { clearAllTimCaches } from '../../testing.js';
-import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { closeDatabaseForTesting, getDatabase, getDefaultDatabasePath } from '../db/database.js';
 import { getPlansByProject } from '../db/plan.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { getProject } from '../db/project.js';
@@ -46,6 +46,10 @@ describe('tim sync command', () => {
   beforeEach(async () => {
     clearAllTimCaches();
     closeDatabaseForTesting();
+    const dbPath = getDefaultDatabasePath();
+    await fs.rm(dbPath, { force: true });
+    await fs.rm(`${dbPath}-wal`, { force: true });
+    await fs.rm(`${dbPath}-shm`, { force: true });
     clearPlanSyncContext();
 
     originalCwd = process.cwd();
@@ -90,7 +94,7 @@ describe('tim sync command', () => {
         details: 'After edit',
         updatedAt: '2026-03-27T01:00:00.000Z',
       },
-      { skipSync: true }
+      { skipDb: true }
     );
 
     await handleSyncCommand(undefined, {}, makeCommand() as any);
@@ -147,7 +151,7 @@ describe('tim sync command', () => {
         details: 'After one',
         updatedAt: '2026-03-27T03:00:00.000Z',
       },
-      { skipSync: true }
+      { skipDb: true }
     );
 
     const secondPlan = await readPlanFile(secondPath);
@@ -158,7 +162,7 @@ describe('tim sync command', () => {
         details: 'After two',
         updatedAt: '2026-03-27T03:05:00.000Z',
       },
-      { skipSync: true }
+      { skipDb: true }
     );
 
     const materializedDir = path.join(repoDir, '.tim', 'plans');
@@ -212,7 +216,7 @@ describe('tim sync command', () => {
         details: 'After edit',
         updatedAt: '2026-03-27T02:00:00.000Z',
       },
-      { skipSync: true }
+      { skipDb: true }
     );
 
     await handleSyncCommand(2, {}, makeCommand() as any);
@@ -248,7 +252,7 @@ describe('tim sync command', () => {
         details: 'After edit',
         updatedAt: undefined,
       },
-      { skipSync: true, skipUpdatedAt: true }
+      { skipDb: true, skipUpdatedAt: true }
     );
 
     await handleSyncCommand(1, { force: true }, makeCommand() as any);
@@ -296,7 +300,7 @@ describe('tim sync command', () => {
         ...firstPlan,
         details: 'After one',
       },
-      { skipSync: true, skipUpdatedAt: true }
+      { skipDb: true, skipUpdatedAt: true }
     );
     await fs.writeFile(
       secondPath,

@@ -5,11 +5,13 @@ import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { removePlanFromDb } from '../db/plan_sync.js';
+import { getDatabase } from '../db/database.js';
+import { getOrCreateProject } from '../db/project.js';
 import { getLegacyAwareSearchDir, resolvePlanPathContext } from '../path_resolver.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
+import { getProjectUuidForId, writePlanDelete } from '../sync/write_router.js';
 
 export async function handleCleanupTempCommand(options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -23,6 +25,12 @@ export async function handleCleanupTempCommand(options: any, command: any) {
   const repository = await getRepositoryIdentity({ cwd: identityCwd });
   const configBaseDir = pathContext.configBaseDir ?? repository.gitRoot;
   const gitRoot = pathContext.gitRoot ?? repository.gitRoot;
+  const db = getDatabase();
+  const project = getOrCreateProject(db, repository.repositoryId, {
+    remoteUrl: repository.remoteUrl,
+    lastGitRoot: repository.gitRoot,
+  });
+  const projectUuid = getProjectUuidForId(db, project.id);
 
   const { plans: allPlans } = loadPlansFromDb(
     getLegacyAwareSearchDir(gitRoot, configBaseDir),
@@ -66,7 +74,10 @@ export async function handleCleanupTempCommand(options: any, command: any) {
     }
 
     try {
-      await removePlanFromDb(plan.uuid, { baseDir: repository.gitRoot, throwOnError: true });
+      if (!plan.uuid) {
+        throw new Error('Plan is missing UUID');
+      }
+      await writePlanDelete(db, config, projectUuid, { planUuid: plan.uuid });
     } catch (error) {
       warn(
         `Failed to remove plan ${plan.id ?? plan.uuid ?? plan.title ?? 'unknown'} from SQLite: ${

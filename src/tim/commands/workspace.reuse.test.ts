@@ -1059,12 +1059,12 @@ describe('workspace add --reuse and --try-reuse', () => {
     await runGit(existingWorkspace, ['add', '.']);
     await runGit(existingWorkspace, ['commit', '-m', 'Add existing workspace plan']);
 
-    const syncPlanToDbSpy = vi.fn(async () => {});
+    const writePlanToDbSpy = vi.fn(async (plan: PlanSchema) => plan);
 
-    const planSyncModule = await import('../db/plan_sync.js');
-    const syncPlanToDbModuleSpy = vi
-      .spyOn(planSyncModule, 'syncPlanToDb')
-      .mockImplementation(syncPlanToDbSpy);
+    const plansModule = await import('../plans.js');
+    const writePlanToDbModuleSpy = vi
+      .spyOn(plansModule, 'writePlanToDb')
+      .mockImplementation(writePlanToDbSpy);
 
     const workspaceManager = await import('../workspace/workspace_manager.js');
     const prepareExistingWorkspaceSpy = vi
@@ -1087,7 +1087,7 @@ describe('workspace add --reuse and --try-reuse', () => {
         },
       } as any);
 
-      const workspaceSyncCall = syncPlanToDbSpy.mock.calls.find(
+      const workspaceSyncCall = writePlanToDbSpy.mock.calls.find(
         (call) =>
           call[0] &&
           typeof call[0] === 'object' &&
@@ -1103,7 +1103,7 @@ describe('workspace add --reuse and --try-reuse', () => {
       });
       expect(workspaceSyncCall?.[1]).toEqual({
         cwdForIdentity: mainRepoDir,
-        throwOnError: true,
+        config: expect.any(Object),
       });
 
       const planInWorkspace = await fs.readFile(workspacePlanPath, 'utf8');
@@ -1112,7 +1112,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
       await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
     } finally {
-      syncPlanToDbModuleSpy.mockRestore();
+      writePlanToDbModuleSpy.mockRestore();
       prepareExistingWorkspaceSpy.mockRestore();
       runWorkspaceUpdateCommandsSpy.mockRestore();
     }

@@ -17,6 +17,7 @@ import {
   readPlanFile,
   resolvePlanByNumericId,
   writePlanFile,
+  writePlanToDb,
 } from '../plans.js';
 import { log, warn, runWithLogger, sendStructured } from '../../logging.js';
 import { getLoggerAdapter, type LoggerAdapter } from '../../logging/adapter.js';
@@ -69,7 +70,6 @@ import { toStructuredReviewIssues } from '../review_structured_message.js';
 import { timestamp } from './agent/agent_helpers.js';
 import { resolveOrchestratorInput } from '../utils/orchestrator_input.js';
 import { loadAgentInstructionsFor } from '../executors/codex_cli/agent_helpers.js';
-import { syncPlanToDb } from '../db/plan_sync.js';
 import type { PrReviewThreadDetail } from '../db/pr_status.js';
 import {
   deleteBatchReviewCache,
@@ -708,11 +708,9 @@ async function handleReviewIssueActions(params: {
       executionPlanFile !== planFileForWrite || executionPlanFile === materializedPlanPath;
     if (shouldSyncEditedPlan) {
       const updatedPlan = await readPlanFile(executionPlanFile);
-      await syncPlanToDb(updatedPlan, {
+      await writePlanToDb(updatedPlan, {
         cwdForIdentity: sharedExecutorOptions.baseDir,
-        // force: true is intentional here because the executor just edited this file.
-        force: true,
-        throwOnError: true,
+        config,
       });
     }
 

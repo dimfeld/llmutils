@@ -146,6 +146,95 @@ export const workspaceCreationConfigSchema = z.object({
 
 export type WorkspaceCreationConfig = z.infer<typeof workspaceCreationConfigSchema>;
 
+export const syncNodeRoleSchema = z.enum(['main', 'persistent', 'ephemeral']);
+
+export const syncAllowedNodeSchema = z
+  .object({
+    nodeId: z.string(),
+    label: z.string().optional(),
+    tokenHash: z
+      .string()
+      .regex(/^[a-fA-F0-9]{64}$/)
+      .optional(),
+    tokenEnv: z.string().optional(),
+  })
+  .strict()
+  .superRefine((node, ctx) => {
+    const tokenSourceCount = Number(Boolean(node.tokenHash)) + Number(Boolean(node.tokenEnv));
+    if (tokenSourceCount !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Exactly one of tokenHash or tokenEnv is required',
+        path: ['tokenHash'],
+      });
+    }
+  });
+
+export const syncConfigSchema = z
+  .object({
+    role: syncNodeRoleSchema.optional(),
+    nodeId: z.string().optional(),
+    mainUrl: z.string().optional(),
+    nodeToken: z.string().optional(),
+    nodeTokenEnv: z.string().optional(),
+    allowedNodes: z.array(syncAllowedNodeSchema).optional(),
+    serverPort: z.number().int().min(0).max(65535).optional(),
+    serverHost: z.string().optional(),
+    requireSecureTransport: z.boolean().optional(),
+    disabled: z.boolean().optional(),
+    offline: z.boolean().optional(),
+    pollIntervalSeconds: z.number().int().positive().optional(),
+    sequenceRetentionDays: z.number().positive().optional(),
+  })
+  .strict()
+  .superRefine((sync, ctx) => {
+    if (sync.nodeToken && sync.nodeTokenEnv) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Only one of nodeToken or nodeTokenEnv may be set',
+        path: ['nodeToken'],
+      });
+    }
+    if (sync.allowedNodes && sync.allowedNodes.length > 0 && sync.role !== 'main') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'sync.allowedNodes is only valid when sync.role is "main"',
+        path: ['allowedNodes'],
+      });
+    }
+    if (sync.serverPort !== undefined && sync.role !== 'main') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'sync.serverPort is only valid when sync.role is "main"',
+        path: ['serverPort'],
+      });
+    }
+    if (sync.serverHost !== undefined && sync.role !== 'main') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'sync.serverHost is only valid when sync.role is "main"',
+        path: ['serverHost'],
+      });
+    }
+    if (sync.allowedNodes && sync.allowedNodes.length > 0) {
+      const seen = new Set<string>();
+      for (const [index, node] of sync.allowedNodes.entries()) {
+        if (seen.has(node.nodeId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `sync.allowedNodes contains duplicate nodeId: ${node.nodeId}`,
+            path: ['allowedNodes', index, 'nodeId'],
+          });
+        }
+        seen.add(node.nodeId);
+      }
+    }
+  });
+
+export type SyncNodeRole = z.infer<typeof syncNodeRoleSchema>;
+export type SyncAllowedNodeConfig = z.infer<typeof syncAllowedNodeSchema>;
+export type SyncConfigInput = z.infer<typeof syncConfigSchema>;
+
 /**
  * Main configuration schema for tim.
  */
@@ -162,6 +251,10 @@ export const timConfigSchema = z
       .describe(
         'If true, commands that create branches will fail unless a branchPrefix is configured (via repo config or project setting).'
       ),
+    /** Local node synchronization configuration. */
+    sync: syncConfigSchema
+      .optional()
+      .describe('Machine-local sync configuration for multi-node tim replication'),
     /** Issue tracking service to use for import commands and issue-related operations. Defaults to 'github'. */
     issueTracker: z
       .enum(['github', 'linear'])

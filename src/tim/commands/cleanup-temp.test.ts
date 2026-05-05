@@ -8,7 +8,7 @@ import { clearConfigCache } from '../configLoader.js';
 import type { PlanSchema } from '../planSchema.js';
 
 let currentPlans: Map<number, PlanSchema>;
-let removePlanFromDbMock: ReturnType<typeof vi.fn>;
+let writePlanDeleteMock: ReturnType<typeof vi.fn>;
 let unlinkImpl: ((p: string) => Promise<void>) | undefined;
 
 vi.mock('../configLoader.js', async (importOriginal) => {
@@ -35,8 +35,17 @@ vi.mock('../plans_db.js', () => ({
   loadPlansFromDb: vi.fn(),
 }));
 
-vi.mock('../db/plan_sync.js', () => ({
-  removePlanFromDb: vi.fn(),
+vi.mock('../db/database.js', () => ({
+  getDatabase: vi.fn(() => ({})),
+}));
+
+vi.mock('../db/project.js', () => ({
+  getOrCreateProject: vi.fn(() => ({ id: 1, uuid: 'project-uuid' })),
+}));
+
+vi.mock('../sync/write_router.js', () => ({
+  getProjectUuidForId: vi.fn(() => 'project-uuid'),
+  writePlanDelete: vi.fn(),
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -57,7 +66,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadPlansFromDb } from '../plans_db.js';
-import { removePlanFromDb } from '../db/plan_sync.js';
+import { writePlanDelete } from '../sync/write_router.js';
 
 describe('tim cleanup-temp command', () => {
   let tempDir: string;
@@ -68,7 +77,7 @@ describe('tim cleanup-temp command', () => {
     vi.clearAllMocks();
     unlinkImpl = undefined;
     currentPlans = new Map();
-    removePlanFromDbMock = vi.mocked(removePlanFromDb);
+    writePlanDeleteMock = vi.mocked(writePlanDelete);
 
     // Create temporary directory structure
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-cleanup-temp-test-'));
@@ -99,7 +108,7 @@ describe('tim cleanup-temp command', () => {
       gitRoot: tempDir,
     });
     vi.mocked(loadPlansFromDb).mockReturnValue({ plans: currentPlans, duplicates: {} } as any);
-    removePlanFromDbMock.mockResolvedValue(undefined);
+    writePlanDeleteMock.mockResolvedValue({ mode: 'applied' } as any);
   });
 
   afterEach(async () => {
@@ -364,7 +373,7 @@ describe('tim cleanup-temp command', () => {
     await handleCleanupTempCommand({}, command);
 
     expect(vi.mocked(fs.unlink)).toHaveBeenCalledTimes(1);
-    expect(removePlanFromDbMock).not.toHaveBeenCalled();
+    expect(writePlanDeleteMock).not.toHaveBeenCalled();
   });
 
   test('removes the DB row when the backing file is already missing', async () => {
@@ -392,10 +401,12 @@ describe('tim cleanup-temp command', () => {
 
     await handleCleanupTempCommand({}, command);
 
-    expect(removePlanFromDbMock).toHaveBeenCalledTimes(1);
-    expect(removePlanFromDbMock).toHaveBeenCalledWith(
-      '11111111-1111-4111-8111-111111111111',
-      expect.objectContaining({ baseDir: tempDir })
+    expect(writePlanDeleteMock).toHaveBeenCalledTimes(1);
+    expect(writePlanDeleteMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'project-uuid',
+      { planUuid: '11111111-1111-4111-8111-111111111111' }
     );
   });
 
@@ -428,10 +439,12 @@ describe('tim cleanup-temp command', () => {
 
     await handleCleanupTempCommand({}, command);
 
-    expect(removePlanFromDbMock).toHaveBeenCalledTimes(1);
-    expect(removePlanFromDbMock).toHaveBeenCalledWith(
-      '22222222-2222-4222-8222-222222222222',
-      expect.objectContaining({ baseDir: tempDir })
+    expect(writePlanDeleteMock).toHaveBeenCalledTimes(1);
+    expect(writePlanDeleteMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'project-uuid',
+      { planUuid: '22222222-2222-4222-8222-222222222222' }
     );
   });
 });

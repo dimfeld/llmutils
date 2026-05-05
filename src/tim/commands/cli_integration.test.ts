@@ -10,7 +10,7 @@ import { handleAddCommand } from './add.js';
 import { handleSetCommand } from './set.js';
 import { handleValidateCommand } from './validate.js';
 import { clearAllTimCaches } from '../../testing.js';
-import { closeDatabaseForTesting } from '../db/database.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 
 vi.mock('../../common/git.js', async (importOriginal) => {
@@ -230,13 +230,12 @@ describe('CLI integration tests for parent-child relationships (internal handler
     });
 
     test('validate auto-fix integration', async () => {
-      // Create parent and child plans manually to create an inconsistent state
+      // Create parent and child plans
       await createPlanFile({
         id: 1,
         title: 'Parent Plan',
         filename: 'parent.plan.md',
         status: 'in_progress',
-        dependencies: [], // Missing child dependency - this creates inconsistency
         tasks: [{ title: 'Parent task', description: 'Do parent work' }],
       });
 
@@ -245,9 +244,19 @@ describe('CLI integration tests for parent-child relationships (internal handler
         title: 'Child Plan',
         filename: 'child.plan.md',
         status: 'pending',
-        parent: 1, // Has parent but parent doesn't have this in dependencies
+        parent: 1,
         tasks: [{ title: 'Child task', description: 'Do child work' }],
       });
+
+      // applyPlanCreate auto-links child as parent dependency. Manually remove it
+      // to simulate the inconsistent state that validate is designed to detect and fix.
+      const { plan: parentPlanResolved } = await resolvePlanByNumericId(1, tempDir);
+      const { plan: childPlanResolved } = await resolvePlanByNumericId(2, tempDir);
+      const db = getDatabase();
+      db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?').run(
+        parentPlanResolved.uuid,
+        childPlanResolved.uuid
+      );
 
       // Run validate command which should auto-fix the inconsistency
       await handleValidateCommand({}, commandObj);

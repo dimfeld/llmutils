@@ -8,16 +8,19 @@ import {
   getSessionDiscoveryClient,
   getSessionInitPromise,
   getSessionManager,
+  getSyncService,
   getWebSocketServerHandle,
   getWebhookPoller,
   setSessionDiscoveryClient,
   setSessionInitPromise,
   setSessionManager,
+  setSyncService,
   setWebSocketServerHandle,
   setWebhookPoller,
 } from '$lib/server/session_context.js';
 import { SessionDiscoveryClient } from '$lib/server/session_discovery.js';
 import { SessionManager } from '$lib/server/session_manager.js';
+import { shouldRunSyncService, startSyncService } from '$lib/server/sync_service.js';
 import { isWebhookPollingEnabled, startWebhookPoller } from '$lib/server/webhook_poller.js';
 import { startWebSocketServer } from '$lib/server/ws_server.js';
 
@@ -57,15 +60,41 @@ function registerShutdownHandlers(stop: () => void): void {
   };
 }
 
+function registerCurrentShutdownHandlers(): void {
+  // The closure intentionally reads service handles from session_context lazily
+  // at signal time, so HMR-started services replace the value in the slot rather
+  // than capturing a stale handle. Do not refactor to capture handles by value.
+  registerShutdownHandlers(() => {
+    getSyncService()?.stop();
+    getWebhookPoller()?.stop();
+    getSessionDiscoveryClient()?.stop();
+    getWebSocketServerHandle()?.stop();
+  });
+}
+
 export const init: ServerInit = async () => {
   const existingPromise = getSessionInitPromise();
   if (existingPromise) {
     await existingPromise;
+    const { config, db } = await getServerContext();
     // Handle poller state changes during HMR re-init.
     const existingPoller = getWebhookPoller();
     if (existingPoller && !isWebhookPollingEnabled()) {
       existingPoller.stop();
       setWebhookPoller(null);
+    }
+    const existingSyncService = getSyncService();
+    if (existingSyncService) {
+      if (!shouldRunSyncService(config)) {
+        existingSyncService.stop();
+        setSyncService(null);
+      }
+    } else if (shouldRunSyncService(config)) {
+      const syncService = await startSyncService(db, config);
+      if (syncService) {
+        setSyncService(syncService);
+        registerCurrentShutdownHandlers();
+      }
     }
     return;
   }
@@ -73,8 +102,15 @@ export const init: ServerInit = async () => {
   const existingServer = getWebSocketServerHandle();
   const existingDiscoveryClient = getSessionDiscoveryClient();
   const existingWebhookPoller = getWebhookPoller();
-  if (existingServer && existingDiscoveryClient) {
+  const existingSyncService = getSyncService();
+  if (existingServer && existingDiscoveryClient && existingSyncService) {
     return;
+  }
+  if (existingServer && existingDiscoveryClient && !existingSyncService) {
+    const { config } = await getServerContext();
+    if (!shouldRunSyncService(config)) {
+      return;
+    }
   }
 
   const createdResources = {
@@ -82,6 +118,7 @@ export const init: ServerInit = async () => {
     server: false,
     discoveryClient: false,
     webhookPoller: false,
+    syncService: false,
   };
 
   const initPromise = (async () => {
@@ -100,6 +137,7 @@ export const init: ServerInit = async () => {
           }
         },
       });
+    let syncService = existingSyncService;
 
     // Store references before await so they are tracked for cleanup on failure.
     if (!existingServer) {
@@ -116,14 +154,17 @@ export const init: ServerInit = async () => {
       createdResources.webhookPoller = true;
       setWebhookPoller(webhookPoller);
     }
+    if (!existingSyncService) {
+      syncService = await startSyncService(db, config);
+    }
+    if (!existingSyncService && syncService) {
+      createdResources.syncService = true;
+      setSyncService(syncService);
+    }
 
     await discoveryClient.start();
 
-    registerShutdownHandlers(() => {
-      webhookPoller?.stop();
-      discoveryClient.stop();
-      serverHandle.stop();
-    });
+    registerCurrentShutdownHandlers();
 
     return sessionManager;
   })().catch((error) => {
@@ -140,6 +181,13 @@ export const init: ServerInit = async () => {
       if (webhookPoller) {
         webhookPoller.stop();
         setWebhookPoller(null);
+      }
+    }
+    if (createdResources.syncService) {
+      const syncService = getSyncService();
+      if (syncService) {
+        syncService.stop();
+        setSyncService(null);
       }
     }
     if (createdResources.server) {

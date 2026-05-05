@@ -330,6 +330,7 @@ describe('tim plans_db', () => {
     expect(plans.get(77)).toEqual({
       id: 77,
       uuid: '77777777-7777-4777-8777-777777777777',
+      revision: 1,
       title: 'Round-trip plan',
       goal: 'Verify DB reconstruction',
       note: 'Internal implementation note',
@@ -366,9 +367,11 @@ describe('tim plans_db', () => {
       tags: ['db-first', 'materialize'],
       tasks: [
         {
+          uuid: expect.any(String),
           title: 'Verify round-trip',
           description: 'Load the plan back from the DB',
           done: false,
+          revision: 1,
         },
       ],
       createdAt: expect.any(String),

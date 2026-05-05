@@ -1,5 +1,6 @@
 import type { SessionManager } from './session_manager.js';
 import type { SessionDiscoveryClient } from './session_discovery.js';
+import type { SyncServiceHandle } from './sync_service.js';
 import type { WebSocketServerHandle } from './ws_server.js';
 
 export interface WebhookPollerHandle {
@@ -11,6 +12,7 @@ interface SessionContextState {
   server: WebSocketServerHandle | null;
   discoveryClient: SessionDiscoveryClient | null;
   webhookPoller: WebhookPollerHandle | null;
+  syncService: SyncServiceHandle | null;
   initPromise: Promise<SessionManager> | null;
 }
 
@@ -26,6 +28,7 @@ function getState(): SessionContextState {
     server: null,
     discoveryClient: null,
     webhookPoller: null,
+    syncService: null,
     initPromise: null,
   };
 
@@ -67,6 +70,14 @@ export function getWebhookPoller(): WebhookPollerHandle | null {
 
 export function setWebhookPoller(webhookPoller: WebhookPollerHandle | null): void {
   getState().webhookPoller = webhookPoller;
+}
+
+export function getSyncService(): SyncServiceHandle | null {
+  return getState().syncService;
+}
+
+export function setSyncService(syncService: SyncServiceHandle | null): void {
+  getState().syncService = syncService;
 }
 
 export function getSessionInitPromise(): Promise<SessionManager> | null {

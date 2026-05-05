@@ -24,8 +24,8 @@ import { executePostApplyCommand } from '../../actions.js';
 import { loadEffectiveConfig, loadGlobalConfigForNotifications } from '../../configLoader.js';
 import { getDefaultConfig } from '../../configSchema.js';
 import { getDatabase } from '../../db/database.js';
-import { setPlanBranch } from '../../db/plan.js';
-import { syncPlanToDb } from '../../db/plan_sync.js';
+import { getPlanByUuid } from '../../db/plan.js';
+import { getProjectUuidForId, writePlanSetScalar } from '../../sync/write_router.js';
 import { getCombinedTitleFromSummary } from '../../display_utils.js';
 import {
   buildExecutorAndLog,
@@ -38,6 +38,7 @@ import {
   readPlanFile,
   resolvePlanByNumericId,
   setPlanStatusById,
+  writePlanToDb,
   writePlanFile,
 } from '../../plans.js';
 import { findNextActionableItem } from '../../plans/find_next.js';
@@ -418,8 +419,18 @@ export async function timAgent(
           getTrunkBranch(currentBaseDir),
         ]);
         if (currentBranch && currentBranch !== trunkBranch) {
-          setPlanBranch(getDatabase(), planData.uuid, currentBranch);
-          recordedBranch = currentBranch;
+          const db = getDatabase();
+          const planRow = getPlanByUuid(db, planData.uuid);
+          if (planRow) {
+            const projectUuid = getProjectUuidForId(db, planRow.project_id);
+            await writePlanSetScalar(db, config, projectUuid, {
+              planUuid: planData.uuid,
+              field: 'branch',
+              value: currentBranch,
+              baseRevision: planRow.revision,
+            });
+            recordedBranch = currentBranch;
+          }
         }
       } catch (err) {
         warn(`Failed to record branch on plan: ${err as Error}`);
@@ -1406,15 +1417,14 @@ export async function timAgent(
       try {
         const updatedPlan = await readPlanFile(currentPlanFile);
         // Preserve the branch recorded earlier — the plan file may not have it
-        // if setPlanBranch() ran after materialization on the first agent run.
+        // if the branch was recorded after materialization on the first agent run.
         if (!updatedPlan.branch && recordedBranch) {
           updatedPlan.branch = recordedBranch;
         }
         lastKnownPlan = updatedPlan;
-        await syncPlanToDb(updatedPlan, {
+        await writePlanToDb(updatedPlan, {
           cwdForIdentity: currentBaseDir,
-          force: true,
-          throwOnError: true,
+          config,
         });
       } catch (err) {
         const syncError = err instanceof Error ? err : new Error(String(err));

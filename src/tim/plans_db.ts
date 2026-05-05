@@ -51,7 +51,13 @@ function resolveUuidToPlanId(uuid: string, uuidToPlanId?: Map<string, number>): 
  */
 export function planRowToSchemaInput(
   row: PlanRow,
-  tasks: Array<{ title: string; description: string; done: boolean }>,
+  tasks: Array<{
+    uuid?: string;
+    title: string;
+    description: string;
+    done: boolean;
+    revision?: number;
+  }>,
   dependencyUuids: string[],
   tags: string[],
   uuidToPlanId?: Map<string, number>
@@ -66,6 +72,7 @@ export function planRowToSchemaInput(
   return {
     id: row.plan_id,
     uuid: row.uuid,
+    revision: row.revision,
     title: row.title ?? undefined,
     goal: row.goal ?? '',
     note: row.note ?? undefined,
@@ -102,9 +109,11 @@ export function planRowToSchemaInput(
 export function planRowForTransaction(row: PlanRow, uuidToPlanId: Map<string, number>): PlanSchema {
   const db = getDatabase();
   const tasks = getPlanTasksByUuid(db, row.uuid).map((task) => ({
+    uuid: task.uuid ?? undefined,
     title: task.title,
     description: task.description,
     done: task.done === 1,
+    revision: task.revision,
   }));
   const dependencyUuids = getPlanDependenciesByUuid(db, row.uuid).map(
     (dependency) => dependency.depends_on_uuid
@@ -144,15 +153,17 @@ export function loadPlansFromDb(_searchDir: string, repositoryId: string): Plans
 
   const tasksByPlanUuid = new Map<
     string,
-    Array<{ title: string; description: string; done: boolean }>
+    Array<{ uuid?: string; title: string; description: string; done: boolean; revision?: number }>
   >();
   const taskRows = getPlanTasksByProject(db, project.id);
   for (const taskRow of taskRows) {
     const list = tasksByPlanUuid.get(taskRow.plan_uuid) ?? [];
     list.push({
+      uuid: taskRow.uuid ?? undefined,
       title: taskRow.title,
       description: taskRow.description,
       done: taskRow.done === 1,
+      revision: taskRow.revision,
     });
     tasksByPlanUuid.set(taskRow.plan_uuid, list);
   }
