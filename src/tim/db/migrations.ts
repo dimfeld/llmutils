@@ -1067,14 +1067,28 @@ function tableColumns(db: Database, tableName: string): Set<string> {
   );
 }
 
-function sourceColumn(columns: ReadonlySet<string>, column: string, fallback: string): string {
-  return columns.has(column) ? column : fallback;
+function sourceColumn(
+  columns: ReadonlySet<string>,
+  column: string,
+  fallback: string,
+  tableAlias?: string
+): string {
+  return columns.has(column) ? `${tableAlias ?? ''}${tableAlias ? '.' : ''}${column}` : fallback;
 }
 
 function backfillCanonicalTables(db: Database): void {
   debugLog('[migrations] Starting canonical table backfill');
   if (tableExists(db, 'plan')) {
     const columns = tableColumns(db, 'plan');
+    const skippedCount = countOrphanRows(
+      db,
+      `
+        SELECT COUNT(*) AS count
+        FROM plan
+        LEFT JOIN project ON project.id = plan.project_id
+        WHERE plan.uuid IS NOT NULL AND plan.project_id IS NOT NULL AND project.id IS NULL
+      `
+    );
     runBackfillStatement(db, 'plan_canonical', `
       INSERT INTO plan_canonical (
         uuid, project_id, plan_id, title, goal, details, status, priority, branch,
@@ -1084,94 +1098,142 @@ function backfillCanonicalTables(db: Database): void {
         base_commit, base_change_id, revision
       )
       SELECT
-        ${sourceColumn(columns, 'uuid', 'NULL')},
-        ${sourceColumn(columns, 'project_id', 'NULL')},
-        ${sourceColumn(columns, 'plan_id', '0')},
-        ${sourceColumn(columns, 'title', 'NULL')},
-        ${sourceColumn(columns, 'goal', 'NULL')},
-        ${sourceColumn(columns, 'details', 'NULL')},
-        ${sourceColumn(columns, 'status', "'pending'")},
-        ${sourceColumn(columns, 'priority', 'NULL')},
-        ${sourceColumn(columns, 'branch', 'NULL')},
-        ${sourceColumn(columns, 'simple', 'NULL')},
-        ${sourceColumn(columns, 'tdd', 'NULL')},
-        ${sourceColumn(columns, 'discovered_from', 'NULL')},
-        ${sourceColumn(columns, 'issue', 'NULL')},
-        ${sourceColumn(columns, 'pull_request', 'NULL')},
-        ${sourceColumn(columns, 'assigned_to', 'NULL')},
-        ${sourceColumn(columns, 'base_branch', 'NULL')},
-        ${sourceColumn(columns, 'temp', 'NULL')},
-        ${sourceColumn(columns, 'docs', 'NULL')},
-        ${sourceColumn(columns, 'changed_files', 'NULL')},
-        ${sourceColumn(columns, 'plan_generated_at', 'NULL')},
-        ${sourceColumn(columns, 'review_issues', 'NULL')},
-        ${sourceColumn(columns, 'parent_uuid', 'NULL')},
-        ${sourceColumn(columns, 'epic', '0')},
-        ${sourceColumn(columns, 'created_at', SQL_NOW_ISO_UTC)},
-        ${sourceColumn(columns, 'updated_at', SQL_NOW_ISO_UTC)},
-        ${sourceColumn(columns, 'docs_updated_at', 'NULL')},
-        ${sourceColumn(columns, 'lessons_applied_at', 'NULL')},
-        ${sourceColumn(columns, 'note', 'NULL')},
-        ${sourceColumn(columns, 'base_commit', 'NULL')},
-        ${sourceColumn(columns, 'base_change_id', 'NULL')},
-        ${sourceColumn(columns, 'revision', '1')}
+        ${sourceColumn(columns, 'uuid', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'project_id', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'plan_id', '0', 'plan')},
+        ${sourceColumn(columns, 'title', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'goal', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'details', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'status', "'pending'", 'plan')},
+        ${sourceColumn(columns, 'priority', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'branch', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'simple', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'tdd', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'discovered_from', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'issue', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'pull_request', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'assigned_to', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'base_branch', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'temp', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'docs', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'changed_files', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'plan_generated_at', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'review_issues', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'parent_uuid', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'epic', '0', 'plan')},
+        ${sourceColumn(columns, 'created_at', SQL_NOW_ISO_UTC, 'plan')},
+        ${sourceColumn(columns, 'updated_at', SQL_NOW_ISO_UTC, 'plan')},
+        ${sourceColumn(columns, 'docs_updated_at', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'lessons_applied_at', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'note', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'base_commit', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'base_change_id', 'NULL', 'plan')},
+        ${sourceColumn(columns, 'revision', '1', 'plan')}
       FROM plan
-      WHERE uuid IS NOT NULL AND project_id IS NOT NULL
+      JOIN project ON project.id = plan.project_id
+      WHERE plan.uuid IS NOT NULL AND plan.project_id IS NOT NULL
     `);
+    logSkippedRows('plan_canonical', skippedCount);
   }
 
   if (tableExists(db, 'plan_task')) {
     const columns = tableColumns(db, 'plan_task');
+    const skippedCount = countOrphanRows(
+      db,
+      `
+        SELECT COUNT(*) AS count
+        FROM plan_task
+        LEFT JOIN plan ON plan.uuid = plan_task.plan_uuid
+        WHERE plan.uuid IS NULL
+      `
+    );
     runBackfillStatement(db, 'task_canonical', `
       INSERT INTO task_canonical (
         id, plan_uuid, task_index, title, description, done, uuid, revision
       )
       SELECT
-        ${sourceColumn(columns, 'id', 'NULL')},
-        ${sourceColumn(columns, 'plan_uuid', 'NULL')},
-        ${sourceColumn(columns, 'task_index', '0')},
-        ${sourceColumn(columns, 'title', "''")},
-        ${sourceColumn(columns, 'description', "''")},
-        ${sourceColumn(columns, 'done', '0')},
-        ${sourceColumn(columns, 'uuid', 'NULL')},
-        ${sourceColumn(columns, 'revision', '1')}
+        ${sourceColumn(columns, 'id', 'NULL', 'plan_task')},
+        ${sourceColumn(columns, 'plan_uuid', 'NULL', 'plan_task')},
+        ${sourceColumn(columns, 'task_index', '0', 'plan_task')},
+        ${sourceColumn(columns, 'title', "''", 'plan_task')},
+        ${sourceColumn(columns, 'description', "''", 'plan_task')},
+        ${sourceColumn(columns, 'done', '0', 'plan_task')},
+        ${sourceColumn(columns, 'uuid', 'NULL', 'plan_task')},
+        ${sourceColumn(columns, 'revision', '1', 'plan_task')}
       FROM plan_task
-      WHERE plan_uuid IS NOT NULL
+      JOIN plan ON plan.uuid = plan_task.plan_uuid
+      WHERE plan_task.plan_uuid IS NOT NULL
     `);
+    logSkippedRows('task_canonical', skippedCount);
   }
 
   if (tableExists(db, 'plan_dependency')) {
+    const skippedCount = countOrphanRows(
+      db,
+      `
+        SELECT COUNT(*) AS count
+        FROM plan_dependency
+        LEFT JOIN plan plan_owner ON plan_owner.uuid = plan_dependency.plan_uuid
+        LEFT JOIN plan plan_dep ON plan_dep.uuid = plan_dependency.depends_on_uuid
+        WHERE plan_owner.uuid IS NULL OR plan_dep.uuid IS NULL
+      `
+    );
     runBackfillStatement(db, 'plan_dependency_canonical', `
       INSERT INTO plan_dependency_canonical (plan_uuid, depends_on_uuid)
-      SELECT plan_uuid, depends_on_uuid
+      SELECT plan_dependency.plan_uuid, plan_dependency.depends_on_uuid
       FROM plan_dependency
+      JOIN plan plan_owner ON plan_owner.uuid = plan_dependency.plan_uuid
+      JOIN plan plan_dep ON plan_dep.uuid = plan_dependency.depends_on_uuid
     `);
+    logSkippedRows('plan_dependency_canonical', skippedCount);
   }
 
   if (tableExists(db, 'plan_tag')) {
+    const skippedCount = countOrphanRows(
+      db,
+      `
+        SELECT COUNT(*) AS count
+        FROM plan_tag
+        LEFT JOIN plan ON plan.uuid = plan_tag.plan_uuid
+        WHERE plan.uuid IS NULL
+      `
+    );
     runBackfillStatement(db, 'plan_tag_canonical', `
       INSERT INTO plan_tag_canonical (plan_uuid, tag)
-      SELECT plan_uuid, tag
+      SELECT plan_tag.plan_uuid, plan_tag.tag
       FROM plan_tag
+      JOIN plan ON plan.uuid = plan_tag.plan_uuid
     `);
+    logSkippedRows('plan_tag_canonical', skippedCount);
   }
 
   if (tableExists(db, 'project_setting')) {
     const columns = tableColumns(db, 'project_setting');
+    const skippedCount = countOrphanRows(
+      db,
+      `
+        SELECT COUNT(*) AS count
+        FROM project_setting
+        LEFT JOIN project ON project.id = project_setting.project_id
+        WHERE project.id IS NULL
+      `
+    );
     runBackfillStatement(db, 'project_setting_canonical', `
       INSERT INTO project_setting_canonical (
         project_id, setting, value, revision, updated_at, updated_by_node
       )
       SELECT
-        ${sourceColumn(columns, 'project_id', 'NULL')},
-        ${sourceColumn(columns, 'setting', 'NULL')},
-        ${sourceColumn(columns, 'value', "''")},
-        ${sourceColumn(columns, 'revision', '1')},
-        ${sourceColumn(columns, 'updated_at', SQL_NOW_ISO_UTC)},
-        ${sourceColumn(columns, 'updated_by_node', 'NULL')}
+        ${sourceColumn(columns, 'project_id', 'NULL', 'project_setting')},
+        ${sourceColumn(columns, 'setting', 'NULL', 'project_setting')},
+        ${sourceColumn(columns, 'value', "''", 'project_setting')},
+        ${sourceColumn(columns, 'revision', '1', 'project_setting')},
+        ${sourceColumn(columns, 'updated_at', SQL_NOW_ISO_UTC, 'project_setting')},
+        ${sourceColumn(columns, 'updated_by_node', 'NULL', 'project_setting')}
       FROM project_setting
-      WHERE project_id IS NOT NULL AND setting IS NOT NULL
+      JOIN project ON project.id = project_setting.project_id
+      WHERE project_setting.project_id IS NOT NULL AND project_setting.setting IS NOT NULL
       `);
+    logSkippedRows('project_setting_canonical', skippedCount);
   }
 
   debugLog('[migrations] Completed canonical table backfill');
@@ -1188,6 +1250,17 @@ function runBackfillStatement(db: Database, targetTable: string, sql: string): v
       debugLog(`[migrations] Failed while backfilling ${targetTable}:`, error);
     }
     throw error;
+  }
+}
+
+function countOrphanRows(db: Database, sql: string): number {
+  const row = db.prepare(sql).get() as { count?: number } | null;
+  return row?.count ?? 0;
+}
+
+function logSkippedRows(targetTable: string, skippedCount: number): void {
+  if (skippedCount > 0) {
+    debugLog(`[migrations] Skipped ${skippedCount} orphan row(s) while backfilling ${targetTable}`);
   }
 }
 
