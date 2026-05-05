@@ -221,6 +221,8 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
     throw new Error('Sync server did not report a listening port');
   }
 
+  console.info(`[sync] Started main sync server (node=${options.mainNodeId}) on ${hostname}:${server.port}`);
+
   return {
     port: server.port,
     hostname,

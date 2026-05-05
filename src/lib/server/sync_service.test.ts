@@ -79,7 +79,7 @@ describe('sync service lifecycle', () => {
   });
 
   test('starts and stops a main-node sync server with minimal valid config', async () => {
-    vi.spyOn(console, 'info').mockImplementation(() => {});
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const handle = await startSyncService(
       createDb(),
@@ -97,6 +97,11 @@ describe('sync service lifecycle', () => {
       ok: true,
       status: 200,
     });
+    expect(
+      infoSpy.mock.calls.some((call) =>
+        String(call[0]).includes('[sync] Started main sync server (node=main-node) on')
+      )
+    ).toBe(true);
 
     handle!.stop();
     handle!.stop();
