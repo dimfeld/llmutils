@@ -251,15 +251,7 @@
     return null;
   });
 
-  let currentCollapsed = $state(untrack(() => collapsed));
-  let lastCollapsedProp = $state(untrack(() => collapsed));
-
-  $effect(() => {
-    if (collapsed !== lastCollapsedProp) {
-      currentCollapsed = collapsed;
-      lastCollapsedProp = collapsed;
-    }
-  });
+  let currentCollapsed = $derived(collapsed);
 
   let shouldVirtualize = $derived.by(() => {
     if (!resolvedDiff || !virtualizer) {
