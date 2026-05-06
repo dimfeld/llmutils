@@ -24,6 +24,7 @@
   const PATCH_HEADER_RE = /^---\s/m;
   const VIRTUALIZED_LINE_THRESHOLD = 20;
   const EMPTY_LINE_ANNOTATIONS: DiffLineAnnotation<unknown>[] = [];
+  const HEADER_TOGGLE_CLASS = 'tim-diff-collapse-toggle';
 
   let workerPool: ReturnType<typeof getOrCreateWorkerPoolSingleton> | undefined;
 
@@ -76,6 +77,25 @@
     ...args: Parameters<NonNullable<FileDiffOptions<unknown>['onLineClick']>>
   ) {
     onLineClick?.(...args);
+  }
+
+  function createCollapseToggleButton(): HTMLButtonElement | undefined {
+    if (disableFileHeader) {
+      return undefined;
+    }
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = HEADER_TOGGLE_CLASS;
+    button.ariaExpanded = String(!currentCollapsed);
+    button.title = currentCollapsed ? 'Expand diff' : 'Collapse diff';
+    button.innerText = currentCollapsed ? 'Show' : 'Hide';
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      currentCollapsed = !currentCollapsed;
+    });
+    return button;
   }
 
   function unmountAnnotationComponent(component: Record<string, unknown>) {
@@ -231,6 +251,16 @@
     return null;
   });
 
+  let currentCollapsed = $state(untrack(() => collapsed));
+  let lastCollapsedProp = $state(untrack(() => collapsed));
+
+  $effect(() => {
+    if (collapsed !== lastCollapsedProp) {
+      currentCollapsed = collapsed;
+      lastCollapsedProp = collapsed;
+    }
+  });
+
   let shouldVirtualize = $derived.by(() => {
     if (!resolvedDiff || !virtualizer) {
       return false;
@@ -255,7 +285,8 @@
       overflow,
       disableFileHeader,
       disableLineNumbers,
-      collapsed,
+      collapsed: currentCollapsed,
+      renderHeaderPrefix: createCollapseToggleButton,
       enableLineSelection,
       onLineSelected: handleLineSelected,
       enableGutterUtility,
@@ -433,3 +464,22 @@
     <div {id} class={className} {@attach diffAttachment}></div>
   {/if}
 {/if}
+
+<style>
+  :global(.tim-diff-collapse-toggle) {
+    margin: 0 0.35rem 0 0;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 4px;
+    background: rgba(15, 23, 42, 0.04);
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.75rem;
+    line-height: 1;
+    padding: 0.2rem 0.35rem;
+  }
+
+  :global(.tim-diff-collapse-toggle:hover) {
+    background: rgba(148, 163, 184, 0.16);
+  }
+</style>
