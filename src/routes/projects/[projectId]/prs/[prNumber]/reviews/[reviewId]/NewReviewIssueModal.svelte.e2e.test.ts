@@ -1,5 +1,5 @@
 import { describe, expect, test, vi, beforeEach } from 'vitest';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import type { ReviewIssueRow, ReviewIssueSide } from '$tim/db/review.js';
 import NewReviewIssueModal from './NewReviewIssueModal.svelte';
@@ -93,6 +93,12 @@ describe('NewReviewIssueModal', () => {
     await expect.element(saveButton).toBeDisabled();
   });
 
+  test('Issue content textarea has autofocus', async () => {
+    const screen = render(NewReviewIssueModal, makeProps());
+
+    await expect.element(screen.getByLabelText('Issue content')).toHaveAttribute('autofocus');
+  });
+
   test('Save calls createReviewIssue with expected payload and fires onSaved + onClose', async () => {
     const created = makeIssue({ content: 'New content', file: 'src/foo.ts' });
     createReviewIssueMock.mockResolvedValueOnce(created);
@@ -135,6 +141,24 @@ describe('NewReviewIssueModal', () => {
       expect(onSaved).toHaveBeenCalledWith(created);
       expect(onClose).toHaveBeenCalledTimes(1);
     });
+  });
+
+  test('Command Enter submits when content is valid', async () => {
+    const created = makeIssue({ content: 'Keyboard content', file: 'src/foo.ts' });
+    createReviewIssueMock.mockResolvedValueOnce(created);
+    const onSaved = vi.fn();
+    const onClose = vi.fn();
+
+    const screen = render(NewReviewIssueModal, makeProps({ onSaved, onClose }));
+
+    await screen.getByLabelText('Issue content').fill('Keyboard content');
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
+
+    await vi.waitFor(() => {
+      expect(createReviewIssueMock).toHaveBeenCalledTimes(1);
+    });
+    expect(onSaved).toHaveBeenCalledWith(created);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   test('Cancel does not call createReviewIssue and calls onClose', async () => {

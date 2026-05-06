@@ -32,8 +32,7 @@
 
   let rangeLabel = $derived(startLine === endLine ? String(startLine) : `${startLine}–${endLine}`);
 
-  async function handleSubmit(event: Event) {
-    event.preventDefault();
+  async function submitIssue() {
     if (!canSave) return;
     errorMessage = null;
     saving = true;
@@ -61,6 +60,11 @@
     }
   }
 
+  async function handleSubmit(event: Event) {
+    event.preventDefault();
+    await submitIssue();
+  }
+
   function handleCancel() {
     if (saving) return;
     content = '';
@@ -78,6 +82,9 @@
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       handleCancel();
+    } else if (event.metaKey && event.key === 'Enter') {
+      event.preventDefault();
+      void submitIssue();
     }
   }
 </script>
@@ -116,6 +123,7 @@
             bind:value={content}
             disabled={saving}
             required
+            autofocus
             class="min-h-24 text-xs"
             placeholder="Describe the issue…"
           />
