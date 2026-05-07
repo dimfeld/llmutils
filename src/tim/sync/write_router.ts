@@ -60,6 +60,7 @@ import type {
 } from './types.js';
 import { createBatchEnvelope } from './types.js';
 import { resolveWriteMode, type WriteMode } from './write_mode.js';
+import { repairClearedRejectedSequenceMarkers } from './sequence_repair.js';
 
 export type SyncWriteResult =
   | {
@@ -87,6 +88,17 @@ export type SyncBatchWriteResult =
 type OperationBuilder = (
   options: SyncOperationConstructorOptions
 ) => Promise<SyncOperationEnvelope>;
+
+function getOperationFieldPath(operation: SyncOperationEnvelope): string | undefined {
+  const op = operation.op as { field?: unknown; list?: unknown };
+  if (typeof op.field === 'string') {
+    return op.field;
+  }
+  if (typeof op.list === 'string') {
+    return op.list;
+  }
+  return undefined;
+}
 
 export interface RouteSyncOperationOptions {
   acceptConflict?: boolean;
@@ -122,6 +134,7 @@ export async function routeSyncOperation(
   let operation: SyncOperationEnvelope = operationTemplate;
   let result: ApplyOperationResult;
   const applyLocalOperation = db.transaction((): ApplyOperationResult => {
+    repairClearedRejectedSequenceMarkers(db, { originNodeId });
     const localSequence = allocateLocalSequence(db, originNodeId);
     operation = {
       ...operationTemplate,
@@ -168,6 +181,8 @@ export async function routeSyncOperation(
         operationUuid: operation.operationUuid,
         targetKey: operation.targetKey,
         conflictId: result.conflictId,
+        operationType: operation.op.type,
+        fieldPath: getOperationFieldPath(operation),
       }
     );
   }
@@ -235,6 +250,7 @@ async function routeSyncBatchWithMode(
   }
 
   options.precondition?.();
+  repairClearedRejectedSequenceMarkers(db, { originNodeId });
   const localSequenceStart = allocateLocalSequenceRange(db, originNodeId, input.operations.length);
   const operations = input.operations.map((operation, index) => ({
     ...operation,
@@ -265,6 +281,9 @@ async function routeSyncBatchWithMode(
         operationUuid: operation.operationUuid,
         targetKey: operation.targetKey,
         conflictId: conflict.conflictId,
+        operationType: operation.op.type,
+        fieldPath: getOperationFieldPath(operation),
+        reason: conflict.error?.message,
       }
     );
   }
@@ -284,6 +303,9 @@ async function routeSyncBatchWithMode(
         operationUuid: conflictOperation.operationUuid,
         targetKey: conflictOperation.targetKey,
         conflictId: result.results[conflictIndex]?.conflictId,
+        operationType: conflictOperation.op.type,
+        fieldPath: getOperationFieldPath(conflictOperation),
+        reason: result.results[conflictIndex]?.error?.message ?? result.error?.message,
       }
     );
   }

@@ -49,6 +49,7 @@ import {
 import { beginSyncBatch, getProjectUuidForId } from './sync/write_router.js';
 import { resolveWriteMode } from './sync/write_mode.js';
 import type { SyncPlanListName, SyncReviewIssueValue } from './sync/types.js';
+import { SyncWriteConflictError } from './sync/errors.js';
 import { DEFAULT_WORKSPACE_CLONE_LOCATION } from './workspace/workspace_paths.js';
 
 export const MATERIALIZED_DIR = path.join('.tim', 'plans');
@@ -596,7 +597,8 @@ async function routeMaterializedPlanChanges(
   projectionRow: PlanRow,
   shadowPlan: PlanSchema,
   filePlan: PlanSchema,
-  changedFields: Set<EditablePlanField>
+  changedFields: Set<EditablePlanField>,
+  source?: { filePath: string; shadowPath: string }
 ): Promise<{ wroteTaskUuids: boolean }> {
   const projectUuid = getProjectUuidForId(db, context.projectId);
   const planUuid = projectionRow.uuid;
@@ -921,7 +923,31 @@ async function routeMaterializedPlanChanges(
     }
   }
 
-  await batch.commit();
+  try {
+    await batch.commit();
+  } catch (error) {
+    if (error instanceof SyncWriteConflictError && source) {
+      const reason = materializedConflictReason(error.reason);
+      throw new SyncWriteConflictError(
+        formatMaterializedPlanSyncConflictMessage({
+          error,
+          planId: filePlan.id,
+          filePath: source.filePath,
+          shadowPath: source.shadowPath,
+          changedFields,
+        }),
+        {
+          operationUuid: error.operationUuid,
+          targetKey: error.targetKey,
+          conflictId: error.conflictId,
+          operationType: error.operationType,
+          fieldPath: error.fieldPath,
+          reason,
+        }
+      );
+    }
+    throw error;
+  }
   if (baseTrackingUpdate) {
     updatePlanBaseTrackingLocalOnly(
       db,
@@ -931,6 +957,44 @@ async function routeMaterializedPlanChanges(
     );
   }
   return { wroteTaskUuids };
+}
+
+function formatMaterializedPlanSyncConflictMessage(input: {
+  error: SyncWriteConflictError;
+  planId?: number;
+  filePath: string;
+  shadowPath: string;
+  changedFields: Set<EditablePlanField>;
+}): string {
+  const operation =
+    input.error.operationType && input.error.fieldPath
+      ? `${input.error.operationType} (${input.error.fieldPath})`
+      : (input.error.operationType ?? 'a sync operation');
+  const planLabel = input.planId ? `plan ${input.planId}` : input.error.targetKey;
+  const changed = [...input.changedFields].sort().join(', ') || 'unknown';
+  const reason = materializedConflictReason(input.error.reason);
+  const details = reason ? `\nConflict detail: ${reason}` : '';
+  const conflictId = input.error.conflictId ? `\nConflict ID: ${input.error.conflictId}` : '';
+
+  return (
+    `Could not sync materialized ${planLabel} before applying the command.\n` +
+    `The materialized file has local edits that conflict with the current database state while applying ${operation}.\n` +
+    `File: ${input.filePath}\n` +
+    `Shadow: ${input.shadowPath}\n` +
+    `Changed fields detected from the materialized file: ${changed}\n` +
+    `No part of this materialized-file sync batch was applied.\n` +
+    `To keep the file edits, reconcile the materialized file with the current DB plan and run the command again. ` +
+    `To discard the materialized file edits, run \`tim materialize ${input.planId ?? ''}\` to refresh it from the database.` +
+    details +
+    conflictId
+  );
+}
+
+function materializedConflictReason(reason: string | undefined): string | undefined {
+  if (!reason || reason.includes('conflict diagnosed but not persisted')) {
+    return undefined;
+  }
+  return reason;
 }
 
 async function syncMaterializedPlanFromDbBaseline(
@@ -1464,7 +1528,8 @@ export async function syncMaterializedPlan(
       projectionRow,
       shadowPlan,
       plan,
-      changes.changedFields
+      changes.changedFields,
+      { filePath, shadowPath }
     );
     // preserveUpdatedAt is a local-only concern (editor-set timestamp). The sync
     // ops don't carry updatedAt, so apply it directly after ops complete.

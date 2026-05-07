@@ -267,7 +267,7 @@ function checkFifo(db: Database, envelope: SyncOperationEnvelope): SyncFifoGapEr
         SELECT MAX(local_sequence) AS max_sequence
         FROM sync_operation
         WHERE origin_node_id = ?
-          AND status IN ('applied', 'conflict', 'rejected')
+          AND status IN ('applied', 'conflict', 'rejected', 'cleared_rejected')
           AND operation_uuid <> ?
       `
     )

@@ -370,6 +370,70 @@ describe('sync write router', () => {
     ).toEqual({ next_sequence: 1 });
   });
 
+  test('main-local writes repair cleared sequence gaps before allocating', async () => {
+    const config = { sync: { role: 'main', nodeId: NODE_ID } } as TimConfig;
+    const applied = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'already-applied' },
+      { originNodeId: NODE_ID, localSequence: 0 }
+    );
+    db.prepare(
+      `
+        INSERT INTO sync_operation (
+          operation_uuid,
+          project_uuid,
+          origin_node_id,
+          local_sequence,
+          target_type,
+          target_key,
+          operation_type,
+          payload,
+          status,
+          attempts,
+          created_at,
+          updated_at,
+          batch_atomic
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'applied', 0, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 0)
+      `
+    ).run(
+      applied.operationUuid,
+      PROJECT_UUID,
+      NODE_ID,
+      0,
+      applied.targetType,
+      applied.targetKey,
+      applied.op.type,
+      JSON.stringify(applied.op)
+    );
+    db.prepare(
+      "INSERT INTO tim_node_sequence (node_id, next_sequence, updated_at) VALUES (?, 3, '2026-01-01T00:00:00.000Z')"
+    ).run(NODE_ID);
+
+    const result = await routeSyncOperation(db, config, (options) =>
+      addPlanTagOperation(PROJECT_UUID, { planUuid: PLAN_UUID, tag: 'after-gap' }, options)
+    );
+
+    expect(result.mode).toBe('applied');
+    expect(
+      db
+        .prepare(
+          `
+            SELECT local_sequence, status
+            FROM sync_operation
+            WHERE origin_node_id = ?
+            ORDER BY local_sequence
+          `
+        )
+        .all(NODE_ID)
+    ).toEqual([
+      { local_sequence: 0, status: 'applied' },
+      { local_sequence: 1, status: 'cleared_rejected' },
+      { local_sequence: 2, status: 'cleared_rejected' },
+      { local_sequence: 3, status: 'applied' },
+    ]);
+    expect(nodeSequenceRow()).toEqual({ next_sequence: 4 });
+  });
+
   test('main-local conflicted writes throw a typed write error by default', async () => {
     const config = { sync: { role: 'main', nodeId: NODE_ID } } as TimConfig;
     db.prepare('UPDATE plan SET details = ?, revision = revision + 1 WHERE uuid = ?').run(

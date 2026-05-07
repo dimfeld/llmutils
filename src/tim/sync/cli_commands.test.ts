@@ -18,8 +18,10 @@ import { getProjectSettingWithMetadata, setProjectSetting } from '../db/project_
 import { insertSyncConflict, insertSyncOperation, getSyncConflict } from '../db/sync_tables.js';
 import {
   handleSyncBootstrapCommand,
+  handleSyncClearRejectedCommand,
   handleSyncConflictsCommand,
   handleSyncResolveCommand,
+  handleSyncShowRejectedCommand,
   handleSyncStatusCommand,
 } from '../commands/sync.js';
 import { applyOperation } from './apply.js';
@@ -349,6 +351,142 @@ describe('tim sync CLI node commands', () => {
       .prepare("SELECT target_key FROM sync_sequence WHERE target_type = 'plan' AND target_key = ?")
       .all(`plan:${PLAN_UUID}`) as Array<{ target_key: string }>;
     expect(planRows).toHaveLength(1);
+  });
+
+  test('sync clear-rejected clears only rejected operation records without deleting sequence slots', async () => {
+    const statuses = ['queued', 'rejected', 'conflict', 'rejected'] as const;
+    for (const [index, status] of statuses.entries()) {
+      const op = await addPlanTagOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, tag: status },
+        { originNodeId: PERSISTENT_NODE, localSequence: index + 1 }
+      );
+      insertSyncOperation(db, {
+        operation_uuid: op.operationUuid,
+        project_uuid: PROJECT_UUID,
+        origin_node_id: PERSISTENT_NODE,
+        local_sequence: index + 1,
+        target_type: op.targetType,
+        target_key: op.targetKey,
+        operation_type: op.op.type,
+        base_revision: null,
+        base_hash: null,
+        payload: JSON.stringify(op.op),
+        status,
+        last_error: status === 'rejected' ? 'bad operation' : null,
+        acked_at: null,
+        ack_metadata: null,
+      });
+    }
+
+    await handleSyncClearRejectedCommand({}, command, { db, config: config('persistent') });
+
+    expect(
+      db.prepare('SELECT status, COUNT(*) AS count FROM sync_operation GROUP BY status').all()
+    ).toEqual([
+      { status: 'cleared_rejected', count: 2 },
+      { status: 'conflict', count: 1 },
+      { status: 'queued', count: 1 },
+    ]);
+    expect(mockLog).toHaveBeenCalledWith('Cleared 2 rejected sync operations.');
+  });
+
+  test('sync clear-rejected repairs missing local sequence slots from prior rejected-row deletion', async () => {
+    const applied = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'applied' },
+      { originNodeId: PERSISTENT_NODE, localSequence: 0 }
+    );
+    insertSyncOperation(db, {
+      operation_uuid: applied.operationUuid,
+      project_uuid: PROJECT_UUID,
+      origin_node_id: PERSISTENT_NODE,
+      local_sequence: 0,
+      target_type: applied.targetType,
+      target_key: applied.targetKey,
+      operation_type: applied.op.type,
+      base_revision: null,
+      base_hash: null,
+      payload: JSON.stringify(applied.op),
+      status: 'applied',
+      last_error: null,
+      acked_at: '2026-01-01T00:00:00.000Z',
+      ack_metadata: null,
+    });
+    db.prepare(
+      "INSERT INTO tim_node_sequence (node_id, next_sequence, updated_at) VALUES (?, 4, '2026-01-01T00:00:00.000Z')"
+    ).run(PERSISTENT_NODE);
+
+    await handleSyncClearRejectedCommand({}, command, { db, config: config('persistent') });
+
+    expect(
+      db
+        .prepare(
+          `
+            SELECT local_sequence, status
+            FROM sync_operation
+            WHERE origin_node_id = ?
+            ORDER BY local_sequence
+          `
+        )
+        .all(PERSISTENT_NODE)
+    ).toEqual([
+      { local_sequence: 0, status: 'applied' },
+      { local_sequence: 1, status: 'cleared_rejected' },
+      { local_sequence: 2, status: 'cleared_rejected' },
+      { local_sequence: 3, status: 'cleared_rejected' },
+    ]);
+    expect(mockLog).toHaveBeenCalledWith('Cleared 0 rejected sync operations.');
+    expect(mockLog).toHaveBeenCalledWith('Repaired 3 cleared sync sequence slots.');
+  });
+
+  test('sync show-rejected lists rejected operation records', async () => {
+    const queued = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'queued' },
+      { originNodeId: PERSISTENT_NODE, localSequence: 1 }
+    );
+    const rejected = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'rejected' },
+      { originNodeId: PERSISTENT_NODE, localSequence: 2 }
+    );
+    for (const [op, status, lastError] of [
+      [queued, 'queued', null],
+      [rejected, 'rejected', 'bad operation'],
+    ] as const) {
+      insertSyncOperation(db, {
+        operation_uuid: op.operationUuid,
+        project_uuid: PROJECT_UUID,
+        origin_node_id: PERSISTENT_NODE,
+        local_sequence: op.localSequence,
+        target_type: op.targetType,
+        target_key: op.targetKey,
+        operation_type: op.op.type,
+        base_revision: null,
+        base_hash: null,
+        payload: JSON.stringify(op.op),
+        status,
+        last_error: lastError,
+        acked_at: null,
+        ack_metadata: null,
+      });
+    }
+
+    await handleSyncShowRejectedCommand({}, command, { db, config: config('persistent') });
+
+    expect(mockLog).toHaveBeenCalledTimes(1);
+    const [line] = mockLog.mock.calls[0]!;
+    expect(line).toContain(rejected.operationUuid);
+    expect(line).toContain('plan.add_tag');
+    expect(line).toContain(`plan:${PLAN_UUID}`);
+    expect(line).toContain('bad operation');
+  });
+
+  test('sync show-rejected reports when there are no rejected operation records', async () => {
+    await handleSyncShowRejectedCommand({}, command, { db, config: config('persistent') });
+
+    expect(mockLog).toHaveBeenCalledWith('No rejected sync operations.');
   });
 
   test('sync conflicts lists open conflicts on main and rejects on persistent', async () => {

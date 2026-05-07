@@ -20,6 +20,8 @@ import { resetSendingOperations } from '../sync/queue.js';
 import { bootstrapSyncMetadata } from '../sync/bootstrap.js';
 import type { Database } from 'bun:sqlite';
 import type { TimConfig } from '../configSchema.js';
+import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
+import { repairClearedRejectedSequenceMarkers } from '../sync/sequence_repair.js';
 
 interface SyncCommandOptions {
   force?: boolean;
@@ -224,6 +226,89 @@ export async function handleSyncBootstrapCommand(
   log(
     `Bootstrapped sync metadata: ${result.plansSeeded} ${pluralize(result.plansSeeded, 'plan')}, ${result.settingsSeeded} ${pluralize(result.settingsSeeded, 'project setting')}.`
   );
+}
+
+export async function handleSyncClearRejectedCommand(
+  _options: Record<string, never>,
+  command: Command,
+  deps: SyncNodeCommandDeps = {}
+): Promise<void> {
+  const { db } = await resolveCommandContext(command, deps);
+  const clear = db.transaction((): { cleared: number; repaired: number } => {
+    db.prepare(
+      `
+        UPDATE sync_operation
+        SET status = 'cleared_rejected',
+            updated_at = ${SQL_NOW_ISO_UTC}
+        WHERE status = 'rejected'
+      `
+    ).run();
+    const cleared = db.prepare('SELECT changes() AS changes').get() as { changes: number };
+    const repaired = repairClearedRejectedSequenceMarkers(db);
+    return { cleared: cleared.changes, repaired };
+  });
+  const { cleared, repaired } = clear.immediate();
+  log(`Cleared ${cleared} rejected sync ${pluralize(cleared, 'operation')}.`);
+  if (repaired > 0) {
+    log(`Repaired ${repaired} cleared sync sequence ${pluralize(repaired, 'slot')}.`);
+  }
+}
+
+export async function handleSyncShowRejectedCommand(
+  _options: Record<string, never>,
+  command: Command,
+  deps: SyncNodeCommandDeps = {}
+): Promise<void> {
+  const { db } = await resolveCommandContext(command, deps);
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          operation_uuid,
+          origin_node_id,
+          local_sequence,
+          target_type,
+          target_key,
+          operation_type,
+          last_error,
+          created_at,
+          updated_at
+        FROM sync_operation
+        WHERE status = 'rejected'
+        ORDER BY updated_at DESC, local_sequence DESC
+      `
+    )
+    .all() as Array<{
+    operation_uuid: string;
+    origin_node_id: string;
+    local_sequence: number;
+    target_type: string;
+    target_key: string;
+    operation_type: string;
+    last_error: string | null;
+    created_at: string;
+    updated_at: string;
+  }>;
+
+  if (rows.length === 0) {
+    log('No rejected sync operations.');
+    return;
+  }
+
+  for (const row of rows) {
+    log(
+      [
+        row.operation_uuid,
+        row.operation_type,
+        row.target_type,
+        row.target_key,
+        row.origin_node_id,
+        row.local_sequence,
+        row.updated_at,
+        row.last_error ?? '-',
+      ].join('\t')
+    );
+  }
 }
 
 export async function handleSyncConflictsCommand(

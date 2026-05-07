@@ -600,6 +600,22 @@ syncCommand
   });
 
 syncCommand
+  .command('clear-rejected')
+  .description('Delete rejected sync operation records from the local database')
+  .action(async (options, command) => {
+    const { handleSyncClearRejectedCommand } = await import('./commands/sync.js');
+    await handleSyncClearRejectedCommand(options, command).catch(handleCommandError);
+  });
+
+syncCommand
+  .command('show-rejected')
+  .description('List rejected sync operation records in the local database')
+  .action(async (options, command) => {
+    const { handleSyncShowRejectedCommand } = await import('./commands/sync.js');
+    await handleSyncShowRejectedCommand(options, command).catch(handleCommandError);
+  });
+
+syncCommand
   .command('conflicts')
   .description('List open main-node sync conflicts')
   .action(async (options, command) => {

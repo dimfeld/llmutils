@@ -18,7 +18,12 @@ export type Mutation = {
   revision: number | null;
 };
 
-export const TERMINAL_OPERATION_STATUSES = new Set(['applied', 'conflict', 'rejected']);
+export const TERMINAL_OPERATION_STATUSES = new Set([
+  'applied',
+  'conflict',
+  'rejected',
+  'cleared_rejected',
+]);
 
 export function rejectedResult(error: SyncValidationError): ApplyOperationResult {
   return {
@@ -74,15 +79,16 @@ export function resultFromRecordedOperation(
       : row.last_error
         ? row.last_error
         : undefined;
+  const effectiveStatus = row.status === 'cleared_rejected' ? 'rejected' : row.status;
   const error =
-    row.status === 'rejected' && errorMessage
+    effectiveStatus === 'rejected' && errorMessage
       ? new SyncValidationError(errorMessage, {
           operationUuid: row.operation_uuid,
           issues: [],
         })
       : undefined;
   return {
-    status: row.status as ApplyOperationStatus,
+    status: effectiveStatus as ApplyOperationStatus,
     sequenceId: sequenceIds.at(-1),
     sequenceIds,
     invalidations: Array.isArray(metadata.invalidations)
@@ -91,7 +97,9 @@ export function resultFromRecordedOperation(
     conflictId,
     resolvedNumericPlanId,
     acknowledged:
-      row.status === 'applied' || row.status === 'conflict' || row.status === 'rejected',
+      effectiveStatus === 'applied' ||
+      effectiveStatus === 'conflict' ||
+      effectiveStatus === 'rejected',
     error,
   };
 }

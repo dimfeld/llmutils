@@ -76,6 +76,9 @@ export class SyncWriteConflictError extends Error {
   readonly operationUuid: string;
   readonly targetKey: string;
   readonly conflictId?: string;
+  readonly operationType?: string;
+  readonly fieldPath?: string;
+  readonly reason?: string;
 
   constructor(
     message: string,
@@ -83,12 +86,18 @@ export class SyncWriteConflictError extends Error {
       operationUuid: string;
       targetKey: string;
       conflictId?: string;
+      operationType?: string;
+      fieldPath?: string;
+      reason?: string;
     }
   ) {
     super(message);
     this.operationUuid = options.operationUuid;
     this.targetKey = options.targetKey;
     this.conflictId = options.conflictId;
+    this.operationType = options.operationType;
+    this.fieldPath = options.fieldPath;
+    this.reason = options.reason;
   }
 }
 

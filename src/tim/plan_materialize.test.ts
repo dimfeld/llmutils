@@ -1568,7 +1568,9 @@ Details
     newerPlan.updatedAt = '2026-03-25T00:00:00.000Z';
     await writePlanFile(planPath, newerPlan, { skipDb: true, skipUpdatedAt: true });
 
-    await expect(syncMaterializedPlan(3, repoDir)).rejects.toThrow('conflicted');
+    await expect(syncMaterializedPlan(3, repoDir)).rejects.toThrow(
+      /Could not sync materialized plan 3 before applying the command\.[\s\S]*Changed fields detected from the materialized file: title/
+    );
 
     const saved = getPlanByPlanId(db, project.id, 3);
     expect(saved?.title).toBe('Older title from DB');
