@@ -278,7 +278,7 @@
       disableFileHeader,
       disableLineNumbers,
       collapsed: currentCollapsed,
-      renderHeaderPrefix: createCollapseToggleButton,
+      renderHeaderMetadata: createCollapseToggleButton,
       enableLineSelection,
       onLineSelected: handleLineSelected,
       enableGutterUtility,
