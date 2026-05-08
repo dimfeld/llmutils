@@ -42,6 +42,7 @@ export interface SelectedIssueContent {
 
 export interface CreatePlansFromIssueOptions {
   simple?: boolean;
+  baseBranch?: string;
 }
 
 export interface IssueTrackerStatus {
@@ -49,6 +50,14 @@ export interface IssueTrackerStatus {
   trackerType: 'github' | 'linear';
   displayName: string;
   supportsHierarchical: boolean;
+}
+
+export interface ImportBaseBranchCandidate {
+  planId: number;
+  uuid?: string;
+  title: string;
+  status: 'in_progress' | 'needs_review';
+  branch: string;
 }
 
 function getTrackerDisplayName(trackerType: 'github' | 'linear'): string {
@@ -169,6 +178,39 @@ function hasSelectableIssueContent(issueData: IssueWithComments): boolean {
   );
 }
 
+function getImportBaseBranchCandidatesFromPlans(
+  plans: Iterable<PlanSchema>
+): ImportBaseBranchCandidate[] {
+  return [...plans]
+    .filter(
+      (plan): plan is PlanSchema & { branch: string; status: 'in_progress' | 'needs_review' } =>
+        (plan.status === 'in_progress' || plan.status === 'needs_review') &&
+        Boolean(plan.branch?.trim())
+    )
+    .map((plan) => ({
+      planId: plan.id,
+      uuid: plan.uuid,
+      title: plan.title ?? `Plan ${plan.id}`,
+      status: plan.status,
+      branch: plan.branch.trim(),
+    }))
+    .sort((a, b) => a.planId - b.planId);
+}
+
+export async function getImportBaseBranchCandidates(
+  projectId: number
+): Promise<ImportBaseBranchCandidate[]> {
+  const { db } = await getServerContext();
+  const repoRoot = getPreferredProjectGitRoot(db, projectId);
+  if (!repoRoot) {
+    return [];
+  }
+
+  const repository = await getRepositoryIdentity({ cwd: repoRoot });
+  const { plans } = loadPlansFromDb(repoRoot, repository.repositoryId);
+  return getImportBaseBranchCandidatesFromPlans(plans.values());
+}
+
 async function getPreferredProjectLinearApiKey(projectId?: number): Promise<string | undefined> {
   if (projectId === undefined) {
     return undefined;
@@ -279,10 +321,24 @@ export async function createPlansFromIssue(
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
   const { plans: allPlans } = loadPlansFromDb(repoRoot, repository.repositoryId);
   const simple = options?.simple === true;
-  const createImportedStubPlan = (issueInstruction: IssueInstructionData, planId: number) =>
-    simple
+  const selectedBaseBranch = options?.baseBranch?.trim() || undefined;
+  if (selectedBaseBranch) {
+    const validBaseBranches = new Set(
+      getImportBaseBranchCandidatesFromPlans(allPlans.values()).map((plan) => plan.branch)
+    );
+    if (!validBaseBranches.has(selectedBaseBranch)) {
+      throw new Error('Selected base branch is no longer available for this project.');
+    }
+  }
+  const createImportedStubPlan = (issueInstruction: IssueInstructionData, planId: number) => {
+    const plan = simple
       ? createStubPlanFromIssue(issueInstruction, planId, { simple })
       : createStubPlanFromIssue(issueInstruction, planId);
+    if (selectedBaseBranch) {
+      plan.baseBranch = selectedBaseBranch;
+    }
+    return plan;
+  };
 
   const children = issueData.children ?? [];
   const normalizedParentContent = normalizeSelectionIndexes(

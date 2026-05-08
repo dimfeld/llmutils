@@ -83,6 +83,7 @@ import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import {
   createPlansFromIssue,
   fetchIssueForImport,
+  getImportBaseBranchCandidates,
   getIssueTrackerStatus,
   type SelectedIssueContent,
 } from './issue_import.js';
@@ -362,6 +363,135 @@ describe('issue_import server helpers', () => {
   });
 
   describe('createPlansFromIssue', () => {
+    test('lists in-progress and review plans with branches as base branch candidates', async () => {
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map<number, PlanSchema>([
+          [
+            1,
+            {
+              id: 1,
+              uuid: 'uuid-1',
+              title: 'Pending branch',
+              details: '',
+              status: 'pending',
+              branch: 'feature/pending',
+              tasks: [],
+            } as PlanSchema,
+          ],
+          [
+            2,
+            {
+              id: 2,
+              uuid: 'uuid-2',
+              title: 'Active parent',
+              details: '',
+              status: 'in_progress',
+              branch: 'feature/active-parent',
+              tasks: [],
+            } as PlanSchema,
+          ],
+          [
+            3,
+            {
+              id: 3,
+              uuid: 'uuid-3',
+              title: 'Review parent',
+              details: '',
+              status: 'needs_review',
+              branch: 'feature/review-parent',
+              tasks: [],
+            } as PlanSchema,
+          ],
+          [
+            4,
+            {
+              id: 4,
+              uuid: 'uuid-4',
+              title: 'Review without branch',
+              details: '',
+              status: 'needs_review',
+              tasks: [],
+            } as PlanSchema,
+          ],
+        ]),
+        duplicates: {},
+      });
+
+      await expect(getImportBaseBranchCandidates(7)).resolves.toEqual([
+        {
+          planId: 2,
+          uuid: 'uuid-2',
+          title: 'Active parent',
+          status: 'in_progress',
+          branch: 'feature/active-parent',
+        },
+        {
+          planId: 3,
+          uuid: 'uuid-3',
+          title: 'Review parent',
+          status: 'needs_review',
+          branch: 'feature/review-parent',
+        },
+      ]);
+    });
+
+    test('sets selected base branch on a newly imported single plan', async () => {
+      const issueData = makeIssue(1, 'Parent', { body: 'Parent body' });
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map<number, PlanSchema>([
+          [
+            9,
+            {
+              id: 9,
+              uuid: 'uuid-9',
+              title: 'Stack base',
+              details: '',
+              status: 'in_progress',
+              branch: 'feature/stack-base',
+              tasks: [],
+            } as PlanSchema,
+          ],
+        ]),
+        duplicates: {},
+      });
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValue(41);
+
+      await createPlansFromIssue(
+        7,
+        issueData,
+        'single',
+        {
+          selectedParentContent: [0],
+          selectedChildIndices: [],
+          selectedChildContent: {},
+        },
+        { baseBranch: 'feature/stack-base' }
+      );
+
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(pendingWrites).toHaveLength(1);
+      expect(pendingWrites?.[0]?.plan.baseBranch).toBe('feature/stack-base');
+    });
+
+    test('rejects a selected base branch that is not an eligible project plan branch', async () => {
+      const issueData = makeIssue(1, 'Parent', { body: 'Parent body' });
+
+      await expect(
+        createPlansFromIssue(
+          7,
+          issueData,
+          'single',
+          {
+            selectedParentContent: [0],
+            selectedChildIndices: [],
+            selectedChildContent: {},
+          },
+          { baseBranch: 'feature/missing' }
+        )
+      ).rejects.toThrow('Selected base branch is no longer available for this project.');
+      expect(writeImportedPlansToDbTransactionally).not.toHaveBeenCalled();
+    });
+
     test('creates a simple plan in single mode when requested', async () => {
       const issueData = makeIssue(1, 'Parent', { body: 'Parent body' });
       vi.mocked(reserveImportedPlanStartId).mockResolvedValue(41);

@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { getServerContext } from '$lib/server/init.js';
-import { getIssueTrackerStatus } from '$lib/server/issue_import.js';
+import { getImportBaseBranchCandidates, getIssueTrackerStatus } from '$lib/server/issue_import.js';
 import type { PageServerLoad } from './$types';
 
 function normalizeInitialIdentifier(value: string | null): string {
@@ -46,5 +46,6 @@ export const load: PageServerLoad = async ({ parent, url }) => {
     supportsHierarchical: trackerStatus.supportsHierarchical,
     numericProjectId,
     initialIdentifier: normalizeInitialIdentifier(url.searchParams.get('identifier')),
+    baseBranchCandidates: await getImportBaseBranchCandidates(numericProjectId),
   };
 };

@@ -53,13 +53,14 @@
   let identifierInput = $state<HTMLInputElement | null>(null);
   let pasting = $state(false);
   let mode: ImportMode = $state('single');
-  let simpleMode = $state(false);
   let fetching = $state(false);
   let fetchError: string | null = $state(null);
 
   // Step 2 state
   let fetchedResult: FetchedIssue | null = $state.raw(null);
   let step = $derived(fetchedResult ? 2 : 1);
+  let simpleMode = $state(false);
+  let selectedBaseBranch = $state('');
   let importing = $state(false);
   let importError: string | null = $state(null);
 
@@ -174,6 +175,7 @@
         selectedChildIndices,
         selectedChildContent,
         simple: simpleMode,
+        baseBranch: selectedBaseBranch || undefined,
       });
       await goto(`/projects/${params.projectId}/plans/${result.planUuid}`);
     } catch (err) {
@@ -254,18 +256,6 @@
                 </div>
               {/if}
             </RadioGroup>
-          </div>
-
-          <div class="space-y-2">
-            <label class="flex items-center gap-2">
-              <Checkbox bind:checked={simpleMode} id="simple-mode" />
-              <span class="text-sm font-medium text-foreground">
-                Simple plan (skip generation)
-              </span>
-            </label>
-            <p class="ml-6 text-sm text-muted-foreground">
-              Run the agent directly without going through plan generation.
-            </p>
           </div>
         </div>
       </div>
@@ -373,6 +363,40 @@
             {/each}
           </div>
         {/if}
+
+        <div class="mt-5 space-y-4 border-t border-border pt-4">
+          <div class="space-y-2">
+            <label class="flex items-center gap-2">
+              <Checkbox bind:checked={simpleMode} id="simple-mode" />
+              <span class="text-sm font-medium text-foreground">
+                Simple plan (skip generation)
+              </span>
+            </label>
+            <p class="ml-6 text-sm text-muted-foreground">
+              Run the agent directly without going through plan generation.
+            </p>
+          </div>
+
+          {#if data.baseBranchCandidates.length > 0}
+            <div class="space-y-2">
+              <Label for="base-branch-plan" class="text-sm font-medium text-foreground">
+                Base Branch
+              </Label>
+              <select
+                id="base-branch-plan"
+                class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none md:max-w-xl"
+                bind:value={selectedBaseBranch}
+              >
+                <option value="">Default project base</option>
+                {#each data.baseBranchCandidates as candidate (candidate.uuid ?? candidate.planId)}
+                  <option value={candidate.branch}>
+                    #{candidate.planId}: {candidate.title} ({candidate.branch})
+                  </option>
+                {/each}
+              </select>
+            </div>
+          {/if}
+        </div>
       </div>
 
       <div class="flex items-center gap-3">
