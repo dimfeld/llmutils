@@ -41,6 +41,7 @@
   onkeydown={handleKeydown}
   title={lineLabel ? `${content} (${lineLabel})` : content}
   style="
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -50,7 +51,7 @@
     border: 1px solid rgba(148, 163, 184, 0.35);
     border-radius: 4px;
     background: rgba(148, 163, 184, 0.08);
-    color: inherit;
+    color: {resolved ? 'rgba(100, 116, 139, 0.95)' : 'inherit'};
     font-size: 12px;
     line-height: 1.3;
     text-align: left;
