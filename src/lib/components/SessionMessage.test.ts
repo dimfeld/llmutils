@@ -179,6 +179,49 @@ describe('SessionMessage', () => {
     expect(body).toContain('ACCEPTABLE');
   });
 
+  test('renders execution_summary with overview, steps, files, and errors', () => {
+    const { body } = render(SessionMessage, {
+      props: {
+        message: createStructuredMessage({
+          type: 'execution_summary',
+          summary: {
+            planId: '253',
+            planTitle: 'Structured messages',
+            planFilePath: 'tasks/253.plan.md',
+            mode: 'serial',
+            startedAt: '2026-03-17T10:00:00.000Z',
+            endedAt: '2026-03-17T10:01:00.000Z',
+            durationMs: 60_000,
+            steps: [
+              {
+                title: 'Step 1',
+                executor: 'claude_code',
+                success: true,
+                durationMs: 1_500,
+                output: { content: 'final message' },
+              },
+            ],
+            changedFiles: ['src/a.ts', 'src/b.ts'],
+            errors: ['First error'],
+            metadata: { totalSteps: 1, failedSteps: 0 },
+          },
+        }),
+      },
+    });
+
+    expect(body).toContain('Execution Summary: Structured messages');
+    expect(body).toContain('Plan ID:');
+    expect(body).toContain('253');
+    expect(body).toContain('Step Results');
+    expect(body).toContain('Step 1');
+    expect(body).toContain('final message');
+    expect(body).toContain('File Changes');
+    expect(body).toContain('src/a.ts');
+    expect(body).toContain('src/b.ts');
+    expect(body).toContain('Errors');
+    expect(body).toContain('First error');
+  });
+
   test('renders plain text messages', () => {
     const { body } = render(SessionMessage, {
       props: {

@@ -11,6 +11,7 @@
     KV_VALUE_TRUNCATE_CHARS,
     TOOL_USE_TRUNCATE_LINE_LIMIT,
   } from './session_message_truncation.js';
+  import ExecutionSummaryDisplay from './ExecutionSummaryDisplay.svelte';
   import ReviewResultDisplay from './ReviewResultDisplay.svelte';
 
   let {
@@ -109,6 +110,8 @@
   <span class="mr-2 text-xs text-gray-400">{timeStr}</span>
   {#if message.body.type === 'structured' && message.body.message.type === 'review_result'}
     <ReviewResultDisplay message={message.body.message} />
+  {:else if message.body.type === 'structured' && message.body.message.type === 'execution_summary'}
+    <ExecutionSummaryDisplay message={message.body.message} />
   {:else if renderBody?.type === 'text'}
     <span class="whitespace-pre-wrap">{displayText}</span>
     {#if isTruncatable}
