@@ -56,6 +56,7 @@ describe('ReviewIssueAnnotation click', () => {
       content: 'Missing guard clause',
       suggestion: null,
       lineLabel: null,
+      resolved: false,
       onClick,
     });
 
@@ -72,10 +73,26 @@ describe('ReviewIssueAnnotation click', () => {
       content: 'Missing guard clause',
       suggestion: 'Use the parsed value instead.',
       lineLabel: '10–12',
+      resolved: false,
       onClick,
     });
 
     expect(screen.getByText('Suggestion')).toBeTruthy();
     expect(screen.getByText('Use the parsed value instead.')).toBeTruthy();
+  });
+
+  test('renders a resolved badge for resolved issue annotations', () => {
+    const onClick = vi.fn();
+    const screen = render(ReviewIssueAnnotation, {
+      issueId: 42,
+      severity: 'minor',
+      content: 'Missing guard clause',
+      suggestion: null,
+      lineLabel: null,
+      resolved: true,
+      onClick,
+    });
+
+    expect(screen.getByText('Resolved')).toBeTruthy();
   });
 });

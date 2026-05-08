@@ -8,10 +8,11 @@
     content: string;
     suggestion: string | null;
     lineLabel: string | null;
+    resolved: boolean;
     onClick: (issueId: number) => void;
   }
 
-  let { issueId, severity, content, suggestion, lineLabel, onClick }: Props = $props();
+  let { issueId, severity, content, suggestion, lineLabel, resolved, onClick }: Props = $props();
 
   const SEVERITY_COLORS: Record<ReviewSeverity, string> = {
     critical: '#dc2626',
@@ -70,14 +71,38 @@
       "
     ></span>
     <div
-      class="plan-rendered-content"
       style="
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
         flex: 1;
         min-width: 0;
-        overflow-wrap: anywhere;
       "
     >
-      {@html renderMarkdown(content)}
+      <div
+        class="plan-rendered-content"
+        style="
+          flex: 1;
+          min-width: 0;
+          overflow-wrap: anywhere;
+        "
+      >
+        {@html renderMarkdown(content)}
+      </div>
+      {#if resolved}
+        <span
+          style="
+            flex-shrink: 0;
+            color: #16a34a;
+            font-size: 10px;
+            font-weight: 600;
+            line-height: 1.3;
+            white-space: nowrap;
+          "
+        >
+          Resolved
+        </span>
+      {/if}
     </div>
   </div>
   {#if suggestion}

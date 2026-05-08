@@ -46,6 +46,7 @@ describe('buildAnnotationsForFile', () => {
           content: 'Issue content',
           suggestion: null,
           lineLabel: null,
+          resolved: false,
         },
       },
     ]);
@@ -320,6 +321,7 @@ describe('buildGuideDiffAnnotations', () => {
           content: 'Issue content',
           suggestion: null,
           lineLabel: '12–22',
+          resolved: false,
         },
       },
     ]);

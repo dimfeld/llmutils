@@ -165,7 +165,8 @@
       a.metadata.severity === b.metadata.severity &&
       a.metadata.content === b.metadata.content &&
       a.metadata.suggestion === b.metadata.suggestion &&
-      a.metadata.lineLabel === b.metadata.lineLabel
+      a.metadata.lineLabel === b.metadata.lineLabel &&
+      a.metadata.resolved === b.metadata.resolved
     );
   }
 
@@ -933,6 +934,7 @@
                       content={metadata.content}
                       suggestion={metadata.suggestion}
                       lineLabel={metadata.lineLabel}
+                      resolved={metadata.resolved}
                       onClick={annotationClick.handleAnnotationClick}
                     />
                   </div>

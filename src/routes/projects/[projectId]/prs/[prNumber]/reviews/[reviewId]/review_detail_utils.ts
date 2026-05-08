@@ -10,6 +10,7 @@ export interface ReviewIssueAnnotationData {
   content: string;
   suggestion: string | null;
   lineLabel: string | null;
+  resolved: boolean;
 }
 
 export interface LineRange {
@@ -177,6 +178,7 @@ function toAnnotation(
       content: parsed.issue.content,
       suggestion: parsed.issue.suggestion,
       lineLabel: parsed.lineLabel,
+      resolved: Boolean(parsed.issue.resolved),
     },
   };
 }

@@ -6,4 +6,5 @@ export interface ReviewIssueAnnotationMetadata {
   content: string;
   suggestion: string | null;
   lineLabel: string | null;
+  resolved: boolean;
 }
