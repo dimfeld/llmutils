@@ -200,6 +200,7 @@ describe('tim MCP generate mode helpers', () => {
     const prompt = await loadQuestionsPrompt({ plan: basePlan.id }, context);
     const message = prompt.messages[0]?.content;
     expect(message?.text).toContain('Ask one concise, high-impact question');
+    expect(message?.text).toContain('Do not use AskUserQuestion');
     expect(message?.text).toContain('Initial details about the plan.');
   });
 

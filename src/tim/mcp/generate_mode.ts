@@ -71,7 +71,7 @@ export interface GenerateModeRegistrationContext {
   configBaseDir?: string;
 }
 
-const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Interview your human partner relentlessly until you reach a shared understanding of every important aspect of the plan. As you figure things out, update the details in the plan file if necessary. Ask as many questions as you need to figure things out, since it improves the implementation quality.
+const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Interview your human partner directly and conversationally until you reach a shared understanding of every important aspect of the plan. Do not use AskUserQuestion, approval-question flows, or similar questionnaire-style tools for this phase; ask the user in natural language and wait for their reply. As you figure things out, update the details in the plan file if necessary. Ask as many questions as you need to figure things out, since it improves the implementation quality.
 
 Walk each branch of the design tree and resolve decision dependencies one-by-one before you finalize tasks. Every time you think you are done asking questions, review the plan file again to see if there are any more questions you might need to ask. If anything is underspecified, make sure you ask about it instead of assuming the answer.`;
 
@@ -605,7 +605,8 @@ export function registerGenerateMode(
 
   server.addPrompt({
     name: 'plan-questions',
-    description: 'Ask focused questions to collaborate with the user on refining a plan.',
+    description:
+      'Ask focused questions conversationally to collaborate with the user on refining a plan without using AskUserQuestion-style tools.',
     arguments: [
       {
         name: 'plan',
