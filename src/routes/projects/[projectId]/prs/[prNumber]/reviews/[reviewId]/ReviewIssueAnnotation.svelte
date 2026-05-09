@@ -40,16 +40,9 @@
   onclick={handleClick}
   onkeydown={handleKeydown}
   title={lineLabel ? `${content} (${lineLabel})` : content}
+  class="relative mx-1 flex w-full flex-col gap-2 rounded px-2 py-1"
   style="
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    width: 100%;
-    padding: 4px 8px;
-    margin: 2px 0;
     border: 1px solid rgba(148, 163, 184, 0.35);
-    border-radius: 4px;
     background: rgba(148, 163, 184, 0.08);
     color: {resolved ? 'rgba(100, 116, 139, 0.95)' : 'inherit'};
     font-size: 12px;
@@ -59,59 +52,27 @@
     font-family: inherit;
   "
 >
+  {#if resolved}
+    <div class="absolute inset-0 z-10 bg-gray-500/30"></div>
+  {/if}
   <div style="display: flex; align-items: flex-start; gap: 6px; min-width: 0;">
     <span
       aria-hidden="true"
+      class="mt-1 size-2 rounded-full"
       style="
-        width: 8px;
-        height: 8px;
-        margin-top: 4px;
-        border-radius: 50%;
         flex-shrink: 0;
-        background: {SEVERITY_COLORS[severity]};
+        background: {resolved ? 'rgba(100, 116, 139, 0.95)' : SEVERITY_COLORS[severity]};
       "
     ></span>
-    <div
-      style="
-        display: flex;
-        align-items: flex-start;
-        gap: 8px;
-        flex: 1;
-        min-width: 0;
-      "
-    >
-      <div
-        class="plan-rendered-content"
-        style="
-          flex: 1;
-          min-width: 0;
-          overflow-wrap: anywhere;
-        "
-      >
-        {@html renderMarkdown(content)}
-      </div>
-      {#if resolved}
-        <span
-          style="
-            flex-shrink: 0;
-            color: #16a34a;
-            font-size: 10px;
-            font-weight: 600;
-            line-height: 1.3;
-            white-space: nowrap;
-          "
-        >
-          Resolved
-        </span>
-      {/if}
+    <div class="plan-rendered-content min-w-0 flex-1" style="overflow-wrap: anywhere">
+      {@html renderMarkdown(content)}
     </div>
   </div>
   {#if suggestion}
     <div
-      class="plan-rendered-content"
+      class="plan-rendered-content min-w-0"
       style="
         margin-left: 14px;
-        min-width: 0;
         overflow-wrap: anywhere;
       "
     >
