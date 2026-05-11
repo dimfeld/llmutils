@@ -13,7 +13,7 @@
         "@ai-sdk/openai": "^1.3.24",
         "@ai-sdk/xai": "^1.2.18",
         "@inquirer/prompts": "^8.3.2",
-        "@linear/sdk": "^68.1.1",
+        "@linear/sdk": "^84.0.0",
         "@openrouter/ai-sdk-provider": "^0.7.5",
         "@pierre/diffs": "^1.1.19",
         "ai": "^4.3.19",
@@ -247,7 +247,7 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@linear/sdk": ["@linear/sdk@68.1.1", "", { "dependencies": { "@graphql-typed-document-node/core": "^3.1.0", "graphql": "^15.4.0" } }, "sha512-6IDbyEGsOFORRrG9fL9oQkZ1FAbdtV4W1qfT82gYPVh4UzefXQwNpljgR3Nsm1Tb11cZyf3reoJpPFqGcj01zw=="],
+    "@linear/sdk": ["@linear/sdk@84.0.0", "", { "dependencies": { "@graphql-typed-document-node/core": "^3.2.0" } }, "sha512-jPtGlY06zG86ba6cL78d4JB9m61YMHo3L0luMrtVFgeOounI/GK3S3c6Ncjw7cxWzcsepoNZD10mQYoT81uKKA=="],
 
     "@lucide/svelte": ["@lucide/svelte@1.9.0", "", { "peerDependencies": { "svelte": "^5" } }, "sha512-+5RmY0tqeuGGbiI2BnyDp1Ft/EP7AKReStHeFEKJ0mPcW1w51Tm41R2GvUfz0sGLJhmRhVAe2zKaTfqrcpJqqg=="],
 

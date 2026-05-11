@@ -16,6 +16,7 @@
   import { normalizeGitHubUsername } from '$common/github/username.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { refreshSinglePrStatus, togglePrDraftStatus } from '$lib/remote/pr_status.remote.js';
+  import { getLinearPrReviewUrl } from '$lib/remote/project_prs.remote.js';
   import { startPrReviewGuide } from '$lib/remote/review_thread_actions.remote.js';
   import { getPrReviews } from '$lib/remote/pr_reviews.remote.js';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
@@ -39,6 +40,13 @@
   let actionError = $state<string | null>(null);
   let graphitePrUrl = $derived(
     `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`
+  );
+  let linearPrReviewUrl = $derived(
+    await getLinearPrReviewUrl({
+      projectId: String(pr.projectId),
+      prNumber: pr.status.pr_number,
+      prUrl: pr.status.pr_url,
+    })
   );
   let reviews = $derived(await getPrReviews({ prUrl: pr.status.pr_url }));
   let latestCompletedReview = $derived(reviews?.find((r) => r.status === 'complete') ?? null);
@@ -188,6 +196,18 @@
         >
           View in Graphite
         </a>
+        {#if linearPrReviewUrl}
+          <a
+            href={linearPrReviewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+            title="View in Linear"
+            aria-label={`View PR #${pr.status.pr_number} in Linear`}
+          >
+            View in Linear
+          </a>
+        {/if}
         {#if canToggleDraft}
           <button
             onclick={handleToggleDraftStatus}
