@@ -19,6 +19,8 @@ import { findPlanFileOnDisk } from '../plans/find_plan_file.js';
 import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
 import {
   addPlanTaskTool,
+  attachPlanArtifactParameters,
+  attachPlanArtifactTool,
   createPlanTool,
   generateTasksParameters,
   listReadyPlansParameters,
@@ -34,6 +36,7 @@ import {
 } from '../tools/index.js';
 import type {
   AddPlanTaskArguments,
+  AttachPlanArtifactArguments,
   CreatePlanArguments,
   GenerateTasksArguments,
   ManagePlanTaskArguments,
@@ -45,6 +48,7 @@ import { normalizeContainerToEpic } from '../planSchema.js';
 
 export {
   addPlanTaskParameters,
+  attachPlanArtifactParameters,
   createPlanParameters,
   generateTasksParameters,
   getPlanParameters,
@@ -55,6 +59,7 @@ export {
 } from '../tools/schemas.js';
 export type {
   AddPlanTaskArguments,
+  AttachPlanArtifactArguments,
   CreatePlanArguments,
   GenerateTasksArguments,
   GetPlanArguments,
@@ -564,6 +569,19 @@ export async function mcpCreatePlan(
   }
 }
 
+export async function mcpAttachPlanArtifact(
+  args: AttachPlanArtifactArguments,
+  context: GenerateModeRegistrationContext
+): Promise<string> {
+  try {
+    const result = await attachPlanArtifactTool(args, context);
+    return toMcpResult(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new UserError(message);
+  }
+}
+
 interface RegisterOptions {
   registerTools?: boolean;
   hasClaudePlugin?: boolean;
@@ -747,6 +765,18 @@ export function registerGenerateMode(
         mcpCreatePlan(args, context, {
           log: wrapLogger(execContext.log, '[create-plan] '),
         }),
+    });
+
+    server.addTool({
+      name: 'attach_plan_artifact',
+      description:
+        'Attach a file artifact to a tim plan. Returns a UUID that can be referenced in follow-up responses.',
+      parameters: attachPlanArtifactParameters,
+      annotations: {
+        destructiveHint: false,
+        readOnlyHint: false,
+      },
+      execute: async (args) => mcpAttachPlanArtifact(args, context),
     });
   }
 

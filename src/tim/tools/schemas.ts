@@ -73,6 +73,16 @@ export const getPlanParameters = z
 
 export type GetPlanArguments = z.infer<typeof getPlanParameters>;
 
+export const attachPlanArtifactParameters = z
+  .object({
+    planId: z.number().int().positive().describe('Numeric plan ID'),
+    filePath: z.string().min(1).describe('Path to the file to attach'),
+    message: z.string().optional().describe('Optional message to associate with the artifact'),
+  })
+  .describe('Attach a file artifact to a plan');
+
+export type AttachPlanArtifactArguments = z.infer<typeof attachPlanArtifactParameters>;
+
 export const updatePlanDetailsParameters = z
   .object({
     plan: z.number().int().positive().describe('Numeric plan ID'),

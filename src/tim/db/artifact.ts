@@ -80,6 +80,11 @@ export function listArtifactsForPlan(
   return rows.map(rowToPlanArtifact);
 }
 
+export function listAllArtifactUuids(db: Database): Set<string> {
+  const rows = db.prepare('SELECT uuid FROM plan_artifact').all() as Array<{ uuid: string }>;
+  return new Set(rows.map((row) => row.uuid));
+}
+
 export function insertArtifact(db: Database, artifact: PlanArtifactInsert): PlanArtifact {
   const createdAt = artifact.createdAt ?? nowIso();
   const updatedAt = artifact.updatedAt ?? createdAt;
