@@ -3,11 +3,7 @@
   import { toast } from 'svelte-sonner';
   import Upload from '@lucide/svelte/icons/upload';
 
-  import {
-    buildUploadFormData,
-    checkUploadSize,
-    parseUploadError,
-  } from './plan_artifact_upload.js';
+  import { uploadArtifact } from './plan_artifact_upload.js';
 
   let {
     planUuid,
@@ -26,32 +22,16 @@
   async function uploadFile(file: File) {
     if (uploading) return;
     errorText = null;
-
-    const sizeCheck = checkUploadSize(file.size);
-    if (!sizeCheck.ok) {
-      errorText = sizeCheck.error ?? 'File too large';
-      return;
-    }
-
-    const form = buildUploadFormData({ planUuid, projectId, file, message });
-
     uploading = true;
     try {
-      const response = await fetch('/api/artifacts', {
-        method: 'POST',
-        body: form,
-      });
-
-      if (!response.ok) {
-        errorText = await parseUploadError(response);
+      const result = await uploadArtifact({ planUuid, projectId, file, message });
+      if (!result.ok) {
+        errorText = result.error ?? 'Upload failed';
         return;
       }
-
       message = '';
       toast.success(`Uploaded ${file.name}`);
       await invalidateAll();
-    } catch (err) {
-      errorText = `Upload failed: ${(err as Error).message}`;
     } finally {
       uploading = false;
       if (fileInput) fileInput.value = '';
@@ -77,7 +57,13 @@
     dragging = true;
   }
 
-  function onDragLeave() {
+  function onDragLeave(e: DragEvent) {
+    // Ignore drag-leave events that fire when crossing into a child element of the dropzone.
+    const current = e.currentTarget as Node | null;
+    const related = e.relatedTarget as Node | null;
+    if (current && related && current.contains(related)) {
+      return;
+    }
     dragging = false;
   }
 

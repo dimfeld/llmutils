@@ -32,6 +32,51 @@ export function checkUploadSize(size: number): UploadSizeCheckResult {
   return { ok: true };
 }
 
+export interface UploadArtifactInput {
+  planUuid: string;
+  projectId?: string | number;
+  file: File;
+  message?: string;
+  fetchImpl?: typeof fetch;
+}
+
+export interface UploadArtifactResult {
+  ok: boolean;
+  error?: string;
+  status?: number;
+}
+
+export async function uploadArtifact(input: UploadArtifactInput): Promise<UploadArtifactResult> {
+  const sizeCheck = checkUploadSize(input.file.size);
+  if (!sizeCheck.ok) {
+    return { ok: false, error: sizeCheck.error };
+  }
+
+  const form = buildUploadFormData(input);
+  const doFetch = input.fetchImpl ?? fetch;
+  let response: Response;
+  try {
+    response = await doFetch('/api/artifacts', { method: 'POST', body: form });
+  } catch (err) {
+    return { ok: false, error: `Upload failed: ${(err as Error).message}` };
+  }
+
+  if (!response.ok) {
+    return { ok: false, error: await parseUploadError(response), status: response.status };
+  }
+  return { ok: true, status: response.status };
+}
+
+export function buildShowDeletedUrl(currentUrl: URL, show: boolean): string {
+  const url = new URL(currentUrl);
+  if (show) {
+    url.searchParams.set('includeDeletedArtifacts', '1');
+  } else {
+    url.searchParams.delete('includeDeletedArtifacts');
+  }
+  return url.pathname + url.search;
+}
+
 export async function parseUploadError(response: Response): Promise<string> {
   if (response.status === 413) {
     return 'File is too large. Maximum is 25 MB.';

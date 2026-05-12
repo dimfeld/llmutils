@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
+  import { SvelteSet } from 'svelte/reactivity';
   import { toast } from 'svelte-sonner';
   import FileIcon from '@lucide/svelte/icons/file';
   import FileImage from '@lucide/svelte/icons/file-image';
@@ -15,6 +16,7 @@
   import { softDeleteArtifact, restoreArtifact } from '$lib/remote/artifact_actions.remote.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import * as Collapsible from '$lib/components/ui/collapsible/index.js';
+  import { buildShowDeletedUrl } from './plan_artifact_upload.js';
 
   let {
     artifacts,
@@ -23,7 +25,7 @@
   } = $props();
 
   let open = $state(true);
-  let pendingUuid: string | null = $state(null);
+  let pendingUuids = new SvelteSet<string>();
 
   let showDeleted = $derived(page.url.searchParams.get('includeDeletedArtifacts') === '1');
 
@@ -55,38 +57,33 @@
   }
 
   async function toggleShowDeleted() {
-    const url = new URL(page.url);
-    if (showDeleted) {
-      url.searchParams.delete('includeDeletedArtifacts');
-    } else {
-      url.searchParams.set('includeDeletedArtifacts', '1');
-    }
-    await goto(url.pathname + url.search, { keepFocus: true, noScroll: true });
+    const target = buildShowDeletedUrl(page.url, !showDeleted);
+    await goto(target, { keepFocus: true, noScroll: true });
   }
 
   async function handleSoftDelete(uuid: string) {
-    if (pendingUuid) return;
-    pendingUuid = uuid;
+    if (pendingUuids.has(uuid)) return;
+    pendingUuids.add(uuid);
     try {
       await softDeleteArtifact({ uuid });
       await invalidateAll();
     } catch (err) {
       toast.error(`Failed to delete artifact: ${(err as Error).message}`);
     } finally {
-      pendingUuid = null;
+      pendingUuids.delete(uuid);
     }
   }
 
   async function handleRestore(uuid: string) {
-    if (pendingUuid) return;
-    pendingUuid = uuid;
+    if (pendingUuids.has(uuid)) return;
+    pendingUuids.add(uuid);
     try {
       await restoreArtifact({ uuid });
       await invalidateAll();
     } catch (err) {
       toast.error(`Failed to restore artifact: ${(err as Error).message}`);
     } finally {
-      pendingUuid = null;
+      pendingUuids.delete(uuid);
     }
   }
 </script>
@@ -137,6 +134,8 @@
             {@const downloadUrl = `/api/artifacts/${artifact.uuid}`}
             {@const isDeleted = artifact.deletedAt !== null}
             {@const fileMissing = artifact.transferState === 'file-missing'}
+            {@const downloadable = !isDeleted && !fileMissing}
+            {@const isPending = pendingUuids.has(artifact.uuid)}
             <li
               class="group rounded border border-border bg-card px-3 py-2 text-sm {isDeleted
                 ? 'opacity-60'
@@ -145,7 +144,7 @@
               data-artifact-uuid={artifact.uuid}
             >
               <div class="flex items-start gap-3">
-                {#if isImage(artifact.mimeType) && !fileMissing}
+                {#if isImage(artifact.mimeType) && downloadable}
                   <a
                     href={downloadUrl}
                     target="_blank"
@@ -166,14 +165,20 @@
 
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center gap-2">
-                    <a
-                      href={downloadUrl}
-                      target="_blank"
-                      rel="noopener"
-                      class="font-medium text-foreground hover:underline"
-                    >
-                      {artifact.filename}
-                    </a>
+                    {#if downloadable}
+                      <a
+                        href={downloadUrl}
+                        target="_blank"
+                        rel="noopener"
+                        class="font-medium text-foreground hover:underline"
+                      >
+                        {artifact.filename}
+                      </a>
+                    {:else}
+                      <span class="font-medium text-foreground">
+                        {artifact.filename}
+                      </span>
+                    {/if}
                     <span class="text-xs text-muted-foreground">
                       {formatSize(artifact.size)}
                     </span>
@@ -216,7 +221,7 @@
                         <button
                           type="button"
                           onclick={() => handleRestore(artifact.uuid)}
-                          disabled={pendingUuid !== null}
+                          disabled={isPending}
                           class="rounded p-1 text-muted-foreground hover:bg-blue-100 hover:text-blue-700 disabled:opacity-50 dark:hover:bg-blue-950/50 dark:hover:text-blue-400"
                           aria-label="Restore artifact"
                           title="Restore"
@@ -227,7 +232,7 @@
                         <button
                           type="button"
                           onclick={() => handleSoftDelete(artifact.uuid)}
-                          disabled={pendingUuid !== null}
+                          disabled={isPending}
                           class="rounded p-1 text-muted-foreground hover:bg-red-100 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/50 dark:hover:text-red-400"
                           aria-label="Delete artifact"
                           title="Delete"

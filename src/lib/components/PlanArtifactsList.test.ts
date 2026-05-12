@@ -177,4 +177,56 @@ describe('PlanArtifactsList', () => {
     expect(body).toContain('aria-label="Restore artifact"');
     pageState.url = new URL('http://localhost/projects/1/plans/1');
   });
+
+  test('does not render a download link for soft-deleted artifacts', () => {
+    pageState.url = new URL('http://localhost/projects/1/plans/1?includeDeletedArtifacts=1');
+    const { body } = render(PlanArtifactsList, {
+      props: {
+        artifacts: [
+          makeArtifact({
+            uuid: '44444444-4444-4444-4444-444444444444',
+            filename: 'old.png',
+            deletedAt: '2026-05-10T10:00:00.000Z',
+          }),
+        ],
+      },
+    });
+    // Filename is present as plain text, but no anchor/img to /api/artifacts/<uuid>
+    expect(body).toContain('old.png');
+    expect(body).not.toContain('/api/artifacts/44444444-4444-4444-4444-444444444444');
+    expect(body).not.toContain('<img');
+    pageState.url = new URL('http://localhost/projects/1/plans/1');
+  });
+
+  test('does not render a download link or thumbnail when file is missing', () => {
+    const { body } = render(PlanArtifactsList, {
+      props: {
+        artifacts: [
+          makeArtifact({
+            uuid: '55555555-5555-5555-5555-555555555555',
+            transferState: 'file-missing',
+          }),
+        ],
+      },
+    });
+    expect(body).toContain('screenshot.png');
+    expect(body).toContain('Sync in progress');
+    expect(body).not.toContain('/api/artifacts/55555555-5555-5555-5555-555555555555');
+    expect(body).not.toContain('<img');
+  });
+
+  test('renders download link for active artifacts with present bytes', () => {
+    const { body } = render(PlanArtifactsList, {
+      props: {
+        artifacts: [
+          makeArtifact({
+            uuid: '66666666-6666-6666-6666-666666666666',
+            mimeType: 'text/plain',
+            filename: 'log.txt',
+          }),
+        ],
+      },
+    });
+    expect(body).toContain('href="/api/artifacts/66666666-6666-6666-6666-666666666666"');
+  });
 });
