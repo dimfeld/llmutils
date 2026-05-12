@@ -25,10 +25,10 @@ import {
 import type { ArtifactTransferStatus } from '../db/artifact_transfer.js';
 import { MAX_ARTIFACT_BYTES } from './constants.js';
 import {
-  artifactFileExists,
   getArtifactsRoot,
   removeArtifactFile,
   storeArtifactFile,
+  artifactFileExistsSync,
 } from './storage.js';
 import type { PlanArtifact } from './types.js';
 
@@ -63,6 +63,11 @@ export interface AddArtifactOptions extends ArtifactServiceOptions {
 
 export interface ListArtifactOptions extends ArtifactServiceOptions {
   planId: number | string;
+  includeDeleted?: boolean;
+}
+
+export interface ListArtifactsForPlanUuidOptions extends ArtifactServiceOptions {
+  planUuid: string;
   includeDeleted?: boolean;
 }
 
@@ -231,23 +236,33 @@ export async function addArtifact(options: AddArtifactOptions): Promise<PlanArti
   }
 }
 
-export async function listArtifacts(
-  options: ListArtifactOptions
-): Promise<PlanArtifactWithTransferState[]> {
-  const { db, planUuid } = await resolveArtifactPlan(options);
+export function listArtifactsForPlanUuid(
+  options: ListArtifactsForPlanUuidOptions
+): PlanArtifactWithTransferState[] {
+  const db = options.db ?? getDatabase();
+  const { planUuid } = options;
   const artifacts = listArtifactsForPlan(db, planUuid, { includeDeleted: options.includeDeleted });
   const states = transferStateMap(
     db,
     artifacts.map((artifact) => artifact.uuid)
   );
-  return Promise.all(
-    artifacts.map(async (artifact) => ({
-      ...artifact,
-      transferState: (await artifactFileExists(artifact.storagePath))
-        ? (states.get(artifact.uuid) ?? null)
-        : 'file-missing',
-    }))
-  );
+  return artifacts.map((artifact) => ({
+    ...artifact,
+    transferState: artifactFileExistsSync(artifact.storagePath)
+      ? (states.get(artifact.uuid) ?? null)
+      : 'file-missing',
+  }));
+}
+
+export async function listArtifacts(
+  options: ListArtifactOptions
+): Promise<PlanArtifactWithTransferState[]> {
+  const { db, planUuid } = await resolveArtifactPlan(options);
+  return listArtifactsForPlanUuid({
+    db,
+    planUuid,
+    includeDeleted: options.includeDeleted,
+  });
 }
 
 export function getArtifact(uuid: string, options: ArtifactServiceOptions = {}): PlanArtifact {

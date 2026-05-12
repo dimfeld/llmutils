@@ -147,3 +147,15 @@ export async function artifactFileExists(storagePath: string): Promise<boolean> 
     throw error;
   }
 }
+
+export function artifactFileExistsSync(storagePath: string): boolean {
+  try {
+    const stat = fs.statSync(storagePath);
+    return stat.isFile();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+}

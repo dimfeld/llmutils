@@ -3,9 +3,11 @@ import { getServerContext } from '$lib/server/init.js';
 import { getPlanDetailRouteData } from '$lib/server/plans_browser.js';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ params, url }) => {
   const { db } = await getServerContext();
-  const result = await getPlanDetailRouteData(db, params.planId, params.projectId, 'plans');
+  const result = await getPlanDetailRouteData(db, params.planId, params.projectId, 'plans', {
+    includeDeletedArtifacts: url.searchParams.get('includeDeletedArtifacts') === '1',
+  });
 
   if (!result) {
     error(404, 'Plan not found');
