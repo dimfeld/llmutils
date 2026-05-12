@@ -15,7 +15,8 @@ import { SyncValidationError } from './errors.js';
 /**
  * Sync operation conventions:
  * - `envelope.projectUuid` is the canonical project identity for every operation.
- * - Payload-level `projectUuid` exists only on `project_setting.*` operations and
+ * - Several payload types (`project.*`, `project_setting.*`, `plan.promote_task`,
+ *   `plan.set_parent`, `plan_artifact.*`) carry a payload-level `projectUuid` that
  *   must match the envelope-level project UUID.
  * - Operation UUIDs are v4 UUIDs generated locally with `crypto.randomUUID()`.
  * - Entity UUIDs (project/plan/task) are v4 in current migrations, but schemas
