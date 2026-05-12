@@ -218,9 +218,12 @@ function applyArtifactAttach(
   for (const table of tables) {
     const existing = db
       .prepare(`SELECT uuid, plan_uuid, sha256, size FROM ${table} WHERE uuid = ?`)
-      .get(envelope.op.artifactUuid) as
-      | { uuid: string; plan_uuid: string; sha256: string; size: number }
-      | null;
+      .get(envelope.op.artifactUuid) as {
+      uuid: string;
+      plan_uuid: string;
+      sha256: string;
+      size: number;
+    } | null;
     if (!existing) {
       presence.set(table, false);
       continue;
