@@ -161,9 +161,7 @@ describe('uploadArtifact', () => {
 describe('buildShowDeletedUrl', () => {
   test('adds includeDeletedArtifacts=1 when toggled on', () => {
     const url = new URL('http://localhost/projects/1/plans/2');
-    expect(buildShowDeletedUrl(url, true)).toBe(
-      '/projects/1/plans/2?includeDeletedArtifacts=1'
-    );
+    expect(buildShowDeletedUrl(url, true)).toBe('/projects/1/plans/2?includeDeletedArtifacts=1');
   });
 
   test('removes the param when toggled off', () => {
