@@ -445,7 +445,9 @@ function reconcileArtifactRowsForPlan(
         existing.uuid,
         planUuid
       );
-      removedStoragePaths.push(existing.storage_path);
+      if (hasArtifactTombstone(db, existing.uuid)) {
+        removedStoragePaths.push(existing.storage_path);
+      }
     }
   }
 

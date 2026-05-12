@@ -11,6 +11,7 @@ import { insertArtifact } from './artifact.js';
 import {
   getArtifactTransfer,
   listArtifactsMissingDownloadTransfer,
+  listArtifactsMissingUploadTransfer,
   listPendingTransfers,
   markTransferFailed,
   markTransferInProgress,
@@ -135,6 +136,24 @@ describe('tim db/artifact_transfer', () => {
         transfer_uuid: 'artifact-transfer-1',
       }),
     ]);
+  });
+
+  test('missing upload discovery skips artifacts with any existing upload row', () => {
+    expect(listArtifactsMissingUploadTransfer(db, 'main-node').map((row) => row.uuid)).toEqual([
+      'artifact-transfer-1',
+    ]);
+
+    upsertPendingTransfer(db, 'artifact-transfer-1', 'main-node', 'upload');
+    markTransferInProgress(db, 'artifact-transfer-1', 'main-node', 'upload');
+    markTransferFailed(
+      db,
+      'artifact-transfer-1',
+      'main-node',
+      'upload',
+      new Error('at max attempts')
+    );
+
+    expect(listArtifactsMissingUploadTransfer(db, 'main-node')).toEqual([]);
   });
 
   test('reenqueueDownloadTransfer resets succeeded rows without changing attempts', () => {

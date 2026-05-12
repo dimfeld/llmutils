@@ -258,7 +258,7 @@ describe('plan_artifact operations', () => {
     });
   });
 
-  test('snapshot merge removes files for artifacts omitted from the canonical snapshot', async () => {
+  test('snapshot merge keeps files for artifacts omitted without a tombstone', async () => {
     seedPlan();
     await applyOperation(
       db,
@@ -284,6 +284,42 @@ describe('plan_artifact operations', () => {
       throw new Error('Expected plan snapshot');
     }
     snapshot.plan.artifacts = [];
+    mergeCanonicalRefresh(db, snapshot);
+
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await expect(fs.stat(storagePath)).resolves.toMatchObject({ size: 3 });
+  });
+
+  test('snapshot merge removes files for artifacts omitted with a tombstone', async () => {
+    seedPlan();
+    await applyOperation(
+      db,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'old.log',
+          mimeType: 'text/plain',
+          size: 3,
+          sha256: 'old',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+    const storagePath = getArtifactByUuid(db, ARTIFACT_UUID)!.storagePath;
+    await fs.mkdir(path.dirname(storagePath), { recursive: true });
+    await fs.writeFile(storagePath, 'old');
+
+    const snapshot = loadCanonicalSnapshot(db, `plan:${PLAN_UUID}`);
+    if (!snapshot || snapshot.type !== 'plan') {
+      throw new Error('Expected plan snapshot');
+    }
+    snapshot.plan.artifacts = [];
+    snapshot.plan.artifactTombstones = [
+      { artifactUuid: ARTIFACT_UUID, deletedAt: '2026-01-01T00:00:00.000Z' },
+    ];
     mergeCanonicalRefresh(db, snapshot);
 
     expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();

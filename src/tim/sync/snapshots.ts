@@ -369,10 +369,6 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
     tags: snapshot.plan.tags,
     forceOverwrite: true,
   });
-  // Ensure the projection plan row exists before replacing artifacts because
-  // plan_artifact has a FK to the projection plan table.
-  rebuildPlanProjectionInTransaction(db, snapshot.plan.uuid);
-  replaceArtifactsForPlanSnapshot(db, snapshot.plan.uuid, snapshot.plan.artifacts ?? []);
   const incomingArtifactUuids = new Set(
     (snapshot.plan.artifacts ?? []).map((artifact) => artifact.uuid)
   );
@@ -399,6 +395,12 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
       originNodeId: 'main',
     });
   }
+  // Ensure the projection plan row exists before replacing artifacts because
+  // plan_artifact has a FK to the projection plan table. Artifact tombstones
+  // are recorded first so reconciliation can distinguish hard-deleted files
+  // from locally queued artifacts that are merely absent from this snapshot.
+  rebuildPlanProjectionInTransaction(db, snapshot.plan.uuid);
+  replaceArtifactsForPlanSnapshot(db, snapshot.plan.uuid, snapshot.plan.artifacts ?? []);
   db.prepare('DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?').run(
     'plan',
     planKey(snapshot.plan.uuid)

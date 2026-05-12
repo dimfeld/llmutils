@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { runMigrations } from '../db/migrations.js';
 import {
   getArtifactTransfer,
+  markTransferFailed,
   markTransferInProgress,
   markTransferSucceeded,
   upsertPendingTransfer,
@@ -490,6 +491,44 @@ describe('sync runner', () => {
 
       expect(getArtifactTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'upload')).toMatchObject({
         status: 'pending',
+      });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('missing upload enqueue does not reset failed rows at max attempts', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-artifact-upload-failed-test-'));
+    try {
+      const storagePath = path.join(tempDir, 'capture.png');
+      await fs.writeFile(storagePath, 'data');
+      insertArtifactRow(db, ARTIFACT_UUID, { storagePath });
+      upsertPendingTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'upload');
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        markTransferInProgress(db, ARTIFACT_UUID, MAIN_NODE_ID, 'upload');
+        markTransferFailed(
+          db,
+          ARTIFACT_UUID,
+          MAIN_NODE_ID,
+          'upload',
+          new Error(`failure ${attempt}`)
+        );
+      }
+
+      await enqueueMissingArtifactUploads({
+        db,
+        serverUrl: 'http://127.0.0.1:9',
+        nodeId: NODE_ID,
+        token: 'token',
+        syncServerNodeId: MAIN_NODE_ID,
+      });
+
+      expect(getArtifactTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'upload')).toMatchObject({
+        status: 'failed',
+        attempts: 5,
+        last_error: 'failure 4',
       });
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });

@@ -383,7 +383,6 @@ export function listArtifactsMissingUploadTransfer(
           ON at.artifact_uuid = pa.uuid
          AND at.node_id = ?
          AND at.direction = 'upload'
-         AND at.status = 'succeeded'
         LEFT JOIN sync_tombstone st
           ON st.entity_type = 'plan_artifact'
          AND st.entity_key = pa.uuid
