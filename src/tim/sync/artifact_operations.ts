@@ -327,15 +327,11 @@ function applyArtifactHardDelete(
   const existing = db
     .prepare(
       `
-        SELECT revision, plan_uuid FROM ${
-          mode === 'projection' ? 'plan_artifact' : 'plan_artifact_canonical'
-        }
+        SELECT revision FROM ${mode === 'projection' ? 'plan_artifact' : 'plan_artifact_canonical'}
         WHERE uuid = ?
       `
     )
-    .get(envelope.op.artifactUuid) as
-    | (Pick<PlanArtifact, 'revision'> & { plan_uuid: string })
-    | null;
+    .get(envelope.op.artifactUuid) as Pick<PlanArtifact, 'revision'> | null;
 
   let changed = false;
   for (const table of tablesForMode(mode)) {
@@ -345,6 +341,7 @@ function applyArtifactHardDelete(
     changed ||= result.changes > 0;
   }
   if (shouldRecordTombstone) {
+    const tombstoneAlreadyExists = hasArtifactTombstone(db, envelope.op.artifactUuid);
     recordSyncTombstone(db, {
       entityType: 'plan_artifact',
       entityKey: envelope.op.artifactUuid,
@@ -354,8 +351,16 @@ function applyArtifactHardDelete(
       deletedRevision: existing ? existing.revision + 1 : null,
       originNodeId: envelope.originNodeId,
     });
+    changed ||= !tombstoneAlreadyExists;
   }
   return changed;
+}
+
+function hasArtifactTombstone(db: Database, artifactUuid: string): boolean {
+  const row = db
+    .prepare('SELECT 1 FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+    .get('plan_artifact', artifactUuid) as { 1: number } | null;
+  return row !== null;
 }
 
 function artifactPlanUuids(db: Database, artifactUuid: string, mode: ArtifactApplyMode): string[] {

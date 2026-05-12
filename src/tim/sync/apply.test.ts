@@ -250,15 +250,41 @@ describe('plan_artifact operations', () => {
     ).toEqual({ entity_key: ARTIFACT_UUID });
   });
 
-  test('artifact tombstones reject stale attach without clearing tombstone', async () => {
+  test('missing-artifact hard-delete records tombstone and emits plan invalidation once', async () => {
     seedPlan();
-    applyOperation(
-      db,
-      await buildArtifactHardDeleteOperation(
-        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
-        { originNodeId: NODE_A, localSequence: 1 }
-      )
+    const hardDelete = await buildArtifactHardDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 1 }
     );
+    const result = applyOperation(db, hardDelete);
+
+    expect(result.invalidations).toEqual([`plan:${PLAN_UUID}`]);
+    expect(countRows('sync_sequence')).toBe(1);
+    expect(sequenceTargets()).toEqual([`plan:${PLAN_UUID}`]);
+    expect(
+      db
+        .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+        .get('plan_artifact', ARTIFACT_UUID)
+    ).toEqual({ entity_key: ARTIFACT_UUID });
+
+    const repeatedHardDelete = await buildArtifactHardDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    const repeatedResult = applyOperation(db, repeatedHardDelete);
+
+    expect(repeatedResult.sequenceIds).toEqual([]);
+    expect(repeatedResult.invalidations).toEqual([]);
+    expect(countRows('sync_sequence')).toBe(1);
+    expect(
+      (
+        db
+          .prepare(
+            'SELECT COUNT(*) AS count FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?'
+          )
+          .get('plan_artifact', ARTIFACT_UUID) as { count: number }
+      ).count
+    ).toBe(1);
 
     const staleAttach = await buildArtifactAttachOperation(
       {
