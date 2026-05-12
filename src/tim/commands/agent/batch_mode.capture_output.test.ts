@@ -69,6 +69,15 @@ vi.mock('../../../common/process.js', () => ({
   commitAll: vi.fn(async () => 0),
 }));
 
+vi.mock('../../../common/git.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../common/git.js')>()),
+  getWorkingCopyStatus: vi.fn(async () => ({
+    hasChanges: true,
+    checkFailed: false,
+    diffHash: String(incompleteCalls),
+  })),
+}));
+
 vi.mock('../../plan_materialize.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../plan_materialize.js')>()),
   materializePlan: vi.fn(async () => {}),

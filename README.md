@@ -274,6 +274,19 @@ Important config areas:
 - `subprocessMonitor` - opt-in timeouts for stuck Claude/Codex tool subprocesses
 - `updateDocs` and `applyLessons` - control finalization behavior
 
+The `simplify` block controls the optional code-simplification pass that runs after an agent finishes implementation and before final review. `simplify.mode` accepts `after-completion` (default) or `never`; `simplify.model` and `simplify.executor` (`claude-code` or `codex-cli`) override the executor used for the pass; `simplify.include` and `simplify.exclude` add free-form scoping guidance. The standalone `tim simplify <planId>` command always runs regardless of `simplify.mode`.
+
+```yaml
+simplify:
+  mode: after-completion
+  executor: claude-code
+  model: opus
+  include:
+    - Source and test files touched by the plan
+  exclude:
+    - Generated files
+```
+
 The web UI **Settings** tab stores per-project settings in SQLite. The project-level branch prefix there takes precedence over the config file value.
 
 ## Subprocess Monitor

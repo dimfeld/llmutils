@@ -12,6 +12,7 @@ import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js';
 import { sendFailureReport, timestamp } from './agent_helpers.js';
 import type { SummaryCollector } from '../../summary/collector.js';
+import { runSimplify } from '../simplify.js';
 import { runUpdateDocs } from '../update-docs.js';
 import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
@@ -112,6 +113,7 @@ export async function executeBatchMode(
   try {
     let hasError = false;
     let iteration = 0;
+    const simplifyMode = config.simplify?.mode ?? 'after-completion';
 
     // Track initial state to determine whether to skip final review
     // We skip final review if we started with no tasks completed and finished in a single iteration
@@ -434,6 +436,43 @@ Available tasks:\n\n${taskDescriptions}`,
               if (summaryCollector) summaryCollector.addError('Post-apply command failed');
               break;
             }
+          }
+        }
+
+        if (isShuttingDown()) {
+          break;
+        }
+
+        const shouldSkipSimplify =
+          simplifyMode === 'never' || (initialCompletedTaskCount === 0 && iteration === 1);
+        if (!shouldSkipSimplify && !isShuttingDown()) {
+          sendStructured({
+            type: 'workflow_progress',
+            timestamp: timestamp(),
+            phase: 'simplify',
+            message: 'Running simplify pass',
+          });
+          try {
+            await runSimplify(planData, currentPlanFile, config, {
+              executor: config.simplify?.executor,
+              model: config.simplify?.model,
+              baseDir,
+              terminalInput,
+            });
+
+            if (!isShuttingDown()) {
+              const failedAfterSimplifyPostApplyCommand = await runPostApplyCommands();
+              if (failedAfterSimplifyPostApplyCommand) {
+                error(
+                  `Batch mode stopping because required command "${failedAfterSimplifyPostApplyCommand}" failed.`
+                );
+                hasError = true;
+                if (summaryCollector) summaryCollector.addError('Post-apply command failed');
+                break;
+              }
+            }
+          } catch (err) {
+            warn(`Simplify pass failed: ${err as Error}`);
           }
         }
 

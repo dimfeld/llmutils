@@ -28,6 +28,7 @@ const {
   getWorkingCopyStatusSpy,
   buildExecutionPromptWithoutStepsSpy,
   executePostApplyCommandSpy,
+  runSimplifySpy,
   runUpdateDocsSpy,
   runUpdateLessonsSpy,
   handleReviewCommandSpy,
@@ -59,6 +60,7 @@ const {
     })),
     buildExecutionPromptWithoutStepsSpy: vi.fn(async () => 'Test batch prompt'),
     executePostApplyCommandSpy: vi.fn(async () => true),
+    runSimplifySpy: vi.fn(async () => {}),
     runUpdateDocsSpy: vi.fn(async () => {}),
     runUpdateLessonsSpy: vi.fn(async () => true),
     handleReviewCommandSpy: vi.fn(async () => ({ tasksAppended: 0 })),
@@ -135,6 +137,10 @@ vi.mock('../../prompt_builder.js', () => ({
 
 vi.mock('../../actions.js', () => ({
   executePostApplyCommand: executePostApplyCommandSpy,
+}));
+
+vi.mock('../simplify.js', () => ({
+  runSimplify: runSimplifySpy,
 }));
 
 vi.mock('../../assignments/remove_plan_assignment.js', () => ({
@@ -286,6 +292,8 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     setPlanStatusSpy.mockClear();
     executePostApplyCommandSpy.mockClear();
     executePostApplyCommandSpy.mockResolvedValue(true);
+    runSimplifySpy.mockClear();
+    runSimplifySpy.mockResolvedValue(undefined);
     runUpdateDocsSpy.mockClear();
     runUpdateLessonsSpy.mockClear();
     handleReviewCommandSpy.mockClear();
@@ -1367,6 +1375,238 @@ describe('timAgent - Batch Mode Execution Loop', () => {
   });
 
   describe('finalization timestamps and manual mode', () => {
+    test('simplify runs when mode=after-completion and tasks were completed before this run', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        simplify: { mode: 'after-completion' },
+      });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 0',
+              description: 'Already done',
+              done: true,
+            },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      await timAgent(1, options, {});
+
+      expect(runSimplifySpy).toHaveBeenCalledTimes(1);
+      expect(handleReviewCommandSpy).toHaveBeenCalledTimes(1);
+      expect(runSimplifySpy.mock.invocationCallOrder[0]).toBeLessThan(
+        handleReviewCommandSpy.mock.invocationCallOrder[0]
+      );
+    });
+
+    test('simplify is skipped when initialCompletedTaskCount===0 && iteration===1', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        simplify: { mode: 'after-completion' },
+      });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      await timAgent(1, options, {});
+
+      expect(runSimplifySpy).not.toHaveBeenCalled();
+      expect(handleReviewCommandSpy).not.toHaveBeenCalled();
+    });
+
+    test('simplify is skipped when config.simplify.mode === "never"', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        simplify: { mode: 'never' },
+      });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 0',
+              description: 'Already done',
+              done: true,
+            },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      await timAgent(1, options, {});
+
+      expect(runSimplifySpy).not.toHaveBeenCalled();
+      expect(handleReviewCommandSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('simplify failure does not abort plan or block final review', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        simplify: { mode: 'after-completion' },
+      });
+      runSimplifySpy.mockRejectedValueOnce(new Error('boom'));
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 0',
+              description: 'Already done',
+              done: true,
+            },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      await expect(timAgent(1, options, {})).resolves.toBeUndefined();
+
+      expect(runSimplifySpy).toHaveBeenCalledTimes(1);
+      expect(handleReviewCommandSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Simplify pass failed'));
+    });
+
+    test('simplify runs post-apply commands after success and aborts on post-apply failure', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [{ title: 'Failing Command', command: 'exit 1' }],
+        simplify: { mode: 'after-completion' },
+      });
+      executePostApplyCommandSpy.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 0',
+              description: 'Already done',
+              done: true,
+            },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      await expect(timAgent(1, options, {})).rejects.toThrow('Batch mode stopped due to error.');
+
+      expect(runSimplifySpy).toHaveBeenCalledTimes(1);
+      expect(executePostApplyCommandSpy).toHaveBeenCalledTimes(2);
+      expect(handleReviewCommandSpy).not.toHaveBeenCalled();
+    });
+
     test('after-review mode runs docs and lessons when final review is clean', async () => {
       await createPlanFile({
         tasks: [
