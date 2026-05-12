@@ -31,8 +31,8 @@ export function getTimCacheDir(): string {
 
 export function getTimDataDir(): string {
   if (process.platform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-    return path.join(localAppData, 'tim');
+    const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+    return path.join(appData, 'tim');
   }
 
   const xdgDataHome = process.env.XDG_DATA_HOME?.trim();

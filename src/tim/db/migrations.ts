@@ -1042,8 +1042,6 @@ const migrations: Migration[] = [
   {
     version: 33,
     up: `
-      DROP TABLE IF EXISTS sync_pending_rollback;
-
       CREATE TABLE plan_artifact (
         uuid TEXT PRIMARY KEY,
         plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,

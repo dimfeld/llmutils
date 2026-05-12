@@ -81,6 +81,28 @@ describe('artifact storage', () => {
     ).rejects.toThrow(/too large/);
   });
 
+  test('aborts and removes partial destination when streamed bytes exceed the size cap', async () => {
+    const sourcePath = path.join(sourceDir, 'growing.bin');
+    await fs.writeFile(sourcePath, Buffer.alloc(MAX_ARTIFACT_BYTES));
+    const storagePath = resolveArtifactPath(
+      'project-uuid',
+      'plan-uuid',
+      'growing-artifact',
+      '.bin'
+    );
+
+    const storePromise = storeArtifactFile(
+      sourcePath,
+      'project-uuid',
+      'plan-uuid',
+      'growing-artifact'
+    );
+    await fs.appendFile(sourcePath, Buffer.alloc(1));
+
+    await expect(storePromise).rejects.toThrow(/too large/);
+    await expect(artifactFileExists(storagePath)).resolves.toBe(false);
+  });
+
   test('checks file existence and removes files idempotently', async () => {
     const content = 'delete me';
     const sourcePath = path.join(sourceDir, 'delete-me.log');
@@ -119,12 +141,7 @@ describe('artifact storage', () => {
 
     const jpegPath = path.join(sourceDir, 'photo.jpeg');
     await fs.writeFile(jpegPath, 'fake jpeg data');
-    const storedJpeg = await storeArtifactFile(
-      jpegPath,
-      'project-uuid',
-      'plan-uuid',
-      'jpeg-uuid'
-    );
+    const storedJpeg = await storeArtifactFile(jpegPath, 'project-uuid', 'plan-uuid', 'jpeg-uuid');
     expect(storedJpeg.mimeType).toBe('image/jpeg');
   });
 

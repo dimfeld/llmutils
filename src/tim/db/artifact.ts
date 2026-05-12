@@ -27,6 +27,11 @@ export interface ListArtifactsForPurgeOptions {
   includeActive?: boolean;
 }
 
+export interface ArtifactStateChangeResult {
+  changed: boolean;
+  artifact: PlanArtifact | undefined;
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -122,9 +127,10 @@ export function insertArtifact(db: Database, artifact: PlanArtifactInsert): Plan
   return inserted;
 }
 
-export function softDeleteArtifact(db: Database, uuid: string): PlanArtifact | undefined {
-  db.prepare(
-    `
+export function softDeleteArtifact(db: Database, uuid: string): ArtifactStateChangeResult {
+  const result = db
+    .prepare(
+      `
       UPDATE plan_artifact
       SET deleted_at = ${SQL_NOW_ISO_UTC},
           updated_at = ${SQL_NOW_ISO_UTC},
@@ -132,13 +138,18 @@ export function softDeleteArtifact(db: Database, uuid: string): PlanArtifact | u
       WHERE uuid = ?
         AND deleted_at IS NULL
     `
-  ).run(uuid);
-  return getArtifactByUuid(db, uuid);
+    )
+    .run(uuid);
+  return {
+    changed: result.changes > 0,
+    artifact: getArtifactByUuid(db, uuid),
+  };
 }
 
-export function restoreArtifact(db: Database, uuid: string): PlanArtifact | undefined {
-  db.prepare(
-    `
+export function restoreArtifact(db: Database, uuid: string): ArtifactStateChangeResult {
+  const result = db
+    .prepare(
+      `
       UPDATE plan_artifact
       SET deleted_at = NULL,
           updated_at = ${SQL_NOW_ISO_UTC},
@@ -146,8 +157,12 @@ export function restoreArtifact(db: Database, uuid: string): PlanArtifact | unde
       WHERE uuid = ?
         AND deleted_at IS NOT NULL
     `
-  ).run(uuid);
-  return getArtifactByUuid(db, uuid);
+    )
+    .run(uuid);
+  return {
+    changed: result.changes > 0,
+    artifact: getArtifactByUuid(db, uuid),
+  };
 }
 
 export function hardDeleteArtifact(db: Database, uuid: string): PlanArtifact | undefined {
@@ -166,11 +181,17 @@ export function listArtifactsForPurge(
   const rows = db
     .prepare(
       `
-        SELECT *
-        FROM plan_artifact
-        WHERE (deleted_at IS NOT NULL AND deleted_at < ?)
-          OR (? AND deleted_at IS NULL AND created_at < ?)
-        ORDER BY created_at ASC, uuid ASC
+        SELECT pa.*
+        FROM plan_artifact pa
+        LEFT JOIN plan_canonical pc ON pc.uuid = pa.plan_uuid
+        WHERE (pa.deleted_at IS NOT NULL AND pa.deleted_at <= ?)
+          OR (
+            ?
+            AND pa.deleted_at IS NULL
+            AND pc.status IN ('done', 'cancelled', 'deferred')
+            AND pc.updated_at <= ?
+          )
+        ORDER BY pa.created_at ASC, pa.uuid ASC
       `
     )
     .all(

@@ -122,16 +122,23 @@ describe('tim db/artifact', () => {
     });
 
     const deleted = softDeleteArtifact(db, 'artifact-toggle');
-    expect(deleted?.deletedAt).toBeTruthy();
-    expect(deleted?.revision).toBe(2);
+    expect(deleted.changed).toBe(true);
+    expect(deleted.artifact?.deletedAt).toBeTruthy();
+    expect(deleted.artifact?.revision).toBe(2);
     expect(listArtifactsForPlan(db, 'plan-artifact')).toEqual([]);
 
     const secondDelete = softDeleteArtifact(db, 'artifact-toggle');
-    expect(secondDelete?.revision).toBe(2);
+    expect(secondDelete.changed).toBe(false);
+    expect(secondDelete.artifact?.revision).toBe(2);
 
     const restored = restoreArtifact(db, 'artifact-toggle');
-    expect(restored?.deletedAt).toBeNull();
-    expect(restored?.revision).toBe(3);
+    expect(restored.changed).toBe(true);
+    expect(restored.artifact?.deletedAt).toBeNull();
+    expect(restored.artifact?.revision).toBe(3);
+
+    const secondRestore = restoreArtifact(db, 'artifact-toggle');
+    expect(secondRestore.changed).toBe(false);
+    expect(secondRestore.artifact?.revision).toBe(3);
     expect(listArtifactsForPlan(db, 'plan-artifact').map((artifact) => artifact.uuid)).toEqual([
       'artifact-toggle',
     ]);
@@ -157,8 +164,14 @@ describe('tim db/artifact', () => {
 
   test('returns undefined for non-existent UUID', () => {
     expect(getArtifactByUuid(db, 'does-not-exist')).toBeUndefined();
-    expect(softDeleteArtifact(db, 'does-not-exist')).toBeUndefined();
-    expect(restoreArtifact(db, 'does-not-exist')).toBeUndefined();
+    expect(softDeleteArtifact(db, 'does-not-exist')).toEqual({
+      changed: false,
+      artifact: undefined,
+    });
+    expect(restoreArtifact(db, 'does-not-exist')).toEqual({
+      changed: false,
+      artifact: undefined,
+    });
     expect(hardDeleteArtifact(db, 'does-not-exist')).toBeUndefined();
   });
 
@@ -197,26 +210,49 @@ describe('tim db/artifact', () => {
     ).run();
 
     const beforeDelete = db
-      .prepare<{ count: number }, string>(
-        "SELECT count(*) as count FROM artifact_transfer WHERE artifact_uuid = ?"
-      )
+      .prepare<
+        { count: number },
+        string
+      >('SELECT count(*) as count FROM artifact_transfer WHERE artifact_uuid = ?')
       .get('artifact-transfer-cascade');
     expect(beforeDelete?.count).toBe(1);
 
     hardDeleteArtifact(db, 'artifact-transfer-cascade');
 
     const afterDelete = db
-      .prepare<{ count: number }, string>(
-        "SELECT count(*) as count FROM artifact_transfer WHERE artifact_uuid = ?"
-      )
+      .prepare<
+        { count: number },
+        string
+      >('SELECT count(*) as count FROM artifact_transfer WHERE artifact_uuid = ?')
       .get('artifact-transfer-cascade');
     expect(afterDelete?.count).toBe(0);
   });
 
-  test('lists purge candidates by threshold and includeActive flag', () => {
+  test('lists purge candidates by threshold, plan status, and includeActive flag', () => {
+    upsertPlan(db, 1, {
+      uuid: 'plan-in-progress-old',
+      planId: 2,
+      title: 'In progress old',
+      status: 'in_progress',
+      sourceUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    upsertPlan(db, 1, {
+      uuid: 'plan-done-old',
+      planId: 3,
+      title: 'Done old',
+      status: 'done',
+      sourceUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    upsertPlan(db, 1, {
+      uuid: 'plan-done-recent',
+      planId: 4,
+      title: 'Done recent',
+      status: 'done',
+      sourceUpdatedAt: '2026-01-10T00:00:00.000Z',
+    });
     insertArtifact(db, {
       uuid: 'artifact-old-deleted',
-      planUuid: 'plan-artifact',
+      planUuid: 'plan-in-progress-old',
       projectUuid,
       filename: 'old-deleted.txt',
       mimeType: 'text/plain',
@@ -241,16 +277,40 @@ describe('tim db/artifact', () => {
       updatedAt: '2026-01-10T00:00:00.000Z',
     });
     insertArtifact(db, {
-      uuid: 'artifact-old-active',
-      planUuid: 'plan-artifact',
+      uuid: 'artifact-old-active-in-progress',
+      planUuid: 'plan-in-progress-old',
       projectUuid,
-      filename: 'old-active.txt',
+      filename: 'old-active-in-progress.txt',
       mimeType: 'text/plain',
       size: 1,
-      sha256: 'hash-old-active',
-      storagePath: '/tmp/old-active.txt',
+      sha256: 'hash-old-active-in-progress',
+      storagePath: '/tmp/old-active-in-progress.txt',
       createdAt: '2026-01-02T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
+    });
+    insertArtifact(db, {
+      uuid: 'artifact-old-active-done-old',
+      planUuid: 'plan-done-old',
+      projectUuid,
+      filename: 'old-active-done-old.txt',
+      mimeType: 'text/plain',
+      size: 1,
+      sha256: 'hash-old-active-done-old',
+      storagePath: '/tmp/old-active-done-old.txt',
+      createdAt: '2026-01-03T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z',
+    });
+    insertArtifact(db, {
+      uuid: 'artifact-old-active-done-recent',
+      planUuid: 'plan-done-recent',
+      projectUuid,
+      filename: 'old-active-done-recent.txt',
+      mimeType: 'text/plain',
+      size: 1,
+      sha256: 'hash-old-active-done-recent',
+      storagePath: '/tmp/old-active-done-recent.txt',
+      createdAt: '2026-01-04T00:00:00.000Z',
+      updatedAt: '2026-01-04T00:00:00.000Z',
     });
 
     const cutoff = '2026-01-05T00:00:00.000Z';
@@ -261,6 +321,6 @@ describe('tim db/artifact', () => {
       listArtifactsForPurge(db, { olderThanIso: cutoff, includeActive: true }).map(
         (row) => row.uuid
       )
-    ).toEqual(['artifact-old-deleted', 'artifact-old-active']);
+    ).toEqual(['artifact-old-deleted', 'artifact-old-active-done-old']);
   });
 });

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
+import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import { getTimDataDir } from '../../common/config_paths.js';
@@ -89,13 +90,31 @@ export async function storeArtifactFile(
 
   const hash = createHash('sha256');
   let size = 0;
-  const sourceStream = fs.createReadStream(resolvedSourcePath);
-  sourceStream.on('data', (chunk: string | Buffer) => {
-    hash.update(chunk);
-    size += Buffer.byteLength(chunk);
+  const hashAndLimit = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      size += chunk.length;
+      if (size > MAX_ARTIFACT_BYTES) {
+        callback(
+          new Error(`Artifact file is too large: ${size} bytes exceeds ${MAX_ARTIFACT_BYTES} bytes`)
+        );
+        return;
+      }
+
+      hash.update(chunk);
+      callback(null, chunk);
+    },
   });
 
-  await pipeline(sourceStream, fs.createWriteStream(storagePath));
+  try {
+    await pipeline(
+      fs.createReadStream(resolvedSourcePath),
+      hashAndLimit,
+      fs.createWriteStream(storagePath)
+    );
+  } catch (error) {
+    await removeArtifactFile(storagePath);
+    throw error;
+  }
 
   return {
     size,

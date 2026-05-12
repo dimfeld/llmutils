@@ -4,6 +4,21 @@ import * as path from 'node:path';
 
 import { getTimCacheDir, getTimConfigRoot, getTimDataDir } from './config_paths.js';
 
+function withPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', {
+    value: platform,
+    configurable: true,
+  });
+  try {
+    return fn();
+  } finally {
+    if (originalDescriptor) {
+      Object.defineProperty(process, 'platform', originalDescriptor);
+    }
+  }
+}
+
 describe('getTimConfigRoot', () => {
   const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
   const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
@@ -135,6 +150,7 @@ describe('getTimCacheDir', () => {
 
 describe('getTimDataDir', () => {
   const originalXdgDataHome = process.env.XDG_DATA_HOME;
+  const originalAppData = process.env.APPDATA;
   const originalLocalAppData = process.env.LOCALAPPDATA;
 
   afterEach(() => {
@@ -148,6 +164,12 @@ describe('getTimDataDir', () => {
       delete process.env.LOCALAPPDATA;
     } else {
       process.env.LOCALAPPDATA = originalLocalAppData;
+    }
+
+    if (originalAppData === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalAppData;
     }
   });
 
@@ -184,14 +206,14 @@ describe('getTimDataDir', () => {
     expect(getTimDataDir()).toBe(path.join(os.homedir(), '.local', 'share', 'tim'));
   });
 
-  test('uses LOCALAPPDATA path on Windows', () => {
-    if (process.platform !== 'win32') {
-      return;
-    }
-
+  test('uses APPDATA path on Windows and stays distinct from cache', () => {
+    process.env.APPDATA = 'C:\\Users\\tester\\AppData\\Roaming';
     process.env.LOCALAPPDATA = 'C:\\Users\\tester\\AppData\\Local';
     process.env.XDG_DATA_HOME = '/tmp/should-be-ignored';
 
-    expect(getTimDataDir()).toBe(path.join('C:\\Users\\tester\\AppData\\Local', 'tim'));
+    withPlatform('win32', () => {
+      expect(getTimDataDir()).toBe(path.join('C:\\Users\\tester\\AppData\\Roaming', 'tim'));
+      expect(getTimDataDir()).not.toBe(getTimCacheDir());
+    });
   });
 });
