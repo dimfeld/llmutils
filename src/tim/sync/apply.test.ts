@@ -308,6 +308,46 @@ describe('plan_artifact operations', () => {
     ).toEqual({ entity_key: ARTIFACT_UUID });
   });
 
+  test('duplicate artifact hard-delete does not rewrite an existing tombstone', async () => {
+    seedPlan();
+    seedPlan(OTHER_PLAN_UUID, 2, TASK_UUID_2);
+    const hardDelete = await buildArtifactHardDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    applyOperation(db, hardDelete);
+    const originalTombstone = db
+      .prepare(
+        `
+          SELECT plan_uuid, deletion_operation_uuid, origin_node_id
+          FROM sync_tombstone
+          WHERE entity_type = ? AND entity_key = ?
+        `
+      )
+      .get('plan_artifact', ARTIFACT_UUID);
+
+    const duplicateHardDelete = await buildArtifactHardDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: OTHER_PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_B, localSequence: 1 }
+    );
+    const duplicateResult = applyOperation(db, duplicateHardDelete);
+
+    expect(duplicateResult.sequenceIds).toEqual([]);
+    expect(duplicateResult.invalidations).toEqual([]);
+    expect(countRows('sync_sequence')).toBe(1);
+    expect(
+      db
+        .prepare(
+          `
+            SELECT plan_uuid, deletion_operation_uuid, origin_node_id
+            FROM sync_tombstone
+            WHERE entity_type = ? AND entity_key = ?
+          `
+        )
+        .get('plan_artifact', ARTIFACT_UUID)
+    ).toEqual(originalTombstone);
+  });
+
   test('artifact hard-delete validates the owning plan uuid', async () => {
     seedPlan();
     seedPlan(OTHER_PLAN_UUID, 2, TASK_UUID_2);
