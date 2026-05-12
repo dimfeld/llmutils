@@ -38,7 +38,7 @@ export async function handleArtifactDeleteCommand(
     );
   } catch (error) {
     if (error instanceof ArtifactNotFoundError) {
-      log(`Artifact ${artifactUuid} is already deleted.`);
+      log(`Artifact ${artifactUuid} not found.`);
       return;
     }
     throw error;

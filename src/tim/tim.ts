@@ -685,7 +685,7 @@ artifactCommand
 artifactCommand
   .command('restore <artifactUuid>')
   .description('Restore a soft-deleted artifact')
-  .action(async (artifactUuid, command) => {
+  .action(async (artifactUuid, _options, command) => {
     const { handleArtifactRestoreCommand } = await import('./commands/artifact/restore.js');
     await handleArtifactRestoreCommand(artifactUuid, {}, command).catch(handleCommandError);
   });
@@ -694,7 +694,7 @@ artifactCommand
   .command('purge')
   .description('Remove old artifact rows and orphaned artifact files')
   .option('--older-than <days>', 'Retention threshold in days (default: 30)')
-  .option('--include-active', 'Include active artifacts on completed plans')
+  .option('--include-active', 'Include active artifacts on non-terminal plans')
   .option('--dry-run', 'Report what would be removed without mutating')
   .option('--json', 'Output structured JSON')
   .action(async (options, command) => {

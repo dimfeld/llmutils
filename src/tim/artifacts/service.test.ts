@@ -10,7 +10,7 @@ import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { upsertCanonicalPlanInTransaction, upsertProjectionPlanInTransaction } from '../db/plan.js';
 import { getArtifactByUuid, insertArtifact } from '../db/artifact.js';
-import { upsertPendingTransfer } from '../db/artifact_transfer.js';
+import { markTransferSucceeded, upsertPendingTransfer } from '../db/artifact_transfer.js';
 import { MAX_ARTIFACT_BYTES } from './constants.js';
 import { getArtifactsRoot, resolveArtifactPath } from './storage.js';
 import {
@@ -215,7 +215,6 @@ describe('artifact service', () => {
 
     const dryRun = await purgeArtifacts({
       olderThanDays: 30,
-      includeActive: true,
       dryRun: true,
       config: getDefaultConfig(),
     });
@@ -230,7 +229,6 @@ describe('artifact service', () => {
 
     const report = await purgeArtifacts({
       olderThanDays: 30,
-      includeActive: true,
       config: getDefaultConfig(),
     });
     expect(report).toMatchObject({
@@ -253,6 +251,39 @@ describe('artifact service', () => {
     });
   });
 
+  test('purge hard-deletes file-missing rows without counting missing bytes', async () => {
+    const sourcePath = path.join(sourceDir, 'missing-purge.txt');
+    await fs.writeFile(sourcePath, 'missing bytes');
+    const artifact = await addArtifact({
+      planId: 1,
+      sourcePath,
+      config: getDefaultConfig(),
+      repoRoot: tempDir,
+    });
+    await softDeleteArtifact(artifact.uuid, { config: getDefaultConfig() });
+    db.prepare(
+      "UPDATE plan_artifact SET deleted_at = '2026-01-01T00:00:00.000Z' WHERE uuid = ?"
+    ).run(artifact.uuid);
+    await fs.rm(artifact.storagePath, { force: true });
+
+    const dryRun = await purgeArtifacts({
+      olderThanDays: 30,
+      dryRun: true,
+      config: getDefaultConfig(),
+    });
+    expect(dryRun).toMatchObject({
+      softDeletedRowsHardDeleted: 1,
+      bytesReclaimed: 0,
+    });
+
+    const report = await purgeArtifacts({ olderThanDays: 30, config: getDefaultConfig() });
+    expect(report).toMatchObject({
+      softDeletedRowsHardDeleted: 1,
+      bytesReclaimed: 0,
+    });
+    expect(getArtifactByUuid(db, artifact.uuid)).toBeUndefined();
+  });
+
   test('listArtifacts includes transfer state from artifact_transfer table', async () => {
     const sourcePath = path.join(sourceDir, 'xfer.txt');
     await fs.writeFile(sourcePath, 'xfer');
@@ -264,7 +295,7 @@ describe('artifact service', () => {
       repoRoot: tempDir,
     });
 
-    // No transfer row => transferState null
+    // No transfer row and file present => transferState null
     let results = await listArtifacts({ planId: 1, config: getDefaultConfig(), repoRoot: tempDir });
     expect(results[0].transferState).toBeNull();
 
@@ -272,5 +303,44 @@ describe('artifact service', () => {
     upsertPendingTransfer(db, artifact.uuid, 'remote-node', 'upload');
     results = await listArtifacts({ planId: 1, config: getDefaultConfig(), repoRoot: tempDir });
     expect(results[0].transferState).toBe('pending');
+  });
+
+  test('listArtifacts reports file-missing when bytes are absent with no transfer row', async () => {
+    const sourcePath = path.join(sourceDir, 'missing-no-transfer.txt');
+    await fs.writeFile(sourcePath, 'missing');
+    const artifact = await addArtifact({
+      planId: 1,
+      sourcePath,
+      config: getDefaultConfig(),
+      repoRoot: tempDir,
+    });
+    await fs.rm(artifact.storagePath, { force: true });
+
+    const results = await listArtifacts({
+      planId: 1,
+      config: getDefaultConfig(),
+      repoRoot: tempDir,
+    });
+    expect(results[0].transferState).toBe('file-missing');
+  });
+
+  test('listArtifacts reports file-missing even when transfer row says succeeded', async () => {
+    const sourcePath = path.join(sourceDir, 'missing-succeeded.txt');
+    await fs.writeFile(sourcePath, 'missing');
+    const artifact = await addArtifact({
+      planId: 1,
+      sourcePath,
+      config: getDefaultConfig(),
+      repoRoot: tempDir,
+    });
+    markTransferSucceeded(db, artifact.uuid, 'remote-node', 'download');
+    await fs.rm(artifact.storagePath, { force: true });
+
+    const results = await listArtifacts({
+      planId: 1,
+      config: getDefaultConfig(),
+      repoRoot: tempDir,
+    });
+    expect(results[0].transferState).toBe('file-missing');
   });
 });

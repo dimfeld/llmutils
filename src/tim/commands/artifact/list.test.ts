@@ -4,7 +4,7 @@ import * as path from 'node:path';
 
 import { getDefaultConfig } from '../../configSchema.js';
 import { addArtifact, softDeleteArtifact } from '../../artifacts/service.js';
-import { upsertPendingTransfer } from '../../db/artifact_transfer.js';
+import { markTransferSucceeded, upsertPendingTransfer } from '../../db/artifact_transfer.js';
 import { handleArtifactListCommand } from './list.js';
 import { setupArtifactCommandTest, type ArtifactCommandTestContext } from './test_utils.js';
 
@@ -99,6 +99,48 @@ describe('tim artifact list command', () => {
       transferState: string | null;
     }>;
     expect(payload[0].transferState).toBe('pending');
+  });
+
+  test('JSON and text output show file-missing when local bytes are absent', async () => {
+    const sourcePath = path.join(context.sourceDir, 'missing.txt');
+    await fs.writeFile(sourcePath, 'missing');
+    const artifact = await addArtifact({
+      planId: 1,
+      sourcePath,
+      config: getDefaultConfig(),
+      repoRoot: context.tempDir,
+    });
+    await fs.rm(artifact.storagePath, { force: true });
+
+    await handleArtifactListCommand('1', { json: true });
+    const payload = JSON.parse(consoleLog.mock.calls.at(-1)?.[0] as string) as Array<{
+      transferState: string | null;
+    }>;
+    expect(payload[0].transferState).toBe('file-missing');
+
+    consoleLog.mockClear();
+    await handleArtifactListCommand('1', {});
+    const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(output).toContain('file-missing');
+  });
+
+  test('file-missing wins over a succeeded transfer row', async () => {
+    const sourcePath = path.join(context.sourceDir, 'succeeded-missing.txt');
+    await fs.writeFile(sourcePath, 'missing');
+    const artifact = await addArtifact({
+      planId: 1,
+      sourcePath,
+      config: getDefaultConfig(),
+      repoRoot: context.tempDir,
+    });
+    markTransferSucceeded(context.db, artifact.uuid, 'remote-node', 'download');
+    await fs.rm(artifact.storagePath, { force: true });
+
+    await handleArtifactListCommand('1', { json: true });
+    const payload = JSON.parse(consoleLog.mock.calls.at(-1)?.[0] as string) as Array<{
+      transferState: string | null;
+    }>;
+    expect(payload[0].transferState).toBe('file-missing');
   });
 
   test('text output includes a TRANSFER column header', async () => {

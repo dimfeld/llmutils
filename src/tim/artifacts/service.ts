@@ -24,7 +24,12 @@ import {
 } from '../sync/write_router.js';
 import type { ArtifactTransferStatus } from '../db/artifact_transfer.js';
 import { MAX_ARTIFACT_BYTES } from './constants.js';
-import { getArtifactsRoot, removeArtifactFile, storeArtifactFile } from './storage.js';
+import {
+  artifactFileExists,
+  getArtifactsRoot,
+  removeArtifactFile,
+  storeArtifactFile,
+} from './storage.js';
 import type { PlanArtifact } from './types.js';
 
 const ORPHAN_SAFETY_WINDOW_MS = 60_000;
@@ -36,7 +41,8 @@ export class ArtifactNotFoundError extends Error {
   }
 }
 
-export type ArtifactTransferState = ArtifactTransferStatus | 'synced' | null;
+export type ArtifactTransferState = ArtifactTransferStatus | 'synced' | 'file-missing' | null;
+type ArtifactTransferDisplayState = Exclude<ArtifactTransferState, 'file-missing' | null>;
 
 export type PlanArtifactWithTransferState = PlanArtifact & {
   transferState: ArtifactTransferState;
@@ -165,20 +171,21 @@ function transferStateMap(
     )
     .all(...artifactUuids) as Array<{ artifact_uuid: string; status: ArtifactTransferStatus }>;
 
-  const rank: Record<ArtifactTransferStatus, number> = {
+  const rank: Record<ArtifactTransferDisplayState, number> = {
     failed: 4,
     in_progress: 3,
     pending: 2,
+    synced: 1,
     succeeded: 1,
   };
-  const states = new Map<string, ArtifactTransferState>();
+  const states = new Map<string, ArtifactTransferDisplayState>();
   for (const row of rows) {
     const current = states.get(row.artifact_uuid);
-    if (!current || current === 'synced' || rank[row.status] > rank[current]) {
+    if (!current || rank[row.status] > rank[current]) {
       states.set(row.artifact_uuid, row.status === 'succeeded' ? 'synced' : row.status);
     }
   }
-  return states;
+  return new Map<string, ArtifactTransferState>(states);
 }
 
 export async function addArtifact(options: AddArtifactOptions): Promise<PlanArtifact> {
@@ -233,10 +240,14 @@ export async function listArtifacts(
     db,
     artifacts.map((artifact) => artifact.uuid)
   );
-  return artifacts.map((artifact) => ({
-    ...artifact,
-    transferState: states.get(artifact.uuid) ?? null,
-  }));
+  return Promise.all(
+    artifacts.map(async (artifact) => ({
+      ...artifact,
+      transferState: (await artifactFileExists(artifact.storagePath))
+        ? (states.get(artifact.uuid) ?? null)
+        : 'file-missing',
+    }))
+  );
 }
 
 export function getArtifact(uuid: string, options: ArtifactServiceOptions = {}): PlanArtifact {
@@ -320,6 +331,18 @@ async function* walkFiles(root: string): AsyncGenerator<string> {
   }
 }
 
+async function existingFileSize(filePath: string): Promise<number | null> {
+  try {
+    const stat = await fs.stat(filePath);
+    return stat.isFile() ? stat.size : null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
+
 export async function purgeArtifacts(options: PurgeArtifactOptions = {}): Promise<PurgeReport> {
   const db = options.db ?? getDatabase();
   const config = await resolveConfig(options);
@@ -346,13 +369,19 @@ export async function purgeArtifacts(options: PurgeArtifactOptions = {}): Promis
     } else {
       report.completedPlanRowsHardDeleted += 1;
     }
-    report.bytesReclaimed += artifact.size;
+    const fileSize = await existingFileSize(artifact.storagePath);
+    if (dryRun && fileSize !== null) {
+      report.bytesReclaimed += fileSize;
+    }
     if (!dryRun) {
       await writePlanArtifactHardDelete(db, config, artifact.projectUuid, {
         planUuid: artifact.planUuid,
         artifactUuid: artifact.uuid,
       });
       await removeArtifactFile(artifact.storagePath);
+      if (fileSize !== null) {
+        report.bytesReclaimed += fileSize;
+      }
     }
   }
 

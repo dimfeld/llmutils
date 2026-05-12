@@ -56,4 +56,11 @@ describe('tim artifact restore command', () => {
     const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toContain('already active');
   });
+
+  test('reports unknown UUIDs as not found', async () => {
+    await handleArtifactRestoreCommand('00000000-0000-4000-8000-000000000000');
+
+    const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(output).toContain('not found');
+  });
 });

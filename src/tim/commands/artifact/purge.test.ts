@@ -83,7 +83,7 @@ describe('tim artifact purge command', () => {
       )
       .run(artifact.planUuid);
 
-    await handleArtifactPurgeCommand({ olderThan: '30', includeActive: true, json: true });
+    await handleArtifactPurgeCommand({ olderThan: '30', json: true });
 
     const payload = JSON.parse(consoleLog.mock.calls.at(-1)?.[0] as string);
     expect(payload.completedPlanRowsHardDeleted).toBe(1);
