@@ -7,6 +7,7 @@ import type { RequestHandler } from './$types';
 import { getServerContext } from '$lib/server/init.js';
 import { getArtifactByUuid } from '$tim/db/artifact.js';
 import { artifactFileExists } from '$tim/artifacts/storage.js';
+import { enqueueMissingArtifactDownloads } from '$tim/sync/artifact_scheduling.js';
 
 function quoteHeaderValue(value: string): string {
   return `"${value.replace(/["\\]/g, '\\$&')}"`;
@@ -18,7 +19,7 @@ function contentDisposition(filename: string): string {
 }
 
 export const GET: RequestHandler = async ({ params, request, url }) => {
-  const { db } = await getServerContext();
+  const { db, config } = await getServerContext();
   const artifact = getArtifactByUuid(db, params.artifactUuid);
   if (!artifact) {
     error(404, 'Artifact not found');
@@ -29,6 +30,23 @@ export const GET: RequestHandler = async ({ params, request, url }) => {
   }
 
   const etag = quoteHeaderValue(artifact.sha256);
+  if (!(await artifactFileExists(artifact.storagePath))) {
+    const sync = config.sync;
+    if (sync?.mainUrl && sync.nodeId && sync.disabled !== true && sync.offline !== true) {
+      void enqueueMissingArtifactDownloads({
+        db,
+        serverUrl: sync.mainUrl,
+        nodeId: sync.nodeId,
+      }).catch((caught) => {
+        console.warn(
+          `Failed to enqueue artifact download after file-missing response for ${artifact.uuid}:`,
+          caught
+        );
+      });
+    }
+    return json({ error: 'file_missing' }, { status: 409 });
+  }
+
   if (request.headers.get('if-none-match') === etag) {
     return new Response(null, {
       status: 304,
@@ -36,10 +54,6 @@ export const GET: RequestHandler = async ({ params, request, url }) => {
         ETag: etag,
       },
     });
-  }
-
-  if (!(await artifactFileExists(artifact.storagePath))) {
-    return json({ error: 'file_missing' }, { status: 409 });
   }
 
   const stream = Readable.toWeb(
@@ -50,6 +64,7 @@ export const GET: RequestHandler = async ({ params, request, url }) => {
       'Content-Type': artifact.mimeType,
       'Content-Length': String(artifact.size),
       'Content-Disposition': contentDisposition(artifact.filename),
+      'Cache-Control': 'private, no-cache',
       ETag: etag,
     },
   });

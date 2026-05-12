@@ -14,7 +14,7 @@ import {
 import { getPlanByUuid } from '../db/plan.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDefaultConfig, type TimConfig } from '../configSchema.js';
-import { parsePlanIdFromCliArg, resolvePlanByNumericId } from '../plans.js';
+import { parsePlanIdFromCliArg, PlanNotFoundError, resolvePlanByNumericId } from '../plans.js';
 import {
   getProjectUuidForId,
   writePlanArtifactAttach,
@@ -24,6 +24,7 @@ import {
 } from '../sync/write_router.js';
 import type { ArtifactTransferStatus } from '../db/artifact_transfer.js';
 import { MAX_ARTIFACT_BYTES } from './constants.js';
+import { ArtifactTooLargeError } from './errors.js';
 import {
   getArtifactsRoot,
   removeArtifactFile,
@@ -58,6 +59,13 @@ export interface ArtifactServiceOptions {
 export interface AddArtifactOptions extends ArtifactServiceOptions {
   planId: number | string;
   sourcePath: string;
+  message?: string;
+}
+
+export interface AddArtifactByPlanUuidOptions extends ArtifactServiceOptions {
+  planUuid: string;
+  sourcePath: string;
+  originalFilename?: string;
   message?: string;
 }
 
@@ -133,6 +141,22 @@ async function resolveArtifactPlan(options: ArtifactServiceOptions & { planId: n
   };
 }
 
+function resolveArtifactPlanByUuid(options: ArtifactServiceOptions & { planUuid: string }) {
+  const db = options.db ?? getDatabase();
+  const planUuid = options.planUuid.trim();
+  const planRow = getPlanByUuid(db, planUuid);
+  if (!planRow) {
+    throw new PlanNotFoundError(`Plan not found: ${planUuid}`);
+  }
+
+  return {
+    db,
+    planRow,
+    planUuid,
+    projectUuid: getProjectUuidForId(db, planRow.project_id),
+  };
+}
+
 async function assertReadableRegularFile(sourcePath: string): Promise<string> {
   const resolvedSourcePath = path.resolve(process.cwd(), sourcePath);
   let stat;
@@ -149,12 +173,21 @@ async function assertReadableRegularFile(sourcePath: string): Promise<string> {
     throw new Error(`Artifact source path is not a regular file: ${resolvedSourcePath}`);
   }
   if (stat.size > MAX_ARTIFACT_BYTES) {
-    throw new Error(
-      `Artifact file is too large: ${stat.size} bytes exceeds ${MAX_ARTIFACT_BYTES} bytes`
-    );
+    throw new ArtifactTooLargeError(stat.size);
   }
 
   return resolvedSourcePath;
+}
+
+function safeOriginalFilename(sourcePath: string, originalFilename?: string): string {
+  const candidate = originalFilename?.trim();
+  if (!candidate) {
+    return path.basename(sourcePath);
+  }
+  const basename = path.basename(candidate);
+  return basename.length > 0 && basename !== '.' && basename !== '..'
+    ? basename
+    : path.basename(sourcePath);
 }
 
 function transferStateMap(
@@ -193,47 +226,72 @@ function transferStateMap(
   return new Map<string, ArtifactTransferState>(states);
 }
 
-export async function addArtifact(options: AddArtifactOptions): Promise<PlanArtifact> {
-  const resolvedSourcePath = await assertReadableRegularFile(options.sourcePath);
-  const { db, planUuid, projectUuid } = await resolveArtifactPlan(options);
-  const config = await resolveConfig(options);
+async function addArtifactForResolvedPlan(options: {
+  db: Database;
+  config: TimConfig;
+  planUuid: string;
+  projectUuid: string;
+  resolvedSourcePath: string;
+  filename: string;
+  message?: string;
+}): Promise<PlanArtifact> {
+  const { db, config, planUuid, projectUuid, resolvedSourcePath } = options;
   const artifactUuid = randomUUID();
   const stored = await storeArtifactFile(resolvedSourcePath, projectUuid, planUuid, artifactUuid);
 
   try {
-    const result = await writePlanArtifactAttach(db, config, projectUuid, {
+    await writePlanArtifactAttach(db, config, projectUuid, {
       planUuid,
       artifactUuid,
-      filename: path.basename(resolvedSourcePath),
+      filename: options.filename,
       mimeType: stored.mimeType,
       size: stored.size,
       sha256: stored.sha256,
       message: options.message,
     });
     const artifact = getArtifactByUuid(db, artifactUuid);
-    if (artifact) {
-      return artifact;
+    if (!artifact) {
+      throw new Error(
+        `Artifact ${artifactUuid} was not found after successful attach operation for plan ${planUuid}`
+      );
     }
-
-    return {
-      uuid: artifactUuid,
-      planUuid,
-      projectUuid,
-      filename: path.basename(resolvedSourcePath),
-      mimeType: stored.mimeType,
-      size: stored.size,
-      sha256: stored.sha256,
-      message: options.message ?? null,
-      storagePath: stored.storagePath,
-      deletedAt: null,
-      createdAt: result.mode === 'legacy' ? new Date().toISOString() : result.operation.createdAt,
-      updatedAt: result.mode === 'legacy' ? new Date().toISOString() : result.operation.createdAt,
-      revision: 1,
-    };
+    return artifact;
   } catch (error) {
     await removeArtifactFile(stored.storagePath).catch(() => undefined);
     throw error;
   }
+}
+
+export async function addArtifact(options: AddArtifactOptions): Promise<PlanArtifact> {
+  const resolvedSourcePath = await assertReadableRegularFile(options.sourcePath);
+  const { db, planUuid, projectUuid } = await resolveArtifactPlan(options);
+  const config = await resolveConfig(options);
+  return addArtifactForResolvedPlan({
+    db,
+    config,
+    planUuid,
+    projectUuid,
+    resolvedSourcePath,
+    filename: path.basename(resolvedSourcePath),
+    message: options.message,
+  });
+}
+
+export async function addArtifactByPlanUuid(
+  options: AddArtifactByPlanUuidOptions
+): Promise<PlanArtifact> {
+  const resolvedSourcePath = await assertReadableRegularFile(options.sourcePath);
+  const { db, planUuid, projectUuid } = resolveArtifactPlanByUuid(options);
+  const config = await resolveConfig(options);
+  return addArtifactForResolvedPlan({
+    db,
+    config,
+    planUuid,
+    projectUuid,
+    resolvedSourcePath,
+    filename: safeOriginalFilename(resolvedSourcePath, options.originalFilename),
+    message: options.message,
+  });
 }
 
 export function listArtifactsForPlanUuid(

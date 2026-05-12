@@ -106,7 +106,8 @@ describe('artifact remote actions', () => {
 
       const result = await invokeCommand(softDeleteArtifact, { uuid });
 
-      expect(result.deletedAt).toBeTruthy();
+      expect(result.changed).toBe(true);
+      expect(result.artifact.deletedAt).toBeTruthy();
       const row = getArtifactByUuid(currentDb, uuid);
       expect(row?.deletedAt).toBeTruthy();
     });
@@ -117,8 +118,8 @@ describe('artifact remote actions', () => {
 
       const result = await invokeCommand(softDeleteArtifact, { uuid });
 
-      expect(result.uuid).toBe(uuid);
-      expect(result.filename).toBe('report.txt');
+      expect(result.artifact.uuid).toBe(uuid);
+      expect(result.artifact.filename).toBe('report.txt');
     });
 
     test('is idempotent: second soft-delete does not error', async () => {
@@ -127,7 +128,8 @@ describe('artifact remote actions', () => {
 
       // Already soft-deleted — should not throw
       const result = await invokeCommand(softDeleteArtifact, { uuid });
-      expect(result.deletedAt).toBeTruthy();
+      expect(result.changed).toBe(false);
+      expect(result.artifact.deletedAt).toBeTruthy();
     });
 
     test('returns 404 for unknown UUID', async () => {
@@ -153,7 +155,8 @@ describe('artifact remote actions', () => {
 
       const result = await invokeCommand(restoreArtifact, { uuid });
 
-      expect(result.deletedAt).toBeNull();
+      expect(result.changed).toBe(true);
+      expect(result.artifact.deletedAt).toBeNull();
       const row = getArtifactByUuid(currentDb, uuid);
       expect(row?.deletedAt).toBeNull();
     });
@@ -163,7 +166,8 @@ describe('artifact remote actions', () => {
       makeArtifact(uuid); // already active (no deletedAt)
 
       const result = await invokeCommand(restoreArtifact, { uuid });
-      expect(result.deletedAt).toBeNull();
+      expect(result.changed).toBe(false);
+      expect(result.artifact.deletedAt).toBeNull();
     });
 
     test('returns 404 for unknown UUID', async () => {

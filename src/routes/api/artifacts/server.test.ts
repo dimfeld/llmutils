@@ -23,6 +23,8 @@ vi.mock('$lib/server/init.js', () => ({
 
 import { POST } from './+server.js';
 
+const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
+
 function makeFormDataRequest(fields: Record<string, string | Blob>): Request {
   const form = new FormData();
   for (const [key, value] of Object.entries(fields)) {
@@ -45,7 +47,7 @@ describe('/api/artifacts POST', () => {
     const file = new File([fileContent], 'output.txt', { type: 'text/plain' });
 
     const response = await POST({
-      request: makeFormDataRequest({ planId: '1', file }),
+      request: makeFormDataRequest({ planUuid: PLAN_UUID, file }),
     } as never);
 
     expect(response.status).toBe(200);
@@ -67,7 +69,7 @@ describe('/api/artifacts POST', () => {
     const file = new File(['data'], 'my-report.log', { type: 'text/plain' });
 
     const response = await POST({
-      request: makeFormDataRequest({ planId: '1', file }),
+      request: makeFormDataRequest({ planUuid: PLAN_UUID, file }),
     } as never);
 
     expect(response.status).toBe(200);
@@ -79,7 +81,7 @@ describe('/api/artifacts POST', () => {
     const file = new File(['log data'], 'trace.log', { type: 'text/plain' });
 
     const response = await POST({
-      request: makeFormDataRequest({ planId: '1', file, message: 'step 3 trace' }),
+      request: makeFormDataRequest({ planUuid: PLAN_UUID, file, message: 'step 3 trace' }),
     } as never);
 
     expect(response.status).toBe(200);
@@ -88,7 +90,7 @@ describe('/api/artifacts POST', () => {
     expect(row?.message).toBe('step 3 trace');
   });
 
-  test('400 when planId is missing', async () => {
+  test('400 when planUuid is missing', async () => {
     const file = new File(['x'], 'x.txt', { type: 'text/plain' });
 
     await expect(POST({ request: makeFormDataRequest({ file }) } as never)).rejects.toMatchObject({
@@ -96,25 +98,27 @@ describe('/api/artifacts POST', () => {
     });
   });
 
-  test('400 when planId is non-numeric', async () => {
+  test('400 when planUuid is invalid', async () => {
     const file = new File(['x'], 'x.txt', { type: 'text/plain' });
 
     await expect(
-      POST({ request: makeFormDataRequest({ planId: 'abc', file }) } as never)
+      POST({ request: makeFormDataRequest({ planUuid: 'abc', file }) } as never)
     ).rejects.toMatchObject({ status: 400 });
   });
 
-  test('400 when planId is zero', async () => {
+  test('400 when projectId is invalid', async () => {
     const file = new File(['x'], 'x.txt', { type: 'text/plain' });
 
     await expect(
-      POST({ request: makeFormDataRequest({ planId: '0', file }) } as never)
+      POST({
+        request: makeFormDataRequest({ planUuid: PLAN_UUID, projectId: 'nope', file }),
+      } as never)
     ).rejects.toMatchObject({ status: 400 });
   });
 
   test('400 when file is missing', async () => {
     await expect(
-      POST({ request: makeFormDataRequest({ planId: '1' }) } as never)
+      POST({ request: makeFormDataRequest({ planUuid: PLAN_UUID }) } as never)
     ).rejects.toMatchObject({ status: 400 });
   });
 
@@ -122,7 +126,22 @@ describe('/api/artifacts POST', () => {
     const file = new File(['x'], 'x.txt', { type: 'text/plain' });
 
     await expect(
-      POST({ request: makeFormDataRequest({ planId: '999', file }) } as never)
+      POST({
+        request: makeFormDataRequest({
+          planUuid: '99999999-9999-4999-8999-999999999999',
+          file,
+        }),
+      } as never)
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  test('404 when projectId does not match the plan project', async () => {
+    const file = new File(['x'], 'x.txt', { type: 'text/plain' });
+
+    await expect(
+      POST({
+        request: makeFormDataRequest({ planUuid: PLAN_UUID, projectId: '999', file }),
+      } as never)
     ).rejects.toMatchObject({ status: 404 });
   });
 
@@ -133,8 +152,24 @@ describe('/api/artifacts POST', () => {
     });
 
     const response = await POST({
-      request: makeFormDataRequest({ planId: '1', file: oversized }),
+      request: makeFormDataRequest({ planUuid: PLAN_UUID, file: oversized }),
     } as never);
+
+    expect(response.status).toBe(413);
+    const body = await response.json();
+    expect(body).toMatchObject({ error: 'artifact_too_large', maxBytes: MAX_ARTIFACT_BYTES });
+  });
+
+  test('413 when content-length exceeds MAX_ARTIFACT_BYTES plus multipart allowance', async () => {
+    const request = new Request('http://localhost/api/artifacts', {
+      method: 'POST',
+      body: new FormData(),
+      headers: {
+        'content-length': String(MAX_ARTIFACT_BYTES + 64 * 1024 + 1),
+      },
+    });
+
+    const response = await POST({ request } as never);
 
     expect(response.status).toBe(413);
     const body = await response.json();
@@ -145,7 +180,7 @@ describe('/api/artifacts POST', () => {
     const tmpBefore = (await fsp.readdir(os.tmpdir())).filter((e) => e.startsWith('tim-artifact-'));
 
     const file = new File(['cleanup check'], 'cleanup.txt', { type: 'text/plain' });
-    await POST({ request: makeFormDataRequest({ planId: '1', file }) } as never);
+    await POST({ request: makeFormDataRequest({ planUuid: PLAN_UUID, file }) } as never);
 
     const tmpAfter = (await fsp.readdir(os.tmpdir())).filter((e) => e.startsWith('tim-artifact-'));
 
@@ -156,7 +191,12 @@ describe('/api/artifacts POST', () => {
     const tmpBefore = (await fsp.readdir(os.tmpdir())).filter((e) => e.startsWith('tim-artifact-'));
 
     const file = new File(['data'], 'f.txt', { type: 'text/plain' });
-    await POST({ request: makeFormDataRequest({ planId: '999', file }) } as never).catch(() => {});
+    await POST({
+      request: makeFormDataRequest({
+        planUuid: '99999999-9999-4999-8999-999999999999',
+        file,
+      }),
+    } as never).catch(() => {});
 
     const tmpAfter = (await fsp.readdir(os.tmpdir())).filter((e) => e.startsWith('tim-artifact-'));
     expect(tmpAfter.length).toBeLessThanOrEqual(tmpBefore.length);
@@ -166,7 +206,7 @@ describe('/api/artifacts POST', () => {
     const file = new File(['stored content'], 'stored.txt', { type: 'text/plain' });
 
     const response = await POST({
-      request: makeFormDataRequest({ planId: '1', file }),
+      request: makeFormDataRequest({ planUuid: PLAN_UUID, file }),
     } as never);
 
     expect(response.status).toBe(200);

@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { insertArtifact } from '$tim/db/artifact.js';
+import type { TimConfig } from '$tim/configSchema.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import {
   upsertCanonicalPlanInTransaction,
@@ -13,10 +14,11 @@ import {
 } from '$tim/db/plan.js';
 
 let currentDb: Database;
+let currentConfig: TimConfig;
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
-    config: {} as never,
+    config: currentConfig,
     db: currentDb,
   }),
 }));
@@ -43,6 +45,12 @@ describe('/api/artifacts/[artifactUuid] GET', () => {
 
   beforeEach(() => {
     currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
+    currentConfig = {
+      sync: {
+        nodeId: 'download-route-node',
+        mainUrl: 'http://127.0.0.1:9',
+      },
+    };
     const project = getOrCreateProject(currentDb, 'repo-artifact-download', {
       uuid: PROJECT_UUID,
       remoteUrl: 'https://example.com/repo.git',
@@ -152,6 +160,7 @@ describe('/api/artifacts/[artifactUuid] GET', () => {
     expect(response.headers.get('Content-Type')).toBe('text/plain');
     expect(response.headers.get('Content-Length')).toBe('7');
     expect(response.headers.get('ETag')).toBe('"deadbeef"');
+    expect(response.headers.get('Cache-Control')).toBe('private, no-cache');
     expect(response.headers.get('Content-Disposition')).toMatch(/report\.txt/);
   });
 
@@ -286,6 +295,65 @@ describe('/api/artifacts/[artifactUuid] GET', () => {
     expect(response.status).toBe(409);
     const body = await response.json();
     expect(body).toMatchObject({ error: 'file_missing' });
+  });
+
+  test('returns 409 when If-None-Match matches but local file is absent', async () => {
+    const uuid = '81000000-0000-4000-8000-000000000001';
+
+    insertArtifact(currentDb, {
+      uuid,
+      planUuid: PLAN_UUID,
+      projectUuid: PROJECT_UUID,
+      filename: 'missing-cached.txt',
+      mimeType: 'text/plain',
+      size: 10,
+      sha256: 'missingetag',
+      storagePath: '/nonexistent/path/missing-cached.txt',
+    });
+
+    const response = await GET({
+      params: { artifactUuid: uuid },
+      request: makeRequest(uuid, { headers: { 'if-none-match': '"missingetag"' } }),
+      url: makeUrl(uuid),
+    } as never);
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body).toMatchObject({ error: 'file_missing' });
+  });
+
+  test('enqueues a download transfer when local file is missing and sync is configured', async () => {
+    const uuid = '82000000-0000-4000-8000-000000000001';
+
+    insertArtifact(currentDb, {
+      uuid,
+      planUuid: PLAN_UUID,
+      projectUuid: PROJECT_UUID,
+      filename: 'needs-transfer.txt',
+      mimeType: 'text/plain',
+      size: 10,
+      sha256: 'transferetag',
+      storagePath: '/nonexistent/path/needs-transfer.txt',
+    });
+
+    await GET({
+      params: { artifactUuid: uuid },
+      request: makeRequest(uuid),
+      url: makeUrl(uuid),
+    } as never);
+
+    await vi.waitFor(() => {
+      const row = currentDb
+        .prepare(
+          `
+            SELECT status, direction
+            FROM artifact_transfer
+            WHERE artifact_uuid = ?
+          `
+        )
+        .get(uuid) as { status: string; direction: string } | null;
+      expect(row).toMatchObject({ status: 'pending', direction: 'download' });
+    });
   });
 
   test('streams actual file content on 200', async () => {

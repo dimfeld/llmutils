@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 
 import { getTimDataDir } from '../../common/config_paths.js';
 import { MAX_ARTIFACT_BYTES } from './constants.js';
+import { ArtifactTooLargeError } from './errors.js';
 
 export interface StoredArtifactFile {
   size: number;
@@ -78,9 +79,7 @@ export async function storeArtifactFile(
     throw new Error(`Artifact source path is not a regular file: ${resolvedSourcePath}`);
   }
   if (stat.size > MAX_ARTIFACT_BYTES) {
-    throw new Error(
-      `Artifact file is too large: ${stat.size} bytes exceeds ${MAX_ARTIFACT_BYTES} bytes`
-    );
+    throw new ArtifactTooLargeError(stat.size);
   }
 
   const filename = path.basename(resolvedSourcePath);
@@ -94,9 +93,7 @@ export async function storeArtifactFile(
     transform(chunk: Buffer, _encoding, callback) {
       size += chunk.length;
       if (size > MAX_ARTIFACT_BYTES) {
-        callback(
-          new Error(`Artifact file is too large: ${size} bytes exceeds ${MAX_ARTIFACT_BYTES} bytes`)
-        );
+        callback(new ArtifactTooLargeError(size));
         return;
       }
 

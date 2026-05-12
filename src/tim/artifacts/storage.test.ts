@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { MAX_ARTIFACT_BYTES } from './constants.js';
+import { ArtifactTooLargeError } from './errors.js';
 import {
   artifactFileExists,
   getArtifactsRoot,
@@ -78,7 +79,7 @@ describe('artifact storage', () => {
 
     await expect(
       storeArtifactFile(sourcePath, 'project-uuid', 'plan-uuid', 'large-artifact')
-    ).rejects.toThrow(/too large/);
+    ).rejects.toThrow(ArtifactTooLargeError);
   });
 
   test('aborts and removes partial destination when streamed bytes exceed the size cap', async () => {
@@ -99,7 +100,7 @@ describe('artifact storage', () => {
     );
     await fs.appendFile(sourcePath, Buffer.alloc(1));
 
-    await expect(storePromise).rejects.toThrow(/too large/);
+    await expect(storePromise).rejects.toThrow(ArtifactTooLargeError);
     await expect(artifactFileExists(storagePath)).resolves.toBe(false);
   });
 
