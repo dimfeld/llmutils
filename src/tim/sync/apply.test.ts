@@ -583,6 +583,137 @@ describe('plan_artifact operations', () => {
     expect(countRows('sync_sequence')).toBe(2);
   });
 
+  test('divergent same-UUID artifact attach is rejected with SyncValidationError', async () => {
+    seedPlan();
+    await applyOperation(
+      db,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'original.png',
+          mimeType: 'image/png',
+          size: 100,
+          sha256: 'original-hash',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    const divergentSha = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'original.png',
+        mimeType: 'image/png',
+        size: 100,
+        sha256: 'tampered-hash',
+      },
+      { originNodeId: NODE_B, localSequence: 1 }
+    );
+    expect(() => applyOperation(db, divergentSha)).toThrow(SyncValidationError);
+
+    const divergentSize = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'original.png',
+        mimeType: 'image/png',
+        size: 999,
+        sha256: 'original-hash',
+      },
+      { originNodeId: NODE_B, localSequence: 2 }
+    );
+    expect(() => applyOperation(db, divergentSize)).toThrow(SyncValidationError);
+
+    // Existing row preserved.
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({
+      sha256: 'original-hash',
+      size: 100,
+    });
+  });
+
+  test('divergent same-UUID attach is rejected when local projection has the row but canonical does not', async () => {
+    seedPlan();
+    // Simulate a locally-queued optimistic attach: projection row present,
+    // canonical row absent (pre-ack state on a persistent node).
+    db.prepare(
+      `
+        INSERT INTO plan_artifact (
+          uuid, plan_uuid, project_uuid, filename, mime_type, size, sha256,
+          message, storage_path, deleted_at, created_at, updated_at, revision
+        ) VALUES (?, ?, ?, 'local.png', 'image/png', 100, 'local-hash',
+          NULL, '/tmp/ignored', NULL, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 1)
+      `
+    ).run(ARTIFACT_UUID, PLAN_UUID, PROJECT_UUID);
+
+    const divergent = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'remote.png',
+        mimeType: 'image/png',
+        size: 100,
+        sha256: 'remote-hash',
+      },
+      { originNodeId: NODE_B, localSequence: 1 }
+    );
+    expect(() => applyOperation(db, divergent)).toThrow(SyncValidationError);
+
+    // Local projection row preserved; canonical still absent.
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({ sha256: 'local-hash' });
+    expect(
+      db.prepare('SELECT uuid FROM plan_artifact_canonical WHERE uuid = ?').get(ARTIFACT_UUID)
+    ).toBeNull();
+  });
+
+  test('matching attach with projection-only local row backfills canonical without clobbering projection', async () => {
+    seedPlan();
+    // Optimistic local attach state: projection populated at revision 2, canonical absent.
+    db.prepare(
+      `
+        INSERT INTO plan_artifact (
+          uuid, plan_uuid, project_uuid, filename, mime_type, size, sha256,
+          message, storage_path, deleted_at, created_at, updated_at, revision
+        ) VALUES (?, ?, ?, 'local.png', 'image/png', 100, 'matching-hash',
+          'local-msg', '/tmp/ignored', NULL, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2)
+      `
+    ).run(ARTIFACT_UUID, PLAN_UUID, PROJECT_UUID);
+
+    const matching = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'capture.png',
+        mimeType: 'image/png',
+        size: 100,
+        sha256: 'matching-hash',
+      },
+      { originNodeId: NODE_B, localSequence: 1 }
+    );
+    const result = applyOperation(db, matching);
+
+    expect(result.status).toBe('applied');
+    expect(result.invalidations).toEqual([`plan:${PLAN_UUID}`]);
+    // Canonical now populated.
+    expect(
+      db
+        .prepare('SELECT uuid, sha256 FROM plan_artifact_canonical WHERE uuid = ?')
+        .get(ARTIFACT_UUID)
+    ).toEqual({ uuid: ARTIFACT_UUID, sha256: 'matching-hash' });
+    // Projection row preserved at revision 2 (not clobbered back to 1).
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({
+      sha256: 'matching-hash',
+      revision: 2,
+      filename: 'local.png',
+    });
+  });
+
   test('replayed artifact attach does not overwrite higher-revision state', async () => {
     seedPlan();
     const attachInput = {

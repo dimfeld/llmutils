@@ -213,12 +213,39 @@ function applyArtifactAttach(
   },
   mode: ArtifactApplyMode
 ): boolean {
-  const existing = db
-    .prepare(
-      `SELECT uuid FROM ${mode === 'projection' ? 'plan_artifact' : 'plan_artifact_canonical'} WHERE uuid = ?`
-    )
-    .get(envelope.op.artifactUuid) as { uuid: string } | null;
-  if (existing) {
+  const tables = tablesForMode(mode);
+  const presence = new Map<'plan_artifact_canonical' | 'plan_artifact', boolean>();
+  for (const table of tables) {
+    const existing = db
+      .prepare(`SELECT uuid, plan_uuid, sha256, size FROM ${table} WHERE uuid = ?`)
+      .get(envelope.op.artifactUuid) as
+      | { uuid: string; plan_uuid: string; sha256: string; size: number }
+      | null;
+    if (!existing) {
+      presence.set(table, false);
+      continue;
+    }
+    if (
+      existing.plan_uuid !== envelope.op.planUuid ||
+      existing.sha256 !== envelope.op.sha256 ||
+      existing.size !== envelope.op.size
+    ) {
+      throw validationError(
+        envelope,
+        `Divergent artifact attach for UUID ${envelope.op.artifactUuid} in ${table}: ` +
+          `existing { planUuid: ${existing.plan_uuid}, sha256: ${existing.sha256}, size: ${existing.size} } ` +
+          `vs incoming { planUuid: ${envelope.op.planUuid}, sha256: ${envelope.op.sha256}, size: ${envelope.op.size} }`
+      );
+    }
+    presence.set(table, true);
+  }
+
+  // Idempotent replay: when canonical already has a matching row (canonical mode
+  // implies projection was also written at insert-time), nothing to do. The same
+  // applies for projection-only mode when projection has the matching row.
+  const canonicalAlreadyHasRow =
+    mode === 'projection' ? presence.get('plan_artifact') : presence.get('plan_artifact_canonical');
+  if (canonicalAlreadyHasRow) {
     return false;
   }
 
@@ -243,7 +270,10 @@ function applyArtifactAttach(
     updatedAt: envelope.createdAt,
     revision: 1,
   };
-  for (const table of tablesForMode(mode)) {
+  for (const table of tables) {
+    // Skip an existing projection row so a locally-queued higher-revision
+    // optimistic state isn't clobbered when canonical is being filled in.
+    if (presence.get(table)) continue;
     upsertArtifactRow(db, table, artifact);
   }
   return true;
