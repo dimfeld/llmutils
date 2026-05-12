@@ -241,7 +241,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
     ? `   - Use the review executor override provided: \`--executor ${options.reviewExecutor}\`.`
     : '';
 
- const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
+  const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
    - Run \`${reviewCommand}\` using the Bash tool.
    - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why. On subsequent review runs, also include a list of any issues from prior review output that you determined were not relevant or acceptable to leave as-is, so the reviewer knows not to flag them again.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.

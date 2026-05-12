@@ -184,7 +184,6 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('Prefer deterministic names');
       expect(out).toContain('/tmp/claude/tim-42-<purpose>.md');
     });
-
   });
 
   describe('simple mode (wrapWithOrchestrationSimple)', () => {
@@ -261,7 +260,6 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).not.toContain('tim subagent implementer 55 -x codex-cli');
       expect(out).not.toContain('tim subagent implementer 55 -x claude-code');
     });
-
   });
 
   describe('tdd mode (wrapWithOrchestrationTdd)', () => {
@@ -335,7 +333,6 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('tim subagent implementer 74 -x claude-code');
       expect(out).not.toContain('Subagent Executor Selection');
     });
-
   });
 
   describe('dynamic executor note in workflow instructions', () => {

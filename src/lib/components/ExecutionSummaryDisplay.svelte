@@ -113,11 +113,13 @@
               {/if}
               {#if failureDetails.requirements?.trim()}
                 <div class="mt-2 text-yellow-300">Requirements:</div>
-                <pre class="whitespace-pre-wrap pl-4 text-gray-200">{failureDetails.requirements.trim()}</pre>
+                <pre
+                  class="pl-4 whitespace-pre-wrap text-gray-200">{failureDetails.requirements.trim()}</pre>
               {/if}
               {#if failureDetails.solutions?.trim()}
                 <div class="mt-2 text-yellow-300">Possible solutions:</div>
-                <pre class="whitespace-pre-wrap pl-4 text-gray-200">{failureDetails.solutions.trim()}</pre>
+                <pre
+                  class="pl-4 whitespace-pre-wrap text-gray-200">{failureDetails.solutions.trim()}</pre>
               {/if}
             {/if}
 
@@ -127,13 +129,14 @@
                   <div>
                     <div class="font-medium text-gray-200">{section.title}</div>
                     {#if section.body.trim()}
-                      <pre class="whitespace-pre-wrap pl-4 text-gray-300">{section.body}</pre>
+                      <pre class="pl-4 whitespace-pre-wrap text-gray-300">{section.body}</pre>
                     {/if}
                   </div>
                 {/each}
               </div>
             {:else if renderStepOutput(step)?.content}
-              <pre class="mt-3 whitespace-pre-wrap text-gray-200">{renderStepOutput(step)!.content}</pre>
+              <pre class="mt-3 whitespace-pre-wrap text-gray-200">{renderStepOutput(step)!
+                  .content}</pre>
             {/if}
           </div>
         {/each}
@@ -155,7 +158,8 @@
   </div>
 
   <div class={titleClass}>
-    {statusIcon} {hasFailures || hasErrors
+    {statusIcon}
+    {hasFailures || hasErrors
       ? `Execution finished for plan ${summary.planId}`
       : `Completed plan ${summary.planId}`}
   </div>

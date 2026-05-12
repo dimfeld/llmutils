@@ -353,9 +353,7 @@ describe('tim db/artifact', () => {
     ).toContain('artifact-divergent');
 
     // Diverge: projection back to in_progress while canonical still says done.
-    db.prepare(
-      "UPDATE plan SET status = 'in_progress' WHERE uuid = 'plan-divergent'"
-    ).run();
+    db.prepare("UPDATE plan SET status = 'in_progress' WHERE uuid = 'plan-divergent'").run();
 
     // Purge eligibility must follow the projection (user-visible) status.
     expect(

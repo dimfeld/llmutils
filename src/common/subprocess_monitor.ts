@@ -132,9 +132,7 @@ export function findSubprocessMonitorMatch(
   let bestMatch: SubprocessMonitorMatch | null = null;
 
   for (const rule of rules) {
-    const matches = rule.matchers.some((matcher) =>
-      matcher.value.test(command)
-    );
+    const matches = rule.matchers.some((matcher) => matcher.value.test(command));
 
     if (!matches) {
       continue;
