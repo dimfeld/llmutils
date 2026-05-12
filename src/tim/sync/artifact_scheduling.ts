@@ -3,6 +3,7 @@ import { artifactFileExists } from '../artifacts/storage.js';
 import {
   type ListArtifactsMissingDownloadTransferCursor,
   listArtifactsMissingDownloadTransfer,
+  listArtifactsMissingUploadTransfer,
   reenqueueDownloadTransfer,
   upsertPendingTransfer,
 } from '../db/artifact_transfer.js';
@@ -76,6 +77,48 @@ export async function enqueueMissingArtifactDownloads(
       } else {
         upsertPendingTransfer(options.db, candidate.uuid, transferNodeId, 'download');
       }
+      enqueued += 1;
+      if (enqueued >= enqueueLimit) {
+        break;
+      }
+    }
+    const last = candidates[candidates.length - 1];
+    cursor = { createdAt: last.created_at, uuid: last.uuid };
+    if (candidates.length < pageLimit) {
+      break;
+    }
+  }
+}
+
+export async function enqueueMissingArtifactUploads(
+  options: ArtifactSchedulingOptions & { projectUuid?: string }
+): Promise<void> {
+  const transferNodeId = syncServerTransferNodeId(options);
+  if (transferNodeId === options.nodeId) {
+    return;
+  }
+  const pageLimit = 200;
+  const enqueueLimit = 500;
+  let enqueued = 0;
+  let cursor: ListArtifactsMissingDownloadTransferCursor | undefined;
+
+  while (enqueued < enqueueLimit) {
+    const candidates = listArtifactsMissingUploadTransfer(options.db, transferNodeId, {
+      limit: pageLimit,
+      cursor,
+      projectUuid: options.projectUuid,
+    });
+    if (candidates.length === 0) {
+      break;
+    }
+    const exists = await Promise.all(
+      candidates.map((candidate) => artifactFileExists(candidate.storage_path))
+    );
+    for (let index = 0; index < candidates.length; index += 1) {
+      if (!exists[index]) {
+        continue;
+      }
+      upsertPendingTransfer(options.db, candidates[index].uuid, transferNodeId, 'upload');
       enqueued += 1;
       if (enqueued >= enqueueLimit) {
         break;

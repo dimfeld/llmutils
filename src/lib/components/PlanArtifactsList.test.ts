@@ -84,6 +84,23 @@ describe('PlanArtifactsList', () => {
     expect(body).toContain('log.txt');
   });
 
+  test('does not render <img> for SVG artifacts', () => {
+    const { body } = render(PlanArtifactsList, {
+      props: {
+        artifacts: [
+          makeArtifact({
+            uuid: '77777777-7777-7777-7777-777777777777',
+            filename: 'unsafe.svg',
+            mimeType: 'image/svg+xml',
+          }),
+        ],
+      },
+    });
+    expect(body).not.toContain('<img');
+    expect(body).toContain('unsafe.svg');
+    expect(body).toContain('href="/api/artifacts/77777777-7777-7777-7777-777777777777"');
+  });
+
   test('shows Sync in progress badge when file is missing', () => {
     const { body } = render(PlanArtifactsList, {
       props: {

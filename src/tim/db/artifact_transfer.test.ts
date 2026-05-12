@@ -74,9 +74,9 @@ describe('tim db/artifact_transfer', () => {
   test('tracks attempts, failures, and eventual success', () => {
     upsertPendingTransfer(db, 'artifact-transfer-1', 'main-node', 'download');
     const inProgress = markTransferInProgress(db, 'artifact-transfer-1', 'main-node', 'download');
-    expect(inProgress.status).toBe('in_progress');
-    expect(inProgress.attempts).toBe(1);
-    expect(inProgress.last_attempt_at).toBeTruthy();
+    expect(inProgress?.status).toBe('in_progress');
+    expect(inProgress?.attempts).toBe(1);
+    expect(inProgress?.last_attempt_at).toBeTruthy();
 
     const failed = markTransferFailed(
       db,
@@ -85,8 +85,8 @@ describe('tim db/artifact_transfer', () => {
       'download',
       new Error('network failed')
     );
-    expect(failed.status).toBe('failed');
-    expect(failed.last_error).toBe('network failed');
+    expect(failed?.status).toBe('failed');
+    expect(failed?.last_error).toBe('network failed');
 
     const secondAttempt = markTransferInProgress(
       db,
@@ -94,12 +94,12 @@ describe('tim db/artifact_transfer', () => {
       'main-node',
       'download'
     );
-    expect(secondAttempt.attempts).toBe(2);
+    expect(secondAttempt?.attempts).toBe(2);
 
     const succeeded = markTransferSucceeded(db, 'artifact-transfer-1', 'main-node', 'download');
-    expect(succeeded.status).toBe('succeeded');
-    expect(succeeded.succeeded_at).toBeTruthy();
-    expect(succeeded.last_error).toBeNull();
+    expect(succeeded?.status).toBe('succeeded');
+    expect(succeeded?.succeeded_at).toBeTruthy();
+    expect(succeeded?.last_error).toBeNull();
   });
 
   test('lists pending and optionally failed transfers by direction', () => {
@@ -190,9 +190,9 @@ describe('tim db/artifact_transfer', () => {
       'upload',
       new Error(longMessage)
     );
-    expect(result.last_error).not.toBeNull();
-    expect(result.last_error!.length).toBeLessThanOrEqual(1024);
-    expect(result.last_error!.length).toBeGreaterThan(0);
+    expect(result?.last_error).not.toBeNull();
+    expect(result?.last_error!.length).toBeLessThanOrEqual(1024);
+    expect(result?.last_error!.length).toBeGreaterThan(0);
   });
 
   test('markTransferSucceeded clears last_error from a previous failure', () => {
@@ -227,5 +227,38 @@ describe('tim db/artifact_transfer', () => {
     expect(listPendingTransfers(db, { direction: 'upload' })).toHaveLength(0);
     expect(listPendingTransfers(db, { direction: 'download' })).toHaveLength(0);
     expect(getArtifactTransfer(db, 'artifact-transfer-1', 'main-node', 'upload')).toBeUndefined();
+  });
+
+  test('mark helpers tolerate cascade-deleted transfer rows', () => {
+    upsertPendingTransfer(db, 'artifact-transfer-1', 'main-node', 'upload');
+    db.prepare('DELETE FROM plan_artifact WHERE uuid = ?').run('artifact-transfer-1');
+
+    expect(() =>
+      markTransferFailed(db, 'artifact-transfer-1', 'main-node', 'upload', new Error('failed'))
+    ).not.toThrow();
+    expect(() =>
+      markTransferInProgress(db, 'artifact-transfer-1', 'main-node', 'upload')
+    ).not.toThrow();
+    expect(() =>
+      markTransferSucceeded(db, 'artifact-transfer-1', 'main-node', 'upload')
+    ).not.toThrow();
+  });
+
+  test('missing download discovery skips tombstoned artifact UUIDs', () => {
+    db.prepare(
+      `
+        INSERT INTO sync_tombstone (
+          entity_type,
+          entity_key,
+          project_uuid,
+          plan_uuid,
+          deletion_operation_uuid,
+          deleted_at,
+          origin_node_id
+        ) VALUES ('plan_artifact', ?, ?, 'plan-artifact-transfer', ?, '2026-01-01T00:00:00.000Z', 'main-node')
+      `
+    ).run('artifact-transfer-1', projectUuid, 'delete-artifact-transfer-1');
+
+    expect(listArtifactsMissingDownloadTransfer(db, 'main-node')).toEqual([]);
   });
 });

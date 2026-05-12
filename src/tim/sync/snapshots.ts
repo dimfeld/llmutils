@@ -373,7 +373,19 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
   // plan_artifact has a FK to the projection plan table.
   rebuildPlanProjectionInTransaction(db, snapshot.plan.uuid);
   replaceArtifactsForPlanSnapshot(db, snapshot.plan.uuid, snapshot.plan.artifacts ?? []);
+  const incomingArtifactUuids = new Set(
+    (snapshot.plan.artifacts ?? []).map((artifact) => artifact.uuid)
+  );
+  const clearArtifactTombstone = db.prepare(
+    'DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?'
+  );
+  for (const artifactUuid of incomingArtifactUuids) {
+    clearArtifactTombstone.run('plan_artifact', artifactUuid);
+  }
   for (const tombstone of snapshot.plan.artifactTombstones ?? []) {
+    if (incomingArtifactUuids.has(tombstone.artifactUuid)) {
+      continue;
+    }
     recordSyncTombstone(db, {
       entityType: 'plan_artifact',
       entityKey: tombstone.artifactUuid,

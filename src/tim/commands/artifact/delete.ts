@@ -20,12 +20,20 @@ export async function handleArtifactDeleteCommand(
   const context = await resolveArtifactCommandContext(command);
 
   if (options.hard) {
-    const result = await hardDeleteArtifact(artifactUuid, { config: context.config });
-    log(
-      result.changed
-        ? chalk.green(`Hard-deleted artifact ${artifactUuid}.`)
-        : `Artifact ${artifactUuid} is already deleted.`
-    );
+    try {
+      const result = await hardDeleteArtifact(artifactUuid, { config: context.config });
+      log(
+        result.changed
+          ? chalk.green(`Hard-deleted artifact ${artifactUuid}.`)
+          : `Artifact ${artifactUuid} is already deleted.`
+      );
+    } catch (error) {
+      if (error instanceof ArtifactNotFoundError) {
+        log(`Artifact ${artifactUuid} not found.`);
+        return;
+      }
+      throw error;
+    }
     return;
   }
 

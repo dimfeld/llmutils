@@ -24,10 +24,11 @@ function safeUploadFilename(filename: string): string {
 
 export const POST: RequestHandler = async ({ request }) => {
   const contentLength = request.headers.get('content-length');
-  if (
-    contentLength &&
-    Number(contentLength) > MAX_ARTIFACT_BYTES + MULTIPART_OVERHEAD_ALLOWANCE_BYTES
-  ) {
+  const parsedContentLength = contentLength === null ? NaN : Number(contentLength);
+  if (!Number.isFinite(parsedContentLength)) {
+    return json({ error: 'length_required' }, { status: 411 });
+  }
+  if (parsedContentLength > MAX_ARTIFACT_BYTES + MULTIPART_OVERHEAD_ALLOWANCE_BYTES) {
     return json(
       {
         error: 'artifact_too_large',

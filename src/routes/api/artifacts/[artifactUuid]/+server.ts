@@ -13,9 +13,18 @@ function quoteHeaderValue(value: string): string {
   return `"${value.replace(/["\\]/g, '\\$&')}"`;
 }
 
-function contentDisposition(filename: string): string {
+const INLINE_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+]);
+
+function contentDisposition(filename: string, mimeType: string): string {
   const fallback = filename.replace(/[^\x20-\x7e]/g, '_');
-  return `inline; filename=${quoteHeaderValue(fallback)}; filename*=UTF-8''${encodeURIComponent(filename)}`;
+  const disposition = INLINE_MIME_TYPES.has(mimeType) ? 'inline' : 'attachment';
+  return `${disposition}; filename=${quoteHeaderValue(fallback)}; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
 export const GET: RequestHandler = async ({ params, request, url }) => {
@@ -63,7 +72,8 @@ export const GET: RequestHandler = async ({ params, request, url }) => {
     headers: {
       'Content-Type': artifact.mimeType,
       'Content-Length': String(artifact.size),
-      'Content-Disposition': contentDisposition(artifact.filename),
+      'Content-Disposition': contentDisposition(artifact.filename, artifact.mimeType),
+      'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'private, no-cache',
       ETag: etag,
     },

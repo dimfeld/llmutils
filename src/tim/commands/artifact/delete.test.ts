@@ -49,6 +49,14 @@ describe('tim artifact delete command', () => {
     expect(output).not.toContain('already deleted');
   });
 
+  test('reports unknown hard-delete UUIDs as not found', async () => {
+    await handleArtifactDeleteCommand('00000000-0000-4000-8000-000000000000', { hard: true });
+
+    const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(output).toContain('not found');
+    expect(output).not.toContain('already deleted');
+  });
+
   test('reports existing soft-deleted artifacts as already deleted', async () => {
     const sourcePath = path.join(context.sourceDir, 'already-deleted.log');
     await fs.writeFile(sourcePath, 'already deleted');

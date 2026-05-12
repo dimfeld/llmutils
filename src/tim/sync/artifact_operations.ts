@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import type { Database } from 'bun:sqlite';
-import { resolveArtifactPath } from '../artifacts/storage.js';
+import { removeArtifactFile, resolveArtifactPath } from '../artifacts/storage.js';
 import type { PlanArtifact } from '../artifacts/types.js';
 import { recordSyncTombstone } from './conflicts.js';
 import type { Mutation } from './apply_shared.js';
@@ -327,11 +327,11 @@ function applyArtifactHardDelete(
   const existing = db
     .prepare(
       `
-        SELECT revision FROM ${mode === 'projection' ? 'plan_artifact' : 'plan_artifact_canonical'}
+        SELECT revision, storage_path AS storagePath FROM ${mode === 'projection' ? 'plan_artifact' : 'plan_artifact_canonical'}
         WHERE uuid = ?
       `
     )
-    .get(envelope.op.artifactUuid) as Pick<PlanArtifact, 'revision'> | null;
+    .get(envelope.op.artifactUuid) as Pick<PlanArtifact, 'revision' | 'storagePath'> | null;
 
   let changed = false;
   for (const table of tablesForMode(mode)) {
@@ -351,6 +351,9 @@ function applyArtifactHardDelete(
       originNodeId: envelope.originNodeId,
     });
     changed = true;
+  }
+  if (changed && existing?.storagePath) {
+    scheduleArtifactFileRemoval([existing.storagePath]);
   }
   return changed;
 }
@@ -431,9 +434,10 @@ function reconcileArtifactRowsForPlan(
   artifacts: ArtifactSnapshotRow[]
 ): void {
   const existingRows = db
-    .prepare(`SELECT uuid FROM ${table} WHERE plan_uuid = ?`)
-    .all(planUuid) as Array<{ uuid: string }>;
+    .prepare(`SELECT uuid, storage_path FROM ${table} WHERE plan_uuid = ?`)
+    .all(planUuid) as Array<{ uuid: string; storage_path: string }>;
   const incomingUuids = new Set(artifacts.map((artifact) => artifact.uuid));
+  const removedStoragePaths: string[] = [];
 
   for (const existing of existingRows) {
     if (!incomingUuids.has(existing.uuid)) {
@@ -441,12 +445,33 @@ function reconcileArtifactRowsForPlan(
         existing.uuid,
         planUuid
       );
+      removedStoragePaths.push(existing.storage_path);
     }
   }
 
   for (const artifact of artifacts) {
     upsertArtifactRow(db, table, artifact);
   }
+  scheduleArtifactFileRemoval(removedStoragePaths);
+}
+
+function scheduleArtifactFileRemoval(storagePaths: string[]): void {
+  const uniquePaths = Array.from(new Set(storagePaths.filter(Boolean)));
+  if (uniquePaths.length === 0) {
+    return;
+  }
+  queueMicrotask(() => {
+    void Promise.allSettled(uniquePaths.map((storagePath) => removeArtifactFile(storagePath))).then(
+      (results) => {
+        for (let index = 0; index < results.length; index += 1) {
+          const result = results[index];
+          if (result.status === 'rejected') {
+            console.warn(`Failed to remove artifact file ${uniquePaths[index]}:`, result.reason);
+          }
+        }
+      }
+    );
+  });
 }
 
 function localizeArtifactStoragePath(artifact: ArtifactSnapshotRow): ArtifactSnapshotRow {

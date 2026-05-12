@@ -30,7 +30,11 @@ function makeFormDataRequest(fields: Record<string, string | Blob>): Request {
   for (const [key, value] of Object.entries(fields)) {
     form.append(key, value);
   }
-  return new Request('http://localhost/api/artifacts', { method: 'POST', body: form });
+  return new Request('http://localhost/api/artifacts', {
+    method: 'POST',
+    body: form,
+    headers: { 'content-length': '1000' },
+  });
 }
 
 describe('/api/artifacts POST', () => {
@@ -174,6 +178,36 @@ describe('/api/artifacts POST', () => {
     expect(response.status).toBe(413);
     const body = await response.json();
     expect(body).toMatchObject({ error: 'artifact_too_large', maxBytes: MAX_ARTIFACT_BYTES });
+  });
+
+  test('411 when content-length is absent', async () => {
+    const form = new FormData();
+    form.append('planUuid', PLAN_UUID);
+    form.append('file', new File(['x'], 'x.txt', { type: 'text/plain' }));
+
+    const response = await POST({
+      request: new Request('http://localhost/api/artifacts', { method: 'POST', body: form }),
+    } as never);
+
+    expect(response.status).toBe(411);
+    await expect(response.json()).resolves.toMatchObject({ error: 'length_required' });
+  });
+
+  test('411 when content-length is not numeric', async () => {
+    const form = new FormData();
+    form.append('planUuid', PLAN_UUID);
+    form.append('file', new File(['x'], 'x.txt', { type: 'text/plain' }));
+
+    const response = await POST({
+      request: new Request('http://localhost/api/artifacts', {
+        method: 'POST',
+        body: form,
+        headers: { 'content-length': 'abc' },
+      }),
+    } as never);
+
+    expect(response.status).toBe(411);
+    await expect(response.json()).resolves.toMatchObject({ error: 'length_required' });
   });
 
   test('cleans up temp file on success', async () => {

@@ -162,6 +162,62 @@ describe('/api/artifacts/[artifactUuid] GET', () => {
     expect(response.headers.get('ETag')).toBe('"deadbeef"');
     expect(response.headers.get('Cache-Control')).toBe('private, no-cache');
     expect(response.headers.get('Content-Disposition')).toMatch(/report\.txt/);
+    expect(response.headers.get('Content-Disposition')).toMatch(/^attachment/);
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+  });
+
+  test('serves SVG artifacts as attachments with nosniff', async () => {
+    const uuid = '31000000-0000-4000-8000-000000000001';
+    const filePath = path.join(tempDir, 'unsafe.svg');
+    await fsp.writeFile(filePath, '<svg><script>alert(1)</script></svg>');
+
+    insertArtifact(currentDb, {
+      uuid,
+      planUuid: PLAN_UUID,
+      projectUuid: PROJECT_UUID,
+      filename: 'unsafe.svg',
+      mimeType: 'image/svg+xml',
+      size: 37,
+      sha256: 'svgsha',
+      storagePath: filePath,
+    });
+
+    const response = await GET({
+      params: { artifactUuid: uuid },
+      request: makeRequest(uuid),
+      url: makeUrl(uuid),
+    } as never);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Disposition')).toMatch(/^attachment/);
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+  });
+
+  test('serves PNG artifacts inline with nosniff', async () => {
+    const uuid = '32000000-0000-4000-8000-000000000001';
+    const filePath = path.join(tempDir, 'safe.png');
+    await fsp.writeFile(filePath, 'fake-png');
+
+    insertArtifact(currentDb, {
+      uuid,
+      planUuid: PLAN_UUID,
+      projectUuid: PROJECT_UUID,
+      filename: 'safe.png',
+      mimeType: 'image/png',
+      size: 8,
+      sha256: 'pngsha',
+      storagePath: filePath,
+    });
+
+    const response = await GET({
+      params: { artifactUuid: uuid },
+      request: makeRequest(uuid),
+      url: makeUrl(uuid),
+    } as never);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Disposition')).toMatch(/^inline/);
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 
   test('Content-Disposition uses RFC 5987 for non-ASCII filenames', async () => {

@@ -1,4 +1,6 @@
 import { Database } from 'bun:sqlite';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { getAssignment, importAssignment } from '../db/assignment.js';
 import { getArtifactByUuid } from '../db/artifact.js';
@@ -232,6 +234,9 @@ describe('plan_artifact operations', () => {
     );
     applyOperation(db, restore);
     expect(getArtifactByUuid(db, ARTIFACT_UUID)?.deletedAt).toBeNull();
+    const storagePath = getArtifactByUuid(db, ARTIFACT_UUID)!.storagePath;
+    await fs.mkdir(path.dirname(storagePath), { recursive: true });
+    await fs.writeFile(storagePath, 'artifact bytes');
 
     const hardDelete = await buildArtifactHardDeleteOperation(
       { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
@@ -248,6 +253,94 @@ describe('plan_artifact operations', () => {
         .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
         .get('plan_artifact', ARTIFACT_UUID)
     ).toEqual({ entity_key: ARTIFACT_UUID });
+    await vi.waitFor(async () => {
+      await expect(fs.stat(storagePath)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  });
+
+  test('snapshot merge removes files for artifacts omitted from the canonical snapshot', async () => {
+    seedPlan();
+    await applyOperation(
+      db,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'old.log',
+          mimeType: 'text/plain',
+          size: 3,
+          sha256: 'old',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+    const storagePath = getArtifactByUuid(db, ARTIFACT_UUID)!.storagePath;
+    await fs.mkdir(path.dirname(storagePath), { recursive: true });
+    await fs.writeFile(storagePath, 'old');
+
+    const snapshot = loadCanonicalSnapshot(db, `plan:${PLAN_UUID}`);
+    if (!snapshot || snapshot.type !== 'plan') {
+      throw new Error('Expected plan snapshot');
+    }
+    snapshot.plan.artifacts = [];
+    mergeCanonicalRefresh(db, snapshot);
+
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+    await vi.waitFor(async () => {
+      await expect(fs.stat(storagePath)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  });
+
+  test('snapshot merge clears stale artifact tombstones for included UUIDs', async () => {
+    seedPlan();
+    await applyOperation(
+      db,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'capture.png',
+          mimeType: 'image/png',
+          size: 12,
+          sha256: 'hash',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+    db.prepare(
+      `
+        INSERT INTO sync_tombstone (
+          entity_type,
+          entity_key,
+          project_uuid,
+          plan_uuid,
+          deletion_operation_uuid,
+          deleted_at,
+          origin_node_id
+        ) VALUES ('plan_artifact', ?, ?, ?, ?, '2026-01-01T00:00:00.000Z', ?)
+      `
+    ).run(ARTIFACT_UUID, PROJECT_UUID, PLAN_UUID, 'stale-delete', NODE_B);
+
+    const snapshot = loadCanonicalSnapshot(db, `plan:${PLAN_UUID}`);
+    if (!snapshot || snapshot.type !== 'plan') {
+      throw new Error('Expected plan snapshot');
+    }
+    mergeCanonicalRefresh(db, snapshot);
+
+    expect(
+      db
+        .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+        .get('plan_artifact', ARTIFACT_UUID)
+    ).toBeNull();
+
+    const softDelete = await buildArtifactSoftDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    expect(() => applyOperation(db, softDelete)).not.toThrow();
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)?.deletedAt).toBe(softDelete.createdAt);
   });
 
   test('missing-artifact hard-delete records tombstone and emits plan invalidation once', async () => {

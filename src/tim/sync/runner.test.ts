@@ -37,6 +37,7 @@ import {
   createSyncRunner,
   drainArtifactTransfersOnce,
   enqueueMissingArtifactDownloads,
+  enqueueMissingArtifactUploads,
   flushPendingOperationsOnce,
   runSyncCatchUpOnce,
 } from './runner.js';
@@ -468,6 +469,31 @@ describe('sync runner', () => {
     expect(getArtifactTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'download')).toMatchObject({
       status: 'pending',
     });
+  });
+
+  test('local artifact bytes without upload transfer are enqueued for upload', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-artifact-upload-enqueue-test-'));
+    try {
+      const storagePath = path.join(tempDir, 'capture.png');
+      await fs.writeFile(storagePath, 'data');
+      insertArtifactRow(db, ARTIFACT_UUID, { storagePath });
+
+      await enqueueMissingArtifactUploads({
+        db,
+        serverUrl: 'http://127.0.0.1:9',
+        nodeId: NODE_ID,
+        token: 'token',
+        syncServerNodeId: MAIN_NODE_ID,
+      });
+
+      expect(getArtifactTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'upload')).toMatchObject({
+        status: 'pending',
+      });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   test('missing download discovery pages past resident artifacts', async () => {

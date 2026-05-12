@@ -32,12 +32,16 @@ import {
 import {
   enqueueArtifactUploadsForFrame,
   enqueueMissingArtifactDownloads,
+  enqueueMissingArtifactUploads,
   syncServerTransferNodeId,
 } from './artifact_scheduling.js';
 import { createSyncClient, rowsToFlushFrames, type SyncClient } from './ws_client.js';
 import type { SyncOperationResult } from './ws_protocol.js';
 
-export { enqueueMissingArtifactDownloads } from './artifact_scheduling.js';
+export {
+  enqueueMissingArtifactDownloads,
+  enqueueMissingArtifactUploads,
+} from './artifact_scheduling.js';
 
 export interface SyncRunnerOptions {
   db: Database;
@@ -169,6 +173,9 @@ class DefaultSyncRunner implements SyncRunner {
     }
     this.running = true;
     resetStrandedArtifactTransfers(this.options.db);
+    void enqueueMissingArtifactUploads(this.options).catch((err) => {
+      warn(`Artifact upload discovery failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
     this.client.start();
     this.startArtifactTransferLoop();
   }
@@ -191,6 +198,8 @@ class DefaultSyncRunner implements SyncRunner {
   }
 
   private async runOnceInternal(): Promise<void> {
+    resetStrandedArtifactTransfers(this.options.db);
+    await enqueueMissingArtifactUploads(this.options);
     await runSyncCatchUpOnce(this.options);
     await flushPendingOperationsOnce(this.options);
     await drainArtifactTransfersOnce(this.options);

@@ -35,8 +35,10 @@
 
   let activeCount = $derived(artifacts.filter((a) => a.deletedAt === null).length);
 
-  function isImage(mime: string): boolean {
-    return mime.startsWith('image/');
+  function canPreviewInline(mime: string): boolean {
+    return (
+      mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/gif' || mime === 'image/webp'
+    );
   }
 
   function iconFor(mime: string) {
@@ -144,7 +146,7 @@
               data-artifact-uuid={artifact.uuid}
             >
               <div class="flex items-start gap-3">
-                {#if isImage(artifact.mimeType) && downloadable}
+                {#if canPreviewInline(artifact.mimeType) && downloadable}
                   <a
                     href={downloadUrl}
                     target="_blank"

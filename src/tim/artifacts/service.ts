@@ -369,7 +369,10 @@ export async function hardDeleteArtifact(
   const db = options.db ?? getDatabase();
   const artifact = getArtifactByUuid(db, uuid);
   if (!artifact) {
-    return { changed: false };
+    if (hasArtifactTombstone(db, uuid)) {
+      return { changed: false };
+    }
+    throw new ArtifactNotFoundError(uuid);
   }
 
   const config = await resolveConfig(options);
@@ -382,6 +385,13 @@ export async function hardDeleteArtifact(
     await removeArtifactFile(artifact.storagePath);
   }
   return { changed };
+}
+
+function hasArtifactTombstone(db: Database, uuid: string): boolean {
+  const row = db
+    .prepare('SELECT 1 FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+    .get('plan_artifact', uuid) as { 1: number } | null;
+  return row !== null;
 }
 
 async function* walkFiles(root: string): AsyncGenerator<string> {
