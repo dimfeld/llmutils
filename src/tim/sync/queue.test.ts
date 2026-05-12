@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { getAssignment, importAssignment } from '../db/assignment.js';
+import { getArtifactByUuid } from '../db/artifact.js';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, getProjectByUuid, type Project } from '../db/project.js';
 import {
@@ -20,6 +21,10 @@ import {
   addPlanListItemOperation,
   addPlanTagOperation,
   addPlanTaskOperation,
+  buildArtifactAttachOperation,
+  buildArtifactHardDeleteOperation,
+  buildArtifactRestoreOperation,
+  buildArtifactSoftDeleteOperation,
   createPlanOperation,
   deletePlanOperation,
   deleteProjectOperation,
@@ -64,6 +69,7 @@ const TASK_UUID = '44444444-4444-4444-8444-444444444444';
 const TASK_UUID_2 = '55555555-5555-4555-8555-555555555555';
 const TASK_UUID_3 = '88888888-8888-4888-8888-888888888888';
 const TASK_UUID_4 = '99999999-9999-4999-8999-999999999999';
+const ARTIFACT_UUID = '77777777-7777-4777-8777-777777777778';
 const OLD_PARENT_TASK_UUID = '66666666-6666-4666-8666-666666666666';
 const NEW_PARENT_TASK_UUID = '77777777-7777-4777-8777-777777777777';
 const NODE_A = 'persistent-a';
@@ -465,6 +471,55 @@ describe('persistent-node sync queue', () => {
     ]);
     expect(getPlanByUuid(db, PLAN_UUID)?.details).toBe('alpha\nbeta updated\ngamma\n');
     expect(getProjectSettingWithMetadata(db, project.id, 'color')?.value).toBe('blue');
+  });
+
+  test('optimistic artifact operations rebuild visible artifact projection', async () => {
+    seedPlan();
+
+    enqueue(
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'trace.log',
+          mimeType: 'text/plain',
+          size: 256,
+          sha256: 'abc123',
+          message: 'local trace',
+        },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({
+      uuid: ARTIFACT_UUID,
+      deletedAt: null,
+      revision: 1,
+    });
+
+    enqueue(
+      await buildArtifactSoftDeleteOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)?.deletedAt).not.toBeNull();
+
+    enqueue(
+      await buildArtifactRestoreOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)?.deletedAt).toBeNull();
+
+    enqueue(
+      await buildArtifactHardDeleteOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
   });
 
   test('project.delete optimistic apply removes local project state while keeping queue row', async () => {

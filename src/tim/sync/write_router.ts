@@ -23,6 +23,10 @@ import {
   addPlanListItemOperation,
   addPlanTagOperation,
   addPlanTaskOperation,
+  buildArtifactAttachOperation,
+  buildArtifactHardDeleteOperation,
+  buildArtifactRestoreOperation,
+  buildArtifactSoftDeleteOperation,
   createPlanOperation,
   deletePlanOperation,
   deleteProjectOperation,
@@ -50,6 +54,10 @@ import {
   type QueueableOperation,
 } from './queue.js';
 import type {
+  SyncArtifactAttachPayload,
+  SyncArtifactHardDeletePayload,
+  SyncArtifactRestorePayload,
+  SyncArtifactSoftDeletePayload,
   SyncOperationBatchEnvelope,
   SyncOperationEnvelope,
   SyncPlanCreatePayload,
@@ -588,6 +596,86 @@ export const addPlanSetParentToBatch = planSetParentRoutes.addToBatch;
 const planDeleteRoutes = defineProjectOperationRoutes(deletePlanOperation);
 export const writePlanDelete = planDeleteRoutes.write;
 export const addPlanDeleteToBatch = planDeleteRoutes.addToBatch;
+
+export async function writePlanArtifactAttach(
+  db: Database,
+  config: TimConfig,
+  projectUuid: string,
+  input: Omit<SyncArtifactAttachPayload, 'type' | 'projectUuid' | 'artifactUuid'> & {
+    artifactUuid?: string;
+  }
+): Promise<SyncWriteResult> {
+  return routeSyncOperation(db, config, (options) =>
+    buildArtifactAttachOperation({ projectUuid, ...input }, options)
+  );
+}
+
+export function addPlanArtifactAttachToBatch(
+  batch: SyncBatchHandle,
+  projectUuid: string,
+  input: Omit<SyncArtifactAttachPayload, 'type' | 'projectUuid' | 'artifactUuid'> & {
+    artifactUuid?: string;
+  }
+): void {
+  batch.add((options) => buildArtifactAttachOperation({ projectUuid, ...input }, options));
+}
+
+export async function writePlanArtifactSoftDelete(
+  db: Database,
+  config: TimConfig,
+  projectUuid: string,
+  input: Omit<SyncArtifactSoftDeletePayload, 'type' | 'projectUuid'>
+): Promise<SyncWriteResult> {
+  return routeSyncOperation(db, config, (options) =>
+    buildArtifactSoftDeleteOperation({ projectUuid, ...input }, options)
+  );
+}
+
+export function addPlanArtifactSoftDeleteToBatch(
+  batch: SyncBatchHandle,
+  projectUuid: string,
+  input: Omit<SyncArtifactSoftDeletePayload, 'type' | 'projectUuid'>
+): void {
+  batch.add((options) => buildArtifactSoftDeleteOperation({ projectUuid, ...input }, options));
+}
+
+export async function writePlanArtifactRestore(
+  db: Database,
+  config: TimConfig,
+  projectUuid: string,
+  input: Omit<SyncArtifactRestorePayload, 'type' | 'projectUuid'>
+): Promise<SyncWriteResult> {
+  return routeSyncOperation(db, config, (options) =>
+    buildArtifactRestoreOperation({ projectUuid, ...input }, options)
+  );
+}
+
+export function addPlanArtifactRestoreToBatch(
+  batch: SyncBatchHandle,
+  projectUuid: string,
+  input: Omit<SyncArtifactRestorePayload, 'type' | 'projectUuid'>
+): void {
+  batch.add((options) => buildArtifactRestoreOperation({ projectUuid, ...input }, options));
+}
+
+export async function writePlanArtifactHardDelete(
+  db: Database,
+  config: TimConfig,
+  projectUuid: string,
+  input: Omit<SyncArtifactHardDeletePayload, 'type' | 'projectUuid'>
+): Promise<SyncWriteResult> {
+  return routeSyncOperation(db, config, (options) =>
+    buildArtifactHardDeleteOperation({ projectUuid, ...input }, options)
+  );
+}
+
+export function addPlanArtifactHardDeleteToBatch(
+  batch: SyncBatchHandle,
+  projectUuid: string,
+  input: Omit<SyncArtifactHardDeletePayload, 'type' | 'projectUuid'>
+): void {
+  batch.add((options) => buildArtifactHardDeleteOperation({ projectUuid, ...input }, options));
+}
 
 export async function writeProjectDelete(
   db: Database,

@@ -19,6 +19,10 @@ import { ApplyOperationToPreconditionError, applyOperationTo } from './operation
 import { CanonicalPlanAdapter } from './canonical_plan_adapter.js';
 import { createTextMergeConflict, currentBaseRevision } from './apply_conflicts.js';
 import {
+  applyArtifactOperationToDb,
+  type ArtifactOperationPayload,
+} from './artifact_operations.js';
+import {
   ConflictAccepted,
   TERMINAL_OPERATION_STATUSES,
   conflictBaseValue,
@@ -353,12 +357,19 @@ function applyPayload(
     case 'plan_artifact.soft_delete':
     case 'plan_artifact.restore':
     case 'plan_artifact.hard_delete':
-      throw new Error(`Applying ${op.type} is not implemented yet`);
+      return applyArtifactPayload(db, { ...envelope, op });
     default: {
       const exhaustive: never = op;
       return exhaustive;
     }
   }
+}
+
+function applyArtifactPayload(
+  db: Database,
+  envelope: SyncOperationEnvelope & { op: ArtifactOperationPayload }
+): Mutation[] {
+  return applyArtifactOperationToDb(db, envelope, { recordTombstone: true });
 }
 
 function applyProjectDelete(

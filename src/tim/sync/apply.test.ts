@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { getAssignment, importAssignment } from '../db/assignment.js';
+import { getArtifactByUuid } from '../db/artifact.js';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
 import {
@@ -28,6 +29,10 @@ import {
   addPlanListItemOperation,
   addPlanTagOperation,
   addPlanTaskOperation,
+  buildArtifactAttachOperation,
+  buildArtifactHardDeleteOperation,
+  buildArtifactRestoreOperation,
+  buildArtifactSoftDeleteOperation,
   createPlanOperation,
   deletePlanOperation,
   deleteProjectOperation,
@@ -53,6 +58,7 @@ const TASK_UUID = '55555555-5555-4555-8555-555555555555';
 const TASK_UUID_2 = '66666666-6666-4666-8666-666666666666';
 const TASK_UUID_3 = '77777777-7777-4777-8777-777777777777';
 const TASK_UUID_4 = '88888888-8888-4888-8888-888888888888';
+const ARTIFACT_UUID = '99999999-9999-4999-8999-999999999999';
 const NODE_A = 'node-a';
 const NODE_B = 'node-b';
 
@@ -144,6 +150,91 @@ describe('project.delete', () => {
       type: 'project_deleted',
       projectUuid: PROJECT_UUID,
     });
+  });
+});
+
+describe('plan_artifact operations', () => {
+  test('attach inserts artifact metadata and invalidates the owning plan', async () => {
+    seedPlan();
+
+    const operation = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'screenshot.PNG',
+        mimeType: 'image/png',
+        size: 1234,
+        sha256: 'abc123',
+        message: 'before fix',
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    const result = applyOperation(db, operation);
+    const artifact = getArtifactByUuid(db, ARTIFACT_UUID);
+
+    expect(result.status).toBe('applied');
+    expect(result.invalidations).toEqual([`plan:${PLAN_UUID}`]);
+    expect(artifact).toMatchObject({
+      uuid: ARTIFACT_UUID,
+      planUuid: PLAN_UUID,
+      projectUuid: PROJECT_UUID,
+      filename: 'screenshot.PNG',
+      mimeType: 'image/png',
+      size: 1234,
+      sha256: 'abc123',
+      message: 'before fix',
+      deletedAt: null,
+      revision: 1,
+    });
+    expect(artifact?.storagePath).toContain(`${ARTIFACT_UUID}.png`);
+  });
+
+  test('soft-delete, restore, and hard-delete update artifact state and tombstones', async () => {
+    seedPlan();
+    await applyOperation(
+      db,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'log.txt',
+          mimeType: 'text/plain',
+          size: 64,
+          sha256: 'def456',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    const softDelete = await buildArtifactSoftDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    expect(applyOperation(db, softDelete).invalidations).toEqual([`plan:${PLAN_UUID}`]);
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)?.deletedAt).toBe(softDelete.createdAt);
+
+    const restore = await buildArtifactRestoreOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 3 }
+    );
+    applyOperation(db, restore);
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)?.deletedAt).toBeNull();
+
+    const hardDelete = await buildArtifactHardDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 4 }
+    );
+    applyOperation(db, hardDelete);
+
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+    expect(
+      db
+        .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+        .get('plan_artifact', ARTIFACT_UUID)
+    ).toEqual({ entity_key: ARTIFACT_UUID });
   });
 });
 

@@ -14,6 +14,10 @@ import { verifyNodeToken } from './auth.js';
 import { applyBatch, applyOperation, type ApplyOperationResult } from './apply.js';
 import { SyncFifoGapError, SyncValidationError } from './errors.js';
 import type { CanonicalSnapshot } from './snapshots.js';
+import {
+  listArtifactSnapshotsForPlan,
+  listArtifactTombstonesForPlan,
+} from './artifact_operations.js';
 import type { SyncOperationEnvelope } from './types.js';
 import { bootstrapSyncMetadata } from './bootstrap.js';
 import {
@@ -764,6 +768,8 @@ function loadPlanSnapshot(db: Database, planUuid: string): CanonicalSnapshot | n
         (dependency) => dependency.depends_on_uuid
       ),
       tags: getPlanTagsByUuid(db, planUuid).map((tag) => tag.tag),
+      artifacts: listArtifactSnapshotsForPlan(db, planUuid),
+      artifactTombstones: listArtifactTombstonesForPlan(db, planUuid),
     },
   };
 }

@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { getArtifactByUuid } from '../db/artifact.js';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject } from '../db/project.js';
 import {
@@ -13,10 +14,15 @@ import {
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
 import { getTimNode, getTimNodeCursor, upsertTimNode } from '../db/sync_tables.js';
 import { hashToken } from './auth.js';
+import { applyOperation } from './apply.js';
 import { httpCatchUp, httpFetchSnapshots, httpFlushOperations } from './client.js';
 import { CanonicalSnapshotSchema } from './snapshots.js';
 import {
   addPlanTagOperation,
+  buildArtifactAttachOperation,
+  buildArtifactHardDeleteOperation,
+  buildArtifactRestoreOperation,
+  buildArtifactSoftDeleteOperation,
   deletePlanOperation,
   deleteProjectSettingOperation,
   setProjectSettingOperation,
@@ -42,6 +48,7 @@ const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
 const SECOND_PLAN_UUID = '22222222-2222-4222-8222-222222222223';
 const TASK_UUID = '33333333-3333-4333-8333-333333333333';
 const SECOND_TASK_UUID = '33333333-3333-4333-8333-333333333334';
+const ARTIFACT_UUID = '44444444-4444-4444-8444-444444444444';
 const NODE_A = 'persistent-a';
 const NODE_B = 'persistent-b';
 const TOKEN = 'secret-token';
@@ -463,6 +470,111 @@ describe('sync transport server and clients', () => {
       targetType: 'plan',
       planUuid: SECOND_PLAN_UUID,
     });
+  });
+
+  test('plan snapshots include artifacts and merge applies soft-delete and restore state', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    seedPlan(localDb);
+
+    await applyOperation(
+      mainDb,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'capture.png',
+          mimeType: 'image/png',
+          size: 512,
+          sha256: 'abc123',
+          message: 'capture',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+    const softDelete = await buildArtifactSoftDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    applyOperation(mainDb, softDelete);
+
+    const deletedSnapshot = loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`);
+    expect(deletedSnapshot).toMatchObject({
+      type: 'plan',
+      plan: {
+        artifacts: [
+          expect.objectContaining({
+            uuid: ARTIFACT_UUID,
+            deletedAt: softDelete.createdAt,
+          }),
+        ],
+      },
+    });
+
+    mergeCanonicalRefresh(localDb, deletedSnapshot!);
+    expect(getArtifactByUuid(localDb, ARTIFACT_UUID)?.deletedAt).toBe(softDelete.createdAt);
+
+    await applyOperation(
+      mainDb,
+      await buildArtifactRestoreOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: NODE_A, localSequence: 3 }
+      )
+    );
+    mergeCanonicalRefresh(localDb, loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`)!);
+    expect(getArtifactByUuid(localDb, ARTIFACT_UUID)?.deletedAt).toBeNull();
+  });
+
+  test('plan snapshot merge removes hard-deleted artifacts and records tombstone', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    seedPlan(localDb);
+
+    const attachInput = {
+      projectUuid: PROJECT_UUID,
+      planUuid: PLAN_UUID,
+      artifactUuid: ARTIFACT_UUID,
+      filename: 'capture.png',
+      mimeType: 'image/png',
+      size: 512,
+      sha256: 'abc123',
+    };
+    await applyOperation(
+      mainDb,
+      await buildArtifactAttachOperation(attachInput, { originNodeId: NODE_A, localSequence: 1 })
+    );
+    await applyOperation(
+      localDb,
+      await buildArtifactAttachOperation(attachInput, { originNodeId: NODE_A, localSequence: 1 })
+    );
+    await applyOperation(
+      mainDb,
+      await buildArtifactHardDeleteOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: NODE_A, localSequence: 2 }
+      )
+    );
+
+    const snapshot = loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`);
+    expect(snapshot).toMatchObject({
+      type: 'plan',
+      plan: {
+        artifacts: [],
+        artifactTombstones: [expect.objectContaining({ artifactUuid: ARTIFACT_UUID })],
+      },
+    });
+
+    mergeCanonicalRefresh(localDb, snapshot!);
+
+    expect(getArtifactByUuid(localDb, ARTIFACT_UUID)).toBeUndefined();
+    expect(
+      localDb
+        .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+        .get('plan_artifact', ARTIFACT_UUID)
+    ).toEqual({ entity_key: ARTIFACT_UUID });
   });
 
   test('broadcasts invalidations to connected peers except the sender', async () => {

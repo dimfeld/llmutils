@@ -295,7 +295,9 @@ function applyOperationToUnchecked(
     case 'plan_artifact.soft_delete':
     case 'plan_artifact.restore':
     case 'plan_artifact.hard_delete':
-      throw new Error(`applyOperationTo does not handle ${op.type} yet`);
+      // Artifact row projection is handled by src/tim/sync/artifact_operations.ts.
+      // The plan-state fold has no in-memory plan/task/tag state to update here.
+      return [];
     default: {
       const exhaustive: never = op;
       return exhaustive;
