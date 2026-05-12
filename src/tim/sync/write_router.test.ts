@@ -8,6 +8,7 @@ import {
   upsertCanonicalPlanInTransaction,
   upsertProjectionPlanInTransaction,
 } from '../db/plan.js';
+import { getArtifactByUuid } from '../db/artifact.js';
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
 import { applyBatch, applyOperation } from './apply.js';
 import {
@@ -28,6 +29,10 @@ import {
   routeSyncOperation,
   routeSyncBatch,
   writePlanAddTask,
+  writePlanArtifactAttach,
+  writePlanArtifactHardDelete,
+  writePlanArtifactRestore,
+  writePlanArtifactSoftDelete,
   writePlanPatchText,
   writePlanRemoveTask,
   writePlanSetStatus,
@@ -703,6 +708,166 @@ describe('sync write router', () => {
     );
 
     expect(syncOperationRows()).toEqual([]);
+    expect(sequenceCount()).toBe(0);
+  });
+});
+
+const ARTIFACT_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+describe('artifact write_router helpers', () => {
+  const attachInput = {
+    planUuid: PLAN_UUID,
+    artifactUuid: ARTIFACT_UUID,
+    filename: 'report.PDF',
+    mimeType: 'application/pdf',
+    size: 2048,
+    sha256: 'deadbeef',
+    message: 'initial upload',
+  } as const;
+
+  test('writePlanArtifactAttach inserts artifact row and emits sequence', async () => {
+    const config = { sync: { role: 'main', nodeId: NODE_ID } } as TimConfig;
+
+    const result = await writePlanArtifactAttach(db, config, PROJECT_UUID, attachInput);
+
+    expect(result.mode).toBe('applied');
+    const artifact = getArtifactByUuid(db, ARTIFACT_UUID);
+    expect(artifact).toMatchObject({
+      uuid: ARTIFACT_UUID,
+      planUuid: PLAN_UUID,
+      projectUuid: PROJECT_UUID,
+      filename: 'report.PDF',
+      mimeType: 'application/pdf',
+      size: 2048,
+      sha256: 'deadbeef',
+      message: 'initial upload',
+      deletedAt: null,
+      revision: 1,
+    });
+    expect(artifact?.storagePath).toContain(`${ARTIFACT_UUID}.pdf`);
+    expect(syncOperationRows()).toEqual([
+      { operation_type: 'plan_artifact.attach', status: 'applied', origin_node_id: NODE_ID },
+    ]);
+    expect(sequenceCount()).toBe(1);
+  });
+
+  test('writePlanArtifactSoftDelete sets deleted_at on existing artifact', async () => {
+    const config = { sync: { role: 'main', nodeId: NODE_ID } } as TimConfig;
+
+    await writePlanArtifactAttach(db, config, PROJECT_UUID, attachInput);
+    const result = await writePlanArtifactSoftDelete(db, config, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      artifactUuid: ARTIFACT_UUID,
+    });
+
+    expect(result.mode).toBe('applied');
+    const artifact = getArtifactByUuid(db, ARTIFACT_UUID);
+    expect(artifact?.deletedAt).not.toBeNull();
+    expect(artifact?.revision).toBe(2);
+    expect(syncOperationRows().at(-1)).toMatchObject({
+      operation_type: 'plan_artifact.soft_delete',
+      status: 'applied',
+    });
+    expect(sequenceCount()).toBe(2);
+  });
+
+  test('writePlanArtifactRestore clears deleted_at after soft-delete', async () => {
+    const config = { sync: { role: 'main', nodeId: NODE_ID } } as TimConfig;
+
+    await writePlanArtifactAttach(db, config, PROJECT_UUID, attachInput);
+    await writePlanArtifactSoftDelete(db, config, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      artifactUuid: ARTIFACT_UUID,
+    });
+
+    const result = await writePlanArtifactRestore(db, config, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      artifactUuid: ARTIFACT_UUID,
+    });
+
+    expect(result.mode).toBe('applied');
+    const artifact = getArtifactByUuid(db, ARTIFACT_UUID);
+    expect(artifact?.deletedAt).toBeNull();
+    expect(artifact?.revision).toBe(3);
+    expect(syncOperationRows().at(-1)).toMatchObject({
+      operation_type: 'plan_artifact.restore',
+      status: 'applied',
+    });
+    expect(sequenceCount()).toBe(3);
+  });
+
+  test('writePlanArtifactHardDelete removes artifact row and writes sync_tombstone', async () => {
+    const config = { sync: { role: 'main', nodeId: NODE_ID } } as TimConfig;
+
+    await writePlanArtifactAttach(db, config, PROJECT_UUID, attachInput);
+    const result = await writePlanArtifactHardDelete(db, config, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      artifactUuid: ARTIFACT_UUID,
+    });
+
+    expect(result.mode).toBe('applied');
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+    expect(
+      db
+        .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+        .get('plan_artifact', ARTIFACT_UUID)
+    ).toEqual({ entity_key: ARTIFACT_UUID });
+    expect(syncOperationRows().at(-1)).toMatchObject({
+      operation_type: 'plan_artifact.hard_delete',
+      status: 'applied',
+    });
+    expect(sequenceCount()).toBe(2);
+  });
+
+  test('soft-delete then restore round-trip leaves deleted_at null', async () => {
+    const config = { sync: { role: 'main', nodeId: NODE_ID } } as TimConfig;
+
+    await writePlanArtifactAttach(db, config, PROJECT_UUID, attachInput);
+    await writePlanArtifactSoftDelete(db, config, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      artifactUuid: ARTIFACT_UUID,
+    });
+    await writePlanArtifactRestore(db, config, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      artifactUuid: ARTIFACT_UUID,
+    });
+
+    const artifact = getArtifactByUuid(db, ARTIFACT_UUID);
+    expect(artifact?.deletedAt).toBeNull();
+    expect(artifact?.revision).toBe(3);
+    // No tombstone should have been written (only hard-delete creates one)
+    expect(
+      db
+        .prepare('SELECT COUNT(*) AS count FROM sync_tombstone WHERE entity_type = ?')
+        .get('plan_artifact')
+    ).toEqual({ count: 0 });
+  });
+
+  test('persistent role queues artifact attach and applies optimistic projection', async () => {
+    const config = {
+      sync: {
+        role: 'persistent',
+        nodeId: NODE_ID,
+        mainUrl: 'http://127.0.0.1:9999',
+        nodeToken: 'secret-token',
+        offline: true,
+      },
+    } as TimConfig;
+
+    const result = await writePlanArtifactAttach(db, config, PROJECT_UUID, attachInput);
+
+    expect(result.mode).toBe('queued');
+    expect(listPendingOperations(db)).toHaveLength(1);
+    expect(syncOperationRows()).toEqual([
+      { operation_type: 'plan_artifact.attach', status: 'queued', origin_node_id: NODE_ID },
+    ]);
+    // Optimistic projection: the artifact row is visible immediately
+    const artifact = getArtifactByUuid(db, ARTIFACT_UUID);
+    expect(artifact).toMatchObject({
+      uuid: ARTIFACT_UUID,
+      planUuid: PLAN_UUID,
+      deletedAt: null,
+    });
     expect(sequenceCount()).toBe(0);
   });
 });
