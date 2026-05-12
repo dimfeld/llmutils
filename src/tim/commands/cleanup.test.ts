@@ -97,7 +97,7 @@ describe('tim cleanup command', () => {
     await expect(fs.stat(artifact.storagePath)).resolves.toBeDefined();
     expect(
       consoleLog.mock.calls.some((call) =>
-        String(call[0]).includes('Artifact purge dry run: 1 row(s) deleted')
+        String(call[0]).includes('Artifact purge dry run: 1 row(s) would be deleted')
       )
     ).toBe(true);
   });

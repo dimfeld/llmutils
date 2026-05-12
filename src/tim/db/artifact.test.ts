@@ -314,14 +314,21 @@ describe('tim db/artifact', () => {
     });
 
     const cutoff = '2026-01-05T00:00:00.000Z';
+    // Default: soft-deleted past retention + completed-plan past retention.
     expect(listArtifactsForPurge(db, { olderThanIso: cutoff }).map((row) => row.uuid)).toEqual([
       'artifact-old-deleted',
+      'artifact-old-active-done-old',
     ]);
+    // includeActive additionally returns active artifacts on non-terminal plans past retention.
     expect(
       listArtifactsForPurge(db, { olderThanIso: cutoff, includeActive: true }).map(
         (row) => row.uuid
       )
-    ).toEqual(['artifact-old-deleted', 'artifact-old-active-done-old']);
+    ).toEqual([
+      'artifact-old-deleted',
+      'artifact-old-active-in-progress',
+      'artifact-old-active-done-old',
+    ]);
   });
 
   test('purge eligibility follows projection plan, not canonical, when they diverge', () => {
@@ -347,17 +354,19 @@ describe('tim db/artifact', () => {
 
     const cutoff = '2026-01-05T00:00:00.000Z';
 
-    // Both projection and canonical agree: done + old → purgeable.
+    // Both projection and canonical agree: done + old → purgeable via the default
+    // completed-plan branch.
     expect(
-      listArtifactsForPurge(db, { olderThanIso: cutoff, includeActive: true }).map((r) => r.uuid)
+      listArtifactsForPurge(db, { olderThanIso: cutoff }).map((r) => r.uuid)
     ).toContain('artifact-divergent');
 
     // Diverge: projection back to in_progress while canonical still says done.
     db.prepare("UPDATE plan SET status = 'in_progress' WHERE uuid = 'plan-divergent'").run();
 
-    // Purge eligibility must follow the projection (user-visible) status.
+    // Purge eligibility must follow the projection (user-visible) status — without
+    // --include-active, active artifacts on non-terminal plans must be excluded.
     expect(
-      listArtifactsForPurge(db, { olderThanIso: cutoff, includeActive: true }).map((r) => r.uuid)
+      listArtifactsForPurge(db, { olderThanIso: cutoff }).map((r) => r.uuid)
     ).not.toContain('artifact-divergent');
   });
 });

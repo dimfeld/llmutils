@@ -12,9 +12,11 @@ export interface CleanupOptions {
 }
 
 function formatArtifactPurgeSummary(report: PurgeReport): string {
-  const rowsDeleted = report.softDeletedRowsHardDeleted + report.completedPlanRowsHardDeleted;
-  const prefix = report.dryRun ? 'Artifact purge dry run' : 'Artifact purge';
-  return `${prefix}: ${rowsDeleted} row(s) deleted, ${report.artifactFilesRemoved} file(s) deleted, ${report.orphanFilesRemoved} orphan file(s) removed, ${report.bytesReclaimed} byte(s) reclaimed.`;
+  const rows = report.softDeletedRowsHardDeleted + report.completedPlanRowsHardDeleted;
+  if (report.dryRun) {
+    return `Artifact purge dry run: ${rows} row(s) would be deleted, ${report.artifactFilesRemoved} file(s) would be removed, ${report.orphanFilesRemoved} orphan file(s) would be removed, ${report.bytesReclaimed} byte(s) would be reclaimed.`;
+  }
+  return `Artifact purge: ${rows} row(s) deleted, ${report.artifactFilesRemoved} file(s) deleted, ${report.orphanFilesRemoved} orphan file(s) removed, ${report.bytesReclaimed} byte(s) reclaimed.`;
 }
 
 export async function handleCleanupCommand(

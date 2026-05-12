@@ -90,6 +90,35 @@ describe('tim artifact purge command', () => {
     expect(getArtifactByUuid(context.db, artifact.uuid)).toBeUndefined();
   });
 
+  test('--include-active purges active artifacts on non-terminal plans past retention', async () => {
+    const sourcePath = path.join(context.sourceDir, 'active-in-progress.txt');
+    await fs.writeFile(sourcePath, 'in progress active');
+    const artifact = await addArtifact({
+      planId: 1,
+      sourcePath,
+      config: getDefaultConfig(),
+      repoRoot: context.tempDir,
+    });
+    // Plan stays in_progress; backdate the artifact so it is past retention.
+    context.db
+      .prepare(
+        "UPDATE plan_artifact SET created_at = '2026-01-01T00:00:00.000Z', updated_at = '2026-01-01T00:00:00.000Z' WHERE uuid = ?"
+      )
+      .run(artifact.uuid);
+
+    // Without --include-active, the active artifact on an in-progress plan must be kept.
+    await handleArtifactPurgeCommand({ olderThan: '30', json: true });
+    let payload = JSON.parse(consoleLog.mock.calls.at(-1)?.[0] as string);
+    expect(payload.completedPlanRowsHardDeleted).toBe(0);
+    expect(getArtifactByUuid(context.db, artifact.uuid)).toBeDefined();
+
+    // With --include-active, it is purged.
+    await handleArtifactPurgeCommand({ olderThan: '30', includeActive: true, json: true });
+    payload = JSON.parse(consoleLog.mock.calls.at(-1)?.[0] as string);
+    expect(payload.completedPlanRowsHardDeleted).toBe(1);
+    expect(getArtifactByUuid(context.db, artifact.uuid)).toBeUndefined();
+  });
+
   test('orphan file scan skips recently modified files (60s safety filter)', async () => {
     const sourcePath = path.join(context.sourceDir, 'source.txt');
     await fs.writeFile(sourcePath, 'source');
