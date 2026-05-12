@@ -292,7 +292,7 @@ tim artifact purge --older-than 30 --dry-run
   "updatedAt": "ISO timestamp",
   "deletedAt": null,
   "revision": 1,
-  "transferState": "synced | pending | failed | file-missing | null",
+  "transferState": "synced | pending | in_progress | failed | file-missing | null",
   "fileExists": true
 }
 ```
