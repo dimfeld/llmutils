@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "useTabs": false,
+  "tabWidth": 2,
+  "singleQuote": true,
+  "trailingComma": "es5",
+  "printWidth": 100,
+  "sortTailwindcss": {
+    "stylesheet": "./src/routes/layout.css"
+  },
+  "svelte": true,
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lock",
+    "tasks",
+    "**/dist/",
+    "**/temp_*.md",
+    "schema/*",
+    ".claude",
+    ".codex",
+    ".agents"
+  ]
+}
