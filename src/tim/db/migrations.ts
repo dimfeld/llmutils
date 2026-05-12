@@ -1039,6 +1039,44 @@ const migrations: Migration[] = [
     `,
     afterUp: backfillCanonicalTables,
   },
+  {
+    version: 33,
+    up: `
+      DROP TABLE IF EXISTS sync_pending_rollback;
+
+      CREATE TABLE plan_artifact (
+        uuid TEXT PRIMARY KEY,
+        plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+        project_uuid TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        message TEXT,
+        storage_path TEXT NOT NULL,
+        deleted_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        revision INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX idx_plan_artifact_plan_deleted
+        ON plan_artifact(plan_uuid, deleted_at);
+      CREATE INDEX idx_plan_artifact_created_at
+        ON plan_artifact(created_at);
+
+      CREATE TABLE artifact_transfer (
+        artifact_uuid TEXT NOT NULL REFERENCES plan_artifact(uuid) ON DELETE CASCADE,
+        node_id TEXT NOT NULL,
+        direction TEXT NOT NULL CHECK(direction IN ('upload', 'download')),
+        status TEXT NOT NULL CHECK(status IN ('pending', 'in_progress', 'succeeded', 'failed')),
+        last_attempt_at TEXT,
+        last_error TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        succeeded_at TEXT,
+        PRIMARY KEY (artifact_uuid, node_id, direction)
+      );
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {
@@ -1089,7 +1127,10 @@ function backfillCanonicalTables(db: Database): void {
         WHERE plan.uuid IS NOT NULL AND plan.project_id IS NOT NULL AND project.id IS NULL
       `
     );
-    runBackfillStatement(db, 'plan_canonical', `
+    runBackfillStatement(
+      db,
+      'plan_canonical',
+      `
       INSERT INTO plan_canonical (
         uuid, project_id, plan_id, title, goal, details, status, priority, branch,
         simple, tdd, discovered_from, issue, pull_request, assigned_to, base_branch,
@@ -1132,7 +1173,8 @@ function backfillCanonicalTables(db: Database): void {
       FROM plan
       JOIN project ON project.id = plan.project_id
       WHERE plan.uuid IS NOT NULL AND plan.project_id IS NOT NULL
-    `);
+    `
+    );
     logSkippedRows('plan_canonical', skippedCount);
   }
 
@@ -1147,7 +1189,10 @@ function backfillCanonicalTables(db: Database): void {
         WHERE plan.uuid IS NULL
       `
     );
-    runBackfillStatement(db, 'task_canonical', `
+    runBackfillStatement(
+      db,
+      'task_canonical',
+      `
       INSERT INTO task_canonical (
         id, plan_uuid, task_index, title, description, done, uuid, revision
       )
@@ -1163,7 +1208,8 @@ function backfillCanonicalTables(db: Database): void {
       FROM plan_task
       JOIN plan ON plan.uuid = plan_task.plan_uuid
       WHERE plan_task.plan_uuid IS NOT NULL
-    `);
+    `
+    );
     logSkippedRows('task_canonical', skippedCount);
   }
 
@@ -1178,13 +1224,17 @@ function backfillCanonicalTables(db: Database): void {
         WHERE plan_owner.uuid IS NULL OR plan_dep.uuid IS NULL
       `
     );
-    runBackfillStatement(db, 'plan_dependency_canonical', `
+    runBackfillStatement(
+      db,
+      'plan_dependency_canonical',
+      `
       INSERT INTO plan_dependency_canonical (plan_uuid, depends_on_uuid)
       SELECT plan_dependency.plan_uuid, plan_dependency.depends_on_uuid
       FROM plan_dependency
       JOIN plan plan_owner ON plan_owner.uuid = plan_dependency.plan_uuid
       JOIN plan plan_dep ON plan_dep.uuid = plan_dependency.depends_on_uuid
-    `);
+    `
+    );
     logSkippedRows('plan_dependency_canonical', skippedCount);
   }
 
@@ -1198,12 +1248,16 @@ function backfillCanonicalTables(db: Database): void {
         WHERE plan.uuid IS NULL
       `
     );
-    runBackfillStatement(db, 'plan_tag_canonical', `
+    runBackfillStatement(
+      db,
+      'plan_tag_canonical',
+      `
       INSERT INTO plan_tag_canonical (plan_uuid, tag)
       SELECT plan_tag.plan_uuid, plan_tag.tag
       FROM plan_tag
       JOIN plan ON plan.uuid = plan_tag.plan_uuid
-    `);
+    `
+    );
     logSkippedRows('plan_tag_canonical', skippedCount);
   }
 
@@ -1218,7 +1272,10 @@ function backfillCanonicalTables(db: Database): void {
         WHERE project.id IS NULL
       `
     );
-    runBackfillStatement(db, 'project_setting_canonical', `
+    runBackfillStatement(
+      db,
+      'project_setting_canonical',
+      `
       INSERT INTO project_setting_canonical (
         project_id, setting, value, revision, updated_at, updated_by_node
       )
@@ -1232,7 +1289,8 @@ function backfillCanonicalTables(db: Database): void {
       FROM project_setting
       JOIN project ON project.id = project_setting.project_id
       WHERE project_setting.project_id IS NOT NULL AND project_setting.setting IS NOT NULL
-      `);
+      `
+    );
     logSkippedRows('project_setting_canonical', skippedCount);
   }
 
@@ -1244,7 +1302,10 @@ function runBackfillStatement(db: Database, targetTable: string, sql: string): v
     db.run(sql);
   } catch (error) {
     if (isForeignKeyConstraintError(error)) {
-      debugLog(`[migrations] Foreign key constraint failed while backfilling ${targetTable}:`, error);
+      debugLog(
+        `[migrations] Foreign key constraint failed while backfilling ${targetTable}:`,
+        error
+      );
       logForeignKeyCheck(db, `[migrations] backfill ${targetTable}`);
     } else {
       debugLog(`[migrations] Failed while backfilling ${targetTable}:`, error);

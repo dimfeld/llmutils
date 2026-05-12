@@ -29,6 +29,20 @@ export function getTimCacheDir(): string {
   return path.join(os.homedir(), '.cache', 'tim');
 }
 
+export function getTimDataDir(): string {
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    return path.join(localAppData, 'tim');
+  }
+
+  const xdgDataHome = process.env.XDG_DATA_HOME?.trim();
+  if (xdgDataHome) {
+    return path.join(xdgDataHome, 'tim');
+  }
+
+  return path.join(os.homedir(), '.local', 'share', 'tim');
+}
+
 export function getLogDir(): string {
   return path.join(getTimCacheDir(), 'logs');
 }

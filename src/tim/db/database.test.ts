@@ -390,6 +390,8 @@ describe('tim db/database', () => {
     expect(tables).toContain('sync_conflict');
     expect(tables).toContain('sync_tombstone');
     expect(tables).toContain('sync_sequence');
+    expect(tables).toContain('plan_artifact');
+    expect(tables).toContain('artifact_transfer');
     expect(tables).not.toContain(['sync', 'pending', 'rollback'].join('_'));
 
     const planColumns = db
@@ -484,6 +486,8 @@ describe('tim db/database', () => {
     expect(indices).toContain('idx_sync_sequence_project_sequence');
     expect(indices).toContain('idx_sync_sequence_bootstrap_target_unique');
     expect(indices).toContain('idx_sync_sequence_operation_target_unique');
+    expect(indices).toContain('idx_plan_artifact_plan_deleted');
+    expect(indices).toContain('idx_plan_artifact_created_at');
 
     db.close(false);
   });
@@ -1162,6 +1166,8 @@ describe('tim db/database', () => {
         DROP TABLE IF EXISTS plan_dependency_canonical;
         DROP TABLE IF EXISTS task_canonical;
         DROP TABLE IF EXISTS plan_canonical;
+        DROP TABLE IF EXISTS artifact_transfer;
+        DROP TABLE IF EXISTS plan_artifact;
 
         DELETE FROM plan_tag;
         DELETE FROM plan_dependency;
@@ -1288,6 +1294,8 @@ describe('tim db/database', () => {
         DROP TABLE IF EXISTS plan_dependency_canonical;
         DROP TABLE IF EXISTS task_canonical;
         DROP TABLE IF EXISTS plan_canonical;
+        DROP TABLE IF EXISTS artifact_transfer;
+        DROP TABLE IF EXISTS plan_artifact;
 
         DELETE FROM plan_tag;
         DELETE FROM plan_dependency;

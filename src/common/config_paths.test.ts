@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { getTimCacheDir, getTimConfigRoot } from './config_paths.js';
+import { getTimCacheDir, getTimConfigRoot, getTimDataDir } from './config_paths.js';
 
 describe('getTimConfigRoot', () => {
   const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -130,5 +130,68 @@ describe('getTimCacheDir', () => {
     process.env.XDG_CACHE_HOME = '/tmp/should-be-ignored';
 
     expect(getTimCacheDir()).toBe(path.join('C:\\Users\\tester\\AppData\\Local', 'tim'));
+  });
+});
+
+describe('getTimDataDir', () => {
+  const originalXdgDataHome = process.env.XDG_DATA_HOME;
+  const originalLocalAppData = process.env.LOCALAPPDATA;
+
+  afterEach(() => {
+    if (originalXdgDataHome === undefined) {
+      delete process.env.XDG_DATA_HOME;
+    } else {
+      process.env.XDG_DATA_HOME = originalXdgDataHome;
+    }
+
+    if (originalLocalAppData === undefined) {
+      delete process.env.LOCALAPPDATA;
+    } else {
+      process.env.LOCALAPPDATA = originalLocalAppData;
+    }
+  });
+
+  test('uses XDG_DATA_HOME when set on non-Windows', () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
+    process.env.XDG_DATA_HOME = '/tmp/tim-data-path-test';
+    delete process.env.LOCALAPPDATA;
+
+    expect(getTimDataDir()).toBe('/tmp/tim-data-path-test/tim');
+  });
+
+  test('falls back to homedir data path on non-Windows without XDG_DATA_HOME', () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
+    delete process.env.XDG_DATA_HOME;
+    delete process.env.LOCALAPPDATA;
+
+    expect(getTimDataDir()).toBe(path.join(os.homedir(), '.local', 'share', 'tim'));
+  });
+
+  test('ignores blank XDG_DATA_HOME values on non-Windows', () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
+    process.env.XDG_DATA_HOME = '   ';
+    delete process.env.LOCALAPPDATA;
+
+    expect(getTimDataDir()).toBe(path.join(os.homedir(), '.local', 'share', 'tim'));
+  });
+
+  test('uses LOCALAPPDATA path on Windows', () => {
+    if (process.platform !== 'win32') {
+      return;
+    }
+
+    process.env.LOCALAPPDATA = 'C:\\Users\\tester\\AppData\\Local';
+    process.env.XDG_DATA_HOME = '/tmp/should-be-ignored';
+
+    expect(getTimDataDir()).toBe(path.join('C:\\Users\\tester\\AppData\\Local', 'tim'));
   });
 });
