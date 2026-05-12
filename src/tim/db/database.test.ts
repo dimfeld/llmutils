@@ -345,10 +345,9 @@ describe('tim db/database', () => {
     expect(synchronous?.synchronous).toBe(1);
 
     const version = db
-      .query<
-        { version: number; import_completed: number; bootstrap_completed: number },
-        []
-      >('SELECT version, import_completed, bootstrap_completed FROM schema_version')
+      .query<{ version: number; import_completed: number; bootstrap_completed: number }, []>(
+        'SELECT version, import_completed, bootstrap_completed FROM schema_version'
+      )
       .get();
     expect(version?.version).toBe(33);
     expect(version?.import_completed).toBe(1);
@@ -496,10 +495,9 @@ describe('tim db/database', () => {
 
     const db2 = openDatabase(dbPath);
     const version = db2
-      .query<
-        { version: number; import_completed: number; bootstrap_completed: number },
-        []
-      >('SELECT version, import_completed, bootstrap_completed FROM schema_version')
+      .query<{ version: number; import_completed: number; bootstrap_completed: number }, []>(
+        'SELECT version, import_completed, bootstrap_completed FROM schema_version'
+      )
       .get();
     expect(version?.version).toBe(33);
     expect(version?.import_completed).toBe(1);
@@ -650,10 +648,9 @@ describe('tim db/database', () => {
       );
 
       const taskRow = db
-        .query<
-          { uuid: string | null; revision: number },
-          []
-        >('SELECT uuid, revision FROM plan_task WHERE plan_uuid = ?')
+        .query<{ uuid: string | null; revision: number }, []>(
+          'SELECT uuid, revision FROM plan_task WHERE plan_uuid = ?'
+        )
         .get('plan-1');
       expect(taskRow?.uuid).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -674,10 +671,9 @@ describe('tim db/database', () => {
         .query<{ count: number }, []>('SELECT count(*) AS count FROM plan_pr')
         .get();
       const webhookCursor = db
-        .query<
-          { last_event_id: number },
-          []
-        >('SELECT last_event_id FROM webhook_cursor WHERE id = 1')
+        .query<{ last_event_id: number }, []>(
+          'SELECT last_event_id FROM webhook_cursor WHERE id = 1'
+        )
         .get();
 
       expect(planCount?.count).toBe(1);
@@ -782,45 +778,40 @@ describe('tim db/database', () => {
       runMigrations(db);
 
       const schemaVersion = db
-        .query<
-          { version: number },
-          []
-        >('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
+        .query<{ version: number }, []>(
+          'SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1'
+        )
         .get();
       expect(schemaVersion?.version).toBe(33);
 
       const checkRows = db
-        .query<
-          { count: number },
-          []
-        >("SELECT count(*) AS count FROM pr_check_run WHERE pr_status_id = 1 AND name = 'tests'")
+        .query<{ count: number }, []>(
+          "SELECT count(*) AS count FROM pr_check_run WHERE pr_status_id = 1 AND name = 'tests'"
+        )
         .get();
       expect(checkRows?.count).toBe(1);
 
       // Verify the latest (completed/success) row survived, not the older queued one
       const survivingCheck = db
-        .query<
-          { status: string; conclusion: string | null },
-          []
-        >("SELECT status, conclusion FROM pr_check_run WHERE pr_status_id = 1 AND name = 'tests'")
+        .query<{ status: string; conclusion: string | null }, []>(
+          "SELECT status, conclusion FROM pr_check_run WHERE pr_status_id = 1 AND name = 'tests'"
+        )
         .get();
       expect(survivingCheck?.status).toBe('completed');
       expect(survivingCheck?.conclusion).toBe('success');
 
       const reviewRows = db
-        .query<
-          { count: number },
-          []
-        >("SELECT count(*) AS count FROM pr_review WHERE pr_status_id = 1 AND author = 'reviewer'")
+        .query<{ count: number }, []>(
+          "SELECT count(*) AS count FROM pr_review WHERE pr_status_id = 1 AND author = 'reviewer'"
+        )
         .get();
       expect(reviewRows?.count).toBe(1);
 
       // Verify the latest (APPROVED) review survived, not the older COMMENTED one
       const survivingReview = db
-        .query<
-          { state: string; body: string | null },
-          []
-        >("SELECT state, body FROM pr_review WHERE pr_status_id = 1 AND author = 'reviewer'")
+        .query<{ state: string; body: string | null }, []>(
+          "SELECT state, body FROM pr_review WHERE pr_status_id = 1 AND author = 'reviewer'"
+        )
         .get();
       expect(survivingReview?.state).toBe('APPROVED');
       expect(survivingReview?.body).toBeNull();
@@ -832,10 +823,9 @@ describe('tim db/database', () => {
       expect(reviewColumns).toContain('body');
 
       const cursorRow = db
-        .query<
-          { id: number; last_event_id: number },
-          []
-        >('SELECT id, last_event_id FROM webhook_cursor')
+        .query<{ id: number; last_event_id: number }, []>(
+          'SELECT id, last_event_id FROM webhook_cursor'
+        )
         .get();
       expect(cursorRow).toEqual({ id: 1, last_event_id: 0 });
 
@@ -844,10 +834,9 @@ describe('tim db/database', () => {
         1
       );
       const planPrRows = db
-        .query<
-          { source: string },
-          []
-        >("SELECT source FROM plan_pr WHERE plan_uuid = 'plan-1' AND pr_status_id = 1 ORDER BY source")
+        .query<{ source: string }, []>(
+          "SELECT source FROM plan_pr WHERE plan_uuid = 'plan-1' AND pr_status_id = 1 ORDER BY source"
+        )
         .all();
       expect(planPrRows).toEqual([{ source: 'auto' }, { source: 'explicit' }]);
 
@@ -1119,10 +1108,9 @@ describe('tim db/database', () => {
       );
       expect(task?.revision).toBe(1);
       const setting = db
-        .query<
-          { revision: number; updated_at: string | null; updated_by_node: string | null },
-          []
-        >('SELECT revision, updated_at, updated_by_node FROM project_setting')
+        .query<{ revision: number; updated_at: string | null; updated_by_node: string | null }, []>(
+          'SELECT revision, updated_at, updated_by_node FROM project_setting'
+        )
         .get();
       expect(setting?.revision).toBe(1);
       expect(setting?.updated_at).toBeTruthy();
@@ -1249,17 +1237,15 @@ describe('tim db/database', () => {
       );
       expect(
         db
-          .query<
-            { uuid: string | null; revision: number; done: number },
-            []
-          >('SELECT uuid, revision, done FROM task_canonical ORDER BY id')
+          .query<{ uuid: string | null; revision: number; done: number }, []>(
+            'SELECT uuid, revision, done FROM task_canonical ORDER BY id'
+          )
           .all()
       ).toEqual(
         db
-          .query<
-            { uuid: string | null; revision: number; done: number },
-            []
-          >('SELECT uuid, revision, done FROM plan_task ORDER BY id')
+          .query<{ uuid: string | null; revision: number; done: number }, []>(
+            'SELECT uuid, revision, done FROM plan_task ORDER BY id'
+          )
           .all()
       );
       expect(db.query('SELECT * FROM plan_dependency_canonical').all()).toEqual(
@@ -1381,10 +1367,9 @@ describe('tim db/database', () => {
       );
       expect(
         db
-          .query<
-            { uuid: string | null; revision: number; done: number },
-            []
-          >('SELECT uuid, revision, done FROM task_canonical ORDER BY id')
+          .query<{ uuid: string | null; revision: number; done: number }, []>(
+            'SELECT uuid, revision, done FROM task_canonical ORDER BY id'
+          )
           .all()
       ).toEqual([
         {
@@ -1559,10 +1544,9 @@ describe('tim db/database', () => {
       expect(syncOperationColumns).toContain('payload_task_uuid');
 
       const refs = db
-        .query<
-          { operation_uuid: string; plan_uuid: string; role: string },
-          []
-        >('SELECT operation_uuid, plan_uuid, role FROM sync_operation_plan_ref ORDER BY operation_uuid, role, plan_uuid')
+        .query<{ operation_uuid: string; plan_uuid: string; role: string }, []>(
+          'SELECT operation_uuid, plan_uuid, role FROM sync_operation_plan_ref ORDER BY operation_uuid, role, plan_uuid'
+        )
         .all();
       expect(refs).toEqual([
         { operation_uuid: 'op-create', plan_uuid: dependencyUuid, role: 'dependency' },

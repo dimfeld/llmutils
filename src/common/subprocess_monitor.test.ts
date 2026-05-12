@@ -39,9 +39,7 @@ describe('subprocess monitor rule matching', () => {
   });
 
   test('requires word boundaries for string rules', () => {
-    const rules = normalizeSubprocessMonitorRules([
-      { match: 'pnpm test', timeoutSeconds: 10 },
-    ]);
+    const rules = normalizeSubprocessMonitorRules([{ match: 'pnpm test', timeoutSeconds: 10 }]);
 
     expect(findSubprocessMonitorMatch('bash -c pnpm testing', rules)).toBeNull();
     expect(findSubprocessMonitorMatch('bash -c apnpm test', rules)).toBeNull();

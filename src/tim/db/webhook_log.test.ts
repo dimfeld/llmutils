@@ -121,10 +121,9 @@ describe('tim db/webhook_log', () => {
 
     expect(pruneOldWebhookLogs(db)).toBe(1);
     const remainingRows = db
-      .query<
-        { delivery_id: string },
-        []
-      >('SELECT delivery_id FROM webhook_log ORDER BY delivery_id')
+      .query<{ delivery_id: string }, []>(
+        'SELECT delivery_id FROM webhook_log ORDER BY delivery_id'
+      )
       .all();
 
     expect(remainingRows).toEqual([{ delivery_id: 'delivery-new' }]);

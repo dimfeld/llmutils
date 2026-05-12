@@ -138,10 +138,9 @@ describe('sync_tables helpers', () => {
       expect(fetched).toEqual(op);
       expect(
         db
-          .query<
-            { plan_uuid: string; role: string },
-            [string]
-          >('SELECT plan_uuid, role FROM sync_operation_plan_ref WHERE operation_uuid = ?')
+          .query<{ plan_uuid: string; role: string }, [string]>(
+            'SELECT plan_uuid, role FROM sync_operation_plan_ref WHERE operation_uuid = ?'
+          )
           .all(op.operation_uuid)
       ).toEqual([{ plan_uuid: PLAN_UUID, role: 'target' }]);
     });

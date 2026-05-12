@@ -71,7 +71,7 @@ sync:
   requireSecureTransport: false
   allowedNodes:
     - nodeId: work-laptop
-      tokenHash: "64-character-sha256-token-hash"
+      tokenHash: '64-character-sha256-token-hash'
 ```
 
 By default, non-loopback main servers require secure transport. Keep that default when running behind HTTPS. Set `requireSecureTransport: false` only on a trusted private network or through another secure tunnel.
