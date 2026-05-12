@@ -1,4 +1,5 @@
 import { Database } from 'bun:sqlite';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -67,6 +68,7 @@ afterEach(() => {
     server.stop();
   }
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 describe('sync transport server and clients', () => {
@@ -257,6 +259,267 @@ describe('sync transport server and clients', () => {
     await expect(response.json()).resolves.toMatchObject({
       error: 'Sync request body exceeds maximum payload size',
     });
+  });
+
+  test('uploads and downloads artifact bytes over HTTP with verification', async () => {
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-http-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const bytes = Buffer.from('artifact bytes');
+    const artifact = await attachArtifactMetadata(mainDb, {
+      size: bytes.byteLength,
+      sha256: sha256(bytes),
+    });
+    const server = startTestServer(mainDb);
+
+    const upload = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: bytes,
+      }
+    );
+    expect(upload.status).toBe(200);
+    await expect(upload.json()).resolves.toMatchObject({
+      ok: true,
+      size: bytes.byteLength,
+      sha256: sha256(bytes),
+    });
+
+    const download = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      {
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'x-tim-node-id': NODE_A,
+        },
+      }
+    );
+    expect(download.status).toBe(200);
+    expect(download.headers.get('content-type')).toBe(artifact.mimeType);
+    expect(download.headers.get('x-artifact-sha256')).toBe(artifact.sha256);
+    expect(Buffer.from(await download.arrayBuffer())).toEqual(bytes);
+
+    fs.rmSync(tempData, { recursive: true, force: true });
+  });
+
+  test('artifact HTTP endpoints reject unauthorized, missing, and mismatched bytes', async () => {
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-http-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    await attachArtifactMetadata(mainDb, {
+      size: 3,
+      sha256: sha256(Buffer.from('abc')),
+    });
+    const server = startTestServer(mainDb);
+
+    const unauthorized = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      { headers: { authorization: 'Bearer wrong', 'x-tim-node-id': NODE_A } }
+    );
+    expect(unauthorized.status).toBe(401);
+
+    const missing = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      { headers: { authorization: `Bearer ${TOKEN}`, 'x-tim-node-id': NODE_A } }
+    );
+    expect(missing.status).toBe(409);
+    await expect(missing.json()).resolves.toEqual({ error: 'file_missing' });
+
+    const mismatch = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: Buffer.from('xyz'),
+      }
+    );
+    expect(mismatch.status).toBe(409);
+    await expect(mismatch.json()).resolves.toMatchObject({ error: 'sha256_mismatch' });
+
+    fs.rmSync(tempData, { recursive: true, force: true });
+  });
+
+  test('artifact PUT rejects unknown UUID with 404 and invalid UUID format with 400', async () => {
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-unknown-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const server = startTestServer(mainDb);
+    const unknownUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+    const notFound = await fetch(
+      new URL(`/internal/sync/artifacts/${unknownUuid}`, serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: Buffer.from('data'),
+      }
+    );
+    expect(notFound.status).toBe(404);
+
+    const badUuid = await fetch(
+      new URL('/internal/sync/artifacts/not-a-valid-uuid', serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: Buffer.from('data'),
+      }
+    );
+    expect(badUuid.status).toBe(400);
+
+    fs.rmSync(tempData, { recursive: true, force: true });
+  });
+
+  test('artifact GET returns 404 for unknown UUID and 401 for bad auth', async () => {
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-get-404-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const server = startTestServer(mainDb);
+    const unknownUuid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    const notFound = await fetch(
+      new URL(`/internal/sync/artifacts/${unknownUuid}`, serverUrl(server)),
+      { headers: { authorization: `Bearer ${TOKEN}`, 'x-tim-node-id': NODE_A } }
+    );
+    expect(notFound.status).toBe(404);
+
+    const unauthorized = await fetch(
+      new URL(`/internal/sync/artifacts/${unknownUuid}`, serverUrl(server)),
+      { headers: { authorization: 'Bearer wrong', 'x-tim-node-id': NODE_A } }
+    );
+    expect(unauthorized.status).toBe(401);
+
+    fs.rmSync(tempData, { recursive: true, force: true });
+  });
+
+  test('artifact PUT rejects body larger than MAX_ARTIFACT_BYTES with 413 and cleans up temp file', async () => {
+    const { MAX_ARTIFACT_BYTES } = await import('../artifacts/constants.js');
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-413-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const oversizedBytes = Buffer.alloc(MAX_ARTIFACT_BYTES + 1, 'x');
+    await attachArtifactMetadata(mainDb, {
+      size: oversizedBytes.byteLength,
+      sha256: sha256(oversizedBytes),
+    });
+    const server = startTestServer(mainDb);
+
+    const response = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: oversizedBytes,
+      }
+    );
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({ error: 'artifact_too_large' });
+
+    // No stray temp files in the artifacts directory
+    const artifactsRoot = path.join(tempData, 'tim', 'artifacts');
+    const allFiles: string[] = [];
+    function walkDir(dir: string): void {
+      if (!fs.existsSync(dir)) return;
+      for (const entry of fs.readdirSync(dir)) {
+        const full = path.join(dir, entry);
+        if (fs.statSync(full).isDirectory()) {
+          walkDir(full);
+        } else {
+          allFiles.push(full);
+        }
+      }
+    }
+    walkDir(artifactsRoot);
+    const tempFiles = allFiles.filter((f) => f.includes('.tmp-'));
+    expect(tempFiles).toHaveLength(0);
+
+    fs.rmSync(tempData, { recursive: true, force: true });
+  });
+
+  test('artifact PUT rejects size mismatch with 409 size_mismatch', async () => {
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-sizemismatch-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const expectedBytes = Buffer.from('abcdefgh'); // 8 bytes
+    await attachArtifactMetadata(mainDb, {
+      size: expectedBytes.byteLength,
+      sha256: sha256(expectedBytes),
+    });
+    const server = startTestServer(mainDb);
+
+    // Send only 4 bytes — sha256 AND size will differ; server hits size check first
+    const response = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: Buffer.from('abcd'), // 4 bytes, matching first 4 chars so sha256 differs
+      }
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ error: 'size_mismatch' });
+
+    fs.rmSync(tempData, { recursive: true, force: true });
+  });
+
+  test('artifact PUT rejects unauthorized requests with 401', async () => {
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-put-auth-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const bytes = Buffer.from('secret data');
+    await attachArtifactMetadata(mainDb, {
+      size: bytes.byteLength,
+      sha256: sha256(bytes),
+    });
+    const server = startTestServer(mainDb);
+
+    const unauthorized = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer wrong-token',
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: bytes,
+      }
+    );
+    expect(unauthorized.status).toBe(401);
+
+    fs.rmSync(tempData, { recursive: true, force: true });
   });
 
   test('responds to ping with pong', async () => {
@@ -1147,6 +1410,36 @@ function sequenceIds(db: Database): number[] {
       sequence: number;
     }>
   ).map((row) => row.sequence);
+}
+
+async function attachArtifactMetadata(
+  db: Database,
+  input: { size: number; sha256: string }
+): Promise<NonNullable<ReturnType<typeof getArtifactByUuid>>> {
+  await applyOperation(
+    db,
+    await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'capture.txt',
+        mimeType: 'text/plain',
+        size: input.size,
+        sha256: input.sha256,
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    )
+  );
+  const artifact = getArtifactByUuid(db, ARTIFACT_UUID);
+  if (!artifact) {
+    throw new Error('Expected artifact metadata to be inserted');
+  }
+  return artifact;
+}
+
+function sha256(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex');
 }
 
 function startTestServer(db: Database, port = 0): SyncServerHandle {

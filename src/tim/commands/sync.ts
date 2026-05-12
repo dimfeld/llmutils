@@ -15,7 +15,12 @@ import {
 import { resolveSyncConfig, type ResolvedSyncConfig } from '../sync/config.js';
 import { resolveSyncConflict } from '../sync/apply.js';
 import { getCurrentSequenceId } from '../sync/server.js';
-import { flushPendingOperationsOnce, runSyncCatchUpOnce } from '../sync/runner.js';
+import {
+  drainArtifactTransfersOnce,
+  flushPendingOperationsOnce,
+  runSyncCatchUpOnce,
+} from '../sync/runner.js';
+import { resetStrandedArtifactTransfers } from '../db/artifact_transfer.js';
 import { resetSendingOperations } from '../sync/queue.js';
 import { bootstrapSyncMetadata } from '../sync/bootstrap.js';
 import type { Database } from 'bun:sqlite';
@@ -186,6 +191,8 @@ export async function handleSyncPushCommand(
     });
   }
   await flushPendingOperationsOnce(context.runnerOptions);
+  resetStrandedArtifactTransfers(context.runnerOptions.db);
+  await drainArtifactTransfersOnce(context.runnerOptions);
   log('Sync push completed.');
 }
 
@@ -202,6 +209,8 @@ export async function handleSyncRunCommand(
   }
   await flushPendingOperationsOnce(context.runnerOptions);
   await runSyncCatchUpOnce(context.runnerOptions);
+  resetStrandedArtifactTransfers(context.runnerOptions.db);
+  await drainArtifactTransfersOnce(context.runnerOptions);
   log('Sync run completed.');
 }
 
@@ -212,6 +221,8 @@ export async function handleSyncCatchUpCommand(
 ): Promise<void> {
   const context = await resolvePersistentRunnerContext(command, deps);
   await runSyncCatchUpOnce(context.runnerOptions);
+  resetStrandedArtifactTransfers(context.runnerOptions.db);
+  await drainArtifactTransfersOnce(context.runnerOptions);
   log('Sync catch-up completed.');
 }
 

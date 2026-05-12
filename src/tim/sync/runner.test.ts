@@ -1,6 +1,16 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { runMigrations } from '../db/migrations.js';
+import {
+  getArtifactTransfer,
+  markTransferInProgress,
+  markTransferSucceeded,
+  upsertPendingTransfer,
+} from '../db/artifact_transfer.js';
+import { insertArtifact } from '../db/artifact.js';
 import {
   getPlanByUuid,
   getPlanTagsByUuid,
@@ -10,9 +20,11 @@ import {
 } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 import { getTimNodeCursor, insertSyncOperation, upsertTimNode } from '../db/sync_tables.js';
+import { applyOperation } from './apply.js';
 import {
   addPlanTagOperation,
   addPlanTaskOperation,
+  buildArtifactAttachOperation,
   promotePlanTaskOperation,
 } from './operations.js';
 import {
@@ -21,7 +33,13 @@ import {
   markOperationAcked,
   markOperationSending,
 } from './queue.js';
-import { createSyncRunner, flushPendingOperationsOnce, runSyncCatchUpOnce } from './runner.js';
+import {
+  createSyncRunner,
+  drainArtifactTransfersOnce,
+  enqueueMissingArtifactDownloads,
+  flushPendingOperationsOnce,
+  runSyncCatchUpOnce,
+} from './runner.js';
 import { createBatchEnvelope } from './types.js';
 
 const clientMocks = vi.hoisted(() => ({
@@ -29,6 +47,10 @@ const clientMocks = vi.hoisted(() => ({
   httpFetchSnapshots: vi.fn(),
   httpFlushBatch: vi.fn(),
   httpFlushOperations: vi.fn(),
+}));
+const transferMocks = vi.hoisted(() => ({
+  uploadArtifact: vi.fn(),
+  downloadArtifact: vi.fn(),
 }));
 
 vi.mock('./client.js', async () => {
@@ -42,16 +64,30 @@ vi.mock('./client.js', async () => {
   };
 });
 
+vi.mock('./artifact_transfer.js', async () => {
+  const actual =
+    await vi.importActual<typeof import('./artifact_transfer.js')>('./artifact_transfer.js');
+  return {
+    ...actual,
+    uploadArtifact: transferMocks.uploadArtifact,
+    downloadArtifact: transferMocks.downloadArtifact,
+  };
+});
+
 const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
 const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
 const TASK_UUID = '33333333-3333-4333-8333-333333333333';
+const ARTIFACT_UUID = '44444444-4444-4444-8444-444444444444';
 const NODE_ID = 'persistent-a';
+const MAIN_NODE_ID = 'main-node';
 
 beforeEach(() => {
   clientMocks.httpCatchUp.mockReset();
   clientMocks.httpFetchSnapshots.mockReset();
   clientMocks.httpFlushBatch.mockReset();
   clientMocks.httpFlushOperations.mockReset();
+  transferMocks.uploadArtifact.mockReset();
+  transferMocks.downloadArtifact.mockReset();
   clientMocks.httpFetchSnapshots.mockResolvedValue({
     ok: true,
     value: { snapshots: [], currentSequenceId: 0 },
@@ -88,6 +124,42 @@ function seedPlan(db: Database): void {
     tasks: plan.tasks.map((task) => ({ ...task, revision: 1 })),
   });
   upsertProjectionPlanInTransaction(db, project.id, plan);
+}
+
+async function attachArtifactMetadata(db: Database): Promise<void> {
+  await applyOperation(
+    db,
+    await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'capture.png',
+        mimeType: 'image/png',
+        size: 12,
+        sha256: 'hash-capture',
+      },
+      { originNodeId: 'remote-node', localSequence: 1 }
+    )
+  );
+}
+
+function insertArtifactRow(
+  db: Database,
+  uuid: string,
+  overrides: { storagePath?: string; createdAt?: string } = {}
+): void {
+  insertArtifact(db, {
+    uuid,
+    planUuid: PLAN_UUID,
+    projectUuid: PROJECT_UUID,
+    filename: `${uuid}.txt`,
+    mimeType: 'text/plain',
+    size: 4,
+    sha256: `hash-${uuid}`,
+    storagePath: overrides.storagePath ?? path.join(os.tmpdir(), `${uuid}.txt`),
+    createdAt: overrides.createdAt,
+  });
 }
 
 async function insertQueuedTagOperation(db: Database, tag: string, localSequence = 0) {
@@ -298,6 +370,424 @@ describe('sync runner', () => {
       markOperationAcked(db, op.operationUuid, { sequenceIds: [1], invalidations: ['second'] })
     ).not.toThrow();
     expect(operationStatus(db, op.operationUuid)).toBe('acked');
+  });
+
+  test('successful artifact attach flush enqueues an upload transfer', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    await attachArtifactMetadata(db);
+    const op = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'capture.png',
+        mimeType: 'image/png',
+        size: 12,
+        sha256: 'hash-capture',
+      },
+      { originNodeId: NODE_ID, localSequence: 0 }
+    );
+    enqueueOperation(db, op);
+    clientMocks.httpFlushOperations.mockResolvedValue({
+      ok: true,
+      value: {
+        results: [
+          {
+            operationId: op.operationUuid,
+            status: 'applied',
+            sequenceIds: [10],
+            invalidations: [`plan:${PLAN_UUID}`],
+          },
+        ],
+        currentSequenceId: 10,
+      },
+    });
+
+    await flushPendingOperationsOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+      syncServerNodeId: MAIN_NODE_ID,
+    });
+
+    expect(getArtifactTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'upload')).toMatchObject({
+      status: 'pending',
+    });
+  });
+
+  test('artifact attach flush skips upload enqueue when this node is the sync server', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    const op = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'capture.png',
+        mimeType: 'image/png',
+        size: 12,
+        sha256: 'hash-capture',
+      },
+      { originNodeId: NODE_ID, localSequence: 0 }
+    );
+    enqueueOperation(db, op);
+    clientMocks.httpFlushOperations.mockResolvedValue({
+      ok: true,
+      value: {
+        results: [{ operationId: op.operationUuid, status: 'applied', sequenceIds: [10] }],
+        currentSequenceId: 10,
+      },
+    });
+
+    await flushPendingOperationsOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+      syncServerNodeId: NODE_ID,
+    });
+
+    expect(getArtifactTransfer(db, ARTIFACT_UUID, NODE_ID, 'upload')).toBeUndefined();
+  });
+
+  test('inbound artifact metadata enqueues missing downloads', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    await attachArtifactMetadata(db);
+
+    await enqueueMissingArtifactDownloads({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+      syncServerNodeId: MAIN_NODE_ID,
+    });
+
+    expect(getArtifactTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'download')).toMatchObject({
+      status: 'pending',
+    });
+  });
+
+  test('missing download discovery pages past resident artifacts', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-artifact-runner-test-'));
+    try {
+      for (let index = 0; index < 250; index += 1) {
+        const uuid = `resident-artifact-${index.toString().padStart(3, '0')}`;
+        const storagePath = path.join(tempDir, `${uuid}.txt`);
+        await fs.writeFile(storagePath, 'done');
+        insertArtifactRow(db, uuid, {
+          storagePath,
+          createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+        });
+      }
+      const missingUuid = 'missing-artifact-250';
+      insertArtifactRow(db, missingUuid, {
+        storagePath: path.join(tempDir, `${missingUuid}.txt`),
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, 5, 0)).toISOString(),
+      });
+
+      await enqueueMissingArtifactDownloads({
+        db,
+        serverUrl: 'http://127.0.0.1:9',
+        nodeId: NODE_ID,
+        token: 'token',
+        syncServerNodeId: MAIN_NODE_ID,
+      });
+
+      expect(getArtifactTransfer(db, missingUuid, MAIN_NODE_ID, 'download')).toMatchObject({
+        status: 'pending',
+      });
+      expect(
+        getArtifactTransfer(db, 'resident-artifact-000', MAIN_NODE_ID, 'download')
+      ).toBeUndefined();
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('succeeded download row with missing local file is requeued and drained', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    await attachArtifactMetadata(db);
+    markTransferSucceeded(db, ARTIFACT_UUID, MAIN_NODE_ID, 'download');
+
+    await enqueueMissingArtifactDownloads({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+      syncServerNodeId: MAIN_NODE_ID,
+    });
+
+    expect(getArtifactTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'download')).toMatchObject({
+      status: 'pending',
+      attempts: 0,
+    });
+
+    transferMocks.downloadArtifact.mockResolvedValue(undefined);
+    await drainArtifactTransfersOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+      syncServerNodeId: MAIN_NODE_ID,
+    });
+
+    expect(transferMocks.downloadArtifact).toHaveBeenCalledTimes(1);
+  });
+
+  test('undefined syncServerNodeId falls back to sync-server:<url> key for transfer rows', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    await attachArtifactMetadata(db);
+    const serverUrl = 'http://127.0.0.1:9';
+    const op = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'capture.png',
+        mimeType: 'image/png',
+        size: 12,
+        sha256: 'hash-capture',
+      },
+      { originNodeId: NODE_ID, localSequence: 0 }
+    );
+    enqueueOperation(db, op);
+    clientMocks.httpFlushOperations.mockResolvedValue({
+      ok: true,
+      value: {
+        results: [
+          {
+            operationId: op.operationUuid,
+            status: 'applied',
+            sequenceIds: [10],
+            invalidations: [`plan:${PLAN_UUID}`],
+          },
+        ],
+        currentSequenceId: 10,
+      },
+    });
+
+    // No syncServerNodeId provided — should use the fallback key
+    await flushPendingOperationsOnce({
+      db,
+      serverUrl,
+      nodeId: NODE_ID,
+      token: 'token',
+      // syncServerNodeId intentionally omitted
+    });
+
+    const fallbackNodeId = `sync-server:${serverUrl}`;
+    expect(getArtifactTransfer(db, ARTIFACT_UUID, fallbackNodeId, 'upload')).toMatchObject({
+      status: 'pending',
+    });
+  });
+
+  test('drainArtifactTransfersOnce retries eligible failed rows after over-max failures', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    const oldAttempt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    for (let index = 0; index < 50; index += 1) {
+      const uuid = `over-max-artifact-${index.toString().padStart(3, '0')}`;
+      insertArtifactRow(db, uuid);
+      upsertPendingTransfer(db, uuid, MAIN_NODE_ID, 'download');
+      db.prepare(
+        `
+          UPDATE artifact_transfer
+          SET status = 'failed',
+              attempts = 5,
+              last_attempt_at = ?
+          WHERE artifact_uuid = ?
+        `
+      ).run(oldAttempt, uuid);
+    }
+    const eligibleUuid = 'eligible-failed-artifact';
+    insertArtifactRow(db, eligibleUuid);
+    upsertPendingTransfer(db, eligibleUuid, MAIN_NODE_ID, 'download');
+    db.prepare(
+      `
+        UPDATE artifact_transfer
+        SET status = 'failed',
+            attempts = 1,
+            last_attempt_at = ?
+        WHERE artifact_uuid = ?
+      `
+    ).run(oldAttempt, eligibleUuid);
+    transferMocks.downloadArtifact.mockResolvedValue(undefined);
+
+    await drainArtifactTransfersOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+      syncServerNodeId: MAIN_NODE_ID,
+      artifactMaxAttempts: 5,
+      artifactBackoffBaseMs: 1_000,
+    });
+
+    expect(transferMocks.downloadArtifact).toHaveBeenCalledTimes(1);
+    expect(transferMocks.downloadArtifact.mock.calls[0][0].artifact.uuid).toBe(eligibleUuid);
+  });
+
+  test('drainArtifactTransfersOnce stops retrying after max attempts is reached', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    await attachArtifactMetadata(db);
+    upsertPendingTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'download');
+    // Set to the default max attempts (5) with an old last_attempt_at so backoff is satisfied
+    db.prepare(
+      `
+        UPDATE artifact_transfer
+        SET status = 'failed',
+            attempts = 5,
+            last_attempt_at = ?
+        WHERE artifact_uuid = ?
+      `
+    ).run(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), ARTIFACT_UUID);
+
+    await drainArtifactTransfersOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+      syncServerNodeId: MAIN_NODE_ID,
+      artifactMaxAttempts: 5,
+    });
+
+    // Should NOT have been called — max attempts reached
+    expect(transferMocks.downloadArtifact).not.toHaveBeenCalled();
+
+    // Confirm attempts count was not incremented
+    expect(getArtifactTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'download')).toMatchObject({
+      status: 'failed',
+      attempts: 5,
+    });
+  });
+
+  test('drainArtifactTransfersOnce honors backoff and retries old failures', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    await attachArtifactMetadata(db);
+    upsertPendingTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'download');
+    db.prepare(
+      `
+        UPDATE artifact_transfer
+        SET status = 'failed',
+            attempts = 3,
+            last_attempt_at = ?
+        WHERE artifact_uuid = ?
+      `
+    ).run(new Date().toISOString(), ARTIFACT_UUID);
+
+    await drainArtifactTransfersOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+      syncServerNodeId: MAIN_NODE_ID,
+      artifactBackoffBaseMs: 60_000,
+    });
+    expect(transferMocks.downloadArtifact).not.toHaveBeenCalled();
+
+    db.prepare(
+      `
+        UPDATE artifact_transfer
+        SET last_attempt_at = ?
+        WHERE artifact_uuid = ?
+      `
+    ).run(new Date(Date.now() - 10 * 60_000).toISOString(), ARTIFACT_UUID);
+    transferMocks.downloadArtifact.mockResolvedValue(undefined);
+
+    await drainArtifactTransfersOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+      syncServerNodeId: MAIN_NODE_ID,
+      artifactBackoffBaseMs: 1_000,
+    });
+    expect(transferMocks.downloadArtifact).toHaveBeenCalledTimes(1);
+  });
+
+  test('drainArtifactTransfersOnce leaves in_progress rows alone', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    await attachArtifactMetadata(db);
+    upsertPendingTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'download');
+    markTransferInProgress(db, ARTIFACT_UUID, MAIN_NODE_ID, 'download');
+    transferMocks.downloadArtifact.mockResolvedValue(undefined);
+
+    await drainArtifactTransfersOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+      syncServerNodeId: MAIN_NODE_ID,
+    });
+
+    expect(transferMocks.downloadArtifact).not.toHaveBeenCalled();
+    expect(getArtifactTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'download')).toMatchObject({
+      status: 'in_progress',
+      attempts: 1,
+    });
+  });
+
+  test('runner start resets stranded in_progress transfer rows once', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    await attachArtifactMetadata(db);
+    upsertPendingTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'download');
+    markTransferInProgress(db, ARTIFACT_UUID, MAIN_NODE_ID, 'download');
+
+    const runner = createSyncRunner({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+      syncServerNodeId: MAIN_NODE_ID,
+      reconnect: false,
+    });
+    runner.start();
+    runner.stop();
+
+    expect(getArtifactTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'download')).toMatchObject({
+      status: 'pending',
+      attempts: 1,
+      last_error: 'orphaned in_progress reset',
+    });
+  });
+
+  test('runOnce drains pending artifact uploads to success after sync work', async () => {
+    const db = createRunnerDb();
+    seedPlan(db);
+    await attachArtifactMetadata(db);
+    upsertPendingTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'upload');
+    clientMocks.httpCatchUp.mockResolvedValue({
+      ok: true,
+      value: { invalidations: [], currentSequenceId: 0 },
+    });
+    transferMocks.uploadArtifact.mockImplementation(async ({ db: transferDb, artifact }) => {
+      markTransferSucceeded(transferDb, artifact.uuid, MAIN_NODE_ID, 'upload');
+    });
+
+    const runner = createSyncRunner({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+      syncServerNodeId: MAIN_NODE_ID,
+    });
+    await runner.runOnce();
+
+    expect(transferMocks.uploadArtifact).toHaveBeenCalledTimes(1);
+    expect(getArtifactTransfer(db, ARTIFACT_UUID, MAIN_NODE_ID, 'upload')).toMatchObject({
+      status: 'succeeded',
+    });
   });
 
   test('plan_deleted canonical merge does not trigger follow-up fetch; active promote_task op keeps destination plan in projection', async () => {

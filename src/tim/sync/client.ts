@@ -8,6 +8,7 @@ import {
   type SyncCatchUpInvalidation,
   type SyncOperationResult,
 } from './ws_protocol.js';
+import { assertOk, authHeaders, isConnectionError, syncUrl, toError } from './http_utils.js';
 
 export type HttpSyncResult<T> =
   | { ok: true; value: T }
@@ -146,40 +147,4 @@ export async function httpCatchUp(
     }
     throw err;
   }
-}
-
-function syncUrl(serverUrl: string, path: string): URL {
-  const base = serverUrl.endsWith('/') ? serverUrl : `${serverUrl}/`;
-  return new URL(path, base);
-}
-
-function authHeaders(token: string, nodeId: string, extra: Record<string, string> = {}) {
-  return {
-    ...extra,
-    authorization: `Bearer ${token}`,
-    'x-tim-node-id': nodeId,
-  };
-}
-
-async function assertOk(response: Response, url: URL): Promise<void> {
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw new Error(
-      `Sync server returned ${response.status} ${response.statusText} from ${url.toString()}${body ? `: ${body}` : ''}`
-    );
-  }
-}
-
-function isConnectionError(err: unknown): boolean {
-  if (err instanceof TypeError) {
-    return true;
-  }
-  const message = err instanceof Error ? err.message : String(err);
-  return /ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|fetch failed|Unable to connect/i.test(
-    message
-  );
-}
-
-function toError(err: unknown): Error {
-  return err instanceof Error ? err : new Error(String(err));
 }
