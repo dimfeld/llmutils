@@ -10,6 +10,7 @@ import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { upsertCanonicalPlanInTransaction, upsertProjectionPlanInTransaction } from '../db/plan.js';
 import { getArtifactByUuid, insertArtifact } from '../db/artifact.js';
+import { upsertPendingTransfer } from '../db/artifact_transfer.js';
 import { MAX_ARTIFACT_BYTES } from './constants.js';
 import { getArtifactsRoot, resolveArtifactPath } from './storage.js';
 import {
@@ -250,5 +251,26 @@ describe('artifact service', () => {
     await expect(purgeArtifacts({ config: getDefaultConfig() })).resolves.toMatchObject({
       orphanFilesRemoved: 0,
     });
+  });
+
+  test('listArtifacts includes transfer state from artifact_transfer table', async () => {
+    const sourcePath = path.join(sourceDir, 'xfer.txt');
+    await fs.writeFile(sourcePath, 'xfer');
+    const artifact = await addArtifact({
+      planId: 1,
+      sourcePath,
+      message: undefined,
+      config: getDefaultConfig(),
+      repoRoot: tempDir,
+    });
+
+    // No transfer row => transferState null
+    let results = await listArtifacts({ planId: 1, config: getDefaultConfig(), repoRoot: tempDir });
+    expect(results[0].transferState).toBeNull();
+
+    // Pending upload row => transferState 'pending'
+    upsertPendingTransfer(db, artifact.uuid, 'remote-node', 'upload');
+    results = await listArtifacts({ planId: 1, config: getDefaultConfig(), repoRoot: tempDir });
+    expect(results[0].transferState).toBe('pending');
   });
 });

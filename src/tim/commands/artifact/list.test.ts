@@ -4,6 +4,7 @@ import * as path from 'node:path';
 
 import { getDefaultConfig } from '../../configSchema.js';
 import { addArtifact, softDeleteArtifact } from '../../artifacts/service.js';
+import { upsertPendingTransfer } from '../../db/artifact_transfer.js';
 import { handleArtifactListCommand } from './list.js';
 import { setupArtifactCommandTest, type ArtifactCommandTestContext } from './test_utils.js';
 
@@ -54,5 +55,65 @@ describe('tim artifact list command', () => {
       'active.log',
       'deleted.log',
     ]);
+  });
+
+  test('JSON output includes all required fields including transferState', async () => {
+    const sourcePath = path.join(context.sourceDir, 'data.txt');
+    await fs.writeFile(sourcePath, 'data');
+    const artifact = await addArtifact({
+      planId: 1,
+      sourcePath,
+      config: getDefaultConfig(),
+      repoRoot: context.tempDir,
+    });
+
+    await handleArtifactListCommand('1', { json: true });
+    const payload = JSON.parse(consoleLog.mock.calls.at(-1)?.[0] as string) as Array<
+      Record<string, unknown>
+    >;
+    expect(payload).toHaveLength(1);
+    const row = payload[0];
+    expect(row).toMatchObject({
+      uuid: artifact.uuid,
+      filename: 'data.txt',
+      mimeType: 'text/plain',
+      size: 4,
+    });
+    expect('transferState' in row).toBe(true);
+    expect(row.transferState).toBeNull();
+  });
+
+  test('transfer state column reflects artifact_transfer rows', async () => {
+    const sourcePath = path.join(context.sourceDir, 'xfer.txt');
+    await fs.writeFile(sourcePath, 'xfer');
+    const artifact = await addArtifact({
+      planId: 1,
+      sourcePath,
+      config: getDefaultConfig(),
+      repoRoot: context.tempDir,
+    });
+    upsertPendingTransfer(context.db, artifact.uuid, 'remote-node', 'upload');
+
+    await handleArtifactListCommand('1', { json: true });
+    const payload = JSON.parse(consoleLog.mock.calls.at(-1)?.[0] as string) as Array<{
+      transferState: string | null;
+    }>;
+    expect(payload[0].transferState).toBe('pending');
+  });
+
+  test('text output includes a TRANSFER column header', async () => {
+    const sourcePath = path.join(context.sourceDir, 'hdr.txt');
+    await fs.writeFile(sourcePath, 'hdr');
+    await addArtifact({
+      planId: 1,
+      sourcePath,
+      config: getDefaultConfig(),
+      repoRoot: context.tempDir,
+    });
+
+    await handleArtifactListCommand('1', {});
+    const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(output).toContain('TRANSFER');
+    expect(output).toContain('UUID');
   });
 });
