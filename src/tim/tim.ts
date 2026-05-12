@@ -44,6 +44,7 @@ import { prioritySchema, statusSchema } from './planSchema.js';
 import { CleanupRegistry } from '../common/cleanup_registry.js';
 import { startMcpServer } from './mcp/server.js';
 import { enableAutoClaim } from './assignments/auto_claim.js';
+import { handleCleanupCommand } from './commands/cleanup.js';
 import { runWithLogger } from '../logging.js';
 import { type TunnelAdapter, createTunnelAdapter } from '../logging/tunnel_client.js';
 import { TIM_OUTPUT_SOCKET } from '../logging/tunnel_protocol.js';
@@ -522,6 +523,14 @@ program
     const { handleSetTaskDoneCommand } = await import('./commands/set-task-done.js');
     const planId = parsePlanIdFromCliArg(planIdArg);
     await handleSetTaskDoneCommand(planId, options, command).catch(handleCommandError);
+  });
+
+program
+  .command('cleanup')
+  .description('Run routine tim cleanup tasks')
+  .option('--dry-run', 'Report artifact cleanup without mutating artifacts')
+  .action(async (options, command) => {
+    await handleCleanupCommand(options, command).catch(handleCommandError);
   });
 
 program

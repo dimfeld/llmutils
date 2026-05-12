@@ -251,6 +251,13 @@ export const timConfigSchema = z
       .describe(
         'If true, commands that create branches will fail unless a branchPrefix is configured (via repo config or project setting).'
       ),
+    /** Retention threshold in days for artifact purge cleanup. */
+    artifactRetentionDays: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe('Number of days to retain purge-eligible plan artifacts'),
     /** Local node synchronization configuration. */
     sync: syncConfigSchema
       .optional()

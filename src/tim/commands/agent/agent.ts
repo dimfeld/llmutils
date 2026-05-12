@@ -22,7 +22,7 @@ import {
 } from '../../../logging.js';
 import { executePostApplyCommand } from '../../actions.js';
 import { loadEffectiveConfig, loadGlobalConfigForNotifications } from '../../configLoader.js';
-import { getDefaultConfig } from '../../configSchema.js';
+import { getDefaultConfig, type TimConfig } from '../../configSchema.js';
 import { getDatabase } from '../../db/database.js';
 import { getPlanByUuid } from '../../db/plan.js';
 import { getProjectUuidForId, writePlanSetScalar } from '../../sync/write_router.js';
@@ -74,6 +74,7 @@ import {
 } from '../../workspace/workspace_roundtrip.js';
 import { LifecycleManager } from '../../lifecycle.js';
 import { getSignalExitCode, isShuttingDown, setDeferSignalExit } from '../../shutdown_state.js';
+import { purgeArtifacts } from '../../artifacts/service.js';
 import {
   findLatestPlanFromDb,
   findNextPlanFromDb,
@@ -113,6 +114,17 @@ interface AgentCommandOptions {
   steps?: string;
   applyLessons?: boolean;
   reviewThreadContext?: string;
+}
+
+export function scheduleOpportunisticArtifactPurge(config: TimConfig): void {
+  void purgeArtifacts({
+    olderThanDays: config.artifactRetentionDays,
+    config,
+  }).catch((err) => {
+    warn(
+      `Artifact purge during agent shutdown failed: ${err instanceof Error ? err.message : err}`
+    );
+  });
 }
 
 interface AgentGlobalCliOptions {
@@ -1495,6 +1507,8 @@ export async function timAgent(
     } finally {
       unregisterLifecycleCleanup?.();
     }
+
+    scheduleOpportunisticArtifactPurge(config);
 
     if (summaryEnabled && summaryCollector) {
       summaryCollector.recordExecutionEnd();

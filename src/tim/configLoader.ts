@@ -360,16 +360,21 @@ function assertNotificationCommandConfigured(config: TimConfig): void {
 }
 
 function applyReadTimeDefaults(config: TimConfig): TimConfig {
-  if (!config.sync) {
-    return config;
+  const withTopLevelDefaults: TimConfig = {
+    ...config,
+    artifactRetentionDays: config.artifactRetentionDays ?? 30,
+  };
+
+  if (!withTopLevelDefaults.sync) {
+    return withTopLevelDefaults;
   }
 
   return {
-    ...config,
+    ...withTopLevelDefaults,
     sync: {
-      ...config.sync,
-      disabled: config.sync.disabled ?? false,
-      offline: config.sync.offline ?? false,
+      ...withTopLevelDefaults.sync,
+      disabled: withTopLevelDefaults.sync.disabled ?? false,
+      offline: withTopLevelDefaults.sync.offline ?? false,
     },
   };
 }

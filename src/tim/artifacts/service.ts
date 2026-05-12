@@ -97,6 +97,7 @@ export interface PurgeArtifactOptions extends ArtifactServiceOptions {
 export interface PurgeReport {
   softDeletedRowsHardDeleted: number;
   completedPlanRowsHardDeleted: number;
+  artifactFilesRemoved: number;
   orphanFilesRemoved: number;
   bytesReclaimed: number;
   dryRun: boolean;
@@ -431,6 +432,7 @@ export async function purgeArtifacts(options: PurgeArtifactOptions = {}): Promis
   const report: PurgeReport = {
     softDeletedRowsHardDeleted: 0,
     completedPlanRowsHardDeleted: 0,
+    artifactFilesRemoved: 0,
     orphanFilesRemoved: 0,
     bytesReclaimed: 0,
     dryRun,
@@ -443,6 +445,9 @@ export async function purgeArtifacts(options: PurgeArtifactOptions = {}): Promis
       report.completedPlanRowsHardDeleted += 1;
     }
     const fileSize = await existingFileSize(artifact.storagePath);
+    if (fileSize !== null) {
+      report.artifactFilesRemoved += 1;
+    }
     if (dryRun && fileSize !== null) {
       report.bytesReclaimed += fileSize;
     }

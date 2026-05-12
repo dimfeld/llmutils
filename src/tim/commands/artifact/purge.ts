@@ -28,7 +28,7 @@ export async function handleArtifactPurgeCommand(
 ): Promise<void> {
   const context = await resolveArtifactCommandContext(command);
   const report = await purgeArtifacts({
-    olderThanDays: parseOlderThanDays(options.olderThan),
+    olderThanDays: parseOlderThanDays(options.olderThan) ?? context.config.artifactRetentionDays,
     includeActive: options.includeActive,
     dryRun: options.dryRun,
     config: context.config,
@@ -45,6 +45,7 @@ export async function handleArtifactPurgeCommand(
   log(prefix);
   log(`Soft-deleted rows hard-deleted: ${report.softDeletedRowsHardDeleted}`);
   log(`Completed-plan rows hard-deleted: ${report.completedPlanRowsHardDeleted}`);
+  log(`Artifact files removed: ${report.artifactFilesRemoved}`);
   log(`Orphan files removed: ${report.orphanFilesRemoved}`);
   log(`Bytes reclaimed: ${report.bytesReclaimed}`);
 }

@@ -42,6 +42,7 @@ const {
   executePostApplyCommandSpy,
   trackFileChangesSpy,
   writeOrDisplaySummarySpy,
+  purgeArtifactsSpy,
 } = vi.hoisted(() => ({
   buildExecutorAndLogSpy: vi.fn(() => ({
     execute: vi.fn(async () => ({ success: true })),
@@ -62,6 +63,7 @@ const {
   executePostApplyCommandSpy: vi.fn(async () => true),
   trackFileChangesSpy: vi.fn(async () => {}),
   writeOrDisplaySummarySpy: vi.fn(async () => {}),
+  purgeArtifactsSpy: vi.fn(async () => ({})),
 }));
 
 vi.mock('../../../logging.js', () => ({
@@ -170,6 +172,10 @@ vi.mock('../update-lessons.js', () => ({
 
 vi.mock('../../actions.js', () => ({
   executePostApplyCommand: executePostApplyCommandSpy,
+}));
+
+vi.mock('../../artifacts/service.js', () => ({
+  purgeArtifacts: purgeArtifactsSpy,
 }));
 
 vi.mock('../../plans/find_next.js', () => ({
@@ -302,6 +308,7 @@ describe('timAgent lifecycle integration', () => {
     summaryOrder.length = 0;
     trackFileChangesSpy.mockClear();
     writeOrDisplaySummarySpy.mockClear();
+    purgeArtifactsSpy.mockClear();
 
     // Reset per-test behavior
     findNextActionableItemImpl = () => null;
@@ -436,6 +443,35 @@ describe('timAgent lifecycle integration', () => {
 
     expect(await fs.readFile(shutdownFile, 'utf-8')).toBe('stopped');
     expect(summaryOrder).toEqual(['record-end', 'track-files', 'write-summary', 'close-log']);
+  });
+
+  test('schedules artifact purge during shutdown without blocking summary cleanup', async () => {
+    let releasePurge: (() => void) | undefined;
+    purgeArtifactsSpy.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releasePurge = () => resolve({});
+        })
+    );
+    trackFileChangesSpy.mockImplementation(async () => {
+      expect(purgeArtifactsSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: effectiveConfig,
+          olderThanDays: effectiveConfig.artifactRetentionDays,
+        })
+      );
+      summaryOrder.push('purge-was-nonblocking');
+    });
+    effectiveConfig = {
+      ...effectiveConfig,
+      artifactRetentionDays: 12,
+    };
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(1, { log: true, summary: true, serialTasks: true }, {});
+
+    expect(summaryOrder).toContain('purge-was-nonblocking');
+    releasePurge?.();
   });
 
   test('runs lifecycle shutdown for the batch mode execution path', async () => {
