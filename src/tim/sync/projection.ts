@@ -23,6 +23,11 @@ import {
   type ApplyOperationToPlan,
   type ApplyOperationToTask,
 } from './apply.js';
+import {
+  applyArtifactOperationToDb,
+  resetArtifactProjectionFromCanonical,
+  type ArtifactOperationPayload,
+} from './artifact_operations.js';
 import { BasePlanStateAdapter } from './plan_state_adapter.js';
 import { QUEUE_ACTIVE_STATUSES, sqlPlaceholders, type QueueActiveStatus } from './statuses.js';
 
@@ -209,22 +214,24 @@ export function rebuildPlanProjectionInTransaction(db: Database, planUuid: strin
   }
 
   const adapter = new ProjectionPlanAdapter(db, project, canonical, locallyDeletedPlanUuids);
+  const artifactOperations: Array<SyncOperationEnvelope & { op: ArtifactOperationPayload }> = [];
   for (const row of activeRows) {
     const op = assertValidPayload(JSON.parse(row.payload));
-    applyOperationTo(
-      adapter,
-      {
-        operationUuid: row.operation_uuid,
-        projectUuid: row.project_uuid,
-        originNodeId: row.origin_node_id,
-        localSequence: row.local_sequence,
-        createdAt: row.created_at,
-        targetType: row.target_type as SyncOperationEnvelope['targetType'],
-        targetKey: row.target_key,
-        op,
-      },
-      { cleanupAssignmentsOnStatusChange: false }
-    );
+    const operationEnvelope = {
+      operationUuid: row.operation_uuid,
+      projectUuid: row.project_uuid,
+      originNodeId: row.origin_node_id,
+      localSequence: row.local_sequence,
+      createdAt: row.created_at,
+      targetType: row.target_type as SyncOperationEnvelope['targetType'],
+      targetKey: row.target_key,
+      op,
+    };
+    if (isArtifactOperationPayload(op)) {
+      artifactOperations.push({ ...operationEnvelope, op });
+      continue;
+    }
+    applyOperationTo(adapter, operationEnvelope, { cleanupAssignmentsOnStatusChange: false });
   }
 
   const nextPlan = adapter.getPlan(planUuid);
@@ -242,6 +249,24 @@ export function rebuildPlanProjectionInTransaction(db: Database, planUuid: strin
     dependencies: adapter.getDependencies(planUuid),
     tags: adapter.getTags(planUuid),
   });
+  resetArtifactProjectionFromCanonical(db, planUuid);
+  for (const artifactOperation of artifactOperations) {
+    applyArtifactOperationToDb(db, artifactOperation, {
+      allowMissingPlan: true,
+      projectionOnly: true,
+    });
+  }
+}
+
+function isArtifactOperationPayload(
+  payload: SyncOperationPayload
+): payload is ArtifactOperationPayload {
+  return (
+    payload.type === 'plan_artifact.attach' ||
+    payload.type === 'plan_artifact.soft_delete' ||
+    payload.type === 'plan_artifact.restore' ||
+    payload.type === 'plan_artifact.hard_delete'
+  );
 }
 
 interface PlanState {

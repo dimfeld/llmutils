@@ -395,6 +395,7 @@ describe('sync_tables helpers', () => {
         entity_type: 'plan',
         entity_key: overrides.entityKey ?? 'plan:some-plan-uuid',
         project_uuid: PROJECT_UUID,
+        plan_uuid: null,
         deletion_operation_uuid: crypto.randomUUID(),
         deleted_revision: 5,
         deleted_at: '2026-04-26T00:00:00Z',

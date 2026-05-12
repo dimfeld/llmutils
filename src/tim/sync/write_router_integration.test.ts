@@ -519,6 +519,9 @@ describe('write_router integration: writePlanFile routing modes', () => {
       planFile,
       {
         ...current,
+        simple: false,
+        tdd: false,
+        temp: false,
         baseCommit: 'deadbeef1234567890',
         baseChangeId: 'change-id-local-only',
       },

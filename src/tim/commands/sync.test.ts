@@ -1,15 +1,26 @@
 import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
+import { Database } from 'bun:sqlite';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { clearAllTimCaches } from '../../testing.js';
 import { closeDatabaseForTesting, getDatabase, getDefaultDatabasePath } from '../db/database.js';
+import { getArtifactByUuid } from '../db/artifact.js';
+import {
+  getArtifactTransfer,
+  markTransferSucceeded,
+  upsertPendingTransfer,
+} from '../db/artifact_transfer.js';
+import { runMigrations } from '../db/migrations.js';
 import { getPlansByProject } from '../db/plan.js';
+import { upsertCanonicalPlanInTransaction, upsertProjectionPlanInTransaction } from '../db/plan.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
-import { getProject } from '../db/project.js';
+import { getOrCreateProject, getProject } from '../db/project.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { materializePlan } from '../plan_materialize.js';
 import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.js';
+import { applyOperation } from '../sync/apply.js';
+import { buildArtifactAttachOperation } from '../sync/operations.js';
 
 vi.mock('../../logging.js', () => ({
   log: vi.fn(),
@@ -21,11 +32,37 @@ vi.mock('../../logging.js', () => ({
   sendStructured: vi.fn(),
 }));
 
-import { handleSyncCommand } from './sync.js';
+const runnerMocks = vi.hoisted(() => ({
+  runSyncCatchUpOnce: vi.fn(),
+  drainArtifactTransfersOnce: vi.fn(),
+}));
+
+vi.mock('../sync/runner.js', async () => {
+  const actual = await vi.importActual<typeof import('../sync/runner.js')>('../sync/runner.js');
+  return {
+    ...actual,
+    runSyncCatchUpOnce: runnerMocks.runSyncCatchUpOnce,
+    drainArtifactTransfersOnce: runnerMocks.drainArtifactTransfersOnce,
+  };
+});
+
+import {
+  handleSyncCatchUpCommand,
+  handleSyncCommand,
+  handleSyncPushCommand,
+  handleSyncRunCommand,
+} from './sync.js';
 import { log as mockLogFn, warn as mockWarnFn } from '../../logging.js';
 
 const mockLog = vi.mocked(mockLogFn);
 const mockWarn = vi.mocked(mockWarnFn);
+
+const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
+const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
+const TASK_UUID = '33333333-3333-4333-8333-333333333333';
+const ARTIFACT_UUID = '44444444-4444-4444-8444-444444444444';
+const NODE_ID = 'persistent-a';
+const MAIN_URL = 'http://main.test';
 
 async function initializeGitRepository(repoDir: string): Promise<void> {
   await Bun.$`git init`.cwd(repoDir).quiet();
@@ -36,6 +73,7 @@ describe('tim sync command', () => {
   let tempDir: string;
   let repoDir: string;
   let originalCwd: string;
+  let originalXdgDataHome: string | undefined;
 
   const makeCommand = () => ({
     parent: {
@@ -58,17 +96,127 @@ describe('tim sync command', () => {
     await fs.mkdir(repoDir, { recursive: true });
     await initializeGitRepository(repoDir);
     process.chdir(repoDir);
+    originalXdgDataHome = process.env.XDG_DATA_HOME;
+    process.env.XDG_DATA_HOME = path.join(tempDir, 'data');
 
     vi.clearAllMocks();
+    runnerMocks.runSyncCatchUpOnce.mockReset();
+    runnerMocks.drainArtifactTransfersOnce.mockReset();
+    runnerMocks.runSyncCatchUpOnce.mockResolvedValue(undefined);
+    runnerMocks.drainArtifactTransfersOnce.mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
     process.chdir(originalCwd);
+    if (originalXdgDataHome === undefined) {
+      delete process.env.XDG_DATA_HOME;
+    } else {
+      process.env.XDG_DATA_HOME = originalXdgDataHome;
+    }
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
     vi.clearAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('sync catch-up drains pending artifact downloads before returning', async () => {
+    const db = createInMemorySyncDb();
+    seedSyncPlan(db);
+    const transferNodeId = `sync-server:${MAIN_URL}`;
+    runnerMocks.runSyncCatchUpOnce.mockImplementation(async ({ db: runnerDb }) => {
+      await attachArtifactMetadata(runnerDb);
+      upsertPendingTransfer(runnerDb, ARTIFACT_UUID, transferNodeId, 'download');
+    });
+    runnerMocks.drainArtifactTransfersOnce.mockImplementation(async ({ db: runnerDb }) => {
+      markTransferSucceeded(runnerDb, ARTIFACT_UUID, transferNodeId, 'download');
+    });
+
+    await handleSyncCatchUpCommand({} as Record<string, never>, makeCommand() as any, {
+      db,
+      config: {
+        sync: {
+          role: 'persistent',
+          nodeId: NODE_ID,
+          mainUrl: MAIN_URL,
+          nodeToken: 'token',
+        },
+      },
+    });
+
+    expect(runnerMocks.runSyncCatchUpOnce).toHaveBeenCalledTimes(1);
+    expect(runnerMocks.drainArtifactTransfersOnce).toHaveBeenCalledTimes(1);
+    expect(getArtifactTransfer(db, ARTIFACT_UUID, transferNodeId, 'download')).toMatchObject({
+      status: 'succeeded',
+    });
+    expect(mockLog).toHaveBeenCalledWith('Sync catch-up completed.');
+  });
+
+  test('one-shot sync commands discover missing artifact upload transfers before draining', async () => {
+    const commands: Array<{
+      name: string;
+      expectedLog: string;
+      run: (db: Database) => Promise<void>;
+    }> = [
+      {
+        name: 'push',
+        expectedLog: 'Sync push completed.',
+        run: (db) =>
+          handleSyncPushCommand({}, makeCommand() as any, {
+            db,
+            config: persistentSyncConfig(),
+          }),
+      },
+      {
+        name: 'run',
+        expectedLog: 'Sync run completed.',
+        run: (db) =>
+          handleSyncRunCommand({}, makeCommand() as any, {
+            db,
+            config: persistentSyncConfig(),
+          }),
+      },
+      {
+        name: 'catch-up',
+        expectedLog: 'Sync catch-up completed.',
+        run: (db) =>
+          handleSyncCatchUpCommand({} as Record<string, never>, makeCommand() as any, {
+            db,
+            config: persistentSyncConfig(),
+          }),
+      },
+    ];
+
+    for (const commandCase of commands) {
+      const db = createInMemorySyncDb();
+      seedSyncPlan(db);
+      await attachArtifactMetadata(db);
+      const artifact = getArtifactByUuid(db, ARTIFACT_UUID);
+      expect(artifact, commandCase.name).toBeDefined();
+      await fs.mkdir(path.dirname(artifact!.storagePath), { recursive: true });
+      await fs.writeFile(artifact!.storagePath, 'artifact-bytes', 'utf8');
+
+      const transferNodeId = `sync-server:${MAIN_URL}`;
+      expect(getArtifactTransfer(db, ARTIFACT_UUID, transferNodeId, 'upload')).toBeUndefined();
+
+      runnerMocks.runSyncCatchUpOnce.mockResolvedValueOnce(undefined);
+      runnerMocks.drainArtifactTransfersOnce.mockImplementationOnce(async ({ db: runnerDb }) => {
+        expect(
+          getArtifactTransfer(runnerDb, ARTIFACT_UUID, transferNodeId, 'upload'),
+          commandCase.name
+        ).toMatchObject({
+          status: 'pending',
+        });
+      });
+
+      await commandCase.run(db);
+
+      expect(runnerMocks.drainArtifactTransfersOnce).toHaveBeenCalledTimes(1);
+      expect(mockLog).toHaveBeenCalledWith(commandCase.expectedLog);
+      runnerMocks.runSyncCatchUpOnce.mockClear();
+      runnerMocks.drainArtifactTransfersOnce.mockClear();
+      mockLog.mockClear();
+    }
   });
 
   test('syncs all materialized plans back into SQLite', async () => {
@@ -347,3 +495,59 @@ tasks: []
     expect(mockLog).toHaveBeenCalledWith('Synced 1 materialized plan (1 error).');
   });
 });
+
+function createInMemorySyncDb(): Database {
+  const db = new Database(':memory:');
+  runMigrations(db);
+  return db;
+}
+
+function seedSyncPlan(db: Database): void {
+  const project = getOrCreateProject(db, 'github.com__example__repo', {
+    uuid: PROJECT_UUID,
+    highestPlanId: 10,
+  });
+  const plan = {
+    uuid: PLAN_UUID,
+    planId: 1,
+    title: 'Artifact catch-up plan',
+    status: 'pending',
+    revision: 1,
+    tasks: [{ uuid: TASK_UUID, title: 'Task one', description: 'Do it' }],
+    forceOverwrite: true,
+  };
+  upsertCanonicalPlanInTransaction(db, project.id, {
+    ...plan,
+    tasks: plan.tasks.map((task) => ({ ...task, revision: 1 })),
+  });
+  upsertProjectionPlanInTransaction(db, project.id, plan);
+}
+
+function persistentSyncConfig() {
+  return {
+    sync: {
+      role: 'persistent',
+      nodeId: NODE_ID,
+      mainUrl: MAIN_URL,
+      nodeToken: 'token',
+    },
+  };
+}
+
+async function attachArtifactMetadata(db: Database): Promise<void> {
+  applyOperation(
+    db,
+    await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'catch-up.txt',
+        mimeType: 'text/plain',
+        size: 12,
+        sha256: 'catch-up-hash',
+      },
+      { originNodeId: 'remote-node', localSequence: 1 }
+    )
+  );
+}

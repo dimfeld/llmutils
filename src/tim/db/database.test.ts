@@ -12,6 +12,8 @@ import {
   DATABASE_FILENAME,
 } from './database.js';
 import { runMigrations } from './migrations.js';
+import { upsertCanonicalPlanInTransaction, upsertProjectionPlanInTransaction } from './plan.js';
+import { getOrCreateProject } from './project.js';
 
 async function createTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -349,7 +351,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(33);
+    expect(version?.version).toBe(35);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
 
@@ -389,6 +391,9 @@ describe('tim db/database', () => {
     expect(tables).toContain('sync_conflict');
     expect(tables).toContain('sync_tombstone');
     expect(tables).toContain('sync_sequence');
+    expect(tables).toContain('plan_artifact');
+    expect(tables).toContain('plan_artifact_canonical');
+    expect(tables).toContain('artifact_transfer');
     expect(tables).not.toContain(['sync', 'pending', 'rollback'].join('_'));
 
     const planColumns = db
@@ -403,6 +408,12 @@ describe('tim db/database', () => {
     expect(planColumns).toContain('note');
     expect(planColumns).toContain('revision');
     expect(planColumns).not.toContain('filename');
+
+    const tombstoneColumns = db
+      .query<{ name: string }, []>("PRAGMA table_info('sync_tombstone')")
+      .all()
+      .map((row) => row.name);
+    expect(tombstoneColumns).toContain('plan_uuid');
 
     const projectColumns = db
       .query<{ name: string }, []>("PRAGMA table_info('project')")
@@ -483,6 +494,11 @@ describe('tim db/database', () => {
     expect(indices).toContain('idx_sync_sequence_project_sequence');
     expect(indices).toContain('idx_sync_sequence_bootstrap_target_unique');
     expect(indices).toContain('idx_sync_sequence_operation_target_unique');
+    expect(indices).toContain('idx_plan_artifact_plan_deleted');
+    expect(indices).toContain('idx_plan_artifact_created_at');
+    expect(indices).toContain('idx_plan_artifact_canonical_plan_deleted');
+    expect(indices).toContain('idx_plan_artifact_canonical_created_at');
+    expect(indices).toContain('idx_sync_tombstone_plan_artifact_plan');
 
     db.close(false);
   });
@@ -499,7 +515,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(33);
+    expect(version?.version).toBe(35);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
     const versionRowCount = db2
@@ -631,7 +647,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(33);
+      expect(schemaVersion?.version).toBe(35);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -782,7 +798,7 @@ describe('tim db/database', () => {
           'SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1'
         )
         .get();
-      expect(schemaVersion?.version).toBe(33);
+      expect(schemaVersion?.version).toBe(35);
 
       const checkRows = db
         .query<{ count: number }, []>(
@@ -1094,7 +1110,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(33);
+      ).toBe(35);
       expect(db.query<{ uuid: string }, []>('SELECT uuid FROM project').get()?.uuid).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
       );
@@ -1150,6 +1166,9 @@ describe('tim db/database', () => {
         DROP TABLE IF EXISTS plan_dependency_canonical;
         DROP TABLE IF EXISTS task_canonical;
         DROP TABLE IF EXISTS plan_canonical;
+        DROP TABLE IF EXISTS artifact_transfer;
+        DROP TABLE IF EXISTS plan_artifact_canonical;
+        DROP TABLE IF EXISTS plan_artifact;
 
         DELETE FROM plan_tag;
         DELETE FROM plan_dependency;
@@ -1262,6 +1281,79 @@ describe('tim db/database', () => {
     }
   });
 
+  test('runMigrations v35 backfills canonical artifact rows from projection artifacts', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db = new Database(dbPath);
+
+    try {
+      runMigrations(db);
+      const project = getOrCreateProject(db, 'repo-v35-artifacts', {
+        uuid: '11111111-1111-4111-8111-111111111111',
+      });
+      upsertCanonicalPlanInTransaction(db, project.id, {
+        uuid: '22222222-2222-4222-8222-222222222222',
+        planId: 1,
+        title: 'Artifact plan',
+        status: 'pending',
+        revision: 1,
+        forceOverwrite: true,
+      });
+      upsertProjectionPlanInTransaction(db, project.id, {
+        uuid: '22222222-2222-4222-8222-222222222222',
+        planId: 1,
+        title: 'Artifact plan',
+        status: 'pending',
+        revision: 1,
+        forceOverwrite: true,
+      });
+      db.prepare(
+        `
+          INSERT INTO plan_artifact (
+            uuid, plan_uuid, project_uuid, filename, mime_type, size, sha256,
+            message, storage_path, deleted_at, created_at, updated_at, revision
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      ).run(
+        '33333333-3333-4333-8333-333333333333',
+        '22222222-2222-4222-8222-222222222222',
+        '11111111-1111-4111-8111-111111111111',
+        'trace.log',
+        'text/plain',
+        12,
+        'abc123',
+        'trace',
+        '/tmp/trace.log',
+        null,
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-01T00:00:00.000Z',
+        4
+      );
+      db.exec(`
+        DROP TABLE plan_artifact_canonical;
+        DELETE FROM schema_version;
+        INSERT INTO schema_version (version, import_completed, bootstrap_completed)
+          VALUES (34, 1, 0);
+      `);
+
+      runMigrations(db);
+
+      expect(
+        db
+          .query<
+            { uuid: string; plan_uuid: string; revision: number },
+            []
+          >('SELECT uuid, plan_uuid, revision FROM plan_artifact_canonical')
+          .get()
+      ).toEqual({
+        uuid: '33333333-3333-4333-8333-333333333333',
+        plan_uuid: '22222222-2222-4222-8222-222222222222',
+        revision: 4,
+      });
+    } finally {
+      db.close(false);
+    }
+  });
+
   test('runMigrations v32 skips orphan legacy child rows while backfilling canonical tables', () => {
     const dbPath = path.join(tempDir, DATABASE_FILENAME);
     const db = new Database(dbPath);
@@ -1274,6 +1366,9 @@ describe('tim db/database', () => {
         DROP TABLE IF EXISTS plan_dependency_canonical;
         DROP TABLE IF EXISTS task_canonical;
         DROP TABLE IF EXISTS plan_canonical;
+        DROP TABLE IF EXISTS artifact_transfer;
+        DROP TABLE IF EXISTS plan_artifact_canonical;
+        DROP TABLE IF EXISTS plan_artifact;
 
         DELETE FROM plan_tag;
         DELETE FROM plan_dependency;
@@ -1524,16 +1619,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(33);
-
-      // Migration v33 must have dropped sync_pending_rollback
-      const tables33 = db
-        .query<{ name: string }, []>(
-          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        )
-        .all()
-        .map((r) => r.name);
-      expect(tables33).not.toContain('sync_pending_rollback');
+      ).toBe(35);
 
       const syncOperationColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('sync_operation')")
@@ -1563,58 +1649,6 @@ describe('tim db/database', () => {
         { operation_uuid: 'op-promote', plan_uuid: sourcePlanUuid, role: 'source' },
         { operation_uuid: 'op-promote', plan_uuid: newPlanUuid, role: 'target' },
       ]);
-    } finally {
-      db.close(false);
-    }
-  });
-
-  test('runMigrations v32→v33 drops sync_pending_rollback table', () => {
-    const dbPath = path.join(tempDir, DATABASE_FILENAME);
-    const db = new Database(dbPath);
-
-    try {
-      // Simulate a v32 database that has sync_pending_rollback populated
-      db.exec(`
-        CREATE TABLE schema_version (
-          version INTEGER NOT NULL DEFAULT 0,
-          import_completed INTEGER NOT NULL DEFAULT 0
-        );
-        INSERT INTO schema_version (version, import_completed) VALUES (32, 1);
-
-        CREATE TABLE sync_pending_rollback (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          entity_type TEXT NOT NULL,
-          entity_key TEXT NOT NULL,
-          created_at TEXT NOT NULL
-        );
-        INSERT INTO sync_pending_rollback (entity_type, entity_key, created_at)
-          VALUES ('plan', 'plan:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '2026-01-01T00:00:00.000Z');
-      `);
-
-      // Verify the table exists before migration
-      const tablesBefore = db
-        .query<{ name: string }, []>(
-          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        )
-        .all()
-        .map((r) => r.name);
-      expect(tablesBefore).toContain('sync_pending_rollback');
-
-      runMigrations(db);
-
-      const version = db
-        .query<{ version: number }, []>('SELECT version FROM schema_version')
-        .get()?.version;
-      expect(version).toBe(33);
-
-      // The table must be gone after migration
-      const tablesAfter = db
-        .query<{ name: string }, []>(
-          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        )
-        .all()
-        .map((r) => r.name);
-      expect(tablesAfter).not.toContain('sync_pending_rollback');
     } finally {
       db.close(false);
     }

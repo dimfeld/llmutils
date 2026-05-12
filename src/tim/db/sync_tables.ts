@@ -66,6 +66,7 @@ export interface SyncTombstoneRow {
   entity_type: string;
   entity_key: string;
   project_uuid: string;
+  plan_uuid: string | null;
   deletion_operation_uuid: string;
   deleted_revision: number | null;
   deleted_at: string;
@@ -427,13 +428,15 @@ export function upsertSyncTombstone(db: Database, tombstone: SyncTombstoneRow): 
           entity_type,
           entity_key,
           project_uuid,
+          plan_uuid,
           deletion_operation_uuid,
           deleted_revision,
           deleted_at,
           origin_node_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(entity_type, entity_key) DO UPDATE SET
           project_uuid = excluded.project_uuid,
+          plan_uuid = excluded.plan_uuid,
           deletion_operation_uuid = excluded.deletion_operation_uuid,
           deleted_revision = excluded.deleted_revision,
           deleted_at = excluded.deleted_at,
@@ -443,6 +446,7 @@ export function upsertSyncTombstone(db: Database, tombstone: SyncTombstoneRow): 
       nextTombstone.entity_type,
       nextTombstone.entity_key,
       nextTombstone.project_uuid,
+      nextTombstone.plan_uuid,
       nextTombstone.deletion_operation_uuid,
       nextTombstone.deleted_revision,
       nextTombstone.deleted_at,

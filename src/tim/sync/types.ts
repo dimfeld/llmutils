@@ -1,5 +1,6 @@
 import * as z from 'zod/v4';
 import { randomUUID } from 'node:crypto';
+import { MAX_ARTIFACT_BYTES } from '../artifacts/constants.js';
 import { prioritySchema, statusSchema } from '../planSchema.js';
 import {
   PROJECT_SETTING_NAME_PATTERN,
@@ -15,7 +16,8 @@ import { SyncValidationError } from './errors.js';
 /**
  * Sync operation conventions:
  * - `envelope.projectUuid` is the canonical project identity for every operation.
- * - Payload-level `projectUuid` exists only on `project_setting.*` operations and
+ * - Several payload types (`project.*`, `project_setting.*`, `plan.promote_task`,
+ *   `plan.set_parent`, `plan_artifact.*`) carry a payload-level `projectUuid` that
  *   must match the envelope-level project UUID.
  * - Operation UUIDs are v4 UUIDs generated locally with `crypto.randomUUID()`.
  * - Entity UUIDs (project/plan/task) are v4 in current migrations, but schemas
@@ -365,6 +367,41 @@ export const SyncPlanPromoteTaskPayloadSchema = z.object({
 });
 export type SyncPlanPromoteTaskPayload = z.infer<typeof SyncPlanPromoteTaskPayloadSchema>;
 
+const SyncArtifactBasePayloadShape = {
+  projectUuid: SyncUuidSchema,
+  planUuid: SyncUuidSchema,
+  artifactUuid: SyncUuidSchema,
+};
+
+export const SyncArtifactAttachPayloadSchema = z.object({
+  type: z.literal('plan_artifact.attach'),
+  ...SyncArtifactBasePayloadShape,
+  filename: z.string().min(1),
+  mimeType: z.string().min(1),
+  size: z.number().int().nonnegative().max(MAX_ARTIFACT_BYTES),
+  sha256: z.string().min(1),
+  message: z.string().optional(),
+});
+export type SyncArtifactAttachPayload = z.infer<typeof SyncArtifactAttachPayloadSchema>;
+
+export const SyncArtifactSoftDeletePayloadSchema = z.object({
+  type: z.literal('plan_artifact.soft_delete'),
+  ...SyncArtifactBasePayloadShape,
+});
+export type SyncArtifactSoftDeletePayload = z.infer<typeof SyncArtifactSoftDeletePayloadSchema>;
+
+export const SyncArtifactRestorePayloadSchema = z.object({
+  type: z.literal('plan_artifact.restore'),
+  ...SyncArtifactBasePayloadShape,
+});
+export type SyncArtifactRestorePayload = z.infer<typeof SyncArtifactRestorePayloadSchema>;
+
+export const SyncArtifactHardDeletePayloadSchema = z.object({
+  type: z.literal('plan_artifact.hard_delete'),
+  ...SyncArtifactBasePayloadShape,
+});
+export type SyncArtifactHardDeletePayload = z.infer<typeof SyncArtifactHardDeletePayloadSchema>;
+
 export const SyncOperationPayloadSchema = z.discriminatedUnion('type', [
   SyncPlanCreatePayloadSchema,
   SyncPlanSetScalarPayloadSchema,
@@ -385,6 +422,10 @@ export const SyncOperationPayloadSchema = z.discriminatedUnion('type', [
   SyncProjectSettingDeletePayloadSchema,
   SyncPlanSetParentPayloadSchema,
   SyncPlanPromoteTaskPayloadSchema,
+  SyncArtifactAttachPayloadSchema,
+  SyncArtifactSoftDeletePayloadSchema,
+  SyncArtifactRestorePayloadSchema,
+  SyncArtifactHardDeletePayloadSchema,
 ]);
 export type SyncOperationPayload = z.infer<typeof SyncOperationPayloadSchema>;
 
@@ -437,12 +478,7 @@ export const SyncOperationEnvelopeSchema = z
         message: `targetKey must match operation target key ${expectedTarget.targetKey}`,
       });
     }
-    if (
-      (envelope.op.type === 'project.delete' ||
-        envelope.op.type === 'project_setting.set' ||
-        envelope.op.type === 'project_setting.delete') &&
-      envelope.projectUuid !== envelope.op.projectUuid
-    ) {
+    if ('projectUuid' in envelope.op && envelope.projectUuid !== envelope.op.projectUuid) {
       ctx.addIssue({
         code: 'custom',
         path: ['projectUuid'],
@@ -523,6 +559,10 @@ export const SyncOperationTypeSchema = z.enum([
   'project_setting.delete',
   'plan.set_parent',
   'plan.promote_task',
+  'plan_artifact.attach',
+  'plan_artifact.soft_delete',
+  'plan_artifact.restore',
+  'plan_artifact.hard_delete',
 ]);
 export type SyncOperationType = SyncOperationPayload['type'];
 
@@ -555,6 +595,10 @@ export function deriveTargetKey(op: SyncOperationPayload): SyncOperationTarget {
     case 'plan.remove_list_item':
     case 'plan.delete':
     case 'plan.set_parent':
+    case 'plan_artifact.attach':
+    case 'plan_artifact.soft_delete':
+    case 'plan_artifact.restore':
+    case 'plan_artifact.hard_delete':
       return { targetType: 'plan', targetKey: planKey(op.planUuid) };
     case 'plan.promote_task':
       return { targetType: 'plan', targetKey: planKey(op.newPlanUuid) };

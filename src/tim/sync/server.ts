@@ -1,5 +1,14 @@
 import type { Database } from 'bun:sqlite';
+import { createHash, randomUUID } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as fsp from 'node:fs/promises';
+import * as path from 'node:path';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import type { SyncAllowedNodeConfig } from '../configSchema.js';
+import { MAX_ARTIFACT_BYTES } from '../artifacts/constants.js';
+import { artifactFileExists, resolveArtifactPath } from '../artifacts/storage.js';
+import { getArtifactByUuid } from '../db/artifact.js';
 import { insertTimNodeIfMissing, updateTimNodeCursor } from '../db/sync_tables.js';
 import {
   getPlanByUuid,
@@ -14,6 +23,10 @@ import { verifyNodeToken } from './auth.js';
 import { applyBatch, applyOperation, type ApplyOperationResult } from './apply.js';
 import { SyncFifoGapError, SyncValidationError } from './errors.js';
 import type { CanonicalSnapshot } from './snapshots.js';
+import {
+  listArtifactSnapshotsForPlan,
+  listArtifactTombstonesForPlan,
+} from './artifact_operations.js';
 import type { SyncOperationEnvelope } from './types.js';
 import { bootstrapSyncMetadata } from './bootstrap.js';
 import {
@@ -264,7 +277,11 @@ async function handleHttpRequest(
     }
     const body = bodyResult.value;
     if (body && typeof body === 'object' && 'batch' in body) {
-      const frame = SyncBatchFrameSchema.parse({ type: 'batch', ...(body as object) });
+      const parsedFrame = SyncBatchFrameSchema.safeParse({ type: 'batch', ...(body as object) });
+      if (!parsedFrame.success) {
+        return jsonResponse({ error: 'Invalid sync batch frame' }, { status: 400 });
+      }
+      const frame = parsedFrame.data;
       const originError = validateOperationOrigins(frame.batch.operations, nodeId);
       if (originError || frame.batch.originNodeId !== nodeId) {
         return jsonResponse(
@@ -279,7 +296,11 @@ async function handleHttpRequest(
         currentSequenceId: getCurrentSequenceId(options.db),
       });
     }
-    const frame = SyncOpBatchFrameSchema.parse({ type: 'op_batch', ...(body as object) });
+    const parsedFrame = SyncOpBatchFrameSchema.safeParse({ type: 'op_batch', ...(body as object) });
+    if (!parsedFrame.success) {
+      return jsonResponse({ error: 'Invalid sync operation frame' }, { status: 400 });
+    }
+    const frame = parsedFrame.data;
     const originError = validateOperationOrigins(frame.operations, nodeId);
     if (originError) {
       return jsonResponse({ error: originError }, { status: 400 });
@@ -289,6 +310,10 @@ async function handleHttpRequest(
       results,
       currentSequenceId: getCurrentSequenceId(options.db),
     });
+  }
+
+  if (url.pathname.startsWith('/internal/sync/artifacts/')) {
+    return handleArtifactHttpRequest(options, request, url);
   }
 
   if (url.pathname === '/internal/sync/snapshots') {
@@ -326,6 +351,157 @@ async function handleHttpRequest(
   }
 
   return new Response('Not Found\n', { status: 404 });
+}
+
+async function handleArtifactHttpRequest(
+  options: StartSyncServerOptions,
+  request: Request,
+  url: URL
+): Promise<Response> {
+  const artifactUuid = parseArtifactUuidFromPath(url.pathname);
+  if (!artifactUuid) {
+    return jsonResponse({ error: 'Invalid artifact UUID' }, { status: 400 });
+  }
+
+  switch (request.method) {
+    case 'PUT':
+      return handleArtifactPut(options, request, artifactUuid);
+    case 'GET':
+      return handleArtifactGet(options, artifactUuid);
+    default:
+      return new Response('Method Not Allowed\n', { status: 405, headers: { Allow: 'GET, PUT' } });
+  }
+}
+
+async function handleArtifactPut(
+  options: StartSyncServerOptions,
+  request: Request,
+  artifactUuid: string
+): Promise<Response> {
+  const artifact = getArtifactByUuid(options.db, artifactUuid);
+  if (!artifact) {
+    return jsonResponse({ error: 'not_found' }, { status: 404 });
+  }
+  if (!request.body) {
+    return jsonResponse({ error: 'missing_body' }, { status: 400 });
+  }
+
+  const storagePath = artifactStoragePath(artifact);
+  await fsp.mkdir(path.dirname(storagePath), { recursive: true });
+  const tempPath = `${storagePath}.tmp-${randomUUID()}`;
+  try {
+    const result = await writeRequestBodyWithHash(request.body, tempPath);
+    if (result.size !== artifact.size) {
+      await removeTempFile(tempPath);
+      return jsonResponse(
+        { error: 'size_mismatch', expected: artifact.size, received: result.size },
+        { status: 409 }
+      );
+    }
+    if (result.sha256 !== artifact.sha256) {
+      await removeTempFile(tempPath);
+      return jsonResponse(
+        { error: 'sha256_mismatch', expected: artifact.sha256, received: result.sha256 },
+        { status: 409 }
+      );
+    }
+
+    await fsp.rename(tempPath, storagePath);
+    return jsonResponse({ ok: true, size: result.size, sha256: result.sha256 });
+  } catch (err) {
+    await removeTempFile(tempPath);
+    if (err instanceof ArtifactBodyTooLargeError) {
+      return jsonResponse(
+        { error: 'artifact_too_large', maxBytes: MAX_ARTIFACT_BYTES },
+        { status: 413 }
+      );
+    }
+    throw err;
+  }
+}
+
+async function handleArtifactGet(
+  options: StartSyncServerOptions,
+  artifactUuid: string
+): Promise<Response> {
+  const artifact = getArtifactByUuid(options.db, artifactUuid);
+  if (!artifact) {
+    return jsonResponse({ error: 'not_found' }, { status: 404 });
+  }
+
+  const storagePath = artifactStoragePath(artifact);
+  if (!(await artifactFileExists(storagePath))) {
+    return jsonResponse({ error: 'file_missing' }, { status: 409 });
+  }
+
+  return new Response(Bun.file(storagePath), {
+    headers: {
+      'content-type': artifact.mimeType,
+      'content-length': String(artifact.size),
+      'x-artifact-sha256': artifact.sha256,
+    },
+  });
+}
+
+function parseArtifactUuidFromPath(pathname: string): string | null {
+  const prefix = '/internal/sync/artifacts/';
+  if (!pathname.startsWith(prefix)) {
+    return null;
+  }
+  const artifactUuid = pathname.slice(prefix.length);
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(artifactUuid)
+  ) {
+    return null;
+  }
+  return artifactUuid;
+}
+
+function artifactStoragePath(artifact: {
+  projectUuid: string;
+  planUuid: string;
+  uuid: string;
+  filename: string;
+}): string {
+  return resolveArtifactPath(
+    artifact.projectUuid,
+    artifact.planUuid,
+    artifact.uuid,
+    path.extname(artifact.filename).toLowerCase()
+  );
+}
+
+class ArtifactBodyTooLargeError extends Error {}
+
+async function writeRequestBodyWithHash(
+  body: ReadableStream<Uint8Array>,
+  tempPath: string
+): Promise<{ size: number; sha256: string }> {
+  const hash = createHash('sha256');
+  let size = 0;
+  const hashAndLimit = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      size += chunk.length;
+      if (size > MAX_ARTIFACT_BYTES) {
+        callback(new ArtifactBodyTooLargeError('Artifact request body exceeds maximum size'));
+        return;
+      }
+      hash.update(chunk);
+      callback(null, chunk);
+    },
+  });
+  await pipeline(Readable.fromWeb(body as never), hashAndLimit, fs.createWriteStream(tempPath));
+  return { size, sha256: hash.digest('hex') };
+}
+
+async function removeTempFile(tempPath: string): Promise<void> {
+  try {
+    await fsp.unlink(tempPath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw err;
+    }
+  }
 }
 
 type JsonBodyResult = { ok: true; value: unknown } | { ok: false; status: number; error: string };
@@ -764,6 +940,8 @@ function loadPlanSnapshot(db: Database, planUuid: string): CanonicalSnapshot | n
         (dependency) => dependency.depends_on_uuid
       ),
       tags: getPlanTagsByUuid(db, planUuid).map((tag) => tag.tag),
+      artifacts: listArtifactSnapshotsForPlan(db, planUuid),
+      artifactTombstones: listArtifactTombstonesForPlan(db, planUuid),
     },
   };
 }

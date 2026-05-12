@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { getArtifactTransfer } from '../db/artifact_transfer.js';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject } from '../db/project.js';
 import {
@@ -15,8 +16,10 @@ import {
   addPlanDependencyOperation,
   addPlanTagOperation,
   addPlanTaskOperation,
+  buildArtifactAttachOperation,
   promotePlanTaskOperation,
 } from './operations.js';
+import { applyOperation } from './apply.js';
 import {
   enqueueBatch,
   enqueueOperation,
@@ -33,6 +36,7 @@ import type { SyncClientFrame, SyncSnapshotRequestFrame } from './ws_protocol.js
 const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
 const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
 const TASK_UUID = '33333333-3333-4333-8333-333333333333';
+const ARTIFACT_UUID = '55555555-5555-4555-8555-555555555555';
 const UNKNOWN_PLAN_UUID = '44444444-4444-4444-8444-444444444444';
 const NODE_A = 'persistent-a';
 const TOKEN = 'secret-token';
@@ -615,6 +619,77 @@ describe('sync WebSocket client', () => {
     ).toBe(0);
   });
 
+  test('successful WebSocket artifact attach flush enqueues an upload transfer', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    seedPlan(localDb);
+    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
+    const server = startServer(mainDb);
+    const client = createSyncClient({
+      db: localDb,
+      serverUrl: `http://${server.hostname}:${server.port}`,
+      nodeId: NODE_A,
+      token: TOKEN,
+      syncServerNodeId: 'main-node',
+      reconnect: false,
+    });
+    clients.push(client);
+    client.start();
+    await waitFor(() => client.getStatus().connected);
+
+    const op = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'ws-capture.png',
+        mimeType: 'image/png',
+        size: 128,
+        sha256: 'ws-artifact-hash',
+      },
+      { originNodeId: NODE_A, localSequence: 999 }
+    );
+    enqueueOperation(localDb, op);
+
+    await waitFor(() => {
+      const row = getArtifactTransfer(localDb, ARTIFACT_UUID, 'main-node', 'upload');
+      return row?.status === 'pending' || row?.status === 'succeeded';
+    });
+    expect(getArtifactTransfer(localDb, ARTIFACT_UUID, 'main-node', 'upload')).toMatchObject({
+      direction: 'upload',
+    });
+  });
+
+  test('WebSocket catch-up invalidation enqueues a download transfer for attached artifacts', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    seedPlan(localDb);
+    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
+    await attachArtifactMetadata(mainDb);
+    const server = startServer(mainDb);
+    const client = createSyncClient({
+      db: localDb,
+      serverUrl: `http://${server.hostname}:${server.port}`,
+      nodeId: NODE_A,
+      token: TOKEN,
+      syncServerNodeId: 'main-node',
+      reconnect: false,
+    });
+    clients.push(client);
+    client.start();
+
+    await waitFor(() => {
+      const row = getArtifactTransfer(localDb, ARTIFACT_UUID, 'main-node', 'download');
+      return row?.status === 'pending';
+    });
+    expect(getArtifactTransfer(localDb, ARTIFACT_UUID, 'main-node', 'download')).toMatchObject({
+      direction: 'download',
+      status: 'pending',
+    });
+  });
+
   test('rowsToFlushFrames refuses to send a partial batch subset', async () => {
     const localDb = createDb();
     seedPlan(localDb);
@@ -827,6 +902,24 @@ function seedPlan(db: Database): void {
     tasks: plan.tasks.map((task) => ({ ...task, revision: 1 })),
   });
   upsertProjectionPlanInTransaction(db, project.id, plan);
+}
+
+async function attachArtifactMetadata(db: Database): Promise<void> {
+  applyOperation(
+    db,
+    await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'ws-capture.png',
+        mimeType: 'image/png',
+        size: 128,
+        sha256: 'ws-artifact-hash',
+      },
+      { originNodeId: 'artifact-origin', localSequence: 1 }
+    )
+  );
 }
 
 function startServer(db: Database, port = 0): SyncServerHandle {

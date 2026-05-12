@@ -1,6 +1,10 @@
 import { Database } from 'bun:sqlite';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { getAssignment, importAssignment } from '../db/assignment.js';
+import { MAX_ARTIFACT_BYTES } from '../artifacts/constants.js';
+import { getArtifactByUuid } from '../db/artifact.js';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, type Project } from '../db/project.js';
 import {
@@ -28,6 +32,10 @@ import {
   addPlanListItemOperation,
   addPlanTagOperation,
   addPlanTaskOperation,
+  buildArtifactAttachOperation,
+  buildArtifactHardDeleteOperation,
+  buildArtifactRestoreOperation,
+  buildArtifactSoftDeleteOperation,
   createPlanOperation,
   deletePlanOperation,
   deleteProjectOperation,
@@ -53,6 +61,7 @@ const TASK_UUID = '55555555-5555-4555-8555-555555555555';
 const TASK_UUID_2 = '66666666-6666-4666-8666-666666666666';
 const TASK_UUID_3 = '77777777-7777-4777-8777-777777777777';
 const TASK_UUID_4 = '88888888-8888-4888-8888-888888888888';
+const ARTIFACT_UUID = '99999999-9999-4999-8999-999999999999';
 const NODE_A = 'node-a';
 const NODE_B = 'node-b';
 
@@ -143,6 +152,633 @@ describe('project.delete', () => {
     expect(loadCanonicalSnapshot(db, `project:${PROJECT_UUID}`)).toMatchObject({
       type: 'project_deleted',
       projectUuid: PROJECT_UUID,
+    });
+  });
+});
+
+describe('plan_artifact operations', () => {
+  test('attach inserts artifact metadata and invalidates the owning plan', async () => {
+    seedPlan();
+
+    const operation = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'screenshot.PNG',
+        mimeType: 'image/png',
+        size: 1234,
+        sha256: 'abc123',
+        message: 'before fix',
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    const result = applyOperation(db, operation);
+    const artifact = getArtifactByUuid(db, ARTIFACT_UUID);
+
+    expect(result.status).toBe('applied');
+    expect(result.invalidations).toEqual([`plan:${PLAN_UUID}`]);
+    expect(artifact).toMatchObject({
+      uuid: ARTIFACT_UUID,
+      planUuid: PLAN_UUID,
+      projectUuid: PROJECT_UUID,
+      filename: 'screenshot.PNG',
+      mimeType: 'image/png',
+      size: 1234,
+      sha256: 'abc123',
+      message: 'before fix',
+      deletedAt: null,
+      revision: 1,
+    });
+    expect(artifact?.storagePath).toContain(`${ARTIFACT_UUID}.png`);
+    expect(
+      db
+        .prepare('SELECT uuid, revision FROM plan_artifact_canonical WHERE uuid = ?')
+        .get(ARTIFACT_UUID)
+    ).toEqual({ uuid: ARTIFACT_UUID, revision: 1 });
+  });
+
+  test('rejects oversized artifact attach metadata before inserting a row', () => {
+    seedPlan();
+
+    expect(() =>
+      applyOperation(db, {
+        operationUuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        projectUuid: PROJECT_UUID,
+        originNodeId: NODE_A,
+        localSequence: 1,
+        createdAt: '2026-04-27T12:00:00.000Z',
+        targetType: 'plan',
+        targetKey: `plan:${PLAN_UUID}`,
+        op: {
+          type: 'plan_artifact.attach',
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'too-large.bin',
+          mimeType: 'application/octet-stream',
+          size: MAX_ARTIFACT_BYTES + 1,
+          sha256: 'oversized',
+        },
+      } as const)
+    ).toThrow(SyncValidationError);
+
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+    expect(
+      db.prepare('SELECT uuid FROM plan_artifact_canonical WHERE uuid = ?').get(ARTIFACT_UUID)
+    ).toBeNull();
+  });
+
+  test('soft-delete, restore, and hard-delete update artifact state and tombstones', async () => {
+    seedPlan();
+    await applyOperation(
+      db,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'log.txt',
+          mimeType: 'text/plain',
+          size: 64,
+          sha256: 'def456',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    const softDelete = await buildArtifactSoftDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    expect(applyOperation(db, softDelete).invalidations).toEqual([`plan:${PLAN_UUID}`]);
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)?.deletedAt).toBe(softDelete.createdAt);
+    expect(
+      db
+        .prepare('SELECT deleted_at, revision FROM plan_artifact_canonical WHERE uuid = ?')
+        .get(ARTIFACT_UUID)
+    ).toEqual({ deleted_at: softDelete.createdAt, revision: 2 });
+
+    const restore = await buildArtifactRestoreOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 3 }
+    );
+    applyOperation(db, restore);
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)?.deletedAt).toBeNull();
+    const storagePath = getArtifactByUuid(db, ARTIFACT_UUID)!.storagePath;
+    await fs.mkdir(path.dirname(storagePath), { recursive: true });
+    await fs.writeFile(storagePath, 'artifact bytes');
+
+    const hardDelete = await buildArtifactHardDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 4 }
+    );
+    applyOperation(db, hardDelete);
+
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+    expect(
+      db.prepare('SELECT uuid FROM plan_artifact_canonical WHERE uuid = ?').get(ARTIFACT_UUID)
+    ).toBeNull();
+    expect(
+      db
+        .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+        .get('plan_artifact', ARTIFACT_UUID)
+    ).toEqual({ entity_key: ARTIFACT_UUID });
+    await vi.waitFor(async () => {
+      await expect(fs.stat(storagePath)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  });
+
+  test('snapshot merge keeps files for artifacts omitted without a tombstone', async () => {
+    seedPlan();
+    await applyOperation(
+      db,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'old.log',
+          mimeType: 'text/plain',
+          size: 3,
+          sha256: 'old',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+    const storagePath = getArtifactByUuid(db, ARTIFACT_UUID)!.storagePath;
+    await fs.mkdir(path.dirname(storagePath), { recursive: true });
+    await fs.writeFile(storagePath, 'old');
+
+    const snapshot = loadCanonicalSnapshot(db, `plan:${PLAN_UUID}`);
+    if (!snapshot || snapshot.type !== 'plan') {
+      throw new Error('Expected plan snapshot');
+    }
+    snapshot.plan.artifacts = [];
+    mergeCanonicalRefresh(db, snapshot);
+
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await expect(fs.stat(storagePath)).resolves.toMatchObject({ size: 3 });
+  });
+
+  test('snapshot merge removes files for artifacts omitted with a tombstone', async () => {
+    seedPlan();
+    await applyOperation(
+      db,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'old.log',
+          mimeType: 'text/plain',
+          size: 3,
+          sha256: 'old',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+    const storagePath = getArtifactByUuid(db, ARTIFACT_UUID)!.storagePath;
+    await fs.mkdir(path.dirname(storagePath), { recursive: true });
+    await fs.writeFile(storagePath, 'old');
+
+    const snapshot = loadCanonicalSnapshot(db, `plan:${PLAN_UUID}`);
+    if (!snapshot || snapshot.type !== 'plan') {
+      throw new Error('Expected plan snapshot');
+    }
+    snapshot.plan.artifacts = [];
+    snapshot.plan.artifactTombstones = [
+      { artifactUuid: ARTIFACT_UUID, deletedAt: '2026-01-01T00:00:00.000Z' },
+    ];
+    mergeCanonicalRefresh(db, snapshot);
+
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+    await vi.waitFor(async () => {
+      await expect(fs.stat(storagePath)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  });
+
+  test('snapshot merge clears stale artifact tombstones for included UUIDs', async () => {
+    seedPlan();
+    await applyOperation(
+      db,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'capture.png',
+          mimeType: 'image/png',
+          size: 12,
+          sha256: 'hash',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+    db.prepare(
+      `
+        INSERT INTO sync_tombstone (
+          entity_type,
+          entity_key,
+          project_uuid,
+          plan_uuid,
+          deletion_operation_uuid,
+          deleted_at,
+          origin_node_id
+        ) VALUES ('plan_artifact', ?, ?, ?, ?, '2026-01-01T00:00:00.000Z', ?)
+      `
+    ).run(ARTIFACT_UUID, PROJECT_UUID, PLAN_UUID, 'stale-delete', NODE_B);
+
+    const snapshot = loadCanonicalSnapshot(db, `plan:${PLAN_UUID}`);
+    if (!snapshot || snapshot.type !== 'plan') {
+      throw new Error('Expected plan snapshot');
+    }
+    mergeCanonicalRefresh(db, snapshot);
+
+    expect(
+      db
+        .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+        .get('plan_artifact', ARTIFACT_UUID)
+    ).toBeNull();
+
+    const softDelete = await buildArtifactSoftDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    expect(() => applyOperation(db, softDelete)).not.toThrow();
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)?.deletedAt).toBe(softDelete.createdAt);
+  });
+
+  test('missing-artifact hard-delete records tombstone and emits plan invalidation once', async () => {
+    seedPlan();
+    const hardDelete = await buildArtifactHardDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    const result = applyOperation(db, hardDelete);
+
+    expect(result.invalidations).toEqual([`plan:${PLAN_UUID}`]);
+    expect(countRows('sync_sequence')).toBe(1);
+    expect(sequenceTargets()).toEqual([`plan:${PLAN_UUID}`]);
+    expect(
+      db
+        .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+        .get('plan_artifact', ARTIFACT_UUID)
+    ).toEqual({ entity_key: ARTIFACT_UUID });
+
+    const repeatedHardDelete = await buildArtifactHardDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    const repeatedResult = applyOperation(db, repeatedHardDelete);
+
+    expect(repeatedResult.sequenceIds).toEqual([]);
+    expect(repeatedResult.invalidations).toEqual([]);
+    expect(countRows('sync_sequence')).toBe(1);
+    expect(
+      (
+        db
+          .prepare(
+            'SELECT COUNT(*) AS count FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?'
+          )
+          .get('plan_artifact', ARTIFACT_UUID) as { count: number }
+      ).count
+    ).toBe(1);
+
+    const staleAttach = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'stale.png',
+        mimeType: 'image/png',
+        size: 12,
+        sha256: 'stale',
+      },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+
+    expect(() => applyOperation(db, staleAttach)).toThrow(SyncValidationError);
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+    expect(
+      db
+        .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+        .get('plan_artifact', ARTIFACT_UUID)
+    ).toEqual({ entity_key: ARTIFACT_UUID });
+  });
+
+  test('duplicate artifact hard-delete does not rewrite an existing tombstone', async () => {
+    seedPlan();
+    seedPlan(OTHER_PLAN_UUID, 2, TASK_UUID_2);
+    const hardDelete = await buildArtifactHardDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    applyOperation(db, hardDelete);
+    const originalTombstone = db
+      .prepare(
+        `
+          SELECT plan_uuid, deletion_operation_uuid, origin_node_id
+          FROM sync_tombstone
+          WHERE entity_type = ? AND entity_key = ?
+        `
+      )
+      .get('plan_artifact', ARTIFACT_UUID);
+
+    const duplicateHardDelete = await buildArtifactHardDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: OTHER_PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_B, localSequence: 1 }
+    );
+    const duplicateResult = applyOperation(db, duplicateHardDelete);
+
+    expect(duplicateResult.sequenceIds).toEqual([]);
+    expect(duplicateResult.invalidations).toEqual([]);
+    expect(countRows('sync_sequence')).toBe(1);
+    expect(
+      db
+        .prepare(
+          `
+            SELECT plan_uuid, deletion_operation_uuid, origin_node_id
+            FROM sync_tombstone
+            WHERE entity_type = ? AND entity_key = ?
+          `
+        )
+        .get('plan_artifact', ARTIFACT_UUID)
+    ).toEqual(originalTombstone);
+  });
+
+  test('artifact hard-delete validates the owning plan uuid', async () => {
+    seedPlan();
+    seedPlan(OTHER_PLAN_UUID, 2, TASK_UUID_2);
+    applyOperation(
+      db,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: OTHER_PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'other-plan.txt',
+          mimeType: 'text/plain',
+          size: 64,
+          sha256: 'abc123',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    const mismatchedHardDelete = await buildArtifactHardDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+
+    expect(() => applyOperation(db, mismatchedHardDelete)).toThrow(SyncValidationError);
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({ planUuid: OTHER_PLAN_UUID });
+    expect(
+      db.prepare('SELECT plan_uuid FROM plan_artifact_canonical WHERE uuid = ?').get(ARTIFACT_UUID)
+    ).toEqual({ plan_uuid: OTHER_PLAN_UUID });
+  });
+
+  test('artifact operations reject unknown and tombstoned plans', async () => {
+    const unknownPlanAttach = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: OTHER_PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'missing-plan.log',
+        mimeType: 'text/plain',
+        size: 12,
+        sha256: 'abc123',
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    expect(() => applyOperation(db, unknownPlanAttach)).toThrow(SyncValidationError);
+
+    seedPlan();
+    applyOperation(
+      db,
+      await deletePlanOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID },
+        { originNodeId: NODE_A, localSequence: 2 }
+      )
+    );
+    const tombstonedPlanAttach = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'tombstoned-plan.log',
+        mimeType: 'text/plain',
+        size: 12,
+        sha256: 'def456',
+      },
+      { originNodeId: NODE_A, localSequence: 3 }
+    );
+    expect(() => applyOperation(db, tombstonedPlanAttach)).toThrow(SyncValidationError);
+  });
+
+  test('artifact no-op state transitions do not emit additional sequence rows', async () => {
+    seedPlan();
+    applyOperation(
+      db,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'log.txt',
+          mimeType: 'text/plain',
+          size: 64,
+          sha256: 'def456',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+    const firstSoftDelete = await buildArtifactSoftDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    expect(applyOperation(db, firstSoftDelete).invalidations).toEqual([`plan:${PLAN_UUID}`]);
+    expect(countRows('sync_sequence')).toBe(2);
+
+    const secondSoftDelete = await buildArtifactSoftDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 3 }
+    );
+    const result = applyOperation(db, secondSoftDelete);
+
+    expect(result.status).toBe('applied');
+    expect(result.sequenceIds).toEqual([]);
+    expect(result.invalidations).toEqual([]);
+    expect(countRows('sync_sequence')).toBe(2);
+  });
+
+  test('divergent same-UUID artifact attach is rejected with SyncValidationError', async () => {
+    seedPlan();
+    await applyOperation(
+      db,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'original.png',
+          mimeType: 'image/png',
+          size: 100,
+          sha256: 'original-hash',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    const divergentSha = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'original.png',
+        mimeType: 'image/png',
+        size: 100,
+        sha256: 'tampered-hash',
+      },
+      { originNodeId: NODE_B, localSequence: 1 }
+    );
+    expect(() => applyOperation(db, divergentSha)).toThrow(SyncValidationError);
+
+    const divergentSize = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'original.png',
+        mimeType: 'image/png',
+        size: 999,
+        sha256: 'original-hash',
+      },
+      { originNodeId: NODE_B, localSequence: 2 }
+    );
+    expect(() => applyOperation(db, divergentSize)).toThrow(SyncValidationError);
+
+    // Existing row preserved.
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({
+      sha256: 'original-hash',
+      size: 100,
+    });
+  });
+
+  test('divergent same-UUID attach is rejected when local projection has the row but canonical does not', async () => {
+    seedPlan();
+    // Simulate a locally-queued optimistic attach: projection row present,
+    // canonical row absent (pre-ack state on a persistent node).
+    db.prepare(
+      `
+        INSERT INTO plan_artifact (
+          uuid, plan_uuid, project_uuid, filename, mime_type, size, sha256,
+          message, storage_path, deleted_at, created_at, updated_at, revision
+        ) VALUES (?, ?, ?, 'local.png', 'image/png', 100, 'local-hash',
+          NULL, '/tmp/ignored', NULL, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 1)
+      `
+    ).run(ARTIFACT_UUID, PLAN_UUID, PROJECT_UUID);
+
+    const divergent = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'remote.png',
+        mimeType: 'image/png',
+        size: 100,
+        sha256: 'remote-hash',
+      },
+      { originNodeId: NODE_B, localSequence: 1 }
+    );
+    expect(() => applyOperation(db, divergent)).toThrow(SyncValidationError);
+
+    // Local projection row preserved; canonical still absent.
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({ sha256: 'local-hash' });
+    expect(
+      db.prepare('SELECT uuid FROM plan_artifact_canonical WHERE uuid = ?').get(ARTIFACT_UUID)
+    ).toBeNull();
+  });
+
+  test('matching attach with projection-only local row backfills canonical without clobbering projection', async () => {
+    seedPlan();
+    // Optimistic local attach state: projection populated at revision 2, canonical absent.
+    db.prepare(
+      `
+        INSERT INTO plan_artifact (
+          uuid, plan_uuid, project_uuid, filename, mime_type, size, sha256,
+          message, storage_path, deleted_at, created_at, updated_at, revision
+        ) VALUES (?, ?, ?, 'local.png', 'image/png', 100, 'matching-hash',
+          'local-msg', '/tmp/ignored', NULL, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 2)
+      `
+    ).run(ARTIFACT_UUID, PLAN_UUID, PROJECT_UUID);
+
+    const matching = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'capture.png',
+        mimeType: 'image/png',
+        size: 100,
+        sha256: 'matching-hash',
+      },
+      { originNodeId: NODE_B, localSequence: 1 }
+    );
+    const result = applyOperation(db, matching);
+
+    expect(result.status).toBe('applied');
+    expect(result.invalidations).toEqual([`plan:${PLAN_UUID}`]);
+    // Canonical now populated.
+    expect(
+      db
+        .prepare('SELECT uuid, sha256 FROM plan_artifact_canonical WHERE uuid = ?')
+        .get(ARTIFACT_UUID)
+    ).toEqual({ uuid: ARTIFACT_UUID, sha256: 'matching-hash' });
+    // Projection row preserved at revision 2 (not clobbered back to 1).
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({
+      sha256: 'matching-hash',
+      revision: 2,
+      filename: 'local.png',
+    });
+  });
+
+  test('replayed artifact attach does not overwrite higher-revision state', async () => {
+    seedPlan();
+    const attachInput = {
+      projectUuid: PROJECT_UUID,
+      planUuid: PLAN_UUID,
+      artifactUuid: ARTIFACT_UUID,
+      filename: 'capture.png',
+      mimeType: 'image/png',
+      size: 512,
+      sha256: 'abc123',
+    };
+    applyOperation(
+      db,
+      await buildArtifactAttachOperation(attachInput, { originNodeId: NODE_A, localSequence: 1 })
+    );
+    db.prepare(
+      `
+        UPDATE plan_artifact
+        SET deleted_at = ?, updated_at = ?, revision = 3
+        WHERE uuid = ?
+      `
+    ).run('2026-01-02T00:00:00.000Z', '2026-01-02T00:00:00.000Z', ARTIFACT_UUID);
+
+    const staleAttach = await buildArtifactAttachOperation(attachInput, {
+      originNodeId: NODE_A,
+      localSequence: 2,
+    });
+    const result = applyOperation(db, staleAttach);
+
+    expect(result.sequenceIds).toEqual([]);
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({
+      deletedAt: '2026-01-02T00:00:00.000Z',
+      revision: 3,
     });
   });
 });

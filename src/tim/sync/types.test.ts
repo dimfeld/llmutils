@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { MAX_ARTIFACT_BYTES } from '../artifacts/constants.js';
 import {
   assertValidPayload,
   assertValidEnvelope,
@@ -16,6 +17,7 @@ import { addPlanTagOperation } from './operations.js';
 
 const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
 const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
+const ARTIFACT_UUID = '33333333-3333-4333-8333-333333333333';
 const OPERATION_UUID = '44444444-4444-4444-8444-444444444444';
 
 function envelopeWithOp(op: SyncOperationEnvelope['op']): SyncOperationEnvelope {
@@ -271,6 +273,30 @@ describe('sync operation schemas', () => {
     expect(() => assertValidEnvelope(envelope)).toThrow(SyncValidationError);
   });
 
+  test('rejects artifact projectUuid mismatch between envelope and payload', () => {
+    const envelope = {
+      operationUuid: OPERATION_UUID,
+      projectUuid: PROJECT_UUID,
+      originNodeId: 'node-a',
+      localSequence: 1,
+      createdAt: '2026-04-27T12:00:00.000Z',
+      targetType: 'plan',
+      targetKey: planKey(PLAN_UUID),
+      op: {
+        type: 'plan_artifact.attach',
+        projectUuid: '55555555-5555-4555-8555-555555555555',
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'screenshot.png',
+        mimeType: 'image/png',
+        size: 1234,
+        sha256: 'abc123',
+      },
+    };
+
+    expect(() => assertValidEnvelope(envelope)).toThrow(SyncValidationError);
+  });
+
   test('validates plan list item values by list type', () => {
     expect(
       SyncOperationPayloadSchema.safeParse({
@@ -386,6 +412,67 @@ describe('sync operation schemas', () => {
     expect(SyncOperationTypeSchema.safeParse(null).success).toBe(false);
   });
 
+  test('round-trips artifact operation payloads', () => {
+    const payloads = [
+      {
+        type: 'plan_artifact.attach',
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'screenshot.png',
+        mimeType: 'image/png',
+        size: 1234,
+        sha256: 'abc123',
+        message: 'before fix',
+      },
+      {
+        type: 'plan_artifact.soft_delete',
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+      },
+      {
+        type: 'plan_artifact.restore',
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+      },
+      {
+        type: 'plan_artifact.hard_delete',
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+      },
+    ] as const;
+
+    for (const payload of payloads) {
+      const parsed = SyncOperationPayloadSchema.parse(JSON.parse(JSON.stringify(payload)));
+      expect(parsed).toEqual(payload);
+    }
+  });
+
+  test('artifact attach payload requires non-negative integer size within artifact cap', () => {
+    const base = {
+      type: 'plan_artifact.attach',
+      projectUuid: PROJECT_UUID,
+      planUuid: PLAN_UUID,
+      artifactUuid: ARTIFACT_UUID,
+      filename: 'screenshot.png',
+      mimeType: 'image/png',
+      sha256: 'abc123',
+    };
+
+    expect(SyncOperationPayloadSchema.safeParse({ ...base, size: 0 }).success).toBe(true);
+    expect(SyncOperationPayloadSchema.safeParse({ ...base, size: MAX_ARTIFACT_BYTES }).success).toBe(
+      true
+    );
+    expect(SyncOperationPayloadSchema.safeParse({ ...base, size: -1 }).success).toBe(false);
+    expect(SyncOperationPayloadSchema.safeParse({ ...base, size: 1.5 }).success).toBe(false);
+    expect(
+      SyncOperationPayloadSchema.safeParse({ ...base, size: MAX_ARTIFACT_BYTES + 1 }).success
+    ).toBe(false);
+  });
+
   test('localSequence must be a non-negative integer', () => {
     const base = {
       operationUuid: OPERATION_UUID,
@@ -415,6 +502,32 @@ describe('sync operation schemas', () => {
     const target = deriveTargetKey(planOp);
     expect(target.targetType).toBe('plan');
     expect(target.targetKey).toBe(planKey(PLAN_UUID));
+  });
+
+  test('deriveTargetKey returns owning plan key for artifact operations', () => {
+    for (const type of [
+      'plan_artifact.attach',
+      'plan_artifact.soft_delete',
+      'plan_artifact.restore',
+      'plan_artifact.hard_delete',
+    ] as const) {
+      const target = deriveTargetKey({
+        type,
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        ...(type === 'plan_artifact.attach'
+          ? {
+              filename: 'screenshot.png',
+              mimeType: 'image/png',
+              size: 1234,
+              sha256: 'abc123',
+            }
+          : {}),
+      });
+      expect(target.targetType).toBe('plan');
+      expect(target.targetKey).toBe(planKey(PLAN_UUID));
+    }
   });
 
   test('deriveTargetKey returns task key for task-scoped operations', () => {

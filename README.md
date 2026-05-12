@@ -255,6 +255,63 @@ tim set 123 --status done
 
 `needs_review` means implementation work is complete enough to unblock dependent plans, but the workspace assignment and lock remain until final completion. `done`, `cancelled`, and `deferred` are terminal lifecycle states.
 
+## Plan Artifacts
+
+Agents and humans can attach files (screenshots, logs, generated outputs) to a plan. Artifacts are tracked by UUID in the database, stored under `tim`'s durable user data directory (`$XDG_DATA_HOME/tim/artifacts/...`; defaults to `~/.local/share/tim/artifacts/` on Linux/macOS and `%APPDATA%/tim/artifacts/` on Windows), and survive cache cleaners. Each file is capped at 25 MB.
+
+CLI commands:
+
+```bash
+tim artifact add 123 ./screenshot.png -m "before fix"
+tim artifact list 123
+tim artifact list 123 --include-deleted --json
+tim artifact show <artifactUuid>
+tim artifact delete <artifactUuid>
+tim artifact restore <artifactUuid>
+tim artifact purge --older-than 30 --dry-run
+```
+
+`tim artifact add` prints the new artifact UUID so agents can reference it in subsequent messages.
+
+### JSON output
+
+`tim artifact add --json`, `tim artifact list --json`, and `tim artifact show --json` use the same artifact shape:
+
+```json
+{
+  "uuid": "artifact UUID",
+  "planUuid": "owning plan UUID",
+  "projectUuid": "owning project UUID",
+  "filename": "original-name.png",
+  "mimeType": "image/png",
+  "size": 12345,
+  "sha256": "hex digest",
+  "message": "optional note or null",
+  "storagePath": "/absolute/local/path",
+  "createdAt": "ISO timestamp",
+  "updatedAt": "ISO timestamp",
+  "deletedAt": null,
+  "revision": 1,
+  "transferState": "synced | pending | in_progress | failed | file-missing | null",
+  "fileExists": true
+}
+```
+
+`transferState` is `null` when the command did not load transfer state; `fileExists` is `null` when the command did not check the filesystem.
+
+Deletion has two tiers:
+
+- **Soft-delete** (`tim artifact delete`) sets `deleted_at`, hides the row from default listings, but keeps the file on disk. Reversible via `tim artifact restore`.
+- **Hard-delete** is performed by `tim artifact purge`, which removes files and rows for soft-deleted artifacts older than the retention threshold, artifacts on completed plans (`done`/`cancelled`/`deferred`) older than the threshold, and orphan files no longer linked to any row. The default retention is 30 days (configurable via `artifactRetentionDays`). A 60-second mtime cushion protects in-flight uploads from being purged. `--include-active` extends purge to active artifacts on non-terminal plans, and `--dry-run` reports counts without mutating.
+
+`tim cleanup` runs an artifact purge alongside other cleanup steps, and agent shutdown triggers a best-effort opportunistic purge using the configured retention.
+
+MCP tool `attach_plan_artifact` (input `{ planId, filePath, message? }`) exposes the add operation to agents running under the MCP server and returns `{ uuid, filename, mimeType, size }`.
+
+Web UI: the plan detail page shows an **Artifacts** section beneath review issues with mime-type icons, inline thumbnails for images, filename, message, size, transfer state, and Delete/Restore actions. A drag-drop uploader and file picker post to `POST /api/artifacts`; downloads stream via `GET /api/artifacts/[artifactUuid]`. A toggle reveals soft-deleted artifacts.
+
+Sync between nodes uses two channels: metadata flows through the standard sync operation engine (attach/soft-delete/restore/hard-delete operations are routed through `write_router`); binaries transfer via sidecar HTTP endpoints (`PUT`/`GET /internal/sync/artifacts/:uuid`) on the sync server. Per-node, per-artifact transfer state is tracked locally in `artifact_transfer` with bounded exponential-backoff retry (default max 5 attempts). Until bytes have transferred, list views surface a distinct `file-missing` state and the web download endpoint returns 409 with `file_missing` (and triggers a non-blocking download attempt) so missing binaries never look like a silent bug. Hard-deletes emit durable tombstones so a deleted artifact UUID cannot be resurrected by a stale attach.
+
 ## Configuration Reference Points
 
 Start with:
@@ -273,6 +330,7 @@ Important config areas:
 - `lifecycle.commands` - start/stop dev servers or services around agent runs
 - `subprocessMonitor` - opt-in timeouts for stuck Claude/Codex tool subprocesses
 - `updateDocs` and `applyLessons` - control finalization behavior
+- `artifactRetentionDays` - days before soft-deleted artifacts and artifacts on completed plans are eligible for purge (default 30)
 
 The `simplify` block controls the optional code-simplification pass that runs after an agent finishes implementation and before final review. `simplify.mode` accepts `after-completion` (default) or `never`; `simplify.model` and `simplify.executor` (`claude-code` or `codex-cli`) override the executor used for the pass; `simplify.include` and `simplify.exclude` add free-form scoping guidance. The standalone `tim simplify <planId>` command always runs regardless of `simplify.mode`.
 

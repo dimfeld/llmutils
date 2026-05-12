@@ -189,6 +189,22 @@ describe('configLoader', () => {
     expect(messageText).toBe(`Using external tim storage at ${expectedRepositoryDir}`);
   });
 
+  test('loadEffectiveConfig applies artifact retention default after merging', async () => {
+    await fs.writeFile(path.join(configDir, 'tim.yml'), 'postApplyCommands: []');
+
+    const config = await loadEffectiveConfig();
+
+    expect(config.artifactRetentionDays).toBe(30);
+  });
+
+  test('loadEffectiveConfig preserves configured artifact retention days', async () => {
+    await fs.writeFile(path.join(configDir, 'tim.yml'), 'artifactRetentionDays: 9');
+
+    const config = await loadEffectiveConfig();
+
+    expect(config.artifactRetentionDays).toBe(9);
+  });
+
   test('loadEffectiveConfig captures repository metadata from remote when using external storage', async () => {
     await fs.rm(path.join(configDir, 'tim.yml'), { force: true });
 

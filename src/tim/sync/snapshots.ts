@@ -19,6 +19,13 @@ import {
   rebuildProjectSettingProjection,
 } from './projection.js';
 import { assertValidPayload } from './types.js';
+import {
+  listArtifactSnapshotsForPlan,
+  listArtifactTombstonesForPlan,
+  replaceArtifactsForPlanSnapshot,
+  type ArtifactSnapshotRow,
+  type ArtifactTombstoneSnapshotRow,
+} from './artifact_operations.js';
 
 export interface CanonicalPlanSnapshot {
   type: 'plan';
@@ -57,6 +64,8 @@ export interface CanonicalPlanSnapshot {
     }>;
     dependencyUuids: string[];
     tags: string[];
+    artifacts?: ArtifactSnapshotRow[];
+    artifactTombstones?: ArtifactTombstoneSnapshotRow[];
   };
 }
 
@@ -155,6 +164,34 @@ const CanonicalPlanSnapshotSchema = z.object({
     ),
     dependencyUuids: z.array(z.string()),
     tags: z.array(z.string()),
+    artifacts: z
+      .array(
+        z.object({
+          uuid: z.string(),
+          planUuid: z.string(),
+          projectUuid: z.string(),
+          filename: z.string(),
+          mimeType: z.string(),
+          size: z.number(),
+          sha256: z.string(),
+          message: z.string().nullable(),
+          storagePath: z.string(),
+          deletedAt: z.string().nullable(),
+          createdAt: z.string(),
+          updatedAt: z.string(),
+          revision: z.number(),
+        })
+      )
+      .optional(),
+    artifactTombstones: z
+      .array(
+        z.object({
+          artifactUuid: z.string(),
+          deletedAt: z.string(),
+          deletedBySequenceId: z.number().int().nonnegative().optional(),
+        })
+      )
+      .optional(),
   }),
 }) satisfies z.ZodType<CanonicalPlanSnapshot>;
 
@@ -332,6 +369,38 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
     tags: snapshot.plan.tags,
     forceOverwrite: true,
   });
+  const incomingArtifactUuids = new Set(
+    (snapshot.plan.artifacts ?? []).map((artifact) => artifact.uuid)
+  );
+  const clearArtifactTombstone = db.prepare(
+    'DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?'
+  );
+  for (const artifactUuid of incomingArtifactUuids) {
+    clearArtifactTombstone.run('plan_artifact', artifactUuid);
+  }
+  for (const tombstone of snapshot.plan.artifactTombstones ?? []) {
+    if (incomingArtifactUuids.has(tombstone.artifactUuid)) {
+      continue;
+    }
+    recordSyncTombstone(db, {
+      entityType: 'plan_artifact',
+      entityKey: tombstone.artifactUuid,
+      projectUuid: snapshot.projectUuid,
+      planUuid: snapshot.plan.uuid,
+      deletionOperationUuid:
+        tombstone.deletedBySequenceId === undefined
+          ? `canonical-artifact-delete:${tombstone.artifactUuid}`
+          : `canonical-sequence:${tombstone.deletedBySequenceId}`,
+      deletedRevision: null,
+      originNodeId: 'main',
+    });
+  }
+  // Ensure the projection plan row exists before replacing artifacts because
+  // plan_artifact has a FK to the projection plan table. Artifact tombstones
+  // are recorded first so reconciliation can distinguish hard-deleted files
+  // from locally queued artifacts that are merely absent from this snapshot.
+  rebuildPlanProjectionInTransaction(db, snapshot.plan.uuid);
+  replaceArtifactsForPlanSnapshot(db, snapshot.plan.uuid, snapshot.plan.artifacts ?? []);
   db.prepare('DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?').run(
     'plan',
     planKey(snapshot.plan.uuid)

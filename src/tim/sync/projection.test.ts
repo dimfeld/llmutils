@@ -15,6 +15,7 @@ import {
   getProjectSettingWithMetadata,
   writeCanonicalProjectSettingRow,
 } from '../db/project_settings.js';
+import { resetArtifactProjectionFromCanonical } from './artifact_operations.js';
 import {
   addPlanDependencyOperation,
   addPlanListItemOperation,
@@ -51,6 +52,7 @@ const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
 const NODE_A = 'persistent-a';
 const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
 const TASK_UUID = '33333333-3333-4333-8333-333333333333';
+const ARTIFACT_UUID = '99999999-9999-4999-8999-999999999999';
 
 let db: Database;
 let project: Project;
@@ -82,6 +84,76 @@ describe('rebuildPlanProjection', () => {
     expect(getPlanTasksByUuid(db, PLAN_UUID)[0]).toMatchObject({
       uuid: TASK_UUID,
       revision: 2,
+    });
+  });
+
+  test('artifact projection reset preserves transfer state for unchanged artifacts', () => {
+    writeCanonicalPlan({ revision: 4, title: 'Canonical' });
+    rebuildPlanProjection(db, PLAN_UUID);
+    db.prepare(
+      `
+        INSERT INTO plan_artifact_canonical (
+          uuid,
+          plan_uuid,
+          project_uuid,
+          filename,
+          mime_type,
+          size,
+          sha256,
+          message,
+          storage_path,
+          deleted_at,
+          created_at,
+          updated_at,
+          revision
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+      `
+    ).run(
+      ARTIFACT_UUID,
+      PLAN_UUID,
+      PROJECT_UUID,
+      'trace.log',
+      'text/plain',
+      128,
+      'abc123',
+      'trace',
+      '/remote/trace.log',
+      '2026-01-01T00:00:00.000Z',
+      '2026-01-01T00:00:00.000Z',
+      1
+    );
+    resetArtifactProjectionFromCanonical(db, PLAN_UUID);
+    db.prepare(
+      `
+        INSERT INTO artifact_transfer (
+          artifact_uuid,
+          node_id,
+          direction,
+          status,
+          attempts,
+          last_error,
+          succeeded_at
+        ) VALUES (?, ?, 'download', 'succeeded', 3, ?, ?)
+      `
+    ).run(ARTIFACT_UUID, NODE_A, 'previous retry', '2026-01-02T00:00:00.000Z');
+
+    resetArtifactProjectionFromCanonical(db, PLAN_UUID);
+
+    expect(
+      db
+        .prepare(
+          `
+            SELECT status, attempts, last_error, succeeded_at
+            FROM artifact_transfer
+            WHERE artifact_uuid = ? AND node_id = ? AND direction = 'download'
+          `
+        )
+        .get(ARTIFACT_UUID, NODE_A)
+    ).toEqual({
+      status: 'succeeded',
+      attempts: 3,
+      last_error: 'previous retry',
+      succeeded_at: '2026-01-02T00:00:00.000Z',
     });
   });
 

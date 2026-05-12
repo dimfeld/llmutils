@@ -87,6 +87,10 @@ export interface PlanDetailRouteResult {
   redirectTo?: string;
 }
 
+export interface PlanDetailRouteOptions {
+  includeDeletedArtifacts?: boolean;
+}
+
 export async function getPlansPageData(db: Database, projectId: string): Promise<PlansPageData> {
   const numericProjectId = projectId === 'all' ? undefined : Number(projectId);
   const projectFinishConfig =
@@ -170,7 +174,8 @@ export async function getPlanDetailRouteData(
   db: Database,
   planUuid: string,
   routeProjectId: string,
-  tab: string = 'plans'
+  tab: string = 'plans',
+  options: PlanDetailRouteOptions = {}
 ): Promise<PlanDetailRouteResult | null> {
   // Lightweight lookup to get project_id without full enrichment
   const planRow = getPlanByUuid(db, planUuid);
@@ -179,7 +184,9 @@ export async function getPlanDetailRouteData(
   }
 
   const finishConfig = await loadFinishConfigForProject(db, planRow.project_id);
-  const detail = getPlanDetail(db, planUuid, finishConfig);
+  const detail = await getPlanDetail(db, planUuid, finishConfig, {
+    includeDeletedArtifacts: options.includeDeletedArtifacts,
+  });
   if (!detail) {
     return null;
   }

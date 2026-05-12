@@ -14,7 +14,7 @@ export const getPlanDetail = query(planDetailSchema, async ({ planUuid }) => {
   if (!planRow) return null;
 
   const finishConfig = await loadFinishConfigForProject(db, planRow.project_id);
-  const plan = getPlanDetailFromDb(db, planUuid, finishConfig);
+  const plan = await getPlanDetailFromDb(db, planUuid, finishConfig);
   if (!plan) return null;
   return {
     plan,

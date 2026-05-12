@@ -437,6 +437,18 @@ describe('configSchema', () => {
     });
   });
 
+  describe('artifactRetentionDays', () => {
+    test('is optional and does not apply zod defaults', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.artifactRetentionDays).toBeUndefined();
+    });
+
+    test('accepts non-negative integer day counts', () => {
+      const result = timConfigSchema.parse({ artifactRetentionDays: 14 });
+      expect(result.artifactRetentionDays).toBe(14);
+    });
+  });
+
   describe('schema validation with issueTracker and other fields', () => {
     test('should validate complete config with issueTracker', () => {
       const config = {

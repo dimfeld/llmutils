@@ -15,6 +15,10 @@ import {
   applyOperationResultsWithSnapshots,
 } from './result_application.js';
 import {
+  enqueueArtifactUploadsForFrame,
+  enqueueMissingArtifactDownloads,
+} from './artifact_scheduling.js';
+import {
   createBatchEnvelope,
   type SyncOperationBatchEnvelope,
   type SyncOperationEnvelope,
@@ -34,6 +38,7 @@ export interface SyncClientOptions {
   serverUrl: string;
   nodeId: string;
   token: string;
+  syncServerNodeId?: string;
   reconnect?: boolean;
   minReconnectDelayMs?: number;
   maxReconnectDelayMs?: number;
@@ -101,6 +106,7 @@ class WebSocketSyncClient implements SyncClient {
     reject: (error: Error) => void;
   } | null = null;
   private flushWaiter: {
+    frame: SyncFlushFrame;
     matches: (frame: SyncOpResultFrame | SyncBatchResultFrame) => boolean;
     resolve: () => void;
     reject: (error: Error) => void;
@@ -397,11 +403,15 @@ class WebSocketSyncClient implements SyncClient {
   ): Promise<void> {
     const results = frame.results;
     const transitions = [...results];
+    const sentFrame = this.flushWaiter?.matches(frame) ? this.flushWaiter.frame : null;
     await applyOperationResultsWithSnapshots({
       db: this.options.db,
       results: transitions,
       fetchSnapshots: (keys) => this.requestSnapshots(keys),
     });
+    if (sentFrame) {
+      enqueueArtifactUploadsForFrame(this.options, sentFrame, transitions);
+    }
     if (this.flushProcessedOperationUuids) {
       for (const result of transitions) {
         this.flushProcessedOperationUuids.add(result.operationId);
@@ -420,6 +430,7 @@ class WebSocketSyncClient implements SyncClient {
   ): NonNullable<WebSocketSyncClient['flushWaiter']> {
     if (frame.type === 'batch') {
       return {
+        frame,
         matches: (resultFrame) =>
           resultFrame.type === 'batch_result' && resultFrame.batchId === frame.batch.batchId,
         resolve,
@@ -429,6 +440,7 @@ class WebSocketSyncClient implements SyncClient {
 
     const operationIds = new Set(frame.operations.map((operation) => operation.operationUuid));
     return {
+      frame,
       matches: (resultFrame) => {
         if (resultFrame.type !== 'op_result' || resultFrame.results.length !== operationIds.size) {
           return false;
@@ -454,6 +466,7 @@ class WebSocketSyncClient implements SyncClient {
     if (sequenceId > 0) {
       updateTimNodeCursor(this.options.db, this.options.nodeId, sequenceId);
     }
+    await enqueueMissingArtifactDownloads(this.options);
   }
 
   private async fetchAndMergeSnapshots(keys: string[]): Promise<CanonicalSnapshot[]> {

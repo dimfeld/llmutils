@@ -1,5 +1,11 @@
 import { Database } from 'bun:sqlite';
+import { createHash } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { MAX_ARTIFACT_BYTES } from '../artifacts/constants.js';
+import { getArtifactByUuid } from '../db/artifact.js';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject } from '../db/project.js';
 import {
@@ -13,10 +19,15 @@ import {
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
 import { getTimNode, getTimNodeCursor, upsertTimNode } from '../db/sync_tables.js';
 import { hashToken } from './auth.js';
+import { applyOperation } from './apply.js';
 import { httpCatchUp, httpFetchSnapshots, httpFlushOperations } from './client.js';
 import { CanonicalSnapshotSchema } from './snapshots.js';
 import {
   addPlanTagOperation,
+  buildArtifactAttachOperation,
+  buildArtifactHardDeleteOperation,
+  buildArtifactRestoreOperation,
+  buildArtifactSoftDeleteOperation,
   deletePlanOperation,
   deleteProjectSettingOperation,
   setProjectSettingOperation,
@@ -42,6 +53,7 @@ const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
 const SECOND_PLAN_UUID = '22222222-2222-4222-8222-222222222223';
 const TASK_UUID = '33333333-3333-4333-8333-333333333333';
 const SECOND_TASK_UUID = '33333333-3333-4333-8333-333333333334';
+const ARTIFACT_UUID = '44444444-4444-4444-8444-444444444444';
 const NODE_A = 'persistent-a';
 const NODE_B = 'persistent-b';
 const TOKEN = 'secret-token';
@@ -57,6 +69,7 @@ afterEach(() => {
     server.stop();
   }
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 describe('sync transport server and clients', () => {
@@ -249,6 +262,266 @@ describe('sync transport server and clients', () => {
     });
   });
 
+  test('uploads and downloads artifact bytes over HTTP with verification', async () => {
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-http-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const bytes = Buffer.from('artifact bytes');
+    const artifact = await attachArtifactMetadata(mainDb, {
+      size: bytes.byteLength,
+      sha256: sha256(bytes),
+    });
+    const server = startTestServer(mainDb);
+
+    const upload = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: bytes,
+      }
+    );
+    expect(upload.status).toBe(200);
+    await expect(upload.json()).resolves.toMatchObject({
+      ok: true,
+      size: bytes.byteLength,
+      sha256: sha256(bytes),
+    });
+
+    const download = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      {
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'x-tim-node-id': NODE_A,
+        },
+      }
+    );
+    expect(download.status).toBe(200);
+    expect(download.headers.get('content-type')).toBe(artifact.mimeType);
+    expect(download.headers.get('x-artifact-sha256')).toBe(artifact.sha256);
+    expect(Buffer.from(await download.arrayBuffer())).toEqual(bytes);
+
+    fs.rmSync(tempData, { recursive: true, force: true });
+  });
+
+  test('artifact HTTP endpoints reject unauthorized, missing, and mismatched bytes', async () => {
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-http-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    await attachArtifactMetadata(mainDb, {
+      size: 3,
+      sha256: sha256(Buffer.from('abc')),
+    });
+    const server = startTestServer(mainDb);
+
+    const unauthorized = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      { headers: { authorization: 'Bearer wrong', 'x-tim-node-id': NODE_A } }
+    );
+    expect(unauthorized.status).toBe(401);
+
+    const missing = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      { headers: { authorization: `Bearer ${TOKEN}`, 'x-tim-node-id': NODE_A } }
+    );
+    expect(missing.status).toBe(409);
+    await expect(missing.json()).resolves.toEqual({ error: 'file_missing' });
+
+    const mismatch = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: Buffer.from('xyz'),
+      }
+    );
+    expect(mismatch.status).toBe(409);
+    await expect(mismatch.json()).resolves.toMatchObject({ error: 'sha256_mismatch' });
+
+    fs.rmSync(tempData, { recursive: true, force: true });
+  });
+
+  test('artifact PUT rejects unknown UUID with 404 and invalid UUID format with 400', async () => {
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-unknown-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const server = startTestServer(mainDb);
+    const unknownUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+    const notFound = await fetch(
+      new URL(`/internal/sync/artifacts/${unknownUuid}`, serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: Buffer.from('data'),
+      }
+    );
+    expect(notFound.status).toBe(404);
+
+    const badUuid = await fetch(
+      new URL('/internal/sync/artifacts/not-a-valid-uuid', serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: Buffer.from('data'),
+      }
+    );
+    expect(badUuid.status).toBe(400);
+
+    fs.rmSync(tempData, { recursive: true, force: true });
+  });
+
+  test('artifact GET returns 404 for unknown UUID and 401 for bad auth', async () => {
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-get-404-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const server = startTestServer(mainDb);
+    const unknownUuid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    const notFound = await fetch(
+      new URL(`/internal/sync/artifacts/${unknownUuid}`, serverUrl(server)),
+      { headers: { authorization: `Bearer ${TOKEN}`, 'x-tim-node-id': NODE_A } }
+    );
+    expect(notFound.status).toBe(404);
+
+    const unauthorized = await fetch(
+      new URL(`/internal/sync/artifacts/${unknownUuid}`, serverUrl(server)),
+      { headers: { authorization: 'Bearer wrong', 'x-tim-node-id': NODE_A } }
+    );
+    expect(unauthorized.status).toBe(401);
+
+    fs.rmSync(tempData, { recursive: true, force: true });
+  });
+
+  test('artifact PUT rejects body larger than MAX_ARTIFACT_BYTES with 413 and cleans up temp file', async () => {
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-413-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const oversizedBytes = Buffer.alloc(MAX_ARTIFACT_BYTES + 1, 'x');
+    await attachArtifactMetadata(mainDb, {
+      size: MAX_ARTIFACT_BYTES,
+      sha256: 'expected-valid-metadata-hash',
+    });
+    const server = startTestServer(mainDb);
+
+    const response = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: oversizedBytes,
+      }
+    );
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({ error: 'artifact_too_large' });
+
+    // No stray temp files in the artifacts directory
+    const artifactsRoot = path.join(tempData, 'tim', 'artifacts');
+    const allFiles: string[] = [];
+    function walkDir(dir: string): void {
+      if (!fs.existsSync(dir)) return;
+      for (const entry of fs.readdirSync(dir)) {
+        const full = path.join(dir, entry);
+        if (fs.statSync(full).isDirectory()) {
+          walkDir(full);
+        } else {
+          allFiles.push(full);
+        }
+      }
+    }
+    walkDir(artifactsRoot);
+    const tempFiles = allFiles.filter((f) => f.includes('.tmp-'));
+    expect(tempFiles).toHaveLength(0);
+
+    fs.rmSync(tempData, { recursive: true, force: true });
+  });
+
+  test('artifact PUT rejects size mismatch with 409 size_mismatch', async () => {
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-sizemismatch-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const expectedBytes = Buffer.from('abcdefgh'); // 8 bytes
+    await attachArtifactMetadata(mainDb, {
+      size: expectedBytes.byteLength,
+      sha256: sha256(expectedBytes),
+    });
+    const server = startTestServer(mainDb);
+
+    // Send only 4 bytes — sha256 AND size will differ; server hits size check first
+    const response = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: Buffer.from('abcd'), // 4 bytes, matching first 4 chars so sha256 differs
+      }
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ error: 'size_mismatch' });
+
+    fs.rmSync(tempData, { recursive: true, force: true });
+  });
+
+  test('artifact PUT rejects unauthorized requests with 401', async () => {
+    const tempData = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-sync-artifact-put-auth-'));
+    vi.stubEnv('XDG_DATA_HOME', tempData);
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const bytes = Buffer.from('secret data');
+    await attachArtifactMetadata(mainDb, {
+      size: bytes.byteLength,
+      sha256: sha256(bytes),
+    });
+    const server = startTestServer(mainDb);
+
+    const unauthorized = await fetch(
+      new URL(`/internal/sync/artifacts/${ARTIFACT_UUID}`, serverUrl(server)),
+      {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer wrong-token',
+          'content-type': 'application/octet-stream',
+          'x-tim-node-id': NODE_A,
+        },
+        body: bytes,
+      }
+    );
+    expect(unauthorized.status).toBe(401);
+
+    fs.rmSync(tempData, { recursive: true, force: true });
+  });
+
   test('responds to ping with pong', async () => {
     const server = startTestServer(createDb());
     const ws = await authenticatedWebSocket(server, NODE_A);
@@ -326,6 +599,51 @@ describe('sync transport server and clients', () => {
     expect(response.status).toBe(400);
     expect(getPlanTagsByUuid(mainDb, PLAN_UUID)).toEqual([]);
     expect(countSyncOperations(mainDb)).toBe(0);
+  });
+
+  test('HTTP fallback rejects oversized artifact attach metadata before inserting a row', async () => {
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const server = startTestServer(mainDb);
+    const op = {
+      operationUuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      projectUuid: PROJECT_UUID,
+      originNodeId: NODE_A,
+      localSequence: 1,
+      createdAt: '2026-04-27T12:00:00.000Z',
+      targetType: 'plan',
+      targetKey: `plan:${PLAN_UUID}`,
+      op: {
+        type: 'plan_artifact.attach',
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'too-large.bin',
+        mimeType: 'application/octet-stream',
+        size: MAX_ARTIFACT_BYTES + 1,
+        sha256: 'oversized',
+      },
+    };
+    const url = new URL('/internal/sync/operations', serverUrl(server));
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        'content-type': 'application/json',
+        'x-tim-node-id': NODE_A,
+      },
+      body: JSON.stringify({ operations: [op] }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Invalid sync operation frame',
+    });
+    expect(getArtifactByUuid(mainDb, ARTIFACT_UUID)).toBeUndefined();
+    expect(
+      mainDb.prepare('SELECT uuid FROM plan_artifact_canonical WHERE uuid = ?').get(ARTIFACT_UUID)
+    ).toBeNull();
   });
 
   test('HTTP fallback requires both node ID and token for authentication', async () => {
@@ -463,6 +781,202 @@ describe('sync transport server and clients', () => {
       targetType: 'plan',
       planUuid: SECOND_PLAN_UUID,
     });
+  });
+
+  test('plan snapshots include artifacts and merge applies soft-delete and restore state', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    seedPlan(localDb);
+
+    await applyOperation(
+      mainDb,
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'capture.png',
+          mimeType: 'image/png',
+          size: 512,
+          sha256: 'abc123',
+          message: 'capture',
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+    const softDelete = await buildArtifactSoftDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    applyOperation(mainDb, softDelete);
+
+    const deletedSnapshot = loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`);
+    expect(deletedSnapshot).toMatchObject({
+      type: 'plan',
+      plan: {
+        artifacts: [
+          expect.objectContaining({
+            uuid: ARTIFACT_UUID,
+            deletedAt: softDelete.createdAt,
+          }),
+        ],
+      },
+    });
+
+    mergeCanonicalRefresh(localDb, deletedSnapshot!);
+    expect(getArtifactByUuid(localDb, ARTIFACT_UUID)?.deletedAt).toBe(softDelete.createdAt);
+
+    await applyOperation(
+      mainDb,
+      await buildArtifactRestoreOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: NODE_A, localSequence: 3 }
+      )
+    );
+    mergeCanonicalRefresh(localDb, loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`)!);
+    expect(getArtifactByUuid(localDb, ARTIFACT_UUID)?.deletedAt).toBeNull();
+  });
+
+  test('plan snapshot catch-up creates missing projection plan and localizes artifact paths', async () => {
+    const mainDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-main-artifacts-'));
+    const localDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-local-artifacts-'));
+    const originalXdgDataHome = process.env.XDG_DATA_HOME;
+    try {
+      process.env.XDG_DATA_HOME = mainDataDir;
+      const mainDb = createDb();
+      const localDb = createDb();
+      seedPlan(mainDb);
+      getOrCreateProject(localDb, 'github.com__example__repo', {
+        uuid: PROJECT_UUID,
+        highestPlanId: 10,
+      });
+
+      await applyOperation(
+        mainDb,
+        await buildArtifactAttachOperation(
+          {
+            projectUuid: PROJECT_UUID,
+            planUuid: PLAN_UUID,
+            artifactUuid: ARTIFACT_UUID,
+            filename: 'capture.PNG',
+            mimeType: 'image/png',
+            size: 512,
+            sha256: 'abc123',
+            message: 'capture',
+          },
+          { originNodeId: NODE_A, localSequence: 1 }
+        )
+      );
+      const snapshot = loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`);
+      expect(getArtifactByUuid(mainDb, ARTIFACT_UUID)?.storagePath).toContain(mainDataDir);
+
+      process.env.XDG_DATA_HOME = localDataDir;
+      mergeCanonicalRefresh(localDb, snapshot!);
+
+      expect(getPlanByUuid(localDb, PLAN_UUID)).not.toBeNull();
+      const artifact = getArtifactByUuid(localDb, ARTIFACT_UUID);
+      expect(artifact?.storagePath).toBe(
+        path.join(localDataDir, 'tim', 'artifacts', PROJECT_UUID, PLAN_UUID, `${ARTIFACT_UUID}.png`)
+      );
+    } finally {
+      if (originalXdgDataHome === undefined) {
+        delete process.env.XDG_DATA_HOME;
+      } else {
+        process.env.XDG_DATA_HOME = originalXdgDataHome;
+      }
+      fs.rmSync(mainDataDir, { recursive: true, force: true });
+      fs.rmSync(localDataDir, { recursive: true, force: true });
+    }
+  });
+
+  test('plan snapshot merge removes hard-deleted artifacts and records tombstone', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    seedPlan(localDb);
+
+    const attachInput = {
+      projectUuid: PROJECT_UUID,
+      planUuid: PLAN_UUID,
+      artifactUuid: ARTIFACT_UUID,
+      filename: 'capture.png',
+      mimeType: 'image/png',
+      size: 512,
+      sha256: 'abc123',
+    };
+    await applyOperation(
+      mainDb,
+      await buildArtifactAttachOperation(attachInput, { originNodeId: NODE_A, localSequence: 1 })
+    );
+    await applyOperation(
+      localDb,
+      await buildArtifactAttachOperation(attachInput, { originNodeId: NODE_A, localSequence: 1 })
+    );
+    const hardDelete = await buildArtifactHardDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    await applyOperation(mainDb, hardDelete);
+    mainDb
+      .prepare('DELETE FROM sync_operation WHERE operation_uuid = ?')
+      .run(hardDelete.operationUuid);
+
+    const snapshot = loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`);
+    expect(snapshot).toMatchObject({
+      type: 'plan',
+      plan: {
+        artifacts: [],
+        artifactTombstones: [expect.objectContaining({ artifactUuid: ARTIFACT_UUID })],
+      },
+    });
+
+    mergeCanonicalRefresh(localDb, snapshot!);
+
+    expect(getArtifactByUuid(localDb, ARTIFACT_UUID)).toBeUndefined();
+    expect(
+      localDb
+        .prepare(
+          'SELECT entity_key, plan_uuid FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?'
+        )
+        .get('plan_artifact', ARTIFACT_UUID)
+    ).toEqual({ entity_key: ARTIFACT_UUID, plan_uuid: PLAN_UUID });
+  });
+
+  test('stale artifact tombstones in snapshot remove stale local artifact rows', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    seedPlan(localDb);
+
+    const attachInput = {
+      projectUuid: PROJECT_UUID,
+      planUuid: PLAN_UUID,
+      artifactUuid: ARTIFACT_UUID,
+      filename: 'capture.png',
+      mimeType: 'image/png',
+      size: 512,
+      sha256: 'abc123',
+    };
+    await applyOperation(
+      localDb,
+      await buildArtifactAttachOperation(attachInput, { originNodeId: NODE_A, localSequence: 1 })
+    );
+    await applyOperation(
+      mainDb,
+      await buildArtifactAttachOperation(attachInput, { originNodeId: NODE_A, localSequence: 1 })
+    );
+    await applyOperation(
+      mainDb,
+      await buildArtifactHardDeleteOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: NODE_A, localSequence: 2 }
+      )
+    );
+
+    const snapshot = loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`);
+    mergeCanonicalRefresh(localDb, snapshot!);
+    expect(getArtifactByUuid(localDb, ARTIFACT_UUID)).toBeUndefined();
   });
 
   test('broadcasts invalidations to connected peers except the sender', async () => {
@@ -941,6 +1455,36 @@ function sequenceIds(db: Database): number[] {
       sequence: number;
     }>
   ).map((row) => row.sequence);
+}
+
+async function attachArtifactMetadata(
+  db: Database,
+  input: { size: number; sha256: string }
+): Promise<NonNullable<ReturnType<typeof getArtifactByUuid>>> {
+  await applyOperation(
+    db,
+    await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'capture.txt',
+        mimeType: 'text/plain',
+        size: input.size,
+        sha256: input.sha256,
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    )
+  );
+  const artifact = getArtifactByUuid(db, ARTIFACT_UUID);
+  if (!artifact) {
+    throw new Error('Expected artifact metadata to be inserted');
+  }
+  return artifact;
+}
+
+function sha256(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex');
 }
 
 function startTestServer(db: Database, port = 0): SyncServerHandle {

@@ -291,6 +291,13 @@ function applyOperationToUnchecked(
       throw new Error(
         'applyOperationTo does not handle project/project_setting operations; use entity-specific apply/projection code instead'
       );
+    case 'plan_artifact.attach':
+    case 'plan_artifact.soft_delete':
+    case 'plan_artifact.restore':
+    case 'plan_artifact.hard_delete':
+      // Artifact row projection is handled by src/tim/sync/artifact_operations.ts.
+      // The plan-state fold has no in-memory plan/task/tag state to update here.
+      return [];
     default: {
       const exhaustive: never = op;
       return exhaustive;

@@ -1039,6 +1039,103 @@ const migrations: Migration[] = [
     `,
     afterUp: backfillCanonicalTables,
   },
+  {
+    version: 33,
+    up: `
+      CREATE TABLE plan_artifact (
+        uuid TEXT PRIMARY KEY,
+        plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+        project_uuid TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        message TEXT,
+        storage_path TEXT NOT NULL,
+        deleted_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        revision INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX idx_plan_artifact_plan_deleted
+        ON plan_artifact(plan_uuid, deleted_at);
+      CREATE INDEX idx_plan_artifact_created_at
+        ON plan_artifact(created_at);
+
+      CREATE TABLE artifact_transfer (
+        artifact_uuid TEXT NOT NULL REFERENCES plan_artifact(uuid) ON DELETE CASCADE,
+        node_id TEXT NOT NULL,
+        direction TEXT NOT NULL CHECK(direction IN ('upload', 'download')),
+        status TEXT NOT NULL CHECK(status IN ('pending', 'in_progress', 'succeeded', 'failed')),
+        last_attempt_at TEXT,
+        last_error TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        succeeded_at TEXT,
+        PRIMARY KEY (artifact_uuid, node_id, direction)
+      );
+    `,
+  },
+  {
+    version: 34,
+    up: `SELECT 1;`,
+    afterUp: addSyncTombstonePlanUuidColumn,
+  },
+  {
+    version: 35,
+    up: `
+      CREATE TABLE plan_artifact_canonical (
+        uuid TEXT PRIMARY KEY,
+        plan_uuid TEXT NOT NULL REFERENCES plan_canonical(uuid) ON DELETE CASCADE,
+        project_uuid TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        message TEXT,
+        storage_path TEXT NOT NULL,
+        deleted_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        revision INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX idx_plan_artifact_canonical_plan_deleted
+        ON plan_artifact_canonical(plan_uuid, deleted_at);
+      CREATE INDEX idx_plan_artifact_canonical_created_at
+        ON plan_artifact_canonical(created_at);
+
+      INSERT INTO plan_artifact_canonical (
+        uuid,
+        plan_uuid,
+        project_uuid,
+        filename,
+        mime_type,
+        size,
+        sha256,
+        message,
+        storage_path,
+        deleted_at,
+        created_at,
+        updated_at,
+        revision
+      )
+      SELECT
+        pa.uuid,
+        pa.plan_uuid,
+        pa.project_uuid,
+        pa.filename,
+        pa.mime_type,
+        pa.size,
+        pa.sha256,
+        pa.message,
+        pa.storage_path,
+        pa.deleted_at,
+        pa.created_at,
+        pa.updated_at,
+        pa.revision
+      FROM plan_artifact pa
+      JOIN plan_canonical pc ON pc.uuid = pa.plan_uuid;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {
@@ -1285,6 +1382,21 @@ function logSkippedRows(targetTable: string, skippedCount: number): void {
   if (skippedCount > 0) {
     debugLog(`[migrations] Skipped ${skippedCount} orphan row(s) while backfilling ${targetTable}`);
   }
+}
+
+function addSyncTombstonePlanUuidColumn(db: Database): void {
+  if (!tableExists(db, 'sync_tombstone')) {
+    return;
+  }
+  const columns = tableColumns(db, 'sync_tombstone');
+  if (!columns.has('plan_uuid')) {
+    db.run('ALTER TABLE sync_tombstone ADD COLUMN plan_uuid TEXT');
+  }
+  db.run(`
+    CREATE INDEX IF NOT EXISTS idx_sync_tombstone_plan_artifact_plan
+      ON sync_tombstone(entity_type, plan_uuid)
+      WHERE entity_type = 'plan_artifact'
+  `);
 }
 
 export function runMigrations(db: Database): void {

@@ -8,6 +8,8 @@ import { claimAssignment } from '$tim/db/assignment.js';
 import { upsertBranchMergeRequirements } from '$tim/db/branch_merge_requirements.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { upsertPlan } from '$tim/db/plan.js';
+import { insertArtifact } from '$tim/db/artifact.js';
+import { upsertPendingTransfer, markTransferSucceeded } from '$tim/db/artifact_transfer.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { setProjectSetting } from '$tim/db/project_settings.js';
@@ -185,7 +187,7 @@ describe('lib/server/db_queries', () => {
     expect(needsReviewPlan?.displayStatus).toBe('needs_review');
   });
 
-  test('getPlansForProject and getPlanDetail include finish-tracking timestamps', () => {
+  test('getPlansForProject and getPlanDetail include finish-tracking timestamps', async () => {
     const docsUpdatedAt = '2026-02-03T04:05:06.000Z';
     const lessonsAppliedAt = '2026-02-04T05:06:07.000Z';
     upsertPlan(db, projectId, {
@@ -211,7 +213,7 @@ describe('lib/server/db_queries', () => {
       note: 'Internal note for finish-tracking',
     });
 
-    const detail = getPlanDetail(db, 'plan-finish-tracking');
+    const detail = await getPlanDetail(db, 'plan-finish-tracking');
     expect(detail).toMatchObject({
       docsUpdatedAt,
       lessonsAppliedAt,
@@ -229,8 +231,8 @@ describe('lib/server/db_queries', () => {
     expect(dependentPlan?.dependencyUuids).toEqual(['plan-review']);
   });
 
-  test('getPlanDetail treats needs_review dependencies as resolved', () => {
-    const detail = getPlanDetail(db, 'plan-depends-on-review');
+  test('getPlanDetail treats needs_review dependencies as resolved', async () => {
+    const detail = await getPlanDetail(db, 'plan-depends-on-review');
 
     expect(detail).not.toBeNull();
     expect(detail?.displayStatus).toBe('in_progress');
@@ -331,7 +333,7 @@ describe('lib/server/db_queries', () => {
     expect(plans.find((plan) => plan.uuid === 'plan-parent')?.prSummaryStatus).toBe('none');
   });
 
-  test('getPlansForProject and getPlanDetail use required checks when computing PR status', () => {
+  test('getPlansForProject and getPlanDetail use required checks when computing PR status', async () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-required-checks',
       planId: 115,
@@ -393,7 +395,7 @@ describe('lib/server/db_queries', () => {
       prSummaryStatus: 'passing',
     });
 
-    const detail = getPlanDetail(db, 'plan-required-checks');
+    const detail = await getPlanDetail(db, 'plan-required-checks');
     expect(detail?.prStatuses).toHaveLength(1);
     expect(detail?.prStatuses[0]?.status.check_rollup_state).toBe('success');
     expect(detail?.prStatuses[0]?.checks).toEqual(
@@ -440,7 +442,7 @@ describe('lib/server/db_queries', () => {
     expect(plans.find((plan) => plan.uuid === 'plan-neutral-pr')?.prSummaryStatus).toBe('passing');
   });
 
-  test('getPlansForProject and getPlanDetail read cached PR status from plan URLs when plan_pr is missing', () => {
+  test('getPlansForProject and getPlanDetail read cached PR status from plan URLs when plan_pr is missing', async () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-cached-pr-no-junction',
       planId: 109,
@@ -470,7 +472,7 @@ describe('lib/server/db_queries', () => {
       prSummaryStatus: 'failing',
     });
 
-    const detail = getPlanDetail(db, 'plan-cached-pr-no-junction');
+    const detail = await getPlanDetail(db, 'plan-cached-pr-no-junction');
     expect(detail?.prStatuses).toHaveLength(1);
     expect(detail?.prStatuses[0]?.status).toMatchObject({
       pr_url: 'https://github.com/example/repo/pull/109',
@@ -478,7 +480,7 @@ describe('lib/server/db_queries', () => {
     });
   });
 
-  test('invalid pullRequest URLs are surfaced separately without crashing plan list or detail queries', () => {
+  test('invalid pullRequest URLs are surfaced separately without crashing plan list or detail queries', async () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-invalid-pr-url',
       planId: 110,
@@ -497,13 +499,13 @@ describe('lib/server/db_queries', () => {
       prSummaryStatus: 'none',
     });
 
-    const detail = getPlanDetail(db, 'plan-invalid-pr-url');
+    const detail = await getPlanDetail(db, 'plan-invalid-pr-url');
     expect(detail?.pullRequests).toEqual([]);
     expect(detail?.invalidPrUrls).toEqual(['https://github.com/example/repo/issues/110']);
     expect(detail?.prStatuses).toEqual([]);
   });
 
-  test('explicit plan pullRequest URLs override stale plan_pr links in plan list and detail queries', () => {
+  test('explicit plan pullRequest URLs override stale plan_pr links in plan list and detail queries', async () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-stale-pr-link',
       planId: 111,
@@ -535,12 +537,12 @@ describe('lib/server/db_queries', () => {
       prSummaryStatus: 'none',
     });
 
-    const detail = getPlanDetail(db, 'plan-stale-pr-link');
+    const detail = await getPlanDetail(db, 'plan-stale-pr-link');
     expect(detail?.pullRequests).toEqual([]);
     expect(detail?.prStatuses).toEqual([]);
   });
 
-  test('cross-project unresolved dependencies mark a plan as blocked in project lists and detail views', () => {
+  test('cross-project unresolved dependencies mark a plan as blocked in project lists and detail views', async () => {
     const plans = getPlansForProject(db, projectId);
     const crossProjectDependencyPlan = plans.find(
       (plan) => plan.uuid === 'plan-cross-project-blocked'
@@ -550,7 +552,7 @@ describe('lib/server/db_queries', () => {
     expect(crossProjectDependencyPlan?.status).toBe('in_progress');
     expect(crossProjectDependencyPlan?.displayStatus).toBe('blocked');
 
-    const detail = getPlanDetail(db, 'plan-cross-project-blocked');
+    const detail = await getPlanDetail(db, 'plan-cross-project-blocked');
     expect(detail).not.toBeNull();
     expect(detail?.displayStatus).toBe('blocked');
     expect(detail?.dependencies).toEqual([
@@ -565,7 +567,7 @@ describe('lib/server/db_queries', () => {
     ]);
   });
 
-  test('cross-project done dependencies stay resolved in project lists and detail views', () => {
+  test('cross-project done dependencies stay resolved in project lists and detail views', async () => {
     const plans = getPlansForProject(db, projectId);
     const crossProjectDependencyPlan = plans.find((plan) => plan.uuid === 'plan-cross-project');
 
@@ -573,7 +575,7 @@ describe('lib/server/db_queries', () => {
     expect(crossProjectDependencyPlan?.status).toBe('in_progress');
     expect(crossProjectDependencyPlan?.displayStatus).toBe('in_progress');
 
-    const detail = getPlanDetail(db, 'plan-cross-project');
+    const detail = await getPlanDetail(db, 'plan-cross-project');
     expect(detail).not.toBeNull();
     expect(detail?.displayStatus).toBe('in_progress');
     expect(detail?.dependencies).toEqual([
@@ -588,7 +590,7 @@ describe('lib/server/db_queries', () => {
     ]);
   });
 
-  test('missing dependencies stay blocking in project lists and detail views', () => {
+  test('missing dependencies stay blocking in project lists and detail views', async () => {
     const plans = getPlansForProject(db, projectId);
     const missingDependencyPlan = plans.find((plan) => plan.uuid === 'plan-missing-dependency');
 
@@ -597,7 +599,7 @@ describe('lib/server/db_queries', () => {
     expect(missingDependencyPlan?.displayStatus).toBe('blocked');
     expect(missingDependencyPlan?.dependencyUuids).toEqual(['nonexistent-plan-uuid']);
 
-    const detail = getPlanDetail(db, 'plan-missing-dependency');
+    const detail = await getPlanDetail(db, 'plan-missing-dependency');
     expect(detail).not.toBeNull();
     expect(detail?.displayStatus).toBe('blocked');
     expect(detail?.dependencies).toEqual([
@@ -612,8 +614,8 @@ describe('lib/server/db_queries', () => {
     ]);
   });
 
-  test('getPlanDetail returns dependency, assignment, tag, task, and parent metadata', () => {
-    const detail = getPlanDetail(db, 'plan-blocked');
+  test('getPlanDetail returns dependency, assignment, tag, task, and parent metadata', async () => {
+    const detail = await getPlanDetail(db, 'plan-blocked');
 
     expect(detail).not.toBeNull();
     expect(detail).toMatchObject({
@@ -660,7 +662,7 @@ describe('lib/server/db_queries', () => {
     ]);
   });
 
-  test('getPlanDetail includes parsed PR metadata and linked PR status details', () => {
+  test('getPlanDetail includes parsed PR metadata and linked PR status details', async () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-blocked',
       planId: 103,
@@ -708,7 +710,7 @@ describe('lib/server/db_queries', () => {
     });
     linkPlanToPr(db, 'plan-blocked', prDetail.status.id);
 
-    const detail = getPlanDetail(db, 'plan-blocked');
+    const detail = await getPlanDetail(db, 'plan-blocked');
 
     expect(detail).not.toBeNull();
     expect(detail).toMatchObject({
@@ -729,8 +731,8 @@ describe('lib/server/db_queries', () => {
     });
   });
 
-  test('getPlanDetail keeps in-progress display status when all dependencies are resolved', () => {
-    const detail = getPlanDetail(db, 'plan-resolved-dependency');
+  test('getPlanDetail keeps in-progress display status when all dependencies are resolved', async () => {
+    const detail = await getPlanDetail(db, 'plan-resolved-dependency');
 
     expect(detail).not.toBeNull();
     expect(detail?.displayStatus).toBe('in_progress');
@@ -746,8 +748,8 @@ describe('lib/server/db_queries', () => {
     ]);
   });
 
-  test('getPlanDetail marks mixed resolved and unresolved dependencies as blocked', () => {
-    const detail = getPlanDetail(db, 'plan-mixed-dependencies');
+  test('getPlanDetail marks mixed resolved and unresolved dependencies as blocked', async () => {
+    const detail = await getPlanDetail(db, 'plan-mixed-dependencies');
 
     expect(detail).not.toBeNull();
     expect(detail?.displayStatus).toBe('blocked');
@@ -767,8 +769,8 @@ describe('lib/server/db_queries', () => {
     ]);
   });
 
-  test('getPlanDetail computes derived display status for dependency summaries using targeted queries', () => {
-    const detail = getPlanDetail(db, 'plan-depends-on-blocked');
+  test('getPlanDetail computes derived display status for dependency summaries using targeted queries', async () => {
+    const detail = await getPlanDetail(db, 'plan-depends-on-blocked');
 
     expect(detail).not.toBeNull();
     expect(detail?.displayStatus).toBe('blocked');
@@ -784,8 +786,8 @@ describe('lib/server/db_queries', () => {
     ]);
   });
 
-  test('getPlanDetail assignment status reflects the live plan status, not the stale assignment row', () => {
-    const detail = getPlanDetail(db, 'plan-stale-assignment');
+  test('getPlanDetail assignment status reflects the live plan status, not the stale assignment row', async () => {
+    const detail = await getPlanDetail(db, 'plan-stale-assignment');
 
     expect(detail).not.toBeNull();
     expect(detail?.status).toBe('done');
@@ -1119,6 +1121,241 @@ describe('lib/server/db_queries', () => {
       lockPid: process.pid,
     });
     expect(detail?.lockStartedAt).toEqual(expect.any(String));
+  });
+
+  describe('getPlanDetail artifacts', () => {
+    let artifactTempDir: string;
+    let savedXdgDataHome: string | undefined;
+
+    beforeAll(async () => {
+      artifactTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-db-queries-artifact-test-'));
+    });
+
+    beforeEach(() => {
+      savedXdgDataHome = process.env.XDG_DATA_HOME;
+      process.env.XDG_DATA_HOME = path.join(artifactTempDir, 'data');
+    });
+
+    afterEach(() => {
+      if (savedXdgDataHome === undefined) {
+        delete process.env.XDG_DATA_HOME;
+      } else {
+        process.env.XDG_DATA_HOME = savedXdgDataHome;
+      }
+    });
+
+    afterAll(async () => {
+      await fs.rm(artifactTempDir, { recursive: true, force: true });
+    });
+
+    test('getPlanDetail returns empty artifacts array when plan has none', async () => {
+      const detail = await getPlanDetail(db, 'plan-parent');
+      expect(detail).not.toBeNull();
+      expect(detail?.artifacts).toEqual([]);
+    });
+
+    test('getPlanDetail returns active artifacts for a plan', async () => {
+      const storagePath = path.join(artifactTempDir, 'data', 'artifacts', 'file.txt');
+      await fs.mkdir(path.dirname(storagePath), { recursive: true });
+      await fs.writeFile(storagePath, 'hello');
+
+      insertArtifact(db, {
+        uuid: 'aaaaaaaa-0000-4000-8000-000000000001',
+        planUuid: 'plan-parent',
+        projectUuid: 'test-project-uuid',
+        filename: 'file.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'abc123',
+        storagePath,
+        message: 'test artifact',
+      });
+
+      const detail = await getPlanDetail(db, 'plan-parent');
+      expect(detail).not.toBeNull();
+      expect(detail?.artifacts).toHaveLength(1);
+      expect(detail?.artifacts[0]).toMatchObject({
+        uuid: 'aaaaaaaa-0000-4000-8000-000000000001',
+        filename: 'file.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        message: 'test artifact',
+      });
+    });
+
+    test('getPlanDetail hides soft-deleted artifacts by default', async () => {
+      const storagePath = path.join(artifactTempDir, 'data', 'artifacts', 'visible.txt');
+      await fs.mkdir(path.dirname(storagePath), { recursive: true });
+      await fs.writeFile(storagePath, 'hello');
+
+      insertArtifact(db, {
+        uuid: 'bbbbbbbb-0000-4000-8000-000000000001',
+        planUuid: 'plan-blocked',
+        projectUuid: 'test-project-uuid',
+        filename: 'visible.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'abc123',
+        storagePath,
+      });
+
+      insertArtifact(db, {
+        uuid: 'bbbbbbbb-0000-4000-8000-000000000002',
+        planUuid: 'plan-blocked',
+        projectUuid: 'test-project-uuid',
+        filename: 'deleted.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'def456',
+        storagePath: '/nonexistent/deleted.txt',
+        deletedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      const detail = await getPlanDetail(db, 'plan-blocked');
+      expect(detail?.artifacts).toHaveLength(1);
+      expect(detail?.artifacts[0].uuid).toBe('bbbbbbbb-0000-4000-8000-000000000001');
+    });
+
+    test('getPlanDetail includes soft-deleted when includeDeletedArtifacts is true', async () => {
+      const storagePath = path.join(artifactTempDir, 'data', 'artifacts', 'inc-visible.txt');
+      await fs.mkdir(path.dirname(storagePath), { recursive: true });
+      await fs.writeFile(storagePath, 'hello');
+
+      insertArtifact(db, {
+        uuid: 'cccccccc-0000-4000-8000-000000000001',
+        planUuid: 'plan-dependency-open',
+        projectUuid: 'test-project-uuid',
+        filename: 'inc-visible.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'abc123',
+        storagePath,
+      });
+
+      insertArtifact(db, {
+        uuid: 'cccccccc-0000-4000-8000-000000000002',
+        planUuid: 'plan-dependency-open',
+        projectUuid: 'test-project-uuid',
+        filename: 'inc-deleted.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'def456',
+        storagePath: '/nonexistent/inc-deleted.txt',
+        deletedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      const defaultDetail = await getPlanDetail(db, 'plan-dependency-open');
+      expect(defaultDetail?.artifacts).toHaveLength(1);
+
+      const fullDetail = await getPlanDetail(db, 'plan-dependency-open', undefined, {
+        includeDeletedArtifacts: true,
+      });
+      expect(fullDetail?.artifacts).toHaveLength(2);
+      const uuids = fullDetail?.artifacts.map((a) => a.uuid).sort();
+      expect(uuids).toEqual([
+        'cccccccc-0000-4000-8000-000000000001',
+        'cccccccc-0000-4000-8000-000000000002',
+      ]);
+    });
+
+    test('getPlanDetail surfaces file-missing when storage file is absent', async () => {
+      insertArtifact(db, {
+        uuid: 'dddddddd-0000-4000-8000-000000000001',
+        planUuid: 'plan-pending',
+        projectUuid: 'test-project-uuid',
+        filename: 'missing.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'abc123',
+        storagePath: '/nonexistent/path/missing.txt',
+      });
+
+      const detail = await getPlanDetail(db, 'plan-pending');
+      expect(detail?.artifacts).toHaveLength(1);
+      expect(detail?.artifacts[0].transferState).toBe('file-missing');
+    });
+
+    test('getPlanDetail surfaces transfer state from artifact_transfer rows', async () => {
+      const storagePath = path.join(artifactTempDir, 'data', 'artifacts', 'xfer.txt');
+      await fs.mkdir(path.dirname(storagePath), { recursive: true });
+      await fs.writeFile(storagePath, 'data');
+
+      insertArtifact(db, {
+        uuid: 'eeeeeeee-0000-4000-8000-000000000001',
+        planUuid: 'plan-review',
+        projectUuid: 'test-project-uuid',
+        filename: 'xfer.txt',
+        mimeType: 'text/plain',
+        size: 4,
+        sha256: 'abc123',
+        storagePath,
+      });
+
+      upsertPendingTransfer(db, 'eeeeeeee-0000-4000-8000-000000000001', 'remote-node', 'upload');
+
+      const detail = await getPlanDetail(db, 'plan-review');
+      expect(detail?.artifacts[0].transferState).toBe('pending');
+    });
+
+    test('getPlanDetail shows synced when transfer succeeded and file is present', async () => {
+      const storagePath = path.join(artifactTempDir, 'data', 'artifacts', 'synced.txt');
+      await fs.mkdir(path.dirname(storagePath), { recursive: true });
+      await fs.writeFile(storagePath, 'data');
+
+      insertArtifact(db, {
+        uuid: 'ffffffff-0000-4000-8000-000000000001',
+        planUuid: 'plan-recently-done',
+        projectUuid: 'test-project-uuid',
+        filename: 'synced.txt',
+        mimeType: 'text/plain',
+        size: 4,
+        sha256: 'abc123',
+        storagePath,
+      });
+
+      markTransferSucceeded(db, 'ffffffff-0000-4000-8000-000000000001', 'remote-node', 'upload');
+
+      const detail = await getPlanDetail(db, 'plan-recently-done');
+      expect(detail?.artifacts[0].transferState).toBe('synced');
+    });
+
+    test('file-missing beats succeeded transfer row when file is absent', async () => {
+      insertArtifact(db, {
+        uuid: '11111111-aaaa-4000-8000-000000000001',
+        planUuid: 'plan-resolved-dependency',
+        projectUuid: 'test-project-uuid',
+        filename: 'gone.txt',
+        mimeType: 'text/plain',
+        size: 4,
+        sha256: 'abc123',
+        storagePath: '/nonexistent/gone.txt',
+      });
+
+      markTransferSucceeded(db, '11111111-aaaa-4000-8000-000000000001', 'remote-node', 'download');
+
+      const detail = await getPlanDetail(db, 'plan-resolved-dependency');
+      expect(detail?.artifacts[0].transferState).toBe('file-missing');
+    });
+
+    test('getPlanDetail returns null transferState when no transfer rows and file is present', async () => {
+      const storagePath = path.join(artifactTempDir, 'data', 'artifacts', 'local.txt');
+      await fs.mkdir(path.dirname(storagePath), { recursive: true });
+      await fs.writeFile(storagePath, 'local');
+
+      insertArtifact(db, {
+        uuid: '22222222-aaaa-4000-8000-000000000001',
+        planUuid: 'plan-mixed-dependencies',
+        projectUuid: 'test-project-uuid',
+        filename: 'local.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'abc123',
+        storagePath,
+      });
+
+      const detail = await getPlanDetail(db, 'plan-mixed-dependencies');
+      expect(detail?.artifacts[0].transferState).toBeNull();
+    });
   });
 });
 

@@ -3,6 +3,10 @@ import type { Database } from 'bun:sqlite';
 import { deduplicatePrUrls } from '$common/github/identifiers.js';
 import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
 import type { PlanSchema } from '$tim/planSchema.js';
+import {
+  listArtifactsForPlanUuid,
+  type PlanArtifactWithTransferState,
+} from '$tim/artifacts/service.js';
 import { getPrStatusByUrls, getPrStatusForPlan } from '$tim/db/pr_status.js';
 import { isWorkCompleteStatus, normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
 import {
@@ -121,6 +125,7 @@ export interface PlanDetail extends EnrichedPlan {
   parent: EnrichedPlanDependency | null;
   prStatuses: PrStatusDetailWithRequiredChecks[];
   reviewIssues: PlanSchema['reviewIssues'];
+  artifacts: PlanArtifactWithTransferState[];
 }
 
 export interface EnrichedWorkspace {
@@ -829,11 +834,12 @@ export function getPrimaryWorkspacePath(db: Database, projectId: number): string
   return row?.workspace_path ?? null;
 }
 
-export function getPlanDetail(
+export async function getPlanDetail(
   db: Database,
   planUuid: string,
-  finishConfig?: FinishConfigInput
-): PlanDetail | null {
+  finishConfig?: FinishConfigInput,
+  options: { includeDeletedArtifacts?: boolean } = {}
+): Promise<PlanDetail | null> {
   const plan = getPlanByUuid(db, planUuid);
   if (!plan) {
     return null;
@@ -900,6 +906,11 @@ export function getPlanDetail(
   const reviewIssues: PlanSchema['reviewIssues'] = plan.review_issues
     ? (JSON.parse(plan.review_issues) as PlanSchema['reviewIssues'])
     : undefined;
+  const artifacts = await listArtifactsForPlanUuid({
+    db,
+    planUuid,
+    includeDeleted: options.includeDeletedArtifacts,
+  });
 
   return {
     ...enrichedPlan,
@@ -908,5 +919,6 @@ export function getPlanDetail(
     parent,
     prStatuses: withRequiredCheckRollupStates(db, prStatuses),
     reviewIssues,
+    artifacts,
   };
 }

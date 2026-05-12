@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { getAssignment, importAssignment } from '../db/assignment.js';
+import { getArtifactByUuid } from '../db/artifact.js';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, getProjectByUuid, type Project } from '../db/project.js';
 import {
@@ -20,6 +21,10 @@ import {
   addPlanListItemOperation,
   addPlanTagOperation,
   addPlanTaskOperation,
+  buildArtifactAttachOperation,
+  buildArtifactHardDeleteOperation,
+  buildArtifactRestoreOperation,
+  buildArtifactSoftDeleteOperation,
   createPlanOperation,
   deletePlanOperation,
   deleteProjectOperation,
@@ -55,6 +60,7 @@ import { mergeCanonicalRefresh, type CanonicalPlanSnapshot } from './snapshots.j
 import { createSyncConflict } from './conflicts.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
 import { createBatchEnvelope } from './types.js';
+import { rebuildPlanProjection } from './projection.js';
 
 const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
 const OTHER_PROJECT_UUID = '99999999-9999-4999-8999-999999999111';
@@ -64,6 +70,7 @@ const TASK_UUID = '44444444-4444-4444-8444-444444444444';
 const TASK_UUID_2 = '55555555-5555-4555-8555-555555555555';
 const TASK_UUID_3 = '88888888-8888-4888-8888-888888888888';
 const TASK_UUID_4 = '99999999-9999-4999-8999-999999999999';
+const ARTIFACT_UUID = '77777777-7777-4777-8777-777777777778';
 const OLD_PARENT_TASK_UUID = '66666666-6666-4666-8666-666666666666';
 const NEW_PARENT_TASK_UUID = '77777777-7777-4777-8777-777777777777';
 const NODE_A = 'persistent-a';
@@ -467,6 +474,86 @@ describe('persistent-node sync queue', () => {
     expect(getProjectSettingWithMetadata(db, project.id, 'color')?.value).toBe('blue');
   });
 
+  test('optimistic artifact operations rebuild visible artifact projection', async () => {
+    seedPlan();
+
+    enqueue(
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'trace.log',
+          mimeType: 'text/plain',
+          size: 256,
+          sha256: 'abc123',
+          message: 'local trace',
+        },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({
+      uuid: ARTIFACT_UUID,
+      deletedAt: null,
+      revision: 1,
+    });
+
+    enqueue(
+      await buildArtifactSoftDeleteOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)?.deletedAt).not.toBeNull();
+
+    enqueue(
+      await buildArtifactRestoreOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)?.deletedAt).toBeNull();
+
+    enqueue(
+      await buildArtifactHardDeleteOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+  });
+
+  test('rejected optimistic artifact attach is removed by projection rebuild', async () => {
+    seedPlan();
+    const operation = enqueue(
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'rejected.log',
+          mimeType: 'text/plain',
+          size: 256,
+          sha256: 'abc123',
+        },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({ uuid: ARTIFACT_UUID });
+    expect(
+      db.prepare('SELECT uuid FROM plan_artifact_canonical WHERE uuid = ?').get(ARTIFACT_UUID)
+    ).toBeNull();
+
+    markOperationSending(db, operation.operationUuid);
+    markOperationRejected(db, operation.operationUuid, 'server rejected artifact attach', {
+      sequenceIds: [],
+      invalidations: [],
+    });
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+  });
+
   test('project.delete optimistic apply removes local project state while keeping queue row', async () => {
     seedPlan();
 
@@ -866,6 +953,50 @@ describe('persistent-node sync queue', () => {
       title: 'Task one',
       description: 'server',
       revision: 7,
+    });
+  });
+
+  test('mergeCanonicalRefresh reapplies pending artifact soft-delete after snapshot replacement', async () => {
+    seedPlan();
+    const pendingSoftDelete = enqueue(
+      await buildArtifactSoftDeleteOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+
+    mergeCanonicalRefresh(
+      db,
+      canonicalPlanSnapshot({
+        uuid: PLAN_UUID,
+        planId: 1,
+        revision: 12,
+        artifacts: [
+          {
+            uuid: ARTIFACT_UUID,
+            planUuid: PLAN_UUID,
+            projectUuid: PROJECT_UUID,
+            filename: 'trace.log',
+            mimeType: 'text/plain',
+            size: 256,
+            sha256: 'abc123',
+            message: 'server trace',
+            storagePath: '/remote/tim/artifacts/trace.log',
+            deletedAt: null,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            revision: 1,
+          },
+        ],
+      })
+    );
+
+    expect(pendingSoftDelete.localSequence).toBe(0);
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({
+      uuid: ARTIFACT_UUID,
+      deletedAt: pendingSoftDelete.createdAt,
+      revision: 2,
     });
   });
 

@@ -29,7 +29,8 @@ import { checkAndMarkParentDone } from '$tim/plans/parent_cascade.js';
 import { getProjectUuidForId, writePlanSetStatus } from '$tim/sync/write_router.js';
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 
-type PlanDetailResult = NonNullable<ReturnType<typeof getPlanDetail>>;
+type PlanDetail = Awaited<ReturnType<typeof getPlanDetail>>;
+type PlanDetailResult = NonNullable<PlanDetail>;
 
 function isTasklessEpic(plan: Pick<PlanDetailResult, 'epic' | 'tasks'>): boolean {
   return plan.epic === true && plan.tasks.length === 0;
@@ -39,9 +40,7 @@ const startGenerateSchema = z.object({
   planUuid: z.string().min(1),
 });
 
-function isPlanEligibleForGenerate(
-  plan: ReturnType<typeof getPlanDetail>
-): plan is PlanDetailResult {
+function isPlanEligibleForGenerate(plan: PlanDetail): plan is PlanDetailResult {
   return (
     plan != null &&
     plan.tasks.length === 0 &&
@@ -52,7 +51,7 @@ function isPlanEligibleForGenerate(
   );
 }
 
-function isPlanEligibleForAgent(plan: ReturnType<typeof getPlanDetail>): plan is PlanDetailResult {
+function isPlanEligibleForAgent(plan: PlanDetail): plan is PlanDetailResult {
   if (
     plan == null ||
     plan.status === 'done' ||
@@ -70,14 +69,14 @@ function isPlanEligibleForAgent(plan: ReturnType<typeof getPlanDetail>): plan is
   return true;
 }
 
-function isPlanEligibleForChat(plan: ReturnType<typeof getPlanDetail>): plan is PlanDetailResult {
+function isPlanEligibleForChat(plan: PlanDetail): plan is PlanDetailResult {
   return plan != null;
 }
 
 async function launchTimCommand(
   commandName: string,
   planUuid: string,
-  eligibilityCheck: (plan: ReturnType<typeof getPlanDetail>) => plan is PlanDetailResult,
+  eligibilityCheck: (plan: PlanDetail) => plan is PlanDetailResult,
   eligibilityError: string,
   spawnProcess: (planId: number, cwd: string) => Promise<SpawnProcessResult>,
   finishConfigOverride?: FinishConfig
@@ -85,7 +84,7 @@ async function launchTimCommand(
   { status: 'started'; planId: number } | { status: 'already_running'; connectionId?: string }
 > {
   const { db } = await getServerContext();
-  const plan = getPlanDetail(db, planUuid, finishConfigOverride);
+  const plan = await getPlanDetail(db, planUuid, finishConfigOverride);
 
   if (!plan) {
     error(404, 'Plan not found');
@@ -223,7 +222,7 @@ export const openInEditor = command(openInEditorSchema, async ({ planUuid }) => 
   }
 
   const { db, config } = await getServerContext();
-  const plan = getPlanDetail(db, planUuid);
+  const plan = await getPlanDetail(db, planUuid);
 
   if (!plan) {
     error(404, 'Plan not found');
@@ -243,7 +242,7 @@ export const openInEditor = command(openInEditorSchema, async ({ planUuid }) => 
 
 const REBASE_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
 
-function isPlanEligibleForRebase(plan: ReturnType<typeof getPlanDetail>): plan is PlanDetailResult {
+function isPlanEligibleForRebase(plan: PlanDetail): plan is PlanDetailResult {
   return plan != null && REBASE_ELIGIBLE_STATUSES.has(plan.status);
 }
 
@@ -261,7 +260,7 @@ export const startRebase = command(startRebaseSchema, async ({ planUuid }) => {
   );
 });
 
-function isPlanEligibleForFinish(plan: ReturnType<typeof getPlanDetail>): plan is PlanDetailResult {
+function isPlanEligibleForFinish(plan: PlanDetail): plan is PlanDetailResult {
   if (plan == null) return false;
   if (isTasklessEpic(plan)) return false;
   if (plan.status === 'needs_review') return true;
@@ -304,7 +303,7 @@ const finishPlanQuickSchema = z.object({
  */
 export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid }) => {
   const { db, config } = await getServerContext();
-  const plan = getPlanDetail(db, planUuid);
+  const plan = await getPlanDetail(db, planUuid);
 
   if (!plan) {
     error(404, 'Plan not found');
@@ -349,9 +348,7 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
 
 const CREATE_PR_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
 
-function isPlanEligibleForCreatePr(
-  plan: ReturnType<typeof getPlanDetail>
-): plan is PlanDetailResult {
+function isPlanEligibleForCreatePr(plan: PlanDetail): plan is PlanDetailResult {
   if (plan == null) return false;
   if (!CREATE_PR_ELIGIBLE_STATUSES.has(plan.status)) return false;
   if (plan.epic) return false;

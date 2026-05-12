@@ -44,6 +44,7 @@ import { prioritySchema, statusSchema } from './planSchema.js';
 import { CleanupRegistry } from '../common/cleanup_registry.js';
 import { startMcpServer } from './mcp/server.js';
 import { enableAutoClaim } from './assignments/auto_claim.js';
+import { handleCleanupCommand } from './commands/cleanup.js';
 import { runWithLogger } from '../logging.js';
 import { type TunnelAdapter, createTunnelAdapter } from '../logging/tunnel_client.js';
 import { TIM_OUTPUT_SOCKET } from '../logging/tunnel_protocol.js';
@@ -535,6 +536,14 @@ program
   });
 
 program
+  .command('cleanup')
+  .description('Run routine tim cleanup tasks')
+  .option('--dry-run', 'Report artifact cleanup without mutating artifacts')
+  .action(async (options, command) => {
+    await handleCleanupCommand(options, command).catch(handleCommandError);
+  });
+
+program
   .command('cleanup-temp')
   .description('Delete all temporary plan files marked with temp: true')
   .action(async (options, command) => {
@@ -650,6 +659,66 @@ syncCommand
   .action(async () => {
     const { handleBackfillUuidsCommand } = await import('./commands/backfill-uuids.js');
     await handleBackfillUuidsCommand().catch(handleCommandError);
+  });
+
+const artifactCommand = program.command('artifact').description('Manage plan artifacts');
+
+artifactCommand
+  .command('add <planId> <file>')
+  .description('Attach a file to a plan')
+  .option('-m, --message <message>', 'Message to store with the artifact')
+  .option('--json', 'Output structured JSON')
+  .action(async (planIdArg, file, options, command) => {
+    const { handleArtifactAddCommand } = await import('./commands/artifact/add.js');
+    await handleArtifactAddCommand(planIdArg, file, options, command).catch(handleCommandError);
+  });
+
+artifactCommand
+  .command('list <planId>')
+  .description('List artifacts attached to a plan')
+  .option('--include-deleted', 'Include soft-deleted artifacts')
+  .option('--json', 'Output structured JSON')
+  .action(async (planIdArg, options, command) => {
+    const { handleArtifactListCommand } = await import('./commands/artifact/list.js');
+    await handleArtifactListCommand(planIdArg, options, command).catch(handleCommandError);
+  });
+
+artifactCommand
+  .command('show <artifactUuid>')
+  .description('Show artifact metadata')
+  .option('--json', 'Output structured JSON')
+  .action(async (artifactUuid, options, command) => {
+    const { handleArtifactShowCommand } = await import('./commands/artifact/show.js');
+    await handleArtifactShowCommand(artifactUuid, options, command).catch(handleCommandError);
+  });
+
+artifactCommand
+  .command('delete <artifactUuid>')
+  .description('Soft-delete an artifact, or hard-delete it with --hard')
+  .option('--hard', 'Remove the artifact row and local file')
+  .action(async (artifactUuid, options, command) => {
+    const { handleArtifactDeleteCommand } = await import('./commands/artifact/delete.js');
+    await handleArtifactDeleteCommand(artifactUuid, options, command).catch(handleCommandError);
+  });
+
+artifactCommand
+  .command('restore <artifactUuid>')
+  .description('Restore a soft-deleted artifact')
+  .action(async (artifactUuid, _options, command) => {
+    const { handleArtifactRestoreCommand } = await import('./commands/artifact/restore.js');
+    await handleArtifactRestoreCommand(artifactUuid, {}, command).catch(handleCommandError);
+  });
+
+artifactCommand
+  .command('purge')
+  .description('Remove old artifact rows and orphaned artifact files')
+  .option('--older-than <days>', 'Retention threshold in days (default: 30)')
+  .option('--include-active', 'Include active artifacts on non-terminal plans')
+  .option('--dry-run', 'Report what would be removed without mutating')
+  .option('--json', 'Output structured JSON')
+  .action(async (options, command) => {
+    const { handleArtifactPurgeCommand } = await import('./commands/artifact/purge.js');
+    await handleArtifactPurgeCommand(options, command).catch(handleCommandError);
   });
 
 program
