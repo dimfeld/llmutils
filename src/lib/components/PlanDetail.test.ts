@@ -147,6 +147,7 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
     parent: null,
     prStatuses: [makePrStatusDetail()],
     reviewIssues: undefined,
+    artifacts: [],
     ...overrides,
   };
 }

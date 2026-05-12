@@ -27,6 +27,8 @@
   import PriorityBadge from './PriorityBadge.svelte';
   import PrStatusSection from './PrStatusSection.svelte';
   import CopyButton from './CopyButton.svelte';
+  import PlanArtifactsList from './PlanArtifactsList.svelte';
+  import PlanArtifactUploader from './PlanArtifactUploader.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import * as Collapsible from '$lib/components/ui/collapsible/index.js';
@@ -1019,6 +1021,12 @@
         </ul>
       </div>
     {/if}
+
+    <!-- Artifacts -->
+    <div class="space-y-2">
+      <PlanArtifactsList artifacts={plan.artifacts ?? []} />
+      <PlanArtifactUploader planUuid={plan.uuid} {projectId} />
+    </div>
 
     <!-- Details -->
     {#if plan.details}
