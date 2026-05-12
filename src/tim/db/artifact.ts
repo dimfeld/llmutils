@@ -183,13 +183,13 @@ export function listArtifactsForPurge(
       `
         SELECT pa.*
         FROM plan_artifact pa
-        LEFT JOIN plan_canonical pc ON pc.uuid = pa.plan_uuid
+        LEFT JOIN plan p ON p.uuid = pa.plan_uuid
         WHERE (pa.deleted_at IS NOT NULL AND pa.deleted_at <= ?)
           OR (
             ?
             AND pa.deleted_at IS NULL
-            AND pc.status IN ('done', 'cancelled', 'deferred')
-            AND pc.updated_at <= ?
+            AND p.status IN ('done', 'cancelled', 'deferred')
+            AND p.updated_at <= ?
           )
         ORDER BY pa.created_at ASC, pa.uuid ASC
       `

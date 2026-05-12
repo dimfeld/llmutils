@@ -323,4 +323,43 @@ describe('tim db/artifact', () => {
       )
     ).toEqual(['artifact-old-deleted', 'artifact-old-active-done-old']);
   });
+
+  test('purge eligibility follows projection plan, not canonical, when they diverge', () => {
+    upsertPlan(db, 1, {
+      uuid: 'plan-divergent',
+      planId: 5,
+      title: 'Divergent plan',
+      status: 'done',
+      sourceUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    insertArtifact(db, {
+      uuid: 'artifact-divergent',
+      planUuid: 'plan-divergent',
+      projectUuid,
+      filename: 'divergent.txt',
+      mimeType: 'text/plain',
+      size: 1,
+      sha256: 'hash-divergent',
+      storagePath: '/tmp/divergent.txt',
+      createdAt: '2026-01-02T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    });
+
+    const cutoff = '2026-01-05T00:00:00.000Z';
+
+    // Both projection and canonical agree: done + old → purgeable.
+    expect(
+      listArtifactsForPurge(db, { olderThanIso: cutoff, includeActive: true }).map((r) => r.uuid)
+    ).toContain('artifact-divergent');
+
+    // Diverge: projection back to in_progress while canonical still says done.
+    db.prepare(
+      "UPDATE plan SET status = 'in_progress' WHERE uuid = 'plan-divergent'"
+    ).run();
+
+    // Purge eligibility must follow the projection (user-visible) status.
+    expect(
+      listArtifactsForPurge(db, { olderThanIso: cutoff, includeActive: true }).map((r) => r.uuid)
+    ).not.toContain('artifact-divergent');
+  });
 });
