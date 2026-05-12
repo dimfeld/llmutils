@@ -110,4 +110,43 @@ describe('artifact storage', () => {
 
     expect(stored.mimeType).toBe('application/octet-stream');
   });
+
+  test('detects jpeg mime type for .jpg and .jpeg extensions', async () => {
+    const jpgPath = path.join(sourceDir, 'photo.jpg');
+    await fs.writeFile(jpgPath, 'fake jpg data');
+    const storedJpg = await storeArtifactFile(jpgPath, 'project-uuid', 'plan-uuid', 'jpg-uuid');
+    expect(storedJpg.mimeType).toBe('image/jpeg');
+
+    const jpegPath = path.join(sourceDir, 'photo.jpeg');
+    await fs.writeFile(jpegPath, 'fake jpeg data');
+    const storedJpeg = await storeArtifactFile(
+      jpegPath,
+      'project-uuid',
+      'plan-uuid',
+      'jpeg-uuid'
+    );
+    expect(storedJpeg.mimeType).toBe('image/jpeg');
+  });
+
+  test('detects application/json for .json extension', async () => {
+    const jsonPath = path.join(sourceDir, 'data.json');
+    await fs.writeFile(jsonPath, '{"key":"value"}');
+    const stored = await storeArtifactFile(jsonPath, 'project-uuid', 'plan-uuid', 'json-uuid');
+    expect(stored.mimeType).toBe('application/json');
+  });
+
+  test('throws when source file does not exist', async () => {
+    const missingPath = path.join(sourceDir, 'does-not-exist.txt');
+    await expect(
+      storeArtifactFile(missingPath, 'project-uuid', 'plan-uuid', 'missing-uuid')
+    ).rejects.toThrow(/does not exist/);
+  });
+
+  test('throws when source path is a directory', async () => {
+    const dirPath = path.join(sourceDir, 'a-directory');
+    await fs.mkdir(dirPath);
+    await expect(
+      storeArtifactFile(dirPath, 'project-uuid', 'plan-uuid', 'dir-uuid')
+    ).rejects.toThrow(/not a regular file/);
+  });
 });

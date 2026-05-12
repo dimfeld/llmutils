@@ -155,6 +155,64 @@ describe('tim db/artifact', () => {
     expect(hardDeleteArtifact(db, 'artifact-hard-delete')).toBeUndefined();
   });
 
+  test('returns undefined for non-existent UUID', () => {
+    expect(getArtifactByUuid(db, 'does-not-exist')).toBeUndefined();
+    expect(softDeleteArtifact(db, 'does-not-exist')).toBeUndefined();
+    expect(restoreArtifact(db, 'does-not-exist')).toBeUndefined();
+    expect(hardDeleteArtifact(db, 'does-not-exist')).toBeUndefined();
+  });
+
+  test('plan cascade-deletes artifacts when the owning plan is deleted', () => {
+    insertArtifact(db, {
+      uuid: 'artifact-cascade-1',
+      planUuid: 'plan-artifact',
+      projectUuid,
+      filename: 'a.txt',
+      mimeType: 'text/plain',
+      size: 1,
+      sha256: 'hash-a',
+      storagePath: '/tmp/a.txt',
+    });
+
+    db.prepare("DELETE FROM plan WHERE uuid = 'plan-artifact'").run();
+
+    expect(getArtifactByUuid(db, 'artifact-cascade-1')).toBeUndefined();
+    expect(listArtifactsForPlan(db, 'plan-artifact', { includeDeleted: true })).toEqual([]);
+  });
+
+  test('artifact cascade-deletes artifact_transfer rows when the artifact is deleted', () => {
+    insertArtifact(db, {
+      uuid: 'artifact-transfer-cascade',
+      planUuid: 'plan-artifact',
+      projectUuid,
+      filename: 'b.txt',
+      mimeType: 'text/plain',
+      size: 2,
+      sha256: 'hash-b',
+      storagePath: '/tmp/b.txt',
+    });
+    db.prepare(
+      `INSERT INTO artifact_transfer (artifact_uuid, node_id, direction, status)
+       VALUES ('artifact-transfer-cascade', 'node-1', 'upload', 'pending')`
+    ).run();
+
+    const beforeDelete = db
+      .prepare<{ count: number }, string>(
+        "SELECT count(*) as count FROM artifact_transfer WHERE artifact_uuid = ?"
+      )
+      .get('artifact-transfer-cascade');
+    expect(beforeDelete?.count).toBe(1);
+
+    hardDeleteArtifact(db, 'artifact-transfer-cascade');
+
+    const afterDelete = db
+      .prepare<{ count: number }, string>(
+        "SELECT count(*) as count FROM artifact_transfer WHERE artifact_uuid = ?"
+      )
+      .get('artifact-transfer-cascade');
+    expect(afterDelete?.count).toBe(0);
+  });
+
   test('lists purge candidates by threshold and includeActive flag', () => {
     insertArtifact(db, {
       uuid: 'artifact-old-deleted',
