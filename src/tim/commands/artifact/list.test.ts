@@ -152,6 +152,29 @@ describe('tim artifact list command', () => {
     expect(payload[0].transferState).toBe('file-missing');
   });
 
+  test('JSON output for soft-deleted artifact has ISO deletedAt and null transferState', async () => {
+    const sourcePath = path.join(context.sourceDir, 'soft.txt');
+    await fs.writeFile(sourcePath, 'soft');
+    const artifact = await addArtifact({
+      planId: 1,
+      sourcePath,
+      config: getDefaultConfig(),
+      repoRoot: context.tempDir,
+    });
+    await softDeleteArtifact(artifact.uuid, { config: getDefaultConfig() });
+
+    await handleArtifactListCommand('1', { includeDeleted: true, json: true });
+    const payload = JSON.parse(consoleLog.mock.calls.at(-1)?.[0] as string) as Array<
+      Record<string, unknown>
+    >;
+    const row = payload.find((r) => r.uuid === artifact.uuid);
+    expect(row).toBeDefined();
+    expect(typeof row!.deletedAt).toBe('string');
+    expect(() => new Date(row!.deletedAt as string).toISOString()).not.toThrow();
+    expect(row!.transferState).toBeNull();
+    expect(row!.fileExists).toBeNull();
+  });
+
   test('text output includes a TRANSFER column header', async () => {
     const sourcePath = path.join(context.sourceDir, 'hdr.txt');
     await fs.writeFile(sourcePath, 'hdr');
