@@ -8,6 +8,8 @@ import { claimAssignment } from '$tim/db/assignment.js';
 import { upsertBranchMergeRequirements } from '$tim/db/branch_merge_requirements.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { upsertPlan } from '$tim/db/plan.js';
+import { insertArtifact } from '$tim/db/artifact.js';
+import { upsertPendingTransfer, markTransferSucceeded } from '$tim/db/artifact_transfer.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { setProjectSetting } from '$tim/db/project_settings.js';
@@ -1119,6 +1121,241 @@ describe('lib/server/db_queries', () => {
       lockPid: process.pid,
     });
     expect(detail?.lockStartedAt).toEqual(expect.any(String));
+  });
+
+  describe('getPlanDetail artifacts', () => {
+    let artifactTempDir: string;
+    let savedXdgDataHome: string | undefined;
+
+    beforeAll(async () => {
+      artifactTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-db-queries-artifact-test-'));
+    });
+
+    beforeEach(() => {
+      savedXdgDataHome = process.env.XDG_DATA_HOME;
+      process.env.XDG_DATA_HOME = path.join(artifactTempDir, 'data');
+    });
+
+    afterEach(() => {
+      if (savedXdgDataHome === undefined) {
+        delete process.env.XDG_DATA_HOME;
+      } else {
+        process.env.XDG_DATA_HOME = savedXdgDataHome;
+      }
+    });
+
+    afterAll(async () => {
+      await fs.rm(artifactTempDir, { recursive: true, force: true });
+    });
+
+    test('getPlanDetail returns empty artifacts array when plan has none', () => {
+      const detail = getPlanDetail(db, 'plan-parent');
+      expect(detail).not.toBeNull();
+      expect(detail?.artifacts).toEqual([]);
+    });
+
+    test('getPlanDetail returns active artifacts for a plan', async () => {
+      const storagePath = path.join(artifactTempDir, 'data', 'artifacts', 'file.txt');
+      await fs.mkdir(path.dirname(storagePath), { recursive: true });
+      await fs.writeFile(storagePath, 'hello');
+
+      insertArtifact(db, {
+        uuid: 'aaaaaaaa-0000-4000-8000-000000000001',
+        planUuid: 'plan-parent',
+        projectUuid: 'test-project-uuid',
+        filename: 'file.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'abc123',
+        storagePath,
+        message: 'test artifact',
+      });
+
+      const detail = getPlanDetail(db, 'plan-parent');
+      expect(detail).not.toBeNull();
+      expect(detail?.artifacts).toHaveLength(1);
+      expect(detail?.artifacts[0]).toMatchObject({
+        uuid: 'aaaaaaaa-0000-4000-8000-000000000001',
+        filename: 'file.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        message: 'test artifact',
+      });
+    });
+
+    test('getPlanDetail hides soft-deleted artifacts by default', async () => {
+      const storagePath = path.join(artifactTempDir, 'data', 'artifacts', 'visible.txt');
+      await fs.mkdir(path.dirname(storagePath), { recursive: true });
+      await fs.writeFile(storagePath, 'hello');
+
+      insertArtifact(db, {
+        uuid: 'bbbbbbbb-0000-4000-8000-000000000001',
+        planUuid: 'plan-blocked',
+        projectUuid: 'test-project-uuid',
+        filename: 'visible.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'abc123',
+        storagePath,
+      });
+
+      insertArtifact(db, {
+        uuid: 'bbbbbbbb-0000-4000-8000-000000000002',
+        planUuid: 'plan-blocked',
+        projectUuid: 'test-project-uuid',
+        filename: 'deleted.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'def456',
+        storagePath: '/nonexistent/deleted.txt',
+        deletedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      const detail = getPlanDetail(db, 'plan-blocked');
+      expect(detail?.artifacts).toHaveLength(1);
+      expect(detail?.artifacts[0].uuid).toBe('bbbbbbbb-0000-4000-8000-000000000001');
+    });
+
+    test('getPlanDetail includes soft-deleted when includeDeletedArtifacts is true', async () => {
+      const storagePath = path.join(artifactTempDir, 'data', 'artifacts', 'inc-visible.txt');
+      await fs.mkdir(path.dirname(storagePath), { recursive: true });
+      await fs.writeFile(storagePath, 'hello');
+
+      insertArtifact(db, {
+        uuid: 'cccccccc-0000-4000-8000-000000000001',
+        planUuid: 'plan-dependency-open',
+        projectUuid: 'test-project-uuid',
+        filename: 'inc-visible.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'abc123',
+        storagePath,
+      });
+
+      insertArtifact(db, {
+        uuid: 'cccccccc-0000-4000-8000-000000000002',
+        planUuid: 'plan-dependency-open',
+        projectUuid: 'test-project-uuid',
+        filename: 'inc-deleted.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'def456',
+        storagePath: '/nonexistent/inc-deleted.txt',
+        deletedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      const defaultDetail = getPlanDetail(db, 'plan-dependency-open');
+      expect(defaultDetail?.artifacts).toHaveLength(1);
+
+      const fullDetail = getPlanDetail(db, 'plan-dependency-open', undefined, {
+        includeDeletedArtifacts: true,
+      });
+      expect(fullDetail?.artifacts).toHaveLength(2);
+      const uuids = fullDetail?.artifacts.map((a) => a.uuid).sort();
+      expect(uuids).toEqual([
+        'cccccccc-0000-4000-8000-000000000001',
+        'cccccccc-0000-4000-8000-000000000002',
+      ]);
+    });
+
+    test('getPlanDetail surfaces file-missing when storage file is absent', () => {
+      insertArtifact(db, {
+        uuid: 'dddddddd-0000-4000-8000-000000000001',
+        planUuid: 'plan-pending',
+        projectUuid: 'test-project-uuid',
+        filename: 'missing.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'abc123',
+        storagePath: '/nonexistent/path/missing.txt',
+      });
+
+      const detail = getPlanDetail(db, 'plan-pending');
+      expect(detail?.artifacts).toHaveLength(1);
+      expect(detail?.artifacts[0].transferState).toBe('file-missing');
+    });
+
+    test('getPlanDetail surfaces transfer state from artifact_transfer rows', async () => {
+      const storagePath = path.join(artifactTempDir, 'data', 'artifacts', 'xfer.txt');
+      await fs.mkdir(path.dirname(storagePath), { recursive: true });
+      await fs.writeFile(storagePath, 'data');
+
+      insertArtifact(db, {
+        uuid: 'eeeeeeee-0000-4000-8000-000000000001',
+        planUuid: 'plan-review',
+        projectUuid: 'test-project-uuid',
+        filename: 'xfer.txt',
+        mimeType: 'text/plain',
+        size: 4,
+        sha256: 'abc123',
+        storagePath,
+      });
+
+      upsertPendingTransfer(db, 'eeeeeeee-0000-4000-8000-000000000001', 'remote-node', 'upload');
+
+      const detail = getPlanDetail(db, 'plan-review');
+      expect(detail?.artifacts[0].transferState).toBe('pending');
+    });
+
+    test('getPlanDetail shows synced when transfer succeeded and file is present', async () => {
+      const storagePath = path.join(artifactTempDir, 'data', 'artifacts', 'synced.txt');
+      await fs.mkdir(path.dirname(storagePath), { recursive: true });
+      await fs.writeFile(storagePath, 'data');
+
+      insertArtifact(db, {
+        uuid: 'ffffffff-0000-4000-8000-000000000001',
+        planUuid: 'plan-recently-done',
+        projectUuid: 'test-project-uuid',
+        filename: 'synced.txt',
+        mimeType: 'text/plain',
+        size: 4,
+        sha256: 'abc123',
+        storagePath,
+      });
+
+      markTransferSucceeded(db, 'ffffffff-0000-4000-8000-000000000001', 'remote-node', 'upload');
+
+      const detail = getPlanDetail(db, 'plan-recently-done');
+      expect(detail?.artifacts[0].transferState).toBe('synced');
+    });
+
+    test('file-missing beats succeeded transfer row when file is absent', () => {
+      insertArtifact(db, {
+        uuid: '11111111-aaaa-4000-8000-000000000001',
+        planUuid: 'plan-resolved-dependency',
+        projectUuid: 'test-project-uuid',
+        filename: 'gone.txt',
+        mimeType: 'text/plain',
+        size: 4,
+        sha256: 'abc123',
+        storagePath: '/nonexistent/gone.txt',
+      });
+
+      markTransferSucceeded(db, '11111111-aaaa-4000-8000-000000000001', 'remote-node', 'download');
+
+      const detail = getPlanDetail(db, 'plan-resolved-dependency');
+      expect(detail?.artifacts[0].transferState).toBe('file-missing');
+    });
+
+    test('getPlanDetail returns null transferState when no transfer rows and file is present', async () => {
+      const storagePath = path.join(artifactTempDir, 'data', 'artifacts', 'local.txt');
+      await fs.mkdir(path.dirname(storagePath), { recursive: true });
+      await fs.writeFile(storagePath, 'local');
+
+      insertArtifact(db, {
+        uuid: '22222222-aaaa-4000-8000-000000000001',
+        planUuid: 'plan-mixed-dependencies',
+        projectUuid: 'test-project-uuid',
+        filename: 'local.txt',
+        mimeType: 'text/plain',
+        size: 5,
+        sha256: 'abc123',
+        storagePath,
+      });
+
+      const detail = getPlanDetail(db, 'plan-mixed-dependencies');
+      expect(detail?.artifacts[0].transferState).toBeNull();
+    });
   });
 });
 
