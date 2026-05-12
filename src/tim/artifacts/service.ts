@@ -25,12 +25,7 @@ import {
 import type { ArtifactTransferStatus } from '../db/artifact_transfer.js';
 import { MAX_ARTIFACT_BYTES } from './constants.js';
 import { ArtifactTooLargeError } from './errors.js';
-import {
-  getArtifactsRoot,
-  removeArtifactFile,
-  storeArtifactFile,
-  artifactFileExistsSync,
-} from './storage.js';
+import { getArtifactsRoot, removeArtifactFile, storeArtifactFile } from './storage.js';
 import type { PlanArtifact } from './types.js';
 
 const ORPHAN_SAFETY_WINDOW_MS = 60_000;
@@ -43,7 +38,6 @@ export class ArtifactNotFoundError extends Error {
 }
 
 export type ArtifactTransferState = ArtifactTransferStatus | 'synced' | 'file-missing' | null;
-type ArtifactTransferDisplayState = Exclude<ArtifactTransferState, 'file-missing' | null>;
 
 export type PlanArtifactWithTransferState = PlanArtifact & {
   transferState: ArtifactTransferState;
@@ -160,9 +154,19 @@ function resolveArtifactPlanByUuid(options: ArtifactServiceOptions & { planUuid:
 
 async function assertReadableRegularFile(sourcePath: string): Promise<string> {
   const resolvedSourcePath = path.resolve(process.cwd(), sourcePath);
+  let realSourcePath;
+  try {
+    realSourcePath = await fs.realpath(resolvedSourcePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(`Artifact source file does not exist: ${resolvedSourcePath}`);
+    }
+    throw error;
+  }
+
   let stat;
   try {
-    stat = await fs.stat(resolvedSourcePath);
+    stat = await fs.stat(realSourcePath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new Error(`Artifact source file does not exist: ${resolvedSourcePath}`);
@@ -171,13 +175,13 @@ async function assertReadableRegularFile(sourcePath: string): Promise<string> {
   }
 
   if (!stat.isFile()) {
-    throw new Error(`Artifact source path is not a regular file: ${resolvedSourcePath}`);
+    throw new Error(`Artifact source path is not a regular file: ${realSourcePath}`);
   }
   if (stat.size > MAX_ARTIFACT_BYTES) {
     throw new ArtifactTooLargeError(stat.size);
   }
 
-  return resolvedSourcePath;
+  return realSourcePath;
 }
 
 function safeOriginalFilename(sourcePath: string, originalFilename?: string): string {
@@ -210,21 +214,25 @@ function transferStateMap(
     )
     .all(...artifactUuids) as Array<{ artifact_uuid: string; status: ArtifactTransferStatus }>;
 
-  const rank: Record<ArtifactTransferDisplayState, number> = {
+  const rank: Record<ArtifactTransferStatus, number> = {
     failed: 4,
     in_progress: 3,
     pending: 2,
-    synced: 1,
     succeeded: 1,
   };
-  const states = new Map<string, ArtifactTransferDisplayState>();
+  const states = new Map<string, ArtifactTransferStatus>();
   for (const row of rows) {
     const current = states.get(row.artifact_uuid);
     if (!current || rank[row.status] > rank[current]) {
-      states.set(row.artifact_uuid, row.status === 'succeeded' ? 'synced' : row.status);
+      states.set(row.artifact_uuid, row.status);
     }
   }
-  return new Map<string, ArtifactTransferState>(states);
+  return new Map<string, ArtifactTransferState>(
+    Array.from(states, ([artifactUuid, status]) => [
+      artifactUuid,
+      status === 'succeeded' ? 'synced' : status,
+    ])
+  );
 }
 
 async function addArtifactForResolvedPlan(options: {
@@ -295,9 +303,21 @@ export async function addArtifactByPlanUuid(
   });
 }
 
-export function listArtifactsForPlanUuid(
+async function artifactFileExists(storagePath: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(storagePath);
+    return stat.isFile();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+export async function listArtifactsForPlanUuid(
   options: ListArtifactsForPlanUuidOptions
-): PlanArtifactWithTransferState[] {
+): Promise<PlanArtifactWithTransferState[]> {
   const db = options.db ?? getDatabase();
   const { planUuid } = options;
   const artifacts = listArtifactsForPlan(db, planUuid, { includeDeleted: options.includeDeleted });
@@ -305,11 +325,12 @@ export function listArtifactsForPlanUuid(
     db,
     artifacts.map((artifact) => artifact.uuid)
   );
-  return artifacts.map((artifact) => ({
+  const fileExistsByIndex = await Promise.all(
+    artifacts.map((artifact) => artifactFileExists(artifact.storagePath))
+  );
+  return artifacts.map((artifact, index) => ({
     ...artifact,
-    transferState: artifactFileExistsSync(artifact.storagePath)
-      ? (states.get(artifact.uuid) ?? null)
-      : 'file-missing',
+    transferState: fileExistsByIndex[index] ? (states.get(artifact.uuid) ?? null) : 'file-missing',
   }));
 }
 
@@ -317,7 +338,7 @@ export async function listArtifacts(
   options: ListArtifactOptions
 ): Promise<PlanArtifactWithTransferState[]> {
   const { db, planUuid } = await resolveArtifactPlan(options);
-  return listArtifactsForPlanUuid({
+  return await listArtifactsForPlanUuid({
     db,
     planUuid,
     includeDeleted: options.includeDeleted,
@@ -477,7 +498,15 @@ export async function purgeArtifacts(options: PurgeArtifactOptions = {}): Promis
 
   const knownArtifactUuids = listAllArtifactUuids(db);
   for await (const filePath of walkFiles(getArtifactsRoot())) {
-    const stat = await fs.stat(filePath);
+    let stat;
+    try {
+      stat = await fs.stat(filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        continue;
+      }
+      throw error;
+    }
     if (stat.mtimeMs >= now - ORPHAN_SAFETY_WINDOW_MS) {
       continue;
     }

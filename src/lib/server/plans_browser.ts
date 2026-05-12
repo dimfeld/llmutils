@@ -184,7 +184,7 @@ export async function getPlanDetailRouteData(
   }
 
   const finishConfig = await loadFinishConfigForProject(db, planRow.project_id);
-  const detail = getPlanDetail(db, planUuid, finishConfig, {
+  const detail = await getPlanDetail(db, planUuid, finishConfig, {
     includeDeletedArtifacts: options.includeDeletedArtifacts,
   });
   if (!detail) {

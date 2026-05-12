@@ -834,12 +834,12 @@ export function getPrimaryWorkspacePath(db: Database, projectId: number): string
   return row?.workspace_path ?? null;
 }
 
-export function getPlanDetail(
+export async function getPlanDetail(
   db: Database,
   planUuid: string,
   finishConfig?: FinishConfigInput,
   options: { includeDeletedArtifacts?: boolean } = {}
-): PlanDetail | null {
+): Promise<PlanDetail | null> {
   const plan = getPlanByUuid(db, planUuid);
   if (!plan) {
     return null;
@@ -906,7 +906,7 @@ export function getPlanDetail(
   const reviewIssues: PlanSchema['reviewIssues'] = plan.review_issues
     ? (JSON.parse(plan.review_issues) as PlanSchema['reviewIssues'])
     : undefined;
-  const artifacts = listArtifactsForPlanUuid({
+  const artifacts = await listArtifactsForPlanUuid({
     db,
     planUuid,
     includeDeleted: options.includeDeletedArtifacts,

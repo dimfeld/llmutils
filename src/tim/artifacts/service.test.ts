@@ -1,8 +1,16 @@
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Database } from 'bun:sqlite';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+vi.mock('node:fs/promises', async () => {
+  const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+  return {
+    ...actual,
+    stat: vi.fn(actual.stat),
+  };
+});
 
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { getDefaultConfig } from '../configSchema.js';
@@ -10,7 +18,12 @@ import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { upsertCanonicalPlanInTransaction, upsertProjectionPlanInTransaction } from '../db/plan.js';
 import { getArtifactByUuid, insertArtifact } from '../db/artifact.js';
-import { markTransferSucceeded, upsertPendingTransfer } from '../db/artifact_transfer.js';
+import {
+  markTransferFailed,
+  markTransferInProgress,
+  markTransferSucceeded,
+  upsertPendingTransfer,
+} from '../db/artifact_transfer.js';
 import { MAX_ARTIFACT_BYTES } from './constants.js';
 import { getArtifactsRoot, resolveArtifactPath } from './storage.js';
 import {
@@ -126,6 +139,34 @@ describe('artifact service', () => {
         repoRoot: tempDir,
       })
     ).rejects.toThrow(/too large/);
+  });
+
+  test('resolves symlink source paths and rejects dangling symlinks as missing', async () => {
+    const targetPath = path.join(sourceDir, 'target.log');
+    const symlinkPath = path.join(sourceDir, 'source-link.log');
+    await fs.writeFile(targetPath, 'target bytes');
+    await fs.symlink(targetPath, symlinkPath);
+
+    const artifact = await addArtifact({
+      planId: 1,
+      sourcePath: symlinkPath,
+      config: getDefaultConfig(),
+      repoRoot: tempDir,
+    });
+
+    expect(artifact.filename).toBe('target.log');
+    await expect(fs.readFile(artifact.storagePath, 'utf8')).resolves.toBe('target bytes');
+
+    const danglingPath = path.join(sourceDir, 'dangling-link.log');
+    await fs.symlink(path.join(sourceDir, 'missing-target.log'), danglingPath);
+    await expect(
+      addArtifact({
+        planId: 1,
+        sourcePath: danglingPath,
+        config: getDefaultConfig(),
+        repoRoot: tempDir,
+      })
+    ).rejects.toThrow(/does not exist/);
   });
 
   test('gets, soft-deletes, restores, and hard-deletes artifacts', async () => {
@@ -251,6 +292,25 @@ describe('artifact service', () => {
     });
   });
 
+  test('purge skips orphan files unlinked between directory walk and stat', async () => {
+    const orphanDir = path.dirname(
+      resolveArtifactPath(projectUuid, '11111111-1111-4111-8111-111111111111', 'race', '.txt')
+    );
+    await fs.mkdir(orphanDir, { recursive: true });
+    const orphanPath = path.join(orphanDir, 'race.txt');
+    await fs.writeFile(orphanPath, 'race');
+
+    const enoent = Object.assign(new Error('missing during stat'), { code: 'ENOENT' });
+    vi.mocked(fs.stat).mockRejectedValueOnce(enoent);
+    try {
+      await expect(purgeArtifacts({ config: getDefaultConfig() })).resolves.toMatchObject({
+        orphanFilesRemoved: 0,
+      });
+    } finally {
+      vi.mocked(fs.stat).mockClear();
+    }
+  });
+
   test('purge hard-deletes file-missing rows without counting missing bytes', async () => {
     const sourcePath = path.join(sourceDir, 'missing-purge.txt');
     await fs.writeFile(sourcePath, 'missing bytes');
@@ -303,6 +363,40 @@ describe('artifact service', () => {
     upsertPendingTransfer(db, artifact.uuid, 'remote-node', 'upload');
     results = await listArtifacts({ planId: 1, config: getDefaultConfig(), repoRoot: tempDir });
     expect(results[0].transferState).toBe('pending');
+  });
+
+  test('listArtifacts reports the worst transfer state and maps succeeded to synced', async () => {
+    const sourcePath = path.join(sourceDir, 'multi-xfer.txt');
+    const syncedPath = path.join(sourceDir, 'synced-xfer.txt');
+    await fs.writeFile(sourcePath, 'multi');
+    await fs.writeFile(syncedPath, 'synced');
+    const artifact = await addArtifact({
+      planId: 1,
+      sourcePath,
+      config: getDefaultConfig(),
+      repoRoot: tempDir,
+    });
+    const syncedArtifact = await addArtifact({
+      planId: 1,
+      sourcePath: syncedPath,
+      config: getDefaultConfig(),
+      repoRoot: tempDir,
+    });
+
+    upsertPendingTransfer(db, artifact.uuid, 'pending-node', 'upload');
+    markTransferSucceeded(db, artifact.uuid, 'succeeded-node', 'download');
+    markTransferInProgress(db, artifact.uuid, 'failed-node', 'download');
+    markTransferFailed(db, artifact.uuid, 'failed-node', 'download', new Error('failed'));
+    markTransferSucceeded(db, syncedArtifact.uuid, 'succeeded-node', 'download');
+
+    const results = await listArtifacts({
+      planId: 1,
+      config: getDefaultConfig(),
+      repoRoot: tempDir,
+    });
+    const byUuid = new Map(results.map((result) => [result.uuid, result]));
+    expect(byUuid.get(artifact.uuid)?.transferState).toBe('failed');
+    expect(byUuid.get(syncedArtifact.uuid)?.transferState).toBe('synced');
   });
 
   test('listArtifacts reports file-missing when bytes are absent with no transfer row', async () => {
