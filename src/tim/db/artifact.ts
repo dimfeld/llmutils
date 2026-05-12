@@ -192,22 +192,14 @@ export function listArtifactsForPurge(
         WHERE (pa.deleted_at IS NOT NULL AND pa.deleted_at <= ?)
           OR (
             pa.deleted_at IS NULL
-            AND (
-              (
-                p.status IN ('done', 'cancelled', 'deferred')
-                AND p.updated_at <= ?
-              )
-              OR (
-                ?
-                AND pa.created_at <= ?
-              )
-            )
+            AND ?
+            AND p.status IN ('done', 'cancelled', 'deferred')
+            AND p.updated_at <= ?
           )
         ORDER BY pa.created_at ASC, pa.uuid ASC
       `
     )
     .all(
-      options.olderThanIso,
       options.olderThanIso,
       options.includeActive ? 1 : 0,
       options.olderThanIso

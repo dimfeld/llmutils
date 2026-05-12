@@ -424,9 +424,11 @@ export async function purgeArtifacts(options: PurgeArtifactOptions = {}): Promis
   const dryRun = options.dryRun ?? false;
   const now = Date.now();
   const olderThanIso = new Date(now - olderThanDays * 86_400_000).toISOString();
+  // Always include active artifacts on completed plans (the default behaviour).
+  // options.includeActive further extends purge to active artifacts on non-terminal plans.
   const candidates = listArtifactsForPurge(db, {
     olderThanIso,
-    includeActive: options.includeActive ?? false,
+    includeActive: true,
   });
 
   const report: PurgeReport = {
