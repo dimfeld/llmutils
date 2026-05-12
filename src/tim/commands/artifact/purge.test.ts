@@ -23,6 +23,18 @@ describe('tim artifact purge command', () => {
     await context.restore();
   });
 
+  test('rejects non-numeric --older-than values', async () => {
+    await expect(handleArtifactPurgeCommand({ olderThan: 'abc' })).rejects.toThrow(
+      /--older-than must be a non-negative integer/
+    );
+  });
+
+  test('rejects negative --older-than values', async () => {
+    await expect(handleArtifactPurgeCommand({ olderThan: '-1' })).rejects.toThrow(
+      /--older-than must be a non-negative integer/
+    );
+  });
+
   test('prints a dry-run JSON report', async () => {
     const sourcePath = path.join(context.sourceDir, 'old.log');
     await fs.writeFile(sourcePath, 'old');

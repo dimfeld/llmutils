@@ -271,7 +271,33 @@ tim artifact restore <artifactUuid>
 tim artifact purge --older-than 30 --dry-run
 ```
 
-`tim artifact add` prints the new artifact UUID so agents can reference it in subsequent messages. With `--json` it emits `{ uuid, filename, mimeType, size, planUuid }`.
+`tim artifact add` prints the new artifact UUID so agents can reference it in subsequent messages.
+
+### JSON output
+
+`tim artifact add --json`, `tim artifact list --json`, and `tim artifact show --json` use the same artifact shape:
+
+```json
+{
+  "uuid": "artifact UUID",
+  "planUuid": "owning plan UUID",
+  "projectUuid": "owning project UUID",
+  "filename": "original-name.png",
+  "mimeType": "image/png",
+  "size": 12345,
+  "sha256": "hex digest",
+  "message": "optional note or null",
+  "storagePath": "/absolute/local/path",
+  "createdAt": "ISO timestamp",
+  "updatedAt": "ISO timestamp",
+  "deletedAt": null,
+  "revision": 1,
+  "transferState": "synced | pending | failed | file-missing | null",
+  "fileExists": true
+}
+```
+
+`transferState` is `null` when the command did not load transfer state; `fileExists` is `null` when the command did not check the filesystem.
 
 Deletion has two tiers:
 

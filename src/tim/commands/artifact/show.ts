@@ -2,7 +2,7 @@ import type { Command } from 'commander';
 import { log } from '../../../logging.js';
 import { artifactFileExists } from '../../artifacts/storage.js';
 import { getArtifact } from '../../artifacts/service.js';
-import { printJson, resolveArtifactCommandContext } from './common.js';
+import { printJson, resolveArtifactCommandContext, serializeArtifactForCli } from './common.js';
 
 export interface ArtifactShowOptions {
   json?: boolean;
@@ -18,7 +18,7 @@ export async function handleArtifactShowCommand(
   const fileExists = await artifactFileExists(artifact.storagePath);
 
   if (options.json) {
-    printJson({ ...artifact, fileExists });
+    printJson(serializeArtifactForCli(artifact, { fileExists }));
     return;
   }
 

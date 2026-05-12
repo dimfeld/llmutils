@@ -27,14 +27,28 @@ describe('tim artifact add command', () => {
 
     await handleArtifactAddCommand('1', sourcePath, { message: 'run log', json: true });
 
-    const payload = JSON.parse(consoleLog.mock.calls.at(-1)?.[0] as string) as { uuid: string };
+    const payload = JSON.parse(consoleLog.mock.calls.at(-1)?.[0] as string) as Record<
+      string,
+      unknown
+    >;
     expect(payload).toMatchObject({
       filename: 'capture.txt',
       mimeType: 'text/plain',
       size: 7,
       planUuid: '22222222-2222-4222-8222-222222222222',
+      projectUuid: context.projectUuid,
+      message: 'run log',
+      transferState: null,
+      fileExists: null,
     });
-    expect(getArtifactByUuid(context.db, payload.uuid)).toMatchObject({
+    expect(payload.uuid).toEqual(expect.any(String));
+    expect(payload.sha256).toEqual(expect.any(String));
+    expect(payload.storagePath).toEqual(expect.any(String));
+    expect(payload.createdAt).toEqual(expect.any(String));
+    expect(payload.updatedAt).toEqual(expect.any(String));
+    expect(payload.deletedAt).toBeNull();
+    expect(payload.revision).toEqual(expect.any(Number));
+    expect(getArtifactByUuid(context.db, payload.uuid as string)).toMatchObject({
       message: 'run log',
       filename: 'capture.txt',
     });

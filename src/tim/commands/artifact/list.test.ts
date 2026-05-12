@@ -75,12 +75,21 @@ describe('tim artifact list command', () => {
     const row = payload[0];
     expect(row).toMatchObject({
       uuid: artifact.uuid,
+      planUuid: artifact.planUuid,
+      projectUuid: artifact.projectUuid,
       filename: 'data.txt',
       mimeType: 'text/plain',
       size: 4,
+      message: null,
     });
-    expect('transferState' in row).toBe(true);
+    expect(row.sha256).toEqual(expect.any(String));
+    expect(row.storagePath).toEqual(expect.any(String));
+    expect(row.createdAt).toEqual(expect.any(String));
+    expect(row.updatedAt).toEqual(expect.any(String));
+    expect(row.deletedAt).toBeNull();
+    expect(row.revision).toEqual(expect.any(Number));
     expect(row.transferState).toBeNull();
+    expect(row.fileExists).toBeNull();
   });
 
   test('transfer state column reflects artifact_transfer rows', async () => {

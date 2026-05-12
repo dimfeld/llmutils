@@ -2,7 +2,7 @@ import type { Command } from 'commander';
 import { log } from '../../../logging.js';
 import { parsePlanIdFromCliArg } from '../../plans.js';
 import { listArtifacts, type PlanArtifactWithTransferState } from '../../artifacts/service.js';
-import { printJson, resolveArtifactCommandContext } from './common.js';
+import { printJson, resolveArtifactCommandContext, serializeArtifactForCli } from './common.js';
 
 export interface ArtifactListOptions {
   includeDeleted?: boolean;
@@ -46,7 +46,11 @@ export async function handleArtifactListCommand(
   });
 
   if (options.json) {
-    printJson(artifacts);
+    printJson(
+      artifacts.map((artifact) =>
+        serializeArtifactForCli(artifact, { transferState: artifact.transferState ?? null })
+      )
+    );
     return;
   }
 

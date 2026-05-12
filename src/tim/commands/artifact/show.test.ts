@@ -35,13 +35,19 @@ describe('tim artifact show command', () => {
 
     const payload = JSON.parse(consoleLog.mock.calls.at(-1)?.[0] as string) as {
       uuid: string;
+      sha256: string;
+      transferState: string | null;
       fileExists: boolean;
     };
     expect(payload.uuid).toBe(artifact.uuid);
     expect(payload.fileExists).toBe(true);
+    expect(payload.sha256).toEqual(expect.any(String));
+    expect(payload.transferState).toBeNull();
     expect(payload).toMatchObject({
       filename: 'show.txt',
       mimeType: 'text/plain',
+      message: null,
+      deletedAt: null,
     });
   });
 

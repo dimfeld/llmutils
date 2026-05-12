@@ -3,7 +3,7 @@ import type { Command } from 'commander';
 import { log } from '../../../logging.js';
 import { parsePlanIdFromCliArg } from '../../plans.js';
 import { addArtifact } from '../../artifacts/service.js';
-import { printJson, resolveArtifactCommandContext } from './common.js';
+import { printJson, resolveArtifactCommandContext, serializeArtifactForCli } from './common.js';
 
 export interface ArtifactAddOptions {
   message?: string;
@@ -27,13 +27,7 @@ export async function handleArtifactAddCommand(
   });
 
   if (options.json) {
-    printJson({
-      uuid: artifact.uuid,
-      filename: artifact.filename,
-      mimeType: artifact.mimeType,
-      size: artifact.size,
-      planUuid: artifact.planUuid,
-    });
+    printJson(serializeArtifactForCli(artifact));
     return;
   }
 

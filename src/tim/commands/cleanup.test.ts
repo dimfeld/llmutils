@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
+import * as loggingModule from '../../logging.js';
+import * as artifactServiceModule from '../artifacts/service.js';
 import { addArtifact, softDeleteArtifact } from '../artifacts/service.js';
 import { getDefaultConfig } from '../configSchema.js';
 import { getArtifactByUuid } from '../db/artifact.js';
@@ -15,6 +17,8 @@ import {
 describe('tim cleanup command', () => {
   let context: ArtifactCommandTestContext;
   let consoleLog: ReturnType<typeof vi.spyOn>;
+  let purgeSpy: ReturnType<typeof vi.spyOn> | undefined;
+  let warnSpy: ReturnType<typeof vi.spyOn> | undefined;
 
   beforeEach(async () => {
     context = await setupArtifactCommandTest();
@@ -22,6 +26,10 @@ describe('tim cleanup command', () => {
   });
 
   afterEach(async () => {
+    purgeSpy?.mockRestore();
+    purgeSpy = undefined;
+    warnSpy?.mockRestore();
+    warnSpy = undefined;
     consoleLog.mockRestore();
     await context.restore();
   });
@@ -100,5 +108,17 @@ describe('tim cleanup command', () => {
         String(call[0]).includes('Artifact purge dry run: 1 row(s) would be deleted')
       )
     ).toBe(true);
+  });
+
+  test('warns and resolves when artifact purge fails', async () => {
+    purgeSpy = vi
+      .spyOn(artifactServiceModule, 'purgeArtifacts')
+      .mockRejectedValueOnce(new Error('boom'));
+    warnSpy = vi.spyOn(loggingModule, 'warn').mockImplementation(() => undefined);
+
+    await expect(handleCleanupCommand({})).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to purge artifacts'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('boom'));
   });
 });
