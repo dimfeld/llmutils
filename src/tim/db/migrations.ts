@@ -1075,6 +1075,11 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 34,
+    up: `SELECT 1;`,
+    afterUp: addSyncTombstonePlanUuidColumn,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {
@@ -1321,6 +1326,21 @@ function logSkippedRows(targetTable: string, skippedCount: number): void {
   if (skippedCount > 0) {
     debugLog(`[migrations] Skipped ${skippedCount} orphan row(s) while backfilling ${targetTable}`);
   }
+}
+
+function addSyncTombstonePlanUuidColumn(db: Database): void {
+  if (!tableExists(db, 'sync_tombstone')) {
+    return;
+  }
+  const columns = tableColumns(db, 'sync_tombstone');
+  if (!columns.has('plan_uuid')) {
+    db.run('ALTER TABLE sync_tombstone ADD COLUMN plan_uuid TEXT');
+  }
+  db.run(`
+    CREATE INDEX IF NOT EXISTS idx_sync_tombstone_plan_artifact_plan
+      ON sync_tombstone(entity_type, plan_uuid)
+      WHERE entity_type = 'plan_artifact'
+  `);
 }
 
 export function runMigrations(db: Database): void {

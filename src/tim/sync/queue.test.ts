@@ -924,6 +924,50 @@ describe('persistent-node sync queue', () => {
     });
   });
 
+  test('mergeCanonicalRefresh reapplies pending artifact soft-delete after snapshot replacement', async () => {
+    seedPlan();
+    const pendingSoftDelete = enqueue(
+      await buildArtifactSoftDeleteOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+
+    mergeCanonicalRefresh(
+      db,
+      canonicalPlanSnapshot({
+        uuid: PLAN_UUID,
+        planId: 1,
+        revision: 12,
+        artifacts: [
+          {
+            uuid: ARTIFACT_UUID,
+            planUuid: PLAN_UUID,
+            projectUuid: PROJECT_UUID,
+            filename: 'trace.log',
+            mimeType: 'text/plain',
+            size: 256,
+            sha256: 'abc123',
+            message: 'server trace',
+            storagePath: '/remote/tim/artifacts/trace.log',
+            deletedAt: null,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            revision: 1,
+          },
+        ],
+      })
+    );
+
+    expect(pendingSoftDelete.localSequence).toBe(0);
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({
+      uuid: ARTIFACT_UUID,
+      deletedAt: pendingSoftDelete.createdAt,
+      revision: 2,
+    });
+  });
+
   test('mergeCanonicalRefresh preserves local base tracking fields', () => {
     seedPlan();
     db.prepare('UPDATE plan SET base_commit = ?, base_change_id = ? WHERE uuid = ?').run(

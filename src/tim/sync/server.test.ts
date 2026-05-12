@@ -1,4 +1,7 @@
 import { Database } from 'bun:sqlite';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { getArtifactByUuid } from '../db/artifact.js';
 import { runMigrations } from '../db/migrations.js';
@@ -527,6 +530,58 @@ describe('sync transport server and clients', () => {
     expect(getArtifactByUuid(localDb, ARTIFACT_UUID)?.deletedAt).toBeNull();
   });
 
+  test('plan snapshot catch-up creates missing projection plan and localizes artifact paths', async () => {
+    const mainDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-main-artifacts-'));
+    const localDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tim-local-artifacts-'));
+    const originalXdgDataHome = process.env.XDG_DATA_HOME;
+    try {
+      process.env.XDG_DATA_HOME = mainDataDir;
+      const mainDb = createDb();
+      const localDb = createDb();
+      seedPlan(mainDb);
+      getOrCreateProject(localDb, 'github.com__example__repo', {
+        uuid: PROJECT_UUID,
+        highestPlanId: 10,
+      });
+
+      await applyOperation(
+        mainDb,
+        await buildArtifactAttachOperation(
+          {
+            projectUuid: PROJECT_UUID,
+            planUuid: PLAN_UUID,
+            artifactUuid: ARTIFACT_UUID,
+            filename: 'capture.PNG',
+            mimeType: 'image/png',
+            size: 512,
+            sha256: 'abc123',
+            message: 'capture',
+          },
+          { originNodeId: NODE_A, localSequence: 1 }
+        )
+      );
+      const snapshot = loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`);
+      expect(getArtifactByUuid(mainDb, ARTIFACT_UUID)?.storagePath).toContain(mainDataDir);
+
+      process.env.XDG_DATA_HOME = localDataDir;
+      mergeCanonicalRefresh(localDb, snapshot!);
+
+      expect(getPlanByUuid(localDb, PLAN_UUID)).not.toBeNull();
+      const artifact = getArtifactByUuid(localDb, ARTIFACT_UUID);
+      expect(artifact?.storagePath).toBe(
+        path.join(localDataDir, 'tim', 'artifacts', PROJECT_UUID, PLAN_UUID, `${ARTIFACT_UUID}.png`)
+      );
+    } finally {
+      if (originalXdgDataHome === undefined) {
+        delete process.env.XDG_DATA_HOME;
+      } else {
+        process.env.XDG_DATA_HOME = originalXdgDataHome;
+      }
+      fs.rmSync(mainDataDir, { recursive: true, force: true });
+      fs.rmSync(localDataDir, { recursive: true, force: true });
+    }
+  });
+
   test('plan snapshot merge removes hard-deleted artifacts and records tombstone', async () => {
     const mainDb = createDb();
     const localDb = createDb();
@@ -550,13 +605,14 @@ describe('sync transport server and clients', () => {
       localDb,
       await buildArtifactAttachOperation(attachInput, { originNodeId: NODE_A, localSequence: 1 })
     );
-    await applyOperation(
-      mainDb,
-      await buildArtifactHardDeleteOperation(
-        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
-        { originNodeId: NODE_A, localSequence: 2 }
-      )
+    const hardDelete = await buildArtifactHardDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
     );
+    await applyOperation(mainDb, hardDelete);
+    mainDb
+      .prepare('DELETE FROM sync_operation WHERE operation_uuid = ?')
+      .run(hardDelete.operationUuid);
 
     const snapshot = loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`);
     expect(snapshot).toMatchObject({
@@ -572,9 +628,47 @@ describe('sync transport server and clients', () => {
     expect(getArtifactByUuid(localDb, ARTIFACT_UUID)).toBeUndefined();
     expect(
       localDb
-        .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+        .prepare(
+          'SELECT entity_key, plan_uuid FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?'
+        )
         .get('plan_artifact', ARTIFACT_UUID)
-    ).toEqual({ entity_key: ARTIFACT_UUID });
+    ).toEqual({ entity_key: ARTIFACT_UUID, plan_uuid: PLAN_UUID });
+  });
+
+  test('stale artifact tombstones in snapshot remove stale local artifact rows', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    seedPlan(localDb);
+
+    const attachInput = {
+      projectUuid: PROJECT_UUID,
+      planUuid: PLAN_UUID,
+      artifactUuid: ARTIFACT_UUID,
+      filename: 'capture.png',
+      mimeType: 'image/png',
+      size: 512,
+      sha256: 'abc123',
+    };
+    await applyOperation(
+      localDb,
+      await buildArtifactAttachOperation(attachInput, { originNodeId: NODE_A, localSequence: 1 })
+    );
+    await applyOperation(
+      mainDb,
+      await buildArtifactAttachOperation(attachInput, { originNodeId: NODE_A, localSequence: 1 })
+    );
+    await applyOperation(
+      mainDb,
+      await buildArtifactHardDeleteOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: NODE_A, localSequence: 2 }
+      )
+    );
+
+    const snapshot = loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`);
+    mergeCanonicalRefresh(localDb, snapshot!);
+    expect(getArtifactByUuid(localDb, ARTIFACT_UUID)).toBeUndefined();
   });
 
   test('broadcasts invalidations to connected peers except the sender', async () => {

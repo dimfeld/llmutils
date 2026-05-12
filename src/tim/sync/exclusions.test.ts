@@ -11,6 +11,10 @@ import {
   addPlanListItemOperation,
   addPlanTagOperation,
   addPlanTaskOperation,
+  buildArtifactAttachOperation,
+  buildArtifactHardDeleteOperation,
+  buildArtifactRestoreOperation,
+  buildArtifactSoftDeleteOperation,
   createPlanOperation,
   deletePlanOperation,
   deleteProjectOperation,
@@ -143,6 +147,7 @@ describe('sync operation exclusions', () => {
       expect(
         operationType.startsWith('project.') ||
           operationType.startsWith('plan.') ||
+          operationType.startsWith('plan_artifact.') ||
           operationType.startsWith('project_setting.')
       ).toBe(true);
       for (const excludedName of excludedNames) {
@@ -230,6 +235,42 @@ describe('sync operation exclusions', () => {
           taskUuid: TASK_UUID,
           newPlanUuid: NEW_PLAN_UUID,
           title: 'Promoted',
+        },
+        options
+      ),
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: '66666666-6666-4666-8666-666666666666',
+          filename: 'trace.log',
+          mimeType: 'text/plain',
+          size: 123,
+          sha256: 'abc123',
+        },
+        options
+      ),
+      await buildArtifactSoftDeleteOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: '66666666-6666-4666-8666-666666666666',
+        },
+        options
+      ),
+      await buildArtifactRestoreOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: '66666666-6666-4666-8666-666666666666',
+        },
+        options
+      ),
+      await buildArtifactHardDeleteOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: '66666666-6666-4666-8666-666666666666',
         },
         options
       ),

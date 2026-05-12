@@ -19,7 +19,7 @@ describe('sync operation metadata', () => {
     ] as const) {
       expect(SYNC_OPERATION_METADATA[type]).toEqual({
         entity: 'plan_artifact',
-        baseRevisionTarget: 'plan',
+        baseRevisionTarget: null,
       });
     }
   });

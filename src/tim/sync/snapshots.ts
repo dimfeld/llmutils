@@ -369,12 +369,16 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
     tags: snapshot.plan.tags,
     forceOverwrite: true,
   });
+  // Ensure the projection plan row exists before replacing artifacts because
+  // plan_artifact has a FK to the projection plan table.
+  rebuildPlanProjectionInTransaction(db, snapshot.plan.uuid);
   replaceArtifactsForPlanSnapshot(db, snapshot.plan.uuid, snapshot.plan.artifacts ?? []);
   for (const tombstone of snapshot.plan.artifactTombstones ?? []) {
     recordSyncTombstone(db, {
       entityType: 'plan_artifact',
       entityKey: tombstone.artifactUuid,
       projectUuid: snapshot.projectUuid,
+      planUuid: snapshot.plan.uuid,
       deletionOperationUuid:
         tombstone.deletedBySequenceId === undefined
           ? `canonical-artifact-delete:${tombstone.artifactUuid}`

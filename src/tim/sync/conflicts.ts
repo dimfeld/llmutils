@@ -76,6 +76,7 @@ export function recordSyncTombstone(
     entityType: string;
     entityKey: string;
     projectUuid: string;
+    planUuid?: string | null;
     deletionOperationUuid: string;
     deletedRevision: number | null;
     originNodeId: string;
@@ -87,13 +88,15 @@ export function recordSyncTombstone(
         entity_type,
         entity_key,
         project_uuid,
+        plan_uuid,
         deletion_operation_uuid,
         deleted_revision,
         deleted_at,
         origin_node_id
-      ) VALUES (?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ?)
       ON CONFLICT(entity_type, entity_key) DO UPDATE SET
         project_uuid = excluded.project_uuid,
+        plan_uuid = excluded.plan_uuid,
         deletion_operation_uuid = excluded.deletion_operation_uuid,
         deleted_revision = excluded.deleted_revision,
         deleted_at = excluded.deleted_at,
@@ -103,6 +106,7 @@ export function recordSyncTombstone(
     input.entityType,
     input.entityKey,
     input.projectUuid,
+    input.planUuid ?? null,
     input.deletionOperationUuid,
     input.deletedRevision,
     input.originNodeId

@@ -249,7 +249,7 @@ export function rebuildPlanProjectionInTransaction(db: Database, planUuid: strin
     tags: adapter.getTags(planUuid),
   });
   for (const artifactOperation of artifactOperations) {
-    applyArtifactOperationToDb(db, artifactOperation);
+    applyArtifactOperationToDb(db, artifactOperation, { allowMissingPlan: true });
   }
 }
 
