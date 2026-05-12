@@ -21,7 +21,7 @@ export interface SyncOperationPayloadIndexes {
 }
 
 type SyncOperationType = SyncOperationPayload['type'];
-type SyncOperationEntity = 'project' | 'plan' | 'project_setting';
+type SyncOperationEntity = 'project' | 'plan' | 'plan_artifact' | 'project_setting';
 type BaseRevisionTargetKind = 'plan' | 'task' | 'source_plan' | null;
 
 export const SYNC_OPERATION_METADATA = {
@@ -41,6 +41,10 @@ export const SYNC_OPERATION_METADATA = {
   'plan.delete': { entity: 'plan', baseRevisionTarget: 'plan' },
   'plan.set_parent': { entity: 'plan', baseRevisionTarget: 'plan' },
   'plan.promote_task': { entity: 'plan', baseRevisionTarget: 'source_plan' },
+  'plan_artifact.attach': { entity: 'plan_artifact', baseRevisionTarget: 'plan' },
+  'plan_artifact.soft_delete': { entity: 'plan_artifact', baseRevisionTarget: 'plan' },
+  'plan_artifact.restore': { entity: 'plan_artifact', baseRevisionTarget: 'plan' },
+  'plan_artifact.hard_delete': { entity: 'plan_artifact', baseRevisionTarget: 'plan' },
   'project.delete': { entity: 'project', baseRevisionTarget: null },
   'project_setting.set': { entity: 'project_setting', baseRevisionTarget: null },
   'project_setting.delete': { entity: 'project_setting', baseRevisionTarget: null },
@@ -135,6 +139,10 @@ export function getSyncOperationPlanRefs(
     case 'plan.add_list_item':
     case 'plan.remove_list_item':
     case 'plan.delete':
+    case 'plan_artifact.attach':
+    case 'plan_artifact.soft_delete':
+    case 'plan_artifact.restore':
+    case 'plan_artifact.hard_delete':
       addRef(parsed.planUuid, 'target');
       break;
     case 'plan.set_scalar':

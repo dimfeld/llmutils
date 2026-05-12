@@ -291,6 +291,11 @@ function applyOperationToUnchecked(
       throw new Error(
         'applyOperationTo does not handle project/project_setting operations; use entity-specific apply/projection code instead'
       );
+    case 'plan_artifact.attach':
+    case 'plan_artifact.soft_delete':
+    case 'plan_artifact.restore':
+    case 'plan_artifact.hard_delete':
+      throw new Error(`applyOperationTo does not handle ${op.type} yet`);
     default: {
       const exhaustive: never = op;
       return exhaustive;

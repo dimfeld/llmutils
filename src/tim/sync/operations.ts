@@ -6,6 +6,10 @@ import {
   deriveTargetKey,
   type SyncOperationEnvelope,
   type SyncOperationPayload,
+  type SyncArtifactAttachPayload,
+  type SyncArtifactHardDeletePayload,
+  type SyncArtifactRestorePayload,
+  type SyncArtifactSoftDeletePayload,
   type SyncPlanAddTaskPayload,
   type SyncPlanCreatePayload,
   type SyncPlanCreateTask,
@@ -281,4 +285,40 @@ export async function promotePlanTaskOperation(
   // TODO(Task 4): finalize any extra promotion metadata needed by the apply
   // engine once composite graph mutation semantics are implemented.
   return buildEnvelope(projectUuid, { type: 'plan.promote_task', ...input }, options);
+}
+
+export async function buildArtifactAttachOperation(
+  input: Omit<SyncArtifactAttachPayload, 'type' | 'artifactUuid'> & { artifactUuid?: string },
+  options: SyncOperationConstructorOptions
+) {
+  return buildEnvelope(
+    input.projectUuid,
+    {
+      type: 'plan_artifact.attach',
+      ...input,
+      artifactUuid: input.artifactUuid ?? randomUUID(),
+    },
+    options
+  );
+}
+
+export async function buildArtifactSoftDeleteOperation(
+  input: Omit<SyncArtifactSoftDeletePayload, 'type'>,
+  options: SyncOperationConstructorOptions
+) {
+  return buildEnvelope(input.projectUuid, { type: 'plan_artifact.soft_delete', ...input }, options);
+}
+
+export async function buildArtifactRestoreOperation(
+  input: Omit<SyncArtifactRestorePayload, 'type'>,
+  options: SyncOperationConstructorOptions
+) {
+  return buildEnvelope(input.projectUuid, { type: 'plan_artifact.restore', ...input }, options);
+}
+
+export async function buildArtifactHardDeleteOperation(
+  input: Omit<SyncArtifactHardDeletePayload, 'type'>,
+  options: SyncOperationConstructorOptions
+) {
+  return buildEnvelope(input.projectUuid, { type: 'plan_artifact.hard_delete', ...input }, options);
 }

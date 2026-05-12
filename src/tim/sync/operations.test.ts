@@ -5,6 +5,10 @@ import {
   addPlanListItemOperation,
   addPlanTagOperation,
   addPlanTaskOperation,
+  buildArtifactAttachOperation,
+  buildArtifactHardDeleteOperation,
+  buildArtifactRestoreOperation,
+  buildArtifactSoftDeleteOperation,
   createPlanOperation,
   deletePlanOperation,
   deleteProjectOperation,
@@ -20,11 +24,12 @@ import {
   setProjectSettingOperation,
   updatePlanTaskTextOperation,
 } from './operations.js';
-import { SyncOperationEnvelopeSchema } from './types.js';
+import { SyncOperationEnvelopeSchema, SyncOperationPayloadSchema } from './types.js';
 
 const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
 const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
 const OTHER_PLAN_UUID = '33333333-3333-4333-8333-333333333333';
+const ARTIFACT_UUID = '77777777-7777-4777-8777-777777777777';
 const TASK_UUID = '55555555-5555-4555-8555-555555555555';
 const NEW_PLAN_UUID = '66666666-6666-4666-8666-666666666666';
 const PROVIDED_OPERATION_UUID = '44444444-4444-4444-8444-444444444444';
@@ -140,10 +145,38 @@ describe('sync operation constructors', () => {
         },
         { originNodeId: 'override-node', localSequence: 18 }
       ),
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'screenshot.png',
+          mimeType: 'image/png',
+          size: 1234,
+          sha256: 'abc123',
+          message: 'before fix',
+        },
+        { originNodeId: 'override-node', localSequence: 19 }
+      ),
+      await buildArtifactSoftDeleteOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: 'override-node', localSequence: 20 }
+      ),
+      await buildArtifactRestoreOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: 'override-node', localSequence: 21 }
+      ),
+      await buildArtifactHardDeleteOperation(
+        { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+        { originNodeId: 'override-node', localSequence: 22 }
+      ),
     ];
 
     for (const operation of operations) {
       expect(() => SyncOperationEnvelopeSchema.parse(operation)).not.toThrow();
+      expect(() =>
+        SyncOperationPayloadSchema.parse(JSON.parse(JSON.stringify(operation.op)))
+      ).not.toThrow();
       expect(JSON.parse(JSON.stringify(operation))).toEqual(operation);
     }
   });
@@ -225,6 +258,40 @@ describe('sync operation constructors', () => {
     expect(withProvided.op.taskUuid).toBe(TASK_UUID);
   });
 
+  test('buildArtifactAttachOperation auto-generates artifactUuid and preserves provided artifactUuid', async () => {
+    const generated = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        filename: 'generated.png',
+        mimeType: 'image/png',
+        size: 1234,
+        sha256: 'abc123',
+      },
+      { originNodeId: 'node-a', localSequence: 1 }
+    );
+    expect(generated.op.type).toBe('plan_artifact.attach');
+    if (generated.op.type !== 'plan_artifact.attach') throw new Error('expected artifact attach');
+    expect(generated.op.artifactUuid).toMatch(OPERATION_UUID_V4);
+
+    const withProvided = await buildArtifactAttachOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        artifactUuid: ARTIFACT_UUID,
+        filename: 'provided.png',
+        mimeType: 'image/png',
+        size: 1234,
+        sha256: 'abc123',
+      },
+      { originNodeId: 'node-a', localSequence: 2 }
+    );
+    if (withProvided.op.type !== 'plan_artifact.attach') {
+      throw new Error('expected artifact attach');
+    }
+    expect(withProvided.op.artifactUuid).toBe(ARTIFACT_UUID);
+  });
+
   test('envelope targetType and targetKey match entity_keys output for sampled operations', async () => {
     const tagOp = await addPlanTagOperation(
       PROJECT_UUID,
@@ -255,6 +322,13 @@ describe('sync operation constructors', () => {
     );
     expect(projectOp.targetType).toBe('project');
     expect(projectOp.targetKey).toBe(`project:${PROJECT_UUID}`);
+
+    const artifactOp = await buildArtifactSoftDeleteOperation(
+      { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
+      { originNodeId: 'node-a', localSequence: 5 }
+    );
+    expect(artifactOp.targetType).toBe('plan');
+    expect(artifactOp.targetKey).toBe(`plan:${PLAN_UUID}`);
   });
 
   test('set-like constructors do not dedupe values', async () => {

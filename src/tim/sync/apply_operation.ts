@@ -349,6 +349,11 @@ function applyPayload(
         originalPayload,
         normalizedPayload
       );
+    case 'plan_artifact.attach':
+    case 'plan_artifact.soft_delete':
+    case 'plan_artifact.restore':
+    case 'plan_artifact.hard_delete':
+      throw new Error(`Applying ${op.type} is not implemented yet`);
     default: {
       const exhaustive: never = op;
       return exhaustive;
