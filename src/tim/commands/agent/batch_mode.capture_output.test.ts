@@ -69,6 +69,8 @@ vi.mock('../../../common/process.js', () => ({
   commitAll: vi.fn(async () => 0),
 }));
 
+// Mocked for test isolation: avoids real git working-copy probes leaking from
+// adjacent code paths into this suite.
 vi.mock('../../../common/git.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../common/git.js')>()),
   getWorkingCopyStatus: vi.fn(async () => ({

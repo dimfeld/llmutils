@@ -172,7 +172,10 @@ function runBootstrapInsert(
     return insertSequence.run(projectUuid, 'project_setting', targetKey, revision);
   } catch (error) {
     if (isForeignKeyConstraintError(error)) {
-      debugLog(`[sync/bootstrap] Foreign key constraint failed while inserting ${targetType}`, context);
+      debugLog(
+        `[sync/bootstrap] Foreign key constraint failed while inserting ${targetType}`,
+        context
+      );
       logForeignKeyCheck(db, `[sync/bootstrap] failing insert for ${targetType}`);
     } else {
       debugLog(`[sync/bootstrap] Failed while inserting ${targetType}`, context, error);

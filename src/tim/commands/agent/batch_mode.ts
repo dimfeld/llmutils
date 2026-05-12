@@ -444,7 +444,9 @@ Available tasks:\n\n${taskDescriptions}`,
         }
 
         const shouldSkipSimplify =
-          simplifyMode === 'never' || (initialCompletedTaskCount === 0 && iteration === 1);
+          simplifyMode === 'never' ||
+          finalReview === false ||
+          (initialCompletedTaskCount === 0 && iteration === 1);
         if (!shouldSkipSimplify && !isShuttingDown()) {
           sendStructured({
             type: 'workflow_progress',

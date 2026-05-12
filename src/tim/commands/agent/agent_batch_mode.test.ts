@@ -1374,7 +1374,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     });
   });
 
-  describe('finalization timestamps and manual mode', () => {
+  describe('simplify pass', () => {
     test('simplify runs when mode=after-completion and tasks were completed before this run', async () => {
       await createPlanFile({
         tasks: [
@@ -1607,6 +1607,55 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       expect(handleReviewCommandSpy).not.toHaveBeenCalled();
     });
 
+    test('simplify is skipped when finalReview is disabled', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        simplify: { mode: 'after-completion' },
+      });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 0',
+              description: 'Already done',
+              done: true,
+            },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      await timAgent(1, options, {});
+
+      expect(runSimplifySpy).not.toHaveBeenCalled();
+      expect(handleReviewCommandSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('finalization timestamps and manual mode', () => {
     test('after-review mode runs docs and lessons when final review is clean', async () => {
       await createPlanFile({
         tasks: [

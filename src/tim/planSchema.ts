@@ -56,7 +56,10 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
       .default(false)
       .optional()
       .describe('Mark plan as an epic for organizing children plans'),
-    temp: z.boolean().optional().describe('A temporary plan that should be deleted after completion'),
+    temp: z
+      .boolean()
+      .optional()
+      .describe('A temporary plan that should be deleted after completion'),
     dependencies: z
       .array(z.number().int().positive())
       .default(() => [])
