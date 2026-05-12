@@ -466,11 +466,11 @@ function applyProjectSetting(
     ];
   }
   const nextValue = JSON.stringify(envelope.op.value);
-  if (row && envelope.op.baseRevision !== undefined && envelope.op.baseRevision !== row.revision) {
-    return staleSettingConflict(db, envelope, originalPayload, normalizedPayload, row.value);
-  }
   if (row?.value === nextValue) {
     return [];
+  }
+  if (row && envelope.op.baseRevision !== undefined && envelope.op.baseRevision !== row.revision) {
+    return staleSettingConflict(db, envelope, originalPayload, normalizedPayload, row.value);
   }
   const nextRevision = (row?.revision ?? 0) + 1;
   writeCanonicalProjectSettingRow(db, project.id, envelope.op.setting, envelope.op.value, {

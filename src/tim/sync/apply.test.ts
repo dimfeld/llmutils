@@ -1726,6 +1726,39 @@ describe('main-node sync apply engine', () => {
     expect(countRows('sync_sequence')).toBe(1);
   });
 
+  test('stale scalar op is accepted as a no-op when incoming already matches current', async () => {
+    seedPlan();
+    const statusOp = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'status', value: 'pending', baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    const result = applyOperation(db, statusOp);
+
+    expect(result.status).toBe('applied');
+    expect(result.sequenceIds).toEqual([]);
+    expect(countRows('sync_conflict')).toBe(0);
+    expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('pending');
+  });
+
+  test('stale text op is accepted as a no-op when incoming already matches current', async () => {
+    seedPlan();
+    const details = getPlanByUuid(db, PLAN_UUID)!.details!;
+    const detailsOp = await patchPlanTextOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'details', base: 'old\n', new: details, baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    const result = applyOperation(db, detailsOp);
+
+    expect(result.status).toBe('applied');
+    expect(result.sequenceIds).toEqual([]);
+    expect(countRows('sync_conflict')).toBe(0);
+    expect(getPlanByUuid(db, PLAN_UUID)?.details).toBe(details);
+  });
+
   test('unknown project and unknown non-create plan reject with SyncValidationError', async () => {
     const unknownProject = await addPlanTagOperation(
       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -2968,6 +3001,28 @@ describe('main-node sync apply engine', () => {
     expect(result.acknowledged).toBe(true);
     const row = db.prepare('SELECT * FROM project_setting WHERE setting = ?').get('color');
     expect(row).not.toBeNull(); // not deleted
+  });
+
+  test('stale project setting set is accepted as a no-op when incoming already matches current', async () => {
+    const setOp = await setProjectSettingOperation(
+      { projectUuid: PROJECT_UUID, setting: 'color', value: 'green' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    applyOperation(db, setOp);
+    db.prepare('UPDATE project_setting SET revision = revision + 1 WHERE setting = ?').run('color');
+
+    const staleSameValueOp = await setProjectSettingOperation(
+      { projectUuid: PROJECT_UUID, setting: 'color', value: 'green', baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    const result = applyOperation(db, staleSameValueOp);
+
+    expect(result.status).toBe('applied');
+    expect(result.sequenceIds).toEqual([]);
+    expect(countRows('sync_conflict')).toBe(0);
+    expect(db.prepare('SELECT value FROM project_setting WHERE setting = ?').get('color')).toEqual({
+      value: '"green"',
+    });
   });
 
   test('task tombstones are recorded for each task when a plan is deleted', async () => {

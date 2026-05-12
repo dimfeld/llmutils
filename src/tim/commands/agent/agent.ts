@@ -22,7 +22,7 @@ import {
 } from '../../../logging.js';
 import { executePostApplyCommand } from '../../actions.js';
 import { loadEffectiveConfig, loadGlobalConfigForNotifications } from '../../configLoader.js';
-import { getDefaultConfig } from '../../configSchema.js';
+import { getDefaultConfig, type TimConfig } from '../../configSchema.js';
 import { getDatabase } from '../../db/database.js';
 import { getPlanByUuid } from '../../db/plan.js';
 import { getProjectUuidForId, writePlanSetScalar } from '../../sync/write_router.js';
@@ -82,6 +82,7 @@ import {
 } from '../plan_discovery.js';
 import { clearTmpDir } from '../../batch_review_cache.js';
 import { autoCreatePrForPlan } from '../create_pr.js';
+import { withPlanAutoSync } from '../../plan_materialize.js';
 
 interface AgentCommandOptions {
   nextReady?: number;
@@ -117,6 +118,27 @@ interface AgentCommandOptions {
 
 interface AgentGlobalCliOptions {
   config?: string;
+}
+
+async function updatePlanTimestampWithAutoSync(
+  currentPlanFile: string,
+  repoRoot: string,
+  config: TimConfig,
+  update: (plan: PlanSchema) => void
+): Promise<void> {
+  const initialPlan = await readPlanFile(currentPlanFile);
+  const planId = initialPlan.id;
+  if (typeof planId !== 'number') {
+    update(initialPlan);
+    await writePlanFile(currentPlanFile, initialPlan, { cwdForIdentity: repoRoot, config });
+    return;
+  }
+
+  await withPlanAutoSync(planId, repoRoot, async () => {
+    const updatedPlan = await readPlanFile(currentPlanFile);
+    update(updatedPlan);
+    await writePlanFile(currentPlanFile, updatedPlan, { cwdForIdentity: repoRoot, config });
+  });
 }
 
 export async function handleAgentCommand(
@@ -827,9 +849,14 @@ export async function timAgent(
               nonInteractive: noninteractive,
               terminalInput: terminalInputEnabled,
             });
-            const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-            updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
-            await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+            await updatePlanTimestampWithAutoSync(
+              currentPlanFile,
+              currentBaseDir,
+              config,
+              (plan) => {
+                plan.docsUpdatedAt = new Date().toISOString();
+              }
+            );
           } catch (err) {
             error('Failed to update documentation:', err);
             // Don't stop execution for documentation update failures
@@ -883,9 +910,14 @@ export async function timAgent(
                   nonInteractive: noninteractive,
                   terminalInput: terminalInputEnabled,
                 });
-                const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-                updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
-                await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+                await updatePlanTimestampWithAutoSync(
+                  currentPlanFile,
+                  currentBaseDir,
+                  config,
+                  (plan) => {
+                    plan.docsUpdatedAt = new Date().toISOString();
+                  }
+                );
               } catch (err) {
                 error('Failed to update documentation:', err);
                 // Don't stop execution for documentation update failures
@@ -987,9 +1019,14 @@ export async function timAgent(
                   nonInteractive: noninteractive,
                   terminalInput: terminalInputEnabled,
                 });
-                const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-                updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
-                await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+                await updatePlanTimestampWithAutoSync(
+                  currentPlanFile,
+                  currentBaseDir,
+                  config,
+                  (plan) => {
+                    plan.docsUpdatedAt = new Date().toISOString();
+                  }
+                );
               } catch (err) {
                 error('Failed to update documentation:', err);
                 // Don't stop execution for documentation update failures
@@ -1034,9 +1071,14 @@ export async function timAgent(
                   }
                 );
                 if (lessonsUpdateResult === true || lessonsUpdateResult === 'skipped-no-lessons') {
-                  const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-                  updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
-                  await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+                  await updatePlanTimestampWithAutoSync(
+                    currentPlanFile,
+                    currentBaseDir,
+                    config,
+                    (plan) => {
+                      plan.lessonsAppliedAt = new Date().toISOString();
+                    }
+                  );
                 }
               } catch (err) {
                 error('Failed to apply lessons learned:', err as Error);
@@ -1234,9 +1276,9 @@ export async function timAgent(
             nonInteractive: noninteractive,
             terminalInput: terminalInputEnabled,
           });
-          const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-          updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
-          await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+          await updatePlanTimestampWithAutoSync(currentPlanFile, currentBaseDir, config, (plan) => {
+            plan.docsUpdatedAt = new Date().toISOString();
+          });
         } catch (err) {
           error('Failed to update documentation:', err);
           // Don't stop execution for documentation update failures
@@ -1288,9 +1330,14 @@ export async function timAgent(
                 nonInteractive: noninteractive,
                 terminalInput: terminalInputEnabled,
               });
-              const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-              updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
-              await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+              await updatePlanTimestampWithAutoSync(
+                currentPlanFile,
+                currentBaseDir,
+                config,
+                (plan) => {
+                  plan.docsUpdatedAt = new Date().toISOString();
+                }
+              );
             } catch (err) {
               error('Failed to update documentation:', err);
               // Don't stop execution for documentation update failures
@@ -1323,9 +1370,14 @@ export async function timAgent(
                 nonInteractive: noninteractive,
                 terminalInput: terminalInputEnabled,
               });
-              const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-              updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
-              await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+              await updatePlanTimestampWithAutoSync(
+                currentPlanFile,
+                currentBaseDir,
+                config,
+                (plan) => {
+                  plan.docsUpdatedAt = new Date().toISOString();
+                }
+              );
             } catch (err) {
               error('Failed to update documentation:', err);
               // Don't stop execution for documentation update failures
@@ -1367,9 +1419,14 @@ export async function timAgent(
                 }
               );
               if (lessonsUpdateResult === true || lessonsUpdateResult === 'skipped-no-lessons') {
-                const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-                updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
-                await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+                await updatePlanTimestampWithAutoSync(
+                  currentPlanFile,
+                  currentBaseDir,
+                  config,
+                  (plan) => {
+                    plan.lessonsAppliedAt = new Date().toISOString();
+                  }
+                );
               }
             } catch (err) {
               error('Failed to apply lessons learned:', err as Error);

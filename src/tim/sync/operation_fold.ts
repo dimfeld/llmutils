@@ -162,7 +162,7 @@ function applyOperationToUnchecked(
         adapter.baseRevisionMode === 'projection'
           ? shouldSkipProjectionBaseRevision(adapter, op, baseTarget)
           : !baseTarget.exists || baselineRevision !== op.baseRevision;
-      if (isStale) {
+      if (isStale && !incomingValueAlreadyApplied(adapter, op)) {
         applyOperationToPrecondition(
           `Stale base revision for plan ${baseTarget.planUuid}`,
           'stale_revision'
@@ -367,6 +367,43 @@ function getAtomicBatchBaselineRevision(
     return options.atomicBatchPlanBaseRevisions.get(target.planUuid)!;
   }
   return target.revision;
+}
+
+function incomingValueAlreadyApplied(
+  adapter: ApplyOperationToAdapter,
+  op: Extract<SyncOperationPayload, { baseRevision?: number }>
+): boolean {
+  switch (op.type) {
+    case 'plan.set_scalar': {
+      const plan = adapter.getPlan(op.planUuid);
+      if (!plan) {
+        return false;
+      }
+      const current = (plan as unknown as Record<string, unknown>)[op.field];
+      const incoming = normalizePlanScalarAdapterValue(adapter, op.field, op.value);
+      return current === incoming;
+    }
+    case 'plan.patch_text': {
+      const plan = adapter.getPlan(op.planUuid);
+      if (!plan) {
+        return false;
+      }
+      const column = PLAN_TEXT_COLUMNS[op.field];
+      return ((plan[column] ?? '') as string).toString() === op.new;
+    }
+    case 'plan.update_task_text': {
+      const task = adapter.getTasks(op.planUuid).find((item) => item.uuid === op.taskUuid);
+      if (!task) {
+        return false;
+      }
+      const column = TASK_TEXT_COLUMNS[op.field];
+      return (task[column] ?? '') === op.new;
+    }
+    case 'plan.set_parent':
+      return (adapter.getPlan(op.planUuid)?.parent_uuid ?? null) === (op.newParentUuid ?? null);
+    default:
+      return false;
+  }
 }
 
 function shouldSkipProjectionBaseRevision(

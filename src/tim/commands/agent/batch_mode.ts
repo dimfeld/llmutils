@@ -16,11 +16,32 @@ import { runUpdateDocs } from '../update-docs.js';
 import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
 import { isShuttingDown } from '../../shutdown_state.js';
-import { materializePlan, syncMaterializedPlan } from '../../plan_materialize.js';
+import { materializePlan, syncMaterializedPlan, withPlanAutoSync } from '../../plan_materialize.js';
 import { getCompletionStatus } from '../../plans/plan_state_utils.js';
 import { removePlanAssignment } from '../../assignments/remove_plan_assignment.js';
 
 const FAST_NOOP_BATCH_RETRY_MS = 5 * 60 * 1000;
+
+async function updatePlanTimestampWithAutoSync(
+  currentPlanFile: string,
+  repoRoot: string,
+  config: TimConfig,
+  update: (plan: Awaited<ReturnType<typeof readPlanFile>>) => void
+): Promise<void> {
+  const initialPlan = await readPlanFile(currentPlanFile);
+  const planId = initialPlan.id;
+  if (typeof planId !== 'number') {
+    update(initialPlan);
+    await writePlanFile(currentPlanFile, initialPlan, { cwdForIdentity: repoRoot, config });
+    return;
+  }
+
+  await withPlanAutoSync(planId, repoRoot, async () => {
+    const updatedPlan = await readPlanFile(currentPlanFile);
+    update(updatedPlan);
+    await writePlanFile(currentPlanFile, updatedPlan, { cwdForIdentity: repoRoot, config });
+  });
+}
 
 function workingCopyStatusesMatch(
   beforeStatus: WorkingCopyStatus,
@@ -360,9 +381,9 @@ Available tasks:\n\n${taskDescriptions}`,
             justCompletedTaskIndices,
             terminalInput,
           });
-          const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-          updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
-          await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+          await updatePlanTimestampWithAutoSync(currentPlanFile, baseDir, config, (plan) => {
+            plan.docsUpdatedAt = new Date().toISOString();
+          });
         } catch (err) {
           error('Failed to update documentation:', err);
           // Don't stop execution for documentation update failures
@@ -416,9 +437,9 @@ Available tasks:\n\n${taskDescriptions}`,
               baseDir,
               terminalInput,
             });
-            const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-            updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
-            await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+            await updatePlanTimestampWithAutoSync(currentPlanFile, baseDir, config, (plan) => {
+              plan.docsUpdatedAt = new Date().toISOString();
+            });
           } catch (err) {
             error('Failed to update documentation:', err);
             // Don't stop execution for documentation update failures
@@ -522,9 +543,9 @@ Available tasks:\n\n${taskDescriptions}`,
               baseDir,
               terminalInput,
             });
-            const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-            updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
-            await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+            await updatePlanTimestampWithAutoSync(currentPlanFile, baseDir, config, (plan) => {
+              plan.docsUpdatedAt = new Date().toISOString();
+            });
           } catch (err) {
             error('Failed to update documentation:', err);
             // Don't stop execution for documentation update failures
@@ -562,9 +583,9 @@ Available tasks:\n\n${taskDescriptions}`,
               terminalInput,
             });
             if (lessonsUpdateResult === true || lessonsUpdateResult === 'skipped-no-lessons') {
-              const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-              updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
-              await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+              await updatePlanTimestampWithAutoSync(currentPlanFile, baseDir, config, (plan) => {
+                plan.lessonsAppliedAt = new Date().toISOString();
+              });
             }
           } catch (err) {
             error('Failed to apply lessons learned:', err as Error);
