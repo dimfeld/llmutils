@@ -25,6 +25,7 @@ import {
 } from './apply.js';
 import {
   applyArtifactOperationToDb,
+  resetArtifactProjectionFromCanonical,
   type ArtifactOperationPayload,
 } from './artifact_operations.js';
 import { BasePlanStateAdapter } from './plan_state_adapter.js';
@@ -248,8 +249,12 @@ export function rebuildPlanProjectionInTransaction(db: Database, planUuid: strin
     dependencies: adapter.getDependencies(planUuid),
     tags: adapter.getTags(planUuid),
   });
+  resetArtifactProjectionFromCanonical(db, planUuid);
   for (const artifactOperation of artifactOperations) {
-    applyArtifactOperationToDb(db, artifactOperation, { allowMissingPlan: true });
+    applyArtifactOperationToDb(db, artifactOperation, {
+      allowMissingPlan: true,
+      projectionOnly: true,
+    });
   }
 }
 

@@ -79,7 +79,7 @@ export function listArtifactSnapshotsForPlan(
   planUuid: string
 ): ArtifactSnapshotRow[] {
   const rows = db
-    .prepare('SELECT * FROM plan_artifact WHERE plan_uuid = ? ORDER BY created_at, uuid')
+    .prepare('SELECT * FROM plan_artifact_canonical WHERE plan_uuid = ? ORDER BY created_at, uuid')
     .all(planUuid) as ArtifactDbRow[];
   return rows.map(rowToArtifactSnapshot);
 }
@@ -117,24 +117,46 @@ export function replaceArtifactsForPlanSnapshot(
   planUuid: string,
   artifacts: ArtifactSnapshotRow[]
 ): void {
-  // Snapshot merge wipes canonical artifact rows for the plan, then projection
-  // rebuild replays still-active local artifact ops over the fresh snapshot.
-  // Callers must rebuild projection after this helper to restore queued state.
+  // Snapshot merge replaces both canonical and visible projection rows. A later
+  // projection rebuild layers still-active local artifact ops on top.
+  db.prepare('DELETE FROM plan_artifact_canonical WHERE plan_uuid = ?').run(planUuid);
   db.prepare('DELETE FROM plan_artifact WHERE plan_uuid = ?').run(planUuid);
   for (const artifact of artifacts) {
-    upsertArtifactRow(db, localizeArtifactStoragePath(artifact));
-    db.prepare('DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?').run(
-      'plan_artifact',
-      artifact.uuid
-    );
+    const localized = localizeArtifactStoragePath(artifact);
+    upsertArtifactRow(db, 'plan_artifact_canonical', localized);
+    upsertArtifactRow(db, 'plan_artifact', localized);
+  }
+}
+
+export function resetArtifactProjectionFromCanonical(db: Database, planUuid: string): void {
+  db.prepare('DELETE FROM plan_artifact WHERE plan_uuid = ?').run(planUuid);
+  const rows = db
+    .prepare('SELECT * FROM plan_artifact_canonical WHERE plan_uuid = ? ORDER BY created_at, uuid')
+    .all(planUuid) as ArtifactDbRow[];
+  for (const row of rows) {
+    upsertArtifactRow(db, 'plan_artifact', localizeArtifactStoragePath(rowToArtifactSnapshot(row)));
   }
 }
 
 export function applyArtifactOperationToDb(
   db: Database,
   envelope: SyncOperationEnvelope & { op: ArtifactOperationPayload },
-  options: { recordTombstone?: boolean; allowMissingPlan?: boolean } = {}
+  options: {
+    recordTombstone?: boolean;
+    allowMissingPlan?: boolean;
+    projectionOnly?: boolean;
+  } = {}
 ): Mutation[] {
+  const tombstone = db
+    .prepare('SELECT entity_key FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?')
+    .get('plan_artifact', envelope.op.artifactUuid) as { entity_key: string } | null;
+  if (tombstone && envelope.op.type !== 'plan_artifact.hard_delete') {
+    if (options.projectionOnly) {
+      return [];
+    }
+    throw validationError(envelope, 'Operation targets a tombstoned artifact');
+  }
+
   const plan = db.prepare('SELECT revision FROM plan WHERE uuid = ?').get(envelope.op.planUuid) as {
     revision: number;
   } | null;
@@ -144,23 +166,27 @@ export function applyArtifactOperationToDb(
     }
     throw validationError(envelope, `Unknown plan ${envelope.op.planUuid}`);
   }
+  const mode: ArtifactApplyMode = options.projectionOnly
+    ? 'projection'
+    : 'canonical_and_projection';
 
   let changed = false;
   switch (envelope.op.type) {
     case 'plan_artifact.attach':
-      changed = applyArtifactAttach(db, { ...envelope, op: envelope.op });
+      changed = applyArtifactAttach(db, { ...envelope, op: envelope.op }, mode);
       break;
     case 'plan_artifact.soft_delete':
-      changed = applyArtifactSoftDelete(db, { ...envelope, op: envelope.op });
+      changed = applyArtifactSoftDelete(db, { ...envelope, op: envelope.op }, mode);
       break;
     case 'plan_artifact.restore':
-      changed = applyArtifactRestore(db, { ...envelope, op: envelope.op });
+      changed = applyArtifactRestore(db, { ...envelope, op: envelope.op }, mode);
       break;
     case 'plan_artifact.hard_delete':
       changed = applyArtifactHardDelete(
         db,
         { ...envelope, op: envelope.op },
-        options.recordTombstone === true
+        options.recordTombstone === true,
+        mode
       );
       break;
     default:
@@ -176,21 +202,32 @@ export function applyArtifactOperationToDb(
   ];
 }
 
+type ArtifactApplyMode = 'canonical_and_projection' | 'projection';
+
+function tablesForMode(
+  mode: ArtifactApplyMode
+): Array<'plan_artifact_canonical' | 'plan_artifact'> {
+  return mode === 'projection' ? ['plan_artifact'] : ['plan_artifact_canonical', 'plan_artifact'];
+}
+
 function applyArtifactAttach(
   db: Database,
   envelope: SyncOperationEnvelope & {
     op: Extract<ArtifactOperationPayload, { type: 'plan_artifact.attach' }>;
-  }
+  },
+  mode: ArtifactApplyMode
 ): boolean {
   const existing = db
-    .prepare('SELECT uuid FROM plan_artifact WHERE uuid = ?')
+    .prepare(
+      `SELECT uuid FROM ${mode === 'projection' ? 'plan_artifact' : 'plan_artifact_canonical'} WHERE uuid = ?`
+    )
     .get(envelope.op.artifactUuid) as { uuid: string } | null;
   if (existing) {
     return false;
   }
 
   const ext = path.extname(envelope.op.filename).toLowerCase();
-  upsertArtifactRow(db, {
+  const artifact = {
     uuid: envelope.op.artifactUuid,
     planUuid: envelope.op.planUuid,
     projectUuid: envelope.op.projectUuid,
@@ -209,11 +246,10 @@ function applyArtifactAttach(
     createdAt: envelope.createdAt,
     updatedAt: envelope.createdAt,
     revision: 1,
-  });
-  db.prepare('DELETE FROM sync_tombstone WHERE entity_type = ? AND entity_key = ?').run(
-    'plan_artifact',
-    envelope.op.artifactUuid
-  );
+  };
+  for (const table of tablesForMode(mode)) {
+    upsertArtifactRow(db, table, artifact);
+  }
   return true;
 }
 
@@ -221,44 +257,54 @@ function applyArtifactSoftDelete(
   db: Database,
   envelope: SyncOperationEnvelope & {
     op: Extract<ArtifactOperationPayload, { type: 'plan_artifact.soft_delete' }>;
-  }
+  },
+  mode: ArtifactApplyMode
 ): boolean {
-  const result = db
-    .prepare(
+  let changed = false;
+  for (const table of tablesForMode(mode)) {
+    const result = db
+      .prepare(
+        `
+        UPDATE ${table}
+        SET deleted_at = ?,
+            updated_at = ?,
+            revision = revision + 1
+        WHERE uuid = ?
+          AND plan_uuid = ?
+          AND deleted_at IS NULL
       `
-      UPDATE plan_artifact
-      SET deleted_at = ?,
-          updated_at = ?,
-          revision = revision + 1
-      WHERE uuid = ?
-        AND plan_uuid = ?
-        AND deleted_at IS NULL
-    `
-    )
-    .run(envelope.createdAt, envelope.createdAt, envelope.op.artifactUuid, envelope.op.planUuid);
-  return result.changes > 0;
+      )
+      .run(envelope.createdAt, envelope.createdAt, envelope.op.artifactUuid, envelope.op.planUuid);
+    changed ||= result.changes > 0;
+  }
+  return changed;
 }
 
 function applyArtifactRestore(
   db: Database,
   envelope: SyncOperationEnvelope & {
     op: Extract<ArtifactOperationPayload, { type: 'plan_artifact.restore' }>;
-  }
+  },
+  mode: ArtifactApplyMode
 ): boolean {
-  const result = db
-    .prepare(
+  let changed = false;
+  for (const table of tablesForMode(mode)) {
+    const result = db
+      .prepare(
+        `
+        UPDATE ${table}
+        SET deleted_at = NULL,
+            updated_at = ?,
+            revision = revision + 1
+        WHERE uuid = ?
+          AND plan_uuid = ?
+          AND deleted_at IS NOT NULL
       `
-      UPDATE plan_artifact
-      SET deleted_at = NULL,
-          updated_at = ?,
-          revision = revision + 1
-      WHERE uuid = ?
-        AND plan_uuid = ?
-        AND deleted_at IS NOT NULL
-    `
-    )
-    .run(envelope.createdAt, envelope.op.artifactUuid, envelope.op.planUuid);
-  return result.changes > 0;
+      )
+      .run(envelope.createdAt, envelope.op.artifactUuid, envelope.op.planUuid);
+    changed ||= result.changes > 0;
+  }
+  return changed;
 }
 
 function applyArtifactHardDelete(
@@ -266,16 +312,37 @@ function applyArtifactHardDelete(
   envelope: SyncOperationEnvelope & {
     op: Extract<ArtifactOperationPayload, { type: 'plan_artifact.hard_delete' }>;
   },
-  shouldRecordTombstone: boolean
+  shouldRecordTombstone: boolean,
+  mode: ArtifactApplyMode
 ): boolean {
+  const planUuids = artifactPlanUuids(db, envelope.op.artifactUuid, mode);
+  const mismatchedPlanUuid = planUuids.find((planUuid) => planUuid !== envelope.op.planUuid);
+  if (mismatchedPlanUuid) {
+    throw validationError(
+      envelope,
+      `Artifact ${envelope.op.artifactUuid} belongs to plan ${mismatchedPlanUuid}, not ${envelope.op.planUuid}`
+    );
+  }
+
   const existing = db
-    .prepare('SELECT revision FROM plan_artifact WHERE uuid = ?')
-    .get(envelope.op.artifactUuid) as Pick<PlanArtifact, 'revision'> | null;
-  const result = db
-    .prepare('DELETE FROM plan_artifact WHERE uuid = ?')
-    .run(envelope.op.artifactUuid);
-  if (result.changes === 0) {
-    return false;
+    .prepare(
+      `
+        SELECT revision, plan_uuid FROM ${
+          mode === 'projection' ? 'plan_artifact' : 'plan_artifact_canonical'
+        }
+        WHERE uuid = ?
+      `
+    )
+    .get(envelope.op.artifactUuid) as
+    | (Pick<PlanArtifact, 'revision'> & { plan_uuid: string })
+    | null;
+
+  let changed = false;
+  for (const table of tablesForMode(mode)) {
+    const result = db
+      .prepare(`DELETE FROM ${table} WHERE uuid = ? AND plan_uuid = ?`)
+      .run(envelope.op.artifactUuid, envelope.op.planUuid);
+    changed ||= result.changes > 0;
   }
   if (shouldRecordTombstone) {
     recordSyncTombstone(db, {
@@ -288,13 +355,26 @@ function applyArtifactHardDelete(
       originNodeId: envelope.originNodeId,
     });
   }
-  return true;
+  return changed;
 }
 
-function upsertArtifactRow(db: Database, artifact: ArtifactSnapshotRow): void {
+function artifactPlanUuids(db: Database, artifactUuid: string, mode: ArtifactApplyMode): string[] {
+  const tables = tablesForMode(mode);
+  const selects = tables.map((table) => `SELECT plan_uuid FROM ${table} WHERE uuid = ?`);
+  const row = db.prepare(selects.join(' UNION ')).all(...tables.map(() => artifactUuid)) as Array<{
+    plan_uuid: string;
+  }>;
+  return row.map((nextRow) => nextRow.plan_uuid);
+}
+
+function upsertArtifactRow(
+  db: Database,
+  table: 'plan_artifact_canonical' | 'plan_artifact',
+  artifact: ArtifactSnapshotRow
+): void {
   db.prepare(
     `
-      INSERT INTO plan_artifact (
+      INSERT INTO ${table} (
         uuid,
         plan_uuid,
         project_uuid,

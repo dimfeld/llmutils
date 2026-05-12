@@ -60,6 +60,7 @@ import { mergeCanonicalRefresh, type CanonicalPlanSnapshot } from './snapshots.j
 import { createSyncConflict } from './conflicts.js';
 import { applyOperationResultTransitions } from './result_transitions.js';
 import { createBatchEnvelope } from './types.js';
+import { rebuildPlanProjection } from './projection.js';
 
 const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
 const OTHER_PROJECT_UUID = '99999999-9999-4999-8999-999999999111';
@@ -519,6 +520,37 @@ describe('persistent-node sync queue', () => {
         { originNodeId: NODE_A, localSequence: 999 }
       )
     );
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
+  });
+
+  test('rejected optimistic artifact attach is removed by projection rebuild', async () => {
+    seedPlan();
+    const operation = enqueue(
+      await buildArtifactAttachOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          planUuid: PLAN_UUID,
+          artifactUuid: ARTIFACT_UUID,
+          filename: 'rejected.log',
+          mimeType: 'text/plain',
+          size: 256,
+          sha256: 'abc123',
+        },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+    expect(getArtifactByUuid(db, ARTIFACT_UUID)).toMatchObject({ uuid: ARTIFACT_UUID });
+    expect(
+      db.prepare('SELECT uuid FROM plan_artifact_canonical WHERE uuid = ?').get(ARTIFACT_UUID)
+    ).toBeNull();
+
+    markOperationSending(db, operation.operationUuid);
+    markOperationRejected(db, operation.operationUuid, 'server rejected artifact attach', {
+      sequenceIds: [],
+      invalidations: [],
+    });
+    rebuildPlanProjection(db, PLAN_UUID);
+
     expect(getArtifactByUuid(db, ARTIFACT_UUID)).toBeUndefined();
   });
 

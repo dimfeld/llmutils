@@ -1080,6 +1080,62 @@ const migrations: Migration[] = [
     up: `SELECT 1;`,
     afterUp: addSyncTombstonePlanUuidColumn,
   },
+  {
+    version: 35,
+    up: `
+      CREATE TABLE plan_artifact_canonical (
+        uuid TEXT PRIMARY KEY,
+        plan_uuid TEXT NOT NULL REFERENCES plan_canonical(uuid) ON DELETE CASCADE,
+        project_uuid TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        message TEXT,
+        storage_path TEXT NOT NULL,
+        deleted_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        revision INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX idx_plan_artifact_canonical_plan_deleted
+        ON plan_artifact_canonical(plan_uuid, deleted_at);
+      CREATE INDEX idx_plan_artifact_canonical_created_at
+        ON plan_artifact_canonical(created_at);
+
+      INSERT INTO plan_artifact_canonical (
+        uuid,
+        plan_uuid,
+        project_uuid,
+        filename,
+        mime_type,
+        size,
+        sha256,
+        message,
+        storage_path,
+        deleted_at,
+        created_at,
+        updated_at,
+        revision
+      )
+      SELECT
+        pa.uuid,
+        pa.plan_uuid,
+        pa.project_uuid,
+        pa.filename,
+        pa.mime_type,
+        pa.size,
+        pa.sha256,
+        pa.message,
+        pa.storage_path,
+        pa.deleted_at,
+        pa.created_at,
+        pa.updated_at,
+        pa.revision
+      FROM plan_artifact pa
+      JOIN plan_canonical pc ON pc.uuid = pa.plan_uuid;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {
