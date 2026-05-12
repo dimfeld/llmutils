@@ -40,9 +40,12 @@ export const restoreArtifact = command(artifactUuidSchema, async ({ uuid }) => {
 
 export const hardDeleteArtifact = command(artifactUuidSchema, async ({ uuid }) => {
   const { db, config } = await getServerContext();
-  const result = await hardDeleteArtifactService(uuid, { db, config });
-  if (!result.changed) {
-    error(404, 'Artifact not found');
+  try {
+    return await hardDeleteArtifactService(uuid, { db, config });
+  } catch (caught) {
+    if (caught instanceof ArtifactNotFoundError) {
+      error(404, 'Artifact not found');
+    }
+    throw caught;
   }
-  return result;
 });
