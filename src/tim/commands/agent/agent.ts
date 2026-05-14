@@ -672,10 +672,6 @@ export async function timAgent(
     log('Starting agent to execute plan:', currentPlanFile);
     let hasError = false;
 
-    // Track initial state to determine whether to skip final review
-    // We skip final review if we started with no tasks completed and finished in a single iteration
-    const initialCompletedTaskCount = planData.tasks.filter((t) => t.done).length;
-
     let stepCount = 0;
     while (stepCount < maxSteps) {
       if (isShuttingDown()) {
@@ -942,11 +938,8 @@ export async function timAgent(
             if (isShuttingDown()) break;
 
             // Run final review if enabled
-            // Skip if we started with no completed tasks and finished in a single iteration
-            const shouldSkipFinalReview =
-              options.finalReview === false || (initialCompletedTaskCount === 0 && stepCount === 1);
             let planStillCompleteAfterReview = true;
-            if (!shouldSkipFinalReview) {
+            if (options.finalReview !== false) {
               sendStructured({
                 type: 'workflow_progress',
                 timestamp: timestamp(),
