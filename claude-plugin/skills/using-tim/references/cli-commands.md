@@ -487,6 +487,15 @@ tim update-docs 123
 tim update-docs 123 --executor claude-code
 ```
 
+### tim simplify
+
+Run a code-simplification pass over the changes introduced by a plan. Launches three parallel review agents (code reuse, code quality, efficiency) and applies the valid findings. Always runs when invoked directly, regardless of the `simplify.mode` config setting.
+
+```bash
+tim simplify 123
+tim simplify 123 --executor claude-code --model opus
+```
+
 ### tim import
 
 Import plans from issues.

@@ -507,6 +507,16 @@ program
   });
 
 program
+  .command('simplify <planId>')
+  .description('Run a post-plan code simplification pass over the plan changes.')
+  .option('-x, --executor <name>', 'The executor to use for the simplify pass')
+  .option('-m, --model <model>', 'Model to use for the executor')
+  .action(async (planArg, options, command) => {
+    const { handleSimplifyCommand } = await import('./commands/simplify.js');
+    await handleSimplifyCommand(planArg, options, command).catch(handleCommandError);
+  });
+
+program
   .command('set-task-done <planId>')
   .description('Mark a specific task as done by title or index.')
   .option('--title <title>', 'Task title to mark as done')

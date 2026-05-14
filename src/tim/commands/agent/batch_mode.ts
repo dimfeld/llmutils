@@ -12,6 +12,7 @@ import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js';
 import { sendFailureReport, timestamp } from './agent_helpers.js';
 import type { SummaryCollector } from '../../summary/collector.js';
+import { runSimplify } from '../simplify.js';
 import { runUpdateDocs } from '../update-docs.js';
 import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
@@ -450,6 +451,48 @@ Available tasks:\n\n${taskDescriptions}`,
             if (failedAfterCompletionDocsPostApplyCommand) {
               error(
                 `Batch mode stopping because required command "${failedAfterCompletionDocsPostApplyCommand}" failed.`
+              );
+              hasError = true;
+              if (summaryCollector) summaryCollector.addError('Post-apply command failed');
+              break;
+            }
+          }
+        }
+
+        if (isShuttingDown()) {
+          break;
+        }
+
+        const simplifyMode = config.simplify?.mode ?? 'after-completion';
+        // Skip simplify if we did everything in a single run. This implies that the plan itself was already fairly
+        // simple.
+        const shouldSkipSimplify =
+          simplifyMode === 'never' || (initialCompletedTaskCount === 0 && iteration === 1);
+        if (!shouldSkipSimplify && !isShuttingDown()) {
+          sendStructured({
+            type: 'workflow_progress',
+            timestamp: timestamp(),
+            phase: 'simplify',
+            message: 'Running simplify pass',
+          });
+          let simplifySucceeded = false;
+          try {
+            await runSimplify(planData, currentPlanFile, config, {
+              executor: config.simplify?.executor,
+              model: config.simplify?.model,
+              baseDir,
+              terminalInput,
+            });
+            simplifySucceeded = true;
+          } catch (err) {
+            warn(`Simplify pass failed: ${err as Error}`);
+          }
+
+          if (simplifySucceeded && !isShuttingDown()) {
+            const failedAfterSimplifyPostApplyCommand = await runPostApplyCommands();
+            if (failedAfterSimplifyPostApplyCommand) {
+              error(
+                `Batch mode stopping because required command "${failedAfterSimplifyPostApplyCommand}" failed.`
               );
               hasError = true;
               if (summaryCollector) summaryCollector.addError('Post-apply command failed');

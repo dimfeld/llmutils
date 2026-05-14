@@ -688,7 +688,10 @@ export const timConfigSchema = z
         /** Model to use for documentation updates */
         model: z.string().optional().describe('Model to use for documentation updates'),
         /** Executor to use for documentation updates */
-        executor: z.string().optional().describe('Executor to use for documentation updates'),
+        executor: z
+          .enum([ClaudeCodeExecutorName, CodexCliExecutorName])
+          .optional()
+          .describe('Executor to use for documentation updates'),
         /** Files or patterns to include - only these files should be edited */
         include: z
           .array(z.string())
@@ -712,6 +715,29 @@ export const timConfigSchema = z
       .strict()
       .optional()
       .describe('Configuration for automatic documentation updates'),
+    simplify: z
+      .object({
+        mode: z
+          .enum(['never', 'after-completion'])
+          .optional()
+          .describe('When to run the simplify pass during agent execution'),
+        model: z.string().optional().describe('Model to use for the simplify pass'),
+        executor: z
+          .enum([ClaudeCodeExecutorName, CodexCliExecutorName])
+          .optional()
+          .describe('Executor to use for the simplify pass'),
+        include: z
+          .array(z.string())
+          .optional()
+          .describe('Descriptions of files or patterns to include during simplify'),
+        exclude: z
+          .array(z.string())
+          .optional()
+          .describe('Descriptions of files or patterns to exclude during simplify'),
+      })
+      .strict()
+      .optional()
+      .describe('Configuration for the post-plan simplify pass'),
   })
   .describe('Repository-level configuration for tim');
 

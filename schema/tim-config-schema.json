@@ -1099,7 +1099,11 @@
         },
         "executor": {
           "description": "Executor to use for documentation updates",
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "claude-code",
+            "codex-cli"
+          ]
         },
         "include": {
           "description": "Descriptions of files or patterns to include - only these files should be edited during doc updates",
@@ -1118,6 +1122,47 @@
         "applyLessons": {
           "description": "Whether to apply lessons learned to documentation after plan completion",
           "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "simplify": {
+      "description": "Configuration for the post-plan simplify pass",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "When to run the simplify pass during agent execution",
+          "type": "string",
+          "enum": [
+            "never",
+            "after-completion"
+          ]
+        },
+        "model": {
+          "description": "Model to use for the simplify pass",
+          "type": "string"
+        },
+        "executor": {
+          "description": "Executor to use for the simplify pass",
+          "type": "string",
+          "enum": [
+            "claude-code",
+            "codex-cli"
+          ]
+        },
+        "include": {
+          "description": "Descriptions of files or patterns to include during simplify",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclude": {
+          "description": "Descriptions of files or patterns to exclude during simplify",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false
