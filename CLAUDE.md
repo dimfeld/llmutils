@@ -47,6 +47,7 @@ Read the relevant doc before working in these areas:
 - **Implementer / reviewer instructions** → `docs/implementer-instructions.md`, `docs/reviewer-instructions.md`
 - **Sync between nodes** → `docs/sync-between-nodes.md`
 - **Import command** → `docs/import_command.md`
+- **Safe path handling** (containment checks, symlink safety, denylists) → `docs/path-safety.md`
 
 ## Always-On Rules
 
@@ -79,11 +80,6 @@ Use prompts from `src/common/input.ts` for user questions — these wrap `@inqui
 
 ## Quick Tips
 
-- In catch-block template strings, use `${err as Error}` to keep eslint quiet.
 - Don't use `await import('module')` for regular imports — use a top-level import.
-- `Promise.resolve(fn()).catch(...)` does NOT catch synchronous throws from `fn()`. Use `Promise.try(() => fn())` for functions that may throw synchronously.
 - TypeScript exhaustive switches (`never` in default) only check at compile time. At runtime, unknown values silently return `undefined`. Add a real `default` if runtime safety matters.
-- Registering custom `SIGTERM`/`SIGINT` handlers suppresses Node's default termination. Call `process.exit()` explicitly or the process hangs.
 - Validation that can throw must run **before** any resource allocation in the same function — otherwise the throw leaks resources because the surrounding `finally` hasn't been entered.
-- When wiring a feature into a code path with both a default and legacy implementation (e.g. Codex's app-server vs `codex exec`), check both. The default path is what users hit; the legacy path often shows up first when grepping.
-- When mirroring a skip predicate across sibling code paths that must stay in lockstep, transcribe ALL conditions — partial mirroring breaks the invariant.

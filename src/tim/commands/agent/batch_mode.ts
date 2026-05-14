@@ -1,6 +1,10 @@
+import { randomUUID } from 'node:crypto';
+
 import { commitAll } from '../../../common/process.js';
 import { getWorkingCopyStatus, type WorkingCopyStatus } from '../../../common/git.js';
 import { promptConfirm } from '../../../common/input.js';
+import { getLoggerAdapter } from '../../../logging/adapter.js';
+import { ConsoleAdapter } from '../../../logging/console.js';
 import { boldMarkdownHeaders, error, log, sendStructured, warn } from '../../../logging.js';
 import chalk from 'chalk';
 import { executePostApplyCommand } from '../../actions.js';
@@ -16,6 +20,7 @@ import { runSimplify } from '../simplify.js';
 import { runUpdateDocs } from '../update-docs.js';
 import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
+import { ProofNotConfiguredError, runProofGeneration } from '../../proof/runner.js';
 import { isShuttingDown } from '../../shutdown_state.js';
 import { materializePlan, syncMaterializedPlan, withPlanAutoSync } from '../../plan_materialize.js';
 import { getCompletionStatus } from '../../plans/plan_state_utils.js';
@@ -659,6 +664,38 @@ Available tasks:\n\n${taskDescriptions}`,
           log(
             'Skipping lessons-learned documentation update because final review produced follow-up work.'
           );
+        }
+
+        if (isShuttingDown()) {
+          break;
+        }
+
+        if (
+          planStillCompleteAfterReview &&
+          !isShuttingDown() &&
+          config.proofGeneration?.mode === 'after-completion'
+        ) {
+          try {
+            if (!updatedPlanData.uuid) {
+              throw new Error(`Batch mode plan is missing a UUID: ${currentPlanFile}`);
+            }
+            const logger = getLoggerAdapter() ?? new ConsoleAdapter();
+            await runProofGeneration({
+              planUuid: updatedPlanData.uuid,
+              gitRoot: baseDir,
+              workspacePath: baseDir,
+              config,
+              runId: randomUUID(),
+              logger,
+              terminalInput,
+            });
+          } catch (err) {
+            if (err instanceof ProofNotConfiguredError) {
+              log('Skipping proof generation: proofGeneration.instructions is not set.');
+            } else {
+              warn(`Proof generation failed: ${err as Error}`);
+            }
+          }
         }
 
         if (isShuttingDown()) {

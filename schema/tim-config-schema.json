@@ -1172,6 +1172,33 @@
         }
       },
       "additionalProperties": false
+    },
+    "proofGeneration": {
+      "description": "Configuration for proof artifact generation",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "When to run proof generation during agent execution",
+          "type": "string",
+          "enum": [
+            "never",
+            "after-completion"
+          ]
+        },
+        "instructions": {
+          "description": "Project-specific prompt material for generating proof artifacts",
+          "type": "string"
+        },
+        "executor": {
+          "description": "Executor to use for proof generation",
+          "type": "string"
+        },
+        "model": {
+          "description": "Model to use for proof generation",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

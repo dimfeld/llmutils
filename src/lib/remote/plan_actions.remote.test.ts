@@ -23,6 +23,7 @@ const spawnRebaseProcessMock = vi.fn();
 const spawnPrCreateProcessMock = vi.fn();
 const spawnUpdateDocsProcessMock = vi.fn();
 const spawnPlanReviewGuideProcessMock = vi.fn();
+const spawnProofProcessMock = vi.fn();
 const loadEffectiveConfigMock = vi.fn();
 
 vi.mock('$lib/server/init.js', () => ({
@@ -55,6 +56,8 @@ vi.mock('$lib/server/plan_actions.js', () => ({
     spawnUpdateDocsProcessMock(...args),
   spawnPlanReviewGuideProcess: (...args: Parameters<typeof spawnPlanReviewGuideProcessMock>) =>
     spawnPlanReviewGuideProcessMock(...args),
+  spawnProofProcess: (...args: Parameters<typeof spawnProofProcessMock>) =>
+    spawnProofProcessMock(...args),
 }));
 
 vi.mock('$tim/configLoader.js', () => ({
@@ -73,6 +76,7 @@ import {
   startGenerate,
   startRebase,
   startPlanReviewGuide,
+  startProof,
 } from './plan_actions.remote.js';
 
 describe('plan remote actions', () => {
@@ -95,6 +99,7 @@ describe('plan remote actions', () => {
     spawnPrCreateProcessMock.mockReset();
     spawnUpdateDocsProcessMock.mockReset();
     spawnPlanReviewGuideProcessMock.mockReset();
+    spawnProofProcessMock.mockReset();
     loadEffectiveConfigMock.mockReset();
 
     projectId = getOrCreateProject(currentDb, 'repo-plan-actions', {
@@ -2409,6 +2414,65 @@ describe('plan remote actions', () => {
         status: 500,
         body: { message: 'tim binary not found' },
       });
+    });
+  });
+
+  describe('startProof', () => {
+    test('rejects missing plans', async () => {
+      await expect(
+        invokeCommand(startProof, { planUuid: 'missing-proof-plan' })
+      ).rejects.toMatchObject({
+        status: 404,
+        body: { message: 'Plan not found' },
+      });
+      expect(spawnProofProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('reports not configured separately from plan readiness', async () => {
+      seedPlan({ uuid: 'proof-not-configured', planId: 5100, status: 'done' });
+      loadEffectiveConfigMock.mockResolvedValueOnce({});
+
+      await expect(
+        invokeCommand(startProof, { planUuid: 'proof-not-configured' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Proof generation is not configured for this project' },
+      });
+      expect(spawnProofProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('reports ineligible plans when proof generation is configured', async () => {
+      seedPlan({ uuid: 'proof-not-ready', planId: 5101, status: 'pending' });
+      loadEffectiveConfigMock.mockResolvedValueOnce({
+        proofGeneration: { instructions: 'Capture proof artifacts.' },
+      });
+
+      await expect(
+        invokeCommand(startProof, { planUuid: 'proof-not-ready' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for proof generation' },
+      });
+      expect(spawnProofProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('starts proof generation for configured ready plans', async () => {
+      seedPlan({ uuid: 'proof-ready', planId: 5102, status: 'needs_review' });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      loadEffectiveConfigMock.mockResolvedValueOnce({
+        proofGeneration: { instructions: 'Capture proof artifacts.' },
+      });
+      spawnProofProcessMock.mockResolvedValue({ success: true, planId: 5102 });
+
+      await expect(invokeCommand(startProof, { planUuid: 'proof-ready' })).resolves.toEqual({
+        status: 'started',
+        planId: 5102,
+      });
+      expect(spawnProofProcessMock).toHaveBeenCalledWith(5102, '/tmp/primary-workspace');
     });
   });
 

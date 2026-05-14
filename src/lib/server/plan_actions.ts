@@ -231,6 +231,15 @@ export async function spawnReviewProcess(planId: number, cwd: string): Promise<S
   );
 }
 
+export async function spawnProofProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
+  return spawnTimProcess(
+    describeTarget('plan', planId),
+    planId,
+    ['proof', String(planId), '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
+}
+
 export async function spawnUpdateDocsProcess(
   planId: number,
   cwd: string

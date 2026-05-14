@@ -355,6 +355,36 @@ simplify:
 
 The web UI **Settings** tab stores per-project settings in SQLite. The project-level branch prefix there takes precedence over the config file value.
 
+## Proof Generation
+
+The optional `proofGeneration` block opts a project into a phase that captures demo evidence (screenshots, videos, written walkthroughs, …) of a completed plan and attaches it to the plan as artifacts. It is most useful for plans with user-facing changes; for purely backend plans the phase is omitted by not configuring it.
+
+The `instructions` field is **prompt material, not a command**. The configured LLM executor reads the plan goal, task list, the changed-file list for the current branch, and your `instructions`, then drives whatever tooling makes sense (Playwright, curl, scripts, dev server, …) on its own to produce evidence files under `.tim/proofs`. The runner only sets up the directory, runs the executor, and attaches every file it finds underneath when the executor is done. The executor finishes by writing a `report.md` that summarizes what was demonstrated.
+
+```yaml
+proofGeneration:
+  mode: after-completion # or 'never' to disable the automatic agent phase
+  executor: claude-code
+  model: opus
+  instructions: |
+    To demo this SvelteKit app:
+    1. Start the dev server with `bun run dev` (it listens on localhost:5173).
+    2. Use Playwright (already installed) to drive the browser. A helper lives at tests/proof_helpers.ts.
+    3. For each user-facing feature added in the plan, capture at least one screenshot and one short video.
+    4. Save screenshots as PNG and videos as WebM. Keep file sizes small.
+    5. Do not modify source files outside the artifacts directory.
+```
+
+Three entry points trigger proof generation:
+
+- **Agent batch mode** – when `proofGeneration.mode` is `after-completion`, the agent runs the proof phase after the final review (and lessons/docs updates) and before parent-cascade and the final commit. Failures here never block the rest of the post-completion pipeline.
+- **CLI** – `tim proof <planId>` runs the phase manually. Pass `--auto-workspace` to use the plan's assigned workspace, `--executor <name>` and `--model <model>` to override the configured defaults.
+- **Web UI** – the **Generate Proof** action on the plan detail page launches `tim proof` as a detached session that streams output through the normal session-discovery infrastructure. The button is shown only when the project has `proofGeneration.instructions` configured and the plan has at least one completed task or status in `needs_review`/`done`.
+
+Reruns are idempotent: prior proof artifacts (marked with a `tim-proof:` prefix) are soft-deleted before the new run begins, and `.tim/proofs` is cleared so leftover files from a previous run are not re-attached. If the executor errors mid-run, whatever files it has already written are still attached and the failure is surfaced to the caller. Files exceeding the 100 MB artifact size cap are skipped with a warning. `.tim/proofs` is added to the tim-managed `.tim/.gitignore`.
+
+See [`docs/proof-generation.md`](docs/proof-generation.md) for more detail.
+
 ## Subprocess Monitor
 
 Agent sessions can get stuck when Claude Code or Codex starts a long-running tool command, such as `pnpm test`, and that command hangs. `subprocessMonitor` lets the main tim process watch descendants of the Claude/Codex executor and kill matching commands that exceed a configured timeout, returning control to the coding agent.
@@ -404,3 +434,4 @@ Use a unique prefix per developer to prevent accidental PR-to-plan matching from
 - [`docs/sync-between-nodes.md`](docs/sync-between-nodes.md) - setup guide for syncing plans between machines
 - [`docs/web-interface.md`](docs/web-interface.md) - web architecture and UI workflow details
 - [`docs/database.md`](docs/database.md) - SQLite-backed plan storage and materialization
+- [`docs/proof-generation.md`](docs/proof-generation.md) - capturing demo artifacts for completed plans
