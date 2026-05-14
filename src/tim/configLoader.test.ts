@@ -1367,6 +1367,43 @@ defaultExecutor: direct-call
       expect(config.simplify?.include).toEqual(['src/**']);
     });
 
+    test('loadEffectiveConfig deep merges proofGeneration from local config', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          proofGeneration: {
+            mode: 'after-completion',
+            instructions: 'Capture browser proof artifacts.',
+            artifactsDir: '.tim/proofs',
+            executor: 'claude-code',
+            model: 'main-model',
+          },
+        }),
+        'utf-8'
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          proofGeneration: {
+            model: 'local-model',
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.proofGeneration?.mode).toBe('after-completion');
+      expect(config.proofGeneration?.instructions).toBe('Capture browser proof artifacts.');
+      expect(config.proofGeneration?.artifactsDir).toBe('.tim/proofs');
+      expect(config.proofGeneration?.executor).toBe('claude-code');
+      expect(config.proofGeneration?.model).toBe('local-model');
+    });
+
     test('local prCreation partial override does not clobber main draft value', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       const localConfigPath = path.join(configDir, 'tim.local.yml');

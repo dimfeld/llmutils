@@ -18,9 +18,11 @@
     startUpdateDocs,
     startCreatePr,
     startPlanReviewGuide,
+    startProof,
     finishPlanQuick,
     openInEditor,
   } from '$lib/remote/plan_actions.remote.js';
+  import { isPlanEligibleForProof } from '$lib/utils/proof_eligibility.js';
   import {
     removeReviewIssue,
     convertReviewIssueToTask,
@@ -49,6 +51,7 @@
     projectName,
     tab = 'plans',
     openInEditorEnabled = false,
+    proofConfigured = false,
   }: {
     plan: PlanDetail;
     reviews?: ReviewWithIssueCounts[];
@@ -56,6 +59,7 @@
     projectName?: string;
     tab?: string;
     openInEditorEnabled?: boolean;
+    proofConfigured?: boolean;
   } = $props();
 
   const sessionManager = useSessionManager();
@@ -189,6 +193,13 @@
       colorClass: '',
       starting: startingFinish,
     };
+    const proofItem: ActionItem = {
+      label: 'Generate Proof',
+      startingLabel: 'Starting Proof…',
+      onclick: handleProof,
+      colorClass: '',
+      starting: startingProof,
+    };
 
     let primary: ActionItem;
     let menuItems: ActionItem[] = [];
@@ -201,26 +212,31 @@
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (isEligibleForReview) menuItems.push(reviewItem);
       menuItems.push(finishItem);
+      if (isEligibleForProof) menuItems.push(proofItem);
     } else if (showFinish) {
       // Show "Finish" as primary (marks plan as done)
       primary = finishItem;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (isEligibleForReview) menuItems.push(reviewItem);
+      if (isEligibleForProof) menuItems.push(proofItem);
     } else if (showAgentOnly) {
       primary = agentItem;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
+      if (isEligibleForProof) menuItems.push(proofItem);
     } else if (showGenerateWithAgent) {
       if (isSimplePlan) {
         primary = agentItem;
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
+        if (isEligibleForProof) menuItems.push(proofItem);
       } else {
         primary = generateItem;
         menuItems.push(agentItem);
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
+        if (isEligibleForProof) menuItems.push(proofItem);
       }
     } else {
       // showChatOnly
@@ -231,6 +247,7 @@
       if (showUpdateDocsInDropdown) {
         menuItems.push(finishNoMarkDoneItem);
       }
+      if (isEligibleForProof) menuItems.push(proofItem);
     }
 
     return { primary, menuItems, chatAction: chatItem, showSeparateChatButton };
@@ -274,6 +291,7 @@
   let startingCreatePr = $state(false);
   let reviewGuideRunning = $state(false);
   let artifactDialogOpen = $state(false);
+  let startingProof = $state(false);
 
   let hasInProgressReview = $derived(
     reviews.some((r) => r.status === 'pending' || r.status === 'in_progress')
@@ -392,6 +410,7 @@
       startingCreatePr = false;
       reviewGuideRunning = false;
       clearReviewGuideResetTimeout();
+      startingProof = false;
       chatDialogOpen = false;
       startedSuccessfully = false;
       reviewIssueSubmitting = null;
@@ -458,7 +477,8 @@
       startingReview ||
       startingChat ||
       startingFinish ||
-      startingCreatePr
+      startingCreatePr ||
+      startingProof
   );
   let controlsDisabled = $derived(starting || startedSuccessfully);
 
@@ -599,6 +619,35 @@
           })
       : []
   );
+
+  let isEligibleForProof = $derived(
+    isPlanEligibleForProof(
+      { status: plan.status, taskCounts: plan.taskCounts, tasks: plan.tasks },
+      proofConfigured ? { proofGeneration: { instructions: 'configured' } } : undefined
+    )
+  );
+
+  async function handleProof() {
+    startingProof = true;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      const result = await startProof({ planUuid: plan.uuid });
+      if (result.status === 'already_running') {
+        successMessage = {
+          text: 'A session is already running for this plan',
+          connectionId: result.connectionId,
+        };
+      } else {
+        successMessage = { text: 'Proof generation started' };
+      }
+      setStartedSuccessfully();
+    } catch (err) {
+      errorMessage = `${err as Error}`;
+    } finally {
+      startingProof = false;
+    }
+  }
 
   async function handleUpdateDocs() {
     startingFinish = true;

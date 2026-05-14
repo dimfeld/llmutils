@@ -301,6 +301,7 @@ describe('tim plan_materialize', () => {
     const excludeContent = await fs.readFile(infoExcludePath, 'utf8');
     expect(excludeContent).toContain('.tim/plans\n');
     expect(excludeContent).toContain('.tim/logs\n');
+    expect(excludeContent).toContain('.tim/proofs\n');
     await expect(fs.access(path.join(materializeDir, '.gitignore'))).rejects.toMatchObject({
       code: 'ENOENT',
     });
@@ -500,11 +501,12 @@ Details
     const materializeDir = await ensureMaterializeDir(repoDir);
 
     expect(materializeDir).toBe(path.join(repoDir, '.tim', 'plans'));
-    // .tim/plans is globally excluded so it should not be added, but .tim/logs and .tim/tmp should be
+    // .tim/plans is globally excluded so it should not be added, but the other managed dirs should be
     const after = await fs.readFile(infoExcludePath, 'utf8');
     expect(after).not.toContain('.tim/plans');
     expect(after).toContain('.tim/logs');
     expect(after).toContain('.tim/tmp');
+    expect(after).toContain('.tim/proofs');
     expect(after).toContain('.tim/workspaces');
     await expect(fs.access(path.join(materializeDir, '.gitignore'))).rejects.toMatchObject({
       code: 'ENOENT',

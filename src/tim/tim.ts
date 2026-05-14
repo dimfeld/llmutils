@@ -531,6 +531,21 @@ program
   });
 
 program
+  .command('proof <planId>')
+  .description('Generate proof artifacts for a completed plan.')
+  .option('-x, --executor <name>', 'The executor to use for proof generation')
+  .option('-m, --model <model>', 'Model to use for the executor')
+  .option(
+    '--aw, --auto-workspace',
+    'Automatically select an available workspace or create a new one'
+  )
+  .option('--no-terminal-input', 'Disable terminal input forwarding during proof generation')
+  .action(async (planArg, options, command) => {
+    const { handleProofCommand } = await import('./commands/proof.js');
+    await handleProofCommand(planArg, options, command).catch(handleCommandError);
+  });
+
+program
   .command('set-task-done <planId>')
   .description('Mark a specific task as done by title or index.')
   .option('--title <title>', 'Task title to mark as done')

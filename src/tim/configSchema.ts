@@ -235,6 +235,25 @@ export type SyncNodeRole = z.infer<typeof syncNodeRoleSchema>;
 export type SyncAllowedNodeConfig = z.infer<typeof syncAllowedNodeSchema>;
 export type SyncConfigInput = z.infer<typeof syncConfigSchema>;
 
+export const proofGenerationSchema = z
+  .object({
+    mode: z
+      .enum(['never', 'after-completion'])
+      .optional()
+      .describe('When to run proof generation during agent execution'),
+    instructions: z
+      .string()
+      .optional()
+      .describe('Project-specific prompt material for generating proof artifacts'),
+    artifactsDir: z
+      .string()
+      .optional()
+      .describe('Workspace-relative directory where proof artifacts should be written'),
+    executor: z.string().optional().describe('Executor to use for proof generation'),
+    model: z.string().optional().describe('Model to use for proof generation'),
+  })
+  .strict();
+
 /**
  * Main configuration schema for tim.
  */
@@ -745,6 +764,9 @@ export const timConfigSchema = z
       .strict()
       .optional()
       .describe('Configuration for the post-plan simplify pass'),
+    proofGeneration: proofGenerationSchema
+      .optional()
+      .describe('Configuration for proof artifact generation'),
   })
   .describe('Repository-level configuration for tim');
 
@@ -758,6 +780,7 @@ export interface TimRuntimeConfigMetadata {
 
 export type TimConfig = z.output<typeof timConfigSchema> & TimRuntimeConfigMetadata;
 export type TimConfigInput = z.input<typeof timConfigSchema>;
+export type ProofGenerationConfig = z.output<typeof proofGenerationSchema>;
 export type PostApplyCommand = z.output<typeof postApplyCommandSchema>;
 export type LifecycleCommand = z.infer<typeof lifecycleCommandSchema>;
 export type NotificationCommand = z.output<typeof notificationCommandSchema>;

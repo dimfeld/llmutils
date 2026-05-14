@@ -55,6 +55,7 @@ import { DEFAULT_WORKSPACE_CLONE_LOCATION } from './workspace/workspace_paths.js
 export const MATERIALIZED_DIR = path.join('.tim', 'plans');
 export const TMP_DIR = path.join('.tim', 'tmp');
 const LOGS_DIR = path.join('.tim', 'logs');
+const PROOFS_DIR = path.join('.tim', 'proofs');
 
 export function parsePlanId(planId: string): number {
   const parsed = Number(planId);
@@ -1115,7 +1116,13 @@ export async function ensureMaterializeDir(repoRoot: string): Promise<string> {
   }
 
   const existingLines = existingContent.split('\n').map((l) => l.trim());
-  const managedDirs = [MATERIALIZED_DIR, LOGS_DIR, TMP_DIR, DEFAULT_WORKSPACE_CLONE_LOCATION];
+  const managedDirs = [
+    MATERIALIZED_DIR,
+    LOGS_DIR,
+    TMP_DIR,
+    PROOFS_DIR,
+    DEFAULT_WORKSPACE_CLONE_LOCATION,
+  ];
   const sharedIgnoreMatches = await Promise.all(
     managedDirs.map(async (managedDir) => {
       const isIgnored = await isIgnoredByGitSharedExcludes(

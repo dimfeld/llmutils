@@ -22,7 +22,9 @@ import {
   spawnPrCreateProcess,
   spawnPlanReviewGuideProcess,
   spawnReviewProcess,
+  spawnProofProcess,
 } from '$lib/server/plan_actions.js';
+import { isPlanEligibleForProof } from '$lib/utils/proof_eligibility.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
@@ -544,6 +546,29 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
   }
 
   return { status: 'done' as const };
+});
+
+const startProofSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startProof = command(startProofSchema, async ({ planUuid }) => {
+  const { db } = await getServerContext();
+  const planRow = getPlanByUuid(db, planUuid);
+  if (!planRow) {
+    error(404, 'Plan not found');
+  }
+
+  const cwd = getPreferredProjectGitRoot(db, planRow.project_id);
+  const projectConfig = cwd ? await loadEffectiveConfig(undefined, { cwd }) : undefined;
+
+  return launchTimCommand(
+    'proof',
+    planUuid,
+    (plan): plan is PlanDetailResult => isPlanEligibleForProof(plan, projectConfig),
+    'Plan is not eligible for proof generation',
+    spawnProofProcess
+  );
 });
 
 const CREATE_PR_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);

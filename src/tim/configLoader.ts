@@ -89,6 +89,7 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
   mergeConfigKey('postApplyCommands');
   mergeConfigKey('planning');
   mergeConfigKey('prCreation');
+  mergeConfigKey('proofGeneration');
   mergeConfigKey('simplify');
   mergeConfigKey('subagents');
   mergeConfigKey('tags');

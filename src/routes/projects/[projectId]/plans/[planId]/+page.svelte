@@ -22,4 +22,5 @@
   {projectId}
   {projectName}
   openInEditorEnabled={data.openInEditorEnabled}
+  proofConfigured={data.proofConfigured}
 />

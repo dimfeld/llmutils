@@ -22,8 +22,13 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startCreatePr: vi.fn(),
   startAgentMulti: vi.fn(),
   startPlanReviewGuide: vi.fn(),
+  startProof: vi.fn(),
   finishPlanQuick: vi.fn(),
   openInEditor: vi.fn(),
+}));
+
+vi.mock('$lib/remote/sync_status.remote.js', () => ({
+  getPlanSyncStatus: vi.fn(() => ({ current: null })),
 }));
 
 vi.mock('$lib/remote/review_issue_actions.remote.js', () => ({
@@ -240,6 +245,38 @@ describe('PlanDetail', () => {
     // Should show "Finish" button (not "Update Docs") since finish work is done
     expect(body).toContain('Finish');
     expect(body).not.toContain('Update Docs');
+  });
+
+  test('shows Generate Proof in the action menu when proof is configured and plan is ready', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          status: 'needs_review',
+          displayStatus: 'needs_review',
+          canUpdateDocs: false,
+        }),
+        projectId: '123',
+        proofConfigured: true,
+      },
+    });
+
+    expect(body).toContain('Generate Proof');
+  });
+
+  test('hides Generate Proof when proof is not configured', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          status: 'needs_review',
+          displayStatus: 'needs_review',
+          canUpdateDocs: false,
+        }),
+        projectId: '123',
+        proofConfigured: false,
+      },
+    });
+
+    expect(body).not.toContain('Generate Proof');
   });
 
   test('shows Run Agent without Generate for a taskless simple plan', () => {
