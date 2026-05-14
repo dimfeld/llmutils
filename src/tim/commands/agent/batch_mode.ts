@@ -454,6 +454,7 @@ Available tasks:\n\n${taskDescriptions}`,
             phase: 'simplify',
             message: 'Running simplify pass',
           });
+          let simplifySucceeded = false;
           try {
             await runSimplify(planData, currentPlanFile, config, {
               executor: config.simplify?.executor,
@@ -461,20 +462,21 @@ Available tasks:\n\n${taskDescriptions}`,
               baseDir,
               terminalInput,
             });
-
-            if (!isShuttingDown()) {
-              const failedAfterSimplifyPostApplyCommand = await runPostApplyCommands();
-              if (failedAfterSimplifyPostApplyCommand) {
-                error(
-                  `Batch mode stopping because required command "${failedAfterSimplifyPostApplyCommand}" failed.`
-                );
-                hasError = true;
-                if (summaryCollector) summaryCollector.addError('Post-apply command failed');
-                break;
-              }
-            }
+            simplifySucceeded = true;
           } catch (err) {
             warn(`Simplify pass failed: ${err as Error}`);
+          }
+
+          if (simplifySucceeded && !isShuttingDown()) {
+            const failedAfterSimplifyPostApplyCommand = await runPostApplyCommands();
+            if (failedAfterSimplifyPostApplyCommand) {
+              error(
+                `Batch mode stopping because required command "${failedAfterSimplifyPostApplyCommand}" failed.`
+              );
+              hasError = true;
+              if (summaryCollector) summaryCollector.addError('Post-apply command failed');
+              break;
+            }
           }
         }
 

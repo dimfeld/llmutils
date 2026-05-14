@@ -47,7 +47,7 @@ function buildSimplifyPrompt(
 
   parts.push(
     '## Diff Scope\n',
-    `The changes are scoped to \`git diff ${diffBase}...HEAD\`. Run \`git diff ${diffBase}...HEAD\` yourself to inspect specifics. Do not review unrelated code outside this diff except when checking existing utilities or conventions needed to simplify the changed code.\n`,
+    `The changes are scoped to \`git diff ${diffBase}\` (which includes working-tree changes; if this is a jj repo, use \`jj diff --from ${diffBase}\`). Run that diff yourself to inspect specifics. Do not review unrelated code outside this diff except when checking existing utilities or conventions needed to simplify the changed code.\n`,
     '## Changed Files\n'
   );
 
@@ -136,9 +136,14 @@ export async function runSimplify(
   });
 }
 
+interface SimplifyCliOptions {
+  executor?: string;
+  model?: string;
+}
+
 export async function handleSimplifyCommand(
   planIdArg: string | number | undefined,
-  options: SimplifyOptions,
+  options: SimplifyCliOptions,
   command: { parent: { opts: () => { config?: string } } }
 ) {
   const globalOpts = command.parent.opts();
@@ -157,8 +162,6 @@ export async function handleSimplifyCommand(
     executor: options.executor,
     model: options.model,
     baseDir: repoRoot,
-    nonInteractive: options.nonInteractive,
-    terminalInput: options.terminalInput,
   });
 
   log('\nSimplify pass complete');

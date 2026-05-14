@@ -1607,6 +1607,58 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       expect(handleReviewCommandSpy).not.toHaveBeenCalled();
     });
 
+    test('simplify failure skips simplify post-apply and still runs final review', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [{ title: 'Would Fail', command: 'exit 1' }],
+        simplify: { mode: 'after-completion' },
+      });
+      runSimplifySpy.mockRejectedValueOnce(new Error('boom'));
+      executePostApplyCommandSpy.mockResolvedValue(true);
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 0',
+              description: 'Already done',
+              done: true,
+            },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      await expect(timAgent(1, options, {})).resolves.toBeUndefined();
+
+      expect(runSimplifySpy).toHaveBeenCalledTimes(1);
+      // Post-apply must run once for the iteration's normal flow, but NOT a second time
+      // for the failed simplify pass.
+      expect(executePostApplyCommandSpy).toHaveBeenCalledTimes(1);
+      expect(handleReviewCommandSpy).toHaveBeenCalledTimes(1);
+    });
+
     test('simplify is skipped when finalReview is disabled', async () => {
       await createPlanFile({
         tasks: [

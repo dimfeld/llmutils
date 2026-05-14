@@ -1315,6 +1315,42 @@ defaultExecutor: direct-call
       expect(config.prCreation?.autoCreatePr).toBe('needs_review');
     });
 
+    test('loadEffectiveConfig deep merges simplify from local config', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          simplify: {
+            mode: 'after-completion',
+            executor: 'claude-code',
+            model: 'main-model',
+            include: ['src/**'],
+          },
+        }),
+        'utf-8'
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          simplify: {
+            mode: 'never',
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      // Local only set mode — main's executor/model/include must be preserved
+      expect(config.simplify?.mode).toBe('never');
+      expect(config.simplify?.executor).toBe('claude-code');
+      expect(config.simplify?.model).toBe('main-model');
+      expect(config.simplify?.include).toEqual(['src/**']);
+    });
+
     test('local prCreation partial override does not clobber main draft value', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       const localConfigPath = path.join(configDir, 'tim.local.yml');
