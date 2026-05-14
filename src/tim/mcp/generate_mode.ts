@@ -228,7 +228,7 @@ export async function loadResearchPrompt(
 
 # Multiple Plan Creation
 
-If you determine that the scope of this plan is large enough that it would benefit from being broken down into multiple independent plans, you should create additional plans. Consider creating multiple plans when:
+Prefer splitting work into multiple smaller, independently testable plans when that makes the work clearer or easier to execute. If the scope can be decomposed without creating artificial dependencies, create additional plans instead of forcing everything into one large plan. Consider creating multiple plans when:
 
 1. The work can be naturally divided into separate phases or parts that can be merged independently
 2. Different aspects of the work could be worked on in parallel by different agents
@@ -245,9 +245,9 @@ When creating multiple plans:
 - Each plan should be independently implementable and testable
 - Each plan should deliver real, demonstrable functionality that works end-to-end
 
-If you think splitting is a good idea, make a suggestion and confer with the user on how to do it. The user may prefer to split vertically by functional areas, or horizonstally (e.g. backend vs. frontend), or both.
+If splitting seems helpful, make that recommendation early and confer with the user on how to do it. The user may prefer to split vertically by functional areas, or horizontally (e.g. backend vs. frontend), or both.
 
-Only create multiple plans if it genuinely improves the project organization. For smaller or tightly coupled features, a single plan is preferred.`
+Only keep a single plan when the work is genuinely tiny or tightly coupled enough that splitting would add coordination overhead without improving clarity.`
     : '';
   const planningInstructions = await loadPlanningInstructions(context);
 
@@ -406,7 +406,7 @@ export async function loadGeneratePrompt(
 
 # Multiple Plan Creation
 
-If you determine that the scope of this plan is large enough that it would benefit from being broken down into multiple independent plans, you should create additional plans. Consider creating multiple plans when:
+Prefer splitting work into multiple smaller, independently testable plans when that makes the work clearer or easier to execute. If the scope can be decomposed without creating artificial dependencies, create additional plans instead of forcing everything into one large plan. Consider creating multiple plans when:
 
 1. The work can be naturally divided into separate phases or parts that can be merged independently
 2. Different aspects of the work could be worked on in parallel by different agents
@@ -424,7 +424,7 @@ When creating multiple plans:
 
 IMPORTANT: Do NOT split plans by architectural layers (frontend/backend, UI/API, client/server). Each plan should deliver a complete, working feature that spans all necessary layers. Split by feature areas or functional domains instead, ensuring each plan produces real, testable value.
 
-Only create multiple plans if it genuinely improves the project organization. For smaller or tightly coupled features, a single plan is preferred.`
+Only keep a single plan when the work is genuinely tiny or tightly coupled enough that splitting would add coordination overhead without improving clarity.`
     : '';
   const planningInstructions = await loadPlanningInstructions(context);
 
@@ -591,7 +591,7 @@ export function registerGenerateMode(
         {
           name: 'allowMultiplePlans',
           description:
-            'Set to true to allow the agent to create multiple independent plans if the scope is large enough to benefit from breaking it down into phases or parts that can be merged independently.',
+            'Set to true to allow the agent to split work into multiple independent plans whenever that makes the work smaller, clearer, or more independently testable.',
           required: false,
         },
       ],

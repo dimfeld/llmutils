@@ -180,6 +180,9 @@ describe('tim MCP generate mode helpers', () => {
     const message = prompt.messages[0]?.content;
     expect(message?.text).toContain('Test Plan');
     expect(message?.text).toContain('Please analyze this project description');
+    expect(message?.text).toContain(
+      'Prefer splitting work into multiple smaller, independently testable plans'
+    );
   });
 
   test('loadResearchPrompt includes planning instructions from config', async () => {
@@ -210,6 +213,9 @@ describe('tim MCP generate mode helpers', () => {
     expect(message?.text).toContain('Test Plan');
     expect(message?.text).toContain('generate a detailed implementation plan');
     expect(message?.text).toContain("'tim tools update-plan-tasks' CLI command");
+    expect(message?.text).toContain(
+      'Prefer splitting work into multiple smaller, independently testable plans'
+    );
     expect(message?.text).toContain('Break the project into phases');
   });
 
