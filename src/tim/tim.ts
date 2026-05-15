@@ -871,6 +871,7 @@ program
     3
   )
   .option('--aw, --auto-workspace', 'Pass --auto-workspace to each spawned child agent')
+  .option('--terminal-input', 'Allow spawned child agents to read from terminal input')
   .option('--no-terminal-input', 'Pass --no-terminal-input to each spawned child agent')
   .option('--non-interactive', 'Run the orchestrator without interactive prompts')
   .action(async (planIdArgs, options, command) => {
@@ -878,6 +879,9 @@ program
     const planIds = (planIdArgs as string[]).map((planIdArg) => parsePlanIdFromCliArg(planIdArg));
     if (options.epic !== undefined) {
       options.epic = parsePlanIdFromCliArg(options.epic);
+    }
+    if (command.getOptionValueSource('terminalInput') !== 'cli') {
+      options.terminalInput = false;
     }
     await handleAgentMultiCommand(planIds, options, command.parent.opts()).catch(
       handleCommandError

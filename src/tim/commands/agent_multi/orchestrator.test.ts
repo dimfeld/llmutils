@@ -71,6 +71,7 @@ function createHarness(
   runner: MultiAgentRunner;
   spawnOrder: number[];
   resolvePlan: (planId: number, status: AgentMultiPlan['status'], exitCode?: number) => void;
+  setPlanStatus: (planUuid: string, status: AgentMultiPlan['status']) => void;
   statuses: Map<string, AgentMultiPlan['status']>;
   maxRunning: () => number;
 } {
@@ -122,6 +123,9 @@ function createHarness(
     spawnOrder,
     statuses,
     maxRunning: () => maxRunningCount,
+    setPlanStatus(planUuid: string, status: AgentMultiPlan['status']): void {
+      statuses.set(planUuid, status);
+    },
     resolvePlan(planId: number, status: AgentMultiPlan['status'], exitCode = 0): void {
       const plan = plans.find((candidate) => candidate.planId === planId);
       if (!plan) {
@@ -147,7 +151,7 @@ describe('agent-multi orchestrator', () => {
     const harness = createHarness(plans);
 
     const run = harness.runner.run();
-    expect(harness.spawnOrder).toEqual([1]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1]));
 
     harness.resolvePlan(1, 'done');
     await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2]));
@@ -175,7 +179,7 @@ describe('agent-multi orchestrator', () => {
     const harness = createHarness(plans, { maxParallel: 2 });
 
     const run = harness.runner.run();
-    expect(harness.spawnOrder).toEqual([1]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1]));
 
     harness.resolvePlan(1, 'done');
     await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2, 3]));
@@ -195,7 +199,7 @@ describe('agent-multi orchestrator', () => {
     const harness = createHarness(plans, { maxParallel: 2 });
 
     const run = harness.runner.run();
-    expect(harness.spawnOrder).toEqual([1, 2]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2]));
 
     harness.resolvePlan(1, 'done');
     await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2, 3]));
@@ -209,6 +213,26 @@ describe('agent-multi orchestrator', () => {
     expect(harness.maxRunning()).toBe(2);
   });
 
+  test('does not spawn a queued plan when an external dependency flips unfinished', async () => {
+    const external = createPlan(99, { status: 'done', taskCount: 1, doneTaskCount: 1 });
+    const plans = [createPlan(1), createPlan(2, { dependencies: ['plan-1', external.uuid] })];
+    const harness = createHarness(plans, { allPlans: [...plans, external] });
+
+    const run = harness.runner.run();
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1]));
+
+    harness.setPlanStatus(external.uuid, 'in_progress');
+    harness.resolvePlan(1, 'done');
+    const result = await run;
+
+    expect(result.success).toBe(false);
+    expect(harness.spawnOrder).toEqual([1]);
+    expect(result.states.get('plan-2')?.status).toBe('failed');
+    expect(result.states.get('plan-2')?.failureReason).toBe(
+      'external dependency plan-99 is not complete'
+    );
+  });
+
   test('marks downstream dependents failed when one plan fails but continues independent work', async () => {
     const plans = [
       createPlan(1),
@@ -219,7 +243,7 @@ describe('agent-multi orchestrator', () => {
     const harness = createHarness(plans, { maxParallel: 2 });
 
     const run = harness.runner.run();
-    expect(harness.spawnOrder).toEqual([1, 2]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2]));
 
     harness.resolvePlan(1, 'pending', 0);
     await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2]));
@@ -245,7 +269,7 @@ describe('agent-multi orchestrator', () => {
     const harness = createHarness(plans);
 
     const run = harness.runner.run();
-    expect(harness.spawnOrder).toEqual([1]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1]));
 
     harness.resolvePlan(1, 'pending', 0);
     const result = await run;
@@ -264,7 +288,7 @@ describe('agent-multi orchestrator', () => {
     const harness = createHarness(plans);
 
     const run = harness.runner.run();
-    expect(harness.spawnOrder).toEqual([1]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1]));
 
     harness.resolvePlan(1, 'done', 1);
     const result = await run;
@@ -435,12 +459,25 @@ describe('agent-multi orchestrator', () => {
     }
   });
 
+  test('validateSelection reports issues once for duplicate plan objects', () => {
+    const duplicate = createPlan(1, { status: 'done' });
+
+    const result = validateSelection([duplicate, duplicate]);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toEqual([
+        { type: 'ineligible_status', planUuid: 'plan-1', planId: 1, status: 'done' },
+      ]);
+    }
+  });
+
   test('treats basePlan as an implicit dependency', async () => {
     const plans = [createPlan(1), createPlan(2, { basePlanUuid: 'plan-1' })];
     const harness = createHarness(plans, { maxParallel: 2 });
 
     const run = harness.runner.run();
-    expect(harness.spawnOrder).toEqual([1]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1]));
 
     harness.resolvePlan(1, 'done');
     await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2]));
@@ -454,7 +491,7 @@ describe('agent-multi orchestrator', () => {
     const harness = createHarness(plans, { maxParallel: 3 });
 
     const run = harness.runner.run();
-    expect(harness.spawnOrder).toEqual([1, 2, 3]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2, 3]));
 
     harness.resolvePlan(2, 'done');
     await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2, 3, 4]));
@@ -474,7 +511,7 @@ describe('agent-multi orchestrator', () => {
     const harness = createHarness(plans);
 
     const run = harness.runner.run();
-    expect(harness.spawnOrder).toEqual([1]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1]));
 
     // exitCode 0 but plan status remains in_progress (not work-complete)
     harness.resolvePlan(1, 'in_progress', 0);

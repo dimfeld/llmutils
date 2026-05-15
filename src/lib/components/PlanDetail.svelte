@@ -27,7 +27,7 @@
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
   import RunChildrenPanel from './RunChildrenPanel.svelte';
-  import { isAgentEligibleChild } from './run_children_panel/eligibility.js';
+  import { hasSelectableEligibleChild } from './run_children_panel/eligibility.js';
   import PrStatusSection from './PrStatusSection.svelte';
   import CopyButton from './CopyButton.svelte';
   import PlanArtifactsList from './PlanArtifactsList.svelte';
@@ -99,6 +99,19 @@
   let tasksOpen = $derived(plan.taskCounts.done < plan.taskCounts.total);
   let isBlocked = $derived(plan.displayStatus === 'blocked');
   let isSimplePlan = $derived(plan.simple === true);
+
+  let childExternalStatusOnlyByUuid = $derived.by(() => {
+    const map: Record<string, string> = {};
+    for (const [uuid, info] of Object.entries(plan.childExternalDependencyStatuses ?? {})) {
+      map[uuid] = info.status;
+    }
+    return map;
+  });
+  let canRenderRunChildren = $derived(
+    plan.epic === true &&
+      (plan.children?.length ?? 0) > 0 &&
+      hasSelectableEligibleChild(plan.children ?? [], childExternalStatusOnlyByUuid)
+  );
 
   let actionConfig = $derived.by(() => {
     // needs_review plans and taskless epics: show "Finish" as primary button
@@ -663,9 +676,11 @@
                 ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'
                 : activeSession.command === 'chat'
                   ? 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:hover:bg-violet-900/60'
-                  : activeSession.command === 'update-docs'
-                    ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60'
-                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
+                  : activeSession.command === 'agent-multi'
+                    ? 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/40 dark:text-cyan-300 dark:hover:bg-cyan-900/60'
+                    : activeSession.command === 'update-docs'
+                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60'
+                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
             >
               <span
                 class="inline-block h-2 w-2 animate-pulse rounded-full {activeSession.command ===
@@ -673,17 +688,21 @@
                   ? 'bg-emerald-500'
                   : activeSession.command === 'chat'
                     ? 'bg-violet-500'
-                    : activeSession.command === 'update-docs'
-                      ? 'bg-amber-500'
-                      : 'bg-blue-500'}"
+                    : activeSession.command === 'agent-multi'
+                      ? 'bg-cyan-500'
+                      : activeSession.command === 'update-docs'
+                        ? 'bg-amber-500'
+                        : 'bg-blue-500'}"
               ></span>
               {activeSession.command === 'agent'
                 ? 'Agent Running...'
                 : activeSession.command === 'generate'
                   ? 'Generating...'
-                  : activeSession.command === 'update-docs'
-                    ? 'Updating Docs...'
-                    : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
+                  : activeSession.command === 'agent-multi'
+                    ? 'Agent Multi Running...'
+                    : activeSession.command === 'update-docs'
+                      ? 'Updating Docs...'
+                      : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
             </a>
           {:else}
             {@const { primary, menuItems, chatAction, showSeparateChatButton } = actionConfig}
@@ -733,7 +752,7 @@
     </div>
 
     <!-- Run children (epic only) -->
-    {#if plan.epic && (plan.children?.length ?? 0) > 0 && plan.children.some(isAgentEligibleChild) && activeSession?.command !== 'agent-multi'}
+    {#if canRenderRunChildren && activeSession?.command !== 'agent-multi'}
       <RunChildrenPanel
         epicPlanUuid={plan.uuid}
         {projectId}

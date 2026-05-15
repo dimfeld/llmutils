@@ -10,7 +10,7 @@ vi.mock('../../../lib/server/plan_actions.js', () => ({
   createLogFile: vi.fn(() => ({ fd: 7, path: '/tmp/agent-multi-child.log' })),
 }));
 
-import { createBunSpawnAgent } from './command.js';
+import { buildChildAgentArgs, createBunSpawnAgent } from './command.js';
 
 describe('agent-multi command', () => {
   afterEach(() => {
@@ -46,5 +46,22 @@ describe('agent-multi command', () => {
       detached: true,
     });
     expect(closeSpy).toHaveBeenCalledWith(7);
+  });
+
+  test('child agent args default to non-interactive stdin', () => {
+    expect(buildChildAgentArgs(101)).toEqual([
+      'agent',
+      '101',
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
+  });
+
+  test('child agent args only omit no-terminal-input for explicit terminal input', () => {
+    expect(buildChildAgentArgs(101, { terminalInput: true })).toEqual([
+      'agent',
+      '101',
+      '--auto-workspace',
+    ]);
   });
 });

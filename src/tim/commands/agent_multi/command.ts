@@ -43,11 +43,7 @@ export async function createBunSpawnAgent(options: {
   // Parallel agent runs cannot share a primary workspace or interactive stdin.
   const autoWorkspace = options.autoWorkspace !== false;
   return (planId: number, cwd: string): SpawnAgentResult => {
-    const args = ['agent', String(planId)];
-    if (autoWorkspace) {
-      args.push('--auto-workspace');
-    }
-    args.push('--no-terminal-input');
+    const args = buildChildAgentArgs(planId, { autoWorkspace });
 
     const logFile = createLogFile('agent-multi-child', planId);
     try {
@@ -71,6 +67,20 @@ export async function createBunSpawnAgent(options: {
   };
 }
 
+export function buildChildAgentArgs(
+  planId: number,
+  options: { autoWorkspace?: boolean; terminalInput?: boolean } = {}
+): string[] {
+  const args = ['agent', String(planId)];
+  if (options.autoWorkspace !== false) {
+    args.push('--auto-workspace');
+  }
+  if (options.terminalInput !== true) {
+    args.push('--no-terminal-input');
+  }
+  return args;
+}
+
 export async function handleAgentMultiCommand(
   planIds: number[],
   options: AgentMultiCommandOptions,
@@ -78,6 +88,13 @@ export async function handleAgentMultiCommand(
 ): Promise<void> {
   if (planIds.length === 0) {
     throw new Error('At least one plan ID is required.');
+  }
+  const seenPlanIds = new Set<number>();
+  for (const planId of planIds) {
+    if (seenPlanIds.has(planId)) {
+      throw new Error(`Duplicate plan id in input: ${planId}`);
+    }
+    seenPlanIds.add(planId);
   }
 
   const repoRoot = await getGitRoot();

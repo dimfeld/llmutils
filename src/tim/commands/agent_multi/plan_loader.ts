@@ -58,10 +58,8 @@ function toAgentMultiPlan(
 }
 
 export function getAgentMultiPlansForProject(db: Database, projectId: number): AgentMultiPlan[] {
-  return db.transaction(() => {
-    const rows = getPlansByProject(db, projectId);
-    const taskCounts = buildTaskCounts(getPlanTasksByProject(db, projectId));
-    const dependenciesByPlanUuid = buildDependencies(getPlanDependenciesByProject(db, projectId));
-    return rows.map((row) => toAgentMultiPlan(row, taskCounts, dependenciesByPlanUuid));
-  })();
+  const rows = getPlansByProject(db, projectId);
+  const taskCounts = buildTaskCounts(getPlanTasksByProject(db, projectId));
+  const dependenciesByPlanUuid = buildDependencies(getPlanDependenciesByProject(db, projectId));
+  return rows.map((row) => toAgentMultiPlan(row, taskCounts, dependenciesByPlanUuid));
 }

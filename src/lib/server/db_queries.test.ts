@@ -224,10 +224,7 @@ describe('lib/server/db_queries', () => {
       planId: 923,
       title: 'Child with external dependency',
       parentUuid: 'child-external-status-epic',
-      dependencyUuids: [
-        'child-external-status-finished',
-        'child-external-status-unfinished',
-      ],
+      dependencyUuids: ['child-external-status-finished', 'child-external-status-unfinished'],
       tasks: [{ title: 'task', description: 'desc', done: false }],
     });
     upsertPlan(db, projectId, {

@@ -177,10 +177,11 @@ export function validateSelection(
 
   const depsByPlanUuid = new Map<string, Set<string>>();
   const depsInInputByPlanUuid = new Map<string, Set<string>>();
+  const selectedPlans = Array.from(selectedByUuid.values());
   const expectedParentUuid =
-    plans.length > 0 ? normalizeParentUuid(plans[0].parentUuid) : undefined;
+    selectedPlans.length > 0 ? normalizeParentUuid(selectedPlans[0].parentUuid) : undefined;
 
-  for (const plan of plans) {
+  for (const plan of selectedPlans) {
     const hasIneligibleStatus = isWorkComplete(plan) || plan.status === 'deferred';
     if (hasIneligibleStatus) {
       issues.push({
@@ -243,7 +244,7 @@ export function validateSelection(
     depsInInputByPlanUuid.set(plan.uuid, depsInInput);
   }
 
-  const cycle = findInputCycle(plans, depsInInputByPlanUuid);
+  const cycle = findInputCycle(selectedPlans, depsInInputByPlanUuid);
   if (cycle) {
     issues.push({ type: 'cycle', cycle });
   }
@@ -258,7 +259,7 @@ export function validateSelection(
 
   const readyPlanUuids: string[] = [];
   const waitingPlanUuids: string[] = [];
-  for (const plan of plans) {
+  for (const plan of selectedPlans) {
     const depsInInput = depsInInputByPlanUuid.get(plan.uuid) ?? new Set<string>();
     if (depsInInput.size === 0) {
       readyPlanUuids.push(plan.uuid);
@@ -269,7 +270,7 @@ export function validateSelection(
 
   return {
     ok: true,
-    plans,
+    plans: selectedPlans,
     depsByPlanUuid,
     depsInInputByPlanUuid,
     readyPlanUuids,
@@ -314,7 +315,7 @@ export class MultiAgentRunner {
 
   async run(): Promise<MultiAgentRunResult> {
     this.logInitialSummary();
-    this.tick();
+    await this.tick();
 
     while (this.hasStatus('pending') || this.hasStatus('running')) {
       if (!this.hasStatus('running')) {
@@ -324,7 +325,7 @@ export class MultiAgentRunner {
 
       const exit = await this.waitForNextExit();
       await this.handleExit(exit.planUuid, exit.exitCode);
-      this.tick();
+      await this.tick();
     }
 
     this.logFinalSummary();
@@ -348,9 +349,9 @@ export class MultiAgentRunner {
     );
   }
 
-  private tick(): void {
+  private async tick(): Promise<void> {
     while (this.runningCount() < this.maxParallel) {
-      const next = this.nextRunnablePendingState();
+      const next = await this.nextRunnablePendingState();
       if (!next) {
         return;
       }
@@ -469,17 +470,42 @@ export class MultiAgentRunner {
     }
   }
 
-  private nextRunnablePendingState(): PlanRunState | null {
+  private async nextRunnablePendingState(): Promise<PlanRunState | null> {
     for (const state of this.states.values()) {
       if (state.status !== 'pending') {
         continue;
       }
-      if (
-        Array.from(state.depsInInput).every(
-          (dependencyUuid) => this.states.get(dependencyUuid)?.status === 'finished'
-        )
-      ) {
-        return state;
+      const inputDepsComplete = Array.from(state.depsInInput).every(
+        (dependencyUuid) => this.states.get(dependencyUuid)?.status === 'finished'
+      );
+      if (!inputDepsComplete) {
+        continue;
+      }
+
+      const incompleteExternalDependency = await this.findIncompleteExternalDependency(state);
+      if (incompleteExternalDependency) {
+        state.status = 'failed';
+        state.failureReason = `external dependency ${incompleteExternalDependency} is not complete`;
+        this.logger.error(
+          `agent-multi: skipped plan ${formatPlan(state.plan)}; ${state.failureReason}`
+        );
+        this.sendWorkflowProgress(`Skipped plan ${formatPlan(state.plan)}`, 'skip');
+        this.markDownstreamFailed(state.plan.uuid);
+        continue;
+      }
+      return state;
+    }
+    return null;
+  }
+
+  private async findIncompleteExternalDependency(state: PlanRunState): Promise<string | null> {
+    for (const dependencyUuid of state.deps) {
+      if (state.depsInInput.has(dependencyUuid)) {
+        continue;
+      }
+      const dependencyPlan = await this.readPlan(dependencyUuid);
+      if (!dependencyPlan || !isWorkComplete(dependencyPlan)) {
+        return dependencyUuid;
       }
     }
     return null;

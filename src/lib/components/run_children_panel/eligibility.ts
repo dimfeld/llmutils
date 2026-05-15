@@ -49,6 +49,24 @@ export function isAgentEligibleChild(child: RunChildrenPlanChild): boolean {
   return !INELIGIBLE_STATUSES.has(child.status) && child.doneTaskCount < child.taskCount;
 }
 
+/**
+ * Returns true if at least one child is agent-eligible AND not (directly or transitively)
+ * blocked. Used as the render gate so the panel doesn't appear with only disabled rows.
+ */
+export function hasSelectableEligibleChild<T extends RunChildrenPlanChild>(
+  children: T[],
+  externalPlanStatusByUuid: Record<string, string | undefined>
+): boolean {
+  if (children.length === 0) return false;
+  const graph = buildSelectionGraph(children, externalPlanStatusByUuid);
+  return children.some(
+    (child) =>
+      isAgentEligibleChild(child) &&
+      !graph.externalBlockedByUuid.has(child.uuid) &&
+      !graph.transitivelyBlockedByUuid.has(child.uuid)
+  );
+}
+
 export function buildSelectionGraph<T extends RunChildrenPlanChild>(
   children: T[],
   externalPlanStatusByUuid: Record<string, string | undefined>
