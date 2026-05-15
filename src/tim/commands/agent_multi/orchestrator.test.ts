@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import {
   MultiAgentRunner,
+  SelectionValidationError,
   validateSelection,
   type AgentMultiPlan,
   type MultiAgentLogger,
@@ -391,5 +392,99 @@ describe('agent-multi orchestrator', () => {
     harness.resolvePlan(5, 'done');
     expect((await run).success).toBe(true);
     expect(harness.maxRunning()).toBe(3);
+  });
+
+  test('treats exit code 0 with non-complete plan status as failure', async () => {
+    const plans = [createPlan(1), createPlan(2, { dependencies: ['plan-1'] })];
+    const harness = createHarness(plans);
+
+    const run = harness.runner.run();
+    expect(harness.spawnOrder).toEqual([1]);
+
+    // exitCode 0 but plan status remains in_progress (not work-complete)
+    harness.resolvePlan(1, 'in_progress', 0);
+    const result = await run;
+
+    expect(result.success).toBe(false);
+    expect(result.states.get('plan-1')?.status).toBe('failed');
+    expect(result.states.get('plan-1')?.failureReason).toBe('plan status is in_progress');
+    // plan-2 depends on plan-1 which failed, so it should be skipped
+    expect(result.states.get('plan-2')?.status).toBe('failed');
+    expect(harness.spawnOrder).toEqual([1]);
+  });
+
+  test('validateSelection passes when external dep is already finished', () => {
+    const external = createPlan(99, { status: 'done', taskCount: 1, doneTaskCount: 1 });
+    const plans = [createPlan(1, { dependencies: [external.uuid] })];
+
+    const result = validateSelection(plans, { allPlans: [...plans, external] });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.readyPlanUuids).toContain('plan-1');
+      expect(result.waitingPlanUuids).toHaveLength(0);
+    }
+  });
+
+  test('validateSelection emits missing_dependency when dep UUID is absent from allPlans', () => {
+    const plans = [createPlan(1, { dependencies: ['nonexistent-uuid'] })];
+
+    // allPlans does not contain the dep, and neither does the selected list
+    const result = validateSelection(plans, { allPlans: plans });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toContainEqual({
+        type: 'missing_dependency',
+        planUuid: 'plan-1',
+        planId: 1,
+        dependencyUuid: 'nonexistent-uuid',
+      });
+    }
+  });
+
+  test('MultiAgentRunner constructor throws SelectionValidationError for invalid plans', () => {
+    const plans = [createPlan(1, { status: 'done' })];
+
+    expect(
+      () =>
+        new MultiAgentRunner({
+          plans,
+          cwd: '/tmp/repo',
+          spawnAgent: vi.fn(),
+          readPlan: vi.fn(),
+          logger: createLogger(),
+        })
+    ).toThrow(SelectionValidationError);
+  });
+
+  test('validateSelection treats basePlanUuid as external dep and rejects when unfinished', () => {
+    const external = createPlan(99); // status: 'pending' — not work-complete
+    const plans = [createPlan(1, { basePlanUuid: 'plan-99' })];
+
+    const result = validateSelection(plans, { allPlans: [...plans, external] });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toContainEqual({
+        type: 'unfinished_external_dependency',
+        planUuid: 'plan-1',
+        planId: 1,
+        dependencyUuid: 'plan-99',
+        dependencyPlanId: 99,
+      });
+    }
+  });
+
+  test('validateSelection with basePlanUuid pointing to finished external plan passes', () => {
+    const external = createPlan(99, { status: 'done', taskCount: 1, doneTaskCount: 1 });
+    const plans = [createPlan(1, { basePlanUuid: external.uuid })];
+
+    const result = validateSelection(plans, { allPlans: [...plans, external] });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.readyPlanUuids).toContain('plan-1');
+    }
   });
 });

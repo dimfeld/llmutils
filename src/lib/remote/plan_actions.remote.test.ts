@@ -1006,6 +1006,77 @@ describe('plan remote actions', () => {
       expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
     });
 
+    test('rejects duplicate child UUIDs', async () => {
+      seedPlan({ uuid: 'multi-epic-dup', planId: 2216, epic: true });
+      seedPlan({
+        uuid: 'multi-child-dup',
+        planId: 2217,
+        parentUuid: 'multi-epic-dup',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-dup',
+          childUuids: ['multi-child-dup', 'multi-child-dup'],
+        })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Child plan multi-child-dup was selected more than once' },
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects when epic project has no primary workspace', async () => {
+      seedPlan({ uuid: 'multi-epic-no-ws', planId: 2218, epic: true });
+      seedPlan({
+        uuid: 'multi-child-no-ws',
+        planId: 2219,
+        parentUuid: 'multi-epic-no-ws',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-no-ws',
+          childUuids: ['multi-child-no-ws'],
+        })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Project does not have a primary workspace' },
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('surfaces spawn failure for startAgentMulti', async () => {
+      seedPlan({ uuid: 'multi-epic-fail', planId: 2220, epic: true });
+      seedPlan({
+        uuid: 'multi-child-fail',
+        planId: 2221,
+        parentUuid: 'multi-epic-fail',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnAgentMultiProcessMock.mockResolvedValue({
+        success: false,
+        error: 'tim agent-multi failed to start',
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-fail',
+          childUuids: ['multi-child-fail'],
+        })
+      ).rejects.toMatchObject({
+        status: 500,
+        body: { message: 'tim agent-multi failed to start' },
+      });
+    });
+
     test('spawns tim agent-multi with resolved numeric child plan IDs', async () => {
       seedPlan({ uuid: 'multi-epic-start', planId: 2213, epic: true });
       seedPlan({
