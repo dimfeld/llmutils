@@ -2,7 +2,11 @@
   import { SvelteSet } from 'svelte/reactivity';
   import { invalidateAll } from '$app/navigation';
 
-  import type { ChildPlanSummary, PlanDisplayStatus } from '$lib/server/db_queries.js';
+  import type {
+    ChildExternalDependencyInfo,
+    ChildPlanSummary,
+    PlanDisplayStatus,
+  } from '$lib/server/db_queries.js';
   import { startAgentMulti } from '$lib/remote/plan_actions.remote.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import StatusBadge from './StatusBadge.svelte';
@@ -24,10 +28,18 @@
     epicPlanUuid: string;
     projectId: string | number;
     children: ChildPlanSummary[];
-    externalPlanStatusByUuid: Record<string, string>;
+    externalPlanStatusByUuid: Record<string, ChildExternalDependencyInfo>;
     tab?: string;
     onLaunched?: (result: { connectionId?: string; status?: string }) => void;
   } = $props();
+
+  let externalStatusOnlyByUuid = $derived.by(() => {
+    const map: Record<string, string> = {};
+    for (const [uuid, info] of Object.entries(externalPlanStatusByUuid)) {
+      map[uuid] = info.status;
+    }
+    return map;
+  });
 
   // Use $derived.by keyed on epicPlanUuid so a route change to a different epic
   // produces fresh state (no stale selected UUIDs / banners) without an $effect.
@@ -40,12 +52,12 @@
     void epicPlanUuid;
     return null;
   });
-  let successMessage: { text: string; connectionId?: string } | null = $derived.by(() => {
+  let successMessage: { text: string } | null = $derived.by(() => {
     void epicPlanUuid;
     return null;
   });
 
-  let graph = $derived(buildSelectionGraph(children, externalPlanStatusByUuid));
+  let graph = $derived(buildSelectionGraph(children, externalStatusOnlyByUuid));
 
   function uuidIsSelectable(uuid: string): boolean {
     const child = graph.childrenByUuid.get(uuid);
@@ -71,8 +83,10 @@
     const externalBlockers = graph.externalBlockedByUuid.get(child.uuid);
     if (externalBlockers && externalBlockers.length > 0) {
       const parts = externalBlockers.map((dep) => {
-        const status = externalPlanStatusByUuid[dep];
-        return status ? `${dep} (${status})` : `${dep} (status unknown)`;
+        const info = externalPlanStatusByUuid[dep];
+        if (!info) return `${dep} (status unknown)`;
+        const titlePart = info.title ? ` ${info.title}` : '';
+        return `#${info.planId}${titlePart} (${info.status})`;
       });
       return `Blocked by external dependency: ${parts.join(', ')}`;
     }
@@ -122,10 +136,7 @@
         childUuids: validSelectedUuids,
       });
       if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this epic',
-          connectionId: result.connectionId,
-        };
+        successMessage = { text: 'A session is already running for this epic' };
       } else {
         successMessage = { text: 'Agent-multi started' };
       }
@@ -205,12 +216,6 @@
       class="mt-2 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-900/30 dark:text-green-300"
     >
       {successMessage.text}
-      {#if successMessage.connectionId}
-        — <a
-          href="/projects/{projectId}/sessions/{successMessage.connectionId}"
-          class="underline hover:no-underline">View session</a
-        >
-      {/if}
     </div>
   {/if}
 </div>

@@ -207,6 +207,12 @@ describe('lib/server/db_queries', () => {
       status: 'done',
     });
     upsertPlan(db, projectId, {
+      uuid: 'child-external-status-unfinished',
+      planId: 925,
+      title: 'Unfinished external dependency',
+      status: 'in_progress',
+    });
+    upsertPlan(db, projectId, {
       uuid: 'child-external-status-internal',
       planId: 922,
       title: 'Internal dependency child',
@@ -218,7 +224,10 @@ describe('lib/server/db_queries', () => {
       planId: 923,
       title: 'Child with external dependency',
       parentUuid: 'child-external-status-epic',
-      dependencyUuids: ['child-external-status-finished'],
+      dependencyUuids: [
+        'child-external-status-finished',
+        'child-external-status-unfinished',
+      ],
       tasks: [{ title: 'task', description: 'desc', done: false }],
     });
     upsertPlan(db, projectId, {
@@ -233,7 +242,16 @@ describe('lib/server/db_queries', () => {
     const detail = await getPlanDetail(db, 'child-external-status-epic');
 
     expect(detail?.childExternalDependencyStatuses).toEqual({
-      'child-external-status-finished': 'done',
+      'child-external-status-finished': {
+        status: 'done',
+        planId: 921,
+        title: 'Finished external dependency',
+      },
+      'child-external-status-unfinished': {
+        status: 'in_progress',
+        planId: 925,
+        title: 'Unfinished external dependency',
+      },
     });
     expect(detail?.childExternalDependencyStatuses).not.toHaveProperty(
       'child-external-status-internal'

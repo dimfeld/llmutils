@@ -121,10 +121,16 @@ export interface EnrichedPlan {
   reviewIssueCount: number;
 }
 
+export interface ChildExternalDependencyInfo {
+  status: string;
+  planId: number;
+  title: string;
+}
+
 export interface PlanDetail extends EnrichedPlan {
   dependencies: EnrichedPlanDependency[];
   children: ChildPlanSummary[];
-  childExternalDependencyStatuses: Record<string, string>;
+  childExternalDependencyStatuses: Record<string, ChildExternalDependencyInfo>;
   assignment: AssignmentEntry | null;
   parent: EnrichedPlanDependency | null;
   basePlan: EnrichedPlanDependency | null;
@@ -585,7 +591,7 @@ function getChildExternalDependencyStatuses(
   db: Database,
   children: ChildPlanSummary[],
   planByUuid: ReadonlyMap<string, PlanRow>
-): Record<string, string> {
+): Record<string, ChildExternalDependencyInfo> {
   if (children.length === 0) {
     return {};
   }
@@ -609,23 +615,33 @@ function getChildExternalDependencyStatuses(
     return {};
   }
 
-  const statuses: Record<string, string> = {};
+  const statuses: Record<string, ChildExternalDependencyInfo> = {};
   const missingPlanUuids: string[] = [];
 
   for (const dependencyUuid of externalDependencyUuids) {
     const plan = planByUuid.get(dependencyUuid);
-    const status = normalizePlanStatus(plan?.status ?? null);
-    if (status) {
-      statuses[dependencyUuid] = status;
-    } else {
+    if (!plan) {
       missingPlanUuids.push(dependencyUuid);
+      continue;
+    }
+    const status = normalizePlanStatus(plan.status);
+    if (status) {
+      statuses[dependencyUuid] = {
+        status,
+        planId: plan.plan_id,
+        title: plan.title ?? '',
+      };
     }
   }
 
   for (const plan of getPlansByUuid(db, missingPlanUuids)) {
     const status = normalizePlanStatus(plan.status);
     if (status) {
-      statuses[plan.uuid] = status;
+      statuses[plan.uuid] = {
+        status,
+        planId: plan.plan_id,
+        title: plan.title ?? '',
+      };
     }
   }
 

@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 
-import type { ChildPlanSummary, PlanDetail } from '$lib/server/db_queries.js';
+import type {
+  ChildExternalDependencyInfo,
+  ChildPlanSummary,
+  PlanDetail,
+} from '$lib/server/db_queries.js';
 import { invalidateAll } from '$app/navigation';
 import { startAgentMulti } from '$lib/remote/plan_actions.remote.js';
 import PlanDetailComponent from './PlanDetail.svelte';
@@ -73,7 +77,7 @@ function child(uuid: string, planId: number, overrides: Partial<ChildPlanSummary
 
 function renderPanel(
   children: ChildPlanSummary[],
-  externalPlanStatusByUuid: Record<string, string> = {}
+  externalPlanStatusByUuid: Record<string, ChildExternalDependencyInfo> = {}
 ) {
   return render(RunChildrenPanel, {
     props: {
@@ -174,13 +178,13 @@ describe('RunChildrenPanel', () => {
 
   test('disables externally blocked children with a blocking dependency tooltip', async () => {
     renderPanel([child('blocked-child', 103, { dependencies: ['external-open'] })], {
-      'external-open': 'in_progress',
+      'external-open': { status: 'in_progress', planId: 999, title: 'External open plan' },
     });
 
     const checkbox = checkboxFor(103);
     expect(checkbox.disabled).toBe(true);
     expect(checkbox.closest('li')?.getAttribute('title')).toBe(
-      'Blocked by external dependency: external-open (in_progress)'
+      'Blocked by external dependency: #999 External open plan (in_progress)'
     );
   });
 
@@ -254,7 +258,7 @@ describe('RunChildrenPanel', () => {
         child('pred-child', 120, { dependencies: ['ext-open'] }),
         child('down-child', 121, { dependencies: ['pred-child'] }),
       ],
-      { 'ext-open': 'in_progress' }
+      { 'ext-open': { status: 'in_progress', planId: 998, title: 'Ext open' } }
     );
 
     // The directly-blocked predecessor is disabled (external block).
@@ -302,7 +306,7 @@ describe('RunChildrenPanel', () => {
     await expect.element(page.getByRole('button', { name: 'Run selected' })).toBeDisabled();
   });
 
-  test('shows a success banner with a session link when the epic already has a running session', async () => {
+  test('shows a generic success banner when the epic already has a running session', async () => {
     mockStartAgentMulti.mockResolvedValue({
       status: 'already_running',
       connectionId: 'session-123',
@@ -315,8 +319,9 @@ describe('RunChildrenPanel', () => {
     await expect
       .element(page.getByText('A session is already running for this epic'))
       .toBeInTheDocument();
-    await expect
-      .element(page.getByRole('link', { name: 'View session' }))
-      .toHaveAttribute('href', '/projects/123/sessions/session-123');
+    // The in-panel "View session" link was intentionally removed: the panel is
+    // hidden by PlanDetail once activeSession.command === 'agent-multi', so the
+    // top-of-page active-session pill is the single entry point.
+    await expect.element(page.getByRole('link', { name: 'View session' })).not.toBeInTheDocument();
   });
 });
