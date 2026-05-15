@@ -416,6 +416,10 @@ program
   .option('-d, --depends-on <ids...>', 'Specify plan IDs that this plan depends on')
   .option('-p, --priority <level>', 'Set the priority level (low, medium, high, urgent)')
   .option('--parent <planId>', 'Set the parent plan ID')
+  .option(
+    '--base-plan <planId>',
+    "Stack this plan's branch on another plan's branch. Explicit --base-branch takes precedence when both are set."
+  )
   .option('-s, --status <status>', `Set the initial status ${statusSchemaHelpText}`)
   .option(
     '--rmfilter <files...>',
@@ -434,6 +438,7 @@ program
     const { handleAddCommand } = await import('./commands/add.js');
     options.dependsOn = parsePlanIdOption(options.dependsOn);
     options.parent = parsePlanIdOption(options.parent);
+    options.basePlan = parsePlanIdOption(options.basePlan);
     options.cleanup = parsePlanIdOption(options.cleanup);
     options.discoveredFrom = parsePlanIdOption(options.discoveredFrom);
     await handleAddCommand(title, options, command).catch(handleCommandError);
@@ -1229,6 +1234,11 @@ program
   .option('--discovered-from <planId>', 'Set the plan this was discovered from')
   .option('--no-discovered-from', 'Remove the discoveredFrom association')
   .option(
+    '--base-plan <planId>',
+    "Stack this plan's branch on another plan's branch. Explicit --base-branch takes precedence when both are set."
+  )
+  .option('--no-base-plan', 'Remove the basePlan association')
+  .option(
     '--rmfilter <files...>',
     'Set rmfilter files (comma-separated list or multiple arguments)'
   )
@@ -1307,6 +1317,12 @@ program
       options.noTag = parsedNoTag;
     }
 
+    if (options.basePlan === false) {
+      options.noBasePlan = true;
+      options.basePlan = undefined;
+    } else {
+      options.basePlan = parsePlanIdOption(options.basePlan);
+    }
     options.parent = parsePlanIdOption(options.parent);
     options.discoveredFrom = parsePlanIdOption(options.discoveredFrom);
     if (options.baseBranch === false) {

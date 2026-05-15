@@ -42,6 +42,8 @@ export interface SetOptions {
   noDependsOn?: number[];
   parent?: number;
   noParent?: boolean;
+  basePlan?: number;
+  noBasePlan?: boolean;
   discoveredFrom?: number;
   noDiscoveredFrom?: boolean;
   note?: string;
@@ -198,6 +200,31 @@ export async function handleSetCommand(
         log('Removed discoveredFrom');
       } else {
         log('No discoveredFrom to remove');
+      }
+    }
+
+    if (options.basePlan !== undefined) {
+      const currentPlanId = plan.id;
+      if (options.basePlan === currentPlanId) {
+        throw new Error(`basePlan cannot refer to the current plan (${currentPlanId})`);
+      }
+      if (!context.planIdToUuid.has(options.basePlan)) {
+        throw new Error(`Base plan ${options.basePlan} not found`);
+      }
+      if (plan.basePlan !== options.basePlan) {
+        plan.basePlan = options.basePlan;
+        modified = true;
+        log(`Set basePlan to ${options.basePlan}`);
+      } else {
+        log(`basePlan is already ${options.basePlan}`);
+      }
+    } else if (options.noBasePlan) {
+      if (plan.basePlan !== undefined) {
+        delete plan.basePlan;
+        modified = true;
+        log('Removed basePlan');
+      } else {
+        log('No basePlan to remove');
       }
     }
 

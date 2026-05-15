@@ -42,6 +42,7 @@ type AddCommandOptions = {
   epic?: boolean;
   dependsOn?: number[];
   parent?: number;
+  basePlan?: number;
   rmfilter?: string[];
   issue?: string[];
   doc?: string[];
@@ -148,6 +149,15 @@ export async function handleAddCommand(
         projectContext.repository.remoteUrl
       );
 
+  if (options.basePlan !== undefined) {
+    if (options.basePlan === planId) {
+      throw new Error(`basePlan cannot refer to the plan being created (${planId})`);
+    }
+    if (!projectContext.planIdToUuid.has(options.basePlan)) {
+      throw new Error(`Base plan ${options.basePlan} not found`);
+    }
+  }
+
   const plan: PlanSchema = {
     id: planId,
     uuid: crypto.randomUUID(),
@@ -161,6 +171,7 @@ export async function handleAddCommand(
     epic: options.epic || false,
     dependencies: needArrayOrUndefined(options.dependsOn),
     parent: referencedPlan ? referencedPlan.id : options.parent,
+    basePlan: options.basePlan,
     discoveredFrom: options.discoveredFrom,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

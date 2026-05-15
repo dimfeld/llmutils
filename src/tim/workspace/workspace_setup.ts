@@ -20,6 +20,7 @@ import { setPlanBaseTracking } from '../db/plan.js';
 import { updateHeadlessSessionInfo } from '../headless.js';
 import { materializePlan, resolveProjectContext } from '../plan_materialize.js';
 import { readPlanFile, resolvePlanByNumericId } from '../plans.js';
+import { resolveBasePlanBranch } from '../plans/base_plan_resolution.js';
 import type { PlanSchema } from '../planSchema.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
 import { findWorkspaceInfosByTaskId } from './workspace_info.js';
@@ -58,7 +59,7 @@ interface ResolvedWorkspaceBranchContext {
   branchName?: string;
   baseBranch?: string;
   checkoutBranch?: string;
-  baseBranchSource?: 'plan' | 'parent';
+  baseBranchSource?: 'plan' | 'basePlan' | 'parent';
   canRetryWithoutBaseBranch: boolean;
 }
 
@@ -77,7 +78,21 @@ async function getParentPlanBranch(
 
   const gitRoot = await getGitRoot(currentBaseDir);
   const parentPlan = await resolvePlanByNumericId(plan.parent, gitRoot);
-  return parentPlan.plan.branch ?? generateBranchNameFromPlan(parentPlan.plan);
+  const projectContext = await resolveProjectContext(currentBaseDir);
+  const branchPrefix = resolveBranchPrefix({
+    config,
+    db: getDatabase(),
+    projectId: projectContext.projectId,
+  });
+  return parentPlan.plan.branch ?? generateBranchNameFromPlan(parentPlan.plan, { branchPrefix });
+}
+
+async function getBasePlanBranch(
+  plan: PlanSchema,
+  config: TimConfig,
+  currentBaseDir: string
+): Promise<string | undefined> {
+  return resolveBasePlanBranch(plan, config, currentBaseDir);
 }
 
 async function resolveWorkspaceBranchContext(
@@ -133,6 +148,15 @@ async function resolveWorkspaceBranchContext(
       baseBranch = resolvedBaseBranch;
       if (baseBranch) {
         baseBranchSource = 'plan';
+      }
+    }
+
+    if (!baseBranch) {
+      const basePlanBranch = await getBasePlanBranch(planData, config, currentBaseDir);
+      if (basePlanBranch) {
+        baseBranch = basePlanBranch;
+        baseBranchSource = 'basePlan';
+        canRetryWithoutBaseBranch = true;
       }
     }
 
@@ -205,8 +229,9 @@ async function updateBaseCommitTracking(options: {
     // even when the plan branch isn't checked out (non-workspace mode).
     const sourceRef = options.planBranch ?? 'HEAD';
     const mergeBase = await getMergeBase(baseDir, baseBranch, sourceRef);
-    // Persist baseBranch for 'parent' (auto-derived) source.
+    // Persist baseBranch for parent-derived sources.
     // 'plan' source means baseBranch is already in the plan, no need to re-persist it.
+    // 'basePlan' source is intentionally a soft reference and must resolve fresh each run.
     const shouldPersistBaseBranch = options.baseBranchSource === 'parent';
 
     if (!mergeBase) {
@@ -321,6 +346,7 @@ export async function setupWorkspace(
         branchName: branchContext.branchName,
         planData: branchContext.planData,
         fallbackToTrunkOnMissingBase: branchContext.canRetryWithoutBaseBranch,
+        baseBranchSource: branchContext.baseBranchSource,
         ...(options.planUuid ? { preferredPlanUuid: options.planUuid } : {}),
       });
 
@@ -351,6 +377,9 @@ export async function setupWorkspace(
           ...(branchContext.branchName && { branchName: branchContext.branchName }),
           ...(createWorkspaceBaseBranch && { fromBranch: createWorkspaceBaseBranch }),
           ...(branchContext.canRetryWithoutBaseBranch && { fallbackToTrunkOnMissingBase: true }),
+          ...(branchContext.baseBranchSource && {
+            baseBranchSource: branchContext.baseBranchSource,
+          }),
           ...(branchContext.planData && { planData: branchContext.planData }),
         });
         isNewWorkspace = true;
@@ -389,6 +418,9 @@ export async function setupWorkspace(
           ...(branchContext.branchName && { branchName: branchContext.branchName }),
           ...(createWorkspaceBaseBranch && { fromBranch: createWorkspaceBaseBranch }),
           ...(branchContext.canRetryWithoutBaseBranch && { fallbackToTrunkOnMissingBase: true }),
+          ...(branchContext.baseBranchSource && {
+            baseBranchSource: branchContext.baseBranchSource,
+          }),
           ...(branchContext.planData && { planData: branchContext.planData }),
         });
         isNewWorkspace = true;

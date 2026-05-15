@@ -1069,6 +1069,99 @@ describe('tim set command', () => {
     expect(updatedPlan.discoveredFrom).toBe(39);
   });
 
+  test('should set basePlan field and persist through sync router', async () => {
+    await createTestPlan(44);
+    await createTestPlan(45);
+
+    await handleSetCommand(
+      45,
+      {
+        basePlan: 44,
+      },
+      globalOpts
+    );
+
+    const updatedPlan = (await resolvePlanByNumericId(45, tempDir)).plan;
+    const basePlan = (await resolvePlanByNumericId(44, tempDir)).plan;
+    expect(updatedPlan.basePlan).toBe(44);
+
+    const projectContext = await resolveProjectContext(tempDir);
+    const row = getPlanByPlanId(getDatabase(), projectContext.projectId, 45);
+    expect(row?.base_plan_uuid).toBe(basePlan.uuid);
+
+    const operations = getDatabase()
+      .prepare('SELECT operation_type, payload FROM sync_operation ORDER BY local_sequence')
+      .all() as Array<{ operation_type: string; payload: string }>;
+    expect(
+      operations.some((operation) => {
+        const payload = JSON.parse(operation.payload);
+        return operation.operation_type === 'plan.set_scalar' && payload.field === 'base_plan_uuid';
+      })
+    ).toBe(true);
+  });
+
+  test('should remove basePlan field', async () => {
+    await createTestPlan(46);
+    await createTestPlan(47, { basePlan: 46 });
+
+    await handleSetCommand(
+      47,
+      {
+        noBasePlan: true,
+      },
+      globalOpts
+    );
+
+    const updatedPlan = (await resolvePlanByNumericId(47, tempDir)).plan;
+    expect(updatedPlan.basePlan).toBeUndefined();
+
+    const projectContext = await resolveProjectContext(tempDir);
+    const row = getPlanByPlanId(getDatabase(), projectContext.projectId, 47);
+    expect(row?.base_plan_uuid).toBeNull();
+
+    const operations = getDatabase()
+      .prepare('SELECT operation_type, payload FROM sync_operation ORDER BY local_sequence')
+      .all() as Array<{ operation_type: string; payload: string }>;
+    expect(
+      operations.some((operation) => {
+        const payload = JSON.parse(operation.payload);
+        return (
+          operation.operation_type === 'plan.set_scalar' &&
+          payload.field === 'base_plan_uuid' &&
+          payload.value === null
+        );
+      })
+    ).toBe(true);
+  });
+
+  test('should reject missing basePlan target', async () => {
+    await createTestPlan(48);
+
+    await expect(
+      handleSetCommand(
+        48,
+        {
+          basePlan: 999,
+        },
+        globalOpts
+      )
+    ).rejects.toThrow('Base plan 999 not found');
+  });
+
+  test('should reject basePlan self-reference', async () => {
+    await createTestPlan(49);
+
+    await expect(
+      handleSetCommand(
+        49,
+        {
+          basePlan: 49,
+        },
+        globalOpts
+      )
+    ).rejects.toThrow('basePlan cannot refer to the current plan (49)');
+  });
+
   test('adds tags with normalization and deduplication', async () => {
     const planPath = await createTestPlan(200);
 

@@ -2,6 +2,7 @@ import { syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import {
   ensureJjPublishedCommitsHaveDescriptions,
   getMergeBase,
+  getTrunkBranch,
   getUsingJj,
 } from '../../common/git.js';
 import { log, warn } from '../../logging.js';
@@ -15,6 +16,10 @@ import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
+import {
+  resolveEffectivePlanBase,
+  resolveEffectivePlanBaseWithSource,
+} from '../plans/base_plan_resolution.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 
 interface RootCommandLike {
@@ -286,6 +291,14 @@ export async function detectAndStorePrUrl(
   return prUrl;
 }
 
+export async function resolveEffectivePrBase(
+  plan: PlanSchema,
+  baseDir: string,
+  config: TimConfig
+): Promise<string> {
+  return resolveEffectivePlanBase({ plan, baseDir, config });
+}
+
 async function runPrCreationExecutor(
   plan: PlanSchema,
   planPath: string | null,
@@ -295,8 +308,21 @@ async function runPrCreationExecutor(
   if (usingJj) {
     await ensureJjPublishedCommitsHaveDescriptions(options.baseDir);
   }
-  const baseBranch = plan.baseBranch?.trim() || 'main';
-  const baseRef = usingJj ? 'latest(ancestors(trunk()) & ancestors(@))' : undefined;
+  const baseResolution = await resolveEffectivePlanBaseWithSource({
+    plan,
+    baseDir: options.baseDir,
+    config: options.config,
+    fetchBasePlanRemote: !usingJj,
+  });
+  const baseBranch = baseResolution.baseBranch;
+  const trunkBranch = await getTrunkBranch(options.baseDir);
+  const jjBaseRevset =
+    baseBranch === trunkBranch
+      ? 'trunk()'
+      : baseResolution.source === 'basePlan'
+        ? `${baseBranch}@origin`
+        : `latest(present(${baseBranch}) | present(${baseBranch}@origin))`;
+  const baseRef = usingJj ? `latest(ancestors(${jjBaseRevset}) & ancestors(@))` : undefined;
   let mergeBase: string | undefined;
   if (!usingJj) {
     const resolved = await getMergeBase(options.baseDir, baseBranch);

@@ -511,6 +511,9 @@ function normalizePlanScalarAdapterValue(
   if (field === 'discovered_from') {
     return adapter.resolveLocalPlanId(value as string | null);
   }
+  if (field === 'base_plan_uuid') {
+    return value;
+  }
   return value;
 }
 
@@ -576,6 +579,9 @@ function validateAdapterPlanOperation(
       if (op.discoveredFrom && adapter.baseRevisionMode !== 'projection') {
         requireAdapterPlan(adapter, op.discoveredFrom);
       }
+      if (op.basePlanUuid && adapter.baseRevisionMode !== 'projection') {
+        requireAdapterPlan(adapter, op.basePlanUuid);
+      }
       if (op.dependencies.some((dependencyUuid) => dependencyUuid === op.planUuid)) {
         applyOperationToPrecondition('Adding dependency would create a cycle');
       }
@@ -596,6 +602,9 @@ function validateAdapterPlanOperation(
     }
     case 'plan.set_scalar':
       if (op.field === 'discovered_from' && typeof op.value === 'string') {
+        requireAdapterPlan(adapter, op.value);
+      }
+      if (op.field === 'base_plan_uuid' && typeof op.value === 'string') {
         requireAdapterPlan(adapter, op.value);
       }
       return;
@@ -723,6 +732,9 @@ function applyOperationToPlanCreate(
   if (op.discoveredFrom && adapter.baseRevisionMode !== 'projection') {
     requireAdapterPlan(adapter, op.discoveredFrom);
   }
+  if (op.basePlanUuid && adapter.baseRevisionMode !== 'projection') {
+    requireAdapterPlan(adapter, op.basePlanUuid);
+  }
   for (const dependencyUuid of new Set(op.dependencies)) {
     requireAdapterPlan(adapter, dependencyUuid);
   }
@@ -743,6 +755,7 @@ function applyOperationToPlanCreate(
     simple: typeof op.simple === 'boolean' ? (op.simple ? 1 : 0) : null,
     tdd: typeof op.tdd === 'boolean' ? (op.tdd ? 1 : 0) : null,
     discovered_from: adapter.resolveLocalPlanId(op.discoveredFrom),
+    base_plan_uuid: op.basePlanUuid ?? null,
     issue: JSON.stringify(op.issue),
     pull_request: JSON.stringify(op.pullRequest),
     assigned_to: op.assignedTo ?? null,

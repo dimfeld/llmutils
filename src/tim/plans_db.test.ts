@@ -60,6 +60,7 @@ function createPlanRow(overrides: Partial<PlanRow> = {}): PlanRow {
       },
     ]),
     parent_uuid: '22222222-2222-4222-8222-222222222222',
+    base_plan_uuid: '33333333-3333-4333-8333-333333333333',
     epic: 1,
     created_at: '2026-03-02T00:00:00.000Z',
     updated_at: '2026-03-03T00:00:00.000Z',
@@ -102,6 +103,7 @@ describe('tim plans_db', () => {
     const tags = ['db', 'materialize'];
     const uuidToPlanId = new Map<string, number>([
       [row.parent_uuid!, 22],
+      [row.base_plan_uuid!, 33],
       ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 4],
       ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 5],
     ]);
@@ -145,6 +147,7 @@ describe('tim plans_db', () => {
         },
       ],
       parent: 22,
+      basePlan: 33,
       dependencies: [4, 5],
       tasks,
       tags,
@@ -178,6 +181,7 @@ describe('tim plans_db', () => {
       lessons_applied_at: null,
       review_issues: null,
       parent_uuid: null,
+      base_plan_uuid: null,
       epic: 0,
     });
 
@@ -211,6 +215,7 @@ describe('tim plans_db', () => {
       lessonsAppliedAt: undefined,
       reviewIssues: undefined,
       parent: undefined,
+      basePlan: undefined,
       dependencies: [],
       tasks: [],
       tags: [],
@@ -220,7 +225,9 @@ describe('tim plans_db', () => {
   });
 
   test('planRowToSchemaInput resolves parent UUID via provided map', () => {
-    const row = createPlanRow({ parent_uuid: '33333333-3333-4333-8333-333333333333' });
+    const row = createPlanRow({
+      parent_uuid: '33333333-3333-4333-8333-333333333333',
+    });
 
     const result = planRowToSchemaInput(row, [], [], [], new Map([[row.parent_uuid!, 33]]));
 
@@ -237,11 +244,33 @@ describe('tim plans_db', () => {
       title: 'Parent',
     });
 
-    const row = createPlanRow({ parent_uuid: '44444444-4444-4444-8444-444444444444' });
+    const row = createPlanRow({
+      parent_uuid: '44444444-4444-4444-8444-444444444444',
+    });
 
     const result = planRowToSchemaInput(row, [], [], []);
 
     expect(result.parent).toBe(44);
+  });
+
+  test('planRowToSchemaInput resolves basePlan UUID from DB when map is not provided', () => {
+    const db = getDatabase();
+    const project = getOrCreateProject(db, 'plans-db-base-plan-resolution');
+
+    upsertPlan(db, project.id, {
+      uuid: '66666666-6666-4666-8666-666666666666',
+      planId: 66,
+      title: 'Base plan',
+    });
+
+    const row = createPlanRow({
+      parent_uuid: null,
+      base_plan_uuid: '66666666-6666-4666-8666-666666666666',
+    });
+
+    const result = planRowToSchemaInput(row, [], [], []);
+
+    expect(result.basePlan).toBe(66);
   });
 
   test('fresh database schema includes materialization columns on plan table', () => {
@@ -260,6 +289,7 @@ describe('tim plans_db', () => {
     expect(columnNames).toContain('lessons_applied_at');
     expect(columnNames).toContain('review_issues');
     expect(columnNames).toContain('note');
+    expect(columnNames).toContain('base_plan_uuid');
   });
 
   test('upsertPlan and loadPlansFromDb round-trip materialization fields', () => {
@@ -277,6 +307,11 @@ describe('tim plans_db', () => {
       uuid: '88888888-8888-4888-8888-888888888888',
       planId: 88,
       title: 'Parent plan',
+    });
+    upsertPlan(db, project.id, {
+      uuid: '66666666-6666-4666-8666-666666666666',
+      planId: 66,
+      title: 'Base plan',
     });
     upsertPlan(db, project.id, {
       uuid: '77777777-7777-4777-8777-777777777777',
@@ -312,6 +347,7 @@ describe('tim plans_db', () => {
         },
       ],
       parentUuid: '88888888-8888-4888-8888-888888888888',
+      basePlanUuid: '66666666-6666-4666-8666-666666666666',
       epic: true,
       tasks: [
         {
@@ -362,6 +398,7 @@ describe('tim plans_db', () => {
         },
       ],
       parent: 88,
+      basePlan: 66,
       epic: true,
       dependencies: [99],
       tags: ['db-first', 'materialize'],

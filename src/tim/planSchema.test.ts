@@ -1,5 +1,9 @@
 import { describe, expect, test, vi } from 'vitest';
 import { planSchema } from './planSchema.js';
+import { generatePlanFileContent, readPlanFile } from './plans.js';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 describe('planSchema tags', () => {
   test('accepts valid tag arrays', () => {
@@ -101,5 +105,31 @@ describe('planSchema finalization timestamps', () => {
     };
 
     expect(() => planSchema.parse(plan)).toThrow();
+  });
+});
+
+describe('planSchema basePlan', () => {
+  test('accepts and preserves basePlan through file serialization', async () => {
+    const plan = planSchema.parse({
+      id: 42,
+      title: 'Stacked sibling plan',
+      goal: 'Stack this plan on another plan branch',
+      details: 'Implementation details',
+      tasks: [],
+      basePlan: 41,
+    });
+
+    expect(plan.basePlan).toBe(41);
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-plan-schema-base-plan-'));
+    try {
+      const planPath = path.join(tempDir, '42.plan.md');
+      await fs.writeFile(planPath, generatePlanFileContent(plan), 'utf8');
+
+      const roundTripped = await readPlanFile(planPath);
+      expect(roundTripped.basePlan).toBe(41);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

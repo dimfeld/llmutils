@@ -97,6 +97,7 @@ type EditablePlanField =
   | 'status'
   | 'priority'
   | 'parent'
+  | 'basePlan'
   | 'branch'
   | 'simple'
   | 'tdd'
@@ -146,6 +147,7 @@ const EDITABLE_PLAN_FIELDS = [
   'status',
   'priority',
   'parent',
+  'basePlan',
   'branch',
   'simple',
   'tdd',
@@ -725,6 +727,30 @@ async function routeMaterializedPlanChanges(
                   missing: 'skip',
                 }
               )
+            : null,
+          baseRevision,
+        },
+        options
+      )
+    );
+  }
+
+  if (changedFields.has('basePlan')) {
+    batch.add((options) =>
+      setPlanScalarOperation(
+        projectUuid,
+        {
+          planUuid,
+          field: 'base_plan_uuid',
+          value: filePlan.basePlan
+            ? resolvePlanUuidForMaterializedId(context, filePlan.basePlan, 'basePlan', {
+                missing: 'throw',
+              })
+            : null,
+          baseValue: shadowPlan.basePlan
+            ? resolvePlanUuidForMaterializedId(context, shadowPlan.basePlan, 'basePlan', {
+                missing: 'skip',
+              })
             : null,
           baseRevision,
         },

@@ -1117,6 +1117,18 @@ describe('main-node sync apply engine', () => {
     expect(() => applyOperation(db, op)).toThrow(SyncValidationError);
   });
 
+  test('plan.set_scalar rejects unknown base_plan_uuid references', async () => {
+    seedPlan();
+    const unknownPlanUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const op = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'base_plan_uuid', value: unknownPlanUuid },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    expect(() => applyOperation(db, op)).toThrow(SyncValidationError);
+  });
+
   test('atomic batch rolls back applied operations when a later operation conflicts', async () => {
     const seedColor = await setProjectSettingOperation(
       { projectUuid: PROJECT_UUID, setting: 'color', value: 'blue' },

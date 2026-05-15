@@ -641,7 +641,8 @@ export async function fetchRemoteBranch(gitRoot: string, branchName: string): Pr
     return result.exitCode === 0;
   }
 
-  const result = await $`git fetch origin ${branchName}`.cwd(gitRoot).quiet().nothrow();
+  const refspec = `+refs/heads/${branchName}:refs/remotes/origin/${branchName}`;
+  const result = await $`git fetch origin ${refspec}`.cwd(gitRoot).quiet().nothrow();
   return result.exitCode === 0;
 }
 
@@ -703,6 +704,39 @@ export async function remoteBranchExists(gitRoot: string, branchName: string): P
     return remoteBranchExistsJj(gitRoot, branchName);
   }
   return remoteBranchExistsGit(gitRoot, branchName);
+}
+
+/**
+ * Ensure a local JJ bookmark exists for the given remote bookmark name.
+ * Tracks `branchName@origin` if needed, then aligns the local bookmark to the
+ * fetched remote bookmark.
+ * Assumes the remote has already been fetched (e.g. via remoteBranchExistsJj).
+ */
+export async function ensureLocalJjBookmark(gitRoot: string, branchName: string): Promise<void> {
+  const trackResult = await $`jj bookmark track ${branchName}@origin`
+    .cwd(gitRoot)
+    .quiet()
+    .nothrow();
+  if (trackResult.exitCode !== 0) {
+    const stderr = trackResult.stderr.toString().trim();
+    const alreadyTracked =
+      stderr.includes('already tracked') ||
+      stderr.includes('already exists') ||
+      stderr.includes('already have a local bookmark');
+    if (!alreadyTracked) {
+      throw new Error(`Failed to track remote bookmark '${branchName}@origin': ${stderr}`);
+    }
+  }
+
+  const setResult = await $`jj bookmark set ${branchName} -r ${branchName}@origin`
+    .cwd(gitRoot)
+    .quiet()
+    .nothrow();
+  if (setResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to align local bookmark '${branchName}' with '${branchName}@origin': ${setResult.stderr.toString().trim()}`
+    );
+  }
 }
 
 /** Compute the merge-base between sourceRef and baseBranch.

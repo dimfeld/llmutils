@@ -777,6 +777,56 @@ describe('tim add command', () => {
     expect(sourcePlan.uuid).toMatch(UUID_REGEX);
   });
 
+  test('creates plan with basePlan reference', async () => {
+    await createExistingPlan(
+      1,
+      {
+        title: 'Base Plan',
+        goal: 'Base goal',
+        details: 'Base details',
+        status: 'in_progress',
+      },
+      '1-base-plan.yml'
+    );
+
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'tim.yml') }),
+      },
+    };
+    await handleAddCommand(['Stacked', 'Plan'], { basePlan: 1 }, command);
+
+    const plan = (await resolvePlanByNumericId(2, tempDir)).plan;
+    expect(plan.basePlan).toBe(1);
+
+    const basePlan = (await resolvePlanByNumericId(1, tempDir)).plan;
+    expect(basePlan.uuid).toMatch(UUID_REGEX);
+  });
+
+  test('rejects basePlan equal to the newly assigned plan ID', async () => {
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'tim.yml') }),
+      },
+    };
+
+    await expect(handleAddCommand(['Self', 'Stacked'], { basePlan: 1 }, command)).rejects.toThrow(
+      'basePlan cannot refer to the plan being created (1)'
+    );
+  });
+
+  test('rejects missing basePlan target', async () => {
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'tim.yml') }),
+      },
+    };
+
+    await expect(handleAddCommand(['Missing', 'Base'], { basePlan: 999 }, command)).rejects.toThrow(
+      'Base plan 999 not found'
+    );
+  });
+
   test('creates plan with both parent and dependsOn references', async () => {
     const parentUuid = crypto.randomUUID();
     await createExistingPlan(

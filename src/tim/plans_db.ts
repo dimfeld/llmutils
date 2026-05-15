@@ -63,6 +63,9 @@ export function planRowToSchemaInput(
   uuidToPlanId?: Map<string, number>
 ): PlanSchema {
   const parent = row.parent_uuid ? resolveUuidToPlanId(row.parent_uuid, uuidToPlanId) : undefined;
+  const basePlan = row.base_plan_uuid
+    ? resolveUuidToPlanId(row.base_plan_uuid, uuidToPlanId)
+    : undefined;
 
   const dependencies = dependencyUuids
     .map((uuid) => resolveUuidToPlanId(uuid, uuidToPlanId))
@@ -83,6 +86,7 @@ export function planRowToSchemaInput(
     simple: row.simple === 1 ? true : undefined,
     tdd: row.tdd === 1 ? true : undefined,
     discoveredFrom: row.discovered_from ?? undefined,
+    basePlan,
     baseBranch: row.base_branch ?? undefined,
     baseCommit: row.base_commit ?? undefined,
     baseChangeId: row.base_change_id ?? undefined,

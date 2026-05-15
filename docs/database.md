@@ -64,7 +64,7 @@ Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML
 
 **Tables** (migration v2, extended through v23):
 
-- `plan`: Core metadata (uuid PRIMARY KEY, project_id FK, plan_id, title, goal, details, status, priority, parent_uuid, epic, filename, timestamps). Additional columns added in later migrations: `assigned_to`, `simple`, `tdd`, `discovered_from`, `base_branch`, `base_commit` (TEXT), `base_change_id` (TEXT), `issue` (JSON), `pull_request` (JSON), `branch`, `temp` (INTEGER), `docs` (JSON array), `changed_files` (JSON array), `plan_generated_at` (TEXT), `review_issues` (JSON array of objects), `docs_updated_at` (TEXT), `lessons_applied_at` (TEXT). No unique constraint on `(project_id, plan_id)` to tolerate temporary duplicate numeric IDs. `base_commit` and `base_change_id` are DB-managed fields for stacked PR base tracking — they are not imported from plan files during file→DB sync.
+- `plan`: Core metadata (uuid PRIMARY KEY, project_id FK, plan_id, title, goal, details, status, priority, parent_uuid, epic, filename, timestamps). Additional columns added in later migrations: `assigned_to`, `simple`, `tdd`, `discovered_from`, `base_branch`, `base_plan_uuid` (TEXT, nullable, soft reference to another plan for stacked PR branch resolution), `base_commit` (TEXT), `base_change_id` (TEXT), `issue` (JSON), `pull_request` (JSON), `branch`, `temp` (INTEGER), `docs` (JSON array), `changed_files` (JSON array), `plan_generated_at` (TEXT), `review_issues` (JSON array of objects), `docs_updated_at` (TEXT), `lessons_applied_at` (TEXT). No unique constraint on `(project_id, plan_id)` to tolerate temporary duplicate numeric IDs. `base_commit` and `base_change_id` are DB-managed fields for stacked PR base tracking — they are not imported from plan files during file→DB sync.
 - `plan_task`: Tasks per plan (plan_uuid FK with CASCADE, task_index, title, description, done). UNIQUE on `(plan_uuid, task_index)`.
 - `plan_dependency`: Dependencies by UUID (plan_uuid FK with CASCADE, depends_on_uuid, composite PK). No FK on `depends_on_uuid` since the referenced plan may not be synced yet.
 
@@ -111,7 +111,7 @@ Plan materialization writes plan files from DB data to disk at well-known paths,
 
 **Shadow diff and merge**:
 
-- `diffPlanFields(shadow, current)`: Compares all user-editable fields between shadow and current file plans using `Bun.deepEquals()`. Returns `{ changedFields: Set<string>, hasChanges: boolean }`. Compared fields: title, goal, details, status, priority, parent, branch, simple, tdd, discoveredFrom, assignedTo, baseBranch, temp, epic, planGeneratedAt, dependencies, issue, pullRequest, docs, changedFiles, tags, tasks, reviewIssues. Excludes: id, uuid, createdAt, updatedAt, materializedAs, references.
+- `diffPlanFields(shadow, current)`: Compares all user-editable fields between shadow and current file plans using `Bun.deepEquals()`. Returns `{ changedFields: Set<string>, hasChanges: boolean }`. Compared fields: title, goal, details, status, priority, parent, branch, simple, tdd, discoveredFrom, assignedTo, baseBranch, basePlan, temp, epic, planGeneratedAt, dependencies, issue, pullRequest, docs, changedFiles, tags, tasks, reviewIssues. Excludes: id, uuid, createdAt, updatedAt, materializedAs, references.
 - `mergePlanWithShadow(dbPlan, shadowPlan, filePlan)`: Starts from `dbPlan`, overlays only the fields that differ between `shadowPlan` and `filePlan`. This preserves DB-side changes (e.g., from web UI) to fields the user didn't edit in the file. When shadow is null, returns `filePlan` unchanged (full overwrite for backward compatibility).
 
 **Path helpers**: `getMaterializedPlanPath(repoRoot, planId)`, `getShadowPlanPath(repoRoot, planId)`, `getShadowPlanPathForFile(planFilePath)`.
@@ -134,6 +134,7 @@ The plan system uses DB-first access: the SQLite database is the source of truth
 - `resolvePlanByUuid(uuid: string, repoRoot, options?)`: Strictly-typed resolver for plan UUIDs. Validates UUID format up front and rejects numeric strings/file paths. Not project-scoped (unlike the numeric variant). Used by internal consumers — no CLI command accepts a UUID positional.
 - `parsePlanIdentifier(planArg: string | number)`: Small dispatcher that returns `{ planId?, uuid? }` for the handful of call sites (e.g. MCP identifier tools) that genuinely accept either form. Those sites then dispatch to the appropriate resolver.
 - `parsePlanIdFromCliArg(arg: string): number` / `parseOptionalPlanIdFromCliArg(arg: string | undefined): number | undefined`: Boundary parsers used in Commander `.action` handlers. CLI commands call these once and pass `number` (or `number | undefined`) onward — handler signatures across `src/tim/commands/**` are strictly numeric.
+- When a Commander option uses `parsePlanIdOption` as its argument coercer, the option value is already `number | undefined` by the time the command body sees it. Do not add defensive `typeof !== 'number'` / `Number.isNaN` / `Number.isInteger` checks in the command body — those branches are unreachable and inconsistent with the rest of the codebase. Keep only the domain validations (target exists, self-reference, etc.).
 - `PlanNotFoundError` (`src/tim/plans.ts`): Custom error class for plan-not-found conditions. Use `instanceof PlanNotFoundError` to check errors — avoids false positives from broad string matching against unrelated "not found" messages.
 - `resolvePlan()` in `plan_display.ts` delegates to the split resolvers. Returns nullable `planPath` — callers must handle `null`.
 
@@ -154,7 +155,7 @@ The plan system uses DB-first access: the SQLite database is the source of truth
 
 `src/tim/plans_db.ts` provides `loadPlansFromDb(searchDir, repositoryId)` — a shared function that assembles `PlanWithFilename` objects from DB rows (plans, tasks, tags, dependencies) for a given project. Returns `PlansLoadResult` with `plans: Map<number, PlanWithFilename>` and `duplicates`. Uses `planRowToSchemaInput()` to convert DB rows to `PlanSchema` objects with full field coverage.
 
-**`planRowToSchemaInput(row, tasks, deps, tags, uuidToPlanId?)`** converts a single plan's DB data to `PlanSchema`. Handles all fields including JSON-stored columns (`issue`, `pullRequest`, `docs`, `changedFiles`, `reviewIssues`). Resolves `parent_uuid` and dependency UUIDs back to numeric plan IDs — if a `uuidToPlanId` map is provided it uses that, otherwise it queries the DB for needed UUIDs. This shared converter is used by both `loadPlansFromDb()` (bulk loading) and `resolvePlanByNumericId()` (single-plan resolution).
+**`planRowToSchemaInput(row, tasks, deps, tags, uuidToPlanId?)`** converts a single plan's DB data to `PlanSchema`. Handles all fields including JSON-stored columns (`issue`, `pullRequest`, `docs`, `changedFiles`, `reviewIssues`). Resolves `parent_uuid`, `base_plan_uuid`, and dependency UUIDs back to numeric plan IDs — if a `uuidToPlanId` map is provided it uses that, otherwise it queries the DB for needed UUIDs. This shared converter is used by both `loadPlansFromDb()` (bulk loading) and `resolvePlanByNumericId()` (single-plan resolution).
 
 **`planRowForTransaction(row, uuidToPlanId)`** is a convenience wrapper that fetches tasks, dependencies, and tags from the DB for a given plan row, then delegates to `planRowToSchemaInput()`. Used by commands that need to resolve a plan within a DB transaction (e.g., `add`, `set`, `create_plan`). **`invertPlanIdToUuidMap(planIdToUuid)`** converts a `Map<number, string>` (planId→UUID) to the `Map<string, number>` (UUID→planId) format expected by `planRowToSchemaInput`. Both are exported from `plans_db.ts` to avoid duplication across command modules.
 
@@ -235,6 +236,25 @@ All CLI commands use DB-first access — the SQLite database is the source of tr
 **Repo root resolution** (`src/tim/plan_repo_root.ts`): `resolveRepoRoot(configPath?, fallbackDir?)` derives the correct repository root. When `configPath` is provided, the repo root is derived from the config file's directory. Falls back to `getGitRoot()` or `fallbackDir` or `process.cwd()` when neither is provided.
 
 **Legacy field stripping**: Legacy YAML-only fields (`rmfilter`, `generatedBy`, `promptsGeneratedAt`, `compactedAt`, `statusDescription`, `references`, `project`, `not_tim`) are stripped by `cleanPlanForYaml()` when writing materialized plan files. The `project`, `not_tim`, and `LegacyPlanPassthroughFields` type have been removed from the plan schema entirely. A `LegacyPlanFileMetadata` interface is preserved for backward compatibility when reading old plan files via `readPlanFile()`. The remaining legacy fields are not in the DB schema and are not preserved during plan writes.
+
+### Adding a UUID-Backed Plan Reference Column
+
+Plan schema fields that reference another plan by UUID (e.g. `parent_uuid`, `discovered_from`, `base_plan_uuid`) require updates at **every** point that touches the canonical plan shape or the sync projection. Missing one surface produces dangling references or stale projections that the round-trip happy-path tests will not catch. Checklist:
+
+1. `PlanSchema` in `src/tim/planSchema.ts` (add the numeric `<field>` and keep it optional).
+2. Public JSON schema (`schema/tim-plan-schema.json`).
+3. DB schema + migration: new `<field>_uuid TEXT` column on both `plan` and `plan_canonical`. Match the `*_uuid` naming convention used by `parent_uuid`.
+4. `PlanRow`, `UpsertPlanInput`, `UpsertCanonicalPlanInput`, `planWriteValues()` in `src/tim/db/plan.ts`. **Verify the placeholder count in the `INSERT INTO plan` statement matches the column list** — column/placeholder mismatches in `db/plan.ts` only surface under new fixtures and reviewers will not always catch them. Test against real DB inserts, not just upserts.
+5. `planRowToSchemaInput` in `src/tim/plans_db.ts` — invert `<field>_uuid` back to the numeric ID via the `uuidToPlanId` map.
+6. `setSyncedPlanScalar` helper + write_router operation key in `src/tim/sync/write_router.ts`.
+7. `validateAdapterPlanOperation` in `src/tim/sync/operation_fold.ts` (`plan.set_scalar` branch).
+8. `readCanonicalPlanState` — null-out on tombstone.
+9. `getInboundProjectionOwnerPlanUuids` — include the new field so projection rebuild fan-out picks up changes to plans that _reference_ a mutated plan.
+10. `import_helpers.planToPendingRow` — derive the new `<field>_uuid` from `idToUuid`.
+11. `EditablePlanField` list in `src/tim/plan_materialize.ts` and the `diffPlanFields()` comparison set, so file edits round-trip through shadow-diff. Missing this silently drops edits made in the materialized YAML.
+12. `getReferencedPlanIds` and `fixReferenceMismatches` in `src/tim/references.ts` — required for `tim renumber` and validate auto-fix to handle the reference.
+
+For _soft_ references (changes to the referenced plan should take effect immediately, like `basePlan`), **do not** persist resolved values back into a sibling field (e.g. don't copy the resolved branch into `baseBranch`). Resolve fresh at every consumer; otherwise the reference quietly becomes a stale hard-coded value. This is the inverse of how `parent` works, where the parent's child-list is mutated as a cascade.
 
 ### PR Status Cache
 

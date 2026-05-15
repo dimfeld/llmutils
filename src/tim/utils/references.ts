@@ -41,7 +41,7 @@ async function writePlanFix(
 }
 
 /**
- * Extracts all plan IDs referenced by a plan (parent, dependencies, discoveredFrom)
+ * Extracts all plan IDs referenced by a plan (parent, dependencies, discoveredFrom, basePlan)
  */
 export function getReferencedPlanIds(plan: PlanSchema): number[] {
   const ids: number[] = [];
@@ -56,6 +56,10 @@ export function getReferencedPlanIds(plan: PlanSchema): number[] {
 
   if (plan.discoveredFrom !== undefined) {
     ids.push(plan.discoveredFrom);
+  }
+
+  if (plan.basePlan !== undefined) {
+    ids.push(plan.basePlan);
   }
 
   // Return unique IDs
@@ -189,7 +193,7 @@ export function verifyReferences(
 }
 
 /**
- * Fixes reference mismatches by updating parent/dependencies/discoveredFrom
+ * Fixes reference mismatches by updating parent/dependencies/discoveredFrom/basePlan
  * to point to the correct plan IDs based on UUIDs.
  *
  * @param plan The plan to fix
@@ -227,6 +231,11 @@ export function fixReferenceMismatches(
   // Update discoveredFrom
   if (updatedPlan.discoveredFrom !== undefined && idMapping.has(updatedPlan.discoveredFrom)) {
     updatedPlan.discoveredFrom = idMapping.get(updatedPlan.discoveredFrom);
+  }
+
+  // Update basePlan
+  if (updatedPlan.basePlan !== undefined && idMapping.has(updatedPlan.basePlan)) {
+    updatedPlan.basePlan = idMapping.get(updatedPlan.basePlan);
   }
 
   // Update references field with new IDs

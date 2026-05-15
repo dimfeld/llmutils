@@ -89,7 +89,10 @@ export async function writeImportedPlansToDbTransactionally(
         currentPlan: pendingPlans.get(entry.plan.id!),
       }
     );
-    pendingRows.set(entry.plan.uuid!, planToPendingRow(context.projectId, entry.plan, existingRow));
+    pendingRows.set(
+      entry.plan.uuid!,
+      planToPendingRow(context.projectId, entry.plan, existingRow, idToUuid)
+    );
     pendingPlans.set(entry.plan.id!, structuredClone(entry.plan));
     return updates;
   });
@@ -167,9 +170,14 @@ function deleteUuidlessLegacyPlanRow(
 function planToPendingRow(
   projectId: number,
   plan: PlanSchema,
-  existingRow: PlanRow | null
+  existingRow: PlanRow | null,
+  idToUuid: Map<number, string>
 ): PlanRow {
   const now = new Date().toISOString();
+  const basePlanUuid =
+    typeof plan.basePlan === 'number'
+      ? (idToUuid.get(plan.basePlan) ?? existingRow?.base_plan_uuid ?? null)
+      : (existingRow?.base_plan_uuid ?? null);
   return {
     uuid: plan.uuid!,
     project_id: existingRow?.project_id ?? projectId,
@@ -198,6 +206,7 @@ function planToPendingRow(
     docs_updated_at: plan.docsUpdatedAt ?? null,
     lessons_applied_at: plan.lessonsAppliedAt ?? null,
     parent_uuid: plan.parent ? null : (existingRow?.parent_uuid ?? null),
+    base_plan_uuid: basePlanUuid,
     epic: plan.epic ? 1 : 0,
     revision: existingRow?.revision ?? 0,
     created_at: existingRow?.created_at ?? plan.createdAt ?? now,

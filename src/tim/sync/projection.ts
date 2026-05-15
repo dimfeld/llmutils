@@ -302,6 +302,12 @@ function readCanonicalPlanState(
             hasPlanTombstone(db, planRow.parent_uuid))
             ? null
             : planRow.parent_uuid,
+        base_plan_uuid:
+          planRow.base_plan_uuid &&
+          (locallyDeletedPlanUuids.has(planRow.base_plan_uuid) ||
+            hasPlanTombstone(db, planRow.base_plan_uuid))
+            ? null
+            : planRow.base_plan_uuid,
       };
   return {
     projectUuid: project?.uuid ?? null,

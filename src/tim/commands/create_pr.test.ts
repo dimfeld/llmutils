@@ -43,7 +43,11 @@ vi.mock('../../common/github/pr_status_service.js', () => ({
 
 vi.mock('../../common/git.js', () => ({
   ensureJjPublishedCommitsHaveDescriptions: vi.fn(async (..._args: unknown[]) => []),
+  fetchRemoteBranch: vi.fn(async (..._args: unknown[]) => true),
+  getMergeBase: vi.fn(async (..._args: unknown[]) => 'merge-base-sha'),
+  getTrunkBranch: vi.fn(async (..._args: unknown[]) => 'main'),
   getUsingJj: vi.fn(async (..._args: unknown[]) => true),
+  remoteBranchExists: vi.fn(async (..._args: unknown[]) => true),
 }));
 
 vi.mock('../executors/index.js', () => ({
@@ -52,12 +56,25 @@ vi.mock('../executors/index.js', () => ({
   })),
 }));
 
+vi.mock('../plan_materialize.js', () => ({
+  resolveProjectContext: vi.fn(async (..._args: unknown[]) => ({ projectId: 1 })),
+}));
+
+vi.mock('./branch.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./branch.js')>();
+  return {
+    ...actual,
+    resolveBranchPrefix: vi.fn(() => 'team/'),
+  };
+});
+
 import {
   autoCreatePrForPlan,
   buildPrCreationPrompt,
   createOrUpdatePrForPlan,
   detectAndStorePrUrl,
   detectExistingPrUrl,
+  resolveEffectivePrBase,
 } from './create_pr.js';
 
 import {
@@ -69,9 +86,15 @@ import { resolvePlan as mockResolvePlanFn } from '../plan_display.js';
 import { syncPlanPrLinks as mockSyncPlanPrLinksFn } from '../../common/github/pr_status_service.js';
 import {
   ensureJjPublishedCommitsHaveDescriptions as mockEnsureJjPublishedCommitsHaveDescriptionsFn,
+  fetchRemoteBranch as mockFetchRemoteBranchFn,
+  getMergeBase as mockGetMergeBaseFn,
+  getTrunkBranch as mockGetTrunkBranchFn,
   getUsingJj as mockGetUsingJjFn,
+  remoteBranchExists as mockRemoteBranchExistsFn,
 } from '../../common/git.js';
 import { buildExecutorAndLog as mockBuildExecutorAndLogFn } from '../executors/index.js';
+import { resolveProjectContext as mockResolveProjectContextFn } from '../plan_materialize.js';
+import { resolveBranchPrefix as mockResolveBranchPrefixFn } from './branch.js';
 
 const mockWritePlanFile = vi.mocked(mockWritePlanFileFn);
 const mockResolvePlanByNumericId = vi.mocked(mockResolvePlanByNumericIdFn);
@@ -81,8 +104,14 @@ const mockSyncPlanPrLinks = vi.mocked(mockSyncPlanPrLinksFn);
 const mockEnsureJjPublishedCommitsHaveDescriptions = vi.mocked(
   mockEnsureJjPublishedCommitsHaveDescriptionsFn
 );
+const mockFetchRemoteBranch = vi.mocked(mockFetchRemoteBranchFn);
+const mockGetMergeBase = vi.mocked(mockGetMergeBaseFn);
+const mockGetTrunkBranch = vi.mocked(mockGetTrunkBranchFn);
 const mockGetUsingJj = vi.mocked(mockGetUsingJjFn);
+const mockRemoteBranchExists = vi.mocked(mockRemoteBranchExistsFn);
 const mockBuildExecutorAndLog = vi.mocked(mockBuildExecutorAndLogFn);
+const mockResolveProjectContext = vi.mocked(mockResolveProjectContextFn);
+const mockResolveBranchPrefix = vi.mocked(mockResolveBranchPrefixFn);
 
 function createSpawnResult(exitCode: number, stdout: string, stderr = ''): any {
   return {
@@ -96,6 +125,12 @@ describe('create_pr command helpers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockEnsureJjPublishedCommitsHaveDescriptions.mockResolvedValue([]);
+    mockFetchRemoteBranch.mockResolvedValue(true);
+    mockGetMergeBase.mockResolvedValue('merge-base-sha');
+    mockGetTrunkBranch.mockResolvedValue('main');
+    mockRemoteBranchExists.mockResolvedValue(true);
+    mockResolveProjectContext.mockResolvedValue({ projectId: 1 } as any);
+    mockResolveBranchPrefix.mockReturnValue('team/');
     mockResolvePlanByNumericId.mockResolvedValue({
       plan: {
         id: 317,
@@ -339,10 +374,138 @@ describe('create_pr command helpers', () => {
     });
   });
 
+  describe('resolveEffectivePrBase', () => {
+    test('uses basePlan predecessor branch when it exists on remote', async () => {
+      mockResolvePlanByNumericId.mockResolvedValueOnce({
+        plan: {
+          id: 122,
+          uuid: 'plan-122',
+          status: 'in_progress',
+          title: 'Predecessor',
+          branch: 'feature-122',
+          tasks: [],
+        } as unknown as PlanSchema,
+        planPath: '/tmp/122.plan.md',
+      });
+      mockRemoteBranchExists.mockResolvedValueOnce(true);
+
+      const baseBranch = await resolveEffectivePrBase(
+        {
+          id: 123,
+          uuid: 'plan-123',
+          status: 'needs_review',
+          title: 'Followup',
+          branch: 'feature-123',
+          basePlan: 122,
+          tasks: [],
+        } as unknown as PlanSchema,
+        '/repo',
+        {}
+      );
+
+      expect(baseBranch).toBe('feature-122');
+      expect(mockResolvePlanByNumericId).toHaveBeenCalledWith(122, '/repo');
+      expect(mockRemoteBranchExists).toHaveBeenCalledWith('/repo', 'feature-122');
+      expect(mockFetchRemoteBranch).not.toHaveBeenCalled();
+    });
+
+    test('falls back to trunk when basePlan predecessor branch is missing on remote', async () => {
+      mockGetTrunkBranch.mockResolvedValueOnce('trunk');
+      mockResolvePlanByNumericId.mockResolvedValueOnce({
+        plan: {
+          id: 122,
+          uuid: 'plan-122',
+          status: 'done',
+          title: 'Merged predecessor',
+          branch: 'feature-122',
+          tasks: [],
+        } as unknown as PlanSchema,
+        planPath: '/tmp/122.plan.md',
+      });
+      mockRemoteBranchExists.mockResolvedValueOnce(false);
+
+      const baseBranch = await resolveEffectivePrBase(
+        {
+          id: 123,
+          uuid: 'plan-123',
+          status: 'needs_review',
+          title: 'Followup',
+          branch: 'feature-123',
+          basePlan: 122,
+          tasks: [],
+        } as unknown as PlanSchema,
+        '/repo',
+        {}
+      );
+
+      expect(baseBranch).toBe('trunk');
+      expect(mockRemoteBranchExists).toHaveBeenCalledWith('/repo', 'feature-122');
+      expect(mockFetchRemoteBranch).not.toHaveBeenCalled();
+    });
+
+    test('lets explicit baseBranch win over basePlan', async () => {
+      const baseBranch = await resolveEffectivePrBase(
+        {
+          id: 123,
+          uuid: 'plan-123',
+          status: 'needs_review',
+          title: 'Followup',
+          branch: 'feature-123',
+          baseBranch: 'release',
+          basePlan: 122,
+          tasks: [],
+        } as unknown as PlanSchema,
+        '/repo',
+        {}
+      );
+
+      expect(baseBranch).toBe('release');
+      expect(mockGetTrunkBranch).not.toHaveBeenCalled();
+      expect(mockResolvePlanByNumericId).not.toHaveBeenCalled();
+      expect(mockRemoteBranchExists).not.toHaveBeenCalled();
+    });
+
+    test('generates basePlan branch with configured prefix when predecessor has no branch', async () => {
+      mockResolvePlanByNumericId.mockResolvedValueOnce({
+        plan: {
+          id: 122,
+          uuid: 'plan-122',
+          status: 'in_progress',
+          title: 'Generated predecessor',
+          tasks: [],
+        } as unknown as PlanSchema,
+        planPath: '/tmp/122.plan.md',
+      });
+
+      const baseBranch = await resolveEffectivePrBase(
+        {
+          id: 123,
+          uuid: 'plan-123',
+          status: 'needs_review',
+          title: 'Followup',
+          branch: 'feature-123',
+          basePlan: 122,
+          tasks: [],
+        } as unknown as PlanSchema,
+        '/repo',
+        { branchPrefix: 'fallback' }
+      );
+
+      expect(baseBranch).toBe('team/122-generated-predecessor');
+      expect(mockResolveBranchPrefix).toHaveBeenCalledWith({
+        config: { branchPrefix: 'fallback' },
+        db: { id: 'db' },
+        projectId: 1,
+      });
+      expect(mockRemoteBranchExists).toHaveBeenCalledWith(
+        '/repo',
+        'team/122-generated-predecessor'
+      );
+    });
+  });
+
   describe('createOrUpdatePrForPlan', () => {
     test('returns null when plan has no branch', async () => {
-      const executeMock = vi.fn(async (..._args: unknown[]) => {});
-      mockBuildExecutorAndLog.mockReturnValueOnce({ execute: executeMock } as any);
       const spawnSpy = vi.spyOn(Bun, 'spawn');
 
       const result = await createOrUpdatePrForPlan(
@@ -362,6 +525,117 @@ describe('create_pr command helpers', () => {
       expect(result).toBeNull();
       expect(mockBuildExecutorAndLog).not.toHaveBeenCalled();
       expect(spawnSpy).not.toHaveBeenCalled();
+    });
+
+    test('passes resolved basePlan remote bookmark through JJ prompt comparison base and PR base', async () => {
+      const executeMock = vi.fn(async (..._args: unknown[]) => {});
+      mockBuildExecutorAndLog.mockReturnValueOnce({ execute: executeMock } as any);
+      mockGetUsingJj.mockResolvedValueOnce(true);
+      mockGetTrunkBranch.mockResolvedValueOnce('main');
+      mockResolvePlanByNumericId.mockResolvedValueOnce({
+        plan: {
+          id: 122,
+          uuid: 'plan-122',
+          status: 'in_progress',
+          title: 'Predecessor plan',
+          branch: 'feature-122',
+          tasks: [],
+        } as unknown as PlanSchema,
+        planPath: '/tmp/122.plan.md',
+      });
+      mockRemoteBranchExists.mockResolvedValueOnce(true);
+      vi.spyOn(Bun, 'spawn').mockReturnValueOnce(createSpawnResult(0, JSON.stringify([])));
+
+      const result = await createOrUpdatePrForPlan(
+        {
+          id: 401,
+          uuid: 'plan-401',
+          status: 'needs_review',
+          tasks: [],
+          title: 'Followup PR',
+          branch: 'feature-401',
+          basePlan: 122,
+          pullRequest: [],
+        } as unknown as PlanSchema,
+        '/tmp/401.plan.md',
+        {
+          baseDir: '/tmp',
+          config: {},
+        }
+      );
+
+      expect(result).toBeNull();
+      expect(executeMock).toHaveBeenCalledTimes(1);
+      const prompt = executeMock.mock.calls[0]?.[0] as string;
+      const resolvedBaseBranch = 'feature-122';
+      const resolvedBaseRevset = 'latest(ancestors(feature-122@origin) & ancestors(@))';
+
+      expect(mockResolvePlanByNumericId).toHaveBeenCalledWith(122, '/tmp');
+      expect(mockRemoteBranchExists).toHaveBeenCalledWith('/tmp', resolvedBaseBranch);
+      expect(mockFetchRemoteBranch).not.toHaveBeenCalled();
+      expect(prompt).toContain(resolvedBaseRevset);
+      expect(prompt).toContain(
+        `gh pr create --draft --head <branch-name> --base ${resolvedBaseBranch}`
+      );
+      expect(prompt).toContain(
+        `Base branch is \`${resolvedBaseBranch}\` and comparison base is \`${resolvedBaseRevset}\``
+      );
+      expect(prompt).not.toContain('latest(ancestors(trunk()) & ancestors(@))');
+      expect(prompt).not.toContain(
+        'latest(ancestors(latest(present(feature-122) | present(feature-122@origin))) & ancestors(@))'
+      );
+      expect(prompt).not.toContain('gh pr create --draft --head <branch-name> --base main');
+    });
+
+    test('fetches resolved basePlan branch before computing git merge-base', async () => {
+      const executeMock = vi.fn(async (..._args: unknown[]) => {});
+      mockBuildExecutorAndLog.mockReturnValueOnce({ execute: executeMock } as any);
+      mockGetUsingJj.mockResolvedValueOnce(false);
+      mockGetTrunkBranch.mockResolvedValueOnce('main');
+      mockResolvePlanByNumericId.mockResolvedValueOnce({
+        plan: {
+          id: 122,
+          uuid: 'plan-122',
+          status: 'in_progress',
+          title: 'Predecessor plan',
+          branch: 'feature-122',
+          tasks: [],
+        } as unknown as PlanSchema,
+        planPath: '/tmp/122.plan.md',
+      });
+      mockRemoteBranchExists.mockResolvedValueOnce(true);
+      mockFetchRemoteBranch.mockResolvedValueOnce(true);
+      mockGetMergeBase.mockResolvedValueOnce('merge-base-after-fetch');
+      vi.spyOn(Bun, 'spawn').mockReturnValueOnce(createSpawnResult(0, JSON.stringify([])));
+
+      const result = await createOrUpdatePrForPlan(
+        {
+          id: 402,
+          uuid: 'plan-402',
+          status: 'needs_review',
+          tasks: [],
+          title: 'Followup Git PR',
+          branch: 'feature-402',
+          basePlan: 122,
+          pullRequest: [],
+        } as unknown as PlanSchema,
+        '/tmp/402.plan.md',
+        {
+          baseDir: '/tmp',
+          config: {},
+        }
+      );
+
+      expect(result).toBeNull();
+      expect(mockRemoteBranchExists).toHaveBeenCalledWith('/tmp', 'feature-122');
+      expect(mockFetchRemoteBranch).toHaveBeenCalledWith('/tmp', 'feature-122');
+      expect(mockGetMergeBase).toHaveBeenCalledWith('/tmp', 'feature-122');
+      expect(mockFetchRemoteBranch.mock.invocationCallOrder[0]).toBeLessThan(
+        mockGetMergeBase.mock.invocationCallOrder[0]
+      );
+      const prompt = executeMock.mock.calls[0]?.[0] as string;
+      expect(prompt).toContain('git diff --name-status merge-base-after-fetch...HEAD');
+      expect(prompt).toContain('gh pr create --draft --head <branch-name> --base feature-122');
     });
 
     test('always runs executor even when PR already exists', async () => {
@@ -411,8 +685,6 @@ describe('create_pr command helpers', () => {
 
   describe('autoCreatePrForPlan', () => {
     test('returns null when plan has no branch', async () => {
-      const executeMock = vi.fn(async (..._args: unknown[]) => {});
-      mockBuildExecutorAndLog.mockReturnValueOnce({ execute: executeMock } as any);
       const spawnSpy = vi.spyOn(Bun, 'spawn');
 
       const result = await autoCreatePrForPlan(

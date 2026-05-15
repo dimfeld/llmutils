@@ -208,6 +208,7 @@ Create plans:
 ```bash
 tim add "Implement user profile settings" --priority high
 tim add "Database migration" --parent 120 --depends-on 119
+tim add "Stacked followup" --base-plan 123          # New branch stacks on plan 123's branch (stacked PR)
 tim import TEAM-123
 tim import https://linear.app/acme/issue/TEAM-123/example-title
 ```
@@ -240,6 +241,8 @@ tim set 123 --status in_progress
 tim set 123 --priority urgent
 tim set 123 --parent 120
 tim set 123 --depends-on 119 121
+tim set 123 --base-plan 122                          # Stack this plan's branch on plan 122's branch
+tim set 123 --no-base-plan                           # Clear stacking pointer
 tim add-task 123 --title "Add tests" --description "Cover the new validation path"
 tim set-task-done 123 --title "Add tests"
 tim remove-task 123

@@ -87,6 +87,32 @@ describe('rebuildPlanProjection', () => {
     });
   });
 
+  test('nulls base_plan_uuid when canonical referenced base plan is tombstoned', () => {
+    const basePlanUuid = '77777777-7777-4777-8777-777777777777';
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: basePlanUuid,
+      planId: 13,
+      title: 'Base plan',
+      status: 'pending',
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
+    writeCanonicalPlan({
+      revision: 4,
+      title: 'Stacked child',
+      basePlanUuid,
+    });
+    db.prepare(
+      "INSERT INTO sync_tombstone (entity_type, entity_key, project_uuid, deletion_operation_uuid, deleted_revision, deleted_at, origin_node_id) VALUES ('plan', ?, ?, ?, ?, datetime('now'), ?)"
+    ).run(`plan:${basePlanUuid}`, PROJECT_UUID, crypto.randomUUID(), 2, 'main');
+
+    rebuildPlanProjection(db, PLAN_UUID);
+
+    expect(getPlanByUuid(db, PLAN_UUID)?.base_plan_uuid).toBeNull();
+  });
+
   test('artifact projection reset preserves transfer state for unchanged artifacts', () => {
     writeCanonicalPlan({ revision: 4, title: 'Canonical' });
     rebuildPlanProjection(db, PLAN_UUID);
@@ -798,6 +824,7 @@ describe('rebuildPlanProjection', () => {
     const PLAN_A_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const PLAN_B_UUID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     const PLAN_C_UUID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const PLAN_D_UUID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
     upsertCanonicalPlanInTransaction(db, project.id, {
       uuid: PLAN_B_UUID,
@@ -830,14 +857,27 @@ describe('rebuildPlanProjection', () => {
       dependencyUuids: [],
       tags: [],
     });
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: PLAN_D_UUID,
+      planId: 24,
+      title: 'Base plan owner',
+      status: 'pending',
+      basePlanUuid: PLAN_B_UUID,
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
     rebuildPlanProjection(db, PLAN_B_UUID);
     rebuildPlanProjection(db, PLAN_A_UUID);
     rebuildPlanProjection(db, PLAN_C_UUID);
+    rebuildPlanProjection(db, PLAN_D_UUID);
 
     expect(getPlanDependenciesByUuid(db, PLAN_A_UUID).map((dep) => dep.depends_on_uuid)).toContain(
       PLAN_B_UUID
     );
     expect(getPlanByUuid(db, PLAN_C_UUID)?.parent_uuid).toBe(PLAN_B_UUID);
+    expect(getPlanByUuid(db, PLAN_D_UUID)?.base_plan_uuid).toBe(PLAN_B_UUID);
 
     await enqueueOperation(
       db,
@@ -852,6 +892,7 @@ describe('rebuildPlanProjection', () => {
       getPlanDependenciesByUuid(db, PLAN_A_UUID).map((dep) => dep.depends_on_uuid)
     ).not.toContain(PLAN_B_UUID);
     expect(getPlanByUuid(db, PLAN_C_UUID)?.parent_uuid).toBeNull();
+    expect(getPlanByUuid(db, PLAN_D_UUID)?.base_plan_uuid).toBeNull();
     expect(getPlanByUuid(db, PLAN_B_UUID)).toBeNull();
 
     await enqueueOperation(
@@ -887,6 +928,22 @@ describe('rebuildPlanProjection', () => {
 
     expect(getPlanByUuid(db, PLAN_C_UUID)?.status).toBe('in_progress');
     expect(getPlanByUuid(db, PLAN_C_UUID)?.parent_uuid).toBeNull();
+
+    await enqueueOperation(
+      db,
+      await setPlanScalarOperation(
+        PROJECT_UUID,
+        {
+          planUuid: PLAN_D_UUID,
+          field: 'status',
+          value: 'in_progress',
+        },
+        { originNodeId: NODE_A, localSequence: 4 }
+      )
+    );
+
+    expect(getPlanByUuid(db, PLAN_D_UUID)?.status).toBe('in_progress');
+    expect(getPlanByUuid(db, PLAN_D_UUID)?.base_plan_uuid).toBeNull();
   });
 
   test('promote_task: creates destination plan and marks source task done', async () => {
@@ -1626,6 +1683,7 @@ function writeCanonicalPlan(
     revision: input.revision,
     tasks: input.tasks ?? [],
     dependencyUuids: input.dependencyUuids ?? [],
+    basePlanUuid: input.basePlanUuid,
     tags: input.tags ?? [],
     docs: input.docs,
   });

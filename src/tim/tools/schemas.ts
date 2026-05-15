@@ -171,6 +171,14 @@ export const createPlanParameters = z
     details: z.string().optional().describe('Plan details (markdown)'),
     priority: prioritySchema.optional().describe('Priority level'),
     parent: z.number().int().positive().optional().describe('Parent plan ID'),
+    basePlan: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        'Plan ID whose branch should serve as the base branch for stacked PR workflows (alternative to baseBranch)'
+      ),
     dependsOn: z
       .array(z.number().int().positive())
       .optional()

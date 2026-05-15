@@ -61,6 +61,7 @@ describe('createPlanTool references', () => {
         status: plan.status ?? 'pending',
         priority: plan.priority,
         parent: plan.parent,
+        basePlan: plan.basePlan,
         dependencies: plan.dependencies ?? [],
         discoveredFrom: plan.discoveredFrom,
         assignedTo: plan.assignedTo,
@@ -254,6 +255,63 @@ describe('createPlanTool references', () => {
     expect(plan.discoveredFrom).toBe(1);
     expect(plan.references).toBeUndefined();
     expect(sourcePlan.uuid).toMatch(UUID_REGEX);
+  });
+
+  test('creates plan with basePlan reference from the DB', async () => {
+    await seedPlan({
+      id: 1,
+      title: 'Base Plan',
+      goal: 'Goal',
+      status: 'in_progress',
+    });
+
+    await createPlanTool(
+      {
+        title: 'Stacked Plan',
+        goal: 'Goal',
+        details: '',
+        priority: 'medium',
+        basePlan: 1,
+      },
+      context
+    );
+
+    const { plan } = await resolvePlanByNumericId(2, tempDir);
+    const { plan: basePlan } = await resolvePlanByNumericId(1, tempDir);
+
+    expect(plan.basePlan).toBe(1);
+    expect(plan.references).toBeUndefined();
+    expect(basePlan.uuid).toMatch(UUID_REGEX);
+
+    const projectContext = await resolveProjectContext(tempDir);
+    const row = getPlanByPlanId(getDatabase(), projectContext.projectId, 2);
+    expect(row?.base_plan_uuid).toBe(basePlan.uuid);
+  });
+
+  test('rejects basePlan equal to the newly assigned plan ID', async () => {
+    await expect(
+      createPlanTool(
+        {
+          title: 'Self Stacked Plan',
+          goal: 'Goal',
+          basePlan: 1,
+        },
+        context
+      )
+    ).rejects.toThrow('basePlan cannot refer to the plan being created (1)');
+  });
+
+  test('rejects basePlan pointing to a missing plan', async () => {
+    await expect(
+      createPlanTool(
+        {
+          title: 'Missing Base Plan',
+          goal: 'Goal',
+          basePlan: 999,
+        },
+        context
+      )
+    ).rejects.toThrow('Base plan 999 not found');
   });
 
   test('creates plan without references when no relationships exist', async () => {

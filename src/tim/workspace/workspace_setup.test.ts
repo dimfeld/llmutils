@@ -1744,6 +1744,7 @@ describe('setupWorkspace', () => {
         createBranch: true,
         branchName: 'feature/plan-branch',
         fromBranch: 'release/base',
+        baseBranchSource: 'plan',
         planData: expect.objectContaining({
           id: 24,
           branch: 'feature/plan-branch',
@@ -1819,6 +1820,7 @@ describe('setupWorkspace', () => {
         branchName: '31-child-branch-holder',
         fromBranch: 'feature/parent-base',
         fallbackToTrunkOnMissingBase: true,
+        baseBranchSource: 'parent',
         planData: expect.objectContaining({
           id: 31,
           parent: 30,
@@ -1898,6 +1900,332 @@ describe('setupWorkspace', () => {
     );
     expect(result.baseDir).toBe(autoWorkspacePath);
     expect(result.isNewWorkspace).toBe(true);
+  });
+
+  test('cp new workspace creates basePlan stacks from trunk when only a stale local predecessor branch exists', async () => {
+    const remoteDir = path.join(tempDir, 'origin.git');
+    const cloneLocation = path.join(tempDir, 'workspaces');
+    const taskId = 'task-stale-baseplan';
+    const workspacePath = path.join(cloneLocation, `repo-${taskId}`);
+
+    await Bun.$`git init --bare ${remoteDir}`.quiet();
+    await Bun.$`git init -b main`.cwd(baseDir).quiet();
+    await Bun.$`git config user.email test@example.com`.cwd(baseDir).quiet();
+    await Bun.$`git config user.name "Test User"`.cwd(baseDir).quiet();
+    await fs.writeFile(path.join(baseDir, 'main.txt'), 'main\n');
+    await Bun.$`git add main.txt`.cwd(baseDir).quiet();
+    await Bun.$`git commit -m initial`.cwd(baseDir).quiet();
+    await Bun.$`git remote add origin ${remoteDir}`.cwd(baseDir).quiet();
+    await Bun.$`git push -u origin main`.cwd(baseDir).quiet();
+
+    await Bun.$`git checkout -b feature/stale-predecessor`.cwd(baseDir).quiet();
+    await fs.writeFile(path.join(baseDir, 'predecessor.txt'), 'stale local predecessor\n');
+    await Bun.$`git add predecessor.txt`.cwd(baseDir).quiet();
+    await Bun.$`git commit -m predecessor`.cwd(baseDir).quiet();
+    await Bun.$`git checkout main`.cwd(baseDir).quiet();
+
+    await writePlanFile(
+      null,
+      {
+        id: 50,
+        uuid: '50505050-5050-4050-8050-505050505050',
+        title: 'Merged predecessor',
+        branch: 'feature/stale-predecessor',
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+
+    const childPlanFile = path.join(baseDir, 'child-stale-baseplan.plan.md');
+    await writePlanFile(
+      childPlanFile,
+      {
+        id: 51,
+        uuid: '51515151-5151-4151-8151-515151515151',
+        title: 'Child stacked after merged predecessor',
+        basePlan: 50,
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+    await Bun.$`git add child-stale-baseplan.plan.md`.cwd(baseDir).quiet();
+    await Bun.$`git commit -m "add child plan"`.cwd(baseDir).quiet();
+
+    const cpConfig: TimConfig = {
+      ...config,
+      workspaceCreation: {
+        repositoryId: 'github.com/test/repo',
+        cloneMethod: 'cp',
+        sourceDirectory: baseDir,
+        cloneLocation,
+        createBranch: true,
+      },
+    };
+
+    const result = await setupWorkspace(
+      {
+        workspace: taskId,
+        newWorkspace: true,
+        createBranch: true,
+      },
+      baseDir,
+      childPlanFile,
+      cpConfig,
+      'tim generate'
+    );
+
+    expect(result.baseDir).toBe(workspacePath);
+    expect(
+      await fs
+        .access(path.join(workspacePath, 'predecessor.txt'))
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(false);
+    expect((await Bun.$`git rev-parse --abbrev-ref HEAD`.cwd(workspacePath).text()).trim()).toBe(
+      '51-child-stacked-after-merged-predecessor'
+    );
+
+    await WorkspaceLock.releaseLock(workspacePath, { force: true });
+  });
+
+  test('cp new workspace creates basePlan stacks from trunk when predecessor has stale local and remote-tracking refs', async () => {
+    const remoteDir = path.join(tempDir, 'origin-stale-remote-ref.git');
+    const cloneLocation = path.join(tempDir, 'workspaces-stale-remote-ref');
+    const taskId = 'task-stale-baseplan-remote-ref';
+    const workspacePath = path.join(cloneLocation, `repo-${taskId}`);
+    const predecessorBranch = 'feature/stale-remote-predecessor';
+
+    await Bun.$`git init --bare ${remoteDir}`.quiet();
+    await Bun.$`git init -b main`.cwd(baseDir).quiet();
+    await Bun.$`git config user.email test@example.com`.cwd(baseDir).quiet();
+    await Bun.$`git config user.name "Test User"`.cwd(baseDir).quiet();
+    await fs.writeFile(path.join(baseDir, 'main.txt'), 'main\n');
+    await Bun.$`git add main.txt`.cwd(baseDir).quiet();
+    await Bun.$`git commit -m initial`.cwd(baseDir).quiet();
+    await Bun.$`git remote add origin ${remoteDir}`.cwd(baseDir).quiet();
+    await Bun.$`git push -u origin main`.cwd(baseDir).quiet();
+
+    await Bun.$`git checkout -b ${predecessorBranch}`.cwd(baseDir).quiet();
+    await fs.writeFile(
+      path.join(baseDir, 'predecessor.txt'),
+      'stale remote-tracking predecessor\n'
+    );
+    await Bun.$`git add predecessor.txt`.cwd(baseDir).quiet();
+    await Bun.$`git commit -m predecessor`.cwd(baseDir).quiet();
+    const predecessorCommit = (await Bun.$`git rev-parse HEAD`.cwd(baseDir).text()).trim();
+    await Bun.$`git push -u origin ${predecessorBranch}`.cwd(baseDir).quiet();
+    await Bun.$`git push origin --delete ${predecessorBranch}`.cwd(baseDir).quiet();
+    await Bun.$`git update-ref refs/remotes/origin/${predecessorBranch} ${predecessorCommit}`
+      .cwd(baseDir)
+      .quiet();
+    await Bun.$`git checkout main`.cwd(baseDir).quiet();
+
+    expect(
+      (await Bun.$`git show-ref --verify refs/heads/${predecessorBranch}`.cwd(baseDir).nothrow())
+        .exitCode
+    ).toBe(0);
+    expect(
+      (
+        await Bun.$`git show-ref --verify refs/remotes/origin/${predecessorBranch}`
+          .cwd(baseDir)
+          .nothrow()
+      ).exitCode
+    ).toBe(0);
+    expect(
+      (
+        await Bun.$`git ls-remote --exit-code --heads origin ${predecessorBranch}`
+          .cwd(baseDir)
+          .nothrow()
+      ).exitCode
+    ).toBe(2);
+
+    await writePlanFile(
+      null,
+      {
+        id: 52,
+        uuid: '52525252-5252-4252-8252-525252525252',
+        title: 'Merged predecessor with stale remote ref',
+        branch: predecessorBranch,
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+
+    const childPlanFile = path.join(baseDir, 'child-stale-baseplan-remote-ref.plan.md');
+    await writePlanFile(
+      childPlanFile,
+      {
+        id: 53,
+        uuid: '53535353-5353-4353-8353-535353535353',
+        title: 'Child stacked after stale remote ref predecessor',
+        basePlan: 52,
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+    await Bun.$`git add child-stale-baseplan-remote-ref.plan.md`.cwd(baseDir).quiet();
+    await Bun.$`git commit -m "add child plan"`.cwd(baseDir).quiet();
+
+    const cpConfig: TimConfig = {
+      ...config,
+      workspaceCreation: {
+        repositoryId: 'github.com/test/repo',
+        cloneMethod: 'cp',
+        sourceDirectory: baseDir,
+        cloneLocation,
+        createBranch: true,
+      },
+    };
+
+    const result = await setupWorkspace(
+      {
+        workspace: taskId,
+        newWorkspace: true,
+        createBranch: true,
+      },
+      baseDir,
+      childPlanFile,
+      cpConfig,
+      'tim generate'
+    );
+
+    expect(result.baseDir).toBe(workspacePath);
+    expect(
+      (
+        await Bun.$`git show-ref --verify refs/heads/${predecessorBranch}`
+          .cwd(workspacePath)
+          .nothrow()
+      ).exitCode
+    ).toBe(0);
+    expect(
+      (
+        await Bun.$`git show-ref --verify refs/remotes/origin/${predecessorBranch}`
+          .cwd(workspacePath)
+          .nothrow()
+      ).exitCode
+    ).toBe(0);
+    expect(
+      await fs
+        .access(path.join(workspacePath, 'predecessor.txt'))
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(false);
+    expect((await Bun.$`git rev-parse --abbrev-ref HEAD`.cwd(workspacePath).text()).trim()).toBe(
+      '53-child-stacked-after-stale-remote-ref-predecessor'
+    );
+
+    await WorkspaceLock.releaseLock(workspacePath, { force: true });
+  });
+
+  test('cp new workspace creates basePlan stacks from the current remote predecessor branch', async () => {
+    const remoteDir = path.join(tempDir, 'origin-advanced-baseplan.git');
+    const cloneLocation = path.join(tempDir, 'workspaces-advanced-baseplan');
+    const taskId = 'task-advanced-baseplan';
+    const workspacePath = path.join(cloneLocation, `repo-${taskId}`);
+    const predecessorBranch = 'feature/advanced-predecessor';
+
+    await Bun.$`git init --bare ${remoteDir}`.quiet();
+    await Bun.$`git init -b main`.cwd(baseDir).quiet();
+    await Bun.$`git config user.email test@example.com`.cwd(baseDir).quiet();
+    await Bun.$`git config user.name "Test User"`.cwd(baseDir).quiet();
+    await fs.writeFile(path.join(baseDir, 'main.txt'), 'main\n');
+    await Bun.$`git add main.txt`.cwd(baseDir).quiet();
+    await Bun.$`git commit -m initial`.cwd(baseDir).quiet();
+    await Bun.$`git remote add origin ${remoteDir}`.cwd(baseDir).quiet();
+    await Bun.$`git push -u origin main`.cwd(baseDir).quiet();
+
+    await Bun.$`git checkout -b ${predecessorBranch}`.cwd(baseDir).quiet();
+    await fs.writeFile(path.join(baseDir, 'predecessor.txt'), 'stale predecessor\n');
+    await Bun.$`git add predecessor.txt`.cwd(baseDir).quiet();
+    await Bun.$`git commit -m predecessor-stale`.cwd(baseDir).quiet();
+    const stalePredecessorCommit = (await Bun.$`git rev-parse HEAD`.cwd(baseDir).text()).trim();
+    await Bun.$`git push -u origin ${predecessorBranch}`.cwd(baseDir).quiet();
+
+    await fs.writeFile(path.join(baseDir, 'remote-advanced.txt'), 'remote advanced\n');
+    await Bun.$`git add remote-advanced.txt`.cwd(baseDir).quiet();
+    await Bun.$`git commit -m predecessor-advanced`.cwd(baseDir).quiet();
+    const advancedPredecessorCommit = (await Bun.$`git rev-parse HEAD`.cwd(baseDir).text()).trim();
+    await Bun.$`git push origin ${predecessorBranch}`.cwd(baseDir).quiet();
+    await Bun.$`git reset --hard ${stalePredecessorCommit}`.cwd(baseDir).quiet();
+    await Bun.$`git checkout main`.cwd(baseDir).quiet();
+
+    await writePlanFile(
+      null,
+      {
+        id: 54,
+        uuid: '54545454-5454-4454-8454-545454545454',
+        title: 'Advanced predecessor',
+        branch: predecessorBranch,
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+
+    const childPlanFile = path.join(baseDir, 'child-advanced-baseplan.plan.md');
+    await writePlanFile(
+      childPlanFile,
+      {
+        id: 55,
+        uuid: '55555555-5555-4555-8555-555555555555',
+        title: 'Child stacked after advanced predecessor',
+        basePlan: 54,
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+    await Bun.$`git add child-advanced-baseplan.plan.md`.cwd(baseDir).quiet();
+    await Bun.$`git commit -m "add advanced child plan"`.cwd(baseDir).quiet();
+
+    expect(
+      (
+        await Bun.$`git merge-base --is-ancestor ${advancedPredecessorCommit} HEAD`
+          .cwd(baseDir)
+          .nothrow()
+      ).exitCode
+    ).not.toBe(0);
+
+    const cpConfig: TimConfig = {
+      ...config,
+      workspaceCreation: {
+        repositoryId: 'github.com/test/repo',
+        cloneMethod: 'cp',
+        sourceDirectory: baseDir,
+        cloneLocation,
+        createBranch: true,
+      },
+    };
+
+    const result = await setupWorkspace(
+      {
+        workspace: taskId,
+        newWorkspace: true,
+        createBranch: true,
+      },
+      baseDir,
+      childPlanFile,
+      cpConfig,
+      'tim generate'
+    );
+
+    expect(result.baseDir).toBe(workspacePath);
+    expect(
+      (
+        await Bun.$`git merge-base --is-ancestor ${advancedPredecessorCommit} HEAD`
+          .cwd(workspacePath)
+          .nothrow()
+      ).exitCode
+    ).toBe(0);
+    expect(await fs.readFile(path.join(workspacePath, 'remote-advanced.txt'), 'utf-8')).toBe(
+      'remote advanced\n'
+    );
+
+    await WorkspaceLock.releaseLock(workspacePath, { force: true });
   });
 
   test('marks branchCreatedDuringSetup false when a new workspace checks out an existing remote branch', async () => {
@@ -2343,6 +2671,91 @@ describe('setupWorkspace', () => {
     expect(lock?.command).toBe('tim generate');
 
     await WorkspaceLock.releaseLock(baseDir, { force: true });
+  });
+
+  test('basePlan takes precedence over parent plan when both are set', async () => {
+    // When a plan has both parent and basePlan set, basePlan should win for the base branch
+    const existingWorkspacePath = path.join(tempDir, 'workspace-base-plan-beats-parent');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-base-plan-beats-parent');
+
+    // Both plans need to be in the DB; git repo required for resolvePlanByNumericId
+    await Bun.$`git init`.cwd(baseDir).quiet();
+    await Bun.$`git remote add origin https://example.com/test/repo.git`.cwd(baseDir).quiet();
+
+    // Parent plan (should NOT be used as base)
+    await writePlanFile(
+      null,
+      {
+        id: 224,
+        uuid: '22422422-2242-4242-8242-224224224224',
+        title: 'Parent plan (should not be base)',
+        branch: 'feature/parent-branch-to-ignore',
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+
+    // BasePlan (should be used as base)
+    await writePlanFile(
+      null,
+      {
+        id: 225,
+        uuid: '22522522-2252-4252-8252-225225225225',
+        title: 'Base plan for stacking (should win)',
+        branch: 'feature/base-plan-wins',
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+
+    // Child plan with both parent and basePlan set
+    const childPlanFile = path.join(baseDir, 'child-base-plan-wins.plan.md');
+    await writePlanFile(
+      childPlanFile,
+      {
+        id: 226,
+        title: 'Child plan with both parent and basePlan',
+        parent: 224,
+        basePlan: 225,
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+
+    vi.spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    const prepareSpy = vi.spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+    });
+    vi.spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      {
+        workspace: 'task-base-plan-beats-parent',
+      },
+      baseDir,
+      childPlanFile,
+      config,
+      'tim generate'
+    );
+
+    // basePlan's branch should be used as the base, not parent's branch
+    expect(prepareSpy).toHaveBeenCalledWith(
+      existingWorkspacePath,
+      expect.objectContaining({
+        baseBranch: 'feature/base-plan-wins',
+        branchName: '226-child-plan-with-both-parent-and-baseplan',
+      })
+    );
+    expect(prepareSpy).not.toHaveBeenCalledWith(
+      existingWorkspacePath,
+      expect.objectContaining({ baseBranch: 'feature/parent-branch-to-ignore' })
+    );
   });
 
   describe('base commit tracking in setupWorkspace', () => {
@@ -2821,6 +3234,276 @@ describe('setupWorkspace', () => {
           baseCommit: fakeCommitHash,
           baseChangeId: fakeChangeId,
         })
+      );
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('basePlan-derived baseBranch: setPlanBaseTracking called with baseCommit only when remote exists', async () => {
+      // Initialize a git repo so resolvePlanByNumericId can locate the project
+      await Bun.$`git init`.cwd(baseDir).quiet();
+      await Bun.$`git remote add origin https://example.com/test/repo.git`.cwd(baseDir).quiet();
+
+      // Create the referenced basePlan in DB with an explicit branch
+      await writePlanFile(
+        null,
+        {
+          id: 220,
+          uuid: '22022022-2202-4202-8202-220220220220',
+          title: 'Base plan for stacking',
+          branch: 'feature/base-plan-branch',
+          status: 'pending',
+          tasks: [],
+        },
+        { cwdForIdentity: baseDir }
+      );
+
+      // Child plan file referencing basePlan 220 but with no explicit baseBranch
+      const childPlanFile = path.join(baseDir, 'child-base-plan.plan.md');
+      await fs.writeFile(
+        childPlanFile,
+        [
+          '---',
+          'id: 221',
+          'uuid: 22122122-2212-4212-8212-221221221221',
+          'title: Child plan stacked on base plan',
+          'branch: feature/child-stacked',
+          'basePlan: 220',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      const fakeCommitHash = 'aabbccddeeff0011aabbccddeeff0011aabbccdd';
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
+      vi.spyOn(git, 'getMergeBase').mockResolvedValue(fakeCommitHash);
+      vi.spyOn(git, 'getUsingJj').mockResolvedValue(false);
+
+      const result = await setupWorkspace({}, baseDir, childPlanFile, config, 'tim generate');
+
+      expect(result.baseDir).toBe(baseDir);
+      // For basePlan-derived baseBranch, baseCommit is tracked but baseBranch remains a soft reference
+      expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        '22122122-2212-4212-8212-221221221221',
+        expect.objectContaining({
+          baseCommit: fakeCommitHash,
+        })
+      );
+      const calls = vi.mocked(setPlanBaseTracking).mock.calls;
+      const update = calls[0]?.[3] as Record<string, unknown>;
+      expect(update).not.toHaveProperty('baseBranch');
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('basePlan-derived baseBranch is not persisted across repeated setup runs', async () => {
+      await Bun.$`git init`.cwd(baseDir).quiet();
+      await Bun.$`git remote add origin https://example.com/test/repo.git`.cwd(baseDir).quiet();
+
+      await writePlanFile(
+        null,
+        {
+          id: 230,
+          uuid: '23023023-2302-4302-8302-230230230230',
+          title: 'Base plan for repeated setup',
+          branch: 'feature/repeated-base-plan',
+          status: 'pending',
+          tasks: [],
+        },
+        { cwdForIdentity: baseDir }
+      );
+
+      const childPlanFile = path.join(baseDir, 'child-base-plan-repeat.plan.md');
+      await fs.writeFile(
+        childPlanFile,
+        [
+          '---',
+          'id: 231',
+          'uuid: 23123123-2312-4312-8312-231231231231',
+          'title: Child plan repeatedly stacked on base plan',
+          'branch: feature/repeated-child',
+          'basePlan: 230',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
+      vi.spyOn(git, 'getMergeBase').mockResolvedValue('bbccddeeff001122bbccddeeff001122bbccddee');
+      vi.spyOn(git, 'getUsingJj').mockResolvedValue(false);
+
+      await setupWorkspace({}, baseDir, childPlanFile, config, 'tim generate');
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+      await setupWorkspace({}, baseDir, childPlanFile, config, 'tim generate');
+
+      const updates = vi.mocked(setPlanBaseTracking).mock.calls.map((call) => call[3]);
+      expect(updates).toHaveLength(2);
+      expect(updates).toEqual([
+        expect.objectContaining({ baseCommit: expect.any(String) }),
+        expect.objectContaining({ baseCommit: expect.any(String) }),
+      ]);
+      for (const update of updates) {
+        expect(update).not.toHaveProperty('baseBranch');
+      }
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('basePlan-derived baseBranch: setPlanBaseTracking NOT called when remote branch is missing', async () => {
+      // Initialize a git repo so resolvePlanByNumericId can locate the project
+      await Bun.$`git init`.cwd(baseDir).quiet();
+      await Bun.$`git remote add origin https://example.com/test/repo.git`.cwd(baseDir).quiet();
+
+      // Create the referenced basePlan in DB
+      await writePlanFile(
+        null,
+        {
+          id: 220,
+          uuid: '22022022-2202-4202-8202-220220220220',
+          title: 'Base plan for stacking',
+          branch: 'feature/merged-base-plan',
+          status: 'pending',
+          tasks: [],
+        },
+        { cwdForIdentity: baseDir }
+      );
+
+      // Child plan file referencing basePlan 220
+      const childPlanFile = path.join(baseDir, 'child-base-plan-missing.plan.md');
+      await fs.writeFile(
+        childPlanFile,
+        [
+          '---',
+          'id: 221',
+          'uuid: 22122122-2212-4212-8212-221221221221',
+          'title: Child plan stacked on merged base plan',
+          'branch: feature/child-stacked-missing',
+          'basePlan: 220',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      // Branch no longer exists on remote (predecessor merged)
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(false);
+
+      const result = await setupWorkspace({}, baseDir, childPlanFile, config, 'tim generate');
+
+      expect(result.baseDir).toBe(baseDir);
+      // Base branch doesn't exist on remote → no tracking update, no stale baseBranch persisted
+      expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('basePlan-derived branch generation applies configured branchPrefix', async () => {
+      await Bun.$`git init`.cwd(baseDir).quiet();
+      await Bun.$`git remote add origin https://example.com/test/repo.git`.cwd(baseDir).quiet();
+
+      await writePlanFile(
+        null,
+        {
+          id: 232,
+          uuid: '23223223-2322-4322-8322-232232232232',
+          title: 'Base plan without explicit branch',
+          status: 'pending',
+          tasks: [],
+        },
+        { cwdForIdentity: baseDir }
+      );
+
+      const childPlanFile = path.join(baseDir, 'child-base-plan-prefix.plan.md');
+      await fs.writeFile(
+        childPlanFile,
+        [
+          '---',
+          'id: 233',
+          'uuid: 23323323-2332-4332-8332-233233233233',
+          'title: Child plan using generated base plan branch',
+          'branch: feature/prefixed-child',
+          'basePlan: 232',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      const fakeCommitHash = 'ccddeeff00112233ccddeeff00112233ccddeeff';
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
+      const getMergeBaseSpy = vi.spyOn(git, 'getMergeBase').mockResolvedValue(fakeCommitHash);
+      vi.spyOn(git, 'getUsingJj').mockResolvedValue(false);
+
+      const prefixedConfig: TimConfig = {
+        ...config,
+        branchPrefix: 'di/',
+      };
+
+      await setupWorkspace({}, baseDir, childPlanFile, prefixedConfig, 'tim generate');
+
+      expect(getMergeBaseSpy).toHaveBeenCalledWith(
+        baseDir,
+        'di/232-base-plan-without-explicit-branch',
+        'feature/prefixed-child'
+      );
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('explicit baseBranch takes precedence over basePlan: baseBranchSource is plan, no baseBranch in tracking', async () => {
+      // Plan has both baseBranch and basePlan set; explicit baseBranch should win
+      const planWithBoth = path.join(baseDir, 'explicit-beats-base-plan.plan.md');
+      await fs.writeFile(
+        planWithBoth,
+        [
+          '---',
+          'id: 223',
+          'uuid: 22322322-2232-4232-8232-223223223232',
+          'title: Plan with explicit baseBranch and basePlan',
+          'branch: feature/explicit-child',
+          'baseBranch: feature/explicit-base',
+          'basePlan: 220',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      const fakeCommitHash = '1122334455667788112233445566778811223344';
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
+      const mergeBaseSpy = vi.spyOn(git, 'getMergeBase').mockResolvedValue(fakeCommitHash);
+      vi.spyOn(git, 'getUsingJj').mockResolvedValue(false);
+
+      const result = await setupWorkspace({}, baseDir, planWithBoth, config, 'tim generate');
+
+      expect(result.baseDir).toBe(baseDir);
+      // getMergeBase should be called with the explicit baseBranch, not the basePlan's branch
+      expect(mergeBaseSpy).toHaveBeenCalledWith(
+        baseDir,
+        'feature/explicit-base',
+        expect.any(String)
+      );
+      // For 'plan' source, baseBranch is NOT re-persisted (already in the plan file)
+      expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        '22322322-2232-4232-8232-223223223232',
+        expect.objectContaining({ baseCommit: fakeCommitHash })
+      );
+      expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ baseBranch: expect.any(String) })
       );
 
       await WorkspaceLock.releaseLock(baseDir, { force: true });

@@ -912,6 +912,7 @@ function loadPlanSnapshot(db: Database, planUuid: string): CanonicalSnapshot | n
       simple: nullableBoolean(plan.simple),
       tdd: nullableBoolean(plan.tdd),
       discoveredFrom: resolveDiscoveredFromUuid(db, plan.project_id, plan.discovered_from),
+      basePlanUuid: plan.base_plan_uuid,
       issue: parseStringArray(plan.issue),
       pullRequest: parseStringArray(plan.pull_request),
       assignedTo: plan.assigned_to,

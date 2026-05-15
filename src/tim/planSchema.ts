@@ -65,6 +65,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
       .default(() => [])
       .optional(),
     parent: z.number().int().positive().optional(),
+    basePlan: z.number().int().positive().optional(),
     discoveredFrom: z
       .number()
       .int()

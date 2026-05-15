@@ -11,11 +11,15 @@ import {
   getPlanByUuid,
   getPlanTagsByUuid,
   getPlanTasksByUuid,
+  setPlanBasePlan,
 } from './plan.js';
 import { clearPlanSyncContext, removePlanFromDb, syncPlanToDb } from './plan_sync.js';
 import { getProject } from './project.js';
 import { recordWorkspace } from './workspace.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { loadPlansFromDb } from '../plans_db.js';
+import { materializePlan, syncMaterializedPlan } from '../plan_materialize.js';
+import { readPlanFile, writePlanFile } from '../plans.js';
 
 function buildTestConfig(tasksDir: string): TimConfig {
   const config = getDefaultConfig();
@@ -125,6 +129,187 @@ describe('tim db/plan_sync', () => {
     expect(getPlanTasksByUuid(db, savedPlan!.uuid)).toHaveLength(1);
   });
 
+  test('syncPlanToDb and loadPlansFromDb round-trip basePlan through UUID mapping', async () => {
+    const config = buildTestConfig(tasksDir);
+    const basePlanUuid = '22222222-2222-4222-8222-222222222222';
+    const childPlanUuid = '33333333-3333-4333-8333-333333333333';
+
+    await syncPlanToDb(
+      {
+        id: 22,
+        uuid: basePlanUuid,
+        title: 'Base plan',
+        goal: 'Provide a predecessor branch',
+        branch: 'feature/base-plan',
+        tasks: [],
+      },
+      { config }
+    );
+    await syncPlanToDb(
+      {
+        id: 33,
+        uuid: childPlanUuid,
+        title: 'Child stacked plan',
+        goal: 'Resolve basePlan back to numeric ID',
+        basePlan: 22,
+        tasks: [],
+      },
+      { config, idToUuid: new Map([[22, basePlanUuid]]) }
+    );
+
+    const repository = await getRepositoryIdentity({ cwd: repoDir });
+    const db = getDatabase();
+    const project = getProject(db, repository.repositoryId);
+    expect(project).not.toBeNull();
+
+    const savedPlan = getPlanByUuid(db, childPlanUuid);
+    expect(savedPlan?.base_plan_uuid).toBe(basePlanUuid);
+
+    const { plans } = loadPlansFromDb(tasksDir, repository.repositoryId);
+    expect(plans.get(33)?.basePlan).toBe(22);
+  });
+
+  test('setPlanBasePlan persists base_plan_uuid and clears it through the sync router', async () => {
+    const config = buildTestConfig(tasksDir);
+    const basePlanUuid = '44444444-4444-4444-8444-444444444444';
+    const childPlanUuid = '55555555-5555-4555-8555-555555555555';
+
+    await syncPlanToDb(
+      {
+        id: 44,
+        uuid: basePlanUuid,
+        title: 'Scalar base plan',
+        goal: 'Target for setPlanBasePlan',
+        tasks: [],
+      },
+      { config }
+    );
+    await syncPlanToDb(
+      {
+        id: 55,
+        uuid: childPlanUuid,
+        title: 'Scalar child plan',
+        goal: 'Update basePlan through sync router',
+        tasks: [],
+      },
+      { config }
+    );
+
+    const db = getDatabase();
+    await setPlanBasePlan(db, config, childPlanUuid, basePlanUuid);
+    expect(getPlanByUuid(db, childPlanUuid)?.base_plan_uuid).toBe(basePlanUuid);
+
+    await setPlanBasePlan(db, config, childPlanUuid, null);
+    expect(getPlanByUuid(db, childPlanUuid)?.base_plan_uuid).toBeNull();
+
+    const operations = db
+      .prepare('SELECT operation_type, status, payload FROM sync_operation ORDER BY local_sequence')
+      .all() as Array<{
+      operation_type: string;
+      status: string;
+      payload: string;
+    }>;
+    const basePlanOps = operations.filter((row) => {
+      const payload = JSON.parse(row.payload) as { field?: string };
+      return row.operation_type === 'plan.set_scalar' && payload.field === 'base_plan_uuid';
+    });
+    expect(basePlanOps.map((row) => row.status)).toEqual(['applied', 'applied']);
+  });
+
+  test('materializePlan writes basePlan to YAML frontmatter', async () => {
+    const config = buildTestConfig(tasksDir);
+    const basePlanUuid = '66666666-6666-4666-8666-666666666666';
+    const childPlanUuid = '77777777-7777-4777-8777-777777777777';
+
+    await syncPlanToDb(
+      {
+        id: 66,
+        uuid: basePlanUuid,
+        title: 'Materialized base plan',
+        goal: 'Predecessor plan',
+        tasks: [],
+      },
+      { config }
+    );
+    await syncPlanToDb(
+      {
+        id: 77,
+        uuid: childPlanUuid,
+        title: 'Materialized child plan',
+        goal: 'Emit basePlan in frontmatter',
+        basePlan: 66,
+        tasks: [],
+      },
+      { config, idToUuid: new Map([[66, basePlanUuid]]) }
+    );
+
+    const planPath = await materializePlan(77, repoDir);
+    const content = await fs.readFile(planPath, 'utf8');
+    expect(content).toContain('basePlan: 66');
+
+    const parsed = await readPlanFile(planPath);
+    expect(parsed.basePlan).toBe(66);
+  });
+
+  test('syncMaterializedPlan applies edited basePlan from YAML back to DB', async () => {
+    const config = buildTestConfig(tasksDir);
+    const originalBaseUuid = '88888888-8888-4888-8888-888888888888';
+    const nextBaseUuid = '99999999-9999-4999-8999-999999999999';
+    const childPlanUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+    await syncPlanToDb(
+      {
+        id: 88,
+        uuid: originalBaseUuid,
+        title: 'Original base plan',
+        goal: 'Original predecessor',
+        tasks: [],
+      },
+      { config }
+    );
+    await syncPlanToDb(
+      {
+        id: 99,
+        uuid: nextBaseUuid,
+        title: 'Next base plan',
+        goal: 'New predecessor',
+        tasks: [],
+      },
+      { config }
+    );
+    await syncPlanToDb(
+      {
+        id: 100,
+        uuid: childPlanUuid,
+        title: 'Editable basePlan child',
+        goal: 'Sync edited basePlan from materialized YAML',
+        basePlan: 88,
+        tasks: [],
+      },
+      {
+        config,
+        idToUuid: new Map([
+          [88, originalBaseUuid],
+          [99, nextBaseUuid],
+        ]),
+      }
+    );
+
+    const planPath = await materializePlan(100, repoDir);
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.basePlan = 99;
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(100, repoDir, { config });
+
+    expect(getPlanByUuid(getDatabase(), childPlanUuid)?.base_plan_uuid).toBe(nextBaseUuid);
+    const reloaded = loadPlansFromDb(
+      tasksDir,
+      (await getRepositoryIdentity({ cwd: repoDir })).repositoryId
+    );
+    expect(reloaded.plans.get(100)?.basePlan).toBe(99);
+  });
+
   test('syncPlanToDb rejects plans missing UUID identity', async () => {
     await expect(
       syncPlanToDb(
@@ -139,7 +324,9 @@ describe('tim db/plan_sync', () => {
     ).rejects.toThrow('Plan must have a UUID before syncing to DB');
 
     const db = getDatabase();
-    const count = db.prepare('SELECT COUNT(*) as count FROM plan').get() as { count: number };
+    const count = db.prepare('SELECT COUNT(*) as count FROM plan').get() as {
+      count: number;
+    };
     expect(count.count).toBe(0);
   });
 
@@ -372,7 +559,13 @@ describe('tim db/plan_sync', () => {
         goal: 'Updated goal',
         status: 'needs_review' as const,
         branch: 'feature/updated-branch',
-        tasks: [{ title: 'new task', description: 'new task description', done: false }],
+        tasks: [
+          {
+            title: 'new task',
+            description: 'new task description',
+            done: false,
+          },
+        ],
       },
       { config, preserveBaseTracking: true }
     );
@@ -465,7 +658,11 @@ describe('tim db/plan_sync', () => {
     claimAssignment(getDatabase(), project!.id, planUuid, 12, workspace.id, 'dimfeld');
     expect(getAssignment(getDatabase(), project!.id, planUuid)).not.toBeNull();
 
-    await removePlanFromDb(planUuid, { config, cwdForIdentity: repoDir, throwOnError: true });
+    await removePlanFromDb(planUuid, {
+      config,
+      cwdForIdentity: repoDir,
+      throwOnError: true,
+    });
 
     expect(getPlanByUuid(getDatabase(), planUuid)).toBeNull();
     expect(getAssignment(getDatabase(), project!.id, planUuid)).toBeNull();

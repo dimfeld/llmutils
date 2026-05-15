@@ -80,6 +80,7 @@ export const SyncPlanCreatePayloadSchema = z.object({
   simple: z.boolean().nullable().optional(),
   tdd: z.boolean().nullable().optional(),
   discoveredFrom: SyncUuidSchema.nullable().optional(),
+  basePlanUuid: SyncUuidSchema.nullable().optional(),
   assignedTo: z.string().nullable().optional(),
   baseBranch: z.string().nullable().optional(),
   temp: z.boolean().nullable().optional(),
@@ -111,6 +112,7 @@ export const SyncPlanSetScalarPayloadSchema = z
       'simple',
       'tdd',
       'discovered_from',
+      'base_plan_uuid',
       'assigned_to',
       'base_branch',
       'temp',
@@ -166,8 +168,9 @@ function validatePlanSetScalarFieldValue(
       }
       return;
     case 'discovered_from':
+    case 'base_plan_uuid':
       if (value !== null && !SyncUuidSchema.safeParse(value).success) {
-        addIssue('discovered_from value must be a plan UUID or null');
+        addIssue(`${field} value must be a plan UUID or null`);
       }
       return;
     case 'branch':

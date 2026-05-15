@@ -67,6 +67,15 @@ export async function createPlanTool(
     throw new Error(`Parent plan ${args.parent} not found`);
   }
 
+  if (args.basePlan !== undefined) {
+    if (args.basePlan === nextId) {
+      throw new Error(`basePlan cannot refer to the plan being created (${nextId})`);
+    }
+    if (!projectContext.planIdToUuid.has(args.basePlan)) {
+      throw new Error(`Base plan ${args.basePlan} not found`);
+    }
+  }
+
   // Validate dependency IDs before creating the plan
   const dependsOn = args.dependsOn || [];
   for (const depId of dependsOn) {
@@ -88,6 +97,7 @@ export async function createPlanTool(
     details: args.details,
     priority: args.priority,
     parent: args.parent,
+    basePlan: args.basePlan,
     dependencies: dependsOn,
     discoveredFrom: args.discoveredFrom,
     assignedTo: args.assignedTo,

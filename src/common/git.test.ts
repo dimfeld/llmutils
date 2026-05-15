@@ -567,6 +567,45 @@ describe('Git Utilities', () => {
       }
     });
 
+    it('fetches a specific remote branch into origin tracking refs for narrowed clones', async () => {
+      const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-remote-'));
+      const sourceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-source-'));
+
+      try {
+        await runGit(remoteDir, ['init', '--bare']);
+        await initGitRepository(sourceDir);
+
+        await fs.writeFile(path.join(sourceDir, 'base.txt'), 'base');
+        await runGit(sourceDir, ['add', '.']);
+        await runGit(sourceDir, ['commit', '-m', 'base']);
+        await runGit(sourceDir, ['remote', 'add', 'origin', remoteDir]);
+        await runGit(sourceDir, ['push', '-u', 'origin', 'main']);
+
+        await runGit(sourceDir, ['checkout', '-b', 'late-branch']);
+        await fs.writeFile(path.join(sourceDir, 'late.txt'), 'late');
+        await runGit(sourceDir, ['add', '.']);
+        await runGit(sourceDir, ['commit', '-m', 'late']);
+        await runGit(sourceDir, ['push', '-u', 'origin', 'late-branch']);
+
+        await runGit(tempDir, ['clone', '--single-branch', '--branch', 'main', remoteDir, '.']);
+        await expect(
+          runGitOutput(tempDir, ['rev-parse', '--verify', 'refs/remotes/origin/late-branch'])
+        ).rejects.toThrow();
+
+        expect(await fetchRemoteBranch(tempDir, 'late-branch')).toBe(true);
+
+        const trackingRef = await runGitOutput(tempDir, [
+          'rev-parse',
+          '--verify',
+          'refs/remotes/origin/late-branch',
+        ]);
+        expect(trackingRef).toMatch(/^[0-9a-f]{40}$/);
+      } finally {
+        await fs.rm(sourceDir, { recursive: true, force: true });
+        await fs.rm(remoteDir, { recursive: true, force: true });
+      }
+    });
+
     it('detects remote branch deletion even when local tracking ref still exists', async () => {
       const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-remote-'));
       const sourceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-source-'));

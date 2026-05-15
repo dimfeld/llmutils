@@ -26,6 +26,7 @@ tim add "Plan title"
 tim add "Plan title" --priority high
 tim add "Plan title" --parent 100
 tim add "Plan title" --depends-on 101,102
+tim add "Plan title" --base-plan 122             # Stack branch on plan 122's branch
 tim add "Plan title" --discovered-from 99
 tim add "Plan title" --tag frontend --tag urgent
 tim add "Plan title" --simple  # Skip research phase
@@ -214,6 +215,10 @@ tim set 123 --no-depends-on 101        # Remove a dependency
 # Parent/child relationships
 tim set 123 --parent 100
 tim set 123 --no-parent                # Remove parent
+
+# Branch stacking (PR stack on top of another plan's branch)
+tim set 123 --base-plan 122            # Stack this plan's branch on plan 122's branch
+tim set 123 --no-base-plan             # Clear the stacking pointer
 
 # Discovery tracking
 tim set 123 --discovered-from 99

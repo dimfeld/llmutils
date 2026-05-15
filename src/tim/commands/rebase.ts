@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import type { Command } from 'commander';
 import { spawnAndLogOutput } from '../../common/process.js';
 import {
+  ensureLocalJjBookmark,
   fetchRemoteBranch,
   getCurrentCommitHash,
   getGitRoot,
@@ -26,6 +27,7 @@ import { materializePlan, resolveProjectContext } from '../plan_materialize.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { clearPlanBaseTracking, setPlanBaseTracking } from '../db/plan.js';
+import { resolveEffectivePlanBase } from '../plans/base_plan_resolution.js';
 import { generateBranchNameFromPlan, resolveBranchPrefix } from './branch.js';
 import { findNextPlanFromDb } from './plan_discovery.js';
 import { pullWorkspaceRefIfExists } from './workspace.js';
@@ -200,10 +202,30 @@ export async function handleRebaseCommand(
             shouldClearBaseFields = true;
           }
         }
+      } else if (!resolved.plan.baseBranch && resolved.plan.basePlan) {
+        const resolvedBaseBranch = await resolveEffectivePlanBase({
+          plan: resolved.plan,
+          config: effectiveConfig,
+          baseDir,
+          trunkBranch,
+          fetchBasePlanRemote: true,
+          onMissingBasePlanBranch: (basePlanBranch) => {
+            log(
+              `Base plan branch "${basePlanBranch}" no longer exists on remote. Falling back to trunk.`
+            );
+          },
+        });
+        if (resolvedBaseBranch !== branchName && resolvedBaseBranch !== trunkBranch) {
+          effectiveBaseBranch = resolvedBaseBranch;
+        }
       }
 
       const rebaseTargetBranch = effectiveBaseBranch ?? trunkBranch;
       const rebaseTarget = isJj ? rebaseTargetBranch : `origin/${rebaseTargetBranch}`;
+
+      if (isJj && effectiveBaseBranch) {
+        await ensureLocalJjBookmark(baseDir, effectiveBaseBranch);
+      }
 
       log(`Rebasing ${branchName} onto ${rebaseTarget}...`);
       const rebaseResult = isJj

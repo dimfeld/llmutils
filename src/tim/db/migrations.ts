@@ -1136,7 +1136,24 @@ const migrations: Migration[] = [
       JOIN plan_canonical pc ON pc.uuid = pa.plan_uuid;
     `,
   },
+  {
+    version: 36,
+    up: `SELECT 1;`,
+    afterUp: addBasePlanUuidColumns,
+  },
 ];
+
+function addBasePlanUuidColumns(db: Database): void {
+  if (tableExists(db, 'plan') && !tableColumns(db, 'plan').has('base_plan_uuid')) {
+    db.run('ALTER TABLE plan ADD COLUMN base_plan_uuid TEXT');
+  }
+  if (
+    tableExists(db, 'plan_canonical') &&
+    !tableColumns(db, 'plan_canonical').has('base_plan_uuid')
+  ) {
+    db.run('ALTER TABLE plan_canonical ADD COLUMN base_plan_uuid TEXT');
+  }
+}
 
 function getCurrentVersion(db: Database): number {
   const row = db

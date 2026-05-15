@@ -774,6 +774,7 @@ export function routePlanWriteIntoBatch(
       simple: upsertInput.simple ?? null,
       tdd: upsertInput.tdd ?? null,
       discoveredFrom: upsertInput.discoveredFromUuid ?? null,
+      basePlanUuid: upsertInput.basePlanUuid ?? null,
       assignedTo: upsertInput.assignedTo ?? null,
       baseBranch: upsertInput.baseBranch ?? null,
       temp: upsertInput.temp ?? null,
@@ -840,6 +841,11 @@ export function routePlanWriteIntoBatch(
           ? (idToUuid.get(current.discoveredFrom) ?? null)
           : null,
         upsertInput.discoveredFromUuid ?? null,
+      ],
+      [
+        'base_plan_uuid',
+        typeof current.basePlan === 'number' ? (idToUuid.get(current.basePlan) ?? null) : null,
+        upsertInput.basePlanUuid ?? null,
       ],
       ['assigned_to', current.assignedTo ?? null, upsertInput.assignedTo ?? null],
       ['base_branch', current.baseBranch ?? null, upsertInput.baseBranch ?? null],

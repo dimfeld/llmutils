@@ -131,6 +131,10 @@ export function getInboundProjectionOwnerPlanUuids(
         FROM plan
         WHERE parent_uuid = ?
         UNION
+        SELECT uuid AS plan_uuid
+        FROM plan
+        WHERE base_plan_uuid = ?
+        UNION
         SELECT plan_uuid
         FROM plan_dependency_canonical
         WHERE depends_on_uuid = ?
@@ -138,9 +142,20 @@ export function getInboundProjectionOwnerPlanUuids(
         SELECT uuid AS plan_uuid
         FROM plan_canonical
         WHERE parent_uuid = ?
+        UNION
+        SELECT uuid AS plan_uuid
+        FROM plan_canonical
+        WHERE base_plan_uuid = ?
       `
     )
-    .all(deletedPlanUuid, deletedPlanUuid, deletedPlanUuid, deletedPlanUuid) as Array<{
+    .all(
+      deletedPlanUuid,
+      deletedPlanUuid,
+      deletedPlanUuid,
+      deletedPlanUuid,
+      deletedPlanUuid,
+      deletedPlanUuid
+    ) as Array<{
     plan_uuid: string;
   }>;
   return rows.map((row) => row.plan_uuid);

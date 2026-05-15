@@ -37,6 +37,7 @@ export interface PlanRow {
   docs_updated_at: string | null;
   lessons_applied_at: string | null;
   parent_uuid: string | null;
+  base_plan_uuid: string | null;
   epic: number;
   revision: number;
   created_at: string;
@@ -94,6 +95,7 @@ export interface UpsertPlanInput {
   planGeneratedAt?: string | null;
   reviewIssues?: PlanSchema['reviewIssues'] | null;
   parentUuid?: string | null;
+  basePlanUuid?: string | null;
   epic?: boolean;
   revision?: number;
   tasks?: Array<{
@@ -412,9 +414,9 @@ export function replacePlanStateInTableSetInTransaction(
         branch, simple, tdd, discovered_from, issue, pull_request, assigned_to,
         base_branch, base_commit, base_change_id, temp, docs, changed_files,
         plan_generated_at, review_issues, docs_updated_at, lessons_applied_at,
-        parent_uuid, epic, revision, created_at, updated_at
+        parent_uuid, base_plan_uuid, epic, revision, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(uuid) DO UPDATE SET
         project_id = excluded.project_id,
         plan_id = excluded.plan_id,
@@ -442,6 +444,7 @@ export function replacePlanStateInTableSetInTransaction(
         docs_updated_at = excluded.docs_updated_at,
         lessons_applied_at = excluded.lessons_applied_at,
         parent_uuid = excluded.parent_uuid,
+        base_plan_uuid = excluded.base_plan_uuid,
         epic = excluded.epic,
         revision = excluded.revision,
         updated_at = excluded.updated_at
@@ -474,6 +477,7 @@ export function replacePlanStateInTableSetInTransaction(
     plan.docs_updated_at,
     plan.lessons_applied_at,
     plan.parent_uuid,
+    plan.base_plan_uuid,
     plan.epic,
     plan.revision,
     plan.created_at,
@@ -577,6 +581,7 @@ type PlanWriteValues = {
   docs_updated_at: string | null;
   lessons_applied_at: string | null;
   parent_uuid: string | null;
+  base_plan_uuid: string | null;
   epic: number;
 };
 
@@ -608,6 +613,7 @@ function planWriteValues(projectId: number, input: UpsertPlanInput): PlanWriteVa
     docs_updated_at: input.sourceDocsUpdatedAt ?? null,
     lessons_applied_at: input.sourceLessonsAppliedAt ?? null,
     parent_uuid: input.parentUuid ?? null,
+    base_plan_uuid: input.basePlanUuid ?? null,
     epic: input.epic ? 1 : 0,
   };
 }
@@ -687,11 +693,12 @@ function upsertPlanRowInTransaction(
         docs_updated_at,
         lessons_applied_at,
         parent_uuid,
+        base_plan_uuid,
         epic,
         revision,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
     `
     ).run(
       input.uuid,
@@ -721,6 +728,7 @@ function upsertPlanRowInTransaction(
       values.docs_updated_at,
       values.lessons_applied_at,
       values.parent_uuid,
+      values.base_plan_uuid,
       values.epic,
       explicitRevision ?? 1,
       effectiveCreatedAt,
@@ -760,6 +768,7 @@ function upsertPlanRowInTransaction(
         docs_updated_at = ?,
         lessons_applied_at = ?,
         parent_uuid = ?,
+        base_plan_uuid = ?,
         epic = ?,
         revision = ?,
         updated_at = COALESCE(?, ${SQL_NOW_ISO_UTC})
@@ -792,6 +801,7 @@ function upsertPlanRowInTransaction(
       values.docs_updated_at,
       values.lessons_applied_at,
       values.parent_uuid,
+      values.base_plan_uuid,
       values.epic,
       explicitRevision ?? existing.revision + 1,
       effectiveUpdatedAt,
@@ -915,6 +925,7 @@ export function mirrorProjectionPlanToCanonicalInTransaction(
       row.review_issues
     ),
     parentUuid: row.parent_uuid,
+    basePlanUuid: row.base_plan_uuid,
     epic: Boolean(row.epic),
     revision: row.revision,
     tasks,
@@ -1111,7 +1122,7 @@ async function setSyncedPlanScalar(
   db: Database,
   config: TimConfig,
   planUuid: string,
-  field: 'branch' | 'base_branch',
+  field: 'branch' | 'base_branch' | 'base_plan_uuid',
   value: string | null
 ): Promise<void> {
   const plan = getPlanByUuid(db, planUuid);
@@ -1138,6 +1149,15 @@ export async function setPlanBranch(
   branch: string
 ): Promise<void> {
   await setSyncedPlanScalar(db, config, planUuid, 'branch', branch);
+}
+
+export async function setPlanBasePlan(
+  db: Database,
+  config: TimConfig,
+  planUuid: string,
+  basePlanUuid: string | null
+): Promise<void> {
+  await setSyncedPlanScalar(db, config, planUuid, 'base_plan_uuid', basePlanUuid);
 }
 
 export type PlanBaseTrackingUpdate = {

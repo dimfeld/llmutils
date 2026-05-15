@@ -67,3 +67,6 @@ tim-*-failure.yml
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Stray bare repo fixtures (tests must use temp dirs)
+/origin.git/

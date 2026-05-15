@@ -8,6 +8,7 @@ export type SyncOperationPlanRefRole =
   | 'new_parent'
   | 'previous_parent'
   | 'discovered_from'
+  | 'base_plan'
   | 'depends_on'
   | 'dependency';
 
@@ -125,6 +126,7 @@ export function getSyncOperationPlanRefs(
       addRef(parsed.planUuid, 'target');
       addRef(parsed.parentUuid, 'parent');
       addRef(parsed.discoveredFrom, 'discovered_from');
+      addRef(parsed.basePlanUuid, 'base_plan');
       for (const dependency of parsed.dependencies) {
         addRef(dependency, 'dependency');
       }
@@ -149,6 +151,9 @@ export function getSyncOperationPlanRefs(
       addRef(parsed.planUuid, 'target');
       if (parsed.field === 'discovered_from' && typeof parsed.value === 'string') {
         addRef(parsed.value, 'discovered_from');
+      }
+      if (parsed.field === 'base_plan_uuid' && typeof parsed.value === 'string') {
+        addRef(parsed.value, 'base_plan');
       }
       break;
     case 'plan.add_dependency':

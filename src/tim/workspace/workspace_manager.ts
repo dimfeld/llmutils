@@ -5,7 +5,10 @@ import * as os from 'node:os';
 import PQueue from 'p-queue';
 import { debugLog, log } from '../../logging.js';
 import { spawnAndLogOutput } from '../../common/process.js';
-import { getTrunkBranch } from '../../common/git.js';
+import {
+  getTrunkBranch,
+  remoteBranchExists as remoteBranchExistsOnOrigin,
+} from '../../common/git.js';
 import { executePostApplyCommand } from '../actions.js';
 import type { PostApplyCommand, TimConfig } from '../configSchema.js';
 import { WorkspaceLock } from './workspace_lock.js';
@@ -734,18 +737,42 @@ async function createLocalWorkspaceBranch(
   hasRemote: boolean | null,
   allowOffline: boolean,
   updateBaseFromRemote: boolean,
-  fallbackToTrunkOnMissingBase = false
+  fallbackToTrunkOnMissingBase = false,
+  baseBranchSource?: 'plan' | 'basePlan' | 'parent'
 ): Promise<{ success: boolean; error?: string }> {
   let effectiveBaseBranch = baseBranch;
   if (fallbackToTrunkOnMissingBase) {
     const trunkBranch = await getTrunkBranch(workspacePath);
     if (baseBranch !== trunkBranch) {
-      const [localBaseExists, remoteBaseExists] = await Promise.all([
-        branchExists(workspacePath, baseBranch, isJj),
-        remoteBranchExists(workspacePath, baseBranch, isJj),
-      ]);
+      const localBaseExists = await branchExists(workspacePath, baseBranch, isJj);
+      let remoteBaseExists: boolean;
+      if (
+        (baseBranchSource === 'basePlan' || baseBranchSource === 'parent') &&
+        hasRemote !== false
+      ) {
+        try {
+          remoteBaseExists = await remoteBranchExistsOnOrigin(workspacePath, baseBranch);
+        } catch (error) {
+          if (!allowOffline && hasRemote !== null) {
+            return {
+              success: false,
+              error: `Failed to verify ${baseBranchSource} branch "${baseBranch}" on origin: ${String(error)}`,
+            };
+          }
+          log(
+            `Warning: Failed to verify ${baseBranchSource} branch "${baseBranch}" on origin (continuing in offline mode): ${String(error)}`
+          );
+          remoteBaseExists = await remoteBranchExists(workspacePath, baseBranch, isJj);
+        }
+      } else {
+        remoteBaseExists = await remoteBranchExists(workspacePath, baseBranch, isJj);
+      }
 
-      if (!localBaseExists && !remoteBaseExists) {
+      // Soft-derived bases (parent/basePlan) should collapse to trunk once the
+      // remote branch is gone. Copy-based workspaces may still have a stale
+      // local branch from the source checkout, so don't let that local ref win
+      // when a remote exists and fresh remote refs say the base is missing.
+      if (!remoteBaseExists && (hasRemote || !localBaseExists)) {
         log(
           `Base branch "${baseBranch}" does not exist; falling back to trunk branch "${trunkBranch}".`
         );
@@ -807,6 +834,7 @@ export async function createWorkspace(
     workspaceType?: WorkspaceType;
     createBranch?: boolean;
     fallbackToTrunkOnMissingBase?: boolean;
+    baseBranchSource?: 'plan' | 'basePlan' | 'parent';
   }
 ): Promise<Workspace | null> {
   // Check if workspace creation is enabled in the config
@@ -1101,8 +1129,9 @@ export async function createWorkspace(
             isJj,
             hasRemote,
             allowOffline,
-            false,
-            options?.fallbackToTrunkOnMissingBase ?? false
+            Boolean(options?.fromBranch && hasRemote),
+            options?.fallbackToTrunkOnMissingBase ?? false,
+            options?.baseBranchSource
           );
         }
       }

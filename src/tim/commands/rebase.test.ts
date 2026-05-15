@@ -279,6 +279,8 @@ async function createJjStackedTestRepo(options?: {
   childBranch?: string;
   baseBranch?: string;
   deleteBaseFromRemote?: boolean;
+  noLocalBaseBookmark?: boolean;
+  advanceBaseAfterChild?: boolean;
 }): Promise<StackedTestRepo> {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-rebase-jj-stacked-'));
   const originDir = path.join(tempRoot, 'origin.git');
@@ -308,12 +310,22 @@ async function createJjStackedTestRepo(options?: {
   // Clone the JJ repo and create/push child bookmark from base.
   await runJj(tempRoot, ['git', 'clone', originDir, workDir]);
   await configureJjUser(workDir);
-  await runJj(workDir, ['bookmark', 'track', baseBranch, '--remote', 'origin']);
+  if (!options?.noLocalBaseBookmark) {
+    await runJj(workDir, ['bookmark', 'track', baseBranch, '--remote', 'origin']);
+  }
   await runJj(workDir, ['new', `${baseBranch}@origin`]);
   await fs.writeFile(path.join(workDir, 'child.txt'), 'child branch feature\n');
   await runJj(workDir, ['commit', '-m', 'child branch commit']);
   await runJj(workDir, ['bookmark', 'set', '-r', '@-', childBranch]);
   await runJj(workDir, ['git', 'push', '--bookmark', childBranch]);
+
+  if (options?.advanceBaseAfterChild) {
+    await runJj(upstreamDir, ['new', baseBranch]);
+    await fs.writeFile(path.join(upstreamDir, 'base-remote-update.txt'), 'remote base update\n');
+    await runJj(upstreamDir, ['commit', '-m', 'advance base branch']);
+    await runJj(upstreamDir, ['bookmark', 'set', '-r', '@-', baseBranch]);
+    await runJj(upstreamDir, ['git', 'push', '--bookmark', baseBranch]);
+  }
 
   // Advance main after the stack is created.
   await runJj(upstreamDir, ['new', 'main']);
@@ -936,6 +948,97 @@ describe('handleRebaseCommand', () => {
       expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
     });
 
+    test('rebases onto basePlan branch when basePlan is set and baseBranch is unset', async () => {
+      const repo = await createStackedTestRepo();
+      tempDirs.push(repo.tempRoot);
+
+      vi.mocked(loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'mock-executor',
+        terminalInput: false,
+      } as any);
+      vi.mocked(resolveRepoRoot).mockResolvedValue(repo.workDir);
+      vi.mocked(resolvePlanByNumericId).mockImplementation(async (planId: number) => {
+        if (planId === 122) {
+          return {
+            plan: buildPlan({
+              id: 122,
+              uuid: 'plan-122',
+              title: 'Base PR plan',
+              branch: repo.baseBranch,
+            }),
+            planPath: path.join(repo.workDir, '.tim', 'plans', '122.plan.md'),
+          } as any;
+        }
+
+        return {
+          plan: buildPlan({
+            branch: repo.featureBranch,
+            basePlan: 122,
+          }),
+          planPath: path.join(repo.workDir, '.tim', 'plans', '263.plan.md'),
+        } as any;
+      });
+
+      process.chdir(repo.workDir);
+
+      await handleRebaseCommand('263', {}, { parent: { opts: () => ({}) } } as any);
+
+      await fetchOrigin(repo.workDir);
+      expect(await isAncestor(repo.workDir, `origin/${repo.baseBranch}`, repo.featureBranch)).toBe(
+        true
+      );
+      expect(vi.mocked(clearPlanBaseTracking)).not.toHaveBeenCalled();
+      expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'plan-263',
+        expect.objectContaining({ baseCommit: expect.any(String) })
+      );
+      const updates = vi.mocked(setPlanBaseTracking).mock.calls.map((call) => call[3]);
+      expect(updates.some((update) => 'baseBranch' in update)).toBe(false);
+    });
+
+    test('basePlan falls back to trunk when predecessor branch is deleted from remote', async () => {
+      const repo = await createStackedTestRepo({ deleteBaseFromRemote: true });
+      tempDirs.push(repo.tempRoot);
+
+      vi.mocked(loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'mock-executor',
+        terminalInput: false,
+      } as any);
+      vi.mocked(resolveRepoRoot).mockResolvedValue(repo.workDir);
+      vi.mocked(resolvePlanByNumericId).mockImplementation(async (planId: number) => {
+        if (planId === 122) {
+          return {
+            plan: buildPlan({
+              id: 122,
+              uuid: 'plan-122',
+              title: 'Merged base PR plan',
+              branch: repo.baseBranch,
+            }),
+            planPath: path.join(repo.workDir, '.tim', 'plans', '122.plan.md'),
+          } as any;
+        }
+
+        return {
+          plan: buildPlan({
+            branch: repo.featureBranch,
+            basePlan: 122,
+          }),
+          planPath: path.join(repo.workDir, '.tim', 'plans', '263.plan.md'),
+        } as any;
+      });
+
+      process.chdir(repo.workDir);
+
+      await handleRebaseCommand('263', {}, { parent: { opts: () => ({}) } } as any);
+
+      await fetchOrigin(repo.workDir);
+      expect(await isAncestor(repo.workDir, 'origin/main', repo.featureBranch)).toBe(true);
+      expect(vi.mocked(clearPlanBaseTracking)).not.toHaveBeenCalled();
+      expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
+    });
+
     test('baseBranch equal to trunk is treated as no baseBranch (no base tracking)', async () => {
       const repo = await createTestRepo({ advanceMain: 'safe' });
       tempDirs.push(repo.tempRoot);
@@ -1123,6 +1226,149 @@ describe('handleRebaseCommand', () => {
           baseCommit: expect.any(String),
           baseChangeId: expect.any(String),
         })
+      );
+    });
+
+    test('JJ: rebases when basePlan predecessor exists only as @origin with no local bookmark', async () => {
+      if (!(await isJjAvailable())) {
+        return;
+      }
+      const repo = await createJjStackedTestRepo({ noLocalBaseBookmark: true });
+      tempDirs.push(repo.tempRoot);
+
+      vi.mocked(loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'mock-executor',
+        terminalInput: false,
+      } as any);
+      vi.mocked(resolveRepoRoot).mockResolvedValue(repo.workDir);
+      vi.mocked(resolvePlanByNumericId).mockImplementation(async (planId: number) => {
+        if (planId === 122) {
+          return {
+            plan: buildPlan({
+              id: 122,
+              uuid: 'plan-122',
+              title: 'Base PR plan',
+              branch: repo.baseBranch,
+            }),
+            planPath: path.join(repo.workDir, '.tim', 'plans', '122.plan.md'),
+          } as any;
+        }
+        return {
+          plan: buildPlan({
+            branch: repo.featureBranch,
+            basePlan: 122,
+          }),
+          planPath: path.join(repo.workDir, '.tim', 'plans', '263.plan.md'),
+        } as any;
+      });
+
+      process.chdir(repo.workDir);
+
+      // Should succeed even though feature/base-pr only exists as feature/base-pr@origin
+      await handleRebaseCommand('263', {}, { parent: { opts: () => ({}) } } as any);
+
+      await fetchOrigin(repo.workDir);
+      expect(await isAncestor(repo.workDir, `origin/${repo.baseBranch}`, repo.featureBranch)).toBe(
+        true
+      );
+      expect(vi.mocked(clearPlanBaseTracking)).not.toHaveBeenCalled();
+      expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'plan-263',
+        expect.objectContaining({ baseCommit: expect.any(String) })
+      );
+    });
+
+    test('JJ: aligns stale local basePlan bookmark to origin before rebase', async () => {
+      if (!(await isJjAvailable())) {
+        return;
+      }
+      const repo = await createJjStackedTestRepo({ advanceBaseAfterChild: true });
+      tempDirs.push(repo.tempRoot);
+
+      const staleLocalBaseTip = await runJjOutput(repo.workDir, [
+        'log',
+        '-r',
+        repo.baseBranch,
+        '--no-graph',
+        '-T',
+        'commit_id',
+        '--limit',
+        '1',
+      ]);
+
+      vi.mocked(loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'mock-executor',
+        terminalInput: false,
+      } as any);
+      vi.mocked(resolveRepoRoot).mockResolvedValue(repo.workDir);
+      vi.mocked(resolvePlanByNumericId).mockImplementation(async (planId: number) => {
+        if (planId === 122) {
+          return {
+            plan: buildPlan({
+              id: 122,
+              uuid: 'plan-122',
+              title: 'Base PR plan',
+              branch: repo.baseBranch,
+            }),
+            planPath: path.join(repo.workDir, '.tim', 'plans', '122.plan.md'),
+          } as any;
+        }
+        return {
+          plan: buildPlan({
+            branch: repo.featureBranch,
+            basePlan: 122,
+          }),
+          planPath: path.join(repo.workDir, '.tim', 'plans', '263.plan.md'),
+        } as any;
+      });
+
+      process.chdir(repo.workDir);
+
+      await handleRebaseCommand('263', {}, { parent: { opts: () => ({}) } } as any);
+
+      await runJj(repo.workDir, ['git', 'fetch', '--branch', repo.baseBranch]);
+      const remoteBaseTip = await runJjOutput(repo.workDir, [
+        'log',
+        '-r',
+        `${repo.baseBranch}@origin`,
+        '--no-graph',
+        '-T',
+        'commit_id',
+        '--limit',
+        '1',
+      ]);
+      const localBaseTip = await runJjOutput(repo.workDir, [
+        'log',
+        '-r',
+        repo.baseBranch,
+        '--no-graph',
+        '-T',
+        'commit_id',
+        '--limit',
+        '1',
+      ]);
+      const mergeBaseCommit = await runJjOutput(repo.workDir, [
+        'log',
+        '-r',
+        `heads(::${repo.featureBranch} & ::${repo.baseBranch})`,
+        '--no-graph',
+        '-T',
+        'commit_id',
+        '--limit',
+        '1',
+      ]);
+
+      expect(remoteBaseTip).not.toBe(staleLocalBaseTip);
+      expect(localBaseTip).toBe(remoteBaseTip);
+      expect(mergeBaseCommit).toBe(remoteBaseTip);
+      expect(vi.mocked(clearPlanBaseTracking)).not.toHaveBeenCalled();
+      expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'plan-263',
+        expect.objectContaining({ baseCommit: remoteBaseTip })
       );
     });
 

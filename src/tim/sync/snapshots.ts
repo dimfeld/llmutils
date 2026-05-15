@@ -43,6 +43,7 @@ export interface CanonicalPlanSnapshot {
     simple: boolean | null;
     tdd: boolean | null;
     discoveredFrom: string | null;
+    basePlanUuid?: string | null;
     issue: string[] | null;
     pullRequest: string[] | null;
     assignedTo: string | null;
@@ -141,6 +142,7 @@ const CanonicalPlanSnapshotSchema = z.object({
     simple: z.boolean().nullable(),
     tdd: z.boolean().nullable(),
     discoveredFrom: z.string().nullable(),
+    basePlanUuid: z.string().nullable().optional(),
     issue: z.array(z.string()).nullable(),
     pullRequest: z.array(z.string()).nullable(),
     assignedTo: z.string().nullable(),
@@ -344,6 +346,7 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
     simple: snapshot.plan.simple,
     tdd: snapshot.plan.tdd,
     discoveredFrom: resolveCanonicalPlanId(db, project.id, snapshot.plan.discoveredFrom),
+    basePlanUuid: snapshot.plan.basePlanUuid ?? null,
     parentUuid: snapshot.plan.parentUuid,
     epic: snapshot.plan.epic,
     revision: snapshot.plan.revision,
