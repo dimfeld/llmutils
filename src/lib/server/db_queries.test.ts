@@ -193,6 +193,53 @@ describe('lib/server/db_queries', () => {
     ]);
   });
 
+  test('getPlanDetail includes child external dependency statuses for epic plans', async () => {
+    upsertPlan(db, projectId, {
+      uuid: 'child-external-status-epic',
+      planId: 920,
+      title: 'Child external status epic',
+      epic: true,
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'child-external-status-finished',
+      planId: 921,
+      title: 'Finished external dependency',
+      status: 'done',
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'child-external-status-internal',
+      planId: 922,
+      title: 'Internal dependency child',
+      parentUuid: 'child-external-status-epic',
+      tasks: [{ title: 'task', description: 'desc', done: false }],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'child-external-status-child',
+      planId: 923,
+      title: 'Child with external dependency',
+      parentUuid: 'child-external-status-epic',
+      dependencyUuids: ['child-external-status-finished'],
+      tasks: [{ title: 'task', description: 'desc', done: false }],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'child-external-status-dependent-child',
+      planId: 924,
+      title: 'Child with internal dependency',
+      parentUuid: 'child-external-status-epic',
+      dependencyUuids: ['child-external-status-internal'],
+      tasks: [{ title: 'task', description: 'desc', done: false }],
+    });
+
+    const detail = await getPlanDetail(db, 'child-external-status-epic');
+
+    expect(detail?.childExternalDependencyStatuses).toEqual({
+      'child-external-status-finished': 'done',
+    });
+    expect(detail?.childExternalDependencyStatuses).not.toHaveProperty(
+      'child-external-status-internal'
+    );
+  });
+
   test('getProjectsWithMetadata includes projects with zero plans', () => {
     const emptyProjectId = getOrCreateProject(db, 'repo-web-empty', {
       remoteUrl: 'https://example.com/repo-web-empty.git',

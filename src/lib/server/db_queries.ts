@@ -124,6 +124,7 @@ export interface EnrichedPlan {
 export interface PlanDetail extends EnrichedPlan {
   dependencies: EnrichedPlanDependency[];
   children: ChildPlanSummary[];
+  childExternalDependencyStatuses: Record<string, string>;
   assignment: AssignmentEntry | null;
   parent: EnrichedPlanDependency | null;
   basePlan: EnrichedPlanDependency | null;
@@ -580,6 +581,57 @@ function getPlansByUuid(db: Database, planUuids: Iterable<string>): PlanRow[] {
   return plans;
 }
 
+function getChildExternalDependencyStatuses(
+  db: Database,
+  children: ChildPlanSummary[],
+  planByUuid: ReadonlyMap<string, PlanRow>
+): Record<string, string> {
+  if (children.length === 0) {
+    return {};
+  }
+
+  const childUuids = new Set(children.map((child) => child.uuid));
+  const externalDependencyUuids = new Set<string>();
+
+  for (const child of children) {
+    for (const dependencyUuid of child.dependencies) {
+      if (!childUuids.has(dependencyUuid)) {
+        externalDependencyUuids.add(dependencyUuid);
+      }
+    }
+
+    if (child.basePlanUuid && !childUuids.has(child.basePlanUuid)) {
+      externalDependencyUuids.add(child.basePlanUuid);
+    }
+  }
+
+  if (externalDependencyUuids.size === 0) {
+    return {};
+  }
+
+  const statuses: Record<string, string> = {};
+  const missingPlanUuids: string[] = [];
+
+  for (const dependencyUuid of externalDependencyUuids) {
+    const plan = planByUuid.get(dependencyUuid);
+    const status = normalizePlanStatus(plan?.status ?? null);
+    if (status) {
+      statuses[dependencyUuid] = status;
+    } else {
+      missingPlanUuids.push(dependencyUuid);
+    }
+  }
+
+  for (const plan of getPlansByUuid(db, missingPlanUuids)) {
+    const status = normalizePlanStatus(plan.status);
+    if (status) {
+      statuses[plan.uuid] = status;
+    }
+  }
+
+  return statuses;
+}
+
 function toDependencySummary(
   dependencyUuid: string,
   planByUuid: ReadonlyMap<string, PlanRow>,
@@ -929,11 +981,17 @@ export async function getPlanDetail(
     includeDeleted: options.includeDeletedArtifacts,
   });
   const children = enrichedPlan.epic ? getChildPlansForEpic(db, planUuid) : [];
+  const childExternalDependencyStatuses = getChildExternalDependencyStatuses(
+    db,
+    children,
+    planByUuid
+  );
 
   return {
     ...enrichedPlan,
     dependencies: dependencySummaries,
     children,
+    childExternalDependencyStatuses,
     assignment,
     parent,
     basePlan,

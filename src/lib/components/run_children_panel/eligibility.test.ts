@@ -9,10 +9,7 @@ import {
   shrinkSelectionRemovingDependents,
 } from './eligibility.js';
 
-function child(
-  uuid: string,
-  overrides: Partial<RunChildrenPlanChild> = {}
-): RunChildrenPlanChild {
+function child(uuid: string, overrides: Partial<RunChildrenPlanChild> = {}): RunChildrenPlanChild {
   return {
     uuid,
     status: 'pending',
@@ -49,20 +46,14 @@ describe('run children eligibility helpers', () => {
   );
 
   test('isAgentEligibleChild rejects children with no incomplete tasks', () => {
-    expect(isAgentEligibleChild(child('complete', { taskCount: 2, doneTaskCount: 2 }))).toBe(
-      false
-    );
+    expect(isAgentEligibleChild(child('complete', { taskCount: 2, doneTaskCount: 2 }))).toBe(false);
   });
 });
 
 describe('buildSelectionGraph', () => {
   test('builds predecessor and dependent maps for a simple chain', () => {
     const graph = buildSelectionGraph(
-      [
-        child('a'),
-        child('b', { dependencies: ['a'] }),
-        child('c', { dependencies: ['b'] }),
-      ],
+      [child('a'), child('b', { dependencies: ['a'] }), child('c', { dependencies: ['b'] })],
       {}
     );
 
@@ -175,11 +166,7 @@ describe('selection expansion and shrinking', () => {
   test('shrinkSelectionRemovingDependents removes a leaf only', () => {
     const children = [child('a'), child('b', { dependencies: ['a'] })];
     const graph = buildSelectionGraph(children, {});
-    const selected = shrinkSelectionRemovingDependents(
-      new Set(['a', 'b']),
-      'b',
-      graph.depsByUuid
-    );
+    const selected = shrinkSelectionRemovingDependents(new Set(['a', 'b']), 'b', graph.depsByUuid);
 
     expect([...selected].sort()).toEqual(['a']);
   });
