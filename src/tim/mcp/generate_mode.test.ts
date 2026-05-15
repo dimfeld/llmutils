@@ -181,7 +181,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(message?.text).toContain('Test Plan');
     expect(message?.text).toContain('Please analyze this project description');
     expect(message?.text).toContain(
-      'Prefer splitting work into multiple smaller, independently testable plans'
+      'Before you create the structured tasks for this plan, you MUST evaluate whether the work should be split'
     );
   });
 
@@ -214,7 +214,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(message?.text).toContain('generate a detailed implementation plan');
     expect(message?.text).toContain("'tim tools update-plan-tasks' CLI command");
     expect(message?.text).toContain(
-      'Prefer splitting work into multiple smaller, independently testable plans'
+      'Before you create the structured tasks for this plan, you MUST evaluate whether the work should be split'
     );
     expect(message?.text).toContain('Break the project into phases');
   });
