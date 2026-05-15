@@ -32,13 +32,7 @@ export interface SelectionGraph<T extends RunChildrenPlanChild = RunChildrenPlan
 }
 
 const FINISHED_STATUSES = new Set(['done', 'cancelled', 'needs_review']);
-const INELIGIBLE_STATUSES = new Set([
-  'done',
-  'cancelled',
-  'needs_review',
-  'deferred',
-  'recently_done',
-]);
+const INELIGIBLE_STATUSES = new Set(['done', 'cancelled', 'needs_review', 'deferred']);
 
 export function isFinishedStatus(status: string): boolean {
   // Keep in sync with isWorkCompleteStatus in src/tim/plans/plan_state_utils.ts.
@@ -47,24 +41,6 @@ export function isFinishedStatus(status: string): boolean {
 
 export function isAgentEligibleChild(child: RunChildrenPlanChild): boolean {
   return !INELIGIBLE_STATUSES.has(child.status) && child.doneTaskCount < child.taskCount;
-}
-
-/**
- * Returns true if at least one child is agent-eligible AND not (directly or transitively)
- * blocked. Used as the render gate so the panel doesn't appear with only disabled rows.
- */
-export function hasSelectableEligibleChild<T extends RunChildrenPlanChild>(
-  children: T[],
-  externalPlanStatusByUuid: Record<string, string | undefined>
-): boolean {
-  if (children.length === 0) return false;
-  const graph = buildSelectionGraph(children, externalPlanStatusByUuid);
-  return children.some(
-    (child) =>
-      isAgentEligibleChild(child) &&
-      !graph.externalBlockedByUuid.has(child.uuid) &&
-      !graph.transitivelyBlockedByUuid.has(child.uuid)
-  );
 }
 
 export function buildSelectionGraph<T extends RunChildrenPlanChild>(

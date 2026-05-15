@@ -196,6 +196,7 @@ describe('agent-multi command', () => {
     expect(mocks.runWithHeadlessAdapterIfEnabled).toHaveBeenCalledWith(
       expect.objectContaining({
         command: 'agent-multi',
+        interactive: false,
         plan: {
           id: 100,
           uuid: 'epic-1',
@@ -219,6 +220,7 @@ describe('agent-multi command', () => {
     expect(mocks.getPlanByUuid).not.toHaveBeenCalled();
     expect(mocks.runWithHeadlessAdapterIfEnabled).toHaveBeenCalledWith(
       expect.objectContaining({
+        interactive: false,
         plan: {
           id: 200,
           uuid: 'explicit-epic',
@@ -239,7 +241,21 @@ describe('agent-multi command', () => {
     expect(mocks.getPlanByUuid).not.toHaveBeenCalled();
     expect(mocks.runWithHeadlessAdapterIfEnabled).toHaveBeenCalledWith(
       expect.objectContaining({
+        interactive: false,
         plan: undefined,
+      })
+    );
+  });
+
+  test('keeps the orchestrator headless session non-interactive even without --non-interactive', async () => {
+    mocks.getAgentMultiPlansForProject.mockReturnValue([makeAgentPlan({ uuid: 'child-101' })]);
+
+    await handleAgentMultiCommand([101], { maxParallel: 3 }, {});
+
+    expect(mocks.runWithHeadlessAdapterIfEnabled).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'agent-multi',
+        interactive: false,
       })
     );
   });

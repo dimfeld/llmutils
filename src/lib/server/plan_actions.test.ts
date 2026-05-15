@@ -400,6 +400,7 @@ describe('lib/server/plan_actions', () => {
       '300',
       '--auto-workspace',
       '--no-terminal-input',
+      '--non-interactive',
     ]);
     expect(result).toEqual({ success: true, planId: 300 });
   });

@@ -3,6 +3,7 @@ import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 import type { TimConfig } from '../configSchema.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getProjectById } from './project.js';
+import { isWorkCompleteStatus } from '../plans/plan_state_utils.js';
 
 // Canonical helpers write the main-node-confirmed mirror tables and require
 // explicit revisions from that canonical source. Projection helpers write the
@@ -65,11 +66,50 @@ export interface ChildPlanSummaryRow {
   planId: number;
   title: string | null;
   status: PlanSchema['status'];
+  displayStatus: PlanSchema['status'] | 'ready' | 'blocked' | 'recently_done';
   taskCount: number;
   doneTaskCount: number;
   dependencies: string[];
   basePlanUuid?: string;
   parentUuid?: string;
+}
+
+const RECENTLY_DONE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+function isRecentlyDone(updatedAt: string, now = Date.now()): boolean {
+  const updatedAtMs = Date.parse(updatedAt);
+  if (!Number.isFinite(updatedAtMs)) {
+    return false;
+  }
+
+  return now - updatedAtMs <= RECENTLY_DONE_WINDOW_MS;
+}
+
+function computeChildDisplayStatus(
+  child: Pick<PlanRow, 'epic' | 'status' | 'updated_at'> & { taskCount: number },
+  dependencyUuids: string[],
+  planByUuid: ReadonlyMap<string, Pick<PlanRow, 'status'>>
+): ChildPlanSummaryRow['displayStatus'] {
+  if (!child.epic && (child.status === 'pending' || child.status === 'in_progress')) {
+    const hasUnresolvedDependency = dependencyUuids.some((dependencyUuid) => {
+      const dependencyPlan = planByUuid.get(dependencyUuid);
+      return dependencyPlan == null || !isWorkCompleteStatus(dependencyPlan.status);
+    });
+
+    if (hasUnresolvedDependency) {
+      return 'blocked';
+    }
+  }
+
+  if (child.status === 'done' && isRecentlyDone(child.updated_at)) {
+    return 'recently_done';
+  }
+
+  if (child.status === 'pending' && child.taskCount > 0) {
+    return 'ready';
+  }
+
+  return child.status;
 }
 
 export interface PlanTagRow {
@@ -1139,6 +1179,8 @@ export function getChildPlansForEpic(db: Database, epicUuid: string): ChildPlanS
         p.plan_id AS planId,
         p.title,
         p.status,
+        p.epic,
+        p.updated_at,
         p.base_plan_uuid AS basePlanUuid,
         p.parent_uuid AS parentUuid,
         COUNT(pt.id) AS taskCount,
@@ -1151,7 +1193,9 @@ export function getChildPlansForEpic(db: Database, epicUuid: string): ChildPlanS
     `
     )
     .all(epicUuid) as Array<
-    Omit<ChildPlanSummaryRow, 'dependencies' | 'basePlanUuid'> & {
+    Omit<ChildPlanSummaryRow, 'dependencies' | 'basePlanUuid' | 'displayStatus'> & {
+      epic: number;
+      updated_at: string;
       basePlanUuid: string | null;
       parentUuid: string | null;
     }
@@ -1180,17 +1224,44 @@ export function getChildPlansForEpic(db: Database, epicUuid: string): ChildPlanS
     dependenciesByPlanUuid.set(dependency.plan_uuid, dependencies);
   }
 
-  return rows.map((row) => ({
-    uuid: row.uuid,
-    planId: row.planId,
-    title: row.title,
-    status: row.status,
-    taskCount: row.taskCount,
-    doneTaskCount: row.doneTaskCount,
-    dependencies: dependenciesByPlanUuid.get(row.uuid) ?? [],
-    basePlanUuid: row.basePlanUuid ?? undefined,
-    parentUuid: row.parentUuid ?? undefined,
-  }));
+  const planByUuid = new Map<string, Pick<PlanRow, 'status'>>();
+  for (const row of rows) {
+    planByUuid.set(row.uuid, { status: row.status });
+  }
+
+  const missingDependencyUuids = [
+    ...new Set(
+      dependencyRows
+        .map((dependency) => dependency.depends_on_uuid)
+        .filter((dependencyUuid) => !planByUuid.has(dependencyUuid))
+    ),
+  ];
+
+  if (missingDependencyUuids.length > 0) {
+    const placeholders = missingDependencyUuids.map(() => '?').join(', ');
+    const dependencyPlans = db
+      .prepare(`SELECT * FROM plan WHERE uuid IN (${placeholders})`)
+      .all(...missingDependencyUuids) as PlanRow[];
+    for (const dependencyPlan of dependencyPlans) {
+      planByUuid.set(dependencyPlan.uuid, dependencyPlan);
+    }
+  }
+
+  return rows.map((row) => {
+    const dependencies = dependenciesByPlanUuid.get(row.uuid) ?? [];
+    return {
+      uuid: row.uuid,
+      planId: row.planId,
+      title: row.title,
+      status: row.status,
+      displayStatus: computeChildDisplayStatus(row, dependencies, planByUuid),
+      taskCount: row.taskCount,
+      doneTaskCount: row.doneTaskCount,
+      dependencies,
+      basePlanUuid: row.basePlanUuid ?? undefined,
+      parentUuid: row.parentUuid ?? undefined,
+    };
+  });
 }
 
 async function setSyncedPlanScalar(

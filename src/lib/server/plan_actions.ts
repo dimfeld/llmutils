@@ -159,6 +159,7 @@ export async function spawnAgentMultiProcess(
       String(epicPlanId),
       '--auto-workspace',
       '--no-terminal-input',
+      '--non-interactive',
     ],
     cwd
   );

@@ -416,6 +416,7 @@ describe('PlanDetail', () => {
               planId: 101,
               title: 'Blocked child',
               status: 'pending',
+              displayStatus: 'blocked',
               taskCount: 2,
               doneTaskCount: 0,
               dependencies: ['external-1'],
@@ -438,6 +439,7 @@ describe('PlanDetail', () => {
     expect(body).toContain('Run children');
     expect(body).toContain('Blocked child');
     expect(body).toContain('Blocked by external dependency: #99 External predecessor');
-    expect(body).toContain('disabled');
+    const checkboxMatch = body.match(/<input[^>]*aria-label="Select plan #101"[^>]*>/);
+    expect(checkboxMatch?.[0]).toContain('disabled');
   });
 });

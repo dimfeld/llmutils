@@ -155,7 +155,7 @@ export async function handleAgentMultiCommand(
   await runWithHeadlessAdapterIfEnabled({
     enabled: !isTunnelActive(),
     command: 'agent-multi',
-    interactive: options.nonInteractive !== true,
+    interactive: false,
     plan: toHeadlessPlanSummary(headlessPlanRow),
     callback: async () => {
       const runner = new MultiAgentRunner({

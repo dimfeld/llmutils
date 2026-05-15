@@ -38,7 +38,7 @@ describe('run children eligibility helpers', () => {
     expect(isAgentEligibleChild(child('active'))).toBe(true);
   });
 
-  test.each(['done', 'cancelled', 'needs_review', 'deferred', 'recently_done'])(
+  test.each(['done', 'cancelled', 'needs_review', 'deferred'])(
     'isAgentEligibleChild rejects %s children',
     (status: string) => {
       expect(isAgentEligibleChild(child(status, { status }))).toBe(false);

@@ -68,6 +68,7 @@ function child(uuid: string, planId: number, overrides: Partial<ChildPlanSummary
     planId,
     title: `Child ${planId}`,
     status: 'pending',
+    displayStatus: overrides.displayStatus ?? overrides.status ?? 'ready',
     taskCount: 4,
     doneTaskCount: 1,
     dependencies: [],
@@ -153,6 +154,41 @@ describe('RunChildrenPanel', () => {
     await expect.element(page.getByText('#101')).toBeInTheDocument();
     await expect.element(page.getByText('1/4 tasks done')).toBeInTheDocument();
     await expect.element(page.getByRole('checkbox', { name: 'Select plan #101' })).toBeEnabled();
+  });
+
+  test('renders the child display status badge', async () => {
+    renderPanel([
+      child('blocked-child', 102, {
+        title: 'Blocked by dependency',
+        status: 'pending',
+        displayStatus: 'blocked',
+        dependencies: ['external-open'],
+      }),
+    ]);
+
+    await expect.element(page.getByText('Blocked')).toBeInTheDocument();
+  });
+
+  test('omits children that are not agent-eligible', async () => {
+    renderPanel([
+      child('runnable-child', 115, { title: 'Runnable child' }),
+      child('done-child', 116, {
+        title: 'Done child',
+        status: 'done',
+        displayStatus: 'done',
+        taskCount: 2,
+        doneTaskCount: 2,
+      }),
+      child('no-task-child', 117, {
+        title: 'No-task child',
+        taskCount: 0,
+        doneTaskCount: 0,
+      }),
+    ]);
+
+    await expect.element(page.getByRole('link', { name: 'Runnable child' })).toBeInTheDocument();
+    await expect.element(page.getByRole('link', { name: 'Done child' })).not.toBeInTheDocument();
+    await expect.element(page.getByRole('link', { name: 'No-task child' })).not.toBeInTheDocument();
   });
 
   test('does not render from PlanDetail when no child is agent-eligible', async () => {

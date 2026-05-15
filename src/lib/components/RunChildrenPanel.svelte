@@ -58,6 +58,7 @@
   });
 
   let graph = $derived(buildSelectionGraph(children, externalStatusOnlyByUuid));
+  let renderedChildren = $derived(children.filter(isAgentEligibleChild));
 
   function uuidIsSelectable(uuid: string): boolean {
     const child = graph.childrenByUuid.get(uuid);
@@ -155,7 +156,7 @@
     Run children
   </h3>
   <ul class="space-y-1">
-    {#each children as child (child.uuid)}
+    {#each renderedChildren as child (child.uuid)}
       {@const disabled = isRowDisabled(child)}
       {@const tooltip = rowTooltip(child)}
       <li
@@ -178,7 +179,7 @@
         >
           {child.title ?? 'Untitled'}
         </a>
-        <StatusBadge status={child.status as PlanDisplayStatus} />
+        <StatusBadge status={child.displayStatus as PlanDisplayStatus} />
         <span class="text-xs text-muted-foreground">
           {child.doneTaskCount}/{child.taskCount} tasks done
         </span>
