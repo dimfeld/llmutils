@@ -19,6 +19,7 @@ import {
   spawnGenerateProcess,
   spawnRebaseProcess,
   spawnPrCreateProcess,
+  spawnReviewProcess,
 } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
@@ -257,6 +258,24 @@ export const startRebase = command(startRebaseSchema, async ({ planUuid }) => {
     isPlanEligibleForRebase,
     'Plan is not eligible for rebase',
     spawnRebaseProcess
+  );
+});
+
+function isPlanEligibleForReview(plan: PlanDetail): plan is PlanDetailResult {
+  return plan != null && plan.status === 'needs_review';
+}
+
+const startReviewSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startReview = command(startReviewSchema, async ({ planUuid }) => {
+  return launchTimCommand(
+    'review',
+    planUuid,
+    isPlanEligibleForReview,
+    'Plan is not eligible for review',
+    spawnReviewProcess
   );
 });
 

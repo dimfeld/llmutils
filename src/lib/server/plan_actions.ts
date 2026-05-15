@@ -57,7 +57,8 @@ async function spawnTimProcess(
   targetLabel: string,
   planId: number,
   args: string[],
-  cwd: string
+  cwd: string,
+  envOverrides?: Record<string, string>
 ): Promise<SpawnProcessResult> {
   let proc: ReturnType<typeof Bun.spawn>;
   let logFile: LogFileInfo | undefined;
@@ -66,7 +67,7 @@ async function spawnTimProcess(
     const command = args[0];
     console.info(`[web-ui] Starting ${describeCommand(args)} for ${targetLabel} in ${cwd}`);
     logFile = createLogFile(command, planId);
-    const env = await buildWorkspaceCommandEnv(cwd);
+    const env = await buildWorkspaceCommandEnv(cwd, envOverrides);
 
     proc = Bun.spawn(['tim', ...args], {
       cwd,
@@ -186,6 +187,22 @@ export async function spawnPrCreateProcess(
     describeTarget('plan', planId),
     planId,
     ['pr', 'create', String(planId), '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
+}
+
+export async function spawnReviewProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
+  return spawnTimProcess(
+    describeTarget('plan', planId),
+    planId,
+    [
+      'review',
+      String(planId),
+      '--auto-workspace',
+      '--no-terminal-input',
+      '--save-issues',
+      '--no-autofix',
+    ],
     cwd
   );
 }

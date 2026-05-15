@@ -10,6 +10,7 @@
     startAgent,
     startChat,
     startRebase,
+    startReview,
     startUpdateDocs,
     startCreatePr,
     finishPlanQuick,
@@ -152,6 +153,13 @@
       colorClass: '',
       starting: startingRebase,
     };
+    const reviewItem: ActionItem = {
+      label: 'Review',
+      startingLabel: 'Starting Review…',
+      onclick: handleReview,
+      colorClass: '',
+      starting: startingReview,
+    };
     const createPrItem: ActionItem = {
       label: 'Create PR',
       startingLabel: 'Starting PR Creation…',
@@ -176,12 +184,14 @@
       primary = finishNoMarkDoneItem;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
+      if (isEligibleForReview) menuItems.push(reviewItem);
       menuItems.push(finishItem);
     } else if (showFinish) {
       // Show "Finish" as primary (marks plan as done)
       primary = finishItem;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
+      if (isEligibleForReview) menuItems.push(reviewItem);
     } else if (showAgentOnly) {
       primary = agentItem;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
@@ -230,6 +240,8 @@
   const REBASE_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
   let isEligibleForRebase = $derived(REBASE_ELIGIBLE_STATUSES.has(plan.status));
 
+  let isEligibleForReview = $derived(plan.status === 'needs_review');
+
   const CREATE_PR_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
   let isEligibleForCreatePr = $derived(
     CREATE_PR_ELIGIBLE_STATUSES.has(plan.status) &&
@@ -241,6 +253,7 @@
   let startingGenerate = $state(false);
   let startingAgent = $state(false);
   let startingRebase = $state(false);
+  let startingReview = $state(false);
   let startingChat: 'claude' | 'codex' | false = $state(false);
   let startingFinish = $state(false);
   let startingCreatePr = $state(false);
@@ -295,6 +308,7 @@
       startingGenerate = false;
       startingAgent = false;
       startingRebase = false;
+      startingReview = false;
       startingChat = false;
       startingFinish = false;
       startingCreatePr = false;
@@ -361,6 +375,7 @@
     startingGenerate ||
       startingAgent ||
       startingRebase ||
+      startingReview ||
       startingChat ||
       startingFinish ||
       startingCreatePr
@@ -411,6 +426,28 @@
       errorMessage = `${err as Error}`;
     } finally {
       startingRebase = false;
+    }
+  }
+
+  async function handleReview() {
+    startingReview = true;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      const result = await startReview({ planUuid: plan.uuid });
+      if (result.status === 'already_running') {
+        successMessage = {
+          text: 'A session is already running for this plan',
+          connectionId: result.connectionId,
+        };
+      } else {
+        successMessage = { text: 'Review started' };
+      }
+      setStartedSuccessfully();
+    } catch (err) {
+      errorMessage = `${err as Error}`;
+    } finally {
+      startingReview = false;
     }
   }
 

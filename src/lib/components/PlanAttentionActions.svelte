@@ -5,6 +5,7 @@
   import {
     startUpdateDocs,
     startCreatePr,
+    startReview,
     finishPlanQuick,
   } from '$lib/remote/plan_actions.remote.js';
   import { invalidateAll } from '$app/navigation';
@@ -54,9 +55,7 @@
 
   let startingFinish = $state(false);
   let startingCreatePr = $state(false);
-  let finishButtonLabel = $derived(
-    startingFinish ? 'Starting…' : canUpdateDocs ? 'Update Docs' : 'Finish'
-  );
+  let startingReview = $state(false);
   let showCreatePr = $derived(
     hasNeedsReview && !epic && !canUpdateDocs && !hasPr && developmentWorkflow === 'pr-based'
   );
@@ -73,6 +72,21 @@
       toast.error(`Failed to create PR: ${(err as Error).message}`);
     } finally {
       startingCreatePr = false;
+    }
+  }
+
+  async function handleReview(event?: MouseEvent) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (startingReview) return;
+    startingReview = true;
+    try {
+      await startReview({ planUuid });
+      await invalidateAll();
+    } catch (err) {
+      toast.error(`Failed to start review: ${(err as Error).message}`);
+    } finally {
+      startingReview = false;
     }
   }
 
@@ -154,6 +168,13 @@
         }}
         menuItems={[
           {
+            label: 'Review',
+            startingLabel: 'Starting Review…',
+            onclick: handleReview,
+            colorClass: '',
+            starting: startingReview,
+          },
+          {
             label: 'Finish',
             startingLabel: 'Starting…',
             onclick: handleFinish,
@@ -161,18 +182,31 @@
             starting: startingFinish,
           },
         ]}
-        disabled={startingCreatePr || startingFinish}
+        disabled={startingCreatePr || startingFinish || startingReview}
         size="xs"
       />
     {:else}
-      <button
-        type="button"
-        class="shrink-0 rounded bg-green-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700 dark:bg-green-700 dark:hover:bg-emerald-600"
-        onclick={handleFinish}
-        disabled={startingFinish}
-      >
-        {finishButtonLabel}
-      </button>
+      <ActionButtonWithDropdown
+        primary={{
+          label: canUpdateDocs ? 'Update Docs' : 'Finish',
+          startingLabel: 'Starting…',
+          onclick: handleFinish,
+          colorClass:
+            'bg-green-600 text-white hover:bg-emerald-700 dark:bg-green-700 dark:hover:bg-emerald-600',
+          starting: startingFinish,
+        }}
+        menuItems={[
+          {
+            label: 'Review',
+            startingLabel: 'Starting Review…',
+            onclick: handleReview,
+            colorClass: '',
+            starting: startingReview,
+          },
+        ]}
+        disabled={startingFinish || startingReview}
+        size="xs"
+      />
     {/if}
   {/if}
 </div>
