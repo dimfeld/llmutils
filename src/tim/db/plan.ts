@@ -90,6 +90,9 @@ function computeChildDisplayStatus(
   dependencyUuids: string[],
   planByUuid: ReadonlyMap<string, Pick<PlanRow, 'status'>>
 ): ChildPlanSummaryRow['displayStatus'] {
+  // This intentionally mirrors the dependency-aware branch of the web
+  // computeDisplayStatus helper. The simple-plan branch is omitted because
+  // the Run Children consumer filters by task count before rendering.
   if (!child.epic && (child.status === 'pending' || child.status === 'in_progress')) {
     const hasUnresolvedDependency = dependencyUuids.some((dependencyUuid) => {
       const dependencyPlan = planByUuid.get(dependencyUuid);
@@ -1231,8 +1234,11 @@ export function getChildPlansForEpic(db: Database, epicUuid: string): ChildPlanS
 
   const missingDependencyUuids = [
     ...new Set(
-      dependencyRows
-        .map((dependency) => dependency.depends_on_uuid)
+      [
+        ...dependencyRows.map((dependency) => dependency.depends_on_uuid),
+        ...rows.map((row) => row.basePlanUuid).filter((basePlanUuid) => basePlanUuid != null),
+      ]
+        .filter((dependencyUuid) => dependencyUuid != null)
         .filter((dependencyUuid) => !planByUuid.has(dependencyUuid))
     ),
   ];
@@ -1249,12 +1255,14 @@ export function getChildPlansForEpic(db: Database, epicUuid: string): ChildPlanS
 
   return rows.map((row) => {
     const dependencies = dependenciesByPlanUuid.get(row.uuid) ?? [];
+    const displayStatusDependencyUuids =
+      row.basePlanUuid == null ? dependencies : [...dependencies, row.basePlanUuid];
     return {
       uuid: row.uuid,
       planId: row.planId,
       title: row.title,
       status: row.status,
-      displayStatus: computeChildDisplayStatus(row, dependencies, planByUuid),
+      displayStatus: computeChildDisplayStatus(row, displayStatusDependencyUuids, planByUuid),
       taskCount: row.taskCount,
       doneTaskCount: row.doneTaskCount,
       dependencies,

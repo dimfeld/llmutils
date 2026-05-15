@@ -204,6 +204,7 @@ describe('tim db/plan', () => {
         planId: 101,
         title: 'Child one',
         status: 'pending',
+        displayStatus: 'ready',
         taskCount: 2,
         doneTaskCount: 1,
         dependencies: [],
@@ -215,11 +216,53 @@ describe('tim db/plan', () => {
         planId: 102,
         title: 'Child two',
         status: 'pending',
+        displayStatus: 'blocked',
         taskCount: 1,
         doneTaskCount: 0,
         dependencies: ['child-1'],
         basePlanUuid: 'child-1',
         parentUuid: 'epic-1',
+      },
+    ]);
+  });
+
+  test('getChildPlansForEpic treats base plans as dependencies for display status', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'epic-with-stacked-child',
+      planId: 110,
+      title: 'Epic',
+      epic: true,
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'external-base-plan',
+      planId: 111,
+      title: 'External base plan',
+      status: 'pending',
+      tasks: [{ title: 'open base task', description: 'open', done: false }],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'stacked-child',
+      planId: 112,
+      title: 'Stacked child',
+      parentUuid: 'epic-with-stacked-child',
+      basePlanUuid: 'external-base-plan',
+      tasks: [{ title: 'child task', description: 'desc', done: false }],
+    });
+
+    const children = getChildPlansForEpic(db, 'epic-with-stacked-child');
+
+    expect(children).toEqual([
+      {
+        uuid: 'stacked-child',
+        planId: 112,
+        title: 'Stacked child',
+        status: 'pending',
+        displayStatus: 'blocked',
+        taskCount: 1,
+        doneTaskCount: 0,
+        dependencies: [],
+        basePlanUuid: 'external-base-plan',
+        parentUuid: 'epic-with-stacked-child',
       },
     ]);
   });
