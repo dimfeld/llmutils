@@ -26,6 +26,8 @@
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
+  import RunChildrenPanel from './RunChildrenPanel.svelte';
+  import { isAgentEligibleChild } from './run_children_panel/eligibility.js';
   import PrStatusSection from './PrStatusSection.svelte';
   import CopyButton from './CopyButton.svelte';
   import PlanArtifactsList from './PlanArtifactsList.svelte';
@@ -729,6 +731,17 @@
         </div>
       {/if}
     </div>
+
+    <!-- Run children (epic only) -->
+    {#if plan.epic && (plan.children?.length ?? 0) > 0 && plan.children.some(isAgentEligibleChild) && activeSession?.command !== 'agent-multi'}
+      <RunChildrenPanel
+        epicPlanUuid={plan.uuid}
+        {projectId}
+        {tab}
+        children={plan.children}
+        externalPlanStatusByUuid={plan.childExternalDependencyStatuses ?? {}}
+      />
+    {/if}
 
     <!-- Goal -->
     {#if plan.goal}

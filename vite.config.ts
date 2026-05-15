@@ -49,6 +49,9 @@ export default defineConfig({
       //     browser: {
       //       enabled: true,
       //       provider: playwright(),
+      //       headless: true,
+      //       ui: false,
+      //       api: { port: 0 },
       //       instances: [{ browser: 'chromium', headless: true }],
       //     },
       //     env: playwrightTestEnv,
