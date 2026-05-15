@@ -21,6 +21,7 @@ export interface HeadlessPlanSummary {
 
 export type HeadlessCommand =
   | 'agent'
+  | 'agent-multi'
   | 'review'
   | 'run-prompt'
   | 'generate'

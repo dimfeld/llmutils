@@ -140,6 +140,27 @@ export async function spawnAgentProcess(planId: number, cwd: string): Promise<Sp
   );
 }
 
+export async function spawnAgentMultiProcess(
+  planIds: number[],
+  cwd: string
+): Promise<SpawnProcessResult> {
+  if (planIds.length === 0) {
+    return { success: false, error: 'At least one plan ID is required.' };
+  }
+
+  return spawnTimProcess(
+    `plans ${planIds.join(', ')}`,
+    planIds[0],
+    [
+      'agent-multi',
+      ...planIds.map((planId) => String(planId)),
+      '--auto-workspace',
+      '--no-terminal-input',
+    ],
+    cwd
+  );
+}
+
 export async function spawnChatProcess(
   planId: number,
   cwd: string,
