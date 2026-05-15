@@ -41,12 +41,16 @@ export async function createBunSpawnAgent(options: {
   cwd: string;
 }): Promise<SpawnAgentFn> {
   const env = await buildWorkspaceCommandEnv(options.cwd);
+  // Default to auto-workspace + no terminal input: parallel agent runs cannot share a
+  // primary workspace or interactive stdin. Explicit `false`/`true` overrides remain available.
+  const autoWorkspace = options.autoWorkspace !== false;
+  const terminalInput = options.terminalInput === true;
   return (planId: number, cwd: string): SpawnAgentResult => {
     const args = ['agent', String(planId)];
-    if (options.autoWorkspace === true) {
+    if (autoWorkspace) {
       args.push('--auto-workspace');
     }
-    if (options.terminalInput === false) {
+    if (!terminalInput) {
       args.push('--no-terminal-input');
     }
 

@@ -433,16 +433,19 @@ export class MultiAgentRunner {
         if (state.status !== 'pending') {
           continue;
         }
-        if (!state.depsInInput.has(failedPlanUuid)) {
-          const failedDependency = Array.from(state.depsInInput).some(
+        let blockingDep: string | undefined;
+        if (state.depsInInput.has(failedPlanUuid)) {
+          blockingDep = failedPlanUuid;
+        } else {
+          blockingDep = Array.from(state.depsInInput).find(
             (dependencyUuid) => this.states.get(dependencyUuid)?.status === 'failed'
           );
-          if (!failedDependency) {
+          if (!blockingDep) {
             continue;
           }
         }
         state.status = 'failed';
-        state.failureReason = `skipped because dependency ${failedPlanUuid} failed`;
+        state.failureReason = `skipped because dependency ${blockingDep} failed`;
         this.logger.error(
           `agent-multi: skipped plan ${formatPlan(state.plan)}; ${state.failureReason}`
         );

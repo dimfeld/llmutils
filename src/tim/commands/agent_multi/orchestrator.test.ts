@@ -236,6 +236,29 @@ describe('agent-multi orchestrator', () => {
     expect(result.states.get('plan-4')?.status).toBe('finished');
   });
 
+  test('attributes transitive skip to the immediate failed dependency', async () => {
+    const plans = [
+      createPlan(1),
+      createPlan(2, { dependencies: ['plan-1'] }),
+      createPlan(3, { dependencies: ['plan-2'] }),
+    ];
+    const harness = createHarness(plans);
+
+    const run = harness.runner.run();
+    expect(harness.spawnOrder).toEqual([1]);
+
+    harness.resolvePlan(1, 'pending', 0);
+    const result = await run;
+
+    expect(result.success).toBe(false);
+    expect(result.states.get('plan-2')?.failureReason).toBe(
+      'skipped because dependency plan-1 failed'
+    );
+    expect(result.states.get('plan-3')?.failureReason).toBe(
+      'skipped because dependency plan-2 failed'
+    );
+  });
+
   test('treats non-zero exit as failure even when plan status is complete', async () => {
     const plans = [createPlan(1), createPlan(2, { dependencies: ['plan-1'] })];
     const harness = createHarness(plans);
