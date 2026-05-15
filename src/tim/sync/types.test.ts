@@ -463,9 +463,9 @@ describe('sync operation schemas', () => {
     };
 
     expect(SyncOperationPayloadSchema.safeParse({ ...base, size: 0 }).success).toBe(true);
-    expect(SyncOperationPayloadSchema.safeParse({ ...base, size: MAX_ARTIFACT_BYTES }).success).toBe(
-      true
-    );
+    expect(
+      SyncOperationPayloadSchema.safeParse({ ...base, size: MAX_ARTIFACT_BYTES }).success
+    ).toBe(true);
     expect(SyncOperationPayloadSchema.safeParse({ ...base, size: -1 }).success).toBe(false);
     expect(SyncOperationPayloadSchema.safeParse({ ...base, size: 1.5 }).success).toBe(false);
     expect(

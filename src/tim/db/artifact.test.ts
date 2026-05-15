@@ -210,20 +210,18 @@ describe('tim db/artifact', () => {
     ).run();
 
     const beforeDelete = db
-      .prepare<
-        { count: number },
-        string
-      >('SELECT count(*) as count FROM artifact_transfer WHERE artifact_uuid = ?')
+      .prepare<{ count: number }, string>(
+        'SELECT count(*) as count FROM artifact_transfer WHERE artifact_uuid = ?'
+      )
       .get('artifact-transfer-cascade');
     expect(beforeDelete?.count).toBe(1);
 
     hardDeleteArtifact(db, 'artifact-transfer-cascade');
 
     const afterDelete = db
-      .prepare<
-        { count: number },
-        string
-      >('SELECT count(*) as count FROM artifact_transfer WHERE artifact_uuid = ?')
+      .prepare<{ count: number }, string>(
+        'SELECT count(*) as count FROM artifact_transfer WHERE artifact_uuid = ?'
+      )
       .get('artifact-transfer-cascade');
     expect(afterDelete?.count).toBe(0);
   });

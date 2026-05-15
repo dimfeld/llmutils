@@ -1339,10 +1339,9 @@ describe('tim db/database', () => {
 
       expect(
         db
-          .query<
-            { uuid: string; plan_uuid: string; revision: number },
-            []
-          >('SELECT uuid, plan_uuid, revision FROM plan_artifact_canonical')
+          .query<{ uuid: string; plan_uuid: string; revision: number }, []>(
+            'SELECT uuid, plan_uuid, revision FROM plan_artifact_canonical'
+          )
           .get()
       ).toEqual({
         uuid: '33333333-3333-4333-8333-333333333333',
