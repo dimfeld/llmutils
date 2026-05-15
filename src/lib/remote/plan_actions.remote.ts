@@ -1,5 +1,6 @@
 import { command } from '$app/server';
 import { error } from '@sveltejs/kit';
+import type { Database } from 'bun:sqlite';
 import * as z from 'zod';
 
 import {
