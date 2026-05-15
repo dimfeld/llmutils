@@ -27,7 +27,7 @@
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
   import RunChildrenPanel from './RunChildrenPanel.svelte';
-  import { hasSelectableEligibleChild } from './run_children_panel/eligibility.js';
+  import { isAgentEligibleChild } from './run_children_panel/eligibility.js';
   import PrStatusSection from './PrStatusSection.svelte';
   import CopyButton from './CopyButton.svelte';
   import PlanArtifactsList from './PlanArtifactsList.svelte';
@@ -100,17 +100,10 @@
   let isBlocked = $derived(plan.displayStatus === 'blocked');
   let isSimplePlan = $derived(plan.simple === true);
 
-  let childExternalStatusOnlyByUuid = $derived.by(() => {
-    const map: Record<string, string> = {};
-    for (const [uuid, info] of Object.entries(plan.childExternalDependencyStatuses ?? {})) {
-      map[uuid] = info.status;
-    }
-    return map;
-  });
   let canRenderRunChildren = $derived(
     plan.epic === true &&
       (plan.children?.length ?? 0) > 0 &&
-      hasSelectableEligibleChild(plan.children ?? [], childExternalStatusOnlyByUuid)
+      (plan.children ?? []).some(isAgentEligibleChild)
   );
 
   let actionConfig = $derived.by(() => {

@@ -62,6 +62,7 @@ export type SelectionValidationResult =
   | {
       ok: true;
       plans: AgentMultiPlan[];
+      sharedParentUuid?: string;
       depsByPlanUuid: Map<string, Set<string>>;
       depsInInputByPlanUuid: Map<string, Set<string>>;
       readyPlanUuids: string[];
@@ -271,6 +272,7 @@ export function validateSelection(
   return {
     ok: true,
     plans: selectedPlans,
+    sharedParentUuid: expectedParentUuid,
     depsByPlanUuid,
     depsInInputByPlanUuid,
     readyPlanUuids,

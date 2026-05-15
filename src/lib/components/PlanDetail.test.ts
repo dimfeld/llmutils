@@ -18,6 +18,7 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startRebase: vi.fn(),
   startUpdateDocs: vi.fn(),
   startCreatePr: vi.fn(),
+  startAgentMulti: vi.fn(),
   finishPlanQuick: vi.fn(),
   openInEditor: vi.fn(),
 }));
@@ -28,11 +29,23 @@ vi.mock('$lib/remote/review_issue_actions.remote.js', () => ({
   clearReviewIssues: vi.fn(),
 }));
 
+vi.mock('$lib/remote/sync_status.remote.js', () => ({
+  getPlanSyncStatus: vi.fn(() => ({ current: null })),
+}));
+
 vi.mock('./PrStatusSection.svelte', () => ({
   default: () => '',
 }));
 
 vi.mock('./CopyButton.svelte', () => ({
+  default: () => '',
+}));
+
+vi.mock('./PlanArtifactsList.svelte', () => ({
+  default: () => '',
+}));
+
+vi.mock('./PlanArtifactUploader.svelte', () => ({
   default: () => '',
 }));
 
@@ -143,6 +156,8 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
     taskCounts: { done: 0, total: 0 },
     reviewIssueCount: 0,
     dependencies: [],
+    children: [],
+    childExternalDependencyStatuses: {},
     assignment: null,
     parent: null,
     prStatuses: [makePrStatusDetail()],
@@ -388,5 +403,41 @@ describe('PlanDetail', () => {
     });
 
     expect(body).not.toContain('PrStatusSection');
+  });
+
+  test('shows Run children panel when the only eligible child is externally blocked', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          epic: true,
+          children: [
+            {
+              uuid: 'child-1',
+              planId: 101,
+              title: 'Blocked child',
+              status: 'pending',
+              taskCount: 2,
+              doneTaskCount: 0,
+              dependencies: ['external-1'],
+              parentUuid: 'plan-1',
+            },
+          ],
+          childExternalDependencyStatuses: {
+            'external-1': {
+              status: 'in_progress',
+              planId: 99,
+              title: 'External predecessor',
+            },
+          },
+          prStatuses: [],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('Run children');
+    expect(body).toContain('Blocked child');
+    expect(body).toContain('Blocked by external dependency: #99 External predecessor');
+    expect(body).toContain('disabled');
   });
 });

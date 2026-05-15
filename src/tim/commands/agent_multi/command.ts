@@ -8,7 +8,13 @@ import { getDatabase } from '../../db/database.js';
 import { getPlanByPlanId, getPlanByUuid, type PlanRow } from '../../db/plan.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
 import { runWithHeadlessAdapterIfEnabled, type HeadlessPlanSummary } from '../../headless.js';
-import { MultiAgentRunner, type SpawnAgentFn, type SpawnAgentResult } from './orchestrator.js';
+import {
+  MultiAgentRunner,
+  SelectionValidationError,
+  validateSelection,
+  type SpawnAgentFn,
+  type SpawnAgentResult,
+} from './orchestrator.js';
 import { getAgentMultiPlansForProject } from './plan_loader.js';
 
 export interface AgentMultiCommandOptions {
@@ -81,6 +87,22 @@ export function buildChildAgentArgs(
   return args;
 }
 
+function getHeadlessPlanRow(options: {
+  explicitEpicRow: PlanRow | null;
+  inferredParentUuid?: string;
+  db: ReturnType<typeof getDatabase>;
+}): PlanRow | null {
+  if (options.explicitEpicRow) {
+    return options.explicitEpicRow;
+  }
+  // Root-level sibling runs have no shared parent plan to attribute the
+  // orchestrator session to; keep the existing unattributed-session behavior.
+  if (!options.inferredParentUuid) {
+    return null;
+  }
+  return getPlanByUuid(options.db, options.inferredParentUuid);
+}
+
 export async function handleAgentMultiCommand(
   planIds: number[],
   options: AgentMultiCommandOptions,
@@ -117,11 +139,24 @@ export async function handleAgentMultiCommand(
     throw new Error(`Epic plan ${options.epic} not found.`);
   }
 
+  const validation = validateSelection(selectedPlans, {
+    allPlans,
+    epicUuid: epicRow?.uuid,
+  });
+  if (!validation.ok) {
+    throw new SelectionValidationError(validation);
+  }
+  const headlessPlanRow = getHeadlessPlanRow({
+    explicitEpicRow: epicRow,
+    inferredParentUuid: validation.sharedParentUuid,
+    db,
+  });
+
   await runWithHeadlessAdapterIfEnabled({
     enabled: !isTunnelActive(),
     command: 'agent-multi',
     interactive: options.nonInteractive !== true,
-    plan: toHeadlessPlanSummary(epicRow),
+    plan: toHeadlessPlanSummary(headlessPlanRow),
     callback: async () => {
       const runner = new MultiAgentRunner({
         plans: selectedPlans,
