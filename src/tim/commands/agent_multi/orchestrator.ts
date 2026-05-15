@@ -68,6 +68,11 @@ export type SelectionValidationResult =
 
 export type ValidateSelectionOptions = {
   epicUuid?: string;
+  /**
+   * Full project plan list used to classify dependencies outside the selected input.
+   * Callers should pass this when available so unfinished external dependencies can
+   * be reported distinctly from dependencies that are missing from the DB.
+   */
   allPlans?: Iterable<AgentMultiPlan>;
 };
 
@@ -93,9 +98,16 @@ export type PlanRunState = {
   failureReason?: string;
 };
 
+export type PlanRunStateSnapshot = Readonly<{
+  status: PlanRunStatus;
+  exitCode?: number;
+  failureReason?: string;
+  pid?: number;
+}>;
+
 export type MultiAgentRunResult = {
   success: boolean;
-  states: Map<string, PlanRunState>;
+  states: Map<string, PlanRunStateSnapshot>;
 };
 
 export type MultiAgentLogger = {
@@ -299,8 +311,22 @@ export class MultiAgentRunner {
     this.logFinalSummary();
     return {
       success: Array.from(this.states.values()).every((state) => state.status === 'finished'),
-      states: new Map(this.states),
+      states: this.snapshot(),
     };
+  }
+
+  snapshot(): Map<string, PlanRunStateSnapshot> {
+    return new Map(
+      Array.from(this.states.entries()).map(([planUuid, state]) => [
+        planUuid,
+        {
+          status: state.status,
+          exitCode: state.exitCode,
+          failureReason: state.failureReason,
+          pid: state.pid,
+        },
+      ])
+    );
   }
 
   private tick(): void {
@@ -310,7 +336,17 @@ export class MultiAgentRunner {
         return;
       }
 
-      const child = this.spawnAgent(next.plan.planId, this.cwd);
+      let child: SpawnAgentResult;
+      try {
+        child = this.spawnAgent(next.plan.planId, this.cwd);
+      } catch (err) {
+        next.status = 'failed';
+        next.failureReason = `spawn failed: ${err instanceof Error ? err.message : String(err)}`;
+        this.logger.error(`agent-multi: plan ${formatPlan(next.plan)} ${next.failureReason}`);
+        this.sendWorkflowProgress(`Plan ${formatPlan(next.plan)} failed to spawn`, 'spawn');
+        this.markDownstreamFailed(next.plan.uuid);
+        continue;
+      }
       next.status = 'running';
       next.process = child;
       next.pid = child.pid;
@@ -343,7 +379,7 @@ export class MultiAgentRunner {
 
     state.exitCode = exitCode;
     const freshPlan = await this.readPlan(planUuid);
-    const finished = freshPlan != null && isWorkComplete(freshPlan);
+    const finished = exitCode === 0 && freshPlan != null && isWorkComplete(freshPlan);
     if (finished) {
       state.status = 'finished';
       this.logger.log(
@@ -354,9 +390,15 @@ export class MultiAgentRunner {
     }
 
     state.status = 'failed';
-    state.failureReason = freshPlan
-      ? `plan status is ${freshPlan.status}`
-      : 'plan was not found after agent exit';
+    if (exitCode !== 0) {
+      state.failureReason = freshPlan
+        ? `agent exited with code ${exitCode}; plan status is ${freshPlan.status}`
+        : `agent exited with code ${exitCode}; plan was not found after agent exit`;
+    } else {
+      state.failureReason = freshPlan
+        ? `plan status is ${freshPlan.status}`
+        : 'plan was not found after agent exit';
+    }
     this.logger.error(
       `agent-multi: plan ${formatPlan(state.plan)} exited ${exitCode}; ${state.failureReason}`
     );
@@ -392,6 +434,7 @@ export class MultiAgentRunner {
   }
 
   private markBlockedPendingPlansFailed(): void {
+    // Defensive guard: normal failure propagation should skip blocked downstream plans.
     for (const state of this.states.values()) {
       if (state.status !== 'pending') {
         continue;

@@ -42,15 +42,30 @@ function createLogger(): MultiAgentLogger {
   };
 }
 
-async function flushPromises(): Promise<void> {
-  for (let index = 0; index < 10; index += 1) {
-    await Promise.resolve();
+async function waitFor(assertion: () => void): Promise<void> {
+  let lastError: unknown;
+  for (let index = 0; index < 20; index += 1) {
+    try {
+      assertion();
+      return;
+    } catch (err) {
+      lastError = err;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
   }
+  if (lastError) {
+    throw lastError;
+  }
+  assertion();
 }
 
 function createHarness(
   plans: AgentMultiPlan[],
-  options: { allPlans?: AgentMultiPlan[]; maxParallel?: number } = {}
+  options: {
+    allPlans?: AgentMultiPlan[];
+    maxParallel?: number;
+    spawnFailures?: Map<number, Error> | Record<number, Error>;
+  } = {}
 ): {
   runner: MultiAgentRunner;
   spawnOrder: number[];
@@ -69,6 +84,13 @@ function createHarness(
 
   const spawnAgent: SpawnAgentFn = (planId: number) => {
     spawnOrder.push(planId);
+    const spawnFailure =
+      options.spawnFailures instanceof Map
+        ? options.spawnFailures.get(planId)
+        : options.spawnFailures?.[planId];
+    if (spawnFailure) {
+      throw spawnFailure;
+    }
     running.add(planId);
     maxRunningCount = Math.max(maxRunningCount, running.size);
     const deferred = createDeferredExit();
@@ -127,12 +149,10 @@ describe('agent-multi orchestrator', () => {
     expect(harness.spawnOrder).toEqual([1]);
 
     harness.resolvePlan(1, 'done');
-    await flushPromises();
-    expect(harness.spawnOrder).toEqual([1, 2]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2]));
 
     harness.resolvePlan(2, 'needs_review');
-    await flushPromises();
-    expect(harness.spawnOrder).toEqual([1, 2, 3]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2, 3]));
 
     harness.resolvePlan(3, 'cancelled');
     const result = await run;
@@ -157,16 +177,13 @@ describe('agent-multi orchestrator', () => {
     expect(harness.spawnOrder).toEqual([1]);
 
     harness.resolvePlan(1, 'done');
-    await flushPromises();
-    expect(harness.spawnOrder).toEqual([1, 2, 3]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2, 3]));
 
     harness.resolvePlan(2, 'done');
-    await flushPromises();
-    expect(harness.spawnOrder).toEqual([1, 2, 3]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2, 3]));
 
     harness.resolvePlan(3, 'done');
-    await flushPromises();
-    expect(harness.spawnOrder).toEqual([1, 2, 3, 4]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2, 3, 4]));
 
     harness.resolvePlan(4, 'done');
     expect((await run).success).toBe(true);
@@ -180,12 +197,10 @@ describe('agent-multi orchestrator', () => {
     expect(harness.spawnOrder).toEqual([1, 2]);
 
     harness.resolvePlan(1, 'done');
-    await flushPromises();
-    expect(harness.spawnOrder).toEqual([1, 2, 3]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2, 3]));
 
     harness.resolvePlan(2, 'done');
-    await flushPromises();
-    expect(harness.spawnOrder).toEqual([1, 2, 3, 4]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2, 3, 4]));
 
     harness.resolvePlan(3, 'done');
     harness.resolvePlan(4, 'done');
@@ -206,12 +221,10 @@ describe('agent-multi orchestrator', () => {
     expect(harness.spawnOrder).toEqual([1, 2]);
 
     harness.resolvePlan(1, 'pending', 0);
-    await flushPromises();
-    expect(harness.spawnOrder).toEqual([1, 2]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2]));
 
     harness.resolvePlan(2, 'done');
-    await flushPromises();
-    expect(harness.spawnOrder).toEqual([1, 2, 4]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2, 4]));
 
     harness.resolvePlan(4, 'done');
     const result = await run;
@@ -220,6 +233,45 @@ describe('agent-multi orchestrator', () => {
     expect(result.states.get('plan-3')?.status).toBe('failed');
     expect(result.states.get('plan-2')?.status).toBe('finished');
     expect(result.states.get('plan-4')?.status).toBe('finished');
+  });
+
+  test('treats non-zero exit as failure even when plan status is complete', async () => {
+    const plans = [createPlan(1), createPlan(2, { dependencies: ['plan-1'] })];
+    const harness = createHarness(plans);
+
+    const run = harness.runner.run();
+    expect(harness.spawnOrder).toEqual([1]);
+
+    harness.resolvePlan(1, 'done', 1);
+    const result = await run;
+
+    expect(result.success).toBe(false);
+    expect(result.states.get('plan-1')?.status).toBe('failed');
+    expect(result.states.get('plan-1')?.failureReason).toBe(
+      'agent exited with code 1; plan status is done'
+    );
+    expect(result.states.get('plan-2')?.status).toBe('failed');
+    expect(harness.spawnOrder).toEqual([1]);
+  });
+
+  test('marks synchronous spawn failures failed and continues independent work', async () => {
+    const plans = [createPlan(1), createPlan(2), createPlan(3, { dependencies: ['plan-1'] })];
+    const harness = createHarness(plans, {
+      maxParallel: 2,
+      spawnFailures: { 1: new Error('missing executable') },
+    });
+
+    const run = harness.runner.run();
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2]));
+
+    harness.resolvePlan(2, 'done');
+    const result = await run;
+
+    expect(result.success).toBe(false);
+    expect(result.states.get('plan-1')?.status).toBe('failed');
+    expect(result.states.get('plan-1')?.failureReason).toBe('spawn failed: missing executable');
+    expect(result.states.get('plan-2')?.status).toBe('finished');
+    expect(result.states.get('plan-3')?.status).toBe('failed');
   });
 
   test('rejects cycles in selected plans', () => {
@@ -254,6 +306,42 @@ describe('agent-multi orchestrator', () => {
     }
   });
 
+  test('rejects plans with ineligible statuses', () => {
+    const plans = [
+      createPlan(1, { status: 'done' }),
+      createPlan(2, { status: 'cancelled' }),
+      createPlan(3, { status: 'needs_review' }),
+      createPlan(4, { status: 'deferred' }),
+    ];
+
+    const result = validateSelection(plans);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues.filter((issue) => issue.type === 'ineligible_status')).toEqual([
+        { type: 'ineligible_status', planUuid: 'plan-1', planId: 1, status: 'done' },
+        { type: 'ineligible_status', planUuid: 'plan-2', planId: 2, status: 'cancelled' },
+        { type: 'ineligible_status', planUuid: 'plan-3', planId: 3, status: 'needs_review' },
+        { type: 'ineligible_status', planUuid: 'plan-4', planId: 4, status: 'deferred' },
+      ]);
+    }
+  });
+
+  test('rejects plans with no remaining tasks', () => {
+    const plans = [createPlan(1, { taskCount: 2, doneTaskCount: 2 })];
+
+    const result = validateSelection(plans);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toContainEqual({
+        type: 'no_remaining_tasks',
+        planUuid: 'plan-1',
+        planId: 1,
+      });
+    }
+  });
+
   test('rejects plans outside the requested epic', () => {
     const plans = [createPlan(1, { parentUuid: 'other-epic' })];
 
@@ -279,8 +367,7 @@ describe('agent-multi orchestrator', () => {
     expect(harness.spawnOrder).toEqual([1]);
 
     harness.resolvePlan(1, 'done');
-    await flushPromises();
-    expect(harness.spawnOrder).toEqual([1, 2]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2]));
 
     harness.resolvePlan(2, 'done');
     expect((await run).success).toBe(true);
@@ -294,12 +381,10 @@ describe('agent-multi orchestrator', () => {
     expect(harness.spawnOrder).toEqual([1, 2, 3]);
 
     harness.resolvePlan(2, 'done');
-    await flushPromises();
-    expect(harness.spawnOrder).toEqual([1, 2, 3, 4]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2, 3, 4]));
 
     harness.resolvePlan(1, 'done');
-    await flushPromises();
-    expect(harness.spawnOrder).toEqual([1, 2, 3, 4, 5]);
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2, 3, 4, 5]));
 
     harness.resolvePlan(3, 'done');
     harness.resolvePlan(4, 'done');
