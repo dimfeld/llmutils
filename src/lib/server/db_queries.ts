@@ -123,6 +123,7 @@ export interface PlanDetail extends EnrichedPlan {
   dependencies: EnrichedPlanDependency[];
   assignment: AssignmentEntry | null;
   parent: EnrichedPlanDependency | null;
+  basePlan: EnrichedPlanDependency | null;
   prStatuses: PrStatusDetailWithRequiredChecks[];
   reviewIssues: PlanSchema['reviewIssues'];
   artifacts: PlanArtifactWithTransferState[];
@@ -856,6 +857,10 @@ export async function getPlanDetail(
     referencedPlanUuids.add(plan.parent_uuid);
   }
 
+  if (plan.base_plan_uuid) {
+    referencedPlanUuids.add(plan.base_plan_uuid);
+  }
+
   const referencedPlans = getPlansByUuid(db, referencedPlanUuids);
   // Load dependency rows for referenced plans so toDependencySummary can compute
   // their display statuses. enrichPlansWithContext also backfills any remaining
@@ -899,6 +904,9 @@ export async function getPlanDetail(
   const parent = plan.parent_uuid
     ? toDependencySummary(plan.parent_uuid, planByUuid, dependenciesByPlanUuid)
     : null;
+  const basePlan = plan.base_plan_uuid
+    ? toDependencySummary(plan.base_plan_uuid, planByUuid, dependenciesByPlanUuid)
+    : null;
   const prStatuses = getPrStatusForPlan(db, planUuid, enrichedPlan.pullRequests, {
     includeReviewThreads: true,
   });
@@ -917,6 +925,7 @@ export async function getPlanDetail(
     dependencies: dependencySummaries,
     assignment,
     parent,
+    basePlan,
     prStatuses: withRequiredCheckRollupStates(db, prStatuses),
     reviewIssues,
     artifacts,
