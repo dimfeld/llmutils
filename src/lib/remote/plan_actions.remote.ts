@@ -2,7 +2,6 @@ import { command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
-import type { Database } from 'bun:sqlite';
 import {
   computeCanUpdateDocs,
   getChildPlansForEpic,
@@ -26,16 +25,9 @@ import {
 import { getSessionManager } from '$lib/server/session_context.js';
 import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
+import { getAgentMultiPlansForProject } from '$tim/commands/agent_multi/plan_loader.js';
 import { removeAssignment } from '$tim/db/assignment.js';
-import {
-  getPlanByUuid,
-  getPlanDependenciesByProject,
-  getPlansByProject,
-  getPlanTasksByProject,
-  type PlanDependencyRow,
-  type PlanRow,
-  type PlanTaskRow,
-} from '$tim/db/plan.js';
+import { getPlanByUuid } from '$tim/db/plan.js';
 import { validateSelection, type AgentMultiPlan } from '$tim/commands/agent_multi/orchestrator.js';
 import { checkAndMarkParentDone } from '$tim/plans/parent_cascade.js';
 import { isWorkComplete } from '$tim/plans/plan_state_utils.js';
@@ -44,11 +36,6 @@ import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 
 type PlanDetail = Awaited<ReturnType<typeof getPlanDetail>>;
 type PlanDetailResult = NonNullable<PlanDetail>;
-
-type TaskCounts = {
-  taskCount: number;
-  doneTaskCount: number;
-};
 
 function isTasklessEpic(plan: Pick<PlanDetailResult, 'epic' | 'tasks'>): boolean {
   return plan.epic === true && plan.tasks.length === 0;
@@ -191,57 +178,6 @@ async function loadProjectFinishConfig(db: Database, projectId: number): Promise
   };
 }
 
-function buildTaskCounts(tasks: PlanTaskRow[]): Map<string, TaskCounts> {
-  const counts = new Map<string, TaskCounts>();
-  for (const task of tasks) {
-    const existing = counts.get(task.plan_uuid) ?? { taskCount: 0, doneTaskCount: 0 };
-    existing.taskCount += 1;
-    if (task.done === 1) {
-      existing.doneTaskCount += 1;
-    }
-    counts.set(task.plan_uuid, existing);
-  }
-  return counts;
-}
-
-function buildDependencies(dependencies: PlanDependencyRow[]): Map<string, string[]> {
-  const byPlanUuid = new Map<string, string[]>();
-  for (const dependency of dependencies) {
-    const planDependencies = byPlanUuid.get(dependency.plan_uuid) ?? [];
-    planDependencies.push(dependency.depends_on_uuid);
-    byPlanUuid.set(dependency.plan_uuid, planDependencies);
-  }
-  return byPlanUuid;
-}
-
-function toAgentMultiPlan(
-  row: PlanRow,
-  taskCounts: Map<string, TaskCounts>,
-  dependenciesByPlanUuid: Map<string, string[]>
-): AgentMultiPlan {
-  const counts = taskCounts.get(row.uuid) ?? { taskCount: 0, doneTaskCount: 0 };
-  return {
-    uuid: row.uuid,
-    planId: row.plan_id,
-    title: row.title,
-    status: row.status,
-    taskCount: counts.taskCount,
-    doneTaskCount: counts.doneTaskCount,
-    dependencies: dependenciesByPlanUuid.get(row.uuid) ?? [],
-    basePlanUuid: row.base_plan_uuid ?? undefined,
-    parentUuid: row.parent_uuid ?? undefined,
-  };
-}
-
-function getAgentMultiPlansForProject(db: Database, projectId: number): AgentMultiPlan[] {
-  return db.transaction(() => {
-    const rows = getPlansByProject(db, projectId);
-    const taskCounts = buildTaskCounts(getPlanTasksByProject(db, projectId));
-    const dependenciesByPlanUuid = buildDependencies(getPlanDependenciesByProject(db, projectId));
-    return rows.map((row) => toAgentMultiPlan(row, taskCounts, dependenciesByPlanUuid));
-  })();
-}
-
 export const startGenerate = command(startGenerateSchema, async ({ planUuid }) => {
   return launchTimCommand(
     'generate',
@@ -332,6 +268,15 @@ export const startAgentMulti = command(
       };
     }
 
+    if (isPlanLaunching(epic.uuid)) {
+      console.info(
+        `[web-ui] Not starting tim agent-multi for epic ${epic.planId}; launch is already in progress`
+      );
+      return {
+        status: 'already_running' as const,
+      };
+    }
+
     const primaryWorkspacePath = getPrimaryWorkspacePath(db, epic.projectId);
     if (!primaryWorkspacePath) {
       error(400, 'Project does not have a primary workspace');
@@ -343,13 +288,24 @@ export const startAgentMulti = command(
         ', '
       )} in ${primaryWorkspacePath}`
     );
-    const result = await spawnAgentMultiProcess(planIds, primaryWorkspacePath);
+    setLaunchLock(epic.uuid);
+    let result: SpawnProcessResult;
+    try {
+      result = await spawnAgentMultiProcess(epic.planId, planIds, primaryWorkspacePath);
+    } catch (err) {
+      clearLaunchLock(epic.uuid);
+      throw err;
+    }
     if (!result.success) {
       console.error(
         `[web-ui] tim agent-multi for epic ${epic.planId} failed to start`,
         result.error
       );
+      clearLaunchLock(epic.uuid);
       error(500, result.error);
+    }
+    if (result.earlyExit) {
+      clearLaunchLock(epic.uuid);
     }
 
     return {

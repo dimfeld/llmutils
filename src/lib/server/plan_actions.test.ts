@@ -18,6 +18,7 @@ vi.mock('$common/env.js', () => ({
 
 import {
   formatLogFileName,
+  spawnAgentMultiProcess,
   spawnAgentProcess,
   spawnChatProcess,
   spawnGenerateProcess,
@@ -378,6 +379,29 @@ describe('lib/server/plan_actions', () => {
     expect(options.env).toBeDefined();
     expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 204 });
+  });
+
+  test('spawnAgentMultiProcess passes the epic plan id to the CLI', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnAgentMultiProcess(300, [301, 302], '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args] = spawnSpy.mock.calls[0];
+    expect(args).toEqual([
+      'tim',
+      'agent-multi',
+      '301',
+      '302',
+      '--epic',
+      '300',
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
+    expect(result).toEqual({ success: true, planId: 300 });
   });
 
   test('formatLogFileName uses planId, timestamp, and command in the expected order', () => {

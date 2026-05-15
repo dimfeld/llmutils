@@ -1075,6 +1075,53 @@ describe('plan remote actions', () => {
         status: 500,
         body: { message: 'tim agent-multi failed to start' },
       });
+      expect(isPlanLaunching('multi-epic-fail')).toBe(false);
+    });
+
+    test('returns already_running for concurrent starts before the orchestrator session registers', async () => {
+      seedPlan({ uuid: 'multi-epic-race', planId: 2222, epic: true });
+      seedPlan({
+        uuid: 'multi-child-race',
+        planId: 2223,
+        parentUuid: 'multi-epic-race',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+
+      let resolveSpawn: ((result: { success: true; planId: number }) => void) | undefined;
+      spawnAgentMultiProcessMock.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSpawn = resolve;
+          })
+      );
+
+      const firstLaunch = invokeCommand(startAgentMulti, {
+        epicPlanUuid: 'multi-epic-race',
+        childUuids: ['multi-child-race'],
+      });
+      await vi.waitFor(() => expect(isPlanLaunching('multi-epic-race')).toBe(true));
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-race',
+          childUuids: ['multi-child-race'],
+        })
+      ).resolves.toEqual({
+        status: 'already_running',
+      });
+      expect(spawnAgentMultiProcessMock).toHaveBeenCalledTimes(1);
+
+      resolveSpawn?.({ success: true, planId: 2222 });
+      await expect(firstLaunch).resolves.toEqual({
+        status: 'started',
+        planId: 2222,
+        planIds: [2223],
+      });
     });
 
     test('spawns tim agent-multi with resolved numeric child plan IDs', async () => {
@@ -1112,6 +1159,7 @@ describe('plan remote actions', () => {
         planIds: [2215, 2214],
       });
       expect(spawnAgentMultiProcessMock).toHaveBeenCalledWith(
+        2213,
         [2215, 2214],
         '/tmp/primary-workspace'
       );

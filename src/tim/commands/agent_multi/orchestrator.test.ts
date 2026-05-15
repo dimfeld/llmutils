@@ -360,6 +360,58 @@ describe('agent-multi orchestrator', () => {
     }
   });
 
+  test('rejects mixed-parent selections when no epic is provided', () => {
+    const plans = [
+      createPlan(1, { parentUuid: 'epic-a' }),
+      createPlan(2, { parentUuid: 'epic-b' }),
+    ];
+
+    const result = validateSelection(plans);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toContainEqual({
+        type: 'sibling_mismatch',
+        planUuid: 'plan-2',
+        planId: 2,
+        expectedParentUuid: 'epic-a',
+        actualParentUuid: 'epic-b',
+      });
+    }
+  });
+
+  test('accepts same-parent selections when no epic is provided', () => {
+    const plans = [
+      createPlan(1, { parentUuid: 'epic-a' }),
+      createPlan(2, { parentUuid: 'epic-a' }),
+    ];
+
+    const result = validateSelection(plans);
+
+    expect(result.ok).toBe(true);
+  });
+
+  test('accepts root-plan selections when no epic is provided', () => {
+    const plans = [createPlan(1), createPlan(2)];
+
+    const result = validateSelection(plans);
+
+    expect(result.ok).toBe(true);
+  });
+
+  test('does not duplicate no_remaining_tasks for status-ineligible plans', () => {
+    const plans = [createPlan(1, { status: 'done', taskCount: 2, doneTaskCount: 2 })];
+
+    const result = validateSelection(plans);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toEqual([
+        { type: 'ineligible_status', planUuid: 'plan-1', planId: 1, status: 'done' },
+      ]);
+    }
+  });
+
   test('treats basePlan as an implicit dependency', async () => {
     const plans = [createPlan(1), createPlan(2, { basePlanUuid: 'plan-1' })];
     const harness = createHarness(plans, { maxParallel: 2 });

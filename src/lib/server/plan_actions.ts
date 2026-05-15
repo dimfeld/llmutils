@@ -43,7 +43,7 @@ export function formatLogFileName(planId: number, command: string, timestamp = n
   return `${planId}-${isoTimestamp}-${command}.log`;
 }
 
-function createLogFile(command: string, planId: number): LogFileInfo {
+export function createLogFile(command: string, planId: number): LogFileInfo {
   const logDir = getLogDir();
   fs.mkdirSync(logDir, { recursive: true });
 
@@ -141,6 +141,7 @@ export async function spawnAgentProcess(planId: number, cwd: string): Promise<Sp
 }
 
 export async function spawnAgentMultiProcess(
+  epicPlanId: number,
   planIds: number[],
   cwd: string
 ): Promise<SpawnProcessResult> {
@@ -149,11 +150,13 @@ export async function spawnAgentMultiProcess(
   }
 
   return spawnTimProcess(
-    `plans ${planIds.join(', ')}`,
-    planIds[0],
+    `epic ${epicPlanId} plans ${planIds.join(', ')}`,
+    epicPlanId,
     [
       'agent-multi',
       ...planIds.map((planId) => String(planId)),
+      '--epic',
+      String(epicPlanId),
       '--auto-workspace',
       '--no-terminal-input',
     ],

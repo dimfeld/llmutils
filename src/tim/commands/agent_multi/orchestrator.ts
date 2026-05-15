@@ -47,6 +47,13 @@ export type SelectionValidationIssue =
       actualEpicUuid: string | undefined;
     }
   | {
+      type: 'sibling_mismatch';
+      planUuid: string;
+      planId: number;
+      expectedParentUuid: string | undefined;
+      actualParentUuid: string | undefined;
+    }
+  | {
       type: 'cycle';
       cycle: string[];
     };
@@ -170,9 +177,12 @@ export function validateSelection(
 
   const depsByPlanUuid = new Map<string, Set<string>>();
   const depsInInputByPlanUuid = new Map<string, Set<string>>();
+  const expectedParentUuid =
+    plans.length > 0 ? normalizeParentUuid(plans[0].parentUuid) : undefined;
 
   for (const plan of plans) {
-    if (isWorkComplete(plan) || plan.status === 'deferred') {
+    const hasIneligibleStatus = isWorkComplete(plan) || plan.status === 'deferred';
+    if (hasIneligibleStatus) {
       issues.push({
         type: 'ineligible_status',
         planUuid: plan.uuid,
@@ -180,7 +190,7 @@ export function validateSelection(
         status: plan.status,
       });
     }
-    if (plan.taskCount <= plan.doneTaskCount) {
+    if (!hasIneligibleStatus && plan.taskCount <= plan.doneTaskCount) {
       issues.push({ type: 'no_remaining_tasks', planUuid: plan.uuid, planId: plan.planId });
     }
     if (options.epicUuid && !planBelongsToEpic(plan, options.epicUuid)) {
@@ -190,6 +200,15 @@ export function validateSelection(
         planId: plan.planId,
         expectedEpicUuid: options.epicUuid,
         actualEpicUuid: plan.parentUuid,
+      });
+    }
+    if (!options.epicUuid && normalizeParentUuid(plan.parentUuid) !== expectedParentUuid) {
+      issues.push({
+        type: 'sibling_mismatch',
+        planUuid: plan.uuid,
+        planId: plan.planId,
+        expectedParentUuid,
+        actualParentUuid: normalizeParentUuid(plan.parentUuid),
       });
     }
 
@@ -507,6 +526,10 @@ function planBelongsToEpic(plan: AgentMultiPlan, epicUuid: string): boolean {
   return plan.parentUuid === epicUuid;
 }
 
+function normalizeParentUuid(parentUuid: string | undefined): string | undefined {
+  return parentUuid || undefined;
+}
+
 function getPlanDependencyUuids(plan: AgentMultiPlan): Set<string> {
   const deps = new Set(plan.dependencies);
   if (plan.basePlanUuid) {
@@ -572,6 +595,10 @@ function formatValidationIssue(issue: SelectionValidationIssue): string {
       return `Plan ${issue.planId} depends on missing plan ${issue.dependencyUuid}`;
     case 'epic_mismatch':
       return `Plan ${issue.planId} does not belong to epic ${issue.expectedEpicUuid}`;
+    case 'sibling_mismatch':
+      return `Plan ${issue.planId} does not share parent ${
+        issue.expectedParentUuid ?? 'root'
+      } with the selected sibling plans`;
     case 'cycle':
       return `Selected plans contain a dependency cycle: ${issue.cycle.join(' -> ')}`;
   }

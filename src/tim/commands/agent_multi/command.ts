@@ -1,29 +1,15 @@
 import fs from 'node:fs';
-import path from 'node:path';
 
-import { getLogDir } from '../../../common/config_paths.js';
 import { buildWorkspaceCommandEnv } from '../../../common/env.js';
 import { getGitRoot } from '../../../common/git.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
+import { createLogFile } from '../../../lib/server/plan_actions.js';
 import { getDatabase } from '../../db/database.js';
-import {
-  getPlanByPlanId,
-  getPlanByUuid,
-  getPlanDependenciesByProject,
-  getPlansByProject,
-  getPlanTasksByProject,
-  type PlanDependencyRow,
-  type PlanRow,
-  type PlanTaskRow,
-} from '../../db/plan.js';
+import { getPlanByPlanId, getPlanByUuid, type PlanRow } from '../../db/plan.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
 import { runWithHeadlessAdapterIfEnabled, type HeadlessPlanSummary } from '../../headless.js';
-import {
-  MultiAgentRunner,
-  type AgentMultiPlan,
-  type SpawnAgentFn,
-  type SpawnAgentResult,
-} from './orchestrator.js';
+import { MultiAgentRunner, type SpawnAgentFn, type SpawnAgentResult } from './orchestrator.js';
+import { getAgentMultiPlansForProject } from './plan_loader.js';
 
 export interface AgentMultiCommandOptions {
   epic?: number;
@@ -37,58 +23,6 @@ export interface AgentMultiGlobalOptions {
   config?: string;
 }
 
-type TaskCounts = {
-  taskCount: number;
-  doneTaskCount: number;
-};
-
-type LogFileInfo = {
-  fd: number;
-  path: string;
-};
-
-function buildTaskCounts(tasks: PlanTaskRow[]): Map<string, TaskCounts> {
-  const counts = new Map<string, TaskCounts>();
-  for (const task of tasks) {
-    const existing = counts.get(task.plan_uuid) ?? { taskCount: 0, doneTaskCount: 0 };
-    existing.taskCount += 1;
-    if (task.done === 1) {
-      existing.doneTaskCount += 1;
-    }
-    counts.set(task.plan_uuid, existing);
-  }
-  return counts;
-}
-
-function buildDependencies(dependencies: PlanDependencyRow[]): Map<string, string[]> {
-  const byPlanUuid = new Map<string, string[]>();
-  for (const dependency of dependencies) {
-    const planDependencies = byPlanUuid.get(dependency.plan_uuid) ?? [];
-    planDependencies.push(dependency.depends_on_uuid);
-    byPlanUuid.set(dependency.plan_uuid, planDependencies);
-  }
-  return byPlanUuid;
-}
-
-function toAgentMultiPlan(
-  row: PlanRow,
-  taskCounts: Map<string, TaskCounts>,
-  dependenciesByPlanUuid: Map<string, string[]>
-): AgentMultiPlan {
-  const counts = taskCounts.get(row.uuid) ?? { taskCount: 0, doneTaskCount: 0 };
-  return {
-    uuid: row.uuid,
-    planId: row.plan_id,
-    title: row.title,
-    status: row.status,
-    taskCount: counts.taskCount,
-    doneTaskCount: counts.doneTaskCount,
-    dependencies: dependenciesByPlanUuid.get(row.uuid) ?? [],
-    basePlanUuid: row.base_plan_uuid ?? undefined,
-    parentUuid: row.parent_uuid ?? undefined,
-  };
-}
-
 function toHeadlessPlanSummary(row: PlanRow | null): HeadlessPlanSummary | undefined {
   if (!row) {
     return undefined;
@@ -99,14 +33,6 @@ function toHeadlessPlanSummary(row: PlanRow | null): HeadlessPlanSummary | undef
     uuid: row.uuid,
     title: row.title ?? undefined,
   };
-}
-
-function createLogFile(planId: number): LogFileInfo {
-  const logDir = getLogDir();
-  fs.mkdirSync(logDir, { recursive: true });
-  const isoTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const logPath = path.join(logDir, `${planId}-${isoTimestamp}-agent-multi-child.log`);
-  return { fd: fs.openSync(logPath, 'a'), path: logPath };
 }
 
 export async function createBunSpawnAgent(options: {
@@ -124,7 +50,7 @@ export async function createBunSpawnAgent(options: {
       args.push('--no-terminal-input');
     }
 
-    const logFile = createLogFile(planId);
+    const logFile = createLogFile('agent-multi-child', planId);
     try {
       const proc = Bun.spawn(['tim', ...args], {
         cwd,
@@ -159,14 +85,7 @@ export async function handleAgentMultiCommand(
   const context = await resolveProjectContext(repoRoot);
   const db = getDatabase();
 
-  const allPlans = db.transaction(() => {
-    const rows = getPlansByProject(db, context.projectId);
-    const taskCounts = buildTaskCounts(getPlanTasksByProject(db, context.projectId));
-    const dependenciesByPlanUuid = buildDependencies(
-      getPlanDependenciesByProject(db, context.projectId)
-    );
-    return rows.map((row) => toAgentMultiPlan(row, taskCounts, dependenciesByPlanUuid));
-  })();
+  const allPlans = getAgentMultiPlansForProject(db, context.projectId);
 
   const allPlansById = new Map(allPlans.map((plan) => [plan.planId, plan]));
   const selectedPlans = planIds.map((planId) => {
