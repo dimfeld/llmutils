@@ -1407,6 +1407,7 @@ program
     '--base <branch>',
     'Base branch to compare against (defaults to auto-detected main/master/trunk)'
   )
+  .option('--auto-workspace', 'Automatically select or create a workspace for review')
   .option('--autofix', 'Automatically fix issues found during review without prompting.')
   .option('--autofix-all', 'Automatically fix all issues without prompting for selection.')
   .option('--no-autofix', 'Disable automatic fixing of issues, even if configured elsewhere.')

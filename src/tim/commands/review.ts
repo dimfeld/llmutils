@@ -65,7 +65,7 @@ import {
   type ReviewExecutorName,
   type ReviewPromptBuilder,
 } from '../review_runner.js';
-import { createHeadlessAdapterForCommand } from '../headless.js';
+import { createHeadlessAdapterForCommand, updateHeadlessSessionInfo } from '../headless.js';
 import { toStructuredReviewIssues } from '../review_structured_message.js';
 import { timestamp } from './agent/agent_helpers.js';
 import { resolveOrchestratorInput } from '../utils/orchestrator_input.js';
@@ -79,6 +79,7 @@ import {
 import which from 'which';
 import { getMaterializedPlanPath, materializePlan, withPlanAutoSync } from '../plan_materialize.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
+import { setupWorkspace } from '../workspace/workspace_setup.js';
 const FIX_EXECUTOR_COMMANDS = {
   'claude-code': 'claude',
   'codex-cli': 'codex',
@@ -923,6 +924,33 @@ export async function handleReviewCommand(
     }
 
     const executeReviewFlow = async (): Promise<void> => {
+      const workspaceMode = options.workspace !== undefined || options.autoWorkspace === true;
+      if (workspaceMode) {
+        const currentBaseDir = await resolveRepoRoot(globalOpts.config, options.cwd);
+        const resolvedPlanForWorkspace =
+          initialResolvedPlan ??
+          (await resolveReviewPlanForWriteById(reviewPlanId, currentBaseDir));
+        const workspaceResult = await setupWorkspace(
+          {
+            workspace: options.workspace,
+            autoWorkspace: options.autoWorkspace,
+            nonInteractive: options.nonInteractive,
+            planId: resolvedPlanForWorkspace.plan.id,
+            planUuid: resolvedPlanForWorkspace.plan.uuid,
+            allowPrimaryWorkspaceWhenLocked: true,
+          },
+          currentBaseDir,
+          resolvedPlanForWorkspace.planPath ?? undefined,
+          config,
+          'tim review'
+        );
+
+        options.cwd = workspaceResult.baseDir;
+        resolvedPlanFilePath = workspaceResult.planFile;
+        notifyPlanFile = workspaceResult.planFile;
+        updateHeadlessSessionInfo({ workspacePath: workspaceResult.baseDir });
+      }
+
       // Gather plan context using the shared utility
       const context = await withReviewLogger(() =>
         gatherPlanContext(reviewPlanId, options, globalOpts)

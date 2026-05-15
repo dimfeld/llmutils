@@ -31,6 +31,7 @@ import * as gitModule from '../../common/git.js';
 import * as agentPromptsModule from '../executors/claude_code/agent_prompts.js';
 import * as inquirerModule from '@inquirer/prompts';
 import * as loggingModule from '../../logging.js';
+import * as workspaceSetupModule from '../workspace/workspace_setup.js';
 
 vi.mock('../notifications.js', () => ({
   sendNotification: vi.fn(),
@@ -338,6 +339,97 @@ test('handleReviewCommand resolves plan by numeric ID', async () => {
   };
 
   await handleReviewCommand(1, {}, mockCommand);
+});
+
+test('handleReviewCommand supports auto workspace selection', async () => {
+  await writePlanToDb(
+    {
+      id: 2,
+      title: 'Workspace Review Plan',
+      goal: 'Test auto workspace review',
+      details: 'Details',
+      tasks: [{ title: 'Review task', description: 'A task' }],
+    },
+    { cwdForIdentity: testDir }
+  );
+
+  const workspaceDir = join(testDir, 'selected-workspace');
+  const workspacePlanFile = join(workspaceDir, '.tim', 'plans', '2.plan.md');
+  await mkdir(join(workspaceDir, '.tim', 'plans'), { recursive: true });
+  const setupWorkspaceSpy = vi.spyOn(workspaceSetupModule, 'setupWorkspace').mockResolvedValue({
+    baseDir: workspaceDir,
+    planFile: workspacePlanFile,
+  } as any);
+
+  vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue({
+    execute: vi.fn(async () =>
+      JSON.stringify({
+        issues: [],
+        recommendations: [],
+        actionItems: [],
+      })
+    ),
+  } as any);
+  vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+    defaultExecutor: 'codex-cli',
+  } as any);
+  vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+    createMockPlanContext({
+      repoRoot: workspaceDir,
+      gitRoot: workspaceDir,
+      resolvedPlanFile: workspacePlanFile,
+      planData: {
+        id: 2,
+        title: 'Workspace Review Plan',
+        goal: 'Test auto workspace review',
+        details: 'Details',
+        tasks: [{ title: 'Review task', description: 'A task' }],
+      },
+      parentChain: [],
+      completedChildren: [],
+      diffResult: {
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: 'main',
+        diffContent: 'mock diff',
+      },
+      incrementalSummary: null,
+      noChangesDetected: false,
+    }) as any
+  );
+  vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+  vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
+  vi.mocked(gitModule.getUsingJj).mockResolvedValue(false);
+  vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+    prompt: 'mock reviewer prompt',
+  } as any);
+
+  try {
+    await handleReviewCommand(
+      2,
+      { autoWorkspace: true, noSave: true },
+      { parent: { opts: () => ({}) } }
+    );
+
+    expect(setupWorkspaceSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        autoWorkspace: true,
+        planId: 2,
+        allowPrimaryWorkspaceWhenLocked: true,
+      }),
+      testDir,
+      undefined,
+      expect.objectContaining({ defaultExecutor: 'codex-cli' }),
+      'tim review'
+    );
+    expect(contextGatheringModule.gatherPlanContext).toHaveBeenCalledWith(
+      2,
+      expect.objectContaining({ autoWorkspace: true, cwd: workspaceDir }),
+      expect.any(Object)
+    );
+  } finally {
+    setupWorkspaceSpy.mockRestore();
+  }
 });
 
 test('handleReviewCommand resolves plan by ID', async () => {
