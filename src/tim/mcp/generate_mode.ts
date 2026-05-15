@@ -249,6 +249,7 @@ Consider splitting when:
 The user may prefer to split vertically by functional areas, or horizontally (e.g. backend foundation followed by UI), or both. Surface the tradeoffs in your proposal.
 
 If the user approves the split, create each child plan using 'tim add' (see the using-tim skill) with appropriate title, goal, details, and priority. Then:
+- Each new child plan will get its own plan number, returned by \`tim add\`
 - Set \`--parent ${parentPlanLabel}\` on every child plan
 - Set the parent plan as an epic using \`tim set ${parentPlanLabel} --epic\`
 - Use \`--depends-on\` to enforce ordering when one plan must be done before another
@@ -432,6 +433,7 @@ Consider splitting when:
 4. Breaking it down would reduce cognitive load and make each plan more focused
 
 If the user approves the split, create each child plan using 'tim add' (see the using-tim skill) with appropriate title, goal, details, and priority. Then:
+- Each new child plan will get its own plan number, returned by \`tim add\`
 - Set \`--parent ${parentPlanLabel}\` on every child plan
 - Set the parent plan as an epic using \`tim set ${parentPlanLabel} --epic\`
 - Use \`--depends-on\` to enforce ordering when one plan must be done before another
