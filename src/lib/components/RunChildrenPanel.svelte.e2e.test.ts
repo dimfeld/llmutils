@@ -173,10 +173,9 @@ describe('RunChildrenPanel', () => {
   });
 
   test('disables externally blocked children with a blocking dependency tooltip', async () => {
-    renderPanel(
-      [child('blocked-child', 103, { dependencies: ['external-open'] })],
-      { 'external-open': 'in_progress' }
-    );
+    renderPanel([child('blocked-child', 103, { dependencies: ['external-open'] })], {
+      'external-open': 'in_progress',
+    });
 
     const checkbox = checkboxFor(103);
     expect(checkbox.disabled).toBe(true);
@@ -316,9 +315,8 @@ describe('RunChildrenPanel', () => {
     await expect
       .element(page.getByText('A session is already running for this epic'))
       .toBeInTheDocument();
-    await expect.element(page.getByRole('link', { name: 'View session' })).toHaveAttribute(
-      'href',
-      '/projects/123/sessions/session-123'
-    );
+    await expect
+      .element(page.getByRole('link', { name: 'View session' }))
+      .toHaveAttribute('href', '/projects/123/sessions/session-123');
   });
 });
