@@ -3316,6 +3316,94 @@ describe('Autofix functionality', () => {
     );
   });
 
+  test('CLI no-autofix shape skips prompts and saves all issues when requested', async () => {
+    await writePlanToDb(
+      {
+        id: 128,
+        title: 'Test CLI No-Autofix Flag',
+        goal: 'Test Commander no-autofix option shape',
+        tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    const mockExecutor = {
+      execute: vi.fn(async () =>
+        JSON.stringify({
+          issues: [
+            {
+              severity: 'critical',
+              category: 'security',
+              content: 'Security - SQL injection vulnerability',
+              file: 'src/db.ts',
+              line: '55',
+              suggestion: 'Use parameterized queries',
+            },
+            {
+              severity: 'minor',
+              category: 'testing',
+              content: 'Missing regression test',
+              file: 'src/db.test.ts',
+              line: '12',
+              suggestion: 'Add a test',
+            },
+          ],
+          recommendations: [],
+          actionItems: [],
+        })
+      ),
+    };
+
+    promptSelectSpy.mockRejectedValue(new Error('Prompt select should not be called'));
+    promptCheckboxSpy.mockRejectedValue(new Error('Prompt checkbox should not be called'));
+
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: '128',
+        planData: {
+          id: 128,
+          title: 'Test CLI No-Autofix Flag',
+          goal: 'Test Commander no-autofix option shape',
+          tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
+
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+      prompt: 'test review prompt',
+    } as any);
+
+    const result = await handleReviewCommand(
+      128,
+      { autofix: false, saveIssues: true },
+      { parent: { opts: () => ({}) } }
+    );
+
+    expect(result.issuesSaved).toBe(2);
+    expect(promptSelectSpy).not.toHaveBeenCalled();
+    expect(promptCheckboxSpy).not.toHaveBeenCalled();
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+
+    const updatedPlan = (await resolvePlanByNumericId(128, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toHaveLength(2);
+  });
+
   test('detectIssuesInReview - detects issues via totalIssues count', () => {
     const reviewResult = {
       summary: { totalIssues: 2 },

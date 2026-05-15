@@ -507,8 +507,9 @@ async function handleReviewIssueActions(params: {
   let appendedTaskCount = 0;
   let actionCompleted = false;
   let skipNotification = false;
+  const noAutofixRequested = options.noAutofix === true || options.autofix === false;
 
-  if (options.autofix || options.autofixAll) {
+  if (!noAutofixRequested && (options.autofix || options.autofixAll)) {
     shouldAutofix = true;
     if (!options.autofixAll && issues.length > 0) {
       if (isInteractiveEnv) {
@@ -538,7 +539,7 @@ async function handleReviewIssueActions(params: {
         log(chalk.yellow('No issues selected for cleanup plan.'));
       }
     }
-  } else if (!options.noAutofix && isInteractiveEnv) {
+  } else if (!noAutofixRequested && isInteractiveEnv) {
     const action = await promptForReviewIssueAction(notifyReviewInput);
 
     if (action === 'fix-claude' || action === 'fix-codex') {
@@ -672,7 +673,7 @@ async function handleReviewIssueActions(params: {
     actionCompleted = true;
   }
 
-  const performAutofix = shouldAutofix && !options.noAutofix;
+  const performAutofix = shouldAutofix && !noAutofixRequested;
 
   if (performAutofix && !isPrintMode) {
     sendStructured({
