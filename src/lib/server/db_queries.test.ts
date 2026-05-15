@@ -18,6 +18,7 @@ import { acquireWorkspaceLock, getWorkspaceLock } from '$tim/db/workspace_lock.j
 
 import {
   computeCanUpdateDocs,
+  getChildPlansForEpic,
   getPlanDetail,
   getPlansForProject,
   getPrimaryWorkspacePath,
@@ -103,6 +104,93 @@ describe('lib/server/db_queries', () => {
         deferred: 0,
       },
     });
+  });
+
+  test('getChildPlansForEpic returns child task and dependency summaries', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'web-epic',
+      planId: 900,
+      title: 'Web epic',
+      epic: true,
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'web-child-a',
+      planId: 901,
+      title: 'Web child A',
+      parentUuid: 'web-epic',
+      tasks: [
+        { title: 'done', description: 'done', done: true },
+        { title: 'open', description: 'open', done: false },
+      ],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'web-child-b',
+      planId: 902,
+      title: 'Web child B',
+      parentUuid: 'web-epic',
+      basePlanUuid: 'web-child-a',
+      dependencyUuids: ['web-child-a'],
+      tasks: [{ title: 'task', description: 'desc', done: false }],
+    });
+
+    const children = getChildPlansForEpic(db, 'web-epic');
+
+    expect(children).toEqual([
+      {
+        uuid: 'web-child-a',
+        planId: 901,
+        title: 'Web child A',
+        status: 'pending',
+        taskCount: 2,
+        doneTaskCount: 1,
+        dependencies: [],
+        basePlanUuid: undefined,
+        parentUuid: 'web-epic',
+      },
+      {
+        uuid: 'web-child-b',
+        planId: 902,
+        title: 'Web child B',
+        status: 'pending',
+        taskCount: 1,
+        doneTaskCount: 0,
+        dependencies: ['web-child-a'],
+        basePlanUuid: 'web-child-a',
+        parentUuid: 'web-epic',
+      },
+    ]);
+  });
+
+  test('getPlanDetail includes children for epic plans', async () => {
+    upsertPlan(db, projectId, {
+      uuid: 'detail-epic',
+      planId: 910,
+      title: 'Detail epic',
+      epic: true,
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'detail-child',
+      planId: 911,
+      title: 'Detail child',
+      parentUuid: 'detail-epic',
+      tasks: [{ title: 'task', description: 'desc', done: false }],
+    });
+
+    const detail = await getPlanDetail(db, 'detail-epic');
+
+    expect(detail?.children).toEqual([
+      {
+        uuid: 'detail-child',
+        planId: 911,
+        title: 'Detail child',
+        status: 'pending',
+        taskCount: 1,
+        doneTaskCount: 0,
+        dependencies: [],
+        basePlanUuid: undefined,
+        parentUuid: 'detail-epic',
+      },
+    ]);
   });
 
   test('getProjectsWithMetadata includes projects with zero plans', () => {

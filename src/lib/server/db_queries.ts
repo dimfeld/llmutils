@@ -17,11 +17,13 @@ import { cleanStaleLocks, type WorkspaceLockRow } from '$tim/db/workspace_lock.j
 import {
   getPlanByUuid,
   getPlanDependenciesByProject,
+  getChildPlansForEpic as getChildPlansForEpicFromPlanDb,
   getPlansByProject,
   getPlanTagsByUuid,
   getPlanTagsByProject,
   getPlanTasksByUuid,
   getPlanTasksByProject,
+  type ChildPlanSummaryRow,
   type PlanDependencyRow,
   type PlanRow,
   type PlanTagRow,
@@ -121,6 +123,7 @@ export interface EnrichedPlan {
 
 export interface PlanDetail extends EnrichedPlan {
   dependencies: EnrichedPlanDependency[];
+  children: ChildPlanSummary[];
   assignment: AssignmentEntry | null;
   parent: EnrichedPlanDependency | null;
   basePlan: EnrichedPlanDependency | null;
@@ -128,6 +131,8 @@ export interface PlanDetail extends EnrichedPlan {
   reviewIssues: PlanSchema['reviewIssues'];
   artifacts: PlanArtifactWithTransferState[];
 }
+
+export type ChildPlanSummary = ChildPlanSummaryRow;
 
 export interface EnrichedWorkspace {
   id: number;
@@ -835,6 +840,10 @@ export function getPrimaryWorkspacePath(db: Database, projectId: number): string
   return row?.workspace_path ?? null;
 }
 
+export function getChildPlansForEpic(db: Database, epicUuid: string): ChildPlanSummary[] {
+  return getChildPlansForEpicFromPlanDb(db, epicUuid);
+}
+
 export async function getPlanDetail(
   db: Database,
   planUuid: string,
@@ -919,10 +928,12 @@ export async function getPlanDetail(
     planUuid,
     includeDeleted: options.includeDeletedArtifacts,
   });
+  const children = enrichedPlan.epic ? getChildPlansForEpic(db, planUuid) : [];
 
   return {
     ...enrichedPlan,
     dependencies: dependencySummaries,
+    children,
     assignment,
     parent,
     basePlan,

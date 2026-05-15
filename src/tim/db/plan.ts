@@ -60,6 +60,18 @@ export interface PlanDependencyRow {
   depends_on_uuid: string;
 }
 
+export interface ChildPlanSummaryRow {
+  uuid: string;
+  planId: number;
+  title: string | null;
+  status: PlanSchema['status'];
+  taskCount: number;
+  doneTaskCount: number;
+  dependencies: string[];
+  basePlanUuid?: string;
+  parentUuid?: string;
+}
+
 export interface PlanTagRow {
   plan_uuid: string;
   tag: string;
@@ -1116,6 +1128,69 @@ export function getPlansByParentUuid(
   return db
     .prepare('SELECT * FROM plan WHERE project_id = ? AND parent_uuid = ? ORDER BY plan_id, uuid')
     .all(projectId, parentUuid) as PlanRow[];
+}
+
+export function getChildPlansForEpic(db: Database, epicUuid: string): ChildPlanSummaryRow[] {
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        p.uuid,
+        p.plan_id AS planId,
+        p.title,
+        p.status,
+        p.base_plan_uuid AS basePlanUuid,
+        p.parent_uuid AS parentUuid,
+        COUNT(pt.id) AS taskCount,
+        COALESCE(SUM(CASE WHEN pt.done = 1 THEN 1 ELSE 0 END), 0) AS doneTaskCount
+      FROM plan p
+      LEFT JOIN plan_task pt ON pt.plan_uuid = p.uuid
+      WHERE p.parent_uuid = ?
+      GROUP BY p.uuid
+      ORDER BY p.plan_id, p.uuid
+    `
+    )
+    .all(epicUuid) as Array<
+    Omit<ChildPlanSummaryRow, 'dependencies' | 'basePlanUuid'> & {
+      basePlanUuid: string | null;
+      parentUuid: string | null;
+    }
+  >;
+
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const dependenciesByPlanUuid = new Map<string, string[]>();
+  const dependencyRows = db
+    .prepare(
+      `
+      SELECT pd.plan_uuid, pd.depends_on_uuid
+      FROM plan_dependency pd
+      INNER JOIN plan p ON p.uuid = pd.plan_uuid
+      WHERE p.parent_uuid = ?
+      ORDER BY pd.plan_uuid, pd.depends_on_uuid
+    `
+    )
+    .all(epicUuid) as PlanDependencyRow[];
+
+  for (const dependency of dependencyRows) {
+    const dependencies = dependenciesByPlanUuid.get(dependency.plan_uuid) ?? [];
+    dependencies.push(dependency.depends_on_uuid);
+    dependenciesByPlanUuid.set(dependency.plan_uuid, dependencies);
+  }
+
+  return rows.map((row) => ({
+    uuid: row.uuid,
+    planId: row.planId,
+    title: row.title,
+    status: row.status,
+    taskCount: row.taskCount,
+    doneTaskCount: row.doneTaskCount,
+    dependencies: dependenciesByPlanUuid.get(row.uuid) ?? [],
+    basePlanUuid: row.basePlanUuid ?? undefined,
+    parentUuid: row.parentUuid ?? undefined,
+  }));
 }
 
 async function setSyncedPlanScalar(
