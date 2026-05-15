@@ -3,7 +3,10 @@
   import { toast } from 'svelte-sonner';
 
   import type { PlanDetail } from '$lib/server/db_queries.js';
+  import type { ReviewWithIssueCounts } from '$tim/db/review.js';
   import { renderMarkdown } from '$lib/utils/markdown_parser.js';
+  import { formatRelativeTime } from '$lib/utils/time.js';
+  import { onDestroy } from 'svelte';
   import { afterNavigate, invalidateAll } from '$app/navigation';
   import {
     startGenerate,
@@ -13,6 +16,7 @@
     startReview,
     startUpdateDocs,
     startCreatePr,
+    startPlanReviewGuide,
     finishPlanQuick,
     openInEditor,
   } from '$lib/remote/plan_actions.remote.js';
@@ -39,12 +43,14 @@
 
   let {
     plan,
+    reviews = [],
     projectId,
     projectName,
     tab = 'plans',
     openInEditorEnabled = false,
   }: {
     plan: PlanDetail;
+    reviews?: ReviewWithIssueCounts[];
     projectId: string;
     projectName?: string;
     tab?: string;
@@ -265,6 +271,64 @@
   let startingChat: 'claude' | 'codex' | false = $state(false);
   let startingFinish = $state(false);
   let startingCreatePr = $state(false);
+  let reviewGuideRunning = $state(false);
+
+  let hasInProgressReview = $derived(
+    reviews.some((r) => r.status === 'pending' || r.status === 'in_progress')
+  );
+
+  const REVIEW_GUIDE_LAUNCH_TIMEOUT_MS = 30_000;
+  let reviewGuideResetTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function clearReviewGuideResetTimeout() {
+    if (reviewGuideResetTimeout) {
+      clearTimeout(reviewGuideResetTimeout);
+      reviewGuideResetTimeout = null;
+    }
+  }
+
+  async function handleStartReviewGuide() {
+    if (reviewGuideRunning || hasInProgressReview) return;
+    reviewGuideRunning = true;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      await startPlanReviewGuide({ projectId: plan.projectId, planId: plan.planId });
+      successMessage = { text: 'Review guide started' };
+      setStartedSuccessfully();
+      await invalidateAll();
+      // After the loader refreshes, hasInProgressReview drives the disabled
+      // state. If the new review row materialized, clear the optimistic flag
+      // immediately so subsequent transitions (in_progress -> complete) re-enable
+      // the button without waiting on the safety net.
+      if (hasInProgressReview) {
+        reviewGuideRunning = false;
+      } else {
+        // Safety net: if the spawned process fails before inserting an
+        // in-progress review row, hasInProgressReview will never become true.
+        // Always reset the flag after a short delay; hasInProgressReview
+        // provides the ongoing disabled state when the row does exist.
+        clearReviewGuideResetTimeout();
+        reviewGuideResetTimeout = setTimeout(() => {
+          reviewGuideRunning = false;
+          reviewGuideResetTimeout = null;
+        }, REVIEW_GUIDE_LAUNCH_TIMEOUT_MS);
+      }
+    } catch (err) {
+      errorMessage = `${err as Error}`;
+      reviewGuideRunning = false;
+    }
+  }
+
+  function reviewGuideStatusLabel(status: string): string {
+    return status === 'complete'
+      ? 'Complete'
+      : status === 'error'
+        ? 'Error'
+        : status === 'in_progress'
+          ? 'Running'
+          : 'Pending';
+  }
   let chatDialogOpen = $state(false);
   let startedSuccessfully = $state(false);
   let errorMessage: string | null = $state(null);
@@ -311,6 +375,10 @@
     }
   }
 
+  onDestroy(() => {
+    clearReviewGuideResetTimeout();
+  });
+
   afterNavigate(({ from, to }) => {
     if (from && to && from.url.pathname !== to.url.pathname) {
       startingGenerate = false;
@@ -320,6 +388,8 @@
       startingChat = false;
       startingFinish = false;
       startingCreatePr = false;
+      reviewGuideRunning = false;
+      clearReviewGuideResetTimeout();
       chatDialogOpen = false;
       startedSuccessfully = false;
       reviewIssueSubmitting = null;
@@ -944,6 +1014,61 @@
     {#if plan.pullRequests.length > 0 || plan.invalidPrUrls.length > 0 || plan.prStatuses.length > 0}
       <PrStatusSection planUuid={plan.uuid} {projectId} />
     {/if}
+
+    <!-- Review Guides -->
+    <div>
+      <div class="mb-1.5 flex items-center justify-start gap-2">
+        <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Review Guides
+        </h3>
+        <button
+          type="button"
+          onclick={handleStartReviewGuide}
+          disabled={reviewGuideRunning || hasInProgressReview}
+          class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+          title="Generate a new review guide"
+        >
+          {reviewGuideRunning ? 'Starting...' : 'Generate review guide'}
+        </button>
+      </div>
+
+      {#if reviews.length > 0}
+        <ul class="space-y-1">
+          {#each reviews as review (review.id)}
+            {@const statusColor =
+              review.status === 'complete'
+                ? 'text-green-600 dark:text-green-400'
+                : review.status === 'error'
+                  ? 'text-red-600 dark:text-red-400'
+                  : review.status === 'in_progress'
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : 'text-muted-foreground'}
+            <li
+              class="flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              <a
+                href="/projects/{projectId}/plans/{plan.uuid}/reviews/{review.id}"
+                class="flex min-w-0 flex-1 items-center gap-2"
+              >
+                <span class="min-w-0 flex-1 truncate text-foreground tabular-nums">
+                  #{review.id} - {formatRelativeTime(review.created_at)}
+                </span>
+                {#if review.status === 'complete'}
+                  <span class="shrink-0 text-xs text-muted-foreground">
+                    {review.unresolved_count}/{review.issue_count} open
+                  </span>
+                {/if}
+                <span class="shrink-0 text-xs {statusColor}">
+                  {reviewGuideStatusLabel(review.status)}
+                </span>
+              </a>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <p class="text-xs text-muted-foreground">No review guides yet.</p>
+      {/if}
+    </div>
 
     <!-- Assignment -->
     {#if plan.assignment}

@@ -3,6 +3,7 @@ import type { Database } from 'bun:sqlite';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import { listProjects } from '$tim/db/project.js';
+import { getReviewsByPlanUuid, type ReviewWithIssueCounts } from '$tim/db/review.js';
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import {
   getPlanDetail,
@@ -84,6 +85,7 @@ export interface PlansPageData {
 
 export interface PlanDetailRouteResult {
   planDetail: PlanDetail;
+  reviews: ReviewWithIssueCounts[];
   redirectTo?: string;
 }
 
@@ -196,5 +198,5 @@ export async function getPlanDetailRouteData(
     redirectTo = `/projects/${detail.projectId}/${tab}/${detail.uuid}`;
   }
 
-  return { planDetail: detail, redirectTo };
+  return { planDetail: detail, reviews: getReviewsByPlanUuid(db, planRow.uuid), redirectTo };
 }

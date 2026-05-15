@@ -8,6 +8,7 @@ import { claimAssignment } from '$tim/db/assignment.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { upsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
+import { createReview } from '$tim/db/review.js';
 import { recordWorkspace } from '$tim/db/workspace.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getDashboardData, getPlanDetailRouteData, getPlansPageData } from './plans_browser.js';
@@ -311,6 +312,31 @@ describe('lib/server/plans_browser', () => {
       await expect(
         getPlanDetailRouteData(db, 'missing-plan', String(projectId))
       ).resolves.toBeNull();
+    });
+
+    test('includes reviews belonging to the plan', async () => {
+      createReview(db, {
+        projectId,
+        planUuid: 'feature-plan',
+        status: 'complete',
+      });
+
+      const result = await getPlanDetailRouteData(db, 'feature-plan', String(projectId));
+
+      expect(result).not.toBeNull();
+      expect(result!.reviews).toHaveLength(1);
+      expect(result!.reviews[0]).toMatchObject({
+        plan_uuid: 'feature-plan',
+        status: 'complete',
+        pr_url: null,
+      });
+    });
+
+    test('reviews is empty when the plan has no reviews', async () => {
+      const result = await getPlanDetailRouteData(db, 'feature-plan', String(projectId));
+
+      expect(result).not.toBeNull();
+      expect(result!.reviews).toEqual([]);
     });
 
     test('uses per-project effective config to compute canUpdateDocs', async () => {

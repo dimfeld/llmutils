@@ -49,6 +49,7 @@ When reusing code originally written for CLI (same `process.cwd()` as the projec
 ### UI Affordance Gating
 
 - Gate an affordance on the conditions that actually determine success, not on the data that feeds the success path. Example: a "Jump to diff" button gated on `issue.file && issue.line` answers "is the issue anchored?" — not "is there a rendered annotation on the page?" — so the button stays visible for files the guide never renders. Derive the gate from whatever produced the DOM (e.g. parse the same markdown the page renders and collect surfaced filenames).
+- When gating create/edit/delete affordances behind a feature flag, check **all** entry points: visible buttons, supporting hooks (line selection, gutter utility callbacks), and modal mounts. Hiding only the buttons can leave a back-channel (e.g. the diff-gutter "add issue" handler) that still creates rows the user can no longer manage. Drive the entire surface from a single prop and audit every consumer of that prop together.
 
 ### Routing Gotchas
 
@@ -64,15 +65,35 @@ When reusing code originally written for CLI (same `process.cwd()` as the projec
 - Display statuses (`blocked`, `recently_done`) are computed server-side in `db_queries.ts`, not stored in DB
 - Cookie-based project persistence: `src/lib/stores/project.svelte.ts` manages the last-selected project ID (httpOnly cookie, server-read only)
 
-## Standalone PR Review Detail Page
+## Review Guide Viewer Pages
 
-The review detail route is `/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]`.
+Two routes render stored review guides, both backed by the shared `src/lib/components/ReviewGuideView.svelte` presentational component:
+
+- PR review: `/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]`
+- Plan review (no PR required): `/projects/[projectId]/plans/[planId]/reviews/[reviewId]` — loader asserts `review.plan_uuid === plan.uuid` (404 on mismatch) and renders `<ReviewGuideView allowGithubSubmission={false} ... />` with a back link to the plan detail page.
+
+`ReviewGuideView` accepts `{ review, issues, linkedPlans?, allowGithubSubmission }`. PR-only features are gated by the single `allowGithubSubmission` prop: linked-plans display, Submit Review dialog, the diff-gutter `+` utility / `NewReviewIssueModal` mount, and per-issue resolve/edit/delete controls. Diff-override gating logic lives in `src/lib/components/review_guide_view_utils.ts` so it can be unit-tested independently.
+
+Shared rendering behavior:
 
 - **Inline diffs**: Markdown review guide ` ```unified-diff ` fenced blocks are rendered as Pierre `Diff.svelte` instances. `MarkdownContent.svelte` uses per-filename `diffOverrides` to pass annotation and interaction props to each diff segment.
 - **Issue annotations**: Existing review issues render as clickable diff annotations via `lineAnnotations` + `renderAnnotation` (mounting `ReviewIssueAnnotation.svelte`). Annotation click scrolls to/highlights the matching issue card. The issue card "Jump to diff" action scrolls to/highlights the matching annotation node.
+
+PR-only (gated by `allowGithubSubmission`):
+
 - **Inline edit**: Each `ReviewIssueCard` supports an Edit mode backed by `ReviewIssueEditor.svelte` (severity, category, file, `start_line`, `line`, side, content, suggestion). Save sends only changed fields in the patch payload.
 - **Gutter-add issues**: The diff gutter `+` utility (`onGutterUtilityClick`) opens `NewReviewIssueModal.svelte` with content + optional suggestion fields. File/line/side are prefilled from the selected range. Save calls the `createReviewIssue` remote command.
 - **GitHub submission**: The page includes a Submit Review dialog for choosing event, body, and issue subset, with partition preview and GitHub posting. See `README.md` for the full submission flow details.
+
+### Plan Review Guides on the Plan Detail Page
+
+`PlanDetail.svelte` has a "Review Guides" section with a **Generate review guide** button that calls the `startPlanReviewGuide` remote command in `src/lib/remote/plan_actions.remote.ts`. That command validates the plan belongs to the project (404 otherwise), rejects with 409 if a `pending`/`in_progress` plan review already exists, and spawns `tim review-guide <planId> --auto-workspace` via `spawnPlanReviewGuideProcess` (`src/lib/server/plan_actions.ts`).
+
+Concurrency is layered: a per-plan launch lock is acquired BEFORE the DB pending/in-progress check (race-safe across simultaneous requests), and the lock is released on spawn failure and on `spawnTimProcess`'s `earlyExit: true` callback. The button is disabled while `reviewGuideRunning` (local optimistic flag) is set or any review for the plan is still `pending`/`in_progress`.
+
+Review history is rendered below the button: `#{review.id} - relative time`, status label, unresolved/total issue counts for complete reviews, with the latest first and a "No review guides yet" empty state. Each entry links to the plan review viewer route above.
+
+Optimistic UI lifecycle: after the remote command succeeds, the page calls `invalidateAll()` and a 15s safety-net timer unconditionally clears `reviewGuideRunning` — do not gate that reset on `hasInProgressReview`, since the row may have already transitioned to `complete`/`error` and would leave the button stuck.
 
 ## Active Work Tab
 

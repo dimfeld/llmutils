@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import type { Database } from 'bun:sqlite';
+import { Database } from 'bun:sqlite';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -8,10 +8,13 @@ import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
   createPrReviewSubmission,
   createReview,
+  getLatestReviewByPlanUuid,
   getLatestReviewByPrUrl,
+  getLatestReviewGuideByPlanUuid,
   getPrReviewSubmissionsForReview,
   getReviewById,
   getReviewIssues,
+  getReviewsByPlanUuid,
   getReviewsForProject,
   insertReviewIssues,
   markIssuesSubmitted,
@@ -19,9 +22,13 @@ import {
   updateReviewIssue,
 } from './review.js';
 import { getOrCreateProject } from './project.js';
+import { upsertPlan } from './plan.js';
+import { runMigrations } from './migrations.js';
 
 const PR_URL_1 = 'https://github.com/example/repo/pull/1';
 const PR_URL_2 = 'https://github.com/example/repo/pull/2';
+const PLAN_UUID_1 = '11111111-1111-4111-8111-111111111111';
+const PLAN_UUID_2 = '22222222-2222-4222-8222-222222222222';
 
 describe('tim db/review', () => {
   let tempDir: string;
@@ -41,6 +48,15 @@ describe('tim db/review', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
+  function createPlan(uuid: string, planId: number): void {
+    upsertPlan(db, projectId, {
+      uuid,
+      planId,
+      title: `Plan ${planId}`,
+      goal: `Goal ${planId}`,
+    });
+  }
+
   describe('createReview', () => {
     test('creates a review with minimal fields', () => {
       const review = createReview(db, {
@@ -55,6 +71,7 @@ describe('tim db/review', () => {
       expect(review.branch).toBe('feature/my-branch');
       expect(review.status).toBe('pending');
       expect(review.pr_status_id).toBeNull();
+      expect(review.plan_uuid).toBeNull();
       expect(review.base_branch).toBeNull();
       expect(review.reviewed_sha).toBeNull();
       expect(review.review_guide).toBeNull();
@@ -116,6 +133,35 @@ describe('tim db/review', () => {
       expect(review1.id).not.toBe(review2.id);
       expect(review1.reviewed_sha).toBe('sha-v1');
       expect(review2.reviewed_sha).toBe('sha-v2');
+    });
+
+    test('creates a plan-only review with nullable PR fields', () => {
+      createPlan(PLAN_UUID_1, 101);
+
+      const review = createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        baseBranch: 'main',
+        status: 'in_progress',
+      });
+
+      expect(review.project_id).toBe(projectId);
+      expect(review.pr_url).toBeNull();
+      expect(review.branch).toBeNull();
+      expect(review.plan_uuid).toBe(PLAN_UUID_1);
+      expect(review.base_branch).toBe('main');
+      expect(review.status).toBe('in_progress');
+    });
+
+    test('CHECK constraint rejects insert with both pr_url and plan_uuid NULL', () => {
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO review (project_id, status, created_at, updated_at)
+             VALUES (?, 'pending', datetime('now'), datetime('now'))`
+          )
+          .run(projectId)
+      ).toThrow();
     });
   });
 
@@ -347,6 +393,166 @@ describe('tim db/review', () => {
 
       const result = getLatestReviewByPrUrl(db, PR_URL_1, { projectId: otherProjectId });
       expect(result).toBeNull();
+    });
+  });
+
+  describe('plan-keyed review queries', () => {
+    beforeEach(() => {
+      createPlan(PLAN_UUID_1, 101);
+      createPlan(PLAN_UUID_2, 102);
+    });
+
+    test('getLatestReviewByPlanUuid returns null when no review exists', () => {
+      const result = getLatestReviewByPlanUuid(db, PLAN_UUID_1);
+      expect(result).toBeNull();
+    });
+
+    test('getLatestReviewByPlanUuid returns the latest review for the plan including mixed PR rows', () => {
+      createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        reviewedSha: 'plan-sha-1',
+        status: 'complete',
+      });
+      createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        reviewedSha: 'plan-sha-2',
+        status: 'complete',
+      });
+      createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/pr-only',
+        reviewedSha: 'pr-sha',
+        status: 'complete',
+      });
+      const mixed = createReview(db, {
+        projectId,
+        prUrl: PR_URL_2,
+        branch: 'feature/mixed',
+        planUuid: PLAN_UUID_1,
+        reviewedSha: 'mixed-sha',
+        status: 'complete',
+      });
+      createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_2,
+        reviewedSha: 'other-plan-sha',
+        status: 'complete',
+      });
+
+      const result = getLatestReviewByPlanUuid(db, PLAN_UUID_1);
+      expect(result?.id).toBe(mixed.id);
+      expect(result?.reviewed_sha).toBe('mixed-sha');
+    });
+
+    test('getLatestReviewByPlanUuid filters by projectId and status', () => {
+      createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        status: 'pending',
+      });
+      const complete = createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        status: 'complete',
+      });
+
+      const result = getLatestReviewByPlanUuid(db, PLAN_UUID_1, {
+        projectId,
+        status: 'complete',
+      });
+      expect(result?.id).toBe(complete.id);
+
+      const missing = getLatestReviewByPlanUuid(db, PLAN_UUID_1, {
+        projectId: otherProjectId,
+      });
+      expect(missing).toBeNull();
+    });
+
+    test('getLatestReviewGuideByPlanUuid returns latest non-empty guide including mixed PR rows', () => {
+      createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        reviewGuide: '   ',
+        status: 'complete',
+      });
+      createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        reviewGuide: '# Plan Guide',
+        status: 'complete',
+      });
+      const mixed = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/mixed',
+        planUuid: PLAN_UUID_1,
+        reviewGuide: '# Mixed Guide',
+        status: 'complete',
+      });
+      createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        reviewGuide: null,
+        status: 'complete',
+      });
+
+      const result = getLatestReviewGuideByPlanUuid(db, PLAN_UUID_1);
+      expect(result?.id).toBe(mixed.id);
+      expect(result?.review_guide).toBe('# Mixed Guide');
+    });
+
+    test('getReviewsByPlanUuid returns history ordered by created_at DESC including mixed PR rows', () => {
+      const first = createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        reviewedSha: 'sha-1',
+      });
+      const second = createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        reviewedSha: 'sha-2',
+      });
+      const mixed = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/mixed',
+        planUuid: PLAN_UUID_1,
+        reviewedSha: 'mixed-plan-pr',
+      });
+      createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_2,
+        reviewedSha: 'other-plan',
+      });
+
+      const reviews = getReviewsByPlanUuid(db, PLAN_UUID_1);
+      expect(reviews).toHaveLength(3);
+      expect(reviews[0].id).toBe(mixed.id);
+      expect(reviews[1].id).toBe(second.id);
+      expect(reviews[2].id).toBe(first.id);
+      expect(reviews[0].issue_count).toBe(0);
+      expect(reviews[0].unresolved_count).toBe(0);
+    });
+
+    test('getReviewsByPlanUuid includes issue counts', () => {
+      const review = createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+      });
+      insertReviewIssues(db, {
+        reviewId: review.id,
+        issues: [
+          { severity: 'major', category: 'bug', content: 'Unresolved' },
+          { severity: 'minor', category: 'style', content: 'Resolved', resolved: true },
+        ],
+      });
+
+      const reviews = getReviewsByPlanUuid(db, PLAN_UUID_1);
+      expect(reviews[0].issue_count).toBe(2);
+      expect(reviews[0].unresolved_count).toBe(1);
     });
   });
 
@@ -1188,6 +1394,30 @@ describe('tim db/review', () => {
       expect(getReviewById(db, review.id)).toBeNull();
     });
 
+    test('deleting a plan removes plan-only reviews and preserves PR-linked reviews', () => {
+      createPlan(PLAN_UUID_1, 101);
+      const planOnlyReview = createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        status: 'complete',
+      });
+      const prLinkedReview = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+        planUuid: PLAN_UUID_1,
+        status: 'complete',
+      });
+
+      db.prepare('DELETE FROM plan WHERE uuid = ?').run(PLAN_UUID_1);
+
+      expect(getReviewById(db, planOnlyReview.id)).toBeNull();
+      const remaining = getReviewById(db, prLinkedReview.id);
+      expect(remaining).not.toBeNull();
+      expect(remaining?.pr_url).toBe(PR_URL_1);
+      expect(remaining?.plan_uuid).toBeNull();
+    });
+
     test('deleting a review cascades to pr_review_submission rows', () => {
       const review = createReview(db, {
         projectId,
@@ -1304,6 +1534,7 @@ Changes to query handling to prevent SQL injection.
     });
 
     test('returns all reviews for a project', () => {
+      createPlan(PLAN_UUID_1, 101);
       createReview(db, {
         projectId,
         prUrl: PR_URL_1,
@@ -1314,9 +1545,14 @@ Changes to query handling to prevent SQL injection.
         prUrl: PR_URL_2,
         branch: 'feature/branch-2',
       });
+      createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+      });
 
       const reviews = getReviewsForProject(db, projectId);
-      expect(reviews).toHaveLength(2);
+      expect(reviews).toHaveLength(3);
+      expect(reviews.some((review) => review.plan_uuid === PLAN_UUID_1)).toBe(true);
     });
 
     test('does not return reviews from other projects', () => {
@@ -1358,6 +1594,7 @@ Changes to query handling to prevent SQL injection.
     });
 
     test('with latestPerPr option returns only latest review per PR URL', () => {
+      createPlan(PLAN_UUID_1, 101);
       // Two reviews for PR_URL_1
       createReview(db, {
         projectId,
@@ -1381,15 +1618,35 @@ Changes to query handling to prevent SQL injection.
         branch: 'feature/branch-2',
         status: 'in_progress',
       });
+      const planOnly = createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        status: 'complete',
+      });
+      createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        reviewedSha: 'older-plan-sha',
+        status: 'complete',
+      });
+      const latestPlanOnly = createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        reviewedSha: 'latest-plan-sha',
+        status: 'complete',
+      });
 
       const latest = getReviewsForProject(db, projectId, { latestPerPr: true });
-      expect(latest).toHaveLength(2);
+      expect(latest).toHaveLength(3);
 
       const pr1Review = latest.find((r) => r.pr_url === PR_URL_1);
       const pr2Review = latest.find((r) => r.pr_url === PR_URL_2);
+      const planReview = latest.find((r) => r.plan_uuid === PLAN_UUID_1);
 
       expect(pr1Review?.id).toBe(latestForPr1.id);
       expect(pr2Review?.id).toBe(forPr2.id);
+      expect(planReview?.id).toBe(latestPlanOnly.id);
+      expect(latest.some((review) => review.id === planOnly.id)).toBe(false);
     });
 
     test('without latestPerPr option returns all reviews including history', () => {
@@ -1449,7 +1706,185 @@ Changes to query handling to prevent SQL injection.
     });
   });
 
+  describe('migration 37 review plan linkage', () => {
+    test('review table has nullable PR columns, plan_uuid index, and plan-delete trigger', () => {
+      const columns = db.prepare("PRAGMA table_info('review')").all() as Array<{
+        name: string;
+        notnull: number;
+      }>;
+      const columnByName = new Map(columns.map((column) => [column.name, column]));
+
+      expect(columnByName.get('pr_url')?.notnull).toBe(0);
+      expect(columnByName.get('branch')?.notnull).toBe(0);
+      expect(columnByName.has('plan_uuid')).toBe(true);
+
+      const indexes = db.prepare("PRAGMA index_list('review')").all() as Array<{ name: string }>;
+      expect(indexes.map((index) => index.name)).toContain('idx_review_plan_uuid');
+
+      const trigger = db
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'review_delete_plan_only_before_plan_delete'"
+        )
+        .get() as { sql: string } | null;
+      expect(trigger?.sql).toContain(
+        'DELETE FROM review WHERE plan_uuid = OLD.uuid AND pr_url IS NULL'
+      );
+    });
+
+    test('migration preserves existing review rows when upgrading from schema version 36', async () => {
+      const legacyPath = path.join(tempDir, 'legacy-review.db');
+      const legacyDb = new Database(legacyPath);
+      try {
+        legacyDb.run('PRAGMA foreign_keys = ON');
+        legacyDb.run(`
+          CREATE TABLE schema_version (
+            version INTEGER NOT NULL DEFAULT 0,
+            import_completed INTEGER NOT NULL DEFAULT 1,
+            bootstrap_completed INTEGER NOT NULL DEFAULT 1
+          );
+          INSERT INTO schema_version (version, import_completed, bootstrap_completed)
+            VALUES (36, 1, 1);
+
+          CREATE TABLE project (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            repository_id TEXT NOT NULL UNIQUE
+          );
+          CREATE TABLE plan (
+            uuid TEXT NOT NULL PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+            plan_id INTEGER NOT NULL
+          );
+          CREATE TABLE pr_status (
+            id INTEGER PRIMARY KEY AUTOINCREMENT
+          );
+          CREATE TABLE review (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+            pr_status_id INTEGER REFERENCES pr_status(id) ON DELETE SET NULL,
+            pr_url TEXT NOT NULL,
+            branch TEXT NOT NULL,
+            base_branch TEXT,
+            reviewed_sha TEXT,
+            review_guide TEXT,
+            status TEXT NOT NULL DEFAULT 'pending'
+              CHECK(status IN ('pending', 'in_progress', 'complete', 'error')),
+            error_message TEXT,
+            created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
+            updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z'
+          );
+          CREATE INDEX idx_review_project_id ON review(project_id);
+          CREATE INDEX idx_review_pr_url ON review(pr_url);
+
+          INSERT INTO project (id, repository_id) VALUES (1, 'legacy-repo');
+          INSERT INTO review (
+            id,
+            project_id,
+            pr_url,
+            branch,
+            base_branch,
+            reviewed_sha,
+            review_guide,
+            status,
+            created_at,
+            updated_at
+          ) VALUES (
+            7,
+            1,
+            'https://github.com/example/repo/pull/7',
+            'feature/legacy',
+            'main',
+            'abc123',
+            '# Legacy Guide',
+            'complete',
+            '2026-01-01T00:00:00.000Z',
+            '2026-01-01T00:00:00.000Z'
+          ), (
+            8,
+            1,
+            'https://github.com/example/repo/pull/8',
+            'feature/no-guide',
+            'main',
+            'def456',
+            NULL,
+            'in_progress',
+            '2026-01-02T00:00:00.000Z',
+            '2026-01-02T00:00:00.000Z'
+          ), (
+            9,
+            1,
+            'https://github.com/example/repo/pull/9',
+            'feature/no-reviewed-sha',
+            'develop',
+            NULL,
+            '# Guide Without SHA',
+            'complete',
+            '2026-01-03T00:00:00.000Z',
+            '2026-01-03T00:00:00.000Z'
+          );
+        `);
+
+        runMigrations(legacyDb);
+
+        const migrated = legacyDb.prepare('SELECT * FROM review ORDER BY id').all() as Array<{
+          id: number;
+          pr_url: string | null;
+          branch: string | null;
+          base_branch: string | null;
+          reviewed_sha: string | null;
+          plan_uuid: string | null;
+          review_guide: string | null;
+          status: string;
+        }>;
+        expect(migrated).toEqual([
+          expect.objectContaining({
+            id: 7,
+            pr_url: 'https://github.com/example/repo/pull/7',
+            branch: 'feature/legacy',
+            base_branch: 'main',
+            reviewed_sha: 'abc123',
+            plan_uuid: null,
+            review_guide: '# Legacy Guide',
+            status: 'complete',
+          }),
+          expect.objectContaining({
+            id: 8,
+            pr_url: 'https://github.com/example/repo/pull/8',
+            branch: 'feature/no-guide',
+            base_branch: 'main',
+            reviewed_sha: 'def456',
+            plan_uuid: null,
+            review_guide: null,
+            status: 'in_progress',
+          }),
+          expect.objectContaining({
+            id: 9,
+            pr_url: 'https://github.com/example/repo/pull/9',
+            branch: 'feature/no-reviewed-sha',
+            base_branch: 'develop',
+            reviewed_sha: null,
+            plan_uuid: null,
+            review_guide: '# Guide Without SHA',
+            status: 'complete',
+          }),
+        ]);
+      } finally {
+        legacyDb.close(false);
+        await fs.rm(legacyPath, { force: true });
+      }
+    });
+  });
+
   describe('PR URL canonicalization', () => {
+    test('createReview validates empty PR URLs instead of coercing them to null', () => {
+      expect(() =>
+        createReview(db, {
+          projectId,
+          prUrl: '',
+          branch: 'feature/my-branch',
+        })
+      ).toThrow('Invalid pull request identifier');
+    });
+
     test('createReview canonicalizes /pulls/ variant to /pull/', () => {
       const pullsUrl = 'https://github.com/example/repo/pulls/1';
       const canonicalUrl = 'https://github.com/example/repo/pull/1';

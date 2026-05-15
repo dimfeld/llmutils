@@ -1008,7 +1008,7 @@ describe('review_pr command', () => {
       expect.objectContaining({ noninteractive: false, terminalInput: false })
     );
     expect(runWithHeadlessAdapterIfEnabledMock).toHaveBeenCalledWith(
-      expect.objectContaining({ interactive: true })
+      expect.objectContaining({ command: 'review-guide', interactive: true })
     );
   });
 
@@ -1099,7 +1099,7 @@ describe('review_pr command', () => {
       expect.objectContaining({ noninteractive: false, terminalInput: false })
     );
     expect(runWithHeadlessAdapterIfEnabledMock).toHaveBeenCalledWith(
-      expect.objectContaining({ enabled: false, interactive: true })
+      expect.objectContaining({ command: 'review-guide', enabled: false, interactive: true })
     );
   });
 
@@ -1636,13 +1636,12 @@ describe('review_pr command', () => {
     expect(prompt).toContain('Focus on auth logic and test gaps.');
   });
 
-  test('warns and omits custom instructions when configured file does not exist', async () => {
+  test('warns and continues when configured custom instructions file does not exist', async () => {
     mockLoadEffectiveConfig.mockResolvedValueOnce({
       terminalInput: true,
       review: { customInstructionsPath: 'missing-instructions.md' },
       executors: {},
     } as any);
-
     const codexExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
     });
@@ -1654,20 +1653,24 @@ describe('review_pr command', () => {
       makeCommand()
     );
 
-    const prompt = codexExecute.mock.calls[0]?.[0];
-    expect(prompt).not.toContain('## Custom Instructions');
+    expect(mockCreateReview).toHaveBeenCalled();
+    expect(mockUpdateReview).toHaveBeenCalledWith(
+      expect.anything(),
+      501,
+      expect.objectContaining({ status: 'complete' })
+    );
+    expect(codexExecute.mock.calls[0]?.[0]).not.toContain('## Custom Instructions');
     expect(mockWarn).toHaveBeenCalledWith(
       expect.stringContaining('Could not read custom instructions file: missing-instructions.md')
     );
   });
 
-  test('warns and omits custom instructions when configured path traverses outside repo', async () => {
+  test('warns and continues when configured custom instructions path traverses outside repo', async () => {
     mockLoadEffectiveConfig.mockResolvedValueOnce({
       terminalInput: true,
       review: { customInstructionsPath: '../../etc/passwd' },
       executors: {},
     } as any);
-
     const codexExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
     });
@@ -1679,8 +1682,13 @@ describe('review_pr command', () => {
       makeCommand()
     );
 
-    const prompt = codexExecute.mock.calls[0]?.[0];
-    expect(prompt).not.toContain('## Custom Instructions');
+    expect(mockCreateReview).toHaveBeenCalled();
+    expect(mockUpdateReview).toHaveBeenCalledWith(
+      expect.anything(),
+      501,
+      expect.objectContaining({ status: 'complete' })
+    );
+    expect(codexExecute.mock.calls[0]?.[0]).not.toContain('## Custom Instructions');
     expect(mockWarn).toHaveBeenCalledWith(
       expect.stringContaining('Could not read custom instructions file: ../../etc/passwd')
     );

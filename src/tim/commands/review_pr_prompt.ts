@@ -13,6 +13,7 @@ const REVIEW_CATEGORIES_SECTION = `### Critical Issue Categories
 - Performance Issues (MEDIUM): unnecessary heavy work, memory growth, avoidable expensive operations.`;
 
 export interface PrReviewMetadata {
+  kind: 'pr';
   prUrl: string;
   prNumber: number;
   title: string | null;
@@ -22,6 +23,22 @@ export interface PrReviewMetadata {
   owner: string;
   repo: string;
 }
+
+export interface PlanReviewMetadata {
+  kind: 'plan';
+  planId: number;
+  planUuid: string;
+  title: string;
+  goal: string | null;
+  details: string | null;
+  tasks: Array<{ title: string; status?: string | null }>;
+  parentChain: Array<{ planId: number; title: string }>;
+  completedChildren: Array<{ planId: number; title: string }>;
+  baseBranch: string;
+  headRef: string;
+}
+
+export type ReviewSubjectMetadata = PrReviewMetadata | PlanReviewMetadata;
 
 export interface ReviewGuideDiffReference {
   ref: string;
@@ -33,7 +50,7 @@ export interface ReviewGuideDiffReference {
 }
 
 interface ReviewGuidePromptOptions {
-  metadata: PrReviewMetadata;
+  metadata: ReviewSubjectMetadata;
   guidePath: string;
   useJj: boolean;
   diffReferences?: ReviewGuideDiffReference[] | null;
@@ -46,33 +63,38 @@ interface ReviewGuideIssuesFollowUpPromptOptions {
 }
 
 interface StandaloneReviewIssuesPromptOptions {
-  metadata: PrReviewMetadata;
+  metadata: ReviewSubjectMetadata;
   useJj: boolean;
   customInstructions?: string;
 }
 
 interface IssueCombinationPromptOptions {
+  subjectKind?: ReviewSubjectMetadata['kind'];
   claudeIssues: unknown;
   codexIssues: unknown;
 }
 
-function getDiffInstructions(baseBranch: string, useJj: boolean): string {
+function getDiffInstructions(metadata: ReviewSubjectMetadata, useJj: boolean): string {
+  const baseBranch = metadata.baseBranch;
   // Quote the branch name to avoid issues with special characters in command examples.
-  // Use remote-tracking refs so the diff is always against the fetched remote state,
-  // not a potentially stale or missing local branch.
   const quotedBranch = baseBranch.replace(/'/g, "'\\''");
 
   if (useJj) {
+    const fromRevset =
+      metadata.kind === 'pr'
+        ? `heads(::@ & ::${quotedBranch}@origin)`
+        : `heads(::@ & ::${quotedBranch})`;
     return [
       `Repository is jj-based. Determine the merge-base diff yourself; do not ask for inline diffs.`,
-      `Primary command: \`jj diff --from 'heads(::@ & ::${quotedBranch}@origin)'\``,
+      `Primary command: \`jj diff --from '${fromRevset}'\``,
       `Use \`jj diff ... -s\` for file lists and \`jj diff ... <path>\` for file-specific analysis.`,
     ].join('\n');
   }
 
+  const baseRef = metadata.kind === 'pr' ? `origin/${quotedBranch}` : quotedBranch;
   return [
     `Repository is git-based. Determine the merge-base diff yourself; do not ask for inline diffs.`,
-    `Use: \`git merge-base 'origin/${quotedBranch}' HEAD\` then \`git diff <merge-base>\``,
+    `Use: \`git merge-base '${baseRef}' HEAD\` then \`git diff <merge-base>\``,
     `Use \`git diff <merge-base> --name-only\` for file lists and file-specific diffs for deep analysis.`,
     `When you generate diffs for the review guide, copy the relevant sections of \`git diff\` output verbatim. Do not paraphrase, normalize, or reconstruct the diff hunks.`,
   ].join('\n');
@@ -88,6 +110,55 @@ function formatPrMetadata(metadata: PrReviewMetadata): string {
     `- Base Branch: ${metadata.baseBranch}`,
     `- Head Branch: ${metadata.headBranch}`,
   ].join('\n');
+}
+
+function formatPlanMetadata(metadata: PlanReviewMetadata): string {
+  const tasks =
+    metadata.tasks.length > 0
+      ? metadata.tasks
+          .map((task) => `  - ${task.title}${task.status ? ` [${task.status}]` : ''}`)
+          .join('\n')
+      : '  - (none listed)';
+  const parentChain =
+    metadata.parentChain.length > 0
+      ? metadata.parentChain.map((plan) => `  - #${plan.planId}: ${plan.title}`).join('\n')
+      : '  - (none)';
+  const completedChildren =
+    metadata.completedChildren.length > 0
+      ? metadata.completedChildren.map((plan) => `  - #${plan.planId}: ${plan.title}`).join('\n')
+      : '  - (none)';
+
+  return [
+    `- Plan ID: #${metadata.planId}`,
+    `- Plan UUID: ${metadata.planUuid}`,
+    `- Title: ${metadata.title}`,
+    `- Goal: ${metadata.goal?.trim() || '(none)'}`,
+    `- Details: ${metadata.details?.trim() || '(none)'}`,
+    `- Base Branch: ${metadata.baseBranch}`,
+    `- Head Ref: ${metadata.headRef}`,
+    '- Tasks:',
+    tasks,
+    '- Parent Chain:',
+    parentChain,
+    '- Completed Children:',
+    completedChildren,
+  ].join('\n');
+}
+
+function formatSubjectMetadata(metadata: ReviewSubjectMetadata): string {
+  return metadata.kind === 'pr' ? formatPrMetadata(metadata) : formatPlanMetadata(metadata);
+}
+
+function getSubjectNoun(metadata: ReviewSubjectMetadata): string {
+  return metadata.kind === 'pr' ? 'pull request' : 'plan implementation';
+}
+
+function getSubjectMetadataHeading(metadata: ReviewSubjectMetadata): string {
+  return metadata.kind === 'pr' ? 'PR Metadata' : 'Plan Metadata';
+}
+
+function getGuideWorkflowSubject(metadata: ReviewSubjectMetadata): string {
+  return metadata.kind === 'pr' ? 'PR diff' : 'plan implementation diff';
 }
 
 function maybeCustomInstructions(customInstructions?: string): string {
@@ -142,20 +213,20 @@ function renderDiffReferenceCatalog(diffReferences?: ReviewGuideDiffReference[] 
 export function buildReviewGuidePrompt(options: ReviewGuidePromptOptions): string {
   const { metadata, guidePath, useJj, diffReferences, customInstructions } = options;
   const hasDiffReferences = Boolean(diffReferences && diffReferences.length > 0);
-  return `You are reviewing a pull request and must produce a complete review guide before issue extraction.
+  return `You are reviewing a ${getSubjectNoun(metadata)} and must produce a complete review guide before issue extraction.
 
-## PR Metadata
-${formatPrMetadata(metadata)}
+## ${getSubjectMetadataHeading(metadata)}
+${formatSubjectMetadata(metadata)}
 
 ## Diff Discovery
-${getDiffInstructions(metadata.baseBranch, useJj)}
+${getDiffInstructions(metadata, useJj)}
 
 ${renderDiffReferenceCatalog(diffReferences)}
 
 ## Required Workflow
-1. Enumerate all changed files from the PR diff.
+1. Enumerate all changed files from the ${getGuideWorkflowSubject(metadata)}.
 2. Group files into functional sections/subsections (core logic, data model, API, tests, docs, etc.).
-3. Analyze each section with enough detail that a reviewer can walk the PR without opening every file.
+3. Analyze each section with enough detail that a reviewer can walk the ${metadata.kind === 'pr' ? 'PR' : 'plan changes'} without opening every file.
 4. Ensure every changed file and every changed line is covered in at least one section.
 5. ${
     hasDiffReferences
@@ -201,15 +272,23 @@ export function buildStandaloneReviewIssuesPrompt(
 ): string {
   const { metadata, useJj, customInstructions } = options;
   const schema = renderSchema();
+  const scopeGuidance =
+    metadata.kind === 'pr'
+      ? `${buildPrReviewScopeGuidance()}\n`
+      : 'Evaluate the implementation against the plan goal, details, task list, parent context, and completed child plans. Focus only on defects or meaningful review issues in the changed code.\n';
+  const planContextInstruction =
+    metadata.kind === 'pr'
+      ? '- Do not include plan/task context; this is PR-only review.'
+      : '- Use the plan/task context only to judge whether changed code correctly implements the requested plan.';
 
-  return `${buildReviewerPromptIntro(false)}You are performing a standalone PR code review and must return structured JSON issues only.
-${buildPrReviewScopeGuidance()}
+  return `${buildReviewerPromptIntro(false)}You are performing a standalone ${metadata.kind === 'pr' ? 'PR' : 'plan implementation'} code review and must return structured JSON issues only.
+${scopeGuidance}
 
-## PR Metadata
-${formatPrMetadata(metadata)}
+## ${getSubjectMetadataHeading(metadata)}
+${formatSubjectMetadata(metadata)}
 
 ## Diff Discovery
-${getDiffInstructions(metadata.baseBranch, useJj)}
+${getDiffInstructions(metadata, useJj)}
 
 ${buildReviewerCriticalIssuesGuidance()}
 
@@ -217,7 +296,7 @@ ${buildReviewerCriticalIssuesGuidance()}
 - Return valid JSON matching the schema below.
 - Focus on concrete, actionable issues tied to changed code.
 - Prefer fewer high-signal findings over speculative noise.
-- Do not include plan/task context; this is PR-only review.
+${planContextInstruction}
 - Do not provide a verdict; only return the JSON issues payload.
 - Use the same severity bar as the reviewer prompt: only report genuine issues that would matter in review.
 
@@ -269,8 +348,9 @@ export function buildIssueCombinationPrompt(options: IssueCombinationPromptOptio
   const schema = JSON.stringify(COMBINATION_OUTPUT_SCHEMA, null, 2);
   const claudeIssues = toJson(options.claudeIssues);
   const codexIssues = toJson(options.codexIssues);
+  const subjectLabel = options.subjectKind === 'plan' ? 'plan implementation' : 'PR';
 
-  return `Merge two PR review outputs into one final review result.
+  return `Merge two ${subjectLabel} review outputs into one final review result.
 
 ## Goals
 - Deduplicate semantically equivalent issues.

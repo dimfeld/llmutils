@@ -307,25 +307,33 @@ PR status data from GitHub is cached in SQLite for display in the web UI and CLI
 - `validatePrIdentifier(identifier)`: Enforces GitHub host + `/pull/` path + numeric PR number for URL-form identifiers. Rejects issue URLs and other non-PR GitHub URLs.
 - `deduplicatePrUrls(urls, options?)`: Canonicalizes and deduplicates a list of PR URLs. Optionally warns on invalid entries via `onInvalid` callback. Used by CLI commands and API endpoints to normalize input before processing.
 
-### Standalone PR Reviews
+### Standalone Reviews (PR and Plan)
 
-Standalone PR reviews (via `tim pr review-guide`) are stored in SQLite (migration v23). Multiple reviews per PR are supported for review history. The review guide is stored as TEXT directly on the `review` row. Results from multiple executors (Claude, Codex) are combined and individual issues are stored with source attribution.
+Standalone reviews are stored in SQLite (migration v23, generalized in v37). A review row is keyed to either a PR (`pr_url` set) or a plan (`plan_uuid` set) — the v37 CHECK enforces that at least one is non-NULL. Multiple reviews per subject are supported for review history. The review guide is stored as TEXT directly on the `review` row. Results from multiple executors (Claude, Codex) are combined and individual issues are stored with source attribution.
+
+Generation paths:
+
+- `tim pr review-guide <prUrlOrNumber>` — PR-linked review (sets `pr_url`/`branch`/`pr_status_id`).
+- `tim review-guide <planId>` — plan-only review (sets `plan_uuid`, leaves `pr_url`/`branch` NULL).
 
 **Tables**:
 
-- `review`: Linked to a project and optionally to a `pr_status` record. Columns: `id`, `project_id` (FK CASCADE), `pr_status_id` (FK SET NULL), `pr_url` (canonicalized), `branch`, `base_branch`, `reviewed_sha`, `review_guide` (TEXT), `status` (pending/in_progress/complete/error), `error_message`, `created_at`, `updated_at`. No unique constraint on `(project_id, pr_url)` — use `ORDER BY created_at DESC, id DESC LIMIT 1` for latest. Indexes on `project_id` and `pr_url`.
+- `review`: Linked to a project and either a `pr_status` row or a `plan` row. Columns: `id`, `project_id` (FK CASCADE), `pr_status_id` (FK SET NULL, NULL for plan-only), `pr_url` (canonicalized, **NULLABLE** after v37), `branch` (**NULLABLE** after v37), `base_branch`, `reviewed_sha`, `plan_uuid` (FK to `plan(uuid)` ON DELETE SET NULL, added in v37), `review_guide` (TEXT), `status` (pending/in_progress/complete/error), `error_message`, `created_at`, `updated_at`. CHECK constraint: `pr_url IS NOT NULL OR plan_uuid IS NOT NULL`. No unique constraint on `(project_id, pr_url)` — use `ORDER BY created_at DESC, id DESC LIMIT 1` for latest. Indexes on `project_id`, `pr_url`, and `plan_uuid`.
 - `review_issue`: Individual issues per review. Columns: `id`, `review_id` (FK CASCADE), `severity` (critical/major/minor/info), `category` (security/performance/bug/style/compliance/testing/other), `content`, `file`, `line`, `start_line`, `suggestion`, `source` (claude-code/codex-cli/combined), `resolved` (INTEGER default 0), `created_at`, `updated_at`. Index on `review_id`.
+
+**Plan-delete trigger** (added in v37): A `BEFORE DELETE ON plan` trigger runs `DELETE FROM review WHERE plan_uuid = OLD.uuid AND pr_url IS NULL` so plan-only reviews are removed when their plan is deleted. PR-linked reviews that also reference the plan get `plan_uuid` set to NULL via the FK's `ON DELETE SET NULL` (BEFORE-DELETE triggers run before cascading FK actions in SQLite).
 
 **CRUD module** (`src/tim/db/review.ts`):
 
-- `createReview(db, input)`: Always inserts a new review record (never upserts). Canonicalizes `prUrl` on insert.
+- `createReview(db, input)`: Always inserts a new review record (never upserts). Canonicalizes `prUrl` on insert. Accepts either `prUrl`/`branch` (PR review) or `planUuid` (plan-only review). Empty-string `prUrl` is rejected before canonicalization.
 - `updateReview(db, id, updates)`: Conditional field-building pattern (like workspace.ts) for nullable fields — supports explicit null clearing. Fields: `status`, `reviewedSha`, `reviewGuide`, `errorMessage`.
-- `getLatestReviewByPrUrl(db, prUrl)`: Canonicalizes URL, returns most recent review (`ORDER BY created_at DESC, id DESC LIMIT 1`).
+- `getLatestReviewByPrUrl(db, prUrl)`: Canonicalizes URL, returns most recent PR review.
+- `getLatestReviewByPlanUuid(db, planUuid, options?)` / `getReviewsByPlanUuid(db, planUuid)` / `getLatestReviewGuideByPlanUuid(db, planUuid, options?)`: Plan-keyed equivalents of the PR lookups.
 - `getReviewById(db, id)`: Look up by ID.
 - `insertReviewIssues(db, reviewId, issues)`: Bulk insert in a single transaction.
 - `getReviewIssues(db, reviewId)`: All issues for a review.
 - `updateReviewIssue(db, id, updates)`: Update a single issue (e.g., mark resolved).
-- `getReviewsForProject(db, projectId, options?)`: List reviews for a project. `latestPerPr` option uses a correlated subquery for consistent "latest" semantics.
+- `getReviewsForProject(db, projectId, options?)`: List reviews for a project. With `latestPerPr: true`, dedupes both PR rows by `pr_url` and plan-only rows (those with `pr_url IS NULL`) by `plan_uuid`.
 
 ### Webhook Log
 

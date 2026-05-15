@@ -21,6 +21,7 @@ import {
   spawnGenerateProcess,
   spawnRebaseProcess,
   spawnPrCreateProcess,
+  spawnPlanReviewGuideProcess,
   spawnReviewProcess,
 } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
@@ -28,8 +29,9 @@ import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getAgentMultiPlansForProject } from '$tim/commands/agent_multi/plan_loader.js';
 import { removeAssignment } from '$tim/db/assignment.js';
-import { getPlanByUuid } from '$tim/db/plan.js';
+import { getPlanByPlanId, getPlanByUuid } from '$tim/db/plan.js';
 import { validateSelection, type AgentMultiPlan } from '$tim/commands/agent_multi/orchestrator.js';
+import { getReviewsByPlanUuid } from '$tim/db/review.js';
 import { checkAndMarkParentDone } from '$tim/plans/parent_cascade.js';
 import { isWorkComplete } from '$tim/plans/plan_state_utils.js';
 import { getProjectUuidForId, writePlanSetStatus } from '$tim/sync/write_router.js';
@@ -85,7 +87,8 @@ async function launchTimCommand(
   eligibilityCheck: (plan: PlanDetail) => plan is PlanDetailResult,
   eligibilityError: string,
   spawnProcess: (planId: number, cwd: string) => Promise<SpawnProcessResult>,
-  finishConfigOverride?: FinishConfig
+  finishConfigOverride?: FinishConfig,
+  beforeSpawn?: (plan: PlanDetailResult, db: Database) => void | Promise<void>
 ): Promise<
   { status: 'started'; planId: number } | { status: 'already_running'; connectionId?: string }
 > {
@@ -132,6 +135,7 @@ async function launchTimCommand(
 
   let result;
   try {
+    await beforeSpawn?.(plan, db);
     result = await spawnProcess(plan.planId, primaryWorkspacePath);
   } catch (e) {
     clearLaunchLock(plan.uuid);
@@ -430,6 +434,38 @@ export const startReview = command(startReviewSchema, async ({ planUuid }) => {
     spawnReviewProcess
   );
 });
+
+const startPlanReviewGuideSchema = z.object({
+  projectId: z.number().int(),
+  planId: z.number().int(),
+});
+
+export const startPlanReviewGuide = command(
+  startPlanReviewGuideSchema,
+  async ({ projectId, planId }) => {
+    const { db } = await getServerContext();
+
+    const planRow = getPlanByPlanId(db, projectId, planId);
+    if (!planRow) {
+      error(404, 'Plan not found in project');
+    }
+
+    return launchTimCommand(
+      'review-guide',
+      planRow.uuid,
+      isPlanEligibleForChat,
+      'Plan is not eligible for review guide',
+      (planId, cwd) => spawnPlanReviewGuideProcess(planId, cwd),
+      undefined,
+      (plan) => {
+        const existingReviews = getReviewsByPlanUuid(db, plan.uuid);
+        if (existingReviews.some((r) => r.status === 'pending' || r.status === 'in_progress')) {
+          error(409, 'A review guide is already in progress for this plan');
+        }
+      }
+    );
+  }
+);
 
 function isPlanEligibleForFinish(plan: PlanDetail): plan is PlanDetailResult {
   if (plan == null) return false;

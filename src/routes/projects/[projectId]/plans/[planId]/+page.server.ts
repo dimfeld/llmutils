@@ -19,6 +19,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 
   return {
     planDetail: result.planDetail,
+    reviews: result.reviews,
     openInEditorEnabled: Boolean(process.env.TIM_ENABLE_OPEN_IN_EDITOR),
   };
 };

@@ -50,6 +50,13 @@ const reviewIssueTaskSchema = z.object({
   planUuid: z.string().min(1),
 });
 
+function requirePrUrlForReview(review: { id: number; pr_url: string | null }): string {
+  if (review.pr_url == null) {
+    error(400, `Review ${review.id} is not associated with a PR`);
+  }
+  return review.pr_url;
+}
+
 export const removeReviewIssue = command(issueIndexSchema, async ({ planUuid, issueIndex }) => {
   const { db, config } = await getServerContext();
   const plan = getPlanByUuid(db, planUuid);
@@ -186,7 +193,8 @@ export const addReviewIssueToPlanTask = command(
       error(404, 'Review issue not found');
     }
 
-    const linkedPlans = getLinkedPlansByPrUrl(db, [review.pr_url]).get(review.pr_url) ?? [];
+    const prUrl = requirePrUrlForReview(review);
+    const linkedPlans = getLinkedPlansByPrUrl(db, [prUrl]).get(prUrl) ?? [];
     if (linkedPlans.length !== 1 || linkedPlans[0]?.planUuid !== planUuid) {
       error(400, 'PR is not linked to this plan');
     }
@@ -246,7 +254,8 @@ function assertReviewIssueCanBeAddedToPlanTask(
     error(404, 'Review issue not found');
   }
 
-  const linkedPlans = getLinkedPlansByPrUrl(db, [review.pr_url]).get(review.pr_url) ?? [];
+  const prUrl = requirePrUrlForReview(review);
+  const linkedPlans = getLinkedPlansByPrUrl(db, [prUrl]).get(prUrl) ?? [];
   if (linkedPlans.length !== 1 || linkedPlans[0]?.planUuid !== planUuid) {
     error(400, 'PR is not linked to this plan');
   }

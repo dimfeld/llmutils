@@ -1141,7 +1141,97 @@ const migrations: Migration[] = [
     up: `SELECT 1;`,
     afterUp: addBasePlanUuidColumns,
   },
+  {
+    version: 37,
+    requiresFkOff: true,
+    up: `SELECT 1;`,
+    afterUp: addReviewPlanLinkage,
+  },
 ];
+
+function addReviewPlanLinkage(db: Database): void {
+  if (!tableExists(db, 'review')) {
+    return;
+  }
+
+  if (!tableColumns(db, 'review').has('plan_uuid')) {
+    // Drop the plan trigger before rebuilding review so it is recreated against the new table.
+    db.run(`
+      DROP TRIGGER IF EXISTS review_delete_plan_only_before_plan_delete;
+
+      CREATE TABLE review_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        pr_status_id INTEGER REFERENCES pr_status(id) ON DELETE SET NULL,
+        pr_url TEXT,
+        branch TEXT,
+        base_branch TEXT,
+        reviewed_sha TEXT,
+        review_guide TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending', 'in_progress', 'complete', 'error')),
+        error_message TEXT,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        plan_uuid TEXT REFERENCES plan(uuid) ON DELETE SET NULL,
+        CHECK (pr_url IS NOT NULL OR plan_uuid IS NOT NULL)
+      );
+
+      INSERT INTO review_new (
+        id,
+        project_id,
+        pr_status_id,
+        pr_url,
+        branch,
+        base_branch,
+        reviewed_sha,
+        review_guide,
+        status,
+        error_message,
+        created_at,
+        updated_at,
+        plan_uuid
+      )
+      SELECT
+        id,
+        project_id,
+        pr_status_id,
+        pr_url,
+        branch,
+        base_branch,
+        reviewed_sha,
+        review_guide,
+        status,
+        error_message,
+        created_at,
+        updated_at,
+        NULL
+      FROM review;
+
+      DROP TABLE review;
+      ALTER TABLE review_new RENAME TO review;
+    `);
+  }
+
+  db.run(`
+    CREATE INDEX IF NOT EXISTS idx_review_project_id ON review(project_id);
+    CREATE INDEX IF NOT EXISTS idx_review_pr_url ON review(pr_url);
+    CREATE INDEX IF NOT EXISTS idx_review_plan_uuid ON review(plan_uuid);
+  `);
+
+  if (!tableExists(db, 'plan')) {
+    return;
+  }
+
+  db.run(`
+    CREATE TRIGGER IF NOT EXISTS review_delete_plan_only_before_plan_delete
+    BEFORE DELETE ON plan
+    FOR EACH ROW
+    BEGIN
+      DELETE FROM review WHERE plan_uuid = OLD.uuid AND pr_url IS NULL;
+    END;
+  `);
+}
 
 function addBasePlanUuidColumns(db: Database): void {
   if (tableExists(db, 'plan') && !tableColumns(db, 'plan').has('base_plan_uuid')) {

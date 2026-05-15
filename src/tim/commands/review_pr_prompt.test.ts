@@ -6,10 +6,12 @@ import {
   buildStandaloneReviewIssuesPrompt,
   COMBINATION_OUTPUT_SCHEMA,
   type PrReviewMetadata,
+  type PlanReviewMetadata,
   type ReviewGuideDiffReference,
 } from './review_pr_prompt.js';
 
 const METADATA: PrReviewMetadata = {
+  kind: 'pr',
   prUrl: 'https://github.com/acme/repo/pull/42',
   prNumber: 42,
   title: 'Improve PR review flow',
@@ -18,6 +20,23 @@ const METADATA: PrReviewMetadata = {
   headBranch: 'feature/review-guide',
   owner: 'acme',
   repo: 'repo',
+};
+
+const PLAN_METADATA: PlanReviewMetadata = {
+  kind: 'plan',
+  planId: 348,
+  planUuid: 'plan-uuid-348',
+  title: 'Plan-only review guides',
+  goal: 'Generate review guides without a GitHub PR.',
+  details: 'Reuse the PR review-guide pipeline for plan-only work.',
+  tasks: [
+    { title: 'Parameterize prompts', status: 'done' },
+    { title: 'Extract workflow', status: 'in_progress' },
+  ],
+  parentChain: [{ planId: 347, title: 'Support plan review guides' }],
+  completedChildren: [{ planId: 346, title: 'Review storage groundwork' }],
+  baseBranch: 'main',
+  headRef: 'HEAD',
 };
 
 const DIFF_REFERENCES: ReviewGuideDiffReference[] = [
@@ -141,6 +160,17 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('"issues"');
   });
 
+  test('buildIssueCombinationPrompt uses plan framing for plan reviews', () => {
+    const prompt = buildIssueCombinationPrompt({
+      subjectKind: 'plan',
+      claudeIssues: { issues: [] },
+      codexIssues: { issues: [] },
+    });
+
+    expect(prompt).toContain('Merge two plan implementation review outputs');
+    expect(prompt).not.toContain('Merge two PR review outputs');
+  });
+
   test('custom instructions are included when provided', () => {
     const guidePrompt = buildReviewGuidePrompt({
       metadata: METADATA,
@@ -204,6 +234,39 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('main');
   });
 
+  test('buildReviewGuidePrompt includes plan metadata and plan framing', () => {
+    const prompt = buildReviewGuidePrompt({
+      metadata: PLAN_METADATA,
+      guidePath: '.tim/tmp/review-guide.md',
+      useJj: false,
+    });
+
+    expect(prompt).toContain('reviewing a plan implementation');
+    expect(prompt).toContain('## Plan Metadata');
+    expect(prompt).toContain('Plan ID: #348');
+    expect(prompt).toContain('Plan UUID: plan-uuid-348');
+    expect(prompt).toContain('Goal: Generate review guides without a GitHub PR.');
+    expect(prompt).toContain('Parameterize prompts [done]');
+    expect(prompt).toContain('#347: Support plan review guides');
+    expect(prompt).toContain('#346: Review storage groundwork');
+    expect(prompt).toContain('plan implementation diff');
+    expect(prompt).toContain("git merge-base 'main' HEAD");
+    expect(prompt).not.toContain('origin/');
+    expect(prompt).not.toContain('## PR Metadata');
+    expect(prompt).not.toContain('PR URL:');
+  });
+
+  test('buildReviewGuidePrompt uses local jj revset for plan metadata', () => {
+    const prompt = buildReviewGuidePrompt({
+      metadata: PLAN_METADATA,
+      guidePath: '.tim/tmp/review-guide.md',
+      useJj: true,
+    });
+
+    expect(prompt).toContain("jj diff --from 'heads(::@ & ::main)'");
+    expect(prompt).not.toContain('@origin');
+  });
+
   test('buildReviewGuidePrompt renders (unknown) when title and author are null', () => {
     const metaNulls: PrReviewMetadata = {
       ...METADATA,
@@ -229,6 +292,33 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain(METADATA.title!);
     expect(prompt).toContain(METADATA.author!);
     expect(prompt).toContain('main');
+  });
+
+  test('buildStandaloneReviewIssuesPrompt includes plan context', () => {
+    const prompt = buildStandaloneReviewIssuesPrompt({
+      metadata: PLAN_METADATA,
+      useJj: false,
+    });
+
+    expect(prompt).toContain('standalone plan implementation code review');
+    expect(prompt).toContain('## Plan Metadata');
+    expect(prompt).toContain('Use the plan/task context');
+    expect(prompt).toContain('Plan-only review guides');
+    expect(prompt).toContain("git merge-base 'main' HEAD");
+    expect(prompt).not.toContain('origin/');
+    expect(prompt).not.toContain('@origin');
+    expect(prompt).not.toContain('Do not include plan/task context; this is PR-only review.');
+  });
+
+  test('buildStandaloneReviewIssuesPrompt uses local jj revset for plan metadata', () => {
+    const prompt = buildStandaloneReviewIssuesPrompt({
+      metadata: PLAN_METADATA,
+      useJj: true,
+    });
+
+    expect(prompt).toContain("jj diff --from 'heads(::@ & ::main)'");
+    expect(prompt).not.toContain('origin/');
+    expect(prompt).not.toContain('@origin');
   });
 
   test('buildIssueCombinationPrompt handles string inputs directly', () => {

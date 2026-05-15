@@ -22,6 +22,7 @@ const spawnChatProcessMock = vi.fn();
 const spawnRebaseProcessMock = vi.fn();
 const spawnPrCreateProcessMock = vi.fn();
 const spawnUpdateDocsProcessMock = vi.fn();
+const spawnPlanReviewGuideProcessMock = vi.fn();
 const loadEffectiveConfigMock = vi.fn();
 
 vi.mock('$lib/server/init.js', () => ({
@@ -52,6 +53,8 @@ vi.mock('$lib/server/plan_actions.js', () => ({
     spawnPrCreateProcessMock(...args),
   spawnUpdateDocsProcess: (...args: Parameters<typeof spawnUpdateDocsProcessMock>) =>
     spawnUpdateDocsProcessMock(...args),
+  spawnPlanReviewGuideProcess: (...args: Parameters<typeof spawnPlanReviewGuideProcessMock>) =>
+    spawnPlanReviewGuideProcessMock(...args),
 }));
 
 vi.mock('$tim/configLoader.js', () => ({
@@ -69,6 +72,7 @@ import {
   startUpdateDocs,
   startGenerate,
   startRebase,
+  startPlanReviewGuide,
 } from './plan_actions.remote.js';
 
 describe('plan remote actions', () => {
@@ -90,6 +94,7 @@ describe('plan remote actions', () => {
     spawnRebaseProcessMock.mockReset();
     spawnPrCreateProcessMock.mockReset();
     spawnUpdateDocsProcessMock.mockReset();
+    spawnPlanReviewGuideProcessMock.mockReset();
     loadEffectiveConfigMock.mockReset();
 
     projectId = getOrCreateProject(currentDb, 'repo-plan-actions', {
@@ -2217,6 +2222,192 @@ describe('plan remote actions', () => {
       });
 
       expect(spawnPrCreateProcessMock).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('startPlanReviewGuide', () => {
+    test('returns 404 when plan does not exist in project', async () => {
+      await expect(
+        invokeCommand(startPlanReviewGuide, { projectId, planId: 5999 })
+      ).rejects.toMatchObject({
+        status: 404,
+        body: { message: 'Plan not found in project' },
+      });
+      expect(spawnPlanReviewGuideProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('returns 400 when project has no primary workspace', async () => {
+      seedPlan({ uuid: 'plan-rg-5001', planId: 5001 });
+      // No workspace recorded for projectId
+      await expect(
+        invokeCommand(startPlanReviewGuide, { projectId, planId: 5001 })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Project does not have a primary workspace' },
+      });
+      expect(spawnPlanReviewGuideProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('spawns the review guide process and returns { status: started }', async () => {
+      seedPlan({ uuid: 'plan-rg-5002', planId: 5002 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnPlanReviewGuideProcessMock.mockResolvedValue({ success: true, planId: 5002 });
+
+      await expect(
+        invokeCommand(startPlanReviewGuide, { projectId, planId: 5002 })
+      ).resolves.toEqual({ status: 'started', planId: 5002 });
+
+      expect(spawnPlanReviewGuideProcessMock).toHaveBeenCalledWith(5002, '/tmp/primary-workspace');
+    });
+
+    test('returns the active session when another session is already running for the plan', async () => {
+      seedPlan({ uuid: 'plan-rg-running', planId: 5008 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      currentManager.handleWebSocketConnect('conn-rg-agent', () => {});
+      currentManager.handleWebSocketMessage('conn-rg-agent', {
+        type: 'session_info',
+        command: 'agent',
+        interactive: true,
+        planId: 5008,
+        planUuid: 'plan-rg-running',
+        workspacePath: '/tmp/primary-workspace',
+      });
+
+      await expect(
+        invokeCommand(startPlanReviewGuide, { projectId, planId: 5008 })
+      ).resolves.toEqual({
+        status: 'already_running',
+        connectionId: 'conn-rg-agent',
+      });
+
+      expect(spawnPlanReviewGuideProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('returns 409 when a review is already pending or in_progress', async () => {
+      seedPlan({ uuid: 'plan-rg-5004', planId: 5004 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      const { createReview } = await import('$tim/db/review.js');
+      createReview(currentDb, {
+        projectId,
+        planUuid: 'plan-rg-5004',
+        status: 'in_progress',
+      });
+
+      await expect(
+        invokeCommand(startPlanReviewGuide, { projectId, planId: 5004 })
+      ).rejects.toMatchObject({
+        status: 409,
+        body: { message: 'A review guide is already in progress for this plan' },
+      });
+      expect(spawnPlanReviewGuideProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects concurrent invocations via launch lock', async () => {
+      seedPlan({ uuid: 'plan-rg-5005', planId: 5005 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+
+      let resolveSpawn: (value: { success: true; planId: number }) => void = () => {};
+      const spawnPromise = new Promise<{ success: true; planId: number }>((resolve) => {
+        resolveSpawn = resolve;
+      });
+      spawnPlanReviewGuideProcessMock.mockReturnValueOnce(spawnPromise);
+
+      const firstInvocation = invokeCommand(startPlanReviewGuide, {
+        projectId,
+        planId: 5005,
+      });
+
+      // Second concurrent invocation should be deduplicated by the shared launch lock
+      // before the first one completes (and before any DB row is inserted).
+      await expect(
+        invokeCommand(startPlanReviewGuide, { projectId, planId: 5005 })
+      ).resolves.toEqual({ status: 'already_running' });
+      expect(spawnPlanReviewGuideProcessMock).toHaveBeenCalledTimes(1);
+
+      resolveSpawn({ success: true, planId: 5005 });
+      await expect(firstInvocation).resolves.toEqual({ status: 'started', planId: 5005 });
+    });
+
+    test('clears launch lock on spawn failure', async () => {
+      seedPlan({ uuid: 'plan-rg-5006', planId: 5006 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnPlanReviewGuideProcessMock.mockResolvedValueOnce({
+        success: false,
+        error: 'boom',
+      });
+
+      await expect(
+        invokeCommand(startPlanReviewGuide, { projectId, planId: 5006 })
+      ).rejects.toMatchObject({ status: 500 });
+
+      expect(isPlanLaunching('plan-rg-5006')).toBe(false);
+
+      // Retry should succeed since the lock was cleared.
+      spawnPlanReviewGuideProcessMock.mockResolvedValueOnce({ success: true, planId: 5006 });
+      await expect(
+        invokeCommand(startPlanReviewGuide, { projectId, planId: 5006 })
+      ).resolves.toEqual({ status: 'started', planId: 5006 });
+    });
+
+    test('clears launch lock immediately when earlyExit is true', async () => {
+      seedPlan({ uuid: 'plan-rg-5007', planId: 5007 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnPlanReviewGuideProcessMock.mockResolvedValueOnce({
+        success: true,
+        planId: 5007,
+        earlyExit: true,
+      });
+
+      await expect(
+        invokeCommand(startPlanReviewGuide, { projectId, planId: 5007 })
+      ).resolves.toEqual({ status: 'started', planId: 5007 });
+
+      // Launch lock should be cleared immediately since earlyExit is true.
+      expect(isPlanLaunching('plan-rg-5007')).toBe(false);
+    });
+
+    test('returns 500 when the spawn process reports failure', async () => {
+      seedPlan({ uuid: 'plan-rg-5003', planId: 5003 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnPlanReviewGuideProcessMock.mockResolvedValue({
+        success: false,
+        error: 'tim binary not found',
+      });
+
+      await expect(
+        invokeCommand(startPlanReviewGuide, { projectId, planId: 5003 })
+      ).rejects.toMatchObject({
+        status: 500,
+        body: { message: 'tim binary not found' },
+      });
     });
   });
 

@@ -17,8 +17,10 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startAgent: vi.fn(),
   startChat: vi.fn(),
   startRebase: vi.fn(),
+  startReview: vi.fn(),
   startUpdateDocs: vi.fn(),
   startCreatePr: vi.fn(),
+  startPlanReviewGuide: vi.fn(),
   finishPlanQuick: vi.fn(),
   openInEditor: vi.fn(),
 }));
@@ -29,11 +31,23 @@ vi.mock('$lib/remote/review_issue_actions.remote.js', () => ({
   clearReviewIssues: vi.fn(),
 }));
 
+vi.mock('$lib/remote/sync_status.remote.js', () => ({
+  getPlanSyncStatus: vi.fn(() => ({ current: null })),
+}));
+
 vi.mock('./PrStatusSection.svelte', () => ({
   default: () => '',
 }));
 
 vi.mock('./CopyButton.svelte', () => ({
+  default: () => '',
+}));
+
+vi.mock('./PlanArtifactsList.svelte', () => ({
+  default: () => '',
+}));
+
+vi.mock('./PlanArtifactUploader.svelte', () => ({
   default: () => '',
 }));
 

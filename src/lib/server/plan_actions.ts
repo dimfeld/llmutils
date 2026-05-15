@@ -254,3 +254,15 @@ export async function spawnPrReviewGuideProcess(
     cwd
   );
 }
+
+export async function spawnPlanReviewGuideProcess(
+  planId: number,
+  cwd: string
+): Promise<SpawnProcessResult> {
+  return spawnTimProcess(
+    describeTarget('plan', planId),
+    planId,
+    ['review-guide', String(planId), '--auto-workspace'],
+    cwd
+  );
+}

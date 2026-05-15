@@ -186,6 +186,7 @@ Useful web actions:
 - Expand unresolved PR review threads and reply, resolve, or convert them to plan tasks.
 - Use **Fix Unresolved** to spawn `tim pr fix` for review thread cleanup.
 - Open stored PR review guides from project PR pages when standalone review has been run.
+- **Generate review guide** from the plan detail page to run a plan-only review (no PR required); past review guides for the plan are listed with status badges and link to a viewer route.
 
 Useful CLI commands:
 
@@ -193,9 +194,13 @@ Useful CLI commands:
 tim pr status 123
 tim pr link 123 https://github.com/owner/repo/pull/456
 tim pr review-guide https://github.com/owner/repo/pull/456
+tim review-guide 123                                 # Plan-only review guide (no PR required)
+tim review-guide 123 --auto-workspace
 tim pr fix 123 --all --auto-workspace
 tim rebase 123 --auto-workspace
 ```
+
+`tim review-guide <planId>` generates a review guide for a plan that does not yet have an associated PR. It reuses the same pipeline as `tim pr review-guide` and stores results in the `review` table, keyed by the plan's UUID instead of a PR URL. With `--auto-workspace`, it routes through the managed workspace and reviews the latest committed state; without it, it runs in the current working tree and includes uncommitted changes in the diff.
 
 See the PR status and web interface notes in [`docs/web-interface.md`](docs/web-interface.md) for implementation details and edge cases.
 

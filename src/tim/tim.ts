@@ -1483,6 +1483,25 @@ program
     }).catch(handleCommandError);
   });
 
+program
+  .command('review-guide <planId>')
+  .description('Generate a stored review guide for a plan without requiring a PR')
+  .option('-x, --executor <name>', 'Run with a single executor (claude-code or codex-cli)')
+  .option('-m, --model <model>', 'Model override for executors')
+  .option('-w, --workspace <name>', 'Use a specific workspace')
+  .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
+  .option('--terminal-input', 'Enable terminal input')
+  .option('--no-terminal-input', 'Disable terminal input')
+  .option('--non-interactive', 'No user prompts')
+  .option('--verbose', 'Verbose output')
+  .action(async (planIdArg, options, command) => {
+    const planId = parsePlanIdFromCliArg(planIdArg);
+    await runWithCommandTunnelAdapter(async () => {
+      const { handlePlanReviewGuideCommand } = await import('./commands/review_plan.js');
+      await handlePlanReviewGuideCommand(planId, options, command);
+    }).catch(handleCommandError);
+  });
+
 const prCommand = program.command('pr').description('GitHub PR commands');
 
 prCommand

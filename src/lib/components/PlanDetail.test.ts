@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import type { PlanDetail } from '$lib/server/db_queries.js';
 import type { PrStatusRow } from '$tim/db/pr_status.js';
+import type { ReviewWithIssueCounts } from '$tim/db/review.js';
 import type { PrStatusDetailWithRequiredChecks } from '$lib/server/required_check_rollup.js';
 import PlanDetailComponent from './PlanDetail.svelte';
 
@@ -16,9 +17,11 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startAgent: vi.fn(),
   startChat: vi.fn(),
   startRebase: vi.fn(),
+  startReview: vi.fn(),
   startUpdateDocs: vi.fn(),
   startCreatePr: vi.fn(),
   startAgentMulti: vi.fn(),
+  startPlanReviewGuide: vi.fn(),
   finishPlanQuick: vi.fn(),
   openInEditor: vi.fn(),
 }));
@@ -167,6 +170,27 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
   };
 }
 
+function makeReview(overrides: Partial<ReviewWithIssueCounts> = {}): ReviewWithIssueCounts {
+  return {
+    id: 101,
+    project_id: 123,
+    pr_status_id: null,
+    pr_url: null,
+    branch: null,
+    base_branch: 'main',
+    reviewed_sha: 'abc123',
+    review_guide: '# Review guide',
+    status: 'complete',
+    error_message: null,
+    created_at: '2026-03-18T10:00:00.000Z',
+    updated_at: '2026-03-18T10:00:00.000Z',
+    plan_uuid: 'plan-1',
+    issue_count: 3,
+    unresolved_count: 1,
+    ...overrides,
+  };
+}
+
 describe('PlanDetail', () => {
   test('shows branch and PR context when the plan is linked to a known PR', () => {
     const { body } = render(PlanDetailComponent, {
@@ -196,7 +220,7 @@ describe('PlanDetail', () => {
     });
 
     expect(body).toContain('Finish');
-    expect(body).not.toContain('Generate');
+    expect(body).not.toContain('<div data-testid="action-config"><button>Generate</button>');
   });
 
   test('does not show Update Docs when needs_review but finish work already done', () => {
@@ -234,7 +258,7 @@ describe('PlanDetail', () => {
     });
 
     expect(body).toContain('Run Agent');
-    expect(body).not.toContain('Generate');
+    expect(body).not.toContain('<div data-testid="action-config"><button>Generate</button>');
   });
 
   test('keeps Run Agent as primary for a simple plan with incomplete tasks', () => {
@@ -261,7 +285,7 @@ describe('PlanDetail', () => {
     });
 
     expect(body).toContain('Run Agent');
-    expect(body).not.toContain('Generate');
+    expect(body).not.toContain('<div data-testid="action-config"><button>Generate</button>');
   });
 
   test('keeps Generate primary and Run Agent in the dropdown for a taskless non-simple plan', () => {
@@ -441,5 +465,53 @@ describe('PlanDetail', () => {
     expect(body).toContain('Blocked by external dependency: #99 External predecessor');
     const checkboxMatch = body.match(/<input[^>]*aria-label="Select plan #101"[^>]*>/);
     expect(checkboxMatch?.[0]).toContain('disabled');
+  });
+
+  test('disables Generate review guide while a review is in progress', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail(),
+        reviews: [makeReview({ status: 'in_progress' })],
+        projectId: '123',
+      },
+    });
+
+    expect(body).toMatch(/<button[^>]*disabled[^>]*>\s*Generate review guide\s*<\/button>/);
+  });
+
+  test('shows an empty state when the plan has no review guides', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail(),
+        reviews: [],
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('Review Guides');
+    expect(body).toContain('No review guides yet.');
+  });
+
+  test('renders review guide history with status badges and viewer links', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail(),
+        reviews: [
+          makeReview({ id: 201, status: 'complete', issue_count: 5, unresolved_count: 2 }),
+          makeReview({ id: 202, status: 'error', issue_count: 0, unresolved_count: 0 }),
+          makeReview({ id: 203, status: 'pending', issue_count: 0, unresolved_count: 0 }),
+        ],
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('href="/projects/123/plans/plan-1/reviews/201"');
+    expect(body).toContain('href="/projects/123/plans/plan-1/reviews/202"');
+    expect(body).toContain('href="/projects/123/plans/plan-1/reviews/203"');
+    expect(body).toContain('Complete');
+    expect(body).toContain('Error');
+    expect(body).toContain('Pending');
+    expect(body).toContain('2/5 open');
+    expect(body).not.toContain('No review guides yet.');
   });
 });

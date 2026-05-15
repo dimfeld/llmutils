@@ -20,8 +20,8 @@ export interface ReviewRow {
   id: number;
   project_id: number;
   pr_status_id: number | null;
-  pr_url: string;
-  branch: string;
+  pr_url: string | null;
+  branch: string | null;
   base_branch: string | null;
   reviewed_sha: string | null;
   review_guide: string | null;
@@ -29,6 +29,7 @@ export interface ReviewRow {
   error_message: string | null;
   created_at: string;
   updated_at: string;
+  plan_uuid: string | null;
 }
 
 export interface ReviewIssueRow {
@@ -65,8 +66,9 @@ export interface PrReviewSubmissionRow {
 export interface CreateReviewInput {
   projectId: number;
   prStatusId?: number | null;
-  prUrl: string;
-  branch: string;
+  prUrl?: string | null;
+  branch?: string | null;
+  planUuid?: string | null;
   baseBranch?: string | null;
   reviewedSha?: string | null;
   reviewGuide?: string | null;
@@ -225,7 +227,10 @@ function rowToPrReviewSubmission(row: PrReviewSubmissionDbRow): PrReviewSubmissi
 
 export function createReview(db: Database, input: CreateReviewInput): ReviewRow {
   const createInTransaction = db.transaction((nextInput: CreateReviewInput): ReviewRow => {
-    const canonicalPrUrl = canonicalizePrUrl(nextInput.prUrl);
+    if (nextInput.prUrl != null && nextInput.prUrl.trim() === '') {
+      throw new Error('Invalid pull request identifier: PR URL cannot be empty');
+    }
+    const canonicalPrUrl = nextInput.prUrl == null ? null : canonicalizePrUrl(nextInput.prUrl);
     const result = db
       .prepare(
         `
@@ -239,21 +244,23 @@ export function createReview(db: Database, input: CreateReviewInput): ReviewRow 
             review_guide,
             status,
             error_message,
+            plan_uuid,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
         `
       )
       .run(
         nextInput.projectId,
         nextInput.prStatusId ?? null,
         canonicalPrUrl,
-        nextInput.branch,
+        nextInput.branch ?? null,
         nextInput.baseBranch ?? null,
         nextInput.reviewedSha ?? null,
         nextInput.reviewGuide ?? null,
         nextInput.status ?? 'pending',
-        nextInput.errorMessage ?? null
+        nextInput.errorMessage ?? null,
+        nextInput.planUuid ?? null
       );
 
     const review = db
@@ -261,7 +268,7 @@ export function createReview(db: Database, input: CreateReviewInput): ReviewRow 
       .get(Number(result.lastInsertRowid)) as ReviewRow | null;
 
     if (!review) {
-      throw new Error(`Failed to create review for ${nextInput.prUrl}`);
+      throw new Error(`Failed to create review for ${nextInput.prUrl ?? nextInput.planUuid}`);
     }
 
     return review;
@@ -363,6 +370,67 @@ export function getLatestReviewGuideByPrUrl(
   const canonicalUrl = canonicalizePrUrl(prUrl);
   const conditions = ['pr_url = ?', 'review_guide IS NOT NULL', "TRIM(review_guide) != ''"];
   const params: (string | number)[] = [canonicalUrl];
+
+  if (options?.projectId !== undefined) {
+    conditions.push('project_id = ?');
+    params.push(options.projectId);
+  }
+
+  return (
+    (db
+      .prepare(
+        `
+          SELECT *
+          FROM review
+          WHERE ${conditions.join(' AND ')}
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
+        `
+      )
+      .get(...params) as ReviewRow | null) ?? null
+  );
+}
+
+export function getLatestReviewByPlanUuid(
+  db: Database,
+  planUuid: string,
+  options?: { projectId?: number; status?: string }
+): ReviewRow | null {
+  const conditions = ['plan_uuid = ?'];
+  const params: (string | number)[] = [planUuid];
+
+  if (options?.projectId !== undefined) {
+    conditions.push('project_id = ?');
+    params.push(options.projectId);
+  }
+
+  if (options?.status !== undefined) {
+    conditions.push('status = ?');
+    params.push(options.status);
+  }
+
+  return (
+    (db
+      .prepare(
+        `
+          SELECT *
+          FROM review
+          WHERE ${conditions.join(' AND ')}
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
+        `
+      )
+      .get(...params) as ReviewRow | null) ?? null
+  );
+}
+
+export function getLatestReviewGuideByPlanUuid(
+  db: Database,
+  planUuid: string,
+  options?: { projectId?: number }
+): ReviewRow | null {
+  const conditions = ['plan_uuid = ?', 'review_guide IS NOT NULL', "TRIM(review_guide) != ''"];
+  const params: (string | number)[] = [planUuid];
 
   if (options?.projectId !== undefined) {
     conditions.push('project_id = ?');
@@ -738,6 +806,23 @@ export function getReviewsByPrUrl(db: Database, prUrl: string): ReviewWithIssueC
     .all(canonicalUrl) as ReviewWithIssueCounts[];
 }
 
+export function getReviewsByPlanUuid(db: Database, planUuid: string): ReviewWithIssueCounts[] {
+  return db
+    .prepare(
+      `
+        SELECT r.*,
+          COUNT(ri.id) as issue_count,
+          COALESCE(SUM(CASE WHEN ri.resolved = 0 THEN 1 ELSE 0 END), 0) as unresolved_count
+        FROM review r
+        LEFT JOIN review_issue ri ON ri.review_id = r.id
+        WHERE r.plan_uuid = ?
+        GROUP BY r.id
+        ORDER BY r.created_at DESC, r.id DESC
+      `
+    )
+    .all(planUuid) as ReviewWithIssueCounts[];
+}
+
 export function getReviewsForProject(
   db: Database,
   projectId: number,
@@ -750,11 +835,28 @@ export function getReviewsForProject(
           SELECT r.*
           FROM review r
           WHERE r.project_id = ?
-            AND r.id = (
-              SELECT r2.id FROM review r2
-              WHERE r2.pr_url = r.pr_url AND r2.project_id = r.project_id
-              ORDER BY r2.created_at DESC, r2.id DESC
-              LIMIT 1
+            AND (
+              (
+                r.pr_url IS NOT NULL
+                AND r.id = (
+                  SELECT r2.id FROM review r2
+                  WHERE r2.pr_url = r.pr_url AND r2.project_id = r.project_id
+                  ORDER BY r2.created_at DESC, r2.id DESC
+                  LIMIT 1
+                )
+              )
+              OR (
+                r.pr_url IS NULL
+                AND r.plan_uuid IS NOT NULL
+                AND r.id = (
+                  SELECT r2.id FROM review r2
+                  WHERE r2.plan_uuid = r.plan_uuid
+                    AND r2.pr_url IS NULL
+                    AND r2.project_id = r.project_id
+                  ORDER BY r2.created_at DESC, r2.id DESC
+                  LIMIT 1
+                )
+              )
             )
           ORDER BY r.created_at DESC, r.id DESC
         `

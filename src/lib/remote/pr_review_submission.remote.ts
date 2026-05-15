@@ -170,17 +170,25 @@ function requireReviewForDiff(review: ReviewRow): {
   repo: string;
   baseBranch: string;
 } {
+  const prUrl = requirePrUrl(review);
   if (!review.base_branch) {
     error(400, `Review ${review.id} is missing base_branch; cannot fetch PR diff`);
   }
 
   // pr_url is canonicalized on write; parse owner/repo from it.
-  const match = review.pr_url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\//);
+  const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\//);
   if (!match) {
-    error(400, `Cannot parse owner/repo from PR URL: ${review.pr_url}`);
+    error(400, `Cannot parse owner/repo from PR URL: ${prUrl}`);
   }
 
   return { owner: match[1]!, repo: match[2]!, baseBranch: review.base_branch };
+}
+
+function requirePrUrl(review: ReviewRow): string {
+  if (review.pr_url == null) {
+    error(400, `Review ${review.id} is not associated with a PR`);
+  }
+  return review.pr_url;
 }
 
 export const getSubmissionPartition = command(
@@ -192,6 +200,7 @@ export const getSubmissionPartition = command(
     if (!review) {
       error(404, 'Review not found');
     }
+    requirePrUrl(review);
 
     const selected = validateSubmittableIssues(db, reviewId, issueIds);
     // Body-only submissions don't need a diff. When there are no selected issues, skip the
@@ -495,6 +504,7 @@ export const submitReviewToGitHub = command(
     if (!review) {
       error(404, 'Review not found');
     }
+    const prUrl = requirePrUrl(review);
 
     const selectedIssues = validateSubmittableIssues(db, reviewId, issueIds);
     let usedCommitSha = commitSha;
@@ -535,7 +545,7 @@ export const submitReviewToGitHub = command(
     let submissionResult: { id: number; html_url: string | null };
     try {
       submissionResult = await submitPrReview({
-        prUrl: review.pr_url,
+        prUrl,
         commitSha: usedCommitSha,
         event,
         body: finalBody,

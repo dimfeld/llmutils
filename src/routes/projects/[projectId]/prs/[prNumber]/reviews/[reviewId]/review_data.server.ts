@@ -55,22 +55,25 @@ export function getReviewDetailData(db: Database, params: ReviewDataParams): Rev
   const reviewId = parseRouteInteger(params.reviewId, 'Review');
 
   const review = getReviewById(db, reviewId);
-  if (
-    !review ||
-    review.project_id !== projectId ||
-    getPrNumberFromUrl(review.pr_url) !== prNumber
-  ) {
+  if (!review || review.project_id !== projectId) {
+    error(404, 'Review not found');
+  }
+  if (review.pr_url == null) {
+    error(404, 'PR review not found');
+  }
+  const prUrl = review.pr_url;
+  if (getPrNumberFromUrl(prUrl) !== prNumber) {
     error(404, 'Review not found');
   }
 
   const issues = getReviewIssues(db, reviewId);
   const submissions = getPrReviewSubmissionsForReview(db, reviewId);
-  const linkedPlans = getLinkedPlansByPrUrl(db, [review.pr_url]).get(review.pr_url) ?? [];
+  const linkedPlans = getLinkedPlansByPrUrl(db, [prUrl]).get(prUrl) ?? [];
   const linkedPlanUuid = linkedPlans.length === 1 ? (linkedPlans[0]?.planUuid ?? null) : null;
 
-  const prStatusRow = db
-    .prepare('SELECT head_sha FROM pr_status WHERE pr_url = ?')
-    .get(review.pr_url) as { head_sha: string | null } | null;
+  const prStatusRow = db.prepare('SELECT head_sha FROM pr_status WHERE pr_url = ?').get(prUrl) as {
+    head_sha: string | null;
+  } | null;
   const currentHeadSha = prStatusRow?.head_sha ?? null;
 
   return { review, issues, submissions, currentHeadSha, linkedPlanUuid, linkedPlans };

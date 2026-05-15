@@ -18,6 +18,7 @@
 
 <PlanDetail
   plan={data.planDetail}
+  reviews={data.reviews}
   {projectId}
   {projectName}
   openInEditorEnabled={data.openInEditorEnabled}
