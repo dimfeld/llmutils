@@ -249,6 +249,60 @@ describe('RunChildrenPanel', () => {
     await expect.element(page.getByText('Error: launch failed')).toBeInTheDocument();
   });
 
+  test('disables and does not auto-check a child whose in-list predecessor is externally blocked', async () => {
+    renderPanel(
+      [
+        child('pred-child', 120, { dependencies: ['ext-open'] }),
+        child('down-child', 121, { dependencies: ['pred-child'] }),
+      ],
+      { 'ext-open': 'in_progress' }
+    );
+
+    // The directly-blocked predecessor is disabled (external block).
+    const predCheckbox = checkboxFor(120);
+    expect(predCheckbox.disabled).toBe(true);
+
+    // The downstream child is also disabled because its closure would require
+    // the unselectable predecessor.
+    const downCheckbox = checkboxFor(121);
+    expect(downCheckbox.disabled).toBe(true);
+    expect(downCheckbox.closest('li')?.getAttribute('title')).toBe(
+      'Blocked because in-list predecessor #120 has an unfinished external dependency'
+    );
+  });
+
+  test('marks a downstream child transitively blocked when an in-list predecessor is deferred', async () => {
+    renderPanel([
+      child('deferred-pred', 122, { status: 'deferred' }),
+      child('down-child', 123, { dependencies: ['deferred-pred'] }),
+    ]);
+
+    const downCheckbox = checkboxFor(123);
+    expect(downCheckbox.disabled).toBe(true);
+    expect(downCheckbox.closest('li')?.getAttribute('title')).toBe(
+      'Blocked because in-list predecessor #122 is not agent-eligible'
+    );
+  });
+
+  test('resets selection when epicPlanUuid prop changes', async () => {
+    const initialChildren = [child('first-child', 130), child('second-child', 131)];
+    const { rerender } = renderPanel(initialChildren);
+
+    await page.getByRole('checkbox', { name: 'Select plan #131' }).click();
+    expect(checkboxFor(131).checked).toBe(true);
+
+    await rerender({
+      epicPlanUuid: 'different-epic-uuid',
+      projectId: '123',
+      children: initialChildren,
+      externalPlanStatusByUuid: {},
+    });
+
+    expect(checkboxFor(130).checked).toBe(false);
+    expect(checkboxFor(131).checked).toBe(false);
+    await expect.element(page.getByRole('button', { name: 'Run selected' })).toBeDisabled();
+  });
+
   test('shows a success banner with a session link when the epic already has a running session', async () => {
     mockStartAgentMulti.mockResolvedValue({
       status: 'already_running',

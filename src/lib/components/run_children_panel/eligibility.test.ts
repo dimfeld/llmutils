@@ -114,6 +114,57 @@ describe('buildSelectionGraph', () => {
 
     expect(graph.externalBlockedByUuid.get('a')).toEqual(['external-unknown']);
   });
+
+  test('flags downstream children as transitively blocked when a predecessor has an external block', () => {
+    const graph = buildSelectionGraph(
+      [
+        child('pred', { dependencies: ['ext-open'] }),
+        child('mid', { dependencies: ['pred'] }),
+        child('leaf', { dependencies: ['mid'] }),
+      ],
+      { 'ext-open': 'in_progress' }
+    );
+
+    expect(graph.transitivelyBlockedByUuid.get('mid')).toEqual({
+      blockerUuid: 'pred',
+      reason: 'external',
+    });
+    expect(graph.transitivelyBlockedByUuid.get('leaf')).toEqual({
+      blockerUuid: 'pred',
+      reason: 'external',
+    });
+    // The directly-blocked child itself is NOT in the transitively-blocked map.
+    expect(graph.transitivelyBlockedByUuid.has('pred')).toBe(false);
+  });
+
+  test('flags downstream children as transitively blocked when a predecessor is ineligible', () => {
+    const graph = buildSelectionGraph(
+      [
+        child('deferred-pred', { status: 'deferred' }),
+        child('down', { dependencies: ['deferred-pred'] }),
+      ],
+      {}
+    );
+
+    expect(graph.transitivelyBlockedByUuid.get('down')).toEqual({
+      blockerUuid: 'deferred-pred',
+      reason: 'ineligible',
+    });
+  });
+
+  test('does not flag downstream children as transitively blocked when blocking predecessor is finished', () => {
+    // A finished ancestor (done/cancelled/needs_review) is not auto-selected, so it
+    // does not propagate a block downstream.
+    const graph = buildSelectionGraph(
+      [
+        child('done-pred', { status: 'done', taskCount: 1, doneTaskCount: 1 }),
+        child('down', { dependencies: ['done-pred'] }),
+      ],
+      {}
+    );
+
+    expect(graph.transitivelyBlockedByUuid.has('down')).toBe(false);
+  });
 });
 
 describe('selection expansion and shrinking', () => {
@@ -124,12 +175,7 @@ describe('selection expansion and shrinking', () => {
       child('c', { dependencies: ['b'] }),
     ];
     const graph = buildSelectionGraph(children, {});
-    const selected = expandSelectionWithPredecessors(
-      new Set<string>(),
-      children[2],
-      graph.predsByUuid,
-      children
-    );
+    const selected = expandSelectionWithPredecessors(new Set<string>(), children[2], graph);
 
     expect([...selected].sort()).toEqual(['a', 'b', 'c']);
   });
@@ -137,12 +183,7 @@ describe('selection expansion and shrinking', () => {
   test('expandSelectionWithPredecessors auto-adds base-plan predecessors', () => {
     const children = [child('base'), child('stacked', { basePlanUuid: 'base' })];
     const graph = buildSelectionGraph(children, {});
-    const selected = expandSelectionWithPredecessors(
-      new Set<string>(),
-      children[1],
-      graph.predsByUuid,
-      children
-    );
+    const selected = expandSelectionWithPredecessors(new Set<string>(), children[1], graph);
 
     expect([...selected].sort()).toEqual(['base', 'stacked']);
   });
@@ -153,14 +194,40 @@ describe('selection expansion and shrinking', () => {
       child('next', { dependencies: ['finished'] }),
     ];
     const graph = buildSelectionGraph(children, {});
-    const selected = expandSelectionWithPredecessors(
-      new Set<string>(),
-      children[1],
-      graph.predsByUuid,
-      children
-    );
+    const selected = expandSelectionWithPredecessors(new Set<string>(), children[1], graph);
 
     expect([...selected]).toEqual(['next']);
+  });
+
+  test('expandSelectionWithPredecessors refuses to expand a transitively-blocked child', () => {
+    // predecessor has an unfinished external dep, so it is externally-blocked.
+    // The downstream child is therefore transitively-blocked and should not expand.
+    const children = [
+      child('pred', { dependencies: ['ext-open'] }),
+      child('down', { dependencies: ['pred'] }),
+    ];
+    const graph = buildSelectionGraph(children, { 'ext-open': 'in_progress' });
+    const selected = expandSelectionWithPredecessors(new Set<string>(), children[1], graph);
+
+    expect([...selected]).toEqual([]);
+  });
+
+  test('expandSelectionWithPredecessors does not auto-add an ineligible predecessor', () => {
+    // Defense-in-depth: even if the helper were called on a downstream child whose
+    // predecessor is ineligible, it must skip the predecessor rather than blindly
+    // adding it. In practice the row is also disabled, so this shouldn't fire.
+    const children = [
+      child('deferred-pred', { status: 'deferred' }),
+      child('down', { dependencies: ['deferred-pred'] }),
+    ];
+    const graph = buildSelectionGraph(children, {});
+    // Force-expand from `down` even though it is transitively-blocked, by clearing
+    // the transitive-block entry first to simulate a stale caller. The predecessor
+    // must still NOT be auto-added because it is directly ineligible.
+    graph.transitivelyBlockedByUuid.delete('down');
+    const selected = expandSelectionWithPredecessors(new Set<string>(), children[1], graph);
+
+    expect([...selected]).toEqual(['down']);
   });
 
   test('shrinkSelectionRemovingDependents removes a leaf only', () => {

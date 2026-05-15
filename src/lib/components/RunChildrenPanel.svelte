@@ -29,30 +29,79 @@
     onLaunched?: (result: { connectionId?: string; status?: string }) => void;
   } = $props();
 
-  let selected = $state(new SvelteSet<string>());
+  // Use $derived.by keyed on epicPlanUuid so a route change to a different epic
+  // produces fresh state (no stale selected UUIDs / banners) without an $effect.
+  let selected = $derived.by(() => {
+    void epicPlanUuid;
+    return new SvelteSet<string>();
+  });
   let starting = $state(false);
-  let errorMessage: string | null = $state(null);
-  let successMessage: { text: string; connectionId?: string } | null = $state(null);
+  let errorMessage: string | null = $derived.by(() => {
+    void epicPlanUuid;
+    return null;
+  });
+  let successMessage: { text: string; connectionId?: string } | null = $derived.by(() => {
+    void epicPlanUuid;
+    return null;
+  });
 
   let graph = $derived(buildSelectionGraph(children, externalPlanStatusByUuid));
 
-  function isExternalBlocked(uuid: string): boolean {
-    return graph.externalBlockedByUuid.has(uuid);
+  function uuidIsSelectable(uuid: string): boolean {
+    const child = graph.childrenByUuid.get(uuid);
+    if (!child) return false;
+    if (graph.externalBlockedByUuid.has(uuid)) return false;
+    if (graph.ineligibleByUuid.has(uuid)) return false;
+    if (graph.transitivelyBlockedByUuid.has(uuid)) return false;
+    return true;
   }
 
-  function blockedTooltip(uuid: string): string {
-    const blockers = graph.externalBlockedByUuid.get(uuid);
-    if (!blockers || blockers.length === 0) return '';
-    const parts = blockers.map((dep) => {
-      const status = externalPlanStatusByUuid[dep];
-      return status ? `${dep} (${status})` : `${dep} (status unknown)`;
-    });
-    return `Blocked by external dependency: ${parts.join(', ')}`;
+  // Prune stale/blocked UUIDs at read time so same-epic data refreshes (e.g.
+  // after invalidateAll() following a launch, or when a child becomes
+  // deferred) cannot submit a now-invalid selection.
+  let validSelectedUuids = $derived(Array.from(selected).filter(uuidIsSelectable));
+
+  function blockerLabel(uuid: string): string {
+    const blocker = graph.childrenByUuid.get(uuid);
+    if (!blocker) return uuid;
+    return `#${blocker.planId}`;
+  }
+
+  function rowTooltip(child: ChildPlanSummary): string {
+    const externalBlockers = graph.externalBlockedByUuid.get(child.uuid);
+    if (externalBlockers && externalBlockers.length > 0) {
+      const parts = externalBlockers.map((dep) => {
+        const status = externalPlanStatusByUuid[dep];
+        return status ? `${dep} (${status})` : `${dep} (status unknown)`;
+      });
+      return `Blocked by external dependency: ${parts.join(', ')}`;
+    }
+    if (graph.ineligibleByUuid.has(child.uuid)) {
+      return 'Child is not eligible for agent';
+    }
+    const transitive = graph.transitivelyBlockedByUuid.get(child.uuid);
+    if (transitive) {
+      const label = blockerLabel(transitive.blockerUuid);
+      const reason =
+        transitive.reason === 'external'
+          ? 'has an unfinished external dependency'
+          : 'is not agent-eligible';
+      return `Blocked because in-list predecessor ${label} ${reason}`;
+    }
+    return '';
+  }
+
+  function isRowDisabled(child: ChildPlanSummary): boolean {
+    return (
+      graph.externalBlockedByUuid.has(child.uuid) ||
+      graph.ineligibleByUuid.has(child.uuid) ||
+      graph.transitivelyBlockedByUuid.has(child.uuid)
+    );
   }
 
   function handleToggle(child: ChildPlanSummary, checked: boolean) {
     if (checked) {
-      expandSelectionWithPredecessors(selected, child, graph.predsByUuid, children);
+      expandSelectionWithPredecessors(selected, child, graph);
     } else {
       shrinkSelectionRemovingDependents(selected, child.uuid, graph.depsByUuid);
     }
@@ -63,14 +112,14 @@
   }
 
   async function handleRunSelected() {
-    if (selected.size === 0 || starting) return;
+    if (validSelectedUuids.length === 0 || starting) return;
     starting = true;
     errorMessage = null;
     successMessage = null;
     try {
       const result = await startAgentMulti({
         epicPlanUuid,
-        childUuids: Array.from(selected),
+        childUuids: validSelectedUuids,
       });
       if (result.status === 'already_running') {
         successMessage = {
@@ -96,14 +145,8 @@
   </h3>
   <ul class="space-y-1">
     {#each children as child (child.uuid)}
-      {@const eligible = isAgentEligibleChild(child)}
-      {@const blocked = isExternalBlocked(child.uuid)}
-      {@const disabled = !eligible || blocked}
-      {@const tooltip = blocked
-        ? blockedTooltip(child.uuid)
-        : !eligible
-          ? 'Child is not eligible for agent'
-          : ''}
+      {@const disabled = isRowDisabled(child)}
+      {@const tooltip = rowTooltip(child)}
       <li
         class="flex items-center gap-2 rounded px-1.5 py-0.5 text-sm"
         class:opacity-60={disabled}
@@ -133,7 +176,11 @@
   </ul>
 
   <div class="mt-2">
-    <Button onclick={handleRunSelected} disabled={selected.size === 0 || starting} size="xs">
+    <Button
+      onclick={handleRunSelected}
+      disabled={validSelectedUuids.length === 0 || starting}
+      size="xs"
+    >
       {#if starting}
         <span
           class="inline-block h-2 w-2 animate-spin rounded-full border-2 border-current border-t-transparent"
