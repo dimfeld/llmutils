@@ -5,6 +5,7 @@ import * as z from 'zod';
 import type { Database } from 'bun:sqlite';
 import {
   computeCanUpdateDocs,
+  getChildPlansForEpic,
   getPrimaryWorkspacePath,
   getPlanDetail,
   type FinishConfig,
@@ -14,6 +15,7 @@ import { clearLaunchLock, isPlanLaunching, setLaunchLock } from '$lib/server/lau
 import {
   type SpawnProcessResult,
   spawnAgentProcess,
+  spawnAgentMultiProcess,
   spawnChatProcess,
   spawnUpdateDocsProcess,
   spawnGenerateProcess,
@@ -25,13 +27,28 @@ import { getSessionManager } from '$lib/server/session_context.js';
 import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { removeAssignment } from '$tim/db/assignment.js';
-import { getPlanByUuid } from '$tim/db/plan.js';
+import {
+  getPlanByUuid,
+  getPlanDependenciesByProject,
+  getPlansByProject,
+  getPlanTasksByProject,
+  type PlanDependencyRow,
+  type PlanRow,
+  type PlanTaskRow,
+} from '$tim/db/plan.js';
+import { validateSelection, type AgentMultiPlan } from '$tim/commands/agent_multi/orchestrator.js';
 import { checkAndMarkParentDone } from '$tim/plans/parent_cascade.js';
+import { isWorkComplete } from '$tim/plans/plan_state_utils.js';
 import { getProjectUuidForId, writePlanSetStatus } from '$tim/sync/write_router.js';
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 
 type PlanDetail = Awaited<ReturnType<typeof getPlanDetail>>;
 type PlanDetailResult = NonNullable<PlanDetail>;
+
+type TaskCounts = {
+  taskCount: number;
+  doneTaskCount: number;
+};
 
 function isTasklessEpic(plan: Pick<PlanDetailResult, 'epic' | 'tasks'>): boolean {
   return plan.epic === true && plan.tasks.length === 0;
@@ -174,6 +191,57 @@ async function loadProjectFinishConfig(db: Database, projectId: number): Promise
   };
 }
 
+function buildTaskCounts(tasks: PlanTaskRow[]): Map<string, TaskCounts> {
+  const counts = new Map<string, TaskCounts>();
+  for (const task of tasks) {
+    const existing = counts.get(task.plan_uuid) ?? { taskCount: 0, doneTaskCount: 0 };
+    existing.taskCount += 1;
+    if (task.done === 1) {
+      existing.doneTaskCount += 1;
+    }
+    counts.set(task.plan_uuid, existing);
+  }
+  return counts;
+}
+
+function buildDependencies(dependencies: PlanDependencyRow[]): Map<string, string[]> {
+  const byPlanUuid = new Map<string, string[]>();
+  for (const dependency of dependencies) {
+    const planDependencies = byPlanUuid.get(dependency.plan_uuid) ?? [];
+    planDependencies.push(dependency.depends_on_uuid);
+    byPlanUuid.set(dependency.plan_uuid, planDependencies);
+  }
+  return byPlanUuid;
+}
+
+function toAgentMultiPlan(
+  row: PlanRow,
+  taskCounts: Map<string, TaskCounts>,
+  dependenciesByPlanUuid: Map<string, string[]>
+): AgentMultiPlan {
+  const counts = taskCounts.get(row.uuid) ?? { taskCount: 0, doneTaskCount: 0 };
+  return {
+    uuid: row.uuid,
+    planId: row.plan_id,
+    title: row.title,
+    status: row.status,
+    taskCount: counts.taskCount,
+    doneTaskCount: counts.doneTaskCount,
+    dependencies: dependenciesByPlanUuid.get(row.uuid) ?? [],
+    basePlanUuid: row.base_plan_uuid ?? undefined,
+    parentUuid: row.parent_uuid ?? undefined,
+  };
+}
+
+function getAgentMultiPlansForProject(db: Database, projectId: number): AgentMultiPlan[] {
+  return db.transaction(() => {
+    const rows = getPlansByProject(db, projectId);
+    const taskCounts = buildTaskCounts(getPlanTasksByProject(db, projectId));
+    const dependenciesByPlanUuid = buildDependencies(getPlanDependenciesByProject(db, projectId));
+    return rows.map((row) => toAgentMultiPlan(row, taskCounts, dependenciesByPlanUuid));
+  })();
+}
+
 export const startGenerate = command(startGenerateSchema, async ({ planUuid }) => {
   return launchTimCommand(
     'generate',
@@ -197,6 +265,100 @@ export const startAgent = command(startAgentSchema, async ({ planUuid }) => {
     spawnAgentProcess
   );
 });
+
+const startAgentMultiSchema = z.object({
+  epicPlanUuid: z.string().min(1),
+  childUuids: z.array(z.string().min(1)).min(1),
+});
+
+export const startAgentMulti = command(
+  startAgentMultiSchema,
+  async ({ epicPlanUuid, childUuids }) => {
+    const { db } = await getServerContext();
+    const epic = await getPlanDetail(db, epicPlanUuid);
+
+    if (!epic) {
+      error(404, 'Epic plan not found');
+    }
+
+    if (epic.epic !== true) {
+      error(400, 'Plan is not an epic');
+    }
+
+    const duplicateChildUuid = childUuids.find(
+      (childUuid, index) => childUuids.indexOf(childUuid) !== index
+    );
+    if (duplicateChildUuid) {
+      error(400, `Child plan ${duplicateChildUuid} was selected more than once`);
+    }
+
+    const children = getChildPlansForEpic(db, epic.uuid);
+    const childrenByUuid = new Map(children.map((child) => [child.uuid, child]));
+    const selectedPlans: AgentMultiPlan[] = [];
+
+    for (const childUuid of childUuids) {
+      const child = childrenByUuid.get(childUuid);
+      if (!child) {
+        error(400, `Child plan ${childUuid} does not belong to epic ${epic.planId}`);
+      }
+      if (child.taskCount === 0) {
+        error(400, `Child plan ${child.planId} has no tasks`);
+      }
+      if (isWorkComplete(child) || child.status === 'deferred') {
+        error(400, `Child plan ${child.planId} is not eligible for agent-multi`);
+      }
+      selectedPlans.push(child);
+    }
+
+    const allPlans = getAgentMultiPlansForProject(db, epic.projectId);
+    const validation = validateSelection(selectedPlans, {
+      allPlans,
+      epicUuid: epic.uuid,
+    });
+    if (!validation.ok) {
+      error(400, validation.message);
+    }
+
+    const activeSession = getSessionManager().hasActiveSessionForPlan(epic.uuid);
+    if (activeSession.active) {
+      console.info(
+        `[web-ui] Not starting tim agent-multi for epic ${epic.planId}; session ${
+          activeSession.connectionId ?? 'unknown'
+        } is already running`
+      );
+      return {
+        status: 'already_running' as const,
+        connectionId: activeSession.connectionId,
+      };
+    }
+
+    const primaryWorkspacePath = getPrimaryWorkspacePath(db, epic.projectId);
+    if (!primaryWorkspacePath) {
+      error(400, 'Project does not have a primary workspace');
+    }
+
+    const planIds = selectedPlans.map((plan) => plan.planId);
+    console.info(
+      `[web-ui] Starting tim agent-multi for epic ${epic.planId} with plans ${planIds.join(
+        ', '
+      )} in ${primaryWorkspacePath}`
+    );
+    const result = await spawnAgentMultiProcess(planIds, primaryWorkspacePath);
+    if (!result.success) {
+      console.error(
+        `[web-ui] tim agent-multi for epic ${epic.planId} failed to start`,
+        result.error
+      );
+      error(500, result.error);
+    }
+
+    return {
+      status: 'started' as const,
+      planId: epic.planId,
+      planIds,
+    };
+  }
+);
 
 const startChatSchema = z.object({
   planUuid: z.string().min(1),
