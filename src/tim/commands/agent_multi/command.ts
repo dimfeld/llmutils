@@ -37,22 +37,17 @@ function toHeadlessPlanSummary(row: PlanRow | null): HeadlessPlanSummary | undef
 
 export async function createBunSpawnAgent(options: {
   autoWorkspace?: boolean;
-  terminalInput?: boolean;
   cwd: string;
 }): Promise<SpawnAgentFn> {
   const env = await buildWorkspaceCommandEnv(options.cwd);
-  // Default to auto-workspace + no terminal input: parallel agent runs cannot share a
-  // primary workspace or interactive stdin. Explicit `false`/`true` overrides remain available.
+  // Parallel agent runs cannot share a primary workspace or interactive stdin.
   const autoWorkspace = options.autoWorkspace !== false;
-  const terminalInput = options.terminalInput === true;
   return (planId: number, cwd: string): SpawnAgentResult => {
     const args = ['agent', String(planId)];
     if (autoWorkspace) {
       args.push('--auto-workspace');
     }
-    if (!terminalInput) {
-      args.push('--no-terminal-input');
-    }
+    args.push('--no-terminal-input');
 
     const logFile = createLogFile('agent-multi-child', planId);
     try {
@@ -119,7 +114,6 @@ export async function handleAgentMultiCommand(
         cwd: repoRoot,
         spawnAgent: await createBunSpawnAgent({
           autoWorkspace: options.autoWorkspace,
-          terminalInput: options.terminalInput,
           cwd: repoRoot,
         }),
         readPlan: async (planUuid: string) => getPlanByUuid(db, planUuid),
