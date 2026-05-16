@@ -138,7 +138,7 @@ import {
   getUsingJj,
   isIgnoredByGitSharedExcludes,
 } from '../../common/git.js';
-import { warn } from '../../logging.js';
+import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
@@ -187,6 +187,7 @@ const mockResolvePrUrl = vi.mocked(resolvePrUrl);
 const mockGetRepositoryIdentity = vi.mocked(getRepositoryIdentity);
 const mockWorkspaceLockAcquireLock = vi.mocked(WorkspaceLock.acquireLock);
 const mockWorkspaceLockSetupCleanupHandlers = vi.mocked(WorkspaceLock.setupCleanupHandlers);
+const mockLog = vi.mocked(log);
 const mockWarn = vi.mocked(warn);
 const mockIsShuttingDown = vi.mocked(isShuttingDown);
 const mockGetSignalExitCode = vi.mocked(getSignalExitCode);
@@ -388,6 +389,7 @@ describe('review_pr command', () => {
   let tempDir: string;
   let guidePath: string;
   let issuesPath: string;
+  let defaultHeadSha: string;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -397,9 +399,31 @@ describe('review_pr command', () => {
     guidePath = path.join(tempDir, '.tim', 'tmp', 'review-501', 'review-guide.md');
     issuesPath = path.join(tempDir, '.tim', 'tmp', 'review-501', 'review-issues.json');
 
+    execFileSync('git', ['init', '-q'], { cwd: tempDir });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+    await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
+    await fs.writeFile(path.join(tempDir, 'src', 'default.ts'), 'const base = true;\n', 'utf8');
+    execFileSync('git', ['add', '.'], { cwd: tempDir });
+    execFileSync('git', ['commit', '-m', 'base'], { cwd: tempDir });
+    const defaultBaseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir })
+      .toString()
+      .trim();
+    execFileSync('git', ['update-ref', 'refs/remotes/origin/main', defaultBaseSha], {
+      cwd: tempDir,
+    });
+    await fs.writeFile(
+      path.join(tempDir, 'src', 'default.ts'),
+      'const base = true;\nconst head = true;\n',
+      'utf8'
+    );
+    execFileSync('git', ['add', '.'], { cwd: tempDir });
+    execFileSync('git', ['commit', '-m', 'head'], { cwd: tempDir });
+    defaultHeadSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir }).toString().trim();
+
     mockGetDatabase.mockReturnValue({} as any);
     mockGetGitRoot.mockResolvedValue(tempDir);
-    mockGetMergeBase.mockResolvedValue('base123');
+    mockGetMergeBase.mockResolvedValue(defaultBaseSha);
     mockGetUsingJj.mockResolvedValue(false);
     mockGetRepositoryIdentity.mockResolvedValue({
       repositoryId: 'github.com__acme__repo',
@@ -422,7 +446,7 @@ describe('review_pr command', () => {
       },
       baseBranch: 'main',
       headBranch: 'feature/pr',
-      headSha: 'sha123',
+      headSha: defaultHeadSha,
       owner: 'acme',
       repo: 'repo',
       prNumber: 42,
@@ -547,11 +571,47 @@ describe('review_pr command', () => {
     expect(mockUpdateReview).toHaveBeenCalledWith(
       expect.anything(),
       501,
-      expect.objectContaining({ status: 'complete', reviewedSha: 'sha123' })
+      expect.objectContaining({ status: 'complete', reviewedSha: defaultHeadSha })
     );
 
     await expect(fs.stat(guidePath)).rejects.toThrow();
     await expect(fs.stat(issuesPath)).rejects.toThrow();
+  });
+
+  test('fails instead of falling back to raw diff instructions when diff catalog generation fails', async () => {
+    mockGatherPrContext.mockResolvedValue({
+      prStatus: {
+        id: 99,
+        title: 'PR title',
+        author: 'alice',
+        changed_files: 3,
+      },
+      baseBranch: 'missing-base',
+      headBranch: 'feature/pr',
+      headSha: defaultHeadSha,
+      owner: 'acme',
+      repo: 'repo',
+      prNumber: 42,
+      prUrl: 'https://github.com/acme/repo/pull/42',
+    } as any);
+    mockGetMergeBase.mockResolvedValue('not-a-valid-sha');
+
+    const claudeExecute = vi.fn();
+    installExecutorMock({ claudeExecute });
+
+    await expect(
+      handleReviewGuideCommand(
+        '42',
+        { executor: 'claude-code', terminalInput: false },
+        makeCommand()
+      )
+    ).rejects.toThrow('Failed to build canonical PR diff catalog');
+
+    expect(claudeExecute).not.toHaveBeenCalled();
+    expect(mockCreateReview).not.toHaveBeenCalled();
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.stringContaining('Generating PR review diff catalog from not-a-valid-sha')
+    );
   });
 
   test('expands diff refs in the stored review guide and appends unused diffs as other changes', async () => {
@@ -565,6 +625,7 @@ describe('review_pr command', () => {
     execFileSync('git', ['add', '.'], { cwd: tempDir });
     execFileSync('git', ['commit', '-m', 'base'], { cwd: tempDir });
     const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir }).toString().trim();
+    execFileSync('git', ['update-ref', 'refs/remotes/origin/main', baseSha], { cwd: tempDir });
 
     await fs.writeFile(
       path.join(tempDir, 'src', 'feature.ts'),
@@ -1104,7 +1165,7 @@ describe('review_pr command', () => {
       expect.anything(),
       501,
       expect.objectContaining({
-        reviewGuide: brokenGuide,
+        reviewGuide: expect.stringContaining(brokenGuide.trimEnd()),
       })
     );
     expect(mockInsertReviewIssues).toHaveBeenCalledTimes(1);
@@ -1308,7 +1369,7 @@ describe('review_pr command', () => {
     expect(mockUpdateReview).toHaveBeenCalledWith(
       expect.anything(),
       501,
-      expect.objectContaining({ status: 'error', reviewedSha: 'sha123' })
+      expect.objectContaining({ status: 'error', reviewedSha: defaultHeadSha })
     );
   });
 

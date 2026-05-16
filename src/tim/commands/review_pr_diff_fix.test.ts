@@ -155,15 +155,27 @@ describe('review_pr diff repair', () => {
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-review-pr-diff-fix-'));
     execFileSync('git', ['init', '-q'], { cwd: tempDir });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
     guidePath = path.join(tempDir, '.tim', 'tmp', 'review-501', 'review-guide.md');
 
     await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
+    await fs.writeFile(path.join(tempDir, 'src/a.ts'), 'const alpha = 1;\n', 'utf8');
+    await fs.writeFile(path.join(tempDir, 'src/b.ts'), 'const beta = 2;\n', 'utf8');
+    execFileSync('git', ['add', '.'], { cwd: tempDir });
+    execFileSync('git', ['commit', '-m', 'base'], { cwd: tempDir });
+    const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir }).toString().trim();
+    execFileSync('git', ['update-ref', 'refs/remotes/origin/main', baseSha], { cwd: tempDir });
+
     await fs.writeFile(path.join(tempDir, 'src/a.ts'), 'const alpha = 2;\n', 'utf8');
     await fs.writeFile(path.join(tempDir, 'src/b.ts'), 'const beta = 3;\n', 'utf8');
+    execFileSync('git', ['add', '.'], { cwd: tempDir });
+    execFileSync('git', ['commit', '-m', 'head'], { cwd: tempDir });
+    const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir }).toString().trim();
 
     mockGetDatabase.mockReturnValue({} as any);
     mockGetGitRoot.mockResolvedValue(tempDir);
-    mockGetMergeBase.mockResolvedValue('base123');
+    mockGetMergeBase.mockResolvedValue(baseSha);
     mockGetUsingJj.mockResolvedValue(false);
     mockLoadEffectiveConfig.mockResolvedValue({
       terminalInput: true,
@@ -179,7 +191,7 @@ describe('review_pr diff repair', () => {
       },
       baseBranch: 'main',
       headBranch: 'feature/pr',
-      headSha: 'sha123',
+      headSha,
       owner: 'acme',
       repo: 'repo',
       prNumber: 42,

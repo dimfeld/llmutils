@@ -275,11 +275,12 @@ async function loadReviewGuideDiffCatalog(options: {
   baseDir: string;
   baseSha: string | null;
   reviewedSha: string;
-}): Promise<ReviewGuideDiffCatalogEntry[] | null> {
+}): Promise<ReviewGuideDiffCatalogEntry[]> {
   if (!options.baseSha) {
-    return null;
+    throw new Error('Unable to build PR review diff catalog because the PR base SHA is unknown.');
   }
 
+  log(`Generating PR review diff catalog from ${options.baseSha} to ${options.reviewedSha}.`);
   const result =
     await $`git diff --no-color --find-renames ${options.baseSha} ${options.reviewedSha}`
       .cwd(options.baseDir)
@@ -288,14 +289,15 @@ async function loadReviewGuideDiffCatalog(options: {
 
   if (result.exitCode !== 0) {
     const stderr = result.stderr.toString().trim();
-    warn(
-      `Failed to build canonical PR diff catalog; falling back to raw diff instructions: ${stderr || 'git diff failed.'}`
-    );
-    return null;
+    throw new Error(`Failed to build canonical PR diff catalog: ${stderr || 'git diff failed.'}`);
   }
 
   const diffText = result.stdout.toString();
-  return buildReviewGuideDiffCatalog(diffText);
+  const catalog = buildReviewGuideDiffCatalog(diffText);
+  log(
+    `Generated PR review diff catalog with ${catalog.length} diff ref${catalog.length === 1 ? '' : 's'}.`
+  );
+  return catalog;
 }
 
 async function resolveReviewedShaAfterCheckout(
@@ -320,14 +322,16 @@ async function resolveReviewGuideBaseSha(
 
   const fallbackBaseSha = await getMergeBase(baseDir, baseBranch, 'HEAD');
   if (fallbackBaseSha) {
+    log(
+      `Resolved PR review diff base with repository merge-base fallback for ${baseBranch}: ${fallbackBaseSha}.`
+    );
     return fallbackBaseSha;
   }
 
   const gitError = gitResult.stderr.toString().trim();
-  warn(
-    `Failed to resolve PR review diff base from ${remoteBaseRef}; review guide will use raw diff instructions. ${gitError || 'git merge-base failed.'}`
+  throw new Error(
+    `Failed to resolve PR review diff base from ${remoteBaseRef}: ${gitError || 'git merge-base failed.'}`
   );
-  return null;
 }
 
 function normalizeExecutorOutput(executorOutput: unknown): string {
