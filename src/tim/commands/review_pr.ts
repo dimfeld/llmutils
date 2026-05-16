@@ -298,6 +298,38 @@ async function loadReviewGuideDiffCatalog(options: {
   return buildReviewGuideDiffCatalog(diffText);
 }
 
+async function resolveReviewedShaAfterCheckout(
+  baseDir: string,
+  fallbackReviewedSha: string
+): Promise<string> {
+  const result = await $`git rev-parse HEAD`.cwd(baseDir).quiet().nothrow();
+  const sha = result.stdout.toString().trim();
+  return result.exitCode === 0 && sha ? sha : fallbackReviewedSha;
+}
+
+async function resolveReviewGuideBaseSha(
+  baseDir: string,
+  baseBranch: string
+): Promise<string | null> {
+  const remoteBaseRef = `origin/${baseBranch}`;
+  const gitResult = await $`git merge-base HEAD ${remoteBaseRef}`.cwd(baseDir).quiet().nothrow();
+  const gitBaseSha = gitResult.stdout.toString().trim();
+  if (gitResult.exitCode === 0 && gitBaseSha) {
+    return gitBaseSha;
+  }
+
+  const fallbackBaseSha = await getMergeBase(baseDir, baseBranch, 'HEAD');
+  if (fallbackBaseSha) {
+    return fallbackBaseSha;
+  }
+
+  const gitError = gitResult.stderr.toString().trim();
+  warn(
+    `Failed to resolve PR review diff base from ${remoteBaseRef}; review guide will use raw diff instructions. ${gitError || 'git merge-base failed.'}`
+  );
+  return null;
+}
+
 function normalizeExecutorOutput(executorOutput: unknown): string {
   if (typeof executorOutput === 'string') {
     return executorOutput;
@@ -1229,33 +1261,10 @@ export async function handleReviewGuideCommand(
           cwd: baseDir,
         });
 
-        // Read the actual reviewed SHA after checkout, not the cached pr_status value,
-        // since the remote branch may have advanced since the cache was written.
-        // For jj, `jj new` creates a synthetic working-copy commit on top of the branch,
-        // so `git rev-parse HEAD` would return the wrong SHA. Use the parent instead.
-        let reviewedSha = prContext.headSha;
-        try {
-          const usingJjForSha = await getUsingJj(baseDir);
-          if (usingJjForSha) {
-            const result = await $`jj log -r @- --no-graph -T commit_id`
-              .cwd(baseDir)
-              .quiet()
-              .nothrow();
-            const sha = result.stdout.toString().trim();
-            if (sha && result.exitCode === 0) {
-              reviewedSha = sha;
-            }
-          } else {
-            const result = await $`git rev-parse HEAD`.cwd(baseDir).quiet().nothrow();
-            const sha = result.stdout.toString().trim();
-            if (sha && result.exitCode === 0) {
-              reviewedSha = sha;
-            }
-          }
-        } catch {
-          // Fall back to cached SHA if we can't read HEAD
-        }
-        const baseSha = await getMergeBase(baseDir, prContext.baseBranch, 'HEAD');
+        // checkoutPrBranch uses Git fetch/checkout even for colocated jj repositories so review
+        // diffs should resolve against the Git refs that checkout just fetched.
+        const reviewedSha = await resolveReviewedShaAfterCheckout(baseDir, prContext.headSha);
+        const baseSha = await resolveReviewGuideBaseSha(baseDir, prContext.baseBranch);
         const diffCatalog = await loadReviewGuideDiffCatalog({
           baseDir,
           baseSha,

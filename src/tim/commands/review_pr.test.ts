@@ -655,6 +655,91 @@ describe('review_pr command', () => {
     expect(storedGuide).not.toContain('<diff ref=');
   });
 
+  test('builds diff catalog from fetched Git base branch when repository is jj-detected', async () => {
+    execFileSync('git', ['init', '-q'], { cwd: tempDir });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+
+    await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
+    await fs.writeFile(path.join(tempDir, 'src', 'stacked.ts'), 'const tierOne = true;\n', 'utf8');
+    execFileSync('git', ['add', '.'], { cwd: tempDir });
+    execFileSync('git', ['commit', '-m', 'tier one'], { cwd: tempDir });
+    const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir }).toString().trim();
+    execFileSync('git', ['update-ref', 'refs/remotes/origin/evan/lot-expiration/tier-1', baseSha], {
+      cwd: tempDir,
+    });
+
+    await fs.writeFile(
+      path.join(tempDir, 'src', 'stacked.ts'),
+      'const tierOne = true;\nconst tierTwo = true;\n',
+      'utf8'
+    );
+    execFileSync('git', ['add', '.'], { cwd: tempDir });
+    execFileSync('git', ['commit', '-m', 'tier two'], { cwd: tempDir });
+    const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir }).toString().trim();
+
+    mockGetUsingJj.mockResolvedValue(true);
+    mockGetMergeBase.mockResolvedValue(null);
+    mockGatherPrContext.mockResolvedValue({
+      prStatus: {
+        id: 99,
+        title: 'Stacked PR',
+        author: 'alice',
+        changed_files: 1,
+      },
+      baseBranch: 'evan/lot-expiration/tier-1',
+      headBranch: 'evan/lot-expiration/tier-2',
+      headSha,
+      owner: 'acme',
+      repo: 'repo',
+      prNumber: 42,
+      prUrl: 'https://github.com/acme/repo/pull/42',
+    } as any);
+
+    const claudeExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('must produce a complete review guide')) {
+        expect(prompt).toContain('## Diff Reference Catalog');
+        expect(prompt).toContain('src/stacked.ts#hunk-1');
+        await fs.mkdir(path.dirname(guidePath), { recursive: true });
+        await fs.writeFile(
+          guidePath,
+          '# Guide\n\n## Stacked change\n\n<diff ref="src/stacked.ts#hunk-1"/>\n',
+          'utf8'
+        );
+        return { content: 'ok' };
+      }
+
+      if (
+        prompt.includes('standalone PR code review and must return structured JSON issues only')
+      ) {
+        return {
+          content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+        };
+      }
+
+      throw new Error(`Unexpected Claude prompt: ${prompt}`);
+    });
+
+    installExecutorMock({ claudeExecute });
+
+    await handleReviewGuideCommand(
+      '42',
+      { executor: 'claude-code', terminalInput: false },
+      makeCommand()
+    );
+
+    expect(mockGetMergeBase).not.toHaveBeenCalled();
+    expect(mockUpdateReview).toHaveBeenCalledWith(
+      expect.anything(),
+      501,
+      expect.objectContaining({
+        status: 'complete',
+        reviewedSha: headSha,
+        reviewGuide: expect.stringContaining('+const tierTwo = true;'),
+      })
+    );
+  });
+
   test('forces noninteractive executors when running both executors concurrently', async () => {
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
