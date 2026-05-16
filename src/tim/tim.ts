@@ -76,6 +76,14 @@ function parsePlanIdOption<T extends string | string[] | undefined>(
   return parsePlanIdFromCliArg(value);
 }
 
+function parsePositiveIntegerOption(value: string, optionName: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${optionName} must be a positive integer, got: "${value}"`);
+  }
+  return parsed;
+}
+
 function formatSchemaHelp(schema: z.ZodTypeAny): string {
   const jsonSchema = z.toJSONSchema(schema, {
     target: 'draft-7',
@@ -851,6 +859,32 @@ createAgentCommand(
   program.command('run [planId]'),
   'Alias for "agent". Automatically execute steps in a plan. Accepts a numeric plan ID.'
 );
+
+program
+  .command('agent-multi <planIds...>')
+  .description('Run tim agent on multiple sibling plans in dependency order.')
+  .option('--epic <id>', 'Validate that all selected plans belong to this epic plan')
+  .option(
+    '--max-parallel <n>',
+    'Maximum number of child agents to run at once',
+    (value: string) => parsePositiveIntegerOption(value, '--max-parallel'),
+    3
+  )
+  .option('--terminal-input', 'Allow spawned child agents to read from terminal input')
+  .option('--non-interactive', 'Run the orchestrator without interactive prompts')
+  .action(async (planIdArgs, options, command) => {
+    const { handleAgentMultiCommand } = await import('./commands/agent_multi/command.js');
+    const planIds = (planIdArgs as string[]).map((planIdArg) => parsePlanIdFromCliArg(planIdArg));
+    if (options.epic !== undefined) {
+      options.epic = parsePlanIdFromCliArg(options.epic);
+    }
+    if (command.getOptionValueSource('terminalInput') !== 'cli') {
+      options.terminalInput = false;
+    }
+    await handleAgentMultiCommand(planIds, options, command.parent.opts()).catch(
+      handleCommandError
+    );
+  });
 
 program
   .command('chat [prompt]')

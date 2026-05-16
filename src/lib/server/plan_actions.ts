@@ -43,7 +43,7 @@ export function formatLogFileName(planId: number, command: string, timestamp = n
   return `${planId}-${isoTimestamp}-${command}.log`;
 }
 
-function createLogFile(command: string, planId: number): LogFileInfo {
+export function createLogFile(command: string, planId: number): LogFileInfo {
   const logDir = getLogDir();
   fs.mkdirSync(logDir, { recursive: true });
 
@@ -136,6 +136,30 @@ export async function spawnAgentProcess(planId: number, cwd: string): Promise<Sp
     describeTarget('plan', planId),
     planId,
     ['agent', String(planId), '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
+}
+
+export async function spawnAgentMultiProcess(
+  epicPlanId: number,
+  planIds: number[],
+  cwd: string
+): Promise<SpawnProcessResult> {
+  if (planIds.length === 0) {
+    return { success: false, error: 'At least one plan ID is required.' };
+  }
+
+  return spawnTimProcess(
+    `epic ${epicPlanId} plans ${planIds.join(', ')}`,
+    epicPlanId,
+    [
+      'agent-multi',
+      ...planIds.map((planId) => String(planId)),
+      '--epic',
+      String(epicPlanId),
+      '--no-terminal-input',
+      '--non-interactive',
+    ],
     cwd
   );
 }

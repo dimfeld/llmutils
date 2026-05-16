@@ -17,11 +17,13 @@ import { cleanStaleLocks, type WorkspaceLockRow } from '$tim/db/workspace_lock.j
 import {
   getPlanByUuid,
   getPlanDependenciesByProject,
+  getChildPlansForEpic as getChildPlansForEpicFromPlanDb,
   getPlansByProject,
   getPlanTagsByUuid,
   getPlanTagsByProject,
   getPlanTasksByUuid,
   getPlanTasksByProject,
+  type ChildPlanSummaryRow,
   type PlanDependencyRow,
   type PlanRow,
   type PlanTagRow,
@@ -119,8 +121,16 @@ export interface EnrichedPlan {
   reviewIssueCount: number;
 }
 
+export interface ChildExternalDependencyInfo {
+  status: string;
+  planId: number;
+  title: string;
+}
+
 export interface PlanDetail extends EnrichedPlan {
   dependencies: EnrichedPlanDependency[];
+  children: ChildPlanSummary[];
+  childExternalDependencyStatuses: Record<string, ChildExternalDependencyInfo>;
   assignment: AssignmentEntry | null;
   parent: EnrichedPlanDependency | null;
   basePlan: EnrichedPlanDependency | null;
@@ -128,6 +138,8 @@ export interface PlanDetail extends EnrichedPlan {
   reviewIssues: PlanSchema['reviewIssues'];
   artifacts: PlanArtifactWithTransferState[];
 }
+
+export type ChildPlanSummary = ChildPlanSummaryRow;
 
 export interface EnrichedWorkspace {
   id: number;
@@ -575,6 +587,67 @@ function getPlansByUuid(db: Database, planUuids: Iterable<string>): PlanRow[] {
   return plans;
 }
 
+function getChildExternalDependencyStatuses(
+  db: Database,
+  children: ChildPlanSummary[],
+  planByUuid: ReadonlyMap<string, PlanRow>
+): Record<string, ChildExternalDependencyInfo> {
+  if (children.length === 0) {
+    return {};
+  }
+
+  const childUuids = new Set(children.map((child) => child.uuid));
+  const externalDependencyUuids = new Set<string>();
+
+  for (const child of children) {
+    for (const dependencyUuid of child.dependencies) {
+      if (!childUuids.has(dependencyUuid)) {
+        externalDependencyUuids.add(dependencyUuid);
+      }
+    }
+
+    if (child.basePlanUuid && !childUuids.has(child.basePlanUuid)) {
+      externalDependencyUuids.add(child.basePlanUuid);
+    }
+  }
+
+  if (externalDependencyUuids.size === 0) {
+    return {};
+  }
+
+  const statuses: Record<string, ChildExternalDependencyInfo> = {};
+  const missingPlanUuids: string[] = [];
+
+  for (const dependencyUuid of externalDependencyUuids) {
+    const plan = planByUuid.get(dependencyUuid);
+    if (!plan) {
+      missingPlanUuids.push(dependencyUuid);
+      continue;
+    }
+    const status = normalizePlanStatus(plan.status);
+    if (status) {
+      statuses[dependencyUuid] = {
+        status,
+        planId: plan.plan_id,
+        title: plan.title ?? '',
+      };
+    }
+  }
+
+  for (const plan of getPlansByUuid(db, missingPlanUuids)) {
+    const status = normalizePlanStatus(plan.status);
+    if (status) {
+      statuses[plan.uuid] = {
+        status,
+        planId: plan.plan_id,
+        title: plan.title ?? '',
+      };
+    }
+  }
+
+  return statuses;
+}
+
 function toDependencySummary(
   dependencyUuid: string,
   planByUuid: ReadonlyMap<string, PlanRow>,
@@ -835,6 +908,10 @@ export function getPrimaryWorkspacePath(db: Database, projectId: number): string
   return row?.workspace_path ?? null;
 }
 
+export function getChildPlansForEpic(db: Database, epicUuid: string): ChildPlanSummary[] {
+  return getChildPlansForEpicFromPlanDb(db, epicUuid);
+}
+
 export async function getPlanDetail(
   db: Database,
   planUuid: string,
@@ -919,10 +996,18 @@ export async function getPlanDetail(
     planUuid,
     includeDeleted: options.includeDeletedArtifacts,
   });
+  const children = enrichedPlan.epic ? getChildPlansForEpic(db, planUuid) : [];
+  const childExternalDependencyStatuses = getChildExternalDependencyStatuses(
+    db,
+    children,
+    planByUuid
+  );
 
   return {
     ...enrichedPlan,
     dependencies: dependencySummaries,
+    children,
+    childExternalDependencyStatuses,
     assignment,
     parent,
     basePlan,

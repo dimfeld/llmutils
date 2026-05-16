@@ -76,7 +76,7 @@ export interface RunningSession {
 
 // --- Derivation functions ---
 
-const AGENT_COMMANDS = new Set(['agent', 'generate', 'chat', 'pr-create']);
+const AGENT_COMMANDS = new Set(['agent', 'agent-multi', 'generate', 'chat', 'pr-create']);
 
 export function indexSessionsByPlanUuid(
   sessions: Iterable<SessionData>

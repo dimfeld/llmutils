@@ -17,6 +17,7 @@ let currentDb: Database;
 let currentManager: SessionManager;
 const spawnGenerateProcessMock = vi.fn();
 const spawnAgentProcessMock = vi.fn();
+const spawnAgentMultiProcessMock = vi.fn();
 const spawnChatProcessMock = vi.fn();
 const spawnRebaseProcessMock = vi.fn();
 const spawnPrCreateProcessMock = vi.fn();
@@ -41,6 +42,8 @@ vi.mock('$lib/server/plan_actions.js', () => ({
     spawnGenerateProcessMock(...args),
   spawnAgentProcess: (...args: Parameters<typeof spawnAgentProcessMock>) =>
     spawnAgentProcessMock(...args),
+  spawnAgentMultiProcess: (...args: Parameters<typeof spawnAgentMultiProcessMock>) =>
+    spawnAgentMultiProcessMock(...args),
   spawnChatProcess: (...args: Parameters<typeof spawnChatProcessMock>) =>
     spawnChatProcessMock(...args),
   spawnRebaseProcess: (...args: Parameters<typeof spawnRebaseProcessMock>) =>
@@ -60,6 +63,7 @@ import { isPlanLaunching, resetLaunchLockState, setLaunchLock } from '$lib/serve
 import {
   finishPlanQuick,
   startAgent,
+  startAgentMulti,
   startChat,
   startCreatePr,
   startUpdateDocs,
@@ -81,6 +85,7 @@ describe('plan remote actions', () => {
     currentManager = new SessionManager(currentDb);
     spawnGenerateProcessMock.mockReset();
     spawnAgentProcessMock.mockReset();
+    spawnAgentMultiProcessMock.mockReset();
     spawnChatProcessMock.mockReset();
     spawnRebaseProcessMock.mockReset();
     spawnPrCreateProcessMock.mockReset();
@@ -830,6 +835,385 @@ describe('plan remote actions', () => {
         status: 'started',
         planId: 2014,
       });
+    });
+  });
+
+  describe('startAgentMulti', () => {
+    test('rejects unknown epic plan UUIDs', async () => {
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'missing-epic',
+          childUuids: ['child-a'],
+        })
+      ).rejects.toMatchObject({
+        status: 404,
+        body: { message: 'Epic plan not found' },
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects plans that are not epics', async () => {
+      seedPlan({ uuid: 'not-an-epic', planId: 2200 });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'not-an-epic',
+          childUuids: ['child-a'],
+        })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not an epic' },
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects child UUIDs that do not belong to the epic', async () => {
+      seedPlan({ uuid: 'multi-epic', planId: 2201, epic: true });
+      seedPlan({
+        uuid: 'multi-other-child',
+        planId: 2202,
+        parentUuid: 'other-epic',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic',
+          childUuids: ['multi-other-child'],
+        })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Child plan multi-other-child does not belong to epic 2201' },
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects child plans with no tasks', async () => {
+      seedPlan({ uuid: 'multi-epic-no-tasks', planId: 2203, epic: true });
+      seedPlan({
+        uuid: 'multi-child-no-tasks',
+        planId: 2204,
+        parentUuid: 'multi-epic-no-tasks',
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-no-tasks',
+          childUuids: ['multi-child-no-tasks'],
+        })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Child plan 2204 has no tasks' },
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects child plans that are already finished or deferred', async () => {
+      seedPlan({ uuid: 'multi-epic-ineligible', planId: 2205, epic: true });
+      seedPlan({
+        uuid: 'multi-child-done',
+        planId: 2206,
+        parentUuid: 'multi-epic-ineligible',
+        status: 'done',
+        tasks: [{ title: 'Task', description: 'Done', done: true }],
+      });
+      seedPlan({
+        uuid: 'multi-child-deferred',
+        planId: 2207,
+        parentUuid: 'multi-epic-ineligible',
+        status: 'deferred',
+        tasks: [{ title: 'Task', description: 'Deferred', done: false }],
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-ineligible',
+          childUuids: ['multi-child-done'],
+        })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Child plan 2206 is not eligible for agent-multi' },
+      });
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-ineligible',
+          childUuids: ['multi-child-deferred'],
+        })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Child plan 2207 is not eligible for agent-multi' },
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects selections that omit an unfinished dependency predecessor', async () => {
+      seedPlan({ uuid: 'multi-epic-deps', planId: 2208, epic: true });
+      seedPlan({
+        uuid: 'multi-child-a',
+        planId: 2209,
+        parentUuid: 'multi-epic-deps',
+        tasks: [{ title: 'Task A', description: 'Pending', done: false }],
+      });
+      seedPlan({
+        uuid: 'multi-child-b',
+        planId: 2210,
+        parentUuid: 'multi-epic-deps',
+        tasks: [{ title: 'Task B', description: 'Pending', done: false }],
+        dependencyUuids: ['multi-child-a'],
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-deps',
+          childUuids: ['multi-child-b'],
+        })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: {
+          message: expect.stringContaining('Plan 2210 depends on unfinished external plan 2209'),
+        },
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('returns already_running when the epic has an active session', async () => {
+      seedPlan({ uuid: 'multi-epic-running', planId: 2211, epic: true });
+      seedPlan({
+        uuid: 'multi-child-running',
+        planId: 2212,
+        parentUuid: 'multi-epic-running',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      currentManager.handleWebSocketConnect('conn-agent-multi', () => {});
+      currentManager.handleWebSocketMessage('conn-agent-multi', {
+        type: 'session_info',
+        command: 'agent-multi',
+        interactive: false,
+        planId: 2211,
+        planUuid: 'multi-epic-running',
+        workspacePath: '/tmp/primary-workspace',
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-running',
+          childUuids: ['multi-child-running'],
+        })
+      ).resolves.toEqual({
+        status: 'already_running',
+        connectionId: 'conn-agent-multi',
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('returns already_running when a selected child has an active agent session', async () => {
+      seedPlan({ uuid: 'multi-epic-child-running', planId: 2224, epic: true });
+      seedPlan({
+        uuid: 'multi-child-active-agent',
+        planId: 2225,
+        parentUuid: 'multi-epic-child-running',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      currentManager.handleWebSocketConnect('conn-child-agent', () => {});
+      currentManager.handleWebSocketMessage('conn-child-agent', {
+        type: 'session_info',
+        command: 'agent',
+        interactive: false,
+        planId: 2225,
+        planUuid: 'multi-child-active-agent',
+        workspacePath: '/tmp/child-workspace',
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-child-running',
+          childUuids: ['multi-child-active-agent'],
+        })
+      ).resolves.toEqual({
+        status: 'already_running',
+        connectionId: 'conn-child-agent',
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('returns already_running when a selected child launch is already in progress', async () => {
+      seedPlan({ uuid: 'multi-epic-child-launching', planId: 2226, epic: true });
+      seedPlan({
+        uuid: 'multi-child-launching',
+        planId: 2227,
+        parentUuid: 'multi-epic-child-launching',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      setLaunchLock('multi-child-launching');
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-child-launching',
+          childUuids: ['multi-child-launching'],
+        })
+      ).resolves.toEqual({
+        status: 'already_running',
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects duplicate child UUIDs', async () => {
+      seedPlan({ uuid: 'multi-epic-dup', planId: 2216, epic: true });
+      seedPlan({
+        uuid: 'multi-child-dup',
+        planId: 2217,
+        parentUuid: 'multi-epic-dup',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-dup',
+          childUuids: ['multi-child-dup', 'multi-child-dup'],
+        })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Child plan multi-child-dup was selected more than once' },
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects when epic project has no primary workspace', async () => {
+      seedPlan({ uuid: 'multi-epic-no-ws', planId: 2218, epic: true });
+      seedPlan({
+        uuid: 'multi-child-no-ws',
+        planId: 2219,
+        parentUuid: 'multi-epic-no-ws',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-no-ws',
+          childUuids: ['multi-child-no-ws'],
+        })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Project does not have a primary workspace' },
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('surfaces spawn failure for startAgentMulti', async () => {
+      seedPlan({ uuid: 'multi-epic-fail', planId: 2220, epic: true });
+      seedPlan({
+        uuid: 'multi-child-fail',
+        planId: 2221,
+        parentUuid: 'multi-epic-fail',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnAgentMultiProcessMock.mockResolvedValue({
+        success: false,
+        error: 'tim agent-multi failed to start',
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-fail',
+          childUuids: ['multi-child-fail'],
+        })
+      ).rejects.toMatchObject({
+        status: 500,
+        body: { message: 'tim agent-multi failed to start' },
+      });
+      expect(isPlanLaunching('multi-epic-fail')).toBe(false);
+    });
+
+    test('returns already_running for concurrent starts before the orchestrator session registers', async () => {
+      seedPlan({ uuid: 'multi-epic-race', planId: 2222, epic: true });
+      seedPlan({
+        uuid: 'multi-child-race',
+        planId: 2223,
+        parentUuid: 'multi-epic-race',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+
+      let resolveSpawn: ((result: { success: true; planId: number }) => void) | undefined;
+      spawnAgentMultiProcessMock.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSpawn = resolve;
+          })
+      );
+
+      const firstLaunch = invokeCommand(startAgentMulti, {
+        epicPlanUuid: 'multi-epic-race',
+        childUuids: ['multi-child-race'],
+      });
+      await vi.waitFor(() => expect(isPlanLaunching('multi-epic-race')).toBe(true));
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-race',
+          childUuids: ['multi-child-race'],
+        })
+      ).resolves.toEqual({
+        status: 'already_running',
+      });
+      expect(spawnAgentMultiProcessMock).toHaveBeenCalledTimes(1);
+
+      resolveSpawn?.({ success: true, planId: 2222 });
+      await expect(firstLaunch).resolves.toEqual({
+        status: 'started',
+        planId: 2222,
+        planIds: [2223],
+      });
+    });
+
+    test('spawns tim agent-multi with resolved numeric child plan IDs', async () => {
+      seedPlan({ uuid: 'multi-epic-start', planId: 2213, epic: true });
+      seedPlan({
+        uuid: 'multi-child-start-a',
+        planId: 2214,
+        parentUuid: 'multi-epic-start',
+        tasks: [{ title: 'Task A', description: 'Pending', done: false }],
+      });
+      seedPlan({
+        uuid: 'multi-child-start-b',
+        planId: 2215,
+        parentUuid: 'multi-epic-start',
+        tasks: [{ title: 'Task B', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnAgentMultiProcessMock.mockResolvedValue({
+        success: true,
+        planId: 2214,
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-start',
+          childUuids: ['multi-child-start-b', 'multi-child-start-a'],
+        })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2213,
+        planIds: [2215, 2214],
+      });
+      expect(spawnAgentMultiProcessMock).toHaveBeenCalledWith(
+        2213,
+        [2215, 2214],
+        '/tmp/primary-workspace'
+      );
     });
   });
 
@@ -1843,6 +2227,8 @@ describe('plan remote actions', () => {
     status?: 'pending' | 'in_progress' | 'needs_review' | 'done' | 'cancelled' | 'deferred';
     epic?: boolean;
     parentUuid?: string;
+    basePlanUuid?: string | null;
+    dependencyUuids?: string[];
     tasks?: Array<{ title: string; description: string; done?: boolean }>;
     docsUpdatedAt?: string | null;
     lessonsAppliedAt?: string | null;
@@ -1856,8 +2242,10 @@ describe('plan remote actions', () => {
       priority: 'medium',
       epic: options.epic ?? false,
       parentUuid: options.parentUuid,
+      basePlanUuid: options.basePlanUuid,
       filename: `${options.planId}.plan.md`,
       tasks: options.tasks,
+      dependencyUuids: options.dependencyUuids,
       sourceDocsUpdatedAt: options.docsUpdatedAt,
       sourceLessonsAppliedAt: options.lessonsAppliedAt,
       pullRequest: options.pullRequest,

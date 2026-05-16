@@ -18,6 +18,7 @@ import { acquireWorkspaceLock, getWorkspaceLock } from '$tim/db/workspace_lock.j
 
 import {
   computeCanUpdateDocs,
+  getChildPlansForEpic,
   getPlanDetail,
   getPlansForProject,
   getPrimaryWorkspacePath,
@@ -103,6 +104,158 @@ describe('lib/server/db_queries', () => {
         deferred: 0,
       },
     });
+  });
+
+  test('getChildPlansForEpic returns child task and dependency summaries', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'web-epic',
+      planId: 900,
+      title: 'Web epic',
+      epic: true,
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'web-child-a',
+      planId: 901,
+      title: 'Web child A',
+      parentUuid: 'web-epic',
+      tasks: [
+        { title: 'done', description: 'done', done: true },
+        { title: 'open', description: 'open', done: false },
+      ],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'web-child-b',
+      planId: 902,
+      title: 'Web child B',
+      parentUuid: 'web-epic',
+      basePlanUuid: 'web-child-a',
+      dependencyUuids: ['web-child-a'],
+      tasks: [{ title: 'task', description: 'desc', done: false }],
+    });
+
+    const children = getChildPlansForEpic(db, 'web-epic');
+
+    expect(children).toEqual([
+      {
+        uuid: 'web-child-a',
+        planId: 901,
+        title: 'Web child A',
+        status: 'pending',
+        displayStatus: 'ready',
+        taskCount: 2,
+        doneTaskCount: 1,
+        dependencies: [],
+        basePlanUuid: undefined,
+        parentUuid: 'web-epic',
+      },
+      {
+        uuid: 'web-child-b',
+        planId: 902,
+        title: 'Web child B',
+        status: 'pending',
+        displayStatus: 'blocked',
+        taskCount: 1,
+        doneTaskCount: 0,
+        dependencies: ['web-child-a'],
+        basePlanUuid: 'web-child-a',
+        parentUuid: 'web-epic',
+      },
+    ]);
+  });
+
+  test('getPlanDetail includes children for epic plans', async () => {
+    upsertPlan(db, projectId, {
+      uuid: 'detail-epic',
+      planId: 910,
+      title: 'Detail epic',
+      epic: true,
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'detail-child',
+      planId: 911,
+      title: 'Detail child',
+      parentUuid: 'detail-epic',
+      tasks: [{ title: 'task', description: 'desc', done: false }],
+    });
+
+    const detail = await getPlanDetail(db, 'detail-epic');
+
+    expect(detail?.children).toEqual([
+      {
+        uuid: 'detail-child',
+        planId: 911,
+        title: 'Detail child',
+        status: 'pending',
+        displayStatus: 'ready',
+        taskCount: 1,
+        doneTaskCount: 0,
+        dependencies: [],
+        basePlanUuid: undefined,
+        parentUuid: 'detail-epic',
+      },
+    ]);
+  });
+
+  test('getPlanDetail includes child external dependency statuses for epic plans', async () => {
+    upsertPlan(db, projectId, {
+      uuid: 'child-external-status-epic',
+      planId: 920,
+      title: 'Child external status epic',
+      epic: true,
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'child-external-status-finished',
+      planId: 921,
+      title: 'Finished external dependency',
+      status: 'done',
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'child-external-status-unfinished',
+      planId: 925,
+      title: 'Unfinished external dependency',
+      status: 'in_progress',
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'child-external-status-internal',
+      planId: 922,
+      title: 'Internal dependency child',
+      parentUuid: 'child-external-status-epic',
+      tasks: [{ title: 'task', description: 'desc', done: false }],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'child-external-status-child',
+      planId: 923,
+      title: 'Child with external dependency',
+      parentUuid: 'child-external-status-epic',
+      dependencyUuids: ['child-external-status-finished', 'child-external-status-unfinished'],
+      tasks: [{ title: 'task', description: 'desc', done: false }],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'child-external-status-dependent-child',
+      planId: 924,
+      title: 'Child with internal dependency',
+      parentUuid: 'child-external-status-epic',
+      dependencyUuids: ['child-external-status-internal'],
+      tasks: [{ title: 'task', description: 'desc', done: false }],
+    });
+
+    const detail = await getPlanDetail(db, 'child-external-status-epic');
+
+    expect(detail?.childExternalDependencyStatuses).toEqual({
+      'child-external-status-finished': {
+        status: 'done',
+        planId: 921,
+        title: 'Finished external dependency',
+      },
+      'child-external-status-unfinished': {
+        status: 'in_progress',
+        planId: 925,
+        title: 'Unfinished external dependency',
+      },
+    });
+    expect(detail?.childExternalDependencyStatuses).not.toHaveProperty(
+      'child-external-status-internal'
+    );
   });
 
   test('getProjectsWithMetadata includes projects with zero plans', () => {
