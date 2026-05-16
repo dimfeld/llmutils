@@ -872,7 +872,6 @@ program
   )
   .option('--aw, --auto-workspace', 'Pass --auto-workspace to each spawned child agent')
   .option('--terminal-input', 'Allow spawned child agents to read from terminal input')
-  .option('--no-terminal-input', 'Pass --no-terminal-input to each spawned child agent')
   .option('--non-interactive', 'Run the orchestrator without interactive prompts')
   .action(async (planIdArgs, options, command) => {
     const { handleAgentMultiCommand } = await import('./commands/agent_multi/command.js');
