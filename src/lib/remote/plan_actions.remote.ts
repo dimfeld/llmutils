@@ -278,6 +278,30 @@ export const startAgentMulti = command(
       };
     }
 
+    for (const child of selectedPlans) {
+      const childActiveSession = getSessionManager().hasActiveSessionForPlan(child.uuid);
+      if (childActiveSession.active) {
+        console.info(
+          `[web-ui] Not starting tim agent-multi for epic ${epic.planId}; child plan ${
+            child.planId
+          } has session ${childActiveSession.connectionId ?? 'unknown'} already running`
+        );
+        return {
+          status: 'already_running' as const,
+          connectionId: childActiveSession.connectionId,
+        };
+      }
+
+      if (isPlanLaunching(child.uuid)) {
+        console.info(
+          `[web-ui] Not starting tim agent-multi for epic ${epic.planId}; child plan ${child.planId} launch is already in progress`
+        );
+        return {
+          status: 'already_running' as const,
+        };
+      }
+    }
+
     const primaryWorkspacePath = getPrimaryWorkspacePath(db, epic.projectId);
     if (!primaryWorkspacePath) {
       error(400, 'Project does not have a primary workspace');
@@ -289,12 +313,17 @@ export const startAgentMulti = command(
         ', '
       )} in ${primaryWorkspacePath}`
     );
-    setLaunchLock(epic.uuid);
+    const lockedPlanUuids = [epic.uuid, ...selectedPlans.map((plan) => plan.uuid)];
+    for (const planUuid of lockedPlanUuids) {
+      setLaunchLock(planUuid);
+    }
     let result: SpawnProcessResult;
     try {
       result = await spawnAgentMultiProcess(epic.planId, planIds, primaryWorkspacePath);
     } catch (err) {
-      clearLaunchLock(epic.uuid);
+      for (const planUuid of lockedPlanUuids) {
+        clearLaunchLock(planUuid);
+      }
       throw err;
     }
     if (!result.success) {
@@ -302,11 +331,15 @@ export const startAgentMulti = command(
         `[web-ui] tim agent-multi for epic ${epic.planId} failed to start`,
         result.error
       );
-      clearLaunchLock(epic.uuid);
+      for (const planUuid of lockedPlanUuids) {
+        clearLaunchLock(planUuid);
+      }
       error(500, result.error);
     }
     if (result.earlyExit) {
-      clearLaunchLock(epic.uuid);
+      for (const planUuid of lockedPlanUuids) {
+        clearLaunchLock(planUuid);
+      }
     }
 
     return {

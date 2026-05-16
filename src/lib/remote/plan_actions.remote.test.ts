@@ -1006,6 +1006,57 @@ describe('plan remote actions', () => {
       expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
     });
 
+    test('returns already_running when a selected child has an active agent session', async () => {
+      seedPlan({ uuid: 'multi-epic-child-running', planId: 2224, epic: true });
+      seedPlan({
+        uuid: 'multi-child-active-agent',
+        planId: 2225,
+        parentUuid: 'multi-epic-child-running',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      currentManager.handleWebSocketConnect('conn-child-agent', () => {});
+      currentManager.handleWebSocketMessage('conn-child-agent', {
+        type: 'session_info',
+        command: 'agent',
+        interactive: false,
+        planId: 2225,
+        planUuid: 'multi-child-active-agent',
+        workspacePath: '/tmp/child-workspace',
+      });
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-child-running',
+          childUuids: ['multi-child-active-agent'],
+        })
+      ).resolves.toEqual({
+        status: 'already_running',
+        connectionId: 'conn-child-agent',
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('returns already_running when a selected child launch is already in progress', async () => {
+      seedPlan({ uuid: 'multi-epic-child-launching', planId: 2226, epic: true });
+      seedPlan({
+        uuid: 'multi-child-launching',
+        planId: 2227,
+        parentUuid: 'multi-epic-child-launching',
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      setLaunchLock('multi-child-launching');
+
+      await expect(
+        invokeCommand(startAgentMulti, {
+          epicPlanUuid: 'multi-epic-child-launching',
+          childUuids: ['multi-child-launching'],
+        })
+      ).resolves.toEqual({
+        status: 'already_running',
+      });
+      expect(spawnAgentMultiProcessMock).not.toHaveBeenCalled();
+    });
+
     test('rejects duplicate child UUIDs', async () => {
       seedPlan({ uuid: 'multi-epic-dup', planId: 2216, epic: true });
       seedPlan({
