@@ -329,6 +329,59 @@ describe('review guide diff references', () => {
       'These are the remaining changes that the model did not include above.'
     );
   });
+
+  test('appends every catalog entry when the guide omits all diff refs', () => {
+    const catalog = [
+      {
+        ref: 'src/first.ts#hunk-1',
+        filePath: 'src/first.ts',
+        oldRange: '1',
+        newRange: '1',
+        header: '@@ -1 +1 @@',
+        preview: '-oldFirst(); | +newFirst();',
+        diffText: [
+          'diff --git a/src/first.ts b/src/first.ts',
+          '--- a/src/first.ts',
+          '+++ b/src/first.ts',
+          '@@ -1 +1 @@',
+          '-oldFirst();',
+          '+newFirst();',
+        ].join('\n'),
+      },
+      {
+        ref: 'src/second.ts#hunk-1',
+        filePath: 'src/second.ts',
+        oldRange: '5',
+        newRange: '5',
+        header: '@@ -5 +5 @@',
+        preview: '-oldSecond(); | +newSecond();',
+        diffText: [
+          'diff --git a/src/second.ts b/src/second.ts',
+          '--- a/src/second.ts',
+          '+++ b/src/second.ts',
+          '@@ -5 +5 @@',
+          '-oldSecond();',
+          '+newSecond();',
+        ].join('\n'),
+      },
+    ];
+
+    const expanded = expandReviewGuideDiffReferences({
+      guideText: '# Guide\n\nThe model wrote commentary but no diff refs.\n',
+      diffCatalog: catalog,
+    });
+
+    expect(expanded.replacedCount).toBe(0);
+    expect(expanded.unresolvedRefs).toEqual([]);
+    expect(expanded.unusedRefs).toEqual(['src/first.ts#hunk-1', 'src/second.ts#hunk-1']);
+    expect(expanded.guideText).toContain('## Other changes');
+    expect(expanded.guideText).toContain('diff --git a/src/first.ts b/src/first.ts');
+    expect(expanded.guideText).toContain('-oldFirst();');
+    expect(expanded.guideText).toContain('+newFirst();');
+    expect(expanded.guideText).toContain('diff --git a/src/second.ts b/src/second.ts');
+    expect(expanded.guideText).toContain('-oldSecond();');
+    expect(expanded.guideText).toContain('+newSecond();');
+  });
 });
 
 describe('review_pr command', () => {

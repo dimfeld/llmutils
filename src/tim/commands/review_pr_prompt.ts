@@ -120,6 +120,7 @@ function renderDiffReferenceCatalog(diffReferences?: ReviewGuideDiffReference[] 
     '## Diff Reference Catalog',
     'Use these exact refs when inserting diff placeholders into the guide.',
     'Write placeholders exactly as `<diff ref="..."/>` and do not invent new refs.',
+    'Never truncate or omit diff refs for readability or because a diff is long; include every ref needed for the complete changed code in the relevant guide section.',
     '',
   ];
 
@@ -157,8 +158,8 @@ ${renderDiffReferenceCatalog(diffReferences)}
 4. Ensure every changed file and every changed line is covered in at least one section.
 5. ${
     hasDiffReferences
-      ? 'Each section must include one or more `<diff ref="..."/>` placeholders using refs from the catalog above. Do not write raw diff blocks yourself. The system will replace the placeholders with the exact canonical diff text after you finish.'
-      : 'Each section must include the full unified diff for all files in that section, in a ```unified-diff code block, copied verbatim from the relevant `git diff` output, so the reviewer can read the changes inline without opening the files separately.'
+      ? 'Each section must include all needed `<diff ref="..."/>` placeholders using refs from the catalog above. Do not write raw diff blocks yourself. The system will replace the placeholders with the exact canonical diff text after you finish. Never truncate or omit diff refs for readability, length, or brevity; long diffs must still be represented with all relevant diff refs so the final guide contains the complete changed code.'
+      : 'Each section must include the full unified diff for all files in that section, in a ```unified-diff code block, copied verbatim from the relevant `git diff` output, so the reviewer can read the changes inline without opening the files separately. Never truncate or omit any part of a diff for readability, length, or brevity.'
   }
 6. Include subsection commentary plus concrete line references for important changes.
 7. Ignore comments that begin with \`AI:\` or \`AI_COMMENT_START\`.

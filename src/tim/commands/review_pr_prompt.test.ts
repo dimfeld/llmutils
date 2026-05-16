@@ -46,6 +46,7 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('.tim/tmp/review-guide.md');
     expect(prompt).toContain('Group files into functional sections');
     expect(prompt).toContain('copied verbatim from the relevant `git diff` output');
+    expect(prompt).toContain('Never truncate or omit any part of a diff');
   });
 
   test('buildReviewGuidePrompt includes diff placeholder instructions when refs are provided', () => {
@@ -60,6 +61,8 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain(DIFF_REFERENCES[0]!.ref);
     expect(prompt).toContain('Write placeholders exactly as `<diff ref="..."/>`');
     expect(prompt).toContain('Do not write raw diff blocks yourself');
+    expect(prompt).toContain('Never truncate or omit diff refs for readability');
+    expect(prompt).toContain('long diffs must still be represented with all relevant diff refs');
   });
 
   test('buildReviewGuidePrompt includes jj instructions when requested', () => {
