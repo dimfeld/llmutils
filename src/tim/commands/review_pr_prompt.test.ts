@@ -59,10 +59,15 @@ describe('review_pr_prompt', () => {
 
     expect(prompt).toContain('## Diff Reference Catalog');
     expect(prompt).toContain(DIFF_REFERENCES[0]!.ref);
-    expect(prompt).toContain('Write placeholders exactly as `<diff ref="..."/>`');
+    expect(prompt).toContain('Write placeholders as `<diff ref="..."/>`');
+    expect(prompt).toContain('<diff ref="..." start="4" end="10"/>');
+    expect(prompt).toContain('Use them only when splitting a diff');
     expect(prompt).toContain('Do not write raw diff blocks yourself');
     expect(prompt).toContain('Never truncate or omit diff refs for readability');
     expect(prompt).toContain('long diffs must still be represented with all relevant diff refs');
+    expect(prompt).toContain(
+      'the system will add any omitted lines back near the closest referenced range'
+    );
   });
 
   test('buildReviewGuidePrompt includes jj instructions when requested', () => {

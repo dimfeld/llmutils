@@ -383,6 +383,133 @@ describe('review guide diff references', () => {
     expect(expanded.guideText).toContain('-oldSecond();');
     expect(expanded.guideText).toContain('+newSecond();');
   });
+
+  test('supports line ranges and merges unused lines into the closest range for the same ref', () => {
+    const catalog = [
+      {
+        ref: 'src/example.ts#hunk-1',
+        filePath: 'src/example.ts',
+        oldRange: '1-4',
+        newRange: '1-5',
+        header: '@@ -1,4 +1,5 @@',
+        preview: '-const beta = 2; | +const beta = 20;',
+        diffText: [
+          'diff --git a/src/example.ts b/src/example.ts',
+          '--- a/src/example.ts',
+          '+++ b/src/example.ts',
+          '@@ -1,4 +1,5 @@',
+          ' const alpha = 1;',
+          '-const beta = 2;',
+          '+const beta = 20;',
+          '+const delta = 4;',
+          ' const gamma = 3;',
+        ].join('\n'),
+      },
+    ];
+
+    const expanded = expandReviewGuideDiffReferences({
+      guideText: [
+        '# Guide',
+        '',
+        'The header and context frame the change.',
+        '<diff ref="src/example.ts#hunk-1" start="1" end="5"/>',
+        '',
+        'The mutation adds the new behavior.',
+        '<diff ref="src/example.ts#hunk-1" start="8" end="9"/>',
+        '',
+      ].join('\n'),
+      diffCatalog: catalog,
+    });
+
+    expect(expanded.replacedCount).toBe(2);
+    expect(expanded.unresolvedRefs).toEqual([]);
+    expect(expanded.unusedRefs).toEqual(['src/example.ts#hunk-1:lines 6-7']);
+    expect(expanded.guideText).toContain('The header and context frame the change.');
+    expect(expanded.guideText).toContain('The mutation adds the new behavior.');
+    expect(expanded.guideText).toContain(' const alpha = 1;');
+    expect(expanded.guideText).toContain('-const beta = 2;');
+    expect(expanded.guideText).toContain('+const beta = 20;');
+    expect(expanded.guideText).toContain('+const delta = 4;');
+    expect(expanded.guideText).toContain(' const gamma = 3;');
+    expect(expanded.guideText).not.toContain('<diff ref=');
+    expect(expanded.guideText).not.toContain('## Other changes');
+  });
+
+  test('uses optional start and end independently for diff ref line ranges', () => {
+    const catalog = [
+      {
+        ref: 'src/range.ts#hunk-1',
+        filePath: 'src/range.ts',
+        oldRange: '1-2',
+        newRange: '1-3',
+        header: '@@ -1,2 +1,3 @@',
+        preview: '+two(); | +three();',
+        diffText: [
+          'diff --git a/src/range.ts b/src/range.ts',
+          '--- a/src/range.ts',
+          '+++ b/src/range.ts',
+          '@@ -1,2 +1,3 @@',
+          ' one();',
+          '+two();',
+          '+three();',
+        ].join('\n'),
+      },
+    ];
+
+    const expanded = expandReviewGuideDiffReferences({
+      guideText: [
+        '# Guide',
+        '',
+        '<diff ref="src/range.ts#hunk-1" end="4"/>',
+        '',
+        '<diff ref="src/range.ts#hunk-1" start="6"/>',
+        '',
+      ].join('\n'),
+      diffCatalog: catalog,
+    });
+
+    expect(expanded.unusedRefs).toEqual(['src/range.ts#hunk-1:line 5']);
+    expect(expanded.guideText).toContain(' one();');
+    expect(expanded.guideText).toContain('+two();');
+    expect(expanded.guideText).toContain('+three();');
+  });
+
+  test('leaves unknown or invalid range diff refs unresolved', () => {
+    const catalog = [
+      {
+        ref: 'src/example.ts#hunk-1',
+        filePath: 'src/example.ts',
+        oldRange: '1',
+        newRange: '1',
+        header: '@@ -1 +1 @@',
+        preview: '+value();',
+        diffText: [
+          'diff --git a/src/example.ts b/src/example.ts',
+          '--- a/src/example.ts',
+          '+++ b/src/example.ts',
+          '@@ -1 +1 @@',
+          '+value();',
+        ].join('\n'),
+      },
+    ];
+
+    const expanded = expandReviewGuideDiffReferences({
+      guideText: [
+        '# Guide',
+        '',
+        '<diff ref="src/example.ts#hunk-1" start="not-a-number"/>',
+        '<diff ref="src/missing.ts#hunk-1" start="1" end="2"/>',
+        '',
+      ].join('\n'),
+      diffCatalog: catalog,
+    });
+
+    expect(expanded.replacedCount).toBe(0);
+    expect(expanded.unresolvedRefs).toEqual(['src/example.ts#hunk-1', 'src/missing.ts#hunk-1']);
+    expect(expanded.unusedRefs).toEqual(['src/example.ts#hunk-1']);
+    expect(expanded.guideText).toContain('<diff ref="src/example.ts#hunk-1"');
+    expect(expanded.guideText).toContain('## Other changes');
+  });
 });
 
 describe('review_pr command', () => {

@@ -616,7 +616,169 @@ function joinUnifiedDiffSections(sections: string[]): string {
   return sections.map((section) => normalizePatchText(section).trimEnd()).join('\n\n');
 }
 
-const DIFF_REF_TAG_REGEX = /<diff\s+ref=(?:"([^"]+)"|'([^']+)')\s*\/>/g;
+const DIFF_REF_TAG_REGEX = /<diff\b([^>]*)\/>/g;
+const DIFF_REF_ATTR_REGEX = /([A-Za-z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s/>]+))/g;
+
+interface DiffRefLineRange {
+  start: number;
+  end: number;
+}
+
+interface ParsedDiffRefTag {
+  fullMatch: string;
+  index: number;
+  ref: string;
+  start: number | null;
+  end: number | null;
+}
+
+interface DiffRefUsage extends ParsedDiffRefTag {
+  range: DiffRefLineRange;
+  additionalRanges: DiffRefLineRange[];
+}
+
+function parseDiffRefTags(guideText: string): ParsedDiffRefTag[] {
+  const tags: ParsedDiffRefTag[] = [];
+  let match: RegExpExecArray | null;
+
+  DIFF_REF_TAG_REGEX.lastIndex = 0;
+  while ((match = DIFF_REF_TAG_REGEX.exec(guideText)) !== null) {
+    const attributesText = match[1] ?? '';
+    const attributes = new Map<string, string>();
+    let attrMatch: RegExpExecArray | null;
+
+    DIFF_REF_ATTR_REGEX.lastIndex = 0;
+    while ((attrMatch = DIFF_REF_ATTR_REGEX.exec(attributesText)) !== null) {
+      const [, name, doubleQuoted, singleQuoted, unquoted] = attrMatch;
+      if (!name) {
+        continue;
+      }
+
+      attributes.set(name, String(doubleQuoted ?? singleQuoted ?? unquoted ?? '').trim());
+    }
+
+    const ref = attributes.get('ref')?.trim();
+    if (!ref) {
+      continue;
+    }
+
+    tags.push({
+      fullMatch: match[0],
+      index: match.index,
+      ref,
+      start: parseOptionalDiffRefLine(attributes.get('start')),
+      end: parseOptionalDiffRefLine(attributes.get('end')),
+    });
+  }
+
+  return tags;
+}
+
+function parseOptionalDiffRefLine(value: string | undefined): number | null {
+  if (value == null || value.trim() === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : Number.NaN;
+}
+
+function normalizeDiffRefLineRange(
+  tag: ParsedDiffRefTag,
+  lineCount: number
+): DiffRefLineRange | null {
+  if (
+    lineCount <= 0 ||
+    (tag.start !== null && Number.isNaN(tag.start)) ||
+    (tag.end !== null && Number.isNaN(tag.end)) ||
+    (tag.start !== null && tag.start > lineCount) ||
+    (tag.end !== null && tag.end > lineCount)
+  ) {
+    return null;
+  }
+
+  const start = tag.start ?? 1;
+  const end = tag.end ?? lineCount;
+  return start <= end ? { start, end } : null;
+}
+
+function getUnusedDiffLineRanges(
+  lineCount: number,
+  usedRanges: DiffRefLineRange[]
+): DiffRefLineRange[] {
+  const mergedRanges = mergeDiffLineRanges(usedRanges);
+  const unusedRanges: DiffRefLineRange[] = [];
+  let nextStart = 1;
+
+  for (const range of mergedRanges) {
+    if (nextStart < range.start) {
+      unusedRanges.push({ start: nextStart, end: range.start - 1 });
+    }
+    nextStart = Math.max(nextStart, range.end + 1);
+  }
+
+  if (nextStart <= lineCount) {
+    unusedRanges.push({ start: nextStart, end: lineCount });
+  }
+
+  return unusedRanges;
+}
+
+function mergeDiffLineRanges(ranges: DiffRefLineRange[]): DiffRefLineRange[] {
+  const sortedRanges = [...ranges].sort((a, b) => a.start - b.start || a.end - b.end);
+  const mergedRanges: DiffRefLineRange[] = [];
+
+  for (const range of sortedRanges) {
+    const previousRange = mergedRanges.at(-1);
+    if (previousRange && range.start <= previousRange.end + 1) {
+      previousRange.end = Math.max(previousRange.end, range.end);
+      continue;
+    }
+
+    mergedRanges.push({ ...range });
+  }
+
+  return mergedRanges;
+}
+
+function assignUnusedLineRangeToClosestUsage(
+  unusedRange: DiffRefLineRange,
+  usages: DiffRefUsage[]
+): void {
+  let closestUsage: DiffRefUsage | null = null;
+  let closestDistance = Number.POSITIVE_INFINITY;
+
+  for (const usage of usages) {
+    const range = usage.range;
+    const distance =
+      unusedRange.end < range.start
+        ? range.start - unusedRange.end
+        : unusedRange.start > range.end
+          ? unusedRange.start - range.end
+          : 0;
+
+    if (distance < closestDistance) {
+      closestUsage = usage;
+      closestDistance = distance;
+    }
+  }
+
+  closestUsage?.additionalRanges.push(unusedRange);
+}
+
+function formatDiffLineRange(ref: string, range: DiffRefLineRange): string {
+  return range.start === range.end
+    ? `${ref}:line ${range.start}`
+    : `${ref}:lines ${range.start}-${range.end}`;
+}
+
+function renderDiffLineRanges(diffLines: string[], ranges: DiffRefLineRange[]): string {
+  const renderedRanges = mergeDiffLineRanges(ranges)
+    .map((range) => diffLines.slice(range.start - 1, range.end).join('\n'))
+    .filter((text) => text.length > 0);
+
+  return `\`\`\`unified-diff\n${normalizePatchText(renderedRanges.join('\n'))}\`\`\``;
+}
 
 export function expandReviewGuideDiffReferences(options: {
   guideText: string;
@@ -631,28 +793,61 @@ export function expandReviewGuideDiffReferences(options: {
     return { guideText: options.guideText, replacedCount: 0, unresolvedRefs: [], unusedRefs: [] };
   }
 
-  const diffMap = new Map(options.diffCatalog.map((entry) => [entry.ref, entry.diffText]));
-  let replacedCount = 0;
-  const unresolvedRefs = new Set<string>();
-  const usedRefs = new Set<string>();
-
-  const guideText = options.guideText.replace(
-    DIFF_REF_TAG_REGEX,
-    (fullMatch, doubleQuoted, singleQuoted) => {
-      const ref = String(doubleQuoted ?? singleQuoted ?? '').trim();
-      const diffText = diffMap.get(ref);
-      if (!diffText) {
-        unresolvedRefs.add(ref || fullMatch);
-        return fullMatch;
-      }
-
-      replacedCount += 1;
-      usedRefs.add(ref);
-      return `\`\`\`unified-diff\n${normalizePatchText(diffText)}\`\`\``;
-    }
+  const diffMap = new Map(
+    options.diffCatalog.map((entry) => [
+      entry.ref,
+      normalizePatchText(entry.diffText).trimEnd().split('\n'),
+    ])
   );
+  const unresolvedRefs = new Set<string>();
+  const usedByRef = new Map<string, DiffRefUsage[]>();
+  const replacementByIndex = new Map<number, string>();
+  const tags = parseDiffRefTags(options.guideText);
 
-  const unusedEntries = options.diffCatalog.filter((entry) => !usedRefs.has(entry.ref));
+  for (const tag of tags) {
+    const diffLines = diffMap.get(tag.ref);
+    const range = diffLines ? normalizeDiffRefLineRange(tag, diffLines.length) : null;
+    if (!diffLines || !range) {
+      unresolvedRefs.add(tag.ref || tag.fullMatch);
+      continue;
+    }
+
+    const usage: DiffRefUsage = { ...tag, range, additionalRanges: [] };
+    const usages = usedByRef.get(tag.ref) ?? [];
+    usages.push(usage);
+    usedByRef.set(tag.ref, usages);
+  }
+
+  const unusedRefs: string[] = [];
+  for (const [ref, usages] of usedByRef) {
+    const diffLines = diffMap.get(ref);
+    if (!diffLines) {
+      continue;
+    }
+
+    const unusedRanges = getUnusedDiffLineRanges(
+      diffLines.length,
+      usages.map((usage) => usage.range)
+    );
+    for (const range of unusedRanges) {
+      unusedRefs.push(formatDiffLineRange(ref, range));
+      assignUnusedLineRangeToClosestUsage(range, usages);
+    }
+
+    for (const usage of usages) {
+      replacementByIndex.set(
+        usage.index,
+        renderDiffLineRanges(diffLines, [usage.range, ...usage.additionalRanges])
+      );
+    }
+  }
+
+  const guideText = options.guideText.replace(DIFF_REF_TAG_REGEX, (fullMatch, _attrs, offset) => {
+    const replacement = replacementByIndex.get(Number(offset));
+    return replacement ?? fullMatch;
+  });
+
+  const unusedEntries = options.diffCatalog.filter((entry) => !usedByRef.has(entry.ref));
   const otherChangesSection =
     unusedEntries.length > 0
       ? [
@@ -675,9 +870,9 @@ export function expandReviewGuideDiffReferences(options: {
       otherChangesSection.length > 0
         ? `${guideText.trimEnd()}\n\n${otherChangesSection}\n`
         : guideText,
-    replacedCount,
+    replacedCount: replacementByIndex.size,
     unresolvedRefs: [...unresolvedRefs],
-    unusedRefs: unusedEntries.map((entry) => entry.ref),
+    unusedRefs: [...unusedRefs, ...unusedEntries.map((entry) => entry.ref)],
   };
 }
 

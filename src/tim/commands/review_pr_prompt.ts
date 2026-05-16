@@ -119,7 +119,8 @@ function renderDiffReferenceCatalog(diffReferences?: ReviewGuideDiffReference[] 
   const lines = [
     '## Diff Reference Catalog',
     'Use these exact refs when inserting diff placeholders into the guide.',
-    'Write placeholders exactly as `<diff ref="..."/>` and do not invent new refs.',
+    'Write placeholders as `<diff ref="..."/>`, or use 1-based inclusive line ranges like `<diff ref="..." start="4" end="10"/>`; do not invent new refs.',
+    'The `start` and `end` attributes are optional. Use them only when splitting a diff so explanatory text can appear between line ranges.',
     'Never truncate or omit diff refs for readability or because a diff is long; include every ref needed for the complete changed code in the relevant guide section.',
     '',
   ];
@@ -158,7 +159,7 @@ ${renderDiffReferenceCatalog(diffReferences)}
 4. Ensure every changed file and every changed line is covered in at least one section.
 5. ${
     hasDiffReferences
-      ? 'Each section must include all needed `<diff ref="..."/>` placeholders using refs from the catalog above. Do not write raw diff blocks yourself. The system will replace the placeholders with the exact canonical diff text after you finish. Never truncate or omit diff refs for readability, length, or brevity; long diffs must still be represented with all relevant diff refs so the final guide contains the complete changed code.'
+      ? 'Each section must include all needed `<diff ref="..."/>` placeholders using refs from the catalog above. You may add optional `start` and `end` attributes for 1-based inclusive line ranges only to insert explanatory text between ranges of the same diff; the final guide still needs every line, and the system will add any omitted lines back near the closest referenced range. Do not write raw diff blocks yourself. The system will replace the placeholders with the exact canonical diff text after you finish. Never truncate or omit diff refs for readability, length, or brevity; long diffs must still be represented with all relevant diff refs so the final guide contains the complete changed code.'
       : 'Each section must include the full unified diff for all files in that section, in a ```unified-diff code block, copied verbatim from the relevant `git diff` output, so the reviewer can read the changes inline without opening the files separately. Never truncate or omit any part of a diff for readability, length, or brevity.'
   }
 6. Include subsection commentary plus concrete line references for important changes.
