@@ -157,7 +157,6 @@ export async function spawnAgentMultiProcess(
       ...planIds.map((planId) => String(planId)),
       '--epic',
       String(epicPlanId),
-      '--auto-workspace',
       '--no-terminal-input',
       '--non-interactive',
     ],

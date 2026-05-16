@@ -398,7 +398,6 @@ describe('lib/server/plan_actions', () => {
       '302',
       '--epic',
       '300',
-      '--auto-workspace',
       '--no-terminal-input',
       '--non-interactive',
     ]);

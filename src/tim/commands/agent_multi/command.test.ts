@@ -57,11 +57,7 @@ vi.mock('../../headless.js', async (importOriginal) => {
   };
 });
 
-import {
-  buildChildAgentArgs,
-  createBunSpawnAgent,
-  handleAgentMultiCommand,
-} from './command.js';
+import { buildChildAgentArgs, createBunSpawnAgent, handleAgentMultiCommand } from './command.js';
 
 function makeAgentPlan(overrides: Partial<AgentMultiPlan> = {}): AgentMultiPlan {
   return {
@@ -139,12 +135,7 @@ describe('agent-multi command', () => {
     } as never);
     const closeSpy = vi.spyOn(fs, 'closeSync').mockImplementation(() => {});
 
-    const plainCliDefaults = {
-      autoWorkspace: true,
-      terminalInput: true,
-      cwd: '/tmp/repo',
-    };
-    const spawnAgent = await createBunSpawnAgent(plainCliDefaults);
+    const spawnAgent = await createBunSpawnAgent({ cwd: '/tmp/repo' });
 
     const result = spawnAgent(101, '/tmp/repo');
 

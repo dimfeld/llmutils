@@ -20,7 +20,6 @@ import { getAgentMultiPlansForProject } from './plan_loader.js';
 export interface AgentMultiCommandOptions {
   epic?: number;
   maxParallel: number;
-  autoWorkspace?: boolean;
   terminalInput?: boolean;
   nonInteractive?: boolean;
 }
@@ -41,15 +40,11 @@ function toHeadlessPlanSummary(row: PlanRow | null): HeadlessPlanSummary | undef
   };
 }
 
-export async function createBunSpawnAgent(options: {
-  autoWorkspace?: boolean;
-  cwd: string;
-}): Promise<SpawnAgentFn> {
+export async function createBunSpawnAgent(options: { cwd: string }): Promise<SpawnAgentFn> {
   const env = await buildWorkspaceCommandEnv(options.cwd);
   // Parallel agent runs cannot share a primary workspace or interactive stdin.
-  const autoWorkspace = options.autoWorkspace !== false;
   return (planId: number, cwd: string): SpawnAgentResult => {
-    const args = buildChildAgentArgs(planId, { autoWorkspace });
+    const args = buildChildAgentArgs(planId);
 
     const logFile = createLogFile('agent-multi-child', planId);
     try {
@@ -75,12 +70,10 @@ export async function createBunSpawnAgent(options: {
 
 export function buildChildAgentArgs(
   planId: number,
-  options: { autoWorkspace?: boolean; terminalInput?: boolean } = {}
+  options: { terminalInput?: boolean } = {}
 ): string[] {
   const args = ['agent', String(planId)];
-  if (options.autoWorkspace !== false) {
-    args.push('--auto-workspace');
-  }
+  args.push('--auto-workspace');
   if (options.terminalInput !== true) {
     args.push('--no-terminal-input');
   }
@@ -165,7 +158,6 @@ export async function handleAgentMultiCommand(
         maxParallel: options.maxParallel,
         cwd: repoRoot,
         spawnAgent: await createBunSpawnAgent({
-          autoWorkspace: options.autoWorkspace,
           cwd: repoRoot,
         }),
         readPlan: async (planUuid: string) => getPlanByUuid(db, planUuid),

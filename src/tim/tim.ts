@@ -870,7 +870,6 @@ program
     (value: string) => parsePositiveIntegerOption(value, '--max-parallel'),
     3
   )
-  .option('--aw, --auto-workspace', 'Pass --auto-workspace to each spawned child agent')
   .option('--terminal-input', 'Allow spawned child agents to read from terminal input')
   .option('--non-interactive', 'Run the orchestrator without interactive prompts')
   .action(async (planIdArgs, options, command) => {
