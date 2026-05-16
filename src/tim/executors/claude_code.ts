@@ -62,8 +62,8 @@ export class ClaudeCodeExecutor implements Executor {
   static description = 'Executes the plan using Claude Code';
   static optionsSchema = claudeCodeOptionsSchema;
   static defaultModel = {
-    execution: 'auto',
-    answerPr: 'auto',
+    execution: 'opus',
+    answerPr: 'opus',
   };
   static supportsSubagents = true;
   readonly supportsSubagents = true;
