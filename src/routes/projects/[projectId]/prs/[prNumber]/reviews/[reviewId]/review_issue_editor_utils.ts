@@ -94,13 +94,10 @@ export function validatePatch(
   if (mergedStartLine != null && !isPositiveInteger(mergedStartLine)) {
     return 'Start line must be a positive integer.';
   }
-  if (mergedLine != null && !isPositiveInteger(mergedLine)) {
-    return 'Line must be a positive integer.';
-  }
   if (mergedStartLine != null && mergedLine == null) {
     return 'Start line cannot be set without line.';
   }
-  if (mergedStartLine != null && mergedLine != null) {
+  if (mergedStartLine != null && mergedLine != null && isPositiveInteger(mergedLine)) {
     const startNum = Number.parseInt(mergedStartLine, 10);
     const endNum = Number.parseInt(mergedLine, 10);
     if (startNum > endNum) {

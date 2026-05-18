@@ -150,7 +150,6 @@
         id="issue-{issue.id}-line"
         bind:value={line}
         disabled={saving}
-        inputmode="numeric"
         placeholder="—"
         class="h-8 text-xs"
       />

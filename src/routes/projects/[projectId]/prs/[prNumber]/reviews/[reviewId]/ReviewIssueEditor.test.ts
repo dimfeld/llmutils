@@ -206,10 +206,16 @@ describe('validatePatch', () => {
     expect(validatePatch(patch, issue)).toBe('Start line must be a positive integer.');
   });
 
-  test('returns error when line is not a positive integer', () => {
+  test('allows line values that are not plain integers', () => {
     const issue = makeIssue();
-    const patch: ReviewIssuePatch = { line: 'abc' };
-    expect(validatePatch(patch, issue)).toBe('Line must be a positive integer.');
+    const patch: ReviewIssuePatch = { line: '1-5, 10' };
+    expect(validatePatch(patch, issue)).toBeNull();
+  });
+
+  test('allows editing other fields when the existing line is not a plain integer', () => {
+    const issue = makeIssue({ line: '1-5, 10' });
+    const patch: ReviewIssuePatch = { content: 'Updated text' };
+    expect(validatePatch(patch, issue)).toBeNull();
   });
 
   test('returns error when start_line is greater than line', () => {
