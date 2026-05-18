@@ -1955,19 +1955,20 @@ describe('plan remote actions', () => {
       expect(getPlanByUuid(currentDb, '11111111-1111-4111-8111-111111111110')?.status).toBe('done');
     });
 
-    test('rejects plans where canUpdateDocs is true', async () => {
+    test('allows quick finish when docs or lessons are still pending', async () => {
       seedPlan({
         uuid: '11111111-1111-4111-8111-111111111104',
         planId: 5001,
         status: 'needs_review',
+        docsUpdatedAt: null,
+        lessonsAppliedAt: null,
       });
 
       await expect(
         invokeCommand(finishPlanQuick, { planUuid: '11111111-1111-4111-8111-111111111104' })
-      ).rejects.toMatchObject({
-        status: 400,
-        body: { message: 'Plan requires doc updates — use startUpdateDocs instead' },
-      });
+      ).resolves.toEqual({ status: 'done' });
+
+      expect(getPlanByUuid(currentDb, '11111111-1111-4111-8111-111111111104')?.status).toBe('done');
     });
 
     test('persists done status directly in the DB when no executor work is needed', async () => {
@@ -2061,7 +2062,7 @@ describe('plan remote actions', () => {
       ).resolves.toEqual({ status: 'done' });
     });
 
-    test('prefers the primary workspace path when loading quick-finish config', async () => {
+    test('prefers the primary workspace path when loading quick-finish side-effect config', async () => {
       seedPlan({
         uuid: '11111111-1111-4111-8111-111111111107',
         planId: 5008,
@@ -2088,7 +2089,7 @@ describe('plan remote actions', () => {
       await expect(
         invokeCommand(finishPlanQuick, { planUuid: '11111111-1111-4111-8111-111111111107' })
       ).resolves.toEqual({ status: 'done' });
-      expect(cwdCalls).toEqual(['/tmp/primary-workspace', '/tmp/primary-workspace']);
+      expect(cwdCalls).toEqual(['/tmp/primary-workspace']);
     });
   });
 

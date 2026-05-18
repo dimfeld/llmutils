@@ -4,7 +4,6 @@ import type { Database } from 'bun:sqlite';
 import * as z from 'zod';
 
 import {
-  computeCanUpdateDocs,
   getChildPlansForEpic,
   getPrimaryWorkspacePath,
   getPlanDetail,
@@ -506,7 +505,7 @@ const finishPlanQuickSchema = z.object({
 
 /**
  * Finish a plan without spawning a process — just sets status to done.
- * Used when no executor work is needed (docs/lessons already done or disabled).
+ * Intentionally bypasses optional finish executor work when the user chooses Finish directly.
  */
 export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid }) => {
   const { db, config } = await getServerContext();
@@ -520,12 +519,6 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
 
   if (!tasklessEpic && plan.status !== 'needs_review' && plan.status !== 'done') {
     error(400, 'Plan is not eligible for finish');
-  }
-
-  const projectConfig = await loadProjectFinishConfig(db, plan.projectId);
-  const canUpdateDocs = computeCanUpdateDocs(plan, projectConfig);
-  if (!tasklessEpic && canUpdateDocs) {
-    error(400, 'Plan requires doc updates — use startUpdateDocs instead');
   }
 
   const cwd = getPreferredProjectGitRoot(db, plan.projectId);
