@@ -97,12 +97,13 @@
       {#if uploading}
         Uploading…
       {:else}
-        Drop a file here or click to choose (max 25 MB)
+        Drop files here or click to choose (max 25 MB each)
       {/if}
     </div>
     <input
       bind:this={fileInput}
       type="file"
+      multiple
       class="sr-only"
       onchange={onFileChange}
       disabled={uploading}

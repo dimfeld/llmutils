@@ -1658,7 +1658,6 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       expect(executePostApplyCommandSpy).toHaveBeenCalledTimes(1);
       expect(handleReviewCommandSpy).toHaveBeenCalledTimes(1);
     });
-
   });
 
   describe('finalization timestamps and manual mode', () => {

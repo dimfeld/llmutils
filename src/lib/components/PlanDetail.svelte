@@ -1,5 +1,6 @@
 <script lang="ts">
   import AppWindow from '@lucide/svelte/icons/app-window';
+  import Upload from '@lucide/svelte/icons/upload';
   import { toast } from 'svelte-sonner';
 
   import type { PlanDetail } from '$lib/server/db_queries.js';
@@ -272,6 +273,7 @@
   let startingFinish = $state(false);
   let startingCreatePr = $state(false);
   let reviewGuideRunning = $state(false);
+  let artifactDialogOpen = $state(false);
 
   let hasInProgressReview = $derived(
     reviews.some((r) => r.status === 'pending' || r.status === 'in_progress')
@@ -1224,8 +1226,18 @@
 
     <!-- Artifacts -->
     <div class="space-y-2">
+      <div class="flex justify-end">
+        <Button
+          variant="outline"
+          size="xs"
+          onclick={() => (artifactDialogOpen = true)}
+          aria-label="Add artifact"
+        >
+          <Upload class="size-3" />
+          Add artifact
+        </Button>
+      </div>
       <PlanArtifactsList artifacts={plan.artifacts ?? []} />
-      <PlanArtifactUploader planUuid={plan.uuid} {projectId} />
     </div>
 
     <!-- Details -->
@@ -1247,6 +1259,16 @@
     </div>
   </div>
 </div>
+
+<Dialog.Root bind:open={artifactDialogOpen}>
+  <Dialog.Content class="sm:max-w-md">
+    <Dialog.Header>
+      <Dialog.Title>Add Artifact</Dialog.Title>
+      <Dialog.Description>Upload a file and include an optional message.</Dialog.Description>
+    </Dialog.Header>
+    <PlanArtifactUploader planUuid={plan.uuid} {projectId} />
+  </Dialog.Content>
+</Dialog.Root>
 
 <Dialog.Root
   open={chatDialogOpen}

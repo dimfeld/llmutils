@@ -21,8 +21,9 @@ describe('PlanArtifactUploader', () => {
     expect(body).toContain('data-testid="artifact-message-input"');
     expect(body).toContain('role="button"');
     expect(body).toContain('aria-label="Upload artifact"');
-    expect(body).toContain('Drop a file here');
-    expect(body).toContain('max 25 MB');
+    expect(body).toContain('multiple');
+    expect(body).toContain('Drop files here');
+    expect(body).toContain('max 25 MB each');
   });
 
   test('shows optional-message placeholder', () => {
