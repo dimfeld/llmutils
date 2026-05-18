@@ -510,6 +510,7 @@ Available tasks:\n\n${taskDescriptions}`,
         const shouldSkipFinalReview =
           finalReview === false || (initialCompletedTaskCount === 0 && iteration === 1);
         let planStillCompleteAfterReview = true;
+        let finalReviewSavedIssues = false;
         if (!shouldSkipFinalReview) {
           const isNonInteractiveReview = terminalInput === false;
           sendStructured({
@@ -530,6 +531,7 @@ Available tasks:\n\n${taskDescriptions}`,
             );
 
             if (isNonInteractiveReview && (reviewResult?.issuesSaved ?? 0) > 0) {
+              finalReviewSavedIssues = true;
               planStillCompleteAfterReview = false;
               await setPlanStatusById(updatedPlanData.id, 'needs_review', baseDir, currentPlanFile);
             } else if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
@@ -574,7 +576,11 @@ Available tasks:\n\n${taskDescriptions}`,
           await removePlanAssignment(updatedPlanData, baseDir);
         }
 
-        if (planStillCompleteAfterReview && updateDocsMode === 'after-review') {
+        const shouldRunAfterReviewDocs =
+          updateDocsMode === 'after-review' &&
+          (planStillCompleteAfterReview || finalReviewSavedIssues);
+
+        if (shouldRunAfterReviewDocs) {
           if (isShuttingDown()) {
             break;
           }
@@ -605,7 +611,7 @@ Available tasks:\n\n${taskDescriptions}`,
               break;
             }
           }
-        } else if (!planStillCompleteAfterReview && updateDocsMode === 'after-review') {
+        } else if (updateDocsMode === 'after-review') {
           log('Skipping documentation update because final review produced follow-up work.');
         }
 

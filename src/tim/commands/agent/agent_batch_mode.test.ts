@@ -1805,7 +1805,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       expect(finalPlan.lessonsAppliedAt).toBeDefined();
     });
 
-    test('after-review mode skips docs and lessons when final review saves issues', async () => {
+    test('after-review mode runs docs when final review saves issues', async () => {
       await createPlanFile({
         tasks: [
           {
@@ -1850,13 +1850,13 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       await timAgent(1, options, {});
 
-      expect(runUpdateDocsSpy).not.toHaveBeenCalled();
+      expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
       expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
 
       const finalContent = await fs.readFile(planFile, 'utf-8');
       const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
       expect(finalPlan.status).toBe('needs_review');
-      expect(finalPlan.docsUpdatedAt).toBeUndefined();
+      expect(finalPlan.docsUpdatedAt).toBeDefined();
       expect(finalPlan.lessonsAppliedAt).toBeUndefined();
     });
 

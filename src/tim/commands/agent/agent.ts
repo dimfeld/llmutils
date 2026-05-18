@@ -951,6 +951,7 @@ export async function timAgent(
 
             // Run final review if enabled
             let planStillCompleteAfterReview = true;
+            let finalReviewSavedIssues = false;
             if (options.finalReview !== false) {
               sendStructured({
                 type: 'workflow_progress',
@@ -970,6 +971,7 @@ export async function timAgent(
                 );
 
                 if (isNonInteractiveReview && (reviewResult?.issuesSaved ?? 0) > 0) {
+                  finalReviewSavedIssues = true;
                   const updatedPlanData = await readPlanFile(currentPlanFile);
                   if (typeof updatedPlanData.id === 'number') {
                     await setPlanStatusById(
@@ -1013,7 +1015,11 @@ export async function timAgent(
 
             if (isShuttingDown()) break;
 
-            if (planStillCompleteAfterReview && updateDocsMode === 'after-review') {
+            const shouldRunAfterReviewDocs =
+              updateDocsMode === 'after-review' &&
+              (planStillCompleteAfterReview || finalReviewSavedIssues);
+
+            if (shouldRunAfterReviewDocs) {
               if (isShuttingDown()) break;
 
               try {
@@ -1051,7 +1057,7 @@ export async function timAgent(
                   break;
                 }
               }
-            } else if (!planStillCompleteAfterReview && updateDocsMode === 'after-review') {
+            } else if (updateDocsMode === 'after-review') {
               log('Skipping documentation update because final review produced follow-up work.');
             }
 

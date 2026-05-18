@@ -922,7 +922,7 @@ describe('timAgent lifecycle integration', () => {
     expect(updatedPlan.lessonsAppliedAt).toBeDefined();
   });
 
-  test('after-review mode skips docs and lessons when final review saves issues in serial task mode', async () => {
+  test('after-review mode runs docs when final review saves issues in serial task mode', async () => {
     effectiveConfig.updateDocs = { mode: 'after-review', applyLessons: true };
 
     const reviewModule = await import('../review.js');
@@ -957,12 +957,12 @@ describe('timAgent lifecycle integration', () => {
     const { timAgent } = await import('./agent.js');
     await timAgent(1, { log: false, summary: false, serialTasks: true }, {});
 
-    expect(runUpdateDocsSpy).not.toHaveBeenCalled();
+    expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
     expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
 
     const updatedPlan = await readPlanFile(planFile);
     expect(updatedPlan.status).toBe('needs_review');
-    expect(updatedPlan.docsUpdatedAt).toBeUndefined();
+    expect(updatedPlan.docsUpdatedAt).toBeDefined();
     expect(updatedPlan.lessonsAppliedAt).toBeUndefined();
   });
 
