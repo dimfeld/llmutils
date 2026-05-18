@@ -315,6 +315,41 @@ describe('common/github/pr_reviews', () => {
     expect(result.appendToBody.map((issue) => issue.id)).toEqual([2]);
   });
 
+  test('partitionIssuesForSubmission tries comma-separated line ranges until one can be inlined', () => {
+    const diff = [
+      'diff --git a/src/range.ts b/src/range.ts',
+      '--- a/src/range.ts',
+      '+++ b/src/range.ts',
+      '@@ -73,1 +73,1 @@',
+      '-old73',
+      '+new73',
+    ].join('\n');
+    const index = buildDiffIndex(diff);
+
+    const issues: ReviewIssueForSubmission[] = [
+      {
+        id: 1,
+        file: 'src/range.ts',
+        line: '25-52, 73, 100-110',
+        start_line: null,
+        side: 'RIGHT',
+        content: 'One of these ranges is commentable',
+        suggestion: null,
+      },
+    ];
+
+    const result = partitionIssuesForSubmission(issues, index);
+    expect(result.appendToBody).toHaveLength(0);
+    expect(result.inlineable).toEqual([
+      expect.objectContaining({
+        id: 1,
+        line: '73',
+        start_line: null,
+        bodyLocation: 'src/range.ts:25-52, 73, 100-110',
+      }),
+    ]);
+  });
+
   test('buildReviewComments emits single-line and multi-line comment shapes', () => {
     const comments = buildReviewComments([
       {
@@ -350,6 +385,28 @@ describe('common/github/pr_reviews', () => {
       line: 20,
       side: 'LEFT',
       body: 'Multi',
+    });
+  });
+
+  test('buildReviewComments includes the original full location when a fallback range was selected', () => {
+    const comments = buildReviewComments([
+      {
+        id: 1,
+        file: 'src/range.ts',
+        line: '73',
+        start_line: null,
+        side: 'RIGHT',
+        content: 'Comment on the first working anchor',
+        suggestion: null,
+        bodyLocation: 'src/range.ts:25-52, 73, 100-110',
+      },
+    ]);
+
+    expect(comments[0]).toEqual({
+      path: 'src/range.ts',
+      line: 73,
+      side: 'RIGHT',
+      body: 'Location: src/range.ts:25-52, 73, 100-110\n\nComment on the first working anchor',
     });
   });
 

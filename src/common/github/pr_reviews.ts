@@ -24,6 +24,7 @@ export interface ReviewIssueForSubmission {
   source?: string | null;
   content: string;
   suggestion: string | null;
+  bodyLocation?: string;
 }
 
 export interface ReviewCommentPayload {
@@ -144,13 +145,18 @@ export function buildDiffIndex(unifiedDiff: string): Map<string, DiffFileIndex> 
   return diffIndex;
 }
 
-function parseIssueLineRange(issue: Pick<ReviewIssueForSubmission, 'line' | 'start_line'>): {
+interface ParsedIssueLineRange {
   start: number;
   end: number;
-} | null {
-  const parsed = parseLineRange(issue.line);
-  const endRaw = parsed.line ?? (issue.line != null ? String(issue.line) : null);
-  const startRaw = issue.start_line ?? parsed.startLine ?? endRaw;
+}
+
+function parseIssueLineRangeText(
+  line: string | number | null | undefined,
+  explicitStartLine: string | null
+): ParsedIssueLineRange | null {
+  const parsed = parseLineRange(line);
+  const endRaw = parsed.line ?? (line != null ? String(line) : null);
+  const startRaw = explicitStartLine ?? parsed.startLine ?? endRaw;
 
   if (!startRaw || !endRaw) {
     return null;
@@ -166,6 +172,75 @@ function parseIssueLineRange(issue: Pick<ReviewIssueForSubmission, 'line' | 'sta
   }
 
   return { start, end };
+}
+
+function parseIssueLineRange(
+  issue: Pick<ReviewIssueForSubmission, 'line' | 'start_line'>
+): ParsedIssueLineRange | null {
+  return parseIssueLineRangeText(issue.line, issue.start_line);
+}
+
+function parseIssueLineRanges(
+  issue: Pick<ReviewIssueForSubmission, 'line' | 'start_line'>
+): ParsedIssueLineRange[] {
+  const lineText = issue.line?.trim() ?? '';
+  if (!lineText.includes(',')) {
+    const range = parseIssueLineRange(issue);
+    return range ? [range] : [];
+  }
+
+  return lineText
+    .split(',')
+    .map((part) => parseIssueLineRangeText(part.trim(), null))
+    .filter((range): range is ParsedIssueLineRange => range != null);
+}
+
+function hasMultipleLineCandidates(issue: Pick<ReviewIssueForSubmission, 'line'>): boolean {
+  return issue.line?.includes(',') ?? false;
+}
+
+function formatIssueBodyLocation(issue: Pick<ReviewIssueForSubmission, 'file' | 'line'>): string {
+  return `${issue.file}${issue.line ? `:${issue.line}` : ''}`;
+}
+
+function rangeToIssueLineFields(range: ParsedIssueLineRange): {
+  start_line: string | null;
+  line: string;
+} {
+  return {
+    start_line: range.start === range.end ? null : String(range.start),
+    line: String(range.end),
+  };
+}
+
+function resolveInlineAnchor(
+  issue: ReviewIssueForSubmission,
+  fileIndex: DiffFileIndex,
+  range: ParsedIssueLineRange
+): { side: DiffSide; range: ParsedIssueLineRange } | null {
+  let resolvedSide = issue.side ?? inferIssueSide(issue, fileIndex, range.start, range.end) ?? null;
+  if (!resolvedSide) {
+    return null;
+  }
+
+  const sideLines = resolvedSide === 'RIGHT' ? fileIndex.additions : fileIndex.deletions;
+  const endpointLines = range.start === range.end ? [range.start] : [range.start, range.end];
+  let endpointsInDiff = endpointLines.every((line) => sideLines.has(line));
+
+  if (!endpointsInDiff && issue.source != null) {
+    const inferredSide = inferIssueSide(issue, fileIndex, range.start, range.end);
+    if (inferredSide && inferredSide !== resolvedSide) {
+      const inferredSideLines =
+        inferredSide === 'RIGHT' ? fileIndex.additions : fileIndex.deletions;
+      const endpointsInInferredSide = endpointLines.every((line) => inferredSideLines.has(line));
+      if (endpointsInInferredSide) {
+        resolvedSide = inferredSide;
+        endpointsInDiff = true;
+      }
+    }
+  }
+
+  return endpointsInDiff ? { side: resolvedSide, range } : null;
 }
 
 function inferIssueSide(
@@ -205,58 +280,43 @@ export function partitionIssuesForSubmission<T extends ReviewIssueForSubmission>
       continue;
     }
 
-    const range = parseIssueLineRange(issue);
-    if (!range) {
+    const ranges = parseIssueLineRanges(issue);
+    if (ranges.length === 0) {
       appendToBody.push(issue);
       continue;
     }
 
-    let resolvedSide =
-      issue.side ?? inferIssueSide(issue, fileIndex, range.start, range.end) ?? null;
-    if (!resolvedSide) {
+    const anchor = ranges
+      .map((range) => resolveInlineAnchor(issue, fileIndex, range))
+      .find((candidate) => candidate != null);
+    if (!anchor) {
       appendToBody.push(issue);
       continue;
     }
 
-    const sideLines = resolvedSide === 'RIGHT' ? fileIndex.additions : fileIndex.deletions;
-    const endpointLines = range.start === range.end ? [range.start] : [range.start, range.end];
-    let endpointsInDiff = endpointLines.every((line) => sideLines.has(line));
-
-    if (!endpointsInDiff && issue.source != null) {
-      const inferredSide = inferIssueSide(issue, fileIndex, range.start, range.end);
-      if (inferredSide && inferredSide !== resolvedSide) {
-        const inferredSideLines =
-          inferredSide === 'RIGHT' ? fileIndex.additions : fileIndex.deletions;
-        const endpointsInInferredSide = endpointLines.every((line) => inferredSideLines.has(line));
-        if (endpointsInInferredSide) {
-          resolvedSide = inferredSide;
-          endpointsInDiff = true;
-        }
-      }
-    }
-
-    if (!endpointsInDiff) {
-      appendToBody.push(issue);
-      continue;
-    }
-
+    const selectedLine = rangeToIssueLineFields(anchor.range);
     inlineable.push({
       ...issue,
-      side: resolvedSide,
+      ...selectedLine,
+      side: anchor.side,
+      ...(hasMultipleLineCandidates(issue) ? { bodyLocation: formatIssueBodyLocation(issue) } : {}),
     });
   }
 
   return { inlineable, appendToBody };
 }
 
-function buildCommentBody(issue: Pick<ReviewIssueForSubmission, 'content' | 'suggestion'>): string {
+function buildCommentBody(
+  issue: Pick<ReviewIssueForSubmission, 'content' | 'suggestion' | 'bodyLocation'>
+): string {
   const base = issue.content.trim();
+  const body = issue.bodyLocation ? `Location: ${issue.bodyLocation}\n\n${base}` : base;
   const suggestion = issue.suggestion?.trim() ?? '';
   if (!suggestion) {
-    return base;
+    return body;
   }
 
-  return `${base}\n\nSuggestion: ${suggestion}`;
+  return `${body}\n\nSuggestion: ${suggestion}`;
 }
 
 export function buildReviewComments<T extends ReviewIssueForSubmission>(
