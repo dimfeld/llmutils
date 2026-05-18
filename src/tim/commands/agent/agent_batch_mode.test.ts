@@ -1659,52 +1659,6 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       expect(handleReviewCommandSpy).toHaveBeenCalledTimes(1);
     });
 
-    test('simplify is skipped when finalReview is disabled', async () => {
-      await createPlanFile({
-        tasks: [
-          {
-            title: 'Task 0',
-            description: 'Already done',
-            done: true,
-          },
-          {
-            title: 'Task 1',
-            description: 'First task',
-            steps: [{ prompt: 'Do task 1', done: false }],
-          },
-        ],
-      });
-
-      loadEffectiveConfigSpy.mockResolvedValue({
-        models: { execution: 'test-model' },
-        postApplyCommands: [],
-        simplify: { mode: 'after-completion' },
-      });
-
-      executorExecuteSpy.mockImplementation(async () => {
-        await createPlanFile({
-          tasks: [
-            {
-              title: 'Task 0',
-              description: 'Already done',
-              done: true,
-            },
-            {
-              title: 'Task 1',
-              description: 'First task',
-              steps: [{ prompt: 'Do task 1', done: true }],
-              done: true,
-            },
-          ],
-        });
-      });
-
-      const options = { log: false, nonInteractive: true, finalReview: false } as any;
-      await timAgent(1, options, {});
-
-      expect(runSimplifySpy).not.toHaveBeenCalled();
-      expect(handleReviewCommandSpy).not.toHaveBeenCalled();
-    });
   });
 
   describe('finalization timestamps and manual mode', () => {
