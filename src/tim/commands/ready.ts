@@ -19,13 +19,7 @@ import {
 } from '../display_utils.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { loadPlansFromDb } from '../plans_db.js';
-import {
-  READY_PLAN_SORT_FIELDS,
-  filterAndSortReadyPlans,
-  formatReadyPlansAsJson,
-  isReadyPlan,
-  sortReadyPlans,
-} from '../ready_plans.js';
+import { READY_PLAN_SORT_FIELDS, isReadyPlan, sortReadyPlans } from '../ready_plans.js';
 import type { ReadyPlanSortField } from '../ready_plans.js';
 import { getGitRoot } from '../../common/git.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';

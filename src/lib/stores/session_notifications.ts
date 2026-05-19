@@ -4,10 +4,7 @@ import type {
   SessionClientEvent,
   SessionClientEventMap,
   SessionClientEventName,
-  SessionDisconnectEvent,
   SessionMessageEvent,
-  SessionPromptClearedEvent,
-  SessionPromptEvent,
 } from '$lib/types/session.js';
 import {
   showBrowserNotification,

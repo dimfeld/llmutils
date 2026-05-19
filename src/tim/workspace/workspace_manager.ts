@@ -907,7 +907,7 @@ export async function createWorkspace(
         log(`Source path is not a directory: ${sourceDirectory}`);
         return null;
       }
-    } catch (error) {
+    } catch {
       log(`Source directory does not exist: ${sourceDirectory}`);
       return null;
     }
@@ -924,7 +924,7 @@ export async function createWorkspace(
           repositoryUrl = stdout.trim();
           log(`Inferred repository URL from source directory: ${repositoryUrl}`);
         }
-      } catch (error) {
+      } catch {
         // It's okay if we can't infer the repository URL for copy methods
         log(`Could not infer repository URL from source directory (this is not an error)`);
       }

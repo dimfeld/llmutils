@@ -17,7 +17,7 @@ interface InitOptions {
   yes?: boolean;
 }
 
-export async function handleInitCommand(options: InitOptions, command: any) {
+export async function handleInitCommand(options: InitOptions, _command: any) {
   try {
     // Get git root or use current directory
     const gitRoot = (await getGitRoot()) || process.cwd();
@@ -130,7 +130,7 @@ async function updateGitignore(gitRoot: string): Promise<void> {
   try {
     gitignoreContent = await fs.readFile(gitignorePath, 'utf-8');
     exists = true;
-  } catch (err) {
+  } catch {
     // File doesn't exist, will create it
   }
 

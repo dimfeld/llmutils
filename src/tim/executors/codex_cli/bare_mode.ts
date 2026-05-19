@@ -2,7 +2,6 @@ import type { ExecutePlanInfo, ExecutorOutput } from '../types.js';
 import type { TimConfig } from '../../configSchema.js';
 import { CodexCliExecutorName, type CodexReasoningLevel } from '../schemas.js';
 import { getGitRoot } from '../../../common/git.js';
-import { log } from '../../../logging.js';
 import { parseFailedReport } from '../failure_detection.js';
 import { executeCodexStep, type CodexAppServerMode } from './codex_runner.js';
 

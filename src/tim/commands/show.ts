@@ -2,7 +2,6 @@
 // Displays detailed information about a plan
 
 import chalk from 'chalk';
-import * as fs from 'node:fs';
 import * as clipboard from '../../common/clipboard.js';
 import { getCurrentBranchName } from '../../common/git.js';
 import { log, warn } from '../../logging.js';
@@ -776,7 +775,7 @@ export async function handleShowCommand(
 
         displayedPlan = updatedDisplayedPlan;
         assignmentInfo = updatedAssignmentInfo;
-      } catch (error) {
+      } catch {
         // If there's an error reading the plan, just continue with the existing data
         previousLineCount = await displayPlanInfo(
           displayedPlan,

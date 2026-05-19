@@ -1,5 +1,4 @@
 import * as z from 'zod/v4';
-import * as clipboard from '../../common/clipboard.ts';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
@@ -11,7 +10,6 @@ import {
   startSubprocessMonitor,
   type SubprocessMonitorHandle,
 } from '../../common/subprocess_monitor.js';
-import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { TimConfig } from '../configSchema.ts';
 import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types.ts';
 import {
@@ -29,7 +27,6 @@ import {
   wrapWithOrchestrationTdd,
 } from './claude_code/orchestrator_prompt.ts';
 import {
-  parseFailedReport,
   parseFailedReportAnywhere,
   detectFailedLineAnywhere,
   inferFailedAgent,
@@ -396,7 +393,7 @@ export class ClaudeCodeExecutor implements Executor {
       try {
         const settingsContent = await fs.readFile(settingsPath, 'utf-8');
         settings = JSON.parse(settingsContent);
-      } catch (err) {
+      } catch {
         // File doesn't exist or can't be parsed - start with defaults
         settings = {
           permissions: {

@@ -7,6 +7,7 @@
     "*.svelte",
     "**/build",
     "**.svelte-kit",
+    "vite.config.ts",
     "scripts/manual-headless-prompt-harness.ts"
   ],
   "options": {
@@ -14,13 +15,14 @@
   },
   "categories": {
     "correctness": "error",
+    // eventually we should be able to turn this on, lots of warnings right now
     "suspicious": "off"
   },
   "rules": {
-    "typescript/no-duplicate-type-constituents": "off",
+    "typescript/no-duplicate-type-constituents": "warn",
     "typescript/no-redundant-type-constituents": "off",
     "typescript/unbound-method": "off",
-    "no-unused-vars": "off",
+    "no-unused-vars": "warn",
     "no-unsafe-finally": "off"
   },
   "env": {

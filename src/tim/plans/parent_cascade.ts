@@ -54,7 +54,7 @@ async function checkAndMarkParentDoneInDb(
   projectId: number,
   parentId: number,
   config: TimConfig,
-  options: ParentCascadeOptions = {}
+  _options: ParentCascadeOptions = {}
 ): Promise<PlanSchema | undefined> {
   const rows = getPlansByProject(db, projectId);
   const planIdToUuid = new Map(rows.map((row) => [row.plan_id, row.uuid]));

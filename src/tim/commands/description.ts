@@ -7,7 +7,7 @@ import { dirname } from 'node:path';
 import { log } from '../../logging.js';
 import { write } from '../../common/clipboard.js';
 import { spawnAndLogOutput } from '../../common/process.js';
-import { select, input, checkbox } from '@inquirer/prompts';
+import { select, input } from '@inquirer/prompts';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
@@ -420,7 +420,7 @@ export async function handleDescriptionCommand(
 
   // Extract context for use in the rest of the function — use gitRoot from context
   // (derived from resolved repoRoot, not CWD) so --config cross-repo works correctly
-  const { resolvedPlanFile, planData, gitRoot, diffResult } = context;
+  const { resolvedPlanFile, planData, gitRoot } = context;
 
   log(chalk.green(`Generating PR description for plan: ${planData.id} - ${planData.title}`));
 

@@ -12,7 +12,7 @@ import { parseOwnerRepoFromRepositoryId } from '../../common/github/pull_request
 import { parseLineRange } from '../../common/review_line_range.js';
 export { parseLineRange };
 import { isTunnelActive } from '../../logging/tunnel_client.js';
-import { log, warn } from '../../logging.js';
+import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
 import {
@@ -27,7 +27,6 @@ import { type PrReviewMetadata } from './review_pr_prompt.js';
 import {
   loadCustomReviewInstructions,
   loadReviewGuideDiffCatalog,
-  readCurrentHeadSha,
   resolveProjectContextForRepo,
   runReviewGuideWorkflow,
 } from './review_workflow.js';

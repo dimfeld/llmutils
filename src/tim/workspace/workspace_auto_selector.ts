@@ -149,7 +149,7 @@ export class WorkspaceAutoSelector {
             log(
               `Selected assigned workspace for plan ${preferredPlanUuid}: ${preferredWorkspace.workspacePath}`
             );
-            const { lockedBy, ...workspaceWithoutLock } = preferredWorkspace;
+            const { lockedBy: _lockedBy, ...workspaceWithoutLock } = preferredWorkspace;
             return {
               workspace: workspaceWithoutLock,
               isNew: false,
@@ -169,7 +169,7 @@ export class WorkspaceAutoSelector {
       const lockInfo = await WorkspaceLock.getLockInfoIncludingStale(workspace.workspacePath);
       if (!lockInfo) {
         log(`Selected unlocked workspace: ${workspace.workspacePath}`);
-        const { lockedBy, ...workspaceWithoutLock } = workspace;
+        const { lockedBy: _lockedBy, ...workspaceWithoutLock } = workspace;
         return {
           workspace: workspaceWithoutLock,
           isNew: false,
@@ -194,7 +194,7 @@ export class WorkspaceAutoSelector {
         continue;
       }
 
-      const { lockedBy, ...workspaceWithoutLock } = candidate.workspace;
+      const { lockedBy: _lockedBy, ...workspaceWithoutLock } = candidate.workspace;
       log(`Selected workspace after clearing stale lock: ${candidate.workspace.workspacePath}`);
       return {
         workspace: workspaceWithoutLock,
@@ -417,7 +417,7 @@ async function enrichWorkspaceLockStatus(
         }
       }
 
-      const { lockedBy, ...workspaceWithoutLock } = workspace;
+      const { lockedBy: _lockedBy, ...workspaceWithoutLock } = workspace;
       return {
         workspace: workspaceWithoutLock,
         clearedStaleLock,

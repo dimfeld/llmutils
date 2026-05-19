@@ -4,7 +4,7 @@
 import * as path from 'node:path';
 import { checkbox } from '@inquirer/prompts';
 import chalk from 'chalk';
-import { error, log, warn } from '../../../logging.js';
+import { log } from '../../../logging.js';
 import { getIssueTracker } from '../../../common/issue_tracker/factory.js';
 import type { IssueWithComments, IssueTrackerClient } from '../../../common/issue_tracker/types.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
@@ -15,8 +15,6 @@ import {
   createStubPlanFromIssue,
   getInstructionsFromIssue,
   getHierarchicalInstructionsFromIssue,
-  type IssueInstructionData,
-  type HierarchicalIssueInstructionData,
 } from '../../issue_utils.js';
 import {
   prioritySchema,
@@ -640,7 +638,7 @@ export async function importSingleIssue(
   withSubissues = false,
   withMergedSubissues = false
 ): Promise<{ success: boolean; planId?: number }> {
-  const planDir = getPlanStorageDir(repoRoot);
+  const _planDir = getPlanStorageDir(repoRoot);
 
   if (withMergedSubissues && issueTracker.fetchIssueWithChildren) {
     const result = await importHierarchicalIssueMerged(
@@ -830,7 +828,7 @@ function resolveHierarchicalImportMode(
 export async function handleImportCommand(
   issue: string,
   options: ImportCommandOptions = {},
-  command?: unknown
+  _command?: unknown
 ) {
   // Determine the issue specifier from either positional argument or --issue flag
   const issueSpecifier = issue?.trim() || options.issue?.trim();

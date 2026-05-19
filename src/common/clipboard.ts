@@ -8,9 +8,7 @@
 import { isSshSession } from './ssh_detection.js';
 import { osc52Copy, osc52Read } from './osc52.js';
 import clipboard from 'clipboardy';
-import { debugLog, log } from '../logging.js';
-import chalk from 'chalk';
-import { waitForEnter } from './terminal.js';
+import { debugLog } from '../logging.js';
 
 /**
  * Writes text to the clipboard

@@ -14,7 +14,6 @@ import {
   upsertPrReviewRequestByReviewer,
   upsertPrStatusMetadata,
 } from '../../tim/db/pr_status.js';
-import { fetchAndUpdatePrReviewThreads } from './pr_status_service.js';
 
 /** Identifies a PR that needs a follow-up API refresh (mergeable/review_decision). */
 export interface PrRefreshTarget {
@@ -659,7 +658,7 @@ export function handlePullRequestReviewEvent(
 export function handlePullRequestReviewThreadEvent(
   db: Database,
   payload: unknown,
-  options?: WebhookHandlerOptions
+  _options?: WebhookHandlerOptions
 ): WebhookHandlerResult {
   const parsed = parseReviewThreadPayload(payload);
   if (!parsed) {

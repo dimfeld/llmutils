@@ -16,7 +16,6 @@ export function parseCliArgsFromString(commandString: string): string[] {
     }
     if (i === n) break;
 
-    const start = i;
     let currentArg = '';
     const quoteChar = commandString[i];
 

@@ -1,10 +1,7 @@
-import path from 'node:path';
 import { getGitRoot } from '../../common/git.js';
 import { log } from '../../logging.js';
 import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import type { TimConfig } from '../configSchema.js';
-import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { getDatabase } from '../db/database.js';
 import { getPlanByPlanId, type PlanRow } from '../db/plan.js';
 import {
@@ -21,7 +18,6 @@ import { resolveRepoRoot } from '../plan_repo_root.js';
 import {
   applyPlanWritePostCommitUpdates,
   preparePlanForWrite,
-  readPlanFile,
   resolvePlanByNumericId,
   resolvePlanByUuid,
   routePlanWriteIntoBatch,
@@ -80,7 +76,6 @@ export async function handleSetCommand(
 
   await withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
     let context = await resolveProjectContext(repoRoot);
-    const tasksDir = getLegacyAwareSearchDir(repoRoot);
     const target = resolvedPlanUuid
       ? await resolvePlanByUuid(resolvedPlanUuid, repoRoot, { context })
       : await resolvePlanByNumericId(planId, repoRoot, { context });

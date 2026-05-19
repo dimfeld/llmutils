@@ -401,7 +401,7 @@ function normalizeEditableValueForDiff(
     if (!task || typeof task !== 'object') {
       return task;
     }
-    const { revision, ...editableTask } = task as TaskSchema;
+    const { revision: _revision, ...editableTask } = task as TaskSchema;
     return editableTask;
   });
 }

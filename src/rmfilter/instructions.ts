@@ -41,7 +41,7 @@ export async function extractFileReferencesFromInstructions(baseDir: string, ins
         const stats = await Bun.file(normalizedPath).stat();
         const isDir = stats.isDirectory();
         return { path: normalizedPath, isDir };
-      } catch (e) {
+      } catch {
         // Ignore errors (e.g., permission issues or invalid paths)
       }
 
@@ -51,7 +51,7 @@ export async function extractFileReferencesFromInstructions(baseDir: string, ins
           const stats = await Bun.file(gitRootPath).stat();
           const isDir = stats.isDirectory();
           return { path: gitRootPath, isDir };
-        } catch (e) {
+        } catch {
           // Ignore errors (e.g., permission issues or invalid paths)
         }
       }

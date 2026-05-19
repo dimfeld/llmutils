@@ -19,7 +19,6 @@ import {
 import { loadEffectiveConfig } from '../configLoader.js';
 import { readPlanFile, setPlanStatusById, writePlanToDb } from '../plans.js';
 import { generateAlphanumericId } from '../id_utils.js';
-import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import {
   createWorkspace,
   ensureJjRevisionHasDescription,
@@ -161,7 +160,7 @@ async function updateWorkspaceLockStatus(workspaces: WorkspaceInfo[]): Promise<W
         };
       }
 
-      const { lockedBy, ...workspaceWithoutLock } = workspace;
+      const { lockedBy: _lockedBy, ...workspaceWithoutLock } = workspace;
       return workspaceWithoutLock;
     })
   );
@@ -284,7 +283,7 @@ export async function handleWorkspaceListCommand(options: WorkspaceListOptions, 
   const inGitRepo = await isInGitRepository();
 
   // If not in a git repo, suppress the external storage message
-  const config = await loadEffectiveConfig(globalOpts.config, { quiet: !inGitRepo });
+  await loadEffectiveConfig(globalOpts.config, { quiet: !inGitRepo });
 
   const format: WorkspaceListFormat = options.format ?? 'table';
   const showHeader = options.header ?? true;
@@ -556,7 +555,7 @@ function outputWorkspaceTsv(entries: WorkspaceListEntry[], _showHeader: boolean)
  */
 function outputWorkspaceJson(entries: WorkspaceListEntry[]): void {
   // Remove lockedBy from entries for JSON output
-  const sanitizedEntries = entries.map(({ lockedBy, ...rest }) => rest);
+  const sanitizedEntries = entries.map(({ lockedBy: _lockedBy, ...rest }) => rest);
   console.log(JSON.stringify(sanitizedEntries, null, 2));
 }
 
@@ -1318,7 +1317,7 @@ export async function handleWorkspaceLockCommand(
 export async function handleWorkspaceUnlockCommand(
   target: string | undefined,
   _options: any,
-  command: Command
+  _command: Command
 ) {
   const workspace = await resolveWorkspaceIdentifier(target);
 
@@ -2054,7 +2053,7 @@ export async function handleWorkspaceRegisterCommand(
     primary?: boolean;
     auto?: boolean;
   },
-  command: Command
+  _command: Command
 ) {
   const workspaceType = resolveWorkspaceTypeOption(options);
 

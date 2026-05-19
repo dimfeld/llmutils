@@ -2,7 +2,6 @@
 // and agent/batch follow-up work.
 
 import * as fs from 'node:fs/promises';
-import * as path from 'path';
 import { getGitRoot } from '../../common/git.js';
 import { promptCheckbox } from '../../common/input.js';
 import { boldMarkdownHeaders, log } from '../../logging.js';

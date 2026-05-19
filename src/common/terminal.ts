@@ -2,7 +2,7 @@ import * as clipboard from './clipboard.ts';
 
 export async function waitForEnter(readClipboard = false) {
   // Wait for Enter key
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<string>((resolve) => {
     process.stdin.setRawMode(true);
     process.stdin.resume();
     process.stdin.on('data', (data) => {

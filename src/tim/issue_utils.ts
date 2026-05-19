@@ -2,12 +2,7 @@
 
 import { checkbox } from '@inquirer/prompts';
 import type { PlanSchema, PlanWithLegacyMetadata } from './planSchema.js';
-import type {
-  IssueTrackerClient,
-  IssueWithComments,
-  IssueData,
-  CommentData,
-} from '../common/issue_tracker/types.js';
+import type { IssueTrackerClient, IssueWithComments } from '../common/issue_tracker/types.js';
 import { singleLineWithPrefix, limitLines } from '../common/formatting.js';
 import {
   parseCommandOptionsFromComment,

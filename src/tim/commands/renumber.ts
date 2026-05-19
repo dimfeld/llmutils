@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import yaml from 'yaml';
 import { getDatabase } from '../db/database.js';
 import {
   getPlanByUuid,
@@ -23,7 +22,7 @@ import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js
 import { getLegacyAwareSearchDir, resolvePlanPathContext } from '../path_resolver.js';
 import { debugLog, log } from '../../logging.js';
 import { ensureReferences } from '../utils/references.js';
-import { invertPlanIdToUuidMap, loadPlansFromDb, planRowForTransaction } from '../plans_db.js';
+import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
 import { toPlanUpsertInput } from '../db/plan_sync.js';
 import { findPlanFileOnDisk } from '../plans/find_plan_file.js';
 
@@ -243,7 +242,7 @@ function applyRenumberDbState(
 
   const applyTransaction = db.transaction(() => {
     for (const [filePath, plan] of planEntries) {
-      const filename = dbFilenames.get(filePath) ?? path.basename(filePath);
+      const _filename = dbFilenames.get(filePath) ?? path.basename(filePath);
       // SYNC-EXEMPT: renumber is an explicit maintenance/repair command that rewrites
       // numeric IDs and must remain a single local DB transaction.
       upsertProjectionPlanInTransaction(db, project.id, {

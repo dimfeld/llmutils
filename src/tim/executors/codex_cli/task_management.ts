@@ -23,7 +23,7 @@ export function logTaskStatus(
   header: string,
   completed: Array<{ title: string }>,
   pending: Array<{ title: string }>,
-  gitRoot: string
+  _gitRoot: string
 ) {
   log(`${header}:`);
   if (completed.length) {
@@ -48,7 +48,7 @@ export function logTaskStatus(
 export async function parseCompletedTasksFromImplementer(
   implementerOutput: string,
   planInfo: ExecutePlanInfo,
-  gitRoot: string
+  _gitRoot: string
 ): Promise<string[]> {
   try {
     const planFilePath = planInfo.planFilePath.trim();

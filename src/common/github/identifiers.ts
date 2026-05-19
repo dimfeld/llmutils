@@ -48,7 +48,7 @@ async function parsePrOrIssueNumberInternal(identifier: string): Promise<{
       repo,
       number: parseInt(number, 10),
     };
-  } catch (err) {
+  } catch {
     // it's fine if it wasn't a url
   }
 

@@ -150,7 +150,7 @@ export async function selectIssueComments(
       description: limitLines(data.issue.body ?? '', MAX_HEIGHT),
       value: data.issue.body,
     },
-    ...data.comments.map((comment, i) => {
+    ...data.comments.map((comment) => {
       const name = `${comment.user?.name ?? comment.user?.login}: `;
       return {
         name: singleLineWithPrefix(

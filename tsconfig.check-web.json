@@ -12,12 +12,12 @@
     "scripts/**/*.ts",
     "vite.config.ts",
     "test-preload.ts",
-    "svelte.config.js",
-    "eslint.config.js"
+    "svelte.config.js"
   ],
   "exclude": [
     "**/*.test.ts",
     "vite.config.ts",
+    "eslint.config.js",
     "src/service-worker.js",
     "src/service-worker/**/*.js",
     "src/service-worker.ts",

@@ -214,7 +214,7 @@ export class Resolver {
           const exportPath = Array.isArray(resolvedExport) ? resolvedExport[0] : resolvedExport;
           return path.resolve(pkg.path, exportPath);
         }
-      } catch (e) {
+      } catch {
         // resolve.exports will throw on invalid paths, we can ignore it
       }
     } else if (depSubpath) {

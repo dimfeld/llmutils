@@ -1,5 +1,3 @@
-import type { PlanSchema } from './planSchema.js';
-import yaml from 'yaml';
 import path from 'path';
 
 export const planExampleFormatGeneric = `title: [single-line string - a concise title for the plan]

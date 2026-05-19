@@ -6,7 +6,6 @@
 
 import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
-import { stringify } from 'yaml';
 import * as net from 'net';
 
 // Define the schema for the permission prompt input
@@ -98,7 +97,7 @@ export function setParentSocket(socket: net.Socket | null) {
     socket.on('error', (err) => {
       console.error('Socket error:', err);
       // Reject all pending requests
-      for (const [id, reject] of pendingRequests.entries()) {
+      for (const [, reject] of pendingRequests.entries()) {
         reject(new Error('Socket connection error'));
       }
       pendingRequests.clear();
@@ -106,7 +105,7 @@ export function setParentSocket(socket: net.Socket | null) {
 
     socket.on('close', () => {
       // Reject all pending requests
-      for (const [id, reject] of pendingRequests.entries()) {
+      for (const [, reject] of pendingRequests.entries()) {
         reject(new Error('Socket connection closed'));
       }
       pendingRequests.clear();
@@ -157,7 +156,7 @@ function connectToParent(socketPath: string) {
   parentSocket.on('error', (err) => {
     console.error('Socket error:', err);
     // Reject all pending requests
-    for (const [id, reject] of pendingRequests.entries()) {
+    for (const [, reject] of pendingRequests.entries()) {
       reject(new Error('Socket connection error'));
     }
     pendingRequests.clear();
@@ -166,7 +165,7 @@ function connectToParent(socketPath: string) {
 
   parentSocket.on('close', () => {
     // Reject all pending requests
-    for (const [id, reject] of pendingRequests.entries()) {
+    for (const [, reject] of pendingRequests.entries()) {
       reject(new Error('Socket connection closed'));
     }
     pendingRequests.clear();

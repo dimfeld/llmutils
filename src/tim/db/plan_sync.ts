@@ -15,7 +15,6 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
 import { statusSchema, type PlanSchemaInput, type PlanSchema } from '../planSchema.js';
-import { readPlanFile } from '../plans.js';
 
 type PlanReferences = {
   references?: Record<string, string>;

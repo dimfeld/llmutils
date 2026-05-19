@@ -115,7 +115,7 @@ export class SummaryCollector {
     try {
       const msg = err instanceof Error ? err.stack || err.message : String(err);
       this.errors.push(msg);
-    } catch (e) {
+    } catch {
       // ignore
     }
   }

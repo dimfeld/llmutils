@@ -31,7 +31,7 @@ export async function loadFinishConfigForProject(
       updateDocsMode: config.updateDocs?.mode,
       applyLessons: config.updateDocs?.applyLessons,
     };
-  } catch (e) {
+  } catch {
     return {
       updateDocsMode: 'after-completion',
       applyLessons: true,
@@ -65,7 +65,7 @@ async function loadFinishConfigForProjects(
         updateDocsMode: config.updateDocs?.mode,
         applyLessons: config.updateDocs?.applyLessons,
       };
-    } catch (e) {
+    } catch {
       finishConfig = {
         updateDocsMode: 'after-completion',
         applyLessons: true,

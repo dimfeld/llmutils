@@ -59,6 +59,7 @@ export async function storeLastReviewMetadata(
 ): Promise<void> {
   const metadataPath = await getMetadataFilePath(gitRoot);
   const tempPath = `${metadataPath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+  let cleanupError: unknown;
 
   // Ensure the directory exists
   await mkdir(getMetadataDir(gitRoot), { recursive: true });
@@ -69,7 +70,7 @@ export async function storeLastReviewMetadata(
   try {
     const existingData = await readFile(metadataPath, 'utf-8');
     allMetadata = JSON.parse(existingData);
-  } catch (error) {
+  } catch {
     // File doesn't exist or is corrupted, start fresh
     allMetadata = {};
   }
@@ -85,17 +86,18 @@ export async function storeLastReviewMetadata(
     const jsonData = JSON.stringify(allMetadata, null, 2);
     await writeFile(tempPath, jsonData, 'utf-8');
     await rename(tempPath, metadataPath);
-  } catch (error) {
+  } catch {
     // Clean up temp file if it exists
     try {
       await access(tempPath);
       await writeFile(tempPath, '', 'utf-8'); // Clear content for security
       // Note: we can't reliably delete the temp file in all scenarios,
       // but clearing its content prevents data leakage
-    } catch {
+    } catch (error) {
+      cleanupError = error;
       // Ignore cleanup errors
     }
-    throw error;
+    throw cleanupError;
   }
 }
 
@@ -122,7 +124,7 @@ export async function getLastReviewMetadata(
       ...planMetadata,
       lastReviewTimestamp: new Date(planMetadata.lastReviewTimestamp),
     };
-  } catch (error) {
+  } catch {
     // File doesn't exist, is corrupted, or can't be read
     return null;
   }
@@ -212,7 +214,7 @@ export async function filterFilesByModificationTime(
       if (stats.mtime > sinceTimestamp) {
         filteredFiles.push(file);
       }
-    } catch (error) {
+    } catch {
       // File might not exist or be accessible, skip it
       continue;
     }
@@ -417,7 +419,7 @@ export async function clearIncrementalMetadata(gitRoot: string, planId: string):
 export async function getIncrementalSummary(
   gitRoot: string,
   planId: string,
-  currentChangedFiles: string[]
+  _currentChangedFiles: string[]
 ): Promise<{
   isIncremental: boolean;
   newFiles: string[];

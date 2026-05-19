@@ -1,7 +1,5 @@
-import type { SessionManager, SessionManagerEvents, SessionSnapshot } from './session_manager.js';
+import type { SessionManager, SessionSnapshot } from './session_manager.js';
 import { subscribeToAllSessionEvents } from './session_manager.js';
-
-type SessionEventName = keyof SessionManagerEvents;
 
 const SSE_HEADERS = {
   'Cache-Control': 'no-cache',

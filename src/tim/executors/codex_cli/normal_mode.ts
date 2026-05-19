@@ -115,7 +115,7 @@ export async function executeNormalMode(
 
   // Track failure state across agents
   let hadFailure = false;
-  let failureOutput: string | undefined;
+  let _failureOutput: string | undefined;
   let finalReviewVerdict: ReviewVerdict | undefined;
 
   // Build implementer prompt using the Claude Code agent prompt for consistency
@@ -181,7 +181,7 @@ export async function executeNormalMode(
 
     if (parsed.failed) {
       hadFailure = true;
-      failureOutput = attemptOutput;
+      _failureOutput = attemptOutput;
       emitFailureReport('implementer', parsed);
       const aggregated = buildAggregatedOutput();
       return {
@@ -320,7 +320,7 @@ export async function executeNormalMode(
     {
       if (testerFailure.failed) {
         hadFailure = true;
-        failureOutput = testerOutput;
+        _failureOutput = testerOutput;
         emitFailureReport('tester', testerFailure);
         const aggregated = buildAggregatedOutput();
         return {
@@ -373,7 +373,7 @@ export async function executeNormalMode(
     } catch (error) {
       hadFailure = true;
       const message = error instanceof Error ? error.message : String(error);
-      failureOutput = message;
+      _failureOutput = message;
       sendStructured({
         type: 'agent_step_end',
         timestamp: timestamp(),
@@ -456,7 +456,7 @@ export async function executeNormalMode(
       {
         if (fixerFailure.failed) {
           hadFailure = true;
-          failureOutput = fixerOutput;
+          _failureOutput = fixerOutput;
           emitFailureReport('fixer', fixerFailure);
           const aggregated = buildAggregatedOutput();
           return {
@@ -499,7 +499,7 @@ export async function executeNormalMode(
       } catch (error) {
         hadFailure = true;
         const message = error instanceof Error ? error.message : String(error);
-        failureOutput = message;
+        _failureOutput = message;
         sendStructured({
           type: 'agent_step_end',
           timestamp: timestamp(),

@@ -7,7 +7,6 @@ import type {
   HeadlessServerMessage,
   HeadlessSessionInfo,
 } from './headless_protocol.js';
-import { parseHeadlessServerMessage } from './headless_message_utils.js';
 import { serializeArgs } from './tunnel_protocol.js';
 import type { TunnelMessage } from './tunnel_protocol.js';
 import { debug } from '../common/process_state.js';

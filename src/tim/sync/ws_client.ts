@@ -28,7 +28,6 @@ import {
   type SyncCatchUpInvalidation,
   type SyncClientFrame,
   type SyncBatchResultFrame,
-  type SyncOperationResult,
   type SyncOpResultFrame,
   type SyncServerFrame,
 } from './ws_protocol.js';

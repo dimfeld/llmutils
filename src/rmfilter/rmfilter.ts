@@ -686,9 +686,6 @@ export async function generateRmfilterOutput(
     throw new Error('No files found and no diff requested');
   }
 
-  const editFormat =
-    globalValues['edit-format'] || modelSettings.defaultEditFormat || 'udiff-simple';
-
   // Load tim config to get docs paths
   let timConfig: TimConfig | null = null;
   try {

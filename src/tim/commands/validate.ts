@@ -13,11 +13,7 @@ import { loadPlansFromDb } from '../plans_db.js';
 import { findPlanFileOnDisk } from '../plans/find_plan_file.js';
 import { getMaterializedPlanPath } from '../plan_materialize.js';
 import {
-  ensureReferences,
-  verifyReferences,
-  fixReferenceMismatches,
   detectReferenceIssues,
-  type ReferenceVerificationResult,
   ensureAllReferences,
   fixReferenceIssues,
   type ReferenceFixResult,
@@ -755,7 +751,6 @@ export async function handleValidateCommand(
   }
 
   let uuidToId = new Map<string, number>();
-  let idToUuid = new Map<number, string>();
 
   if (planMap) {
     const planResults = await loadValidationPlanState(
@@ -765,7 +760,6 @@ export async function handleValidateCommand(
       planFiles
     );
     uuidToId = planResults.uuidToId;
-    idToUuid = planResults.idToUuid;
     planMap = planResults.planMap;
   }
 

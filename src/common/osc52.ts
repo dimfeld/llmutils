@@ -48,7 +48,7 @@ export async function osc52Read(): Promise<string | null> {
       if (originalIsPaused) {
         process.stdin.pause();
       }
-    } catch (e) {
+    } catch {
       // Ignore errors during cleanup
     }
   };
@@ -84,7 +84,7 @@ export async function osc52Read(): Promise<string | null> {
             const decodedText = Buffer.from(base64Data, 'base64').toString('utf8');
             resolve(decodedText);
           }
-        } catch (error) {
+        } catch {
           // Failed to decode the response
           resolve(null);
         }
@@ -120,7 +120,7 @@ export async function osc52Read(): Promise<string | null> {
 
       // Send the OSC52 request sequence to stdout
       process.stdout.write('\x1b]52;c;?\x07');
-    } catch (error) {
+    } catch {
       // If we can't set up the stdin properly, fail gracefully
       cleanup();
       resolve(null);

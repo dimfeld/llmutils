@@ -1,7 +1,6 @@
 // Shared documentation updater used by the workspace-aware update-docs flow
 // and agent/batch follow-up work.
 
-import * as path from 'path';
 import { getGitRoot } from '../../common/git.js';
 import { boldMarkdownHeaders, log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';

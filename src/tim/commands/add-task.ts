@@ -1,7 +1,6 @@
 import chalk from 'chalk';
 import { editor } from '@inquirer/prompts';
 import { log } from '../../logging.js';
-import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveProjectContext, withPlanAutoSync } from '../plan_materialize.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { resolvePlanByNumericId, resolvePlanByUuid, writePlanFile } from '../plans.js';
@@ -25,7 +24,6 @@ export async function handleAddTaskCommand(
   command: any
 ): Promise<void> {
   const globalOpts = command.parent?.opts?.() ?? {};
-  const config = await loadEffectiveConfig(globalOpts.config);
   const repoRoot = await resolveRepoRoot(globalOpts.config);
   const initialPlan = await resolvePlanByNumericId(planId, repoRoot);
   const resolvedPlanUuid = initialPlan.plan.uuid;

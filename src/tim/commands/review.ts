@@ -3,13 +3,8 @@
 
 import chalk from 'chalk';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { join, dirname, isAbsolute, resolve, relative } from 'node:path';
-import {
-  getCurrentBranchName,
-  getCurrentCommitHash,
-  getTrunkBranch,
-  getUsingJj,
-} from '../../common/git.js';
+import { join, dirname, isAbsolute } from 'node:path';
+import { getCurrentBranchName, getCurrentCommitHash } from '../../common/git.js';
 import { promptCheckbox, promptSelect } from '../../common/input.js';
 import {
   PlanNotFoundError,
@@ -51,8 +46,6 @@ import {
 } from '../review_persistence.js';
 import {
   storeLastReviewMetadata,
-  getLastReviewMetadata,
-  getIncrementalDiff,
   type IncrementalReviewMetadata,
   type DiffResult,
 } from '../incremental_review.js';

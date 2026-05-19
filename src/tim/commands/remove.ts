@@ -21,7 +21,7 @@ import {
   routePlanWriteIntoBatch,
   writePlanFile,
 } from '../plans.js';
-import { invertPlanIdToUuidMap, loadPlansFromDb, planRowForTransaction } from '../plans_db.js';
+import { loadPlansFromDb, planRowForTransaction } from '../plans_db.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ensureReferences } from '../utils/references.js';

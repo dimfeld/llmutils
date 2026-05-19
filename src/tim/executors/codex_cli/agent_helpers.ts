@@ -17,7 +17,7 @@ export async function loadAgentInstructionsFor(
     const content = await file.text();
     log(`Including ${agent} instructions: ${path.relative(gitRoot, resolved)}`);
     return content;
-  } catch (e) {
+  } catch {
     // Non-fatal
     return undefined;
   }

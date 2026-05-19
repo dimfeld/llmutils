@@ -15,7 +15,6 @@ import { readDotEnvFromDirectory } from '$common/env.js';
 import type { IssueWithComments } from '$common/issue_tracker/types.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getRepositoryIdentity } from '$tim/assignments/workspace_identifier.js';
-import { getProjectById } from '$tim/db/project.js';
 import {
   reserveImportedPlanStartId,
   writeImportedPlansToDbTransactionally,

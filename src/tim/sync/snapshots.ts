@@ -20,8 +20,6 @@ import {
 } from './projection.js';
 import { assertValidPayload } from './types.js';
 import {
-  listArtifactSnapshotsForPlan,
-  listArtifactTombstonesForPlan,
   replaceArtifactsForPlanSnapshot,
   type ArtifactSnapshotRow,
   type ArtifactTombstoneSnapshotRow,

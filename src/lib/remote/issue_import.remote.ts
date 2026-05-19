@@ -1,5 +1,5 @@
 import { command, query } from '$app/server';
-import { error, redirect } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
 import { getServerContext } from '$lib/server/init.js';

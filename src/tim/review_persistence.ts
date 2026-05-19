@@ -168,7 +168,7 @@ export async function loadReviewHistory(reviewsDir: string): Promise<ReviewHisto
       debugLog('Reviews directory does not exist: %s', reviewsDir);
       return [];
     }
-  } catch (error) {
+  } catch {
     debugLog('Reviews directory not accessible: %s', reviewsDir);
     return [];
   }

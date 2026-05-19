@@ -11,7 +11,7 @@ import {
   type PlanRow,
 } from './db/plan.js';
 import { getProject } from './db/project.js';
-import type { PlanSchema, PlanSchemaInput } from './planSchema.js';
+import type { PlanSchema } from './planSchema.js';
 
 export interface PlansLoadResult {
   plans: Map<number, PlanSchema>;

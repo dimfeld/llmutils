@@ -34,7 +34,7 @@ const schemaMappings: SchemaMapping[] = [
 async function updateSchemas() {
   console.log('Updating JSON schema files...\n');
 
-  for (const { zodSchema, outputPath, schemaName } of schemaMappings) {
+  for (const { zodSchema, outputPath } of schemaMappings) {
     try {
       // Convert Zod schema to JSON Schema
       const jsonSchema = z.toJSONSchema(zodSchema, {

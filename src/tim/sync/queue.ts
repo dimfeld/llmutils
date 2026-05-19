@@ -8,9 +8,7 @@ import {
   assertValidBatchEnvelope,
   assertValidPayload,
   type SyncOperationBatchEnvelope,
-  deriveTargetKey,
   type SyncOperationEnvelope,
-  type SyncOperationPayload,
 } from './types.js';
 import { insertSyncOperationRow } from './operation_rows.js';
 import {
@@ -593,21 +591,6 @@ function setProjectHighestPlanId(db: Database, projectId: number, planId: number
   db.prepare(
     `UPDATE project SET highest_plan_id = max(highest_plan_id, ?), updated_at = ${SQL_NOW_ISO_UTC} WHERE id = ?`
   ).run(planId, projectId);
-}
-
-function rowToEnvelope(row: SyncOperationQueueRow): SyncOperationEnvelope {
-  const op = assertValidPayload(JSON.parse(row.payload) as unknown);
-  const target = deriveTargetKey(op);
-  return assertValidEnvelope({
-    operationUuid: row.operation_uuid,
-    projectUuid: row.project_uuid,
-    originNodeId: row.origin_node_id,
-    localSequence: row.local_sequence,
-    createdAt: row.created_at,
-    targetType: target.targetType,
-    targetKey: target.targetKey,
-    op,
-  });
 }
 
 function transitionOperation(

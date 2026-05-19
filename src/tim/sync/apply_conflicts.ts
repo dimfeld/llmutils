@@ -22,10 +22,6 @@ import {
 } from './operation_fold.js';
 import { CanonicalPlanAdapter } from './canonical_plan_adapter.js';
 import {
-  conflictBaseValue,
-  conflictFieldPath,
-  conflictIncomingValue,
-  conflictPatch,
   insertSequence,
   markConflictResolved,
   type Mutation,

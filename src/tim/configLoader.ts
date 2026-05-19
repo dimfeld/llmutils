@@ -263,7 +263,7 @@ export async function loadConfig(
   let fileContent: string;
   try {
     fileContent = await Bun.file(configPath).text();
-  } catch (err: any) {
+  } catch {
     debugLog('File reading failed. Falling back to default configuration.');
     // Return default here as the file might just not exist.
     return getDefaultConfig();

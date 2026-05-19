@@ -1,6 +1,5 @@
 import { createRequire } from 'node:module';
-import path from 'node:path';
-import { Parser, Language } from 'web-tree-sitter';
+import { Language } from 'web-tree-sitter';
 
 const require = createRequire(import.meta.url);
 

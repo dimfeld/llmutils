@@ -7,7 +7,6 @@ import * as fs from 'node:fs/promises';
 import { promptConfirm } from '../../../common/input.js';
 import { getCurrentBranchName, getGitRoot, getTrunkBranch } from '../../../common/git.js';
 import { getLogDir } from '../../../common/config_paths.js';
-import { logSpawn } from '../../../common/process.js';
 import { CleanupRegistry } from '../../../common/cleanup_registry.js';
 import { getLoggerAdapter } from '../../../logging/adapter.js';
 import { HeadlessAdapter } from '../../../logging/headless_adapter.js';

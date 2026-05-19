@@ -73,14 +73,6 @@ function formatPlanFileForPrompt(
   return planFile ? path.relative(searchDir, planFile) : null;
 }
 
-interface ParentPlanInfo {
-  id: number;
-  title: string;
-  goal: string;
-  details: string;
-  docURLs?: string[];
-}
-
 interface PlanContextOptions {
   planData: PlanSchema;
   planFilePath: string;

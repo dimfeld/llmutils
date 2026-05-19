@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { canonicalizePrUrl, tryCanonicalizePrUrl } from '../../common/github/identifiers.js';
+import { tryCanonicalizePrUrl } from '../../common/github/identifiers.js';
 import { parseOwnerRepoFromRepositoryId } from '../../common/github/pull_requests.js';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 

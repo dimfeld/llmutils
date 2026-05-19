@@ -72,7 +72,7 @@ export async function findAdditionalDocs(
         for (const file of matches) {
           try {
             instructionsContent.push(await Bun.file(file).text());
-          } catch (e) {
+          } catch {
             error(`Error reading instructions file: ${file}`);
             process.exit(1);
           }
@@ -111,7 +111,7 @@ export async function findAdditionalDocs(
           try {
             const stat = await Bun.file(resolvedPath).stat();
             isDirectory = stat.isDirectory();
-          } catch (e) {
+          } catch {
             // Path doesn't exist or can't be accessed
             isDirectory = false;
           }
@@ -224,7 +224,7 @@ export async function gatherDocsInternal(
         try {
           manualDocsContent.push(await Bun.file(file).text());
           docFilesPaths.push(path.relative(gitRoot, file));
-        } catch (e) {
+        } catch {
           error(`Error reading docs file: ${file}`);
           process.exit(1);
         }
@@ -305,7 +305,7 @@ export async function gatherDocsInternal(
       try {
         manualRulesContent.push(await Bun.file(file).text());
         ruleFilesPaths.push(path.relative(gitRoot, file));
-      } catch (e) {
+      } catch {
         error(`Error reading rules file: ${file}`);
         process.exit(1);
       }
@@ -318,7 +318,7 @@ export async function gatherDocsInternal(
       const cursorrulesContent = await Bun.file(cursorrulesPath).text();
       manualRulesContent.push(cursorrulesContent);
       ruleFilesPaths.push('.cursorrules');
-    } catch (error) {
+    } catch {
       // It's ok if .cursorrules doesn't exist
     }
   }

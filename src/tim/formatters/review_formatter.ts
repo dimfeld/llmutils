@@ -3,7 +3,7 @@
 
 import chalk from 'chalk';
 import { table } from 'table';
-import { PostProcessedReviewOutputSchema, ReviewOutputSchema } from './review_output_schema.js';
+import { PostProcessedReviewOutputSchema } from './review_output_schema.js';
 
 export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info';
 type ReviewIssueLike = Omit<ReviewIssue, 'severity'> & { severity: ReviewSeverity | 'note' };

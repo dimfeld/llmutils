@@ -109,7 +109,7 @@ export async function handleListCommand(
   searchTerms?: string[]
 ) {
   const globalOpts = command.parent.opts();
-  const config = await loadEffectiveConfig(globalOpts.config);
+  await loadEffectiveConfig(globalOpts.config);
 
   if (options.assigned && options.unassigned) {
     throw new Error('Cannot use --assigned and --unassigned together.');

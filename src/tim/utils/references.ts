@@ -1,5 +1,4 @@
 import { existsSync } from 'node:fs';
-import * as path from 'node:path';
 import type { PlanSchema } from '../planSchema.ts';
 import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.ts';
 

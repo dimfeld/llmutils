@@ -32,7 +32,6 @@ import {
   getOperationByOriginSequence,
   getOperationRow,
   getPlan,
-  getTask,
   getTombstone,
   insertReceivedOperation,
   insertSequence,

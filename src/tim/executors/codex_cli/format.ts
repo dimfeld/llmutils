@@ -172,13 +172,6 @@ export interface FormattedCodexMessage {
   failed?: boolean;
 }
 
-function truncateToLines(input: string | undefined, maxLines = 20): string {
-  if (!input) return '';
-  const lines = input.split('\n');
-  if (lines.length <= maxLines) return input;
-  return [...lines.slice(0, maxLines), '(truncated long output...)'].join('\n');
-}
-
 function isCodexOutMessage(value: unknown): value is CodexOutMessage {
   if (!value || typeof value !== 'object') {
     return false;

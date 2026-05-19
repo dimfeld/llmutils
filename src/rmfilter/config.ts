@@ -1,11 +1,10 @@
-import { glob } from 'glob';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse, stringify } from 'yaml';
 import * as z from 'zod/v4';
-import { debugLog, error, log } from '../logging.ts';
+import { error, log } from '../logging.ts';
 import { getGitRoot } from '../common/git.ts';
 import type { ModelPreset } from '../common/model_presets.ts';
 
@@ -131,84 +130,6 @@ export async function findPresetFile(preset: string, gitRoot: string): Promise<s
   }
 
   return null;
-}
-
-// Function to find all preset files
-async function findAllPresetFiles(
-  gitRoot: string
-): Promise<{ name: string; description: string | undefined; source: 'repository' | 'global' }[]> {
-  let currentDir = process.cwd();
-  const gitRootDir = path.resolve(gitRoot);
-  const homeConfigDir = path.join(os.homedir(), '.config', 'rmfilter');
-
-  const projectSearchDirs: string[] = [];
-  // Collect directories from current path up to git root
-  const components = currentDir.split(path.sep);
-  while (currentDir.startsWith(gitRootDir)) {
-    projectSearchDirs.push(path.join(components.join(path.sep), '.rmfilter'));
-    components.pop();
-    const parentDir = components.join(path.sep);
-    currentDir = parentDir;
-  }
-
-  const presetInfo = new Map<string, { path: string; source: 'repository' | 'global' }>();
-
-  // Search project directories first to prioritize them
-  for (const dir of projectSearchDirs) {
-    try {
-      const files = await glob('*.yml', { cwd: dir, absolute: true });
-      files.forEach((file) => {
-        const presetName = path.basename(file, '.yml');
-        // Set (or overwrite) - implicitly prioritizes presets closer to cwd if names clash within repo
-        presetInfo.set(presetName, { path: file, source: 'repository' });
-      });
-    } catch (e) {
-      // Ignore errors like directory not found
-      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
-        debugLog(`Error searching directory ${dir}: ${(e as Error).message}`);
-      }
-    }
-  }
-
-  // Search global config directory
-  try {
-    const globalFiles = await glob('*.yml', { cwd: homeConfigDir, absolute: true });
-    globalFiles.forEach((file) => {
-      const presetName = path.basename(file, '.yml');
-      if (!presetInfo.has(presetName)) {
-        // Only add if not found in the repository
-        presetInfo.set(presetName, { path: file, source: 'global' });
-      }
-    });
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
-      debugLog(`Error searching directory ${homeConfigDir}: ${(e as Error).message}`);
-    }
-  }
-
-  const items = await Promise.all(
-    Array.from(presetInfo.entries()).map(async ([presetName, info]) => {
-      const path = info.path;
-      const data = await Bun.file(path).text();
-      let description: string | undefined;
-      try {
-        const parsedConfig = parse(data);
-        const config = ConfigSchema.safeParse(parsedConfig);
-        if (config.success) {
-          description = config.data.description;
-        } else {
-          debugLog(
-            `Could not parse description from preset ${presetName} at ${path}: ${config.error.message}`
-          );
-        }
-      } catch (parseError) {
-        debugLog(`Error parsing preset file ${path}: ${(parseError as Error).message}`);
-      }
-      return { ...info, name: presetName, description };
-    })
-  );
-
-  return items.toSorted((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function getCurrentConfig(options?: { args?: string[]; gitRoot?: string }) {

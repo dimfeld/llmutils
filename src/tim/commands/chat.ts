@@ -35,7 +35,6 @@ import {
 } from '../workspace/workspace_roundtrip.js';
 import { LATEST_GPT5_MODEL, LATEST_GPT5_MINI_MODEL } from '../constants.js';
 
-const CHAT_COMPATIBLE_EXECUTORS = new Set([ClaudeCodeExecutorName, CodexCliExecutorName]);
 const MODEL_ALIASES = new Map<string, string>([
   ['gpt5', LATEST_GPT5_MODEL],
   ['mini', LATEST_GPT5_MINI_MODEL],

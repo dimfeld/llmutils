@@ -574,7 +574,7 @@ export function parseDiff(diff: string) {
   let currentNewLine = newStart;
 
   // Extract changed lines within the specified range
-  const changedLines: DiffLine[] = lines.slice(1).map((line, i) => {
+  const changedLines: DiffLine[] = lines.slice(1).map((line) => {
     if (line.startsWith(' ')) {
       currentOldLine++;
       currentNewLine++;

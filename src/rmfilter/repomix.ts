@@ -70,7 +70,7 @@ export async function getOutputPath() {
     try {
       const config = await Bun.file(configPath).json();
       outputFile = config.output?.filePath;
-    } catch (e) {
+    } catch {
       error(`Error reading config file: ${configPath}`);
     }
   }

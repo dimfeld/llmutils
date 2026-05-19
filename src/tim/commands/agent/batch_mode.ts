@@ -6,7 +6,6 @@ import { promptConfirm } from '../../../common/input.js';
 import { getLoggerAdapter } from '../../../logging/adapter.js';
 import { ConsoleAdapter } from '../../../logging/console.js';
 import { boldMarkdownHeaders, error, log, sendStructured, warn } from '../../../logging.js';
-import chalk from 'chalk';
 import { executePostApplyCommand } from '../../actions.js';
 import { type TimConfig } from '../../configSchema.js';
 import type { Executor } from '../../executors/types.js';
