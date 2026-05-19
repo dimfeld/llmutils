@@ -135,6 +135,13 @@ vi.mock('../../workspace/workspace_roundtrip.js', () => ({
   materializePlansForExecution: vi.fn(async () => undefined),
 }));
 
+vi.mock('../../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(async () => ({
+    baseDir: tempDir,
+    planFile,
+  })),
+}));
+
 let tempDir: string;
 let planFile: string;
 
@@ -255,7 +262,7 @@ describe('timAgent notifications', () => {
   });
 
   test('sends notification after batch mode execution', async () => {
-    await writePlan([{ title: 'Task 1' }]);
+    await writePlan([{ title: 'Task 1', description: 'Do task 1' }]);
 
     await timAgent(1, { log: false, summary: false }, {} as any);
 
@@ -268,7 +275,7 @@ describe('timAgent notifications', () => {
   });
 
   test('sends notification after serial execution', async () => {
-    await writePlan([{ title: 'Task 1', done: true }]);
+    await writePlan([{ title: 'Task 1', description: 'Do task 1', done: true }]);
 
     await timAgent(1, { log: false, summary: false, serialTasks: true }, {} as any);
 

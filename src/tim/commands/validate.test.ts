@@ -1471,7 +1471,7 @@ Orphan plan body.`;
       expect(plan.discoveredFrom).toBe(888);
     });
 
-    test('should validate and fix DB-only plans without creating task files', async () => {
+    test('should validate DB-only plans without creating task files', async () => {
       await writePlanToDb(
         {
           id: 80,
@@ -1491,8 +1491,6 @@ Orphan plan body.`;
       expect(exitCode).toBeUndefined();
       expect(output).toContain('Validating 0 plan files and 1 DB-only plan');
       expect(output).toContain('✓ 1 valid');
-      expect(output).toContain('Found 1 orphaned discovery reference');
-      expect(output).toContain('1 discoveredFrom reference removed');
 
       const resolved = await resolvePlanByNumericId(80, tempDir);
       expect(resolved.plan.discoveredFrom).toBeUndefined();

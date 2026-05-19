@@ -363,7 +363,7 @@ describe('checkoutPrBranch', () => {
     expect(runCommand).toHaveBeenNthCalledWith(3, ['git', 'fetch', 'origin', 'main'], '/tmp/repo');
   });
 
-  test('uses jj bookmark track + jj new for jj repositories', async () => {
+  test('uses git checkout even when the repository uses jj', async () => {
     const runCommand = vi.fn(async () => ({ exitCode: 0, stderr: '' }));
     const deps = makeBranchDeps({
       getUsingJj: vi.fn(async () => true),
@@ -376,13 +376,16 @@ describe('checkoutPrBranch', () => {
     );
 
     expect(runCommand).toHaveBeenCalledWith(
-      ['jj', 'bookmark', 'track', 'feature/pr-123@origin'],
+      ['git', 'fetch', 'origin', 'feature/pr-123'],
       '/tmp/repo'
     );
-    expect(runCommand).toHaveBeenCalledWith(['jj', 'new', 'feature/pr-123'], '/tmp/repo');
+    expect(runCommand).toHaveBeenCalledWith(
+      ['git', 'checkout', '--detach', 'origin/feature/pr-123'],
+      '/tmp/repo'
+    );
   });
 
-  test('fetches base branch after jj checkout when baseBranch is provided', async () => {
+  test('fetches base branch with git even when the repository uses jj', async () => {
     const runCommand = vi.fn(async () => ({ exitCode: 0, stderr: '' }));
     const deps = makeBranchDeps({
       getUsingJj: vi.fn(async () => true),
@@ -396,15 +399,15 @@ describe('checkoutPrBranch', () => {
 
     expect(runCommand).toHaveBeenNthCalledWith(
       1,
-      ['jj', 'bookmark', 'track', 'feature/pr-123@origin'],
+      ['git', 'fetch', 'origin', 'feature/pr-123'],
       '/tmp/repo'
     );
-    expect(runCommand).toHaveBeenNthCalledWith(2, ['jj', 'new', 'feature/pr-123'], '/tmp/repo');
     expect(runCommand).toHaveBeenNthCalledWith(
-      3,
-      ['jj', 'git', 'fetch', '--branch', 'main'],
+      2,
+      ['git', 'checkout', '--detach', 'origin/feature/pr-123'],
       '/tmp/repo'
     );
+    expect(runCommand).toHaveBeenNthCalledWith(3, ['git', 'fetch', 'origin', 'main'], '/tmp/repo');
   });
 
   test('proceeds with checkout when dirty tree and skipDirtyCheck is true', async () => {
@@ -439,10 +442,10 @@ describe('checkoutPrBranch', () => {
     ).rejects.toThrow('Failed to fetch base branch "main"');
   });
 
-  test('throws when jj base branch fetch fails', async () => {
+  test('throws when base branch fetch fails in a jj repository using git checkout', async () => {
     const runCommand = vi.fn(async (args: string[]) => {
       // Checkout succeeds, but base branch fetch fails
-      if (args[0] === 'jj' && args[1] === 'git' && args[2] === 'fetch' && args[4] === 'main') {
+      if (args[0] === 'git' && args[1] === 'fetch' && args[3] === 'main') {
         return { exitCode: 1, stderr: 'no such branch: main' };
       }
       return { exitCode: 0, stderr: '' };
@@ -489,9 +492,9 @@ describe('checkoutPrBranch', () => {
     ).rejects.toThrow('Failed to switch to branch "feature/unknown-branch"');
   });
 
-  test('throws with descriptive error when jj new fails', async () => {
+  test('throws with descriptive error when git checkout fails in a jj repository', async () => {
     const runCommand = vi.fn(async (args: string[]) => {
-      if (args[0] === 'jj' && args[1] === 'bookmark') return { exitCode: 0, stderr: '' };
+      if (args[0] === 'git' && args[1] === 'fetch') return { exitCode: 0, stderr: '' };
       return { exitCode: 1, stderr: 'No such bookmark: feature/unknown-branch' };
     });
     const deps = makeBranchDeps({
@@ -501,7 +504,7 @@ describe('checkoutPrBranch', () => {
 
     await expect(
       checkoutPrBranch({ branch: 'feature/unknown-branch', cwd: '/tmp/repo' }, deps)
-    ).rejects.toThrow('Failed to switch to branch "feature/unknown-branch" with jj new');
+    ).rejects.toThrow('Failed to switch to branch "feature/unknown-branch" with git checkout');
   });
 
   test('falls back to refs/pull/<number>/head for fork-based git PRs', async () => {
@@ -537,7 +540,7 @@ describe('checkoutPrBranch', () => {
     expect(commands).toContainEqual(['git', 'checkout', '--detach', 'FETCH_HEAD']);
   });
 
-  test('falls back to refs/pull for fork-based jj PRs', async () => {
+  test('falls back to refs/pull through git for fork-based jj PRs', async () => {
     const commands: string[][] = [];
     const runCommand = vi.fn(async (args: string[]) => {
       commands.push(args);
@@ -553,27 +556,11 @@ describe('checkoutPrBranch', () => {
       deps
     );
 
-    expect(commands).toContainEqual([
-      'jj',
-      'git',
-      'fetch',
-      '--remote',
-      'origin',
-      '--branch',
-      'refs/pull/99/head',
-    ]);
-    expect(commands).toContainEqual([
-      'jj',
-      'bookmark',
-      'set',
-      'fork-feature',
-      '-r',
-      'refs/pull/99/head@origin',
-    ]);
-    expect(commands).toContainEqual(['jj', 'new', 'fork-feature']);
+    expect(commands).toContainEqual(['git', 'fetch', 'origin', 'fork-feature']);
+    expect(commands).toContainEqual(['git', 'checkout', '--detach', 'origin/fork-feature']);
   });
 
-  test('refreshes jj PR bookmark before jj new on reruns', async () => {
+  test('uses git branch checkout for jj PR reruns', async () => {
     const runCommand = vi.fn(async () => ({ exitCode: 0, stderr: '' }));
     const deps = makeBranchDeps({
       getUsingJj: vi.fn(async () => true),
@@ -587,14 +574,13 @@ describe('checkoutPrBranch', () => {
 
     expect(runCommand).toHaveBeenNthCalledWith(
       1,
-      ['jj', 'git', 'fetch', '--remote', 'origin', '--branch', 'refs/pull/99/head'],
+      ['git', 'fetch', 'origin', 'fork-feature'],
       '/tmp/repo'
     );
     expect(runCommand).toHaveBeenNthCalledWith(
       2,
-      ['jj', 'bookmark', 'set', 'fork-feature', '-r', 'refs/pull/99/head@origin'],
+      ['git', 'checkout', '--detach', 'origin/fork-feature'],
       '/tmp/repo'
     );
-    expect(runCommand).toHaveBeenNthCalledWith(3, ['jj', 'new', 'fork-feature'], '/tmp/repo');
   });
 });

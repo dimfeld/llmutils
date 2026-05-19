@@ -10,6 +10,7 @@ import { getArtifactByUuid } from '../db/artifact.js';
 import { resolveArtifactPath } from '../artifacts/storage.js';
 import { handleCleanupCommand } from './cleanup.js';
 import {
+  runWithConsoleLogger,
   setupArtifactCommandTest,
   type ArtifactCommandTestContext,
 } from './artifact/test_utils.js';
@@ -73,7 +74,7 @@ describe('tim cleanup command', () => {
     const oldTime = new Date(Date.now() - 120_000);
     await fs.utimes(oldOrphan, oldTime, oldTime);
 
-    await handleCleanupCommand();
+    await runWithConsoleLogger(() => handleCleanupCommand());
 
     expect(getArtifactByUuid(context.db, softDeleted.uuid)).toBeUndefined();
     expect(getArtifactByUuid(context.db, completed.uuid)).toBeUndefined();
@@ -99,7 +100,7 @@ describe('tim cleanup command', () => {
       .prepare("UPDATE plan_artifact SET deleted_at = '2026-01-01T00:00:00.000Z' WHERE uuid = ?")
       .run(artifact.uuid);
 
-    await handleCleanupCommand({ dryRun: true });
+    await runWithConsoleLogger(() => handleCleanupCommand({ dryRun: true }));
 
     expect(getArtifactByUuid(context.db, artifact.uuid)).toBeDefined();
     await expect(fs.stat(artifact.storagePath)).resolves.toBeDefined();

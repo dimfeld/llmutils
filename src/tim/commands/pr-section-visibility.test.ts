@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, expect, it } from 'vitest';
 
 // Simple test to verify the PR section visibility logic
 describe('PlanDetail PR Section Visibility', () => {

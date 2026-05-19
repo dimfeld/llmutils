@@ -1,4 +1,4 @@
-import { render } from 'svelte/server';
+import { renderWithTooltipProvider } from '$lib/test-utils/render_with_tooltip_provider.js';
 import { describe, expect, test } from 'vitest';
 
 import type { PrReviewThreadDetail } from '$tim/db/pr_status.js';
@@ -67,7 +67,7 @@ function makeLongHunk(focusLine = 15, totalLines = 30): string {
 
 describe('PrReviewThreadList', () => {
   test('sorts threads by file path and line number and renders GitHub discussion links', async () => {
-    const { body } = await render(PrReviewThreadList, {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
         planUuid: 'plan-uuid-1',
@@ -85,7 +85,7 @@ describe('PrReviewThreadList', () => {
   });
 
   test('renders unresolved threads expanded and resolved threads collapsed by default', async () => {
-    const { body } = await render(PrReviewThreadList, {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
         planUuid: 'plan-uuid-1',
@@ -101,7 +101,7 @@ describe('PrReviewThreadList', () => {
   });
 
   test('renders expand controls and opens only threads where the current user commented', async () => {
-    const { body } = await render(PrReviewThreadList, {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
         planUuid: 'plan-uuid-1',
@@ -164,7 +164,7 @@ describe('PrReviewThreadList', () => {
       ],
     };
 
-    const { body } = await render(PrReviewThreadList, {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
         planUuid: 'plan-uuid-1',
@@ -190,7 +190,7 @@ describe('PrReviewThreadList', () => {
       ],
     };
 
-    const expanded = await render(PrReviewThreadList, {
+    const expanded = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         ...baseProps,
         expandMode: 'expanded',
@@ -198,7 +198,7 @@ describe('PrReviewThreadList', () => {
     });
     expect(expanded.body.match(/<details open/g) ?? []).toHaveLength(2);
 
-    const collapsed = await render(PrReviewThreadList, {
+    const collapsed = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         ...baseProps,
         expandMode: 'collapsed',
@@ -208,7 +208,7 @@ describe('PrReviewThreadList', () => {
   });
 
   test('renders unresolved thread actions only for unresolved threads', async () => {
-    const { body } = await render(PrReviewThreadList, {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
         planUuid: 'plan-uuid-1',
@@ -225,7 +225,7 @@ describe('PrReviewThreadList', () => {
   });
 
   test('does not render unresolved thread actions when all threads are resolved', async () => {
-    const { body } = await render(PrReviewThreadList, {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
         planUuid: 'plan-uuid-1',
@@ -243,7 +243,7 @@ describe('PrReviewThreadList', () => {
   });
 
   test('renders review comment bodies with the plan markdown styler', async () => {
-    const { body } = await render(PrReviewThreadList, {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
         planUuid: 'plan-uuid-1',
@@ -258,13 +258,13 @@ describe('PrReviewThreadList', () => {
       },
     });
 
-    expect(body).toContain('<span class="plan-heading"># Heading</span>');
-    expect(body).toContain('<span class="plan-inline-code">`foo()`</span>');
-    expect(body).toContain('<span class="plan-bold">**bold**</span>');
+    expect(body).toContain('<h1 id="heading">Heading</h1>');
+    expect(body).toContain('<code>foo()</code>');
+    expect(body).toContain('<strong>bold</strong>');
   });
 
   test('truncates long diff hunks by default and offers a toggle to show the full hunk', async () => {
-    const { body } = await render(PrReviewThreadList, {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
         planUuid: 'plan-uuid-1',
@@ -288,7 +288,7 @@ describe('PrReviewThreadList', () => {
   });
 
   test('does not render the reply form by default', async () => {
-    const { body } = await render(PrReviewThreadList, {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
         planUuid: 'plan-uuid-1',
@@ -301,7 +301,7 @@ describe('PrReviewThreadList', () => {
   });
 
   test('renders outdated badge on outdated threads', async () => {
-    const { body } = await render(PrReviewThreadList, {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
         planUuid: 'plan-uuid-1',
@@ -313,7 +313,7 @@ describe('PrReviewThreadList', () => {
   });
 
   test('renders path without line number when line is null', async () => {
-    const { body } = await render(PrReviewThreadList, {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
         planUuid: 'plan-uuid-1',
@@ -377,7 +377,7 @@ describe('PrReviewThreadList', () => {
       ],
     };
 
-    const { body } = await render(PrReviewThreadList, {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
         planUuid: 'plan-uuid-1',
@@ -393,7 +393,7 @@ describe('PrReviewThreadList', () => {
   });
 
   test('renders empty list when no threads provided', async () => {
-    const { body } = await render(PrReviewThreadList, {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
         planUuid: 'plan-uuid-1',

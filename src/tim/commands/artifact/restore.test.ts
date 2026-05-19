@@ -5,7 +5,11 @@ import * as path from 'node:path';
 import { getDefaultConfig } from '../../configSchema.js';
 import { addArtifact, softDeleteArtifact, listArtifacts } from '../../artifacts/service.js';
 import { handleArtifactRestoreCommand } from './restore.js';
-import { setupArtifactCommandTest, type ArtifactCommandTestContext } from './test_utils.js';
+import {
+  runWithConsoleLogger,
+  setupArtifactCommandTest,
+  type ArtifactCommandTestContext,
+} from './test_utils.js';
 
 describe('tim artifact restore command', () => {
   let context: ArtifactCommandTestContext;
@@ -36,7 +40,7 @@ describe('tim artifact restore command', () => {
       await listArtifacts({ planId: 1, config: getDefaultConfig(), repoRoot: context.tempDir })
     ).toHaveLength(0);
 
-    await handleArtifactRestoreCommand(artifact.uuid);
+    await runWithConsoleLogger(() => handleArtifactRestoreCommand(artifact.uuid));
     expect(
       await listArtifacts({ planId: 1, config: getDefaultConfig(), repoRoot: context.tempDir })
     ).toHaveLength(1);
@@ -52,13 +56,15 @@ describe('tim artifact restore command', () => {
       repoRoot: context.tempDir,
     });
 
-    await handleArtifactRestoreCommand(artifact.uuid);
+    await runWithConsoleLogger(() => handleArtifactRestoreCommand(artifact.uuid));
     const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toContain('already active');
   });
 
   test('reports unknown UUIDs as not found', async () => {
-    await handleArtifactRestoreCommand('00000000-0000-4000-8000-000000000000');
+    await runWithConsoleLogger(() =>
+      handleArtifactRestoreCommand('00000000-0000-4000-8000-000000000000')
+    );
 
     const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toContain('not found');

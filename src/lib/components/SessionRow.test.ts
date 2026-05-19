@@ -54,8 +54,8 @@ describe('SessionRow', () => {
     vi.useRealTimers();
   });
 
-  test('shows relative time from the latest notification message when present', () => {
-    const { body } = render(SessionRow, {
+  test('shows relative time from the latest notification message when present', async () => {
+    const { body } = await render(SessionRow, {
       props: {
         session: createSession({
           connectedAt: '2026-03-18T10:00:00.000Z',
@@ -80,8 +80,8 @@ describe('SessionRow', () => {
     expect(body).not.toContain('5 minutes ago');
   });
 
-  test('falls back to connected time when no notification message exists', () => {
-    const { body } = render(SessionRow, {
+  test('falls back to connected time when no notification message exists', async () => {
+    const { body } = await render(SessionRow, {
       props: {
         session: createSession({
           connectedAt: '2026-03-18T10:00:00.000Z',
@@ -105,8 +105,8 @@ describe('SessionRow', () => {
     expect(body).toContain('5 minutes ago');
   });
 
-  test('shows an attention dot for active prompts', () => {
-    const { body } = render(SessionRow, {
+  test('shows an attention dot for active prompts', async () => {
+    const { body } = await render(SessionRow, {
       props: {
         session: createSession({
           activePrompts: [
@@ -124,8 +124,8 @@ describe('SessionRow', () => {
     expect(body).toContain('aria-label="Needs attention"');
   });
 
-  test('shows an attention dot for notification sessions', () => {
-    const { body } = render(SessionRow, {
+  test('shows an attention dot for notification sessions', async () => {
+    const { body } = await render(SessionRow, {
       props: {
         session: createSession({
           status: 'notification',
@@ -137,9 +137,9 @@ describe('SessionRow', () => {
     expect(body).toContain('aria-label="Needs attention"');
   });
 
-  test('does not show an attention dot when the session manager says it was acknowledged', () => {
+  test('does not show an attention dot when the session manager says it was acknowledged', async () => {
     sessionManager.hasSessionAttention.mockReturnValueOnce(false);
-    const { body } = render(SessionRow, {
+    const { body } = await render(SessionRow, {
       props: {
         session: createSession({
           status: 'notification',
@@ -151,8 +151,8 @@ describe('SessionRow', () => {
     expect(body).not.toContain('aria-label="Needs attention"');
   });
 
-  test('does not show an attention dot for regular active sessions', () => {
-    const { body } = render(SessionRow, {
+  test('does not show an attention dot for regular active sessions', async () => {
+    const { body } = await render(SessionRow, {
       props: {
         session: createSession(),
         href: '/projects/1/sessions/conn-1',

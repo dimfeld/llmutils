@@ -384,7 +384,7 @@ describe('review guide diff references', () => {
     expect(expanded.guideText).toContain('+newSecond();');
   });
 
-  test('supports line ranges and merges unused lines into the closest range for the same ref', () => {
+  test('leaves range-annotated diff refs untouched', () => {
     const catalog = [
       {
         ref: 'src/example.ts#hunk-1',
@@ -421,21 +421,16 @@ describe('review guide diff references', () => {
       diffCatalog: catalog,
     });
 
-    expect(expanded.replacedCount).toBe(2);
+    expect(expanded.replacedCount).toBe(0);
     expect(expanded.unresolvedRefs).toEqual([]);
-    expect(expanded.unusedRefs).toEqual(['src/example.ts#hunk-1:lines 6-7']);
+    expect(expanded.unusedRefs).toEqual(['src/example.ts#hunk-1']);
     expect(expanded.guideText).toContain('The header and context frame the change.');
     expect(expanded.guideText).toContain('The mutation adds the new behavior.');
-    expect(expanded.guideText).toContain(' const alpha = 1;');
-    expect(expanded.guideText).toContain('-const beta = 2;');
-    expect(expanded.guideText).toContain('+const beta = 20;');
-    expect(expanded.guideText).toContain('+const delta = 4;');
-    expect(expanded.guideText).toContain(' const gamma = 3;');
-    expect(expanded.guideText).not.toContain('<diff ref=');
-    expect(expanded.guideText).not.toContain('## Other changes');
+    expect(expanded.guideText).toContain('<diff ref="src/example.ts#hunk-1" start="1" end="5"/>');
+    expect(expanded.guideText).toContain('## Other changes');
   });
 
-  test('uses optional start and end independently for diff ref line ranges', () => {
+  test('does not treat range-annotated diff refs as replacements', () => {
     const catalog = [
       {
         ref: 'src/range.ts#hunk-1',
@@ -468,13 +463,14 @@ describe('review guide diff references', () => {
       diffCatalog: catalog,
     });
 
-    expect(expanded.unusedRefs).toEqual(['src/range.ts#hunk-1:line 5']);
+    expect(expanded.replacedCount).toBe(0);
+    expect(expanded.unusedRefs).toEqual(['src/range.ts#hunk-1']);
     expect(expanded.guideText).toContain(' one();');
     expect(expanded.guideText).toContain('+two();');
     expect(expanded.guideText).toContain('+three();');
   });
 
-  test('leaves unknown or invalid range diff refs unresolved', () => {
+  test('leaves unknown range-annotated diff refs untouched without marking them unresolved', () => {
     const catalog = [
       {
         ref: 'src/example.ts#hunk-1',
@@ -505,7 +501,7 @@ describe('review guide diff references', () => {
     });
 
     expect(expanded.replacedCount).toBe(0);
-    expect(expanded.unresolvedRefs).toEqual(['src/example.ts#hunk-1', 'src/missing.ts#hunk-1']);
+    expect(expanded.unresolvedRefs).toEqual([]);
     expect(expanded.unusedRefs).toEqual(['src/example.ts#hunk-1']);
     expect(expanded.guideText).toContain('<diff ref="src/example.ts#hunk-1"');
     expect(expanded.guideText).toContain('## Other changes');
@@ -732,12 +728,12 @@ describe('review_pr command', () => {
         { executor: 'claude-code', terminalInput: false },
         makeCommand()
       )
-    ).rejects.toThrow('Failed to build canonical PR diff catalog');
+    ).rejects.toThrow('Failed to build canonical review diff catalog');
 
     expect(claudeExecute).not.toHaveBeenCalled();
     expect(mockCreateReview).not.toHaveBeenCalled();
     expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining('Generating PR review diff catalog from not-a-valid-sha')
+      expect.stringContaining('Generating review diff catalog from not-a-valid-sha')
     );
   });
 

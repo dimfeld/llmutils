@@ -5,7 +5,11 @@ import * as path from 'node:path';
 import { getArtifactByUuid } from '../../db/artifact.js';
 import { MAX_ARTIFACT_BYTES } from '../../artifacts/constants.js';
 import { handleArtifactAddCommand } from './add.js';
-import { setupArtifactCommandTest, type ArtifactCommandTestContext } from './test_utils.js';
+import {
+  runWithConsoleLogger,
+  setupArtifactCommandTest,
+  type ArtifactCommandTestContext,
+} from './test_utils.js';
 
 describe('tim artifact add command', () => {
   let context: ArtifactCommandTestContext;
@@ -58,7 +62,7 @@ describe('tim artifact add command', () => {
     const sourcePath = path.join(context.sourceDir, 'output.log');
     await fs.writeFile(sourcePath, 'log content');
 
-    await handleArtifactAddCommand('1', sourcePath, {});
+    await runWithConsoleLogger(() => handleArtifactAddCommand('1', sourcePath, {}));
 
     const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toMatch(/[0-9a-f-]{36}/); // UUID pattern

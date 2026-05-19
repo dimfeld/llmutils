@@ -1,8 +1,28 @@
-import { render } from 'svelte/server';
-import { describe, expect, test } from 'vitest';
+import { renderWithTooltipProvider } from '$lib/test-utils/render_with_tooltip_provider.js';
+import { describe, expect, test, vi } from 'vitest';
 
 import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
 import PrDetail from './PrDetail.svelte';
+
+vi.mock('$lib/remote/project_prs.remote.js', async () => {
+  const actual = await vi.importActual<typeof import('$lib/remote/project_prs.remote.js')>(
+    '$lib/remote/project_prs.remote.js'
+  );
+  return {
+    ...actual,
+    getLinearPrReviewUrl: vi.fn(async () => null),
+  };
+});
+
+vi.mock('$lib/remote/pr_reviews.remote.js', async () => {
+  const actual = await vi.importActual<typeof import('$lib/remote/pr_reviews.remote.js')>(
+    '$lib/remote/pr_reviews.remote.js'
+  );
+  return {
+    ...actual,
+    getPrReviews: vi.fn(async () => []),
+  };
+});
 
 function createPr(): EnrichedProjectPr {
   return {
@@ -44,8 +64,8 @@ function createPr(): EnrichedProjectPr {
 }
 
 describe('PrDetail', () => {
-  test('renders the current user review-request label in the badge bar', () => {
-    const { body } = render(PrDetail, {
+  test('renders the current user review-request label in the badge bar', async () => {
+    const { body } = await renderWithTooltipProvider(PrDetail, {
       props: {
         pr: createPr(),
         projectId: '123',
@@ -56,8 +76,8 @@ describe('PrDetail', () => {
     expect(body).not.toContain('Review Required');
   });
 
-  test('renders a Graphite link for the current PR', () => {
-    const { body } = render(PrDetail, {
+  test('renders a Graphite link for the current PR', async () => {
+    const { body } = await renderWithTooltipProvider(PrDetail, {
       props: {
         pr: createPr(),
         projectId: '123',
@@ -68,8 +88,8 @@ describe('PrDetail', () => {
     expect(body).toContain('href="https://app.graphite.com/github/pr/example/repo/42"');
   });
 
-  test('shows the draft toggle only for the authenticated author', () => {
-    const ownPr = render(PrDetail, {
+  test('shows the draft toggle only for the authenticated author', async () => {
+    const ownPr = await renderWithTooltipProvider(PrDetail, {
       props: {
         pr: createPr(),
         projectId: '123',
@@ -80,7 +100,7 @@ describe('PrDetail', () => {
 
     expect(ownPr.body).toContain('Convert to draft');
 
-    const otherPr = render(PrDetail, {
+    const otherPr = await renderWithTooltipProvider(PrDetail, {
       props: {
         pr: createPr(),
         projectId: '123',
@@ -93,13 +113,13 @@ describe('PrDetail', () => {
     expect(otherPr.body).not.toContain('Mark ready for review');
   });
 
-  test('renders full diff stats when additions, deletions, and changed_files are available', () => {
+  test('renders full diff stats when additions, deletions, and changed_files are available', async () => {
     const pr = createPr();
     pr.status.additions = 42;
     pr.status.deletions = 17;
     pr.status.changed_files = 3;
 
-    const { body } = render(PrDetail, {
+    const { body } = await renderWithTooltipProvider(PrDetail, {
       props: {
         pr,
         projectId: '123',
@@ -111,13 +131,13 @@ describe('PrDetail', () => {
     expect(body).toContain('-17');
   });
 
-  test('does not render diff stats when changed_files is null', () => {
+  test('does not render diff stats when changed_files is null', async () => {
     const pr = createPr();
     pr.status.additions = 42;
     pr.status.deletions = 17;
     pr.status.changed_files = null;
 
-    const { body } = render(PrDetail, {
+    const { body } = await renderWithTooltipProvider(PrDetail, {
       props: {
         pr,
         projectId: '123',
@@ -129,11 +149,11 @@ describe('PrDetail', () => {
     expect(body).not.toContain('text-red-600');
   });
 
-  test('does not render diff stats when additions and deletions are null', () => {
+  test('does not render diff stats when additions and deletions are null', async () => {
     const pr = createPr();
     // additions, deletions, changed_files are already null in createPr()
 
-    const { body } = render(PrDetail, {
+    const { body } = await renderWithTooltipProvider(PrDetail, {
       props: {
         pr,
         projectId: '123',
@@ -145,7 +165,7 @@ describe('PrDetail', () => {
     expect(body).not.toContain('text-red-600');
   });
 
-  test('sorts linked plans by plan number', () => {
+  test('sorts linked plans by plan number', async () => {
     const pr = createPr();
     pr.linkedPlans = [
       { planUuid: 'plan-30', planId: 30, title: 'Plan thirty' },
@@ -153,7 +173,7 @@ describe('PrDetail', () => {
       { planUuid: 'plan-20', planId: 20, title: 'Plan twenty' },
     ];
 
-    const { body } = render(PrDetail, {
+    const { body } = await renderWithTooltipProvider(PrDetail, {
       props: {
         pr,
         projectId: '123',

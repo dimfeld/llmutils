@@ -6,7 +6,11 @@ import { getDefaultConfig } from '../../configSchema.js';
 import { getArtifactByUuid } from '../../db/artifact.js';
 import { addArtifact, softDeleteArtifact } from '../../artifacts/service.js';
 import { handleArtifactDeleteCommand } from './delete.js';
-import { setupArtifactCommandTest, type ArtifactCommandTestContext } from './test_utils.js';
+import {
+  runWithConsoleLogger,
+  setupArtifactCommandTest,
+  type ArtifactCommandTestContext,
+} from './test_utils.js';
 
 describe('tim artifact delete command', () => {
   let context: ArtifactCommandTestContext;
@@ -42,7 +46,9 @@ describe('tim artifact delete command', () => {
   });
 
   test('reports unknown soft-delete UUIDs as not found', async () => {
-    await handleArtifactDeleteCommand('00000000-0000-4000-8000-000000000000');
+    await runWithConsoleLogger(() =>
+      handleArtifactDeleteCommand('00000000-0000-4000-8000-000000000000')
+    );
 
     const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toContain('not found');
@@ -50,7 +56,9 @@ describe('tim artifact delete command', () => {
   });
 
   test('reports unknown hard-delete UUIDs as not found', async () => {
-    await handleArtifactDeleteCommand('00000000-0000-4000-8000-000000000000', { hard: true });
+    await runWithConsoleLogger(() =>
+      handleArtifactDeleteCommand('00000000-0000-4000-8000-000000000000', { hard: true })
+    );
 
     const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toContain('not found');
@@ -68,7 +76,7 @@ describe('tim artifact delete command', () => {
     });
     await softDeleteArtifact(artifact.uuid, { config: getDefaultConfig() });
 
-    await handleArtifactDeleteCommand(artifact.uuid);
+    await runWithConsoleLogger(() => handleArtifactDeleteCommand(artifact.uuid));
 
     const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toContain('already deleted');

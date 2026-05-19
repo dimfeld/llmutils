@@ -42,7 +42,7 @@ describe('RunningNowRow', () => {
     vi.useRealTimers();
   });
 
-  test('shows task progress instead of workspace name', async () => {
+  test('shows project name instead of workspace path', async () => {
     const { body } = await render(RunningNowRow, {
       props: {
         session: createSession(),
@@ -51,8 +51,8 @@ describe('RunningNowRow', () => {
       },
     });
 
-    expect(body).toContain('2/5');
     expect(body).not.toContain('workspace-a');
+    expect(body).toContain('Project Alpha');
     expect(body).toContain('started 5 minutes ago');
   });
 });

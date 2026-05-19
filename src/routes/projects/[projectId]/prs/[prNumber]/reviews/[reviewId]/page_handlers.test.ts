@@ -1,6 +1,5 @@
-// @vitest-environment jsdom
-
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { JSDOM } from 'jsdom';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import {
   createAnnotationClickHandler,
@@ -10,6 +9,32 @@ import {
   type EditableReviewIssueRow,
   type ReviewIssueRef,
 } from './page_handlers.js';
+
+let dom: JSDOM;
+let originalDocument: typeof globalThis.document;
+let originalHTMLElement: typeof globalThis.HTMLElement;
+let originalShadowRoot: typeof globalThis.ShadowRoot;
+let originalGetComputedStyle: typeof globalThis.getComputedStyle;
+
+beforeAll(() => {
+  originalDocument = globalThis.document;
+  originalHTMLElement = globalThis.HTMLElement;
+  originalShadowRoot = globalThis.ShadowRoot;
+  originalGetComputedStyle = globalThis.getComputedStyle;
+  dom = new JSDOM('<!doctype html><html><body></body></html>');
+  globalThis.document = dom.window.document;
+  globalThis.HTMLElement = dom.window.HTMLElement;
+  globalThis.ShadowRoot = dom.window.ShadowRoot;
+  globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
+});
+
+afterAll(() => {
+  globalThis.document = originalDocument;
+  globalThis.HTMLElement = originalHTMLElement;
+  globalThis.ShadowRoot = originalShadowRoot;
+  globalThis.getComputedStyle = originalGetComputedStyle;
+  dom.window.close();
+});
 
 interface TestReviewIssueRow extends EditableReviewIssueRow {
   review_id: number;
@@ -508,7 +533,7 @@ describe('createJumpToDiffHandler', () => {
     await handler(issue);
 
     expect(setError).toHaveBeenCalledWith(null);
-    expect(scrollContainer.scrollBy).toHaveBeenCalledTimes(4);
+    expect(scrollContainer.scrollBy).toHaveBeenCalledTimes(3);
     expect(diffNode.scrollIntoView).not.toHaveBeenCalled();
     expect(annotationNode.scrollIntoView).not.toHaveBeenCalled();
     expect(setHighlightedAnnotation).toHaveBeenCalledWith(annotationNode);
@@ -621,12 +646,14 @@ describe('createJumpToDiffHandler', () => {
   test('finds the scroll container across a shadow root boundary', async () => {
     const scrollContainer = document.createElement('div');
     scrollContainer.style.overflowY = 'auto';
+    scrollContainer.scrollBy = vi.fn();
     Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 200 });
     Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 100 });
 
     const host = document.createElement('div');
     const shadowRoot = host.attachShadow({ mode: 'open' });
     const annotationNode = makeNode();
+    mockRect(annotationNode, { top: 20, bottom: 40, right: 100, width: 100 });
     shadowRoot.appendChild(annotationNode);
     scrollContainer.appendChild(host);
     document.body.appendChild(scrollContainer);

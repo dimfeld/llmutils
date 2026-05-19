@@ -1,7 +1,10 @@
 import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest';
+import * as fs from 'node:fs/promises';
 import { timAgent } from './agent.js';
 
 let findNextActionableItemCalled = false;
+const TEST_REPO = '/tmp/tim-agent-capture-repo';
+const TEST_PLAN_FILE = '/tmp/tim-agent-capture-plan.md';
 
 const executorExecuteSpy = vi.fn(async () => 'SERIAL FINAL OUTPUT');
 
@@ -15,7 +18,7 @@ const summaryCollector = {
   getExecutionSummary: vi.fn(() => ({
     planId: '1',
     planTitle: 'P',
-    planFilePath: '/tmp/plan.yml',
+    planFilePath: TEST_PLAN_FILE,
     mode: 'serial',
     startedAt: new Date().toISOString(),
     endedAt: new Date().toISOString(),
@@ -42,7 +45,7 @@ vi.mock('../../plans.js', async (importOriginal) => {
         title: 'P',
         tasks: [{ title: 'T1', steps: [{ prompt: 'p', done: false }] }],
       },
-      planPath: '/tmp/plan.yml',
+      planPath: TEST_PLAN_FILE,
     })),
   };
 });
@@ -57,7 +60,7 @@ vi.mock('../../plans.js', () => ({
   generatePlanFileContent: vi.fn(() => ''),
   resolvePlanByNumericId: vi.fn(async () => ({
     plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
-    planPath: '/tmp/plan.yml',
+    planPath: TEST_PLAN_FILE,
   })),
 }));
 
@@ -116,7 +119,7 @@ vi.mock('../../summary/display.js', () => ({
 
 vi.mock('../../../common/git.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../common/git.js')>()),
-  getGitRoot: vi.fn(async () => '/tmp/repo'),
+  getGitRoot: vi.fn(async () => TEST_REPO),
 }));
 
 vi.mock('../../../logging.js', () => ({
@@ -137,6 +140,13 @@ vi.mock('../../workspace/workspace_roundtrip.js', () => ({
   materializePlansForExecution: vi.fn(async () => undefined),
 }));
 
+vi.mock('../../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(async () => ({
+    baseDir: '/tmp',
+    planFile: TEST_PLAN_FILE,
+  })),
+}));
+
 describe('timAgent serial captureOutput integration', () => {
   beforeEach(() => {
     findNextActionableItemCalled = false;
@@ -147,10 +157,30 @@ describe('timAgent serial captureOutput integration', () => {
     summaryCollector.recordExecutionEnd.mockClear();
     summaryCollector.trackFileChanges.mockClear();
     summaryCollector.getExecutionSummary.mockClear();
+    return fs
+      .mkdir(TEST_REPO, { recursive: true })
+      .then(() =>
+        fs.writeFile(
+          TEST_PLAN_FILE,
+          [
+            '---',
+            'id: 1',
+            'title: P',
+            'status: pending',
+            'tasks:',
+            '  - title: T1',
+            '    description: D1',
+            '---',
+            '',
+          ].join('\n')
+        )
+      );
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.clearAllMocks();
+    await fs.rm(TEST_PLAN_FILE, { force: true });
+    await fs.rm(TEST_REPO, { recursive: true, force: true });
   });
 
   test('passes captureOutput: "result" and records output in serial mode', async () => {

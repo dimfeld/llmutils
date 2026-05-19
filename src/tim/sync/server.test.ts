@@ -1077,7 +1077,11 @@ describe('sync transport server and clients', () => {
     clients.push(client);
     client.start();
 
-    await waitFor(() => listPendingOperations(localDb, { originNodeId: NODE_A }).length === 0);
+    await waitFor(
+      () =>
+        listPendingOperations(localDb, { originNodeId: NODE_A }).length === 0 &&
+        getPlanTagsByUuid(mainDb, PLAN_UUID).some((tag) => tag.tag === 'client-flush')
+    );
 
     expect(getPlanTagsByUuid(mainDb, PLAN_UUID).map((tag) => tag.tag)).toEqual(['client-flush']);
     expect(getPlanTagsByUuid(localDb, PLAN_UUID).map((tag) => tag.tag)).toEqual(['client-flush']);
@@ -1305,7 +1309,11 @@ describe('sync transport server and clients', () => {
     clients.push(client);
     client.start();
 
-    await waitFor(() => listPendingOperations(localDb, { originNodeId: NODE_A }).length === 0);
+    await waitFor(
+      () =>
+        listPendingOperations(localDb, { originNodeId: NODE_A }).length === 0 &&
+        getPlanTagsByUuid(mainDb, PLAN_UUID).length === 2
+    );
 
     expect(
       getPlanTagsByUuid(mainDb, PLAN_UUID)

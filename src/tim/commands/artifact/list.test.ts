@@ -6,7 +6,11 @@ import { getDefaultConfig } from '../../configSchema.js';
 import { addArtifact, softDeleteArtifact } from '../../artifacts/service.js';
 import { markTransferSucceeded, upsertPendingTransfer } from '../../db/artifact_transfer.js';
 import { handleArtifactListCommand } from './list.js';
-import { setupArtifactCommandTest, type ArtifactCommandTestContext } from './test_utils.js';
+import {
+  runWithConsoleLogger,
+  setupArtifactCommandTest,
+  type ArtifactCommandTestContext,
+} from './test_utils.js';
 
 describe('tim artifact list command', () => {
   let context: ArtifactCommandTestContext;
@@ -128,7 +132,7 @@ describe('tim artifact list command', () => {
     expect(payload[0].transferState).toBe('file-missing');
 
     consoleLog.mockClear();
-    await handleArtifactListCommand('1', {});
+    await runWithConsoleLogger(() => handleArtifactListCommand('1', {}));
     const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toContain('file-missing');
   });
@@ -185,7 +189,7 @@ describe('tim artifact list command', () => {
       repoRoot: context.tempDir,
     });
 
-    await handleArtifactListCommand('1', {});
+    await runWithConsoleLogger(() => handleArtifactListCommand('1', {}));
     const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toContain('TRANSFER');
     expect(output).toContain('UUID');

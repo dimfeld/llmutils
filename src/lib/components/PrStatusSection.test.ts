@@ -1,4 +1,4 @@
-import { render } from 'svelte/server';
+import { renderWithTooltipProvider } from '$lib/test-utils/render_with_tooltip_provider.js';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type {
@@ -194,7 +194,7 @@ async function renderSection(props: {
     })
   );
 
-  return await render(PrStatusSection, {
+  return await renderWithTooltipProvider(PrStatusSection, {
     props: {
       planUuid: props.planUuid ?? 'plan-uuid-1',
       projectId: props.projectId ?? '1',
@@ -234,7 +234,7 @@ describe('PrStatusSection', () => {
       })
     );
 
-    const { body } = await render(PrStatusSection, {
+    const { body } = await renderWithTooltipProvider(PrStatusSection, {
       props: {
         planUuid: 'plan-uuid-1',
         projectId: '1',

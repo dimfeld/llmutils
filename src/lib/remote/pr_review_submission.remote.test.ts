@@ -620,7 +620,7 @@ describe('pr_review_submission remote functions', () => {
     });
 
     await expect(
-      invokeQuery(getSubmissionPartition, {
+      invokeCommand(getSubmissionPartition, {
         reviewId: review.id,
         issueIds: [issue.id, issue.id],
         commitSha: 'commit-10611',
@@ -925,7 +925,7 @@ describe('pr_review_submission remote functions', () => {
   test('getSubmissionPartition short-circuits when issueIds is empty (no diff fetch)', async () => {
     const review = seedReview('https://github.com/example/repo/pull/2050');
 
-    const result = await invokeQuery(getSubmissionPartition, {
+    const result = await invokeCommand(getSubmissionPartition, {
       reviewId: review.id,
       issueIds: [],
       commitSha: 'commit-2050',
@@ -942,7 +942,7 @@ describe('pr_review_submission remote functions', () => {
       baseBranch: null,
     });
 
-    const result = await invokeQuery(getSubmissionPartition, {
+    const result = await invokeCommand(getSubmissionPartition, {
       reviewId: review.id,
       issueIds: [],
       commitSha: 'commit-2051',
@@ -1009,7 +1009,7 @@ describe('pr_review_submission remote functions', () => {
       baseBranch: null,
     });
 
-    const result = await invokeQuery(getSubmissionPartition, {
+    const result = await invokeCommand(getSubmissionPartition, {
       reviewId: review.id,
       issueIds: [],
       commitSha: 'stale-sha',
@@ -1100,7 +1100,7 @@ describe('pr_review_submission remote functions', () => {
       ].join('\n'),
     });
 
-    const result = await invokeQuery(getSubmissionPartition, {
+    const result = await invokeCommand(getSubmissionPartition, {
       reviewId: review.id,
       issueIds: [inlineIssue.id, appendedIssue.id],
       commitSha: 'commit-200',
@@ -1131,7 +1131,7 @@ describe('pr_review_submission remote functions', () => {
     });
 
     await expect(
-      invokeQuery(getSubmissionPartition, {
+      invokeCommand(getSubmissionPartition, {
         reviewId: reviewA.id,
         issueIds: [otherIssue.id],
         commitSha: 'commit-201',
@@ -1157,7 +1157,7 @@ describe('pr_review_submission remote functions', () => {
     });
 
     await expect(
-      invokeQuery(getSubmissionPartition, {
+      invokeCommand(getSubmissionPartition, {
         reviewId: review.id,
         issueIds: [issue.id],
         commitSha: 'commit-203',
@@ -1193,7 +1193,7 @@ describe('pr_review_submission remote functions', () => {
       ].join('\n'),
     });
 
-    await invokeQuery(getSubmissionPartition, {
+    await invokeCommand(getSubmissionPartition, {
       reviewId: review.id,
       issueIds: [issue.id],
       commitSha: 'supplied-sha',
@@ -1235,7 +1235,7 @@ describe('pr_review_submission remote functions', () => {
       ].join('\n'),
     });
 
-    const result = await invokeQuery(getSubmissionPartition, {
+    const result = await invokeCommand(getSubmissionPartition, {
       reviewId: review.id,
       issueIds: [issue.id],
       commitSha: 'stale-sha',
@@ -1260,7 +1260,7 @@ describe('pr_review_submission remote functions', () => {
     const notFound = Object.assign(new Error('Not Found'), { status: 404 });
     compareCommitsMock.mockRejectedValueOnce(notFound).mockResolvedValueOnce({ data: '' });
 
-    const result = await invokeQuery(getSubmissionPartition, {
+    const result = await invokeCommand(getSubmissionPartition, {
       reviewId: review.id,
       issueIds: [],
       commitSha: 'stale-sha',

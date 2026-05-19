@@ -176,6 +176,10 @@ export function artifactUrl(serverUrl: string, artifactUuid: string): URL {
 }
 
 function artifactStoragePath(artifact: PlanArtifact): string {
+  if (artifact.storagePath) {
+    return artifact.storagePath;
+  }
+
   return resolveArtifactPath(
     artifact.projectUuid,
     artifact.planUuid,

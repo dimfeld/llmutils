@@ -2807,7 +2807,7 @@ describe('Autofix functionality', () => {
       },
     };
 
-    await handleReviewCommand(123, { autofix: true, noSave: true }, mockCommand);
+    await handleReviewCommand(123, { autofixAll: true, noSave: true }, mockCommand);
 
     expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
     expect(mockExecutor.execute.mock.calls[0]?.[1]?.planFilePath).toBe(materializedPlanPath);
@@ -2934,7 +2934,7 @@ describe('Autofix functionality', () => {
       },
     };
 
-    await handleReviewCommand(123, { autofix: true }, mockCommand);
+    await handleReviewCommand(123, { autofixAll: true }, mockCommand);
 
     // Verify the executor was called twice: once for review, once for autofix
     expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
@@ -3766,7 +3766,7 @@ Updated by branch-name autofix
       },
     };
 
-    await handleReviewCommand(undefined, { autofix: true, noSave: true }, mockCommand);
+    await handleReviewCommand(undefined, { autofixAll: true, noSave: true }, mockCommand);
 
     expect(gatherPlanContextMock).toHaveBeenCalledTimes(1);
     expect(mockExecutor.execute).toHaveBeenCalledTimes(2);

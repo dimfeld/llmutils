@@ -10,6 +10,8 @@ import {
   upsertCanonicalPlanInTransaction,
   upsertProjectionPlanInTransaction,
 } from '../../db/plan.js';
+import { runWithLogger } from '../../../logging.js';
+import { ConsoleAdapter } from '../../../logging/console.js';
 
 export interface ArtifactCommandTestContext {
   tempDir: string;
@@ -68,4 +70,8 @@ export async function setupArtifactCommandTest(): Promise<ArtifactCommandTestCon
       await fs.rm(tempDir, { recursive: true, force: true });
     },
   };
+}
+
+export async function runWithConsoleLogger<T>(callback: () => Promise<T>): Promise<T> {
+  return runWithLogger(new ConsoleAdapter(), callback);
 }

@@ -1,6 +1,7 @@
 import { render } from 'svelte/server';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { renderWithTooltipProvider } from '$lib/test-utils/render_with_tooltip_provider.js';
 import type { SessionData } from '$lib/types/session.js';
 
 let pageState = {
@@ -117,7 +118,7 @@ describe('sessions/[connectionId]/+page.svelte', () => {
     sessionManager.initialized = true;
     sessionManager.sessions = new Map([['conn-1', createSession()]]);
 
-    const { body } = await render(Page);
+    const { body } = await renderWithTooltipProvider(Page);
 
     expect(body).toContain('href="/projects/3/plans/plan-286"');
     expect(body).toContain('#286');

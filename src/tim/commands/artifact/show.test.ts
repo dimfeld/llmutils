@@ -5,7 +5,11 @@ import * as path from 'node:path';
 import { getDefaultConfig } from '../../configSchema.js';
 import { addArtifact, ArtifactNotFoundError } from '../../artifacts/service.js';
 import { handleArtifactShowCommand } from './show.js';
-import { setupArtifactCommandTest, type ArtifactCommandTestContext } from './test_utils.js';
+import {
+  runWithConsoleLogger,
+  setupArtifactCommandTest,
+  type ArtifactCommandTestContext,
+} from './test_utils.js';
 
 describe('tim artifact show command', () => {
   let context: ArtifactCommandTestContext;
@@ -80,7 +84,7 @@ describe('tim artifact show command', () => {
       repoRoot: context.tempDir,
     });
 
-    await handleArtifactShowCommand(artifact.uuid, {});
+    await runWithConsoleLogger(() => handleArtifactShowCommand(artifact.uuid, {}));
 
     const output = consoleLog.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toContain(artifact.uuid);

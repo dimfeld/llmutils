@@ -462,7 +462,12 @@ function artifactStoragePath(artifact: {
   planUuid: string;
   uuid: string;
   filename: string;
+  storagePath?: string;
 }): string {
+  if (artifact.storagePath) {
+    return artifact.storagePath;
+  }
+
   return resolveArtifactPath(
     artifact.projectUuid,
     artifact.planUuid,
