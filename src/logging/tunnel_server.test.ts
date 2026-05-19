@@ -715,6 +715,76 @@ describe('createTunnelServer', () => {
     });
   });
 
+  it('should accept optional todo_update item detail and reject non-string detail', async () => {
+    const sp = uniqueSocketPath();
+    const { adapter, calls } = createRecordingAdapter();
+
+    await runWithLogger(adapter, async () => {
+      tunnelServer = await createTunnelServer(sp);
+
+      await connectAndSend(sp, [
+        {
+          type: 'structured',
+          message: {
+            type: 'todo_update',
+            timestamp: '2026-02-08T00:00:00.000Z',
+            items: [
+              {
+                label: 'Research formatter',
+                status: 'in_progress',
+                detail: 'Trace todo_update consumers',
+              },
+            ],
+          },
+        },
+        {
+          type: 'structured',
+          message: {
+            type: 'todo_update',
+            timestamp: '2026-02-08T00:00:00.000Z',
+            items: [{ label: 'Broken detail', status: 'pending', detail: 42 }],
+          },
+        } as unknown as TunnelMessage,
+        {
+          type: 'structured',
+          message: {
+            type: 'todo_update',
+            timestamp: '2026-02-08T00:00:00.000Z',
+            items: [{ label: 'No detail', status: 'pending' }],
+          },
+        },
+      ]);
+
+      await waitForCalls(calls, 2);
+    });
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({
+      method: 'sendStructured',
+      args: [
+        {
+          type: 'todo_update',
+          items: [
+            {
+              label: 'Research formatter',
+              status: 'in_progress',
+              detail: 'Trace todo_update consumers',
+            },
+          ],
+        },
+      ],
+    });
+    expect(calls[1]).toMatchObject({
+      method: 'sendStructured',
+      args: [
+        {
+          type: 'todo_update',
+          items: [{ label: 'No detail', status: 'pending' }],
+        },
+      ],
+    });
+  });
+
   it('should handle malformed JSON gracefully without crashing', async () => {
     const sp = uniqueSocketPath();
     const { adapter, calls } = createRecordingAdapter();

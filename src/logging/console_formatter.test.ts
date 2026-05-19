@@ -76,13 +76,14 @@ describe('console_formatter', () => {
       type: 'todo_update',
       timestamp,
       items: [
-        { label: 'Wire parser', status: 'in_progress' },
+        { label: 'Wire parser', status: 'in_progress', detail: 'Preserve task description' },
         { label: 'Ship tests', status: 'pending' },
       ],
     });
     expect(todo).toContain('Todo Update');
-    expect(todo).toContain('Wire parser');
+    expect(todo).toContain('Wire parser (Preserve task description)');
     expect(todo).toContain('Ship tests');
+    expect(todo).not.toContain('Ship tests (');
   });
 
   it('formats file and command messages', () => {

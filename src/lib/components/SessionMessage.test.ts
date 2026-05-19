@@ -88,8 +88,10 @@ describe('SessionMessage', () => {
           type: 'todo_update',
           explanation: 'Working through tasks',
           items: [
-            { label: 'Done task', status: 'completed' },
+            { label: 'Done task', status: 'completed', detail: 'Completed task details' },
+            { label: 'Padded detail task', status: 'pending', detail: '  Padded details  ' },
             { label: 'Current task', status: 'in_progress' },
+            { label: 'Blank detail task', status: 'pending', detail: '   ' },
           ],
         }),
       },
@@ -97,7 +99,33 @@ describe('SessionMessage', () => {
 
     expect(body).toContain('Working through tasks');
     expect(body).toContain('Done task');
+    expect(body).toContain('Completed task details');
+    expect(body).toContain('Padded detail task');
+    expect(body).toContain('>Padded details</div>');
+    expect(body).not.toContain('>  Padded details  </div>');
+    expect(body).toContain('text-xs text-gray-500');
     expect(body).toContain('Current task');
+    expect(body).toContain('Blank detail task');
+    expect(body).not.toContain('>   </div>');
+  });
+
+  test('renders todo items without detail as a plain label (backward compat with TodoWrite)', () => {
+    const { body } = render(SessionMessage, {
+      props: {
+        message: createStructuredMessage({
+          type: 'todo_update',
+          items: [
+            { label: 'First task', status: 'pending' },
+            { label: 'Second task', status: 'completed' },
+          ],
+        }),
+      },
+    });
+
+    expect(body).toContain('First task');
+    expect(body).toContain('Second task');
+    // No detail div should appear when no item has detail
+    expect(body).not.toContain('text-xs text-gray-500');
   });
 
   test('renders structured file change summaries through the existing file changes renderer', () => {

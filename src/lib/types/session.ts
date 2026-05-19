@@ -29,6 +29,7 @@ export type TodoUpdateStatus = 'pending' | 'in_progress' | 'completed' | 'blocke
 export interface TodoUpdateItem {
   label: string;
   status: TodoUpdateStatus;
+  detail?: string;
 }
 
 export type FileChangeKind = 'added' | 'updated' | 'removed';

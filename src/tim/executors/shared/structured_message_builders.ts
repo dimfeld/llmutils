@@ -12,6 +12,7 @@ export type StructuredMessageSource = 'codex' | 'claude';
 export interface TodoLikeStructuredItem {
   label: string;
   status?: string | null;
+  detail?: string | null;
 }
 
 function normalizeText(value: string | undefined): string | undefined {
@@ -54,10 +55,14 @@ export function buildTodoUpdate(
   timestamp: string,
   items: TodoLikeStructuredItem[]
 ): TodoUpdateMessage {
-  const normalizedItems: TodoUpdateItem[] = items.map((item) => ({
-    label: item.label.trim() || '(missing item text)',
-    status: normalizeTodoStatus(item.status),
-  }));
+  const normalizedItems: TodoUpdateItem[] = items.map((item) => {
+    const detail = normalizeText(item.detail ?? undefined);
+    return {
+      label: item.label.trim() || '(missing item text)',
+      status: normalizeTodoStatus(item.status),
+      ...(detail ? { detail } : {}),
+    };
+  });
 
   return {
     type: 'todo_update',

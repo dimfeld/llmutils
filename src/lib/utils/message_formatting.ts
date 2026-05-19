@@ -169,7 +169,11 @@ export function formatStructuredMessage(
     case 'todo_update':
       return {
         type: 'todoList',
-        items: message.items,
+        items: message.items.map((item) => ({
+          label: item.label,
+          status: item.status,
+          ...(item.detail != null ? { detail: item.detail } : {}),
+        })),
         explanation: message.explanation,
       };
     case 'task_completion':

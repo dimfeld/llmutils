@@ -181,7 +181,13 @@ export function formatStructuredMessage(message: StructuredMessage): string {
           .join('\n');
       case 'todo_update': {
         const lines = formatTodoLikeLines(
-          message.items.map((item) => ({ label: item.label, status: item.status })),
+          message.items.map((item) => {
+            const detail = item.detail?.trim();
+            return {
+              label: detail ? `${item.label} (${detail})` : item.label,
+              status: item.status,
+            };
+          }),
           { includePriority: false }
         );
         return [formatHeader(chalk.blue, 'Todo Update', message.timestamp), ...lines]

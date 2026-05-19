@@ -274,7 +274,8 @@ function isValidStructuredMessagePayload(message: unknown): message is Structure
           return (
             typeof item.label === 'string' &&
             typeof item.status === 'string' &&
-            todoStatuses.has(item.status)
+            todoStatuses.has(item.status) &&
+            (item.detail == null || typeof item.detail === 'string')
           );
         }) &&
         (structured.turnId == null || typeof structured.turnId === 'string') &&

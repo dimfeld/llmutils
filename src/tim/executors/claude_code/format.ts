@@ -3,7 +3,7 @@ import yaml from 'yaml';
 import { debugLog } from '../../../logging.ts';
 import * as diff from 'diff';
 import { detectFailedLineAnywhere } from '../failure_detection.ts';
-import type { StructuredMessage } from '../../../logging/structured_messages.ts';
+import type { StructuredMessage, TodoUpdateStatus } from '../../../logging/structured_messages.ts';
 import { formatStructuredMessage } from '../../../logging/console_formatter.ts';
 import {
   buildCommandResult,
@@ -11,6 +11,7 @@ import {
   buildSessionStart,
   buildTodoUpdate,
   buildUnknownStatus,
+  normalizeTodoStatus,
 } from '../shared/structured_message_builders.ts';
 
 // Represents the top-level message object
@@ -161,8 +162,49 @@ export interface FormattedClaudeMessage {
 // Cache for tool use IDs mapped to their names.
 const toolUseCache = new Map<string, string>();
 
+interface ClaudeTaskItem {
+  subject: string;
+  description?: string;
+  status: TodoUpdateStatus;
+}
+
+interface PendingTaskCreate {
+  sessionId: string;
+  subject: string;
+  description?: string;
+}
+
+const sessionTaskLists: Map<string, Map<string, ClaudeTaskItem>> = new Map();
+const pendingTaskCreates: Map<string, PendingTaskCreate> = new Map();
+const appliedTaskUpdates: Map<
+  string,
+  {
+    sessionId: string;
+    taskId: string;
+    previousStatus: TodoUpdateStatus;
+    appliedStatus: TodoUpdateStatus;
+  }
+> = new Map();
+
 export function resetToolUseCache(): void {
   toolUseCache.clear();
+  sessionTaskLists.clear();
+  pendingTaskCreates.clear();
+  appliedTaskUpdates.clear();
+}
+
+export function applyTaskUpdateToList(
+  list: Map<string, ClaudeTaskItem>,
+  taskId: string,
+  status: string
+): boolean {
+  const task = list.get(taskId);
+  if (!task) {
+    return false;
+  }
+
+  task.status = normalizeTodoStatus(status);
+  return true;
 }
 
 function timestamp(): string {
@@ -210,6 +252,49 @@ function toArray(
     return [];
   }
   return Array.isArray(message) ? message : [message];
+}
+
+function buildTaskListUpdate(
+  timestamp: string,
+  list: Map<string, ClaudeTaskItem>
+): StructuredMessage {
+  return buildTodoUpdate(
+    'claude',
+    timestamp,
+    Array.from(list.values()).map((task) => ({
+      label: task.subject,
+      detail: task.description,
+      status: task.status,
+    }))
+  );
+}
+
+function extractToolResultText(result: unknown): string | undefined {
+  if (typeof result === 'string') {
+    return result;
+  }
+
+  if (!Array.isArray(result)) {
+    return undefined;
+  }
+
+  const textParts = result
+    .map((item) => {
+      if (
+        item &&
+        typeof item === 'object' &&
+        'type' in item &&
+        item.type === 'text' &&
+        'text' in item &&
+        typeof item.text === 'string'
+      ) {
+        return item.text;
+      }
+      return undefined;
+    })
+    .filter((text): text is string => text !== undefined);
+
+  return textParts.length > 0 ? textParts.join('\n') : undefined;
 }
 
 export function extractStructuredMessages(
@@ -531,6 +616,55 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
           continue;
         }
 
+        if (
+          content.name === 'TaskCreate' &&
+          content.input &&
+          typeof content.input === 'object' &&
+          'subject' in content.input &&
+          typeof content.input.subject === 'string' &&
+          typeof content.id === 'string'
+        ) {
+          pendingTaskCreates.set(content.id, {
+            sessionId: message.session_id,
+            subject: content.input.subject,
+            ...('description' in content.input && typeof content.input.description === 'string'
+              ? { description: content.input.description }
+              : {}),
+          });
+          continue;
+        }
+
+        if (
+          content.name === 'TaskUpdate' &&
+          content.input &&
+          typeof content.input === 'object' &&
+          'taskId' in content.input &&
+          typeof content.input.taskId === 'string' &&
+          'status' in content.input &&
+          typeof content.input.status === 'string'
+        ) {
+          const taskList = sessionTaskLists.get(message.session_id);
+          if (!taskList) {
+            debugLog(`TaskUpdate for unknown session: ${message.session_id}`);
+          } else {
+            const task = taskList.get(content.input.taskId);
+            if (!task) {
+              debugLog(`TaskUpdate for unknown task: ${content.input.taskId}`);
+            } else {
+              const previousStatus = task.status;
+              applyTaskUpdateToList(taskList, content.input.taskId, content.input.status);
+              appliedTaskUpdates.set(content.id, {
+                sessionId: message.session_id,
+                taskId: content.input.taskId,
+                previousStatus,
+                appliedStatus: task.status,
+              });
+              structuredMessages.push(buildTaskListUpdate(ts, taskList));
+              continue;
+            }
+          }
+        }
+
         structuredMessages.push({
           type: 'llm_tool_use',
           timestamp: ts,
@@ -544,12 +678,60 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
       if (content.type === 'tool_result') {
         // Get the tool name if we have it cached
         let toolName = '';
-        if ('tool_use_id' in content && toolUseCache.has(content.tool_use_id)) {
+        if (toolUseCache.has(content.tool_use_id)) {
           toolName = toolUseCache.get(content.tool_use_id) ?? '';
         }
 
         // Check if this is a file operation (read/write) and simplify output
         const result = content.content;
+        const isError = 'is_error' in content && content.is_error === true;
+
+        if (toolName === 'TaskCreate') {
+          const resultText = extractToolResultText(result);
+          const taskId = resultText?.match(/Task #(\d+) created successfully/)?.[1];
+          const pendingCreate = pendingTaskCreates.get(content.tool_use_id);
+
+          if (isError) {
+            debugLog('TaskCreate returned an error result');
+          } else if (!taskId) {
+            debugLog('TaskCreate result did not include a parseable task id:', resultText);
+          } else if (!pendingCreate) {
+            debugLog('TaskCreate result did not match a pending create:', content.tool_use_id);
+          } else {
+            let taskList = sessionTaskLists.get(pendingCreate.sessionId);
+            if (!taskList) {
+              taskList = new Map<string, ClaudeTaskItem>();
+              sessionTaskLists.set(pendingCreate.sessionId, taskList);
+            }
+
+            taskList.set(taskId, {
+              subject: pendingCreate.subject,
+              description: pendingCreate.description,
+              status: 'pending',
+            });
+            pendingTaskCreates.delete(content.tool_use_id);
+            structuredMessages.push(buildTaskListUpdate(ts, taskList));
+            continue;
+          }
+        }
+
+        if (toolName === 'TaskUpdate') {
+          const appliedUpdate = appliedTaskUpdates.get(content.tool_use_id);
+          if (appliedUpdate) {
+            appliedTaskUpdates.delete(content.tool_use_id);
+
+            if (!isError) {
+              continue;
+            }
+
+            const taskList = sessionTaskLists.get(appliedUpdate.sessionId);
+            const task = taskList?.get(appliedUpdate.taskId);
+            if (taskList && task && task.status === appliedUpdate.appliedStatus) {
+              task.status = appliedUpdate.previousStatus;
+              structuredMessages.push(buildTaskListUpdate(ts, taskList));
+            }
+          }
+        }
 
         if (toolName === 'Read' && typeof result === 'string') {
           structuredMessages.push({

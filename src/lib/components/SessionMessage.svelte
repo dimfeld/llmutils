@@ -140,26 +140,31 @@
     {/if}
     {#each renderBody.items as item, i (i)}
       <div class="pl-2">
-        <span
-          class={item.status === 'completed'
-            ? 'text-green-400'
-            : item.status === 'in_progress'
-              ? 'text-blue-400'
-              : item.status === 'blocked'
-                ? 'text-red-400'
-                : 'text-gray-400'}
-        >
-          {item.status === 'completed'
-            ? '\u2713'
-            : item.status === 'in_progress'
-              ? '\u2192'
-              : item.status === 'blocked'
-                ? '\u2717'
-                : item.status === 'unknown'
-                  ? '?'
-                  : '\u25CB'}
-        </span>
-        {item.label}
+        <div>
+          <span
+            class={item.status === 'completed'
+              ? 'text-green-400'
+              : item.status === 'in_progress'
+                ? 'text-blue-400'
+                : item.status === 'blocked'
+                  ? 'text-red-400'
+                  : 'text-gray-400'}
+          >
+            {item.status === 'completed'
+              ? '\u2713'
+              : item.status === 'in_progress'
+                ? '\u2192'
+                : item.status === 'blocked'
+                  ? '\u2717'
+                  : item.status === 'unknown'
+                    ? '?'
+                    : '\u25CB'}
+          </span>
+          {item.label}
+        </div>
+        {#if item.detail?.trim()}
+          <div class="pl-5 text-xs text-gray-500">{item.detail.trim()}</div>
+        {/if}
       </div>
     {/each}
   {:else if renderBody?.type === 'fileChanges'}

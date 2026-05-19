@@ -1,5 +1,59 @@
-import { test, describe, expect, beforeEach, vi } from 'vitest';
-import { formatJsonMessage, resetToolUseCache } from './format.ts';
+import { test, describe, expect, beforeEach } from 'vitest';
+import { applyTaskUpdateToList, formatJsonMessage, resetToolUseCache } from './format.ts';
+
+function toolUseMessage({
+  id,
+  name,
+  input,
+  sessionId = 'test-session',
+}: {
+  id: string;
+  name: string;
+  input: unknown;
+  sessionId?: string;
+}): string {
+  return JSON.stringify({
+    type: 'assistant',
+    message: {
+      content: [
+        {
+          type: 'tool_use',
+          id,
+          name,
+          input,
+        },
+      ],
+    },
+    session_id: sessionId,
+  });
+}
+
+function toolResultMessage({
+  toolUseId,
+  content,
+  isError,
+  sessionId = 'test-session',
+}: {
+  toolUseId: string;
+  content: unknown;
+  isError?: boolean;
+  sessionId?: string;
+}): string {
+  return JSON.stringify({
+    type: 'user',
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: toolUseId,
+          content,
+          ...(isError === undefined ? {} : { is_error: isError }),
+        },
+      ],
+    },
+    session_id: sessionId,
+  });
+}
 
 describe('formatJsonMessage', () => {
   beforeEach(() => {
@@ -739,6 +793,516 @@ describe('formatJsonMessage', () => {
           }),
         ])
       );
+    });
+
+    describe('Task management tools', () => {
+      beforeEach(() => {
+        resetToolUseCache();
+      });
+
+      test('applyTaskUpdateToList mutates a known task status', () => {
+        const list = new Map([
+          ['1', { subject: 'Research', description: 'Read files', status: 'pending' as const }],
+        ]);
+
+        expect(applyTaskUpdateToList(list, '1', 'in_progress')).toBe(true);
+        expect(list.get('1')?.status).toBe('in_progress');
+        expect(applyTaskUpdateToList(list, '2', 'completed')).toBe(false);
+      });
+
+      test('TaskCreate tool_use alone emits no structured message', () => {
+        const result = formatJsonMessage(
+          toolUseMessage({
+            id: 'task-create-1',
+            name: 'TaskCreate',
+            input: {
+              subject: 'Research codebase',
+              description: 'Explore formatter tests',
+            },
+          })
+        );
+
+        expect(result.structured).toEqual([]);
+        expect(result.message).toBeUndefined();
+      });
+
+      test('TaskCreate tool_result emits a todo_update with subject and description', () => {
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'task-create-1',
+            name: 'TaskCreate',
+            input: {
+              subject: 'Research codebase',
+              description: 'Explore formatter tests',
+            },
+          })
+        );
+
+        const result = formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-create-1',
+            content: [
+              {
+                type: 'text',
+                text: 'Task #1 created successfully: Research codebase',
+              },
+            ],
+          })
+        );
+
+        expect(result.structured).toEqual([
+          expect.objectContaining({
+            type: 'todo_update',
+            source: 'claude',
+            items: [
+              {
+                label: 'Research codebase',
+                detail: 'Explore formatter tests',
+                status: 'pending',
+              },
+            ],
+          }),
+        ]);
+      });
+
+      test('multiple TaskCreate results produce snapshots in creation order', () => {
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'task-create-1',
+            name: 'TaskCreate',
+            input: { subject: 'Research codebase', description: 'Explore formatter tests' },
+          })
+        );
+        formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-create-1',
+            content: 'Task #1 created successfully: Research codebase',
+          })
+        );
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'task-create-2',
+            name: 'TaskCreate',
+            input: { subject: 'Implement formatter', description: 'Track task state' },
+          })
+        );
+
+        const result = formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-create-2',
+            content: 'Task #2 created successfully: Implement formatter',
+          })
+        );
+
+        expect(result.structured).toEqual([
+          expect.objectContaining({
+            type: 'todo_update',
+            items: [
+              {
+                label: 'Research codebase',
+                detail: 'Explore formatter tests',
+                status: 'pending',
+              },
+              {
+                label: 'Implement formatter',
+                detail: 'Track task state',
+                status: 'pending',
+              },
+            ],
+          }),
+        ]);
+      });
+
+      test('TaskUpdate emits full-list snapshots for status transitions', () => {
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'task-create-1',
+            name: 'TaskCreate',
+            input: { subject: 'Research codebase', description: 'Explore formatter tests' },
+          })
+        );
+        formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-create-1',
+            content: 'Task #1 created successfully: Research codebase',
+          })
+        );
+
+        for (const status of ['in_progress', 'completed', 'blocked']) {
+          const result = formatJsonMessage(
+            toolUseMessage({
+              id: `task-update-${status}`,
+              name: 'TaskUpdate',
+              input: { taskId: '1', status },
+            })
+          );
+
+          expect(result.structured).toEqual([
+            expect.objectContaining({
+              type: 'todo_update',
+              items: [
+                {
+                  label: 'Research codebase',
+                  detail: 'Explore formatter tests',
+                  status,
+                },
+              ],
+            }),
+          ]);
+
+          const toolResult = formatJsonMessage(
+            toolResultMessage({
+              toolUseId: `task-update-${status}`,
+              content: 'Updated task #1 status',
+            })
+          );
+          expect(toolResult.structured).toEqual([]);
+          expect(toolResult.message).toBeUndefined();
+        }
+      });
+
+      test('TaskUpdate for unknown task state falls through to llm_tool_use', () => {
+        const beforeCreate = formatJsonMessage(
+          toolUseMessage({
+            id: 'task-update-missing-session',
+            name: 'TaskUpdate',
+            input: { taskId: '1', status: 'in_progress' },
+          })
+        );
+
+        expect(beforeCreate.structured).toEqual([
+          expect.objectContaining({
+            type: 'llm_tool_use',
+            toolName: 'TaskUpdate',
+          }),
+        ]);
+
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'task-create-1',
+            name: 'TaskCreate',
+            input: { subject: 'Research codebase' },
+          })
+        );
+        formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-create-1',
+            content: 'Task #1 created successfully: Research codebase',
+          })
+        );
+
+        const unknownTask = formatJsonMessage(
+          toolUseMessage({
+            id: 'task-update-missing-task',
+            name: 'TaskUpdate',
+            input: { taskId: '2', status: 'completed' },
+          })
+        );
+
+        expect(unknownTask.structured).toEqual([
+          expect.objectContaining({
+            type: 'llm_tool_use',
+            toolName: 'TaskUpdate',
+          }),
+        ]);
+
+        const unknownTaskResult = formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-update-missing-task',
+            content: 'Updated task #2 status',
+          })
+        );
+
+        expect(unknownTaskResult.structured).toEqual([
+          expect.objectContaining({
+            type: 'llm_tool_result',
+            toolName: 'TaskUpdate',
+          }),
+        ]);
+      });
+
+      test('TaskUpdate error result rolls back the local status and renders the error', () => {
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'task-create-1',
+            name: 'TaskCreate',
+            input: { subject: 'Research codebase', description: 'Explore formatter tests' },
+          })
+        );
+        formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-create-1',
+            content: 'Task #1 created successfully: Research codebase',
+          })
+        );
+
+        const update = formatJsonMessage(
+          toolUseMessage({
+            id: 'task-update-error',
+            name: 'TaskUpdate',
+            input: { taskId: '1', status: 'in_progress' },
+          })
+        );
+
+        expect(update.structured).toEqual([
+          expect.objectContaining({
+            type: 'todo_update',
+            items: [
+              {
+                label: 'Research codebase',
+                detail: 'Explore formatter tests',
+                status: 'in_progress',
+              },
+            ],
+          }),
+        ]);
+
+        const result = formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-update-error',
+            content: 'TaskUpdate failed',
+            isError: true,
+          })
+        );
+
+        expect(result.structured).toEqual([
+          expect.objectContaining({
+            type: 'todo_update',
+            items: [
+              {
+                label: 'Research codebase',
+                detail: 'Explore formatter tests',
+                status: 'pending',
+              },
+            ],
+          }),
+          expect.objectContaining({
+            type: 'llm_tool_result',
+            toolName: 'TaskUpdate',
+          }),
+        ]);
+      });
+
+      test('failed earlier TaskUpdate does not roll back a later successful TaskUpdate on the same task', () => {
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'task-create-1',
+            name: 'TaskCreate',
+            input: { subject: 'Research codebase' },
+          })
+        );
+        formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-create-1',
+            content: 'Task #1 created successfully: Research codebase',
+          })
+        );
+
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'task-update-A',
+            name: 'TaskUpdate',
+            input: { taskId: '1', status: 'in_progress' },
+          })
+        );
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'task-update-B',
+            name: 'TaskUpdate',
+            input: { taskId: '1', status: 'completed' },
+          })
+        );
+
+        const errorResult = formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-update-A',
+            content: 'TaskUpdate A failed',
+            isError: true,
+          })
+        );
+
+        // Update A errored, but B already succeeded locally — do not clobber B's status.
+        expect(errorResult.structured).toEqual([
+          expect.objectContaining({
+            type: 'llm_tool_result',
+            toolName: 'TaskUpdate',
+          }),
+        ]);
+
+        const successResult = formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-update-B',
+            content: 'Updated task #1 status',
+          })
+        );
+
+        expect(successResult.structured).toEqual([]);
+      });
+
+      test('TaskCreate error result falls through to llm_tool_result', () => {
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'task-create-1',
+            name: 'TaskCreate',
+            input: { subject: 'Research codebase' },
+          })
+        );
+
+        const result = formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-create-1',
+            content: 'TaskCreate failed',
+            isError: true,
+          })
+        );
+
+        expect(result.structured).toEqual([
+          expect.objectContaining({
+            type: 'llm_tool_result',
+            toolName: 'TaskCreate',
+          }),
+        ]);
+      });
+
+      test('TaskCreate unparseable result falls through to llm_tool_result', () => {
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'task-create-1',
+            name: 'TaskCreate',
+            input: { subject: 'Research codebase' },
+          })
+        );
+
+        const result = formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-create-1',
+            content: 'Created a task without an assigned id',
+          })
+        );
+
+        expect(result.structured).toEqual([
+          expect.objectContaining({
+            type: 'llm_tool_result',
+            toolName: 'TaskCreate',
+          }),
+        ]);
+      });
+
+      test('TaskCreate and TaskUpdate state is isolated by session_id', () => {
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'session-a-create',
+            name: 'TaskCreate',
+            input: { subject: 'Session A task' },
+            sessionId: 'session-a',
+          })
+        );
+        formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'session-a-create',
+            content: 'Task #1 created successfully: Session A task',
+            sessionId: 'session-a',
+          })
+        );
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'session-b-create',
+            name: 'TaskCreate',
+            input: { subject: 'Session B task' },
+            sessionId: 'session-b',
+          })
+        );
+        formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'session-b-create',
+            content: 'Task #1 created successfully: Session B task',
+            sessionId: 'session-b',
+          })
+        );
+
+        const sessionAUpdate = formatJsonMessage(
+          toolUseMessage({
+            id: 'session-a-update',
+            name: 'TaskUpdate',
+            input: { taskId: '1', status: 'completed' },
+            sessionId: 'session-a',
+          })
+        );
+        const sessionBUpdate = formatJsonMessage(
+          toolUseMessage({
+            id: 'session-b-update',
+            name: 'TaskUpdate',
+            input: { taskId: '1', status: 'in_progress' },
+            sessionId: 'session-b',
+          })
+        );
+
+        expect(sessionAUpdate.structured).toEqual([
+          expect.objectContaining({
+            type: 'todo_update',
+            items: [{ label: 'Session A task', status: 'completed' }],
+          }),
+        ]);
+        expect(sessionBUpdate.structured).toEqual([
+          expect.objectContaining({
+            type: 'todo_update',
+            items: [{ label: 'Session B task', status: 'in_progress' }],
+          }),
+        ]);
+      });
+
+      test('resetToolUseCache clears pending creates and session task lists', () => {
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'pending-create',
+            name: 'TaskCreate',
+            input: { subject: 'Pending task' },
+          })
+        );
+        resetToolUseCache();
+
+        const pendingResult = formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'pending-create',
+            content: 'Task #1 created successfully: Pending task',
+          })
+        );
+        expect(pendingResult.structured).toEqual([
+          expect.objectContaining({
+            type: 'llm_tool_result',
+            toolName: '',
+          }),
+        ]);
+
+        formatJsonMessage(
+          toolUseMessage({
+            id: 'task-create-1',
+            name: 'TaskCreate',
+            input: { subject: 'Tracked task' },
+          })
+        );
+        formatJsonMessage(
+          toolResultMessage({
+            toolUseId: 'task-create-1',
+            content: 'Task #1 created successfully: Tracked task',
+          })
+        );
+        resetToolUseCache();
+
+        const updateAfterReset = formatJsonMessage(
+          toolUseMessage({
+            id: 'task-update-after-reset',
+            name: 'TaskUpdate',
+            input: { taskId: '1', status: 'completed' },
+          })
+        );
+        expect(updateAfterReset.structured).toEqual([
+          expect.objectContaining({
+            type: 'llm_tool_use',
+            toolName: 'TaskUpdate',
+          }),
+        ]);
+      });
     });
 
     test('maps rate_limit_event to llm_status with detail for terminal/gui rendering', () => {

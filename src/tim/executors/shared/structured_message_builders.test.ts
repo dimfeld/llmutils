@@ -20,8 +20,9 @@ describe('structured_message_builders', () => {
 
   test('builds todo_update payload', () => {
     const message = buildTodoUpdate('codex', timestamp, [
-      { label: 'Update docs', status: 'in_progress' },
+      { label: 'Update docs', status: 'in_progress', detail: 'Document the new field' },
       { label: 'Unclear state', status: 'custom_value' },
+      { label: 'No detail', status: 'pending', detail: '   ' },
     ]);
 
     expect(message).toEqual({
@@ -29,8 +30,9 @@ describe('structured_message_builders', () => {
       timestamp,
       source: 'codex',
       items: [
-        { label: 'Update docs', status: 'in_progress' },
+        { label: 'Update docs', status: 'in_progress', detail: 'Document the new field' },
         { label: 'Unclear state', status: 'unknown' },
+        { label: 'No detail', status: 'pending' },
       ],
     });
   });

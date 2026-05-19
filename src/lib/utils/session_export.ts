@@ -49,7 +49,8 @@ export function formatMessageAsMarkdown(message: DisplayMessage): string {
     case 'todoList': {
       const lines = body.items.map((item) => {
         const checkbox = todoStatusToCheckbox(item.status);
-        return `${checkbox} ${item.label}`;
+        const detail = item.detail?.trim();
+        return `${checkbox} ${detail ? `${item.label} (${detail})` : item.label}`;
       });
       const explanation = body.explanation ? `\n${body.explanation}` : '';
       return `${prefix}${explanation}\n${lines.join('\n')}`;

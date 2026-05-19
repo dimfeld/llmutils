@@ -76,7 +76,7 @@ describe('formatMessageAsMarkdown', () => {
         type: 'todoList',
         items: [
           { label: 'Done task', status: 'completed' },
-          { label: 'Pending task', status: 'pending' },
+          { label: 'Pending task', status: 'pending', detail: 'Needs follow-up' },
           { label: 'Active task', status: 'in_progress' },
           { label: 'Blocked task', status: 'blocked' },
           { label: 'Unknown task', status: 'unknown' },
@@ -86,7 +86,7 @@ describe('formatMessageAsMarkdown', () => {
     });
     const result = formatMessageAsMarkdown(msg);
     expect(result).toContain('- [x] Done task');
-    expect(result).toContain('- [ ] Pending task');
+    expect(result).toContain('- [ ] Pending task (Needs follow-up)');
     expect(result).toContain('- [>] Active task');
     expect(result).toContain('- [-] Blocked task');
     expect(result).toContain('- [ ] Unknown task');

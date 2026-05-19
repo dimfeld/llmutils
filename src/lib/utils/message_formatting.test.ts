@@ -157,7 +157,11 @@ describe('message_formatting', () => {
       formatStructuredMessage({
         type: 'todo_update',
         items: [
-          { label: 'Investigate failures', status: 'completed' },
+          {
+            label: 'Investigate failures',
+            status: 'completed',
+            detail: 'Trace the formatter path',
+          },
           { label: 'Add formatter tests', status: 'in_progress' },
         ],
         explanation: 'Working through the remaining gaps',
@@ -165,7 +169,11 @@ describe('message_formatting', () => {
     ).toEqual({
       type: 'todoList',
       items: [
-        { label: 'Investigate failures', status: 'completed' },
+        {
+          label: 'Investigate failures',
+          status: 'completed',
+          detail: 'Trace the formatter path',
+        },
         { label: 'Add formatter tests', status: 'in_progress' },
       ],
       explanation: 'Working through the remaining gaps',
