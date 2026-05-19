@@ -18,7 +18,6 @@
     actioning: boolean;
     linkedPlanUuid: string | null;
     submission?: PrReviewSubmissionRow | null;
-    allowIssueActions?: boolean;
     showSubmissionStatus?: boolean;
     rootId?: string;
     highlighted?: boolean;
@@ -38,7 +37,6 @@
     actioning,
     linkedPlanUuid,
     submission = null,
-    allowIssueActions = true,
     showSubmissionStatus = true,
     rootId,
     highlighted = false,
@@ -246,7 +244,7 @@
           </div>
 
           <div class="flex flex-wrap items-center gap-1.5">
-            {#if allowIssueActions && linkedPlanUuid}
+            {#if linkedPlanUuid}
               <button
                 type="button"
                 onclick={() => onAddToPlan(issue)}
@@ -258,43 +256,41 @@
               </button>
             {/if}
 
-            {#if allowIssueActions}
-              <button
-                type="button"
-                onclick={handleToggleResolved}
-                disabled={actioning}
-                class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
-                title={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
-                aria-label={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
-              >
-                {#if issue.resolved}
-                  <CheckCircle class="size-3 @sm:size-3.5" />
-                {:else}
-                  <Circle class="size-3 @sm:size-3.5" />
-                {/if}
-                {issue.resolved ? 'Mark unresolved' : 'Mark resolved'}
-              </button>
+            <button
+              type="button"
+              onclick={handleToggleResolved}
+              disabled={actioning}
+              class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
+              title={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
+              aria-label={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
+            >
+              {#if issue.resolved}
+                <CheckCircle class="size-3 @sm:size-3.5" />
+              {:else}
+                <Circle class="size-3 @sm:size-3.5" />
+              {/if}
+              {issue.resolved ? 'Mark unresolved' : 'Mark resolved'}
+            </button>
 
-              <button
-                type="button"
-                onclick={startEditing}
-                disabled={actioning}
-                class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
-              >
-                <Pencil class="size-3 @sm:size-3.5" />
-                Edit
-              </button>
+            <button
+              type="button"
+              onclick={startEditing}
+              disabled={actioning}
+              class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
+            >
+              <Pencil class="size-3 @sm:size-3.5" />
+              Edit
+            </button>
 
-              <button
-                type="button"
-                onclick={() => onDelete(issue)}
-                disabled={actioning}
-                class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
-              >
-                <Trash class="size-3 @sm:size-3.5" />
-                Delete issue
-              </button>
-            {/if}
+            <button
+              type="button"
+              onclick={() => onDelete(issue)}
+              disabled={actioning}
+              class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
+            >
+              <Trash class="size-3 @sm:size-3.5" />
+              Delete issue
+            </button>
           </div>
         </div>
       {/if}

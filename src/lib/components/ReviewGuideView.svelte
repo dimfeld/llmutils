@@ -251,7 +251,7 @@
 
     const patch =
       guideSegments[diffIndex]?.type === 'unified-diff' ? guideSegments[diffIndex].patch : null;
-    const flags = computeReviewGuideDiffOverrideFlags(filename, allowGithubSubmission);
+    const flags = computeReviewGuideDiffOverrideFlags(filename);
     const override: DiffOverrides = {
       id: getReviewGuideDiffId(filename, patch ?? ''),
       lineAnnotations,
@@ -1003,7 +1003,6 @@
                       highlighted={highlightedIssueId === issue.id}
                       actioning={isIssueActioning(issue.id)}
                       {linkedPlanUuid}
-                      allowIssueActions={allowGithubSubmission}
                       showSubmissionStatus={allowGithubSubmission}
                       submission={allowGithubSubmission && issue.submittedInPrReviewId != null
                         ? (submissionsById.get(issue.submittedInPrReviewId) ?? null)
@@ -1044,7 +1043,7 @@
     />
   {/if}
 
-  {#if allowGithubSubmission && newIssueModalState}
+  {#if newIssueModalState}
     <NewReviewIssueModal
       open={true}
       reviewId={review.id}

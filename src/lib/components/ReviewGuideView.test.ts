@@ -81,10 +81,10 @@ describe('ReviewGuideView', () => {
     expect(body).not.toContain('Linked plans:');
     expect(body).not.toContain('Submit Review');
     expect(body).not.toContain('Submitted in review');
-    expect(body).not.toContain('Add to plan as a task');
-    expect(body).not.toContain('Mark resolved');
-    expect(body).not.toContain('Edit');
-    expect(body).not.toContain('Delete issue');
+    expect(body).toContain('Add to plan as a task');
+    expect(body).toContain('Edit');
+    expect(body).toContain('Mark resolved');
+    expect(body).toContain('Delete issue');
   });
 
   test('shows PR review controls when GitHub submission is allowed', () => {

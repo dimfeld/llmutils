@@ -1,9 +1,7 @@
 /**
- * Compute whether a review-guide diff segment should expose interactive
- * issue-creation affordances (line selection and the gutter "add issue"
- * button). These must be gated together with the issue-management controls
- * (resolve/edit/delete) so plan-only viewers don't create orphaned issues
- * via the gutter when the management UI is hidden.
+ * Compute whether a review-guide diff segment should expose the gutter
+ * "add issue" button. Requires a filename — diff segments without one
+ * (e.g. pre-diff context) can't anchor a new issue.
  */
 export interface ReviewGuideDiffOverrideFlags {
   enableLineSelection: boolean;
@@ -12,12 +10,11 @@ export interface ReviewGuideDiffOverrideFlags {
 }
 
 export function computeReviewGuideDiffOverrideFlags(
-  filename: string | null,
-  allowIssueActions: boolean
+  filename: string | null
 ): ReviewGuideDiffOverrideFlags {
-  const canAddIssues = filename != null && allowIssueActions;
+  const canAddIssues = filename != null;
   return {
-    enableLineSelection: allowIssueActions,
+    enableLineSelection: true,
     enableGutterUtility: canAddIssues,
     exposeGutterClick: canAddIssues,
   };
