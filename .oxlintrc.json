@@ -23,18 +23,18 @@
     "typescript/no-redundant-type-constituents": "off",
     "typescript/unbound-method": "off",
     "no-unused-vars": "warn",
-    "no-unsafe-finally": "off"
+    "no-unsafe-finally": "off",
+    "typescript/no-floating-promises": [
+      "error",
+      {
+        "allowForKnownSafeCalls": ["goto", "invalidate", "invalidateAll", "refresh"]
+      }
+    ]
   },
   "env": {
     "builtin": true
   },
   "overrides": [
-    {
-      "files": ["*.remote.ts"],
-      "rules": {
-        "typescript/no-floating-promises": "off"
-      }
-    },
     {
       "files": ["**/*.test.ts", "**/test-*.ts", "**/*.test-d.ts", "**/__tests__/*"],
       "rules": {
