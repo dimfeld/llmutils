@@ -1147,6 +1147,12 @@ const migrations: Migration[] = [
     up: `SELECT 1;`,
     afterUp: addReviewPlanLinkage,
   },
+  {
+    version: 38,
+    requiresFkOff: true,
+    up: `SELECT 1;`,
+    afterUp: rebuildReviewIssueForNoteSeverity,
+  },
 ];
 
 function addReviewPlanLinkage(db: Database): void {
@@ -1230,6 +1236,74 @@ function addReviewPlanLinkage(db: Database): void {
     BEGIN
       DELETE FROM review WHERE plan_uuid = OLD.uuid AND pr_url IS NULL;
     END;
+  `);
+}
+
+function rebuildReviewIssueForNoteSeverity(db: Database): void {
+  if (!tableExists(db, 'review_issue')) {
+    return;
+  }
+
+  db.run(`
+    CREATE TABLE review_issue_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
+      severity TEXT NOT NULL
+        CHECK(severity IN ('critical', 'major', 'minor', 'info', 'note')),
+      category TEXT NOT NULL
+        CHECK(category IN ('security', 'performance', 'bug', 'style', 'compliance', 'testing', 'other')),
+      content TEXT NOT NULL,
+      file TEXT,
+      line TEXT,
+      start_line TEXT,
+      suggestion TEXT,
+      source TEXT
+        CHECK(source IN ('claude-code', 'codex-cli', 'combined')),
+      side TEXT,
+      resolved INTEGER NOT NULL DEFAULT 0,
+      submitted_in_pr_review_id INTEGER REFERENCES pr_review_submission(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+      updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+    );
+
+    INSERT INTO review_issue_new (
+      id,
+      review_id,
+      severity,
+      category,
+      content,
+      file,
+      line,
+      start_line,
+      suggestion,
+      source,
+      side,
+      resolved,
+      submitted_in_pr_review_id,
+      created_at,
+      updated_at
+    )
+    SELECT
+      id,
+      review_id,
+      severity,
+      category,
+      content,
+      file,
+      line,
+      start_line,
+      suggestion,
+      source,
+      side,
+      resolved,
+      submitted_in_pr_review_id,
+      created_at,
+      updated_at
+    FROM review_issue;
+
+    DROP TABLE review_issue;
+    ALTER TABLE review_issue_new RENAME TO review_issue;
+    CREATE INDEX idx_review_issue_review_id ON review_issue(review_id);
   `);
 }
 

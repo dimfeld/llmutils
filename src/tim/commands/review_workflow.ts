@@ -16,6 +16,7 @@ import {
   type ReviewCategory,
   type ReviewIssueSource,
   type ReviewRow,
+  type ReviewSeverity as DbReviewSeverity,
   updateReview,
 } from '../db/review.js';
 import { buildExecutorAndLog } from '../executors/index.js';
@@ -87,7 +88,8 @@ type CombinationIssue = {
   source: ReviewIssueSource;
 };
 
-type StoredReviewIssue = Omit<ReviewIssue, 'source' | 'file' | 'line'> & {
+export type StoredReviewIssue = Omit<ReviewIssue, 'severity' | 'source' | 'file' | 'line'> & {
+  severity: DbReviewSeverity;
   file?: string | null;
   line?: string | number | null;
   source?: ReviewIssueSource;
@@ -188,7 +190,12 @@ function parseUnifiedDiffHunkHeader(headerLine: string): {
   }
 
   const [, oldStart, oldCount, newStart, newCount] = match;
-  const formatRange = (start: string, count: string | undefined): string => {
+  const formatRange = (start: string, count: string | undefined): string | null => {
+    // A zero-count hunk side (e.g. `+9,0` for a pure deletion) has no lines on
+    // that side; return null so callers can prefer the non-empty side.
+    if (count === '0') {
+      return null;
+    }
     if (!count || count === '1') {
       return start;
     }
@@ -429,7 +436,7 @@ function parseCombinationIssues(rawOutput: string): StoredReviewIssue[] {
   return normalized;
 }
 
-function toInsertIssue(issue: StoredReviewIssue): InsertReviewIssueInput {
+export function toInsertIssue(issue: StoredReviewIssue): InsertReviewIssueInput {
   const { startLine, line } = parseLineRange(issue.line);
   return {
     severity: issue.severity,
@@ -440,7 +447,27 @@ function toInsertIssue(issue: StoredReviewIssue): InsertReviewIssueInput {
     startLine,
     suggestion: issue.suggestion ?? null,
     source: issue.source ?? null,
+    // Default actionable executor-emitted issues to RIGHT so the GitHub
+    // submission partitioner can inline findings on context lines. Notes go
+    // through annotationToInsertIssue and preserve nullable side.
+    side: 'RIGHT',
     resolved: false,
+  };
+}
+
+function annotationToInsertIssue(annotation: ExtractedAnnotation): InsertReviewIssueInput {
+  return {
+    severity: 'note',
+    category: 'other',
+    content: annotation.content,
+    file: annotation.file,
+    line: annotation.line,
+    startLine: annotation.startLine,
+    suggestion: null,
+    source: null,
+    side: annotation.side,
+    resolved: false,
+    submittedInPrReviewId: null,
   };
 }
 
@@ -459,9 +486,14 @@ function sortIssues(issues: StoredReviewIssue[]): StoredReviewIssue[] {
 }
 
 function summarizeTopIssues(issues: StoredReviewIssue[]): string[] {
-  const severityRank: Record<string, number> = { critical: 0, major: 1, minor: 2, info: 3 };
+  const severityRank: Record<string, number> = {
+    critical: 0,
+    major: 1,
+    minor: 2,
+    info: 3,
+  };
   const important = issues
-    .filter((issue) => issue.severity !== 'info')
+    .filter((issue) => issue.severity !== 'info' && issue.severity !== 'note')
     .toSorted((a, b) => (severityRank[a.severity] ?? 3) - (severityRank[b.severity] ?? 3))
     .slice(0, 5);
   return important.map((issue, index) => {
@@ -594,6 +626,289 @@ function joinUnifiedDiffSections(sections: string[]): string {
 }
 
 const DIFF_REF_TAG_REGEX = /<diff\s+ref=(?:"([^"]+)"|'([^']+)')\s*\/>/g;
+const ANNOTATION_TAG_REGEX = /<annotation\b([^>]*)>([\s\S]*?)<\/annotation>/g;
+// Matches an opening fenced-code-block delimiter: 3+ backticks or tildes, with
+// an optional info string after. CommonMark allows arbitrary info-string text
+// after the opener.
+const FENCE_OPEN_LINE_REGEX = /^[ \t]{0,3}(`{3,}|~{3,})/;
+// Matches a closing fenced-code-block delimiter: 3+ backticks or tildes
+// followed only by trailing whitespace. A language tag like ```ts is NOT a
+// valid close — it can only open a new fence.
+const FENCE_CLOSE_LINE_REGEX = /^[ \t]{0,3}(`{3,}|~{3,})[ \t]*$/;
+const ANNOTATION_ATTRIBUTE_REGEX = /(?:^|\s)(file|line)=(?:"([^"]*)"|'([^']*)')/g;
+
+export interface ExtractedAnnotation {
+  file: string | null;
+  line: string | null;
+  startLine: string | null;
+  content: string;
+  // When anchoring to a diff ref's hunk, side indicates which side of a split
+  // diff should receive the note. null means the renderer infers the side
+  // per-anchor from the surrounding hunk's old/new ranges; ambiguous overlaps
+  // fall back to the additions side so plain file/line annotations still
+  // render inline.
+  side: 'LEFT' | 'RIGHT' | null;
+}
+
+function parseAnnotationAttributes(attrString: string): {
+  file: string | null;
+  line: string | null;
+} {
+  const attributes: { file: string | null; line: string | null } = {
+    file: null,
+    line: null,
+  };
+
+  ANNOTATION_ATTRIBUTE_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = ANNOTATION_ATTRIBUTE_REGEX.exec(attrString)) !== null) {
+    const key = match[1];
+    const value = match[2] ?? match[3] ?? '';
+    if (key === 'file') {
+      attributes.file = value.trim() || null;
+    } else if (key === 'line') {
+      attributes.line = value.trim() || null;
+    }
+  }
+
+  return attributes;
+}
+
+function getFirstLineFromRange(range: string | null): string | null {
+  if (!range) {
+    return null;
+  }
+
+  const trimmed = range.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.split(/[-\u2013]/, 1)[0]?.trim() || null;
+}
+
+function parseNumericLineInterval(lineRange: string | null): { min: number; max: number } | null {
+  const { startLine, line } = parseLineRange(lineRange);
+  if (line == null) {
+    return null;
+  }
+
+  const start = startLine ?? line;
+  if (!/^\d+$/.test(start) || !/^\d+$/.test(line)) {
+    return null;
+  }
+
+  const startNumber = Number(start);
+  const endNumber = Number(line);
+  return {
+    min: Math.min(startNumber, endNumber),
+    max: Math.max(startNumber, endNumber),
+  };
+}
+
+// Annotation/issue `line` values support comma-separated anchors (e.g. "5,11").
+// Split on commas and parse each segment into a numeric interval; segments that
+// don't parse (non-numeric, blank) are dropped.
+function parseNumericLineIntervalCandidates(
+  lineRange: string | null
+): Array<{ min: number; max: number }> {
+  if (lineRange == null) {
+    return [];
+  }
+  const text = String(lineRange).trim();
+  if (!text) {
+    return [];
+  }
+  if (!text.includes(',')) {
+    const single = parseNumericLineInterval(text);
+    return single ? [single] : [];
+  }
+  const out: Array<{ min: number; max: number }> = [];
+  for (const part of text.split(',')) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const interval = parseNumericLineInterval(trimmed);
+    if (interval) out.push(interval);
+  }
+  return out;
+}
+
+function lineIntervalsOverlap(
+  left: { min: number; max: number } | null,
+  right: { min: number; max: number } | null
+): boolean {
+  if (left == null || right == null) {
+    return false;
+  }
+
+  return left.min <= right.max && right.min <= left.max;
+}
+
+function classifyLineIntervalAgainstDiffRanges(
+  candidate: { min: number; max: number },
+  oldInterval: { min: number; max: number } | null,
+  newInterval: { min: number; max: number } | null
+): 'LEFT' | 'RIGHT' | 'BOTH' | 'NEITHER' {
+  const overlapsOld = lineIntervalsOverlap(candidate, oldInterval);
+  const overlapsNew = lineIntervalsOverlap(candidate, newInterval);
+  if (overlapsOld && overlapsNew) {
+    return 'BOTH';
+  }
+  if (overlapsOld) {
+    return 'LEFT';
+  }
+  if (overlapsNew) {
+    return 'RIGHT';
+  }
+  return 'NEITHER';
+}
+
+function deriveSideForMixedDiffRefLine(
+  lineRange: string | null,
+  oldRange: string | null,
+  newRange: string | null
+): 'LEFT' | 'RIGHT' | null {
+  const oldInterval = parseNumericLineInterval(oldRange);
+  const newInterval = parseNumericLineInterval(newRange);
+  const classifications = parseNumericLineIntervalCandidates(lineRange).map((candidate) =>
+    classifyLineIntervalAgainstDiffRanges(candidate, oldInterval, newInterval)
+  );
+
+  if (classifications.length === 0 || classifications.includes('BOTH')) {
+    return null;
+  }
+
+  const firstClassification = classifications[0];
+  if (
+    (firstClassification === 'LEFT' || firstClassification === 'RIGHT') &&
+    classifications.every((classification) => classification === firstClassification)
+  ) {
+    return firstClassification;
+  }
+
+  return null;
+}
+
+function trimBoundaryNewlines(content: string): string {
+  return content.replace(/^(?:\r?\n)+/, '').replace(/(?:\r?\n)+$/, '');
+}
+
+function segmentGuideByFences(guideText: string): Array<{ kind: 'prose' | 'fence'; text: string }> {
+  const segments: Array<{ kind: 'prose' | 'fence'; text: string }> = [];
+  const lines = guideText.split('\n');
+  let buffer: string[] = [];
+  // Track the full opening fence delimiter so the closing fence must match its
+  // character AND be at least as long (per CommonMark). A four-backtick fence
+  // must not be closed by a three-backtick line.
+  let fenceMarker: string | null = null;
+
+  const pushBuffer = (kind: 'prose' | 'fence') => {
+    if (buffer.length === 0) return;
+    segments.push({ kind, text: buffer.join('') });
+    buffer = [];
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const isLast = i === lines.length - 1;
+    const lineWithNewline = isLast ? line : line + '\n';
+    if (fenceMarker === null) {
+      const openMatch = line.match(FENCE_OPEN_LINE_REGEX);
+      if (openMatch) {
+        pushBuffer('prose');
+        fenceMarker = openMatch[1];
+        buffer.push(lineWithNewline);
+      } else {
+        buffer.push(lineWithNewline);
+      }
+    } else {
+      buffer.push(lineWithNewline);
+      const closeMatch = line.match(FENCE_CLOSE_LINE_REGEX);
+      if (
+        closeMatch &&
+        closeMatch[1][0] === fenceMarker[0] &&
+        closeMatch[1].length >= fenceMarker.length
+      ) {
+        pushBuffer('fence');
+        fenceMarker = null;
+      }
+    }
+  }
+
+  // Unterminated fence: treat the remaining buffer as a fence so we don't
+  // accidentally extract annotations from inside an unclosed code block.
+  pushBuffer(fenceMarker === null ? 'prose' : 'fence');
+  return segments;
+}
+
+export function extractReviewGuideAnnotations(options: {
+  guideText: string;
+  diffCatalog: ReviewGuideDiffCatalogEntry[] | null;
+}): { guideText: string; annotations: ExtractedAnnotation[] } {
+  const annotations: ExtractedAnnotation[] = [];
+  const diffRefMap = new Map((options.diffCatalog ?? []).map((entry) => [entry.ref, entry]));
+
+  const extractFromProse = (segment: string): string => {
+    ANNOTATION_TAG_REGEX.lastIndex = 0;
+    return segment.replace(ANNOTATION_TAG_REGEX, (_fullMatch, attrString, rawContent) => {
+      const attributes = parseAnnotationAttributes(String(attrString ?? ''));
+      const refEntry = attributes.file ? diffRefMap.get(attributes.file) : undefined;
+      // When file= resolves to a diff ref, derive side from the ref's ranges.
+      // Auto-anchor line when line= is missing: prefer newRange (RIGHT) but
+      // fall back to oldRange (LEFT) for pure-deletion hunks.
+      let derivedLine: string | null = attributes.line;
+      let derivedSide: 'LEFT' | 'RIGHT' | null = null;
+      if (refEntry) {
+        const hasNewRange = getFirstLineFromRange(refEntry.newRange) != null;
+        const hasOldRange = getFirstLineFromRange(refEntry.oldRange) != null;
+        if (derivedLine == null) {
+          if (hasNewRange) {
+            derivedLine = getFirstLineFromRange(refEntry.newRange);
+            derivedSide = 'RIGHT';
+          } else if (hasOldRange) {
+            derivedLine = getFirstLineFromRange(refEntry.oldRange);
+            derivedSide = 'LEFT';
+          }
+        } else if (!hasNewRange && hasOldRange) {
+          // Pure-deletion hunk with an explicit line: place on LEFT.
+          derivedSide = 'LEFT';
+        } else if (hasNewRange && !hasOldRange) {
+          // Pure-addition hunk with an explicit line: place on RIGHT.
+          derivedSide = 'RIGHT';
+        } else if (hasNewRange && hasOldRange) {
+          // Explicit `line=` may carry comma-separated anchors. Force a side
+          // only when every parsed anchor unambiguously belongs to the same
+          // side. For ambiguous / out-of-range / cross-side cases the helper
+          // returns null, and review_detail_utils infers the per-anchor side
+          // from the hunk ranges at render time.
+          derivedSide = deriveSideForMixedDiffRefLine(
+            derivedLine,
+            refEntry.oldRange,
+            refEntry.newRange
+          );
+        }
+      }
+      const { startLine, line } = parseLineRange(derivedLine);
+
+      annotations.push({
+        file: refEntry ? refEntry.filePath : attributes.file,
+        line,
+        startLine,
+        content: trimBoundaryNewlines(String(rawContent ?? '')),
+        side: derivedSide,
+      });
+
+      return '';
+    });
+  };
+
+  const segments = segmentGuideByFences(options.guideText);
+  const result = segments
+    .map((segment) => (segment.kind === 'prose' ? extractFromProse(segment.text) : segment.text))
+    .join('');
+
+  return { guideText: result, annotations };
+}
 
 export function expandReviewGuideDiffReferences(options: {
   guideText: string;
@@ -1019,9 +1334,16 @@ function getExecutorNames(
   return selection === 'both' ? ['claude-code', 'codex-cli'] : [selection];
 }
 
-function toFormatterIssue(issue: StoredReviewIssue): ReviewIssue {
+function toFormatterIssue(issue: StoredReviewIssue): ReviewIssue | null {
+  // Notes are descriptive guide annotations, not actionable review findings, so keep them
+  // out of formatter summaries instead of silently folding them into another severity.
+  if (issue.severity === 'note') {
+    return null;
+  }
+
   return {
     ...issue,
+    severity: issue.severity,
     file: issue.file ?? undefined,
     line: issue.line ?? undefined,
     source:
@@ -1187,6 +1509,7 @@ export async function runReviewGuideWorkflow(
 
       let finalIssues: StoredReviewIssue[] = [];
       let reviewGuide = claudeGuideResult?.guideText ?? null;
+      let extractedAnnotations: ExtractedAnnotation[] = [];
 
       if (reviewGuide) {
         try {
@@ -1226,6 +1549,13 @@ export async function runReviewGuideWorkflow(
             );
           }
         }
+
+        const annotationResult = extractReviewGuideAnnotations({
+          guideText: reviewGuide,
+          diffCatalog: options.diffCatalog,
+        });
+        reviewGuide = annotationResult.guideText;
+        extractedAnnotations = annotationResult.annotations;
       }
 
       if (claudeIssuesResult && codexResult) {
@@ -1252,10 +1582,11 @@ export async function runReviewGuideWorkflow(
       }
 
       finalIssues = sortIssues(finalIssues);
+      const noteIssues = extractedAnnotations.map(annotationToInsertIssue);
 
       insertReviewIssues(options.db, {
         reviewId: options.review.id,
-        issues: finalIssues.map(toInsertIssue),
+        issues: [...finalIssues.map(toInsertIssue), ...noteIssues],
       });
 
       updateReview(options.db, options.review.id, {
@@ -1265,7 +1596,9 @@ export async function runReviewGuideWorkflow(
         errorMessage: null,
       });
 
-      const formatterIssues = finalIssues.map(toFormatterIssue);
+      const formatterIssues = finalIssues
+        .map(toFormatterIssue)
+        .filter((issue): issue is ReviewIssue => issue != null);
       const summary = generateReviewSummary(formatterIssues, options.filesReviewed ?? 0);
       log(chalk.green(`Review complete for ${options.completionLabel ?? subjectTag}`));
       log(

@@ -52,8 +52,9 @@
   }: Props = $props();
 
   let canJumpToDiff = $derived(Boolean(onJumpToDiff && issue.file && issue.line));
+  let isNote = $derived(issue.severity === 'note');
 
-  let expanded = $state(untrack(() => !issue.resolved));
+  let expanded = $state(untrack(() => issue.severity === 'note' || !issue.resolved));
   let editing = $state(false);
   let saving = $state(false);
 
@@ -109,7 +110,8 @@
 <li
   id={rootId}
   data-highlighted={highlighted ? 'true' : undefined}
-  class="rounded-md border border-border bg-card text-xs transition-shadow duration-500 data-[highlighted=true]:ring-2 data-[highlighted=true]:ring-blue-500 data-[highlighted=true]:ring-offset-2 data-[highlighted=true]:ring-offset-background @sm:text-sm {issue.resolved
+  class="rounded-md border border-border bg-card text-xs transition-shadow duration-500 data-[highlighted=true]:ring-2 data-[highlighted=true]:ring-blue-500 data-[highlighted=true]:ring-offset-2 data-[highlighted=true]:ring-offset-background @sm:text-sm {!isNote &&
+  issue.resolved
     ? 'opacity-50'
     : ''}"
 >
@@ -136,21 +138,29 @@
     </span>
     <div class="min-w-0 flex-1">
       <div class="flex flex-wrap items-center gap-1">
-        <span
-          class="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium @sm:text-xs {categoryBadgeClass(
-            issue.category
-          )}"
-        >
-          {formatCategory(issue.category)}
-        </span>
-        {#if issue.resolved}
+        {#if isNote}
+          <span
+            class="inline-flex items-center rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-700 @sm:text-xs dark:bg-slate-800 dark:text-slate-300"
+          >
+            Note
+          </span>
+        {:else}
+          <span
+            class="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium @sm:text-xs {categoryBadgeClass(
+              issue.category
+            )}"
+          >
+            {formatCategory(issue.category)}
+          </span>
+        {/if}
+        {#if !isNote && issue.resolved}
           <span
             class="inline-flex items-center rounded bg-emerald-100 px-1 py-0.5 text-[10px] font-medium text-emerald-800 @sm:text-xs dark:bg-emerald-900/30 dark:text-emerald-300"
           >
             Resolved
           </span>
         {/if}
-        {#if showSubmissionStatus && issue.submittedInPrReviewId != null}
+        {#if !isNote && showSubmissionStatus && issue.submittedInPrReviewId != null}
           {#if submission?.githubReviewUrl}
             <a
               href={submission.githubReviewUrl}
@@ -178,7 +188,9 @@
         {/if}
       </div>
       {#if !expanded}
-        <p class="mt-0.5 truncate text-foreground/70">{issue.content}</p>
+        <p class="mt-0.5 text-foreground/70 {isNote ? 'whitespace-pre-wrap' : 'truncate'}">
+          {issue.content}
+        </p>
       {/if}
     </div>
   </button>
@@ -190,8 +202,8 @@
         <ReviewIssueEditor {issue} {saving} onSave={handleSave} onCancel={handleCancel} />
       {:else}
         <div class="space-y-1">
-          <p class="text-foreground">{issue.content}</p>
-          {#if issue.suggestion}
+          <p class="text-foreground {isNote ? 'whitespace-pre-wrap' : ''}">{issue.content}</p>
+          {#if !isNote && issue.suggestion}
             <p class="text-muted-foreground">
               <span class="font-medium text-foreground">Suggestion:</span>
               {issue.suggestion}
@@ -244,7 +256,7 @@
           </div>
 
           <div class="flex flex-wrap items-center gap-1.5">
-            {#if linkedPlanUuid}
+            {#if !isNote && linkedPlanUuid}
               <button
                 type="button"
                 onclick={() => onAddToPlan(issue)}
@@ -256,21 +268,23 @@
               </button>
             {/if}
 
-            <button
-              type="button"
-              onclick={handleToggleResolved}
-              disabled={actioning}
-              class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
-              title={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
-              aria-label={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
-            >
-              {#if issue.resolved}
-                <CheckCircle class="size-3 @sm:size-3.5" />
-              {:else}
-                <Circle class="size-3 @sm:size-3.5" />
-              {/if}
-              {issue.resolved ? 'Mark unresolved' : 'Mark resolved'}
-            </button>
+            {#if !isNote}
+              <button
+                type="button"
+                onclick={handleToggleResolved}
+                disabled={actioning}
+                class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
+                title={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
+                aria-label={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
+              >
+                {#if issue.resolved}
+                  <CheckCircle class="size-3 @sm:size-3.5" />
+                {:else}
+                  <Circle class="size-3 @sm:size-3.5" />
+                {/if}
+                {issue.resolved ? 'Mark unresolved' : 'Mark resolved'}
+              </button>
+            {/if}
 
             <button
               type="button"

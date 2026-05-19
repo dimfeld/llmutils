@@ -256,6 +256,42 @@ test('saveReviewIssuesToPlan persists only the selected review issues', async ()
   expect(updatedPlan.reviewIssues).toEqual([reviewIssues[0]]);
 });
 
+test('saveReviewIssuesToPlan excludes note severity annotations', async () => {
+  await writeFile(join(testDir, '.tim.yml'), 'review: {}\n');
+  await writePlanToDb(
+    {
+      id: 11,
+      title: 'Save actionable review issues',
+      goal: 'Notes should not be saved for fix workflows',
+      details: 'Details',
+      tasks: [],
+    },
+    { cwdForIdentity: testDir }
+  );
+
+  const reviewIssues = [
+    {
+      id: 'issue-1',
+      severity: 'major',
+      category: 'bug',
+      content: 'Actionable issue',
+      file: 'src/actionable.ts',
+    },
+    {
+      id: 'issue-note',
+      severity: 'note',
+      category: 'other',
+      content: 'Descriptive annotation',
+      file: 'src/note.ts',
+    },
+  ] as any;
+
+  await saveReviewIssuesToPlan(11, reviewIssues, testDir);
+
+  const updatedPlan = (await resolvePlanByNumericId(11, testDir)).plan;
+  expect(updatedPlan.reviewIssues).toEqual([reviewIssues[0]]);
+});
+
 test('handleReviewCommand resolves plan by numeric ID', async () => {
   // Create a test plan in the DB
   await writePlanToDb(
@@ -3577,6 +3613,44 @@ describe('Autofix functionality', () => {
     expect(autofixPrompt).toContain('## Instructions');
     expect(autofixPrompt).toContain('Please fix all the issues identified in the review');
     expect(autofixPrompt).toContain('maintaining the plan requirements');
+  });
+
+  test('buildAutofixPrompt excludes note severity annotations', () => {
+    const planData = {
+      id: 42,
+      title: 'Test Plan',
+      goal: 'Test autofix prompt note filtering',
+      tasks: [],
+    };
+    const reviewResult = {
+      issues: [
+        {
+          id: 'issue-1',
+          severity: 'major',
+          category: 'bug',
+          content: 'Fix the actionable issue',
+          file: 'src/actionable.ts',
+        },
+        {
+          id: 'issue-note',
+          severity: 'note',
+          category: 'other',
+          content: 'Descriptive annotation only',
+          file: 'src/note.ts',
+        },
+      ],
+      rawOutput: 'raw output with note',
+    } as any;
+    const diffResult = {
+      baseBranch: 'main',
+      changedFiles: ['src/actionable.ts'],
+    } as any;
+
+    const autofixPrompt = buildAutofixPrompt(planData, reviewResult, diffResult);
+
+    expect(autofixPrompt).toContain('Fix the actionable issue');
+    expect(autofixPrompt).not.toContain('Descriptive annotation only');
+    expect(autofixPrompt).not.toContain('src/note.ts');
   });
 });
 

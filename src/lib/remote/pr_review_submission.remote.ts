@@ -7,6 +7,7 @@ import {
   appendIssuesToBody,
   buildDiffIndex,
   buildReviewComments,
+  filterReviewIssuesForSubmission,
   partitionIssuesForSubmission,
   submitPrReview,
   type ReviewIssueForSubmission,
@@ -28,6 +29,13 @@ import {
 import type { Database } from 'bun:sqlite';
 
 const reviewSeverityValues = ['critical', 'major', 'minor', 'info'] as const;
+// Update path accepts 'note' because the DB now allows it. The editor never
+// opens on note rows (Edit is hidden in the UI), but the schema must match
+// the widened DB ReviewSeverity so non-severity fields on a note can be
+// patched. updateReviewIssueFields enforces that severity transitions
+// to/from 'note' are rejected so notes cannot be created via this path
+// outside the annotation flow.
+const reviewSeverityUpdateValues = ['critical', 'major', 'minor', 'info', 'note'] as const;
 const reviewCategoryValues = [
   'security',
   'performance',
@@ -202,7 +210,9 @@ export const getSubmissionPartition = command(
     }
     requirePrUrl(review);
 
-    const selected = validateSubmittableIssues(db, reviewId, issueIds);
+    const selected = filterReviewIssuesForSubmission(
+      validateSubmittableIssues(db, reviewId, issueIds)
+    );
     // Body-only submissions don't need a diff. When there are no selected issues, skip the
     // compare API entirely: either keep the primary SHA, or switch to the fallback if one was
     // supplied. This path intentionally does not require `base_branch`, which may be null for
@@ -249,7 +259,7 @@ export const getSubmissionPartition = command(
 const updateReviewIssueFieldsSchema = z.object({
   issueId: z.number().int().positive(),
   patch: z.object({
-    severity: z.enum(reviewSeverityValues).optional(),
+    severity: z.enum(reviewSeverityUpdateValues).optional(),
     category: z.enum(reviewCategoryValues).optional(),
     file: nullableTrimmedTextSchema.optional(),
     startLine: anchorLineStringSchema.optional(),
@@ -284,6 +294,19 @@ export const updateReviewIssueFields = command(
     const existing = getReviewIssueById(db, issueId);
     if (!existing) {
       error(404, 'Review issue not found');
+    }
+
+    if ('severity' in patch && patch.severity != null) {
+      const isExistingNote = existing.severity === 'note';
+      const isPatchNote = patch.severity === 'note';
+      if (isExistingNote !== isPatchNote) {
+        error(
+          400,
+          isExistingNote
+            ? 'Cannot convert a note into an actionable review issue'
+            : 'Cannot convert a review issue into a note'
+        );
+      }
     }
 
     const mergedStartLine = 'startLine' in patch ? patch.startLine : existing.start_line;
@@ -506,7 +529,9 @@ export const submitReviewToGitHub = command(
     }
     const prUrl = requirePrUrl(review);
 
-    const selectedIssues = validateSubmittableIssues(db, reviewId, issueIds);
+    const selectedIssues = filterReviewIssuesForSubmission(
+      validateSubmittableIssues(db, reviewId, issueIds)
+    );
     let usedCommitSha = commitSha;
     let fellBackToHead = false;
     let inlineable: ReturnType<typeof partitionIssuesForSubmission>['inlineable'] = [];

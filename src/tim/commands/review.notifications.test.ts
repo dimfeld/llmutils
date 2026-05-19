@@ -681,6 +681,162 @@ describe('review notifications', () => {
     expect(orderedEvents.indexOf('input_required')).toBeLessThan(orderedEvents.indexOf('select'));
   });
 
+  test('skips autofix execution for --autofix when review only has notes', async () => {
+    const { handleReviewCommand } = await import('./review.js');
+    const structuredMessages: StructuredMessage[] = [];
+
+    runReviewSpy.mockResolvedValueOnce({
+      reviewResult: {
+        summary: { totalIssues: 1 },
+        issues: [
+          {
+            id: 'note-1',
+            severity: 'note',
+            category: 'other',
+            content: 'Descriptive annotation only',
+            file: 'src/file.ts',
+            line: 10,
+          },
+        ],
+        recommendations: [],
+        actionItems: [],
+      },
+      rawOutput: 'notes found',
+      usedExecutors: ['claude-code'],
+      warnings: [],
+    } as any);
+
+    await runWithLogger(createStructuredCaptureAdapter(structuredMessages), () =>
+      handleReviewCommand(123, { noSave: true, autofix: true }, mockCommand)
+    );
+
+    expect(buildExecutorAndLogSpy).not.toHaveBeenCalled();
+    expect(checkboxSpy).not.toHaveBeenCalled();
+    expect(structuredMessages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'workflow_progress', phase: 'autofix' }),
+      ])
+    );
+  });
+
+  test('skips interactive autofix execution when selected action has only notes', async () => {
+    const { handleReviewCommand } = await import('./review.js');
+    const structuredMessages: StructuredMessage[] = [];
+
+    selectSpy.mockResolvedValueOnce('fix-codex' as any);
+    runReviewSpy.mockResolvedValueOnce({
+      reviewResult: {
+        summary: { totalIssues: 1 },
+        issues: [
+          {
+            id: 'note-1',
+            severity: 'note',
+            category: 'other',
+            content: 'Descriptive annotation only',
+            file: 'src/file.ts',
+            line: 10,
+          },
+        ],
+        recommendations: [],
+        actionItems: [],
+      },
+      rawOutput: 'notes found',
+      usedExecutors: ['claude-code'],
+      warnings: [],
+    } as any);
+
+    await runWithLogger(createStructuredCaptureAdapter(structuredMessages), () =>
+      handleReviewCommand(123, { noSave: true }, mockCommand)
+    );
+
+    expect(selectSpy).toHaveBeenCalled();
+    expect(checkboxSpy).not.toHaveBeenCalled();
+    expect(buildExecutorAndLogSpy).not.toHaveBeenCalled();
+    expect(structuredMessages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'workflow_progress', phase: 'autofix' }),
+      ])
+    );
+  });
+
+  test('skips cleanup plan creation for --create-cleanup-plan when review only has notes', async () => {
+    const { handleReviewCommand } = await import('./review.js');
+    const structuredMessages: StructuredMessage[] = [];
+
+    runReviewSpy.mockResolvedValueOnce({
+      reviewResult: {
+        summary: { totalIssues: 1 },
+        issues: [
+          {
+            id: 'note-1',
+            severity: 'note',
+            category: 'other',
+            content: 'Descriptive annotation only',
+            file: 'src/file.ts',
+            line: 10,
+          },
+        ],
+        recommendations: [],
+        actionItems: [],
+      },
+      rawOutput: 'notes found',
+      usedExecutors: ['claude-code'],
+      warnings: [],
+    } as any);
+
+    await runWithLogger(createStructuredCaptureAdapter(structuredMessages), () =>
+      handleReviewCommand(123, { noSave: true, createCleanupPlan: true }, mockCommand)
+    );
+
+    expect(createCleanupPlanSpy).not.toHaveBeenCalled();
+    expect(checkboxSpy).not.toHaveBeenCalled();
+    expect(structuredMessages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'workflow_progress', phase: 'cleanup' }),
+      ])
+    );
+  });
+
+  test('skips interactive cleanup plan creation when selected action has only notes', async () => {
+    const { handleReviewCommand } = await import('./review.js');
+    const structuredMessages: StructuredMessage[] = [];
+
+    selectSpy.mockResolvedValueOnce('cleanup' as any);
+    runReviewSpy.mockResolvedValueOnce({
+      reviewResult: {
+        summary: { totalIssues: 1 },
+        issues: [
+          {
+            id: 'note-1',
+            severity: 'note',
+            category: 'other',
+            content: 'Descriptive annotation only',
+            file: 'src/file.ts',
+            line: 10,
+          },
+        ],
+        recommendations: [],
+        actionItems: [],
+      },
+      rawOutput: 'notes found',
+      usedExecutors: ['claude-code'],
+      warnings: [],
+    } as any);
+
+    await runWithLogger(createStructuredCaptureAdapter(structuredMessages), () =>
+      handleReviewCommand(123, { noSave: true }, mockCommand)
+    );
+
+    expect(selectSpy).toHaveBeenCalled();
+    expect(checkboxSpy).not.toHaveBeenCalled();
+    expect(createCleanupPlanSpy).not.toHaveBeenCalled();
+    expect(structuredMessages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'workflow_progress', phase: 'cleanup' }),
+      ])
+    );
+  });
+
   test('emits workflow_progress for autofix and cleanup flows', async () => {
     const { handleReviewCommand } = await import('./review.js');
     const structuredMessages: StructuredMessage[] = [];

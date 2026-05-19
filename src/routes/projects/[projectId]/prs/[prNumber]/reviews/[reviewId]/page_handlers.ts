@@ -8,7 +8,7 @@ export interface EditableReviewIssueRow {
   file: string | null;
   start_line: string | null;
   line: string | null;
-  side: NonNullable<ReviewIssuePatch['side']>;
+  side: NonNullable<ReviewIssuePatch['side']> | null;
   content: string;
   suggestion: string | null;
 }

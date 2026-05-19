@@ -156,6 +156,67 @@ describe('buildAnnotationsForFile', () => {
     expect(annotations[0]?.metadata.lineLabel).toBe('22–33');
   });
 
+  it('picks the comma-separated candidate that overlaps the diff', () => {
+    // Diff covers lines 20-30. The issue lists 1, 3, 25 — only 25 is in the
+    // hunk, so the annotation should anchor there rather than be dropped or
+    // anchored to line 1.
+    const diffRanges: LineRange[] = [{ start: 20, end: 30, side: 'additions' }];
+    const annotations = buildAnnotationsForFile(
+      [makeIssue({ id: 50, file: 'src/a.ts', line: '1,3,25', side: 'RIGHT' })],
+      'src/a.ts',
+      diffRanges
+    );
+    expect(annotations).toHaveLength(1);
+    expect(annotations[0]?.lineNumber).toBe(25);
+  });
+
+  it('places a nullable-side anchor on additions when both sides overlap (same-number hunk)', () => {
+    // Regression: a plain `<annotation file="src/a.ts" line="11">` against a
+    // same-number modified hunk like `@@ -10,3 +10,3 @@` stores side=null.
+    // The renderer must still produce an inline annotation; defaulting to
+    // additions keeps the previous user-visible behaviour for non-cross-side
+    // anchors.
+    const diffRanges: LineRange[] = [
+      { start: 10, end: 12, side: 'deletions' },
+      { start: 10, end: 12, side: 'additions' },
+    ];
+    const annotations = buildAnnotationsForFile(
+      [makeIssue({ id: 53, file: 'src/a.ts', line: '11', side: null, severity: 'note' })],
+      'src/a.ts',
+      diffRanges
+    );
+
+    expect(annotations.map((annotation) => [annotation.side, annotation.lineNumber])).toEqual([
+      ['additions', 11],
+    ]);
+  });
+
+  it('resolves nullable-side comma candidates independently against mixed ranges', () => {
+    const diffRanges: LineRange[] = [
+      { start: 4, end: 6, side: 'deletions' },
+      { start: 10, end: 12, side: 'additions' },
+    ];
+    const annotations = buildAnnotationsForFile(
+      [makeIssue({ id: 52, file: 'src/a.ts', line: '5,11', side: null, severity: 'note' })],
+      'src/a.ts',
+      diffRanges
+    );
+
+    expect(annotations.map((annotation) => [annotation.side, annotation.lineNumber])).toEqual([
+      ['deletions', 5],
+      ['additions', 11],
+    ]);
+  });
+
+  it('falls back to the first comma-separated candidate when no diff is provided', () => {
+    const annotations = buildAnnotationsForFile(
+      [makeIssue({ id: 51, file: 'src/a.ts', line: '7,12,19', side: 'RIGHT' })],
+      'src/a.ts'
+    );
+    expect(annotations).toHaveLength(1);
+    expect(annotations[0]?.lineNumber).toBe(7);
+  });
+
   it('keeps original line when it is already in diff range', () => {
     const diffRanges: LineRange[] = [{ start: 10, end: 23, side: 'additions' }];
     const annotations = buildAnnotationsForFile(
@@ -360,5 +421,116 @@ describe('buildGuideDiffAnnotations', () => {
     expect(annotations.get(0)).toBeUndefined();
     expect(annotations.get(1)?.[0]?.lineNumber).toBe(21);
     expect(annotations.get(1)?.[0]?.metadata.issueId).toBe(42);
+  });
+
+  it('passes note-severity issues through to the overlay like any other severity', () => {
+    const guideSegments = [
+      {
+        type: 'unified-diff',
+        filename: 'src/a.ts',
+        patch: `--- a/src/a.ts
++++ b/src/a.ts
+@@ -10,3 +10,3 @@
+ line 10
+-line 11
++line 11 updated
+ line 12`,
+      },
+    ] as const;
+
+    const annotations = buildGuideDiffAnnotations(
+      [
+        makeIssue({
+          id: 50,
+          file: 'src/a.ts',
+          line: '11',
+          side: 'RIGHT',
+          severity: 'note',
+          category: 'other',
+          content: 'Heads up:\nthis line was rewritten',
+        }),
+      ],
+      [...guideSegments]
+    );
+
+    expect(annotations.get(0)).toEqual([
+      {
+        side: 'additions',
+        lineNumber: 11,
+        metadata: {
+          issueId: 50,
+          severity: 'note',
+          content: 'Heads up:\nthis line was rewritten',
+          suggestion: null,
+          lineLabel: null,
+          resolved: false,
+        },
+      },
+    ]);
+  });
+
+  it('uses the first comma-candidate that overlaps any hunk, not the globally closest', () => {
+    // Earlier candidate (range 10-20) overlaps hunk 0 (a 15-16 line) with
+    // non-exact distance; later candidate (30) is an exact match in hunk 1.
+    // First-overlap semantics: the earlier candidate must win even though the
+    // later one would have a smaller distance.
+    const guideSegments = [
+      {
+        type: 'unified-diff',
+        filename: 'src/a.ts',
+        patch: `--- a/src/a.ts
++++ b/src/a.ts
+@@ -15,2 +15,2 @@
+ line 15
+-line 16
++line 16 updated`,
+      },
+      {
+        type: 'unified-diff',
+        filename: 'src/a.ts',
+        patch: `--- a/src/a.ts
++++ b/src/a.ts
+@@ -30,1 +30,1 @@
+-line 30
++line 30 updated`,
+      },
+    ] as const;
+
+    const annotations = buildGuideDiffAnnotations(
+      [makeIssue({ id: 60, file: 'src/a.ts', line: '10-20,30', side: 'RIGHT' })],
+      [...guideSegments]
+    );
+
+    expect(annotations.get(0)).toBeDefined();
+    expect(annotations.get(1)).toBeUndefined();
+    expect(annotations.get(0)?.[0]?.metadata.issueId).toBe(60);
+  });
+
+  it('resolves nullable-side comma candidates independently against a mixed guide hunk', () => {
+    const guideSegments = [
+      {
+        type: 'unified-diff',
+        filename: 'src/a.ts',
+        patch: `--- a/src/a.ts
++++ b/src/a.ts
+@@ -4,3 +10,3 @@
+ line 4
+-line 5
++line 11
+ line 6`,
+      },
+    ] as const;
+
+    const annotations = buildGuideDiffAnnotations(
+      [makeIssue({ id: 61, file: 'src/a.ts', line: '5,11', side: null, severity: 'note' })],
+      [...guideSegments]
+    );
+
+    expect(
+      annotations.get(0)?.map((annotation) => [annotation.side, annotation.lineNumber])
+    ).toEqual([
+      ['deletions', 5],
+      ['additions', 11],
+    ]);
   });
 });

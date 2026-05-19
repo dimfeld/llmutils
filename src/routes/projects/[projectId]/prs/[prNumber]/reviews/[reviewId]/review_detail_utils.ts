@@ -21,7 +21,7 @@ export interface LineRange {
 
 interface ParsedIssueAnchor {
   issue: ReviewIssueRow;
-  side: 'additions' | 'deletions';
+  side: 'additions' | 'deletions' | null;
   rangeStart: number;
   rangeEnd: number;
   lineLabel: string | null;
@@ -138,18 +138,59 @@ function findClosestLineInRange(
   return closestLine;
 }
 
-function parseIssueAnchor(issue: ReviewIssueRow): ParsedIssueAnchor | null {
-  if (!issue.line) return null;
+function toAnnotationSide(side: ReviewIssueRow['side']): ParsedIssueAnchor['side'] {
+  if (side === 'LEFT') return 'deletions';
+  if (side === 'RIGHT') return 'additions';
+  return null;
+}
 
-  // `issue.line` may be a plain number ("5") or a range ("10-20" / "10–20").
+function inferAnchorSideFromRanges(
+  rangeStart: number,
+  rangeEnd: number,
+  ranges: LineRange[]
+): 'additions' | 'deletions' | null {
+  let overlapsAdditions = false;
+  let overlapsDeletions = false;
+
+  for (const range of ranges) {
+    const overlaps = rangeStart <= range.end && rangeEnd >= range.start;
+    if (!overlaps) continue;
+
+    if (range.side === 'additions') {
+      overlapsAdditions = true;
+    } else {
+      overlapsDeletions = true;
+    }
+  }
+
+  // Unambiguous: only one side overlaps.
+  if (overlapsAdditions !== overlapsDeletions) {
+    return overlapsAdditions ? 'additions' : 'deletions';
+  }
+  // Both overlap (same-number / numerically-overlapping mixed hunk): default
+  // to additions so a plain `<annotation file="..." line="11">` still renders
+  // inline. Cross-side comma anchors (e.g. line="5,11" against old=4-6 /
+  // new=10-12) avoid this branch because each candidate falls in only one
+  // range, so they continue to resolve to the correct per-anchor side.
+  if (overlapsAdditions && overlapsDeletions) return 'additions';
+  // Neither side overlaps — caller will skip the anchor.
+  return null;
+}
+
+function parseSingleAnchor(
+  issue: ReviewIssueRow,
+  rawLine: string,
+  rawStartLine: string | null
+): ParsedIssueAnchor | null {
+  // `rawLine` may be a plain number ("5") or a range ("10-20" / "10–20").
   // parseLineRange normalizes both forms; if start_line is explicitly set on the
   // row (older data path), it takes precedence over the range's parsed start.
-  const parsed = parseLineRange(issue.line);
-  const endStr = parsed.line ?? issue.line;
+  const parsed = parseLineRange(rawLine);
+  const endStr = parsed.line ?? rawLine;
   const end = Number.parseInt(endStr, 10);
   if (!Number.isFinite(end)) return null;
 
-  const startSource = issue.start_line ?? parsed.startLine ?? endStr;
+  const startSource = rawStartLine ?? parsed.startLine ?? endStr;
   const parsedStart = Number.parseInt(startSource, 10);
   const start = Number.isFinite(parsedStart) ? parsedStart : end;
 
@@ -158,19 +199,46 @@ function parseIssueAnchor(issue: ReviewIssueRow): ParsedIssueAnchor | null {
 
   return {
     issue,
-    side: issue.side === 'LEFT' ? 'deletions' : 'additions',
+    side: toAnnotationSide(issue.side),
     rangeStart,
     rangeEnd,
     lineLabel: rangeStart === rangeEnd ? null : `${rangeStart}–${rangeEnd}`,
   };
 }
 
+// Returns one anchor per comma-separated candidate. A bare value like "5" or a
+// range like "10-20" yields a single anchor; "1,3,5" yields three; "1,5-7,10"
+// yields three (with the middle one being a range). start_line on the row, if
+// present, applies only to the first candidate (it has no meaning for comma
+// lists).
+function parseIssueAnchors(issue: ReviewIssueRow): ParsedIssueAnchor[] {
+  if (!issue.line) return [];
+  const lineText = issue.line.trim();
+  if (!lineText) return [];
+
+  if (!lineText.includes(',')) {
+    const anchor = parseSingleAnchor(issue, lineText, issue.start_line);
+    return anchor ? [anchor] : [];
+  }
+
+  const anchors: ParsedIssueAnchor[] = [];
+  const parts = lineText.split(',').map((part) => part.trim());
+  parts.forEach((part, index) => {
+    if (!part) return;
+    const startLineForPart = index === 0 ? issue.start_line : null;
+    const anchor = parseSingleAnchor(issue, part, startLineForPart);
+    if (anchor) anchors.push(anchor);
+  });
+  return anchors;
+}
+
 function toAnnotation(
   parsed: ParsedIssueAnchor,
+  side: 'additions' | 'deletions',
   lineNumber: number
 ): DiffLineAnnotation<ReviewIssueAnnotationData> {
   return {
-    side: parsed.side,
+    side,
     lineNumber,
     metadata: {
       issueId: parsed.issue.id,
@@ -181,6 +249,20 @@ function toAnnotation(
       resolved: Boolean(parsed.issue.resolved),
     },
   };
+}
+
+function findAnnotationPlacement(
+  parsed: ParsedIssueAnchor,
+  ranges: LineRange[]
+): { side: 'additions' | 'deletions'; lineNumber: number } | null {
+  const side = parsed.side ?? inferAnchorSideFromRanges(parsed.rangeStart, parsed.rangeEnd, ranges);
+  if (side == null) return null;
+
+  const hasOverlap = checkLineRangeOverlap(parsed.rangeStart, parsed.rangeEnd, ranges, side);
+  if (!hasOverlap) return null;
+
+  const lineNumber = findClosestLineInRange(parsed.rangeEnd, ranges, side);
+  return lineNumber == null ? null : { side, lineNumber };
 }
 
 export function buildAnnotationsForFile(
@@ -194,30 +276,38 @@ export function buildAnnotationsForFile(
 
   for (const issue of allIssues) {
     if (issue.file !== filename) continue;
-    const parsed = parseIssueAnchor(issue);
-    if (!parsed) continue;
+    const parsedAnchors = parseIssueAnchors(issue);
+    if (parsedAnchors.length === 0) continue;
 
-    // If diff line ranges are provided, check if the issue overlaps with this specific diff
-    // Only include the annotation if the issue's line range overlaps with the diff's line ranges
     if (diffLineRanges && diffLineRanges.length > 0) {
-      const hasOverlap = checkLineRangeOverlap(
-        parsed.rangeStart,
-        parsed.rangeEnd,
-        diffLineRanges,
-        parsed.side
-      );
-      if (!hasOverlap) continue;
-
-      // Try to find a line that's actually in the diff
-      const closestLine = findClosestLineInRange(parsed.rangeEnd, diffLineRanges, parsed.side);
-      if (closestLine !== null) {
-        annotations.push(toAnnotation(parsed, closestLine));
+      if (issue.side == null) {
+        for (const parsed of parsedAnchors) {
+          const placement = findAnnotationPlacement(parsed, diffLineRanges);
+          if (placement) {
+            annotations.push(toAnnotation(parsed, placement.side, placement.lineNumber));
+          }
+        }
         continue;
       }
-    }
 
-    // If no diff ranges or no overlap found, use the original line.
-    annotations.push(toAnnotation(parsed, parsed.rangeEnd));
+      // For comma-separated line lists, take the first candidate whose range
+      // overlaps the diff. Drop the issue if none overlap (matching the
+      // single-anchor exclusion behavior).
+      let placed = false;
+      for (const parsed of parsedAnchors) {
+        const placement = findAnnotationPlacement(parsed, diffLineRanges);
+        if (placement) {
+          annotations.push(toAnnotation(parsed, placement.side, placement.lineNumber));
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) continue;
+    } else {
+      // No diff ranges: use the original line of the first parsed anchor.
+      const fallback = parsedAnchors[0];
+      annotations.push(toAnnotation(fallback, fallback.side ?? 'additions', fallback.rangeEnd));
+    }
   }
 
   return annotations;
@@ -243,53 +333,92 @@ export function buildGuideDiffAnnotations(
   for (const issue of allIssues) {
     if (!issue.file) continue;
 
-    const parsed = parseIssueAnchor(issue);
-    if (!parsed) continue;
+    const parsedAnchors = parseIssueAnchors(issue);
+    if (parsedAnchors.length === 0) continue;
 
-    let bestMatch: {
-      segmentIndex: number;
-      anchorLine: number;
-      distance: number;
-    } | null = null;
+    if (issue.side == null) {
+      for (const parsed of parsedAnchors) {
+        const bestMatch = findBestGuideDiffMatch(parsed, issue.file, diffSegments);
+        if (!bestMatch) continue;
 
-    for (const segment of diffSegments) {
-      if (segment.filename !== issue.file || segment.ranges.length === 0) continue;
+        const segmentAnnotations = annotationsBySegment.get(bestMatch.segmentIndex) ?? [];
+        segmentAnnotations.push(
+          toAnnotation(bestMatch.parsed, bestMatch.side, bestMatch.anchorLine)
+        );
+        annotationsBySegment.set(bestMatch.segmentIndex, segmentAnnotations);
+      }
+      continue;
+    }
 
-      const hasOverlap = checkLineRangeOverlap(
-        parsed.rangeStart,
-        parsed.rangeEnd,
-        segment.ranges,
-        parsed.side
-      );
-      if (!hasOverlap) continue;
+    // Iterate candidates in order. The first comma-separated candidate that has
+    // any matching segment wins, matching the first-overlap semantics used by
+    // buildAnnotationsForFile. Within that candidate, pick the best (closest)
+    // segment.
+    let bestMatch: GuideDiffMatch | null = null;
 
-      const anchorLine = findClosestLineInRange(parsed.rangeEnd, segment.ranges, parsed.side);
-      if (anchorLine == null) continue;
-
-      const candidate = {
-        segmentIndex: segment.segmentIndex,
-        anchorLine,
-        distance: Math.abs(anchorLine - parsed.rangeEnd),
-      };
-
-      if (
-        bestMatch == null ||
-        candidate.distance < bestMatch.distance ||
-        (candidate.distance === bestMatch.distance &&
-          candidate.segmentIndex < bestMatch.segmentIndex)
-      ) {
-        bestMatch = candidate;
+    for (const parsed of parsedAnchors) {
+      const candidateMatch = findBestGuideDiffMatch(parsed, issue.file, diffSegments);
+      if (candidateMatch) {
+        bestMatch = candidateMatch;
+        break;
       }
     }
 
     if (!bestMatch) continue;
 
     const segmentAnnotations = annotationsBySegment.get(bestMatch.segmentIndex) ?? [];
-    segmentAnnotations.push(toAnnotation(parsed, bestMatch.anchorLine));
+    segmentAnnotations.push(toAnnotation(bestMatch.parsed, bestMatch.side, bestMatch.anchorLine));
     annotationsBySegment.set(bestMatch.segmentIndex, segmentAnnotations);
   }
 
   return annotationsBySegment;
+}
+
+interface GuideDiffSegment {
+  segmentIndex: number;
+  filename: string;
+  ranges: LineRange[];
+}
+
+interface GuideDiffMatch {
+  parsed: ParsedIssueAnchor;
+  side: 'additions' | 'deletions';
+  segmentIndex: number;
+  anchorLine: number;
+  distance: number;
+}
+
+function findBestGuideDiffMatch(
+  parsed: ParsedIssueAnchor,
+  filename: string,
+  diffSegments: GuideDiffSegment[]
+): GuideDiffMatch | null {
+  let bestMatch: GuideDiffMatch | null = null;
+
+  for (const segment of diffSegments) {
+    if (segment.filename !== filename || segment.ranges.length === 0) continue;
+
+    const placement = findAnnotationPlacement(parsed, segment.ranges);
+    if (!placement) continue;
+
+    const candidate: GuideDiffMatch = {
+      parsed,
+      side: placement.side,
+      segmentIndex: segment.segmentIndex,
+      anchorLine: placement.lineNumber,
+      distance: Math.abs(placement.lineNumber - parsed.rangeEnd),
+    };
+
+    if (
+      bestMatch == null ||
+      candidate.distance < bestMatch.distance ||
+      (candidate.distance === bestMatch.distance && candidate.segmentIndex < bestMatch.segmentIndex)
+    ) {
+      bestMatch = candidate;
+    }
+  }
+
+  return bestMatch;
 }
 
 /**

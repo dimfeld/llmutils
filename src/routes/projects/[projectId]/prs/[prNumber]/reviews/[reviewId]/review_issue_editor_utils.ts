@@ -1,13 +1,4 @@
-export type ReviewIssueSide = 'RIGHT' | 'LEFT';
-export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info';
-export type ReviewCategory =
-  | 'security'
-  | 'performance'
-  | 'bug'
-  | 'style'
-  | 'compliance'
-  | 'testing'
-  | 'other';
+import type { ReviewCategory, ReviewIssueSide, ReviewSeverity } from '$tim/db/review.js';
 
 export interface EditableReviewIssueSource {
   severity: ReviewSeverity;
@@ -15,7 +6,7 @@ export interface EditableReviewIssueSource {
   file: string | null;
   start_line: string | null;
   line: string | null;
-  side: ReviewIssueSide;
+  side: ReviewIssueSide | null;
   content: string;
   suggestion: string | null;
 }

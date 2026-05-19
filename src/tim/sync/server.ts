@@ -926,7 +926,17 @@ function loadPlanSnapshot(db: Database, planUuid: string): CanonicalSnapshot | n
       docs: parseStringArray(plan.docs),
       changedFiles: parseStringArray(plan.changed_files),
       planGeneratedAt: plan.plan_generated_at,
-      reviewIssues: parseUnknownArray(plan.review_issues),
+      // Review guide notes are local-only annotations; omit them from sync payloads.
+      reviewIssues:
+        parseUnknownArray(plan.review_issues)?.filter(
+          (issue) =>
+            !(
+              issue != null &&
+              typeof issue === 'object' &&
+              'severity' in issue &&
+              issue.severity === 'note'
+            )
+        ) ?? null,
       parentUuid: plan.parent_uuid,
       epic: Boolean(plan.epic),
       revision: plan.revision,

@@ -839,6 +839,147 @@ describe('review_pr command', () => {
     expect(storedGuide).not.toContain('<diff ref=');
   });
 
+  test('extracts review guide annotations into note issues while preserving fenced literals', async () => {
+    execFileSync('git', ['init', '-q'], { cwd: tempDir });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+
+    await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
+    await fs.writeFile(path.join(tempDir, 'src', 'feature.ts'), 'const alpha = 1;\n', 'utf8');
+    await fs.writeFile(path.join(tempDir, 'src', 'literal.txt'), '', 'utf8');
+    execFileSync('git', ['add', '.'], { cwd: tempDir });
+    execFileSync('git', ['commit', '-m', 'base'], { cwd: tempDir });
+    const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir }).toString().trim();
+    execFileSync('git', ['update-ref', 'refs/remotes/origin/main', baseSha], { cwd: tempDir });
+
+    const fencedLiteral = '<annotation file="src/ignored.ts" line="99">literal only</annotation>';
+    await fs.writeFile(
+      path.join(tempDir, 'src', 'feature.ts'),
+      'const alpha = 2;\nconst beta = 3;\n',
+      'utf8'
+    );
+    await fs.writeFile(path.join(tempDir, 'src', 'literal.txt'), `${fencedLiteral}\n`, 'utf8');
+    execFileSync('git', ['add', '.'], { cwd: tempDir });
+    execFileSync('git', ['commit', '-m', 'head'], { cwd: tempDir });
+    const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir }).toString().trim();
+    const literalDiff = execFileSync(
+      'git',
+      ['diff', '--no-color', baseSha, headSha, '--', 'src/literal.txt'],
+      {
+        cwd: tempDir,
+      }
+    )
+      .toString()
+      .trimEnd();
+
+    mockGetMergeBase.mockResolvedValue(baseSha);
+    mockGatherPrContext.mockResolvedValue({
+      prStatus: {
+        id: 99,
+        title: 'PR title',
+        author: 'alice',
+        changed_files: 2,
+      },
+      baseBranch: 'main',
+      headBranch: 'feature/pr',
+      headSha,
+      owner: 'acme',
+      repo: 'repo',
+      prNumber: 42,
+      prUrl: 'https://github.com/acme/repo/pull/42',
+    } as any);
+
+    const claudeExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('must produce a complete review guide')) {
+        expect(prompt).toContain('src/feature.ts#hunk-1');
+        await fs.mkdir(path.dirname(guidePath), { recursive: true });
+        await fs.writeFile(
+          guidePath,
+          [
+            '# Guide',
+            '',
+            '<annotation file="src/feature.ts" line="2">Real path note</annotation>',
+            '',
+            '<annotation file="src/feature.ts#hunk-1">Ref note</annotation>',
+            '',
+            '<annotation file="src/multiline.ts" line="5">',
+            'First note line',
+            '  second note line',
+            '</annotation>',
+            '',
+            '```unified-diff',
+            literalDiff,
+            '```',
+            '',
+          ].join('\n'),
+          'utf8'
+        );
+        return { content: 'ok' };
+      }
+
+      if (
+        prompt.includes('standalone PR code review and must return structured JSON issues only')
+      ) {
+        return {
+          content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+        };
+      }
+
+      throw new Error(`Unexpected Claude prompt: ${prompt}`);
+    });
+
+    installExecutorMock({ claudeExecute });
+
+    await handleReviewGuideCommand(
+      '42',
+      { executor: 'claude-code', terminalInput: false },
+      makeCommand()
+    );
+
+    const storedGuide = mockUpdateReview.mock.calls.find(
+      (call) => call[1] === 501 && call[2]?.status === 'complete'
+    )?.[2]?.reviewGuide;
+    expect(storedGuide).not.toContain('Real path note');
+    expect(storedGuide).not.toContain('Ref note');
+    expect(storedGuide).not.toContain('First note line');
+    expect(storedGuide).toContain(fencedLiteral);
+
+    const inserted = mockInsertReviewIssues.mock.calls[0]?.[1];
+    const notes = inserted?.issues.filter((issue) => issue.severity === 'note') ?? [];
+    expect(notes).toHaveLength(3);
+    expect(notes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'note',
+          category: 'other',
+          content: 'Real path note',
+          file: 'src/feature.ts',
+          line: '2',
+          suggestion: null,
+          source: null,
+          side: null,
+          resolved: false,
+          submittedInPrReviewId: null,
+        }),
+        expect.objectContaining({
+          severity: 'note',
+          category: 'other',
+          content: 'Ref note',
+          file: 'src/feature.ts',
+          line: '1',
+        }),
+        expect.objectContaining({
+          severity: 'note',
+          category: 'other',
+          content: 'First note line\n  second note line',
+          file: 'src/multiline.ts',
+          line: '5',
+        }),
+      ])
+    );
+    expect(notes.some((issue) => issue.file === 'src/ignored.ts')).toBe(false);
+  });
+
   test('builds diff catalog from fetched Git base branch when repository is jj-detected', async () => {
     execFileSync('git', ['init', '-q'], { cwd: tempDir });
     execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });

@@ -30,7 +30,7 @@ export const structuredMessageTypes = new Set<StructuredMessage['type']>(structu
 
 const fileChangeKinds = new Set(['added', 'updated', 'removed']);
 const fileChangeStatuses = new Set(['in_progress', 'completed', 'failed', 'declined']);
-const reviewSeverities = new Set(['critical', 'major', 'minor', 'info']);
+const reviewSeverities = new Set(['critical', 'major', 'minor', 'info', 'note']);
 const reviewCategories = new Set([
   'security',
   'performance',

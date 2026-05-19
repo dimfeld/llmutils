@@ -87,6 +87,57 @@ describe('ReviewGuideView', () => {
     expect(body).toContain('Delete issue');
   });
 
+  test('renders note-severity issues in a Notes group with no actionable buttons', () => {
+    const { body } = render(ReviewGuideView, {
+      props: {
+        review: makeReview({ pr_url: 'https://github.com/example/repo/pull/1', plan_uuid: null }),
+        issues: [
+          makeIssue({ id: 1, severity: 'critical', content: 'Critical issue', resolved: 1 }),
+          makeIssue({ id: 2, severity: 'major', content: 'Major issue', resolved: 1 }),
+          makeIssue({ id: 3, severity: 'minor', content: 'Minor issue', resolved: 1 }),
+          makeIssue({ id: 4, severity: 'info', content: 'Info issue', resolved: 1 }),
+          makeIssue({
+            id: 5,
+            severity: 'note',
+            category: 'other',
+            content: 'Heads up:\nMulti-line note body',
+            suggestion: null,
+            submittedInPrReviewId: null,
+          }),
+        ],
+        projectId: '1',
+        backHref: '/projects/1/prs/1',
+        backLabel: 'Back to PR #1',
+        allowGithubSubmission: true,
+        linkedPlans: [{ planUuid: 'plan-uuid-1', planId: 7001, title: 'Plan review' }],
+        linkedPlanUuid: 'plan-uuid-1',
+        submissions: [],
+      },
+    });
+
+    expect(body).toContain('Notes');
+    expect(body).toContain('Heads up:');
+    expect(body).toContain('Multi-line note body');
+    expect(body).toContain('(0 of 4 unresolved)');
+
+    const notesGroupIdx = body.indexOf('Notes');
+    for (const severityLabel of ['Critical', 'Major', 'Minor', 'Info']) {
+      expect(notesGroupIdx).toBeGreaterThan(body.indexOf(severityLabel));
+    }
+
+    expect(body).toContain('whitespace-pre-wrap');
+
+    const noteCardIdx = body.indexOf('Multi-line note body');
+    const tailAfterNote = body.slice(noteCardIdx);
+    const nextLiBoundary = tailAfterNote.indexOf('</li>');
+    const noteCard = tailAfterNote.slice(0, nextLiBoundary);
+    expect(noteCard).not.toContain('Add to plan as a task');
+    expect(noteCard).not.toContain('Mark resolved');
+    expect(noteCard).not.toContain('Mark unresolved');
+    expect(noteCard).not.toContain('Delete issue');
+    expect(noteCard).not.toMatch(/>Edit</);
+  });
+
   test('shows PR review controls when GitHub submission is allowed', () => {
     const { body } = render(ReviewGuideView, {
       props: {

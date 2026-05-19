@@ -17,6 +17,7 @@ export interface DiffFileIndex {
 
 export interface ReviewIssueForSubmission {
   id: number;
+  severity?: string | null;
   file: string | null;
   line: string | null;
   start_line: string | null;
@@ -260,6 +261,12 @@ function inferIssueSide(
   return allInAdditions ? 'RIGHT' : 'LEFT';
 }
 
+export function filterReviewIssuesForSubmission<T extends { severity?: string | null }>(
+  issues: readonly T[]
+): T[] {
+  return issues.filter((issue) => issue.severity !== 'note');
+}
+
 export function partitionIssuesForSubmission<T extends ReviewIssueForSubmission>(
   issues: T[],
   diffIndex: Map<string, DiffFileIndex>
@@ -267,7 +274,7 @@ export function partitionIssuesForSubmission<T extends ReviewIssueForSubmission>
   const inlineable: T[] = [];
   const appendToBody: T[] = [];
 
-  for (const issue of issues) {
+  for (const issue of filterReviewIssuesForSubmission(issues)) {
     const file = issue.file?.trim() ?? '';
     if (!file) {
       appendToBody.push(issue);

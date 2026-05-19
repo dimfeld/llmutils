@@ -309,7 +309,7 @@ PR status data from GitHub is cached in SQLite for display in the web UI and CLI
 
 ### Standalone Reviews (PR and Plan)
 
-Standalone reviews are stored in SQLite (migration v23, generalized in v37). A review row is keyed to either a PR (`pr_url` set) or a plan (`plan_uuid` set) — the v37 CHECK enforces that at least one is non-NULL. Multiple reviews per subject are supported for review history. The review guide is stored as TEXT directly on the `review` row. Results from multiple executors (Claude, Codex) are combined and individual issues are stored with source attribution.
+Standalone reviews are stored in SQLite (migration v23, generalized in v37). A review row is keyed to either a PR (`pr_url` set) or a plan (`plan_uuid` set) — the v37 CHECK enforces that at least one is non-NULL. Multiple reviews per subject are supported for review history. The review guide is stored as TEXT directly on the `review` row. Results from multiple executors (Claude, Codex) are combined and individual issues are stored with source attribution. Review-guide annotations are stored as local-only `review_issue` rows with severity `note`.
 
 Generation paths:
 
@@ -319,7 +319,7 @@ Generation paths:
 **Tables**:
 
 - `review`: Linked to a project and either a `pr_status` row or a `plan` row. Columns: `id`, `project_id` (FK CASCADE), `pr_status_id` (FK SET NULL, NULL for plan-only), `pr_url` (canonicalized, **NULLABLE** after v37), `branch` (**NULLABLE** after v37), `base_branch`, `reviewed_sha`, `plan_uuid` (FK to `plan(uuid)` ON DELETE SET NULL, added in v37), `review_guide` (TEXT), `status` (pending/in_progress/complete/error), `error_message`, `created_at`, `updated_at`. CHECK constraint: `pr_url IS NOT NULL OR plan_uuid IS NOT NULL`. No unique constraint on `(project_id, pr_url)` — use `ORDER BY created_at DESC, id DESC LIMIT 1` for latest. Indexes on `project_id`, `pr_url`, and `plan_uuid`.
-- `review_issue`: Individual issues per review. Columns: `id`, `review_id` (FK CASCADE), `severity` (critical/major/minor/info), `category` (security/performance/bug/style/compliance/testing/other), `content`, `file`, `line`, `start_line`, `suggestion`, `source` (claude-code/codex-cli/combined), `resolved` (INTEGER default 0), `created_at`, `updated_at`. Index on `review_id`.
+- `review_issue`: Individual issues per review. Columns: `id`, `review_id` (FK CASCADE), `severity` (critical/major/minor/info/note), `category` (security/performance/bug/style/compliance/testing/other), `content`, `file`, `line`, `start_line`, `suggestion`, `source` (claude-code/codex-cli/combined), `resolved` (INTEGER default 0), `created_at`, `updated_at`. `note` rows come from review-guide annotations, are non-actionable/local-only, and are not submitted to GitHub. Index on `review_id`.
 
 **Plan-delete trigger** (added in v37): A `BEFORE DELETE ON plan` trigger runs `DELETE FROM review WHERE plan_uuid = OLD.uuid AND pr_url IS NULL` so plan-only reviews are removed when their plan is deleted. PR-linked reviews that also reference the plan get `plan_uuid` set to NULL via the FK's `ON DELETE SET NULL` (BEFORE-DELETE triggers run before cascading FK actions in SQLite).
 

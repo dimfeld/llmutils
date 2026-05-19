@@ -104,7 +104,7 @@
   let togglingIssueIds = $state(new Set<number>());
   let issueActionError = $state<string | null>(null);
 
-  const SEVERITY_ORDER: ReviewSeverity[] = ['critical', 'major', 'minor', 'info'];
+  const SEVERITY_ORDER: ReviewSeverity[] = ['critical', 'major', 'minor', 'info', 'note'];
 
   let groupedIssues = $derived.by(() => {
     const groups = new Map<ReviewSeverity, ReviewIssueRow[]>();
@@ -124,7 +124,8 @@
       review.status === 'complete'
   );
 
-  let unresolvedCount = $derived(issues.filter((i) => !i.resolved).length);
+  let unresolvedCount = $derived(issues.filter((i) => i.severity !== 'note' && !i.resolved).length);
+  let actionableIssueCount = $derived(issues.filter((i) => i.severity !== 'note').length);
   let linkedPlanUuid = $derived(linkedPlanUuidInput);
 
   let reviewGuideText = $derived(review.review_guide ?? '');
@@ -738,6 +739,8 @@
         return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300';
       case 'info':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
+      case 'note':
+        return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
     }
   }
 
@@ -791,6 +794,7 @@
   }
 
   function formatSeverity(severity: ReviewSeverity): string {
+    if (severity === 'note') return 'Notes';
     return severity.charAt(0).toUpperCase() + severity.slice(1);
   }
 
@@ -888,7 +892,7 @@
       {/if}
       {#if review.status === 'complete'}
         <span
-          >{issues.length} issue{issues.length === 1 ? '' : 's'} ({unresolvedCount} unresolved)</span
+          >{actionableIssueCount} issue{actionableIssueCount === 1 ? '' : 's'} ({unresolvedCount} unresolved)</span
         >
       {/if}
     </div>
@@ -969,9 +973,9 @@
           class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase @sm:text-sm"
         >
           Issues
-          {#if issues.length > 0}
+          {#if actionableIssueCount > 0}
             <span class="ml-1 font-normal normal-case">
-              ({unresolvedCount} of {issues.length} unresolved)
+              ({unresolvedCount} of {actionableIssueCount} unresolved)
             </span>
           {/if}
         </h3>
@@ -992,7 +996,11 @@
                     {formatSeverity(severity)}
                   </span>
                   <span class="text-xs text-muted-foreground @sm:text-sm">
-                    {severityIssues.filter((i) => !i.resolved).length}/{severityIssues.length} open
+                    {#if severity === 'note'}
+                      {severityIssues.length}
+                    {:else}
+                      {severityIssues.filter((i) => !i.resolved).length}/{severityIssues.length} open
+                    {/if}
                   </span>
                 </summary>
                 <ul class="mt-1 space-y-1.5 pl-1">

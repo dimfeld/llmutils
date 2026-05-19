@@ -187,4 +187,67 @@ describe('ReviewIssueCard', () => {
     const { body } = render(ReviewIssueCard, { props: defaultProps(issue) });
     expect(body).toContain('Delete issue');
   });
+
+  describe('note severity', () => {
+    test('renders a Note pill instead of the category badge', () => {
+      const issue = makeIssue({
+        severity: 'note',
+        category: 'security',
+        content: 'Heads up:\nmulti-line note',
+      });
+      const { body } = render(ReviewIssueCard, {
+        props: { ...defaultProps(issue), linkedPlanUuid: 'plan-uuid-123' },
+      });
+      expect(body).toContain('Note');
+      expect(body).not.toContain('Security');
+    });
+
+    test('hides actionable buttons but keeps copy/jump-to-diff', () => {
+      const issue = makeIssue({
+        severity: 'note',
+        category: 'other',
+        content: 'Just an observation',
+        file: 'src/a.ts',
+        line: '12',
+      });
+      const props = {
+        ...defaultProps(issue),
+        linkedPlanUuid: 'plan-uuid-123',
+        onJumpToDiff: vi.fn(),
+      };
+      const { body } = render(ReviewIssueCard, { props });
+
+      expect(body).not.toContain('Add to plan as a task');
+      expect(body).not.toContain('Mark resolved');
+      expect(body).not.toContain('Mark unresolved');
+      expect(body).not.toContain('Delete issue');
+      expect(body).not.toMatch(/>\s*Edit\s*</);
+
+      expect(body).toContain('Jump to diff');
+      expect(body).toContain('Copy issue');
+      expect(body).toContain('Copy file path');
+    });
+
+    test('hides the submitted-in-review badge for notes', () => {
+      const issue = makeIssue({
+        severity: 'note',
+        submittedInPrReviewId: 7,
+        content: 'note body',
+      });
+      const { body } = render(ReviewIssueCard, {
+        props: { ...defaultProps(issue), submission: null },
+      });
+      expect(body).not.toContain('Submitted in review');
+    });
+
+    test('renders note content with whitespace-pre-wrap so newlines are visible', () => {
+      const issue = makeIssue({
+        severity: 'note',
+        content: 'line one\nline two',
+      });
+      const { body } = render(ReviewIssueCard, { props: defaultProps(issue) });
+      expect(body).toContain('line one\nline two');
+      expect(body).toContain('whitespace-pre-wrap');
+    });
+  });
 });

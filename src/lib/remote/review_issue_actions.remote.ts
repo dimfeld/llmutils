@@ -164,11 +164,19 @@ export const deleteReviewIssue = command(reviewIssueSchema, async ({ reviewId, i
       error(404, 'Review issue not found');
     }
 
+    if (issue.severity === 'note') {
+      error(400, 'Notes cannot be deleted');
+    }
+
     db.prepare('DELETE FROM review_issue WHERE id = ?').run(issue.id);
   }).immediate();
 });
 
 function reviewIssueToTask(issue: ReviewIssueRow): ReviewFormatterIssue {
+  if (issue.severity === 'note') {
+    error(400, 'Notes cannot be added to plans as tasks');
+  }
+
   return {
     severity: issue.severity,
     category: issue.category,

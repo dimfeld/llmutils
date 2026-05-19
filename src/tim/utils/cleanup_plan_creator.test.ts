@@ -137,4 +137,74 @@ describe('cleanup_plan_creator', () => {
     expect(updatedParent.status).toBe('in_progress');
     expect(updatedParent.dependencies).toContain(result.planId);
   });
+
+  test('createCleanupPlan excludes note severity annotations from cleanup tasks', async () => {
+    await writePlanToDb(
+      {
+        id: 30,
+        title: 'Notes Parent',
+        goal: 'Only actionable issues should become cleanup work',
+        details: 'Parent details',
+        status: 'done',
+        changedFiles: ['src/actionable.ts'],
+        tasks: [],
+        filename: '30-parent.plan.md',
+      },
+      { cwdForIdentity: repoRoot }
+    );
+
+    const issues = [
+      {
+        id: 'issue-1',
+        severity: 'major',
+        category: 'bug',
+        content: 'Fix the actionable issue',
+        file: 'src/actionable.ts',
+      },
+      {
+        id: 'issue-note',
+        severity: 'note',
+        category: 'other',
+        content: 'Descriptive annotation only',
+        file: 'src/note.ts',
+      },
+    ] as ReviewIssue[];
+
+    const result = await createCleanupPlan(30, issues);
+
+    expect(result.plan.goal).toContain('Address 1 code review issue (1 major)');
+    expect(result.plan.details).toContain('Fix the actionable issue');
+    expect(result.plan.details).not.toContain('Descriptive annotation only');
+    expect(result.plan.rmfilter).toEqual(['src/actionable.ts']);
+  });
+
+  test('createCleanupPlan rejects all-note review issues', async () => {
+    await writePlanToDb(
+      {
+        id: 40,
+        title: 'Only Notes Parent',
+        goal: 'Notes should not produce cleanup work',
+        details: 'Parent details',
+        status: 'done',
+        changedFiles: ['src/parent.ts'],
+        tasks: [],
+        filename: '40-parent.plan.md',
+      },
+      { cwdForIdentity: repoRoot }
+    );
+
+    const issues = [
+      {
+        id: 'issue-note',
+        severity: 'note',
+        category: 'other',
+        content: 'Descriptive annotation only',
+        file: 'src/note.ts',
+      },
+    ] as ReviewIssue[];
+
+    await expect(createCleanupPlan(40, issues)).rejects.toThrow(
+      'No actionable review issues available for cleanup plan'
+    );
+  });
 });

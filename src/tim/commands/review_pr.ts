@@ -63,7 +63,7 @@ interface MaterializeCommandOptions {
 const REVIEW_GUIDE_FILENAME = 'review-guide.md';
 const MATERIALIZED_REVIEWS_DIR = path.join('.tim', 'reviews');
 
-const SEVERITY_ORDER: ReviewIssueRow['severity'][] = ['critical', 'major', 'minor', 'info'];
+const SEVERITY_ORDER: ReviewIssueRow['severity'][] = ['critical', 'major', 'minor', 'info', 'note'];
 
 function getRootOptions(command: RootCommandLike | undefined): { config?: string } {
   let current = command;

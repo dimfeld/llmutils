@@ -24,6 +24,10 @@ describe('ReviewSeveritySchema', () => {
     expect(ReviewSeveritySchema.safeParse('').success).toBe(false);
     expect(ReviewSeveritySchema.safeParse(123).success).toBe(false);
   });
+
+  test('keeps executor JSON severity restricted from notes', () => {
+    expect(ReviewSeveritySchema.safeParse('note').success).toBe(false);
+  });
 });
 
 describe('ReviewCategorySchema', () => {
@@ -90,6 +94,19 @@ describe('ReviewIssueOutputSchema', () => {
       file: 'src/test.ts',
       line: 42, // Should be string, not number
       suggestion: 'fix it',
+    };
+
+    expect(ReviewIssueOutputSchema.safeParse(issue).success).toBe(false);
+  });
+
+  test('rejects note severity from structured executor output', () => {
+    const issue = {
+      severity: 'note',
+      category: 'other',
+      content: 'Descriptive note',
+      file: 'src/test.ts',
+      line: '42',
+      suggestion: 'No action required',
     };
 
     expect(ReviewIssueOutputSchema.safeParse(issue).success).toBe(false);

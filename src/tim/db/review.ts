@@ -3,7 +3,7 @@ import { canonicalizePrUrl } from '../../common/github/identifiers.js';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 export type ReviewStatus = 'pending' | 'in_progress' | 'complete' | 'error';
-export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info';
+export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info' | 'note';
 export type ReviewIssueSide = 'LEFT' | 'RIGHT';
 export type ReviewCategory =
   | 'security'
@@ -43,7 +43,7 @@ export interface ReviewIssueRow {
   start_line: string | null;
   suggestion: string | null;
   source: ReviewIssueSource | null;
-  side: ReviewIssueSide;
+  side: ReviewIssueSide | null;
   submittedInPrReviewId: number | null;
   resolved: 0 | 1;
   created_at: string;
@@ -182,12 +182,7 @@ function getReviewIdForSubmission(db: Database, submissionId: number): number {
 }
 
 function rowToReviewIssue(row: ReviewIssueDbRow): ReviewIssueRow {
-  let side: ReviewIssueSide;
-  if (row.side == null) {
-    side = 'RIGHT';
-  } else if (row.side === 'LEFT' || row.side === 'RIGHT') {
-    side = row.side;
-  } else {
+  if (row.side != null && row.side !== 'LEFT' && row.side !== 'RIGHT') {
     throw new Error(`Unexpected review_issue.side value: ${row.side as string}`);
   }
 
@@ -202,7 +197,7 @@ function rowToReviewIssue(row: ReviewIssueDbRow): ReviewIssueRow {
     start_line: row.start_line,
     suggestion: row.suggestion,
     source: row.source,
-    side,
+    side: row.side,
     submittedInPrReviewId: row.submitted_in_pr_review_id ?? null,
     resolved: row.resolved,
     created_at: row.created_at,
@@ -794,8 +789,8 @@ export function getReviewsByPrUrl(db: Database, prUrl: string): ReviewWithIssueC
     .prepare(
       `
         SELECT r.*,
-          COUNT(ri.id) as issue_count,
-          COALESCE(SUM(CASE WHEN ri.resolved = 0 THEN 1 ELSE 0 END), 0) as unresolved_count
+          COUNT(CASE WHEN ri.severity <> 'note' THEN ri.id END) as issue_count,
+          COALESCE(SUM(CASE WHEN ri.severity <> 'note' AND ri.resolved = 0 THEN 1 ELSE 0 END), 0) as unresolved_count
         FROM review r
         LEFT JOIN review_issue ri ON ri.review_id = r.id
         WHERE r.pr_url = ?
@@ -811,8 +806,8 @@ export function getReviewsByPlanUuid(db: Database, planUuid: string): ReviewWith
     .prepare(
       `
         SELECT r.*,
-          COUNT(ri.id) as issue_count,
-          COALESCE(SUM(CASE WHEN ri.resolved = 0 THEN 1 ELSE 0 END), 0) as unresolved_count
+          COUNT(CASE WHEN ri.severity <> 'note' THEN ri.id END) as issue_count,
+          COALESCE(SUM(CASE WHEN ri.severity <> 'note' AND ri.resolved = 0 THEN 1 ELSE 0 END), 0) as unresolved_count
         FROM review r
         LEFT JOIN review_issue ri ON ri.review_id = r.id
         WHERE r.plan_uuid = ?

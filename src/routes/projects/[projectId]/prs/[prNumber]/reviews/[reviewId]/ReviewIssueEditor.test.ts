@@ -316,6 +316,7 @@ describe('ReviewIssueEditor rendering', () => {
     expect(body).toContain('Major');
     expect(body).toContain('Minor');
     expect(body).toContain('Info');
+    expect(body).toContain('Note');
   });
 
   test('renders category select with all options', () => {

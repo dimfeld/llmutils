@@ -167,6 +167,76 @@ describe('pr_review_submission remote functions', () => {
     });
   });
 
+  test('updateReviewIssueFields rejects converting a normal issue into a note', async () => {
+    const review = seedReview('https://github.com/example/repo/pull/1041');
+    const issue = seedIssue(review.id, {
+      severity: 'minor',
+      category: 'style',
+      content: 'Needs update',
+      file: 'src/example.ts',
+      line: '12',
+      startLine: null,
+      suggestion: null,
+      side: 'RIGHT',
+    });
+
+    await expect(
+      invokeCommand(updateReviewIssueFields, {
+        issueId: issue.id,
+        patch: { severity: 'note' },
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'Cannot convert a review issue into a note' },
+    });
+  });
+
+  test('updateReviewIssueFields rejects converting a note into an actionable issue', async () => {
+    const review = seedReview('https://github.com/example/repo/pull/1042');
+    const issue = seedIssue(review.id, {
+      severity: 'note',
+      category: 'other',
+      content: 'Annotation',
+      file: 'src/example.ts',
+      line: '12',
+      startLine: null,
+      suggestion: null,
+      side: 'RIGHT',
+    });
+
+    await expect(
+      invokeCommand(updateReviewIssueFields, {
+        issueId: issue.id,
+        patch: { severity: 'minor' },
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'Cannot convert a note into an actionable review issue' },
+    });
+  });
+
+  test('updateReviewIssueFields allows patching content on a note without changing severity', async () => {
+    const review = seedReview('https://github.com/example/repo/pull/1043');
+    const issue = seedIssue(review.id, {
+      severity: 'note',
+      category: 'other',
+      content: 'Original annotation',
+      file: 'src/example.ts',
+      line: '12',
+      startLine: null,
+      suggestion: null,
+      side: 'RIGHT',
+    });
+
+    const updated = await invokeCommand(updateReviewIssueFields, {
+      issueId: issue.id,
+      patch: { content: 'Updated annotation' },
+    });
+
+    expect(updated.severity).toBe('note');
+    expect(updated.content).toBe('Updated annotation');
+  });
+
   test('updateReviewIssueFields rejects non-numeric and invalid numeric line fields', async () => {
     const review = seedReview('https://github.com/example/repo/pull/1031');
     const issue = seedIssue(review.id, {
@@ -1363,7 +1433,7 @@ describe('pr_review_submission remote functions', () => {
   function seedIssue(
     reviewId: number,
     input: {
-      severity: 'critical' | 'major' | 'minor' | 'info';
+      severity: 'critical' | 'major' | 'minor' | 'info' | 'note';
       category: 'security' | 'performance' | 'bug' | 'style' | 'compliance' | 'testing' | 'other';
       content: string;
       file: string | null;

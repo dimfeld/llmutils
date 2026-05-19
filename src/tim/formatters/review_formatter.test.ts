@@ -48,6 +48,60 @@ describe('generateReviewSummary', () => {
     expect(summary.filesReviewed).toBe(5);
   });
 
+  test('excludes note severity rows from issue and category counts', () => {
+    const issues = [
+      {
+        id: '1',
+        severity: 'critical',
+        category: 'security',
+        content: 'Critical test',
+      },
+      {
+        id: '2',
+        severity: 'note',
+        category: 'other',
+        content: 'Descriptive annotation',
+      },
+    ] as Array<Omit<ReviewIssue, 'severity'> & { severity: ReviewIssue['severity'] | 'note' }>;
+
+    const summary = generateReviewSummary(issues, 3);
+
+    expect(summary.totalIssues).toBe(1);
+    expect(summary.criticalCount).toBe(1);
+    expect(summary.majorCount).toBe(0);
+    expect(summary.minorCount).toBe(0);
+    expect(summary.infoCount).toBe(0);
+    expect(summary.categoryCounts).toEqual({ security: 1 });
+    expect(summary.filesReviewed).toBe(3);
+  });
+
+  test('returns zero counts when all issues are notes', () => {
+    const issues = [
+      {
+        id: '1',
+        severity: 'note',
+        category: 'other',
+        content: 'First annotation',
+      },
+      {
+        id: '2',
+        severity: 'note',
+        category: 'other',
+        content: 'Second annotation',
+      },
+    ] as Array<Omit<ReviewIssue, 'severity'> & { severity: ReviewIssue['severity'] | 'note' }>;
+
+    const summary = generateReviewSummary(issues, 2);
+
+    expect(summary.totalIssues).toBe(0);
+    expect(summary.criticalCount).toBe(0);
+    expect(summary.majorCount).toBe(0);
+    expect(summary.minorCount).toBe(0);
+    expect(summary.infoCount).toBe(0);
+    expect(summary.categoryCounts).toEqual({});
+    expect(summary.filesReviewed).toBe(2);
+  });
+
   test('determines overall rating correctly', () => {
     // Poor rating with critical issues
     const criticalIssues: ReviewIssue[] = [

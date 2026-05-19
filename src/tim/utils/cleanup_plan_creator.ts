@@ -14,6 +14,7 @@ import { loadPlansFromDb } from '../plans_db.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import type { ReviewIssue } from '../formatters/review_formatter.js';
 import { getPlanStorageDir, resolvePlanPathContext } from '../path_resolver.js';
+import { filterActionableReviewIssues } from './review_issue_filters.js';
 
 export interface CleanupPlanOptions {
   title?: string;
@@ -44,6 +45,11 @@ export async function createCleanupPlan(
   options: CleanupPlanOptions = {},
   globalOpts: any = {}
 ): Promise<CleanupPlanResult> {
+  const actionableIssues = filterActionableReviewIssues(reviewIssues);
+  if (actionableIssues.length === 0) {
+    throw new Error('No actionable review issues available for cleanup plan');
+  }
+
   // Load the effective configuration
   const config = await loadEffectiveConfig(globalOpts.config);
 
@@ -99,7 +105,7 @@ export async function createCleanupPlan(
   }
 
   // Add files mentioned in review issues
-  reviewIssues.forEach((issue) => {
+  actionableIssues.forEach((issue) => {
     if (issue.file) {
       filePaths.add(issue.file);
     }
@@ -109,10 +115,10 @@ export async function createCleanupPlan(
   const plan: PlanSchema = {
     id: planId,
     title: planTitle,
-    goal: buildCleanupGoal(planContext, reviewIssues),
+    goal: buildCleanupGoal(planContext, actionableIssues),
     details: buildCleanupDetails(
       planContext,
-      reviewIssues,
+      actionableIssues,
       options.scopeNote,
       options.scopedPlan?.tasks
     ),

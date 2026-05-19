@@ -89,4 +89,22 @@ describe('SubmitReviewDialog', () => {
     const { body } = render(SubmitReviewDialog, { props: defaultProps(issues) });
     expect(body).toContain('No submittable issues');
   });
+
+  test('excludes note-severity issues from the submittable list', () => {
+    const issues = [
+      makeIssue({ id: 1, content: 'Real issue', severity: 'minor' }),
+      makeIssue({ id: 2, content: 'A descriptive annotation', severity: 'note' }),
+    ];
+    const { body } = render(SubmitReviewDialog, { props: defaultProps(issues) });
+    expect(body).toContain('Real issue');
+    expect(body).not.toContain('A descriptive annotation');
+    expect(body).toContain('1 of 1 selected');
+  });
+
+  test('shows empty message when only note-severity issues are present', () => {
+    const issues = [makeIssue({ id: 1, content: 'Just a note', severity: 'note' })];
+    const { body } = render(SubmitReviewDialog, { props: defaultProps(issues) });
+    expect(body).toContain('No submittable issues');
+    expect(body).not.toContain('Just a note');
+  });
 });

@@ -12,6 +12,17 @@ const REVIEW_CATEGORIES_SECTION = `### Critical Issue Categories
 - Project Violations (MEDIUM): broken conventions, architecture mismatches, wrong module boundaries.
 - Performance Issues (MEDIUM): unnecessary heavy work, memory growth, avoidable expensive operations.`;
 
+const REVIEW_GUIDE_ANNOTATIONS_SECTION = `## Review Guide Annotations
+Use annotations only for descriptive callouts, observations, FYI commentary, or explanatory notes that give reviewers useful context but do not require a code change. Actionable findings, regressions, bugs, security concerns, missing tests, or code-quality issues must be emitted later as structured JSON review issues instead.
+
+Annotation syntax:
+\`<annotation file="src/foo.ts" line="42">Non-actionable context.</annotation>\`
+
+- \`file=\` accepts either a plain file path or a diff ref token such as \`src/foo.ts#hunk-2\`.
+- \`line=\` may be omitted when \`file=\` is a diff ref token; the system anchors the note to that hunk.
+- Multi-line annotation content is rendered verbatim with whitespace preserved.
+- Do not place annotation tags inside \`\`\`unified-diff\`\`\` fences; tags inside fenced diff blocks are treated as literal diff text and are not extracted.`;
+
 export interface PrReviewMetadata {
   kind: 'pr';
   prUrl: string;
@@ -223,6 +234,8 @@ ${getDiffInstructions(metadata, useJj)}
 
 ${renderDiffReferenceCatalog(diffReferences)}
 
+${REVIEW_GUIDE_ANNOTATIONS_SECTION}
+
 ## Required Workflow
 1. Enumerate all changed files from the ${getGuideWorkflowSubject(metadata)}.
 2. Group files into functional sections/subsections (core logic, data model, API, tests, docs, etc.).
@@ -256,6 +269,7 @@ export function buildReviewGuideIssuesFollowUpPrompt(
 ## Instructions
 - Re-read the guide and the underlying diff context before writing issues.
 - Focus on actionable correctness, security, testing, performance, and compliance findings.
+- Do not convert non-actionable review-guide annotations into JSON issues; annotations are already recorded as notes.
 - Output MUST be valid JSON matching the schema below.
 - Write the JSON to: \`${options.issuesPath}\`
 - Do not include markdown fences inside the JSON file.

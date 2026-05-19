@@ -24,7 +24,7 @@
 
   let { issue, saving, onSave, onCancel }: Props = $props();
 
-  const SEVERITIES: ReviewSeverity[] = ['critical', 'major', 'minor', 'info'];
+  const SEVERITIES: ReviewSeverity[] = ['critical', 'major', 'minor', 'info', 'note'];
   const CATEGORIES: ReviewCategory[] = [
     'security',
     'performance',
@@ -42,7 +42,7 @@
   let file = $state(initial.file ?? '');
   let startLine = $state(initial.start_line ?? '');
   let line = $state(initial.line ?? '');
-  let side = $state<ReviewIssueSide>(initial.side);
+  let side = $state<ReviewIssueSide>(initial.side ?? 'RIGHT');
   let content = $state(initial.content);
   let suggestion = $state(initial.suggestion ?? '');
   let errorMessage = $state<string | null>(null);

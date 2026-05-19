@@ -6,6 +6,7 @@ import { table } from 'table';
 import { PostProcessedReviewOutputSchema, ReviewOutputSchema } from './review_output_schema.js';
 
 export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info';
+type ReviewIssueLike = Omit<ReviewIssue, 'severity'> & { severity: ReviewSeverity | 'note' };
 
 export interface ReviewIssue {
   id?: string;
@@ -88,6 +89,10 @@ export function groupIssuesBySeverity<T extends { severity: ReviewSeverity }>(
     acc[issue.severity].push(issue);
     return acc;
   }, groups);
+}
+
+function isFormattedReviewIssue(issue: ReviewIssueLike): issue is ReviewIssue {
+  return issue.severity !== 'note';
 }
 
 export function getSeverityColor(severity: ReviewSeverity) {
@@ -325,9 +330,13 @@ export function tryParseJsonReviewOutput(jsonString: string): ParsedReviewOutput
 /**
  * Generates a summary from review issues
  */
-export function generateReviewSummary(issues: ReviewIssue[], filesReviewed: number): ReviewSummary {
+export function generateReviewSummary(
+  issues: ReviewIssueLike[],
+  filesReviewed: number
+): ReviewSummary {
+  const reviewIssues = issues.filter(isFormattedReviewIssue);
   const summary: ReviewSummary = {
-    totalIssues: issues.length,
+    totalIssues: reviewIssues.length,
     criticalCount: 0,
     majorCount: 0,
     minorCount: 0,
@@ -337,7 +346,7 @@ export function generateReviewSummary(issues: ReviewIssue[], filesReviewed: numb
   };
 
   // Count by severity
-  for (const issue of issues) {
+  for (const issue of reviewIssues) {
     switch (issue.severity) {
       case 'critical':
         summary.criticalCount++;

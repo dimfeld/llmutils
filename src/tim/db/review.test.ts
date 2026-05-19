@@ -15,6 +15,7 @@ import {
   getReviewById,
   getReviewIssues,
   getReviewsByPlanUuid,
+  getReviewsByPrUrl,
   getReviewsForProject,
   insertReviewIssues,
   markIssuesSubmitted,
@@ -554,6 +555,72 @@ describe('tim db/review', () => {
       expect(reviews[0].issue_count).toBe(2);
       expect(reviews[0].unresolved_count).toBe(1);
     });
+
+    test('getReviewsByPlanUuid excludes note-only reviews from issue counts', () => {
+      const review = createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+      });
+      insertReviewIssues(db, {
+        reviewId: review.id,
+        issues: [{ severity: 'note', category: 'other', content: 'Context note' }],
+      });
+
+      const reviews = getReviewsByPlanUuid(db, PLAN_UUID_1);
+      expect(reviews[0].issue_count).toBe(0);
+      expect(reviews[0].unresolved_count).toBe(0);
+    });
+
+    test('getReviewsByPlanUuid excludes notes from mixed review issue counts', () => {
+      const review = createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+      });
+      insertReviewIssues(db, {
+        reviewId: review.id,
+        issues: [
+          { severity: 'major', category: 'bug', content: 'Actionable finding' },
+          { severity: 'note', category: 'other', content: 'Context note' },
+        ],
+      });
+
+      const reviews = getReviewsByPlanUuid(db, PLAN_UUID_1);
+      expect(reviews[0].issue_count).toBe(1);
+      expect(reviews[0].unresolved_count).toBe(1);
+    });
+
+    test('getReviewsByPrUrl excludes notes from issue counts', () => {
+      const noteOnlyReview = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/note-only',
+      });
+      insertReviewIssues(db, {
+        reviewId: noteOnlyReview.id,
+        issues: [{ severity: 'note', category: 'other', content: 'Context note' }],
+      });
+
+      const mixedReview = createReview(db, {
+        projectId,
+        prUrl: PR_URL_2,
+        branch: 'feature/mixed',
+      });
+      insertReviewIssues(db, {
+        reviewId: mixedReview.id,
+        issues: [
+          { severity: 'major', category: 'bug', content: 'Actionable finding' },
+          { severity: 'note', category: 'other', content: 'Context note' },
+        ],
+      });
+
+      const noteOnlyReviews = getReviewsByPrUrl(db, PR_URL_1);
+      expect(noteOnlyReviews[0].issue_count).toBe(0);
+      expect(noteOnlyReviews[0].unresolved_count).toBe(0);
+
+      const mixedReviews = getReviewsByPrUrl(db, PR_URL_2);
+      expect(mixedReviews[0].issue_count).toBe(1);
+      expect(mixedReviews[0].unresolved_count).toBe(1);
+    });
   });
 
   describe('getReviewById', () => {
@@ -653,11 +720,11 @@ describe('tim db/review', () => {
       expect(issues[0].start_line).toBeNull();
       expect(issues[0].suggestion).toBeNull();
       expect(issues[0].source).toBeNull();
-      expect(issues[0].side).toBe('RIGHT');
+      expect(issues[0].side).toBeNull();
       expect(issues[0].submittedInPrReviewId).toBeNull();
     });
 
-    test('defaults side to RIGHT when side is NULL in the database', () => {
+    test('preserves NULL side from the database', () => {
       const review = createReview(db, {
         projectId,
         prUrl: PR_URL_1,
@@ -679,7 +746,38 @@ describe('tim db/review', () => {
       ).run(review.id, 'minor', 'other', 'Issue with null side');
 
       const [issue] = getReviewIssues(db, review.id);
-      expect(issue.side).toBe('RIGHT');
+      expect(issue.side).toBeNull();
+    });
+
+    test('round-trips a note issue with NULL side', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+
+      insertReviewIssues(db, {
+        reviewId: review.id,
+        issues: [
+          {
+            severity: 'note',
+            category: 'other',
+            content: 'Context-only note',
+            file: 'src/example.ts',
+            line: '5,11',
+            side: null,
+          },
+        ],
+      });
+
+      const [issue] = getReviewIssues(db, review.id);
+      expect(issue).toMatchObject({
+        severity: 'note',
+        content: 'Context-only note',
+        file: 'src/example.ts',
+        line: '5,11',
+        side: null,
+      });
     });
 
     test('throws when persisted side contains an unexpected value', () => {
@@ -889,7 +987,7 @@ describe('tim db/review', () => {
 
       const updated = updateReviewIssue(db, issue.id, { resolved: true });
       expect(updated?.resolved).toBe(1);
-      expect(updated?.side).toBe('RIGHT');
+      expect(updated?.side).toBeNull();
       expect(updated?.submittedInPrReviewId).toBeNull();
     });
 
@@ -1867,6 +1965,338 @@ Changes to query handling to prevent SQL injection.
             status: 'complete',
           }),
         ]);
+      } finally {
+        legacyDb.close(false);
+        await fs.rm(legacyPath, { force: true });
+      }
+    });
+  });
+
+  describe('migration 38 review issue note severity', () => {
+    test('preserves review_issue rows and widens severity check when upgrading from schema version 37', async () => {
+      const legacyPath = path.join(tempDir, 'legacy-review-issue-note.db');
+      const legacyDb = new Database(legacyPath);
+      try {
+        legacyDb.run('PRAGMA foreign_keys = ON');
+        legacyDb.run(`
+          CREATE TABLE schema_version (
+            version INTEGER NOT NULL DEFAULT 0,
+            import_completed INTEGER NOT NULL DEFAULT 1,
+            bootstrap_completed INTEGER NOT NULL DEFAULT 1
+          );
+          INSERT INTO schema_version (version, import_completed, bootstrap_completed)
+            VALUES (37, 1, 1);
+
+          CREATE TABLE project (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            repository_id TEXT NOT NULL UNIQUE
+          );
+          CREATE TABLE plan (
+            uuid TEXT NOT NULL PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+            plan_id INTEGER NOT NULL
+          );
+          CREATE TABLE pr_status (
+            id INTEGER PRIMARY KEY AUTOINCREMENT
+          );
+          CREATE TABLE review (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+            pr_status_id INTEGER REFERENCES pr_status(id) ON DELETE SET NULL,
+            pr_url TEXT,
+            branch TEXT,
+            base_branch TEXT,
+            reviewed_sha TEXT,
+            review_guide TEXT,
+            status TEXT NOT NULL DEFAULT 'pending'
+              CHECK(status IN ('pending', 'in_progress', 'complete', 'error')),
+            error_message TEXT,
+            created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
+            updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
+            plan_uuid TEXT REFERENCES plan(uuid) ON DELETE SET NULL,
+            CHECK (pr_url IS NOT NULL OR plan_uuid IS NOT NULL)
+          );
+          CREATE INDEX idx_review_project_id ON review(project_id);
+          CREATE INDEX idx_review_pr_url ON review(pr_url);
+          CREATE INDEX idx_review_plan_uuid ON review(plan_uuid);
+
+          CREATE TABLE pr_review_submission (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
+            github_review_id INTEGER,
+            github_review_url TEXT,
+            event TEXT NOT NULL CHECK (event IN ('APPROVE', 'COMMENT', 'REQUEST_CHANGES')),
+            body TEXT,
+            commit_sha TEXT,
+            submitted_by TEXT,
+            submitted_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
+            error_message TEXT
+          );
+          CREATE INDEX idx_pr_review_submission_review_id ON pr_review_submission(review_id);
+
+          CREATE TABLE review_issue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
+            severity TEXT NOT NULL
+              CHECK(severity IN ('critical', 'major', 'minor', 'info')),
+            category TEXT NOT NULL
+              CHECK(category IN ('security', 'performance', 'bug', 'style', 'compliance', 'testing', 'other')),
+            content TEXT NOT NULL,
+            file TEXT,
+            line TEXT,
+            start_line TEXT,
+            suggestion TEXT,
+            source TEXT
+              CHECK(source IN ('claude-code', 'codex-cli', 'combined')),
+            resolved INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
+            updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
+            side TEXT,
+            submitted_in_pr_review_id INTEGER REFERENCES pr_review_submission(id) ON DELETE SET NULL
+          );
+          CREATE INDEX idx_review_issue_review_id ON review_issue(review_id);
+
+          INSERT INTO project (id, repository_id) VALUES (1, 'legacy-repo');
+          INSERT INTO review (
+            id,
+            project_id,
+            pr_url,
+            branch,
+            status,
+            created_at,
+            updated_at
+          ) VALUES (
+            3,
+            1,
+            'https://github.com/example/repo/pull/3',
+            'feature/notes',
+            'complete',
+            '2026-01-02T00:00:00.000Z',
+            '2026-01-02T00:00:00.000Z'
+          );
+          INSERT INTO pr_review_submission (
+            id,
+            review_id,
+            github_review_id,
+            github_review_url,
+            event,
+            body,
+            commit_sha,
+            submitted_by,
+            submitted_at
+          ) VALUES (
+            4,
+            3,
+            999,
+            'https://github.com/example/repo/pull/3#pullrequestreview-999',
+            'COMMENT',
+            'Submitted body',
+            'abc123',
+            'tester',
+            '2026-01-03T00:00:00.000Z'
+          );
+          INSERT INTO review_issue (
+            id,
+            review_id,
+            severity,
+            category,
+            content,
+            file,
+            line,
+            start_line,
+            suggestion,
+            source,
+            side,
+            resolved,
+            submitted_in_pr_review_id,
+            created_at,
+            updated_at
+          ) VALUES
+            (
+              11,
+              3,
+              'critical',
+              'security',
+              'Critical content',
+              'src/a.ts',
+              '10',
+              NULL,
+              'Fix critical',
+              'claude-code',
+              'RIGHT',
+              0,
+              4,
+              '2026-01-04T00:00:00.000Z',
+              '2026-01-05T00:00:00.000Z'
+            ),
+            (
+              12,
+              3,
+              'major',
+              'bug',
+              'Major content',
+              'src/b.ts',
+              '20-22',
+              '20',
+              NULL,
+              'codex-cli',
+              'LEFT',
+              1,
+              NULL,
+              '2026-01-06T00:00:00.000Z',
+              '2026-01-07T00:00:00.000Z'
+            ),
+            (
+              13,
+              3,
+              'info',
+              'other',
+              'Info content',
+              NULL,
+              NULL,
+              NULL,
+              NULL,
+              NULL,
+              NULL,
+              0,
+              NULL,
+              '2026-01-08T00:00:00.000Z',
+              '2026-01-09T00:00:00.000Z'
+            );
+        `);
+
+        runMigrations(legacyDb);
+
+        const migrated = legacyDb
+          .prepare(
+            `
+            SELECT
+              id,
+              review_id,
+              severity,
+              category,
+              content,
+              file,
+              line,
+              start_line,
+              suggestion,
+              source,
+              side,
+              resolved,
+              submitted_in_pr_review_id,
+              created_at,
+              updated_at
+            FROM review_issue
+            ORDER BY id
+          `
+          )
+          .all();
+        expect(migrated).toEqual([
+          {
+            id: 11,
+            review_id: 3,
+            severity: 'critical',
+            category: 'security',
+            content: 'Critical content',
+            file: 'src/a.ts',
+            line: '10',
+            start_line: null,
+            suggestion: 'Fix critical',
+            source: 'claude-code',
+            side: 'RIGHT',
+            resolved: 0,
+            submitted_in_pr_review_id: 4,
+            created_at: '2026-01-04T00:00:00.000Z',
+            updated_at: '2026-01-05T00:00:00.000Z',
+          },
+          {
+            id: 12,
+            review_id: 3,
+            severity: 'major',
+            category: 'bug',
+            content: 'Major content',
+            file: 'src/b.ts',
+            line: '20-22',
+            start_line: '20',
+            suggestion: null,
+            source: 'codex-cli',
+            side: 'LEFT',
+            resolved: 1,
+            submitted_in_pr_review_id: null,
+            created_at: '2026-01-06T00:00:00.000Z',
+            updated_at: '2026-01-07T00:00:00.000Z',
+          },
+          {
+            id: 13,
+            review_id: 3,
+            severity: 'info',
+            category: 'other',
+            content: 'Info content',
+            file: null,
+            line: null,
+            start_line: null,
+            suggestion: null,
+            source: null,
+            side: null,
+            resolved: 0,
+            submitted_in_pr_review_id: null,
+            created_at: '2026-01-08T00:00:00.000Z',
+            updated_at: '2026-01-09T00:00:00.000Z',
+          },
+        ]);
+
+        legacyDb
+          .prepare(
+            `
+            INSERT INTO review_issue (
+              review_id,
+              severity,
+              category,
+              content,
+              file,
+              line
+            ) VALUES (?, ?, ?, ?, ?, ?)
+          `
+          )
+          .run(3, 'note', 'other', 'A descriptive annotation', 'src/note.ts', '44');
+
+        const noteSeverity = legacyDb
+          .prepare('SELECT severity FROM review_issue WHERE content = ?')
+          .get('A descriptive annotation') as { severity: string } | null;
+        expect(noteSeverity?.severity).toBe('note');
+
+        expect(() =>
+          legacyDb
+            .prepare(
+              `
+              INSERT INTO review_issue (
+                review_id,
+                severity,
+                category,
+                content
+              ) VALUES (?, ?, ?, ?)
+            `
+            )
+            .run(3, 'bogus', 'other', 'Invalid severity')
+        ).toThrow();
+
+        const indexes = legacyDb.prepare("PRAGMA index_list('review_issue')").all() as Array<{
+          name: string;
+        }>;
+        expect(indexes.map((index) => index.name)).toContain('idx_review_issue_review_id');
+
+        const foreignKeys = legacyDb
+          .prepare("PRAGMA foreign_key_list('review_issue')")
+          .all() as Array<{
+          from: string;
+          table: string;
+          on_delete: string;
+        }>;
+        expect(
+          foreignKeys.find(
+            (fk) => fk.from === 'submitted_in_pr_review_id' && fk.table === 'pr_review_submission'
+          )?.on_delete
+        ).toBe('SET NULL');
       } finally {
         legacyDb.close(false);
         await fs.rm(legacyPath, { force: true });

@@ -94,6 +94,7 @@ const FIX_ACTION_LABELS: Record<FixAction, string> = {
   'fix-codex': 'Fix now with Codex (apply fixes immediately)',
 };
 import { createCleanupPlan, type CleanupPlanOptions } from '../utils/cleanup_plan_creator.js';
+import { filterActionableReviewIssues } from '../utils/review_issue_filters.js';
 
 /**
  * Result returned from handleReviewCommand indicating what actions were taken
@@ -368,7 +369,7 @@ export async function saveReviewIssuesToPlan(
   repoRoot: string
 ): Promise<void> {
   const { plan: latestPlan, planPath } = await resolveReviewPlanForWriteById(planId, repoRoot);
-  latestPlan.reviewIssues = issues.map((issue) => ({ ...issue }));
+  latestPlan.reviewIssues = filterActionableReviewIssues(issues).map((issue) => ({ ...issue }));
   await writePlanFile(planPath, latestPlan, { cwdForIdentity: repoRoot });
 }
 
@@ -383,6 +384,7 @@ export async function clearSavedReviewIssues(planId: number, repoRoot: string): 
 }
 
 function summarizeReviewIssues(issues: readonly ReviewIssue[]): string {
+  const actionableIssues = filterActionableReviewIssues(issues);
   const counts = {
     critical: 0,
     major: 0,
@@ -390,12 +392,12 @@ function summarizeReviewIssues(issues: readonly ReviewIssue[]): string {
     info: 0,
   };
 
-  for (const issue of issues) {
+  for (const issue of actionableIssues) {
     counts[issue.severity]++;
   }
 
   return [
-    `${issues.length} unresolved review issue${issues.length === 1 ? '' : 's'}`,
+    `${actionableIssues.length} unresolved review issue${actionableIssues.length === 1 ? '' : 's'}`,
     `${counts.critical} critical`,
     `${counts.major} major`,
     `${counts.minor} minor`,
@@ -408,7 +410,8 @@ function createReviewResultFromSavedIssues(
   diffResult: DiffResult,
   issues: readonly ReviewIssue[]
 ): ReviewResult {
-  const summary = generateReviewSummary([...issues], diffResult.changedFiles.length);
+  const actionableIssues = filterActionableReviewIssues(issues);
+  const summary = generateReviewSummary(actionableIssues, diffResult.changedFiles.length);
   return {
     planId: planData.id?.toString() ?? 'unknown',
     planTitle: planData.title ?? 'Untitled Plan',
@@ -416,8 +419,8 @@ function createReviewResultFromSavedIssues(
     baseBranch: diffResult.baseBranch,
     changedFiles: diffResult.changedFiles,
     summary,
-    issues: [...issues],
-    rawOutput: JSON.stringify({ issues }),
+    issues: actionableIssues,
+    rawOutput: JSON.stringify({ issues: actionableIssues }),
     recommendations: [],
     actionItems: [],
   };
@@ -501,6 +504,7 @@ async function handleReviewIssueActions(params: {
     globalOpts,
     notifyReviewInput,
   } = params;
+  const actionableIssues = filterActionableReviewIssues(issues);
 
   let shouldAutofix = false;
   let shouldCreateCleanupPlan = false;
@@ -515,33 +519,45 @@ async function handleReviewIssueActions(params: {
 
   if (!noAutofixRequested && (options.autofix || options.autofixAll)) {
     shouldAutofix = true;
-    if (!options.autofixAll && issues.length > 0) {
+    if (options.autofixAll) {
+      selectedIssues = actionableIssues;
+      shouldAutofix = actionableIssues.length > 0;
+      if (!shouldAutofix) {
+        log(chalk.yellow('No actionable review issues available for autofix.'));
+      }
+    } else if (actionableIssues.length > 0) {
       if (isInteractiveEnv) {
-        selectedIssues = await selectIssuesToFix(issues, 'fix', () =>
+        selectedIssues = await selectIssuesToFix(actionableIssues, 'fix', () =>
           notifyReviewInput('Review needs input: select issues for autofix.')
         );
       } else {
-        selectedIssues = issues;
+        selectedIssues = actionableIssues;
       }
       shouldAutofix = selectedIssues.length > 0;
       if (!shouldAutofix) {
         log(chalk.yellow('No issues selected for autofix.'));
       }
+    } else {
+      shouldAutofix = false;
+      log(chalk.yellow('No actionable review issues available for autofix.'));
     }
   } else if (options.createCleanupPlan) {
     shouldCreateCleanupPlan = true;
-    if (issues.length > 0) {
+    if (actionableIssues.length > 0) {
       if (isInteractiveEnv) {
-        selectedIssues = await selectIssuesToFix(issues, 'include in cleanup plan', () =>
+        selectedIssues = await selectIssuesToFix(actionableIssues, 'include in cleanup plan', () =>
           notifyReviewInput('Review needs input: select issues for the cleanup plan.')
         );
       } else {
-        selectedIssues = issues;
+        selectedIssues = actionableIssues;
       }
       shouldCreateCleanupPlan = selectedIssues.length > 0;
       if (!shouldCreateCleanupPlan) {
         log(chalk.yellow('No issues selected for cleanup plan.'));
       }
+    } else {
+      shouldCreateCleanupPlan = false;
+      log(chalk.yellow('No actionable review issues available for cleanup plan.'));
     }
   } else if (!noAutofixRequested && isInteractiveEnv) {
     const action = await promptForReviewIssueAction(notifyReviewInput);
@@ -549,32 +565,38 @@ async function handleReviewIssueActions(params: {
     if (action === 'fix-claude' || action === 'fix-codex') {
       shouldAutofix = true;
       autofixExecutorName = FIX_ACTION_EXECUTOR_MAP[action];
-      if (issues.length > 0) {
-        selectedIssues = await selectIssuesToFix(issues, 'fix', () =>
+      if (actionableIssues.length > 0) {
+        selectedIssues = await selectIssuesToFix(actionableIssues, 'fix', () =>
           notifyReviewInput('Review needs input: select issues for autofix.')
         );
         shouldAutofix = selectedIssues.length > 0;
         if (!shouldAutofix) {
           log(chalk.yellow('No issues selected for autofix.'));
         }
+      } else {
+        shouldAutofix = false;
+        log(chalk.yellow('No actionable review issues available for autofix.'));
       }
     } else if (action === 'cleanup') {
       skipNotification = true;
       shouldCreateCleanupPlan = true;
-      if (issues.length > 0) {
-        selectedIssues = await selectIssuesToFix(issues, 'include in cleanup plan', () =>
+      if (actionableIssues.length > 0) {
+        selectedIssues = await selectIssuesToFix(actionableIssues, 'include in cleanup plan', () =>
           notifyReviewInput('Review needs input: select issues for the cleanup plan.')
         );
         shouldCreateCleanupPlan = selectedIssues.length > 0;
         if (!shouldCreateCleanupPlan) {
           log(chalk.yellow('No issues selected for cleanup plan.'));
         }
+      } else {
+        shouldCreateCleanupPlan = false;
+        log(chalk.yellow('No actionable review issues available for cleanup plan.'));
       }
     } else if (action === 'append') {
       skipNotification = true;
       shouldAppendTasksToPlan = true;
-      if (issues.length > 0) {
-        selectedIssues = await selectIssuesToFix(issues, 'append as plan tasks', () =>
+      if (actionableIssues.length > 0) {
+        selectedIssues = await selectIssuesToFix(actionableIssues, 'append as plan tasks', () =>
           notifyReviewInput('Review needs input: select issues to append as tasks.')
         );
         shouldAppendTasksToPlan = selectedIssues.length > 0;
@@ -586,8 +608,8 @@ async function handleReviewIssueActions(params: {
       actionCompleted = true;
     } else if (action === 'exit') {
       skipNotification = true;
-      if (issues.length > 0) {
-        selectedIssues = await selectIssuesToFix(issues, 'save for later', () =>
+      if (actionableIssues.length > 0) {
+        selectedIssues = await selectIssuesToFix(actionableIssues, 'save for later', () =>
           notifyReviewInput('Review needs input: select issues to save for later.')
         );
         issuesToSaveForLater = selectedIssues;
@@ -604,7 +626,8 @@ async function handleReviewIssueActions(params: {
   }
 
   if (shouldAppendTasksToPlan && !isPrintMode) {
-    const issuesToAppend = selectedIssues && selectedIssues.length > 0 ? selectedIssues : issues;
+    const issuesToAppend =
+      selectedIssues && selectedIssues.length > 0 ? selectedIssues : actionableIssues;
 
     if (issuesToAppend.length === 0) {
       log(chalk.yellow('No review issues available to append as tasks.'));
@@ -659,7 +682,7 @@ async function handleReviewIssueActions(params: {
 
     const cleanupResult = await createCleanupPlan(
       planData.id,
-      selectedIssues || issues,
+      selectedIssues || actionableIssues,
       cleanupOptions,
       globalOpts
     );
@@ -1771,9 +1794,10 @@ async function selectIssuesToFix(
   purpose: string = 'fix',
   notifyInput?: () => Promise<void>
 ): Promise<ReviewIssue[]> {
+  const actionableIssues = filterActionableReviewIssues(issues);
   const isInteractiveEnv = process.env.TIM_INTERACTIVE !== '0';
   if (!isInteractiveEnv) {
-    return issues;
+    return actionableIssues;
   }
   if (notifyInput) {
     await notifyInput();
@@ -1784,7 +1808,7 @@ async function selectIssuesToFix(
     prompt: `Select issues to ${purpose}`,
   });
   // Group issues by severity for better organization
-  const groupedIssues = issues.reduce(
+  const groupedIssues = actionableIssues.reduce(
     (acc, issue) => {
       if (!acc[issue.severity]) acc[issue.severity] = [];
       acc[issue.severity].push(issue);
@@ -2579,7 +2603,7 @@ export function buildAutofixPrompt(
   );
 
   // Add issues from the review result
-  const issuesToFix = selectedIssues || reviewResult.issues;
+  const issuesToFix = filterActionableReviewIssues(selectedIssues || reviewResult.issues);
 
   if (issuesToFix && issuesToFix.length > 0) {
     // Add note if subset selected

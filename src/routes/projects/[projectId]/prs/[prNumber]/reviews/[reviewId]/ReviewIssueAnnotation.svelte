@@ -1,4 +1,5 @@
 <script lang="ts">
+  import StickyNote from '@lucide/svelte/icons/sticky-note';
   import { renderMarkdown } from '$lib/utils/markdown_parser.js';
   import type { ReviewSeverity } from '$tim/db/review.js';
 
@@ -14,11 +15,14 @@
 
   let { issueId, severity, content, suggestion, lineLabel, resolved, onClick }: Props = $props();
 
+  let isNote = $derived(severity === 'note');
+
   const SEVERITY_COLORS: Record<ReviewSeverity, string> = {
     critical: '#dc2626',
     major: '#ea580c',
     minor: '#ca8a04',
     info: '#2563eb',
+    note: '#64748b',
   };
 
   function handleClick(event: MouseEvent) {
@@ -56,17 +60,34 @@
     <div class="absolute inset-0 z-10 bg-gray-500/30"></div>
   {/if}
   <div style="display: flex; align-items: flex-start; gap: 6px; min-width: 0;">
-    <span
-      aria-hidden="true"
-      class="mt-1 size-2 rounded-full"
-      style="
-        flex-shrink: 0;
-        background: {resolved ? 'rgba(100, 116, 139, 0.95)' : SEVERITY_COLORS[severity]};
-      "
-    ></span>
-    <div class="plan-rendered-content min-w-0 flex-1" style="overflow-wrap: anywhere">
-      {@html renderMarkdown(content)}
-    </div>
+    {#if isNote}
+      <StickyNote
+        aria-hidden="true"
+        class="mt-0.5 size-3.5 shrink-0"
+        style="color: {resolved ? 'rgba(100, 116, 139, 0.95)' : SEVERITY_COLORS[severity]};"
+      />
+    {:else}
+      <span
+        aria-hidden="true"
+        class="mt-1 size-2 rounded-full"
+        style="
+          flex-shrink: 0;
+          background: {resolved ? 'rgba(100, 116, 139, 0.95)' : SEVERITY_COLORS[severity]};
+        "
+      ></span>
+    {/if}
+    {#if isNote}
+      <div
+        class="min-w-0 flex-1 whitespace-pre-wrap"
+        style="overflow-wrap: anywhere; font-family: inherit;"
+      >
+        {content}
+      </div>
+    {:else}
+      <div class="plan-rendered-content min-w-0 flex-1" style="overflow-wrap: anywhere">
+        {@html renderMarkdown(content)}
+      </div>
+    {/if}
   </div>
   {#if suggestion}
     <div
@@ -79,7 +100,11 @@
       <div class="mb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
         Suggestion
       </div>
-      {@html renderMarkdown(suggestion)}
+      {#if severity === 'note'}
+        <div class="whitespace-pre-wrap">{suggestion}</div>
+      {:else}
+        {@html renderMarkdown(suggestion)}
+      {/if}
     </div>
   {/if}
   {#if lineLabel}

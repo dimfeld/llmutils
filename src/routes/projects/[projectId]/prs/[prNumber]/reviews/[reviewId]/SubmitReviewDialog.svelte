@@ -36,9 +36,12 @@
   let { open, reviewId, reviewedSha, currentHeadSha, issues, onClose, onSubmitted }: Props =
     $props();
 
-  // Submittable: not resolved AND not already submitted
+  // Submittable: not resolved AND not already submitted AND not a note
+  // (notes are local-only and never sent to GitHub).
   let submittableIssues = $derived(
-    issues.filter((i) => i.resolved === 0 && i.submittedInPrReviewId == null)
+    issues.filter(
+      (i) => i.severity !== 'note' && i.resolved === 0 && i.submittedInPrReviewId == null
+    )
   );
 
   // Default selection = all submittable. Track as a Set keyed on issue id.

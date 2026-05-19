@@ -5,6 +5,7 @@ import {
   appendIssuesToBody,
   buildDiffIndex,
   buildReviewComments,
+  filterReviewIssuesForSubmission,
   partitionIssuesForSubmission,
   submitPrReview,
   type ReviewIssueForSubmission,
@@ -155,6 +156,160 @@ describe('common/github/pr_reviews', () => {
 
     const inferred = result.inlineable.find((issue) => issue.id === 5);
     expect(inferred?.side).toBe('RIGHT');
+  });
+
+  test('submission helpers exclude note severity issues', () => {
+    const diff = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -10,2 +10,2 @@',
+      '-old10',
+      '+new10',
+      ' context',
+    ].join('\n');
+    const index = buildDiffIndex(diff);
+
+    const issues: ReviewIssueForSubmission[] = [
+      {
+        id: 1,
+        severity: 'major',
+        file: 'src/a.ts',
+        line: '10',
+        start_line: null,
+        side: 'RIGHT',
+        content: 'Submit this issue',
+        suggestion: null,
+      },
+      {
+        id: 2,
+        severity: 'note',
+        file: 'src/a.ts',
+        line: '10',
+        start_line: null,
+        side: 'RIGHT',
+        content: 'Do not submit this note',
+        suggestion: null,
+      },
+      {
+        id: 3,
+        severity: 'note',
+        file: null,
+        line: null,
+        start_line: null,
+        side: null,
+        content: 'Do not append this note',
+        suggestion: null,
+      },
+    ];
+
+    expect(filterReviewIssuesForSubmission(issues).map((issue) => issue.id)).toEqual([1]);
+
+    const partitioned = partitionIssuesForSubmission(issues, index);
+    expect(partitioned.inlineable.map((issue) => issue.id)).toEqual([1]);
+    expect(partitioned.appendToBody).toEqual([]);
+
+    expect(buildReviewComments(partitioned.inlineable).map((comment) => comment.body)).toEqual([
+      'Submit this issue',
+    ]);
+    expect(appendIssuesToBody('Body', partitioned.appendToBody)).toBe('Body');
+  });
+
+  test('submission helpers return empty/unchanged results when all issues are notes', () => {
+    const diff = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -5,2 +5,2 @@',
+      '-old5',
+      '+new5',
+    ].join('\n');
+    const index = buildDiffIndex(diff);
+
+    const allNotes: ReviewIssueForSubmission[] = [
+      {
+        id: 10,
+        severity: 'note',
+        file: 'src/a.ts',
+        line: '5',
+        start_line: null,
+        side: 'RIGHT',
+        content: 'Inline annotation note',
+        suggestion: null,
+      },
+      {
+        id: 11,
+        severity: 'note',
+        file: null,
+        line: null,
+        start_line: null,
+        side: null,
+        content: 'General annotation note',
+        suggestion: null,
+      },
+    ];
+
+    expect(filterReviewIssuesForSubmission(allNotes)).toEqual([]);
+
+    const partitioned = partitionIssuesForSubmission(allNotes, index);
+    expect(partitioned.inlineable).toEqual([]);
+    expect(partitioned.appendToBody).toEqual([]);
+
+    expect(buildReviewComments(partitioned.inlineable)).toEqual([]);
+    expect(appendIssuesToBody('Original body', partitioned.appendToBody)).toBe('Original body');
+  });
+
+  test('submission helpers include info/minor severities alongside note exclusion', () => {
+    const diff = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -1,3 +1,3 @@',
+      '-old1',
+      '+new1',
+      ' context',
+    ].join('\n');
+    const index = buildDiffIndex(diff);
+
+    const mixed: ReviewIssueForSubmission[] = [
+      {
+        id: 20,
+        severity: 'info',
+        file: 'src/a.ts',
+        line: '1',
+        start_line: null,
+        side: 'RIGHT',
+        content: 'Info issue should be submitted',
+        suggestion: null,
+      },
+      {
+        id: 21,
+        severity: 'minor',
+        file: null,
+        line: null,
+        start_line: null,
+        side: null,
+        content: 'Minor general issue should be appended',
+        suggestion: null,
+      },
+      {
+        id: 22,
+        severity: 'note',
+        file: 'src/a.ts',
+        line: '1',
+        start_line: null,
+        side: 'RIGHT',
+        content: 'Note should be excluded entirely',
+        suggestion: null,
+      },
+    ];
+
+    const filtered = filterReviewIssuesForSubmission(mixed);
+    expect(filtered.map((i) => i.id)).toEqual([20, 21]);
+
+    const partitioned = partitionIssuesForSubmission(mixed, index);
+    expect(partitioned.inlineable.map((i) => i.id)).toEqual([20]);
+    expect(partitioned.appendToBody.map((i) => i.id)).toEqual([21]);
   });
 
   test('partitionIssuesForSubmission: ambiguous side (line in both additions and deletions) goes to appendToBody', () => {

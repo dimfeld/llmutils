@@ -56,6 +56,7 @@ export type SyncPlanCreateTask = z.infer<typeof SyncPlanCreateTaskSchema>;
 
 export const SyncReviewIssueValueSchema = z.object({
   id: z.string().optional(),
+  // Review guide notes are local-only annotations and intentionally do not sync between nodes.
   severity: z.enum(['critical', 'major', 'minor', 'info']),
   category: z.string().min(1),
   content: z.string().min(1),

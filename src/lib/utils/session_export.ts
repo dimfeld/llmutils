@@ -119,12 +119,13 @@ function formatReviewResult(
     : [];
 
   if (issues.length > 0) {
-    const severityOrder = ['critical', 'major', 'minor', 'info'] as const;
+    const severityOrder = ['critical', 'major', 'minor', 'info', 'note'] as const;
     const severityEmoji: Record<string, string> = {
       critical: '\u{1F534}',
       major: '\u{1F7E1}',
       minor: '\u{1F7E0}',
       info: '\u{2139}\u{FE0F}',
+      note: '\u{2022}',
     };
 
     const grouped = new Map<string, typeof issues>();

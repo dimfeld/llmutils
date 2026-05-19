@@ -12,7 +12,7 @@ Sync configuration is machine-local. Put it in `~/.config/tim/config.yml`; repos
 
 ## What Syncs
 
-Node sync covers canonical `tim` data such as plans, plan tasks, tags, dependencies, review issues, and project settings.
+Node sync covers canonical `tim` data such as plans, plan tasks, tags, dependencies, review issues, and project settings. Review-guide notes (`review_issue.severity = 'note'`) are local-only annotations and are filtered out at the sync boundary.
 
 It does not replace:
 
