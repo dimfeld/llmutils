@@ -1148,7 +1148,7 @@ describe('lib/server/session_manager', () => {
     const remaining = manager
       .getSessionSnapshot()
       .sessions.map((s) => s.connectionId)
-      .sort();
+      .toSorted();
     expect(remaining).toEqual(['active-1', 'active-2']);
   });
 

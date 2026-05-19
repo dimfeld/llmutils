@@ -178,7 +178,7 @@ async function collectFilesToCopy(
   await includeDirectoryTreeIfExists(files, sourceDir, '.git');
   await includeDirectoryTreeIfExists(files, sourceDir, '.jj');
 
-  return Array.from(files).sort();
+  return Array.from(files).toSorted();
 }
 
 async function copyFilesToTarget(
@@ -1047,7 +1047,7 @@ export async function createWorkspace(
       // Delete stale local-only branches inherited from the primary workspace copy.
       // Only safe when remote refs are fresh or there is no remote at all.
       // In offline mode with a remote, the branch might legitimately exist only locally.
-      const canTrustRemoteRefs = copiedWorkspaceFetchSucceeded || hasRemote === false;
+      const canTrustRemoteRefs = copiedWorkspaceFetchSucceeded || !hasRemote;
       if (localExists && !remoteExists && canTrustRemoteRefs) {
         const deleteResult = await deleteLocalBranch(targetClonePath, branchName, isJj);
         if (!deleteResult.success) {

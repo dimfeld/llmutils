@@ -64,7 +64,7 @@ describe('uuid_lookup utilities', () => {
     };
     const allPlans = new Map<number, PlanSchemaWithFilename>([[plan.id!, plan]]);
 
-    const result = verifyPlanIdCache(plan.id, plan.uuid!, allPlans);
+    const result = verifyPlanIdCache(plan.id, plan.uuid, allPlans);
     expect(result).toEqual({
       plan,
       planId: plan.id,
@@ -83,7 +83,7 @@ describe('uuid_lookup utilities', () => {
     };
     const allPlans = new Map<number, PlanSchemaWithFilename>([[plan.id!, plan]]);
 
-    const result = verifyPlanIdCache(4, plan.uuid!, allPlans);
+    const result = verifyPlanIdCache(4, plan.uuid, allPlans);
     expect(result).toEqual({
       plan,
       planId: plan.id,

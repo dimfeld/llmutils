@@ -60,7 +60,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
   for (const [rawPlanId, taskInfo] of tasksByPlan) {
     const planId = parsePlanIdFromCliArg(rawPlanId);
     log(`Processing plan ${planId}...`);
-    const sortedTaskInfo = taskInfo.sort((a, b) => a.taskIndex - b.taskIndex);
+    const sortedTaskInfo = taskInfo.toSorted((a, b) => a.taskIndex - b.taskIndex);
     const resolvedPlan = await resolvePlanByNumericId(planId, repoRoot);
     const originalPlan = resolvedPlan.plan;
 

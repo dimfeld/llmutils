@@ -42,7 +42,7 @@ type PlanDetail = Awaited<ReturnType<typeof getPlanDetail>>;
 type PlanDetailResult = NonNullable<PlanDetail>;
 
 function isTasklessEpic(plan: Pick<PlanDetailResult, 'epic' | 'tasks'>): boolean {
-  return plan.epic === true && plan.tasks.length === 0;
+  return plan.epic && plan.tasks.length === 0;
 }
 
 const startGenerateSchema = z.object({
@@ -223,7 +223,7 @@ export const startAgentMulti = command(
       error(404, 'Epic plan not found');
     }
 
-    if (epic.epic !== true) {
+    if (!epic.epic) {
       error(400, 'Plan is not an epic');
     }
 
@@ -524,9 +524,7 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
   }
 
   const cwd = getPreferredProjectGitRoot(db, plan.projectId);
-  const effectiveConfig = (cwd ? await loadEffectiveConfig(undefined, { cwd }) : {}) as Parameters<
-    typeof checkAndMarkParentDone
-  >[1];
+  const effectiveConfig = cwd ? await loadEffectiveConfig(undefined, { cwd }) : {};
   const planRow = getPlanByUuid(db, planUuid)!;
   await writePlanSetStatus(
     db,

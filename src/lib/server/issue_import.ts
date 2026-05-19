@@ -71,7 +71,7 @@ function normalizeSelectionIndexes(indexes: number[], maxIndex: number): number[
 
   return [...new Set(indexes)]
     .filter((index) => Number.isInteger(index) && index >= 0 && index <= maxIndex)
-    .sort((a, b) => a - b);
+    .toSorted((a, b) => a - b);
 }
 
 function extractSelectedContent(issueData: IssueWithComments, selectedIndexes: number[]): string[] {
@@ -194,7 +194,7 @@ function getImportBaseBranchCandidatesFromPlans(
       status: plan.status,
       branch: plan.branch.trim(),
     }))
-    .sort((a, b) => a.planId - b.planId);
+    .toSorted((a, b) => a.planId - b.planId);
 }
 
 export async function getImportBaseBranchCandidates(
@@ -347,7 +347,7 @@ export async function createPlansFromIssue(
   );
   const selectedChildIndices = [...new Set(selectedContent.selectedChildIndices)]
     .filter((index) => Number.isInteger(index) && index >= 0 && index < children.length)
-    .sort((a, b) => a - b);
+    .toSorted((a, b) => a - b);
   const normalizedChildContent = Object.fromEntries(
     selectedChildIndices.map((index) => [
       index,

@@ -515,9 +515,7 @@ describe('timAgent - Parent Plan Status Updates', () => {
     const parentPlan = readDbPlan(100);
     const childPlan = await readPlanFile(childPlanFile);
 
-    const structuredMessageCalls = vi
-      .mocked(loggingMod.sendStructured)
-      .mock.calls.map((c) => c[0] as StructuredMessage);
+    const structuredMessageCalls = vi.mocked(loggingMod.sendStructured).mock.calls.map((c) => c[0]);
 
     expect(childPlan.status).toBe('pending');
     expect(parentPlan.status).toBe('in_progress');
@@ -541,9 +539,7 @@ describe('timAgent - Parent Plan Status Updates', () => {
 
     await markParentInProgress(100, config);
 
-    const structuredMessageCalls = vi
-      .mocked(loggingMod.sendStructured)
-      .mock.calls.map((c) => c[0] as StructuredMessage);
+    const structuredMessageCalls = vi.mocked(loggingMod.sendStructured).mock.calls.map((c) => c[0]);
 
     const updatedParentPlan = readDbPlan(100);
 
@@ -962,9 +958,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     const { timAgent } = await import('./agent.js');
     await timAgent(123, { log: false, serialTasks: true, nonInteractive: true } as any, {});
 
-    const structuredMessages = vi
-      .mocked(loggingMod.sendStructured)
-      .mock.calls.map((c) => c[0] as StructuredMessage);
+    const structuredMessages = vi.mocked(loggingMod.sendStructured).mock.calls.map((c) => c[0]);
     expect(
       structuredMessages.filter(
         (message) => message.type === 'agent_step_start' && message.phase === 'execution'
@@ -985,9 +979,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     const { timAgent } = await import('./agent.js');
     await timAgent(123, { log: false, serialTasks: true, nonInteractive: true } as any, {});
 
-    const structuredMessages = vi
-      .mocked(loggingMod.sendStructured)
-      .mock.calls.map((c) => c[0] as StructuredMessage);
+    const structuredMessages = vi.mocked(loggingMod.sendStructured).mock.calls.map((c) => c[0]);
     expect(structuredMessages).toContainEqual(
       expect.objectContaining({
         type: 'task_completion',
@@ -1037,7 +1029,7 @@ describe('timAgent - simple mode flag plumbing', () => {
       .mockReturnValueOnce(null);
     serialMarkTaskDoneImpl = vi.fn(async () => {
       const plan = await readPlanFile(simplePlanFile);
-      plan.tasks[1]!.done = true;
+      plan.tasks[1].done = true;
       plan.status = 'done';
       await writePlanFile(simplePlanFile, plan, { cwdForIdentity: tempDir });
       return { message: 'Task updated', planComplete: true };
@@ -1103,7 +1095,7 @@ describe('timAgent - simple mode flag plumbing', () => {
       .mockReturnValueOnce(null);
     serialMarkTaskDoneImpl = vi.fn(async () => {
       const plan = await readPlanFile(simplePlanFile);
-      plan.tasks[1]!.done = true;
+      plan.tasks[1].done = true;
       plan.status = 'done';
       await writePlanFile(simplePlanFile, plan, { cwdForIdentity: tempDir });
       return { message: 'Task updated', planComplete: true };
@@ -1927,7 +1919,7 @@ describe('timAgent - Batch Tasks Mode', () => {
     const updatedPlan = await readPlanFile(batchPlanFile);
 
     expect(updatedPlan.tasks).toHaveLength(4);
-    expect(updatedPlan.tasks.every((task) => task.done === true)).toBe(true);
+    expect(updatedPlan.tasks.every((task) => task.done)).toBe(true);
 
     expect(updatedPlan.status).toBe('needs_review');
   });
@@ -1945,7 +1937,7 @@ describe('timAgent - Batch Tasks Mode', () => {
     expect(testBatchExecutor.executeCalls).toBeGreaterThanOrEqual(2);
 
     const finalPlan = await readPlanFile(batchPlanFile);
-    expect(finalPlan.tasks.every((task) => task.done === true)).toBe(true);
+    expect(finalPlan.tasks.every((task) => task.done)).toBe(true);
     expect(finalPlan.status).toBe('needs_review');
   });
 
@@ -1965,7 +1957,7 @@ describe('timAgent - Batch Tasks Mode', () => {
     expect(testBatchExecutor!.executeCalls).toBe(0);
 
     const unchangedPlan = await readPlanFile(batchPlanFile);
-    expect(unchangedPlan.tasks.every((task) => task.done === true)).toBe(true);
+    expect(unchangedPlan.tasks.every((task) => task.done)).toBe(true);
   });
 
   test('batch mode handles executor failure and maintains plan file integrity', async () => {

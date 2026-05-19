@@ -438,7 +438,7 @@ async function applyRenumberFileOperations(fileOperations: PlannedFileOperation[
   } catch (error) {
     log('\nError during file operations, attempting rollback...');
 
-    for (const completed of completedOperations.reverse()) {
+    for (const completed of completedOperations.toReversed()) {
       try {
         if (completed.backupPath && fs.existsSync(completed.backupPath)) {
           await fs.promises.copyFile(completed.backupPath, completed.originalPath);
@@ -1028,7 +1028,7 @@ export function topologicalSortFamily(
 
   // Within each level, sort by dependencies (siblings only)
   const result: Array<{ plan: Record<string, any>; filePath: string }> = [];
-  const sortedLevels = Array.from(levelGroups.keys()).sort((a, b) => a - b);
+  const sortedLevels = Array.from(levelGroups.keys()).toSorted((a, b) => a - b);
 
   for (const level of sortedLevels) {
     const plansAtLevel = levelGroups.get(level)!;
@@ -1411,12 +1411,14 @@ async function handleSwapOrRenumber(
         restoreOriginalDbState(repositoryId, originalDbSnapshots);
       } catch (rollbackError) {
         throw new Error(
-          `Swap/renumber failed: ${error instanceof Error ? error.message : String(error)}. DB rollback also failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+          `Swap/renumber failed: ${error instanceof Error ? error.message : String(error)}. DB rollback also failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+          { cause: rollbackError }
         );
       }
     }
     throw new Error(
-      `Swap/renumber failed: ${error instanceof Error ? error.message : String(error)}`
+      `Swap/renumber failed: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error }
     );
   }
 
@@ -2109,12 +2111,14 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
           restoreOriginalDbState(repository.repositoryId, originalDbSnapshots);
         } catch (rollbackError) {
           throw new Error(
-            `File operations failed: ${error instanceof Error ? error.message : String(error)}. DB rollback also failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+            `File operations failed: ${error instanceof Error ? error.message : String(error)}. DB rollback also failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+            { cause: rollbackError }
           );
         }
       }
       throw new Error(
-        `File operations failed: ${error instanceof Error ? error.message : String(error)}`
+        `File operations failed: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
       );
     }
 

@@ -30,7 +30,7 @@ function canonicalJsonStringify(value: unknown): string {
     return `[${value.map((item) => canonicalJsonStringify(item)).join(',')}]`;
   }
   if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+    const entries = Object.entries(value as Record<string, unknown>).toSorted(([a], [b]) =>
       a.localeCompare(b)
     );
     return `{${entries

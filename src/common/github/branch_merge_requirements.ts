@@ -68,7 +68,7 @@ function dedupeChecks(checks: BranchRequiredCheck[]): BranchRequiredCheck[] {
     deduped.push(check);
   }
 
-  return deduped.sort((a, b) => {
+  return deduped.toSorted((a, b) => {
     if (a.context !== b.context) {
       return a.context.localeCompare(b.context);
     }
@@ -185,7 +185,7 @@ async function fetchRulesetRequiredChecks(
       checks: dedupeChecks(requirement.checks),
     }))
     .filter((requirement) => requirement.checks.length > 0)
-    .sort((a, b) => a.sourceId - b.sourceId);
+    .toSorted((a, b) => a.sourceId - b.sourceId);
 }
 
 export async function fetchBranchMergeRequirements(

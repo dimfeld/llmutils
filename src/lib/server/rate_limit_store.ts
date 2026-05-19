@@ -204,7 +204,7 @@ export class RateLimitStore {
   getState(): RateLimitState {
     this.pruneExpiredEntries();
     return {
-      entries: Array.from(this.entries.values()).sort((a, b) => {
+      entries: Array.from(this.entries.values()).toSorted((a, b) => {
         const providerCmp = a.provider.localeCompare(b.provider);
         if (providerCmp !== 0) {
           return providerCmp;

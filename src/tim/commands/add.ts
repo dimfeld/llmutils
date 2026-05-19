@@ -201,7 +201,7 @@ export async function handleAddCommand(
       }
     }
 
-    plan.rmfilter = Array.from(filePaths).sort();
+    plan.rmfilter = Array.from(filePaths).toSorted();
     if (referencedPlan.rmfilter?.length) {
       if (plan.rmfilter.length) {
         plan.rmfilter.push('--');

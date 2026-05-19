@@ -114,7 +114,8 @@ export async function handleProofCommand(
       } catch (err) {
         if (err instanceof ProofNotConfiguredError) {
           throw new Error(
-            'No proofGeneration config found. Add a proofGeneration block to .tim/config/tim.yml; see README for an example.'
+            'No proofGeneration config found. Add a proofGeneration block to .tim/config/tim.yml; see README for an example.',
+            { cause: err }
           );
         }
         throw err;

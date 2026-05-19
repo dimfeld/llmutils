@@ -108,7 +108,7 @@ export async function createReviewsDirectory(gitRoot: string): Promise<string> {
     debugLog('Created reviews directory: %s', reviewsDir);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to create reviews directory: ${errorMessage}`);
+    throw new Error(`Failed to create reviews directory: ${errorMessage}`, { cause: error });
   }
 
   return reviewsDir;
@@ -152,7 +152,7 @@ export async function saveReviewResult(
     return filePath;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to save review result: ${errorMessage}`);
+    throw new Error(`Failed to save review result: ${errorMessage}`, { cause: error });
   }
 }
 

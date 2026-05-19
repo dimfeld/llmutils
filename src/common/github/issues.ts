@@ -178,7 +178,7 @@ export async function selectIssueComments(
   });
 
   return chosen
-    .sort((a, b) => a - b)
+    .toSorted((a, b) => a - b)
     .map((a) => items[a].value?.trim() ?? '')
     .filter((s) => s != '');
 }

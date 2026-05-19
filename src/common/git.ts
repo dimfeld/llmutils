@@ -364,7 +364,7 @@ async function computeGitWorkingTreeHash(cwd: string): Promise<string | undefine
         .toString()
         .split('\0')
         .filter((p) => p.length > 0)
-        .sort();
+        .toSorted();
       for (const relPath of paths) {
         hash.update(relPath);
         hash.update('\0');

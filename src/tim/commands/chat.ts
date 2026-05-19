@@ -196,7 +196,7 @@ export async function handleChatCommand(
   const codexAppServerEnabled = isCodexAppServerEnabled();
   const canUseTerminalInput =
     !noninteractive &&
-    process.stdin.isTTY === true &&
+    process.stdin.isTTY &&
     options.terminalInput !== false &&
     workspaceConfig.terminalInput !== false;
   const terminalInputEnabled =

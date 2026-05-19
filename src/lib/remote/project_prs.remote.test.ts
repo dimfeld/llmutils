@@ -458,8 +458,8 @@ describe('project_prs remote functions', () => {
 
     expect(result.hasData).toBe(true);
     expect(result.authored).toHaveLength(2);
-    expect(result.authored.map((pr) => pr.projectId).sort((a, b) => a - b)).toEqual(
-      [projectId, otherProjectId].sort((a, b) => a - b)
+    expect(result.authored.map((pr) => pr.projectId).toSorted((a, b) => a - b)).toEqual(
+      [projectId, otherProjectId].toSorted((a, b) => a - b)
     );
     expect(result.authored.map((pr) => pr.status.pr_number)).toEqual([23, 17]);
   });

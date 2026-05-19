@@ -26,9 +26,9 @@ export function composeReviewerContext(
     ? `\n\n### Pending Tasks\n- ${pendingTitles.join('\n- ')}`
     : '';
   const base =
-    `${originalContext}` +
-    `${completedSection}` +
-    `${pendingSection}` +
+    originalContext +
+    completedSection +
+    pendingSection +
     `\n\n### Initial Implementation Output\n${implementerOutput}` +
     `\n\n### Initial Testing Output\n${testerOutput}`;
   return base;
@@ -51,7 +51,7 @@ export function composeVerifierContext(
     ? `\n\n### Newly Completed Tasks From Implementer\n- ${newlyCompletedTitles.join('\n- ')}`
     : '';
   return (
-    `${originalContext}` +
+    originalContext +
     previouslyCompletedSection +
     pendingSection +
     newlyCompletedSection +

@@ -43,7 +43,7 @@ export async function httpFlushOperations(
       body: JSON.stringify({ operations: ops }),
     });
     await assertOk(response, url);
-    const payload = (await response.json()) as unknown;
+    const payload = await response.json();
     const parsed = SyncOpResultFrameSchema.extend({
       currentSequenceId: SyncCatchUpResponseFrameSchema.shape.currentSequenceId,
     }).parse({ type: 'op_result', ...(payload as object) });
@@ -73,7 +73,7 @@ export async function httpFlushBatch(
       body: JSON.stringify({ batch }),
     });
     await assertOk(response, url);
-    const payload = (await response.json()) as unknown;
+    const payload = await response.json();
     const parsed = SyncBatchResultFrameSchema.extend({
       currentSequenceId: SyncCatchUpResponseFrameSchema.shape.currentSequenceId,
     }).parse({ type: 'batch_result', ...(payload as object) });
@@ -102,7 +102,7 @@ export async function httpFetchSnapshots(
   try {
     const response = await fetch(url, { headers: authHeaders(token, nodeId) });
     await assertOk(response, url);
-    const payload = (await response.json()) as unknown;
+    const payload = await response.json();
     const parsed = SyncSnapshotResponseFrameSchema.extend({
       currentSequenceId: SyncCatchUpResponseFrameSchema.shape.currentSequenceId,
     }).parse({ type: 'snapshot_response', requestId: 'http', ...(payload as object) });
@@ -129,7 +129,7 @@ export async function httpCatchUp(
   try {
     const response = await fetch(url, { headers: authHeaders(token, nodeId) });
     await assertOk(response, url);
-    const payload = (await response.json()) as unknown;
+    const payload = await response.json();
     const parsed = SyncCatchUpResponseFrameSchema.parse({
       type: 'catch_up_response',
       ...(payload as object),

@@ -9,7 +9,7 @@ export interface ShortcutCallbacks {
 
 /** Returns true if the event target is a text-entry element where Ctrl+/ would type a character. */
 export function isTypingTarget(event: KeyboardEvent): boolean {
-  const target = event.target as HTMLElement | null;
+  const target = event.target;
   if (!target) return false;
   const tagName = target.tagName;
   if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return true;

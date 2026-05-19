@@ -118,7 +118,7 @@ export function findNextPlanFromCollection(
       return false;
     })
     .filter((plan) => isReadyPlan(plan, plans, !includeInProgress))
-    .sort((a, b) => {
+    .toSorted((a, b) => {
       if (includePending && includeInProgress) {
         return compareByStatusPriorityAndId(a, b);
       }
@@ -188,7 +188,7 @@ export function findNextReadyDependencyFromCollection(
 
       return isReadyPlan(plan, plans, false);
     })
-    .sort(compareByStatusPriorityAndId);
+    .toSorted(compareByStatusPriorityAndId);
 
   if (readyCandidates.length > 0) {
     return {
@@ -206,7 +206,7 @@ export function findNextReadyDependencyFromCollection(
       const status = plan.status || 'pending';
       return status === 'pending' || status === 'in_progress';
     })
-    .sort(compareByStatusPriorityAndId)[0];
+    .toSorted(compareByStatusPriorityAndId)[0];
 
   if (blockedPlan) {
     return {

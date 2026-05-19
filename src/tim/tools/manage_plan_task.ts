@@ -40,7 +40,7 @@ export async function managePlanTaskTool(
       );
       return {
         ...result,
-        data: { action: 'add', ...(result.data ?? {}) },
+        data: { action: 'add', ...result.data },
       };
     }
     case 'update': {
@@ -57,7 +57,7 @@ export async function managePlanTaskTool(
       );
       return {
         ...result,
-        data: { action: 'update', ...(result.data ?? {}) },
+        data: { action: 'update', ...result.data },
       };
     }
     case 'remove': {
@@ -71,7 +71,7 @@ export async function managePlanTaskTool(
       );
       return {
         ...result,
-        data: { action: 'remove', ...(result.data ?? {}) },
+        data: { action: 'remove', ...result.data },
       };
     }
   }

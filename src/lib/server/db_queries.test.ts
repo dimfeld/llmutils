@@ -1404,7 +1404,7 @@ describe('lib/server/db_queries', () => {
         includeDeletedArtifacts: true,
       });
       expect(fullDetail?.artifacts).toHaveLength(2);
-      const uuids = fullDetail?.artifacts.map((a) => a.uuid).sort();
+      const uuids = fullDetail?.artifacts.map((a) => a.uuid).toSorted();
       expect(uuids).toEqual([
         'cccccccc-0000-4000-8000-000000000001',
         'cccccccc-0000-4000-8000-000000000002',

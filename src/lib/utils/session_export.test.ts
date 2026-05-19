@@ -416,7 +416,7 @@ describe('generateExportFilename', () => {
       sessionInfo: { command: 'tim agent --flag=value/path' },
     });
     const filename = generateExportFilename(session);
-    expect(filename).not.toMatch(/[^a-zA-Z0-9_.\-]/);
+    expect(filename).not.toMatch(/[^a-zA-Z0-9_.-]/);
   });
 
   it('omits planId when missing', () => {

@@ -1060,7 +1060,7 @@ export async function handleWorkspaceAddCommand(
 
       log(`Using plan: ${planData.title || planData.goal || resolvedPlanFilePath}`);
     } catch (err) {
-      throw new Error(`Failed to resolve plan: ${err as Error}`);
+      throw new Error(`Failed to resolve plan: ${err as Error}`, { cause: err });
     }
   }
 
@@ -2016,7 +2016,7 @@ export async function handleWorkspaceUpdateCommand(
       patch.planTitle = planTitle || '';
       patch.issueUrls = plan.issue && plan.issue.length > 0 ? [...plan.issue] : [];
     } catch (err) {
-      throw new Error(`Failed to read plan for --from-plan: ${err as Error}`);
+      throw new Error(`Failed to read plan for --from-plan: ${err as Error}`, { cause: err });
     }
   } else if (options.description !== undefined) {
     patch.description = options.description;

@@ -987,8 +987,8 @@ describe('main-node sync apply engine', () => {
         attempts: 1,
       },
     ]);
-    expect(operationRows()[1]!.last_error).toContain(`Unknown plan ${OTHER_PLAN_UUID}`);
-    expect(operationRows()[0]!.last_error).toBe(
+    expect(operationRows()[1].last_error).toContain(`Unknown plan ${OTHER_PLAN_UUID}`);
+    expect(operationRows()[0].last_error).toBe(
       'Operation rolled back because its batch did not commit'
     );
     expect(countRows('sync_sequence')).toBe(0);
@@ -1172,7 +1172,7 @@ describe('main-node sync apply engine', () => {
         attempts: 1,
       },
     ]);
-    expect(operationRows()[2]!.last_error).toContain(
+    expect(operationRows()[2].last_error).toContain(
       'Atomic batch aborted: conflict diagnosed but not persisted'
     );
     expect(countRows('sync_conflict')).toBe(0);
@@ -1410,7 +1410,7 @@ describe('main-node sync apply engine', () => {
       })
     );
 
-    const task = getPlanTasksByUuid(db, PLAN_UUID)[0]!;
+    const task = getPlanTasksByUuid(db, PLAN_UUID)[0];
     expect(result.status).toBe('applied');
     expect(result.results.map((item) => item.status)).toEqual(['applied', 'applied']);
     expect(task).toMatchObject({
@@ -1445,7 +1445,7 @@ describe('main-node sync apply engine', () => {
     expect(
       getPlanTagsByUuid(db, PLAN_UUID)
         .map((row) => row.tag)
-        .sort()
+        .toSorted()
     ).toEqual(['one', 'two']);
     expect(countRows('sync_sequence')).toBe(2);
   });
@@ -1519,7 +1519,7 @@ describe('main-node sync apply engine', () => {
       [2, 'rejected'],
       [3, 'rejected'],
     ]);
-    expect(operationRows()[2]!.last_error).toBe(
+    expect(operationRows()[2].last_error).toBe(
       'Operation rolled back because its batch did not commit'
     );
     const next = await addPlanTagOperation(
@@ -1535,7 +1535,7 @@ describe('main-node sync apply engine', () => {
     expect(
       getPlanTagsByUuid(db, PLAN_UUID)
         .map((row) => row.tag)
-        .sort()
+        .toSorted()
     ).toEqual(['next', 'prior']);
   });
 
@@ -1575,7 +1575,7 @@ describe('main-node sync apply engine', () => {
       [1, 'applied'],
       [2, 'rejected'],
     ]);
-    expect(operationRows()[1]!.last_error).toBe(
+    expect(operationRows()[1].last_error).toBe(
       'Operation rolled back because its batch did not commit'
     );
 
@@ -1634,7 +1634,7 @@ describe('main-node sync apply engine', () => {
     expect(
       getPlanTagsByUuid(db, PLAN_UUID)
         .map((row) => row.tag)
-        .sort()
+        .toSorted()
     ).toEqual(['applied']);
     expect(countRows('sync_operation')).toBe(2);
     expect(operationRows()).toMatchObject([
@@ -1670,7 +1670,7 @@ describe('main-node sync apply engine', () => {
     expect(
       getPlanTagsByUuid(db, PLAN_UUID)
         .map((row) => row.tag)
-        .sort()
+        .toSorted()
     ).toEqual(['applied']);
   });
 
@@ -2214,11 +2214,11 @@ describe('main-node sync apply engine', () => {
     const result = applyOperation(db, op);
 
     expect(result.status).toBe('applied');
-    expect(result.invalidations.sort()).toEqual(
-      [`plan:${OTHER_PLAN_UUID}`, `plan:${PLAN_UUID}`].sort()
+    expect(result.invalidations.toSorted()).toEqual(
+      [`plan:${OTHER_PLAN_UUID}`, `plan:${PLAN_UUID}`].toSorted()
     );
-    expect(sequenceTargets().sort()).toEqual(
-      [`plan:${OTHER_PLAN_UUID}`, `plan:${PLAN_UUID}`].sort()
+    expect(sequenceTargets().toSorted()).toEqual(
+      [`plan:${OTHER_PLAN_UUID}`, `plan:${PLAN_UUID}`].toSorted()
     );
     expect(getPlanByUuid(db, PLAN_UUID)?.revision).toBe(1);
     expect(getPlanByUuid(db, OTHER_PLAN_UUID)?.revision).toBe((parentBefore ?? 0) + 1);
@@ -2252,11 +2252,11 @@ describe('main-node sync apply engine', () => {
     const result = applyOperation(db, op);
 
     expect(result.status).toBe('applied');
-    expect(result.invalidations.sort()).toEqual(
-      [`plan:${OTHER_PLAN_UUID}`, `plan:${PLAN_UUID}`].sort()
+    expect(result.invalidations.toSorted()).toEqual(
+      [`plan:${OTHER_PLAN_UUID}`, `plan:${PLAN_UUID}`].toSorted()
     );
-    expect(sequenceTargets().sort()).toEqual(
-      [`plan:${OTHER_PLAN_UUID}`, `plan:${PLAN_UUID}`].sort()
+    expect(sequenceTargets().toSorted()).toEqual(
+      [`plan:${OTHER_PLAN_UUID}`, `plan:${PLAN_UUID}`].toSorted()
     );
     expect(getPlanByUuid(db, OTHER_PLAN_UUID)?.revision).toBe((parentBefore ?? 0) + 1);
   });
@@ -2326,7 +2326,7 @@ describe('main-node sync apply engine', () => {
     expect(
       getPlanTagsByUuid(db, PLAN_UUID)
         .map((tag) => tag.tag)
-        .sort()
+        .toSorted()
     ).toEqual(['one', 'two', 'zero']);
   });
 
@@ -3696,8 +3696,8 @@ describe('main-node sync apply engine', () => {
     const planTombstone = tombstones.find((t) => t.entity_type === 'plan');
     const taskTombstones = tombstones.filter((t) => t.entity_type === 'task');
     expect(planTombstone?.entity_key).toBe(`plan:${PLAN_UUID}`);
-    expect(taskTombstones.map((t) => t.entity_key).sort()).toEqual(
-      [`task:${TASK_UUID}`, `task:${TASK_UUID_2}`].sort()
+    expect(taskTombstones.map((t) => t.entity_key).toSorted()).toEqual(
+      [`task:${TASK_UUID}`, `task:${TASK_UUID_2}`].toSorted()
     );
   });
 
@@ -3738,13 +3738,13 @@ describe('main-node sync apply engine', () => {
     const result = applyOperation(db, op);
 
     expect(result.status).toBe('applied');
-    expect(result.invalidations.sort()).toEqual(
+    expect(result.invalidations.toSorted()).toEqual(
       [
         `plan:${OTHER_PLAN_UUID}`,
         `plan:${PLAN_UUID}`,
         `plan:${THIRD_PLAN_UUID}`,
         `task:${TASK_UUID}`,
-      ].sort()
+      ].toSorted()
     );
     expect(getPlanByUuid(db, OTHER_PLAN_UUID)?.revision).toBe((otherBefore ?? 0) + 1);
     expect(getPlanByUuid(db, THIRD_PLAN_UUID)?.revision).toBe((thirdBefore ?? 0) + 1);
@@ -3753,7 +3753,7 @@ describe('main-node sync apply engine', () => {
         .prepare('SELECT COUNT(*) AS count FROM plan_dependency WHERE depends_on_uuid = ?')
         .get(PLAN_UUID)
     ).toEqual({ count: 0 });
-    expect(sequenceTargets().sort()).toEqual(result.invalidations.sort());
+    expect(sequenceTargets().toSorted()).toEqual(result.invalidations.toSorted());
   });
 
   test('plan.delete emits sequence rows for the deleted plan and each deleted task tombstone', async () => {
@@ -3770,8 +3770,8 @@ describe('main-node sync apply engine', () => {
 
     applyOperation(db, op);
 
-    expect(sequenceTargets().sort()).toEqual(
-      [`plan:${PLAN_UUID}`, `task:${TASK_UUID}`, `task:${TASK_UUID_2}`].sort()
+    expect(sequenceTargets().toSorted()).toEqual(
+      [`plan:${PLAN_UUID}`, `task:${TASK_UUID}`, `task:${TASK_UUID_2}`].toSorted()
     );
     expect(
       db
@@ -3823,8 +3823,12 @@ describe('main-node sync apply engine', () => {
 
     const result = applyOperation(db, op);
 
-    expect(result.invalidations.sort()).toEqual([`plan:${PLAN_UUID}`, `task:${TASK_UUID}`].sort());
-    expect(sequenceTargets().sort()).toEqual([`plan:${PLAN_UUID}`, `task:${TASK_UUID}`].sort());
+    expect(result.invalidations.toSorted()).toEqual(
+      [`plan:${PLAN_UUID}`, `task:${TASK_UUID}`].toSorted()
+    );
+    expect(sequenceTargets().toSorted()).toEqual(
+      [`plan:${PLAN_UUID}`, `task:${TASK_UUID}`].toSorted()
+    );
   });
 
   test('FIFO gap: re-submitting a deferred op succeeds after gap is filled', async () => {
@@ -3859,8 +3863,8 @@ describe('main-node sync apply engine', () => {
     expect(
       getPlanTagsByUuid(db, PLAN_UUID)
         .map((t) => t.tag)
-        .sort()
-    ).toEqual(['first', 'second'].sort());
+        .toSorted()
+    ).toEqual(['first', 'second'].toSorted());
   });
 
   test('duplicate localSequence from same node with different op UUID throws SyncValidationError', async () => {

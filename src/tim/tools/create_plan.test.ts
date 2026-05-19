@@ -223,7 +223,7 @@ describe('createPlanTool references', () => {
     const { plan: dep1 } = await resolvePlanByNumericId(1, tempDir);
     const { plan: dep2 } = await resolvePlanByNumericId(2, tempDir);
 
-    expect([...plan.dependencies].sort((a, b) => a - b)).toEqual([1, 2]);
+    expect([...plan.dependencies].toSorted((a, b) => a - b)).toEqual([1, 2]);
     expect(plan.references).toBeUndefined();
     expect(dep1.uuid).toMatch(UUID_REGEX);
     expect(dep2.uuid).toMatch(UUID_REGEX);

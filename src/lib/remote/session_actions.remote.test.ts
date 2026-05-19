@@ -367,7 +367,7 @@ describe('session remote actions', () => {
       currentManager
         .getSessionSnapshot()
         .sessions.map((session) => session.connectionId)
-        .sort()
+        .toSorted()
     ).toEqual(['conn-active']);
   });
 });

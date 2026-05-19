@@ -77,7 +77,7 @@ export async function executeNormalMode(
       const title = n === 1 ? prettyType : `${prettyType} #${n}`;
       steps.push({ title, body: e.message.trim() });
     }
-    const lastReviewer = [...events].reverse().find((e) => e.type === 'reviewer');
+    const lastReviewer = [...events].toReversed().find((e) => e.type === 'reviewer');
     const lastAny = events[events.length - 1];
     const content = (lastReviewer?.message || lastAny?.message || '').trim();
     // Provide structured steps preferred by summary; keep `content` as fallback.
@@ -559,7 +559,9 @@ export async function executeNormalMode(
     ) {
       await markTasksAsDone(planInfo.planFilePath, newlyCompletedTitles, gitRoot, timConfig);
       if (finalReviewVerdict === 'NEEDS_FIXES') {
-        const lastReviewMessage = [...events].reverse().find((e) => e.type === 'reviewer')?.message;
+        const lastReviewMessage = [...events]
+          .toReversed()
+          .find((e) => e.type === 'reviewer')?.message;
         if (lastReviewMessage) {
           await appendReviewNotesToPlan(
             planInfo.planFilePath,

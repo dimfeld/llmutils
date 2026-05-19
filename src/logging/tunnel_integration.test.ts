@@ -341,7 +341,7 @@ describe('tunnel integration', () => {
 
       expect(calls).toHaveLength(2);
       // Both messages should arrive (order may vary due to async)
-      const allArgs = calls.map((c) => c.args[0]).sort();
+      const allArgs = calls.map((c) => c.args[0]).toSorted();
       expect(allArgs).toEqual(['from level 1', 'from level 2']);
     });
 
@@ -371,7 +371,7 @@ describe('tunnel integration', () => {
       });
 
       expect(calls).toHaveLength(3);
-      const allArgs = calls.map((c) => c.args[0]).sort();
+      const allArgs = calls.map((c) => c.args[0]).toSorted();
       expect(allArgs).toEqual(['client A message', 'client B message', 'client C message']);
     });
   });

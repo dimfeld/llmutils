@@ -52,12 +52,12 @@ describe('bootstrapSyncMetadata', () => {
 
     expect(result).toEqual({ plansSeeded: 1, settingsSeeded: 2 });
     const rows = syncSequenceRows();
-    expect(rows.map((row) => row.target_key).sort()).toEqual(
+    expect(rows.map((row) => row.target_key).toSorted()).toEqual(
       [
         planKey(PLAN_UUID),
         projectSettingKey(PROJECT_UUID, 'branchPrefix'),
         projectSettingKey(PROJECT_UUID, 'color'),
-      ].sort()
+      ].toSorted()
     );
     expect(rows.filter((row) => row.target_type === 'task')).toEqual([]);
     expect(rows).toEqual(
@@ -124,8 +124,8 @@ describe('bootstrapSyncMetadata', () => {
 
     expect(result).toEqual({ plansSeeded: 1, settingsSeeded: 0 });
     const planRows = syncSequenceRows().filter((row) => row.target_type === 'plan');
-    expect(planRows.map((row) => row.target_key).sort()).toEqual(
-      [planKey(PLAN_UUID), planKey(SECOND_PLAN_UUID)].sort()
+    expect(planRows.map((row) => row.target_key).toSorted()).toEqual(
+      [planKey(PLAN_UUID), planKey(SECOND_PLAN_UUID)].toSorted()
     );
     expect(planRows.filter((row) => row.target_key === planKey(PLAN_UUID))).toHaveLength(1);
   });

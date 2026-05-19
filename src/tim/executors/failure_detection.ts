@@ -138,7 +138,7 @@ export function extractFailureDetails(content: string): FailureDetails | undefin
   function sliceSection(startIdx: number): string {
     const headingPositions = Object.values(indices)
       .filter((n): n is number => n != null)
-      .sort((a, b) => a - b);
+      .toSorted((a, b) => a - b);
     const next = headingPositions.find((n) => n > startIdx);
     const from = startIdx + 1; // skip the heading line
     const to = next != null ? next : lines.length;

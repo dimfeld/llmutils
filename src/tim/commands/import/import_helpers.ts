@@ -86,14 +86,14 @@ export async function writeImportedPlansToDbTransactionally(
       idToUuid,
       {
         existingRow,
-        currentPlan: pendingPlans.get(entry.plan.id!),
+        currentPlan: pendingPlans.get(entry.plan.id),
       }
     );
     pendingRows.set(
       entry.plan.uuid!,
       planToPendingRow(context.projectId, entry.plan, existingRow, idToUuid)
     );
-    pendingPlans.set(entry.plan.id!, structuredClone(entry.plan));
+    pendingPlans.set(entry.plan.id, structuredClone(entry.plan));
     return updates;
   });
   await batch.commit();
@@ -124,7 +124,7 @@ function writeImportedPlansViaLegacyTransaction(
     ) => {
       purgeUuidlessLegacyChildRows(db);
       for (const entry of nextWrites) {
-        deleteUuidlessLegacyPlanRow(db, nextProjectId, entry.plan.id!);
+        deleteUuidlessLegacyPlanRow(db, nextProjectId, entry.plan.id);
         upsertPlan(db, nextProjectId, toPlanUpsertInput(entry.plan, nextIdToUuid));
       }
     }
@@ -139,7 +139,7 @@ function removeUuidlessLegacyPlanRowsInTransaction(
 ): void {
   purgeUuidlessLegacyChildRows(db);
   for (const entry of writes) {
-    deleteUuidlessLegacyPlanRow(db, projectId, entry.plan.id!);
+    deleteUuidlessLegacyPlanRow(db, projectId, entry.plan.id);
   }
 }
 
@@ -181,7 +181,7 @@ function planToPendingRow(
   return {
     uuid: plan.uuid!,
     project_id: existingRow?.project_id ?? projectId,
-    plan_id: plan.id!,
+    plan_id: plan.id,
     title: plan.title ?? null,
     goal: plan.goal ?? null,
     note: plan.note ?? null,

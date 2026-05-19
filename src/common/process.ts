@@ -420,7 +420,7 @@ export function createLineSplitter(): (input: string) => string[] {
  * @returns Promise resolving to the exit code of the commit command (0 for success)
  */
 export async function commitAll(message: string, cwd?: string): Promise<number> {
-  if ((await hasUncommittedChanges(cwd)) === false) {
+  if (!(await hasUncommittedChanges(cwd))) {
     return 0;
   }
 

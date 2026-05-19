@@ -64,7 +64,7 @@ export function isUnderEpic<T extends PlanSchema>(
 export function getDirectChildren(planId: number, allPlans: Map<number, PlanSchema>): PlanSchema[] {
   const children = Array.from(allPlans.values())
     .filter((plan) => plan.parent === planId)
-    .sort((a, b) => (a.id || 0) - (b.id || 0));
+    .toSorted((a, b) => (a.id || 0) - (b.id || 0));
 
   return children;
 }
@@ -110,7 +110,7 @@ export function getAllChildren(planId: number, allPlans: Map<number, PlanSchema>
   }
 
   // Sort by ID for consistent ordering
-  return allChildren.sort((a, b) => (a.id || 0) - (b.id || 0));
+  return allChildren.toSorted((a, b) => (a.id || 0) - (b.id || 0));
 }
 
 /**
@@ -188,5 +188,5 @@ export function hasCycleInParentChain(
 export function getRootPlans(allPlans: Map<number, PlanSchema>): PlanSchema[] {
   return Array.from(allPlans.values())
     .filter((plan) => !plan.parent)
-    .sort((a, b) => (a.id || 0) - (b.id || 0));
+    .toSorted((a, b) => (a.id || 0) - (b.id || 0));
 }

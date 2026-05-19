@@ -476,7 +476,7 @@ describe('tim sync CLI node commands', () => {
     await handleSyncShowRejectedCommand({}, command, { db, config: config('persistent') });
 
     expect(mockLog).toHaveBeenCalledTimes(1);
-    const [line] = mockLog.mock.calls[0]!;
+    const [line] = mockLog.mock.calls[0];
     expect(line).toContain(rejected.operationUuid);
     expect(line).toContain('plan.add_tag');
     expect(line).toContain(`plan:${PLAN_UUID}`);

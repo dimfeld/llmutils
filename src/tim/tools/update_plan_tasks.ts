@@ -68,6 +68,6 @@ export async function updatePlanTasksTool(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to update plan: ${message}`);
+    throw new Error(`Failed to update plan: ${message}`, { cause: error });
   }
 }

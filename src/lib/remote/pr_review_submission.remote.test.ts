@@ -1315,7 +1315,7 @@ describe('pr_review_submission remote functions', () => {
     );
     const persisted = getPrReviewSubmissionsForReview(currentDb, review.id);
     expect(persisted).toHaveLength(1);
-    expect(persisted[0]!.commitSha).toBe('head-sha');
+    expect(persisted[0].commitSha).toBe('head-sha');
   });
 
   test('submitReviewToGitHub body-only submission also falls back', async () => {
@@ -1340,7 +1340,7 @@ describe('pr_review_submission remote functions', () => {
     );
     const persisted = getPrReviewSubmissionsForReview(currentDb, review.id);
     expect(persisted).toHaveLength(1);
-    expect(persisted[0]!.commitSha).toBe('head-sha');
+    expect(persisted[0].commitSha).toBe('head-sha');
   });
 
   function seedReview(

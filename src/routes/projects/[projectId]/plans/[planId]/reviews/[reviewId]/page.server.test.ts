@@ -78,11 +78,11 @@ describe('projects/[projectId]/plans/[planId]/reviews/[reviewId]/+page.server', 
       ],
     });
 
-    const result = (await invokeLoad({
+    const result = await invokeLoad({
       projectId: String(projectId),
       planId: planUuid,
       reviewId: String(review.id),
-    })) as Awaited<ReturnType<typeof load>>;
+    });
 
     expect(result.review.id).toBe(review.id);
     expect(result.plan.uuid).toBe(planUuid);

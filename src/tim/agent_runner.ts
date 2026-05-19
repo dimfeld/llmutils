@@ -35,6 +35,6 @@ export async function runPlanContextWithExecutor(
   } catch (err) {
     const errorMessage = `Failed to execute with executor ${executorName}: ${(err as Error).message}`;
     error(errorMessage);
-    throw new Error(errorMessage);
+    throw new Error(errorMessage, { cause: err });
   }
 }

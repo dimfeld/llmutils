@@ -362,7 +362,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
 
     // Verify the plan has dependencies and priority
     const created = (await resolvePlanByNumericId(3, tempDir)).plan;
-    expect([...(created.dependencies ?? [])].sort((a, b) => a - b)).toEqual([1, 2]);
+    expect([...(created.dependencies ?? [])].toSorted((a, b) => a - b)).toEqual([1, 2]);
     expect(created.priority).toBe('high');
   });
 });

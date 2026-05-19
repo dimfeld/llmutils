@@ -1325,7 +1325,10 @@ describe('tim db/pr_status', () => {
     getOrCreateProject(db, 'github.com__example__other-repo');
     getOrCreateProject(db, 'gitlab.com__example__ignored-repo');
 
-    expect([...getKnownRepoFullNames(db)].sort()).toEqual(['example/other-repo', 'example/repo']);
+    expect([...getKnownRepoFullNames(db)].toSorted()).toEqual([
+      'example/other-repo',
+      'example/repo',
+    ]);
   });
 
   test('getKnownRepoFullNames ignores malformed and non-github repository ids', () => {

@@ -279,7 +279,7 @@ async function promptForConfig(): Promise<TimConfigInput> {
     ...(autoCreatePr === 'never'
       ? {}
       : {
-          autoCreatePr: autoCreatePr as 'done' | 'needs_review' | 'always',
+          autoCreatePr: autoCreatePr,
         }),
   };
 

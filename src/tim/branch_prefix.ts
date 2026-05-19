@@ -4,8 +4,10 @@ export const BRANCH_PREFIX_MAX_LENGTH = 20;
 /** Regex for validating a complete git ref segment (not a prefix).
  * Used internally — for prefix validation, use `isValidBranchPrefix` which
  * normalizes the prefix and appends a dummy suffix before checking. */
-export const GIT_REF_SEGMENT_REGEX =
-  /^(?![.\-/])(?!.*\s)(?!.*[\x00-\x1f\x7f])(?!.*\.\.)(?!.*\/\.)(?!.*\/\/)(?!.*@\{)(?!.*[~^:\\?*\[])(?!.*\.lock(?:\/|$))(?!.*\.$)(?!@$).+$/;
+export const GIT_REF_SEGMENT_REGEX = new RegExp(
+  String.raw`^(?![.\-/])(?!.*\s)(?!.*[\u0000-\u001f\u007f])(?!.*\.\.)(?!.*\/\.)(?!.*\/\/)(?!.*@\{)(?!.*[~^:\\?*[])(?!.*\.lock(?:\/|$))(?!.*\.$)(?!@$).+$`,
+  'u'
+);
 export const BRANCH_PREFIX_VALIDATION_MESSAGE = 'Branch prefix must be a valid git ref segment';
 
 export const branchPrefixSchema = z

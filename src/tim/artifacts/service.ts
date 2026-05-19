@@ -159,7 +159,9 @@ async function assertReadableRegularFile(sourcePath: string): Promise<string> {
     realSourcePath = await fs.realpath(resolvedSourcePath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error(`Artifact source file does not exist: ${resolvedSourcePath}`);
+      throw new Error(`Artifact source file does not exist: ${resolvedSourcePath}`, {
+        cause: error,
+      });
     }
     throw error;
   }
@@ -169,7 +171,9 @@ async function assertReadableRegularFile(sourcePath: string): Promise<string> {
     stat = await fs.stat(realSourcePath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error(`Artifact source file does not exist: ${resolvedSourcePath}`);
+      throw new Error(`Artifact source file does not exist: ${resolvedSourcePath}`, {
+        cause: error,
+      });
     }
     throw error;
   }

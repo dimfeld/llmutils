@@ -123,7 +123,7 @@ export async function createCleanupPlan(
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tasks: [],
-    rmfilter: Array.from(filePaths).sort(), // Convert to sorted array
+    rmfilter: Array.from(filePaths).toSorted(), // Convert to sorted array
     tags: [],
   };
 

@@ -447,7 +447,7 @@ export async function handleCreatePrCommand(
     terminalInput !== false &&
     config.terminalInput !== false &&
     nonInteractive !== true &&
-    process.stdin.isTTY === true;
+    process.stdin.isTTY;
   const { plan, planPath } = await resolvePlanByNumericId(planId, repoRoot);
 
   if (!plan.branch) {
@@ -504,9 +504,9 @@ export async function handleCreatePrCommand(
     },
   });
 
-  if (!prUrl) {
+  if (prUrl === null) {
     throw new Error('No PR was found or created for this plan branch.');
   }
 
-  log(`PR available: ${prUrl}`);
+  log('PR available:', prUrl);
 }

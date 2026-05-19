@@ -24,7 +24,7 @@ vi.mock('./pull_requests.js', () => ({
   parseOwnerRepoFromRepositoryId: vi.fn((id: string) => {
     const parts = id.split('__');
     if (parts[0] !== 'github.com') return null;
-    return { owner: parts[1]!, repo: parts[2]! };
+    return { owner: parts[1], repo: parts[2] };
   }),
   fetchOpenPullRequestsWithReviewers: vi.fn(),
 }));

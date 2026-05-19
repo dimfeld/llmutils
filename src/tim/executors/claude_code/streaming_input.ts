@@ -17,17 +17,17 @@ export async function sendSinglePromptAndWait(
   streamingProcess: StreamingProcess,
   content: string
 ): Promise<SpawnAndLogOutputResult> {
-  streamingProcess.stdin.write(buildSingleUserInputMessageLine(content));
+  void streamingProcess.stdin.write(buildSingleUserInputMessageLine(content));
   await streamingProcess.stdin.end();
   return streamingProcess.result;
 }
 
 export function sendInitialPrompt(streamingProcess: StreamingProcess, content: string): void {
-  streamingProcess.stdin.write(buildSingleUserInputMessageLine(content));
+  void streamingProcess.stdin.write(buildSingleUserInputMessageLine(content));
 }
 
 export function sendFollowUpMessage(stdin: FileSink, content: string): void {
-  stdin.write(buildSingleUserInputMessageLine(content));
+  void stdin.write(buildSingleUserInputMessageLine(content));
 }
 
 export function safeEndStdin(stdin: FileSink, debugLog: (...args: unknown[]) => void): void {

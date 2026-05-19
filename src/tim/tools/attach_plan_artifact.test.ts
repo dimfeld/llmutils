@@ -87,7 +87,7 @@ describe('attachPlanArtifactTool', () => {
 
     const result = await attachPlanArtifactTool({ planId: 1, filePath: sourcePath }, toolContext);
 
-    expect(Object.keys(result.data!).sort()).toEqual(['filename', 'mimeType', 'size', 'uuid']);
+    expect(Object.keys(result.data!).toSorted()).toEqual(['filename', 'mimeType', 'size', 'uuid']);
     expect(result.data!.filename).toBe('shape.png');
     expect(result.data!.mimeType).toBe('image/png');
   });

@@ -1268,7 +1268,7 @@ describe('sync transport server and clients', () => {
     expect(
       getPlanTagsByUuid(mainDb, PLAN_UUID)
         .map((t) => t.tag)
-        .sort()
+        .toSorted()
     ).toEqual(['batch-tag-one', 'batch-tag-two']);
     expect(getTimNodeCursor(mainDb, NODE_A).last_known_sequence_id).toBe(0);
     sender.close();
@@ -1318,12 +1318,12 @@ describe('sync transport server and clients', () => {
     expect(
       getPlanTagsByUuid(mainDb, PLAN_UUID)
         .map((t) => t.tag)
-        .sort()
+        .toSorted()
     ).toEqual(['ws-batch-one', 'ws-batch-two']);
     expect(
       getPlanTagsByUuid(localDb, PLAN_UUID)
         .map((t) => t.tag)
-        .sort()
+        .toSorted()
     ).toEqual(['ws-batch-one', 'ws-batch-two']);
   });
 

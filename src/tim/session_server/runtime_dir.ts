@@ -198,7 +198,7 @@ export function listSessionInfoFiles(): SessionInfoFile[] {
     .readdirSync(sessionDir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
     .map((entry) => entry.name)
-    .sort();
+    .toSorted();
 
   const infos: SessionInfoFile[] = [];
   for (const name of names) {

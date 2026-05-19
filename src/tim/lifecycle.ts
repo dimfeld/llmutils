@@ -196,7 +196,7 @@ export class LifecycleManager {
 
     const errors: Error[] = [];
 
-    for (const state of [...this.states].reverse()) {
+    for (const state of [...this.states].toReversed()) {
       if (!state.shouldRunShutdown) {
         continue;
       }

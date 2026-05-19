@@ -241,7 +241,7 @@ export function buildReviewGuideDiffCatalog(diffText: string): ReviewGuideDiffCa
 
     const fileHeaderLines = lines.slice(0, hunkStartIndexes[0]);
     for (let hunkIndex = 0; hunkIndex < hunkStartIndexes.length; hunkIndex++) {
-      const startIndex = hunkStartIndexes[hunkIndex]!;
+      const startIndex = hunkStartIndexes[hunkIndex];
       const endIndex = hunkStartIndexes[hunkIndex + 1] ?? lines.length;
       const hunkLines = lines.slice(startIndex, endIndex);
       const headerLine = hunkLines[0] ?? '';
@@ -445,7 +445,7 @@ function toInsertIssue(issue: StoredReviewIssue): InsertReviewIssueInput {
 }
 
 function sortIssues(issues: StoredReviewIssue[]): StoredReviewIssue[] {
-  return [...issues].sort((a, b) => {
+  return [...issues].toSorted((a, b) => {
     const fileA = a.file ?? '';
     const fileB = b.file ?? '';
     if (fileA !== fileB) {
@@ -462,7 +462,7 @@ function summarizeTopIssues(issues: StoredReviewIssue[]): string[] {
   const severityRank: Record<string, number> = { critical: 0, major: 1, minor: 2, info: 3 };
   const important = issues
     .filter((issue) => issue.severity !== 'info')
-    .sort((a, b) => (severityRank[a.severity] ?? 3) - (severityRank[b.severity] ?? 3))
+    .toSorted((a, b) => (severityRank[a.severity] ?? 3) - (severityRank[b.severity] ?? 3))
     .slice(0, 5);
   return important.map((issue, index) => {
     const location = issue.file

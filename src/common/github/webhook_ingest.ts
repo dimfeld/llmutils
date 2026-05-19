@@ -112,7 +112,7 @@ async function autoCompleteMergedLinkedPlans(
       getPlanTagsByUuid(db, planUuid).map((tag) => tag.tag),
       uuidToPlanId
     );
-    if (plan.tasks.length === 0 || !plan.tasks.every((task) => task.done === true)) {
+    if (plan.tasks.length === 0 || !plan.tasks.every((task) => task.done)) {
       continue;
     }
 

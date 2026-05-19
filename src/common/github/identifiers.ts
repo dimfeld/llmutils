@@ -108,7 +108,7 @@ export function validatePrIdentifier(identifier: string): void {
     );
   }
 
-  if (!/^\d+$/.test(segments[3]!)) {
+  if (!/^\d+$/.test(segments[3])) {
     throw new Error(
       `Invalid pull request number in URL: ${identifier}. Expected a GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)`
     );
@@ -139,7 +139,7 @@ export function tryCanonicalizePrUrl(identifier: string): string | null {
   const repo = segments[1];
   const number = segments[3];
 
-  if (!/^\d+$/.test(number!)) {
+  if (!/^\d+$/.test(number)) {
     return null;
   }
 

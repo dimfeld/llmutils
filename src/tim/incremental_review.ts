@@ -305,7 +305,7 @@ export async function getIncrementalDiff(
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to generate incremental jj diff: ${errorMessage}`);
+      throw new Error(`Failed to generate incremental jj diff: ${errorMessage}`, { cause: error });
     }
   } else {
     try {
@@ -343,7 +343,7 @@ export async function getIncrementalDiff(
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to generate incremental git diff: ${errorMessage}`);
+      throw new Error(`Failed to generate incremental git diff: ${errorMessage}`, { cause: error });
     }
   }
 
@@ -603,7 +603,7 @@ async function generateRegularDiffForReview(
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      throw new Error(`Failed to generate jj diff: ${errorMessage}`);
+      throw new Error(`Failed to generate jj diff: ${errorMessage}`, { cause: err });
     }
   } else {
     // Use git commands for diff generation
@@ -645,7 +645,7 @@ async function generateRegularDiffForReview(
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      throw new Error(`Failed to generate git diff: ${errorMessage}`);
+      throw new Error(`Failed to generate git diff: ${errorMessage}`, { cause: err });
     }
   }
 

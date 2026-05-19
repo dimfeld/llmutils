@@ -70,7 +70,7 @@ export function planRowToSchemaInput(
   const dependencies = dependencyUuids
     .map((uuid) => resolveUuidToPlanId(uuid, uuidToPlanId))
     .filter((id): id is number => typeof id === 'number')
-    .sort((a, b) => a - b);
+    .toSorted((a, b) => a - b);
 
   return {
     id: row.plan_id,

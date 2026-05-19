@@ -36,7 +36,7 @@ export async function createPlanTool(
     planTags = validateTags(args.tags, context.config);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(message);
+    throw new Error(message, { cause: error });
   }
 
   const projectContext = await resolveProjectContext(context.gitRoot);

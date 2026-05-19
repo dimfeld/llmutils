@@ -224,6 +224,6 @@ describe('import_helpers', () => {
 
     const urls = getImportedIssueUrlsFromPlans(plans);
 
-    expect([...urls].sort()).toEqual(['https://issue/1', 'https://issue/2', 'https://issue/3']);
+    expect([...urls].toSorted()).toEqual(['https://issue/1', 'https://issue/2', 'https://issue/3']);
   });
 });

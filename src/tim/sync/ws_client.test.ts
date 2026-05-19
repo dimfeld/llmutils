@@ -240,7 +240,7 @@ describe('sync WebSocket client', () => {
     expect(
       getPlanTagsByUuid(mainDb, PLAN_UUID)
         .map((tag) => tag.tag)
-        .sort()
+        .toSorted()
     ).toEqual(['in-flight-a', 'in-flight-b']);
   });
 

@@ -27,7 +27,7 @@ export function updatePlanProperties(
 
   // Update rmfilter
   if (options.rmfilter && options.rmfilter.length > 0) {
-    plan.rmfilter = Array.from(new Set([...(plan.rmfilter || []), ...options.rmfilter])).sort();
+    plan.rmfilter = Array.from(new Set([...(plan.rmfilter || []), ...options.rmfilter])).toSorted();
     modified = true;
     log(`Updated rmfilter patterns`);
   }

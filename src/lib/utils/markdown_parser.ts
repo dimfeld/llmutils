@@ -54,7 +54,7 @@ function collectHeadings(tree: Root): TocEntry[] {
  */
 export function extractHeadings(content: string): TocEntry[] {
   if (!content.trim()) return [];
-  const tree = parser.parse(content) as Root;
+  const tree = parser.parse(content);
   return collectHeadings(tree);
 }
 
@@ -81,7 +81,7 @@ function renderMarkdownTree(tree: Root, toc: TocEntry[], cursor: { i: number }):
  */
 export function renderMarkdown(content: string): string {
   if (!content.trim()) return '';
-  const tree = parser.parse(content) as Root;
+  const tree = parser.parse(content);
   const toc = collectHeadings(tree);
   return renderMarkdownTree(tree, toc, { i: 0 });
 }
@@ -131,7 +131,7 @@ export function parsePatchFilename(patch: string): string | null {
 export function parseMarkdownWithDiffsAndToc(content: string): ParsedMarkdownWithDiffs {
   if (!content.trim()) return { segments: [], toc: [] };
 
-  const tree = parser.parse(content) as Root;
+  const tree = parser.parse(content);
   const toc = collectHeadings(tree);
   const cursor = { i: 0 };
 

@@ -181,7 +181,7 @@ function requireReviewForDiff(review: ReviewRow): {
     error(400, `Cannot parse owner/repo from PR URL: ${prUrl}`);
   }
 
-  return { owner: match[1]!, repo: match[2]!, baseBranch: review.base_branch };
+  return { owner: match[1], repo: match[2], baseBranch: review.base_branch };
 }
 
 function requirePrUrl(review: ReviewRow): string {

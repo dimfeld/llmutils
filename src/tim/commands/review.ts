@@ -134,13 +134,17 @@ async function saveReviewResultWithErrorHandling(
         try {
           const stat = statSync(outputDir);
           if (!stat.isDirectory()) {
-            throw new Error(`Output directory path exists but is not a directory: ${outputDir}`);
+            throw new Error(`Output directory path exists but is not a directory: ${outputDir}`, {
+              cause: mkdirErr,
+            });
           }
         } catch {
           throw new Error(`Cannot access output directory: ${outputDir}`);
         }
       } else {
-        throw new Error(`Failed to create output directory: ${(mkdirErr as Error).message}`);
+        throw new Error(`Failed to create output directory: ${(mkdirErr as Error).message}`, {
+          cause: mkdirErr,
+        });
       }
     }
 
@@ -180,7 +184,7 @@ async function saveReviewResultWithErrorHandling(
         const errorCode = (writeErr as any)?.code;
 
         if (errorCode === 'ENOSPC') {
-          throw new Error('Insufficient disk space to save review results');
+          throw new Error('Insufficient disk space to save review results', { cause: writeErr });
         } else if (errorCode === 'EMFILE' || errorCode === 'ENFILE') {
           if (retryCount < maxRetries) {
             logger(
@@ -191,11 +195,11 @@ async function saveReviewResultWithErrorHandling(
             await new Promise((resolve) => setTimeout(resolve, 100 * retryCount)); // Exponential backoff
             continue;
           }
-          throw new Error('Too many open files - system resource exhaustion');
+          throw new Error('Too many open files - system resource exhaustion', { cause: writeErr });
         } else if (errorCode === 'EACCES') {
-          throw new Error(`Permission denied when writing to: ${filePath}`);
+          throw new Error(`Permission denied when writing to: ${filePath}`, { cause: writeErr });
         } else if (errorCode === 'EROFS') {
-          throw new Error('Cannot write to read-only file system');
+          throw new Error('Cannot write to read-only file system', { cause: writeErr });
         } else if (retryCount < maxRetries) {
           logger(
             chalk.yellow(
@@ -1535,7 +1539,7 @@ export async function handleReviewCommand(
         completionMessage = `Review failed: ${errorMessage}`;
         completionStatus = 'error';
         completionErrorMessage = errorMessage;
-        throw new Error(contextualError);
+        throw new Error(contextualError, { cause: err });
       }
     };
 

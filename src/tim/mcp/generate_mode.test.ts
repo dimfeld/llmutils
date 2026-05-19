@@ -1606,9 +1606,9 @@ describe('mcpListReadyPlans', () => {
     expect(parsed.count).toBe(1);
     expect(parsed.plans[0].id).toBe(3);
     expect(parsed.plans[0].title).toBe('Ready Plan');
-    expect([...(parsed.plans[0].dependencies ?? [])].sort((a: number, b: number) => a - b)).toEqual(
-      [1, 2]
-    );
+    expect(
+      [...(parsed.plans[0].dependencies ?? [])].toSorted((a: number, b: number) => a - b)
+    ).toEqual([1, 2]);
   });
 
   test('filters ready plans by tags using OR logic', async () => {
@@ -1647,7 +1647,7 @@ describe('mcpListReadyPlans', () => {
     const parsed = JSON.parse(result);
 
     expect(parsed.count).toBe(2);
-    const ids = parsed.plans.map((plan: { id: number }) => plan.id).sort();
+    const ids = parsed.plans.map((plan: { id: number }) => plan.id).toSorted();
     expect(ids).toEqual([1, 3]);
   });
 
@@ -1691,7 +1691,7 @@ describe('mcpListReadyPlans', () => {
     const result = await mcpListReadyPlans(args, context);
     const parsed = JSON.parse(result);
 
-    const ids = parsed.plans.map((plan: { id: number }) => plan.id).sort();
+    const ids = parsed.plans.map((plan: { id: number }) => plan.id).toSorted();
     // Auto-linking makes parent plans depend on their children, so only the leaf (12)
     // is ready. Plans 10 and 11 are blocked by their children.
     expect(ids).toEqual([12]);
@@ -1963,7 +1963,7 @@ describe('mcpCreatePlan', () => {
     expect(plan.goal).toBe('Implement new feature');
     expect(plan.details).toBe('## Overview\nThis is a test plan.');
     expect(plan.priority).toBe('high');
-    expect([...(plan.dependencies ?? [])].sort((a, b) => a - b)).toEqual([10, 20]);
+    expect([...(plan.dependencies ?? [])].toSorted((a, b) => a - b)).toEqual([10, 20]);
     expect(plan.discoveredFrom).toBe(5);
     expect(plan.assignedTo).toBe('alice');
     expect(plan.issue).toEqual(['https://github.com/org/repo/issues/123']);
@@ -2590,7 +2590,7 @@ describe('MCP Resources', () => {
       expect(plan.priority).toBe('high');
       expect(plan.parent).toBe(5);
       expect(plan.tasks).toHaveLength(2);
-      expect([...(plan.dependencies ?? [])].sort((a, b) => a - b)).toEqual([10, 20]);
+      expect([...(plan.dependencies ?? [])].toSorted((a, b) => a - b)).toEqual([10, 20]);
       expect(plan.discoveredFrom).toBe(3);
       expect(plan.assignedTo).toBe('charlie');
       expect(plan.issue).toEqual(['https://github.com/org/repo/issues/1']);

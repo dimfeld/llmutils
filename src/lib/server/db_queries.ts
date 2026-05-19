@@ -824,7 +824,7 @@ export function getWorkspacesForProject(db: Database, projectId?: number): Enric
         isRecentlyActive,
       };
     })
-    .sort((left, right) => {
+    .toSorted((left, right) => {
       if (left.isRecentlyActive !== right.isRecentlyActive) {
         return left.isRecentlyActive ? -1 : 1;
       }

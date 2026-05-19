@@ -167,7 +167,7 @@ async function selectComments(
     choices: withIndex,
   });
 
-  return chosen.sort((a, b) => a - b).map((index) => commentChoices[index].value);
+  return chosen.toSorted((a, b) => a - b).map((index) => commentChoices[index].value);
 }
 
 /**
@@ -296,7 +296,7 @@ async function importHierarchicalIssue(
     startId = (await resolveProjectContext(repoRoot)).maxNumericId + 1;
   }
 
-  const parentPlanId = existingParentPlan ? existingParentPlan.id! : startId;
+  const parentPlanId = existingParentPlan ? existingParentPlan.id : startId;
   let currentMaxId = existingParentPlan ? startId - 1 : startId;
 
   let parentPlan: PlanSchema;

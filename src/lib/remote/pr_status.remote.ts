@@ -127,7 +127,7 @@ async function refreshPlanPrStatusFromGitHub(
     const errors: string[] = invalidPrUrls.map((url) => `${url}: not a valid PR URL`);
     refreshResults.forEach((result, index) => {
       if (result.status === 'rejected') {
-        const prUrl = prUrls[index]!;
+        const prUrl = prUrls[index];
         errors.push(
           `${prUrl}: ${
             result.reason instanceof Error ? result.reason.message : String(result.reason)

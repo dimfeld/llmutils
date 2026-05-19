@@ -301,7 +301,7 @@ export class CodexAppServerConnection {
     }
     const line = `${JSON.stringify(payload)}\n`;
     debugLog('Codex app-server send:', line.trimEnd());
-    this.stdinSink.write(line);
+    void this.stdinSink.write(line);
   }
 
   private async consumeStdout(): Promise<void> {

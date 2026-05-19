@@ -179,7 +179,7 @@ export async function ensureNodeId(config: TimConfig): Promise<string> {
 
   await writeGlobalConfigFile(globalConfig);
   config.sync = {
-    ...(config.sync ?? {}),
+    ...config.sync,
     nodeId,
   };
   return nodeId;

@@ -179,7 +179,7 @@ async function getNFilesBySize(files: string[], nLargest: number, nSmallest: num
         .catch(() => 0),
     }))
   );
-  const sorted = filesWithSizes.sort((a, b) => b.size - a.size);
+  const sorted = filesWithSizes.toSorted((a, b) => b.size - a.size);
 
   const largest = nLargest ? sorted.slice(0, nLargest).map((f) => f.file) : [];
   const smallest = nSmallest ? sorted.slice(-nSmallest).map((f) => f.file) : [];

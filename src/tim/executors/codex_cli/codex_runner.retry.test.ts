@@ -90,8 +90,8 @@ describe('executeCodexStep retries', () => {
     expect(output).toBe('ok');
     expect(vi.mocked(spawnAndLogOutput)).toHaveBeenCalledTimes(2);
 
-    const firstArgs = vi.mocked(spawnAndLogOutput).mock.calls[0][0] as string[];
-    const secondArgs = vi.mocked(spawnAndLogOutput).mock.calls[1][0] as string[];
+    const firstArgs = vi.mocked(spawnAndLogOutput).mock.calls[0][0];
+    const secondArgs = vi.mocked(spawnAndLogOutput).mock.calls[1][0];
 
     expect(firstArgs.slice(-2)).toEqual(['--json', 'prompt']);
     expect(secondArgs.slice(-4)).toEqual(['--json', 'resume', 'thread-123', 'continue']);

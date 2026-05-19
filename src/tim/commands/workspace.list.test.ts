@@ -1157,8 +1157,8 @@ describe('workspace list outside git repository', () => {
     const output = JSON.parse(consoleOutputOutsideRepo.join('\n'));
     // Should show both workspaces even without --all flag
     expect(output).toHaveLength(2);
-    expect(output.map((w: any) => w.fullPath).sort()).toEqual(
-      [workspaceDir1, workspaceDir2].sort()
+    expect(output.map((w: any) => w.fullPath).toSorted()).toEqual(
+      [workspaceDir1, workspaceDir2].toSorted()
     );
   });
 

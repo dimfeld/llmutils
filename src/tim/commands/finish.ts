@@ -70,9 +70,7 @@ export function isPlanReadyToFinish(plan: Pick<PlanSchema, 'status' | 'tasks' | 
   }
 
   return (
-    plan.status === 'in_progress' &&
-    plan.tasks.length > 0 &&
-    plan.tasks.every((task) => task.done === true)
+    plan.status === 'in_progress' && plan.tasks.length > 0 && plan.tasks.every((task) => task.done)
   );
 }
 
@@ -181,7 +179,7 @@ export async function handleFinishCommand(
       const nonInteractive = options.nonInteractive === true;
       const terminalInputEnabled =
         !nonInteractive &&
-        process.stdin.isTTY === true &&
+        process.stdin.isTTY &&
         options.terminalInput !== false &&
         config.terminalInput !== false;
       const runOptions = {

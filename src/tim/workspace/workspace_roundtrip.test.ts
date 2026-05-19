@@ -637,7 +637,7 @@ describe('wipeMaterializedPlans', () => {
 
       const remainingEntries = await realReaddir(plansDir);
       expect(remainingEntries).toHaveLength(2);
-      expect(remainingEntries.sort()).toEqual(['.gitignore', '.gitkeep']);
+      expect(remainingEntries.toSorted()).toEqual(['.gitignore', '.gitkeep']);
     } finally {
       await realRm(workspaceDir, { force: true, recursive: true });
     }
@@ -646,9 +646,7 @@ describe('wipeMaterializedPlans', () => {
   test('ignores missing materialized plans directory', async () => {
     const { mkdtemp: realMkdtemp, rm: realRm } =
       await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
-    const workspaceDir = await (realMkdtemp as typeof mkdtemp)(
-      path.join(os.tmpdir(), 'workspace-roundtrip-')
-    );
+    const workspaceDir = await realMkdtemp(path.join(os.tmpdir(), 'workspace-roundtrip-'));
 
     // Restore real fs for this test
     const { readdir: realReaddir } =
@@ -660,7 +658,7 @@ describe('wipeMaterializedPlans', () => {
       const { wipeMaterializedPlans } = await import('./workspace_roundtrip.js');
       await expect(wipeMaterializedPlans(workspaceDir)).resolves.toBeUndefined();
     } finally {
-      await (realRm as typeof rm)(workspaceDir, { force: true, recursive: true });
+      await realRm(workspaceDir, { force: true, recursive: true });
     }
   });
 });

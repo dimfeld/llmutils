@@ -55,7 +55,7 @@ describe('tim artifact list command', () => {
     payload = JSON.parse(consoleLog.mock.calls.at(-1)?.[0] as string) as Array<{
       filename: string;
     }>;
-    expect(payload.map((artifact) => artifact.filename).sort()).toEqual([
+    expect(payload.map((artifact) => artifact.filename).toSorted()).toEqual([
       'active.log',
       'deleted.log',
     ]);

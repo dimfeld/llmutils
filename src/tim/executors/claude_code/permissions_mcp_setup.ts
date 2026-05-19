@@ -206,7 +206,7 @@ function addBashPrefixSafely(
 ): boolean {
   const existingValue = allowedToolsMap.get(BASH_TOOL_NAME);
 
-  if (existingValue !== undefined && !Array.isArray(existingValue) && existingValue !== true) {
+  if (existingValue !== undefined && !Array.isArray(existingValue) && !existingValue) {
     debugLog(
       `Warning: Unexpected value type for ${BASH_TOOL_NAME} in allowedToolsMap: ${typeof existingValue}`
     );

@@ -55,7 +55,7 @@ export function buildPlanMetadata(
 ): PlanReviewMetadata {
   const planData = context.planData;
   const mapRelatedPlans = (
-    plans: PlanContext['parentChain'] | PlanContext['completedChildren'],
+    plans: PlanContext['parentChain'],
     label: string
   ): PlanReviewMetadata['parentChain'] => {
     return plans.flatMap((plan) => {
@@ -120,7 +120,7 @@ export async function handlePlanReviewGuideCommand(
     options.terminalInput !== false &&
     config.terminalInput !== false &&
     reviewInteractive &&
-    process.stdin.isTTY === true;
+    process.stdin.isTTY;
   const reviewSelection = resolveReviewExecutorSelection(options.executor, config);
 
   let baseDir = initialRepoRoot;

@@ -104,7 +104,7 @@ export function getRequiredCheckNames(
     return [];
   }
 
-  return [...getRequiredCheckContexts(requirements)].sort((a, b) => a.localeCompare(b));
+  return [...getRequiredCheckContexts(requirements)].toSorted((a, b) => a.localeCompare(b));
 }
 
 export function getEffectiveCheckRollupState(

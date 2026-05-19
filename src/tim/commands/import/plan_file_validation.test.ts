@@ -379,7 +379,7 @@ describe('Plan File Validation Tests', () => {
     expect(validationResult.success).toBe(true);
 
     // Verify GitHub-specific structure
-    expect(planData.issue[0]).toMatch(/^https:\/\/github\.com\/[^\/]+\/[^\/]+\/issues\/\d+$/);
+    expect(planData.issue[0]).toMatch(/^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+$/);
   });
 
   test('should handle edge case data types correctly in YAML', async () => {

@@ -392,7 +392,7 @@ describe('finish command', () => {
 
     expect(runUpdateLessonsSpy).toHaveBeenCalled();
     expect(writePlanFileSpy).toHaveBeenCalled();
-    const writtenPlan = writePlanFileSpy.mock.calls[0]![1];
+    const writtenPlan = writePlanFileSpy.mock.calls[0][1];
     expect(writtenPlan.status).toBe('needs_review');
     expect(writtenPlan.lessonsAppliedAt).toBeUndefined();
   });
@@ -403,7 +403,7 @@ describe('finish command', () => {
     await handleFinishCommand('314', {}, buildCommand());
 
     expect(runUpdateLessonsSpy).toHaveBeenCalled();
-    const writtenPlan = writePlanFileSpy.mock.calls[0]![1];
+    const writtenPlan = writePlanFileSpy.mock.calls[0][1];
     expect(writtenPlan.status).toBe('needs_review');
     expect(writtenPlan.lessonsAppliedAt).toBeDefined();
     expect(new Date(writtenPlan.lessonsAppliedAt).toISOString()).toBe(writtenPlan.lessonsAppliedAt);

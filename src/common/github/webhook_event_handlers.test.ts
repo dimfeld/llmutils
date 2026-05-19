@@ -961,7 +961,7 @@ describe('common/github/webhook_event_handlers', () => {
 
     const detail52 = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/52');
     const detail53 = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/53');
-    expect(detail52?.checks.map((check) => check.name).sort()).toEqual([
+    expect(detail52?.checks.map((check) => check.name).toSorted()).toEqual([
       'existing-check',
       'integration tests',
     ]);

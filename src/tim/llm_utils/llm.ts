@@ -29,7 +29,7 @@ class MarkdownBuffer {
   }
 
   add(chunk: string) {
-    this.batProcess.stdin.write(chunk);
+    void this.batProcess.stdin.write(chunk);
   }
 
   async flush() {

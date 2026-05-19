@@ -164,11 +164,7 @@ function defaultGetScrollContainer(node: HTMLElement): HTMLElement {
     current = getComposedParentElement(current);
   }
 
-  return (
-    (node.ownerDocument?.scrollingElement as HTMLElement | null) ??
-    node.ownerDocument?.documentElement ??
-    node
-  );
+  return node.ownerDocument?.scrollingElement ?? node.ownerDocument?.documentElement ?? node;
 }
 
 function defaultIsElementVisible(node: HTMLElement, scrollContainer: HTMLElement): boolean {
@@ -525,7 +521,7 @@ export function createAnnotationClickHandler(
       // Cards live inside user-collapsible <details> severity groups; force
       // the containing group open before scrolling so collapsed severities
       // don't appear to swallow the click.
-      const details = el.closest('details') as HTMLDetailsElement | null;
+      const details = el.closest('details');
       if (details && !details.open) details.open = true;
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }

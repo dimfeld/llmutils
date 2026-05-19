@@ -413,7 +413,7 @@ describe('persistent-node sync queue', () => {
     expect(
       getPlanTagsByUuid(mainDb, PLAN_UUID)
         .map((tag) => tag.tag)
-        .sort()
+        .toSorted()
     ).toEqual(['after-prune', 'before-prune']);
   });
 

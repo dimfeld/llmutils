@@ -229,7 +229,7 @@ describe('tim db/assignment', () => {
 
     const assignments = getAssignmentsByProject(db, projectId);
     expect(assignments).toHaveLength(2);
-    expect(assignments.map((entry) => entry.plan_uuid).sort()).toEqual(['uuid-1', 'uuid-2']);
+    expect(assignments.map((entry) => entry.plan_uuid).toSorted()).toEqual(['uuid-1', 'uuid-2']);
   });
 
   test('getAssignment returns null for missing assignment', () => {

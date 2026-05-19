@@ -206,7 +206,7 @@ function mergeUsage(
   existing: FormatterState['latestUsage'],
   next: FormatterState['latestUsage']
 ): FormatterState['latestUsage'] {
-  const merged = { ...(existing ?? {}) };
+  const merged = { ...existing };
   for (const [key, value] of Object.entries(next ?? {})) {
     if (value != null) {
       (merged as Record<string, unknown>)[key] = value;

@@ -277,7 +277,7 @@ export async function selectHierarchicalIssueComments(
   const childrenContentMap = new Map<number, string[]>();
 
   chosen
-    .sort((a, b) => a - b)
+    .toSorted((a, b) => a - b)
     .map((index) => items[index])
     .filter((item): item is NonNullable<typeof item> => item != null)
     .forEach((item) => {
@@ -370,7 +370,7 @@ export async function selectIssueComments(
   });
 
   return chosen
-    .sort((a, b) => a - b)
+    .toSorted((a, b) => a - b)
     .map((a) => items[a].value)
     .filter((s): s is string => s != null && s != undefined && s != '');
 }

@@ -675,7 +675,7 @@ export async function resolveReviewThread(threadId: string): Promise<boolean> {
     const response: {
       resolveReviewThread: { thread: { isResolved: boolean } };
     } = await octokit.graphql(mutation, { threadId });
-    const resolved = response.resolveReviewThread?.thread?.isResolved === true;
+    const resolved = response.resolveReviewThread?.thread?.isResolved;
     if (resolved) {
       debugLog(`Successfully resolved review thread ${threadId}`);
     } else {

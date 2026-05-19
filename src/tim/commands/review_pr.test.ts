@@ -1472,7 +1472,7 @@ describe('review_pr command', () => {
 
     const inserted = mockInsertReviewIssues.mock.calls[0]?.[1];
     expect(inserted?.issues).toHaveLength(2);
-    const sources = (inserted?.issues ?? []).map((issue) => issue.source).sort();
+    const sources = (inserted?.issues ?? []).map((issue) => issue.source).toSorted();
     expect(sources).toEqual(['claude-code', 'codex-cli']);
     expect(mockUpdateReview).toHaveBeenCalledWith(
       expect.anything(),

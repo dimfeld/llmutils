@@ -137,11 +137,11 @@ describe('handlePromoteCommand', () => {
     // Read and verify the original plan was updated
     const updatedOriginalPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(updatedOriginalPlan.tasks).toHaveLength(2);
-    expect(updatedOriginalPlan.tasks![0].title).toBe('Set up database schema');
-    expect(updatedOriginalPlan.tasks![1].title).toBe('Add password hashing');
+    expect(updatedOriginalPlan.tasks[0].title).toBe('Set up database schema');
+    expect(updatedOriginalPlan.tasks[1].title).toBe('Add password hashing');
     expect(updatedOriginalPlan.dependencies).toHaveLength(1);
 
-    const newPlanId = updatedOriginalPlan.dependencies![0]!;
+    const newPlanId = updatedOriginalPlan.dependencies![0];
     const newPlan = (await resolvePlanByNumericId(newPlanId, tempDir)).plan;
     expect(newPlan.id).toBe(newPlanId);
     expect(newPlan.title).toBe('Implement login endpoint');
@@ -209,7 +209,7 @@ describe('handlePromoteCommand', () => {
     const updatedParent = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(updatedParent.dependencies).toHaveLength(1);
 
-    const childPlan = (await resolvePlanByNumericId(updatedParent.dependencies![0]!, tempDir)).plan;
+    const childPlan = (await resolvePlanByNumericId(updatedParent.dependencies![0], tempDir)).plan;
     expect(childPlan.tags).toEqual(['backend', 'urgent']);
     expect(updatedParent.tags).toEqual(['backend', 'urgent']);
   });
@@ -261,8 +261,8 @@ describe('handlePromoteCommand', () => {
 
     const promotedPlans = await Promise.all(
       updatedOriginalPlan.dependencies!.map(async (planId) => ({
-        id: planId!,
-        plan: (await resolvePlanByNumericId(planId!, tempDir)).plan,
+        id: planId,
+        plan: (await resolvePlanByNumericId(planId, tempDir)).plan,
       }))
     );
     const promotedByTitle = new Map(promotedPlans.map(({ plan }) => [plan.title, plan]));
@@ -279,8 +279,8 @@ describe('handlePromoteCommand', () => {
     expect(registrationPlan?.dependencies).toContain(hashingPlan?.id);
 
     expect(updatedOriginalPlan.tasks).toHaveLength(2);
-    expect(updatedOriginalPlan.tasks![0].title).toBe('Set up database schema');
-    expect(updatedOriginalPlan.tasks![1].title).toBe('Add email verification');
+    expect(updatedOriginalPlan.tasks[0].title).toBe('Set up database schema');
+    expect(updatedOriginalPlan.tasks[1].title).toBe('Add email verification');
 
     // Verify logging was called
     expect(logSpy).toHaveBeenCalled();
@@ -381,9 +381,9 @@ describe('handlePromoteCommand', () => {
       expect(updatedOriginalPlan.dependencies).toHaveLength(1);
 
       const promotedPlan = (
-        await resolvePlanByNumericId(updatedOriginalPlan.dependencies![0]!, tempDir)
+        await resolvePlanByNumericId(updatedOriginalPlan.dependencies![0], tempDir)
       ).plan;
-      expect(promotedPlan.id).toBe(updatedOriginalPlan.dependencies![0]!);
+      expect(promotedPlan.id).toBe(updatedOriginalPlan.dependencies![0]);
       expect(promotedPlan.title).toBe('External task');
     } finally {
       tasksDir = originalTasksDir;
@@ -428,8 +428,8 @@ describe('handlePromoteCommand', () => {
 
     const promotedPlans = await Promise.all(
       updatedOriginalPlan.dependencies!.map(async (planId) => ({
-        id: planId!,
-        plan: (await resolvePlanByNumericId(planId!, tempDir)).plan,
+        id: planId,
+        plan: (await resolvePlanByNumericId(planId, tempDir)).plan,
       }))
     );
     const promotedByTitle = new Map(promotedPlans.map(({ plan }) => [plan.title, plan]));
@@ -510,28 +510,28 @@ describe('handlePromoteCommand', () => {
     expect(updatedPlan1.dependencies).toHaveLength(1);
     expect(updatedPlan2.dependencies).toHaveLength(1);
 
-    const newPlan3 = (await resolvePlanByNumericId(updatedPlan1.dependencies![0]!, tempDir)).plan;
-    const newPlan4 = (await resolvePlanByNumericId(updatedPlan2.dependencies![0]!, tempDir)).plan;
+    const newPlan3 = (await resolvePlanByNumericId(updatedPlan1.dependencies![0], tempDir)).plan;
+    const newPlan4 = (await resolvePlanByNumericId(updatedPlan2.dependencies![0], tempDir)).plan;
 
     // Verify plan 3 (from task 1.2)
-    expect(newPlan3.id).toBe(updatedPlan1.dependencies![0]!);
+    expect(newPlan3.id).toBe(updatedPlan1.dependencies![0]);
     expect(newPlan3.title).toBe('Plan 1 Task 2');
     expect(newPlan3.details).toBe('Second task in plan 1');
     expect(newPlan3.dependencies).toEqual([]);
 
     // Verify plan 4 (from task 2.1)
-    expect(newPlan4.id).toBe(updatedPlan2.dependencies![0]!);
+    expect(newPlan4.id).toBe(updatedPlan2.dependencies![0]);
     expect(newPlan4.title).toBe('Plan 2 Task 1');
     expect(newPlan4.details).toBe('First task in plan 2');
     expect(newPlan4.dependencies).toEqual([]);
 
     // Plan 1 should have only the first task remaining
     expect(updatedPlan1.tasks).toHaveLength(1);
-    expect(updatedPlan1.tasks![0].title).toBe('Plan 1 Task 1');
+    expect(updatedPlan1.tasks[0].title).toBe('Plan 1 Task 1');
 
     // Plan 2 should have only the second task remaining
     expect(updatedPlan2.tasks).toHaveLength(1);
-    expect(updatedPlan2.tasks![0].title).toBe('Plan 2 Task 2');
+    expect(updatedPlan2.tasks[0].title).toBe('Plan 2 Task 2');
 
     // Verify logging was called
     expect(logSpy).toHaveBeenCalled();

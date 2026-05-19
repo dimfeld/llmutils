@@ -250,7 +250,7 @@ describe('Hierarchy Utilities', () => {
 
       const completedChildren = getCompletedChildren(1, allPlans);
       expect(completedChildren).toHaveLength(2);
-      expect(completedChildren.map((c) => c.id).sort()).toEqual([2, 5]);
+      expect(completedChildren.map((c) => c.id).toSorted()).toEqual([2, 5]);
     });
 
     it('should include completed grandchildren', () => {

@@ -372,9 +372,9 @@ function validateJsonStructure(obj: any): void {
     JSON.stringify(obj);
   } catch (error) {
     if (error instanceof TypeError && error.message.includes('circular')) {
-      throw new Error('Cannot serialize object with circular references to JSON');
+      throw new Error('Cannot serialize object with circular references to JSON', { cause: error });
     }
-    throw new Error(`JSON serialization failed: ${(error as Error).message}`);
+    throw new Error(`JSON serialization failed: ${(error as Error).message}`, { cause: error });
   }
 
   // Validate critical fields exist and are correct types
@@ -426,7 +426,9 @@ export class JsonFormatter implements ReviewFormatter {
     try {
       return JSON.stringify(outputObject, null, 2);
     } catch (error) {
-      throw new Error(`Failed to generate JSON output: ${(error as Error).message}`);
+      throw new Error(`Failed to generate JSON output: ${(error as Error).message}`, {
+        cause: error,
+      });
     }
   }
 

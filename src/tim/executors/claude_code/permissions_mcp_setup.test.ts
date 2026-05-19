@@ -213,7 +213,7 @@ describe('permissions socket server line buffering', () => {
     });
 
     expect(responses).toHaveLength(2);
-    const sorted = responses.sort((a, b) => a.requestId.localeCompare(b.requestId));
+    const sorted = responses.toSorted((a, b) => a.requestId.localeCompare(b.requestId));
     expect(sorted[0]).toEqual({
       type: 'permission_response',
       requestId: 'test-3a',

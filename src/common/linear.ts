@@ -164,7 +164,9 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to fetch Linear issue ${parsed.identifier}: ${errorMessage}`);
+      throw new Error(`Failed to fetch Linear issue ${parsed.identifier}: ${errorMessage}`, {
+        cause: error,
+      });
     }
   }
 
@@ -199,7 +201,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       ]);
 
       const comments = commentsConnection.nodes;
-      const children = childrenConnection.nodes.sort(
+      const children = childrenConnection.nodes.toSorted(
         (a, b) => (a.subIssueSortOrder ?? 0) - (b.subIssueSortOrder ?? 0)
       );
 
@@ -278,7 +280,8 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(
-        `Failed to fetch Linear issue with children ${parsed.identifier}: ${errorMessage}`
+        `Failed to fetch Linear issue with children ${parsed.identifier}: ${errorMessage}`,
+        { cause: error }
       );
     }
   }
@@ -356,7 +359,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       return issueData;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to fetch open Linear issues: ${errorMessage}`);
+      throw new Error(`Failed to fetch open Linear issues: ${errorMessage}`, { cause: error });
     }
   }
 

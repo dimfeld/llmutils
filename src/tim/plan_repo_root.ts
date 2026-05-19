@@ -19,7 +19,7 @@ async function findRepoRootFromConfig(startDir: string): Promise<string | null> 
   let currentDir = path.resolve(startDir);
 
   while (true) {
-    const candidatePatterns = [...TIM_CONFIG_CANDIDATES].sort(
+    const candidatePatterns = [...TIM_CONFIG_CANDIDATES].toSorted(
       (left, right) => right.split('/').length - left.split('/').length
     );
     for (const candidate of candidatePatterns) {

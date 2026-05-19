@@ -70,7 +70,9 @@ export async function storeArtifactFile(
     stat = await fsp.stat(resolvedSourcePath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error(`Artifact source file does not exist: ${resolvedSourcePath}`);
+      throw new Error(`Artifact source file does not exist: ${resolvedSourcePath}`, {
+        cause: error,
+      });
     }
     throw error;
   }

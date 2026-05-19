@@ -446,7 +446,7 @@ describe('runClaudeSubprocess shared permissions DB integration', () => {
     });
 
     expect(mockExecuteWithTerminalInput).toHaveBeenCalledTimes(1);
-    const callArgs = mockExecuteWithTerminalInput.mock.calls[0]![0];
+    const callArgs = mockExecuteWithTerminalInput.mock.calls[0][0];
     expect(callArgs.tunnelForwardingEnabled).toBe(true);
     expect(mockSendSinglePromptAndWait).toHaveBeenCalledTimes(0);
   });

@@ -18,7 +18,7 @@ export function isProofConfigured(projectConfig: ProofEligibleConfig | null | un
 export function isPlanProofReady(plan: ProofEligiblePlan | null | undefined): boolean {
   if (!plan) return false;
   if (plan.status === 'needs_review' || plan.status === 'done') return true;
-  if (plan.tasks?.some((task) => task.done === true)) return true;
+  if (plan.tasks?.some((task) => task.done)) return true;
   if (plan.taskCounts && plan.taskCounts.done > 0) return true;
   return false;
 }

@@ -291,7 +291,7 @@ export async function handleListCommand(
 
   // Sort based on the specified field
   // TODO Secondary sorts for low-cardinality fields like status and priority
-  const sortField = (options.sort ?? 'created') as ListSortField;
+  const sortField = options.sort ?? 'created';
   const sortFieldSource =
     typeof command?.getOptionValueSource === 'function'
       ? command.getOptionValueSource('sort')
@@ -587,13 +587,13 @@ export async function handleListCommand(
   // Display duplicate IDs if any exist
   const duplicateIds = Object.keys(duplicates)
     .map(Number)
-    .sort((a, b) => a - b);
+    .toSorted((a, b) => a - b);
   if (duplicateIds.length > 0) {
     log('');
     log(chalk.yellow.bold('⚠️  Duplicate plan IDs found:'));
     for (const duplicateId of duplicateIds) {
       log(chalk.yellow(`   - ID ${duplicateId}:`));
-      const planIdentifiers = duplicates[duplicateId].sort((a, b) => a.localeCompare(b));
+      const planIdentifiers = duplicates[duplicateId].toSorted((a, b) => a.localeCompare(b));
       for (const planIdentifier of planIdentifiers) {
         log(chalk.gray(`     • UUID ${planIdentifier}`));
       }

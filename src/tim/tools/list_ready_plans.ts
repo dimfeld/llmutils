@@ -65,7 +65,7 @@ export async function listReadyPlansTool(
       readyPlans = readyPlans.slice(0, args.limit);
     }
 
-    const jsonOutput = formatReadyPlansAsJson(readyPlans as PlanSchema[], {
+    const jsonOutput = formatReadyPlansAsJson(readyPlans, {
       gitRoot: context.gitRoot,
     });
     const parsedOutput = JSON.parse(jsonOutput) as ReadyPlansResult;
@@ -78,6 +78,6 @@ export async function listReadyPlansTool(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to list ready plans: ${message}`);
+    throw new Error(`Failed to list ready plans: ${message}`, { cause: error });
   }
 }

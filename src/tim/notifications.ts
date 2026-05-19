@@ -108,7 +108,7 @@ export async function sendNotification(
     : baseDir;
 
   const env: Record<string, string> = Object.fromEntries(
-    Object.entries({ ...process.env, ...(notificationConfig.env ?? {}) }).filter(
+    Object.entries({ ...process.env, ...notificationConfig.env }).filter(
       (entry): entry is [string, string] => entry[1] !== undefined
     )
   );

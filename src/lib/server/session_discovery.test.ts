@@ -567,7 +567,7 @@ describe('lib/server/session_discovery', () => {
       return (
         manager.getSessionSnapshot().sessions.length === 1 &&
         session?.status === 'active' &&
-        session.isReplaying === false &&
+        !session.isReplaying &&
         session.activePrompts?.[0]?.requestId === 'req-integration' &&
         session.messages.length === 2
       );
@@ -780,7 +780,7 @@ describe('lib/server/session_discovery', () => {
       return (
         manager.getSessionSnapshot().sessions.length === 1 &&
         session?.status === 'active' &&
-        session.isReplaying === true
+        session.isReplaying
       );
     });
 
@@ -794,7 +794,7 @@ describe('lib/server/session_discovery', () => {
       }),
     });
 
-    await waitFor(() => manager.getSessionSnapshot().sessions[0]?.isReplaying === false);
+    await waitFor(() => !manager.getSessionSnapshot().sessions[0]?.isReplaying);
   });
 
   test('does not register a first-time session that never sends session_info', async () => {

@@ -103,7 +103,7 @@ export class WorkspaceAutoSelector {
     }
 
     // Find existing workspaces for this repository (newest first)
-    const allWorkspaces = findWorkspaceInfosByRepositoryId(repositoryId).sort(
+    const allWorkspaces = findWorkspaceInfosByRepositoryId(repositoryId).toSorted(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     const requireAutoType =

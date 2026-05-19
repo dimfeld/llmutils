@@ -1092,7 +1092,7 @@ describe('workspace add --reuse and --try-reuse', () => {
           call[0] &&
           typeof call[0] === 'object' &&
           'title' in call[0] &&
-          (call[0] as PlanSchema).title === 'Workspace Local Edits'
+          call[0].title === 'Workspace Local Edits'
       );
       expect(workspaceSyncCall).toBeDefined();
       expect(workspaceSyncCall?.[0]).toMatchObject({

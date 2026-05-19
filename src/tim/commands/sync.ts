@@ -404,7 +404,7 @@ function parseManualJson(value: string): unknown {
     return JSON.parse(value) as unknown;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`--manual must be valid JSON: ${message}`);
+    throw new Error(`--manual must be valid JSON: ${message}`, { cause: error });
   }
 }
 

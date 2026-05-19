@@ -24,7 +24,9 @@ export async function resolveOptionalPromptInput(
     try {
       return normalizePrompt(await baseReadFile(options.promptFile));
     } catch (err) {
-      throw new Error(`Failed to read prompt file "${options.promptFile}": ${err as Error}`);
+      throw new Error(`Failed to read prompt file "${options.promptFile}": ${err as Error}`, {
+        cause: err,
+      });
     }
   }
 

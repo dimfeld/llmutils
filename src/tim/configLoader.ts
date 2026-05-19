@@ -27,13 +27,18 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
     if (Array.isArray(localValue)) {
       if (mainValue) {
         // @ts-expect-error hard to specify this is an array
-        merged[key] = [...(mainValue as any[]), ...localValue];
+        merged[key] = (mainValue as any[]).concat(localValue);
       } else {
         merged[key] = localValue;
       }
-    } else if (typeof localValue === 'object') {
+    } else if (
+      typeof localValue === 'object' &&
+      !Array.isArray(localValue) &&
+      typeof mainValue === 'object' &&
+      !Array.isArray(mainValue)
+    ) {
       if (mainValue) {
-        merged[key] = { ...(mainValue as object), ...localValue };
+        merged[key] = Object.assign({}, mainValue, localValue);
       } else {
         merged[key] = localValue;
       }
@@ -75,7 +80,7 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
       deduped.push(command);
     }
 
-    return deduped.reverse();
+    return deduped.toReversed();
   }
 
   // Do deep merge for select paths
@@ -142,8 +147,8 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
             model:
               mainSubagentOptions?.model || localSubagentOptions?.model
                 ? {
-                    ...(mainSubagentOptions?.model ?? {}),
-                    ...(localSubagentOptions?.model ?? {}),
+                    ...mainSubagentOptions?.model,
+                    ...localSubagentOptions?.model,
                   }
                 : undefined,
           };

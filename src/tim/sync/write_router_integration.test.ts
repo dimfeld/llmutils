@@ -287,7 +287,7 @@ describe('write_router integration: writePlanFile routing modes', () => {
     const updated: PlanSchema = {
       ...current,
       tasks: [
-        ...((current.tasks ?? []) as PlanSchema['tasks']),
+        ...(current.tasks ?? []),
         { title: 'Offline Task', description: 'Created while disconnected', done: false },
       ],
     };
@@ -419,7 +419,7 @@ describe('write_router integration: writePlanFile routing modes', () => {
     const updated: PlanSchema = {
       ...current,
       tasks: [
-        ...((current.tasks ?? []) as PlanSchema['tasks']),
+        ...(current.tasks ?? []),
         { title: 'Canonical Task', description: 'Applied directly to main', done: false },
       ],
     };
@@ -683,7 +683,7 @@ describe('write_router integration: plan.remove_task index shifting', () => {
     expect(result.mode).toBe('applied');
 
     // After removal: only 2 tasks remain with indices 0 and 1
-    const after = getPlanTasksByUuid(db, PLAN_UUID).sort((a, b) => a.task_index - b.task_index);
+    const after = getPlanTasksByUuid(db, PLAN_UUID).toSorted((a, b) => a.task_index - b.task_index);
     expect(after).toHaveLength(2);
     expect(after[0]).toMatchObject({ uuid: TASK1_UUID, task_index: 0, title: 'First' });
     expect(after[1]).toMatchObject({ uuid: TASK3_UUID, task_index: 1, title: 'Last' });
@@ -709,7 +709,7 @@ describe('write_router integration: plan.remove_task index shifting', () => {
       taskUuid: TASK1_UUID,
     });
 
-    const after = getPlanTasksByUuid(db, PLAN_UUID).sort((a, b) => a.task_index - b.task_index);
+    const after = getPlanTasksByUuid(db, PLAN_UUID).toSorted((a, b) => a.task_index - b.task_index);
     expect(after).toHaveLength(2);
     expect(after[0]).toMatchObject({ uuid: TASK2_UUID, task_index: 0 });
     expect(after[1]).toMatchObject({ uuid: TASK3_UUID, task_index: 1 });
@@ -729,7 +729,7 @@ describe('write_router integration: plan.remove_task index shifting', () => {
       taskUuid: TASK3_UUID,
     });
 
-    const after = getPlanTasksByUuid(db, PLAN_UUID).sort((a, b) => a.task_index - b.task_index);
+    const after = getPlanTasksByUuid(db, PLAN_UUID).toSorted((a, b) => a.task_index - b.task_index);
     expect(after).toHaveLength(2);
     expect(after[0]).toMatchObject({ uuid: TASK1_UUID, task_index: 0 });
     expect(after[1]).toMatchObject({ uuid: TASK2_UUID, task_index: 1 });

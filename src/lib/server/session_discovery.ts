@@ -233,7 +233,7 @@ export class SessionDiscoveryClient {
       this.directoryWatcher = null;
     }
 
-    for (const tracked of [...this.trackedConnections.values()]) {
+    for (const tracked of this.trackedConnections.values()) {
       this.disposeTrackedConnection(tracked, true);
     }
     this.trackedConnections.clear();
@@ -312,7 +312,7 @@ export class SessionDiscoveryClient {
 
     // Clean up tracked connections whose PID files have been removed.
     // Liveness checks are already handled by reconcileSessionInfo in the first loop.
-    for (const [pid, tracked] of [...this.trackedConnections]) {
+    for (const [pid, tracked] of this.trackedConnections) {
       if (!infosByPid.has(pid)) {
         this.disposeTrackedConnection(tracked, true);
         this.trackedConnections.delete(pid);

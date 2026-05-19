@@ -632,7 +632,7 @@ describe('prompt wrappers', () => {
         // Wait briefly for the message to be sent, then destroy the client adapter
         // to simulate connection loss. This rejects pending prompts.
         await new Promise((resolve) => setTimeout(resolve, 20));
-        await clientAdapter!.destroy();
+        await clientAdapter.destroy();
 
         // The promise should reject with an error about the connection/destroy
         const err = await promptPromise.catch((e: unknown) => e);
@@ -850,8 +850,8 @@ describe('prompt wrappers', () => {
       expect((headlessAdapter as any).pendingPrompts.size).toBe(0);
       const structured = calls.filter((call) => call.method === 'sendStructured');
       expect(structured).toHaveLength(2);
-      const requestMessage = structured[0]!.args[0] as Record<string, unknown>;
-      const cancelledMessage = structured[1]!.args[0] as Record<string, unknown>;
+      const requestMessage = structured[0].args[0] as Record<string, unknown>;
+      const cancelledMessage = structured[1].args[0] as Record<string, unknown>;
       expect(requestMessage).toMatchObject({
         type: 'prompt_request',
         promptType: 'confirm',

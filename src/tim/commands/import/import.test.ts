@@ -234,7 +234,7 @@ describe('handleImportCommand', () => {
       }
       return Promise.resolve({
         plan,
-        planPath: (plan as any).filename,
+        planPath: plan.filename,
       });
     });
 

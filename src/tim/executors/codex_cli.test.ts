@@ -728,7 +728,7 @@ describe('CodexCliExecutor - failure detection across agents', () => {
     ).resolves.toBeUndefined();
 
     const implementerPromptsRun = spawnMock.mock.calls.filter((call) => {
-      const args = call[0] as string[];
+      const args = call[0];
       const jsonIndex = args.lastIndexOf('--json');
       const promptIdx = jsonIndex > 0 ? jsonIndex + 1 : args.length - 1;
       const prompt = args[promptIdx];

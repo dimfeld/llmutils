@@ -35,7 +35,7 @@ const baseRevisionShape = {
   baseRevision: SyncRevisionSchema.optional(),
 };
 
-const JsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
+const JsonValueSchema: z.ZodType = z.lazy(() =>
   z.union([
     z.string(),
     z.number().finite(),

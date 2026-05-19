@@ -194,7 +194,7 @@ function applyResolvedPlanTextWithCanonicalAdapter(
   const adapter = new CanonicalPlanAdapter(db, project, envelope);
   const plan = requireAdapterPlan(adapter, envelope.op.planUuid);
   const column = PLAN_TEXT_COLUMNS[envelope.op.field];
-  const current = ((plan[column] ?? '') as string).toString();
+  const current = (plan[column] ?? '').toString();
   if (current === value) {
     return [];
   }
@@ -332,7 +332,7 @@ export function createTextMergeConflict(
       baseValue: op.base,
       incomingValue: op.new,
       attemptedPatch: op.patch ?? null,
-      currentValue: plan ? ((plan[column] ?? '') as string).toString() : null,
+      currentValue: plan ? (plan[column] ?? '').toString() : null,
       reason: 'text_merge_failed',
     });
   }

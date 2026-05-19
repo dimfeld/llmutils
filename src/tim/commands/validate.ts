@@ -283,7 +283,7 @@ async function findPlanFiles(
     await addFilesFromDir(materializedDir);
   }
 
-  return Array.from(discoveredFiles).sort();
+  return Array.from(discoveredFiles).toSorted();
 }
 
 function validateParentChildRelationships(

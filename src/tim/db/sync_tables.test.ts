@@ -169,11 +169,11 @@ describe('sync_tables helpers', () => {
 
       const forA = listSyncOperationsByStatus(db, 'queued', projectA);
       expect(forA).toHaveLength(1);
-      expect(forA[0]!.project_uuid).toBe(projectA);
+      expect(forA[0].project_uuid).toBe(projectA);
 
       const forB = listSyncOperationsByStatus(db, 'queued', projectB);
       expect(forB).toHaveLength(1);
-      expect(forB[0]!.project_uuid).toBe(projectB);
+      expect(forB[0].project_uuid).toBe(projectB);
     });
 
     test('listSyncOperationsByStatus orders by origin_node_id then local_sequence', () => {
@@ -203,12 +203,12 @@ describe('sync_tables helpers', () => {
       );
 
       const ops = listSyncOperationsByStatus(db, 'queued');
-      expect(ops[0]!.origin_node_id).toBe('node-a');
-      expect(ops[0]!.local_sequence).toBe(1);
-      expect(ops[1]!.origin_node_id).toBe('node-a');
-      expect(ops[1]!.local_sequence).toBe(2);
-      expect(ops[2]!.origin_node_id).toBe('node-b');
-      expect(ops[2]!.local_sequence).toBe(1);
+      expect(ops[0].origin_node_id).toBe('node-a');
+      expect(ops[0].local_sequence).toBe(1);
+      expect(ops[1].origin_node_id).toBe('node-a');
+      expect(ops[1].local_sequence).toBe(2);
+      expect(ops[2].origin_node_id).toBe('node-b');
+      expect(ops[2].local_sequence).toBe(1);
     });
 
     test('(origin_node_id, local_sequence) UNIQUE constraint rejects duplicate insert', () => {
@@ -501,12 +501,12 @@ describe('sync_tables helpers', () => {
 
       const after1 = listSyncSequenceAfter(db, PROJECT_UUID, row1.sequence);
       expect(after1).toHaveLength(2);
-      expect(after1[0]!.sequence).toBe(row2.sequence);
-      expect(after1[1]!.sequence).toBe(row3.sequence);
+      expect(after1[0].sequence).toBe(row2.sequence);
+      expect(after1[1].sequence).toBe(row3.sequence);
 
       const after2 = listSyncSequenceAfter(db, PROJECT_UUID, row2.sequence);
       expect(after2).toHaveLength(1);
-      expect(after2[0]!.sequence).toBe(row3.sequence);
+      expect(after2[0].sequence).toBe(row3.sequence);
 
       const afterAll = listSyncSequenceAfter(db, PROJECT_UUID, row3.sequence);
       expect(afterAll).toHaveLength(0);
@@ -520,7 +520,7 @@ describe('sync_tables helpers', () => {
 
       const entriesA = listSyncSequenceAfter(db, projectA, 0);
       expect(entriesA).toHaveLength(1);
-      expect(entriesA[0]!.project_uuid).toBe(projectA);
+      expect(entriesA[0].project_uuid).toBe(projectA);
 
       const entriesB = listSyncSequenceAfter(db, projectB, rowA.sequence - 1);
       expect(entriesB.every((r) => r.project_uuid === projectB)).toBe(true);

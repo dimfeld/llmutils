@@ -102,7 +102,9 @@ export class GitHubIssueTrackerClient implements IssueTrackerClient {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to fetch GitHub issue #${parsed.number}: ${errorMessage}`);
+      throw new Error(`Failed to fetch GitHub issue #${parsed.number}: ${errorMessage}`, {
+        cause: error,
+      });
     }
   }
 
@@ -144,7 +146,7 @@ export class GitHubIssueTrackerClient implements IssueTrackerClient {
       return issueData;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to fetch open GitHub issues: ${errorMessage}`);
+      throw new Error(`Failed to fetch open GitHub issues: ${errorMessage}`, { cause: error });
     }
   }
 

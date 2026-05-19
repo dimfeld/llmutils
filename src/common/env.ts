@@ -54,8 +54,8 @@ export async function buildWorkspaceCommandEnv(
   const workspaceEnv = cwd ? await readDotEnvFromDirectory(cwd) : null;
   const env = {
     ...process.env,
-    ...(workspaceEnv ?? {}),
-    ...(overrides ?? {}),
+    ...workspaceEnv,
+    ...overrides,
   } as Record<string, string>;
   env.PATH = filterBunNodeFromPath(env.PATH) ?? env.PATH;
   return env;

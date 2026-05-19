@@ -77,7 +77,7 @@ describe('review_pr_prompt', () => {
     });
 
     expect(prompt).toContain('## Diff Reference Catalog');
-    expect(prompt).toContain(DIFF_REFERENCES[0]!.ref);
+    expect(prompt).toContain(DIFF_REFERENCES[0].ref);
     expect(prompt).toContain('Write placeholders as `<diff ref="..."/>`');
     expect(prompt).toContain('<diff ref="..." start="4" end="10"/>');
     expect(prompt).toContain('Use them only when splitting a diff');

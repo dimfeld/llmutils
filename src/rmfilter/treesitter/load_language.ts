@@ -14,7 +14,7 @@ export async function loadLanguage(langName: string): Promise<Language> {
     return await Language.load(wasmPath);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to load language ${langName}: ${message}`);
+    throw new Error(`Failed to load language ${langName}: ${message}`, { cause: error });
   }
 }
 

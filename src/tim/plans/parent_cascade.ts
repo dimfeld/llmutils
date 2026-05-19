@@ -95,7 +95,7 @@ async function checkAndMarkParentDoneInDb(
     status: getCompletionStatus(config),
     updatedAt: new Date().toISOString(),
     changedFiles:
-      allChangedFiles.size > 0 ? Array.from(allChangedFiles).sort() : parentPlan.changedFiles,
+      allChangedFiles.size > 0 ? Array.from(allChangedFiles).toSorted() : parentPlan.changedFiles,
   };
 
   const projectUuid = getProjectUuidForId(db, projectId);
@@ -188,7 +188,7 @@ export async function checkAndMarkParentDone(
       status: getCompletionStatus(config),
       updatedAt: new Date().toISOString(),
       changedFiles:
-        allChangedFiles.size > 0 ? Array.from(allChangedFiles).sort() : parentPlan.changedFiles,
+        allChangedFiles.size > 0 ? Array.from(allChangedFiles).toSorted() : parentPlan.changedFiles,
     };
 
     await writePlanFile(await materializedPathOrNull(repoRoot, updatedParent.id), updatedParent, {
@@ -216,6 +216,8 @@ export async function markParentInProgress(
   config: TimConfig,
   options: ParentCascadeOptions = {}
 ): Promise<void> {
+  void config;
+
   const repoRoot = await getRepoRoot(options.baseDir);
   const result = await withPlanAutoSync(parentId, repoRoot, async () => {
     const context = await resolveProjectContext(repoRoot);

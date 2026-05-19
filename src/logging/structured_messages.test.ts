@@ -150,7 +150,7 @@ describe('structured_messages', () => {
 
     const asStructured: StructuredMessage = message;
     expect(asStructured.type).toBe('user_terminal_input');
-    expect((asStructured as UserTerminalInputMessage).content).toBe('Also fix the type error');
-    expect((asStructured as UserTerminalInputMessage).source).toBe('gui');
+    expect(asStructured.content).toBe('Also fix the type error');
+    expect(asStructured.source).toBe('gui');
   });
 });

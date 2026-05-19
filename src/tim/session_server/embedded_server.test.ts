@@ -192,15 +192,15 @@ describe('session_server/embedded_server', () => {
     await waitFor(() => messages.length === 3);
     expect(messages).toEqual([
       {
-        connectionId: connects[0]!,
+        connectionId: connects[0],
         message: { type: 'user_input', content: 'hello' },
       },
       {
-        connectionId: connects[0]!,
+        connectionId: connects[0],
         message: { type: 'prompt_response', requestId: 'req-1', value: 'ok' },
       },
       {
-        connectionId: connects[0]!,
+        connectionId: connects[0],
         message: { type: 'end_session' },
       },
     ]);
@@ -232,7 +232,7 @@ describe('session_server/embedded_server', () => {
 
     const targeted = waitForMessage(ws1);
     expect(
-      server.sendTo(firstConnectionId!, {
+      server.sendTo(firstConnectionId, {
         type: 'session_info',
         command: 'agent',
         workspacePath: '/tmp/workspace',
@@ -268,7 +268,7 @@ describe('session_server/embedded_server', () => {
     const [firstConnectionId] = [...server.connectedClients.keys()];
     const rawTargetPayload = '{"type":"replay_end"}';
     const rawTarget = waitForRawMessage(ws1);
-    expect(server.sendToRaw(firstConnectionId!, rawTargetPayload)).toBe(true);
+    expect(server.sendToRaw(firstConnectionId, rawTargetPayload)).toBe(true);
     expect(await rawTarget).toBe(rawTargetPayload);
     expect(server.sendToRaw('missing', rawTargetPayload)).toBe(false);
 

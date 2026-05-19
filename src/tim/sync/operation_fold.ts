@@ -34,7 +34,7 @@ export function canonicalJsonStringify(value: unknown): string {
     return `[${value.map((item) => canonicalJsonStringify(item)).join(',')}]`;
   }
   if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+    const entries = Object.entries(value as Record<string, unknown>).toSorted(([a], [b]) =>
       a.localeCompare(b)
     );
     return `{${entries
@@ -396,7 +396,7 @@ function incomingValueAlreadyApplied(
         return false;
       }
       const column = PLAN_TEXT_COLUMNS[op.field];
-      return ((plan[column] ?? '') as string).toString() === op.new;
+      return (plan[column] ?? '').toString() === op.new;
     }
     case 'plan.update_task_text': {
       const task = adapter.getTasks(op.planUuid).find((item) => item.uuid === op.taskUuid);
@@ -472,7 +472,7 @@ function projectionPlanTextPrestateMatches(
     return false;
   }
   const column = PLAN_TEXT_COLUMNS[op.field];
-  return ((plan[column] ?? '') as string).toString() === op.base;
+  return (plan[column] ?? '').toString() === op.base;
 }
 
 function projectionTaskTextPrestateMatches(
@@ -525,7 +525,7 @@ export function clonePlanWithBump(
   return {
     ...plan,
     ...patch,
-    revision: (patch.revision as number | undefined) ?? plan.revision + 1,
+    revision: patch.revision ?? plan.revision + 1,
     updated_at: options.skipUpdatedAt
       ? plan.updated_at
       : (options.sourceUpdatedAt ?? new Date().toISOString()),
@@ -853,7 +853,7 @@ function applyOperationToPlanText(
 ): Mutation[] {
   const plan = requireAdapterPlan(adapter, envelope.op.planUuid);
   const column = PLAN_TEXT_COLUMNS[envelope.op.field];
-  const current = ((plan[column] ?? '') as string).toString();
+  const current = (plan[column] ?? '').toString();
   const merged = mergeText(current, envelope.op.base, envelope.op.new);
   if (merged === null) {
     applyOperationToPrecondition('text merge failed', 'text_merge_failed');
@@ -894,7 +894,7 @@ function applyOperationToAddTask(
         done: envelope.op.done ? 1 : 0,
         revision: 1,
       },
-    ].sort((a, b) => a.task_index - b.task_index)
+    ].toSorted((a, b) => a.task_index - b.task_index)
   );
   adapter.setPlan(clonePlanWithBump(plan, {}, options));
   return [

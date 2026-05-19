@@ -340,7 +340,7 @@ describe('tim add command', () => {
 
     expect(plan.id).toBe(3);
     expect(plan.title).toBe('Plan with Dependencies');
-    expect([...(plan.dependencies ?? [])].sort((a, b) => a - b)).toEqual([1, 2]);
+    expect([...(plan.dependencies ?? [])].toSorted((a, b) => a - b)).toEqual([1, 2]);
     expect(plan.priority).toBe('high');
 
     const dep1 = (await resolvePlanByNumericId(1, tempDir)).plan;

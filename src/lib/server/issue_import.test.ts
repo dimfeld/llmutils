@@ -552,7 +552,7 @@ describe('issue_import server helpers', () => {
       const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
       expect(pendingWrites).toHaveLength(3);
       expect(pendingWrites?.map((entry) => entry.plan.simple)).toEqual([true, true, true]);
-      expect(pendingWrites?.map((entry) => entry.plan.id).sort((a, b) => a - b)).toEqual([
+      expect(pendingWrites?.map((entry) => entry.plan.id).toSorted((a, b) => a - b)).toEqual([
         100, 101, 102,
       ]);
     });

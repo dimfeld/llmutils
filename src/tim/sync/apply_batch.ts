@@ -362,7 +362,7 @@ function persistBatchRejections(
         insertReceivedOperation(
           db,
           operation,
-          normalizedPayloads[index]!,
+          normalizedPayloads[index],
           batch.batchId,
           batch.atomic === true
         );

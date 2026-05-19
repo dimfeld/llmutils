@@ -869,7 +869,7 @@ describe('tim db/plan', () => {
 
     expect(getPlanByUuid(db, 'plan-tag-bump')?.revision).toBe(2);
     const tags = getPlanTagsByUuid(db, 'plan-tag-bump');
-    expect(tags.map((t) => t.tag).sort()).toEqual(['alpha', 'beta']);
+    expect(tags.map((t) => t.tag).toSorted()).toEqual(['alpha', 'beta']);
   });
 
   test('plan revision bumps when only dependencies change', () => {

@@ -306,7 +306,7 @@ export class ClaudeCodeExecutor implements Executor {
     const existingValue = this.alwaysAllowedTools.get(BASH_TOOL_NAME);
 
     // Type safety validation
-    if (existingValue !== undefined && !Array.isArray(existingValue) && existingValue !== true) {
+    if (existingValue !== undefined && !Array.isArray(existingValue) && !existingValue) {
       // This should not happen, but if it does, we need to handle it gracefully
       debugLog(
         `Warning: Unexpected value type for ${BASH_TOOL_NAME} in alwaysAllowedTools: ${typeof existingValue}`
@@ -817,7 +817,7 @@ export class ClaudeCodeExecutor implements Executor {
               resultMessageCount++;
               seenResultMessage = true;
               if (followUpIndex < followUpPrompts.length && terminalInputResult) {
-                const nextPrompt = followUpPrompts[followUpIndex]!;
+                const nextPrompt = followUpPrompts[followUpIndex];
                 followUpIndex++;
                 terminalInputResult.sendFollowUpMessage(nextPrompt);
               } else if (

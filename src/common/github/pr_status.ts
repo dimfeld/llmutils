@@ -691,7 +691,7 @@ function dedupeReviewsByLatestAuthorReview(reviews: PrStatusReview[]): PrStatusR
   const latestReviewByAuthor = new Map<string, PrStatusReview>();
 
   for (let index = reviews.length - 1; index >= 0; index -= 1) {
-    const review = reviews[index]!;
+    const review = reviews[index];
     const existingReview = latestReviewByAuthor.get(review.author);
     if (!existingReview) {
       latestReviewByAuthor.set(review.author, review);

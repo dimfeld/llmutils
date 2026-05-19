@@ -20,7 +20,7 @@ describe('getDefiningFiles', () => {
       .values()
       .map((f) => path.relative(rootDir, f))
       .toArray()
-      .sort();
+      .toSorted();
     expect(relativeImports).toMatchSnapshot();
   });
 
@@ -34,7 +34,7 @@ describe('getDefiningFiles', () => {
       .values()
       .map((f) => path.relative(rootDir, f))
       .toArray()
-      .sort();
+      .toSorted();
     expect(relativeImports).toMatchSnapshot();
   });
 });
@@ -144,7 +144,7 @@ describe('findImporters', () => {
 
     const relativeImporters = Array.from(importers)
       .map((f) => path.relative(tempImporterTestDir, f))
-      .sort();
+      .toSorted();
     expect(relativeImporters).toEqual([path.join('pkg-a', 'importer.ts')]);
   });
 
@@ -155,7 +155,7 @@ describe('findImporters', () => {
 
     const relativeImporters = Array.from(importers)
       .map((f) => path.relative(tempImporterTestDir, f))
-      .sort();
+      .toSorted();
     expect(relativeImporters).toEqual([path.join('pkg-a', 'importer.ts')]);
   });
 
@@ -167,12 +167,12 @@ describe('findImporters', () => {
 
     const relativeImporters = Array.from(importers)
       .map((f) => path.relative(tempImporterTestDir, f))
-      .sort();
+      .toSorted();
     expect(relativeImporters).toEqual(
       [
         path.join('pkg-a', 'importer.ts'), // Imports 'pkg-b/feature'
         path.join('pkg-b', 'internal-consumer.ts'), // Imports './src/feature'
-      ].sort()
+      ].toSorted()
     );
   });
 
@@ -183,8 +183,8 @@ describe('findImporters', () => {
 
     const relativeImporters = Array.from(importers)
       .map((f) => path.relative(tempImporterTestDir, f))
-      .sort();
-    expect(relativeImporters).toEqual([path.join('pkg-a', 'importer.ts')].sort());
+      .toSorted();
+    expect(relativeImporters).toEqual([path.join('pkg-a', 'importer.ts')].toSorted());
   });
 
   test('findImporters for a package root export (pkg-b/main.ts)', async () => {
@@ -194,11 +194,11 @@ describe('findImporters', () => {
 
     const relativeImporters = Array.from(importers)
       .map((f) => path.relative(tempImporterTestDir, f))
-      .sort();
+      .toSorted();
     expect(relativeImporters).toEqual(
       [
         path.join('pkg-c', 'consumer.ts'), // Imports 'pkg-b'
-      ].sort()
+      ].toSorted()
     );
   });
 
@@ -223,12 +223,12 @@ describe('findImporters', () => {
 
     const relativeImporters = Array.from(importers)
       .map((f) => path.relative(tempImporterTestDir, f))
-      .sort();
+      .toSorted();
     expect(relativeImporters).toEqual(
       [
         path.join('pkg-a', 'importer.ts'), // Direct import
         path.join('pkg-c', 'reexport-consumer.ts'), // Via reexport
-      ].sort()
+      ].toSorted()
     );
   });
 

@@ -134,7 +134,7 @@ export async function resolveJsonSchemaOption(
   try {
     JSON.parse(schema);
   } catch (err) {
-    throw new Error(`Invalid JSON schema: ${err as Error}`);
+    throw new Error(`Invalid JSON schema: ${err as Error}`, { cause: err });
   }
 
   return schema;
@@ -273,7 +273,9 @@ export function normalizeStructuredJsonOutput(value: unknown): string {
   try {
     parsed = typeof value === 'string' ? JSON.parse(stripMarkdownFence(value)) : value;
   } catch (err) {
-    throw new Error(`Failed to parse structured output from executor: ${err as Error}`);
+    throw new Error(`Failed to parse structured output from executor: ${err as Error}`, {
+      cause: err,
+    });
   }
   return JSON.stringify(parsed, null, 2);
 }

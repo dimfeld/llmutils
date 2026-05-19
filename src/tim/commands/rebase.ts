@@ -470,7 +470,7 @@ async function resolveRebaseConflicts(options: {
     terminalInput:
       options.terminalInput !== false &&
       options.configTerminalInput !== false &&
-      process.stdin.isTTY === true,
+      process.stdin.isTTY,
     disableInactivityTimeout: true,
   };
 

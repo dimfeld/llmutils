@@ -694,7 +694,7 @@ describe('IssueTrackerClient interface validation', () => {
           return { identifier: spec };
         }
 
-        const urlMatch = spec.match(/^https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/issues\/(\d+)$/);
+        const urlMatch = spec.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)$/);
         if (urlMatch) {
           return {
             identifier: urlMatch[3],
@@ -777,9 +777,7 @@ describe('IssueTrackerClient interface validation', () => {
     const mockClient: IssueTrackerClient = {
       parseIssueIdentifier(spec: string): ParsedIssueIdentifier | null {
         // GitHub URL
-        const githubMatch = spec.match(
-          /^https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/issues\/(\d+)$/
-        );
+        const githubMatch = spec.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)$/);
         if (githubMatch) {
           return {
             identifier: githubMatch[3],
@@ -790,7 +788,7 @@ describe('IssueTrackerClient interface validation', () => {
         }
 
         // Linear URL
-        const linearMatch = spec.match(/^https:\/\/linear\.app\/([^\/]+)\/issue\/([A-Z]+-\d+)/);
+        const linearMatch = spec.match(/^https:\/\/linear\.app\/([^/]+)\/issue\/([A-Z]+-\d+)/);
         if (linearMatch) {
           return {
             identifier: linearMatch[2],

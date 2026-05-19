@@ -23,8 +23,8 @@ function parseCanonicalPrUrl(prUrl: string): { owner: string; repo: string } | n
   }
 
   return {
-    owner: match[1]!,
-    repo: match[2]!,
+    owner: match[1],
+    repo: match[2],
   };
 }
 

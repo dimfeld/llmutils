@@ -167,7 +167,7 @@ async function buildGeneratePromptContext(
       const parentContext = buildPlanContext(parentPlan, parentPlanPath, context);
       const siblingPlans = Array.from(plans.values())
         .filter((candidate) => candidate.id !== plan.id && candidate.parent === plan.parent)
-        .sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+        .toSorted((a, b) => (a.id ?? 0) - (b.id ?? 0));
 
       const siblingContext =
         siblingPlans.length > 0

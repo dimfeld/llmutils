@@ -142,7 +142,7 @@ export function watchPlanFile(
       scheduleEmit();
     });
     watcher.on('error', (err) => {
-      warn(`Plan file watcher error for ${filePath}: ${err as Error}`);
+      warn(`Plan file watcher error for ${filePath}: ${err}`);
     });
   } catch (err) {
     warn(`Failed to watch plan file ${filePath} via ${parentDir}: ${err as Error}`);

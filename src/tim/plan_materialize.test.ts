@@ -345,13 +345,13 @@ describe('tim plan_materialize', () => {
     await expectShadowMatchesFile(getShadowPlanPath(repoDir, 3), planPath);
 
     const refPaths = await materializeRelatedPlans(3, repoDir);
-    expect(refPaths.sort()).toEqual(
+    expect(refPaths.toSorted()).toEqual(
       [
         getMaterializedPlanPath(repoDir, 1),
         getMaterializedPlanPath(repoDir, 2),
         getMaterializedPlanPath(repoDir, 4),
         getMaterializedPlanPath(repoDir, 5),
-      ].sort()
+      ].toSorted()
     );
 
     const parentRef = await readPlanFile(getMaterializedPlanPath(repoDir, 1));
@@ -640,7 +640,7 @@ Details
 
     await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
 
-    expect(JSON.parse(syncOperationRows()[0]!.payload)).toMatchObject({
+    expect(JSON.parse(syncOperationRows()[0].payload)).toMatchObject({
       type: 'plan.patch_text',
       baseRevision: 1,
     });
@@ -750,7 +750,7 @@ Details
     expect(rows.map((row) => [row.operation_type, row.status])).toEqual([
       ['plan.patch_text', 'queued'],
     ]);
-    expect(JSON.parse(rows[0]!.payload)).toMatchObject({
+    expect(JSON.parse(rows[0].payload)).toMatchObject({
       type: 'plan.patch_text',
       field: 'title',
       base: 'Primary plan',
@@ -857,7 +857,7 @@ Details
 
     const rows = syncOperationRows();
     expect(rows.map((row) => row.operation_type)).toEqual(['plan.add_task']);
-    const payload = JSON.parse(rows[0]!.payload) as { taskUuid: string; title: string };
+    const payload = JSON.parse(rows[0].payload) as { taskUuid: string; title: string };
     expect(payload).toMatchObject({
       type: 'plan.add_task',
       title: 'new materialized task',
@@ -875,15 +875,15 @@ Details
     const planPath = await materializePlan(3, repoDir);
 
     const editedPlan = await readPlanFile(planPath);
-    const firstTaskUuid = editedPlan.tasks[0]!.uuid;
-    const secondTaskUuid = editedPlan.tasks[1]!.uuid;
+    const firstTaskUuid = editedPlan.tasks[0].uuid;
+    const secondTaskUuid = editedPlan.tasks[1].uuid;
     editedPlan.tasks[0] = {
-      ...editedPlan.tasks[0]!,
+      ...editedPlan.tasks[0],
       title: 'implement via operation',
       description: 'build materialize flow with task ops',
       done: true,
     };
-    editedPlan.tasks = [editedPlan.tasks[0]!];
+    editedPlan.tasks = [editedPlan.tasks[0]];
     await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
@@ -916,8 +916,8 @@ Details
     const planPath = await materializePlan(3, repoDir);
 
     const editedPlan = await readPlanFile(planPath);
-    const firstTaskUuid = editedPlan.tasks[0]!.uuid;
-    const secondTaskUuid = editedPlan.tasks[1]!.uuid;
+    const firstTaskUuid = editedPlan.tasks[0].uuid;
+    const secondTaskUuid = editedPlan.tasks[1].uuid;
     expect(firstTaskUuid).toBeDefined();
     expect(secondTaskUuid).toBeDefined();
 
@@ -1223,7 +1223,7 @@ Details
     await fs.unlink(getShadowPlanPath(repoDir, 3));
 
     const editedPlan = await readPlanFile(planPath);
-    editedPlan.tasks = [editedPlan.tasks[1]!, editedPlan.tasks[0]!];
+    editedPlan.tasks = [editedPlan.tasks[1], editedPlan.tasks[0]];
     await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await syncMaterializedPlan(3, repoDir, { config: localOperationConfig() });
@@ -1422,7 +1422,7 @@ Details
     expect(await Bun.file(getMaterializedPlanPath(repoDir, 9)).exists()).toBe(false);
     const rows = syncOperationRows();
     expect(rows.map((row) => row.operation_type)).toEqual(['plan.patch_text']);
-    expect(JSON.parse(rows[0]!.payload)).toMatchObject({
+    expect(JSON.parse(rows[0].payload)).toMatchObject({
       type: 'plan.patch_text',
       planUuid: '33333333-3333-4333-8333-333333333333',
       field: 'title',
@@ -1461,7 +1461,7 @@ Details
 
     const rows = syncOperationRows();
     expect(rows.map((row) => row.operation_type)).toEqual(['plan.add_tag', 'plan.remove_tag']);
-    expect(JSON.parse(rows[1]!.payload)).toMatchObject({
+    expect(JSON.parse(rows[1].payload)).toMatchObject({
       type: 'plan.remove_tag',
       tag: 'x',
     });
@@ -1527,7 +1527,7 @@ Details
     ]);
 
     expect(refreshed).toHaveLength(1);
-    expect(await fs.realpath(refreshed[0]!)).toBe(await fs.realpath(planPath));
+    expect(await fs.realpath(refreshed[0])).toBe(await fs.realpath(planPath));
     expect(await Bun.file(getMaterializedPlanPath(repoDir, 9)).exists()).toBe(false);
     expect((await readPlanFile(planPath)).id).toBe(3);
     expect((await readPlanFile(planPath)).title).toBe('Refreshed through uuid fallback');
@@ -1550,7 +1550,7 @@ Details
 
     const rows = syncOperationRows();
     expect(rows.map((row) => row.operation_type)).toEqual(['plan.patch_text']);
-    expect(JSON.parse(rows[0]!.payload)).toMatchObject({
+    expect(JSON.parse(rows[0].payload)).toMatchObject({
       type: 'plan.patch_text',
       field: 'title',
       new: 'Edited while stale dependency ref is gone',
@@ -1714,7 +1714,7 @@ Details
 
     expect(result.deletedPrimaryFiles).toEqual([]);
     expect(result.deletedReferenceFiles).toEqual([]);
-    expect(await Bun.file(refPaths[0]!).exists()).toBe(true);
+    expect(await Bun.file(refPaths[0]).exists()).toBe(true);
   });
 
   test('cleanupMaterializedPlans removes cancelled and orphaned plan files while preserving active files', async () => {
@@ -1745,7 +1745,9 @@ Details
 
     // Plan 4 is cancelled but still needed as a reference by plan 3 (child),
     // so cleanup deletes the stale primary file and re-materializes a fresh reference.
-    expect(result.deletedPrimaryFiles.sort()).toEqual([cancelledPlanPath, orphanPlanPath].sort());
+    expect(result.deletedPrimaryFiles.toSorted()).toEqual(
+      [cancelledPlanPath, orphanPlanPath].toSorted()
+    );
     expect(result.deletedReferenceFiles).toEqual([]);
     expect(await Bun.file(activePlanPath).exists()).toBe(true);
     expect(await Bun.file(cancelledPlanPath).exists()).toBe(true);
@@ -1773,7 +1775,7 @@ Details
     const result = await cleanupMaterializedPlans(repoDir);
 
     expect(result.deletedPrimaryFiles).toEqual([planPath]);
-    expect(result.deletedReferenceFiles.sort()).toEqual(refPaths.sort());
+    expect(result.deletedReferenceFiles.toSorted()).toEqual(refPaths.toSorted());
     expect(await Bun.file(planPath).exists()).toBe(false);
     expect(await Bun.file(shadowPath).exists()).toBe(false);
     for (const refPath of refPaths) {
@@ -2201,7 +2203,7 @@ Details
     await fs.rm(getShadowPlanPath(repoDir, 3), { force: true });
 
     const editedPlan = await readPlanFile(planPath);
-    editedPlan.tasks = [...editedPlan.tasks].reverse();
+    editedPlan.tasks = [...editedPlan.tasks].toReversed();
     await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
@@ -2255,7 +2257,7 @@ Details
     expect(uniqueBatchIds.size).toBe(1);
 
     // Verify all expected op types are present
-    const opTypes = rows.map((row) => row.operation_type).sort();
+    const opTypes = rows.map((row) => row.operation_type).toSorted();
     expect(opTypes).toContain('plan.patch_text');
     expect(opTypes).toContain('plan.add_tag');
     expect(opTypes).toContain('plan.add_list_item');

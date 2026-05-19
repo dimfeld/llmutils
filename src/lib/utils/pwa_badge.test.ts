@@ -11,7 +11,7 @@ const originalNavigator = globalThis.navigator;
 
 function installNavigatorMock(overrides: Partial<BadgeNavigatorMock> = {}): BadgeNavigatorMock {
   const navigatorMock = {
-    ...(originalNavigator ?? {}),
+    ...originalNavigator,
     ...overrides,
   } as BadgeNavigatorMock;
 

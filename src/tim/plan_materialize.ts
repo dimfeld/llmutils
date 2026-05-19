@@ -318,7 +318,7 @@ function collectRelatedPlanRows(
     addIfPresent(rows.find((candidate) => candidate.uuid === dependencyUuid));
   }
 
-  return [...relatedByUuid.values()].sort(
+  return [...relatedByUuid.values()].toSorted(
     (a, b) => a.plan_id - b.plan_id || a.uuid.localeCompare(b.uuid)
   );
 }
@@ -998,7 +998,7 @@ function formatMaterializedPlanSyncConflictMessage(input: {
       ? `${input.error.operationType} (${input.error.fieldPath})`
       : (input.error.operationType ?? 'a sync operation');
   const planLabel = input.planId ? `plan ${input.planId}` : input.error.targetKey;
-  const changed = [...input.changedFields].sort().join(', ') || 'unknown';
+  const changed = [...input.changedFields].toSorted().join(', ') || 'unknown';
   const reason = materializedConflictReason(input.error.reason);
   const details = reason ? `\nConflict detail: ${reason}` : '';
   const conflictId = input.error.conflictId ? `\nConflict ID: ${input.error.conflictId}` : '';
@@ -1433,7 +1433,9 @@ async function readShadowPlanFile(filePath: string): Promise<PlanSchema> {
 
   if (markdownBody) {
     if (planData.details) {
-      planData.details = `${planData.details}\n\n${markdownBody}`;
+      const existingDetails =
+        typeof planData.details === 'string' ? planData.details : JSON.stringify(planData.details);
+      planData.details = `${existingDetails}\n\n${markdownBody}`;
     } else {
       planData.details = markdownBody;
     }

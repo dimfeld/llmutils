@@ -211,7 +211,7 @@ describe('simple field logic in commands', () => {
     const options: any = {};
 
     const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && parsedPlan.simple === true) {
+    if (!hasExplicitSimpleFlag && parsedPlan.simple) {
       options.simple = true;
     }
 
@@ -224,7 +224,7 @@ describe('simple field logic in commands', () => {
     const options: any = { simple: false };
 
     const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && parsedPlan.simple === true) {
+    if (!hasExplicitSimpleFlag && parsedPlan.simple) {
       options.simple = true;
     }
 
@@ -344,7 +344,7 @@ describe('simple field logic in commands', () => {
     const options: any = { simple: false };
 
     const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && parsedPlan.simple === true) {
+    if (!hasExplicitSimpleFlag && parsedPlan.simple) {
       options.simple = true;
     }
 
@@ -358,7 +358,7 @@ describe('simple field logic in commands', () => {
     const options: any = { simple: true };
 
     const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && parsedPlan.simple === true) {
+    if (!hasExplicitSimpleFlag && parsedPlan.simple) {
       options.simple = true;
     }
 
@@ -372,7 +372,7 @@ describe('simple field logic in commands', () => {
     const options: any = {};
 
     const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && planData.simple === true) {
+    if (!hasExplicitSimpleFlag && planData.simple) {
       options.simple = true;
     }
 
@@ -385,7 +385,7 @@ describe('simple field logic in commands', () => {
     const options: any = { simple: false };
 
     const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && planData.simple === true) {
+    if (!hasExplicitSimpleFlag && planData.simple) {
       options.simple = true;
     }
 
@@ -399,7 +399,7 @@ describe('simple field logic in commands', () => {
     const options: any = { simple: false };
 
     const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && planData.simple === true) {
+    if (!hasExplicitSimpleFlag && planData.simple) {
       options.simple = true;
     }
 
@@ -413,7 +413,7 @@ describe('simple field logic in commands', () => {
     const options: any = { simple: true };
 
     const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && planData.simple === true) {
+    if (!hasExplicitSimpleFlag && planData.simple) {
       options.simple = true;
     }
 

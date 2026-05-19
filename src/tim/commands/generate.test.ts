@@ -212,7 +212,7 @@ describe('handleGenerateCommand', () => {
       models: { stepGeneration: 'test-model' },
     };
 
-    vi.mocked(loadEffectiveConfig).mockResolvedValue(loadedConfig as any);
+    vi.mocked(loadEffectiveConfig).mockResolvedValue(loadedConfig);
     vi.mocked(getGitRoot).mockResolvedValue(tempDir);
   });
 

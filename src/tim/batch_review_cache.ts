@@ -17,7 +17,7 @@ export function normalizeTaskIndexes(taskIndexes?: readonly number[]): number[] 
     return [];
   }
 
-  return [...new Set(taskIndexes)].sort((a, b) => a - b);
+  return [...new Set(taskIndexes)].toSorted((a, b) => a - b);
 }
 
 function isValidIssue(issue: unknown): issue is ReviewIssue {

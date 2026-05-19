@@ -711,6 +711,6 @@ describe('Linear Plan File Structure Tests', () => {
     expect(() => new URL(planData.issue[0])).not.toThrow();
 
     // Verify Linear URL pattern
-    expect(planData.issue[0]).toMatch(/^https:\/\/linear\.app\/[^\/]+\/issue\/[A-Z]+-[0-9A-Z]+$/);
+    expect(planData.issue[0]).toMatch(/^https:\/\/linear\.app\/[^/]+\/issue\/[A-Z]+-[0-9A-Z]+$/);
   });
 });

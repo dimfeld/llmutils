@@ -39,7 +39,7 @@ vi.mock('../../common/input.js', async (importOriginal) => {
 vi.mock('../../common/process.js', () => ({
   logSpawn: vi.fn((cmd: string[]) => {
     const attempt = ++mockState.attempt;
-    const editedPath = cmd[1]!;
+    const editedPath = cmd[1];
     return {
       exitCode: 0,
       exited: Promise.try(async () => {
@@ -90,7 +90,8 @@ vi.mock('../plan_materialize.js', async (importOriginal) => {
 import { editMaterializedPlan, isUserFixableParseError } from './materialized_edit.js';
 
 function stripAnsi(value: string): string {
-  return value.replace(/\u001b\[[0-9;]*m/g, '');
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/\u{1b}\[[0-9;]*m/gu, '');
 }
 
 describe('materialized edit retry flow', () => {

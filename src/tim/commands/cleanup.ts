@@ -44,7 +44,7 @@ export async function handleCleanupCommand(
     }
   } catch (error) {
     warn(
-      `Failed to clean up materialized plans: ${error instanceof Error ? error.message : error}`
+      `Failed to clean up materialized plans: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 
@@ -57,7 +57,7 @@ export async function handleCleanupCommand(
     log(chalk.green(formatArtifactPurgeSummary(report)));
   } catch (error) {
     warn(
-      `Failed to purge artifacts during cleanup: ${error instanceof Error ? error.message : error}`
+      `Failed to purge artifacts during cleanup: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 }

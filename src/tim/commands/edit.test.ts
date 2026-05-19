@@ -13,7 +13,7 @@ import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js
 vi.mock('../../common/process.js', () => ({
   logSpawn: vi.fn((cmd: string[]) => {
     const exited = Promise.try(async () => {
-      await (global as any).editorBehavior?.(cmd[1]!);
+      await (global as any).editorBehavior?.(cmd[1]);
       return 0;
     });
 
@@ -54,7 +54,7 @@ describe('handleEditCommand', () => {
     vi.mocked((await import('../../common/process.js')).logSpawn).mockImplementation(
       (cmd: string[]) => {
         const exited = Promise.try(async () => {
-          await (global as any).editorBehavior?.(cmd[1]!);
+          await (global as any).editorBehavior?.(cmd[1]);
           return 0;
         });
         return { exited };

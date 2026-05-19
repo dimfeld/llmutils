@@ -104,7 +104,6 @@ describe('common/github/pr_status', () => {
     expect(result).toEqual({
       author: null,
       number: 42,
-      author: null,
       title: 'Add PR status monitoring',
       state: 'open',
       isDraft: false,

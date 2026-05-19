@@ -213,7 +213,7 @@ describe('Issue Tracker Factory Integration', () => {
 
       // Both should be available
       const available = getAvailableTrackers();
-      expect(available.available.sort()).toEqual(['github', 'linear']);
+      expect(available.available.toSorted()).toEqual(['github', 'linear']);
     });
   });
 

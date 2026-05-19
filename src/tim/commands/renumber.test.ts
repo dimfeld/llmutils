@@ -976,7 +976,7 @@ describe('tim renumber', () => {
     // Test findPlanFamily
     const family = findPlanFamily(10, allPlans, hierarchy);
     expect(family.length).toBe(3); // Should find all 3 plans in the family
-    const familyIds = family.map((f) => f.plan.id).sort((a, b) => a - b);
+    const familyIds = family.map((f) => f.plan.id).toSorted((a, b) => a - b);
     expect(familyIds).toEqual([3, 5, 10]); // Should contain all family members
 
     // Test findDisorderedFamilies
@@ -1109,7 +1109,7 @@ describe('tim renumber', () => {
     // Test findPlanFamily - should find all 4 plans
     const family = findPlanFamily(20, allPlans, hierarchy);
     expect(family.length).toBe(4);
-    const familyIds = family.map((f) => f.plan.id).sort((a, b) => a - b);
+    const familyIds = family.map((f) => f.plan.id).toSorted((a, b) => a - b);
     expect(familyIds).toEqual([5, 10, 15, 20]);
 
     // Test findDisorderedFamilies - should identify the root as disordered
@@ -2188,7 +2188,7 @@ describe('tim renumber', () => {
       expect(project).toBeTruthy();
 
       upsertPlan(db, project!.id, {
-        planId: childFromDisk.id!,
+        planId: childFromDisk.id,
         uuid: childFromDisk.uuid!,
         title: childFromDisk.title ?? null,
         goal: childFromDisk.goal ?? null,

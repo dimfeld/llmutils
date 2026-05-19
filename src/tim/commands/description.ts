@@ -369,7 +369,7 @@ async function handleInteractiveOutput(
 
       const formattedError = `Failed to ${actionName}: ${errorMessage}`;
       log(chalk.red(formattedError));
-      throw new Error(formattedError);
+      throw new Error(formattedError, { cause: err });
     }
   } catch (err) {
     // Handle prompt cancellation and other interactive errors gracefully
@@ -442,16 +442,18 @@ export async function handleDescriptionCommand(
       // Different error handling based on error type
       if (err instanceof Error && err.message.includes('outside the allowed directory')) {
         // Security error - fail fast
-        throw new Error(`Security error: ${errorMessage}`);
+        throw new Error(`Security error: ${errorMessage}`, { cause: err });
       } else if (err instanceof Error && (err as any).code === 'ENOENT') {
         // File not found - fail fast since user explicitly provided the file
         throw new Error(
-          `Instructions file not found: ${options.instructionsFile}. Please check the file path.`
+          `Instructions file not found: ${options.instructionsFile}. Please check the file path.`,
+          { cause: err }
         );
       } else if (err instanceof Error && (err as any).code === 'EACCES') {
         // Permission error - fail fast
         throw new Error(
-          `Cannot read instructions file: ${options.instructionsFile}. Permission denied.`
+          `Cannot read instructions file: ${options.instructionsFile}. Permission denied.`,
+          { cause: err }
         );
       } else {
         // Other errors - warn but continue, with clear indication that instructions will be empty
@@ -544,6 +546,6 @@ export async function handleDescriptionCommand(
       }
     }
 
-    throw new Error(contextualError);
+    throw new Error(contextualError, { cause: err });
   }
 }

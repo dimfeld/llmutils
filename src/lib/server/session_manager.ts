@@ -732,7 +732,7 @@ export class SessionManager {
     return {
       sessions: [...this.sessions.values()]
         .map((session) => this.cloneSession(session, MAX_SNAPSHOT_MESSAGES))
-        .sort((a, b) => a.connectedAt.localeCompare(b.connectedAt)),
+        .toSorted((a, b) => a.connectedAt.localeCompare(b.connectedAt)),
     };
   }
 

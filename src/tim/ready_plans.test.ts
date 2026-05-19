@@ -24,7 +24,7 @@ function createPlan(overrides: Partial<PlanSchema> & { id: number }): PlanSchema
       {
         title: 'Task',
         description: 'Do something important',
-        done: overrides.status === 'done' ?? false,
+        done: overrides.status === 'done',
       },
     ],
     parent: overrides.parent,

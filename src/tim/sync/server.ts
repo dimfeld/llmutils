@@ -248,7 +248,7 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
         clearTimeout(timer);
       }
       helloTimers.clear();
-      server.stop(true);
+      void server.stop(true);
     },
     broadcast: (frame) => broadcast(frame),
   };
@@ -1104,11 +1104,11 @@ function rawToString(raw: string | Buffer): string {
 }
 
 function jsonResponse(payload: unknown, init: ResponseInit = {}): Response {
+  const headers = new Headers(init.headers);
+  headers.set('content-type', 'application/json');
+
   return new Response(JSON.stringify(payload), {
     ...init,
-    headers: {
-      'content-type': 'application/json',
-      ...init.headers,
-    },
+    headers,
   });
 }

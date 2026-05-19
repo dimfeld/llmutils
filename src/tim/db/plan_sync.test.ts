@@ -26,7 +26,7 @@ function buildTestConfig(tasksDir: string): TimConfig {
   return {
     ...config,
     paths: {
-      ...(config.paths ?? {}),
+      ...config.paths,
       tasks: tasksDir,
     },
   };

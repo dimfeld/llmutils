@@ -255,7 +255,7 @@ export function deriveRepositoryName(
   if (parts.length === 0) {
     const fallbackSource = options.fallbackName?.trim();
     if (fallbackSource) {
-      parts.push(...fallbackSource.split(/[\/]+/));
+      parts.push(...fallbackSource.split(/[/]+/));
     }
   }
 

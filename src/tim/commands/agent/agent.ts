@@ -534,7 +534,7 @@ export async function timAgent(
     const executor = options.simple
       ? buildExecutorAndLog(executorName, sharedExecutorOptions, config, { simpleMode: true })
       : buildExecutorAndLog(executorName, sharedExecutorOptions, config);
-    const isNonInteractiveReview = terminalInputEnabled === false;
+    const isNonInteractiveReview = !terminalInputEnabled;
     const executionMode: 'normal' | 'simple' | 'tdd' = tddModeEnabled
       ? 'tdd'
       : simpleModeEnabled
@@ -1231,7 +1231,7 @@ export async function timAgent(
         if (summaryEnabled) {
           const end = Date.now();
           summaryCollector.addStepResult({
-            title: `${pendingTaskInfo.task.title}`,
+            title: pendingTaskInfo.task.title,
             executor: executorName,
             success: ok,
             output: output ?? undefined,
@@ -1247,7 +1247,7 @@ export async function timAgent(
         recordFailure(err);
         if (summaryEnabled) {
           summaryCollector.addStepResult({
-            title: `${pendingTaskInfo.task.title}`,
+            title: pendingTaskInfo.task.title,
             executor: executorName,
             success: false,
             errorMessage: String(err instanceof Error ? err.message : err),

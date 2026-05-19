@@ -475,7 +475,9 @@ export async function executeSimpleMode(
     ) {
       await markTasksAsDone(planInfo.planFilePath, newlyCompletedTitles, gitRoot, timConfig);
       if (finalReviewVerdict === 'NEEDS_FIXES') {
-        const lastReviewMessage = [...events].reverse().find((e) => e.type === 'verifier')?.message;
+        const lastReviewMessage = [...events]
+          .toReversed()
+          .find((e) => e.type === 'verifier')?.message;
         if (lastReviewMessage) {
           await appendReviewNotesToPlan(
             planInfo.planFilePath,

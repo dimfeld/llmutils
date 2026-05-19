@@ -360,7 +360,7 @@ function replacePlanDependenciesInTable(
   planUuid: string,
   dependencyUuids: string[]
 ): boolean {
-  const nextDependencyUuids = [...new Set(dependencyUuids)].sort();
+  const nextDependencyUuids = [...new Set(dependencyUuids)].toSorted();
   const existingDependencyUuids = getPlanDependenciesByUuidFromTable(db, table, planUuid).map(
     (dependency) => dependency.depends_on_uuid
   );
@@ -400,7 +400,7 @@ function replacePlanTagsInTable(
   planUuid: string,
   tags: string[]
 ): boolean {
-  const nextTags = [...new Set(tags)].sort();
+  const nextTags = [...new Set(tags)].toSorted();
   const existingTags = getPlanTagsByUuidFromTable(db, table, planUuid).map((tag) => tag.tag);
   if (
     existingTags.length === nextTags.length &&
@@ -565,7 +565,7 @@ function replaceExactPlanTasksInTable(
     `INSERT INTO ${table} (uuid, plan_uuid, task_index, title, description, done, revision)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   );
-  for (const task of [...tasks].sort((a, b) => a.task_index - b.task_index)) {
+  for (const task of [...tasks].toSorted((a, b) => a.task_index - b.task_index)) {
     if (!task.uuid) {
       throw new Error('task missing uuid in exact plan state write');
     }

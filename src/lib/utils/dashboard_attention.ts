@@ -249,7 +249,7 @@ export function deriveReadyToStartPlans(
         !activePlanUuids.has(plan.uuid) &&
         !plan.epic
     )
-    .sort((a, b) => {
+    .toSorted((a, b) => {
       const aPriority = a.priority ? (PRIORITY_ORDER[a.priority] ?? 0) : 0;
       const bPriority = b.priority ? (PRIORITY_ORDER[b.priority] ?? 0) : 0;
       return bPriority - aPriority;

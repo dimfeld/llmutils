@@ -253,9 +253,9 @@ describe('createTunnelServer', () => {
 
     expect(calls).toHaveLength(2);
     // Order is non-deterministic, so check that both messages arrived
-    const methods = calls.map((c) => c.method).sort();
+    const methods = calls.map((c) => c.method).toSorted();
     expect(methods).toEqual(['error', 'log']);
-    const allArgs = calls.map((c) => c.args[0]).sort();
+    const allArgs = calls.map((c) => c.args[0]).toSorted();
     expect(allArgs).toEqual(['from client 1', 'from client 2']);
   });
 

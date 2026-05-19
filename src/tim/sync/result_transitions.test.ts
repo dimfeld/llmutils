@@ -239,7 +239,7 @@ describe('applyOperationResultTransitions', () => {
     expect(
       getPlanTagsByUuid(db, PLAN_UUID)
         .map((tag) => tag.tag)
-        .sort()
+        .toSorted()
     ).toEqual(['rejected-tag', 'still-active']);
 
     applyOperationResultTransitions(db, [

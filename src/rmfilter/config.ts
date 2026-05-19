@@ -208,7 +208,7 @@ async function findAllPresetFiles(
     })
   );
 
-  return items.sort((a, b) => a.name.localeCompare(b.name));
+  return items.toSorted((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function getCurrentConfig(options?: { args?: string[]; gitRoot?: string }) {

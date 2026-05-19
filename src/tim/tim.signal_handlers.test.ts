@@ -45,7 +45,7 @@ describe('registerShutdownSignalHandlers', () => {
 
     registerShutdownSignalHandlers(cleanupRegistry, fakeProcess);
 
-    expect([...fakeProcess.handlers.keys()].sort()).toEqual([
+    expect([...fakeProcess.handlers.keys()].toSorted()).toEqual([
       'SIGHUP',
       'SIGINT',
       'SIGTERM',

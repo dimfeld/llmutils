@@ -272,11 +272,11 @@ describe('handlePlanReviewGuideCommand', () => {
         review_guide: expect.stringContaining('Stub Plan Review Guide'),
       })
     );
-    const issues = getReviewIssues(getDatabase(), reviews[0]!.id);
+    const issues = getReviewIssues(getDatabase(), reviews[0].id);
     expect(issues).toHaveLength(1);
     expect(issues[0]).toEqual(
       expect.objectContaining({
-        review_id: reviews[0]!.id,
+        review_id: reviews[0].id,
         severity: 'major',
         category: 'bug',
         file: 'src/app.ts',

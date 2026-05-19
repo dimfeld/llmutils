@@ -107,7 +107,7 @@ async function resolveTaskIndex(tasks: PlanTask[], options: RemoveTaskOptions): 
       return await selectTaskInteractive(tasks);
     } catch (err: any) {
       if (err instanceof Error && err.name === 'ExitPromptError') {
-        throw new Error('Interactive task selection cancelled.');
+        throw new Error('Interactive task selection cancelled.', { cause: err });
       }
       throw err;
     }

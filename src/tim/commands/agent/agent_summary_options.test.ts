@@ -163,7 +163,8 @@ vi.mock('../../summary/display.js', () => ({
     const lines = [
       `${summary.planTitle}`,
       '------------------------------------------------------------',
-      ...[`Execution Summary: ${summary.planTitle}`, `Steps: ${summary.metadata?.totalSteps ?? 0}`],
+      `Execution Summary: ${summary.planTitle}`,
+      `Steps: ${summary.metadata?.totalSteps ?? 0}`,
     ];
     await fs.writeFile(filePath, lines.join('\n'));
   }),

@@ -70,7 +70,7 @@ async function collectTaskInput(options: AddTaskOptions): Promise<TaskInput> {
       });
     } catch (err: any) {
       if (err instanceof Error && err.name === 'ExitPromptError') {
-        throw new Error('Interactive task creation cancelled.');
+        throw new Error('Interactive task creation cancelled.', { cause: err });
       }
       throw err;
     }
@@ -90,7 +90,7 @@ async function collectTaskInput(options: AddTaskOptions): Promise<TaskInput> {
       });
     } catch (err: any) {
       if (err instanceof Error && err.name === 'ExitPromptError') {
-        throw new Error('Task description editor cancelled.');
+        throw new Error('Task description editor cancelled.', { cause: err });
       }
       throw err;
     }

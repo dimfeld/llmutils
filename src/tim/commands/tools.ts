@@ -28,7 +28,7 @@ type ToolCommandOptions = {
 
 type ToolHandler = {
   schema: ZodTypeAny;
-  fn: (args: any, context: ToolContext) => Promise<ToolResult<unknown>>;
+  fn: (args: any, context: ToolContext) => Promise<ToolResult>;
 };
 
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
@@ -73,11 +73,11 @@ async function readJsonFromStdin(): Promise<unknown> {
     return JSON.parse(trimmed) as unknown;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Invalid JSON input: ${message}`);
+    throw new Error(`Invalid JSON input: ${message}`, { cause: error });
   }
 }
 
-function formatOutput(result: ToolResult<unknown>, options: ToolCommandOptions): string {
+function formatOutput(result: ToolResult, options: ToolCommandOptions): string {
   if (options.json) {
     const payload: Record<string, unknown> = {
       success: true,

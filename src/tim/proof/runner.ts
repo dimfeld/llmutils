@@ -52,7 +52,9 @@ export class ProofRunError extends Error {
   readonly cause: unknown;
 
   constructor(cause: unknown) {
-    super(`Proof generation executor failed: ${cause instanceof Error ? cause.message : cause}`);
+    super(
+      `Proof generation executor failed: ${cause instanceof Error ? cause.message : String(cause)}`
+    );
     this.name = 'ProofRunError';
     this.cause = cause;
   }
@@ -95,7 +97,7 @@ async function walkFiles(directory: string): Promise<string[]> {
     })
   );
 
-  return files.flat().sort((a, b) => a.localeCompare(b));
+  return files.flat().toSorted((a, b) => a.localeCompare(b));
 }
 
 function formatTasks(tasks: Array<{ title: string; done?: boolean }>): string {

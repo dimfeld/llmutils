@@ -91,7 +91,7 @@ function enrichProjectPrs(
 }
 
 function sortProjectPrsByPrNumberDesc(prs: EnrichedProjectPr[]): EnrichedProjectPr[] {
-  return [...prs].sort((left, right) => {
+  return [...prs].toSorted((left, right) => {
     const prNumberComparison = right.status.pr_number - left.status.pr_number;
     if (prNumberComparison !== 0) {
       return prNumberComparison;
@@ -102,7 +102,7 @@ function sortProjectPrsByPrNumberDesc(prs: EnrichedProjectPr[]): EnrichedProject
 }
 
 function sortReviewingProjectPrs(prs: EnrichedProjectPr[]): EnrichedProjectPr[] {
-  return [...prs].sort((left, right) => {
+  return [...prs].toSorted((left, right) => {
     const leftReviewRequested = left.currentUserReviewRequestLabel === 'Review Requested' ? 1 : 0;
     const rightReviewRequested = right.currentUserReviewRequestLabel === 'Review Requested' ? 1 : 0;
 

@@ -21,7 +21,7 @@ function child(uuid: string, overrides: Partial<RunChildrenPlanChild> = {}): Run
 }
 
 function sortedValues(map: Map<string, Set<string>>, key: string): string[] {
-  return [...(map.get(key) ?? [])].sort();
+  return [...(map.get(key) ?? [])].toSorted();
 }
 
 describe('run children eligibility helpers', () => {
@@ -177,7 +177,7 @@ describe('selection expansion and shrinking', () => {
     const graph = buildSelectionGraph(children, {});
     const selected = expandSelectionWithPredecessors(new Set<string>(), children[2], graph);
 
-    expect([...selected].sort()).toEqual(['a', 'b', 'c']);
+    expect([...selected].toSorted()).toEqual(['a', 'b', 'c']);
   });
 
   test('expandSelectionWithPredecessors auto-adds base-plan predecessors', () => {
@@ -185,7 +185,7 @@ describe('selection expansion and shrinking', () => {
     const graph = buildSelectionGraph(children, {});
     const selected = expandSelectionWithPredecessors(new Set<string>(), children[1], graph);
 
-    expect([...selected].sort()).toEqual(['base', 'stacked']);
+    expect([...selected].toSorted()).toEqual(['base', 'stacked']);
   });
 
   test('expandSelectionWithPredecessors skips finished predecessors', () => {
@@ -235,7 +235,7 @@ describe('selection expansion and shrinking', () => {
     const graph = buildSelectionGraph(children, {});
     const selected = shrinkSelectionRemovingDependents(new Set(['a', 'b']), 'b', graph.depsByUuid);
 
-    expect([...selected].sort()).toEqual(['a']);
+    expect([...selected].toSorted()).toEqual(['a']);
   });
 
   test('shrinkSelectionRemovingDependents cascades from a middle node to dependents', () => {
@@ -252,6 +252,6 @@ describe('selection expansion and shrinking', () => {
       graph.depsByUuid
     );
 
-    expect([...selected].sort()).toEqual(['a', 'independent']);
+    expect([...selected].toSorted()).toEqual(['a', 'independent']);
   });
 });

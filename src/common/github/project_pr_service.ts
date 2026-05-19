@@ -218,7 +218,7 @@ export async function refreshProjectPrs(
     const authored = [...authoredNumbers]
       .map((prNumber) => detailsByNumber.get(prNumber))
       .filter((detail): detail is PrStatusDetail => detail !== undefined)
-      .sort((a, b) => a.status.pr_number - b.status.pr_number);
+      .toSorted((a, b) => a.status.pr_number - b.status.pr_number);
 
     const reviewingNumbers = new Set(relevantPrs.reviewing.map((pr) => pr.number));
     for (const detail of details) {
@@ -237,7 +237,7 @@ export async function refreshProjectPrs(
     const reviewing = [...reviewingNumbers]
       .map((prNumber) => detailsByNumber.get(prNumber))
       .filter((detail): detail is PrStatusDetail => detail !== undefined)
-      .sort((a, b) => a.status.pr_number - b.status.pr_number);
+      .toSorted((a, b) => a.status.pr_number - b.status.pr_number);
 
     // Auto-link PRs to plans based on branch name matching
     const branchMatches = getProjectPlanBranchMatches(db, projectId);

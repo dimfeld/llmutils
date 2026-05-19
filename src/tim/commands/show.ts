@@ -697,7 +697,7 @@ export async function handleShowCommand(
       );
       planId = parsePlanIdFromCliArg(inferredPlanId);
     }
-    const resolvedPlan = await resolvePlan(planId!, {
+    const resolvedPlan = await resolvePlan(planId, {
       gitRoot: repository.gitRoot,
       configPath: globalOpts.config,
     });

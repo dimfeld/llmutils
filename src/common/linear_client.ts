@@ -86,7 +86,8 @@ export function getLinearClient(explicitApiKey?: string): LinearClient {
     const errorMessage = error instanceof Error ? error.message : String(error);
     throw new Error(
       `Failed to initialize Linear client: ${errorMessage}. ` +
-        'Please check that your LINEAR_API_KEY is valid.'
+        'Please check that your LINEAR_API_KEY is valid.',
+      { cause: error }
     );
   }
 }
