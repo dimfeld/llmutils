@@ -2,6 +2,7 @@ import { renderWithTooltipProvider } from '$lib/test-utils/render_with_tooltip_p
 import { describe, expect, test, vi } from 'vitest';
 
 import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
+import { getLinearPrReviewUrl } from '$lib/remote/project_prs.remote.js';
 import PrDetail from './PrDetail.svelte';
 
 vi.mock('$lib/remote/project_prs.remote.js', async () => {
@@ -86,6 +87,28 @@ describe('PrDetail', () => {
 
     expect(body).toContain('View in Graphite');
     expect(body).toContain('href="https://app.graphite.com/github/pr/example/repo/42"');
+  });
+
+  test('does not block server render on the Linear review URL lookup', async () => {
+    vi.mocked(getLinearPrReviewUrl).mockImplementationOnce(
+      () => new Promise<string | null>(() => {})
+    );
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr: createPr(),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('View in GitHub');
+    expect(body).toContain('View in Graphite');
+    expect(body).not.toContain('View in Linear');
+    expect(getLinearPrReviewUrl).toHaveBeenCalledWith({
+      projectId: '123',
+      prNumber: 42,
+      prUrl: 'https://github.com/example/repo/pull/42',
+    });
   });
 
   test('shows the draft toggle only for the authenticated author', async () => {

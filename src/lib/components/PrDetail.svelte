@@ -41,13 +41,14 @@
   let graphitePrUrl = $derived(
     `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`
   );
-  let linearPrReviewUrl = $derived(
-    await getLinearPrReviewUrl({
+  let linearPrReviewUrlQuery = $derived(
+    getLinearPrReviewUrl({
       projectId: String(pr.projectId),
       prNumber: pr.status.pr_number,
       prUrl: pr.status.pr_url,
     })
   );
+  let linearPrReviewUrl = $derived(linearPrReviewUrlQuery.current ?? null);
   let reviews = $derived(await getPrReviews({ prUrl: pr.status.pr_url }));
   let latestCompletedReview = $derived(reviews?.find((r) => r.status === 'complete') ?? null);
   let hasNewCommitsSinceReview = $derived(
