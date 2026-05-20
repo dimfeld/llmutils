@@ -538,6 +538,53 @@ describe('tim db/review', () => {
       expect(reviews[0].unresolved_count).toBe(0);
     });
 
+    test('getReviewsByPlanUuid includes PR-only reviews for linked PR URLs', () => {
+      const planOnly = createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        reviewedSha: 'plan-only',
+      });
+      const prOnly = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/pr-only',
+        reviewedSha: 'pr-only',
+      });
+      createReview(db, {
+        projectId,
+        prUrl: PR_URL_2,
+        branch: 'feature/other-pr',
+        reviewedSha: 'other-pr',
+      });
+
+      const reviews = getReviewsByPlanUuid(db, PLAN_UUID_1, { linkedPrUrls: [PR_URL_1] });
+
+      expect(reviews.map((review) => review.id)).toEqual([prOnly.id, planOnly.id]);
+    });
+
+    test('getReviewsByPrUrl includes plan-only reviews for linked plan UUIDs', () => {
+      const prOnly = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/pr-only',
+        reviewedSha: 'pr-only',
+      });
+      const planOnly = createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        reviewedSha: 'plan-only',
+      });
+      createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_2,
+        reviewedSha: 'other-plan',
+      });
+
+      const reviews = getReviewsByPrUrl(db, PR_URL_1, { linkedPlanUuids: [PLAN_UUID_1] });
+
+      expect(reviews.map((review) => review.id)).toEqual([planOnly.id, prOnly.id]);
+    });
+
     test('getReviewsByPlanUuid includes issue counts', () => {
       const review = createReview(db, {
         projectId,

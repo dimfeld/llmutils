@@ -49,7 +49,8 @@
     })
   );
   let linearPrReviewUrl = $derived(linearPrReviewUrlQuery.current ?? null);
-  let reviews = $derived(await getPrReviews({ prUrl: pr.status.pr_url }));
+  let linkedPlanUuids = $derived(pr.linkedPlans.map((plan) => plan.planUuid));
+  let reviews = $derived(await getPrReviews({ prUrl: pr.status.pr_url, linkedPlanUuids }));
   let latestCompletedReview = $derived(reviews?.find((r) => r.status === 'complete') ?? null);
   let hasNewCommitsSinceReview = $derived(
     pr.status.head_sha != null &&
@@ -142,6 +143,18 @@
         : status === 'in_progress'
           ? 'Running'
           : 'Pending';
+  }
+
+  function reviewGuideHref(review: {
+    id: number;
+    pr_url: string | null;
+    plan_uuid: string | null;
+  }): string {
+    if (review.pr_url) {
+      return `/projects/${projectId}/prs/${pr.status.pr_number}/reviews/${review.id}`;
+    }
+
+    return `/projects/${projectId}/plans/${review.plan_uuid ?? planUuid}/reviews/${review.id}`;
   }
 </script>
 
@@ -433,10 +446,7 @@
             <li
               class="flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
             >
-              <a
-                href="/projects/{projectId}/prs/{pr.status.pr_number}/reviews/{review.id}"
-                class="flex min-w-0 flex-1 items-center gap-2"
-              >
+              <a href={reviewGuideHref(review)} class="flex min-w-0 flex-1 items-center gap-2">
                 <span class="min-w-0 flex-1 truncate text-foreground tabular-nums">
                   #{reviews.length - i} - {formatRelativeTime(review.created_at)}
                 </span>

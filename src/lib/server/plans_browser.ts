@@ -198,5 +198,11 @@ export async function getPlanDetailRouteData(
     redirectTo = `/projects/${detail.projectId}/${tab}/${detail.uuid}`;
   }
 
-  return { planDetail: detail, reviews: getReviewsByPlanUuid(db, planRow.uuid), redirectTo };
+  const linkedPrUrls = detail.prStatuses.map((pr) => pr.status.pr_url);
+
+  return {
+    planDetail: detail,
+    reviews: getReviewsByPlanUuid(db, planRow.uuid, { linkedPrUrls }),
+    redirectTo,
+  };
 }

@@ -551,4 +551,22 @@ describe('PlanDetail', () => {
     expect(body).toContain('2/5 open');
     expect(body).not.toContain('No review guides yet.');
   });
+
+  test('links PR-backed review guides to the PR review route', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail(),
+        reviews: [
+          makeReview({
+            id: 204,
+            pr_url: 'https://github.com/example/repo/pull/42',
+            plan_uuid: null,
+          }),
+        ],
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('href="/projects/123/prs/42/reviews/204"');
+  });
 });

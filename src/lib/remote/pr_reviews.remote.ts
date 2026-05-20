@@ -7,11 +7,12 @@ import { getReviewIssueById, getReviewsByPrUrl, updateReviewIssue } from '$tim/d
 
 const prUrlSchema = z.object({
   prUrl: z.string().min(1),
+  linkedPlanUuids: z.array(z.string()).optional(),
 });
 
-export const getPrReviews = query(prUrlSchema, async ({ prUrl }) => {
+export const getPrReviews = query(prUrlSchema, async ({ prUrl, linkedPlanUuids }) => {
   const { db } = await getServerContext();
-  return getReviewsByPrUrl(db, prUrl);
+  return getReviewsByPrUrl(db, prUrl, { linkedPlanUuids });
 });
 
 const toggleIssueSchema = z.object({

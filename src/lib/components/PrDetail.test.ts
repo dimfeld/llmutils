@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
 import { getLinearPrReviewUrl } from '$lib/remote/project_prs.remote.js';
+import { getPrReviews } from '$lib/remote/pr_reviews.remote.js';
 import PrDetail from './PrDetail.svelte';
 
 vi.mock('$lib/remote/project_prs.remote.js', async () => {
@@ -212,5 +213,42 @@ describe('PrDetail', () => {
     expect(plan30).toBeGreaterThanOrEqual(0);
     expect(plan10).toBeLessThan(plan20);
     expect(plan20).toBeLessThan(plan30);
+  });
+
+  test('loads and links plan-only review guides for linked plans', async () => {
+    vi.mocked(getPrReviews).mockResolvedValueOnce([
+      {
+        id: 501,
+        project_id: 123,
+        pr_status_id: null,
+        pr_url: null,
+        branch: null,
+        base_branch: 'main',
+        reviewed_sha: 'abc123',
+        review_guide: '# Plan guide',
+        status: 'complete',
+        error_message: null,
+        created_at: '2026-03-18T10:00:00.000Z',
+        updated_at: '2026-03-18T10:00:00.000Z',
+        plan_uuid: 'plan-10',
+        issue_count: 2,
+        unresolved_count: 1,
+      },
+    ]);
+    const pr = createPr();
+    pr.linkedPlans = [{ planUuid: 'plan-10', planId: 10, title: 'Plan ten' }];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+      },
+    });
+
+    expect(getPrReviews).toHaveBeenLastCalledWith({
+      prUrl: 'https://github.com/example/repo/pull/42',
+      linkedPlanUuids: ['plan-10'],
+    });
+    expect(body).toContain('href="/projects/123/plans/plan-10/reviews/501"');
   });
 });

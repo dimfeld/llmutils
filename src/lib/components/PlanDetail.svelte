@@ -349,6 +349,34 @@
           ? 'Running'
           : 'Pending';
   }
+
+  function prNumberFromUrl(prUrl: string): number | null {
+    try {
+      const url = new URL(prUrl);
+      const segments = url.pathname.split('/').filter(Boolean);
+      const prNumber =
+        segments[2] === 'pull' || segments[2] === 'pulls' ? Number(segments[3]) : NaN;
+      return Number.isInteger(prNumber) && prNumber > 0 ? prNumber : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function reviewGuideHref(review: {
+    id: number;
+    pr_url: string | null;
+    plan_uuid: string | null;
+  }): string {
+    if (review.pr_url) {
+      const prNumber = prNumberFromUrl(review.pr_url);
+      if (prNumber != null) {
+        return `/projects/${projectId}/prs/${prNumber}/reviews/${review.id}`;
+      }
+    }
+
+    return `/projects/${projectId}/plans/${review.plan_uuid ?? plan.uuid}/reviews/${review.id}`;
+  }
+
   let chatDialogOpen = $state(false);
   let startedSuccessfully = $state(false);
   let errorMessage: string | null = $state(null);
@@ -1097,10 +1125,7 @@
             <li
               class="flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
             >
-              <a
-                href="/projects/{projectId}/plans/{plan.uuid}/reviews/{review.id}"
-                class="flex min-w-0 flex-1 items-center gap-2"
-              >
+              <a href={reviewGuideHref(review)} class="flex min-w-0 flex-1 items-center gap-2">
                 <span class="min-w-0 flex-1 truncate text-foreground tabular-nums">
                   #{review.id} - {formatRelativeTime(review.created_at)}
                 </span>

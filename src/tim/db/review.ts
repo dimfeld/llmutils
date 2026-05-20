@@ -783,8 +783,19 @@ export interface ReviewWithIssueCounts extends ReviewRow {
   unresolved_count: number;
 }
 
-export function getReviewsByPrUrl(db: Database, prUrl: string): ReviewWithIssueCounts[] {
+export function getReviewsByPrUrl(
+  db: Database,
+  prUrl: string,
+  options: { linkedPlanUuids?: string[] } = {}
+): ReviewWithIssueCounts[] {
   const canonicalUrl = canonicalizePrUrl(prUrl);
+  const linkedPlanUuids = [...new Set(options.linkedPlanUuids ?? [])];
+  const linkedPlanPlaceholders = linkedPlanUuids.map(() => '?').join(', ');
+  const whereClause =
+    linkedPlanUuids.length > 0
+      ? `(r.pr_url = ? OR (r.pr_url IS NULL AND r.plan_uuid IN (${linkedPlanPlaceholders})))`
+      : 'r.pr_url = ?';
+
   return db
     .prepare(
       `
@@ -793,15 +804,26 @@ export function getReviewsByPrUrl(db: Database, prUrl: string): ReviewWithIssueC
           COALESCE(SUM(CASE WHEN ri.severity <> 'note' AND ri.resolved = 0 THEN 1 ELSE 0 END), 0) as unresolved_count
         FROM review r
         LEFT JOIN review_issue ri ON ri.review_id = r.id
-        WHERE r.pr_url = ?
+        WHERE ${whereClause}
         GROUP BY r.id
         ORDER BY r.created_at DESC, r.id DESC
       `
     )
-    .all(canonicalUrl) as ReviewWithIssueCounts[];
+    .all(canonicalUrl, ...linkedPlanUuids) as ReviewWithIssueCounts[];
 }
 
-export function getReviewsByPlanUuid(db: Database, planUuid: string): ReviewWithIssueCounts[] {
+export function getReviewsByPlanUuid(
+  db: Database,
+  planUuid: string,
+  options: { linkedPrUrls?: string[] } = {}
+): ReviewWithIssueCounts[] {
+  const linkedPrUrls = [...new Set(options.linkedPrUrls ?? [])].map(canonicalizePrUrl);
+  const linkedPrPlaceholders = linkedPrUrls.map(() => '?').join(', ');
+  const whereClause =
+    linkedPrUrls.length > 0
+      ? `(r.plan_uuid = ? OR (r.plan_uuid IS NULL AND r.pr_url IN (${linkedPrPlaceholders})))`
+      : 'r.plan_uuid = ?';
+
   return db
     .prepare(
       `
@@ -810,12 +832,12 @@ export function getReviewsByPlanUuid(db: Database, planUuid: string): ReviewWith
           COALESCE(SUM(CASE WHEN ri.severity <> 'note' AND ri.resolved = 0 THEN 1 ELSE 0 END), 0) as unresolved_count
         FROM review r
         LEFT JOIN review_issue ri ON ri.review_id = r.id
-        WHERE r.plan_uuid = ?
+        WHERE ${whereClause}
         GROUP BY r.id
         ORDER BY r.created_at DESC, r.id DESC
       `
     )
-    .all(planUuid) as ReviewWithIssueCounts[];
+    .all(planUuid, ...linkedPrUrls) as ReviewWithIssueCounts[];
 }
 
 export function getReviewsForProject(
