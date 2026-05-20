@@ -2,3 +2,7 @@
 # Don't run any regular tests, user should be using `bun run test`
 pathIgnorePatterns = ["src/**"]
 
+[install]
+# Only install package versions published at least 3 days ago
+minimumReleaseAge = 259200
+
