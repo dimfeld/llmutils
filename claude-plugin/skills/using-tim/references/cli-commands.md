@@ -11,6 +11,7 @@ Complete reference for tim command-line interface.
 - [Workspace Commands](#workspace-commands)
 - [Assignment Commands](#assignment-commands)
 - [PR Commands](#pr-commands)
+- [Review Guide Commands](#review-guide-commands)
 - [Branch Commands](#branch-commands)
 - [Utility Commands](#utility-commands)
 - [Common Workflows](#common-workflows)
@@ -411,6 +412,46 @@ Resolve a PR review thread via the GitHub API. Primarily used by agents during `
 ```bash
 tim pr resolve <threadId>
 ```
+
+## Review Guide Commands
+
+Use these commands when working with stored review guides and their extracted issues. Review guides may be plan-only (`tim review-guide generate`) or PR-based (`tim pr review-guide`), and issue management commands can resolve the current guide from a plan ID, branch name, or PR URL.
+
+### tim review-guide generate
+
+Generate a plan-only stored review guide.
+
+```bash
+tim review-guide generate 123
+tim review-guide generate 123 --auto-workspace
+tim review-guide generate 123 --executor codex-cli
+```
+
+### tim review-guide list-issues
+
+List actionable issues from the latest stored review guide for a target. Targets can be a plan ID, a branch name, or a PR URL. When the target resolves to a plan linked to a PR, include review guides from both the plan and linked PR; when it resolves to a PR linked to a plan, include guides from both the PR and linked plan. By default, only unresolved non-note issues are shown.
+
+```bash
+tim review-guide list-issues 123
+tim review-guide list-issues feature/my-branch
+tim review-guide list-issues https://github.com/org/repo/pull/456
+tim review-guide list-issues 123 --all          # Include resolved issues
+```
+
+When a user asks to work through review-guide issues, run `tim review-guide list-issues <target>` first to identify the latest issue IDs and scope. Prefer using the plan ID when available; use the branch name when the user gives branch context; use the PR URL when the user is explicitly asking about PR review-guide issues.
+
+### tim review-guide resolve-issue
+
+Mark a review-guide issue resolved after you have addressed or verified it. Pass the target when available so tim validates that the issue belongs to the latest guide for that plan, branch, or PR. Use `--unresolved` to reopen an issue.
+
+```bash
+tim review-guide resolve-issue 42 123
+tim review-guide resolve-issue 42 feature/my-branch
+tim review-guide resolve-issue 42 https://github.com/org/repo/pull/456
+tim review-guide resolve-issue 42 --unresolved
+```
+
+Do not mark an issue resolved just because code was changed; verify the specific issue is handled. Notes from review-guide annotations are not actionable issues and cannot be resolved with this command.
 
 ## Branch Commands
 

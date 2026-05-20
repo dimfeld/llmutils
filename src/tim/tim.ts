@@ -1498,8 +1498,12 @@ program
     }).catch(handleCommandError);
   });
 
-program
-  .command('review-guide <planId>')
+const reviewGuideCommand = program
+  .command('review-guide')
+  .description('Generate, list, and manage stored review guides');
+
+reviewGuideCommand
+  .command('generate <planId>')
   .description('Generate a stored review guide for a plan without requiring a PR')
   .option('-x, --executor <name>', 'Run with a single executor (claude-code or codex-cli)')
   .option('-m, --model <model>', 'Model override for executors')
@@ -1514,6 +1518,32 @@ program
     await runWithCommandTunnelAdapter(async () => {
       const { handlePlanReviewGuideCommand } = await import('./commands/review_plan.js');
       await handlePlanReviewGuideCommand(planId, options, command);
+    }).catch(handleCommandError);
+  });
+
+reviewGuideCommand
+  .command('list-issues <target>')
+  .description('List unresolved issues on the latest review guide for a plan ID, branch, or PR URL')
+  .option('--all', 'Include resolved issues')
+  .action(async (target, options) => {
+    await runWithCommandTunnelAdapter(async () => {
+      const { handleReviewGuideListIssuesCommand } =
+        await import('./commands/review_guide_manage.js');
+      await handleReviewGuideListIssuesCommand(target, options);
+    }).catch(handleCommandError);
+  });
+
+reviewGuideCommand
+  .command('resolve-issue <issueId> [target]')
+  .description(
+    'Mark a review-guide issue resolved, optionally scoped to a plan ID, branch, or PR URL'
+  )
+  .option('--unresolved', 'Mark the issue unresolved instead')
+  .action(async (issueId, target, options) => {
+    await runWithCommandTunnelAdapter(async () => {
+      const { handleReviewGuideResolveIssueCommand } =
+        await import('./commands/review_guide_manage.js');
+      await handleReviewGuideResolveIssueCommand(issueId, target, options);
     }).catch(handleCommandError);
   });
 

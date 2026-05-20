@@ -162,7 +162,7 @@ export async function handlePlanReviewGuideCommand(
             baseDir,
             resolvedPlan.planPath ?? undefined,
             config,
-            'tim review-guide'
+            'tim review-guide generate'
           );
           baseDir = workspaceResult.baseDir;
           updateHeadlessSessionInfo({ workspacePath: baseDir });

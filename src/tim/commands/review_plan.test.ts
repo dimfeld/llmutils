@@ -380,7 +380,7 @@ describe('handlePlanReviewGuideCommand', () => {
       realRepoDir,
       expect.stringContaining('348.plan.md'),
       expect.any(Object),
-      'tim review-guide'
+      'tim review-guide generate'
     );
     expect(capturedGuidePrompts[0]).toContain('src/feature.ts#');
     expect(capturedGuidePrompts[0]).not.toContain('+export const value = 3;');

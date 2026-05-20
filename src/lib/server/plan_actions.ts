@@ -271,7 +271,7 @@ export async function spawnPlanReviewGuideProcess(
   return spawnTimProcess(
     describeTarget('plan', planId),
     planId,
-    ['review-guide', String(planId), '--auto-workspace'],
+    ['review-guide', 'generate', String(planId), '--auto-workspace'],
     cwd
   );
 }

@@ -314,7 +314,9 @@ Standalone reviews are stored in SQLite (migration v23, generalized in v37). A r
 Generation paths:
 
 - `tim pr review-guide <prUrlOrNumber>` — PR-linked review (sets `pr_url`/`branch`/`pr_status_id`).
-- `tim review-guide <planId>` — plan-only review (sets `plan_uuid`, leaves `pr_url`/`branch` NULL).
+- `tim review-guide generate <planId>` — plan-only review (sets `plan_uuid`, leaves `pr_url`/`branch` NULL).
+- `tim review-guide list-issues <planId|branch|prUrl>` — resolves a plan, PR, or branch to the latest stored guide and lists actionable issues. Plan resolution includes linked PR review rows; PR resolution includes linked plan review rows.
+- `tim review-guide resolve-issue <issueId> [planId|branch|prUrl]` — marks an actionable issue resolved, optionally validating it belongs to the latest guide for the target.
 
 **Tables**:
 

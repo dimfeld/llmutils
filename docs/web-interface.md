@@ -88,7 +88,7 @@ PR-only (gated by `allowGithubSubmission`):
 
 ### Plan Review Guides on the Plan Detail Page
 
-`PlanDetail.svelte` has a "Review Guides" section with a **Generate review guide** button that calls the `startPlanReviewGuide` remote command in `src/lib/remote/plan_actions.remote.ts`. That command validates the plan belongs to the project (404 otherwise), rejects with 409 if a `pending`/`in_progress` plan review already exists, and spawns `tim review-guide <planId> --auto-workspace` via `spawnPlanReviewGuideProcess` (`src/lib/server/plan_actions.ts`).
+`PlanDetail.svelte` has a "Review Guides" section with a **Generate review guide** button that calls the `startPlanReviewGuide` remote command in `src/lib/remote/plan_actions.remote.ts`. That command validates the plan belongs to the project (404 otherwise), rejects with 409 if a `pending`/`in_progress` plan review already exists, and spawns `tim review-guide generate <planId> --auto-workspace` via `spawnPlanReviewGuideProcess` (`src/lib/server/plan_actions.ts`).
 
 Concurrency is layered: a per-plan launch lock is acquired BEFORE the DB pending/in-progress check (race-safe across simultaneous requests), and the lock is released on spawn failure and on `spawnTimProcess`'s `earlyExit: true` callback. The button is disabled while `reviewGuideRunning` (local optimistic flag) is set or any review for the plan is still `pending`/`in_progress`.
 

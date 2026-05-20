@@ -194,13 +194,18 @@ Useful CLI commands:
 tim pr status 123
 tim pr link 123 https://github.com/owner/repo/pull/456
 tim pr review-guide https://github.com/owner/repo/pull/456
-tim review-guide 123                                 # Plan-only review guide (no PR required)
-tim review-guide 123 --auto-workspace
+tim review-guide generate 123                       # Plan-only review guide (no PR required)
+tim review-guide generate 123 --auto-workspace
+tim review-guide list-issues 123                    # Latest guide for plan, plus linked PR guides
+tim review-guide list-issues feature/my-branch      # Resolve by plan or PR branch
+tim review-guide resolve-issue 42 123
 tim pr fix 123 --all --auto-workspace
 tim rebase 123 --auto-workspace
 ```
 
-`tim review-guide <planId>` generates a review guide for a plan that does not yet have an associated PR. It reuses the same pipeline as `tim pr review-guide` and stores results in the `review` table, keyed by the plan's UUID instead of a PR URL. With `--auto-workspace`, it routes through the managed workspace and reviews the latest committed state; without it, it runs in the current working tree and includes uncommitted changes in the diff.
+`tim review-guide generate <planId>` generates a review guide for a plan that does not yet have an associated PR. It reuses the same pipeline as `tim pr review-guide` and stores results in the `review` table, keyed by the plan's UUID instead of a PR URL. With `--auto-workspace`, it routes through the managed workspace and reviews the latest committed state; without it, it runs in the current working tree and includes uncommitted changes in the diff.
+
+`tim review-guide list-issues <planId|branch|prUrl>` finds the latest stored review guide for the resolved plan or PR and includes linked guides from the other object when a plan is linked to a PR or a PR is linked to a plan. By default it shows unresolved actionable issues; use `--all` to include resolved issues. `tim review-guide resolve-issue <issueId> [planId|branch|prUrl]` marks an issue resolved, and the optional target validates that the issue belongs to the latest review guide.
 
 Review guides can include non-actionable `<annotation file="..." line="...">...</annotation>` callouts. These render as Notes in the guide viewer sidebar and inline diff overlay, but are not submitted to GitHub or converted into cleanup work.
 
