@@ -237,7 +237,7 @@ const CanonicalProjectSettingSetSnapshotSchema = z.object({
   projectUuid: z.string(),
   setting: z.string(),
   deleted: z.literal(false).optional(),
-  value: z.unknown().refine((v) => v !== undefined, { message: 'value is required' }),
+  value: z.unknown(),
   revision: z.number(),
   updatedAt: z.string().nullable().optional(),
   updatedByNode: z.string().nullable().optional(),
