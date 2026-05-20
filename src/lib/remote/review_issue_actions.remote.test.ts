@@ -372,7 +372,7 @@ describe('review issue remote actions', () => {
     expect(getReviewIssues(currentDb, review.id)[0]?.content).toBe('Keep me');
   });
 
-  test('deleteReviewIssue refuses to delete note rows', async () => {
+  test('deleteReviewIssue removes note rows', async () => {
     const review = seedReview({
       prUrl: 'https://github.com/example/repo/pull/411',
       branch: 'feature/review-issue-delete-note',
@@ -392,15 +392,9 @@ describe('review issue remote actions', () => {
     });
     const note = getReviewIssues(currentDb, review.id).at(-1)!;
 
-    await expect(
-      invokeCommand(deleteReviewIssue, { reviewId: review.id, issueId: note.id })
-    ).rejects.toMatchObject({
-      status: 400,
-      body: { message: 'Notes cannot be deleted' },
-    });
+    await invokeCommand(deleteReviewIssue, { reviewId: review.id, issueId: note.id });
 
-    expect(getReviewIssues(currentDb, review.id)).toHaveLength(1);
-    expect(getReviewIssues(currentDb, review.id)[0]?.id).toBe(note.id);
+    expect(getReviewIssues(currentDb, review.id)).toHaveLength(0);
   });
 
   test('addReviewIssueToPlanTask appends a task for the single linked plan', async () => {

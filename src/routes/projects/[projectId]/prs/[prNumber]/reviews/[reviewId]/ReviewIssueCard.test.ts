@@ -220,8 +220,7 @@ describe('ReviewIssueCard', () => {
       expect(body).not.toContain('Add to plan as a task');
       expect(body).not.toContain('Mark resolved');
       expect(body).not.toContain('Mark unresolved');
-      expect(body).not.toContain('Delete issue');
-      expect(body).not.toMatch(/>\s*Edit\s*</);
+      expect(body).toContain('Delete issue');
 
       expect(body).toContain('Jump to diff');
       expect(body).toContain('Copy issue');

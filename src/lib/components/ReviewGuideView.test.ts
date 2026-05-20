@@ -134,7 +134,7 @@ describe('ReviewGuideView', () => {
     expect(noteCard).not.toContain('Add to plan as a task');
     expect(noteCard).not.toContain('Mark resolved');
     expect(noteCard).not.toContain('Mark unresolved');
-    expect(noteCard).not.toContain('Delete issue');
+    expect(noteCard).toContain('Delete issue');
     expect(noteCard).not.toMatch(/>Edit</);
   });
 
