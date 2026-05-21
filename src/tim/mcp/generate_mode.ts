@@ -78,6 +78,21 @@ export interface GenerateModeRegistrationContext {
 
 const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Interview your human partner directly and conversationally until you reach a shared understanding of every important aspect of the plan. Do not use AskUserQuestion, approval-question flows, or similar questionnaire-style tools for this phase; ask the user in natural language and wait for their reply. As you figure things out, update the details in the plan file if necessary. Ask as many questions as you need to figure things out, since it improves the implementation quality.
 
+Challenge against the glossary
+When the user uses a term that conflicts with the existing language in CONTEXT.md, call it out immediately. "Your glossary defines 'cancellation' as X, but you seem to mean Y — which is it?"
+
+Sharpen fuzzy language
+When the user uses vague or overloaded terms, propose a precise canonical term. "You're saying 'account' — do you mean the Customer or the User? Those are different things."
+
+Discuss concrete scenarios
+When domain relationships are being discussed, stress-test them with specific scenarios. Invent scenarios that probe edge cases and force the user to be precise about the boundaries between concepts.
+
+Cross-reference with code
+When the user states how something works, check whether the code agrees. If you find a contradiction, surface it: "Your code cancels entire Orders, but you just said partial cancellation is possible — which is right?"
+
+Update the plan inline
+When a term is resolved, update the plan right there and any corresponding documentation, if applicable. Don't batch these up — capture them as they happen.
+
 Walk each branch of the design tree and resolve decision dependencies one-by-one before you finalize tasks. Every time you think you are done asking questions, review the plan file again to see if there are any more questions you might need to ask. If anything is underspecified, make sure you ask about it instead of assuming the answer.`;
 
 function parseBooleanOption(value: unknown, defaultValue = false): boolean {
