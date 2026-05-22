@@ -9,7 +9,12 @@ import {
   type ReviewIssueRow,
   type ReviewRow,
 } from '$tim/db/review.js';
-import { getLinkedPlansByPrUrl, type LinkedPlanSummary } from '$tim/db/pr_status.js';
+import {
+  getLinkedPlansByPrUrl,
+  getPrStatusByUrl,
+  type LinkedPlanSummary,
+  type PrReviewThreadDetail,
+} from '$tim/db/pr_status.js';
 
 interface ReviewDataParams {
   projectId: string;
@@ -24,6 +29,7 @@ export interface ReviewDetailData {
   currentHeadSha: string | null;
   linkedPlanUuid: string | null;
   linkedPlans: LinkedPlanSummary[];
+  reviewThreads: PrReviewThreadDetail[];
 }
 
 function parseRouteInteger(value: string, label: string): number {
@@ -71,10 +77,17 @@ export function getReviewDetailData(db: Database, params: ReviewDataParams): Rev
   const linkedPlans = getLinkedPlansByPrUrl(db, [prUrl]).get(prUrl) ?? [];
   const linkedPlanUuid = linkedPlans.length === 1 ? (linkedPlans[0]?.planUuid ?? null) : null;
 
-  const prStatusRow = db.prepare('SELECT head_sha FROM pr_status WHERE pr_url = ?').get(prUrl) as {
-    head_sha: string | null;
-  } | null;
-  const currentHeadSha = prStatusRow?.head_sha ?? null;
+  const prStatus = getPrStatusByUrl(db, prUrl, { includeReviewThreads: true });
+  const currentHeadSha = prStatus?.status.head_sha ?? null;
+  const reviewThreads = prStatus?.reviewThreads ?? [];
 
-  return { review, issues, submissions, currentHeadSha, linkedPlanUuid, linkedPlans };
+  return {
+    review,
+    issues,
+    submissions,
+    currentHeadSha,
+    linkedPlanUuid,
+    linkedPlans,
+    reviewThreads,
+  };
 }

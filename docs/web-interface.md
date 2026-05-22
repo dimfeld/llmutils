@@ -72,7 +72,7 @@ Two routes render stored review guides, both backed by the shared `src/lib/compo
 - PR review: `/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]`
 - Plan review (no PR required): `/projects/[projectId]/plans/[planId]/reviews/[reviewId]` — loader asserts `review.plan_uuid === plan.uuid` (404 on mismatch) and renders `<ReviewGuideView allowGithubSubmission={false} ... />` with a back link to the plan detail page.
 
-`ReviewGuideView` accepts `{ review, issues, linkedPlans?, allowGithubSubmission }`. PR-only features are gated by the single `allowGithubSubmission` prop: linked-plans display, Submit Review dialog, the diff-gutter `+` utility / `NewReviewIssueModal` mount, and per-issue resolve/edit/delete controls. Diff-override gating logic lives in `src/lib/components/review_guide_view_utils.ts` so it can be unit-tested independently.
+`ReviewGuideView` accepts `{ review, issues, linkedPlans?, reviewThreads?, allowGithubSubmission }`. PR-only features are gated by the single `allowGithubSubmission` prop: linked-plans display, Submit Review dialog, existing GitHub review threads attached under matching guide diffs, the diff-gutter `+` utility / `NewReviewIssueModal` mount, and per-issue resolve/edit/delete controls. Diff-override gating logic lives in `src/lib/components/review_guide_view_utils.ts` so it can be unit-tested independently.
 
 Shared rendering behavior:
 
@@ -83,6 +83,7 @@ Shared rendering behavior:
 PR-only (gated by `allowGithubSubmission`):
 
 - **Inline edit**: Each `ReviewIssueCard` supports an Edit mode backed by `ReviewIssueEditor.svelte` (severity, category, file, `start_line`, `line`, side, content, suggestion). Save sends only changed fields in the patch payload.
+- **Existing review threads**: The PR review-guide loader fetches cached PR review threads with `includeReviewThreads: true`. `ReviewGuideView` matches each thread by path, side, and line overlap with a guide diff hunk, then renders `PrReviewThreadList` under that diff with `showDiff={false}` so the thread comments are visible without repeating the hunk.
 - **Gutter-add issues**: The diff gutter `+` utility (`onGutterUtilityClick`) opens `NewReviewIssueModal.svelte` with content + optional suggestion fields. File/line/side are prefilled from the selected range. Save calls the `createReviewIssue` remote command.
 - **GitHub submission**: The page includes a Submit Review dialog for choosing event, body, and issue subset, with partition preview and GitHub posting. See `README.md` for the full submission flow details.
 

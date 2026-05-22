@@ -287,6 +287,27 @@ describe('PrReviewThreadList', () => {
     expect(body).toContain('Show full hunk');
   });
 
+  test('can hide embedded diff hunks when rendered next to an existing diff', async () => {
+    const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
+      props: {
+        prUrl: 'https://github.com/owner/repo/pull/42',
+        planUuid: 'plan-uuid-1',
+        showDiff: false,
+        threads: [
+          makeThread(
+            {},
+            {
+              diff_hunk: '@@ -1,1 +1,1 @@\n-old\n+new',
+            }
+          ),
+        ],
+      },
+    });
+
+    expect(body).toContain('src/example.ts:10');
+    expect(body).not.toContain('@@ -1,1 +1,1 @@');
+  });
+
   test('does not render the reply form by default', async () => {
     const { body } = await renderWithTooltipProvider(PrReviewThreadList, {
       props: {

@@ -16,6 +16,7 @@
   linkedPlans={data.linkedPlans}
   linkedPlanUuid={data.linkedPlanUuid}
   currentHeadSha={data.currentHeadSha}
+  reviewThreads={data.reviewThreads}
   {projectId}
   backHref="/projects/{projectId}/prs/{prNumber}"
   backLabel="Back to PR #{prNumber}"

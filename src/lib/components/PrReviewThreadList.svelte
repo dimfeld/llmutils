@@ -21,12 +21,14 @@
     planUuid,
     currentUsername = null,
     expandMode = 'default',
+    showDiff = true,
   }: {
     threads: PrReviewThreadDetail[];
     prUrl: string;
     planUuid?: string;
     currentUsername?: string | null;
     expandMode?: 'default' | 'expanded' | 'collapsed' | 'mine';
+    showDiff?: boolean;
   } = $props();
 
   let threadExpandModeOverride = $state<'default' | 'expanded' | 'collapsed' | 'mine'>('default');
@@ -71,7 +73,9 @@
 
     const normalizedCurrentUsername = normalizeGitHubUsername(currentUsername);
     return thread.comments.some(
-      (comment) => normalizeGitHubUsername(comment.author) === normalizedCurrentUsername
+      (comment) =>
+        comment.author != null &&
+        normalizeGitHubUsername(comment.author) === normalizedCurrentUsername
     );
   }
 
@@ -416,7 +420,7 @@
       </summary>
 
       <div class="border-t border-gray-200 dark:border-gray-700">
-        {#if diffHunk}
+        {#if showDiff && diffHunk}
           {#if hunkWindow.isTruncated}
             <div
               class="border-b border-gray-200 px-3 py-2 text-xs text-muted-foreground dark:border-gray-700"

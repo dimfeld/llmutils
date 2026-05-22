@@ -13,6 +13,7 @@
   import { updateReviewIssueFields } from '$lib/remote/pr_review_submission.remote.js';
   import CopyButton from '$lib/components/CopyButton.svelte';
   import MarkdownContent, { type DiffOverrides } from '$lib/components/MarkdownContent.svelte';
+  import PrReviewThreadList from '$lib/components/PrReviewThreadList.svelte';
   import { computeReviewGuideDiffOverrideFlags } from '$lib/components/review_guide_view_utils.js';
   import { parseMarkdownWithDiffsAndToc, type TocEntry } from '$lib/utils/markdown_parser.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
@@ -24,10 +25,11 @@
     ReviewCategory,
     PrReviewSubmissionRow,
   } from '$tim/db/review.js';
-  import type { LinkedPlanSummary } from '$tim/db/pr_status.js';
+  import type { LinkedPlanSummary, PrReviewThreadDetail } from '$tim/db/pr_status.js';
   import Send from '@lucide/svelte/icons/send';
   import {
     buildGuideDiffAnnotations,
+    extractDiffLineRanges,
     type ReviewIssueAnnotationData,
   } from '../../routes/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/review_detail_utils.js';
   import ReviewIssueCard from '../../routes/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/ReviewIssueCard.svelte';
@@ -62,6 +64,7 @@
     linkedPlans?: LinkedPlanSummary[];
     linkedPlanUuid?: string | null;
     currentHeadSha?: string | null;
+    reviewThreads?: PrReviewThreadDetail[];
   }
 
   let {
@@ -75,6 +78,7 @@
     linkedPlans = [],
     linkedPlanUuid: linkedPlanUuidInput = null,
     currentHeadSha = null,
+    reviewThreads = [],
   }: Props = $props();
 
   // Local state for optimistic issue updates. $derived is writable in Svelte 5,
@@ -801,6 +805,47 @@
   function shortSha(sha: string | null): string {
     return sha ? sha.slice(0, 7) : '';
   }
+
+  function threadDisplayLine(thread: PrReviewThreadDetail): number | null {
+    const row = thread.thread;
+    return row.line ?? row.original_line ?? row.start_line ?? row.original_start_line;
+  }
+
+  function threadStartLine(thread: PrReviewThreadDetail): number | null {
+    const row = thread.thread;
+    return row.start_line ?? row.original_start_line ?? row.line ?? row.original_line;
+  }
+
+  function threadSide(thread: PrReviewThreadDetail): 'additions' | 'deletions' {
+    return thread.thread.diff_side === 'LEFT' ? 'deletions' : 'additions';
+  }
+
+  function diffContainsThread(
+    filename: string | null,
+    patch: string,
+    thread: PrReviewThreadDetail
+  ): boolean {
+    if (filename == null || thread.thread.path !== filename) {
+      return false;
+    }
+
+    const line = threadDisplayLine(thread);
+    const startLine = threadStartLine(thread);
+    if (line == null || startLine == null) {
+      return false;
+    }
+
+    const side = threadSide(thread);
+    const start = Math.min(startLine, line);
+    const end = Math.max(startLine, line);
+    return extractDiffLineRanges(patch, filename).some(
+      (range) => range.side === side && start <= range.end && end >= range.start
+    );
+  }
+
+  function reviewThreadsForDiff(filename: string | null, patch: string): PrReviewThreadDetail[] {
+    return reviewThreads.filter((thread) => diffContainsThread(filename, patch, thread));
+  }
 </script>
 
 <div
@@ -955,6 +1000,25 @@
                       lineLabel={metadata.lineLabel}
                       resolved={metadata.resolved}
                       onClick={annotationClick.handleAnnotationClick}
+                    />
+                  </div>
+                {/if}
+              {/snippet}
+              {#snippet diffFooter(filename, patch, _diffIndex)}
+                {@const diffReviewThreads = reviewThreadsForDiff(filename, patch)}
+                {#if allowGithubSubmission && review.pr_url && diffReviewThreads.length > 0}
+                  <div class="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+                    <div
+                      class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                    >
+                      Existing review thread{diffReviewThreads.length === 1 ? '' : 's'}
+                    </div>
+                    <PrReviewThreadList
+                      threads={diffReviewThreads}
+                      prUrl={review.pr_url}
+                      planUuid={linkedPlanUuid ?? undefined}
+                      expandMode="expanded"
+                      showDiff={false}
                     />
                   </div>
                 {/if}

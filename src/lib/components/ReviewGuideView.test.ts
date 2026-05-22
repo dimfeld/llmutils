@@ -1,5 +1,7 @@
 import { render } from 'svelte/server';
 import { describe, expect, test } from 'vitest';
+import { renderWithTooltipProvider } from '$lib/test-utils/render_with_tooltip_provider.js';
+import type { PrReviewThreadDetail } from '$tim/db/pr_status.js';
 import type { PrReviewSubmissionRow, ReviewIssueRow, ReviewRow } from '$tim/db/review.js';
 import ReviewGuideView from './ReviewGuideView.svelte';
 
@@ -59,9 +61,48 @@ function makeSubmission(overrides: Partial<PrReviewSubmissionRow> = {}): PrRevie
   };
 }
 
+function makeReviewThread(
+  overrides: Partial<PrReviewThreadDetail['thread']> = {},
+  commentOverrides: Partial<PrReviewThreadDetail['comments'][number]> = {}
+): PrReviewThreadDetail {
+  const threadId = overrides.id ?? 1;
+  return {
+    thread: {
+      id: threadId,
+      pr_status_id: 1,
+      thread_id: `thread-${threadId}`,
+      path: 'src/app.ts',
+      line: 12,
+      original_line: 12,
+      start_line: null,
+      original_start_line: null,
+      diff_side: 'RIGHT',
+      start_diff_side: null,
+      is_resolved: 0,
+      is_outdated: 0,
+      subject_type: 'LINE',
+      ...overrides,
+    },
+    comments: [
+      {
+        id: threadId,
+        review_thread_id: threadId,
+        comment_id: `comment-${threadId}`,
+        database_id: 5000 + threadId,
+        author: 'reviewer',
+        body: 'Existing feedback for this line.',
+        diff_hunk: '@@ -10,3 +10,3 @@\n context\n-old\n+new',
+        state: 'COMMENTED',
+        created_at: '2026-03-18T10:05:00.000Z',
+        ...commentOverrides,
+      },
+    ],
+  };
+}
+
 describe('ReviewGuideView', () => {
   test('hides PR-only controls and linked plans for plan-only review guides', () => {
-    const { body } = render(ReviewGuideView, {
+    const { body } = renderWithTooltipProvider(ReviewGuideView, {
       props: {
         review: makeReview(),
         issues: [makeIssue()],
@@ -88,7 +129,7 @@ describe('ReviewGuideView', () => {
   });
 
   test('renders note-severity issues in a Notes group with no actionable buttons', () => {
-    const { body } = render(ReviewGuideView, {
+    const { body } = renderWithTooltipProvider(ReviewGuideView, {
       props: {
         review: makeReview({ pr_url: 'https://github.com/example/repo/pull/1', plan_uuid: null }),
         issues: [
@@ -164,5 +205,59 @@ describe('ReviewGuideView', () => {
     expect(body).toContain('Mark resolved');
     expect(body).toContain('Edit');
     expect(body).toContain('Delete issue');
+  });
+
+  test('renders existing PR review threads below matching guide diffs without nested diff hunks', () => {
+    const { body } = renderWithTooltipProvider(ReviewGuideView, {
+      props: {
+        review: makeReview({
+          pr_url: 'https://github.com/example/repo/pull/1',
+          plan_uuid: null,
+          review_guide: [
+            '# Summary',
+            '',
+            '```unified-diff',
+            'diff --git a/src/app.ts b/src/app.ts',
+            '--- a/src/app.ts',
+            '+++ b/src/app.ts',
+            '@@ -10,3 +10,3 @@',
+            ' context',
+            '-old',
+            '+new',
+            '```',
+            '',
+            '```unified-diff',
+            'diff --git a/src/other.ts b/src/other.ts',
+            '--- a/src/other.ts',
+            '+++ b/src/other.ts',
+            '@@ -1,1 +1,1 @@',
+            '-no',
+            '+match',
+            '```',
+          ].join('\n'),
+        }),
+        issues: [],
+        projectId: '1',
+        backHref: '/projects/1/prs/1',
+        backLabel: 'Back to PR #1',
+        allowGithubSubmission: true,
+        linkedPlans: [],
+        linkedPlanUuid: null,
+        submissions: [],
+        reviewThreads: [
+          makeReviewThread(),
+          makeReviewThread(
+            { id: 2, path: 'src/other.ts', line: 50, original_line: 50 },
+            { body: 'Should not render for this diff.' }
+          ),
+        ],
+      },
+    });
+
+    expect(body).toContain('Existing review thread');
+    expect(body).toContain('src/app.ts:12');
+    expect(body).toContain('Existing feedback for this line.');
+    expect(body).not.toContain('Should not render for this diff.');
+    expect(body).not.toContain('Showing 10 lines of context');
   });
 });

@@ -26,6 +26,7 @@
     class: className = '',
     diffOverrides,
     diffAnnotation,
+    diffFooter,
     virtualizer = null,
     parsedSegments,
   }: {
@@ -39,6 +40,8 @@
       patch: string,
       diffIndex: number
     ) => DiffOverrides | undefined;
+    /** Snippet rendered below each diff block. */
+    diffFooter?: Snippet<[string | null, string, number]>;
     /** Shared virtualizer for diffs within a parent scroll container */
     virtualizer?: Virtualizer | null;
     /** Pre-parsed markdown segments for callers that also need derived metadata such as TOC entries. */
@@ -67,6 +70,9 @@
           onLineSelected={overrides.onLineSelected}
           {virtualizer}
         />
+        {#if diffFooter}
+          {@render diffFooter(segment.filename, segment.patch, i)}
+        {/if}
       </div>
     {/if}
   {/each}
