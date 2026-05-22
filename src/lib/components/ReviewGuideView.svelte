@@ -3,6 +3,7 @@
   import { Virtualizer, type DiffLineAnnotation, type FileDiffOptions } from '@pierre/diffs';
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
+  import ExternalLink from '@lucide/svelte/icons/external-link';
   import { onDestroy } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { toggleReviewIssueResolved } from '$lib/remote/pr_reviews.remote.js';
@@ -450,6 +451,64 @@
     },
   });
 
+  interface GuideReviewThreadTarget {
+    filename: string;
+    patch: string;
+    lineNumber: number;
+    side: GuideIssueAnnotation['side'];
+  }
+
+  function getGuideReviewThreadTarget(threadId: number): GuideReviewThreadTarget | null {
+    return reviewThreadDiffTargets.get(threadId) ?? null;
+  }
+
+  function getDiffNodeForReviewThread(threadId: number): HTMLElement | null {
+    const diffTarget = getGuideReviewThreadTarget(threadId);
+    if (diffTarget === null) {
+      return null;
+    }
+
+    return document.getElementById(getReviewGuideDiffId(diffTarget.filename, diffTarget.patch));
+  }
+
+  function getReviewThreadLineNode(threadId: number): HTMLElement | null {
+    const diffTarget = getGuideReviewThreadTarget(threadId);
+    if (diffTarget === null) {
+      return null;
+    }
+
+    const diffNode = document.getElementById(
+      getReviewGuideDiffId(diffTarget.filename, diffTarget.patch)
+    );
+    if (!diffNode) {
+      return null;
+    }
+
+    return queryLineNode(diffNode, diffTarget.lineNumber);
+  }
+
+  function getApproximateReviewThreadPosition(
+    threadId: number
+  ): ApproximateAnnotationPosition | null {
+    const diffTarget = getGuideReviewThreadTarget(threadId);
+    if (diffTarget === null) {
+      return null;
+    }
+
+    return getApproximateLinePosition(diffTarget.patch, diffTarget.lineNumber, diffTarget.side);
+  }
+
+  const handleJumpToReviewThreadDiff = createJumpToDiffHandler({
+    getAnnotationNode: () => null,
+    getAnnotationLineNode: getReviewThreadLineNode,
+    getApproximateAnnotationPosition: getApproximateReviewThreadPosition,
+    getDiffNode: getDiffNodeForReviewThread,
+    setHighlightedAnnotation: () => {},
+    setError: (message) => {
+      issueActionError = message?.replaceAll('annotation', 'review thread') ?? null;
+    },
+  });
+
   onDestroy(() => {
     annotationClick.cancel();
     annotationHighlight?.cancel();
@@ -846,6 +905,63 @@
   function reviewThreadsForDiff(filename: string | null, patch: string): PrReviewThreadDetail[] {
     return reviewThreads.filter((thread) => diffContainsThread(filename, patch, thread));
   }
+
+  let reviewThreadDiffTargets = $derived.by(() => {
+    const targets = new Map<number, GuideReviewThreadTarget>();
+    for (const segment of guideSegments) {
+      if (segment.type !== 'unified-diff') {
+        continue;
+      }
+
+      for (const thread of reviewThreads) {
+        if (
+          targets.has(thread.thread.id) ||
+          !diffContainsThread(segment.filename, segment.patch, thread)
+        ) {
+          continue;
+        }
+
+        const line = threadDisplayLine(thread);
+        if (segment.filename == null || line == null) {
+          continue;
+        }
+
+        targets.set(thread.thread.id, {
+          filename: segment.filename,
+          patch: segment.patch,
+          lineNumber: line,
+          side: threadSide(thread),
+        });
+      }
+    }
+    return targets;
+  });
+
+  let matchedReviewThreads = $derived(
+    reviewThreads.filter((thread) => reviewThreadDiffTargets.has(thread.thread.id))
+  );
+
+  let unresolvedReviewThreadCount = $derived(
+    matchedReviewThreads.filter((thread) => !thread.thread.is_resolved).length
+  );
+
+  function reviewThreadGithubLink(thread: PrReviewThreadDetail): string {
+    const databaseId = thread.comments.find((comment) => comment.database_id != null)?.database_id;
+    if (databaseId && review.pr_url) {
+      return `${review.pr_url}#discussion_r${databaseId}`;
+    }
+    return review.pr_url ?? '#';
+  }
+
+  function reviewThreadLocationLabel(thread: PrReviewThreadDetail): string {
+    const line = threadDisplayLine(thread);
+    return line != null ? `${thread.thread.path}:${line}` : thread.thread.path;
+  }
+
+  function reviewThreadSummary(thread: PrReviewThreadDetail): string {
+    const firstBody = thread.comments.find((comment) => comment.body?.trim())?.body?.trim();
+    return firstBody ?? 'No comment body.';
+  }
 </script>
 
 <div
@@ -1098,6 +1214,76 @@
           {/each}
         {:else if review.status === 'complete'}
           <p class="text-xs text-muted-foreground @sm:text-sm">No issues found.</p>
+        {/if}
+
+        {#if allowGithubSubmission && review.pr_url && matchedReviewThreads.length > 0}
+          <details open class="group pt-3">
+            <summary
+              class="flex cursor-pointer list-none items-center gap-2 rounded px-1 py-1 hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              <span
+                class="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800 @sm:text-sm dark:bg-indigo-900/30 dark:text-indigo-300"
+              >
+                PR Threads
+              </span>
+              <span class="text-xs text-muted-foreground @sm:text-sm">
+                {unresolvedReviewThreadCount}/{matchedReviewThreads.length} open
+              </span>
+            </summary>
+            <ul class="mt-1 space-y-1.5 pl-1">
+              {#each matchedReviewThreads as thread (thread.thread.id)}
+                {@const isResolved = !!thread.thread.is_resolved}
+                {@const isOutdated = !!thread.thread.is_outdated}
+                <li
+                  class="rounded-md border border-border bg-card px-2.5 py-2 text-xs @sm:text-sm {isResolved
+                    ? 'opacity-60'
+                    : ''}"
+                >
+                  <div class="flex min-w-0 flex-wrap items-center gap-1">
+                    <a
+                      href={reviewThreadGithubLink(thread)}
+                      target="_blank"
+                      rel="noreferrer"
+                      class="font-mono text-[10px] [overflow-wrap:anywhere] text-blue-600 hover:underline @sm:text-xs dark:text-blue-400"
+                    >
+                      {reviewThreadLocationLabel(thread)}
+                    </a>
+                    {#if isResolved}
+                      <span
+                        class="inline-flex items-center rounded bg-emerald-100 px-1 py-0.5 text-[10px] font-medium text-emerald-800 @sm:text-xs dark:bg-emerald-900/30 dark:text-emerald-300"
+                      >
+                        Resolved
+                      </span>
+                    {/if}
+                    {#if isOutdated}
+                      <span
+                        class="inline-flex items-center rounded bg-gray-100 px-1 py-0.5 text-[10px] font-medium text-gray-600 @sm:text-xs dark:bg-gray-800 dark:text-gray-400"
+                      >
+                        Outdated
+                      </span>
+                    {/if}
+                    <span class="ml-auto text-[10px] text-muted-foreground @sm:text-xs">
+                      {thread.comments.length} comment{thread.comments.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <p class="mt-1 line-clamp-3 text-foreground/80">
+                    {reviewThreadSummary(thread)}
+                  </p>
+                  <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onclick={() => handleJumpToReviewThreadDiff({ id: thread.thread.id })}
+                      class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground @sm:text-xs dark:hover:bg-gray-800"
+                      title="Jump to this review thread in the diff"
+                    >
+                      <ExternalLink class="size-3 @sm:size-3.5" />
+                      Jump to diff
+                    </button>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          </details>
         {/if}
       </div>
     </Pane>

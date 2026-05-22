@@ -83,7 +83,7 @@ Shared rendering behavior:
 PR-only (gated by `allowGithubSubmission`):
 
 - **Inline edit**: Each `ReviewIssueCard` supports an Edit mode backed by `ReviewIssueEditor.svelte` (severity, category, file, `start_line`, `line`, side, content, suggestion). Save sends only changed fields in the patch payload.
-- **Existing review threads**: The PR review-guide loader fetches cached PR review threads with `includeReviewThreads: true`. `ReviewGuideView` matches each thread by path, side, and line overlap with a guide diff hunk, then renders `PrReviewThreadList` under that diff with `showDiff={false}` so the thread comments are visible without repeating the hunk.
+- **Existing review threads**: The PR review-guide loader fetches cached PR review threads with `includeReviewThreads: true`. `ReviewGuideView` matches each thread by path, side, and line overlap with a guide diff hunk, then renders `PrReviewThreadList` under that diff with `showDiff={false}` so the thread comments are visible without repeating the hunk. Matched threads also appear in a compact "PR Threads" group at the bottom of the issue sidebar, with status badges, first-comment summaries, and a "Jump to diff" action that targets the same rendered guide diff.
 - **Gutter-add issues**: The diff gutter `+` utility (`onGutterUtilityClick`) opens `NewReviewIssueModal.svelte` with content + optional suggestion fields. File/line/side are prefilled from the selected range. Save calls the `createReviewIssue` remote command.
 - **GitHub submission**: The page includes a Submit Review dialog for choosing event, body, and issue subset, with partition preview and GitHub posting. See `README.md` for the full submission flow details.
 

@@ -255,8 +255,10 @@ describe('ReviewGuideView', () => {
     });
 
     expect(body).toContain('Existing review thread');
+    expect(body).toContain('PR Threads');
     expect(body).toContain('src/app.ts:12');
     expect(body).toContain('Existing feedback for this line.');
+    expect(body).toContain('Jump to diff');
     expect(body).not.toContain('Should not render for this diff.');
     expect(body).not.toContain('Showing 10 lines of context');
   });
