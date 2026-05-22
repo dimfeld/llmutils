@@ -15,9 +15,28 @@ import type {
   IssueData,
   CommentData,
   IssueWithComments,
+  IssueDocument,
   ParsedIssueIdentifier,
   UserData,
 } from './issue_tracker/types.ts';
+
+interface LinearDocumentNode {
+  id: string;
+  title: string;
+  url: string;
+  content?: string | null;
+  trashed?: boolean | null;
+  archivedAt?: Date | string | null;
+  hiddenAt?: Date | string | null;
+}
+
+interface LinearDocumentConnectionLike {
+  nodes: LinearDocumentNode[];
+  pageInfo: {
+    hasNextPage: boolean;
+  };
+  fetchNext(): Promise<LinearDocumentConnectionLike>;
+}
 
 export function parseLinearIssueIdentifier(spec: string): ParsedIssueIdentifier | null {
   const trimmedSpec = spec.trim();
@@ -287,6 +306,62 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
   }
 
   /**
+   * Fetch native Linear Documents linked to an issue and its project
+   */
+  async fetchIssueDocuments(identifier: string): Promise<IssueDocument[]> {
+    debugLog(`Fetching Linear issue documents: ${identifier}`);
+
+    const client = getLinearClient(this.config.apiKey);
+    const parsed = this.parseIssueIdentifier(identifier);
+
+    if (!parsed) {
+      throw new Error(`Invalid Linear issue identifier: ${identifier}`);
+    }
+
+    try {
+      const issue = await client.issue(parsed.identifier);
+
+      if (!issue) {
+        throw new Error(`Issue not found: ${parsed.identifier}`);
+      }
+
+      const [issueDocumentsConnection, project] = await Promise.all([
+        issue.documents(),
+        issue.project,
+      ]);
+
+      const issueDocuments = await this.fetchAllDocumentNodes(issueDocumentsConnection);
+      const projectDocuments = project
+        ? await this.fetchAllDocumentNodes(await project.documents())
+        : [];
+
+      const documentsById = new Map<string, IssueDocument>();
+      for (const document of issueDocuments) {
+        this.addIssueDocument(documentsById, document, 'issue');
+      }
+
+      for (const document of projectDocuments) {
+        this.addIssueDocument(documentsById, document, 'project');
+      }
+
+      const documents = [...documentsById.values()];
+      debugLog(
+        `Successfully fetched ${documents.length} Linear documents for issue ${parsed.identifier}`
+      );
+
+      return documents;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to fetch Linear issue documents ${parsed.identifier}: ${errorMessage}`,
+        {
+          cause: error,
+        }
+      );
+    }
+  }
+
+  /**
    * Fetch all open issues from the user's workspace
    */
   async fetchAllOpenIssues(): Promise<IssueData[]> {
@@ -394,6 +469,56 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       // Linear users don't typically have login usernames like GitHub
       login: undefined,
     };
+  }
+
+  private async fetchAllDocumentNodes(
+    initialConnection: LinearDocumentConnectionLike
+  ): Promise<LinearDocumentNode[]> {
+    const documentsById = new Map<string, LinearDocumentNode>();
+    let currentConnection = initialConnection;
+
+    while (true) {
+      for (const document of currentConnection.nodes) {
+        documentsById.set(document.id, document);
+      }
+
+      if (!currentConnection.pageInfo.hasNextPage) {
+        break;
+      }
+
+      currentConnection = await currentConnection.fetchNext();
+    }
+
+    return [...documentsById.values()];
+  }
+
+  private addIssueDocument(
+    documentsById: Map<string, IssueDocument>,
+    document: LinearDocumentNode,
+    source: IssueDocument['source']
+  ): void {
+    if (documentsById.has(document.id)) {
+      return;
+    }
+
+    // Skip documents that Linear considers trashed, archived, or hidden so they
+    // are never surfaced for selection or injected into the generate prompt.
+    if (document.trashed || document.archivedAt || document.hiddenAt) {
+      return;
+    }
+
+    const content = document.content ?? '';
+    if (content.trim().length === 0) {
+      return;
+    }
+
+    documentsById.set(document.id, {
+      id: document.id,
+      title: document.title,
+      url: document.url,
+      content,
+      source,
+    });
   }
 }
 

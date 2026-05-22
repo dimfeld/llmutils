@@ -74,6 +74,7 @@ export interface GenerateModeRegistrationContext {
   configPath?: string;
   gitRoot: string;
   configBaseDir?: string;
+  issueDocPaths?: string[];
 }
 
 const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Interview your human partner directly and conversationally until you reach a shared understanding of every important aspect of the plan. Do not use AskUserQuestion, approval-question flows, or similar questionnaire-style tools for this phase; ask the user in natural language and wait for their reply. As you figure things out, update the details in the plan file if necessary. Ask as many questions as you need to figure things out, since it improves the implementation quality.
@@ -217,11 +218,31 @@ ${siblingContext}`.trim();
     }
   }
 
+  contextBlock = appendLinkedIssueDocumentsContext(contextBlock, context.issueDocPaths);
+
   return {
     plan,
     planPath,
     contextBlock,
   };
+}
+
+function appendLinkedIssueDocumentsContext(
+  contextBlock: string,
+  issueDocPaths: string[] | undefined
+): string {
+  if (!issueDocPaths || issueDocPaths.length === 0) {
+    return contextBlock;
+  }
+
+  const linkedIssueDocumentsContext = `## Linked Issue Documents
+
+Documentation references:
+${issueDocPaths.join('\n')}
+
+These document files are temporary and live in a git-excluded cache under .tim/issue-docs. They will be deleted before this plan is implemented by tim agent. Read each document now and copy any information needed for implementation into the plan details and the generated task descriptions so the plan is self-contained. Do not rely on these files being available later.`;
+
+  return `${contextBlock}\n\n${linkedIssueDocumentsContext}`;
 }
 
 export async function loadResearchPrompt(

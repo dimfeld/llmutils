@@ -233,6 +233,65 @@ describe('tim MCP generate mode helpers', () => {
     expect(messageText).toContain('Prefer small, composable steps.');
   });
 
+  describe('issueDocPaths — Linked Issue Documents section', () => {
+    test('loadResearchPrompt includes linked issue documents section with file paths and transient warning', async () => {
+      context.issueDocPaths = [
+        '.tim/issue-docs/99999/architecture.md',
+        '.tim/issue-docs/99999/api-spec.md',
+      ];
+
+      const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
+      const messageText = prompt.messages[0]?.content?.text ?? '';
+
+      expect(messageText).toContain('## Linked Issue Documents');
+      expect(messageText).toContain('.tim/issue-docs/99999/architecture.md');
+      expect(messageText).toContain('.tim/issue-docs/99999/api-spec.md');
+      // Transient/self-contained warning text
+      expect(messageText).toContain('temporary');
+      expect(messageText).toContain('deleted before this plan is implemented');
+      expect(messageText).toContain('copy any information needed for implementation');
+      expect(messageText).toContain('self-contained');
+    });
+
+    test('loadResearchPrompt omits linked issue documents section when issueDocPaths is absent', async () => {
+      // context.issueDocPaths is undefined by default in beforeEach
+      const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
+      const messageText = prompt.messages[0]?.content?.text ?? '';
+
+      expect(messageText).not.toContain('## Linked Issue Documents');
+    });
+
+    test('loadResearchPrompt omits linked issue documents section when issueDocPaths is empty', async () => {
+      context.issueDocPaths = [];
+
+      const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
+      const messageText = prompt.messages[0]?.content?.text ?? '';
+
+      expect(messageText).not.toContain('## Linked Issue Documents');
+    });
+
+    test('loadGeneratePrompt includes linked issue documents section with file paths and transient warning', async () => {
+      context.issueDocPaths = ['.tim/issue-docs/99999/design-doc.md'];
+
+      const prompt = await loadGeneratePrompt({ plan: basePlan.id }, context);
+      const messageText = prompt.messages[0]?.content?.text ?? '';
+
+      expect(messageText).toContain('## Linked Issue Documents');
+      expect(messageText).toContain('.tim/issue-docs/99999/design-doc.md');
+      expect(messageText).toContain('temporary');
+      expect(messageText).toContain('deleted before this plan is implemented');
+      expect(messageText).toContain('copy any information needed for implementation');
+      expect(messageText).toContain('self-contained');
+    });
+
+    test('loadGeneratePrompt omits linked issue documents section when issueDocPaths is absent', async () => {
+      const prompt = await loadGeneratePrompt({ plan: basePlan.id }, context);
+      const messageText = prompt.messages[0]?.content?.text ?? '';
+
+      expect(messageText).not.toContain('## Linked Issue Documents');
+    });
+  });
+
   test('loadResearchPrompt includes parent plan context when plan has a parent', async () => {
     const parentPath = getMaterializedPlanPath(tmpDir, 99998);
     const doneSiblingPath = getMaterializedPlanPath(tmpDir, 99997);

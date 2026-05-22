@@ -114,6 +114,12 @@ tim generate 456
 tim generate 456 --commit
 ```
 
+When `tim generate` runs for a plan linked to Linear issues, tim also checks for native Linear Documents attached to each issue and to each issue's project. If documents are found, interactive runs show a checkbox list labeled by source, such as `[Issue] API Spec` or `[Project] Architecture Overview`, with all documents selected by default. Non-interactive and headless runs skip the prompt and include all discovered documents automatically.
+
+Selected documents are downloaded as markdown files into `.tim/issue-docs/<planId>/` in the execution workspace. This cache is git-excluded and transient; the generated prompt tells the planning agent to read the files immediately and copy any implementation-relevant details into the plan details and task descriptions so the plan remains self-contained. Only native Linear Documents with markdown content are included. External-link attachments and other attachment resources are out of scope.
+
+Document fetching degrades gracefully: GitHub-tracked plans and plans without a Linear issue URL skip the step entirely with no behavior change, and if `LINEAR_API_KEY` is missing or the Linear fetch fails, tim emits a warning and continues generation without documents.
+
 ### Comment Integration
 
 Linear issue comments are automatically included in imported plans:
@@ -251,7 +257,7 @@ updatedAt: '2024-01-16T10:30:00.000Z'
 ### ⚠️ Partially Supported
 
 - **Rich Text Formatting**: Linear's rich text is converted to Markdown, some formatting may be lost
-- **Attachments**: Issue attachments are not downloaded, only referenced by URL
+- **Attachments and external resources**: External-link attachments are not downloaded, only referenced by URL. Native Linear Documents with markdown content can be included at `tim generate` time through the transient `.tim/issue-docs/<planId>/` cache.
 - **Issue Labels**: Linear labels are not currently imported (can be added in future versions)
 
 ### ❌ Not Supported

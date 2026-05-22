@@ -8,6 +8,52 @@ vi.mock('./linear_client.ts', () => ({
   getLinearClient: vi.fn(),
 }));
 
+interface MockDocument {
+  id: string;
+  title: string;
+  url: string;
+  content?: string | null;
+  trashed?: boolean | null;
+  archivedAt?: Date | string | null;
+  hiddenAt?: Date | string | null;
+}
+
+interface MockDocumentConnection {
+  nodes: MockDocument[];
+  pageInfo: {
+    hasNextPage: boolean;
+  };
+  fetchNext: ReturnType<typeof vi.fn<() => Promise<MockDocumentConnection>>>;
+}
+
+/**
+ * Build a mock document connection from one or more pages. The mock mirrors the
+ * real `@linear/sdk` `fetchNext()` semantics: it appends the next page's nodes
+ * to `this.nodes` in place (accumulating all pages seen so far) and returns the
+ * same connection object. This is important because it guards the Map-based
+ * dedup in `fetchAllDocumentNodes` — a plain array push would duplicate the
+ * earlier pages on every iteration and the test would catch it.
+ */
+function createDocumentConnection(pages: MockDocument[][]): MockDocumentConnection {
+  let pageIndex = 0;
+  const connection: MockDocumentConnection = {
+    nodes: [...(pages[0] ?? [])],
+    pageInfo: { hasNextPage: pages.length > 1 },
+    fetchNext: vi.fn(async () => {
+      if (pageIndex + 1 >= pages.length) {
+        throw new Error('No next page');
+      }
+
+      pageIndex += 1;
+      connection.nodes = [...connection.nodes, ...pages[pageIndex]];
+      connection.pageInfo.hasNextPage = pageIndex + 1 < pages.length;
+      return connection;
+    }),
+  };
+
+  return connection;
+}
+
 describe('LinearIssueTrackerClient', () => {
   const mockConfig: IssueTrackerConfig = {
     type: 'linear',
@@ -441,6 +487,337 @@ describe('LinearIssueTrackerClient', () => {
       expect(result.issue.body?.length).toBe(10000);
       expect(result.comments[0].body).toBe(largeComment);
       expect(result.comments[0].body.length).toBe(5000);
+    });
+  });
+
+  describe('fetchIssueDocuments', () => {
+    test('maps issue and project documents successfully', async () => {
+      const issueConnection = createDocumentConnection([
+        [
+          {
+            id: 'issue-doc-1',
+            title: 'Issue Spec',
+            url: 'https://linear.app/company/document/issue-doc-1',
+            content: '# Issue Spec',
+          },
+        ],
+      ]);
+      const projectConnection = createDocumentConnection([
+        [
+          {
+            id: 'project-doc-1',
+            title: 'Project Brief',
+            url: 'https://linear.app/company/document/project-doc-1',
+            content: '# Project Brief',
+          },
+        ],
+      ]);
+      const project = {
+        documents: vi.fn(async () => projectConnection),
+      };
+      const mockLinearClient = {
+        issue: vi.fn(async (id: string) => ({
+          documents: vi.fn(async () => issueConnection),
+          project: Promise.resolve(project),
+        })),
+      };
+
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.fetchIssueDocuments('TEAM-123');
+
+      expect(result).toEqual([
+        {
+          id: 'issue-doc-1',
+          title: 'Issue Spec',
+          url: 'https://linear.app/company/document/issue-doc-1',
+          content: '# Issue Spec',
+          source: 'issue',
+        },
+        {
+          id: 'project-doc-1',
+          title: 'Project Brief',
+          url: 'https://linear.app/company/document/project-doc-1',
+          content: '# Project Brief',
+          source: 'project',
+        },
+      ]);
+      expect(mockLinearClient.issue).toHaveBeenCalledWith('TEAM-123');
+      expect(project.documents).toHaveBeenCalledTimes(1);
+    });
+
+    test('dedupes documents by id and keeps the issue source first', async () => {
+      const issueConnection = createDocumentConnection([
+        [
+          {
+            id: 'shared-doc',
+            title: 'Shared Spec',
+            url: 'https://linear.app/company/document/shared-doc',
+            content: '# Issue Copy',
+          },
+        ],
+      ]);
+      const projectConnection = createDocumentConnection([
+        [
+          {
+            id: 'shared-doc',
+            title: 'Shared Spec',
+            url: 'https://linear.app/company/document/shared-doc',
+            content: '# Project Copy',
+          },
+        ],
+      ]);
+      const mockLinearClient = {
+        issue: vi.fn(async (id: string) => ({
+          documents: vi.fn(async () => issueConnection),
+          project: Promise.resolve({
+            documents: vi.fn(async () => projectConnection),
+          }),
+        })),
+      };
+
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.fetchIssueDocuments('TEAM-123');
+
+      expect(result).toEqual([
+        {
+          id: 'shared-doc',
+          title: 'Shared Spec',
+          url: 'https://linear.app/company/document/shared-doc',
+          content: '# Issue Copy',
+          source: 'issue',
+        },
+      ]);
+    });
+
+    test('handles issues without a project', async () => {
+      const issueConnection = createDocumentConnection([
+        [
+          {
+            id: 'issue-doc-1',
+            title: 'Issue Only',
+            url: 'https://linear.app/company/document/issue-doc-1',
+            content: '# Issue Only',
+          },
+        ],
+      ]);
+      const mockLinearClient = {
+        issue: vi.fn(async (id: string) => ({
+          documents: vi.fn(async () => issueConnection),
+          project: Promise.resolve(null),
+        })),
+      };
+
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.fetchIssueDocuments('TEAM-123');
+
+      expect(result).toEqual([
+        {
+          id: 'issue-doc-1',
+          title: 'Issue Only',
+          url: 'https://linear.app/company/document/issue-doc-1',
+          content: '# Issue Only',
+          source: 'issue',
+        },
+      ]);
+    });
+
+    test('skips documents with empty content', async () => {
+      const issueConnection = createDocumentConnection([
+        [
+          {
+            id: 'empty-doc',
+            title: 'Empty',
+            url: 'https://linear.app/company/document/empty-doc',
+            content: '',
+          },
+          {
+            id: 'whitespace-doc',
+            title: 'Whitespace',
+            url: 'https://linear.app/company/document/whitespace-doc',
+            content: '   \n\t  ',
+          },
+          {
+            id: 'missing-doc',
+            title: 'Missing',
+            url: 'https://linear.app/company/document/missing-doc',
+            content: null,
+          },
+          {
+            id: 'content-doc',
+            title: 'Content',
+            url: 'https://linear.app/company/document/content-doc',
+            content: 'Useful content',
+          },
+        ],
+      ]);
+      const mockLinearClient = {
+        issue: vi.fn(async (id: string) => ({
+          documents: vi.fn(async () => issueConnection),
+          project: Promise.resolve(null),
+        })),
+      };
+
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.fetchIssueDocuments('TEAM-123');
+
+      expect(result).toEqual([
+        {
+          id: 'content-doc',
+          title: 'Content',
+          url: 'https://linear.app/company/document/content-doc',
+          content: 'Useful content',
+          source: 'issue',
+        },
+      ]);
+    });
+
+    test('skips trashed, archived, and hidden documents', async () => {
+      const issueConnection = createDocumentConnection([
+        [
+          {
+            id: 'trashed-doc',
+            title: 'Trashed',
+            url: 'https://linear.app/company/document/trashed-doc',
+            content: '# Trashed',
+            trashed: true,
+          },
+          {
+            id: 'archived-doc',
+            title: 'Archived',
+            url: 'https://linear.app/company/document/archived-doc',
+            content: '# Archived',
+            archivedAt: new Date('2024-01-01T00:00:00.000Z'),
+          },
+          {
+            id: 'hidden-doc',
+            title: 'Hidden',
+            url: 'https://linear.app/company/document/hidden-doc',
+            content: '# Hidden',
+            hiddenAt: new Date('2024-01-01T00:00:00.000Z'),
+          },
+          {
+            id: 'active-doc',
+            title: 'Active',
+            url: 'https://linear.app/company/document/active-doc',
+            content: '# Active',
+          },
+        ],
+      ]);
+      const mockLinearClient = {
+        issue: vi.fn(async (id: string) => ({
+          documents: vi.fn(async () => issueConnection),
+          project: Promise.resolve(null),
+        })),
+      };
+
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.fetchIssueDocuments('TEAM-123');
+
+      expect(result).toEqual([
+        {
+          id: 'active-doc',
+          title: 'Active',
+          url: 'https://linear.app/company/document/active-doc',
+          content: '# Active',
+          source: 'issue',
+        },
+      ]);
+    });
+
+    test('paginates issue and project document connections', async () => {
+      const issueConnection = createDocumentConnection([
+        [
+          {
+            id: 'issue-doc-1',
+            title: 'Issue Page One',
+            url: 'https://linear.app/company/document/issue-doc-1',
+            content: '# Issue Page One',
+          },
+        ],
+        [
+          {
+            id: 'issue-doc-2',
+            title: 'Issue Page Two',
+            url: 'https://linear.app/company/document/issue-doc-2',
+            content: '# Issue Page Two',
+          },
+        ],
+      ]);
+      const projectConnection = createDocumentConnection([
+        [
+          {
+            id: 'project-doc-1',
+            title: 'Project Page One',
+            url: 'https://linear.app/company/document/project-doc-1',
+            content: '# Project Page One',
+          },
+        ],
+        [
+          {
+            id: 'project-doc-2',
+            title: 'Project Page Two',
+            url: 'https://linear.app/company/document/project-doc-2',
+            content: '# Project Page Two',
+          },
+        ],
+      ]);
+      const mockLinearClient = {
+        issue: vi.fn(async (id: string) => ({
+          documents: vi.fn(async () => issueConnection),
+          project: Promise.resolve({
+            documents: vi.fn(async () => projectConnection),
+          }),
+        })),
+      };
+
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.fetchIssueDocuments('TEAM-123');
+
+      // Each document must appear exactly once even though the in-place
+      // accumulation re-exposes earlier pages on the second iteration.
+      expect(result.map((document) => document.id)).toEqual([
+        'issue-doc-1',
+        'issue-doc-2',
+        'project-doc-1',
+        'project-doc-2',
+      ]);
+      expect(issueConnection.fetchNext).toHaveBeenCalledTimes(1);
+      expect(projectConnection.fetchNext).toHaveBeenCalledTimes(1);
+    });
+
+    test('wraps Linear SDK errors', async () => {
+      const mockLinearClient = {
+        issue: vi.fn(async (id: string) => {
+          throw new Error('Linear API error');
+        }),
+      };
+
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+
+      await expect(client.fetchIssueDocuments('TEAM-123')).rejects.toThrow(
+        'Failed to fetch Linear issue documents TEAM-123: Linear API error'
+      );
     });
   });
 

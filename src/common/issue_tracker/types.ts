@@ -94,6 +94,22 @@ export interface IssueWithComments {
 }
 
 /**
+ * Native issue-tracker document content linked to an issue or its project
+ */
+export interface IssueDocument {
+  /** Unique document identifier */
+  id: string;
+  /** Document title */
+  title: string;
+  /** URL to view the document in the web interface */
+  url: string;
+  /** Markdown document content */
+  content: string;
+  /** Whether the document was linked directly to the issue or its project */
+  source: 'issue' | 'project';
+}
+
+/**
  * Parsed issue identifier information
  */
 export interface ParsedIssueIdentifier {
@@ -141,6 +157,13 @@ export interface IssueTrackerClient {
    * @returns Promise resolving to issue with comments and children
    */
   fetchIssueWithChildren?(identifier: string): Promise<IssueWithComments>;
+
+  /**
+   * Fetch native documents linked to an issue and related issue metadata
+   * @param identifier - The issue identifier (number, key, or URL)
+   * @returns Promise resolving to linked issue documents
+   */
+  fetchIssueDocuments?(identifier: string): Promise<IssueDocument[]>;
 
   /**
    * Fetch all open issues (without comments)

@@ -38,6 +38,8 @@ import {
   runPreExecutionWorkspaceSync,
 } from '../workspace/workspace_roundtrip.js';
 import { findLatestPlanFromDb, findNextReadyDependencyFromDb } from './plan_discovery.js';
+import { resolveProjectContext } from '../plan_materialize.js';
+import { collectIssueDocuments, hasLinearIssueReferences } from './generate_issue_docs.js';
 
 interface GenerateCommandOptions {
   plan?: number;
@@ -266,6 +268,40 @@ export async function handleGenerateCommand(
 
         await updateWorkspaceDescriptionFromPlan(currentBaseDir, parsedPlan);
 
+        // Compute terminal input and noninteractive options before any pre-generation
+        // prompts so all interactive steps share the same behavior.
+        const noninteractive = options.nonInteractive === true;
+        const terminalInputEnabled =
+          !noninteractive &&
+          process.stdin.isTTY === true &&
+          options.terminalInput !== false &&
+          config.terminalInput !== false;
+
+        let issueDocPaths: string[] | undefined;
+        // Only Linear-configured projects fetch issue documents. Gate the whole
+        // block (including project-context resolution) so a GitHub-configured plan
+        // that merely contains a Linear-looking URL skips the step entirely with no
+        // side effects or misleading warnings.
+        if (
+          (config.issueTracker ?? 'github') === 'linear' &&
+          hasLinearIssueReferences(parsedPlan)
+        ) {
+          let projectIdForIssueDocs: number | undefined;
+          try {
+            projectIdForIssueDocs = (await resolveProjectContext(currentBaseDir)).projectId;
+          } catch (err) {
+            warn(`Unable to resolve project context for Linear documents: ${err as Error}`);
+          }
+
+          issueDocPaths = await collectIssueDocuments({
+            plan: parsedPlan,
+            baseDir: currentBaseDir,
+            config,
+            projectId: projectIdForIssueDocs,
+            interactive: terminalInputEnabled,
+          });
+        }
+
         // Build the prompt using the new interactive prompt system
         // Use 'generate-plan-simple' for simple mode, 'generate-plan' for full interactive mode
         // loadResearchPrompt handles the simple flag check on the plan itself,
@@ -279,6 +315,7 @@ export async function handleGenerateCommand(
           // and relative file references point at the active workspace checkout.
           gitRoot: currentBaseDir,
           configBaseDir: pathContext.configBaseDir,
+          issueDocPaths,
         };
 
         const singlePrompt = await buildPromptText(
@@ -289,14 +326,6 @@ export async function handleGenerateCommand(
           },
           context
         );
-
-        // Compute terminal input and noninteractive options
-        const noninteractive = options.nonInteractive === true;
-        const terminalInputEnabled =
-          !noninteractive &&
-          process.stdin.isTTY === true &&
-          options.terminalInput !== false &&
-          config.terminalInput !== false;
 
         // Build executor
         const executorName =

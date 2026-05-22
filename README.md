@@ -159,6 +159,8 @@ The main workflow is:
 
    On the plan detail page, click **Generate**. This starts an interactive planning session. The agent asks clarifying questions, researches context, and updates the plan. Answer prompts in the **Sessions** tab.
 
+   For Linear-linked plans, generation can include native Linear Documents attached to the issue or its project. tim lists the available documents with all selected by default, downloads the selected markdown into the transient, git-excluded `.tim/issue-docs/<planId>/` cache, and references those files in the generate prompt. Non-interactive generation includes all discovered documents automatically. Only Linear Documents with markdown content are included; external-link attachments are not downloaded.
+
    Click **End Session** when the plan has the right structure and tasks.
 
 4. **Run the agent**
