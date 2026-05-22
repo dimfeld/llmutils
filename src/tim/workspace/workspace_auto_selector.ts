@@ -1,9 +1,11 @@
 import chalk from 'chalk';
+import * as fs from 'node:fs/promises';
 import { promptConfirm } from '../../common/input.js';
 import { log } from '../../logging.js';
 import { getAssignmentEntry } from '../db/assignment.js';
 import { getDatabase } from '../db/database.js';
 import { getProject } from '../db/project.js';
+import { deleteWorkspace } from '../db/workspace.js';
 import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
 import { createWorkspace } from './workspace_manager.js';
 import type { TimConfig } from '../configSchema.js';
@@ -106,10 +108,11 @@ export class WorkspaceAutoSelector {
     const allWorkspaces = findWorkspaceInfosByRepositoryId(repositoryId).toSorted(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
+    const existingWorkspaces = await removeDeletedWorkspaceRecords(allWorkspaces);
     const requireAutoType =
       this.config.workspaceCreation?.requireAutoType ||
-      allWorkspaces.some((workspace) => workspace.workspaceType === 'auto');
-    const eligibleWorkspaces = allWorkspaces.filter((workspace) =>
+      existingWorkspaces.some((workspace) => workspace.workspaceType === 'auto');
+    const eligibleWorkspaces = existingWorkspaces.filter((workspace) =>
       requireAutoType ? workspace.workspaceType === 'auto' : workspace.workspaceType !== 'primary'
     );
     const newWorkspaceType: WorkspaceType | undefined = requireAutoType ? 'auto' : undefined;
@@ -329,6 +332,40 @@ function getPreferredAssignedWorkspacePath(
   }
 
   return getAssignmentEntry(db, project.id, planUuid)?.workspacePaths[0];
+}
+
+async function removeDeletedWorkspaceRecords(
+  workspaces: WorkspaceInfo[]
+): Promise<WorkspaceInfo[]> {
+  const db = getDatabase();
+  const existingWorkspaces: WorkspaceInfo[] = [];
+
+  for (const workspace of workspaces) {
+    if (await workspaceDirectoryExists(workspace.workspacePath)) {
+      existingWorkspaces.push(workspace);
+      continue;
+    }
+
+    if (deleteWorkspace(db, workspace.workspacePath)) {
+      log(`Removed deleted workspace record: ${workspace.workspacePath}`);
+    }
+  }
+
+  return existingWorkspaces;
+}
+
+async function workspaceDirectoryExists(workspacePath: string): Promise<boolean> {
+  try {
+    const stats = await fs.stat(workspacePath);
+    return stats.isDirectory();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false;
+    }
+
+    log(`Failed to check workspace directory ${workspacePath}: ${String(error)}`);
+    return true;
+  }
 }
 
 async function maybeClearStaleLock(

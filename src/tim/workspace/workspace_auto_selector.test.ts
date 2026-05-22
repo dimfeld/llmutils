@@ -151,6 +151,56 @@ describe('WorkspaceAutoSelector', () => {
     expect(getLockInfoIncludingStaleSpy).toHaveBeenCalledWith(lockedPath);
   });
 
+  test('selectWorkspace removes deleted workspace records before selecting', async () => {
+    const deletedPath = path.join(testDir, 'workspace-deleted');
+    const unlockedPath = path.join(testDir, 'workspace-unlocked-after-delete');
+    await fs.mkdir(unlockedPath, { recursive: true });
+
+    await seedWorkspace('github.com/test/repo', deletedPath, 'task-deleted', 'task-deleted');
+    await seedWorkspace('github.com/test/repo', unlockedPath, 'task-unlocked', 'task-unlocked');
+
+    const result = await selector.selectWorkspace('task-next', '/test/plan-next.yml', {
+      interactive: false,
+    });
+
+    const db = getDatabase();
+    const deletedWorkspace = db
+      .prepare('SELECT id FROM workspace WHERE workspace_path = ?')
+      .get(deletedPath);
+
+    expect(result).not.toBeNull();
+    expect(result?.workspace.workspacePath).toBe(unlockedPath);
+    expect(deletedWorkspace).toBeNull();
+  });
+
+  test('selectWorkspace does not let deleted auto workspace records force auto-only selection', async () => {
+    const deletedAutoPath = path.join(testDir, 'workspace-deleted-auto');
+    const standardPath = path.join(testDir, 'workspace-standard-after-delete');
+    await fs.mkdir(standardPath, { recursive: true });
+
+    await seedWorkspace(
+      'github.com/test/repo',
+      deletedAutoPath,
+      'task-deleted-auto',
+      'task-deleted-auto',
+      'auto'
+    );
+    await seedWorkspace(
+      'github.com/test/repo',
+      standardPath,
+      'task-standard',
+      'task-standard',
+      'standard'
+    );
+
+    const result = await selector.selectWorkspace('task-next', '/test/plan-next.yml', {
+      interactive: false,
+    });
+
+    expect(result?.workspace.workspacePath).toBe(standardPath);
+    expect(result?.workspace.workspaceType).toBe('standard');
+  });
+
   test('selectWorkspace clears stale lock in non-interactive mode', async () => {
     const workspacePath = path.join(testDir, 'workspace-stale');
     await fs.mkdir(workspacePath, { recursive: true });
@@ -329,7 +379,9 @@ describe('WorkspaceAutoSelector', () => {
       gitRoot: testDir,
     });
 
-    await seedWorkspace(repositoryId, path.join(testDir, 'workspace-1'), 'task-1', 'task-1');
+    const workspacePath = path.join(testDir, 'workspace-1');
+    await fs.mkdir(workspacePath, { recursive: true });
+    await seedWorkspace(repositoryId, workspacePath, 'task-1', 'task-1');
 
     const localSelector = new WorkspaceAutoSelector(testDir, {
       modelSettings: {
