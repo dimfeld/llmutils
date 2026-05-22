@@ -51,32 +51,34 @@
 </script>
 
 <div
-  class="flex w-full items-center gap-2 rounded-md px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 {selected
+  class="flex w-full items-start gap-2 rounded-md px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 {selected
     ? 'bg-gray-100 dark:bg-gray-800'
     : ''}"
 >
   <a href={prHref} class="min-w-0 flex-1">
-    <div class="flex items-center gap-2">
+    <div class="truncate text-sm font-medium text-foreground">
+      {pr.title ?? 'Untitled PR'}
+    </div>
+    <div class="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
       <span class="shrink-0 text-xs font-medium text-muted-foreground">
         {pr.owner}/{pr.repo}#{pr.prNumber}
-      </span>
-      <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-        {pr.title ?? 'Untitled PR'}
       </span>
       <span
         class="inline-block h-2 w-2 shrink-0 rounded-full {checkDotColor}"
         title="Checks: {pr.checkStatus}"
       ></span>
+      {#if projectName || pr.linkedPlanTitle}
+        <span class="min-w-0 truncate">
+          <span aria-hidden="true">&middot;</span>
+          {' '}
+          {#if projectName}{projectName}{/if}
+          {#if projectName && pr.linkedPlanTitle}
+            &middot;
+          {/if}
+          {#if pr.linkedPlanTitle}Plan #{pr.linkedPlanId}: {pr.linkedPlanTitle}{/if}
+        </span>
+      {/if}
     </div>
-    {#if projectName || pr.linkedPlanTitle}
-      <div class="mt-0.5 truncate text-xs text-muted-foreground">
-        {#if projectName}{projectName}{/if}
-        {#if projectName && pr.linkedPlanTitle}
-          &middot;
-        {/if}
-        {#if pr.linkedPlanTitle}Plan #{pr.linkedPlanId}: {pr.linkedPlanTitle}{/if}
-      </div>
-    {/if}
     <div class="mt-1 flex items-center gap-1.5">
       {#if reasonStyle}
         <span
