@@ -63,10 +63,9 @@
       <span class="shrink-0 text-xs font-medium text-muted-foreground">
         {pr.owner}/{pr.repo}#{pr.prNumber}
       </span>
-      <span
-        class="inline-block h-2 w-2 shrink-0 rounded-full {checkDotColor}"
-        title="Checks: {pr.checkStatus}"
-      ></span>
+      {#if pr.author}
+        <span class="shrink-0">by {pr.author}</span>
+      {/if}
       {#if projectName || pr.linkedPlanTitle}
         <span class="min-w-0 truncate">
           <span aria-hidden="true">&middot;</span>
@@ -87,9 +86,6 @@
           {reasonStyle.label}
         </span>
       {/if}
-      {#if pr.author}
-        <span class="text-xs text-muted-foreground">by {pr.author}</span>
-      {/if}
       {#if pr.additions != null && pr.deletions != null}
         <span class="text-xs">
           <span class="text-green-600 dark:text-green-400">+{pr.additions}</span>
@@ -97,6 +93,10 @@
           <span class="text-red-600 dark:text-red-400">-{pr.deletions}</span>
         </span>
       {/if}
+      <span
+        class="inline-block h-2 w-2 shrink-0 rounded-full {checkDotColor}"
+        title="Checks: {pr.checkStatus}"
+      ></span>
     </div>
   </a>
   <a
