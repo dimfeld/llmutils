@@ -2233,6 +2233,31 @@ describe('review_pr command', () => {
     );
   });
 
+  test('allows newly created auto workspaces to transition their creation lock', async () => {
+    workspaceAutoSelectorMocks.selectWorkspace.mockResolvedValueOnce({
+      workspace: {
+        workspacePath: tempDir,
+      },
+      isNew: true,
+      clearedStaleLock: false,
+    });
+    const codexExecute = vi.fn().mockResolvedValue({
+      content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+    });
+    mockBuildExecutorAndLog.mockReturnValue({ execute: codexExecute } as any);
+
+    await handleReviewGuideCommand(
+      '42',
+      { autoWorkspace: true, executor: 'codex-cli', terminalInput: false },
+      makeCommand()
+    );
+
+    expect(mockWorkspaceLockAcquireLock).toHaveBeenCalledWith(tempDir, 'tim pr review-guide', {
+      type: 'pid',
+      allowPersistentToPidTransition: true,
+    });
+  });
+
   test('materialize writes guide and issues markdown and updates git exclude', async () => {
     const infoExcludePath = path.join(tempDir, '.git', 'info', 'exclude');
     await fs.mkdir(path.dirname(infoExcludePath), { recursive: true });

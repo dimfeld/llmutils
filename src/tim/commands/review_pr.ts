@@ -300,7 +300,10 @@ export async function handleReviewGuideCommand(
           const lockInfo = await WorkspaceLock.acquireLock(
             selectedWorkspace.workspace.workspacePath,
             'tim pr review-guide',
-            { type: 'pid' }
+            {
+              type: 'pid',
+              ...(selectedWorkspace.isNew ? { allowPersistentToPidTransition: true } : {}),
+            }
           );
           WorkspaceLock.setupCleanupHandlers(
             selectedWorkspace.workspace.workspacePath,
