@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getLogDir } from '$common/config_paths.js';
+import { getLogDir } from '../../common/config_paths.js';
 import { buildWorkspaceCommandEnv } from '$common/env.js';
 
 const EARLY_EXIT_CHECK_DELAY_MS = 2000;

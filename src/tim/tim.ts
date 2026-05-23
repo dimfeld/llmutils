@@ -886,6 +886,7 @@ program
     3
   )
   .option('--terminal-input', 'Allow spawned child agents to read from terminal input')
+  .option('--no-terminal-input', 'Disable terminal input forwarding')
   .option('--non-interactive', 'Run the orchestrator without interactive prompts')
   .action(async (planIdArgs, options, command) => {
     const { handleAgentMultiCommand } = await import('./commands/agent_multi/command.js');
@@ -896,9 +897,9 @@ program
     if (command.getOptionValueSource('terminalInput') !== 'cli') {
       options.terminalInput = false;
     }
-    await handleAgentMultiCommand(planIds, options, command.parent.opts()).catch(
-      handleCommandError
-    );
+    await runWithCommandTunnelAdapter(async () => {
+      await handleAgentMultiCommand(planIds, options, command.parent.opts());
+    }).catch(handleCommandError);
   });
 
 program

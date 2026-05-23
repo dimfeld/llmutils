@@ -5,6 +5,7 @@ const {
   handleSetCommandMock,
   handleImportCommandMock,
   handleGenerateCommandMock,
+  handleAgentMultiCommandMock,
   handleReviewGuideCommandMock,
   handleListCommandMock,
   handleReadyCommandMock,
@@ -14,6 +15,7 @@ const {
   handleSetCommandMock: vi.fn(async () => {}),
   handleImportCommandMock: vi.fn(async () => {}),
   handleGenerateCommandMock: vi.fn(async () => {}),
+  handleAgentMultiCommandMock: vi.fn(async () => {}),
   handleReviewGuideCommandMock: vi.fn(async () => {}),
   handleListCommandMock: vi.fn(async () => {}),
   handleReadyCommandMock: vi.fn(async () => {}),
@@ -34,6 +36,10 @@ vi.mock('./commands/import/import.js', () => ({
 
 vi.mock('./commands/generate.js', () => ({
   handleGenerateCommand: handleGenerateCommandMock,
+}));
+
+vi.mock('./commands/agent_multi/command.js', () => ({
+  handleAgentMultiCommand: handleAgentMultiCommandMock,
 }));
 
 vi.mock('./commands/review_pr.js', () => ({
@@ -68,6 +74,7 @@ describe('tim plan ID option parsing at Commander boundary', () => {
     handleSetCommandMock.mockClear();
     handleImportCommandMock.mockClear();
     handleGenerateCommandMock.mockClear();
+    handleAgentMultiCommandMock.mockClear();
     handleReviewGuideCommandMock.mockClear();
     handleListCommandMock.mockClear();
     handleReadyCommandMock.mockClear();
@@ -134,6 +141,14 @@ describe('tim plan ID option parsing at Commander boundary', () => {
       'Expected a numeric plan ID'
     );
     expect(handleGenerateCommandMock).not.toHaveBeenCalled();
+  });
+
+  test('accepts --no-terminal-input for agent-multi at the CLI boundary', async () => {
+    await runTimCli(['agent-multi', '101', '102', '--no-terminal-input']);
+
+    expect(handleAgentMultiCommandMock).toHaveBeenCalledTimes(1);
+    const [, options] = handleAgentMultiCommandMock.mock.calls[0];
+    expect(options.terminalInput).toBe(false);
   });
 
   test('rejects non-numeric pr review-guide --plan at the CLI boundary', async () => {

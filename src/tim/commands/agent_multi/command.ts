@@ -7,7 +7,11 @@ import { createLogFile } from '../../../lib/server/plan_actions.js';
 import { getDatabase } from '../../db/database.js';
 import { getPlanByPlanId, getPlanByUuid, type PlanRow } from '../../db/plan.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
-import { runWithHeadlessAdapterIfEnabled, type HeadlessPlanSummary } from '../../headless.js';
+import {
+  runWithHeadlessAdapterIfEnabled,
+  updateHeadlessSessionInfo,
+  type HeadlessPlanSummary,
+} from '../../headless.js';
 import {
   MultiAgentRunner,
   SelectionValidationError,
@@ -101,6 +105,20 @@ export async function handleAgentMultiCommand(
   options: AgentMultiCommandOptions,
   _globalOptions: AgentMultiGlobalOptions
 ): Promise<void> {
+  await runWithHeadlessAdapterIfEnabled({
+    enabled: !isTunnelActive(),
+    command: 'agent-multi',
+    interactive: false,
+    callback: async () => {
+      await runAgentMultiCommand(planIds, options);
+    },
+  });
+}
+
+async function runAgentMultiCommand(
+  planIds: number[],
+  options: AgentMultiCommandOptions
+): Promise<void> {
   if (planIds.length === 0) {
     throw new Error('At least one plan ID is required.');
   }
@@ -144,28 +162,28 @@ export async function handleAgentMultiCommand(
     inferredParentUuid: validation.sharedParentUuid,
     db,
   });
+  const headlessPlan = toHeadlessPlanSummary(headlessPlanRow);
+  if (headlessPlan) {
+    updateHeadlessSessionInfo({
+      planId: headlessPlan.id,
+      planUuid: headlessPlan.uuid,
+      planTitle: headlessPlan.title,
+    });
+  }
 
-  await runWithHeadlessAdapterIfEnabled({
-    enabled: !isTunnelActive(),
-    command: 'agent-multi',
-    interactive: false,
-    plan: toHeadlessPlanSummary(headlessPlanRow),
-    callback: async () => {
-      const runner = new MultiAgentRunner({
-        plans: selectedPlans,
-        allPlans,
-        epicUuid: epicRow?.uuid,
-        maxParallel: options.maxParallel,
-        cwd: repoRoot,
-        spawnAgent: await createBunSpawnAgent({
-          cwd: repoRoot,
-        }),
-        readPlan: async (planUuid: string) => getPlanByUuid(db, planUuid),
-      });
-      const result = await runner.run();
-      if (!result.success) {
-        process.exitCode = 1;
-      }
-    },
+  const runner = new MultiAgentRunner({
+    plans: selectedPlans,
+    allPlans,
+    epicUuid: epicRow?.uuid,
+    maxParallel: options.maxParallel,
+    cwd: repoRoot,
+    spawnAgent: await createBunSpawnAgent({
+      cwd: repoRoot,
+    }),
+    readPlan: async (planUuid: string) => getPlanByUuid(db, planUuid),
   });
+  const result = await runner.run();
+  if (!result.success) {
+    process.exitCode = 1;
+  }
 }

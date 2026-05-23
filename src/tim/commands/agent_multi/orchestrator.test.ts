@@ -1,5 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 
+import { runWithLogger, type LoggerAdapter } from '../../../logging/adapter.js';
+import type { StructuredMessage } from '../../../logging/structured_messages.js';
 import {
   MultiAgentRunner,
   SelectionValidationError,
@@ -41,6 +43,19 @@ function createLogger(): MultiAgentLogger {
     error: vi.fn(),
     sendStructured: vi.fn(),
   };
+}
+
+function createCaptureAdapter(logMessages: string[], structuredMessages: StructuredMessage[]) {
+  const adapter: LoggerAdapter = {
+    log: vi.fn((...args: unknown[]) => logMessages.push(args.map(String).join(' '))),
+    error: vi.fn((...args: unknown[]) => logMessages.push(args.map(String).join(' '))),
+    warn: vi.fn((...args: unknown[]) => logMessages.push(args.map(String).join(' '))),
+    writeStdout: vi.fn((data: string) => logMessages.push(data)),
+    writeStderr: vi.fn((data: string) => logMessages.push(data)),
+    debugLog: vi.fn(),
+    sendStructured: vi.fn((message: StructuredMessage) => structuredMessages.push(message)),
+  };
+  return adapter;
 }
 
 async function waitFor(assertion: () => void): Promise<void> {
@@ -211,6 +226,58 @@ describe('agent-multi orchestrator', () => {
     harness.resolvePlan(4, 'done');
     expect((await run).success).toBe(true);
     expect(harness.maxRunning()).toBe(2);
+  });
+
+  test('default logger routes summary and spawn progress through active logger adapter', async () => {
+    const logMessages: string[] = [];
+    const structuredMessages: StructuredMessage[] = [];
+    const plans = [createPlan(646, { title: 'Migrate loans permissions' })];
+    const statuses = new Map(plans.map((plan) => [plan.uuid, plan.status]));
+    let resolveExit!: (exitCode: number) => void;
+    const exited = new Promise<number>((resolve) => {
+      resolveExit = resolve;
+    });
+    const runner = new MultiAgentRunner({
+      plans,
+      maxParallel: 3,
+      cwd: '/tmp/repo',
+      spawnAgent: () => ({ pid: 14614, exited }),
+      readPlan: async (planUuid: string) => {
+        const status = statuses.get(planUuid);
+        return status ? { status } : null;
+      },
+    });
+
+    const run = runWithLogger(createCaptureAdapter(logMessages, structuredMessages), () =>
+      runner.run()
+    );
+    await waitFor(() => {
+      expect(logMessages).toContain(
+        'agent-multi: 1 plan(s), maxParallel=3, ready=[646], waiting=[]'
+      );
+      expect(logMessages).toContain(
+        'agent-multi: spawned plan #646 Migrate loans permissions pid=14614'
+      );
+    });
+
+    statuses.set('plan-646', 'done');
+    resolveExit(0);
+    await run;
+
+    expect(structuredMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'workflow_progress',
+          phase: 'agent-multi:summary',
+          message: 'agent-multi: 1 plan(s), maxParallel=3, ready=[646], waiting=[]',
+        }),
+        expect.objectContaining({
+          type: 'workflow_progress',
+          phase: 'agent-multi:spawn',
+          message: 'Spawned plan #646 Migrate loans permissions',
+        }),
+      ])
+    );
   });
 
   test('does not spawn a queued plan when an external dependency flips unfinished', async () => {

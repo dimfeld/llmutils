@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   getAgentMultiPlansForProject: vi.fn(),
   isTunnelActive: vi.fn(),
   runWithHeadlessAdapterIfEnabled: vi.fn(),
+  updateHeadlessSessionInfo: vi.fn(),
+  multiAgentRunnerConstructor: vi.fn(),
+  multiAgentRunnerRun: vi.fn(),
 }));
 
 vi.mock('../../../common/env.js', () => ({
@@ -54,6 +57,23 @@ vi.mock('../../headless.js', async (importOriginal) => {
   return {
     ...actual,
     runWithHeadlessAdapterIfEnabled: mocks.runWithHeadlessAdapterIfEnabled,
+    updateHeadlessSessionInfo: mocks.updateHeadlessSessionInfo,
+  };
+});
+
+vi.mock('./orchestrator.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./orchestrator.js')>();
+  return {
+    ...actual,
+    MultiAgentRunner: class {
+      constructor(options: ConstructorParameters<typeof actual.MultiAgentRunner>[0]) {
+        mocks.multiAgentRunnerConstructor(options);
+      }
+
+      async run(): Promise<{ success: boolean; states: Map<string, never> }> {
+        return mocks.multiAgentRunnerRun();
+      }
+    },
   };
 });
 
@@ -121,7 +141,10 @@ describe('agent-multi command', () => {
     mocks.getPlanByUuid.mockReturnValue(null);
     mocks.getAgentMultiPlansForProject.mockReturnValue([]);
     mocks.isTunnelActive.mockReturnValue(false);
-    mocks.runWithHeadlessAdapterIfEnabled.mockResolvedValue(undefined);
+    mocks.runWithHeadlessAdapterIfEnabled.mockImplementation(async (options: any) =>
+      options.callback()
+    );
+    mocks.multiAgentRunnerRun.mockResolvedValue({ success: true, states: new Map() });
   });
 
   afterEach(() => {
@@ -188,13 +211,13 @@ describe('agent-multi command', () => {
       expect.objectContaining({
         command: 'agent-multi',
         interactive: false,
-        plan: {
-          id: 100,
-          uuid: 'epic-1',
-          title: 'Parent epic',
-        },
       })
     );
+    expect(mocks.updateHeadlessSessionInfo).toHaveBeenCalledWith({
+      planId: 100,
+      planUuid: 'epic-1',
+      planTitle: 'Parent epic',
+    });
   });
 
   test('preserves explicit --epic headless attribution', async () => {
@@ -212,13 +235,13 @@ describe('agent-multi command', () => {
     expect(mocks.runWithHeadlessAdapterIfEnabled).toHaveBeenCalledWith(
       expect.objectContaining({
         interactive: false,
-        plan: {
-          id: 200,
-          uuid: 'explicit-epic',
-          title: 'Explicit epic',
-        },
       })
     );
+    expect(mocks.updateHeadlessSessionInfo).toHaveBeenCalledWith({
+      planId: 200,
+      planUuid: 'explicit-epic',
+      planTitle: 'Explicit epic',
+    });
   });
 
   test('leaves root-level sibling runs without headless plan attribution', async () => {
@@ -233,9 +256,9 @@ describe('agent-multi command', () => {
     expect(mocks.runWithHeadlessAdapterIfEnabled).toHaveBeenCalledWith(
       expect.objectContaining({
         interactive: false,
-        plan: undefined,
       })
     );
+    expect(mocks.updateHeadlessSessionInfo).not.toHaveBeenCalled();
   });
 
   test('keeps the orchestrator headless session non-interactive even without --non-interactive', async () => {
