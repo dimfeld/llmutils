@@ -2,8 +2,8 @@ import fs from 'node:fs';
 
 import { buildWorkspaceCommandEnv } from '../../../common/env.js';
 import { getGitRoot } from '../../../common/git.js';
+import { createLogFile } from '../../../common/log_files.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
-import { createLogFile } from '../../../lib/server/plan_actions.js';
 import { getDatabase } from '../../db/database.js';
 import { getPlanByPlanId, getPlanByUuid, type PlanRow } from '../../db/plan.js';
 import { resolveProjectContext } from '../../plan_materialize.js';

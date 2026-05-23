@@ -1,7 +1,12 @@
 import fs from 'node:fs';
-import path from 'node:path';
-import { getLogDir } from '../../common/config_paths.js';
 import { buildWorkspaceCommandEnv } from '$common/env.js';
+import {
+  createLogFile as createLogFileImpl,
+  formatLogFileName as formatLogFileNameImpl,
+} from '../../common/log_files.js';
+
+export const createLogFile = createLogFileImpl;
+export const formatLogFileName = formatLogFileNameImpl;
 
 const EARLY_EXIT_CHECK_DELAY_MS = 2000;
 
@@ -25,32 +30,12 @@ function waitForSpawnWindow(delayMs = EARLY_EXIT_CHECK_DELAY_MS): Promise<void> 
   });
 }
 
-interface LogFileInfo {
-  fd: number;
-  path: string;
-}
-
 function describeCommand(args: string[]): string {
   return ['tim', ...args].join(' ');
 }
 
 function describeTarget(kind: 'plan' | 'pr', id: number): string {
   return `${kind} ${id}`;
-}
-
-export function formatLogFileName(planId: number, command: string, timestamp = new Date()): string {
-  const isoTimestamp = timestamp.toISOString().replace(/[:.]/g, '-');
-  return `${planId}-${isoTimestamp}-${command}.log`;
-}
-
-export function createLogFile(command: string, planId: number): LogFileInfo {
-  const logDir = getLogDir();
-  fs.mkdirSync(logDir, { recursive: true });
-
-  const filename = formatLogFileName(planId, command);
-  const logPath = path.join(logDir, filename);
-
-  return { fd: fs.openSync(logPath, 'a'), path: logPath };
 }
 
 async function spawnTimProcess(
