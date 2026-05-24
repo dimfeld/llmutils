@@ -1,6 +1,5 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "description": "Repository-level configuration for tim",
   "type": "object",
   "properties": {
     "githubUsername": {
@@ -8,9 +7,9 @@
       "type": "string"
     },
     "branchPrefix": {
-      "description": "Prefix to prepend to auto-generated branch names (for example \"di/\")",
       "type": "string",
-      "maxLength": 20
+      "maxLength": 20,
+      "description": "Prefix to prepend to auto-generated branch names (for example \"di/\")"
     },
     "requireBranchPrefix": {
       "description": "If true, commands that create branches will fail unless a branchPrefix is configured (via repo config or project setting).",
@@ -96,6 +95,28 @@
         "sequenceRetentionDays": {
           "type": "number",
           "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "slack": {
+      "description": "Machine-local Slack workspace configuration for outbound notifications",
+      "type": "object",
+      "properties": {
+        "workspaces": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "token": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false
@@ -405,12 +426,12 @@
             "type": "object",
             "properties": {
               "find": {
-                "description": "String to search for in the prompt to trigger this example.",
-                "type": "string"
+                "type": "string",
+                "description": "String to search for in the prompt to trigger this example."
               },
               "example": {
-                "description": "Example string to pass as --example argument when find matches.",
-                "type": "string"
+                "type": "string",
+                "description": "Example string to pass as --example argument when find matches."
               }
             },
             "required": [
@@ -519,8 +540,8 @@
         "type": "string"
       },
       "additionalProperties": {
-        "description": "Environment variable name to use for API key",
-        "type": "string"
+        "type": "string",
+        "description": "Environment variable name to use for API key"
       }
     },
     "defaultExecutor": {
@@ -1200,5 +1221,6 @@
       },
       "additionalProperties": false
     }
-  }
+  },
+  "description": "Repository-level configuration for tim"
 }

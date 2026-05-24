@@ -1,6 +1,5 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "description": "tim phase file schema",
   "type": "object",
   "properties": {
     "title": {
@@ -233,21 +232,21 @@
         "type": "object",
         "properties": {
           "severity": {
-            "description": "Severity level of the issue. critical: Security vulnerabilities, data loss risks, or system-breaking bugs. major: Significant bugs, performance problems, or logic errors. minor: Code quality issues, style violations, or minor bugs. info: Suggestions, notes, or informational observations.",
             "type": "string",
             "enum": [
               "critical",
               "major",
               "minor",
               "info"
-            ]
+            ],
+            "description": "Severity level of the issue. critical: Security vulnerabilities, data loss risks, or system-breaking bugs. major: Significant bugs, performance problems, or logic errors. minor: Code quality issues, style violations, or minor bugs. info: Suggestions, notes, or informational observations."
           },
           "category": {
             "type": "string"
           },
           "content": {
-            "description": "A clear description of the issue found. Include relevant context and why this is a problem. If you have already generated an explanation for this issue, include the entire thing here even if it overlaps with other fields.",
-            "type": "string"
+            "type": "string",
+            "description": "A clear description of the issue found. Include relevant context and why this is a problem. If you have already generated an explanation for this issue, include the entire thing here even if it overlaps with other fields."
           },
           "file": {
             "type": "string"
@@ -285,8 +284,8 @@
   },
   "required": [
     "id",
-    "status",
     "tasks"
   ],
-  "additionalProperties": {}
+  "additionalProperties": {},
+  "description": "tim phase file schema"
 }
