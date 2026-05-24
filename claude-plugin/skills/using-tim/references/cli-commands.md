@@ -173,11 +173,11 @@ tim ready --reverse
 Use `tim tools <tool-name>` for programmatic plan management with JSON stdin/stdout.
 
 ```bash
-echo '{"plan": "123"}' | tim tools get-plan
+echo '{"plan": 123}' | tim tools get-plan
 echo '{"title": "New plan"}' | tim tools create-plan --json
-echo '{"plan": "123", "details": "New details"}' | tim tools update-plan-details
-echo '{"plan": "123", "tasks": [{"title": "Task", "description": "Details"}]}' | tim tools update-plan-tasks --json
-echo '{"plan": "123", "action": "add", "title": "Task", "description": "Details"}' | tim tools manage-plan-task
+echo '{"plan": 123, "details": "New details"}' | tim tools update-plan-details
+echo '{"plan": 123, "tasks": [{"title": "Task", "description": "Details"}]}' | tim tools update-plan-tasks --json
+echo '{"plan": 123, "action": "add", "title": "Task", "description": "Details"}' | tim tools manage-plan-task
 echo '{}' | tim tools list-ready-plans --json
 ```
 

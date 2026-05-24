@@ -53,7 +53,7 @@ Use `tim tools <tool-name>` with JSON on stdin to manage plans programmatically.
 Retrieve full plan details.
 
 ```bash
-echo '{"plan": "123"}' | tim tools get-plan
+echo '{"plan": 123}' | tim tools get-plan
 ```
 
 ### create-plan
@@ -71,7 +71,7 @@ Parameters: `title` (required), `goal`, `details`, `priority`, `parent`, `depend
 Update plan with generated tasks.
 
 ```bash
-echo '{"plan": "123", "tasks": [{"title": "Task 1", "description": "Details"}]}' | tim tools update-plan-tasks
+echo '{"plan": 123, "tasks": [{"title": "Task 1", "description": "Details"}]}' | tim tools update-plan-tasks
 ```
 
 Parameters: `plan` (required), `tasks` (required), `title`, `goal`, `details`, `priority`
@@ -81,7 +81,7 @@ Parameters: `plan` (required), `tasks` (required), `title`, `goal`, `details`, `
 Update the generated section content (between `<!-- tim-generated-start -->` and `<!-- tim-generated-end -->`).
 
 ```bash
-echo '{"plan": "123", "details": "New implementation notes", "append": true}' | tim tools update-plan-details
+echo '{"plan": 123, "details": "New implementation notes", "append": true}' | tim tools update-plan-details
 ```
 
 Parameters: `plan` (required), `details` (required), `append` (default: false)
@@ -92,16 +92,16 @@ Add, update, or remove individual tasks. Tasks can be identified by `taskTitle` 
 
 ```bash
 # Add a task
-echo '{"plan": "123", "action": "add", "title": "New task", "description": "Details"}' | tim tools manage-plan-task
+echo '{"plan": 123, "action": "add", "title": "New task", "description": "Details"}' | tim tools manage-plan-task
 
 # Mark task complete by title
-echo '{"plan": "123", "action": "update", "taskTitle": "New task", "done": true}' | tim tools manage-plan-task
+echo '{"plan": 123, "action": "update", "taskTitle": "New task", "done": true}' | tim tools manage-plan-task
 
 # Mark task complete by index (1-based)
-echo '{"plan": "123", "action": "update", "taskIndex": 2, "done": true}' | tim tools manage-plan-task
+echo '{"plan": 123, "action": "update", "taskIndex": 2, "done": true}' | tim tools manage-plan-task
 
 # Remove a task
-echo '{"plan": "123", "action": "remove", "taskTitle": "New task"}' | tim tools manage-plan-task
+echo '{"plan": 123, "action": "remove", "taskTitle": "New task"}' | tim tools manage-plan-task
 ```
 
 ## File-Based Plan Editing
