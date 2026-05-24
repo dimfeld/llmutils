@@ -18,6 +18,9 @@ tim agent --batch-tasks <planId>
 # Execute a plan in batch mode
 tim agent --batch-tasks 123
 
+# Use the older behavior where each orchestrator run is prompted to complete only one batch
+tim agent --no-continuous-batches 123
+
 # Use batch mode with a different executor
 tim agent --batch-tasks --executor claude-code 456
 
@@ -43,7 +46,9 @@ In batch mode, the tim agent operates differently from normal single-task execut
 
 4. **Plan Updates**: After successful completion, the orchestrator uses file editing tools to update the plan YAML file, marking completed tasks with `done: true`.
 
-5. **Loop Continuation**: The main agent loop re-reads the updated plan file and continues with remaining tasks until the entire plan is complete.
+5. **Continuous Selection**: By default, the orchestrator prompt asks the agent to re-read the plan after completing a batch, select another coherent batch from the remaining tasks, and continue until all tasks are complete or the agent is blocked.
+
+6. **Outer Loop Safety**: The main agent loop still re-reads the updated plan file after the orchestrator returns and continues with any remaining tasks until the entire plan is complete. Use `--no-continuous-batches` to omit the continuous-selection instruction from the orchestrator prompt.
 
 ### Task Selection Logic
 

@@ -844,6 +844,10 @@ function createAgentCommand(command: Command, description: string) {
       '--serial-tasks',
       'Disable batch task execution mode and process tasks one at a time (default is batch mode)'
     )
+    .option(
+      '--no-continuous-batches',
+      'Do not tell the orchestrator to keep selecting batches within a single batch-mode run'
+    )
     .option('--simple', 'Use streamlined two-phase execution mode (implement then verify)')
     .option('--tdd', 'Use TDD mode: write tests first, then implement to make them pass')
     .option(

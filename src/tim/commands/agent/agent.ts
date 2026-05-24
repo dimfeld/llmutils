@@ -109,6 +109,7 @@ interface AgentCommandOptions {
   summary?: boolean;
   summaryFile?: string;
   serialTasks?: boolean;
+  continuousBatches?: boolean;
   dryRun?: boolean;
   finalReview?: boolean;
   steps?: string;
@@ -670,6 +671,7 @@ export async function timAgent(
             configPath: globalCliOptions.config,
             terminalInput: terminalInputEnabled,
             reviewThreadContext: options.reviewThreadContext,
+            continuousBatches: options.continuousBatches,
           },
           summaryEnabled ? summaryCollector : undefined
         );

@@ -385,8 +385,36 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const callArgs = buildExecutionPromptWithoutStepsSpy.mock.calls[0][0];
       expect(callArgs.task.title).toContain('2 Tasks');
       expect(callArgs.task.description).toContain('select and complete');
+      expect(callArgs.task.description).toContain('Continuous batch mode is enabled');
+      expect(callArgs.task.description).toContain('Repeat this cycle until every task');
       expect(callArgs.task.description).toContain('Task 1: Task 1');
       expect(callArgs.task.description).toContain('Task 2: Task 2');
+    });
+
+    test('batch mode can opt out of continuous batch prompt instructions', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      const options = {
+        continuousBatches: false,
+        log: false,
+        dryRun: true,
+        nonInteractive: true,
+      } as any;
+      const globalCliOptions = {};
+
+      await timAgent(1, options, globalCliOptions);
+
+      const callArgs = buildExecutionPromptWithoutStepsSpy.mock.calls[0][0];
+      expect(callArgs.task.description).not.toContain('Continuous batch mode is enabled');
+      expect(callArgs.task.description).not.toContain('Repeat this cycle until every task');
     });
 
     test('batch mode does not execute when options.serialTasks is true', async () => {

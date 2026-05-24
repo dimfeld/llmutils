@@ -87,6 +87,7 @@ export async function executeBatchMode(
     configPath,
     terminalInput,
     reviewThreadContext,
+    continuousBatches = true,
   }: {
     currentPlanFile: string;
     config: TimConfig;
@@ -102,6 +103,7 @@ export async function executeBatchMode(
     configPath?: string;
     terminalInput?: boolean;
     reviewThreadContext?: string;
+    continuousBatches?: boolean;
   },
   summaryCollector?: SummaryCollector
 ) {
@@ -206,6 +208,12 @@ export async function executeBatchMode(
         })
         .join('\n\n');
 
+      const continuousBatchInstructions = continuousBatches
+        ? `
+
+Continuous batch mode is enabled. After you complete and mark one coherent batch of tasks, re-read the plan file, choose another coherent batch from the remaining incomplete tasks, and continue working. Repeat this cycle until every task in the plan is complete or you are genuinely blocked.`
+        : '';
+
       // Build the batch prompt that includes the plan context and all incomplete task details
       const batchPrompt = await buildExecutionPromptWithoutSteps({
         executor,
@@ -218,6 +226,7 @@ export async function executeBatchMode(
           description: `Please select and complete a logical subset of the following incomplete tasks that makes sense to work on together.
 
 IMPORTANT: It's better to choose a small number of closely related tasks that form an atomic unit than to take on too many at once. Focus on what can be completed well in a single iteration.
+${continuousBatchInstructions}
 
 Available tasks:\n\n${taskDescriptions}`,
           files: [], // Files will be included via plan context
