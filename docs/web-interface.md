@@ -577,6 +577,7 @@ An "Import Issue" link button appears in the plans layout sidebar (`+layout.svel
 - Displays fetched issue title and metadata
 - For single mode: checkboxes for issue body (checked by default when non-empty) + each comment (unchecked by default)
 - For separate/merged mode: combined tree view with parent content, then each subissue as a top-level checkbox (checked by default) with nested body + comment checkboxes. Unchecking a subissue hides its content
+- Optional base plan selector: lists eligible plans ordered by `updatedAt` descending. Eligible plans are any plan whose status is not `done`, plus `done` plans updated within the past week. The selected plan is stored as `basePlan`, not as a resolved `baseBranch`.
 - "Import" button calls the `importIssue` command
 - On success: redirects to `/projects/[projectId]/plans/[newPlanUuid]`
 
@@ -594,7 +595,7 @@ The web import reuses the CLI's duplicate-detection behavior. When importing an 
 
 - **`checkIssueTrackerStatus`** (`query`): Returns tracker availability, type, display name, and hierarchical support for a project
 - **`fetchIssueForImport`** (`query`): Takes identifier string, mode, and projectId. Fetches issue data from the configured tracker API. Returns `IssueWithComments` data for the selection UI
-- **`importIssue`** (`command`): Takes already-fetched issue data, selected content indices, import mode, and an optional `simple` flag. Creates plans transactionally and returns the parent plan UUID for redirect. When `simple: true`, the flag is propagated to all newly-created stubs and applied as an opt-in update to existing plans matched by issue URL.
+- **`importIssue`** (`command`): Takes already-fetched issue data, selected content indices, import mode, an optional `simple` flag, and an optional `basePlan` id. Creates plans transactionally and returns the parent plan UUID for redirect. When `simple: true`, the flag is propagated to all newly-created stubs and applied as an opt-in update to existing plans matched by issue URL.
 
 ### Server-Side Logic
 
@@ -602,7 +603,7 @@ The web import reuses the CLI's duplicate-detection behavior. When importing an 
 
 - **`getIssueTrackerStatus(gitRoot)`**: Checks tracker configuration and capabilities
 - **`fetchIssueForImport(identifier, mode, gitRoot)`**: Parses identifier, creates tracker client via factory, fetches issue (with or without children)
-- **`createPlansFromIssue(projectId, issueData, mode, selectedContent, options?)`**: Reserves plan IDs, builds plans via `createStubPlanFromIssue()`, writes to DB via `writeImportedPlansToDbTransactionally()`. Handles all three modes (single, separate, merged) with proper parent-child relationships and dependencies. Accepts `options.simple` which is forwarded to every `createStubPlanFromIssue()` call and, for existing-plan update branches in all three modes, sets `simple: true` on the existing plan when not already set (treated as a content change so the no-op early-return doesn't skip the write). The flag is opt-in only — never set back to `false`.
+- **`createPlansFromIssue(projectId, issueData, mode, selectedContent, options?)`**: Reserves plan IDs, builds plans via `createStubPlanFromIssue()`, writes to DB via `writeImportedPlansToDbTransactionally()`. Handles all three modes (single, separate, merged) with proper parent-child relationships and dependencies. Accepts `options.simple` which is forwarded to every `createStubPlanFromIssue()` call and, for existing-plan update branches in all three modes, sets `simple: true` on the existing plan when not already set (treated as a content change so the no-op early-return doesn't skip the write). The flag is opt-in only — never set back to `false`. Accepts `options.basePlan` to store a soft base-plan reference on imported or updated plans after validating that the selected base plan is still eligible.
 
 ### Shared Import Helpers
 

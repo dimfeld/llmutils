@@ -60,7 +60,7 @@
   let fetchedResult: FetchedIssue | null = $state.raw(null);
   let step = $derived(fetchedResult ? 2 : 1);
   let simpleMode = $state(false);
-  let selectedBaseBranch = $state('');
+  let selectedBasePlanId = $state('');
   let importing = $state(false);
   let importError: string | null = $state(null);
 
@@ -175,7 +175,7 @@
         selectedChildIndices,
         selectedChildContent,
         simple: simpleMode,
-        baseBranch: selectedBaseBranch || undefined,
+        basePlan: selectedBasePlanId ? Number(selectedBasePlanId) : undefined,
       });
       await goto(`/projects/${params.projectId}/plans/${result.planUuid}`);
     } catch (err) {
@@ -377,21 +377,19 @@
             </p>
           </div>
 
-          {#if data.baseBranchCandidates.length > 0}
+          {#if data.basePlanCandidates.length > 0}
             <div class="space-y-2">
-              <Label for="base-branch-plan" class="text-sm font-medium text-foreground">
-                Base Branch
-              </Label>
+              <Label for="base-plan" class="text-sm font-medium text-foreground">Base Plan</Label>
               <select
-                id="base-branch-plan"
+                id="base-plan"
                 class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none md:max-w-xl"
-                bind:value={selectedBaseBranch}
+                bind:value={selectedBasePlanId}
               >
                 <option value="">Default project base</option>
-                {#each data.baseBranchCandidates as candidate (candidate.uuid ?? candidate.planId)}
-                  <option value={candidate.branch}>
-                    #{candidate.planId}: {candidate.title} ({candidate.branch})
-                  </option>
+                {#each data.basePlanCandidates as candidate (candidate.uuid ?? candidate.planId)}
+                  <option value={String(candidate.planId)}
+                    >#{candidate.planId}: {candidate.title}</option
+                  >
                 {/each}
               </select>
             </div>

@@ -2,6 +2,7 @@ import { command, query } from '$app/server';
 import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
+import type { IssueWithComments } from '$common/issue_tracker/types.js';
 import { getServerContext } from '$lib/server/init.js';
 import {
   createPlansFromIssue as createPlansFromIssueOnServer,
@@ -67,7 +68,7 @@ const importIssueSchema = z.object({
   selectedChildIndices: z.array(z.number().int().nonnegative()),
   selectedChildContent: z.record(z.string(), z.array(z.number().int().nonnegative())),
   simple: z.boolean().optional(),
-  baseBranch: z.string().trim().min(1).optional(),
+  basePlan: z.number().int().positive().optional(),
 });
 
 export const importIssue = command(
@@ -80,7 +81,7 @@ export const importIssue = command(
     selectedChildIndices,
     selectedChildContent,
     simple,
-    baseBranch,
+    basePlan,
   }) => {
     const { db } = await getServerContext();
     const project = getProjectById(db, projectId);
@@ -90,7 +91,7 @@ export const importIssue = command(
 
     return await createPlansFromIssueOnServer(
       projectId,
-      issueData,
+      issueData as IssueWithComments,
       mode as IssueImportMode,
       {
         selectedParentContent,
@@ -99,7 +100,7 @@ export const importIssue = command(
           Object.entries(selectedChildContent).map(([key, value]) => [Number(key), value])
         ),
       },
-      { simple, baseBranch }
+      { simple, basePlan }
     );
   }
 );

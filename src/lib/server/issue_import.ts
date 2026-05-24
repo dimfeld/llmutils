@@ -41,7 +41,7 @@ export interface SelectedIssueContent {
 
 export interface CreatePlansFromIssueOptions {
   simple?: boolean;
-  baseBranch?: string;
+  basePlan?: number;
 }
 
 export interface IssueTrackerStatus {
@@ -51,12 +51,12 @@ export interface IssueTrackerStatus {
   supportsHierarchical: boolean;
 }
 
-export interface ImportBaseBranchCandidate {
+export interface ImportBasePlanCandidate {
   planId: number;
   uuid?: string;
   title: string;
-  status: 'in_progress' | 'needs_review';
-  branch: string;
+  status: PlanSchema['status'];
+  updatedAt?: string;
 }
 
 function getTrackerDisplayName(trackerType: 'github' | 'linear'): string {
@@ -177,28 +177,49 @@ function hasSelectableIssueContent(issueData: IssueWithComments): boolean {
   );
 }
 
-function getImportBaseBranchCandidatesFromPlans(
+function getTimestamp(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function isEligibleImportBasePlan(plan: PlanSchema, now: Date): boolean {
+  if (plan.status !== 'done') {
+    return true;
+  }
+
+  const updatedAt = getTimestamp(plan.updatedAt);
+  if (updatedAt === 0) {
+    return false;
+  }
+
+  return now.getTime() - updatedAt <= 7 * 24 * 60 * 60 * 1000;
+}
+
+function getImportBasePlanCandidatesFromPlans(
   plans: Iterable<PlanSchema>
-): ImportBaseBranchCandidate[] {
+): ImportBasePlanCandidate[] {
+  const now = new Date();
   return [...plans]
-    .filter(
-      (plan): plan is PlanSchema & { branch: string; status: 'in_progress' | 'needs_review' } =>
-        (plan.status === 'in_progress' || plan.status === 'needs_review') &&
-        Boolean(plan.branch?.trim())
-    )
+    .filter((plan) => isEligibleImportBasePlan(plan, now))
     .map((plan) => ({
       planId: plan.id,
       uuid: plan.uuid,
       title: plan.title ?? `Plan ${plan.id}`,
       status: plan.status,
-      branch: plan.branch.trim(),
+      updatedAt: plan.updatedAt,
     }))
-    .toSorted((a, b) => a.planId - b.planId);
+    .toSorted(
+      (a, b) => getTimestamp(b.updatedAt) - getTimestamp(a.updatedAt) || b.planId - a.planId
+    );
 }
 
-export async function getImportBaseBranchCandidates(
+export async function getImportBasePlanCandidates(
   projectId: number
-): Promise<ImportBaseBranchCandidate[]> {
+): Promise<ImportBasePlanCandidate[]> {
   const { db } = await getServerContext();
   const repoRoot = getPreferredProjectGitRoot(db, projectId);
   if (!repoRoot) {
@@ -207,7 +228,7 @@ export async function getImportBaseBranchCandidates(
 
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
   const { plans } = loadPlansFromDb(repoRoot, repository.repositoryId);
-  return getImportBaseBranchCandidatesFromPlans(plans.values());
+  return getImportBasePlanCandidatesFromPlans(plans.values());
 }
 
 async function getPreferredProjectLinearApiKey(projectId?: number): Promise<string | undefined> {
@@ -320,23 +341,28 @@ export async function createPlansFromIssue(
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
   const { plans: allPlans } = loadPlansFromDb(repoRoot, repository.repositoryId);
   const simple = options?.simple === true;
-  const selectedBaseBranch = options?.baseBranch?.trim() || undefined;
-  if (selectedBaseBranch) {
-    const validBaseBranches = new Set(
-      getImportBaseBranchCandidatesFromPlans(allPlans.values()).map((plan) => plan.branch)
+  const selectedBasePlan = options?.basePlan;
+  if (selectedBasePlan !== undefined) {
+    const validBasePlans = new Set(
+      getImportBasePlanCandidatesFromPlans(allPlans.values()).map((plan) => plan.planId)
     );
-    if (!validBaseBranches.has(selectedBaseBranch)) {
-      throw new Error('Selected base branch is no longer available for this project.');
+    if (!validBasePlans.has(selectedBasePlan)) {
+      throw new Error('Selected base plan is no longer available for this project.');
     }
   }
   const createImportedStubPlan = (issueInstruction: IssueInstructionData, planId: number) => {
     const plan = simple
       ? createStubPlanFromIssue(issueInstruction, planId, { simple })
       : createStubPlanFromIssue(issueInstruction, planId);
-    if (selectedBaseBranch) {
-      plan.baseBranch = selectedBaseBranch;
+    if (selectedBasePlan !== undefined) {
+      plan.basePlan = selectedBasePlan;
     }
     return plan;
+  };
+  const assertNotSelfBasePlan = (planId: number) => {
+    if (selectedBasePlan === planId) {
+      throw new Error(`basePlan cannot refer to the imported plan (${planId})`);
+    }
   };
 
   const children = issueData.children ?? [];
@@ -379,9 +405,18 @@ export async function createPlansFromIssue(
       const titleChanged = currentPlan.title !== issueData.issue.title;
       const hasNewContent = newSegments.length > 0;
       const simpleChanged = simple && currentPlan.simple !== true;
+      const basePlanChanged =
+        selectedBasePlan !== undefined && currentPlan.basePlan !== selectedBasePlan;
 
       parentPlanId = currentPlan.id;
-      if (!titleChanged && !rmfilterChanged && !hasNewContent && !simpleChanged) {
+      assertNotSelfBasePlan(parentPlanId);
+      if (
+        !titleChanged &&
+        !rmfilterChanged &&
+        !hasNewContent &&
+        !simpleChanged &&
+        !basePlanChanged
+      ) {
         if (!currentPlan.uuid) {
           throw new Error('Failed to determine imported plan UUID');
         }
@@ -399,6 +434,9 @@ export async function createPlansFromIssue(
       }
       if (simpleChanged) {
         updatedPlan.simple = true;
+      }
+      if (basePlanChanged) {
+        updatedPlan.basePlan = selectedBasePlan;
       }
       pendingWrites.push({ plan: updatedPlan, filePath: null });
     } else {
@@ -458,7 +496,10 @@ export async function createPlansFromIssue(
       const titleChanged = currentParentPlan.title !== issueData.issue.title;
       const hasNewContent = newSegments.length > 0;
       const simpleChanged = simple && currentParentPlan.simple !== true;
-      shouldWriteParent = titleChanged || hasNewContent || simpleChanged;
+      const basePlanChanged =
+        selectedBasePlan !== undefined && currentParentPlan.basePlan !== selectedBasePlan;
+      assertNotSelfBasePlan(parentPlanId);
+      shouldWriteParent = titleChanged || hasNewContent || simpleChanged || basePlanChanged;
       if (shouldWriteParent) {
         parentPlan = {
           ...currentParentPlan,
@@ -468,6 +509,9 @@ export async function createPlansFromIssue(
         };
         if (simpleChanged) {
           parentPlan.simple = true;
+        }
+        if (basePlanChanged) {
+          parentPlan.basePlan = selectedBasePlan;
         }
       } else {
         parentPlan = currentParentPlan;
@@ -505,7 +549,11 @@ export async function createPlansFromIssue(
         const hasNewContent = newSegments.length > 0;
         const parentChanged = currentChildPlan.parent !== parentPlanId;
         const simpleChanged = simple && currentChildPlan.simple !== true;
-        shouldWriteChild = titleChanged || hasNewContent || parentChanged || simpleChanged;
+        const basePlanChanged =
+          selectedBasePlan !== undefined && currentChildPlan.basePlan !== selectedBasePlan;
+        assertNotSelfBasePlan(childPlanId);
+        shouldWriteChild =
+          titleChanged || hasNewContent || parentChanged || simpleChanged || basePlanChanged;
         if (shouldWriteChild) {
           childPlan = {
             ...currentChildPlan,
@@ -516,6 +564,9 @@ export async function createPlansFromIssue(
           };
           if (simpleChanged) {
             childPlan.simple = true;
+          }
+          if (basePlanChanged) {
+            childPlan.basePlan = selectedBasePlan;
           }
         } else {
           childPlan = currentChildPlan;
@@ -600,7 +651,16 @@ export async function createPlansFromIssue(
       const titleChanged = currentParentPlan.title !== issueData.issue.title;
       const hasNewContent = newSegments.length > 0;
       const simpleChanged = simple && currentParentPlan.simple !== true;
-      if (!titleChanged && !hasNewContent && !issueUrlsChanged && !simpleChanged) {
+      const basePlanChanged =
+        selectedBasePlan !== undefined && currentParentPlan.basePlan !== selectedBasePlan;
+      assertNotSelfBasePlan(parentPlanId);
+      if (
+        !titleChanged &&
+        !hasNewContent &&
+        !issueUrlsChanged &&
+        !simpleChanged &&
+        !basePlanChanged
+      ) {
         if (!currentParentPlan.uuid) {
           throw new Error('Failed to determine imported plan UUID');
         }
@@ -616,6 +676,9 @@ export async function createPlansFromIssue(
       };
       if (simpleChanged) {
         parentPlan.simple = true;
+      }
+      if (basePlanChanged) {
+        parentPlan.basePlan = selectedBasePlan;
       }
       pendingWrites.push({ plan: parentPlan, filePath: null });
     } else {

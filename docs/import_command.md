@@ -107,9 +107,9 @@ The web interface provides the same import functionality through a visual two-st
 
 **Step 1:** Enter an issue identifier (ID, URL, or branch name) and select an import mode (single, separate subissues, or merged subissues).
 
-**Step 2:** Select which content to include via checkboxes (issue body, comments, subissues), then import.
+**Step 2:** Select which content to include via checkboxes (issue body, comments, subissues), optionally choose a base plan, then import.
 
-The web import shares core logic with the CLI via extracted helpers in `src/tim/commands/import/import_helpers.ts`. It supports the same duplicate detection, hierarchical imports, and content selection. See `docs/web-interface.md` for full details on the web import flow.
+The web import shares core logic with the CLI via extracted helpers in `src/tim/commands/import/import_helpers.ts`. It supports the same duplicate detection, hierarchical imports, content selection, and base-plan persistence. See `docs/web-interface.md` for full details on the web import flow.
 
 ## Requirements
 

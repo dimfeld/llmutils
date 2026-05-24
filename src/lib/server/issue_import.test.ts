@@ -83,7 +83,7 @@ import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import {
   createPlansFromIssue,
   fetchIssueForImport,
-  getImportBaseBranchCandidates,
+  getImportBasePlanCandidates,
   getIssueTrackerStatus,
   type SelectedIssueContent,
 } from './issue_import.js';
@@ -363,7 +363,7 @@ describe('issue_import server helpers', () => {
   });
 
   describe('createPlansFromIssue', () => {
-    test('lists in-progress and review plans with branches as base branch candidates', async () => {
+    test('lists non-done and recently done plans as base plan candidates by updated date', async () => {
       vi.mocked(loadPlansFromDb).mockReturnValue({
         plans: new Map<number, PlanSchema>([
           [
@@ -371,11 +371,11 @@ describe('issue_import server helpers', () => {
             {
               id: 1,
               uuid: 'uuid-1',
-              title: 'Pending branch',
+              title: 'Pending plan',
               details: '',
               status: 'pending',
-              branch: 'feature/pending',
               tasks: [],
+              updatedAt: '2026-05-20T00:00:00.000Z',
             } as PlanSchema,
           ],
           [
@@ -386,8 +386,8 @@ describe('issue_import server helpers', () => {
               title: 'Active parent',
               details: '',
               status: 'in_progress',
-              branch: 'feature/active-parent',
               tasks: [],
+              updatedAt: '2026-05-22T00:00:00.000Z',
             } as PlanSchema,
           ],
           [
@@ -395,11 +395,11 @@ describe('issue_import server helpers', () => {
             {
               id: 3,
               uuid: 'uuid-3',
-              title: 'Review parent',
+              title: 'Recently done',
               details: '',
-              status: 'needs_review',
-              branch: 'feature/review-parent',
+              status: 'done',
               tasks: [],
+              updatedAt: new Date().toISOString(),
             } as PlanSchema,
           ],
           [
@@ -407,35 +407,43 @@ describe('issue_import server helpers', () => {
             {
               id: 4,
               uuid: 'uuid-4',
-              title: 'Review without branch',
+              title: 'Old done',
               details: '',
-              status: 'needs_review',
+              status: 'done',
               tasks: [],
+              updatedAt: '2024-01-01T00:00:00.000Z',
             } as PlanSchema,
           ],
         ]),
         duplicates: {},
       });
 
-      await expect(getImportBaseBranchCandidates(7)).resolves.toEqual([
+      await expect(getImportBasePlanCandidates(7)).resolves.toEqual([
+        {
+          planId: 3,
+          uuid: 'uuid-3',
+          title: 'Recently done',
+          status: 'done',
+          updatedAt: expect.any(String),
+        },
         {
           planId: 2,
           uuid: 'uuid-2',
           title: 'Active parent',
           status: 'in_progress',
-          branch: 'feature/active-parent',
+          updatedAt: '2026-05-22T00:00:00.000Z',
         },
         {
-          planId: 3,
-          uuid: 'uuid-3',
-          title: 'Review parent',
-          status: 'needs_review',
-          branch: 'feature/review-parent',
+          planId: 1,
+          uuid: 'uuid-1',
+          title: 'Pending plan',
+          status: 'pending',
+          updatedAt: '2026-05-20T00:00:00.000Z',
         },
       ]);
     });
 
-    test('sets selected base branch on a newly imported single plan', async () => {
+    test('sets selected base plan on a newly imported single plan', async () => {
       const issueData = makeIssue(1, 'Parent', { body: 'Parent body' });
       vi.mocked(loadPlansFromDb).mockReturnValue({
         plans: new Map<number, PlanSchema>([
@@ -447,7 +455,6 @@ describe('issue_import server helpers', () => {
               title: 'Stack base',
               details: '',
               status: 'in_progress',
-              branch: 'feature/stack-base',
               tasks: [],
             } as PlanSchema,
           ],
@@ -465,15 +472,15 @@ describe('issue_import server helpers', () => {
           selectedChildIndices: [],
           selectedChildContent: {},
         },
-        { baseBranch: 'feature/stack-base' }
+        { basePlan: 9 }
       );
 
       const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
       expect(pendingWrites).toHaveLength(1);
-      expect(pendingWrites?.[0]?.plan.baseBranch).toBe('feature/stack-base');
+      expect(pendingWrites?.[0]?.plan.basePlan).toBe(9);
     });
 
-    test('rejects a selected base branch that is not an eligible project plan branch', async () => {
+    test('rejects a selected base plan that is not eligible for this project', async () => {
       const issueData = makeIssue(1, 'Parent', { body: 'Parent body' });
 
       await expect(
@@ -486,9 +493,9 @@ describe('issue_import server helpers', () => {
             selectedChildIndices: [],
             selectedChildContent: {},
           },
-          { baseBranch: 'feature/missing' }
+          { basePlan: 99 }
         )
-      ).rejects.toThrow('Selected base branch is no longer available for this project.');
+      ).rejects.toThrow('Selected base plan is no longer available for this project.');
       expect(writeImportedPlansToDbTransactionally).not.toHaveBeenCalled();
     });
 
