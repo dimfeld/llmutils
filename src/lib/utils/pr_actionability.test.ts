@@ -196,6 +196,7 @@ describe('hasReviewRequestForUser', () => {
             requested_at: '2026-01-01T00:00:00Z',
             removed_at: null,
             last_event_at: '2026-01-01T00:00:00Z',
+            request_version: 0,
           },
         ],
       }
@@ -215,6 +216,7 @@ describe('hasReviewRequestForUser', () => {
             requested_at: '2026-01-01T00:00:00Z',
             removed_at: '2026-01-02T00:00:00Z',
             last_event_at: '2026-01-02T00:00:00Z',
+            request_version: 0,
           },
         ],
       }
@@ -234,6 +236,7 @@ describe('hasReviewRequestForUser', () => {
             requested_at: '2026-01-03T00:00:00Z',
             removed_at: '2026-01-02T00:00:00Z',
             last_event_at: '2026-01-03T00:00:00Z',
+            request_version: 0,
           },
         ],
       }
@@ -253,6 +256,7 @@ describe('hasReviewRequestForUser', () => {
             requested_at: '2026-01-01T00:00:00Z',
             removed_at: null,
             last_event_at: '2026-01-01T00:00:00Z',
+            request_version: 0,
           },
         ],
         reviews: [
@@ -281,6 +285,7 @@ describe('hasReviewRequestForUser', () => {
             requested_at: '2026-01-03T00:00:00Z',
             removed_at: null,
             last_event_at: '2026-01-03T00:00:00Z',
+            request_version: 0,
           },
         ],
         reviews: [
@@ -334,6 +339,7 @@ describe('hasReviewRequestForUser', () => {
             requested_at: '2026-01-01T00:00:00Z',
             removed_at: null,
             last_event_at: '2026-01-01T00:00:00Z',
+            request_version: 0,
           },
         ],
       }
@@ -358,6 +364,7 @@ describe('hasReviewRequestForUser', () => {
             requested_at: '2026-01-01T00:00:00Z',
             removed_at: null,
             last_event_at: '2026-01-01T00:00:00Z',
+            request_version: 0,
           },
         ],
         reviews: [
@@ -442,6 +449,7 @@ describe('buildActionablePrsForRepo', () => {
             requested_at: '2026-01-01T00:00:00Z',
             removed_at: null,
             last_event_at: '2026-01-01T00:00:00Z',
+            request_version: 0,
           },
         ],
       }
@@ -518,6 +526,7 @@ describe('buildActionablePrsForRepo', () => {
             requested_at: '2026-01-01T00:00:00Z',
             removed_at: null,
             last_event_at: '2026-01-01T00:00:00Z',
+            request_version: 0,
           },
         ],
       }

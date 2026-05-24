@@ -213,6 +213,49 @@ Review guides can include non-actionable `<annotation file="..." line="...">...<
 
 See the PR status and web interface notes in [`docs/web-interface.md`](docs/web-interface.md) for implementation details and edge cases.
 
+## Slack Review Notifications
+
+tim can post debounced Slack channel messages for GitHub review requests. Named Slack workspaces, per-repo opt-in settings, and GitHub-to-Slack user mappings control which repos notify and how reviewers are rendered.
+
+Slack workspace tokens are machine-local and must be configured in your global tim config, not committed repo config or `tim.local.yml`:
+
+```yaml
+slack:
+  workspaces:
+    work: { token: '${SLACK_WORK_TOKEN}' }
+    personal: { token: '${SLACK_PERSONAL_TOKEN}' }
+```
+
+The token value supports `${ENV_VAR}` expansion at read time. The Slack app bot token needs `chat:write` access for the target channel, and the bot must be invited to that channel.
+
+Per-repo opt-in is stored in the local database as a `project_setting` named `slack`, so most repos stay silent until explicitly enabled:
+
+```bash
+tim slack enable --workspace work --channel "#code-reviews"
+tim slack test --workspace work --channel "#code-reviews"
+tim slack map your-github-login U123456789 --workspace work --display "Your Name"
+tim slack list
+```
+
+Command reference:
+
+```bash
+tim slack enable --workspace <name> --channel <#channel>
+tim slack disable
+tim slack test --workspace <name> --channel <#channel> [--message <text>]
+tim slack mark-closed-notified [--dry-run]
+tim slack map <github-login> <slack-user-id> --workspace <name> [--display <name>]
+tim slack unmap <github-login> --workspace <name>
+tim slack list [--workspace <name>]
+```
+
+Workspace names must exist in `slack.workspaces`. User mappings are keyed by `(workspace, github_login)` and shared across repos in that Slack workspace; mapped reviewers render as Slack mentions, while unmapped reviewers are named by GitHub login without a ping.
+Use `tim slack mark-closed-notified` to suppress pending historical review-request notifications for cached closed or merged PRs.
+
+The notifier runs in the SvelteKit web server when at least one Slack workspace is configured. It is kicked by GitHub webhook ingestion and also checks about every 15 seconds. Review requests on the same PR are batched with a fixed 30-second debounce, then marked notified in the DB after Slack confirms the post.
+
+See [`docs/slack-integration.md`](docs/slack-integration.md) for setup details and current scope.
+
 ## CLI Plan Management
 
 The web UI covers the normal workflow, but the CLI is useful for quick creation, edits, dependency management, and scripting.
@@ -439,6 +482,7 @@ Use a unique prefix per developer to prevent accidental PR-to-plan matching from
 
 - [`docs/import_command.md`](docs/import_command.md) - CLI and web issue import behavior
 - [`docs/linear-integration.md`](docs/linear-integration.md) - Linear setup and supported issue formats
+- [`docs/slack-integration.md`](docs/slack-integration.md) - Slack review notification setup and CLI reference
 - [`docs/multi-workspace-workflow.md`](docs/multi-workspace-workflow.md) - workspace assignment, locking, and sync behavior
 - [`docs/sync-between-nodes.md`](docs/sync-between-nodes.md) - setup guide for syncing plans between machines
 - [`docs/web-interface.md`](docs/web-interface.md) - web architecture and UI workflow details

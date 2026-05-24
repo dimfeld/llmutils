@@ -252,7 +252,7 @@ export async function findGlobalConfigPath(): Promise<string | null> {
  */
 export async function loadConfig(
   configPath: string | null,
-  options: { stripSync?: boolean } = {}
+  options: { stripSync?: boolean; stripSlack?: boolean } = {}
 ): Promise<TimConfig> {
   if (configPath === null) {
     debugLog('No configuration file specified or found. Using default configuration.');
@@ -282,16 +282,22 @@ export async function loadConfig(
     return getDefaultConfig(); // Return default on YAML parse error as requested
   }
 
-  // Sync is machine-local: when loading repo/local configs, strip the `sync`
-  // key before validation so a misconfigured repo can't break loading and
-  // can't smuggle sync config into the merge result.
+  // Sync and Slack are machine-local: when loading repo/local configs, strip
+  // those keys before validation so a misconfigured repo can't break loading
+  // and can't smuggle machine-local config into the merge result.
   if (
-    options.stripSync &&
+    (options.stripSync || options.stripSlack) &&
     parsedYaml &&
     typeof parsedYaml === 'object' &&
     !Array.isArray(parsedYaml)
   ) {
-    delete (parsedYaml as Record<string, unknown>).sync;
+    const configRecord = parsedYaml as Record<string, unknown>;
+    if (options.stripSync) {
+      delete configRecord.sync;
+    }
+    if (options.stripSlack) {
+      delete configRecord.slack;
+    }
   }
 
   const result = timConfigSchema.safeParse(parsedYaml);
@@ -431,14 +437,15 @@ export async function loadEffectiveConfig(
     const configExists = configPath ? await Bun.file(configPath).exists() : false;
     const baseConfig = getDefaultConfig();
     const config = configExists
-      ? await loadConfig(configPath, { stripSync: !configIsGlobal })
+      ? await loadConfig(configPath, { stripSync: !configIsGlobal, stripSlack: !configIsGlobal })
       : undefined;
     const localConfigPath = await findLocalConfigPath(configPath);
     let effectiveConfig: TimConfig;
 
-    // sync config is machine-local and must come only from the global config
+    // sync and Slack config are machine-local and must come only from the global config
     // (or an explicit --config pointing at the global file).
     const machineLocalSync = globalConfig?.sync ?? (configIsGlobal ? config?.sync : undefined);
+    const machineLocalSlack = globalConfig?.slack ?? (configIsGlobal ? config?.slack : undefined);
 
     if (globalConfig) {
       effectiveConfig = mergeConfigs(baseConfig, globalConfig);
@@ -452,7 +459,10 @@ export async function loadEffectiveConfig(
 
     if (localConfigPath) {
       try {
-        const localConfig = await loadConfig(localConfigPath, { stripSync: true });
+        const localConfig = await loadConfig(localConfigPath, {
+          stripSync: true,
+          stripSlack: true,
+        });
         effectiveConfig = mergeConfigs(effectiveConfig, localConfig);
 
         const configSources = [
@@ -485,6 +495,14 @@ export async function loadEffectiveConfig(
       effectiveConfig = { ...effectiveConfig, sync: machineLocalSync };
     } else {
       const { sync: _stripped, ...rest } = effectiveConfig;
+      effectiveConfig = rest as TimConfig;
+    }
+
+    // Restore machine-local Slack from the global config; repo/local configs cannot influence it.
+    if (machineLocalSlack !== undefined) {
+      effectiveConfig = { ...effectiveConfig, slack: machineLocalSlack };
+    } else {
+      const { slack: _stripped, ...rest } = effectiveConfig;
       effectiveConfig = rest as TimConfig;
     }
 

@@ -1192,6 +1192,76 @@ projectCommand
     await handleProjectDeleteCommand(projectRef, options, command).catch(handleCommandError);
   });
 
+const slackCommand = program.command('slack').description('Manage Slack review notifications');
+
+slackCommand
+  .command('enable')
+  .description('Enable Slack review notifications for the current project')
+  .requiredOption('--workspace <name>', 'Configured Slack workspace name')
+  .requiredOption('--channel <channel>', 'Slack channel to post review requests to')
+  .action(async (options, command) => {
+    const { handleSlackEnableCommand } = await import('./commands/slack.js');
+    await handleSlackEnableCommand(options, command).catch(handleCommandError);
+  });
+
+slackCommand
+  .command('disable')
+  .description('Disable Slack review notifications for the current project')
+  .action(async (options, command) => {
+    const { handleSlackDisableCommand } = await import('./commands/slack.js');
+    await handleSlackDisableCommand(options, command).catch(handleCommandError);
+  });
+
+slackCommand
+  .command('test')
+  .description('Send a Slack test message to a channel')
+  .requiredOption('--workspace <name>', 'Configured Slack workspace name')
+  .requiredOption('--channel <channel>', 'Slack channel to send the test message to')
+  .option('--message <text>', 'Custom test message text')
+  .action(async (options, command) => {
+    const { handleSlackTestCommand } = await import('./commands/slack.js');
+    await handleSlackTestCommand(options, command).catch(handleCommandError);
+  });
+
+slackCommand
+  .command('mark-closed-notified')
+  .description('Mark pending Slack notifications for closed or merged PRs as already notified')
+  .option('--dry-run', 'Show how many rows would be marked without changing the database')
+  .action(async (options) => {
+    const { handleSlackMarkClosedNotifiedCommand } = await import('./commands/slack.js');
+    await handleSlackMarkClosedNotifiedCommand(options).catch(handleCommandError);
+  });
+
+slackCommand
+  .command('map <github-login> <slack-user-id>')
+  .description('Map a GitHub login to a Slack user ID in a workspace')
+  .requiredOption('--workspace <name>', 'Configured Slack workspace name')
+  .option('--display <name>', 'Slack display name for humans')
+  .action(async (githubLogin, slackUserId, options, command) => {
+    const { handleSlackMapCommand } = await import('./commands/slack.js');
+    await handleSlackMapCommand(githubLogin, slackUserId, options, command).catch(
+      handleCommandError
+    );
+  });
+
+slackCommand
+  .command('unmap <github-login>')
+  .description('Remove a GitHub-to-Slack user mapping from a workspace')
+  .requiredOption('--workspace <name>', 'Configured Slack workspace name')
+  .action(async (githubLogin, options, command) => {
+    const { handleSlackUnmapCommand } = await import('./commands/slack.js');
+    await handleSlackUnmapCommand(githubLogin, options, command).catch(handleCommandError);
+  });
+
+slackCommand
+  .command('list')
+  .description('List Slack settings for the current project and user mappings')
+  .option('--workspace <name>', 'Filter mappings to a configured Slack workspace')
+  .action(async (options, command) => {
+    const { handleSlackListCommand } = await import('./commands/slack.js');
+    await handleSlackListCommand(options, command).catch(handleCommandError);
+  });
+
 program
   .command('renumber')
   .description('Renumber plans with alphanumeric IDs or ID conflicts to sequential numeric IDs')

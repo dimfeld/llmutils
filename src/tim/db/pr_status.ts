@@ -58,7 +58,9 @@ export interface PrReviewRequestRow {
   reviewer: string;
   requested_at: string | null;
   removed_at: string | null;
+  notified_at: string | null;
   last_event_at: string;
+  request_version: number;
 }
 
 export interface PrLabelRow {
@@ -1048,15 +1050,23 @@ export function upsertPrReviewRequestByReviewer(
           ELSE pr_review_request.requested_at
         END,
         removed_at = CASE
+          WHEN excluded.last_event_at >= pr_review_request.last_event_at AND excluded.requested_at IS NOT NULL
+            THEN NULL
           WHEN excluded.last_event_at >= pr_review_request.last_event_at AND excluded.removed_at IS NOT NULL
             THEN excluded.removed_at
           ELSE pr_review_request.removed_at
+        END,
+        notified_at = CASE
+          WHEN excluded.last_event_at >= pr_review_request.last_event_at AND excluded.requested_at IS NOT NULL
+            THEN NULL
+          ELSE pr_review_request.notified_at
         END,
         last_event_at = CASE
           WHEN excluded.last_event_at >= pr_review_request.last_event_at
             THEN excluded.last_event_at
           ELSE pr_review_request.last_event_at
-        END
+        END,
+        request_version = pr_review_request.request_version + 1
       WHERE excluded.last_event_at >= pr_review_request.last_event_at
     `
     )

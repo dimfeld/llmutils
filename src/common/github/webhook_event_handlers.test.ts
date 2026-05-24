@@ -133,6 +133,7 @@ describe('common/github/webhook_event_handlers', () => {
         requested_at: '2026-03-30T12:00:00.000Z',
         removed_at: '2026-03-30T13:00:00.000Z',
         last_event_at: '2026-03-30T13:00:00.000Z',
+        request_version: 1,
       }),
     ]);
   });
@@ -554,6 +555,7 @@ describe('common/github/webhook_event_handlers', () => {
         requested_at: '2026-03-30T10:00:00.000Z',
         removed_at: null,
         last_event_at: '2026-03-30T10:00:00.000Z',
+        request_version: 0,
       }),
     ]);
     expect(detail?.reviews).toEqual([

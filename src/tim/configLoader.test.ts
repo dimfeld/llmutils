@@ -1402,6 +1402,121 @@ defaultExecutor: direct-call
       expect(config.proofGeneration?.model).toBe('local-model');
     });
 
+    test('slack.workspaces in repo config is stripped (machine-local only)', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          slack: {
+            workspaces: {
+              work: { token: '${SLACK_WORK_TOKEN}' },
+            },
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      // Repo config must not leak workspace tokens into the effective config.
+      expect(config.slack).toBeUndefined();
+    });
+
+    test('slack.workspaces in local config is stripped (machine-local only)', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(mainConfigPath, yaml.stringify({ postApplyCommands: [] }), 'utf-8');
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          slack: {
+            workspaces: {
+              personal: { token: '${SLACK_PERSONAL_TOKEN}' },
+            },
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.slack).toBeUndefined();
+    });
+
+    test('slack.workspaces from global config IS present in effective config', async () => {
+      const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;
+      delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+
+      try {
+        const globalConfigPath = path.join(fakeHomeDir, '.config', 'tim', 'config.yml');
+        await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await fs.writeFile(
+          globalConfigPath,
+          yaml.stringify({
+            slack: {
+              workspaces: {
+                work: { token: 'xoxb-test-token' },
+              },
+            },
+          }),
+          'utf-8'
+        );
+
+        // No repo config needed — just global
+        const config = await loadEffectiveConfig();
+
+        expect(config.slack?.workspaces?.['work']?.token).toBe('xoxb-test-token');
+      } finally {
+        if (originalEnv !== undefined) {
+          process.env.TIM_LOAD_GLOBAL_CONFIG = originalEnv;
+        }
+      }
+    });
+
+    test('repo config cannot override slack.workspaces from global config', async () => {
+      const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;
+      delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+
+      try {
+        const globalConfigPath = path.join(fakeHomeDir, '.config', 'tim', 'config.yml');
+        await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await fs.writeFile(
+          globalConfigPath,
+          yaml.stringify({
+            slack: {
+              workspaces: {
+                work: { token: 'xoxb-global-token' },
+              },
+            },
+          }),
+          'utf-8'
+        );
+
+        const mainConfigPath = path.join(configDir, 'tim.yml');
+        await fs.writeFile(
+          mainConfigPath,
+          yaml.stringify({
+            slack: {
+              workspaces: {
+                work: { token: 'xoxb-should-be-ignored' },
+              },
+            },
+          }),
+          'utf-8'
+        );
+
+        const config = await loadEffectiveConfig();
+
+        // Global token wins; repo token is stripped.
+        expect(config.slack?.workspaces?.['work']?.token).toBe('xoxb-global-token');
+      } finally {
+        if (originalEnv !== undefined) {
+          process.env.TIM_LOAD_GLOBAL_CONFIG = originalEnv;
+        }
+      }
+    });
+
     test('local prCreation partial override does not clobber main draft value', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       const localConfigPath = path.join(configDir, 'tim.local.yml');

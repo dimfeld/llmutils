@@ -40,6 +40,7 @@ Read the relevant doc before working in these areas:
 - **Batch tasks** → `docs/batch-tasks-feature.md`
 - **Next-ready plan logic** → `docs/next-ready-feature.md`
 - **Linear integration** → `docs/linear-integration.md`
+- **Slack integration** → `docs/slack-integration.md`
 - **GitHub diffs** → `docs/github-diffs.md`
 - **Git/jj patterns** → `docs/git-jj-patterns.md`
 - **OS process interaction** → `docs/os-process-interaction.md`

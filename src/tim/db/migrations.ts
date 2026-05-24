@@ -1153,6 +1153,42 @@ const migrations: Migration[] = [
     up: `SELECT 1;`,
     afterUp: rebuildReviewIssueForNoteSeverity,
   },
+  {
+    version: 39,
+    up: `
+      CREATE TABLE IF NOT EXISTS slack_user_map (
+        workspace TEXT NOT NULL,
+        github_login TEXT NOT NULL,
+        slack_user_id TEXT NOT NULL,
+        slack_display TEXT,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        PRIMARY KEY (workspace, github_login)
+      );
+    `,
+    afterUp: (db: Database) => {
+      if (
+        tableExists(db, 'pr_review_request') &&
+        !tableColumns(db, 'pr_review_request').has('notified_at')
+      ) {
+        db.exec('ALTER TABLE pr_review_request ADD COLUMN notified_at TEXT');
+      }
+    },
+  },
+  {
+    version: 40,
+    up: `SELECT 1;`,
+    afterUp: (db: Database) => {
+      if (
+        tableExists(db, 'pr_review_request') &&
+        !tableColumns(db, 'pr_review_request').has('request_version')
+      ) {
+        db.exec(
+          'ALTER TABLE pr_review_request ADD COLUMN request_version INTEGER NOT NULL DEFAULT 0'
+        );
+      }
+    },
+  },
 ];
 
 function addReviewPlanLinkage(db: Database): void {

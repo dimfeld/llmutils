@@ -235,6 +235,21 @@ export type SyncNodeRole = z.infer<typeof syncNodeRoleSchema>;
 export type SyncAllowedNodeConfig = z.infer<typeof syncAllowedNodeSchema>;
 export type SyncConfigInput = z.infer<typeof syncConfigSchema>;
 
+export const slackWorkspaceConfigSchema = z
+  .object({
+    token: z.string().optional(),
+  })
+  .strict();
+
+export const slackConfigSchema = z
+  .object({
+    workspaces: z.record(z.string(), slackWorkspaceConfigSchema).optional(),
+  })
+  .strict();
+
+export type SlackWorkspaceConfig = z.infer<typeof slackWorkspaceConfigSchema>;
+export type SlackConfigInput = z.infer<typeof slackConfigSchema>;
+
 export const proofGenerationSchema = z
   .object({
     mode: z
@@ -277,6 +292,10 @@ export const timConfigSchema = z
     sync: syncConfigSchema
       .optional()
       .describe('Machine-local sync configuration for multi-node tim replication'),
+    /** Slack workspace configuration for outbound review-request notifications. */
+    slack: slackConfigSchema
+      .optional()
+      .describe('Machine-local Slack workspace configuration for outbound notifications'),
     /** Issue tracking service to use for import commands and issue-related operations. Defaults to 'github'. */
     issueTracker: z
       .enum(['github', 'linear'])

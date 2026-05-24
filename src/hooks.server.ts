@@ -8,16 +8,19 @@ import {
   getSessionDiscoveryClient,
   getSessionInitPromise,
   getSessionManager,
+  getSlackNotifier,
   getSyncService,
   getWebSocketServerHandle,
   getWebhookPoller,
   setSessionDiscoveryClient,
   setSessionInitPromise,
   setSessionManager,
+  setSlackNotifier,
   setSyncService,
   setWebSocketServerHandle,
   setWebhookPoller,
 } from '$lib/server/session_context.js';
+import { shouldStartSlackNotifier, startSlackNotifier } from '$lib/server/slack_notifier.js';
 import { SessionDiscoveryClient } from '$lib/server/session_discovery.js';
 import { SessionManager } from '$lib/server/session_manager.js';
 import { shouldRunSyncService, startSyncService } from '$lib/server/sync_service.js';
@@ -66,6 +69,7 @@ function registerCurrentShutdownHandlers(): void {
   // than capturing a stale handle. Do not refactor to capture handles by value.
   registerShutdownHandlers(() => {
     getSyncService()?.stop();
+    getSlackNotifier()?.stop();
     getWebhookPoller()?.stop();
     getSessionDiscoveryClient()?.stop();
     getWebSocketServerHandle()?.stop();
@@ -82,6 +86,19 @@ export const init: ServerInit = async () => {
     if (existingPoller && !isWebhookPollingEnabled()) {
       existingPoller.stop();
       setWebhookPoller(null);
+    }
+    const existingSlackNotifier = getSlackNotifier();
+    if (existingSlackNotifier) {
+      if (!shouldStartSlackNotifier(config)) {
+        existingSlackNotifier.stop();
+        setSlackNotifier(null);
+      }
+    } else if (shouldStartSlackNotifier(config)) {
+      const slackNotifier = startSlackNotifier(db, config);
+      if (slackNotifier) {
+        setSlackNotifier(slackNotifier);
+        registerCurrentShutdownHandlers();
+      }
     }
     const existingSyncService = getSyncService();
     if (existingSyncService) {
@@ -102,13 +119,28 @@ export const init: ServerInit = async () => {
   const existingServer = getWebSocketServerHandle();
   const existingDiscoveryClient = getSessionDiscoveryClient();
   const existingWebhookPoller = getWebhookPoller();
+  const existingSlackNotifier = getSlackNotifier();
   const existingSyncService = getSyncService();
-  if (existingServer && existingDiscoveryClient && existingSyncService) {
-    return;
-  }
-  if (existingServer && existingDiscoveryClient && !existingSyncService) {
-    const { config } = await getServerContext();
-    if (!shouldRunSyncService(config)) {
+  if (existingServer && existingDiscoveryClient) {
+    const { config, db } = await getServerContext();
+    const shouldRunSync = shouldRunSyncService(config);
+    const shouldRunSlack = shouldStartSlackNotifier(config);
+    const syncReady = Boolean(existingSyncService) || !shouldRunSync;
+    const slackReady = Boolean(existingSlackNotifier) || !shouldRunSlack;
+    if (syncReady && slackReady) {
+      return;
+    }
+
+    if (syncReady && !existingSlackNotifier && shouldRunSlack) {
+      const slackNotifier = startSlackNotifier(db, config);
+      if (slackNotifier) {
+        setSlackNotifier(slackNotifier);
+        registerCurrentShutdownHandlers();
+      }
+      return;
+    }
+
+    if (!existingSyncService && !shouldRunSync) {
       return;
     }
   }
@@ -118,6 +150,7 @@ export const init: ServerInit = async () => {
     server: false,
     discoveryClient: false,
     webhookPoller: false,
+    slackNotifier: false,
     syncService: false,
   };
 
@@ -135,8 +168,16 @@ export const init: ServerInit = async () => {
           } catch (err) {
             console.warn('[webhook_poller] Failed to emit PR update event', err);
           }
+          void getSlackNotifier()
+            ?.kick()
+            .catch((err) =>
+              console.warn('[slack_notifier] Failed to kick notifier after PR ingest', err)
+            );
         },
       });
+    const slackNotifier =
+      existingSlackNotifier ??
+      (shouldStartSlackNotifier(config) ? startSlackNotifier(db, config) : null);
     let syncService = existingSyncService;
 
     // Store references before await so they are tracked for cleanup on failure.
@@ -153,6 +194,10 @@ export const init: ServerInit = async () => {
     if (!existingWebhookPoller && webhookPoller) {
       createdResources.webhookPoller = true;
       setWebhookPoller(webhookPoller);
+    }
+    if (!existingSlackNotifier && slackNotifier) {
+      createdResources.slackNotifier = true;
+      setSlackNotifier(slackNotifier);
     }
     if (!existingSyncService) {
       syncService = await startSyncService(db, config);
@@ -188,6 +233,13 @@ export const init: ServerInit = async () => {
       if (syncService) {
         syncService.stop();
         setSyncService(null);
+      }
+    }
+    if (createdResources.slackNotifier) {
+      const slackNotifier = getSlackNotifier();
+      if (slackNotifier) {
+        slackNotifier.stop();
+        setSlackNotifier(null);
       }
     }
     if (createdResources.server) {

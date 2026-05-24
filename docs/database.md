@@ -388,6 +388,29 @@ Per-project key-value settings stored in the database (migration v16). Used by t
 - `setProjectSetting(db, projectId, setting, value)`: INSERT OR REPLACE with `JSON.stringify(value)`.
 - `deleteProjectSetting(db, projectId, setting)`: Returns boolean indicating whether the setting existed.
 
+Per-repo Slack settings are stored here under the `slack` setting key (JSON `{ enabled, workspace, channel }`), written by the `tim slack` CLI. See [`slack-integration.md`](slack-integration.md).
+
+### Slack User Mappings
+
+Workspace-scoped GitHub-to-Slack user mappings for review-request notifications (migration v39). Keyed by Slack workspace name + GitHub login because Slack user IDs are workspace-scoped, so a mapping is shared by every repo targeting that workspace. The `workspace` is a config-defined string (from `slack.workspaces` in machine-local config), so there is **no** `project_id` FK. See [`slack-integration.md`](slack-integration.md) for the surrounding feature.
+
+**Table**:
+
+- `slack_user_map`: Composite PK `(workspace, github_login)`. Columns: `workspace` (TEXT NOT NULL), `github_login` (TEXT NOT NULL), `slack_user_id` (TEXT NOT NULL), `slack_display` (TEXT, nullable), `created_at`/`updated_at` (TEXT NOT NULL, defaulted with `SQL_NOW_ISO_UTC`). Created with `IF NOT EXISTS`.
+
+**Migration v39 also adds** `pr_review_request.notified_at` (TEXT, nullable, no `CHECK`) via a guarded `afterUp` `ALTER TABLE ADD COLUMN` (no table rebuild). The Slack notifier sets it transactionally after a confirmed Slack send so the pending query is restart-safe.
+
+**Migration v40 adds** `pr_review_request.request_version` (INTEGER NOT NULL DEFAULT 0) via the same guarded `afterUp` pattern. `upsertPrReviewRequestByReviewer` increments it on every applied lifecycle change to a row (request, removal, re-request) and resets `notified_at` to NULL whenever a row is (re-)requested by a newer event. The notifier reads `request_version` alongside each pending row and `markReviewRequestsNotified` only sets `notified_at` where the version still matches, so a remove + re-request that lands during an in-flight Slack send does not mark the new request as already notified. See [`slack-integration.md`](slack-integration.md).
+
+**CRUD module** (`src/tim/db/slack_user_map.ts`):
+
+- `upsertUserMapping(db, { workspace, githubLogin, slackUserId, slackDisplay? })`: INSERT ON CONFLICT(workspace, github_login) DO UPDATE. Uses `slack_display = COALESCE(excluded.slack_display, slack_display)` so re-mapping without a display preserves an existing one; `created_at` stays stable while `updated_at` is refreshed.
+- `deleteUserMapping(db, workspace, githubLogin)`: Returns boolean indicating whether a row was removed.
+- `getUserMapping(db, workspace, githubLogin)`: Returns the row or `undefined`.
+- `listUserMappings(db, workspace?)`: All mappings, optionally filtered to one workspace, ordered by `(workspace, github_login)`.
+
+All mutations are synchronous and wrapped in `db.transaction().immediate()`.
+
 ### Web Query Helpers
 
 `src/lib/server/db_queries.ts` provides enriched read-only queries for the SvelteKit web interface, layered on top of the CRUD functions in `src/tim/db/plan.ts`:

@@ -351,7 +351,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(38);
+    expect(version?.version).toBe(40);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
 
@@ -515,7 +515,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(38);
+    expect(version?.version).toBe(40);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
     const versionRowCount = db2
@@ -647,7 +647,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(38);
+      expect(schemaVersion?.version).toBe(40);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -798,7 +798,7 @@ describe('tim db/database', () => {
           'SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1'
         )
         .get();
-      expect(schemaVersion?.version).toBe(38);
+      expect(schemaVersion?.version).toBe(40);
 
       const checkRows = db
         .query<{ count: number }, []>(
@@ -866,7 +866,16 @@ describe('tim db/database', () => {
           .query<{ name: string }, []>("PRAGMA table_info('pr_review_request')")
           .all()
           .map((row) => row.name)
-      ).toEqual(['id', 'pr_status_id', 'reviewer', 'last_event_at', 'requested_at', 'removed_at']);
+      ).toEqual([
+        'id',
+        'pr_status_id',
+        'reviewer',
+        'last_event_at',
+        'requested_at',
+        'removed_at',
+        'notified_at',
+        'request_version',
+      ]);
 
       const checkRunIndexColumns = db
         .query<{ name: string }, []>("PRAGMA index_info('idx_pr_check_run_unique')")
@@ -1110,7 +1119,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(38);
+      ).toBe(40);
       expect(db.query<{ uuid: string }, []>('SELECT uuid FROM project').get()?.uuid).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
       );
@@ -1618,7 +1627,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(38);
+      ).toBe(40);
 
       const syncOperationColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('sync_operation')")

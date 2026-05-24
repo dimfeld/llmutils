@@ -7,11 +7,17 @@ export interface WebhookPollerHandle {
   stop: () => void;
 }
 
+export interface SlackNotifierHandle {
+  stop: () => void;
+  kick: () => Promise<void>;
+}
+
 interface SessionContextState {
   manager: SessionManager | null;
   server: WebSocketServerHandle | null;
   discoveryClient: SessionDiscoveryClient | null;
   webhookPoller: WebhookPollerHandle | null;
+  slackNotifier: SlackNotifierHandle | null;
   syncService: SyncServiceHandle | null;
   initPromise: Promise<SessionManager> | null;
 }
@@ -28,6 +34,7 @@ function getState(): SessionContextState {
     server: null,
     discoveryClient: null,
     webhookPoller: null,
+    slackNotifier: null,
     syncService: null,
     initPromise: null,
   };
@@ -70,6 +77,14 @@ export function getWebhookPoller(): WebhookPollerHandle | null {
 
 export function setWebhookPoller(webhookPoller: WebhookPollerHandle | null): void {
   getState().webhookPoller = webhookPoller;
+}
+
+export function getSlackNotifier(): SlackNotifierHandle | null {
+  return getState().slackNotifier;
+}
+
+export function setSlackNotifier(slackNotifier: SlackNotifierHandle | null): void {
+  getState().slackNotifier = slackNotifier;
 }
 
 export function getSyncService(): SyncServiceHandle | null {
