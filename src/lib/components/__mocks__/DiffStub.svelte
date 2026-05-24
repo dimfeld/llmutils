@@ -2,23 +2,41 @@
   // Lightweight stub standing in for Diff.svelte in tests. Renders a single div
   // with the forwarded props captured as data-* attributes so the tests can
   // assert on per-filename forwarding of override props.
-  const props: Record<string, unknown> = $props();
+  let {
+    filename = '',
+    id = '',
+    diffStyle = 'unified',
+    lineAnnotations: annotations,
+    enableGutterUtility,
+    enableLineSelection,
+    annotation,
+    onGutterUtilityClick,
+    onLineSelected,
+  }: {
+    filename?: string;
+    id?: string;
+    diffStyle?: string;
+    lineAnnotations?: Array<unknown>;
+    enableGutterUtility?: boolean;
+    enableLineSelection?: boolean;
+    annotation?: unknown;
+    onGutterUtilityClick?: unknown;
+    onLineSelected?: unknown;
+  } = $props();
 
-  const filename = (props.filename as string | undefined) ?? '';
-  const id = (props.id as string | undefined) ?? '';
-  const annotations = props.lineAnnotations as Array<unknown> | undefined;
-  const annotationsCount = annotations?.length ?? 0;
-  const gutterEnabled = Boolean(props.enableGutterUtility);
-  const lineSelection = Boolean(props.enableLineSelection);
-  const hasAnnotation = Boolean(props.annotation);
-  const hasGutterClick = Boolean(props.onGutterUtilityClick);
-  const hasLineSelected = Boolean(props.onLineSelected);
+  let annotationsCount = $derived(annotations?.length ?? 0);
+  let gutterEnabled = $derived(Boolean(enableGutterUtility));
+  let lineSelection = $derived(Boolean(enableLineSelection));
+  let hasAnnotation = $derived(Boolean(annotation));
+  let hasGutterClick = $derived(Boolean(onGutterUtilityClick));
+  let hasLineSelected = $derived(Boolean(onLineSelected));
 </script>
 
 <div
   {id}
   data-testid="diff-stub"
   data-filename={filename}
+  data-diff-style={diffStyle}
   data-annotations-count={String(annotationsCount)}
   data-gutter-enabled={String(gutterEnabled)}
   data-line-selection-enabled={String(lineSelection)}

@@ -3,8 +3,10 @@
   import { Virtualizer, type DiffLineAnnotation, type FileDiffOptions } from '@pierre/diffs';
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
+  import Columns2 from '@lucide/svelte/icons/columns-2';
   import ExternalLink from '@lucide/svelte/icons/external-link';
-  import { onDestroy } from 'svelte';
+  import Rows2 from '@lucide/svelte/icons/rows-2';
+  import { onDestroy, onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { toggleReviewIssueResolved } from '$lib/remote/pr_reviews.remote.js';
   import {
@@ -54,6 +56,9 @@
     type ApproximateAnnotationPosition,
   } from '../../routes/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/page_handlers.js';
 
+  type GuideDiffStyle = 'unified' | 'split';
+  const DIFF_STYLE_STORAGE_KEY = 'tim.reviewGuide.diffStyle';
+
   interface Props {
     review: ReviewRow;
     issues: ReviewIssueRow[];
@@ -93,6 +98,23 @@
   );
 
   let submitDialogOpen = $state(false);
+  let guideDiffStyle = $state<GuideDiffStyle>('unified');
+
+  function parseStoredDiffStyle(value: string | null): GuideDiffStyle | null {
+    return value === 'unified' || value === 'split' ? value : null;
+  }
+
+  function setGuideDiffStyle(style: GuideDiffStyle): void {
+    guideDiffStyle = style;
+    localStorage.setItem(DIFF_STYLE_STORAGE_KEY, style);
+  }
+
+  onMount(() => {
+    const storedStyle = parseStoredDiffStyle(localStorage.getItem(DIFF_STYLE_STORAGE_KEY));
+    if (storedStyle) {
+      guideDiffStyle = storedStyle;
+    }
+  });
 
   function openSubmitDialog() {
     submitDialogOpen = true;
@@ -174,6 +196,7 @@
     {
       filename: string | null;
       patch: string | null;
+      diffStyle: GuideDiffStyle;
       lineAnnotations: DiffLineAnnotation<unknown>[];
       override: DiffOverrides;
     }
@@ -240,7 +263,8 @@
   function getDiffOverrides(
     annotationsBySegment: Map<number, GuideIssueAnnotation[]>,
     filename: string | null,
-    diffIndex: number
+    diffIndex: number,
+    diffStyle: GuideDiffStyle
   ): DiffOverrides {
     const lineAnnotations = (annotationsBySegment.get(diffIndex) ??
       EMPTY_DIFF_ANNOTATIONS) as DiffLineAnnotation<unknown>[];
@@ -248,6 +272,7 @@
     if (
       cached &&
       cached.filename === filename &&
+      cached.diffStyle === diffStyle &&
       cached.lineAnnotations === lineAnnotations &&
       cached.patch ===
         (guideSegments[diffIndex]?.type === 'unified-diff' ? guideSegments[diffIndex].patch : null)
@@ -260,6 +285,7 @@
     const flags = computeReviewGuideDiffOverrideFlags(filename);
     const override: DiffOverrides = {
       id: getReviewGuideDiffId(filename, patch ?? ''),
+      diffStyle,
       lineAnnotations,
       enableLineSelection: flags.enableLineSelection,
       enableGutterUtility: flags.enableGutterUtility,
@@ -268,7 +294,13 @@
           ? getGutterClickHandler(diffIndex, filename)
           : undefined,
     };
-    diffOverrideCache.set(diffIndex, { filename, patch, lineAnnotations, override });
+    diffOverrideCache.set(diffIndex, {
+      filename,
+      patch,
+      diffStyle,
+      lineAnnotations,
+      override,
+    });
     return override;
   }
 
@@ -633,12 +665,13 @@
 
   let diffOverrides = $derived.by<DiffOverrideResolver>(() => {
     const annotationsBySegment = guideIssueAnnotations;
+    const currentDiffStyle = guideDiffStyle;
     return (
       filename: string | null,
       _patch: string,
       diffIndex: number
     ): DiffOverrides | undefined => {
-      return getDiffOverrides(annotationsBySegment, filename, diffIndex);
+      return getDiffOverrides(annotationsBySegment, filename, diffIndex, currentDiffStyle);
     };
   });
 
@@ -997,6 +1030,41 @@
               {/each}
             </select>
           {/if}
+          <div
+            class="inline-flex shrink-0 overflow-hidden rounded-md border border-border bg-background"
+            aria-label="Diff layout"
+          >
+            <button
+              type="button"
+              class="inline-flex h-8 items-center gap-1.5 px-2.5 text-xs font-medium transition-colors {guideDiffStyle ===
+              'unified'
+                ? 'bg-muted text-foreground'
+                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
+              aria-pressed={guideDiffStyle === 'unified'}
+              title="Stacked diff layout"
+              onclick={() => {
+                setGuideDiffStyle('unified');
+              }}
+            >
+              <Rows2 class="size-3.5" />
+              Stacked
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-8 items-center gap-1.5 border-l border-border px-2.5 text-xs font-medium transition-colors {guideDiffStyle ===
+              'split'
+                ? 'bg-muted text-foreground'
+                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
+              aria-pressed={guideDiffStyle === 'split'}
+              title="Side-by-side diff layout"
+              onclick={() => {
+                setGuideDiffStyle('split');
+              }}
+            >
+              <Columns2 class="size-3.5" />
+              Side by side
+            </button>
+          </div>
         </div>
         {#if review.branch}
           <div class="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
