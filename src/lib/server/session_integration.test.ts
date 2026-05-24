@@ -829,7 +829,22 @@ describe('session integration', () => {
     manager.handleWebSocketMessage('conn-replay', { type: 'replay_end' });
     expect(await sseReader.readEvent()).toMatchObject({
       event: 'session:update',
-      data: { session: { connectionId: 'conn-replay', isReplaying: false } },
+      data: {
+        session: {
+          connectionId: 'conn-replay',
+          isReplaying: false,
+          activePrompts: [],
+          messages: [
+            {
+              seq: 1,
+              body: {
+                type: 'structured',
+                message: { type: 'llm_response', text: 'Replayed message' },
+              },
+            },
+          ],
+        },
+      },
     });
 
     manager.handleWebSocketMessage('conn-replay', {

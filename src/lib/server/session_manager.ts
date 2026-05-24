@@ -473,10 +473,12 @@ export class SessionManager {
       case 'replay_end': {
         session.isReplaying = false;
         const deferredPrompts = this.internals.get(connectionId)?.deferredPromptEvents ?? [];
-        // Emit session:update first with empty activePrompts, then emit session:prompt
-        // for each deferred prompt so the client builds the queue incrementally without duplication.
+        // Emit a full session snapshot so existing SSE clients catch up on replayed
+        // messages that were intentionally not streamed as session:message events.
+        // Then emit session:prompt for each deferred prompt so the client builds
+        // the queue incrementally without duplication.
         this.syncSessionPlanIndex(session);
-        this.emit('session:update', { session: this.cloneSessionMetadata(session) });
+        this.emit('session:update', { session: this.cloneSession(session) });
         for (const deferredPrompt of deferredPrompts) {
           session.activePrompts.push(cloneActivePrompt(deferredPrompt));
           this.emit('session:prompt', {

@@ -817,6 +817,17 @@ describe('lib/server/session_manager', () => {
       },
     });
     expect(onUpdate).toHaveBeenCalledTimes(2);
+    expect(onUpdate).toHaveBeenNthCalledWith(2, {
+      session: expect.objectContaining({
+        connectionId: 'conn-1',
+        isReplaying: false,
+        messages: [
+          expect.objectContaining({ seq: 1 }),
+          expect.objectContaining({ seq: 2, rawType: 'prompt_request' }),
+        ],
+        activePrompts: [],
+      }),
+    });
     expect(replaySnapshot.sessions[0]).toMatchObject({
       isReplaying: true,
       activePrompts: [],
