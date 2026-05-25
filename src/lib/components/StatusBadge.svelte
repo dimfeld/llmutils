@@ -1,7 +1,11 @@
 <script lang="ts">
   import type { PlanDisplayStatus } from '$lib/server/db_queries.js';
 
-  let { status }: { status: PlanDisplayStatus } = $props();
+  let {
+    status,
+    label: labelOverride,
+    colorClass: colorClassOverride,
+  }: { status: PlanDisplayStatus; label?: string; colorClass?: string } = $props();
 
   const colorMap: Record<PlanDisplayStatus, string> = {
     in_progress: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
@@ -28,9 +32,11 @@
   };
 
   let colorClass = $derived(
-    colorMap[status] ?? 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+    colorClassOverride ??
+      colorMap[status] ??
+      'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
   );
-  let label = $derived(labelMap[status] ?? status);
+  let label = $derived(labelOverride ?? labelMap[status] ?? status);
 </script>
 
 <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {colorClass}">

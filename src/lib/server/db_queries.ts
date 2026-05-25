@@ -113,6 +113,8 @@ export interface EnrichedPlan {
   canUpdateDocs: boolean;
   tags: string[];
   dependencyUuids: string[];
+  /** True when all dependencies are done or cancelled (not just work-complete). */
+  depsFullyResolved: boolean;
   tasks: EnrichedPlanTask[];
   taskCounts: {
     done: number;
@@ -487,6 +489,11 @@ function enrichPlansWithContext(
       displayStatus = 'ready';
     }
 
+    const depsFullyResolved = dependencyRows.every((dep) => {
+      const depPlan = planByUuid.get(dep.depends_on_uuid);
+      return depPlan?.status === 'done' || depPlan?.status === 'cancelled';
+    });
+
     return {
       uuid: plan.uuid,
       projectId: plan.project_id,
@@ -522,6 +529,7 @@ function enrichPlansWithContext(
       prSummaryStatus: prSummaryStatusByPlanUuid.get(plan.uuid) ?? 'none',
       tags: tagsByPlanUuid.get(plan.uuid) ?? [],
       dependencyUuids: dependencyRows.map((dependency) => dependency.depends_on_uuid),
+      depsFullyResolved,
       tasks,
       taskCounts: {
         done: doneTaskCount,

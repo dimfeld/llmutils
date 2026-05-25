@@ -45,6 +45,7 @@ export interface PlanAttentionItem {
   canUpdateDocs: boolean;
   hasPr: boolean;
   reviewIssueCount: number;
+  depsFullyResolved: boolean;
   reasons: PlanAttentionReason[];
 }
 
@@ -165,6 +166,7 @@ export function deriveAttentionItems(
         hasPr:
           plan.pullRequests.length > 0 || plan.prSummaryStatus !== 'none' || plan.hasPlanPrLinks,
         reviewIssueCount: plan.reviewIssueCount,
+        depsFullyResolved: plan.depsFullyResolved,
         reasons,
       });
     }
@@ -230,17 +232,21 @@ const PRIORITY_ORDER: Record<string, number> = {
   maybe: 1,
 };
 
-export function deriveReadyToStartPlans(
-  plans: EnrichedPlan[],
-  sessions: Iterable<SessionData>
-): EnrichedPlan[] {
-  // Collect planUuids with active sessions
+function collectActivePlanUuids(sessions: Iterable<SessionData>): Set<string> {
   const activePlanUuids = new Set<string>();
   for (const session of sessions) {
     if (session.status === 'active' && session.sessionInfo.planUuid) {
       activePlanUuids.add(session.sessionInfo.planUuid);
     }
   }
+  return activePlanUuids;
+}
+
+export function deriveReadyToStartPlans(
+  plans: EnrichedPlan[],
+  sessions: Iterable<SessionData>
+): EnrichedPlan[] {
+  const activePlanUuids = collectActivePlanUuids(sessions);
 
   return plans
     .filter(

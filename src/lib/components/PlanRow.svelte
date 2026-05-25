@@ -58,7 +58,15 @@
     <div class="mt-0.5 truncate text-xs text-muted-foreground">{projectName}</div>
   {/if}
   <div class="mt-1 flex items-center gap-1.5">
-    <StatusBadge status={plan.displayStatus} />
+    <StatusBadge
+      status={plan.displayStatus}
+      label={plan.displayStatus === 'needs_review' && !plan.depsFullyResolved
+        ? 'Stacked'
+        : undefined}
+      colorClass={plan.displayStatus === 'needs_review' && !plan.depsFullyResolved
+        ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+        : undefined}
+    />
     <PriorityBadge priority={plan.priority} />
     {#if plan.pullRequests.length > 0}
       <PrStatusIndicator status={plan.prSummaryStatus} />

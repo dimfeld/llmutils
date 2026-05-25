@@ -50,6 +50,7 @@
     canUpdateDocs={item.canUpdateDocs}
     hasPr={item.hasPr}
     epic={item.epic}
+    depsFullyResolved={item.depsFullyResolved}
     {developmentWorkflow}
   />
 </div>

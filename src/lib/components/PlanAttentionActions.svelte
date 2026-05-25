@@ -20,6 +20,7 @@
     hasPr,
     epic,
     projectId,
+    depsFullyResolved = true,
     developmentWorkflow = 'pr-based' as const,
     inline = false,
   }: {
@@ -30,16 +31,22 @@
     hasPr: boolean;
     epic: boolean;
     projectId: string;
+    depsFullyResolved?: boolean;
     developmentWorkflow?: 'pr-based' | 'trunk-based';
     waitingForInputReason?: string;
     inline?: boolean;
   } = $props();
 
-  const reasonStyles: Record<string, { label: string; classes: string }> = {
-    needs_review: {
-      label: 'Needs review',
-      classes: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
-    },
+  const reasonStyles = $derived({
+    needs_review: depsFullyResolved
+      ? {
+          label: 'Needs review',
+          classes: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
+        }
+      : {
+          label: 'Stacked',
+          classes: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
+        },
     agent_finished: {
       label: 'Agent finished',
       classes: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
@@ -48,7 +55,7 @@
       label: 'Waiting for input',
       classes: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
     },
-  };
+  });
 
   let waitingForInputReason = $derived(reasons.find((r) => r.type === 'waiting_for_input'));
   let hasNeedsReview = $derived(reasons.some((r) => r.type === 'needs_review'));
