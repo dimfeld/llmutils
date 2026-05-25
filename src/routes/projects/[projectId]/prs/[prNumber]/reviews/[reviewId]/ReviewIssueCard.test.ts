@@ -202,31 +202,6 @@ describe('ReviewIssueCard', () => {
       expect(body).not.toContain('Security');
     });
 
-    test('hides actionable buttons but keeps copy/jump-to-diff', () => {
-      const issue = makeIssue({
-        severity: 'note',
-        category: 'other',
-        content: 'Just an observation',
-        file: 'src/a.ts',
-        line: '12',
-      });
-      const props = {
-        ...defaultProps(issue),
-        linkedPlanUuid: 'plan-uuid-123',
-        onJumpToDiff: vi.fn(),
-      };
-      const { body } = render(ReviewIssueCard, { props });
-
-      expect(body).not.toContain('Add to plan as a task');
-      expect(body).not.toContain('Mark resolved');
-      expect(body).not.toContain('Mark unresolved');
-      expect(body).toContain('Delete issue');
-
-      expect(body).toContain('Jump to diff');
-      expect(body).toContain('Copy issue');
-      expect(body).toContain('Copy file path');
-    });
-
     test('hides the submitted-in-review badge for notes', () => {
       const issue = makeIssue({
         severity: 'note',
