@@ -3,12 +3,17 @@ import * as fs from 'node:fs';
 
 vi.mock('node:fs', async (importOriginal) => {
   const realFs = await importOriginal<typeof import('node:fs')>();
-  return {
+  const mockedFs = {
     ...realFs,
     mkdirSync: vi.fn(),
     openSync: vi.fn(),
     closeSync: vi.fn(),
     readFileSync: vi.fn(),
+  };
+
+  return {
+    ...mockedFs,
+    default: mockedFs,
   };
 });
 
@@ -75,7 +80,7 @@ describe('lib/server/plan_actions', () => {
     const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
     const resultPromise = spawnGenerateProcess(189, '/tmp/primary-workspace');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
@@ -94,7 +99,7 @@ describe('lib/server/plan_actions', () => {
       '[web-ui] Starting tim generate 189 --auto-workspace --no-terminal-input for plan 189 in /tmp/primary-workspace'
     );
     expect(vi.mocked(console.info)).toHaveBeenCalledWith(
-      '[web-ui] Started tim generate 189 --auto-workspace --no-terminal-input for plan 189; waiting 500ms for early exit'
+      '[web-ui] Started tim generate 189 --auto-workspace --no-terminal-input for plan 189; waiting 2000ms for early exit'
     );
     expect(vi.mocked(console.info)).toHaveBeenCalledWith(
       '[web-ui] tim generate 189 --auto-workspace --no-terminal-input for plan 189 is running detached'
@@ -110,13 +115,13 @@ describe('lib/server/plan_actions', () => {
     vi.mocked(fs.readFileSync).mockReturnValue('command not found' as never);
 
     const resultPromise = spawnGenerateProcess(190, '/tmp/primary-workspace');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(proc.unref).not.toHaveBeenCalled();
     expect(result).toEqual({
       success: false,
-      error: 'tim generate exited early with code 1',
+      error: 'command not found',
     });
   });
 
@@ -128,7 +133,7 @@ describe('lib/server/plan_actions', () => {
     vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
     const resultPromise = spawnGenerateProcess(190, '/tmp/primary-workspace');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(proc.unref).not.toHaveBeenCalled();
@@ -160,7 +165,7 @@ describe('lib/server/plan_actions', () => {
     const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
     const resultPromise = spawnAgentProcess(189, '/tmp/primary-workspace');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
@@ -186,13 +191,13 @@ describe('lib/server/plan_actions', () => {
     vi.mocked(fs.readFileSync).mockReturnValue('command not found' as never);
 
     const resultPromise = spawnAgentProcess(190, '/tmp/primary-workspace');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(proc.unref).not.toHaveBeenCalled();
     expect(result).toEqual({
       success: false,
-      error: 'tim agent exited early with code 1',
+      error: 'command not found',
     });
   });
 
@@ -204,7 +209,7 @@ describe('lib/server/plan_actions', () => {
     vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
     const resultPromise = spawnAgentProcess(190, '/tmp/primary-workspace');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(proc.unref).not.toHaveBeenCalled();
@@ -232,7 +237,7 @@ describe('lib/server/plan_actions', () => {
     const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
     const resultPromise = spawnChatProcess(189, '/tmp/primary-workspace', 'codex');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
@@ -257,7 +262,7 @@ describe('lib/server/plan_actions', () => {
     vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
     const resultPromise = spawnChatProcess(190, '/tmp/primary-workspace', 'claude');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(proc.unref).not.toHaveBeenCalled();
@@ -275,7 +280,7 @@ describe('lib/server/plan_actions', () => {
     vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
     const resultPromise = spawnChatProcess(190, '/tmp/primary-workspace', 'claude');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(proc.unref).not.toHaveBeenCalled();
@@ -303,7 +308,7 @@ describe('lib/server/plan_actions', () => {
     const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
     const resultPromise = spawnRebaseProcess(200, '/tmp/primary-workspace');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
@@ -324,7 +329,7 @@ describe('lib/server/plan_actions', () => {
     vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
     const resultPromise = spawnRebaseProcess(201, '/tmp/primary-workspace');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(result).toEqual({ success: true, planId: 201, earlyExit: true });
@@ -337,7 +342,7 @@ describe('lib/server/plan_actions', () => {
     vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
     const resultPromise = spawnRebaseProcess(202, '/tmp/primary-workspace');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(proc.unref).not.toHaveBeenCalled();
@@ -365,7 +370,7 @@ describe('lib/server/plan_actions', () => {
     const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
     const resultPromise = spawnUpdateDocsProcess(204, '/tmp/primary-workspace');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
@@ -386,7 +391,7 @@ describe('lib/server/plan_actions', () => {
     const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
     const resultPromise = spawnAgentMultiProcess(300, [301, 302], '/tmp/primary-workspace');
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(2000);
     const result = await resultPromise;
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
