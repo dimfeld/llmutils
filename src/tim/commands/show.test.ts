@@ -173,6 +173,7 @@ describe('handleShowCommand', () => {
               priority: rawPlan.priority ?? undefined,
               epic: Boolean(rawPlan.epic),
               simple: Boolean(rawPlan.simple),
+              basePlan: rawPlan.basePlan ?? undefined,
               tasks: dbPlanTasks
                 .filter((task) => task.plan_uuid === rawPlan.uuid)
                 .map((task) => ({
@@ -237,6 +238,7 @@ describe('handleShowCommand', () => {
       changedFiles: plan.changedFiles ?? undefined,
       temp: Boolean(plan.temp),
       baseBranch: plan.baseBranch ?? undefined,
+      basePlan: plan.basePlan ?? undefined,
       reviewIssues: plan.reviewIssues ?? undefined,
       planGeneratedAt: plan.planGeneratedAt ?? undefined,
       filename: `${plan.id}.plan.md`,
@@ -364,6 +366,45 @@ describe('handleShowCommand', () => {
 
     const output = stripAnsi(logSpy.mock.calls.map((call) => call[0]).join('\n'));
     expect(output).toContain('Epic: 1 - Epic Plan');
+  });
+
+  test('shows base plan when set', async () => {
+    addDbPlan({
+      id: 10,
+      title: 'Predecessor Plan',
+      goal: 'Base work',
+      status: 'done',
+      tasks: [],
+    });
+    addDbPlan({
+      id: 11,
+      title: 'Stacked Plan',
+      goal: 'Build on predecessor',
+      status: 'pending',
+      basePlan: 10,
+      tasks: [],
+    });
+
+    await handleShowCommand(11, {}, { parent: { opts: () => ({}) } });
+
+    const output = stripAnsi(logSpy.mock.calls.map((call) => call[0]).join('\n'));
+    expect(output).toContain('Base Plan: 10 - Predecessor Plan');
+  });
+
+  test('shows missing base plan references', async () => {
+    addDbPlan({
+      id: 12,
+      title: 'Dangling Stacked Plan',
+      goal: 'References a missing base',
+      status: 'pending',
+      basePlan: 999,
+      tasks: [],
+    });
+
+    await handleShowCommand(12, {}, { parent: { opts: () => ({}) } });
+
+    const output = stripAnsi(logSpy.mock.calls.map((call) => call[0]).join('\n'));
+    expect(output).toContain('Base Plan: 999 [Not found]');
   });
 
   test('shows condensed summary with --short', async () => {

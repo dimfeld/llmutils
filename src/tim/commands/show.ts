@@ -180,6 +180,15 @@ function getPlanDisplayLocation(plan: Pick<PlanSchema, 'id'>, planPath?: string 
   return planPath ?? (plan.id ? `Plan ${plan.id}` : 'Plan');
 }
 
+function formatReferencedPlan(planId: number, allPlans: Map<number, PlanSchema>): string {
+  const referencedPlan = allPlans.get(planId);
+  if (!referencedPlan) {
+    return `${chalk.cyan(planId)} ${chalk.red('[Not found]')}`;
+  }
+
+  return `${chalk.cyan(planId)} - ${getCombinedTitleFromSummary(referencedPlan)}`;
+}
+
 /**
  * Display plan information based on options
  */
@@ -242,6 +251,9 @@ async function displayPlanInfo(
     output.push(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
     if (epicSummary) {
       output.push(`${chalk.cyan('Epic:')} ${epicSummary}`);
+    }
+    if (plan.basePlan) {
+      output.push(`${chalk.cyan('Base Plan:')} ${formatReferencedPlan(plan.basePlan, allPlans)}`);
     }
     if (assignmentInfo.entry) {
       const workspaceLine =
@@ -348,17 +360,13 @@ async function displayPlanInfo(
 
     // Display parent plan if present
     if (plan.parent) {
-      const parentPlan = allPlans.get(plan.parent);
-      if (parentPlan) {
-        log(
-          `${chalk.cyan('Parent:')} ${chalk.cyan(plan.parent)} - ${getCombinedTitleFromSummary(parentPlan)}`
-        );
-      } else {
-        log(`${chalk.cyan('Parent:')} ${chalk.cyan(plan.parent)} ${chalk.red('[Not found]')}`);
-      }
+      log(`${chalk.cyan('Parent:')} ${formatReferencedPlan(plan.parent, allPlans)}`);
     }
     if (epicSummary) {
       log(`${chalk.cyan('Epic:')} ${epicSummary}`);
+    }
+    if (plan.basePlan) {
+      log(`${chalk.cyan('Base Plan:')} ${formatReferencedPlan(plan.basePlan, allPlans)}`);
     }
     log(`${chalk.cyan('Goal:')} ${getCombinedGoal(plan)}`);
     log(`${chalk.cyan('File:')} ${resolvedPlanFile}`);
