@@ -719,12 +719,18 @@
   }
 
   let dependencyEntries = $derived.by(() => {
+    const childUuids = new Set(plan.children.map((c) => c.uuid));
     const entries = plan.dependencies.map((dep) => ({
       dep,
       isBase: plan.basePlan?.uuid === dep.uuid,
+      isChild: childUuids.has(dep.uuid),
     }));
     if (plan.basePlan && !entries.some((entry) => entry.dep.uuid === plan.basePlan!.uuid)) {
-      entries.push({ dep: plan.basePlan, isBase: true });
+      entries.push({
+        dep: plan.basePlan,
+        isBase: true,
+        isChild: childUuids.has(plan.basePlan.uuid),
+      });
     }
     return entries.sort((a, b) => {
       const aPlanId = a.dep.planId ?? Number.POSITIVE_INFINITY;
@@ -735,6 +741,9 @@
       return a.dep.title?.localeCompare(b.dep.title ?? '') ?? 0;
     });
   });
+
+  let childDependencyEntries = $derived(dependencyEntries.filter((e) => e.isChild));
+  let nonChildDependencyEntries = $derived(dependencyEntries.filter((e) => !e.isChild));
 
   function planUrl(uuid: string, depProjectId?: number | null): string {
     const pid = depProjectId ?? projectId;
@@ -992,13 +1001,51 @@
     {/if}
 
     <!-- Dependencies -->
-    {#if dependencyEntries.length > 0}
+    {#if nonChildDependencyEntries.length > 0}
       <div>
         <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Dependencies
         </h3>
         <ul class="space-y-1">
-          {#each dependencyEntries as { dep, isBase } (dep.uuid)}
+          {#each nonChildDependencyEntries as { dep, isBase } (dep.uuid)}
+            <li class="flex items-center gap-2 text-sm">
+              <a
+                href={planUrl(dep.uuid, dep.projectId)}
+                data-sveltekit-preload-data
+                class="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-800
+                {dep.isResolved ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400'}"
+              >
+                {#if dep.planId}
+                  <span class="text-xs font-medium">#{dep.planId}</span>
+                {/if}
+                <span class={dep.isResolved ? 'line-through' : ''}>
+                  {dep.title ?? 'Unknown plan'}
+                </span>
+                {#if isBase}
+                  <span
+                    class="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
+                  >
+                    Base Plan
+                  </span>
+                {/if}
+                {#if dep.displayStatus}
+                  <StatusBadge status={dep.displayStatus} />
+                {/if}
+              </a>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
+    <!-- Child dependencies -->
+    {#if childDependencyEntries.length > 0}
+      <div>
+        <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Children
+        </h3>
+        <ul class="space-y-1">
+          {#each childDependencyEntries as { dep, isBase } (dep.uuid)}
             <li class="flex items-center gap-2 text-sm">
               <a
                 href={planUrl(dep.uuid, dep.projectId)}
