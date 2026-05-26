@@ -131,6 +131,8 @@ export interface ChildExternalDependencyInfo {
 
 export interface PlanDetail extends EnrichedPlan {
   dependencies: EnrichedPlanDependency[];
+  dependents: EnrichedPlanDependency[];
+  siblings: EnrichedPlanDependency[];
   children: ChildPlanSummary[];
   childExternalDependencyStatuses: Record<string, ChildExternalDependencyInfo>;
   assignment: AssignmentEntry | null;
@@ -946,6 +948,20 @@ export async function getPlanDetail(
     referencedPlanUuids.add(plan.base_plan_uuid);
   }
 
+  const dependentRows = db
+    .prepare('SELECT plan_uuid FROM plan_dependency WHERE depends_on_uuid = ?')
+    .all(planUuid) as Array<{ plan_uuid: string }>;
+  const dependentUuids = dependentRows.map((r) => r.plan_uuid);
+  for (const uuid of dependentUuids) referencedPlanUuids.add(uuid);
+
+  const siblingRows = plan.parent_uuid
+    ? (db
+        .prepare('SELECT uuid FROM plan WHERE parent_uuid = ? AND uuid != ?')
+        .all(plan.parent_uuid, planUuid) as Array<{ uuid: string }>)
+    : [];
+  const siblingUuids = siblingRows.map((r) => r.uuid);
+  for (const uuid of siblingUuids) referencedPlanUuids.add(uuid);
+
   const referencedPlans = getPlansByUuid(db, referencedPlanUuids);
   // Load dependency rows for referenced plans so toDependencySummary can compute
   // their display statuses. enrichPlansWithContext also backfills any remaining
@@ -1011,9 +1027,18 @@ export async function getPlanDetail(
     planByUuid
   );
 
+  const dependents = dependentUuids.map((uuid) =>
+    toDependencySummary(uuid, planByUuid, dependenciesByPlanUuid)
+  );
+  const siblings = siblingUuids.map((uuid) =>
+    toDependencySummary(uuid, planByUuid, dependenciesByPlanUuid)
+  );
+
   return {
     ...enrichedPlan,
     dependencies: dependencySummaries,
+    dependents,
+    siblings,
     children,
     childExternalDependencyStatuses,
     assignment,

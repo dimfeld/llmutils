@@ -1029,6 +1029,62 @@
       </div>
     {/if}
 
+    <!-- Dependents -->
+    {#if plan.dependents.length > 0}
+      <div>
+        <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Depended on by
+        </h3>
+        <ul class="space-y-1">
+          {#each plan.dependents.sort((a, b) => (a.planId ?? 0) - (b.planId ?? 0)) as dep (dep.uuid)}
+            <li class="text-sm">
+              <a
+                href={planUrl(dep.uuid, dep.projectId)}
+                data-sveltekit-preload-data
+                class="flex items-center gap-1.5 rounded px-1.5 py-0.5 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                {#if dep.planId}
+                  <span class="text-xs font-medium text-muted-foreground">#{dep.planId}</span>
+                {/if}
+                <span class="text-foreground">{dep.title ?? 'Unknown plan'}</span>
+                {#if dep.displayStatus}
+                  <StatusBadge status={dep.displayStatus} />
+                {/if}
+              </a>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
+    <!-- Siblings -->
+    {#if plan.siblings.length > 0}
+      <div>
+        <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Sibling Plans
+        </h3>
+        <ul class="space-y-1">
+          {#each plan.siblings.sort((a, b) => (a.planId ?? 0) - (b.planId ?? 0)) as dep (dep.uuid)}
+            <li class="text-sm">
+              <a
+                href={planUrl(dep.uuid, dep.projectId)}
+                data-sveltekit-preload-data
+                class="flex items-center gap-1.5 rounded px-1.5 py-0.5 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                {#if dep.planId}
+                  <span class="text-xs font-medium text-muted-foreground">#{dep.planId}</span>
+                {/if}
+                <span class="text-foreground">{dep.title ?? 'Unknown plan'}</span>
+                {#if dep.displayStatus}
+                  <StatusBadge status={dep.displayStatus} />
+                {/if}
+              </a>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
     <!-- Parent -->
     {#if plan.parent}
       <div>
