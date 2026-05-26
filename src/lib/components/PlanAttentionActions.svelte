@@ -47,6 +47,10 @@
           label: 'Stacked',
           classes: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
         },
+    reviewed: {
+      label: 'Reviewed',
+      classes: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300',
+    },
     agent_finished: {
       label: 'Agent finished',
       classes: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',

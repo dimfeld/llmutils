@@ -133,7 +133,7 @@ Actionable PR data is loaded client-side via `getActionablePrs` query in `src/li
 
 Key types:
 
-- `PlanAttentionItem` — groups multiple reasons per plan: `waiting_for_input`, `needs_review`, `agent_finished`. Agent finished = offline session linked to `in_progress` plan still in session manager memory (restricted to agent/generate/chat commands). Includes `docsUpdatedAt`, `lessonsAppliedAt`, and `needsFinishExecutor` fields for determining Finish button behavior.
+- `PlanAttentionItem` — groups multiple reasons per plan: `waiting_for_input`, `needs_review`, `reviewed`, `agent_finished`. Agent finished = offline session linked to `in_progress` plan still in session manager memory (restricted to agent/generate/chat commands). Includes `docsUpdatedAt`, `lessonsAppliedAt`, and `needsFinishExecutor` fields for determining Finish button behavior.
 - `PrAttentionItem` — per-PR: `ready_to_merge`, `checks_failing`, `changes_requested`, `review_requested`.
 - `ActionablePr` — type for PR actionability data (defined here for the remote query to import).
 
@@ -141,7 +141,7 @@ Key types:
 
 The layout (`+layout.svelte`) combines server-loaded plan data with client-side session state from `useSessionManager()`. Sections are derived reactively using `$derived`:
 
-- **Needs Attention**: Plan items (waiting for input, needs review, agent finished) and PR items (ready to merge, checks failing, changes requested, review requested) in separate subsections with a divider
+- **Needs Attention**: Plan items (waiting for input, needs review, reviewed, agent finished) and PR items (ready to merge, checks failing, changes requested, review requested) in separate subsections with a divider
 - **Running Now**: Active agent/generate/chat sessions with plan title, workspace, elapsed time, command badge. Clicking selects the session and navigates to Sessions tab
 - **Ready to Start**: Ready plans sorted by priority with inline "Run Agent" button (handles `already_running`, tracks launched plan UUID)
 

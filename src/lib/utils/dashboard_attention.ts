@@ -31,6 +31,7 @@ export interface ActionablePr {
 export type PlanAttentionReason =
   | { type: 'waiting_for_input'; sessionId: string; promptType: string }
   | { type: 'needs_review' }
+  | { type: 'reviewed' }
   | { type: 'agent_finished' };
 
 export interface PlanAttentionItem {
@@ -147,9 +148,11 @@ export function deriveAttentionItems(
       }
     }
 
-    // Check for needs_review
+    // Check for review-complete states that should still remain visible until done.
     if (plan.displayStatus === 'needs_review') {
       reasons.push({ type: 'needs_review' });
+    } else if (plan.displayStatus === 'reviewed') {
+      reasons.push({ type: 'reviewed' });
     }
 
     if (reasons.length > 0) {

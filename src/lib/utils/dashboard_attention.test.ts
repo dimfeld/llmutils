@@ -117,6 +117,14 @@ describe('deriveAttentionItems', () => {
     expect(result.planItems[0].reasons).toEqual([{ type: 'needs_review' }]);
   });
 
+  test('detects reviewed status', () => {
+    const plan = makePlan({ uuid: 'plan-reviewed', displayStatus: 'reviewed' });
+
+    const result = deriveAttentionItems([plan], planIndex([]), []);
+    expect(result.planItems).toHaveLength(1);
+    expect(result.planItems[0].reasons).toEqual([{ type: 'reviewed' }]);
+  });
+
   test('preserves epic flag on plan attention items', () => {
     const plan = makePlan({
       uuid: 'plan-1',
