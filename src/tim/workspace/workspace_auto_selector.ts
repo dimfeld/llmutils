@@ -40,6 +40,8 @@ export interface AutoSelectOptions {
   fallbackToTrunkOnMissingBase?: boolean;
   /** Source of the inferred base branch, used to select remote verification behavior */
   baseBranchSource?: 'plan' | 'basePlan' | 'parent';
+  /** Workspace paths to skip because a caller already lost a lock race for them */
+  excludedWorkspacePaths?: string[];
 }
 
 export interface SelectedWorkspace {
@@ -92,7 +94,9 @@ export class WorkspaceAutoSelector {
       planData,
       fallbackToTrunkOnMissingBase = false,
       baseBranchSource,
+      excludedWorkspacePaths = [],
     } = options;
+    const excludedWorkspacePathSet = new Set(excludedWorkspacePaths);
 
     // Get repository ID from current git repo
     let repositoryId: string;
@@ -112,8 +116,12 @@ export class WorkspaceAutoSelector {
     const requireAutoType =
       this.config.workspaceCreation?.requireAutoType ||
       existingWorkspaces.some((workspace) => workspace.workspaceType === 'auto');
-    const eligibleWorkspaces = existingWorkspaces.filter((workspace) =>
-      requireAutoType ? workspace.workspaceType === 'auto' : workspace.workspaceType !== 'primary'
+    const eligibleWorkspaces = existingWorkspaces.filter(
+      (workspace) =>
+        !excludedWorkspacePathSet.has(workspace.workspacePath) &&
+        (requireAutoType
+          ? workspace.workspaceType === 'auto'
+          : workspace.workspaceType !== 'primary')
     );
     const newWorkspaceType: WorkspaceType | undefined = requireAutoType ? 'auto' : undefined;
 

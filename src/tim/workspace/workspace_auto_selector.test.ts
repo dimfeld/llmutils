@@ -151,6 +151,25 @@ describe('WorkspaceAutoSelector', () => {
     expect(getLockInfoIncludingStaleSpy).toHaveBeenCalledWith(lockedPath);
   });
 
+  test('selectWorkspace skips excluded workspace paths', async () => {
+    const excludedPath = path.join(testDir, 'workspace-excluded');
+    const fallbackPath = path.join(testDir, 'workspace-fallback');
+    await fs.mkdir(excludedPath, { recursive: true });
+    await fs.mkdir(fallbackPath, { recursive: true });
+
+    await seedWorkspace('github.com/test/repo', fallbackPath, 'task-fallback', 'task-fallback');
+    await seedWorkspace('github.com/test/repo', excludedPath, 'task-excluded', 'task-excluded');
+
+    const result = await selector.selectWorkspace('task-3', '/test/plan3.yml', {
+      interactive: false,
+      excludedWorkspacePaths: [excludedPath],
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.workspace.workspacePath).toBe(fallbackPath);
+    expect(result?.workspace.taskId).toBe('task-fallback');
+  });
+
   test('selectWorkspace removes deleted workspace records before selecting', async () => {
     const deletedPath = path.join(testDir, 'workspace-deleted');
     const unlockedPath = path.join(testDir, 'workspace-unlocked-after-delete');

@@ -331,26 +331,35 @@ export async function setupWorkspace(
     let selectedWorkspace:
       | Awaited<ReturnType<WorkspaceAutoSelector['selectWorkspace']>>
       | undefined;
+    let acquiredWorkspaceLockInfo:
+      | Awaited<ReturnType<typeof WorkspaceLock.acquireLock>>
+      | undefined;
 
     if (options.autoWorkspace) {
       log('Auto-selecting workspace...');
       const selector = new WorkspaceAutoSelector(baseDir, config);
       const taskId =
         options.workspace || `${path.parse(baseDir).dir.split(path.sep).pop()}-${Date.now()}`;
+      const excludedWorkspacePaths: string[] = [];
 
-      selectedWorkspace = await selector.selectWorkspace(taskId, currentPlanFile, {
-        interactive: !options.nonInteractive,
-        preferNewWorkspace: options.newWorkspace,
-        createBranch: effectiveCreateBranch,
-        base: branchContext.checkoutBranch ?? branchContext.baseBranch,
-        branchName: branchContext.branchName,
-        planData: branchContext.planData,
-        fallbackToTrunkOnMissingBase: branchContext.canRetryWithoutBaseBranch,
-        baseBranchSource: branchContext.baseBranchSource,
-        ...(options.planUuid ? { preferredPlanUuid: options.planUuid } : {}),
-      });
+      while (true) {
+        selectedWorkspace = await selector.selectWorkspace(taskId, currentPlanFile, {
+          interactive: !options.nonInteractive,
+          preferNewWorkspace: options.newWorkspace,
+          createBranch: effectiveCreateBranch,
+          base: branchContext.checkoutBranch ?? branchContext.baseBranch,
+          branchName: branchContext.branchName,
+          planData: branchContext.planData,
+          fallbackToTrunkOnMissingBase: branchContext.canRetryWithoutBaseBranch,
+          baseBranchSource: branchContext.baseBranchSource,
+          ...(excludedWorkspacePaths.length > 0 ? { excludedWorkspacePaths } : {}),
+          ...(options.planUuid ? { preferredPlanUuid: options.planUuid } : {}),
+        });
 
-      if (selectedWorkspace) {
+        if (!selectedWorkspace) {
+          break;
+        }
+
         workspace = {
           path: selectedWorkspace.workspace.workspacePath,
           originalPlanFilePath: selectedWorkspace.workspace.originalPlanFilePath,
@@ -358,6 +367,32 @@ export async function setupWorkspace(
           checkedOutRemoteBranch: selectedWorkspace.workspace.checkedOutRemoteBranch,
         };
 
+        try {
+          acquiredWorkspaceLockInfo = await WorkspaceLock.acquireLock(
+            workspace.path,
+            `${commandLabel} --workspace ${workspace.taskId}`,
+            {
+              type: 'pid',
+              ...(selectedWorkspace.isNew ? { allowPersistentToPidTransition: true } : {}),
+            }
+          );
+          WorkspaceLock.setupCleanupHandlers(workspace.path, acquiredWorkspaceLockInfo.type);
+          break;
+        } catch (err) {
+          if (err instanceof WorkspaceAlreadyLocked && !selectedWorkspace.isNew) {
+            excludedWorkspacePaths.push(workspace.path);
+            log(
+              `Selected workspace was claimed before it could be locked; trying another workspace: ${workspace.path}`
+            );
+            workspace = undefined;
+            continue;
+          }
+
+          throw err;
+        }
+      }
+
+      if (workspace && selectedWorkspace) {
         if (selectedWorkspace.isNew) {
           log(`Created new workspace for task: ${workspace.taskId}`);
         } else {
@@ -449,15 +484,17 @@ export async function setupWorkspace(
       const workspacePlanFile = relativePlanPath
         ? path.join(workspace.path, relativePlanPath)
         : undefined;
-      const lockInfo = await WorkspaceLock.acquireLock(
-        workspace.path,
-        `${commandLabel} --workspace ${workspace.taskId}`,
-        {
-          type: 'pid',
-          ...(isNewWorkspace ? { allowPersistentToPidTransition: true } : {}),
-        }
-      );
-      WorkspaceLock.setupCleanupHandlers(workspace.path, lockInfo.type);
+      if (!acquiredWorkspaceLockInfo) {
+        acquiredWorkspaceLockInfo = await WorkspaceLock.acquireLock(
+          workspace.path,
+          `${commandLabel} --workspace ${workspace.taskId}`,
+          {
+            type: 'pid',
+            ...(isNewWorkspace ? { allowPersistentToPidTransition: true } : {}),
+          }
+        );
+        WorkspaceLock.setupCleanupHandlers(workspace.path, acquiredWorkspaceLockInfo.type);
+      }
 
       const materializePlanIntoWorkspace = async (): Promise<void> => {
         if (typeof options.planId === 'number') {

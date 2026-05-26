@@ -626,6 +626,70 @@ describe('setupWorkspace', () => {
     expect(setupCleanupHandlersSpy).toHaveBeenCalledWith(autoWorkspacePath, 'pid');
   });
 
+  test('auto-workspace retries selection when selected workspace is locked before acquisition', async () => {
+    const racedWorkspacePath = path.join(tempDir, 'workspace-auto-raced');
+    const fallbackWorkspacePath = path.join(tempDir, 'workspace-auto-fallback');
+    await fs.mkdir(racedWorkspacePath, { recursive: true });
+    await fs.mkdir(fallbackWorkspacePath, { recursive: true });
+    await seedWorkspace(racedWorkspacePath, 'task-auto-raced');
+    await seedWorkspace(fallbackWorkspacePath, 'task-auto-fallback');
+    await WorkspaceLock.acquireLock(racedWorkspacePath, 'concurrent agent', { type: 'pid' });
+
+    const selectWorkspaceSpy = vi
+      .spyOn(WorkspaceAutoSelector.prototype, 'selectWorkspace')
+      .mockResolvedValueOnce({
+        workspace: {
+          taskId: 'task-auto-raced',
+          workspacePath: racedWorkspacePath,
+          originalPlanFilePath: planFile,
+          createdAt: new Date().toISOString(),
+        },
+        isNew: false,
+        clearedStaleLock: false,
+      })
+      .mockResolvedValueOnce({
+        workspace: {
+          taskId: 'task-auto-fallback',
+          workspacePath: fallbackWorkspacePath,
+          originalPlanFilePath: planFile,
+          createdAt: new Date().toISOString(),
+        },
+        isNew: false,
+        clearedStaleLock: false,
+      });
+    vi.spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    vi.spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
+
+    const result = await setupWorkspace(
+      {
+        autoWorkspace: true,
+        workspace: 'task-auto',
+        nonInteractive: true,
+      },
+      baseDir,
+      planFile,
+      config,
+      'tim generate'
+    );
+
+    expect(result.baseDir).toBe(fallbackWorkspacePath);
+    expect(selectWorkspaceSpy).toHaveBeenNthCalledWith(
+      2,
+      'task-auto',
+      planFile,
+      expect.objectContaining({
+        excludedWorkspacePaths: [racedWorkspacePath],
+      })
+    );
+    expect((await WorkspaceLock.getLockInfo(fallbackWorkspacePath))?.type).toBe('pid');
+
+    await WorkspaceLock.releaseLock(racedWorkspacePath, { force: true });
+    await WorkspaceLock.releaseLock(fallbackWorkspacePath, { force: true });
+  });
+
   test('auto-workspace creates branch directly in workspace', async () => {
     const autoWorkspacePath = path.join(tempDir, 'workspace-auto-existing-plan-branch');
     await fs.mkdir(autoWorkspacePath, { recursive: true });
