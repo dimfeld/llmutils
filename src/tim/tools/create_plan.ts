@@ -17,6 +17,7 @@ import { getDatabase } from '../db/database.js';
 import { getPlanByUuid, type PlanRow } from '../db/plan.js';
 import { previewNextPlanId, reserveNextPlanId } from '../db/project.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
+import { isReopenableCompletedStatus } from '../plans/plan_state_utils.js';
 import { beginSyncBatch } from '../sync/write_router.js';
 import { resolveWriteMode, usesPlanIdReserve } from '../sync/write_mode.js';
 import type { ToolContext, ToolResult } from './context.js';
@@ -151,8 +152,7 @@ export async function createPlanTool(
     // (the in-memory parentPlan may be stale after sync)
     const freshParentResolved = resolvePlanRowForTransaction(freshParentRow, idToUuid);
     const parentNeedsDependency = !(freshParentResolved.dependencies ?? []).includes(nextId);
-    const parentNeedsStatus =
-      freshParentResolved.status === 'done' || freshParentResolved.status === 'needs_review';
+    const parentNeedsStatus = isReopenableCompletedStatus(freshParentResolved.status);
     if (parentNeedsDependency || parentNeedsStatus) {
       const updatedParent: PlanSchema = {
         ...freshParentResolved,

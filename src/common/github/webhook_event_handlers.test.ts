@@ -718,6 +718,17 @@ describe('common/github/webhook_event_handlers', () => {
   });
 
   test('handlePullRequestEvent schedules targeted refresh when a draft PR becomes ready for review', async () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/48',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 48,
+      title: 'Draft PR',
+      state: 'open',
+      draft: true,
+      lastFetchedAt: '2026-03-30T12:00:00.000Z',
+    });
+
     const result = handlePullRequestEvent(db, {
       action: 'ready_for_review',
       repository: { full_name: 'example/repo' },
@@ -738,6 +749,7 @@ describe('common/github/webhook_event_handlers', () => {
 
     expect(result.updated).toBe(true);
     expect(result.prUrl).toBe('https://github.com/example/repo/pull/48');
+    expect(result.prDraftTransition).toBe('became_ready');
     expect(result.apiRefreshTargets).toEqual([
       {
         owner: 'example',
@@ -747,6 +759,174 @@ describe('common/github/webhook_event_handlers', () => {
         type: 'mergeable',
       },
     ]);
+  });
+
+  test('handlePullRequestEvent reports when a ready PR is converted back to draft', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/55',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 55,
+      title: 'Ready PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-30T12:00:00.000Z',
+    });
+
+    const result = handlePullRequestEvent(db, {
+      action: 'converted_to_draft',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 55,
+        title: 'Ready PR',
+        state: 'open',
+        draft: true,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-55', ref: 'feature/ready' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T12:30:00.000Z',
+      },
+    });
+
+    expect(result.updated).toBe(true);
+    expect(result.prUrl).toBe('https://github.com/example/repo/pull/55');
+    expect(result.prDraftTransition).toBe('became_draft');
+    expect(result.apiRefreshTargets).toEqual([]);
+  });
+
+  test('handlePullRequestEvent does not report a draft transition for new or unchanged PR rows', () => {
+    const newPrResult = handlePullRequestEvent(db, {
+      action: 'opened',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 56,
+        title: 'New ready PR',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-56', ref: 'feature/new-ready' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T12:30:00.000Z',
+      },
+    });
+    expect(newPrResult.updated).toBe(true);
+    expect(newPrResult.prDraftTransition).toBeUndefined();
+
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/57',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 57,
+      title: 'Still draft',
+      state: 'open',
+      draft: true,
+      lastFetchedAt: '2026-03-30T12:00:00.000Z',
+    });
+
+    const unchangedDraftResult = handlePullRequestEvent(db, {
+      action: 'synchronize',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 57,
+        title: 'Still draft',
+        state: 'open',
+        draft: true,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-57', ref: 'feature/still-draft' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T12:30:00.000Z',
+      },
+    });
+
+    expect(unchangedDraftResult.updated).toBe(true);
+    expect(unchangedDraftResult.prDraftTransition).toBeUndefined();
+  });
+
+  test('handlePullRequestEvent does not report a draft transition when the draft flag is unchanged', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/58',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 58,
+      title: 'Ready PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-30T12:00:00.000Z',
+    });
+
+    const result = handlePullRequestEvent(db, {
+      action: 'synchronize',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 58,
+        title: 'Ready PR',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-58', ref: 'feature/still-ready' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T12:30:00.000Z',
+      },
+    });
+
+    expect(result.updated).toBe(true);
+    expect(result.prDraftTransition).toBeUndefined();
+  });
+
+  test('handlePullRequestEvent does not report a draft transition for stale metadata with a differing draft flag', () => {
+    upsertPrStatusMetadata(db, {
+      prUrl: 'https://github.com/example/repo/pull/59',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 59,
+      title: 'Newer ready PR',
+      author: 'alice',
+      state: 'open',
+      draft: false,
+      headSha: 'sha-new',
+      requestedReviewers: [],
+      prUpdatedAt: '2026-03-30T12:00:00.000Z',
+      lastFetchedAt: '2026-03-30T12:00:00.000Z',
+      checks: [],
+      labels: [],
+    });
+
+    const result = handlePullRequestEvent(db, {
+      action: 'converted_to_draft',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 59,
+        title: 'Stale draft PR',
+        state: 'open',
+        draft: true,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-old', ref: 'feature/stale-draft' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T11:00:00.000Z',
+      },
+    });
+
+    expect(result.updated).toBe(false);
+    expect(result.prDraftTransition).toBeUndefined();
+    expect(result.apiRefreshTargets).toEqual([]);
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/59');
+    expect(detail?.status.draft).toBe(0);
+    expect(detail?.status.pr_updated_at).toBe('2026-03-30T12:00:00.000Z');
   });
 
   test('handlePullRequestEvent ignores stale pull_request metadata updates and preserves newer checks', () => {

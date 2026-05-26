@@ -42,10 +42,11 @@
       "enum": [
         "pending",
         "in_progress",
+        "needs_review",
+        "reviewed",
         "done",
         "cancelled",
-        "deferred",
-        "needs_review"
+        "deferred"
       ]
     },
     "priority": {

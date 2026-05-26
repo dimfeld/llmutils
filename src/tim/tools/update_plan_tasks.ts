@@ -3,6 +3,7 @@ import { withPlanAutoSync } from '../plan_materialize.js';
 import { resolvePlan } from '../plan_display.js';
 import { mergeTasksIntoPlan } from '../plan_merge.js';
 import { findNextActionableItem } from '../plans/find_next.js';
+import { isReopenableCompletedStatus } from '../plans/plan_state_utils.js';
 import { writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { ToolContext, ToolResult } from './context.js';
@@ -44,7 +45,7 @@ export async function updatePlanTasksTool(
       const updatedPlan = await mergeTasksIntoPlan(newPlanData, plan);
 
       if (
-        (plan.status === 'done' || plan.status === 'needs_review') &&
+        isReopenableCompletedStatus(plan.status) &&
         findNextActionableItem(updatedPlan) !== null
       ) {
         updatedPlan.status = 'in_progress';

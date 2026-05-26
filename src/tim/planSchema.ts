@@ -7,10 +7,11 @@ export type Priority = z.infer<typeof prioritySchema>;
 export const statusSchema = z.enum([
   'pending',
   'in_progress',
+  'needs_review',
+  'reviewed',
   'done',
   'cancelled',
   'deferred',
-  'needs_review',
 ]);
 
 type ObjectFactory = <T extends z.ZodRawShape>(shape: T) => z.ZodObject<T>;

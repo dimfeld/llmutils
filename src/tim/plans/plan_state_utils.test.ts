@@ -11,6 +11,7 @@ import {
   isWorkComplete,
   isWorkCompleteStatus,
   getStatusDisplayName,
+  isReopenableCompletedStatus,
   isValidPlanStatus,
   normalizePlanStatus,
 } from './plan_state_utils.js';
@@ -236,7 +237,7 @@ describe('plan state utilities', () => {
     });
 
     test('returns false for non-complete statuses', () => {
-      const statuses = ['pending', 'in_progress', 'needs_review'] as const;
+      const statuses = ['pending', 'in_progress', 'needs_review', 'reviewed'] as const;
       for (const status of statuses) {
         const plan: PlanSchema = {
           id: 1,
@@ -260,7 +261,7 @@ describe('plan state utilities', () => {
 
   describe('isWorkComplete', () => {
     test('returns true for work-complete statuses', () => {
-      const statuses = ['done', 'cancelled', 'needs_review'] as const;
+      const statuses = ['done', 'cancelled', 'needs_review', 'reviewed'] as const;
       for (const status of statuses) {
         const plan: PlanSchema = {
           id: 1,
@@ -288,7 +289,7 @@ describe('plan state utilities', () => {
 
   describe('isWorkCompleteStatus', () => {
     test('returns true for work-complete status strings', () => {
-      const statuses = ['done', 'cancelled', 'needs_review'] as const;
+      const statuses = ['done', 'cancelled', 'needs_review', 'reviewed'] as const;
       for (const status of statuses) {
         expect(isWorkCompleteStatus(status)).toBe(true);
       }
@@ -310,6 +311,19 @@ describe('plan state utilities', () => {
     });
   });
 
+  describe('isReopenableCompletedStatus', () => {
+    test.each(['done', 'needs_review', 'reviewed'] as const)('returns true for %s', (status) => {
+      expect(isReopenableCompletedStatus(status)).toBe(true);
+    });
+
+    test.each(['cancelled', 'deferred', 'pending', 'in_progress', null, undefined] as const)(
+      'returns false for %s',
+      (status) => {
+        expect(isReopenableCompletedStatus(status)).toBe(false);
+      }
+    );
+  });
+
   describe('getCompletionStatus', () => {
     test('defaults to needs_review', () => {
       expect(getCompletionStatus({})).toBe('needs_review');
@@ -329,6 +343,7 @@ describe('plan state utilities', () => {
       expect(getStatusDisplayName('cancelled')).toBe('Cancelled');
       expect(getStatusDisplayName('deferred')).toBe('Deferred');
       expect(getStatusDisplayName('needs_review')).toBe('Needs Review');
+      expect(getStatusDisplayName('reviewed')).toBe('Reviewed');
     });
 
     test('returns Pending for undefined status', () => {
@@ -345,6 +360,7 @@ describe('plan state utilities', () => {
         'cancelled',
         'deferred',
         'needs_review',
+        'reviewed',
       ];
       for (const status of validStatuses) {
         expect(isValidPlanStatus(status)).toBe(true);
@@ -369,6 +385,7 @@ describe('plan state utilities', () => {
       expect(normalizePlanStatus('pending')).toBe('pending');
       expect(normalizePlanStatus('in_progress')).toBe('in_progress');
       expect(normalizePlanStatus('needs_review')).toBe('needs_review');
+      expect(normalizePlanStatus('reviewed')).toBe('reviewed');
     });
 
     test('returns undefined for invalid values', () => {

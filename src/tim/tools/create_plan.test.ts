@@ -158,6 +158,36 @@ describe('createPlanTool references', () => {
     expect(parentPlan.status).toBe('in_progress');
   });
 
+  test('reopens a reviewed parent when creating a child plan', async () => {
+    await seedPlan({
+      id: 1,
+      uuid: crypto.randomUUID(),
+      title: 'Reviewed Parent',
+      goal: 'Parent goal',
+      epic: true,
+      status: 'reviewed',
+      dependencies: [],
+    });
+
+    const result = await createPlanTool(
+      {
+        title: 'Child Plan',
+        goal: 'Child goal',
+        details: '',
+        priority: 'medium',
+        parent: 1,
+      },
+      context
+    );
+
+    const { plan: childPlan } = await resolvePlanByNumericId(result.data?.id, tempDir);
+    const { plan: parentPlan } = await resolvePlanByNumericId(1, tempDir);
+
+    expect(childPlan.parent).toBe(1);
+    expect(parentPlan.dependencies).toEqual([2]);
+    expect(parentPlan.status).toBe('in_progress');
+  });
+
   test('rolls back child create and parent status update when parent batch fails', async () => {
     await seedPlan({
       id: 1,

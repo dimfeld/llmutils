@@ -80,4 +80,35 @@ describe('reopenParentForAppendedReviewTasks', () => {
     expect(reopenedPlan.details).toBe('Unsynced materialized parent edit');
     expect(reopenedPlan.status).toBe('in_progress');
   });
+
+  test('reopens reviewed materialized parents', async () => {
+    await writePlanToDb(
+      {
+        id: 902,
+        title: 'Reviewed parent plan',
+        goal: 'Ensure reviewed parents reopen',
+        details: 'Existing reviewed parent details',
+        status: 'reviewed',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    await materializePlanSpy(902, testDir);
+    materializePlanSpy.mockClear();
+    const materializedPath = getMaterializedPlanPath(testDir, 902);
+
+    await reopenParentForAppendedReviewTasks(
+      {
+        parent: 902,
+        status: 'reviewed',
+      },
+      testDir
+    );
+
+    expect(materializePlanSpy).not.toHaveBeenCalled();
+
+    const reopenedPlan = await readPlanFile(materializedPath);
+    expect(reopenedPlan.status).toBe('in_progress');
+  });
 });

@@ -31,8 +31,10 @@ export interface SelectionGraph<T extends RunChildrenPlanChild = RunChildrenPlan
   childrenByUuid: Map<string, T>;
 }
 
-const FINISHED_STATUSES = new Set(['done', 'cancelled', 'needs_review']);
-const INELIGIBLE_STATUSES = new Set(['done', 'cancelled', 'needs_review', 'deferred']);
+// Keep in sync with isWorkCompleteStatus in src/tim/plans/plan_state_utils.ts.
+// 'reviewed' counts as finished so a reviewed predecessor no longer blocks dependents ("stacked").
+const FINISHED_STATUSES = new Set(['done', 'cancelled', 'needs_review', 'reviewed']);
+const INELIGIBLE_STATUSES = new Set(['done', 'cancelled', 'needs_review', 'reviewed', 'deferred']);
 
 export function isFinishedStatus(status: string): boolean {
   // Keep in sync with isWorkCompleteStatus in src/tim/plans/plan_state_utils.ts.

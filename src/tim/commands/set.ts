@@ -104,7 +104,10 @@ export async function handleSetCommand(
       // so the reviewer knows which workspace worked on the plan.
       if (
         plan.uuid &&
-        (plan.status === 'done' || plan.status === 'needs_review' || plan.status === 'cancelled')
+        (plan.status === 'done' ||
+          plan.status === 'needs_review' ||
+          plan.status === 'reviewed' ||
+          plan.status === 'cancelled')
       ) {
         shouldRemoveAssignment = true;
       }
@@ -413,7 +416,11 @@ export async function handleSetCommand(
       dependencies.add(plan.id);
       newParentPlan.dependencies = [...dependencies];
       newParentPlan.updatedAt = new Date().toISOString();
-      if (newParentPlan.status === 'done' || newParentPlan.status === 'needs_review') {
+      if (
+        newParentPlan.status === 'done' ||
+        newParentPlan.status === 'needs_review' ||
+        newParentPlan.status === 'reviewed'
+      ) {
         newParentPlan.status = 'in_progress';
         const { updatedPlan: updatedNewParent } = ensureReferences(newParentPlan, {
           planIdToUuid: idToUuid,
@@ -501,6 +508,7 @@ export async function handleSetCommand(
       Boolean(refreshedPlanWithReferences.parent) &&
       (refreshedPlanWithReferences.status === 'done' ||
         refreshedPlanWithReferences.status === 'needs_review' ||
+        refreshedPlanWithReferences.status === 'reviewed' ||
         refreshedPlanWithReferences.status === 'cancelled');
     if (shouldCheckParentCompletion && refreshedPlanWithReferences.parent) {
       await checkAndMarkParentDone(refreshedPlanWithReferences.parent, config, {

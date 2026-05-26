@@ -43,6 +43,7 @@ export type PlanDisplayStatus =
   | 'in_progress'
   | 'blocked'
   | 'needs_review'
+  | 'reviewed'
   | 'recently_done'
   | 'done'
   | 'cancelled'
@@ -52,6 +53,7 @@ export interface ProjectPlanStatusCounts {
   pending: number;
   in_progress: number;
   needs_review: number;
+  reviewed: number;
   done: number;
   cancelled: number;
   deferred: number;
@@ -188,6 +190,7 @@ const EMPTY_STATUS_COUNTS: ProjectPlanStatusCounts = {
   pending: 0,
   in_progress: 0,
   needs_review: 0,
+  reviewed: 0,
   done: 0,
   cancelled: 0,
   deferred: 0,
@@ -497,17 +500,24 @@ function enrichPlansWithContext(
       displayStatus = 'ready';
     }
 
+    // A predecessor counts as a resolved dependency for the "stacked" UI when its
+    // work is complete enough to no longer block: done, cancelled, or reviewed
+    // (the author has finished review and the PR is ready to merge). needs_review
+    // is intentionally excluded so a dependent still shows the stacked badge until
+    // the predecessor is marked reviewed/merged.
+    const isResolvedDependencyStatus = (status: string | null | undefined): boolean =>
+      status === 'done' || status === 'cancelled' || status === 'reviewed';
     const basePlanResolved = !plan.base_plan_uuid
       ? true
       : (() => {
           const bp = planByUuid.get(plan.base_plan_uuid);
-          return bp?.status === 'done' || bp?.status === 'cancelled';
+          return isResolvedDependencyStatus(bp?.status);
         })();
     const depsFullyResolved =
       basePlanResolved &&
       dependencyRows.every((dep) => {
         const depPlan = planByUuid.get(dep.depends_on_uuid);
-        return depPlan?.status === 'done' || depPlan?.status === 'cancelled';
+        return isResolvedDependencyStatus(depPlan?.status);
       });
 
     return {
@@ -739,6 +749,7 @@ export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
           pending: counts.pending,
           in_progress: counts.in_progress,
           needs_review: counts.needs_review,
+          reviewed: counts.reviewed,
           done: counts.done,
           cancelled: counts.cancelled,
           deferred: counts.deferred,
@@ -752,7 +763,11 @@ export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
     return {
       ...project,
       planCount: counts?.total ?? 0,
-      activePlanCount: statusCounts.pending + statusCounts.in_progress + statusCounts.needs_review,
+      activePlanCount:
+        statusCounts.pending +
+        statusCounts.in_progress +
+        statusCounts.needs_review +
+        statusCounts.reviewed,
       statusCounts,
       featured: featuredRaw != null ? JSON.parse(featuredRaw) === true : true,
       abbreviation: abbreviationRaw != null ? (JSON.parse(abbreviationRaw) as string) : undefined,

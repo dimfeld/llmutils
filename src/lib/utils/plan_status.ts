@@ -2,6 +2,7 @@ import type { PlanDisplayStatus } from '$lib/server/db_queries.js';
 
 export const STATUS_ORDER: PlanDisplayStatus[] = [
   'needs_review',
+  'reviewed',
   'in_progress',
   'ready',
   'pending',

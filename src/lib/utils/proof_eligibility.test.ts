@@ -43,6 +43,7 @@ describe('isPlanProofReady', () => {
     expect(isPlanProofReady({ status: 'needs_review', taskCounts: { done: 0, total: 0 } })).toBe(
       true
     );
+    expect(isPlanProofReady({ status: 'reviewed' })).toBe(true);
     expect(isPlanProofReady({ status: 'done' })).toBe(true);
     expect(
       isPlanProofReady({

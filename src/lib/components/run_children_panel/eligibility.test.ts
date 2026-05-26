@@ -29,6 +29,7 @@ describe('run children eligibility helpers', () => {
     expect(isFinishedStatus('done')).toBe(true);
     expect(isFinishedStatus('cancelled')).toBe(true);
     expect(isFinishedStatus('needs_review')).toBe(true);
+    expect(isFinishedStatus('reviewed')).toBe(true);
     expect(isFinishedStatus('pending')).toBe(false);
     expect(isFinishedStatus('in_progress')).toBe(false);
     expect(isFinishedStatus('deferred')).toBe(false);
@@ -38,7 +39,7 @@ describe('run children eligibility helpers', () => {
     expect(isAgentEligibleChild(child('active'))).toBe(true);
   });
 
-  test.each(['done', 'cancelled', 'needs_review', 'deferred'])(
+  test.each(['done', 'cancelled', 'needs_review', 'reviewed', 'deferred'])(
     'isAgentEligibleChild rejects %s children',
     (status: string) => {
       expect(isAgentEligibleChild(child(status, { status }))).toBe(false);
@@ -165,6 +166,26 @@ describe('buildSelectionGraph', () => {
 
     expect(graph.transitivelyBlockedByUuid.has('down')).toBe(false);
   });
+
+  test('does not block external dependencies with reviewed status', () => {
+    const graph = buildSelectionGraph([child('a', { dependencies: ['external-reviewed'] })], {
+      'external-reviewed': 'reviewed',
+    });
+
+    expect(graph.externalBlockedByUuid.has('a')).toBe(false);
+  });
+
+  test('does not flag downstream children as transitively blocked when predecessor is reviewed', () => {
+    const graph = buildSelectionGraph(
+      [
+        child('reviewed-pred', { status: 'reviewed', taskCount: 1, doneTaskCount: 1 }),
+        child('down', { dependencies: ['reviewed-pred'] }),
+      ],
+      {}
+    );
+
+    expect(graph.transitivelyBlockedByUuid.has('down')).toBe(false);
+  });
 });
 
 describe('selection expansion and shrinking', () => {
@@ -192,6 +213,17 @@ describe('selection expansion and shrinking', () => {
     const children = [
       child('finished', { status: 'done', taskCount: 1, doneTaskCount: 1 }),
       child('next', { dependencies: ['finished'] }),
+    ];
+    const graph = buildSelectionGraph(children, {});
+    const selected = expandSelectionWithPredecessors(new Set<string>(), children[1], graph);
+
+    expect([...selected]).toEqual(['next']);
+  });
+
+  test('expandSelectionWithPredecessors skips reviewed predecessors', () => {
+    const children = [
+      child('reviewed-pred', { status: 'reviewed', taskCount: 1, doneTaskCount: 1 }),
+      child('next', { dependencies: ['reviewed-pred'] }),
     ];
     const graph = buildSelectionGraph(children, {});
     const selected = expandSelectionWithPredecessors(new Set<string>(), children[1], graph);

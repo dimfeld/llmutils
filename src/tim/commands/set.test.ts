@@ -214,6 +214,24 @@ describe('tim set command', () => {
     expect(callArgs[2]).toBe(updatedPlan.uuid);
   });
 
+  test('removes assignments when status set to reviewed', async () => {
+    const planPath = await createTestPlan(118);
+
+    await handleSetCommand(
+      118,
+      {
+        status: 'reviewed',
+      },
+      globalOpts
+    );
+
+    const updatedPlan = (await resolvePlanByNumericId(118, tempDir)).plan;
+    expect(updatedPlan.status).toBe('reviewed');
+    expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
+    const [callArgs] = removeAssignmentSpy.mock.calls;
+    expect(callArgs[2]).toBe(updatedPlan.uuid);
+  });
+
   test('logs warning when assignment removal fails', async () => {
     const planPath = await createTestPlan(113);
     removeAssignmentSpy.mockImplementationOnce(() => {
@@ -263,6 +281,37 @@ describe('tim set command', () => {
     const doneChild = (await resolvePlanByNumericId(115, tempDir)).plan;
 
     expect(updatedLastChild.status).toBe('cancelled');
+    expect(doneChild.status).toBe('done');
+    expect(updatedParent.status).toBe('needs_review');
+  });
+
+  test('marks epic parent needs_review when last incomplete child is set to reviewed', async () => {
+    const parentPlanPath = await createTestPlan(119, {
+      epic: true,
+      status: 'in_progress',
+    });
+    const doneChildPath = await createTestPlan(120, {
+      parent: 119,
+      status: 'done',
+    });
+    const lastChildPath = await createTestPlan(121, {
+      parent: 119,
+      status: 'in_progress',
+    });
+
+    await handleSetCommand(
+      121,
+      {
+        status: 'reviewed',
+      },
+      globalOpts
+    );
+
+    const updatedLastChild = (await resolvePlanByNumericId(121, tempDir)).plan;
+    const updatedParent = (await resolvePlanByNumericId(119, tempDir)).plan;
+    const doneChild = (await resolvePlanByNumericId(120, tempDir)).plan;
+
+    expect(updatedLastChild.status).toBe('reviewed');
     expect(doneChild.status).toBe('done');
     expect(updatedParent.status).toBe('needs_review');
   });
@@ -837,6 +886,48 @@ describe('tim set command', () => {
     // Verify new parent has child in dependencies
     const newParent = (await resolvePlanByNumericId(206, tempDir)).plan;
     expect(newParent.dependencies).toEqual([204]);
+  });
+
+  test('reverts parent status to in_progress when child is reparented onto a reviewed parent', async () => {
+    await createTestPlan(220, { status: 'reviewed' });
+    await createTestPlan(221, { status: 'pending' });
+
+    await handleSetCommand(221, { parent: 220 }, globalOpts);
+
+    const updatedChild = (await resolvePlanByNumericId(221, tempDir)).plan;
+    const updatedParent = (await resolvePlanByNumericId(220, tempDir)).plan;
+
+    expect(updatedChild.parent).toBe(220);
+    expect(updatedParent.status).toBe('in_progress');
+    expect(updatedParent.dependencies).toContain(221);
+  });
+
+  test('reverts parent status to in_progress when child is reparented onto a done parent', async () => {
+    await createTestPlan(222, { status: 'done' });
+    await createTestPlan(223, { status: 'pending' });
+
+    await handleSetCommand(223, { parent: 222 }, globalOpts);
+
+    const updatedChild = (await resolvePlanByNumericId(223, tempDir)).plan;
+    const updatedParent = (await resolvePlanByNumericId(222, tempDir)).plan;
+
+    expect(updatedChild.parent).toBe(222);
+    expect(updatedParent.status).toBe('in_progress');
+    expect(updatedParent.dependencies).toContain(223);
+  });
+
+  test('reverts parent status to in_progress when child is reparented onto a needs_review parent', async () => {
+    await createTestPlan(224, { status: 'needs_review' });
+    await createTestPlan(225, { status: 'pending' });
+
+    await handleSetCommand(225, { parent: 224 }, globalOpts);
+
+    const updatedChild = (await resolvePlanByNumericId(225, tempDir)).plan;
+    const updatedParent = (await resolvePlanByNumericId(224, tempDir)).plan;
+
+    expect(updatedChild.parent).toBe(224);
+    expect(updatedParent.status).toBe('in_progress');
+    expect(updatedParent.dependencies).toContain(225);
   });
 
   test('rolls back child and parent changes when parent-change batch fails', async () => {

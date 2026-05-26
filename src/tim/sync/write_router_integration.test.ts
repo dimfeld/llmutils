@@ -622,6 +622,36 @@ describe('write_router integration: parent cascade no double-emit', () => {
     const nonParentSeq = seqRows.filter((r) => r.target_key !== `plan:${PARENT_UUID}`);
     expect(nonParentSeq).toHaveLength(0);
   });
+
+  test('cascade preserves an already reviewed epic parent', async () => {
+    upsertPlanForSyncTest(db, projectId, {
+      uuid: PARENT_UUID,
+      planId: 1,
+      title: 'Reviewed Parent Epic',
+      status: 'reviewed',
+      epic: true,
+      forceOverwrite: true,
+    });
+
+    const config: TimConfig = {
+      sync: {
+        role: 'main',
+        nodeId: NODE_ID,
+        allowedNodes: [],
+      },
+    } as TimConfig;
+
+    const result = await checkAndMarkParentDone(1, config, { db, projectId });
+
+    expect(result).toBeUndefined();
+    const parent = getPlanByUuid(db, PARENT_UUID)!;
+    expect(parent.status).toBe('reviewed');
+
+    const parentSeqRows = db
+      .prepare('SELECT target_key FROM sync_sequence WHERE target_key = ?')
+      .all(`plan:${PARENT_UUID}`);
+    expect(parentSeqRows).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

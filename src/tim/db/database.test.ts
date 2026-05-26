@@ -351,7 +351,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(40);
+    expect(version?.version).toBe(41);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
 
@@ -503,6 +503,182 @@ describe('tim db/database', () => {
     db.close(false);
   });
 
+  test('runMigrations allows reviewed status in projection and canonical plan tables', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db = openDatabase(dbPath);
+
+    try {
+      const project = getOrCreateProject(db, 'repo-reviewed-status', {
+        uuid: '11111111-1111-4111-8111-111111111111',
+      });
+
+      db.prepare(
+        `
+          INSERT INTO plan (
+            uuid, project_id, plan_id, title, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, 'reviewed', ?, ?)
+        `
+      ).run(
+        '22222222-2222-4222-8222-222222222222',
+        project.id,
+        1,
+        'Reviewed projection insert',
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-01T00:00:00.000Z'
+      );
+      db.prepare(
+        `
+          INSERT INTO plan_canonical (
+            uuid, project_id, plan_id, title, status, created_at, updated_at, revision
+          ) VALUES (?, ?, ?, ?, 'reviewed', ?, ?, ?)
+        `
+      ).run(
+        '33333333-3333-4333-8333-333333333333',
+        project.id,
+        2,
+        'Reviewed canonical insert',
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-01T00:00:00.000Z',
+        1
+      );
+      db.prepare(
+        `
+          INSERT INTO plan (
+            uuid, project_id, plan_id, title, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, 'pending', ?, ?)
+        `
+      ).run(
+        '44444444-4444-4444-8444-444444444444',
+        project.id,
+        3,
+        'Reviewed projection update',
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-01T00:00:00.000Z'
+      );
+      db.prepare(
+        `
+          INSERT INTO plan_canonical (
+            uuid, project_id, plan_id, title, status, created_at, updated_at, revision
+          ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
+        `
+      ).run(
+        '55555555-5555-4555-8555-555555555555',
+        project.id,
+        4,
+        'Reviewed canonical update',
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-01T00:00:00.000Z',
+        1
+      );
+
+      db.prepare('UPDATE plan SET status = ? WHERE uuid = ?').run(
+        'reviewed',
+        '44444444-4444-4444-8444-444444444444'
+      );
+      db.prepare('UPDATE plan_canonical SET status = ? WHERE uuid = ?').run(
+        'reviewed',
+        '55555555-5555-4555-8555-555555555555'
+      );
+
+      expect(
+        db
+          .query<{ status: string }, []>('SELECT status FROM plan ORDER BY plan_id')
+          .all()
+          .map((row) => row.status)
+      ).toEqual(['reviewed', 'reviewed']);
+      expect(
+        db
+          .query<{ status: string }, []>('SELECT status FROM plan_canonical ORDER BY plan_id')
+          .all()
+          .map((row) => row.status)
+      ).toEqual(['reviewed', 'reviewed']);
+    } finally {
+      db.close(false);
+    }
+  });
+
+  test('runMigrations v41 preserves projection and canonical plan rows', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db = openDatabase(dbPath);
+
+    try {
+      const project = getOrCreateProject(db, 'repo-reviewed-v41-preserve', {
+        uuid: '11111111-1111-4111-8111-111111111111',
+      });
+      db.prepare(
+        `
+          INSERT INTO plan (
+            uuid, project_id, plan_id, title, goal, status, created_at, updated_at, revision
+          ) VALUES (?, ?, ?, ?, ?, 'needs_review', ?, ?, ?)
+        `
+      ).run(
+        '22222222-2222-4222-8222-222222222222',
+        project.id,
+        1,
+        'Projection before v41',
+        'Keep projection',
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-02T00:00:00.000Z',
+        7
+      );
+      db.prepare(
+        `
+          INSERT INTO plan_canonical (
+            uuid, project_id, plan_id, title, goal, status, created_at, updated_at, revision
+          ) VALUES (?, ?, ?, ?, ?, 'needs_review', ?, ?, ?)
+        `
+      ).run(
+        '33333333-3333-4333-8333-333333333333',
+        project.id,
+        2,
+        'Canonical before v41',
+        'Keep canonical',
+        '2026-01-03T00:00:00.000Z',
+        '2026-01-04T00:00:00.000Z',
+        9
+      );
+      db.exec(`
+        DELETE FROM schema_version;
+        INSERT INTO schema_version (version, import_completed, bootstrap_completed)
+          VALUES (40, 1, 0);
+      `);
+
+      runMigrations(db);
+
+      expect(
+        db
+          .query<
+            { title: string | null; goal: string | null; status: string; revision: number },
+            []
+          >('SELECT title, goal, status, revision FROM plan WHERE uuid = ?')
+          .get('22222222-2222-4222-8222-222222222222')
+      ).toEqual({
+        title: 'Projection before v41',
+        goal: 'Keep projection',
+        status: 'needs_review',
+        revision: 7,
+      });
+      expect(
+        db
+          .query<
+            { title: string | null; goal: string | null; status: string; revision: number },
+            []
+          >('SELECT title, goal, status, revision FROM plan_canonical WHERE uuid = ?')
+          .get('33333333-3333-4333-8333-333333333333')
+      ).toEqual({
+        title: 'Canonical before v41',
+        goal: 'Keep canonical',
+        status: 'needs_review',
+        revision: 9,
+      });
+      expect(db.query<{ version: number }, []>('SELECT version FROM schema_version').get()).toEqual(
+        { version: 41 }
+      );
+    } finally {
+      db.close(false);
+    }
+  });
+
   test('openDatabase is idempotent across repeated opens', () => {
     const dbPath = path.join(tempDir, DATABASE_FILENAME);
 
@@ -515,7 +691,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(40);
+    expect(version?.version).toBe(41);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
     const versionRowCount = db2
@@ -647,7 +823,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(40);
+      expect(schemaVersion?.version).toBe(41);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -798,7 +974,7 @@ describe('tim db/database', () => {
           'SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1'
         )
         .get();
-      expect(schemaVersion?.version).toBe(40);
+      expect(schemaVersion?.version).toBe(41);
 
       const checkRows = db
         .query<{ count: number }, []>(
@@ -1119,7 +1295,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(40);
+      ).toBe(41);
       expect(db.query<{ uuid: string }, []>('SELECT uuid FROM project').get()?.uuid).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
       );
@@ -1627,7 +1803,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(40);
+      ).toBe(41);
 
       const syncOperationColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('sync_operation')")

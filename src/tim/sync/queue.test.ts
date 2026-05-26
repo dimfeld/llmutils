@@ -2004,6 +2004,12 @@ describe('persistent-node sync queue', () => {
         planId: 3,
         status: 'cancelled',
       },
+      {
+        planUuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        taskUuid: TASK_UUID_4,
+        planId: 4,
+        status: 'reviewed',
+      },
     ] as const;
 
     for (const testCase of cases) {

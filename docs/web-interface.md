@@ -510,10 +510,10 @@ An "Open Terminal" button (AppWindow icon) appears next to each workspace path i
 
 ### Eligibility
 
-- **Generate** (`isPlanEligibleForGenerate`): Plan has no tasks and `displayStatus` is not `done`, `needs_review`, `cancelled`, or `recently_done`.
-- **Agent** (`isPlanEligibleForAgent`): Plan is not `done`, `needs_review`, or `cancelled`. If the plan has tasks, at least one must be incomplete (not all done). Plans without tasks are also eligible (simple/stub plans).
+- **Generate** (`isPlanEligibleForGenerate`): Plan has no tasks and `displayStatus` is not `done`, `needs_review`, `reviewed`, `cancelled`, or `recently_done`.
+- **Agent** (`isPlanEligibleForAgent`): Plan is not `done`, `needs_review`, `reviewed`, or `cancelled`. If the plan has tasks, at least one must be incomplete (not all done). Plans without tasks are also eligible (simple/stub plans).
 - **Chat** (`isPlanEligibleForChat`): Any existing plan is eligible, including plans in terminal statuses (done, cancelled, deferred).
-- **Rebase** (`isPlanEligibleForRebase`): Plan status must be `in_progress`, `needs_review`, or `done` (states where a branch is expected to exist).
+- **Rebase** (`isPlanEligibleForRebase`): Plan status must be `in_progress`, `needs_review`, `reviewed`, or `done` (states where a branch is expected to exist).
 
 ### Executor Selection Dialog
 

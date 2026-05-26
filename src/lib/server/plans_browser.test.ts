@@ -218,6 +218,44 @@ describe('lib/server/plans_browser', () => {
     expect(result.planNumberToUuid[`${projectId}:412`]).toBe('deferred-plan');
   });
 
+  test('getDashboardData includes reviewed plans and does not block dependents by them', async () => {
+    upsertPlan(db, projectId, {
+      uuid: 'reviewed-plan',
+      planId: 413,
+      title: 'Reviewed plan',
+      status: 'reviewed',
+      priority: 'high',
+      filename: '413-reviewed.plan.md',
+      sourceCreatedAt: daysAgo(2),
+      sourceUpdatedAt: daysAgo(2),
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'depends-on-reviewed',
+      planId: 414,
+      title: 'Plan depending on reviewed',
+      status: 'pending',
+      priority: 'medium',
+      filename: '414-depends-on-reviewed.plan.md',
+      sourceCreatedAt: daysAgo(2),
+      sourceUpdatedAt: daysAgo(2),
+      dependencyUuids: ['reviewed-plan'],
+    });
+
+    const result = await getDashboardData(db, String(projectId));
+
+    const reviewedEntry = result.plans.find((p) => p.uuid === 'reviewed-plan');
+    const dependentEntry = result.plans.find((p) => p.uuid === 'depends-on-reviewed');
+
+    // The reviewed plan appears in the dashboard (not terminal)
+    expect(reviewedEntry).toBeDefined();
+    expect(reviewedEntry?.displayStatus).toBe('reviewed');
+
+    // The dependent is not blocked by the reviewed plan
+    expect(dependentEntry).toBeDefined();
+    expect(dependentEntry?.displayStatus).toBe('pending');
+  });
+
   test('getDashboardData supports all-project mode', async () => {
     upsertPlan(db, otherProjectId, {
       uuid: 'other-project-done-recent',

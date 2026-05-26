@@ -32,6 +32,7 @@ import * as clipboard from '../../../common/clipboard.js';
 import { loadPlansFromDb } from '../../plans_db.js';
 import { ensureMaterializeDir, resolveProjectContext } from '../../plan_materialize.js';
 import { resolvePlanByNumericId } from '../../plans.js';
+import { isReopenableCompletedStatus } from '../../plans/plan_state_utils.js';
 import { editMaterializedPlan } from '../materialized_edit.js';
 import {
   applyCommandOptions,
@@ -82,7 +83,7 @@ async function updateParentPlanDependencies(
     parentPlan.dependencies.push(childPlanId);
     parentPlan.updatedAt = new Date().toISOString();
 
-    if (parentPlan.status === 'done' || parentPlan.status === 'needs_review') {
+    if (isReopenableCompletedStatus(parentPlan.status)) {
       parentPlan.status = 'in_progress';
       log(chalk.yellow(`  Parent plan "${parentPlan.title}" marked as in_progress`));
     }

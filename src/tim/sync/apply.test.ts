@@ -1973,6 +1973,21 @@ describe('main-node sync apply engine', () => {
     expect(getAssignment(db, project.id, PLAN_UUID)).not.toBeNull();
   });
 
+  test('plan.set_scalar cleans local assignment when status transitions to reviewed', async () => {
+    seedPlan();
+    seedAssignment();
+    const op = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'status', value: 'reviewed' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    const result = applyOperation(db, op);
+
+    expect(result.status).toBe('applied');
+    expect(getAssignment(db, project.id, PLAN_UUID)).toBeNull();
+  });
+
   test.each(['simple', 'tdd', 'temp', 'epic'] as const)(
     'plan.set_scalar treats false %s as an unchanged boolean',
     async (field) => {

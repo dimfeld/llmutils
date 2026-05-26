@@ -98,6 +98,7 @@
   const INELIGIBLE_STATUSES = new Set([
     'done',
     'needs_review',
+    'reviewed',
     'cancelled',
     'deferred',
     'recently_done',
@@ -269,12 +270,12 @@
     return null;
   });
 
-  const REBASE_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
+  const REBASE_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'reviewed', 'done']);
   let isEligibleForRebase = $derived(REBASE_ELIGIBLE_STATUSES.has(plan.status));
 
   let isEligibleForReview = $derived(plan.status === 'needs_review');
 
-  const CREATE_PR_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
+  const CREATE_PR_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'reviewed', 'done']);
   let isEligibleForCreatePr = $derived(
     CREATE_PR_ELIGIBLE_STATUSES.has(plan.status) &&
       !plan.epic &&

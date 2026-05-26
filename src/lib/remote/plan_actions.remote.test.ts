@@ -160,6 +160,18 @@ describe('plan remote actions', () => {
     });
   });
 
+  test('startGenerate rejects reviewed plans', async () => {
+    seedPlan({ uuid: 'plan-reviewed', planId: 1894, status: 'reviewed' });
+
+    await expect(invokeCommand(startGenerate, { planUuid: 'plan-reviewed' })).rejects.toMatchObject(
+      {
+        status: 400,
+        body: { message: 'Plan is not eligible for generate' },
+      }
+    );
+    expect(spawnGenerateProcessMock).not.toHaveBeenCalled();
+  });
+
   test('startGenerate rejects stub plans that are already needs_review, done, cancelled, or deferred', async () => {
     seedPlan({ uuid: 'plan-needs-review', planId: 1890, status: 'needs_review' });
     seedPlan({ uuid: 'plan-done', planId: 1891, status: 'done' });
@@ -386,6 +398,18 @@ describe('plan remote actions', () => {
         status: 404,
         body: { message: 'Plan not found' },
       });
+    });
+
+    test('rejects reviewed plans', async () => {
+      seedPlan({ uuid: 'agent-plan-reviewed', planId: 2099, status: 'reviewed' });
+
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-reviewed' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for agent' },
+      });
+      expect(spawnAgentProcessMock).not.toHaveBeenCalled();
     });
 
     test('rejects needs_review, done, cancelled, or deferred plans', async () => {
@@ -1581,9 +1605,10 @@ describe('plan remote actions', () => {
       expect(spawnRebaseProcessMock).not.toHaveBeenCalled();
     });
 
-    test('allows in_progress, needs_review, and done plans', async () => {
+    test('allows in_progress, needs_review, reviewed, and done plans', async () => {
       seedPlan({ uuid: 'rebase-plan-in-progress', planId: 3003, status: 'in_progress' });
       seedPlan({ uuid: 'rebase-plan-needs-review', planId: 3004, status: 'needs_review' });
+      seedPlan({ uuid: 'rebase-plan-reviewed', planId: 3009, status: 'reviewed' });
       seedPlan({ uuid: 'rebase-plan-done', planId: 3005, status: 'done' });
       recordWorkspace(currentDb, {
         projectId,
@@ -1601,13 +1626,18 @@ describe('plan remote actions', () => {
         invokeCommand(startRebase, { planUuid: 'rebase-plan-needs-review' })
       ).resolves.toEqual({ status: 'started', planId: 3004 });
 
+      spawnRebaseProcessMock.mockResolvedValue({ success: true, planId: 3009 });
+      await expect(
+        invokeCommand(startRebase, { planUuid: 'rebase-plan-reviewed' })
+      ).resolves.toEqual({ status: 'started', planId: 3009 });
+
       spawnRebaseProcessMock.mockResolvedValue({ success: true, planId: 3005 });
       await expect(invokeCommand(startRebase, { planUuid: 'rebase-plan-done' })).resolves.toEqual({
         status: 'started',
         planId: 3005,
       });
 
-      expect(spawnRebaseProcessMock).toHaveBeenCalledTimes(3);
+      expect(spawnRebaseProcessMock).toHaveBeenCalledTimes(4);
     });
 
     test('returns already_running when a session exists on the same plan', async () => {
@@ -2201,9 +2231,10 @@ describe('plan remote actions', () => {
       expect(spawnPrCreateProcessMock).not.toHaveBeenCalled();
     });
 
-    test('allows in_progress, needs_review, and done plans without PRs', async () => {
+    test('allows in_progress, needs_review, reviewed, and done plans without PRs', async () => {
       seedPlan({ uuid: 'pr-create-in-progress', planId: 4005, status: 'in_progress' });
       seedPlan({ uuid: 'pr-create-needs-review', planId: 4006, status: 'needs_review' });
+      seedPlan({ uuid: 'pr-create-reviewed', planId: 4009, status: 'reviewed' });
       seedPlan({ uuid: 'pr-create-done', planId: 4007, status: 'done' });
       recordWorkspace(currentDb, {
         projectId,
@@ -2221,13 +2252,18 @@ describe('plan remote actions', () => {
         invokeCommand(startCreatePr, { planUuid: 'pr-create-needs-review' })
       ).resolves.toEqual({ status: 'started', planId: 4006 });
 
+      spawnPrCreateProcessMock.mockResolvedValue({ success: true, planId: 4009 });
+      await expect(
+        invokeCommand(startCreatePr, { planUuid: 'pr-create-reviewed' })
+      ).resolves.toEqual({ status: 'started', planId: 4009 });
+
       spawnPrCreateProcessMock.mockResolvedValue({ success: true, planId: 4007 });
       await expect(invokeCommand(startCreatePr, { planUuid: 'pr-create-done' })).resolves.toEqual({
         status: 'started',
         planId: 4007,
       });
 
-      expect(spawnPrCreateProcessMock).toHaveBeenCalledTimes(3);
+      expect(spawnPrCreateProcessMock).toHaveBeenCalledTimes(4);
     });
   });
 
@@ -2480,7 +2516,14 @@ describe('plan remote actions', () => {
     uuid: string;
     planId: number;
     projectId?: number;
-    status?: 'pending' | 'in_progress' | 'needs_review' | 'done' | 'cancelled' | 'deferred';
+    status?:
+      | 'pending'
+      | 'in_progress'
+      | 'needs_review'
+      | 'reviewed'
+      | 'done'
+      | 'cancelled'
+      | 'deferred';
     epic?: boolean;
     parentUuid?: string;
     basePlanUuid?: string | null;

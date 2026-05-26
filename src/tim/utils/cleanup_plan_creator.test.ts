@@ -138,6 +138,36 @@ describe('cleanup_plan_creator', () => {
     expect(updatedParent.dependencies).toContain(result.planId);
   });
 
+  test('createCleanupPlan reopens reviewed parents to in_progress', async () => {
+    await writePlanToDb(
+      {
+        id: 21,
+        title: 'Reviewed Parent',
+        goal: 'Return reviewed work to active status when cleanup is needed',
+        details: 'Parent details',
+        status: 'reviewed',
+        changedFiles: ['src/reviewed-parent.ts'],
+        tasks: [],
+        filename: '21-parent.plan.md',
+      },
+      { cwdForIdentity: repoRoot }
+    );
+
+    const result = await createCleanupPlan(21, [
+      {
+        id: 'issue-1',
+        severity: 'major',
+        category: 'bug',
+        content: 'Follow up after reviewed parent review',
+        file: 'src/reviewed-parent.ts',
+      },
+    ]);
+
+    const updatedParent = (await resolvePlanByNumericId(21, repoRoot)).plan;
+    expect(updatedParent.status).toBe('in_progress');
+    expect(updatedParent.dependencies).toContain(result.planId);
+  });
+
   test('createCleanupPlan excludes note severity annotations from cleanup tasks', async () => {
     await writePlanToDb(
       {

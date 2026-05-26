@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from '../../tim/db/database.js';
+import { claimAssignment, getAssignment } from '../../tim/db/assignment.js';
 import { getPlanByUuid, upsertPlan } from '../../tim/db/plan.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
 import {
@@ -13,7 +14,11 @@ import {
   updateWebhookCursor,
   pruneOldWebhookLogs,
 } from '../../tim/db/webhook_log.js';
-import { getPrStatusByUrl, upsertPrStatus } from '../../tim/db/pr_status.js';
+import {
+  getPrStatusByUrl,
+  upsertPrStatus,
+  upsertPrStatusMetadata,
+} from '../../tim/db/pr_status.js';
 
 const mocks = vi.hoisted(() => ({
   fetchWebhookEvents: vi.fn<(...args: unknown[]) => Promise<unknown[]>>(),
@@ -76,6 +81,56 @@ describe('common/github/webhook_ingest', () => {
     db.close(false);
     await fs.rm(tempDir, { recursive: true, force: true });
   });
+
+  function enqueuePullRequestEvent(params: {
+    id: number;
+    deliveryId: string;
+    action: string;
+    prNumber: number;
+    title: string;
+    draft: boolean;
+    state?: string;
+    mergedAt?: string | null;
+    headSha?: string;
+    headRef?: string;
+    receivedAt?: string;
+    updatedAt?: string;
+  }): void {
+    const receivedAt = params.receivedAt ?? '2026-03-30T10:00:00.000Z';
+    mocks.fetchWebhookEvents.mockResolvedValueOnce([
+      {
+        id: params.id,
+        deliveryId: params.deliveryId,
+        eventType: 'pull_request',
+        action: params.action,
+        repositoryFullName: 'example/repo',
+        receivedAt,
+        payloadJson: JSON.stringify({
+          action: params.action,
+          repository: { full_name: 'example/repo' },
+          pull_request: {
+            number: params.prNumber,
+            title: params.title,
+            state: params.state ?? 'open',
+            draft: params.draft,
+            merged_at: params.mergedAt ?? null,
+            user: { login: 'alice' },
+            head: { sha: params.headSha ?? `sha-${params.prNumber}`, ref: params.headRef },
+            base: { ref: 'main' },
+            labels: [],
+            requested_reviewers: [],
+            updated_at: params.updatedAt ?? receivedAt,
+          },
+        }),
+      },
+    ]);
+  }
+
+  function linkPlanToPr(planUuid: string, prStatusId: number): void {
+    db.prepare(
+      "INSERT INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'explicit')"
+    ).run(planUuid, prStatusId);
+  }
 
   test('ingestWebhookEvents stores webhook logs, updates matching PRs, and advances the cursor', async () => {
     mocks.fetchWebhookEvents.mockResolvedValueOnce([
@@ -392,6 +447,223 @@ describe('common/github/webhook_ingest', () => {
     ).toBe(1);
   });
 
+  test('ingestWebhookEvents moves linked needs_review plans to reviewed when a draft PR becomes ready', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    const pr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/70',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 70,
+      title: 'Draft PR',
+      state: 'open',
+      draft: true,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const guardedStatuses = ['in_progress', 'done', 'pending'] as const;
+    upsertPlan(db, projectId, {
+      uuid: 'plan-ready-source',
+      planId: 70,
+      title: 'Ready source',
+      branch: 'feature/ready-source',
+      filename: '70.plan.md',
+      status: 'needs_review',
+    });
+    for (const [index, status] of guardedStatuses.entries()) {
+      upsertPlan(db, projectId, {
+        uuid: `plan-ready-guard-${status}`,
+        planId: 71 + index,
+        title: `Ready guard ${status}`,
+        branch: `feature/ready-guard-${status}`,
+        filename: `${71 + index}.plan.md`,
+        status,
+      });
+    }
+    linkPlanToPr('plan-ready-source', pr.status.id);
+    for (const status of guardedStatuses) {
+      linkPlanToPr(`plan-ready-guard-${status}`, pr.status.id);
+    }
+    claimAssignment(db, projectId, 'plan-ready-source', 70, null, 'alice');
+
+    enqueuePullRequestEvent({
+      id: 70,
+      deliveryId: 'delivery-ready-transition',
+      action: 'ready_for_review',
+      prNumber: 70,
+      title: 'Draft PR',
+      draft: false,
+      headRef: 'feature/ready-source',
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/70']);
+    expect(getPlanByUuid(db, 'plan-ready-source')?.status).toBe('reviewed');
+    expect(getAssignment(db, projectId, 'plan-ready-source')).not.toBeNull();
+    for (const status of guardedStatuses) {
+      expect(getPlanByUuid(db, `plan-ready-guard-${status}`)?.status).toBe(status);
+    }
+  });
+
+  test('ingestWebhookEvents moves linked reviewed plans back to needs_review when a PR becomes draft', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    const pr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/71',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 71,
+      title: 'Ready PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const guardedStatuses = ['needs_review', 'in_progress', 'done', 'pending'] as const;
+    upsertPlan(db, projectId, {
+      uuid: 'plan-draft-source',
+      planId: 80,
+      title: 'Draft source',
+      branch: 'feature/draft-source',
+      filename: '80.plan.md',
+      status: 'reviewed',
+    });
+    for (const [index, status] of guardedStatuses.entries()) {
+      upsertPlan(db, projectId, {
+        uuid: `plan-draft-guard-${status}`,
+        planId: 81 + index,
+        title: `Draft guard ${status}`,
+        branch: `feature/draft-guard-${status}`,
+        filename: `${81 + index}.plan.md`,
+        status,
+      });
+    }
+    linkPlanToPr('plan-draft-source', pr.status.id);
+    for (const status of guardedStatuses) {
+      linkPlanToPr(`plan-draft-guard-${status}`, pr.status.id);
+    }
+    claimAssignment(db, projectId, 'plan-draft-source', 80, null, 'alice');
+
+    enqueuePullRequestEvent({
+      id: 71,
+      deliveryId: 'delivery-draft-transition',
+      action: 'converted_to_draft',
+      prNumber: 71,
+      title: 'Ready PR',
+      draft: true,
+      headRef: 'feature/draft-source',
+    });
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/71']);
+    expect(getPlanByUuid(db, 'plan-draft-source')?.status).toBe('needs_review');
+    expect(getAssignment(db, projectId, 'plan-draft-source')).not.toBeNull();
+    for (const status of guardedStatuses) {
+      expect(getPlanByUuid(db, `plan-draft-guard-${status}`)?.status).toBe(status);
+    }
+  });
+
+  test('ingestWebhookEvents leaves reviewed plans unchanged for stale converted_to_draft events', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    const pr = upsertPrStatusMetadata(db, {
+      prUrl: 'https://github.com/example/repo/pull/72',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 72,
+      title: 'Newer ready PR',
+      author: 'alice',
+      state: 'open',
+      draft: false,
+      headSha: 'sha-new',
+      headBranch: 'feature/stale-draft-source',
+      requestedReviewers: [],
+      prUpdatedAt: '2026-03-30T12:00:00.000Z',
+      lastFetchedAt: '2026-03-30T12:00:00.000Z',
+      labels: [],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'plan-stale-draft-source',
+      planId: 90,
+      title: 'Stale draft source',
+      branch: 'feature/stale-draft-source',
+      filename: '90.plan.md',
+      status: 'reviewed',
+    });
+    linkPlanToPr('plan-stale-draft-source', pr.status.id);
+
+    enqueuePullRequestEvent({
+      id: 72,
+      deliveryId: 'delivery-stale-draft-transition',
+      action: 'converted_to_draft',
+      prNumber: 72,
+      title: 'Stale draft PR',
+      draft: true,
+      headSha: 'sha-old',
+      headRef: 'feature/stale-draft-source',
+      receivedAt: '2026-03-30T12:30:00.000Z',
+      updatedAt: '2026-03-30T11:00:00.000Z',
+    });
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(getPlanByUuid(db, 'plan-stale-draft-source')?.status).toBe('reviewed');
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/72');
+    expect(detail?.status.draft).toBe(0);
+    expect(detail?.status.pr_updated_at).toBe('2026-03-30T12:00:00.000Z');
+  });
+
+  test('ingestWebhookEvents leaves needs_review plans unchanged for stale ready_for_review events', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    const pr = upsertPrStatusMetadata(db, {
+      prUrl: 'https://github.com/example/repo/pull/73',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 73,
+      title: 'Newer draft PR',
+      author: 'alice',
+      state: 'open',
+      draft: true,
+      headSha: 'sha-new',
+      headBranch: 'feature/stale-ready-source',
+      requestedReviewers: [],
+      prUpdatedAt: '2026-03-30T12:00:00.000Z',
+      lastFetchedAt: '2026-03-30T12:00:00.000Z',
+      labels: [],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'plan-stale-ready-source',
+      planId: 91,
+      title: 'Stale ready source',
+      branch: 'feature/stale-ready-source',
+      filename: '91.plan.md',
+      status: 'needs_review',
+    });
+    linkPlanToPr('plan-stale-ready-source', pr.status.id);
+
+    enqueuePullRequestEvent({
+      id: 73,
+      deliveryId: 'delivery-stale-ready-transition',
+      action: 'ready_for_review',
+      prNumber: 73,
+      title: 'Stale ready PR',
+      draft: false,
+      headSha: 'sha-old',
+      headRef: 'feature/stale-ready-source',
+      receivedAt: '2026-03-30T12:30:00.000Z',
+      updatedAt: '2026-03-30T11:00:00.000Z',
+    });
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(getPlanByUuid(db, 'plan-stale-ready-source')?.status).toBe('needs_review');
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/73');
+    expect(detail?.status.draft).toBe(1);
+    expect(detail?.status.pr_updated_at).toBe('2026-03-30T12:00:00.000Z');
+  });
+
   test('ingestWebhookEvents marks a linked needs_review plan done when the PR is merged and the plan is fully finished', async () => {
     upsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
       uuid: 'plan-1',
@@ -498,6 +770,43 @@ describe('common/github/webhook_ingest', () => {
     expect(plan?.status).toBe('done');
     expect(plan?.docs_updated_at).toBeNull();
     expect(plan?.lessons_applied_at).toBeNull();
+  });
+
+  test('ingestWebhookEvents marks a linked reviewed plan done when the PR is merged and the plan is fully finished', async () => {
+    upsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
+      uuid: 'plan-reviewed-merged',
+      planId: 3,
+      title: 'Plan 3',
+      branch: 'feature/webhook-reviewed',
+      filename: '3.plan.md',
+      status: 'reviewed',
+      tasks: [
+        { title: 'Task 1', description: 'Done', done: true },
+        { title: 'Task 2', description: 'Done', done: true },
+      ],
+    });
+
+    enqueuePullRequestEvent({
+      id: 17,
+      deliveryId: 'delivery-reviewed-merged',
+      action: 'closed',
+      prNumber: 53,
+      title: 'Webhook PR Reviewed',
+      state: 'closed',
+      draft: false,
+      mergedAt: '2026-03-30T12:00:00.000Z',
+      headSha: 'sha-53',
+      headRef: 'feature/webhook-reviewed',
+      receivedAt: '2026-03-30T12:00:00.000Z',
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+    const plan = getPlanByUuid(db, 'plan-reviewed-merged');
+
+    expect(result.errors).toEqual([]);
+    expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/53']);
+    expect(plan?.status).toBe('done');
   });
 
   test('ingestWebhookEvents returns early when webhook config is missing', async () => {

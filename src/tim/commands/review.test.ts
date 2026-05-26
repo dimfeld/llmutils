@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   handleReviewCommand,
+  appendIssuesToPlanTasks,
   buildReviewPrompt,
   detectIssuesInReview,
   buildAutofixPrompt,
@@ -2649,6 +2650,45 @@ describe('Custom review instructions', () => {
 });
 
 describe('Autofix functionality', () => {
+  test('reopens a reviewed plan after appending review issues as tasks', async () => {
+    process.chdir(testDir);
+    await writePlanToDb(
+      {
+        id: 299,
+        title: 'Reviewed Plan',
+        goal: 'Append follow-up review issues',
+        details: 'Plan details',
+        status: 'reviewed',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    const appendedCount = await appendIssuesToPlanTasks(
+      299,
+      [
+        {
+          id: 'issue-1',
+          severity: 'major',
+          category: 'bug',
+          content: 'Fix the reviewed follow-up',
+          file: 'src/reviewed.ts',
+        },
+      ],
+      testDir
+    );
+
+    const updatedPlan = (await resolvePlanByNumericId(299, testDir)).plan;
+    expect(appendedCount).toBe(1);
+    expect(updatedPlan.status).toBe('in_progress');
+    expect(updatedPlan.tasks).toHaveLength(1);
+    expect(updatedPlan.tasks?.[0]).toMatchObject({
+      title: 'Address Review Feedback: Fix the reviewed follow-up',
+      description: 'Fix the reviewed follow-up\n\nRelated file: src/reviewed.ts',
+      done: false,
+    });
+  });
+
   test('reopens a needs_review parent after appending review issues to a reopened child', async () => {
     process.chdir(testDir);
     await writePlanToDb(
@@ -2708,6 +2748,31 @@ describe('Autofix functionality', () => {
     );
 
     const updatedParent = (await resolvePlanByNumericId(302, testDir)).plan;
+    expect(updatedParent.status).toBe('in_progress');
+  });
+
+  test('reopens a reviewed parent after appending review issues to a reopened child', async () => {
+    process.chdir(testDir);
+    await writePlanToDb(
+      {
+        id: 304,
+        title: 'Reviewed Parent',
+        goal: 'Track parent state',
+        details: 'Parent details',
+        status: 'reviewed',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    await reopenParentForAppendedReviewTasks(
+      {
+        parent: 304,
+        status: 'reviewed',
+      },
+      testDir
+    );
+
+    const updatedParent = (await resolvePlanByNumericId(304, testDir)).plan;
     expect(updatedParent.status).toBe('in_progress');
   });
 

@@ -49,6 +49,7 @@
     blocked: 'Blocked',
     pending: 'Pending',
     needs_review: 'Needs Review',
+    reviewed: 'Reviewed',
     recently_done: 'Recently Done',
     done: 'Done',
     cancelled: 'Cancelled',

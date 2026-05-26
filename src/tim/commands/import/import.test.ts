@@ -453,6 +453,36 @@ describe('handleImportCommand', () => {
     expect(planData.updatedAt).toBeDefined();
   });
 
+  test('reopens a reviewed parent when importing a child under it', async () => {
+    const reviewedParent: PlanSchema & { filename: string } = {
+      id: 1,
+      title: 'Reviewed Parent',
+      goal: 'Parent goal',
+      details: '',
+      status: 'reviewed',
+      dependencies: [],
+      tasks: [],
+      filename: path.join(gitRootDir, 'tasks', '1-reviewed-parent.plan.md'),
+    };
+    currentPlansResult = {
+      plans: new Map([[1, reviewedParent]]),
+      maxNumericId: 5,
+      duplicates: {},
+    };
+
+    await handleImportCommand('123', { parent: 1 });
+
+    const parentWrite = vi
+      .mocked(writePlanFile)
+      .mock.calls.find(([filePath]) => filePath === reviewedParent.filename);
+    expect(parentWrite).toBeDefined();
+    expect(parentWrite?.[1]).toMatchObject({
+      id: 1,
+      dependencies: [6],
+      status: 'in_progress',
+    });
+  });
+
   test('should update existing plan when importing duplicate issue', async () => {
     // Setup mock to return a plan with the same issue URL and content already matching the issue
     const mockExistingPlan: PlanSchema & { filename: string } = {

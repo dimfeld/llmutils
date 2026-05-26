@@ -399,6 +399,32 @@ describe('tim add command', () => {
     expect(parentPlan.uuid).toMatch(UUID_REGEX);
   });
 
+  test('reopens a reviewed parent when adding a child with --parent', async () => {
+    await createExistingPlan(
+      1,
+      {
+        title: 'Reviewed Parent',
+        status: 'reviewed',
+        dependencies: [],
+      },
+      '1-reviewed-parent.yml'
+    );
+
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'tim.yml') }),
+      },
+    };
+    await handleAddCommand(['Child', 'Plan'], { parent: 1 }, command);
+
+    const childPlan = (await resolvePlanByNumericId(2, tempDir)).plan;
+    const parentPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
+
+    expect(childPlan.parent).toBe(1);
+    expect(parentPlan.dependencies).toEqual([2]);
+    expect(parentPlan.status).toBe('in_progress');
+  });
+
   test('rolls back child create and parent reconciliation when add --parent batch fails', async () => {
     await createExistingPlan(
       1,

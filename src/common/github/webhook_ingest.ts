@@ -13,6 +13,7 @@ import {
   handlePullRequestEvent,
   handlePullRequestReviewEvent,
   handlePullRequestReviewThreadEvent,
+  type PrDraftTransition,
   type PrRefreshTarget,
   type WebhookHandlerOptions,
 } from './webhook_event_handlers.js';
@@ -97,7 +98,7 @@ async function autoCompleteMergedLinkedPlans(
 
   for (const { plan_uuid: planUuid } of linkedPlanRows) {
     const planRow = getPlanByUuid(db, planUuid);
-    if (!planRow || planRow.status !== 'needs_review') {
+    if (!planRow || (planRow.status !== 'needs_review' && planRow.status !== 'reviewed')) {
       continue;
     }
 
@@ -135,6 +136,76 @@ async function autoCompleteMergedLinkedPlans(
 
   for (const parentId of completedParents) {
     await checkAndMarkParentDone(parentId, getDefaultConfig(), { db, projectId: project.id });
+  }
+}
+
+async function applyDraftReadyStatusToLinkedPlans(
+  db: Database,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  transition: PrDraftTransition
+): Promise<void> {
+  const prStatus = getPrStatusByRepoAndNumber(db, owner, repo, prNumber);
+  if (!prStatus) {
+    return;
+  }
+
+  const project = getProject(db, constructGitHubRepositoryId(owner, repo));
+  if (!project) {
+    return;
+  }
+
+  const linkedPlanRows = db
+    .prepare(
+      `
+      SELECT DISTINCT plan_uuid
+      FROM plan_pr
+      WHERE pr_status_id = ?
+      ORDER BY plan_uuid
+    `
+    )
+    .all(prStatus.id) as Array<{ plan_uuid: string }>;
+
+  if (linkedPlanRows.length === 0) {
+    return;
+  }
+
+  const planRows = getPlansByProject(db, project.id);
+  const planIdToUuid = new Map(planRows.map((row) => [row.plan_id, row.uuid]));
+  const uuidToPlanId = invertPlanIdToUuidMap(planIdToUuid);
+  const nowIso = new Date().toISOString();
+  const sourceStatus = transition === 'became_ready' ? 'needs_review' : 'reviewed';
+  const targetStatus = transition === 'became_ready' ? 'reviewed' : 'needs_review';
+
+  for (const { plan_uuid: planUuid } of linkedPlanRows) {
+    const planRow = getPlanByUuid(db, planUuid);
+    if (!planRow || planRow.status !== sourceStatus) {
+      continue;
+    }
+
+    const plan = planRowToSchemaInput(
+      planRow,
+      getPlanTasksByUuid(db, planUuid).map((task) => ({
+        title: task.title,
+        description: task.description,
+        done: task.done === 1,
+      })),
+      getPlanDependenciesByUuid(db, planUuid).map((dependency) => dependency.depends_on_uuid),
+      getPlanTagsByUuid(db, planUuid).map((tag) => tag.tag),
+      uuidToPlanId
+    );
+
+    const updatedPlan: PlanSchema = {
+      ...plan,
+      status: targetStatus,
+      updatedAt: nowIso,
+    };
+
+    upsertPlan(db, project.id, {
+      ...toPlanUpsertInput(updatedPlan, planIdToUuid),
+      forceOverwrite: true,
+    });
   }
 }
 
@@ -251,6 +322,30 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
             `[webhook-ingest] queued refresh key=${key} type=${target.type} thread=${target.threadId ?? 'all'} op=${target.operation}`
           );
           apiRefreshTargets.set(key, target);
+        }
+
+        if (event.eventType === 'pull_request' && result.updated && result.prDraftTransition) {
+          const pullRequest = (payload as { pull_request?: { number?: unknown } }).pull_request;
+          if (event.repositoryFullName && typeof pullRequest?.number === 'number') {
+            const [owner, repo] = event.repositoryFullName.split('/');
+            if (owner && repo) {
+              try {
+                await applyDraftReadyStatusToLinkedPlans(
+                  db,
+                  owner,
+                  repo,
+                  pullRequest.number,
+                  result.prDraftTransition
+                );
+              } catch (err) {
+                errors.push(
+                  `webhook draft transition failed: ${
+                    err instanceof Error ? err.message : String(err)
+                  }`
+                );
+              }
+            }
+          }
         }
 
         if (

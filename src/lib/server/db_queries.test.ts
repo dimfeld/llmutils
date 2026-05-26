@@ -382,6 +382,7 @@ describe('lib/server/db_queries', () => {
     expect(dependentPlan?.status).toBe('in_progress');
     expect(dependentPlan?.displayStatus).toBe('in_progress');
     expect(dependentPlan?.dependencyUuids).toEqual(['plan-review']);
+    expect(dependentPlan?.depsFullyResolved).toBe(false);
   });
 
   test('getPlanDetail treats needs_review dependencies as resolved', async () => {
@@ -399,6 +400,173 @@ describe('lib/server/db_queries', () => {
         isResolved: true,
       }),
     ]);
+  });
+
+  test('getPlansForProject treats reviewed dependencies as resolved (does not block dependent)', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-reviewed-dep',
+      planId: 116,
+      title: 'Reviewed plan',
+      goal: 'Awaiting merge',
+      status: 'reviewed',
+      priority: 'high',
+      filename: '116-reviewed.plan.md',
+      sourceCreatedAt: daysAgo(5),
+      sourceUpdatedAt: daysAgo(1),
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-depends-on-reviewed',
+      planId: 117,
+      title: 'Plan depending on reviewed plan',
+      goal: 'Should not be blocked when dependency is reviewed',
+      status: 'in_progress',
+      priority: 'medium',
+      filename: '117-depends-on-reviewed.plan.md',
+      sourceCreatedAt: daysAgo(5),
+      sourceUpdatedAt: daysAgo(1),
+      dependencyUuids: ['plan-reviewed-dep'],
+    });
+
+    const plans = getPlansForProject(db, projectId);
+    const reviewedPlan = plans.find((plan) => plan.uuid === 'plan-reviewed-dep');
+    const dependentPlan = plans.find((plan) => plan.uuid === 'plan-depends-on-reviewed');
+
+    expect(reviewedPlan?.displayStatus).toBe('reviewed');
+    expect(dependentPlan?.displayStatus).toBe('in_progress');
+    expect(dependentPlan?.depsFullyResolved).toBe(true);
+  });
+
+  test('getPlansForProject treats reviewed base plans as fully resolved dependencies', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-reviewed-base',
+      planId: 119,
+      title: 'Reviewed base plan',
+      goal: 'Base branch is reviewed',
+      status: 'reviewed',
+      priority: 'high',
+      filename: '119-reviewed-base.plan.md',
+      sourceCreatedAt: daysAgo(5),
+      sourceUpdatedAt: daysAgo(1),
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-based-on-reviewed',
+      planId: 120,
+      title: 'Plan based on reviewed plan',
+      goal: 'Should have fully resolved stacked dependency',
+      status: 'in_progress',
+      priority: 'medium',
+      filename: '120-based-on-reviewed.plan.md',
+      sourceCreatedAt: daysAgo(5),
+      sourceUpdatedAt: daysAgo(1),
+      basePlanUuid: 'plan-reviewed-base',
+    });
+
+    const plans = getPlansForProject(db, projectId);
+    const dependentPlan = plans.find((plan) => plan.uuid === 'plan-based-on-reviewed');
+
+    expect(dependentPlan).toBeDefined();
+    expect(dependentPlan?.displayStatus).toBe('in_progress');
+    expect(dependentPlan?.depsFullyResolved).toBe(true);
+  });
+
+  test('getPlansForProject keeps needs_review base plans in the stacked state', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-based-on-review',
+      planId: 121,
+      title: 'Plan based on needs-review plan',
+      goal: 'Should keep the stacked badge until the base is reviewed',
+      status: 'in_progress',
+      priority: 'medium',
+      filename: '121-based-on-review.plan.md',
+      sourceCreatedAt: daysAgo(5),
+      sourceUpdatedAt: daysAgo(1),
+      basePlanUuid: 'plan-review',
+    });
+
+    const plans = getPlansForProject(db, projectId);
+    const dependentPlan = plans.find((plan) => plan.uuid === 'plan-based-on-review');
+
+    expect(dependentPlan).toBeDefined();
+    expect(dependentPlan?.displayStatus).toBe('in_progress');
+    expect(dependentPlan?.depsFullyResolved).toBe(false);
+  });
+
+  test('getPlansForProject requires every dependency to be fully resolved', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-reviewed-dep-mixed',
+      planId: 122,
+      title: 'Reviewed dependency in a mixed set',
+      goal: 'One dependency is reviewed',
+      status: 'reviewed',
+      priority: 'medium',
+      filename: '122-reviewed-dep-mixed.plan.md',
+      sourceCreatedAt: daysAgo(5),
+      sourceUpdatedAt: daysAgo(1),
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-in-progress-dep-mixed',
+      planId: 123,
+      title: 'Unresolved dependency in a mixed set',
+      goal: 'One dependency is still active',
+      status: 'in_progress',
+      priority: 'medium',
+      filename: '123-in-progress-dep-mixed.plan.md',
+      sourceCreatedAt: daysAgo(5),
+      sourceUpdatedAt: daysAgo(1),
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-mixed-reviewed-and-open',
+      planId: 124,
+      title: 'Plan with reviewed and open dependencies',
+      goal: 'Should not be fully resolved while one dependency remains active',
+      status: 'in_progress',
+      priority: 'medium',
+      filename: '124-mixed-reviewed-and-open.plan.md',
+      sourceCreatedAt: daysAgo(5),
+      sourceUpdatedAt: daysAgo(1),
+      dependencyUuids: ['plan-reviewed-dep-mixed', 'plan-in-progress-dep-mixed'],
+    });
+
+    const plans = getPlansForProject(db, projectId);
+    const dependentPlan = plans.find((plan) => plan.uuid === 'plan-mixed-reviewed-and-open');
+
+    expect(dependentPlan).toBeDefined();
+    expect(dependentPlan?.displayStatus).toBe('blocked');
+    expect(dependentPlan?.dependencyUuids).toEqual([
+      'plan-in-progress-dep-mixed',
+      'plan-reviewed-dep-mixed',
+    ]);
+    expect(dependentPlan?.depsFullyResolved).toBe(false);
+  });
+
+  test('getProjectsWithMetadata counts reviewed plans in activePlanCount and statusCounts', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-reviewed-count',
+      planId: 118,
+      title: 'Reviewed plan for count test',
+      status: 'reviewed',
+      priority: 'medium',
+      filename: '118-reviewed-count.plan.md',
+      sourceCreatedAt: daysAgo(5),
+      sourceUpdatedAt: daysAgo(1),
+    });
+
+    const projects = getProjectsWithMetadata(db);
+    const primary = projects.find((p) => p.id === projectId);
+
+    expect(primary?.statusCounts.reviewed).toBe(1);
+    // activePlanCount includes reviewed plans
+    expect(primary?.activePlanCount).toBeGreaterThanOrEqual(1);
+    const expectedActive =
+      (primary?.statusCounts.pending ?? 0) +
+      (primary?.statusCounts.in_progress ?? 0) +
+      (primary?.statusCounts.needs_review ?? 0) +
+      (primary?.statusCounts.reviewed ?? 0);
+    expect(primary?.activePlanCount).toBe(expectedActive);
   });
 
   test('getPlansForProject parses PR metadata and computes PR summary statuses in bulk', () => {

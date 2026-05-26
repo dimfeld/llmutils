@@ -28,12 +28,15 @@ export interface PrRefreshTarget {
   threadId?: string;
 }
 
+export type PrDraftTransition = 'became_ready' | 'became_draft';
+
 export interface WebhookHandlerResult {
   updated: boolean;
   prUrl?: string;
   prUrls?: string[];
   /** PRs that need a follow-up API refresh. Callers should deduplicate before executing. */
   apiRefreshTargets?: PrRefreshTarget[];
+  prDraftTransition?: PrDraftTransition | null;
 }
 
 interface ParsedRepoInfo {
@@ -484,7 +487,7 @@ export function handlePullRequestEvent(
   const prUrl = getCanonicalPrUrl(owner, repo, pullRequest.number);
   const state =
     pullRequest.state === 'closed' ? (pullRequest.mergedAt ? 'merged' : 'closed') : 'open';
-  const { updated, isNewRow } = db
+  const { updated, isNewRow, prDraftTransition } = db
     .transaction((nextOwner: string, nextRepo: string) => {
       const repositoryId = constructGitHubRepositoryId(nextOwner, nextRepo);
       const project = getProject(db, repositoryId);
@@ -493,6 +496,7 @@ export function handlePullRequestEvent(
       );
       const existing = getPrStatusByRepoAndNumber(db, nextOwner, nextRepo, pullRequest.number);
       const previousHeadSha = existing?.head_sha ?? null;
+      const wasDraft = existing ? Boolean(existing.draft) : null;
       let reviewRequestChanged = false;
       const isPushAction =
         parsed.action === 'synchronize' ||
@@ -527,6 +531,15 @@ export function handlePullRequestEvent(
       if (!nextDetail) {
         throw new Error(`Failed to load PR status detail for ${prUrl}`);
       }
+
+      const prDraftTransition: PrDraftTransition | null =
+        wasDraft === null || !nextDetail.changed
+          ? null
+          : wasDraft && !pullRequest.draft
+            ? 'became_ready'
+            : !wasDraft && pullRequest.draft
+              ? 'became_draft'
+              : null;
 
       const eventTime = pullRequest.updatedAt ?? getNowIsoString();
       if (parsed.action === 'review_requested' && pullRequest.requestedReviewerLogin) {
@@ -569,7 +582,11 @@ export function handlePullRequestEvent(
         }
       }
 
-      return { updated: nextDetail.changed || reviewRequestChanged, isNewRow: !existing };
+      return {
+        updated: nextDetail.changed || reviewRequestChanged,
+        isNewRow: !existing,
+        prDraftTransition,
+      };
     })
     .immediate(owner, repo);
 
@@ -585,6 +602,7 @@ export function handlePullRequestEvent(
   return {
     updated,
     prUrl,
+    ...(prDraftTransition ? { prDraftTransition } : {}),
     apiRefreshTargets: needsApiRefresh
       ? [
           {

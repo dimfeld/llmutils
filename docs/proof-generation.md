@@ -51,7 +51,7 @@ There are three ways to trigger the phase:
   - `--auto-workspace` — use the plan's assigned workspace (mirrors `tim chat` / `tim review`).
   - `--executor <name>` and `--model <model>` — override the configured executor/model.
   - `--no-terminal-input` — non-interactive mode used by detached web-UI launches.
-- **Web UI.** Plans whose project has `proofGeneration.instructions` configured show a **Generate Proof** action on the plan detail page when the plan has at least one completed task or status in `needs_review`/`done`. Clicking it detaches a `tim proof` process whose output streams back through the normal session-discovery infrastructure.
+- **Web UI.** Plans whose project has `proofGeneration.instructions` configured show a **Generate Proof** action on the plan detail page when the plan has at least one completed task or status in `needs_review`/`reviewed`/`done`. Clicking it detaches a `tim proof` process whose output streams back through the normal session-discovery infrastructure.
 
 If you run `tim proof` against a project that does not have `proofGeneration` configured, the command exits non-zero with a message pointing at this README. Agent batch mode treats the missing config as a clean skip rather than an error.
 

@@ -1347,7 +1347,7 @@ export function unlinkPlanFromPr(db: Database, planUuid: string, prStatusId: num
   unlinkInTransaction.immediate(planUuid, prStatusId);
 }
 
-/** Returns plans in actionable states (pending, in_progress, needs_review) that have open PRs.
+/** Returns plans in actionable states (pending, in_progress, needs_review, reviewed) that have open PRs.
  * Used by background polling to determine which PRs need status checks.
  * Combines plan_pr junction links with direct plan.pull_request URL lookups
  * (canonicalized in TypeScript to avoid raw SQL string comparison mismatches). */
@@ -1366,7 +1366,7 @@ export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinke
     INNER JOIN plan_pr pp ON pp.plan_uuid = p.uuid
     INNER JOIN pr_status ps ON ps.id = pp.pr_status_id
     WHERE ps.state = 'open'
-      AND p.status IN ('pending', 'in_progress', 'needs_review')
+      AND p.status IN ('pending', 'in_progress', 'needs_review', 'reviewed')
       ${projectId === undefined ? '' : 'AND p.project_id = ?'}
     ORDER BY p.plan_id, p.uuid, ps.pr_url
   `;
@@ -1449,7 +1449,7 @@ export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinke
       p.title AS title,
       p.pull_request AS pull_request
     FROM plan p
-    WHERE p.status IN ('pending', 'in_progress', 'needs_review')
+    WHERE p.status IN ('pending', 'in_progress', 'needs_review', 'reviewed')
       AND p.pull_request IS NOT NULL
       AND p.pull_request != ''
       AND p.pull_request != '[]'

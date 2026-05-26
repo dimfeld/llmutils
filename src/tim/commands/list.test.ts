@@ -628,6 +628,58 @@ describe('handleListCommand', () => {
     expect(planIds).not.toContain(4);
   });
 
+  test('includes reviewed plans in the default list output', async () => {
+    const plans = [
+      {
+        id: 1,
+        title: 'Pending Plan',
+        goal: 'Test pending',
+        details: 'Details',
+        status: 'pending',
+        tasks: [
+          { title: 'Task 1', description: 'Do task', steps: [{ prompt: 'step', done: false }] },
+        ],
+      },
+      {
+        id: 2,
+        title: 'Reviewed Plan',
+        goal: 'Awaiting merge',
+        details: 'Details',
+        status: 'reviewed',
+        tasks: [
+          { title: 'Task 1', description: 'Do task', steps: [{ prompt: 'step', done: false }] },
+        ],
+      },
+      {
+        id: 3,
+        title: 'Done Plan',
+        goal: 'Finished',
+        details: 'Details',
+        status: 'done',
+        tasks: [
+          { title: 'Task 1', description: 'Do task', steps: [{ prompt: 'step', done: false }] },
+        ],
+      },
+    ];
+
+    for (const plan of plans) {
+      await createPlanFixture(plan);
+    }
+
+    const options = {};
+    const command = { parent: { opts: () => ({}) } };
+    await handleListCommand(options, command);
+
+    expect(mockTable).toHaveBeenCalled();
+    const tableData = mockTable.mock.calls[0][0];
+
+    // Header + 2 plans (pending and reviewed) — done is excluded by default
+    const planIds = tableData.slice(1).map((row: any) => row[0]);
+    expect(planIds).toContain(1);
+    expect(planIds).toContain(2);
+    expect(planIds).not.toContain(3);
+  });
+
   test('filters by ready status', async () => {
     // Clear mocks (but don't clear cache - let beforeEach handle that)
     mockTable.mockClear();

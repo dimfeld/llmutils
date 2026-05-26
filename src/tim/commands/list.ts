@@ -257,8 +257,8 @@ export async function handleListCommand(
       // Use explicitly specified statuses
       statusesToShow = new Set(options.status);
     } else {
-      // Default: show pending, in_progress, and needs_review
-      statusesToShow = new Set(['pending', 'in_progress', 'needs_review']);
+      // Default: show pending, in_progress, needs_review, and reviewed
+      statusesToShow = new Set(['pending', 'in_progress', 'needs_review', 'reviewed']);
     }
 
     // Filter plans
@@ -391,9 +391,11 @@ export async function handleListCommand(
                   ? chalk.yellow
                   : actualStatus === 'needs_review'
                     ? chalk.yellow
-                    : actualStatus === 'pending'
-                      ? chalk.white
-                      : chalk.gray;
+                    : actualStatus === 'reviewed'
+                      ? chalk.cyan
+                      : actualStatus === 'pending'
+                        ? chalk.white
+                        : chalk.gray;
 
     const priorityColor =
       plan.priority === 'urgent'
@@ -441,6 +443,8 @@ export async function handleListCommand(
             return chalk.yellow(`${depId}${suffix}…`);
           } else if (depStatus === 'needs_review') {
             return chalk.yellow(`${depId}${suffix}⚠`);
+          } else if (depStatus === 'reviewed') {
+            return chalk.cyan(`${depId}${suffix}✓`);
           } else if (depStatus === 'cancelled') {
             return chalk.gray(`${depId}${suffix}✗`);
           } else {

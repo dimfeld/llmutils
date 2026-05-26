@@ -310,10 +310,13 @@ Complete and finalize:
 ```bash
 tim set 123 --status needs_review
 tim update-docs 123 --auto-workspace
+tim set 123 --status reviewed
 tim set 123 --status done
 ```
 
-`needs_review` means implementation work is complete enough to unblock dependent plans, but the workspace assignment and lock remain until final completion. `done`, `cancelled`, and `deferred` are terminal lifecycle states.
+`needs_review` means implementation work is complete enough to unblock dependent plans, but the workspace assignment and lock remain until final completion. `reviewed` sits between `needs_review` and `done`: it means the author has finished their own review and the linked PR has been marked ready for review, so the work is awaiting external review/merge. Like `needs_review`, `reviewed` counts as work-complete for dependency and stacked calculations (it stops blocking dependents), but it is not terminal. `done`, `cancelled`, and `deferred` are terminal lifecycle states.
+
+When a plan is linked to a GitHub PR, these transitions happen automatically: marking the PR ready for review moves the plan `needs_review → reviewed`, converting the PR back to draft moves it `reviewed → needs_review`, and merging the PR auto-completes the plan to `done` (from either `needs_review` or `reviewed`).
 
 ## Plan Artifacts
 
@@ -431,7 +434,7 @@ Three entry points trigger proof generation:
 
 - **Agent batch mode** – when `proofGeneration.mode` is `after-completion`, the agent runs the proof phase after the final review (and lessons/docs updates) and before parent-cascade and the final commit. Failures here never block the rest of the post-completion pipeline.
 - **CLI** – `tim proof <planId>` runs the phase manually. Pass `--auto-workspace` to use the plan's assigned workspace, `--executor <name>` and `--model <model>` to override the configured defaults.
-- **Web UI** – the **Generate Proof** action on the plan detail page launches `tim proof` as a detached session that streams output through the normal session-discovery infrastructure. The button is shown only when the project has `proofGeneration.instructions` configured and the plan has at least one completed task or status in `needs_review`/`done`.
+- **Web UI** – the **Generate Proof** action on the plan detail page launches `tim proof` as a detached session that streams output through the normal session-discovery infrastructure. The button is shown only when the project has `proofGeneration.instructions` configured and the plan has at least one completed task or status in `needs_review`/`reviewed`/`done`.
 
 Reruns are idempotent: prior proof artifacts (marked with a `tim-proof:` prefix) are soft-deleted before the new run begins, and `.tim/proofs` is cleared so leftover files from a previous run are not re-attached. If the executor errors mid-run, whatever files it has already written are still attached and the failure is surfaced to the caller. Files exceeding the 100 MB artifact size cap are skipped with a warning. `.tim/proofs` is added to the tim-managed `.tim/.gitignore`.
 

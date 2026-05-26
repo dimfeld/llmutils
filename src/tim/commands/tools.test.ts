@@ -583,6 +583,42 @@ describe('tim tools CLI handlers', () => {
     expect(storedPlan.tasks[1]?.done).toBe(false);
   });
 
+  test('manage-plan-task moves a reviewed plan back to in_progress when a task becomes actionable', async () => {
+    const planFile = path.join(tasksDir, '17-reviewed-reopen.plan.md');
+    const plan: PlanSchema = {
+      id: 17,
+      title: 'Reviewed Reopen Plan',
+      goal: 'Move back to in progress when reviewed work reopens',
+      details: 'Initial details',
+      status: 'reviewed',
+      tasks: [
+        {
+          title: 'Completed task',
+          description: 'Already finished',
+          done: true,
+        },
+      ],
+    };
+    await writeDbBackedPlan(planFile, plan);
+
+    const context = createToolContext();
+    const result = await managePlanTaskTool(
+      {
+        plan: 17,
+        action: 'update',
+        taskIndex: 1,
+        done: false,
+      },
+      context
+    );
+
+    expect(result.text).toContain('plan status back to in_progress');
+
+    const { plan: storedPlan } = await resolvePlanByNumericId(17, tempDir);
+    expect(storedPlan.status).toBe('in_progress');
+    expect(storedPlan.tasks[0]?.done).toBe(false);
+  });
+
   test('update-plan-tasks moves a done plan back to in_progress when unfinished tasks remain', async () => {
     const planFile = path.join(tasksDir, '16-update-tasks-reopen.plan.md');
     const plan: PlanSchema = {
@@ -624,6 +660,52 @@ describe('tim tools CLI handlers', () => {
     expect(result.text).toContain('2 tasks');
 
     const { plan: storedPlan } = await resolvePlanByNumericId(16, tempDir);
+    expect(storedPlan.status).toBe('in_progress');
+    expect(storedPlan.tasks).toHaveLength(2);
+    expect(storedPlan.tasks[1]?.done).toBe(false);
+  });
+
+  test('update-plan-tasks moves a reviewed plan back to in_progress when tasks become actionable', async () => {
+    const planFile = path.join(tasksDir, '18-reviewed-update-tasks-reopen.plan.md');
+    const plan: PlanSchema = {
+      id: 18,
+      title: 'Reviewed Update Tasks Reopen Plan',
+      goal: 'Keep reviewed status aligned with remaining work',
+      details: 'Initial details',
+      status: 'reviewed',
+      tasks: [
+        {
+          title: 'Completed task',
+          description: 'Already finished',
+          done: true,
+        },
+      ],
+    };
+    await writeDbBackedPlan(planFile, plan);
+
+    const context = createToolContext();
+    const result = await updatePlanTasksTool(
+      {
+        plan: 18,
+        tasks: [
+          {
+            title: 'Completed task',
+            description: 'Already finished',
+            done: true,
+          },
+          {
+            title: 'Remaining task',
+            description: 'Still pending',
+            done: false,
+          },
+        ],
+      },
+      context
+    );
+
+    expect(result.text).toContain('2 tasks');
+
+    const { plan: storedPlan } = await resolvePlanByNumericId(18, tempDir);
     expect(storedPlan.status).toBe('in_progress');
     expect(storedPlan.tasks).toHaveLength(2);
     expect(storedPlan.tasks[1]?.done).toBe(false);

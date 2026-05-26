@@ -73,6 +73,7 @@ import which from 'which';
 import { getMaterializedPlanPath, materializePlan, withPlanAutoSync } from '../plan_materialize.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
+import { isReopenableCompletedStatus } from '../plans/plan_state_utils.js';
 const FIX_EXECUTOR_COMMANDS = {
   'claude-code': 'claude',
   'codex-cli': 'codex',
@@ -2040,7 +2041,7 @@ export function createTaskFromReviewThread(thread: PrReviewThreadDetail, prUrl: 
   };
 }
 
-async function appendIssuesToPlanTasks(
+export async function appendIssuesToPlanTasks(
   planId: number,
   issues: ReviewIssue[],
   repoRoot: string
@@ -2067,7 +2068,7 @@ async function appendIssuesToPlanTasks(
   }
 
   if (appendedCount > 0) {
-    if (planData.status === 'done' || planData.status === 'needs_review') {
+    if (isReopenableCompletedStatus(planData.status)) {
       planData.status = 'in_progress';
     }
     await writePlanFile(planPath, planData, { cwdForIdentity: repoRoot });
@@ -2080,14 +2081,14 @@ export async function reopenParentForAppendedReviewTasks(
   planData: Pick<PlanSchema, 'parent' | 'status'>,
   repoRoot: string
 ): Promise<void> {
-  if (!planData.parent || (planData.status !== 'done' && planData.status !== 'needs_review')) {
+  if (!planData.parent || !isReopenableCompletedStatus(planData.status)) {
     return;
   }
   const parentId = planData.parent;
 
   await withPlanAutoSync(parentId, repoRoot, async () => {
     const { plan: parentPlan } = await resolveReviewPlanForWriteById(parentId, repoRoot);
-    if (parentPlan.status !== 'done' && parentPlan.status !== 'needs_review') {
+    if (!isReopenableCompletedStatus(parentPlan.status)) {
       return;
     }
 

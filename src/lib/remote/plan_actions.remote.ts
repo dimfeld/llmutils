@@ -55,6 +55,7 @@ function isPlanEligibleForGenerate(plan: PlanDetail): plan is PlanDetailResult {
     plan.tasks.length === 0 &&
     plan.status !== 'done' &&
     plan.status !== 'needs_review' &&
+    plan.status !== 'reviewed' &&
     plan.status !== 'cancelled' &&
     plan.status !== 'deferred'
   );
@@ -65,6 +66,7 @@ function isPlanEligibleForAgent(plan: PlanDetail): plan is PlanDetailResult {
     plan == null ||
     plan.status === 'done' ||
     plan.status === 'needs_review' ||
+    plan.status === 'reviewed' ||
     plan.status === 'cancelled' ||
     plan.status === 'deferred'
   ) {
@@ -398,7 +400,7 @@ export const openInEditor = command(openInEditorSchema, async ({ planUuid }) => 
   );
 });
 
-const REBASE_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
+const REBASE_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'reviewed', 'done']);
 
 function isPlanEligibleForRebase(plan: PlanDetail): plan is PlanDetailResult {
   return plan != null && REBASE_ELIGIBLE_STATUSES.has(plan.status);
@@ -572,7 +574,7 @@ export const startProof = command(startProofSchema, async ({ planUuid }) => {
   );
 });
 
-const CREATE_PR_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
+const CREATE_PR_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'reviewed', 'done']);
 
 function isPlanEligibleForCreatePr(plan: PlanDetail): plan is PlanDetailResult {
   if (plan == null) return false;

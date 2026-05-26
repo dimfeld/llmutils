@@ -46,7 +46,7 @@ export function findSiblingPlans(
           : undefined,
     };
 
-    if (plan.status === 'done' || plan.status === 'needs_review') {
+    if (plan.status === 'done' || plan.status === 'needs_review' || plan.status === 'reviewed') {
       siblings.completed.push(siblingInfo);
     } else {
       siblings.pending.push(siblingInfo);

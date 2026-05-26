@@ -1516,6 +1516,14 @@ describe('tim db/pr_status', () => {
       filename: '3.plan.md',
       pullRequest: ['https://github.com/example/repo/pull/104'],
     });
+    upsertPlan(db, projectId, {
+      uuid: 'plan-4',
+      planId: 4,
+      title: 'Plan 4',
+      filename: '4.plan.md',
+      status: 'reviewed',
+      pullRequest: ['https://github.com/example/repo/pull/104'],
+    });
 
     const openPr = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/104',
@@ -1557,6 +1565,13 @@ describe('tim db/pr_status', () => {
         title: 'Plan 3',
         prUrls: ['https://github.com/example/repo/pull/104'],
       },
+      {
+        uuid: 'plan-4',
+        projectId,
+        planId: 4,
+        title: 'Plan 4',
+        prUrls: ['https://github.com/example/repo/pull/104'],
+      },
     ]);
 
     expect(getPlansWithPrs(db, projectId)).toEqual([
@@ -1565,6 +1580,13 @@ describe('tim db/pr_status', () => {
         projectId,
         planId: 1,
         title: 'Plan 1',
+        prUrls: ['https://github.com/example/repo/pull/104'],
+      },
+      {
+        uuid: 'plan-4',
+        projectId,
+        planId: 4,
+        title: 'Plan 4',
         prUrls: ['https://github.com/example/repo/pull/104'],
       },
     ]);

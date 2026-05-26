@@ -26,6 +26,7 @@ import {
   routePlanWriteIntoBatch,
   writePlanFile,
 } from '../plans.js';
+import { isReopenableCompletedStatus } from '../plans/plan_state_utils.js';
 import { beginSyncBatch } from '../sync/write_router.js';
 import { resolveWriteMode, usesPlanIdReserve } from '../sync/write_mode.js';
 import { ensureReferences } from '../utils/references.js';
@@ -192,7 +193,9 @@ export async function handleAddCommand(
     for (const childRow of projectContext.rows) {
       if (
         childRow.parent_uuid === referencedPlan.uuid &&
-        (childRow.status === 'done' || childRow.status === 'needs_review') &&
+        (childRow.status === 'done' ||
+          childRow.status === 'needs_review' ||
+          childRow.status === 'reviewed') &&
         childRow.changed_files
       ) {
         for (const file of JSON.parse(childRow.changed_files) as string[]) {
@@ -264,7 +267,7 @@ export async function handleAddCommand(
   if (parentPlan) {
     const parentNeedsDependency = !(parentPlan.dependencies ?? []).includes(planId);
     parentNeedsDependencyLog = parentNeedsDependency;
-    const parentNeedsStatus = parentPlan.status === 'done' || parentPlan.status === 'needs_review';
+    const parentNeedsStatus = isReopenableCompletedStatus(parentPlan.status);
 
     let referencedParent: PlanSchema | null = null;
     if (parentNeedsDependency || parentNeedsStatus) {
@@ -315,7 +318,7 @@ export async function handleAddCommand(
     if (parentNeedsDependencyLog) {
       log(chalk.gray(`  Updated parent plan ${parentPlan.id} to include dependency on ${planId}`));
     }
-    if (parentPlan.status === 'done' || parentPlan.status === 'needs_review') {
+    if (isReopenableCompletedStatus(parentPlan.status)) {
       log(chalk.yellow(`  Parent plan "${parentPlan.title}" marked as in_progress`));
     }
   }

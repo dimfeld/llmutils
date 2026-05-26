@@ -65,8 +65,8 @@ export function isPlanActionable(plan: PlanSchema): boolean {
 
 /**
  * Checks if a plan lifecycle is fully complete (either 'done', 'cancelled', or 'deferred').
- * This intentionally does not include 'needs_review'; use isWorkComplete() when a plan should
- * stop blocking dependents or stop receiving active work.
+ * This intentionally does not include 'needs_review' or 'reviewed'; use isWorkComplete() when a
+ * plan should stop blocking dependents or stop receiving active work.
  * @param plan - The plan to check
  * @returns true if the plan status is 'done', 'cancelled', or 'deferred'
  */
@@ -77,9 +77,10 @@ export function isPlanComplete(plan: PlanSchema): boolean {
 
 /**
  * Checks if implementation work is complete and the plan should no longer block dependents or
- * have active work performed on it. Unlike isPlanComplete(), this includes 'needs_review'.
+ * have active work performed on it. Unlike isPlanComplete(), this includes 'needs_review' and
+ * 'reviewed'.
  * @param plan - The plan to check
- * @returns true if the plan status is 'done', 'cancelled', or 'needs_review'
+ * @returns true if the plan status is 'done', 'cancelled', 'needs_review', or 'reviewed'
  */
 export function isWorkComplete(plan: Pick<PlanSchema, 'status'>): boolean {
   return isWorkCompleteStatus(plan.status);
@@ -88,10 +89,25 @@ export function isWorkComplete(plan: Pick<PlanSchema, 'status'>): boolean {
 /**
  * Status-string variant of isWorkComplete() for DB rows and other raw status sources.
  * @param status - The raw status value to check
- * @returns true if the status is 'done', 'cancelled', or 'needs_review'
+ * @returns true if the status is 'done', 'cancelled', 'needs_review', or 'reviewed'
  */
 export function isWorkCompleteStatus(status: string | null | undefined): boolean {
-  return status === 'done' || status === 'cancelled' || status === 'needs_review';
+  return (
+    status === 'done' ||
+    status === 'cancelled' ||
+    status === 'needs_review' ||
+    status === 'reviewed'
+  );
+}
+
+/**
+ * Statuses representing auto-completed work that should be reopened to
+ * 'in_progress' when new unfinished work (a new child dependency, or a newly
+ * actionable task) is introduced. Intentionally EXCLUDES the manually-terminal
+ * statuses 'cancelled' and 'deferred', which must not be auto-reopened.
+ */
+export function isReopenableCompletedStatus(status: string | null | undefined): boolean {
+  return status === 'done' || status === 'needs_review' || status === 'reviewed';
 }
 
 /**
@@ -124,6 +140,8 @@ export function getStatusDisplayName(status: PlanStatus | undefined): string {
       return 'Deferred';
     case 'needs_review':
       return 'Needs Review';
+    case 'reviewed':
+      return 'Reviewed';
     default:
       return 'Pending'; // Default for undefined status
   }

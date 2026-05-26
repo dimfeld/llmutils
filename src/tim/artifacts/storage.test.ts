@@ -98,9 +98,10 @@ describe('artifact storage', () => {
       'plan-uuid',
       'growing-artifact'
     );
+    const storeRejection = expect(storePromise).rejects.toThrow(ArtifactTooLargeError);
     await fs.appendFile(sourcePath, Buffer.alloc(1));
 
-    await expect(storePromise).rejects.toThrow(ArtifactTooLargeError);
+    await storeRejection;
     await expect(artifactFileExists(storagePath)).resolves.toBe(false);
   });
 

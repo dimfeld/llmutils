@@ -15,6 +15,7 @@ import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import type { ReviewIssue } from '../formatters/review_formatter.js';
 import { getPlanStorageDir, resolvePlanPathContext } from '../path_resolver.js';
 import { filterActionableReviewIssues } from './review_issue_filters.js';
+import { isReopenableCompletedStatus } from '../plans/plan_state_utils.js';
 
 export interface CleanupPlanOptions {
   title?: string;
@@ -97,7 +98,9 @@ export async function createCleanupPlan(
   for (const childPlan of allPlans.values()) {
     if (
       childPlan.parent === referencedPlan.id &&
-      (childPlan.status === 'done' || childPlan.status === 'needs_review') &&
+      (childPlan.status === 'done' ||
+        childPlan.status === 'needs_review' ||
+        childPlan.status === 'reviewed') &&
       childPlan.changedFiles
     ) {
       childPlan.changedFiles.forEach((file) => filePaths.add(file));
@@ -158,7 +161,7 @@ export async function createCleanupPlan(
     referencedPlan.dependencies.push(planId);
     referencedPlan.updatedAt = new Date().toISOString();
 
-    if (referencedPlan.status === 'done' || referencedPlan.status === 'needs_review') {
+    if (isReopenableCompletedStatus(referencedPlan.status)) {
       referencedPlan.status = 'in_progress';
       log(chalk.yellow(`  Parent plan "${referencedPlan.title}" marked as in_progress`));
     }

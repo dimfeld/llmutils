@@ -1189,7 +1189,133 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 41,
+    requiresFkOff: true,
+    up: `SELECT 1;`,
+    afterUp: rebuildPlanStatusConstraintsForReviewed,
+  },
 ];
+
+function rebuildPlanStatusConstraintsForReviewed(db: Database): void {
+  if (tableExists(db, 'plan')) {
+    rebuildPlanTableWithReviewedStatus(db, 'plan');
+  }
+
+  if (tableExists(db, 'plan_canonical')) {
+    rebuildPlanTableWithReviewedStatus(db, 'plan_canonical');
+  }
+
+  addReviewPlanLinkage(db);
+}
+
+function rebuildPlanTableWithReviewedStatus(
+  db: Database,
+  tableName: 'plan' | 'plan_canonical'
+): void {
+  const existingColumns = tableColumns(db, tableName);
+  const newTableName = `${tableName}_new`;
+  const finalColumns = [
+    'uuid',
+    'project_id',
+    'plan_id',
+    'title',
+    'goal',
+    'details',
+    'status',
+    'priority',
+    'branch',
+    'simple',
+    'tdd',
+    'discovered_from',
+    'issue',
+    'pull_request',
+    'assigned_to',
+    'base_branch',
+    'temp',
+    'docs',
+    'changed_files',
+    'plan_generated_at',
+    'review_issues',
+    'parent_uuid',
+    'epic',
+    'created_at',
+    'updated_at',
+    'docs_updated_at',
+    'lessons_applied_at',
+    'note',
+    'base_commit',
+    'base_change_id',
+    'revision',
+    'base_plan_uuid',
+  ] as const;
+  const defaultExpressionByColumn: Partial<Record<(typeof finalColumns)[number], string>> = {
+    status: "'pending'",
+    epic: '0',
+    created_at: SQL_NOW_ISO_UTC,
+    updated_at: SQL_NOW_ISO_UTC,
+    revision: '1',
+  };
+  const selectExpressions = finalColumns.map((column) => {
+    if (existingColumns.has(column)) {
+      return column;
+    }
+    return `${defaultExpressionByColumn[column] ?? 'NULL'} AS ${column}`;
+  });
+
+  if (tableName === 'plan') {
+    db.run('DROP TRIGGER IF EXISTS review_delete_plan_only_before_plan_delete');
+  }
+
+  db.run(`
+      CREATE TABLE ${newTableName} (
+        uuid TEXT NOT NULL PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        plan_id INTEGER NOT NULL,
+        title TEXT,
+        goal TEXT,
+        details TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending', 'in_progress', 'needs_review', 'reviewed', 'done', 'cancelled', 'deferred')),
+        priority TEXT
+          CHECK(priority IN ('low', 'medium', 'high', 'urgent', 'maybe') OR priority IS NULL),
+        branch TEXT,
+        simple INTEGER,
+        tdd INTEGER,
+        discovered_from INTEGER,
+        issue TEXT,
+        pull_request TEXT,
+        assigned_to TEXT,
+        base_branch TEXT,
+        temp INTEGER,
+        docs TEXT,
+        changed_files TEXT,
+        plan_generated_at TEXT,
+        review_issues TEXT,
+        parent_uuid TEXT,
+        epic INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        docs_updated_at TEXT,
+        lessons_applied_at TEXT,
+        note TEXT,
+        base_commit TEXT,
+        base_change_id TEXT,
+        revision INTEGER NOT NULL DEFAULT 1,
+        base_plan_uuid TEXT
+      );
+
+      INSERT INTO ${newTableName} (${finalColumns.join(', ')})
+      SELECT ${selectExpressions.join(', ')}
+      FROM ${tableName};
+
+      DROP TABLE ${tableName};
+      ALTER TABLE ${newTableName} RENAME TO ${tableName};
+      CREATE INDEX idx_${tableName}_project_id ON ${tableName}(project_id);
+      CREATE INDEX idx_${tableName}_project_plan_id ON ${tableName}(project_id, plan_id);
+      CREATE INDEX idx_${tableName}_parent_uuid ON ${tableName}(parent_uuid);
+    `);
+}
 
 function addReviewPlanLinkage(db: Database): void {
   if (!tableExists(db, 'review')) {
