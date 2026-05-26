@@ -411,11 +411,15 @@ export async function handleListCommand(
 
     const priorityDisplay = plan.priority || '';
 
-    // Format dependencies with their status
+    // Format dependencies with their status (includes base plan if set)
+    const allDepIds: Array<{ id: number | string; isBase: boolean }> = [
+      ...(plan.basePlan != null ? [{ id: plan.basePlan, isBase: true }] : []),
+      ...(plan.dependencies ?? []).map((id) => ({ id, isBase: false })),
+    ];
     let dependenciesDisplay = '-';
-    if (plan.dependencies && plan.dependencies.length > 0) {
-      dependenciesDisplay = plan.dependencies
-        .map((depId) => {
+    if (allDepIds.length > 0) {
+      dependenciesDisplay = allDepIds
+        .map(({ id: depId, isBase }) => {
           let depPlan: ListPlan | undefined;
 
           if (typeof depId === 'number') {
@@ -424,21 +428,23 @@ export async function handleListCommand(
             depPlan = enrichedPlans.get(parseInt(depId, 10));
           }
 
+          const suffix = isBase ? '*' : '';
+
           if (!depPlan) {
-            return `${depId}(?)`;
+            return `${depId}${suffix}(?)`;
           }
 
           const depStatus = depPlan.status || 'pending';
           if (depStatus === 'done') {
-            return chalk.green(`${depId}✓`);
+            return chalk.green(`${depId}${suffix}✓`);
           } else if (depStatus === 'in_progress') {
-            return chalk.yellow(`${depId}…`);
+            return chalk.yellow(`${depId}${suffix}…`);
           } else if (depStatus === 'needs_review') {
-            return chalk.yellow(`${depId}⚠`);
+            return chalk.yellow(`${depId}${suffix}⚠`);
           } else if (depStatus === 'cancelled') {
-            return chalk.gray(`${depId}✗`);
+            return chalk.gray(`${depId}${suffix}✗`);
           } else {
-            return `${depId}`;
+            return `${depId}${suffix}`;
           }
         })
         .join(', ');
