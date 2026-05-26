@@ -432,15 +432,21 @@ function enrichPlansWithContext(
   const dependenciesByPlanUuid = groupByPlanUuid(bundle.dependencies);
   const tagsByPlanUuid = groupTagsByPlanUuid(bundle.tags);
   const planByUuid = new Map(bundle.plans.map((plan) => [plan.uuid, plan]));
-  const missingDependencyUuids = new Set<string>();
+  const missingPlanUuids = new Set<string>();
 
   for (const dependency of bundle.dependencies) {
     if (!planByUuid.has(dependency.depends_on_uuid)) {
-      missingDependencyUuids.add(dependency.depends_on_uuid);
+      missingPlanUuids.add(dependency.depends_on_uuid);
     }
   }
 
-  for (const dependencyPlan of getPlansByUuid(db, missingDependencyUuids)) {
+  for (const plan of bundle.plans) {
+    if (plan.base_plan_uuid && !planByUuid.has(plan.base_plan_uuid)) {
+      missingPlanUuids.add(plan.base_plan_uuid);
+    }
+  }
+
+  for (const dependencyPlan of getPlansByUuid(db, missingPlanUuids)) {
     planByUuid.set(dependencyPlan.uuid, dependencyPlan);
   }
 
@@ -491,10 +497,18 @@ function enrichPlansWithContext(
       displayStatus = 'ready';
     }
 
-    const depsFullyResolved = dependencyRows.every((dep) => {
-      const depPlan = planByUuid.get(dep.depends_on_uuid);
-      return depPlan?.status === 'done' || depPlan?.status === 'cancelled';
-    });
+    const basePlanResolved = !plan.base_plan_uuid
+      ? true
+      : (() => {
+          const bp = planByUuid.get(plan.base_plan_uuid);
+          return bp?.status === 'done' || bp?.status === 'cancelled';
+        })();
+    const depsFullyResolved =
+      basePlanResolved &&
+      dependencyRows.every((dep) => {
+        const depPlan = planByUuid.get(dep.depends_on_uuid);
+        return depPlan?.status === 'done' || depPlan?.status === 'cancelled';
+      });
 
     return {
       uuid: plan.uuid,
