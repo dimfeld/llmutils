@@ -1004,7 +1004,7 @@
     {#if nonChildDependencyEntries.length > 0}
       <div>
         <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          Dependencies
+          Depends On
         </h3>
         <ul class="space-y-1">
           {#each nonChildDependencyEntries as { dep, isBase } (dep.uuid)}
