@@ -117,6 +117,9 @@ describe('lib/server/slack_notifier', () => {
       state: 'open',
       draft: false,
       lastFetchedAt: new Date().toISOString(),
+      additions: 42,
+      deletions: 17,
+      changedFiles: 3,
     });
 
     return { projectId: project.id, prStatusId: pr.status.id };
@@ -172,6 +175,17 @@ describe('lib/server/slack_notifier', () => {
       const blockText = payload.blocks[0].text.text;
       expect(blockText).toContain('reviewer-a');
       expect(blockText).toContain('reviewer-b');
+    });
+
+    test('passes cached PR change stats into the Slack message', async () => {
+      const { prStatusId } = setupEnabledProject();
+      insertReviewRequest(db, prStatusId, 'reviewer-a', minsAgo(2));
+
+      const { sender, sent } = makeFakeSender();
+      await runSlackNotifierOnce(db, buildConfig(), { sender, debounceMs: 0 });
+
+      expect(sent).toHaveLength(1);
+      expect(sent[0].payload.blocks[0].text.text).toContain('*Changes:* 3 files changed (+42/-17)');
     });
 
     test('batching: both rows marked notified after single send', async () => {

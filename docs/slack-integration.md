@@ -201,9 +201,10 @@ The notifier posts one Slack channel message per PR once the debounce window has
 
 - a linked PR title
 - the PR author
+- cached PR size when available (`files changed` and `+/-` counts)
 - requested reviewers, with mapped reviewers as Slack mentions and unmapped reviewers as GitHub logins
 
-The fallback text also includes the PR title, author, and reviewer GitHub logins. Slack API failures are logged and returned to the caller as `{ ok: false, error }`; token misconfiguration throws so the caller can fail loudly.
+The fallback text also includes the PR title, author, cached PR size when available, and reviewer GitHub logins. Slack API failures are logged and returned to the caller as `{ ok: false, error }`; token misconfiguration throws so the caller can fail loudly.
 
 ## Notifier Behavior
 

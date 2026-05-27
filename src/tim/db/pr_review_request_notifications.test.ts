@@ -46,6 +46,9 @@ describe('tim db/pr_review_request_notifications', () => {
       state: 'open',
       draft: false,
       lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      additions: 42,
+      deletions: 17,
+      changedFiles: 3,
     });
     prStatusId = pr1.status.id;
 
@@ -130,6 +133,9 @@ describe('tim db/pr_review_request_notifications', () => {
       expect(row.pr_number).toBe(1);
       expect(row.title).toBe('Fix the thing');
       expect(row.author).toBe('alice');
+      expect(row.additions).toBe(42);
+      expect(row.deletions).toBe(17);
+      expect(row.changed_files).toBe(3);
       expect(row.requested_at).toBe('2026-01-01T10:00:00.000Z');
       expect(typeof row.id).toBe('number');
       expect(typeof row.request_version).toBe('number');

@@ -108,6 +108,30 @@ describe('common/slack/slack_client', () => {
       expect(blockText).toContain('alice');
     });
 
+    test('includes PR change stats when available', () => {
+      const payload = buildReviewRequestSlackPayload(
+        '#reviews',
+        {
+          ...testPr,
+          changedFiles: 3,
+          additions: 42,
+          deletions: 17,
+        },
+        [mappedReviewer]
+      );
+      const blockText = payload.blocks[0].text.text;
+
+      expect(blockText).toContain('*Changes:* 3 files changed (+42/-17)');
+      expect(payload.text).toContain('(3 files changed (+42/-17))');
+    });
+
+    test('omits PR change stats when unavailable', () => {
+      const payload = buildReviewRequestSlackPayload('#reviews', testPr, [mappedReviewer]);
+      const blockText = payload.blocks[0].text.text;
+
+      expect(blockText).not.toContain('*Changes:*');
+    });
+
     test('top-level text fallback contains title, author, and github logins', () => {
       const payload = buildReviewRequestSlackPayload('#reviews', testPr, [
         mappedReviewer,

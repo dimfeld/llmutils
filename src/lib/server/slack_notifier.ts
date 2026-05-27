@@ -48,6 +48,9 @@ interface PendingPrGroup {
   prNumber: number;
   title: string;
   author: string;
+  additions: number | null;
+  deletions: number | null;
+  changedFiles: number | null;
   rows: PendingReviewRequestNotification[];
 }
 
@@ -77,6 +80,9 @@ function groupPendingNotifications(pending: PendingReviewRequestNotification[]):
       prNumber: row.pr_number,
       title: row.title,
       author: row.author,
+      additions: row.additions,
+      deletions: row.deletions,
+      changedFiles: row.changed_files,
       rows: [row],
     });
   }
@@ -181,6 +187,9 @@ async function processPendingPrGroup(
       number: group.prNumber,
       owner: group.owner,
       repo: group.repo,
+      additions: group.additions,
+      deletions: group.deletions,
+      changedFiles: group.changedFiles,
     },
     reviewers,
     sender: options.sender,

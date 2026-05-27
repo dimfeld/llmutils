@@ -14,6 +14,9 @@ export interface PendingReviewRequestNotification {
   pr_number: number;
   title: string;
   author: string;
+  additions: number | null;
+  deletions: number | null;
+  changed_files: number | null;
 }
 
 export function getPendingReviewRequestNotifications(
@@ -34,7 +37,10 @@ export function getPendingReviewRequestNotifications(
           pr_status.pr_url,
           pr_status.pr_number,
           COALESCE(pr_status.title, '') AS title,
-          COALESCE(pr_status.author, '') AS author
+          COALESCE(pr_status.author, '') AS author,
+          pr_status.additions,
+          pr_status.deletions,
+          pr_status.changed_files
         FROM pr_review_request
         INNER JOIN pr_status ON pr_status.id = pr_review_request.pr_status_id
         WHERE pr_review_request.removed_at IS NULL

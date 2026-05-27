@@ -16,6 +16,9 @@ export interface ReviewRequestPr {
   number?: number;
   owner?: string;
   repo?: string;
+  additions?: number | null;
+  deletions?: number | null;
+  changedFiles?: number | null;
 }
 
 export interface SlackPostResult {
@@ -126,6 +129,20 @@ function formatReviewerList(reviewers: ReviewRequestReviewer[]): string {
   return reviewers.map(formatReviewer).join(', ');
 }
 
+function formatPrChangeStats(pr: ReviewRequestPr): string | null {
+  const parts: string[] = [];
+
+  if (typeof pr.changedFiles === 'number') {
+    parts.push(`${pr.changedFiles} ${pr.changedFiles === 1 ? 'file' : 'files'} changed`);
+  }
+
+  if (typeof pr.additions === 'number' && typeof pr.deletions === 'number') {
+    parts.push(`(+${pr.additions}/-${pr.deletions})`);
+  }
+
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 function formatPlainLogin(login: string): string {
   return `\`${escapeSlackCodeSpan(login)}\``;
 }
@@ -199,11 +216,15 @@ export function buildReviewRequestSlackPayload(
   const escapedAuthor = escapeSlackMrkdwnText(pr.author);
   const escapedUrl = escapeSlackMrkdwnText(pr.url);
   const reviewerText = formatReviewerList(reviewers);
+  const changeStats = formatPrChangeStats(pr);
+  const escapedChangeStats = changeStats ? escapeSlackMrkdwnText(changeStats) : null;
   const fallbackReviewers =
     reviewers.length > 0
       ? reviewers.map((reviewer) => escapeSlackMrkdwnText(reviewer.githubLogin)).join(', ')
       : 'none';
-  const fallbackText = `Review requested on ${escapedTitle} by ${escapedAuthor}: ${fallbackReviewers}`;
+  const fallbackStats = escapedChangeStats ? ` (${escapedChangeStats})` : '';
+  const fallbackText = `Review requested on ${escapedTitle} by ${escapedAuthor}${fallbackStats}: ${fallbackReviewers}`;
+  const statsLine = escapedChangeStats ? `\n*Changes:* ${escapedChangeStats}` : '';
 
   return {
     channel,
@@ -213,7 +234,7 @@ export function buildReviewRequestSlackPayload(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Review requested:* <${escapedUrl}|${escapedTitle}>\n*Author:* ${escapedAuthor}\n*Reviewers:* ${reviewerText}`,
+          text: `*Review requested:* <${escapedUrl}|${escapedTitle}>\n*Author:* ${escapedAuthor}${statsLine}\n*Reviewers:* ${reviewerText}`,
         },
       },
     ],
