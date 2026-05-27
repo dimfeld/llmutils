@@ -371,13 +371,13 @@ export function appendIssuesToBody<T extends ReviewIssueForSubmission>(
     return body;
   }
 
-  const bulletLines = appendToBody.map((issue) => {
-    const location = issue.file ? `**${issue.file}${issue.line ? `:${issue.line}` : ''}**: ` : '';
-    const suggestionLine = issue.suggestion ? `\n  - Suggestion: ${issue.suggestion}` : '';
-    return `- ${location}${issue.content}${suggestionLine}`;
+  const noteSections = appendToBody.map((issue) => {
+    const location = issue.file ? `${issue.file}${issue.line ? `:${issue.line}` : ''}` : 'General';
+    const suggestionLine = issue.suggestion ? `\n\n- Suggestion: ${issue.suggestion}` : '';
+    return `### ${location}\n\n${issue.content}${suggestionLine}`;
   });
 
-  return `${body}\n\n## Additional notes\n${bulletLines.join('\n')}`;
+  return `${body}\n\n## Additional notes\n${noteSections.join('\n\n')}`;
 }
 
 export async function submitPrReview(input: SubmitPrReviewInput): Promise<{

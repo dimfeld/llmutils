@@ -602,7 +602,7 @@ describe('common/github/pr_reviews', () => {
     expect(appendIssuesToBody(body, [])).toBe(body);
   });
 
-  test('appendIssuesToBody appends additional-notes bullets with file and suggestion', () => {
+  test('appendIssuesToBody appends additional-note sections with file and suggestion', () => {
     const body = 'Review body';
     const updated = appendIssuesToBody(body, [
       {
@@ -626,9 +626,10 @@ describe('common/github/pr_reviews', () => {
     ]);
 
     expect(updated).toContain('## Additional notes');
-    expect(updated).toContain('- **src/a.ts:22**: Needs follow-up');
-    expect(updated).toContain('  - Suggestion: Add test coverage');
-    expect(updated).toContain('- General note');
+    expect(updated).toContain(
+      '### src/a.ts:22\n\nNeeds follow-up\n\n- Suggestion: Add test coverage'
+    );
+    expect(updated).toContain('### General\n\nGeneral note');
   });
 
   test('submitPrReview calls octokit pulls.createReview and returns id/url', async () => {
