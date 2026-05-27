@@ -66,6 +66,7 @@
       ? pr.checks.filter((c) => (pr.requiredCheckNames ?? []).includes(c.name))
       : pr.checks
   );
+  let pendingRequestedReviewers = $derived(getPendingRequestedReviewers(pr));
 
   // Get planUuid if there's exactly one linked plan, otherwise undefined
   let planUuid = $derived(pr.linkedPlans.length === 1 ? pr.linkedPlans[0].planUuid : undefined);
@@ -155,6 +156,49 @@
     }
 
     return `/projects/${projectId}/plans/${review.plan_uuid ?? planUuid}/reviews/${review.id}`;
+  }
+
+  function parseRequestedReviewers(requestedReviewers: string | null): string[] {
+    if (!requestedReviewers) {
+      return [];
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(requestedReviewers);
+      return Array.isArray(parsed)
+        ? parsed.filter((value): value is string => typeof value === 'string')
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function getPendingRequestedReviewers(pr: EnrichedProjectPr): string[] {
+    const reviewersByName = new Map<string, string>();
+
+    for (const reviewer of parseRequestedReviewers(pr.status.requested_reviewers)) {
+      reviewersByName.set(normalizeGitHubUsername(reviewer), reviewer);
+    }
+
+    for (const request of pr.reviewRequests) {
+      const isCurrentlyRequested =
+        request.requested_at !== null &&
+        (request.removed_at === null || request.requested_at > request.removed_at);
+
+      if (isCurrentlyRequested) {
+        reviewersByName.set(normalizeGitHubUsername(request.reviewer), request.reviewer);
+      }
+    }
+
+    for (const review of pr.reviews) {
+      if (review.state === 'PENDING') {
+        continue;
+      }
+
+      reviewersByName.delete(normalizeGitHubUsername(review.author));
+    }
+
+    return [...reviewersByName.values()].sort((a, b) => a.localeCompare(b));
   }
 </script>
 
@@ -394,15 +438,35 @@
     {/if}
 
     <!-- Reviews -->
-    {#if pr.reviews.length > 0}
+    {#if pr.reviews.length > 0 || pendingRequestedReviewers.length > 0}
       <details open>
         <summary
           class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
         >
           {pr.reviews.length} review{pr.reviews.length === 1 ? '' : 's'}
+          {#if pendingRequestedReviewers.length > 0}
+            · {pendingRequestedReviewers.length} requested
+          {/if}
         </summary>
         <div class="mt-1.5 pl-2">
-          <PrReviewList reviews={pr.reviews} />
+          {#if pr.reviews.length > 0}
+            <PrReviewList reviews={pr.reviews} />
+          {/if}
+          {#if pendingRequestedReviewers.length > 0}
+            <div class={pr.reviews.length > 0 ? 'mt-2' : ''}>
+              <ul class="space-y-1">
+                {#each pendingRequestedReviewers as reviewer (reviewer)}
+                  <li class="flex items-center gap-2 text-sm">
+                    <span class="shrink-0 text-yellow-600 dark:text-yellow-400">◌</span>
+                    <span class="min-w-0 flex-1 text-foreground">{reviewer}</span>
+                    <span class="shrink-0 text-right text-xs text-yellow-600 dark:text-yellow-400">
+                      Requested
+                    </span>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
         </div>
       </details>
     {/if}

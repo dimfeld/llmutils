@@ -189,6 +189,74 @@ describe('PrDetail', () => {
     expect(body).not.toContain('text-red-600');
   });
 
+  test('renders requested reviewers who have not reviewed yet', async () => {
+    const pr = createPr();
+    pr.status.requested_reviewers = '["dimfeld","bob"]';
+    pr.reviews = [
+      {
+        id: 11,
+        pr_status_id: 1,
+        author: 'bob',
+        state: 'APPROVED',
+        body: null,
+        submitted_at: '2026-03-18T11:00:00.000Z',
+      },
+    ];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('1 review');
+    expect(body).toContain('1 requested');
+    expect(body).toContain('Requested');
+    expect(body).toContain('dimfeld');
+    expect(body).not.toContain('@dimfeld');
+    expect(body).not.toContain('@bob');
+  });
+
+  test('renders active requested reviewers from review request history', async () => {
+    const pr = createPr();
+    pr.status.requested_reviewers = null;
+    pr.reviewRequests = [
+      {
+        id: 21,
+        pr_status_id: 1,
+        reviewer: 'carol',
+        requested_at: '2026-03-18T10:00:00.000Z',
+        removed_at: null,
+        notified_at: null,
+        last_event_at: '2026-03-18T10:00:00.000Z',
+        request_version: 1,
+      },
+      {
+        id: 22,
+        pr_status_id: 1,
+        reviewer: 'dave',
+        requested_at: '2026-03-18T10:00:00.000Z',
+        removed_at: '2026-03-18T11:00:00.000Z',
+        notified_at: null,
+        last_event_at: '2026-03-18T11:00:00.000Z',
+        request_version: 1,
+      },
+    ];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('0 reviews');
+    expect(body).toContain('1 requested');
+    expect(body).toContain('carol');
+    expect(body).not.toContain('@dave');
+  });
+
   test('sorts linked plans by plan number', async () => {
     const pr = createPr();
     pr.linkedPlans = [
