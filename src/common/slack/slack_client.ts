@@ -133,7 +133,7 @@ function formatPrChangeStats(pr: ReviewRequestPr): string | null {
   const parts: string[] = [];
 
   if (typeof pr.changedFiles === 'number') {
-    parts.push(`${pr.changedFiles} ${pr.changedFiles === 1 ? 'file' : 'files'} changed`);
+    parts.push(`${pr.changedFiles} ${pr.changedFiles === 1 ? 'file' : 'files'}`);
   }
 
   if (typeof pr.additions === 'number' && typeof pr.deletions === 'number') {

@@ -121,8 +121,8 @@ describe('common/slack/slack_client', () => {
       );
       const blockText = payload.blocks[0].text.text;
 
-      expect(blockText).toContain('*Changes:* 3 files changed (+42/-17)');
-      expect(payload.text).toContain('(3 files changed (+42/-17))');
+      expect(blockText).toContain('*Changes:* 3 files (+42/-17)');
+      expect(payload.text).toContain('(3 files (+42/-17))');
     });
 
     test('omits PR change stats when unavailable', () => {
