@@ -6,6 +6,7 @@
     getPrStatus,
     refreshPrStatus,
   } from '$lib/remote/pr_status.remote.js';
+  import type { PrStatusRow } from '$tim/db/pr_status.js';
   import { startFixThreads } from '$lib/remote/review_thread_actions.remote.js';
   import {
     getFixButtonState,
@@ -36,7 +37,11 @@
   let tokenConfigured = $derived(prData.tokenConfigured);
   let statusByUrl = $derived(new Map(prData.prStatuses.map((pr) => [pr.status.pr_url, pr])));
   let latestReviewGuidesByPrUrl = $derived(prData.latestReviewGuidesByPrUrl);
-  let effectivePrs = $derived(prData.prStatuses);
+  function isVisiblePrStatus(status: PrStatusRow): boolean {
+    return status.state !== 'closed' || status.merged_at !== null;
+  }
+
+  let effectivePrs = $derived(prData.prStatuses.filter((pr) => isVisiblePrStatus(pr.status)));
   let uncachedUrls = $derived(prUrls.filter((url) => !statusByUrl.has(url)));
 
   let hasUnresolvedThreads = $derived(

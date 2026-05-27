@@ -5,6 +5,7 @@
 
   import type { PlanDetail } from '$lib/server/db_queries.js';
   import type { ReviewWithIssueCounts } from '$tim/db/review.js';
+  import type { PrStatusRow } from '$tim/db/pr_status.js';
   import { renderMarkdown } from '$lib/utils/markdown_parser.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { onDestroy } from 'svelte';
@@ -111,6 +112,20 @@
   let tasksOpen = $derived(plan.taskCounts.done < plan.taskCounts.total);
   let isBlocked = $derived(plan.displayStatus === 'blocked');
   let isSimplePlan = $derived(plan.simple === true);
+
+  function isVisiblePrStatus(status: PrStatusRow): boolean {
+    return status.state !== 'closed' || status.merged_at !== null;
+  }
+
+  let visiblePrStatuses = $derived(plan.prStatuses.filter((pr) => isVisiblePrStatus(pr.status)));
+  let hiddenPrStatusUrls = $derived(
+    new Set(
+      plan.prStatuses.filter((pr) => !isVisiblePrStatus(pr.status)).map((pr) => pr.status.pr_url)
+    )
+  );
+  let visiblePullRequests = $derived(
+    plan.pullRequests.filter((prUrl) => !hiddenPrStatusUrls.has(prUrl))
+  );
 
   let canRenderRunChildren = $derived(
     plan.epic === true &&
@@ -279,8 +294,8 @@
   let isEligibleForCreatePr = $derived(
     CREATE_PR_ELIGIBLE_STATUSES.has(plan.status) &&
       !plan.epic &&
-      plan.prStatuses.length === 0 &&
-      plan.pullRequests.length === 0
+      visiblePrStatuses.length === 0 &&
+      visiblePullRequests.length === 0
   );
 
   let startingGenerate = $state(false);
@@ -1194,7 +1209,7 @@
     {/if}
 
     <!-- Pull Requests -->
-    {#if plan.pullRequests.length > 0 || plan.invalidPrUrls.length > 0 || plan.prStatuses.length > 0}
+    {#if visiblePullRequests.length > 0 || plan.invalidPrUrls.length > 0 || visiblePrStatuses.length > 0}
       <PrStatusSection planUuid={plan.uuid} {projectId} />
     {/if}
 
