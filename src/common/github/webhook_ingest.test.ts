@@ -494,12 +494,17 @@ describe('common/github/webhook_ingest', () => {
       headRef: 'feature/ready-source',
     });
     mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
     const result = await ingestWebhookEvents(db);
 
     expect(result.errors).toEqual([]);
     expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/70']);
     expect(getPlanByUuid(db, 'plan-ready-source')?.status).toBe('reviewed');
+    expect(logSpy).toHaveBeenCalledWith(
+      '[webhook-ingest] auto-updated plan 70 status needs_review -> reviewed after PR example/repo#70 became_ready'
+    );
+    logSpy.mockRestore();
     expect(getAssignment(db, projectId, 'plan-ready-source')).not.toBeNull();
     for (const status of guardedStatuses) {
       expect(getPlanByUuid(db, `plan-ready-guard-${status}`)?.status).toBe(status);
@@ -708,6 +713,7 @@ describe('common/github/webhook_ingest', () => {
       },
     ]);
     mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
     const result = await ingestWebhookEvents(db);
     const plan = getPlanByUuid(db, 'plan-1');
@@ -715,6 +721,10 @@ describe('common/github/webhook_ingest', () => {
     expect(result.errors).toEqual([]);
     expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/51']);
     expect(plan?.status).toBe('done');
+    expect(logSpy).toHaveBeenCalledWith(
+      '[webhook-ingest] auto-updated plan 1 status needs_review -> done after PR example/repo#51 merged'
+    );
+    logSpy.mockRestore();
     expect(plan?.docs_updated_at).toBe('2026-03-30T09:30:00.000Z');
     expect(plan?.lessons_applied_at).toBe('2026-03-30T09:45:00.000Z');
   });

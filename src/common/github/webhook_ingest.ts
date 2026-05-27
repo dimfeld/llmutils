@@ -127,6 +127,9 @@ async function autoCompleteMergedLinkedPlans(
       ...toPlanUpsertInput(completedPlan, planIdToUuid),
       forceOverwrite: true,
     });
+    console.log(
+      `[webhook-ingest] auto-updated plan ${plan.id ?? planUuid} status ${planRow.status} -> done after PR ${owner}/${repo}#${prNumber} merged`
+    );
     removeAssignment(db, project.id, planUuid);
 
     if (completedPlan.parent != null) {
@@ -206,6 +209,9 @@ async function applyDraftReadyStatusToLinkedPlans(
       ...toPlanUpsertInput(updatedPlan, planIdToUuid),
       forceOverwrite: true,
     });
+    console.log(
+      `[webhook-ingest] auto-updated plan ${plan.id ?? planUuid} status ${sourceStatus} -> ${targetStatus} after PR ${owner}/${repo}#${prNumber} ${transition}`
+    );
   }
 }
 
