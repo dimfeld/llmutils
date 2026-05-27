@@ -61,6 +61,8 @@ Read the relevant doc before working in these areas:
 
 When adding new values to `configSchema.ts`, do not put defaults in the zod schemas — it breaks merging of local and main configs. Apply defaults where values are read, or set them in `loadEffectiveConfig` after merging.
 
+This "no defaults" rule does **not** forbid _validation_ in the schema. Format-correctness checks (`.refine()`, `.regex()`, enum/range constraints — e.g. an `HH:MM` time or an IANA timezone) belong in the zod schema so misconfiguration is rejected at config-load time. Prefer schema validation over a standalone validator helper: a validator that nothing calls on the read path gives no real protection.
+
 ### Testing
 
 - Don't mock if you can help it. Tests must exercise real code.

@@ -7,6 +7,10 @@ import {
   codexCliOptionsSchema,
 } from './executors/schemas.js';
 import { branchPrefixSchema } from './branch_prefix.js';
+import {
+  SLACK_DAILY_DIGEST_TIME_PATTERN,
+  isValidIanaTimeZone,
+} from '../common/slack/slack_daily_digest_config.js';
 
 /**
  * Schema for a single command to be executed after applying changes.
@@ -238,6 +242,26 @@ export type SyncConfigInput = z.infer<typeof syncConfigSchema>;
 export const slackWorkspaceConfigSchema = z
   .object({
     token: z.string().optional(),
+    dailyDigest: z
+      .object({
+        time: z
+          .string()
+          .regex(
+            SLACK_DAILY_DIGEST_TIME_PATTERN,
+            'Slack dailyDigest.time must be HH:MM in 24-hour time (e.g. "00:00", "09:30")'
+          )
+          .optional(),
+        timezone: z
+          .string()
+          .refine(isValidIanaTimeZone, {
+            message:
+              'Slack dailyDigest.timezone must be a valid IANA time zone (e.g. "America/New_York")',
+          })
+          .optional(),
+        staleAfterHours: z.number().positive().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

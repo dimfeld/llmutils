@@ -6,15 +6,19 @@ vi.mock('../../logging.js', () => ({
 
 import { getDefaultConfig, type TimConfig } from '../../tim/configSchema.js';
 import {
+  buildDailyDigestSlackPayload,
   buildSlackTestMessagePayload,
   buildReviewRequestSlackPayload,
   clearSlackClientCache,
   createFetchSlackSender,
   getSlackPostSender,
+  postDailyDigestMessage,
   postReviewRequestMessage,
   postSlackTestMessage,
+  type DailyDigestPayloadInput,
   type ReviewRequestPr,
   type ReviewRequestReviewer,
+  type SlackBlock,
   type SlackPostResult,
   type SlackPostSenderArgs,
 } from './slack_client.js';
@@ -35,6 +39,18 @@ const testPr: ReviewRequestPr = {
 const mappedReviewer: ReviewRequestReviewer = { githubLogin: 'bob', slackUserId: 'U123BOB' };
 const unmappedReviewer: ReviewRequestReviewer = { githubLogin: 'carol', slackUserId: null };
 const unmappedReviewer2: ReviewRequestReviewer = { githubLogin: 'dave' };
+
+function sectionText(block: SlackBlock): string {
+  if (block.type !== 'section') {
+    throw new Error(`Expected section block, received ${block.type}`);
+  }
+
+  return block.text.text;
+}
+
+function serializedBlocks(blocks: SlackBlock[]): string {
+  return JSON.stringify(blocks);
+}
 
 function buildFetchResponse(options: {
   ok: boolean;
@@ -251,6 +267,269 @@ describe('common/slack/slack_client', () => {
           sender: fakeSender,
         })
       ).rejects.toThrow('"nonexistent" is not configured');
+    });
+  });
+
+  describe('buildDailyDigestSlackPayload', () => {
+    const digestBothBuckets: DailyDigestPayloadInput = {
+      approvedUnmerged: [
+        {
+          prUrl: 'https://github.com/octocat/hello-world/pull/1',
+          prNumber: 1,
+          title: 'Approved PR',
+          author: 'alice',
+        },
+      ],
+      staleAwaitingReview: [
+        {
+          prUrl: 'https://github.com/octocat/hello-world/pull/2',
+          prNumber: 2,
+          title: 'Needs review',
+          author: 'bob',
+          reviewers: [
+            { login: 'carol', waitedMs: 90_000_000, waitedLabel: '25 hours' },
+            { login: 'dave', waitedMs: 180_000_000, waitedLabel: '2 days' },
+          ],
+        },
+      ],
+    };
+
+    test('formats both buckets with header, approved section, divider, and stale section', () => {
+      const payload = buildDailyDigestSlackPayload(
+        '#reviews',
+        'octocat/hello-world',
+        digestBothBuckets
+      );
+
+      expect(payload.channel).toBe('#reviews');
+      expect(payload.blocks.map((block) => block.type)).toEqual([
+        'section',
+        'section',
+        'divider',
+        'section',
+      ]);
+      expect(sectionText(payload.blocks[0])).toBe('*Daily PR digest — octocat/hello-world*');
+      expect(sectionText(payload.blocks[1])).toContain('*Approved, not yet merged*');
+      expect(sectionText(payload.blocks[3])).toContain('*Awaiting review for > 1 day*');
+    });
+
+    test('omits divider and stale section when only approved bucket is populated', () => {
+      const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
+        approvedUnmerged: digestBothBuckets.approvedUnmerged,
+        staleAwaitingReview: [],
+      });
+
+      expect(payload.blocks.map((block) => block.type)).toEqual(['section', 'section']);
+      expect(serializedBlocks(payload.blocks)).toContain('Approved, not yet merged');
+      expect(serializedBlocks(payload.blocks)).not.toContain('Awaiting review');
+    });
+
+    test('omits approved section and divider when only stale bucket is populated', () => {
+      const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
+        approvedUnmerged: [],
+        staleAwaitingReview: digestBothBuckets.staleAwaitingReview,
+      });
+
+      expect(payload.blocks.map((block) => block.type)).toEqual(['section', 'section']);
+      expect(serializedBlocks(payload.blocks)).not.toContain('Approved, not yet merged');
+      expect(serializedBlocks(payload.blocks)).toContain('Awaiting review');
+    });
+
+    test('renders PR links and plain login code spans without Slack mentions', () => {
+      const payload = buildDailyDigestSlackPayload(
+        '#reviews',
+        'octocat/hello-world',
+        digestBothBuckets
+      );
+      const blocks = serializedBlocks(payload.blocks);
+
+      expect(blocks).toContain('<https://github.com/octocat/hello-world/pull/1|Approved PR>');
+      expect(blocks).toContain('`alice`');
+      expect(blocks).toContain('<https://github.com/octocat/hello-world/pull/2|Needs review>');
+      expect(blocks).toContain('`bob`');
+      expect(blocks).not.toContain('<@');
+    });
+
+    test('lists all waiting reviewers as plain logins with waited labels', () => {
+      const payload = buildDailyDigestSlackPayload(
+        '#reviews',
+        'octocat/hello-world',
+        digestBothBuckets
+      );
+      const staleText = sectionText(payload.blocks[3]);
+
+      expect(staleText).toContain('`carol` (25 hours)');
+      expect(staleText).toContain('`dave` (2 days)');
+    });
+
+    test('renders both sections when different PRs are approved and awaiting review', () => {
+      const digest: DailyDigestPayloadInput = {
+        approvedUnmerged: [
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/9',
+            prNumber: 9,
+            title: 'Approved but waiting',
+            author: 'alice',
+          },
+        ],
+        staleAwaitingReview: [
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/10',
+            prNumber: 10,
+            title: 'Needs review',
+            author: 'carol',
+            reviewers: [{ login: 'bob', waitedMs: 90_000_000, waitedLabel: '25 hours' }],
+          },
+        ],
+      };
+
+      const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', digest);
+      const approvedText = sectionText(payload.blocks[1]);
+      const staleText = sectionText(payload.blocks[3]);
+
+      expect(payload.blocks.map((block) => block.type)).toEqual([
+        'section',
+        'section',
+        'divider',
+        'section',
+      ]);
+      expect(approvedText).toContain(
+        '<https://github.com/octocat/hello-world/pull/9|Approved but waiting>'
+      );
+      expect(staleText).toContain('<https://github.com/octocat/hello-world/pull/10|Needs review>');
+      expect(staleText).toContain('`bob` (25 hours)');
+      expect(serializedBlocks(payload.blocks)).not.toContain('<@');
+    });
+
+    test('escapes Slack mrkdwn control characters in titles, authors, reviewers, and wait labels', () => {
+      const payload = buildDailyDigestSlackPayload('#reviews', 'octo&cat/repo<main>', {
+        approvedUnmerged: [
+          {
+            prUrl: 'https://github.com/octo/repo/pull/3?x=1&y=<bad>',
+            prNumber: 3,
+            title: 'Fix & <broken> > thing',
+            author: 'dev&<@U999>`name',
+          },
+        ],
+        staleAwaitingReview: [
+          {
+            prUrl: 'https://github.com/octo/repo/pull/4',
+            prNumber: 4,
+            title: 'Review <this> & that',
+            author: 'author<raw>',
+            reviewers: [
+              {
+                login: 'reviewer&<@U123>`name',
+                waitedMs: 90_000_000,
+                waitedLabel: '25 <hours> & counting',
+              },
+            ],
+          },
+        ],
+      });
+      const blocks = serializedBlocks(payload.blocks);
+
+      expect(blocks).toContain('octo&amp;cat/repo&lt;main&gt;');
+      expect(blocks).toContain('Fix &amp; &lt;broken&gt; &gt; thing');
+      expect(blocks).toContain("`dev&amp;&lt;@U999&gt;'name`");
+      expect(blocks).toContain('Review &lt;this&gt; &amp; that');
+      expect(blocks).toContain("`reviewer&amp;&lt;@U123&gt;'name`");
+      expect(blocks).toContain('25 &lt;hours&gt; &amp; counting');
+      expect(blocks).not.toContain('Fix & <broken>');
+      expect(blocks).not.toContain('repo<main>');
+      expect(blocks).not.toContain('<@U123>');
+      expect(blocks).not.toContain('<@U999>');
+    });
+
+    test('chunks a large bucket across multiple section blocks under the Slack size limit', () => {
+      const approvedUnmerged = Array.from({ length: 200 }, (_, index) => ({
+        prUrl: `https://github.com/octocat/hello-world/pull/${index}`,
+        prNumber: index,
+        title: `A reasonably long pull request title number ${index} that takes up space`,
+        author: `contributor-${index}`,
+      }));
+
+      const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
+        approvedUnmerged,
+        staleAwaitingReview: [],
+      });
+
+      const sectionBlocks = payload.blocks.filter((block) => block.type === 'section');
+      // header + multiple approved sections
+      expect(sectionBlocks.length).toBeGreaterThan(2);
+      for (const block of sectionBlocks) {
+        expect(sectionText(block).length).toBeLessThanOrEqual(2900);
+      }
+      // Every PR line is still present across the chunked blocks.
+      const allText = serializedBlocks(payload.blocks);
+      expect(allText).toContain('/pull/0|');
+      expect(allText).toContain('/pull/199|');
+      // Title only appears on the first approved section block, not repeated per chunk.
+      const titleOccurrences = sectionBlocks.filter((block) =>
+        sectionText(block).includes('*Approved, not yet merged*')
+      ).length;
+      expect(titleOccurrences).toBe(1);
+    });
+  });
+
+  describe('postDailyDigestMessage with injected sender', () => {
+    const config = buildConfig({
+      workspaces: {
+        work: { token: 'xoxb-test-token' },
+      },
+    });
+
+    test('returns ok without invoking sender when both buckets are empty', async () => {
+      const calls: SlackPostSenderArgs[] = [];
+      const fakeSender = async (args: SlackPostSenderArgs): Promise<SlackPostResult> => {
+        calls.push(args);
+        return { ok: true };
+      };
+
+      const result = await postDailyDigestMessage({
+        config,
+        workspace: 'work',
+        channel: '#reviews',
+        repoFullName: 'octocat/hello-world',
+        digest: { approvedUnmerged: [], staleAwaitingReview: [] },
+        sender: fakeSender,
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(calls).toHaveLength(0);
+    });
+
+    test('calls sender once with the built payload when content is present', async () => {
+      const calls: SlackPostSenderArgs[] = [];
+      const fakeSender = async (args: SlackPostSenderArgs): Promise<SlackPostResult> => {
+        calls.push(args);
+        return { ok: true };
+      };
+
+      const result = await postDailyDigestMessage({
+        config,
+        workspace: 'work',
+        channel: '#reviews',
+        repoFullName: 'octocat/hello-world',
+        digest: {
+          approvedUnmerged: [
+            {
+              prUrl: 'https://github.com/octocat/hello-world/pull/1',
+              prNumber: 1,
+              title: 'Approved PR',
+              author: 'alice',
+            },
+          ],
+          staleAwaitingReview: [],
+        },
+        sender: fakeSender,
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(calls).toHaveLength(1);
+      expect(calls[0].token).toBe('xoxb-test-token');
+      expect(calls[0].payload.channel).toBe('#reviews');
+      expect(serializedBlocks(calls[0].payload.blocks)).toContain('Approved PR');
     });
   });
 

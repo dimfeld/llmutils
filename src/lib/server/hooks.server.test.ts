@@ -10,6 +10,7 @@ describe('hooks.server init', () => {
     (sessionContext.setWebSocketServerHandle as unknown as (server: null) => void)(null);
     sessionContext.setSessionDiscoveryClient(null);
     sessionContext.setWebhookPoller(null);
+    sessionContext.setDailyDigestScheduler(null);
     sessionContext.setSyncService(null);
     sessionContext.setSessionInitPromise(null);
     const globalState = globalThis as typeof globalThis & {
@@ -25,6 +26,7 @@ describe('hooks.server init', () => {
     (sessionContext.setWebSocketServerHandle as unknown as (server: null) => void)(null);
     sessionContext.setSessionDiscoveryClient(null);
     sessionContext.setWebhookPoller(null);
+    sessionContext.setDailyDigestScheduler(null);
     sessionContext.setSyncService(null);
     sessionContext.setSessionInitPromise(null);
     const globalState = globalThis as typeof globalThis & {
@@ -35,6 +37,7 @@ describe('hooks.server init', () => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.doUnmock('$lib/server/init.js');
+    vi.doUnmock('$lib/server/daily_digest.js');
     vi.doUnmock('$lib/server/session_discovery.js');
     vi.doUnmock('$lib/server/sync_service.js');
     vi.doUnmock('$lib/server/webhook_poller.js');
@@ -69,6 +72,46 @@ describe('hooks.server init', () => {
     expect(sessionContext.getSessionManager()).toEqual(expect.anything());
     expect(sessionContext.getWebSocketServerHandle()).toBe(serverHandle);
     expect(sessionContext.getSessionInitPromise()).toEqual(expect.any(Promise));
+  });
+
+  test('init starts the daily digest scheduler when daily digests are enabled', async () => {
+    const config = {
+      headless: { url: 'ws://localhost:8123/tim-agent' },
+      slack: { workspaces: { work: { token: 'xoxb-token' } } },
+    };
+    const db = { fake: true };
+    const getServerContext = vi.fn().mockResolvedValue({ config, db });
+    const schedulerHandle = { stop: vi.fn(), runNow: vi.fn() };
+    const shouldStartDailyDigest = vi.fn().mockReturnValue(true);
+    const startDailyDigestScheduler = vi.fn().mockReturnValue(schedulerHandle);
+    const serverHandle = { port: 8123, stop: vi.fn() };
+    const startWebSocketServer = vi.fn().mockReturnValue(serverHandle);
+
+    vi.doMock('$lib/server/init.js', () => ({ getServerContext }));
+    vi.doMock('$lib/server/daily_digest.js', async () => {
+      const actual = await vi.importActual<typeof import('./daily_digest.js')>('./daily_digest.js');
+      return {
+        ...actual,
+        shouldStartDailyDigest,
+        startDailyDigestScheduler,
+      };
+    });
+    vi.doMock('$lib/server/ws_server.js', async () => {
+      const actual = await vi.importActual<typeof import('./ws_server.js')>('./ws_server.js');
+      return {
+        ...actual,
+        startWebSocketServer,
+      };
+    });
+
+    const hooks = await import('../../hooks.server.js');
+    const sessionContext = await import('./session_context.js');
+
+    await hooks.init();
+
+    expect(shouldStartDailyDigest).toHaveBeenCalledWith(db, config);
+    expect(startDailyDigestScheduler).toHaveBeenCalledWith(db, config);
+    expect(sessionContext.getDailyDigestScheduler()).toBe(schedulerHandle);
   });
 
   test('init clears the init promise when startup fails', async () => {

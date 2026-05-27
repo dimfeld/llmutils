@@ -1236,6 +1236,31 @@ slackCommand
     await handleSlackMarkClosedNotifiedCommand(options).catch(handleCommandError);
   });
 
+const slackDigestCommand = slackCommand
+  .command('digest')
+  .description('Manage Slack daily PR digest settings')
+  .option('--dry-run', 'Preview the daily PR digest without posting to Slack')
+  .action(async (options, command) => {
+    const { handleSlackDigestRunCommand } = await import('./commands/slack.js');
+    await handleSlackDigestRunCommand(options, command).catch(handleCommandError);
+  });
+
+slackDigestCommand
+  .command('enable')
+  .description('Enable the Slack daily PR digest for the current project')
+  .action(async (options, command) => {
+    const { handleSlackDigestEnableCommand } = await import('./commands/slack.js');
+    await handleSlackDigestEnableCommand(options, command).catch(handleCommandError);
+  });
+
+slackDigestCommand
+  .command('disable')
+  .description('Disable the Slack daily PR digest for the current project')
+  .action(async (options, command) => {
+    const { handleSlackDigestDisableCommand } = await import('./commands/slack.js');
+    await handleSlackDigestDisableCommand(options, command).catch(handleCommandError);
+  });
+
 slackCommand
   .command('map <github-login> <slack-user-id>')
   .description('Map a GitHub login to a Slack user ID in a workspace')

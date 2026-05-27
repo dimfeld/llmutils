@@ -226,7 +226,7 @@ slack:
     personal: { token: '${SLACK_PERSONAL_TOKEN}' }
 ```
 
-The token value supports `${ENV_VAR}` expansion at read time. The Slack app bot token needs `chat:write` access for the target channel, and the bot must be invited to that channel.
+The token value supports `${ENV_VAR}` expansion at read time. The Slack app bot token needs `chat:write` access for the target channel, and the bot must be invited to that channel. A workspace may also carry an optional `dailyDigest: { time, timezone, staleAfterHours }` schedule for the daily PR digest (see below).
 
 Per-repo opt-in is stored in the local database as a `project_setting` named `slack`, so most repos stay silent until explicitly enabled:
 
@@ -247,12 +247,18 @@ tim slack mark-closed-notified [--dry-run]
 tim slack map <github-login> <slack-user-id> --workspace <name> [--display <name>]
 tim slack unmap <github-login> --workspace <name>
 tim slack list [--workspace <name>]
+tim slack digest enable | disable
+tim slack digest [--dry-run]
 ```
 
 Workspace names must exist in `slack.workspaces`. User mappings are keyed by `(workspace, github_login)` and shared across repos in that Slack workspace; mapped reviewers render as Slack mentions, while unmapped reviewers are named by GitHub login without a ping.
 Use `tim slack mark-closed-notified` to suppress pending historical review-request notifications for cached closed or merged PRs.
 
 The notifier runs in the SvelteKit web server when at least one Slack workspace is configured. It is kicked by GitHub webhook ingestion and also checks about every 15 seconds. Review requests on the same PR are batched with a fixed 30-second debounce, then marked notified in the DB after Slack confirms the post.
+
+### Daily PR Digest
+
+Separately, repos can opt into a once-per-day digest (`tim slack digest enable`) that summarizes approved-but-unmerged PRs and non-approved PRs awaiting review longer than the stale threshold (default 24h), posting one message per repo to its configured channel and skipping repos with nothing to report. The schedule (`time`/`timezone`/`staleAfterHours`) is per workspace; it requires webhook polling so the local PR data stays fresh, never uses `@`-mentions, and runs on a per-workspace timer in the web server. Run it on demand with `tim slack digest`, or preview without sending via `tim slack digest --dry-run`.
 
 See [`docs/slack-integration.md`](docs/slack-integration.md) for setup details and current scope.
 

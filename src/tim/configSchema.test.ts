@@ -2,6 +2,141 @@ import { test, describe, expect, vi } from 'vitest';
 import { timConfigSchema, getDefaultConfig } from './configSchema.js';
 
 describe('configSchema', () => {
+  describe('slack workspace configuration', () => {
+    test('accepts optional daily digest schedule configuration without applying defaults', () => {
+      const result = timConfigSchema.parse({
+        slack: {
+          workspaces: {
+            work: {
+              token: '${SLACK_WORK_TOKEN}',
+              dailyDigest: {
+                time: '09:30',
+                timezone: 'America/Los_Angeles',
+                staleAfterHours: 36,
+              },
+            },
+          },
+        },
+      });
+
+      expect(result.slack?.workspaces?.work).toEqual({
+        token: '${SLACK_WORK_TOKEN}',
+        dailyDigest: {
+          time: '09:30',
+          timezone: 'America/Los_Angeles',
+          staleAfterHours: 36,
+        },
+      });
+    });
+
+    test('does not add daily digest defaults in the zod schema', () => {
+      const result = timConfigSchema.parse({
+        slack: {
+          workspaces: {
+            work: {
+              token: '${SLACK_WORK_TOKEN}',
+            },
+          },
+        },
+      });
+
+      expect(result.slack?.workspaces?.work?.dailyDigest).toBeUndefined();
+    });
+
+    test('rejects unknown fields in daily digest configuration', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          slack: {
+            workspaces: {
+              work: {
+                dailyDigest: {
+                  time: '09:30',
+                  unexpected: true,
+                },
+              },
+            },
+          },
+        })
+      ).toThrow();
+    });
+
+    test('requires daily digest staleAfterHours to be positive', () => {
+      for (const staleAfterHours of [0, -1]) {
+        expect(() =>
+          timConfigSchema.parse({
+            slack: {
+              workspaces: {
+                work: {
+                  dailyDigest: {
+                    staleAfterHours,
+                  },
+                },
+              },
+            },
+          })
+        ).toThrow();
+      }
+    });
+
+    test('rejects a malformed daily digest time', () => {
+      for (const time of ['24:00', '12:60', '9:00', '12:5', '', '1230', 'aa:bb']) {
+        expect(() =>
+          timConfigSchema.parse({
+            slack: {
+              workspaces: {
+                work: {
+                  dailyDigest: { time },
+                },
+              },
+            },
+          })
+        ).toThrow();
+      }
+    });
+
+    test('accepts valid daily digest times', () => {
+      for (const time of ['00:00', '23:59', '09:05']) {
+        const result = timConfigSchema.parse({
+          slack: {
+            workspaces: {
+              work: {
+                dailyDigest: { time },
+              },
+            },
+          },
+        });
+        expect(result.slack?.workspaces?.work?.dailyDigest?.time).toBe(time);
+      }
+    });
+
+    test('rejects an invalid IANA timezone', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          slack: {
+            workspaces: {
+              work: {
+                dailyDigest: { timezone: 'Not/AZone' },
+              },
+            },
+          },
+        })
+      ).toThrow();
+    });
+
+    test('accepts a valid IANA timezone', () => {
+      const result = timConfigSchema.parse({
+        slack: {
+          workspaces: {
+            work: {
+              dailyDigest: { timezone: 'America/New_York' },
+            },
+          },
+        },
+      });
+      expect(result.slack?.workspaces?.work?.dailyDigest?.timezone).toBe('America/New_York');
+    });
+  });
+
   describe('issueTracker field', () => {
     test('should accept "github" value', () => {
       const config = {

@@ -12,12 +12,18 @@ export interface SlackNotifierHandle {
   kick: () => Promise<void>;
 }
 
+export interface DailyDigestSchedulerHandle {
+  stop: () => void;
+  runNow: () => Promise<void>;
+}
+
 interface SessionContextState {
   manager: SessionManager | null;
   server: WebSocketServerHandle | null;
   discoveryClient: SessionDiscoveryClient | null;
   webhookPoller: WebhookPollerHandle | null;
   slackNotifier: SlackNotifierHandle | null;
+  dailyDigestScheduler: DailyDigestSchedulerHandle | null;
   syncService: SyncServiceHandle | null;
   initPromise: Promise<SessionManager> | null;
 }
@@ -35,6 +41,7 @@ function getState(): SessionContextState {
     discoveryClient: null,
     webhookPoller: null,
     slackNotifier: null,
+    dailyDigestScheduler: null,
     syncService: null,
     initPromise: null,
   };
@@ -85,6 +92,16 @@ export function getSlackNotifier(): SlackNotifierHandle | null {
 
 export function setSlackNotifier(slackNotifier: SlackNotifierHandle | null): void {
   getState().slackNotifier = slackNotifier;
+}
+
+export function getDailyDigestScheduler(): DailyDigestSchedulerHandle | null {
+  return getState().dailyDigestScheduler;
+}
+
+export function setDailyDigestScheduler(
+  dailyDigestScheduler: DailyDigestSchedulerHandle | null
+): void {
+  getState().dailyDigestScheduler = dailyDigestScheduler;
 }
 
 export function getSyncService(): SyncServiceHandle | null {

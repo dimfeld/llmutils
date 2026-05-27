@@ -2,9 +2,11 @@ import process from 'node:process';
 
 import type { Handle, ServerInit } from '@sveltejs/kit';
 
+import { shouldStartDailyDigest, startDailyDigestScheduler } from '$lib/server/daily_digest.js';
 import { getServerContext } from '$lib/server/init.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import {
+  getDailyDigestScheduler,
   getSessionDiscoveryClient,
   getSessionInitPromise,
   getSessionManager,
@@ -13,6 +15,7 @@ import {
   getWebSocketServerHandle,
   getWebhookPoller,
   setSessionDiscoveryClient,
+  setDailyDigestScheduler,
   setSessionInitPromise,
   setSessionManager,
   setSlackNotifier,
@@ -69,6 +72,7 @@ function registerCurrentShutdownHandlers(): void {
   // than capturing a stale handle. Do not refactor to capture handles by value.
   registerShutdownHandlers(() => {
     getSyncService()?.stop();
+    getDailyDigestScheduler()?.stop();
     getSlackNotifier()?.stop();
     getWebhookPoller()?.stop();
     getSessionDiscoveryClient()?.stop();
@@ -100,6 +104,19 @@ export const init: ServerInit = async () => {
         registerCurrentShutdownHandlers();
       }
     }
+    const existingDailyDigestScheduler = getDailyDigestScheduler();
+    if (existingDailyDigestScheduler) {
+      if (!shouldStartDailyDigest(db, config)) {
+        existingDailyDigestScheduler.stop();
+        setDailyDigestScheduler(null);
+      }
+    } else if (shouldStartDailyDigest(db, config)) {
+      const dailyDigestScheduler = startDailyDigestScheduler(db, config);
+      if (dailyDigestScheduler) {
+        setDailyDigestScheduler(dailyDigestScheduler);
+        registerCurrentShutdownHandlers();
+      }
+    }
     const existingSyncService = getSyncService();
     if (existingSyncService) {
       if (!shouldRunSyncService(config)) {
@@ -120,14 +137,17 @@ export const init: ServerInit = async () => {
   const existingDiscoveryClient = getSessionDiscoveryClient();
   const existingWebhookPoller = getWebhookPoller();
   const existingSlackNotifier = getSlackNotifier();
+  const existingDailyDigestScheduler = getDailyDigestScheduler();
   const existingSyncService = getSyncService();
   if (existingServer && existingDiscoveryClient) {
     const { config, db } = await getServerContext();
     const shouldRunSync = shouldRunSyncService(config);
     const shouldRunSlack = shouldStartSlackNotifier(config);
+    const shouldRunDigest = shouldStartDailyDigest(db, config);
     const syncReady = Boolean(existingSyncService) || !shouldRunSync;
     const slackReady = Boolean(existingSlackNotifier) || !shouldRunSlack;
-    if (syncReady && slackReady) {
+    const digestReady = Boolean(existingDailyDigestScheduler) || !shouldRunDigest;
+    if (syncReady && slackReady && digestReady) {
       return;
     }
 
@@ -135,6 +155,15 @@ export const init: ServerInit = async () => {
       const slackNotifier = startSlackNotifier(db, config);
       if (slackNotifier) {
         setSlackNotifier(slackNotifier);
+        registerCurrentShutdownHandlers();
+      }
+      return;
+    }
+
+    if (syncReady && slackReady && !existingDailyDigestScheduler && shouldRunDigest) {
+      const dailyDigestScheduler = startDailyDigestScheduler(db, config);
+      if (dailyDigestScheduler) {
+        setDailyDigestScheduler(dailyDigestScheduler);
         registerCurrentShutdownHandlers();
       }
       return;
@@ -151,6 +180,7 @@ export const init: ServerInit = async () => {
     discoveryClient: false,
     webhookPoller: false,
     slackNotifier: false,
+    dailyDigestScheduler: false,
     syncService: false,
   };
 
@@ -178,6 +208,9 @@ export const init: ServerInit = async () => {
     const slackNotifier =
       existingSlackNotifier ??
       (shouldStartSlackNotifier(config) ? startSlackNotifier(db, config) : null);
+    const dailyDigestScheduler =
+      existingDailyDigestScheduler ??
+      (shouldStartDailyDigest(db, config) ? startDailyDigestScheduler(db, config) : null);
     let syncService = existingSyncService;
 
     // Store references before await so they are tracked for cleanup on failure.
@@ -198,6 +231,10 @@ export const init: ServerInit = async () => {
     if (!existingSlackNotifier && slackNotifier) {
       createdResources.slackNotifier = true;
       setSlackNotifier(slackNotifier);
+    }
+    if (!existingDailyDigestScheduler && dailyDigestScheduler) {
+      createdResources.dailyDigestScheduler = true;
+      setDailyDigestScheduler(dailyDigestScheduler);
     }
     if (!existingSyncService) {
       syncService = await startSyncService(db, config);
@@ -240,6 +277,13 @@ export const init: ServerInit = async () => {
       if (slackNotifier) {
         slackNotifier.stop();
         setSlackNotifier(null);
+      }
+    }
+    if (createdResources.dailyDigestScheduler) {
+      const dailyDigestScheduler = getDailyDigestScheduler();
+      if (dailyDigestScheduler) {
+        dailyDigestScheduler.stop();
+        setDailyDigestScheduler(null);
       }
     }
     if (createdResources.server) {

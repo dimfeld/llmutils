@@ -21,6 +21,7 @@ import {
   updatePrCheckRuns,
   updatePrMergeableAndReviewDecision,
   upsertPrCheckRunByName,
+  upsertPrReviewRequestByReviewer,
   upsertPrReviewByAuthor,
   upsertPrStatus,
   upsertPrStatusMetadata,
@@ -1740,7 +1741,7 @@ describe('tim db/pr_status', () => {
     ]);
   });
 
-  test('cleanOrphanedPrStatus removes unlinked PR status rows', () => {
+  test('cleanOrphanedPrStatus retains unlinked open PR status rows', () => {
     const kept = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/106',
       owner: 'example',
@@ -1751,7 +1752,7 @@ describe('tim db/pr_status', () => {
       draft: false,
       lastFetchedAt: '2026-03-20T00:00:00.000Z',
     });
-    upsertPrStatus(db, {
+    const openOrphan = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/107',
       owner: 'example',
       repo: 'repo',
@@ -1764,19 +1765,66 @@ describe('tim db/pr_status', () => {
 
     linkPlanToPr(db, 'plan-1', kept.status.id);
 
-    expect(cleanOrphanedPrStatus(db)).toBe(1);
+    expect(cleanOrphanedPrStatus(db)).toBe(0);
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/106')).not.toBeNull();
-    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/107')).toBeNull();
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/107')?.status.id).toBe(
+      openOrphan.status.id
+    );
   });
 
-  test('cleanOrphanedPrStatus keeps rows linked from any plan and removes them after final unlink', () => {
+  test('cleanOrphanedPrStatus removes unlinked closed and merged PR status rows with child data', () => {
+    const closedOrphan = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/107',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 107,
+      title: 'Closed orphan PR 107',
+      state: 'closed',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviews: [{ author: 'alice', state: 'APPROVED' }],
+    });
+    const mergedOrphan = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/110',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 110,
+      title: 'Merged orphan PR 110',
+      state: 'merged',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviews: [{ author: 'bob', state: 'COMMENTED' }],
+    });
+    upsertPrReviewRequestByReviewer(db, closedOrphan.status.id, {
+      reviewer: 'alice',
+      action: 'requested',
+      eventAt: '2026-03-20T00:01:00.000Z',
+    });
+    upsertPrReviewRequestByReviewer(db, mergedOrphan.status.id, {
+      reviewer: 'bob',
+      action: 'requested',
+      eventAt: '2026-03-20T00:02:00.000Z',
+    });
+
+    expect(cleanOrphanedPrStatus(db)).toBe(6);
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/107')).toBeNull();
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/110')).toBeNull();
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM pr_review').get() as { count: number }
+    ).toEqual({ count: 0 });
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM pr_review_request').get() as { count: number }
+    ).toEqual({ count: 0 });
+  });
+
+  test('cleanOrphanedPrStatus keeps non-open rows linked from any plan and removes them after final unlink', () => {
     const shared = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/108',
       owner: 'example',
       repo: 'repo',
       prNumber: 108,
       title: 'Shared PR 108',
-      state: 'open',
+      state: 'closed',
       draft: false,
       lastFetchedAt: '2026-03-20T00:00:00.000Z',
       checks: [{ name: 'ci', source: 'check_run', status: 'completed', conclusion: 'success' }],
@@ -1799,7 +1847,7 @@ describe('tim db/pr_status', () => {
     );
 
     unlinkPlanFromPr(db, 'plan-2', shared.status.id);
-    expect(cleanOrphanedPrStatus(db)).toBeGreaterThanOrEqual(1);
+    expect(cleanOrphanedPrStatus(db)).toBe(4);
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/108')).toBeNull();
   });
 
@@ -1818,7 +1866,7 @@ describe('tim db/pr_status', () => {
       repo: 'repo',
       prNumber: 109,
       title: 'Referenced by plan JSON',
-      state: 'open',
+      state: 'closed',
       draft: false,
       lastFetchedAt: '2026-03-20T00:00:00.000Z',
     });
@@ -1842,13 +1890,131 @@ describe('tim db/pr_status', () => {
       repo: 'repo',
       prNumber: 123,
       title: 'Canonical PR 123',
-      state: 'open',
+      // Closed (not open) so retention here is driven solely by the
+      // referencedPrUrls canonicalization path, not the open-state retention.
+      state: 'closed',
       draft: false,
       lastFetchedAt: '2026-03-20T00:00:00.000Z',
     });
 
     expect(cleanOrphanedPrStatus(db)).toBe(0);
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/123')).not.toBeNull();
+  });
+
+  test('cleanOrphanedPrStatus mixed: open orphan retained, closed/merged orphans removed, linked rows unaffected', () => {
+    // open orphan — must be retained
+    const openOrphan = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/201',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 201,
+      title: 'Open orphan',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviews: [{ author: 'alice', state: 'APPROVED' }],
+    });
+    upsertPrReviewRequestByReviewer(db, openOrphan.status.id, {
+      reviewer: 'alice',
+      action: 'requested',
+      eventAt: '2026-03-20T00:01:00.000Z',
+    });
+
+    // closed orphan — must be removed (with cascade)
+    const closedOrphan = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/202',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 202,
+      title: 'Closed orphan',
+      state: 'closed',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviews: [{ author: 'bob', state: 'COMMENTED' }],
+    });
+    upsertPrReviewRequestByReviewer(db, closedOrphan.status.id, {
+      reviewer: 'bob',
+      action: 'requested',
+      eventAt: '2026-03-20T00:02:00.000Z',
+    });
+
+    // merged orphan — must be removed (with cascade)
+    const mergedOrphan = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/203',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 203,
+      title: 'Merged orphan',
+      state: 'merged',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviews: [{ author: 'carol', state: 'APPROVED' }],
+    });
+
+    // open plan-linked row — must be retained
+    const openLinked = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/204',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 204,
+      title: 'Open linked',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    linkPlanToPr(db, 'plan-1', openLinked.status.id);
+
+    // closed plan-linked row — must be retained
+    const closedLinked = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/205',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 205,
+      title: 'Closed linked',
+      state: 'closed',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviews: [{ author: 'dave', state: 'APPROVED' }],
+    });
+    linkPlanToPr(db, 'plan-2', closedLinked.status.id);
+
+    // deleted rows: closedOrphan pr_status(1) + pr_review(1) + pr_review_request(1)
+    //             + mergedOrphan pr_status(1) + pr_review(1)
+    // total direct pr_status deletes = 2; SQLite counts cascade deletes too = 5
+    const deleted = cleanOrphanedPrStatus(db);
+    expect(deleted).toBe(5);
+
+    // open orphan and its child rows must survive
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/201')).not.toBeNull();
+    const remainingReviews = db
+      .prepare('SELECT COUNT(*) AS count FROM pr_review WHERE pr_status_id = ?')
+      .get(openOrphan.status.id) as { count: number };
+    expect(remainingReviews.count).toBe(1);
+    const remainingRequests = db
+      .prepare('SELECT COUNT(*) AS count FROM pr_review_request WHERE pr_status_id = ?')
+      .get(openOrphan.status.id) as { count: number };
+    expect(remainingRequests.count).toBe(1);
+
+    // closed and merged orphans must be gone
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/202')).toBeNull();
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/203')).toBeNull();
+    // their child rows must also be gone (cascade)
+    const orphanReviews = db
+      .prepare('SELECT COUNT(*) AS count FROM pr_review WHERE pr_status_id IN (?, ?)')
+      .get(closedOrphan.status.id, mergedOrphan.status.id) as { count: number };
+    expect(orphanReviews.count).toBe(0);
+    const orphanRequests = db
+      .prepare('SELECT COUNT(*) AS count FROM pr_review_request WHERE pr_status_id IN (?, ?)')
+      .get(closedOrphan.status.id, mergedOrphan.status.id) as { count: number };
+    expect(orphanRequests.count).toBe(0);
+
+    // plan-linked rows must be untouched
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/204')).not.toBeNull();
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/205')).not.toBeNull();
+    const linkedReview = db
+      .prepare('SELECT COUNT(*) AS count FROM pr_review WHERE pr_status_id = ?')
+      .get(closedLinked.status.id) as { count: number };
+    expect(linkedReview.count).toBe(1);
   });
 
   test('upsertPrStatus stores and updates diff stat fields', () => {

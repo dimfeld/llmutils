@@ -1561,7 +1561,7 @@ export function cleanOrphanedPrStatus(db: Database): number {
     const unlinkedRows = db
       .prepare(
         `
-          SELECT ps.id, ps.pr_url
+          SELECT ps.id, ps.pr_url, ps.state
           FROM pr_status ps
           WHERE NOT EXISTS (
             SELECT 1
@@ -1570,10 +1570,12 @@ export function cleanOrphanedPrStatus(db: Database): number {
           )
         `
       )
-      .all() as Array<{ id: number; pr_url: string }>;
+      .all() as Array<{ id: number; pr_url: string; state: string }>;
 
     const idsToDelete = unlinkedRows
-      .filter((row) => !referencedPrUrls.has(row.pr_url))
+      // Keep open webhook-ingested PRs, including unlinked PRs opened by others,
+      // so downstream daily digest jobs retain their review/review-request data.
+      .filter((row) => row.state !== 'open' && !referencedPrUrls.has(row.pr_url))
       .map((row) => row.id);
     if (idsToDelete.length === 0) {
       return 0;

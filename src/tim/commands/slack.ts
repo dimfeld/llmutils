@@ -9,6 +9,13 @@ import {
   type SlackProjectSetting,
 } from '../../common/slack/slack_project_setting.js';
 import { log } from '../../logging.js';
+import {
+  collectDailyDigestsForWorkspace,
+  getEligibleDailyDigestWorkspaces,
+  runAllDailyDigests,
+  type CollectedProjectDigest,
+} from '../../lib/server/daily_digest.js';
+import type { DigestEntry, PrDigest } from '../../lib/server/pr_digest.js';
 import type { TimConfig } from '../configSchema.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
@@ -43,6 +50,10 @@ interface SlackTestOptions extends SlackEnableOptions {
 }
 
 interface SlackMarkClosedNotifiedOptions {
+  dryRun?: boolean;
+}
+
+interface SlackDigestRunOptions {
   dryRun?: boolean;
 }
 
@@ -147,9 +158,10 @@ function formatProjectSetting(setting: SlackProjectSetting | null): string {
   }
 
   const enabled = setting.enabled === true ? 'enabled' : 'disabled';
+  const digest = setting.dailyDigest === true ? 'enabled' : 'disabled';
   const workspace = setting.workspace ?? '(no workspace)';
   const channel = setting.channel ?? '(no channel)';
-  return `${enabled}, workspace=${workspace}, channel=${channel}`;
+  return `${enabled}, workspace=${workspace}, channel=${channel}, dailyDigest=${digest}`;
 }
 
 function printMappings(mappings: SlackUserMapRow[]): void {
@@ -171,6 +183,43 @@ function printMappings(mappings: SlackUserMapRow[]): void {
   );
 }
 
+function isDigestEmpty(digest: PrDigest): boolean {
+  return digest.approvedUnmerged.length === 0 && digest.staleAwaitingReview.length === 0;
+}
+
+function formatPrLine(entry: DigestEntry): string {
+  return `  - #${entry.prNumber} ${entry.title} (author: ${entry.author})`;
+}
+
+function printDigestDryRunProject(projectDigest: CollectedProjectDigest): void {
+  log(
+    `${chalk.bold(projectDigest.repoFullName)} (${projectDigest.workspaceName}/${projectDigest.channel})`
+  );
+
+  if (isDigestEmpty(projectDigest.digest)) {
+    log('  Would skip: no approved or stale review-request PRs.');
+    return;
+  }
+
+  if (projectDigest.digest.approvedUnmerged.length > 0) {
+    log('  Approved, not yet merged:');
+    for (const entry of projectDigest.digest.approvedUnmerged) {
+      log(formatPrLine(entry));
+    }
+  }
+
+  if (projectDigest.digest.staleAwaitingReview.length > 0) {
+    log('  Awaiting review for > 1 day:');
+    for (const entry of projectDigest.digest.staleAwaitingReview) {
+      const reviewers =
+        entry.reviewers
+          ?.map((reviewer) => `${reviewer.login} (${reviewer.waitedLabel})`)
+          .join(', ') ?? 'none';
+      log(`${formatPrLine(entry)}; waiting on: ${reviewers}`);
+    }
+  }
+}
+
 export async function handleSlackEnableCommand(
   options: SlackEnableOptions,
   command: RootCommandLike | undefined
@@ -181,7 +230,15 @@ export async function handleSlackEnableCommand(
 
   const db = getDatabase();
   const project = await resolveCurrentProject();
-  const setting: SlackProjectSetting = { enabled: true, workspace, channel };
+  const existing = parseSlackProjectSetting(
+    getProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY)
+  );
+  const setting: SlackProjectSetting = {
+    enabled: true,
+    workspace,
+    channel,
+    ...(typeof existing?.dailyDigest === 'boolean' ? { dailyDigest: existing.dailyDigest } : {}),
+  };
   await writeProjectSettingSet(
     db,
     config,
@@ -211,6 +268,7 @@ export async function handleSlackDisableCommand(
   const nextSetting: SlackProjectSetting = {
     ...existing,
     enabled: false,
+    dailyDigest: false,
   };
   await writeProjectSettingSet(
     db,
@@ -222,6 +280,113 @@ export async function handleSlackDisableCommand(
   );
 
   log(chalk.green(`Disabled Slack notifications for ${project.repository_id}.`));
+}
+
+export async function handleSlackDigestEnableCommand(
+  _options: Record<string, never>,
+  command: RootCommandLike | undefined
+): Promise<void> {
+  const config = await loadConfigForCommand(command);
+  const db = getDatabase();
+  const project = await resolveCurrentProject();
+  const existing = parseSlackProjectSetting(
+    getProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY)
+  );
+
+  if (existing?.enabled !== true || !existing.workspace || !existing.channel) {
+    throw new Error(
+      'Slack daily digest requires Slack notifications to be enabled first with a workspace and channel.'
+    );
+  }
+
+  validateWorkspaceExists(config, existing.workspace);
+
+  const nextSetting: SlackProjectSetting = {
+    ...existing,
+    dailyDigest: true,
+  };
+  await writeProjectSettingSet(
+    db,
+    config,
+    project.id,
+    SLACK_PROJECT_SETTING_KEY,
+    nextSetting,
+    'latest'
+  );
+
+  log(chalk.green(`Enabled Slack daily digest for ${project.repository_id}.`));
+  log(`Workspace: ${existing.workspace}`);
+  log(`Channel: ${existing.channel}`);
+}
+
+export async function handleSlackDigestDisableCommand(
+  _options: Record<string, never>,
+  command: RootCommandLike | undefined
+): Promise<void> {
+  const config = await loadConfigForCommand(command);
+  const db = getDatabase();
+  const project = await resolveCurrentProject();
+  const existing = parseSlackProjectSetting(
+    getProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY)
+  );
+  const nextSetting: SlackProjectSetting = {
+    ...existing,
+    dailyDigest: false,
+  };
+
+  await writeProjectSettingSet(
+    db,
+    config,
+    project.id,
+    SLACK_PROJECT_SETTING_KEY,
+    nextSetting,
+    'latest'
+  );
+
+  log(chalk.green(`Disabled Slack daily digest for ${project.repository_id}.`));
+}
+
+export async function handleSlackDigestRunCommand(
+  options: SlackDigestRunOptions,
+  command: RootCommandLike | undefined,
+  sender?: SlackPostSender
+): Promise<void> {
+  const config = await loadConfigForCommand(command);
+  const db = getDatabase();
+
+  if (options.dryRun === true) {
+    const nowMs = Date.now();
+    const eligibleWorkspaces = getEligibleDailyDigestWorkspaces(db, config);
+    if (eligibleWorkspaces.length === 0) {
+      log('No Slack daily digest-enabled projects found.');
+      return;
+    }
+
+    log(chalk.bold('Slack daily PR digest dry run'));
+    let printedProjectCount = 0;
+    for (const workspaceName of eligibleWorkspaces) {
+      const projectDigests = collectDailyDigestsForWorkspace(db, config, workspaceName, {
+        nowMs,
+        includeEmpty: true,
+        onProjectError: (repositoryId: string, error: unknown): void => {
+          log(chalk.yellow(`Failed to compute daily digest for ${repositoryId}: ${String(error)}`));
+        },
+      });
+
+      for (const projectDigest of projectDigests) {
+        printDigestDryRunProject(projectDigest);
+        printedProjectCount += 1;
+      }
+    }
+
+    if (printedProjectCount === 0) {
+      log('No Slack daily digest-enabled projects with a parseable GitHub repository were found.');
+    }
+    return;
+  }
+
+  await runAllDailyDigests(db, config, { sender });
+  log(chalk.green('Ran Slack daily PR digest.'));
 }
 
 export async function handleSlackTestCommand(

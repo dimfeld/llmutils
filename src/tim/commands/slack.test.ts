@@ -34,10 +34,14 @@ import { getGitRepository } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
-import { getProjectSetting } from '../db/project_settings.js';
+import { getProjectSetting, setProjectSetting } from '../db/project_settings.js';
+import { upsertPrReviewRequestByReviewer, upsertPrStatus } from '../db/pr_status.js';
 import { getUserMapping, upsertUserMapping } from '../db/slack_user_map.js';
 import {
   handleSlackDisableCommand,
+  handleSlackDigestDisableCommand,
+  handleSlackDigestEnableCommand,
+  handleSlackDigestRunCommand,
   handleSlackEnableCommand,
   handleSlackListCommand,
   handleSlackMarkClosedNotifiedCommand,
@@ -163,6 +167,7 @@ describe('tim slack CLI handlers', () => {
       expect(setting!.enabled).toBe(false);
       expect(setting!.workspace).toBe(WORKSPACE_NAME);
       expect(setting!.channel).toBe('#reviews');
+      expect(setting!.dailyDigest).toBe(false);
     });
 
     test('disables even when no prior setting exists (sets enabled=false)', async () => {
@@ -176,6 +181,209 @@ describe('tim slack CLI handlers', () => {
       > | null;
       expect(setting).not.toBeNull();
       expect(setting!.enabled).toBe(false);
+    });
+  });
+
+  describe('handleSlackDigestEnableCommand', () => {
+    test('sets dailyDigest=true when Slack is already enabled with workspace and channel', async () => {
+      await handleSlackEnableCommand(
+        { workspace: WORKSPACE_NAME, channel: '#reviews' },
+        fakeCommand
+      );
+
+      await handleSlackDigestEnableCommand({}, fakeCommand);
+
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      const setting = getProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY) as Record<
+        string,
+        unknown
+      > | null;
+      expect(setting).not.toBeNull();
+      expect(setting!.enabled).toBe(true);
+      expect(setting!.workspace).toBe(WORKSPACE_NAME);
+      expect(setting!.channel).toBe('#reviews');
+      expect(setting!.dailyDigest).toBe(true);
+    });
+
+    test('throws without writing when Slack is not already enabled', async () => {
+      await expect(handleSlackDigestEnableCommand({}, fakeCommand)).rejects.toThrow(
+        'Slack daily digest requires Slack notifications to be enabled first'
+      );
+
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      expect(getProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY)).toBeNull();
+    });
+
+    test('throws when Slack setting is enabled but missing workspace or channel', async () => {
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        workspace: WORKSPACE_NAME,
+      });
+      await expect(handleSlackDigestEnableCommand({}, fakeCommand)).rejects.toThrow(
+        'Slack daily digest requires Slack notifications to be enabled first'
+      );
+
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        channel: '#reviews',
+      });
+      await expect(handleSlackDigestEnableCommand({}, fakeCommand)).rejects.toThrow(
+        'Slack daily digest requires Slack notifications to be enabled first'
+      );
+    });
+
+    test('throws when the saved workspace is no longer configured', async () => {
+      await handleSlackEnableCommand(
+        { workspace: WORKSPACE_NAME, channel: '#reviews' },
+        fakeCommand
+      );
+      vi.mocked(loadEffectiveConfig).mockResolvedValue({ slack: { workspaces: {} } } as any);
+
+      await expect(handleSlackDigestEnableCommand({}, fakeCommand)).rejects.toThrow(
+        'is not configured'
+      );
+    });
+  });
+
+  describe('handleSlackDigestDisableCommand', () => {
+    test('sets dailyDigest=false while preserving Slack workspace and channel', async () => {
+      await handleSlackEnableCommand(
+        { workspace: WORKSPACE_NAME, channel: '#reviews' },
+        fakeCommand
+      );
+      await handleSlackDigestEnableCommand({}, fakeCommand);
+
+      await handleSlackDigestDisableCommand({}, fakeCommand);
+
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      const setting = getProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY) as Record<
+        string,
+        unknown
+      > | null;
+      expect(setting).not.toBeNull();
+      expect(setting!.enabled).toBe(true);
+      expect(setting!.workspace).toBe(WORKSPACE_NAME);
+      expect(setting!.channel).toBe('#reviews');
+      expect(setting!.dailyDigest).toBe(false);
+    });
+  });
+
+  describe('handleSlackDigestRunCommand', () => {
+    test('dry run prints computed digests without sending or resolving Slack tokens', async () => {
+      vi.mocked(loadEffectiveConfig).mockResolvedValue({
+        slack: {
+          workspaces: {
+            [WORKSPACE_NAME]: {
+              token: '${TIM_SLACK_DIGEST_TEST_UNSET_TOKEN}',
+              dailyDigest: { staleAfterHours: 24 },
+            },
+          },
+        },
+      } as any);
+      delete process.env.TIM_SLACK_DIGEST_TEST_UNSET_TOKEN;
+
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        dailyDigest: true,
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+      });
+      const approved = upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/1`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 1,
+        author: 'alice',
+        title: 'Approved digest PR',
+        state: 'open',
+        draft: false,
+        reviewDecision: 'APPROVED',
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+      const stale = upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/2`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 2,
+        author: 'bob',
+        title: 'Waiting digest PR',
+        state: 'open',
+        draft: false,
+        reviewDecision: null,
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+      expect(approved.status.id).toBeGreaterThan(0);
+      upsertPrReviewRequestByReviewer(db, stale.status.id, {
+        reviewer: 'carol',
+        action: 'requested',
+        eventAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      const calls: SlackPostSenderArgs[] = [];
+      const fakeSender = async (args: SlackPostSenderArgs): Promise<SlackPostResult> => {
+        calls.push(args);
+        return { ok: true };
+      };
+
+      await handleSlackDigestRunCommand({ dryRun: true }, fakeCommand, fakeSender);
+
+      expect(calls).toHaveLength(0);
+      const { log } = await import('../../logging.js');
+      const output = vi
+        .mocked(log)
+        .mock.calls.map((call) => String(call[0]))
+        .join('\n');
+      expect(output).toContain('Slack daily PR digest dry run');
+      expect(output).toContain(`${OWNER}/${REPO}`);
+      expect(output).toContain('Approved digest PR');
+      expect(output).toContain('Waiting digest PR');
+      expect(output).toContain('carol');
+    });
+
+    test('non-dry run posts computed digests through the injected sender', async () => {
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        dailyDigest: true,
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+      });
+      upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/3`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 3,
+        author: 'dana',
+        title: 'Posted digest PR',
+        state: 'open',
+        draft: false,
+        reviewDecision: 'APPROVED',
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      const calls: SlackPostSenderArgs[] = [];
+      const fakeSender = async (args: SlackPostSenderArgs): Promise<SlackPostResult> => {
+        calls.push(args);
+        return { ok: true };
+      };
+
+      await handleSlackDigestRunCommand({ dryRun: false }, fakeCommand, fakeSender);
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].token).toBe('xoxb-test-token');
+      expect(calls[0].payload.channel).toBe('#reviews');
+      expect(JSON.stringify(calls[0].payload.blocks)).toContain('Posted digest PR');
+      const { log } = await import('../../logging.js');
+      expect(vi.mocked(log)).toHaveBeenCalledWith('Ran Slack daily PR digest.');
     });
   });
 
@@ -428,6 +636,21 @@ describe('tim slack CLI handlers', () => {
       });
 
       await expect(handleSlackListCommand({}, fakeCommand)).resolves.not.toThrow();
+    });
+
+    test('prints daily digest status in the project setting summary', async () => {
+      await handleSlackEnableCommand(
+        { workspace: WORKSPACE_NAME, channel: '#reviews' },
+        fakeCommand
+      );
+      await handleSlackDigestEnableCommand({}, fakeCommand);
+
+      await handleSlackListCommand({}, fakeCommand);
+
+      const { log } = await import('../../logging.js');
+      expect(vi.mocked(log)).toHaveBeenCalledWith(
+        'Slack setting: enabled, workspace=work, channel=#reviews, dailyDigest=enabled'
+      );
     });
 
     test('filters by workspace when --workspace is given', async () => {

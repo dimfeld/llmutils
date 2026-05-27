@@ -1474,6 +1474,83 @@ defaultExecutor: direct-call
       }
     });
 
+    test('slack daily digest defaults are applied per configured global workspace', async () => {
+      const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;
+      delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+
+      try {
+        const globalConfigPath = path.join(fakeHomeDir, '.config', 'tim', 'config.yml');
+        await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await fs.writeFile(
+          globalConfigPath,
+          yaml.stringify({
+            slack: {
+              workspaces: {
+                work: { token: 'xoxb-test-token' },
+                personal: {
+                  token: 'xoxb-personal-token',
+                  dailyDigest: {
+                    time: '08:15',
+                    staleAfterHours: 12,
+                  },
+                },
+                custom: {
+                  token: 'xoxb-custom-token',
+                  dailyDigest: {
+                    timezone: 'America/New_York',
+                    staleAfterHours: 48,
+                  },
+                },
+              },
+            },
+          }),
+          'utf-8'
+        );
+
+        const config = await loadEffectiveConfig();
+        const expectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+        expect(config.slack?.workspaces?.['work']?.dailyDigest).toEqual({
+          time: '00:00',
+          timezone: expectedTimezone,
+          staleAfterHours: 24,
+        });
+        expect(config.slack?.workspaces?.['personal']?.dailyDigest).toEqual({
+          time: '08:15',
+          timezone: expectedTimezone,
+          staleAfterHours: 12,
+        });
+        expect(config.slack?.workspaces?.['custom']?.dailyDigest).toEqual({
+          time: '00:00',
+          timezone: 'America/New_York',
+          staleAfterHours: 48,
+        });
+      } finally {
+        if (originalEnv !== undefined) {
+          process.env.TIM_LOAD_GLOBAL_CONFIG = originalEnv;
+        }
+      }
+    });
+
+    test('slack daily digest defaults do not invent slack config when no workspaces exist', async () => {
+      const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;
+      delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+
+      try {
+        const globalConfigPath = path.join(fakeHomeDir, '.config', 'tim', 'config.yml');
+        await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await fs.writeFile(globalConfigPath, yaml.stringify({ defaultExecutor: 'copy-only' }));
+
+        const config = await loadEffectiveConfig();
+
+        expect(config.slack).toBeUndefined();
+      } finally {
+        if (originalEnv !== undefined) {
+          process.env.TIM_LOAD_GLOBAL_CONFIG = originalEnv;
+        }
+      }
+    });
+
     test('repo config cannot override slack.workspaces from global config', async () => {
       const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;
       delete process.env.TIM_LOAD_GLOBAL_CONFIG;

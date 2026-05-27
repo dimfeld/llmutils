@@ -1,6 +1,11 @@
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
 import { getTimConfigRoot } from '../common/config_paths.js';
+import {
+  DEFAULT_SLACK_DAILY_DIGEST_STALE_AFTER_HOURS,
+  DEFAULT_SLACK_DAILY_DIGEST_TIME,
+  getDefaultSlackDailyDigestTimezone,
+} from '../common/slack/slack_daily_digest_config.js';
 import { quiet } from '../common/process.js';
 import { debugLog, error, log, warn } from '../logging.js';
 import { type TimConfig, timConfigSchema, getDefaultConfig } from './configSchema.js';
@@ -378,16 +383,46 @@ function applyReadTimeDefaults(config: TimConfig): TimConfig {
     artifactRetentionDays: config.artifactRetentionDays ?? 30,
   };
 
-  if (!withTopLevelDefaults.sync) {
-    return withTopLevelDefaults;
+  const slackWorkspaces = withTopLevelDefaults.slack?.workspaces;
+  const defaultSlackDailyDigestTimezone = slackWorkspaces
+    ? getDefaultSlackDailyDigestTimezone()
+    : undefined;
+  const withSlackDefaults: TimConfig = slackWorkspaces
+    ? {
+        ...withTopLevelDefaults,
+        slack: {
+          ...withTopLevelDefaults.slack,
+          workspaces: Object.fromEntries(
+            Object.entries(slackWorkspaces).map(([workspaceName, workspaceConfig]) => [
+              workspaceName,
+              {
+                ...workspaceConfig,
+                dailyDigest: {
+                  ...workspaceConfig.dailyDigest,
+                  time: workspaceConfig.dailyDigest?.time ?? DEFAULT_SLACK_DAILY_DIGEST_TIME,
+                  timezone:
+                    workspaceConfig.dailyDigest?.timezone ?? defaultSlackDailyDigestTimezone,
+                  staleAfterHours:
+                    workspaceConfig.dailyDigest?.staleAfterHours ??
+                    DEFAULT_SLACK_DAILY_DIGEST_STALE_AFTER_HOURS,
+                },
+              },
+            ])
+          ),
+        },
+      }
+    : withTopLevelDefaults;
+
+  if (!withSlackDefaults.sync) {
+    return withSlackDefaults;
   }
 
   return {
-    ...withTopLevelDefaults,
+    ...withSlackDefaults,
     sync: {
-      ...withTopLevelDefaults.sync,
-      disabled: withTopLevelDefaults.sync.disabled ?? false,
-      offline: withTopLevelDefaults.sync.offline ?? false,
+      ...withSlackDefaults.sync,
+      disabled: withSlackDefaults.sync.disabled ?? false,
+      offline: withSlackDefaults.sync.offline ?? false,
     },
   };
 }

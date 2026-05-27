@@ -4,6 +4,7 @@ export interface SlackProjectSetting {
   enabled?: boolean;
   workspace?: string;
   channel?: string;
+  dailyDigest?: boolean;
 }
 
 export function parseSlackProjectSetting(value: unknown): SlackProjectSetting | null {
@@ -16,5 +17,6 @@ export function parseSlackProjectSetting(value: unknown): SlackProjectSetting | 
     enabled: typeof record.enabled === 'boolean' ? record.enabled : undefined,
     workspace: typeof record.workspace === 'string' ? record.workspace : undefined,
     channel: typeof record.channel === 'string' ? record.channel : undefined,
+    dailyDigest: typeof record.dailyDigest === 'boolean' ? record.dailyDigest : undefined,
   };
 }

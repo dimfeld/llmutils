@@ -5,3 +5,4 @@
 - Svelte $effect should almost never be used. Prefer event callbacks, afterNavigate, actions/attachments, or mutable
   derived when possible.
 - Zod recursive schemas (e.g., for tree-structured data like `IssueWithComments`) need `z.lazy()` with an explicit `z.ZodType<YourType>` annotation on the base reference. Without the type annotation, TypeScript cannot infer the recursive type and will error.
+- When the plan/spec defines a boundary condition (e.g. "fresh ≤ threshold / stale > threshold"), implement it exactly as stated. Defer to the spec's boundary semantics over generic or initial guidance about inclusivity — making a boundary inclusive when the spec says exclusive (or vice versa) is a real bug that review will catch. If the spec's boundary seems wrong, raise it rather than silently changing it.
