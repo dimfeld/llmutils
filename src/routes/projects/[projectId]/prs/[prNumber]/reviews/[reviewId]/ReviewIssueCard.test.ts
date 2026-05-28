@@ -81,6 +81,23 @@ describe('ReviewIssueCard', () => {
     expect(body).toContain('Security');
   });
 
+  test.each([
+    ['claude-code', 'Claude Code'],
+    ['codex-cli', 'Codex CLI'],
+    ['combined', 'Combined'],
+  ] as const)('shows source badge for %s issues', (source, label) => {
+    const issue = makeIssue({ source });
+    const { body } = render(ReviewIssueCard, { props: defaultProps(issue) });
+    expect(body).toContain(label);
+    expect(body).toContain('Issue source');
+  });
+
+  test('does not show source badge for manual issues', () => {
+    const issue = makeIssue({ source: null });
+    const { body } = render(ReviewIssueCard, { props: defaultProps(issue) });
+    expect(body).not.toContain('Issue source');
+  });
+
   test('shows file location when file is set', () => {
     const issue = makeIssue({ file: 'src/auth.ts', line: '42' });
     const { body } = render(ReviewIssueCard, { props: defaultProps(issue) });

@@ -8,7 +8,12 @@
   import Plus from '@lucide/svelte/icons/plus';
   import Trash from '@lucide/svelte/icons/trash';
   import { untrack } from 'svelte';
-  import type { ReviewIssueRow, ReviewCategory, PrReviewSubmissionRow } from '$tim/db/review.js';
+  import type {
+    ReviewIssueRow,
+    ReviewCategory,
+    ReviewIssueSource,
+    PrReviewSubmissionRow,
+  } from '$tim/db/review.js';
   import CopyButton from '$lib/components/CopyButton.svelte';
   import ReviewIssueEditor from './ReviewIssueEditor.svelte';
   import type { ReviewIssuePatch } from './review_issue_editor_utils.js';
@@ -105,6 +110,17 @@
 
     return parts.join('\n\n');
   }
+
+  function formatSource(source: ReviewIssueSource): string {
+    switch (source) {
+      case 'claude-code':
+        return 'Claude Code';
+      case 'codex-cli':
+        return 'Codex CLI';
+      case 'combined':
+        return 'Combined';
+    }
+  }
 </script>
 
 <li
@@ -158,6 +174,14 @@
             class="inline-flex items-center rounded bg-emerald-100 px-1 py-0.5 text-[10px] font-medium text-emerald-800 @sm:text-xs dark:bg-emerald-900/30 dark:text-emerald-300"
           >
             Resolved
+          </span>
+        {/if}
+        {#if issue.source}
+          <span
+            class="inline-flex items-center rounded bg-violet-100 px-1 py-0.5 text-[10px] font-medium text-violet-800 @sm:text-xs dark:bg-violet-900/30 dark:text-violet-300"
+            title="Issue source"
+          >
+            {formatSource(issue.source)}
           </span>
         {/if}
         {#if !isNote && showSubmissionStatus && issue.submittedInPrReviewId != null}
