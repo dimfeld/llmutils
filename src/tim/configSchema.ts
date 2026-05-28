@@ -716,6 +716,21 @@ export const timConfigSchema = z
       .strict()
       .optional()
       .describe('Configuration options for the review command'),
+    /** Review guide-specific configuration options */
+    reviewGuide: z
+      .object({
+        /** Model overrides for review guide executors */
+        model: z
+          .object({
+            claude: z.string().optional().describe('Model override for claude-code execution'),
+            codex: z.string().optional().describe('Model override for codex-cli execution'),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional()
+      .describe('Configuration options for the review guide command'),
     /**
      * Executor-specific options mapped by executor name.
      * Each executor has its own schema:

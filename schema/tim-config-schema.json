@@ -954,6 +954,27 @@
       },
       "additionalProperties": false
     },
+    "reviewGuide": {
+      "description": "Configuration options for the review guide command",
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "object",
+          "properties": {
+            "claude": {
+              "description": "Model override for claude-code execution",
+              "type": "string"
+            },
+            "codex": {
+              "description": "Model override for codex-cli execution",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "executors": {
       "description": "Options for each executor",
       "type": "object",

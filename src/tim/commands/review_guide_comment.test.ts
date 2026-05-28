@@ -245,7 +245,7 @@ describe('review_guide_comment', () => {
     expect(mockRunWithHeadlessAdapterIfEnabled).toHaveBeenCalledWith(
       expect.objectContaining({
         enabled: true,
-        command: 'review-guide',
+        command: 'review-guide-comment',
         interactive: true,
       })
     );
@@ -271,7 +271,8 @@ describe('review_guide_comment', () => {
     expect(mockRunWithHeadlessAdapterIfEnabled).toHaveBeenCalledWith(
       expect.objectContaining({
         enabled: false,
-        command: 'review-guide',
+        command: 'review-guide-comment',
+        interactive: true,
       })
     );
   });

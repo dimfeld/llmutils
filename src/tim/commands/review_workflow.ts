@@ -1395,7 +1395,7 @@ export async function runReviewGuideWorkflow(
           'claude-code',
           {
             baseDir: options.baseDir,
-            model: options.model,
+            model: options.model ?? options.config.reviewGuide?.model?.claude,
             terminalInput: executorTerminalInput,
             noninteractive: executorNoninteractive,
           },
@@ -1421,7 +1421,7 @@ export async function runReviewGuideWorkflow(
           'claude-code',
           {
             baseDir: options.baseDir,
-            model: options.model,
+            model: options.model ?? options.config.reviewGuide?.model?.claude,
             terminalInput: executorTerminalInput,
             noninteractive: executorNoninteractive,
           },
@@ -1448,7 +1448,7 @@ export async function runReviewGuideWorkflow(
           'codex-cli',
           {
             baseDir: options.baseDir,
-            model: options.model,
+            model: options.model ?? options.config.reviewGuide?.model?.codex,
             terminalInput: executorTerminalInput,
             noninteractive: executorNoninteractive,
           },

@@ -323,11 +323,16 @@ export async function handlePrReviewGuideCommentCommand(
       const outputPath = path.join(outputDir, `pr-review-guide-comment-${prContext.prNumber}.md`);
       await fs.mkdir(outputDir, { recursive: true });
 
+      const configModel =
+        executorName === ClaudeCodeExecutorName
+          ? config.reviewGuide?.model?.claude
+          : config.reviewGuide?.model?.codex;
+
       const executor = buildExecutorAndLog(
         executorName,
         {
           baseDir,
-          model: options.model,
+          model: options.model ?? configModel,
           terminalInput: false,
           noninteractive: true,
         },

@@ -1270,6 +1270,60 @@ describe('configSchema', () => {
       expect(result.review?.focusAreas).toEqual([]);
       expect(result.review?.excludePatterns).toEqual([]);
     });
+
+    test('should accept review guide model configuration with both executors', () => {
+      const config = {
+        reviewGuide: {
+          model: {
+            claude: 'sonnet',
+            codex: 'gpt-5.5',
+          },
+        },
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.reviewGuide?.model?.claude).toBe('sonnet');
+      expect(result.reviewGuide?.model?.codex).toBe('gpt-5.5');
+    });
+
+    test('should accept partial review guide model configuration', () => {
+      const configClaude = {
+        reviewGuide: {
+          model: {
+            claude: 'opus',
+          },
+        },
+      };
+
+      const configCodex = {
+        reviewGuide: {
+          model: {
+            codex: 'o3',
+          },
+        },
+      };
+
+      const resultClaude = timConfigSchema.parse(configClaude);
+      expect(resultClaude.reviewGuide?.model?.claude).toBe('opus');
+      expect(resultClaude.reviewGuide?.model?.codex).toBeUndefined();
+
+      const resultCodex = timConfigSchema.parse(configCodex);
+      expect(resultCodex.reviewGuide?.model?.codex).toBe('o3');
+      expect(resultCodex.reviewGuide?.model?.claude).toBeUndefined();
+    });
+
+    test('should reject unknown fields in review guide model configuration', () => {
+      const config = {
+        reviewGuide: {
+          model: {
+            claude: 'sonnet',
+            unknownField: 'invalid',
+          },
+        },
+      };
+
+      expect(() => timConfigSchema.parse(config)).toThrow();
+    });
   });
 
   describe('orchestrator and subagent executor config fields', () => {
