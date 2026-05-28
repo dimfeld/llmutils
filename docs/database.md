@@ -257,6 +257,22 @@ Plan schema fields that reference another plan by UUID (e.g. `parent_uuid`, `dis
 
 For _soft_ references (changes to the referenced plan should take effect immediately, like `basePlan`), **do not** persist resolved values back into a sibling field (e.g. don't copy the resolved branch into `baseBranch`). Resolve fresh at every consumer; otherwise the reference quietly becomes a stale hard-coded value. This is the inverse of how `parent` works, where the parent's child-list is mutated as a cascade.
 
+### GitHub App Authentication
+
+GitHub App authentication state is stored in SQLite (migration v42). The private key contents are not stored; only the configured key path is persisted. Installation access tokens are short-lived and cached per installation with their expiry.
+
+**Tables**:
+
+- `github_app_config`: Single-row app configuration (`app_id`, `private_key_path`).
+- `github_app_installation`: Installation rows keyed by `(app_id, installation_id)`, with optional `account_login`, cached `token`, and `token_expires_at`. `account_login` is used to map GitHub repository owners/orgs to the right installation.
+- `github_app_project_installation`: Project-to-installation mapping keyed by `project_id`. This is populated from the current repository owner or by scanning known projects after listing installations.
+
+**Auth boundary**:
+
+- Personal-token GitHub flows use `resolveGitHubToken()` only (`GITHUB_TOKEN`, then `gh auth token`). They never read app installation tokens.
+- App-authenticated flows use `src/common/github/app_auth.ts` and pass installation tokens directly to Octokit. They never fall back to `GITHUB_TOKEN` or `gh auth token`.
+- `tim github-app status`, `token`, `refresh`, and `tim pr review-guide-comment` auto-detect the current repository owner, discover installations if needed, and use the matching installation token.
+
 ### PR Status Cache
 
 PR status data from GitHub is cached in SQLite for display in the web UI and CLI. The schema (migration v8) separates the PR data from plan linkage so the same PR can be linked to multiple plans.

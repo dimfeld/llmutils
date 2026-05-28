@@ -2,9 +2,9 @@ import { Octokit } from 'octokit';
 import { debugLog } from '../../logging.js';
 import { resolveGitHubToken } from './token.js';
 
-export function getOctokit(): Octokit {
+export function getOctokit(authToken?: string | null): Octokit {
   const octokit = new Octokit({
-    auth: resolveGitHubToken(),
+    auth: authToken ?? resolveGitHubToken(),
   });
 
   octokit.hook.wrap('request', async (request, options) => {

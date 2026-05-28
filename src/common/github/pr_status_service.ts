@@ -21,6 +21,14 @@ import {
 
 const BRANCH_MERGE_REQUIREMENTS_MAX_AGE_MS = 30 * 60 * 1000;
 
+export interface RefreshPrStatusOptions {
+  authToken?: string;
+}
+
+function githubFetchOptions(options: RefreshPrStatusOptions): RefreshPrStatusOptions | undefined {
+  return options.authToken ? options : undefined;
+}
+
 function getNowIsoString(): string {
   return new Date().toISOString();
 }
@@ -29,16 +37,31 @@ function getPrStatusId(detail: PrStatusDetail): number {
   return detail.status.id;
 }
 
-export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrStatusDetail> {
+export async function refreshPrStatus(
+  db: Database,
+  prUrl: string,
+  options: RefreshPrStatusOptions = {}
+): Promise<PrStatusDetail> {
   const canonicalPrUrl = canonicalizePrUrl(prUrl);
   const parsed = await parsePrOrIssueNumber(canonicalPrUrl);
   if (!parsed) {
     throw new Error(`Invalid GitHub pull request identifier: ${canonicalPrUrl}`);
   }
 
+  const fetchOptions = githubFetchOptions(options);
   const [fullStatusResult, reviewThreadsResult] = await Promise.allSettled([
-    fetchPrFullStatus(parsed.owner, parsed.repo, parsed.number),
-    fetchPrReviewThreads(parsed.owner, parsed.repo, parsed.number),
+    fetchPrFullStatus(
+      parsed.owner,
+      parsed.repo,
+      parsed.number,
+      ...(fetchOptions ? [fetchOptions] : [])
+    ),
+    fetchPrReviewThreads(
+      parsed.owner,
+      parsed.repo,
+      parsed.number,
+      ...(fetchOptions ? [fetchOptions] : [])
+    ),
   ]);
 
   if (fullStatusResult.status !== 'fulfilled') {
@@ -59,7 +82,8 @@ export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrSt
       parsed.owner,
       parsed.repo,
       fullStatus.baseRefName,
-      BRANCH_MERGE_REQUIREMENTS_MAX_AGE_MS
+      BRANCH_MERGE_REQUIREMENTS_MAX_AGE_MS,
+      ...(fetchOptions ? [fetchOptions] : [])
     );
   }
 
@@ -110,12 +134,16 @@ export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrSt
 /** Lightweight refresh that only updates check runs and rollup state, not PR lifecycle fields.
  * Designed for frequent polling between full refreshes. Callers that need updated PR state
  * (open/merged/closed) should use refreshPrStatus() periodically. */
-export async function refreshPrCheckStatus(db: Database, prUrl: string): Promise<PrStatusDetail> {
+export async function refreshPrCheckStatus(
+  db: Database,
+  prUrl: string,
+  options: RefreshPrStatusOptions = {}
+): Promise<PrStatusDetail> {
   const canonicalPrUrl = canonicalizePrUrl(prUrl);
 
   const existing = getPrStatusByUrl(db, canonicalPrUrl);
   if (!existing) {
-    return refreshPrStatus(db, canonicalPrUrl);
+    return refreshPrStatus(db, canonicalPrUrl, options);
   }
 
   const parsed = await parsePrOrIssueNumber(canonicalPrUrl);
@@ -123,7 +151,12 @@ export async function refreshPrCheckStatus(db: Database, prUrl: string): Promise
     throw new Error(`Invalid GitHub pull request identifier: ${canonicalPrUrl}`);
   }
 
-  const checkStatus = await fetchPrCheckStatus(parsed.owner, parsed.repo, parsed.number);
+  const checkStatus = await fetchPrCheckStatus(
+    parsed.owner,
+    parsed.repo,
+    parsed.number,
+    ...(githubFetchOptions(options) ? [githubFetchOptions(options)!] : [])
+  );
   return updatePrCheckRuns(
     db,
     getPrStatusId(existing),

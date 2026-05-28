@@ -7,6 +7,7 @@ import {
 } from '$common/github/webhook_ingest.js';
 import { getWebhookInternalApiToken, getWebhookServerUrl } from '$common/github/webhook_client.js';
 
+import { triggerReviewGuideComments } from './review_guide_comment_trigger.js';
 import type { WebhookPollerHandle } from './session_context.js';
 
 const MIN_POLL_INTERVAL_SECONDS = 5;
@@ -74,6 +75,9 @@ export function startWebhookPoller(
       }
       if (result.prsUpdated.length > 0) {
         options.onPrUpdated?.(result);
+      }
+      if ((result.prsReadyForReview?.length ?? 0) > 0) {
+        await triggerReviewGuideComments(db, result.prsReadyForReview);
       }
     } catch (error) {
       console.error('[webhook_poller] Polling failed', error);

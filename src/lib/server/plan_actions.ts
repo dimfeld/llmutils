@@ -3,6 +3,7 @@ import { buildWorkspaceCommandEnv } from '$common/env.js';
 import {
   createLogFile as createLogFileImpl,
   formatLogFileName as formatLogFileNameImpl,
+  type LogFileInfo,
 } from '../../common/log_files.js';
 
 export const createLogFile = createLogFileImpl;
@@ -257,6 +258,26 @@ export async function spawnPlanReviewGuideProcess(
     describeTarget('plan', planId),
     planId,
     ['review-guide', 'generate', String(planId), '--auto-workspace'],
+    cwd
+  );
+}
+
+export async function spawnPrReviewGuideCommentProcess(
+  prNumber: number,
+  cwd: string
+): Promise<SpawnProcessResult> {
+  return spawnTimProcess(
+    describeTarget('pr', prNumber),
+    prNumber,
+    [
+      'pr',
+      'review-guide-comment',
+      String(prNumber),
+      '--auto',
+      '--auto-workspace',
+      '--no-terminal-input',
+      '--non-interactive',
+    ],
     cwd
   );
 }

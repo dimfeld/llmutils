@@ -113,7 +113,7 @@ The web import shares core logic with the CLI via extracted helpers in `src/tim/
 
 ## Requirements
 
-- Issue tracker API token set in the environment (`GITHUB_TOKEN` for GitHub, `LINEAR_API_KEY` for Linear)
+- Issue tracker API token set in the environment (`GITHUB_TOKEN` for GitHub imports, `LINEAR_API_KEY` for Linear). GitHub App installation tokens are not used for issue import.
 - Current working directory must be within a Git repository (CLI) or project must have a `last_git_root` (web UI)
 - Issues must be accessible with the provided token
 

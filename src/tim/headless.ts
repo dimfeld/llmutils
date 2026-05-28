@@ -24,6 +24,7 @@ export type HeadlessCommand =
   | 'agent-multi'
   | 'review'
   | 'review-guide'
+  | 'review-guide-comment'
   | 'run-prompt'
   | 'generate'
   | 'chat'

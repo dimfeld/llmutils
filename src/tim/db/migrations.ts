@@ -1195,6 +1195,44 @@ const migrations: Migration[] = [
     up: `SELECT 1;`,
     afterUp: rebuildPlanStatusConstraintsForReviewed,
   },
+  {
+    version: 42,
+    up: `
+      CREATE TABLE IF NOT EXISTS github_app_config (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        app_id TEXT NOT NULL,
+        private_key_path TEXT,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+
+      CREATE TABLE IF NOT EXISTS github_app_installation (
+        app_id TEXT NOT NULL,
+        installation_id INTEGER NOT NULL,
+        account_login TEXT,
+        token TEXT,
+        token_expires_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        PRIMARY KEY (app_id, installation_id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_github_app_installation_account
+        ON github_app_installation(app_id, account_login COLLATE NOCASE);
+
+      CREATE TABLE IF NOT EXISTS github_app_project_installation (
+        project_id INTEGER NOT NULL PRIMARY KEY REFERENCES project(id) ON DELETE CASCADE,
+        app_id TEXT NOT NULL,
+        installation_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        FOREIGN KEY (app_id, installation_id)
+          REFERENCES github_app_installation(app_id, installation_id)
+          ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_github_app_project_installation_installation
+        ON github_app_project_installation(app_id, installation_id);
+    `,
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

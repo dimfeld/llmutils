@@ -616,3 +616,98 @@ describe('parseDiff and filterDiffToRange integration', () => {
     expect(removedLine!.oldLineNumber).toBe(22);
   });
 });
+
+describe('postPullRequestComment', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('creates an issue comment and returns the id and html url', async () => {
+    const createComment = vi.fn(async () => ({
+      data: { id: 987, html_url: 'https://github.com/example/repo/pull/5#issuecomment-987' },
+    }));
+    vi.mocked(octokitModule.getOctokit).mockReturnValue({
+      rest: { issues: { createComment } },
+    } as unknown as ReturnType<typeof octokitModule.getOctokit>);
+
+    const { postPullRequestComment } = await import('./pull_requests.ts');
+    const result = await postPullRequestComment('example', 'repo', 5, 'hello world');
+
+    expect(createComment).toHaveBeenCalledWith({
+      owner: 'example',
+      repo: 'repo',
+      issue_number: 5,
+      body: 'hello world',
+    });
+    expect(result).toEqual({
+      id: 987,
+      htmlUrl: 'https://github.com/example/repo/pull/5#issuecomment-987',
+    });
+  });
+});
+
+describe('updatePullRequestComment', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('updates an issue comment and returns the id and html url', async () => {
+    const updateComment = vi.fn(async () => ({
+      data: { id: 987, html_url: 'https://github.com/example/repo/pull/5#issuecomment-987' },
+    }));
+    vi.mocked(octokitModule.getOctokit).mockReturnValue({
+      rest: { issues: { updateComment } },
+    } as unknown as ReturnType<typeof octokitModule.getOctokit>);
+
+    const { updatePullRequestComment } = await import('./pull_requests.ts');
+    const result = await updatePullRequestComment('example', 'repo', 987, 'updated guide');
+
+    expect(updateComment).toHaveBeenCalledWith({
+      owner: 'example',
+      repo: 'repo',
+      comment_id: 987,
+      body: 'updated guide',
+    });
+    expect(result).toEqual({
+      id: 987,
+      htmlUrl: 'https://github.com/example/repo/pull/5#issuecomment-987',
+    });
+  });
+});
+
+describe('findPullRequestCommentByMarker', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('returns the first comment containing the marker', async () => {
+    const paginate = vi.fn(async () => [
+      { id: 1, body: 'unrelated comment', html_url: 'https://example/1' },
+      { id: 2, body: '<!-- marker -->\nGuide body', html_url: 'https://example/2' },
+    ]);
+    vi.mocked(octokitModule.getOctokit).mockReturnValue({
+      paginate,
+      rest: { issues: { listComments: vi.fn() } },
+    } as unknown as ReturnType<typeof octokitModule.getOctokit>);
+
+    const { findPullRequestCommentByMarker } = await import('./pull_requests.ts');
+    const result = await findPullRequestCommentByMarker('example', 'repo', 5, '<!-- marker -->');
+
+    expect(result).toEqual({ id: 2, htmlUrl: 'https://example/2' });
+  });
+
+  test('returns null when no comment contains the marker', async () => {
+    const paginate = vi.fn(async () => [
+      { id: 1, body: 'unrelated comment', html_url: 'https://example/1' },
+    ]);
+    vi.mocked(octokitModule.getOctokit).mockReturnValue({
+      paginate,
+      rest: { issues: { listComments: vi.fn() } },
+    } as unknown as ReturnType<typeof octokitModule.getOctokit>);
+
+    const { findPullRequestCommentByMarker } = await import('./pull_requests.ts');
+    const result = await findPullRequestCommentByMarker('example', 'repo', 5, '<!-- marker -->');
+
+    expect(result).toBeNull();
+  });
+});

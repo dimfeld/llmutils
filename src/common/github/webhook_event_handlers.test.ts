@@ -797,6 +797,104 @@ describe('common/github/webhook_event_handlers', () => {
     expect(result.apiRefreshTargets).toEqual([]);
   });
 
+  test('handlePullRequestEvent flags prReadyForReview when a PR is opened in a ready state', () => {
+    const result = handlePullRequestEvent(db, {
+      action: 'opened',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 60,
+        title: 'Opened ready',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-60', ref: 'feature/opened-ready' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T12:30:00.000Z',
+      },
+    });
+
+    expect(result.updated).toBe(true);
+    expect(result.prReadyForReview).toBe(true);
+  });
+
+  test('handlePullRequestEvent flags prReadyForReview when a draft PR becomes ready', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/61',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 61,
+      title: 'Draft PR',
+      state: 'open',
+      draft: true,
+      lastFetchedAt: '2026-03-30T12:00:00.000Z',
+    });
+
+    const result = handlePullRequestEvent(db, {
+      action: 'ready_for_review',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 61,
+        title: 'Now ready',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-61', ref: 'feature/became-ready' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T12:30:00.000Z',
+      },
+    });
+
+    expect(result.prReadyForReview).toBe(true);
+    expect(result.prDraftTransition).toBe('became_ready');
+  });
+
+  test('handlePullRequestEvent does not flag prReadyForReview for draft opens, draft conversions, or pushes', () => {
+    const openedDraft = handlePullRequestEvent(db, {
+      action: 'opened',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 62,
+        title: 'Opened draft',
+        state: 'open',
+        draft: true,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-62', ref: 'feature/opened-draft' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T12:30:00.000Z',
+      },
+    });
+    expect(openedDraft.prReadyForReview).toBeUndefined();
+
+    const synchronize = handlePullRequestEvent(db, {
+      action: 'synchronize',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 62,
+        title: 'Opened draft',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-62b', ref: 'feature/opened-draft' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T12:31:00.000Z',
+      },
+    });
+    // A push that happens to flip draft off still isn't a "ready_for_review"/"opened" action.
+    expect(synchronize.prReadyForReview).toBeUndefined();
+  });
+
   test('handlePullRequestEvent does not report a draft transition for new or unchanged PR rows', () => {
     const newPrResult = handlePullRequestEvent(db, {
       action: 'opened',

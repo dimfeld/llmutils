@@ -41,6 +41,7 @@ export interface GatherPrContextOptions {
   plan?: number;
   cwd?: string;
   maxStatusAgeMs?: number;
+  authToken?: string;
 }
 
 export interface PrContextGatheringDependencies {
@@ -157,7 +158,7 @@ export async function gatherPrContext(
 
   let detail = deps.getPrStatusByUrl(options.db, prUrl);
   if (!detail || isStatusStale(detail, maxStatusAgeMs)) {
-    detail = await deps.refreshPrStatus(options.db, prUrl);
+    detail = await deps.refreshPrStatus(options.db, prUrl, { authToken: options.authToken });
   }
 
   const baseBranch = detail.status.base_branch;

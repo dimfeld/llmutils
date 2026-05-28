@@ -866,6 +866,7 @@ describe('common/github/webhook_ingest', () => {
     await expect(ingestWebhookEvents(db)).resolves.toEqual({
       eventsIngested: 0,
       prsUpdated: [],
+      prsReadyForReview: [],
       errors: [],
     });
     expect(mocks.fetchWebhookEvents).not.toHaveBeenCalled();
@@ -1049,6 +1050,14 @@ describe('common/github/webhook_ingest', () => {
     expect(await ingestWebhookEvents(db)).toEqual({
       eventsIngested: 1,
       prsUpdated: ['https://github.com/example/repo/pull/54'],
+      prsReadyForReview: [
+        {
+          owner: 'example',
+          repo: 'repo',
+          prNumber: 54,
+          prUrl: 'https://github.com/example/repo/pull/54',
+        },
+      ],
       errors: [],
     });
 
@@ -1057,6 +1066,7 @@ describe('common/github/webhook_ingest', () => {
     expect(await ingestWebhookEvents(db)).toEqual({
       eventsIngested: 0,
       prsUpdated: [],
+      prsReadyForReview: [],
       errors: [],
     });
     // pruneOldWebhookLogs was called once (first run had events), not on second run

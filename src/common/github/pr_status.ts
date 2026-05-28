@@ -86,6 +86,10 @@ export interface PrCheckStatusResult {
   checkRollupState: PrCheckRollupState;
 }
 
+export interface GitHubStatusFetchOptions {
+  authToken?: string;
+}
+
 interface GraphQlActor {
   login: string;
 }
@@ -803,13 +807,17 @@ async function fetchAllReviewThreadComments(
 export async function fetchPrFullStatus(
   owner: string,
   repo: string,
-  prNumber: number
+  prNumber: number,
+  options: GitHubStatusFetchOptions = {}
 ): Promise<PrFullStatus> {
-  const response = await getOctokit().graphql<FullStatusGraphQlResponse>(fullStatusQuery, {
-    owner,
-    repo,
-    prNumber,
-  });
+  const response = await getOctokit(options.authToken).graphql<FullStatusGraphQlResponse>(
+    fullStatusQuery,
+    {
+      owner,
+      repo,
+      prNumber,
+    }
+  );
 
   const pullRequest = response.repository?.pullRequest;
   if (!pullRequest) {
@@ -864,13 +872,17 @@ export async function fetchPrFullStatus(
 export async function fetchPrCheckStatus(
   owner: string,
   repo: string,
-  prNumber: number
+  prNumber: number,
+  options: GitHubStatusFetchOptions = {}
 ): Promise<PrCheckStatusResult> {
-  const response = await getOctokit().graphql<CheckStatusGraphQlResponse>(checkStatusQuery, {
-    owner,
-    repo,
-    prNumber,
-  });
+  const response = await getOctokit(options.authToken).graphql<CheckStatusGraphQlResponse>(
+    checkStatusQuery,
+    {
+      owner,
+      repo,
+      prNumber,
+    }
+  );
 
   const pullRequest = response.repository?.pullRequest;
   if (!pullRequest) {
@@ -883,18 +895,22 @@ export async function fetchPrCheckStatus(
 export async function fetchPrReviewThreads(
   owner: string,
   repo: string,
-  prNumber: number
+  prNumber: number,
+  options: GitHubStatusFetchOptions = {}
 ): Promise<StoredPrReviewThreadInput[]> {
   const reviewThreads: StoredPrReviewThreadInput[] = [];
   let threadsCursor: string | null = null;
 
   while (true) {
-    const response: ReviewThreadsGraphQlResponse = await getOctokit().graphql(reviewThreadsQuery, {
-      owner,
-      repo,
-      prNumber,
-      threadsCursor,
-    });
+    const response: ReviewThreadsGraphQlResponse = await getOctokit(options.authToken).graphql(
+      reviewThreadsQuery,
+      {
+        owner,
+        repo,
+        prNumber,
+        threadsCursor,
+      }
+    );
 
     const repository = response.repository;
     const pullRequest = repository?.pullRequest;
@@ -916,10 +932,16 @@ export async function fetchPrReviewThreads(
   }
 }
 
-export async function fetchPrReviewThread(threadId: string): Promise<StoredPrReviewThreadInput> {
-  const response = await getOctokit().graphql<ReviewThreadGraphQlResponse>(reviewThreadQuery, {
-    threadId,
-  });
+export async function fetchPrReviewThread(
+  threadId: string,
+  options: GitHubStatusFetchOptions = {}
+): Promise<StoredPrReviewThreadInput> {
+  const response = await getOctokit(options.authToken).graphql<ReviewThreadGraphQlResponse>(
+    reviewThreadQuery,
+    {
+      threadId,
+    }
+  );
 
   const thread = response.node;
   if (!thread) {
@@ -932,9 +954,10 @@ export async function fetchPrReviewThread(threadId: string): Promise<StoredPrRev
 export async function fetchPrMergeableAndReviewDecision(
   owner: string,
   repo: string,
-  prNumber: number
+  prNumber: number,
+  options: GitHubStatusFetchOptions = {}
 ): Promise<{ mergeable: PrMergeableState; reviewDecision: PrReviewDecision }> {
-  const response = await getOctokit().graphql<MergeableStatusGraphQlResponse>(
+  const response = await getOctokit(options.authToken).graphql<MergeableStatusGraphQlResponse>(
     mergeableStatusQuery,
     {
       owner,

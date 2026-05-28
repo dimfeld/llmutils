@@ -113,6 +113,23 @@
             "properties": {
               "token": {
                 "type": "string"
+              },
+              "dailyDigest": {
+                "type": "object",
+                "properties": {
+                  "time": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  },
+                  "timezone": {
+                    "type": "string"
+                  },
+                  "staleAfterHours": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "additionalProperties": false

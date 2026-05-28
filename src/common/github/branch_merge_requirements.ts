@@ -80,10 +80,11 @@ function dedupeChecks(checks: BranchRequiredCheck[]): BranchRequiredCheck[] {
 async function fetchLegacyBranchProtectionRequiredChecks(
   owner: string,
   repo: string,
-  branch: string
+  branch: string,
+  authToken?: string
 ): Promise<BranchMergeRequirementSource | null> {
   try {
-    const response = await getOctokit().request(
+    const response = await getOctokit(authToken).request(
       'GET /repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks',
       {
         owner,
@@ -126,12 +127,13 @@ async function fetchLegacyBranchProtectionRequiredChecks(
 async function fetchRulesetRequiredChecks(
   owner: string,
   repo: string,
-  branch: string
+  branch: string,
+  authToken?: string
 ): Promise<BranchMergeRequirementSource[]> {
   const rules: RulesBranchRuleResponse[] = [];
 
   for (let page = 1; ; page += 1) {
-    const response = await getOctokit().request(
+    const response = await getOctokit(authToken).request(
       'GET /repos/{owner}/{repo}/rules/branches/{branch}',
       {
         owner,
@@ -191,11 +193,12 @@ async function fetchRulesetRequiredChecks(
 export async function fetchBranchMergeRequirements(
   owner: string,
   repo: string,
-  branch: string
+  branch: string,
+  options: { authToken?: string } = {}
 ): Promise<BranchMergeRequirementsSnapshot> {
   const [legacyRequirement, rulesetRequirements] = await Promise.all([
-    fetchLegacyBranchProtectionRequiredChecks(owner, repo, branch),
-    fetchRulesetRequiredChecks(owner, repo, branch),
+    fetchLegacyBranchProtectionRequiredChecks(owner, repo, branch, options.authToken),
+    fetchRulesetRequiredChecks(owner, repo, branch, options.authToken),
   ]);
 
   return {

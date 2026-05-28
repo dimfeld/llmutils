@@ -68,12 +68,77 @@ requireBranchPrefix: true
 githubUsername: your-github-username
 ```
 
-Use environment variables for secrets. For Linear imports, set `LINEAR_API_KEY` in the shell or in the project workspace environment. For GitHub PR status and review thread operations, set `GITHUB_TOKEN` or have an authenticated `gh` GitHub CLI installed.
+Use environment variables for secrets. For Linear imports, set `LINEAR_API_KEY` in the shell or in the project workspace environment. For user-authenticated GitHub operations (issue import, PR status refreshes, review thread replies/resolution), set `GITHUB_TOKEN` or have an authenticated `gh` GitHub CLI installed.
 
 ```bash
 export LINEAR_API_KEY="lin_api_..."
 export GITHUB_TOKEN="ghp_..."
 ```
+
+### GitHub access for reading and writing
+
+GitHub access in tim has two independent parts, and **receiving webhooks does not grant tim any ability to call the GitHub API**:
+
+1. **Webhooks (inbound).** A GitHub App (or repo webhook) delivers PR/review/check events to the webhook receiver. This only pushes events to tim; it carries no API credentials.
+2. **API token (outbound).** Most calls tim makes back to GitHub — refreshing PR status, importing issues, and replying to or resolving review threads — use the personal token from `resolveGitHubToken()`: `GITHUB_TOKEN` if set, otherwise `gh auth token`.
+3. **GitHub App token (outbound app identity).** Commands that intentionally act as the App, currently `tim pr review-guide-comment` and `tim github-app ...`, use a GitHub App installation token. They do **not** use `GITHUB_TOKEN` or `gh auth token`.
+
+So if you currently "only have it sending webhooks," you still need outbound auth before tim can call GitHub. For general user-authenticated features, any of the following work, as long as the token has access to the repo:
+
+- **Fine-grained personal access token** scoped to the repo with **Pull requests: Read & write**.
+- **Classic personal access token** with the `repo` scope.
+- **`gh auth login`** on the machine running the web server (tim falls back to `gh auth token`).
+
+```bash
+# In the environment where the web app / tim CLI runs:
+export GITHUB_TOKEN="<personal-access-token>"
+```
+
+For comments that should appear as the `tim` bot/App identity, configure the GitHub App instead.
+
+### Act as your GitHub App
+
+A GitHub App has **no long-lived refresh token**: an installation access token expires after ~1 hour and is re-minted from the App's **App ID + private key + installation ID**. The private key belongs to the App, while installation IDs and installation tokens are per account/org where the App is installed.
+
+`tim github-app` stores the App config, installation list, project-to-installation mappings, and per-installation cached tokens in the SQLite database. Only the **path** to the private key is stored, never the key contents.
+
+One-time setup (the App needs **Pull requests: Read & write**, and **Issues: Read & write**, and must be installed on the target account/org):
+
+```bash
+# From GitHub → Settings → Developer settings → GitHub Apps → your app:
+#   - note the App ID
+#   - generate a private key and download the .pem
+tim github-app set --app-id 123456 --private-key ~/secrets/tim-app.pem
+```
+
+If the App has multiple installations, `set` stores the App config and discovered installations but does not choose a global installation. That is expected: tim maps each project to the relevant installation by the GitHub repository owner/org. Run status from inside a repository to verify the mapping:
+
+```bash
+tim github-app status
+```
+
+`status`, `token`, `refresh`, and `pr review-guide-comment` all auto-detect the current repository owner from `origin`, discover installations if needed, and use the matching installation token. You can still override this explicitly:
+
+```bash
+tim github-app token --owner my-org
+tim github-app token --installation-id 12345678
+tim github-app refresh --owner my-org
+```
+
+App tokens are never exported into `GITHUB_TOKEN` by tim and are not used by user-token flows such as issue import or PR status refreshes. Conversely, app-authenticated flows do not fall back to `GITHUB_TOKEN` or `gh auth token`.
+
+Useful commands:
+
+```bash
+tim github-app status                  # Show app config, current-repo installation, and cached-token expiry
+tim github-app token                   # Print a valid token for the current repo's installation
+tim github-app refresh                 # Mint a fresh token for the current repo's installation
+tim github-app refresh --watch         # Keep that installation token refreshed in the foreground
+tim github-app installations           # List/store accounts/orgs where the app is installed
+tim github-app logout                  # Remove stored app config, mappings, and cached tokens
+```
+
+For CI or ephemeral environments you can skip stored config and provide credentials via environment variables instead: `TIM_GITHUB_APP_ID`, optionally `TIM_GITHUB_APP_INSTALLATION_ID`, and either `TIM_GITHUB_APP_PRIVATE_KEY` (inline PEM; literal `\n` escapes are accepted) or `TIM_GITHUB_APP_PRIVATE_KEY_PATH`. If no installation ID is supplied, owner-based auto-discovery still works when the App can list its installations.
 
 If you use the webhook receiver for PR updates, configure these in the environment where the web app runs:
 
@@ -196,6 +261,8 @@ Useful CLI commands:
 tim pr status 123
 tim pr link 123 https://github.com/owner/repo/pull/456
 tim pr review-guide https://github.com/owner/repo/pull/456
+tim pr review-guide-comment https://github.com/owner/repo/pull/456   # Concise guide posted as a PR comment
+tim pr review-guide-comment 456 --dry-run                            # Print the guide without posting it
 tim review-guide generate 123                       # Plan-only review guide (no PR required)
 tim review-guide generate 123 --auto-workspace
 tim review-guide list-issues 123                    # Latest guide for plan, plus linked PR guides
@@ -210,6 +277,20 @@ tim rebase 123 --auto-workspace
 `tim review-guide list-issues <planId|branch|prUrl>` finds the latest stored review guide for the resolved plan or PR and includes linked guides from the other object when a plan is linked to a PR or a PR is linked to a plan. By default it shows unresolved actionable issues; use `--all` to include resolved issues. `tim review-guide resolve-issue <issueId> [planId|branch|prUrl]` marks an issue resolved, and the optional target validates that the issue belongs to the latest review guide.
 
 Review guides can include non-actionable `<annotation file="..." line="...">...</annotation>` callouts. These render as Notes in the guide viewer sidebar and inline diff overlay, but are not submitted to GitHub or converted into cleanup work.
+
+### Automatic PR review-guide comments
+
+`tim pr review-guide-comment <prUrlOrNumber>` generates a short, comment-sized review guide and posts it directly to the PR as a comment (distinct from the in-app review guide above, which embeds full diffs for the web viewer). The comment groups the changes into a few logical sections and flags the specific places a human reviewer should look closely. It checks out the PR branch in a managed workspace (`--auto-workspace`), runs an executor (codex-cli by default; override with `-x claude-code`), logs the generated guide, and posts via the configured GitHub App installation token. Use `--dry-run` to generate and log the guide without posting it.
+
+When webhook polling is enabled, the web server can post this comment automatically as soon as a PR becomes ready for review — either opened directly as a non-draft PR or moved from draft to ready. This is opt-in per project:
+
+```bash
+tim pr review-guide-comment enable
+tim pr review-guide-comment status
+tim pr review-guide-comment disable
+```
+
+Like Slack digest settings, the opt-in is stored as a per-project database setting, not in committed config. With the setting enabled, a `tim pr review-guide-comment --auto` process is spawned in the project's primary workspace for each newly-ready PR. The comment is posted at most once per PR — before posting, tim looks for its hidden marker (`<!-- tim:pr-review-guide -->`) in the PR's existing comments and skips if one is already present. Run the command manually with `--force` to refresh the existing marked comment instead; refreshed comments include an `Updated at <timestamp>` footer, and a new comment is created if none exists. Posting uses the configured GitHub App installation token for the PR owner; it does not use `GITHUB_TOKEN` or `gh auth token`.
 
 See the PR status and web interface notes in [`docs/web-interface.md`](docs/web-interface.md) for implementation details and edge cases.
 

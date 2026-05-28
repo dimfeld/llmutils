@@ -5,10 +5,9 @@ let cached: string | null | undefined;
 let ghFallbackDisabled = false;
 
 /**
- * Resolve a GitHub token. Checks `process.env.GITHUB_TOKEN` first, then
- * falls back to `gh auth token`. The result is cached and also written back
- * to `process.env.GITHUB_TOKEN` so that downstream code (Octokit, synchronous
- * availability checks, etc.) sees it without an extra call.
+ * Resolve a personal GitHub token. Checks `process.env.GITHUB_TOKEN` first, then
+ * falls back to `gh auth token`. GitHub App installation tokens are intentionally
+ * excluded; app-authenticated contexts must use common/github/app_auth.ts.
  *
  * Returns the token string, or `null` when no token could be obtained.
  */
