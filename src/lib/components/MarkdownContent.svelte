@@ -13,6 +13,7 @@
   export interface DiffOverrides {
     id?: string;
     diffStyle?: 'unified' | 'split';
+    stickyHeader?: boolean;
     lineAnnotations?: DiffLineAnnotation<unknown>[];
     enableGutterUtility?: boolean;
     onGutterUtilityClick?: FileDiffOptions<unknown>['onGutterUtilityClick'];
@@ -62,6 +63,7 @@
         <Diff
           id={overrides.id}
           diffStyle={overrides.diffStyle}
+          stickyHeader={overrides.stickyHeader ?? false}
           patch={segment.patch}
           filename={segment.filename ?? undefined}
           lineAnnotations={overrides.lineAnnotations}

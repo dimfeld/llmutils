@@ -295,6 +295,7 @@
     const override: DiffOverrides = {
       id: getReviewGuideDiffId(filename, patch ?? ''),
       diffStyle,
+      stickyHeader: true,
       lineAnnotations,
       enableLineSelection: flags.enableLineSelection,
       enableGutterUtility: flags.enableGutterUtility,

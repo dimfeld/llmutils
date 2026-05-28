@@ -25,6 +25,14 @@
   const VIRTUALIZED_LINE_THRESHOLD = 20;
   const EMPTY_LINE_ANNOTATIONS: DiffLineAnnotation<unknown>[] = [];
   const HEADER_TOGGLE_CLASS = 'tim-diff-collapse-toggle';
+  const STICKY_HEADER_CSS = `
+    [data-diffs-header] {
+      position: sticky;
+      top: var(--tim-diff-sticky-header-top, 0px);
+      z-index: 3;
+      box-shadow: 0 1px 0 color-mix(in lab, var(--diffs-bg) 82%, var(--diffs-fg));
+    }
+  `;
 
   let workerPool: ReturnType<typeof getOrCreateWorkerPoolSingleton> | undefined;
 
@@ -165,6 +173,7 @@
     lineDiffType = 'word-alt',
     overflow = 'scroll',
     disableFileHeader = false,
+    stickyHeader = false,
     disableLineNumbers = false,
     collapsed = false,
     lineAnnotations,
@@ -200,6 +209,8 @@
     overflow?: OverflowStyle;
     /** Hide the file header */
     disableFileHeader?: boolean;
+    /** Keep the file header visible while scrolling its parent container */
+    stickyHeader?: boolean;
     /** Hide line numbers */
     disableLineNumbers?: boolean;
     /** Collapse file body, keep header visible */
@@ -275,6 +286,7 @@
       hunkSeparators,
       lineDiffType,
       overflow,
+      unsafeCSS: stickyHeader && !disableFileHeader ? STICKY_HEADER_CSS : undefined,
       disableFileHeader,
       disableLineNumbers,
       collapsed: currentCollapsed,
@@ -294,6 +306,7 @@
       a.hunkSeparators === b.hunkSeparators &&
       a.lineDiffType === b.lineDiffType &&
       a.overflow === b.overflow &&
+      a.unsafeCSS === b.unsafeCSS &&
       a.disableFileHeader === b.disableFileHeader &&
       a.disableLineNumbers === b.disableLineNumbers &&
       a.collapsed === b.collapsed &&
