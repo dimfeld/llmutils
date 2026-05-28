@@ -215,9 +215,19 @@ async function applyDraftReadyStatusToLinkedPlans(
   }
 }
 
+/** A PR that just entered the ready-for-review state during this ingestion run. */
+export interface ReadyForReviewPr {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  prUrl: string;
+}
+
 export interface IngestResult {
   eventsIngested: number;
   prsUpdated: string[];
+  /** PRs that became ready for review (opened ready or draft -> ready) during this run. */
+  prsReadyForReview: ReadyForReviewPr[];
   errors: string[];
 }
 
@@ -232,7 +242,7 @@ function formatIngestError(eventId: number, message: string): string {
 export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
   const serverUrl = getWebhookServerUrl();
   if (!serverUrl) {
-    return { eventsIngested: 0, prsUpdated: [], errors: [] };
+    return { eventsIngested: 0, prsUpdated: [], prsReadyForReview: [], errors: [] };
   }
 
   const token = getWebhookInternalApiToken();
@@ -241,12 +251,15 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
     return {
       eventsIngested: 0,
       prsUpdated: [],
+      prsReadyForReview: [],
       errors: ['WEBHOOK_INTERNAL_API_TOKEN is not configured but TIM_WEBHOOK_SERVER_URL is set'],
     };
   }
 
   const BATCH_SIZE = 500;
   const prsUpdated = new Set<string>();
+  /** Deduplicated set of PRs that became ready for review, keyed by "owner/repo#number". */
+  const prsReadyForReview = new Map<string, ReadyForReviewPr>();
   const errors: string[] = [];
   /** Deduplicated set of PRs needing API refresh, keyed by "owner/repo#number:type[:threadId]". */
   const apiRefreshTargets = new Map<string, PrRefreshTarget>();
@@ -328,6 +341,24 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
             `[webhook-ingest] queued refresh key=${key} type=${target.type} thread=${target.threadId ?? 'all'} op=${target.operation}`
           );
           apiRefreshTargets.set(key, target);
+        }
+
+        if (
+          event.eventType === 'pull_request' &&
+          result.prReadyForReview &&
+          result.prUrl &&
+          event.repositoryFullName
+        ) {
+          const pullRequest = (payload as { pull_request?: { number?: unknown } }).pull_request;
+          const [owner, repo] = event.repositoryFullName.split('/');
+          if (owner && repo && typeof pullRequest?.number === 'number') {
+            prsReadyForReview.set(`${owner}/${repo}#${pullRequest.number}`, {
+              owner,
+              repo,
+              prNumber: pullRequest.number,
+              prUrl: result.prUrl,
+            });
+          }
         }
 
         if (event.eventType === 'pull_request' && result.updated && result.prDraftTransition) {
@@ -459,6 +490,7 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
   return {
     eventsIngested: eventsProcessed,
     prsUpdated: [...prsUpdated],
+    prsReadyForReview: [...prsReadyForReview.values()],
     errors,
   };
 }

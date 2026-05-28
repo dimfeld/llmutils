@@ -763,3 +763,89 @@ export async function setPullRequestDraftState(
     return false;
   }
 }
+
+export interface PostedPullRequestComment {
+  id: number;
+  htmlUrl: string | null;
+}
+
+export interface GitHubRequestAuthOptions {
+  authToken?: string;
+}
+
+/**
+ * Posts a standalone issue comment to a pull request (the conversation timeline,
+ * not a review or review-thread reply).
+ */
+export async function postPullRequestComment(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  body: string,
+  options: GitHubRequestAuthOptions = {}
+): Promise<PostedPullRequestComment> {
+  const octokit = getOctokit(options.authToken);
+  const response = await octokit.rest.issues.createComment({
+    owner,
+    repo,
+    issue_number: prNumber,
+    body,
+  });
+
+  return {
+    id: response.data.id,
+    htmlUrl: response.data.html_url ?? null,
+  };
+}
+
+/**
+ * Updates a standalone issue comment on a pull request.
+ */
+export async function updatePullRequestComment(
+  owner: string,
+  repo: string,
+  commentId: number,
+  body: string,
+  options: GitHubRequestAuthOptions = {}
+): Promise<PostedPullRequestComment> {
+  const octokit = getOctokit(options.authToken);
+  const response = await octokit.rest.issues.updateComment({
+    owner,
+    repo,
+    comment_id: commentId,
+    body,
+  });
+
+  return {
+    id: response.data.id,
+    htmlUrl: response.data.html_url ?? null,
+  };
+}
+
+/**
+ * Returns the first issue comment on a pull request whose body contains the given
+ * marker string, or null if none exists. Used to make comment posting idempotent.
+ */
+export async function findPullRequestCommentByMarker(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  marker: string,
+  options: GitHubRequestAuthOptions = {}
+): Promise<PostedPullRequestComment | null> {
+  const octokit = getOctokit(options.authToken);
+  const comments = await octokit.paginate(octokit.rest.issues.listComments, {
+    owner,
+    repo,
+    issue_number: prNumber,
+    per_page: 100,
+  });
+
+  for (const comment of comments) {
+    if (typeof comment.body === 'string' && comment.body.includes(marker)) {
+      return { id: comment.id, htmlUrl: comment.html_url ?? null };
+    }
+  }
+
+  return null;
+}

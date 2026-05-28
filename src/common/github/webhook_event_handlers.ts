@@ -37,6 +37,11 @@ export interface WebhookHandlerResult {
   /** PRs that need a follow-up API refresh. Callers should deduplicate before executing. */
   apiRefreshTargets?: PrRefreshTarget[];
   prDraftTransition?: PrDraftTransition | null;
+  /**
+   * True when this event represents a PR entering the ready-for-review state:
+   * either opened directly as a non-draft PR or transitioned from draft to ready.
+   */
+  prReadyForReview?: boolean;
 }
 
 interface ParsedRepoInfo {
@@ -599,10 +604,20 @@ export function handlePullRequestEvent(
       parsed.action === 'synchronize' ||
       parsed.action === 'reopened' ||
       parsed.action === 'ready_for_review');
+
+  // A PR enters the ready-for-review state either by being opened directly as a
+  // non-draft PR or by transitioning from draft to ready. Both cases require the
+  // metadata to have actually changed so duplicate/stale deliveries don't re-fire.
+  const prReadyForReview =
+    updated &&
+    state === 'open' &&
+    (parsed.action === 'ready_for_review' || (parsed.action === 'opened' && !pullRequest.draft));
+
   return {
     updated,
     prUrl,
     ...(prDraftTransition ? { prDraftTransition } : {}),
+    ...(prReadyForReview ? { prReadyForReview: true } : {}),
     apiRefreshTargets: needsApiRefresh
       ? [
           {

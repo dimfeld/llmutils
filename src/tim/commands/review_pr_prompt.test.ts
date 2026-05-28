@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   buildIssueCombinationPrompt,
+  buildReviewGuideCommentPrompt,
   buildReviewGuideIssuesFollowUpPrompt,
   buildReviewGuidePrompt,
   buildStandaloneReviewIssuesPrompt,
@@ -66,6 +67,33 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('Group files into functional sections');
     expect(prompt).toContain('copied verbatim from the relevant `git diff` output');
     expect(prompt).toContain('Never truncate or omit any part of a diff');
+  });
+
+  test('buildReviewGuideCommentPrompt produces a concise, comment-oriented prompt', () => {
+    const prompt = buildReviewGuideCommentPrompt({
+      metadata: METADATA,
+      outputPath: '/work/.tim/tmp/pr-review-guide-comment-42.md',
+      useJj: false,
+    });
+
+    expect(prompt).toContain('posted as a comment on a GitHub pull request');
+    expect(prompt).toContain(METADATA.prUrl);
+    expect(prompt).toContain("git merge-base 'origin/main' HEAD");
+    expect(prompt).toContain('Pay special attention to');
+    expect(prompt).toContain('Group the changes into a small number of logical sections');
+    expect(prompt).toContain('Do not paste diffs or large code blocks');
+    expect(prompt).toContain('/work/.tim/tmp/pr-review-guide-comment-42.md');
+  });
+
+  test('buildReviewGuideCommentPrompt uses jj diff instructions when requested', () => {
+    const prompt = buildReviewGuideCommentPrompt({
+      metadata: METADATA,
+      outputPath: '/work/.tim/tmp/pr-review-guide-comment-42.md',
+      useJj: true,
+    });
+
+    expect(prompt).toContain('Repository is jj-based');
+    expect(prompt).toContain('jj diff');
   });
 
   test('buildReviewGuidePrompt includes diff placeholder instructions when refs are provided', () => {

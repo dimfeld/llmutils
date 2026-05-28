@@ -57,7 +57,7 @@ function getRequirementsForStatus(
     db,
     status.owner,
     status.repo,
-    status.base_branch
+    status.base_branch ?? ''
   );
   cache.set(cacheKey, requirements);
   return requirements;

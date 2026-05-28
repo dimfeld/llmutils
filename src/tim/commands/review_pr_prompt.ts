@@ -260,6 +260,64 @@ The guide must be structured with section headers and subsection headers, and mu
   )}`;
 }
 
+interface ReviewGuideCommentPromptOptions {
+  metadata: PrReviewMetadata;
+  /** Absolute path the agent must write the finished comment markdown to. */
+  outputPath: string;
+  useJj: boolean;
+  customInstructions?: string;
+}
+
+/**
+ * Builds the prompt for a concise, comment-sized PR review guide. Unlike the full
+ * review guide (which embeds verbatim diffs for in-app rendering), this output is
+ * meant to be posted directly as a GitHub PR comment: short, grouped into sections,
+ * and focused on where a human reviewer should look closely.
+ */
+export function buildReviewGuideCommentPrompt(options: ReviewGuideCommentPromptOptions): string {
+  const { metadata, outputPath, useJj, customInstructions } = options;
+  return `You are preparing a short review guide that will be posted as a comment on a GitHub pull request to help a human reviewer.
+
+## PR Metadata
+${formatPrMetadata(metadata)}
+
+## Diff Discovery
+${getDiffInstructions(metadata, useJj)}
+
+## Required Workflow
+1. Determine the full set of changed files from the PR diff.
+2. Group the changes into a small number of logical sections (e.g. core logic, data model, API, UI, tests, docs). Aim for the fewest sections that capture the shape of the change.
+3. For each section, write 1-3 sentences summarizing what changed and why, so a reviewer understands the change without opening every file. Use parallel subagents if it makes sense.
+4. Identify the specific places a human reviewer should pay special attention to: risky logic, security/permission/auth concerns, data migrations, concurrency, error handling, public API or schema changes, missing tests, or anything subtle. Reference concrete files (and line numbers where helpful) using \`path/to/file.ts:42\` style.
+5. If nothing in the PR warrants special scrutiny, say so plainly instead of inventing concerns.
+
+## Output Format
+Write GitHub-flavored markdown using this structure:
+
+\`\`\`markdown
+## Review Guide
+
+_Brief one or two sentence overview of the change._
+
+### Sections
+- **<section name>** — what changed and why.
+- ... (one bullet per section)
+
+### Pay special attention to
+- \`path/to/file.ts:42\` — why this needs a careful look.
+- ... (omit this section's bullets and write "Nothing stands out for special review." when there are no concerns)
+\`\`\`
+
+## Constraints
+- Keep the whole comment concise — it should be skimmable in under a minute. Do not paste diffs or large code blocks.
+- Do not include a verdict, approval, or request-changes language; this is a guide, not a review.
+- Do not invent files or changes that are not in the diff.
+
+## Output File
+Write the finished markdown comment (and nothing else) to:
+\`${outputPath}\`${maybeCustomInstructions(customInstructions)}`;
+}
+
 export function buildReviewGuideIssuesFollowUpPrompt(
   options: ReviewGuideIssuesFollowUpPromptOptions
 ): string {

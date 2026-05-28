@@ -1753,6 +1753,119 @@ prReviewGuideCommand
     }).catch(handleCommandError);
   });
 
+const prReviewGuideCommentCommand = prCommand
+  .command('review-guide-comment')
+  .description('Generate a concise review guide and post it as a comment on the PR')
+  .argument('[pr-url-or-number]', 'PR URL or number')
+  .option('-x, --executor <name>', 'Executor to use (claude-code or codex-cli; default codex-cli)')
+  .option('-m, --model <model>', 'Model override for the executor')
+  .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
+  .option('--auto', 'Only run if automatic review-guide comments are enabled for this project')
+  .option('--force', 'Update an existing review-guide comment, or post one if none exists')
+  .option('--dry-run', 'Generate and print the guide comment without posting it')
+  .option('--no-terminal-input', 'Disable terminal input')
+  .option('--non-interactive', 'No user prompts')
+  .option('--verbose', 'Verbose output')
+  .action(async (prUrlOrNumber, options, command) => {
+    await runWithCommandTunnelAdapter(async () => {
+      const { handlePrReviewGuideCommentCommand } =
+        await import('./commands/review_guide_comment.js');
+      await handlePrReviewGuideCommentCommand(prUrlOrNumber, options, command);
+    }).catch(handleCommandError);
+  });
+
+prReviewGuideCommentCommand
+  .command('enable')
+  .description('Enable automatic PR review-guide comments for the current project')
+  .action(async (options, command) => {
+    const { handlePrReviewGuideCommentEnableCommand } =
+      await import('./commands/review_guide_comment.js');
+    await handlePrReviewGuideCommentEnableCommand(options, command).catch(handleCommandError);
+  });
+
+prReviewGuideCommentCommand
+  .command('disable')
+  .description('Disable automatic PR review-guide comments for the current project')
+  .action(async (options, command) => {
+    const { handlePrReviewGuideCommentDisableCommand } =
+      await import('./commands/review_guide_comment.js');
+    await handlePrReviewGuideCommentDisableCommand(options, command).catch(handleCommandError);
+  });
+
+prReviewGuideCommentCommand
+  .command('status')
+  .description('Show automatic PR review-guide comment status for the current project')
+  .action(async () => {
+    const { handlePrReviewGuideCommentStatusCommand } =
+      await import('./commands/review_guide_comment.js');
+    await handlePrReviewGuideCommentStatusCommand().catch(handleCommandError);
+  });
+
+const githubAppCommand = program
+  .command('github-app')
+  .description('Configure and manage GitHub App authentication (act as the App via a bot token)');
+
+githubAppCommand
+  .command('set')
+  .description('Store GitHub App credentials and mint an installation token to verify them')
+  .option('--app-id <id>', 'GitHub App ID')
+  .option('--installation-id <id>', 'Installation ID (auto-detected if the App has one install)')
+  .option('--private-key <path>', 'Path to the App private key (.pem)')
+  .action(async (options) => {
+    const { handleGitHubAppSetCommand } = await import('./commands/github_app.js');
+    await handleGitHubAppSetCommand(options).catch(handleCommandError);
+  });
+
+githubAppCommand
+  .command('token')
+  .description('Print a valid installation token (mints/refreshes as needed)')
+  .option('--refresh', 'Force minting a fresh token even if a cached one is still valid')
+  .option('--installation-id <id>', 'Installation ID to mint a token for')
+  .option('--owner <owner>', 'GitHub organization/user owner to resolve to an installation')
+  .action(async (options) => {
+    const { handleGitHubAppTokenCommand } = await import('./commands/github_app.js');
+    await handleGitHubAppTokenCommand(options).catch(handleCommandError);
+  });
+
+githubAppCommand
+  .command('status')
+  .description('Show GitHub App configuration and cached token status')
+  .action(async () => {
+    const { handleGitHubAppStatusCommand } = await import('./commands/github_app.js');
+    await handleGitHubAppStatusCommand().catch(handleCommandError);
+  });
+
+githubAppCommand
+  .command('refresh')
+  .description('Mint a fresh installation token now, or keep it refreshed with --watch')
+  .option('--watch', 'Keep refreshing the token before it expires until interrupted')
+  .option('--installation-id <id>', 'Installation ID to refresh a token for')
+  .option('--owner <owner>', 'GitHub organization/user owner to resolve to an installation')
+  .option(
+    '--interval <minutes>',
+    'Refresh interval in minutes when watching (default: near expiry)'
+  )
+  .action(async (options) => {
+    const { handleGitHubAppRefreshCommand } = await import('./commands/github_app.js');
+    await handleGitHubAppRefreshCommand(options).catch(handleCommandError);
+  });
+
+githubAppCommand
+  .command('installations')
+  .description('List the accounts/orgs where the App is installed')
+  .action(async () => {
+    const { handleGitHubAppInstallationsCommand } = await import('./commands/github_app.js');
+    await handleGitHubAppInstallationsCommand().catch(handleCommandError);
+  });
+
+githubAppCommand
+  .command('logout')
+  .description('Remove stored GitHub App credentials and the cached token')
+  .action(async () => {
+    const { handleGitHubAppLogoutCommand } = await import('./commands/github_app.js');
+    handleGitHubAppLogoutCommand();
+  });
+
 function registerPrDescriptionCommand(
   targetCommand: Command,
   signature: string,
