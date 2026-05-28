@@ -47,6 +47,7 @@ const JS_TASK_RUNNERS = ['npm', 'pnpm', 'yarn', 'bun'];
  */
 export function getDefaultAllowedTools(): string[] {
   return [
+    'Read',
     'Edit',
     'MultiEdit',
     'Write',
