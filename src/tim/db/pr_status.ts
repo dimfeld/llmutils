@@ -220,6 +220,7 @@ export interface LinkedPlanSummary {
   planUuid: string;
   planId: number;
   title: string | null;
+  branch?: string | null;
 }
 
 const FAILURE_CHECK_CONCLUSIONS = new Set([
@@ -1278,7 +1279,8 @@ export function getLinkedPlansByPrUrl(
           ps.pr_url AS pr_url,
           p.uuid AS plan_uuid,
           p.plan_id AS plan_id,
-          p.title AS title
+          p.title AS title,
+          p.branch AS branch
         FROM pr_status ps
         INNER JOIN plan_pr pp ON pp.pr_status_id = ps.id
         INNER JOIN plan p ON p.uuid = pp.plan_uuid
@@ -1291,6 +1293,7 @@ export function getLinkedPlansByPrUrl(
     plan_uuid: string;
     plan_id: number;
     title: string | null;
+    branch: string | null;
   }>;
 
   const linkedPlans = new Map<string, LinkedPlanSummary[]>();
@@ -1303,6 +1306,7 @@ export function getLinkedPlansByPrUrl(
       planUuid: row.plan_uuid,
       planId: row.plan_id,
       title: row.title,
+      branch: row.branch,
     });
   }
 

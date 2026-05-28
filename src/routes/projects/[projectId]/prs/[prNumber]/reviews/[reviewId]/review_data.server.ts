@@ -26,6 +26,7 @@ export interface ReviewDetailData {
   review: ReviewRow;
   issues: ReviewIssueRow[];
   submissions: PrReviewSubmissionRow[];
+  currentBranch: string | null;
   currentHeadSha: string | null;
   linkedPlanUuid: string | null;
   linkedPlans: LinkedPlanSummary[];
@@ -78,6 +79,7 @@ export function getReviewDetailData(db: Database, params: ReviewDataParams): Rev
   const linkedPlanUuid = linkedPlans.length === 1 ? (linkedPlans[0]?.planUuid ?? null) : null;
 
   const prStatus = getPrStatusByUrl(db, prUrl, { includeReviewThreads: true });
+  const currentBranch = prStatus?.status.head_branch ?? null;
   const currentHeadSha = prStatus?.status.head_sha ?? null;
   const reviewThreads = prStatus?.reviewThreads ?? [];
 
@@ -85,6 +87,7 @@ export function getReviewDetailData(db: Database, params: ReviewDataParams): Rev
     review,
     issues,
     submissions,
+    currentBranch,
     currentHeadSha,
     linkedPlanUuid,
     linkedPlans,

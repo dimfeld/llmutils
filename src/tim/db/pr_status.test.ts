@@ -1444,11 +1444,11 @@ describe('tim db/pr_status', () => {
     ]);
 
     expect(links.get('https://github.com/example/repo/pull/401')).toEqual([
-      { planUuid: 'plan-1', planId: 1, title: 'Plan 1' },
-      { planUuid: 'plan-2', planId: 2, title: 'Plan 2' },
+      { planUuid: 'plan-1', planId: 1, title: 'Plan 1', branch: null },
+      { planUuid: 'plan-2', planId: 2, title: 'Plan 2', branch: null },
     ]);
     expect(links.get('https://github.com/example/repo/pull/402')).toEqual([
-      { planUuid: 'plan-2', planId: 2, title: 'Plan 2' },
+      { planUuid: 'plan-2', planId: 2, title: 'Plan 2', branch: null },
     ]);
     expect(links.has('https://github.com/example/repo/issues/999')).toBe(false);
   });
@@ -1490,7 +1490,7 @@ describe('tim db/pr_status', () => {
     linkPlanToPr(db, 'plan-1', pr.status.id, 'auto');
 
     expect(getLinkedPlansByPrUrl(db, [pr.status.pr_url]).get(pr.status.pr_url)).toEqual([
-      { planUuid: 'plan-1', planId: 1, title: 'Plan 1' },
+      { planUuid: 'plan-1', planId: 1, title: 'Plan 1', branch: null },
     ]);
   });
 

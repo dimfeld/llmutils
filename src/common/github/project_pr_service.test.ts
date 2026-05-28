@@ -207,7 +207,7 @@ describe('common/github/project_pr_service', () => {
       getLinkedPlansByPrUrl(db, ['https://github.com/example/repo/pull/11']).get(
         'https://github.com/example/repo/pull/11'
       )
-    ).toEqual([{ planUuid: 'plan-1', planId: 1, title: 'Plan 1' }]);
+    ).toEqual([{ planUuid: 'plan-1', planId: 1, title: 'Plan 1', branch: 'feature/one' }]);
   });
 
   test('refreshProjectPrs persists diff stats from full status fetch', async () => {

@@ -35,7 +35,7 @@ export const load: PageServerLoad = async ({ params }) => {
   return {
     review,
     issues,
-    plan: { uuid: plan.uuid, planId: plan.plan_id, title: plan.title },
+    plan: { uuid: plan.uuid, planId: plan.plan_id, title: plan.title, branch: plan.branch },
     projectId: routeProjectId,
   };
 };

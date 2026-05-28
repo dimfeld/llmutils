@@ -15,6 +15,7 @@
   submissions={data.submissions}
   linkedPlans={data.linkedPlans}
   linkedPlanUuid={data.linkedPlanUuid}
+  currentBranch={data.currentBranch}
   currentHeadSha={data.currentHeadSha}
   reviewThreads={data.reviewThreads}
   {projectId}

@@ -69,6 +69,7 @@
     submissions?: PrReviewSubmissionRow[];
     linkedPlans?: LinkedPlanSummary[];
     linkedPlanUuid?: string | null;
+    currentBranch?: string | null;
     currentHeadSha?: string | null;
     reviewThreads?: PrReviewThreadDetail[];
   }
@@ -83,6 +84,7 @@
     submissions: submissionsInput = [],
     linkedPlans = [],
     linkedPlanUuid: linkedPlanUuidInput = null,
+    currentBranch = null,
     currentHeadSha = null,
     reviewThreads = [],
   }: Props = $props();
@@ -154,6 +156,13 @@
   let unresolvedCount = $derived(issues.filter((i) => i.severity !== 'note' && !i.resolved).length);
   let actionableIssueCount = $derived(issues.filter((i) => i.severity !== 'note').length);
   let linkedPlanUuid = $derived(linkedPlanUuidInput);
+  let linkedPlanBranch = $derived.by(() => {
+    if (!linkedPlanUuid) {
+      return linkedPlans.length === 1 ? (linkedPlans[0]?.branch ?? null) : null;
+    }
+    return linkedPlans.find((plan) => plan.planUuid === linkedPlanUuid)?.branch ?? null;
+  });
+  let displayBranch = $derived(currentBranch ?? review.branch ?? linkedPlanBranch);
 
   let reviewGuideText = $derived(review.review_guide ?? '');
   let parsedGuide = $derived(parseMarkdownWithDiffsAndToc(reviewGuideText));
@@ -1066,12 +1075,12 @@
             </button>
           </div>
         </div>
-        {#if review.branch}
+        {#if displayBranch}
           <div class="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
-            <span class="min-w-0 truncate">{review.branch}</span>
+            <span class="min-w-0 truncate">{displayBranch}</span>
             <CopyButton
-              text={review.branch ?? ''}
-              disabled={!review.branch}
+              text={displayBranch ?? ''}
+              disabled={!displayBranch}
               mode="icon"
               iconClass="size-3"
               className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"

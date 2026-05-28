@@ -36,7 +36,7 @@ export default defineConfig({
   server: {
     port: process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 8124,
     watch: {
-      ignored: ['tasks/**', '.jj/**'],
+      ignored: ['tasks/**', '.jj/**', '.svelte-kit/**', '**/*.test.ts'],
     },
   },
   test: {

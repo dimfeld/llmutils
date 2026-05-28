@@ -110,7 +110,9 @@ describe('ReviewGuideView', () => {
         backHref: '/projects/1/plans/plan-uuid-1',
         backLabel: 'Back to plan #7001',
         allowGithubSubmission: false,
-        linkedPlans: [{ planUuid: 'plan-uuid-1', planId: 7001, title: 'Plan review' }],
+        linkedPlans: [
+          { planUuid: 'plan-uuid-1', planId: 7001, title: 'Plan review', branch: null },
+        ],
         linkedPlanUuid: 'plan-uuid-1',
         submissions: [makeSubmission()],
       },
@@ -150,7 +152,9 @@ describe('ReviewGuideView', () => {
         backHref: '/projects/1/prs/1',
         backLabel: 'Back to PR #1',
         allowGithubSubmission: true,
-        linkedPlans: [{ planUuid: 'plan-uuid-1', planId: 7001, title: 'Plan review' }],
+        linkedPlans: [
+          { planUuid: 'plan-uuid-1', planId: 7001, title: 'Plan review', branch: null },
+        ],
         linkedPlanUuid: 'plan-uuid-1',
         submissions: [],
       },
@@ -192,7 +196,9 @@ describe('ReviewGuideView', () => {
         backHref: '/projects/1/prs/1',
         backLabel: 'Back to PR #1',
         allowGithubSubmission: true,
-        linkedPlans: [{ planUuid: 'plan-uuid-1', planId: 7001, title: 'Plan review' }],
+        linkedPlans: [
+          { planUuid: 'plan-uuid-1', planId: 7001, title: 'Plan review', branch: null },
+        ],
         linkedPlanUuid: 'plan-uuid-1',
         submissions: [makeSubmission()],
       },
@@ -205,6 +211,58 @@ describe('ReviewGuideView', () => {
     expect(body).toContain('Mark resolved');
     expect(body).toContain('Edit');
     expect(body).toContain('Delete issue');
+  });
+
+  test('prefers the current PR branch over the stored review branch in the header', () => {
+    const { body } = renderWithTooltipProvider(ReviewGuideView, {
+      props: {
+        review: makeReview({
+          pr_url: 'https://github.com/example/repo/pull/1',
+          branch: 'main',
+          base_branch: 'main',
+          plan_uuid: null,
+        }),
+        issues: [],
+        projectId: '1',
+        backHref: '/projects/1/prs/1',
+        backLabel: 'Back to PR #1',
+        allowGithubSubmission: true,
+        currentBranch: 'feature/current-pr',
+      },
+    });
+
+    expect(body).toContain('feature/current-pr');
+    expect(body).not.toContain('>main</span>');
+    expect(body).toContain('→ main');
+  });
+
+  test('falls back to the linked plan branch for plan-created review guides', () => {
+    const { body } = renderWithTooltipProvider(ReviewGuideView, {
+      props: {
+        review: makeReview({
+          branch: null,
+          base_branch: 'main',
+        }),
+        issues: [],
+        projectId: '1',
+        backHref: '/projects/1/plans/plan-uuid-1',
+        backLabel: 'Back to plan #7001',
+        allowGithubSubmission: false,
+        linkedPlans: [
+          {
+            planUuid: 'plan-uuid-1',
+            planId: 7001,
+            title: 'Plan review',
+            branch: 'feature/plan-review',
+          },
+        ],
+        linkedPlanUuid: 'plan-uuid-1',
+      },
+    });
+
+    expect(body).toContain('feature/plan-review');
+    expect(body).toContain('→ main');
+    expect(body).not.toContain('Base:');
   });
 
   test('renders existing PR review threads below matching guide diffs without nested diff hunks', () => {

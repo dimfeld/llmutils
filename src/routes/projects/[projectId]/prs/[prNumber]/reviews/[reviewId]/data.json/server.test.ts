@@ -111,6 +111,7 @@ describe('/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/data.json GET'
       review: { id: number; review_guide: string | null };
       issues: Array<{ content: string; file: string | null }>;
       submissions: Array<{ githubReviewId: number | null; body: string | null }>;
+      currentBranch: string | null;
       currentHeadSha: string | null;
       linkedPlans: unknown[];
       linkedPlanUuid: string | null;
@@ -124,6 +125,7 @@ describe('/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/data.json GET'
     expect(body.submissions).toMatchObject([
       { githubReviewId: 12345, body: 'Submitted review body' },
     ]);
+    expect(body.currentBranch).toBe('feature/data-json');
     expect(body.currentHeadSha).toBe('head-sha-current');
     expect(body.linkedPlans).toEqual([]);
     expect(body.linkedPlanUuid).toBeNull();
