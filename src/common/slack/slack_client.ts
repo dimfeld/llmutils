@@ -157,15 +157,19 @@ function formatApprovedDigestLine(entry: DailyDigestEntry): string {
   return `• ${formatPrLink(entry)} by ${formatPlainLogin(entry.author)}`;
 }
 
-function formatWaitingReviewer(reviewer: DailyDigestReviewer): string {
-  return `${formatPlainLogin(reviewer.login)} (${escapeSlackMrkdwnText(reviewer.waitedLabel)})`;
-}
-
 function formatStaleDigestLine(entry: DailyDigestEntry): string {
   const reviewers = entry.reviewers ?? [];
-  const waitingText =
-    reviewers.length > 0 ? reviewers.map(formatWaitingReviewer).join(', ') : '_reviewer unknown_';
-  return `• ${formatPrLink(entry)} by ${formatPlainLogin(entry.author)} — waiting on ${waitingText}`;
+  const author = formatPlainLogin(entry.author);
+  if (reviewers.length === 0) {
+    return `• ${formatPrLink(entry)} by ${author} — waiting on _reviewer unknown_`;
+  }
+
+  const reviewerLogins = reviewers.map((reviewer) => formatPlainLogin(reviewer.login)).join(', ');
+  // Use a single waited time across all reviewers: the shortest (most recently requested) wait.
+  const shortestWait = reviewers.reduce((shortest, reviewer) =>
+    reviewer.waitedMs < shortest.waitedMs ? reviewer : shortest
+  );
+  return `• ${formatPrLink(entry)} by ${author} — waiting on ${reviewerLogins} (${escapeSlackMrkdwnText(shortestWait.waitedLabel)})`;
 }
 
 function buildReviewRequestedPullsUrl(repoFullName: string): string {

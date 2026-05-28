@@ -378,7 +378,7 @@ describe('common/slack/slack_client', () => {
       expect(blocks).not.toContain('<@');
     });
 
-    test('lists all waiting reviewers as plain logins with waited labels', () => {
+    test('lists all waiting reviewers as plain logins with a single shortest waited label', () => {
       const payload = buildDailyDigestSlackPayload(
         '#reviews',
         'octocat/hello-world',
@@ -386,8 +386,9 @@ describe('common/slack/slack_client', () => {
       );
       const staleText = sectionText(payload.blocks[3]);
 
-      expect(staleText).toContain('`carol` (25 hours)');
-      expect(staleText).toContain('`dave` (2 days)');
+      // carol (25 hours) is shorter than dave (2 days), so the single time uses carol's label.
+      expect(staleText).toContain('`carol`, `dave` (25 hours)');
+      expect(staleText).not.toContain('2 days');
     });
 
     test('renders both sections when different PRs are approved and awaiting review', () => {
@@ -427,6 +428,7 @@ describe('common/slack/slack_client', () => {
       );
       expect(staleText).toContain('<https://github.com/octocat/hello-world/pull/10|Needs review>');
       expect(staleText).toContain('`bob` (25 hours)');
+      expect(staleText).toContain('— waiting on `bob` (25 hours)');
       expect(serializedBlocks(payload.blocks)).not.toContain('<@');
     });
 
