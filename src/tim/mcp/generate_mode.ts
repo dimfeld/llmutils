@@ -77,10 +77,11 @@ export interface GenerateModeRegistrationContext {
   issueDocPaths?: string[];
 }
 
+// Much of this interview guidance is adapted from Matt Pocock's grill-me and grill-with-docs skills.
 const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Interview your human partner directly and conversationally until you reach a shared understanding of every important aspect of the plan. Do not use AskUserQuestion, approval-question flows, or similar questionnaire-style tools for this phase; ask the user in natural language and wait for their reply. As you figure things out, update the details in the plan file if necessary. Ask as many questions as you need to figure things out, since it improves the implementation quality.
 
 Challenge against the glossary
-When the user uses a term that conflicts with the existing language in CONTEXT.md, call it out immediately. "Your glossary defines 'cancellation' as X, but you seem to mean Y — which is it?"
+When the user uses a term that conflicts with the existing language in CONTEXT.md or elsewhere, call it out immediately. "Your glossary defines 'cancellation' as X, but you seem to mean Y — which is it?"
 
 Sharpen fuzzy language
 When the user uses vague or overloaded terms, propose a precise canonical term. "You're saying 'account' — do you mean the Customer or the User? Those are different things."
