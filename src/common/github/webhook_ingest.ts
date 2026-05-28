@@ -8,6 +8,7 @@ import {
   fetchAndUpdatePrMergeableStatus,
   fetchAndUpdatePrReviewThreads,
 } from './pr_status_service.js';
+import { tryCanonicalizePrUrl } from './identifiers.js';
 import {
   handleCheckRunEvent,
   handlePullRequestEvent,
@@ -59,6 +60,72 @@ function isMergedPrPayload(payload: unknown): payload is {
   return typeof mergedAt === 'string' && state === 'closed';
 }
 
+function parseCanonicalPlanPrUrls(value: string | null): string[] {
+  if (!value) {
+    return [];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [];
+  }
+
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  const urls = new Set<string>();
+  for (const item of parsed) {
+    if (typeof item !== 'string') {
+      continue;
+    }
+
+    const canonicalUrl = tryCanonicalizePrUrl(item);
+    if (canonicalUrl !== null) {
+      urls.add(canonicalUrl);
+    }
+  }
+
+  return [...urls];
+}
+
+function getPlanUuidsLinkedToPr(
+  db: Database,
+  projectId: number,
+  prStatusId: number,
+  prUrl: string
+): string[] {
+  const linkedPlanUuids = new Set<string>();
+  const linkedPlanRows = db
+    .prepare(
+      `
+      SELECT DISTINCT plan_uuid
+      FROM plan_pr
+      WHERE pr_status_id = ?
+      ORDER BY plan_uuid
+    `
+    )
+    .all(prStatusId) as Array<{ plan_uuid: string }>;
+
+  for (const { plan_uuid: planUuid } of linkedPlanRows) {
+    linkedPlanUuids.add(planUuid);
+  }
+
+  for (const planRow of getPlansByProject(db, projectId)) {
+    if (linkedPlanUuids.has(planRow.uuid)) {
+      continue;
+    }
+
+    if (parseCanonicalPlanPrUrls(planRow.pull_request).includes(prUrl)) {
+      linkedPlanUuids.add(planRow.uuid);
+    }
+  }
+
+  return [...linkedPlanUuids].sort();
+}
+
 async function autoCompleteMergedLinkedPlans(
   db: Database,
   owner: string,
@@ -75,18 +142,9 @@ async function autoCompleteMergedLinkedPlans(
     return;
   }
 
-  const linkedPlanRows = db
-    .prepare(
-      `
-      SELECT DISTINCT plan_uuid
-      FROM plan_pr
-      WHERE pr_status_id = ?
-      ORDER BY plan_uuid
-    `
-    )
-    .all(prStatus.id) as Array<{ plan_uuid: string }>;
+  const linkedPlanUuids = getPlanUuidsLinkedToPr(db, project.id, prStatus.id, prStatus.pr_url);
 
-  if (linkedPlanRows.length === 0) {
+  if (linkedPlanUuids.length === 0) {
     return;
   }
 
@@ -96,7 +154,7 @@ async function autoCompleteMergedLinkedPlans(
   const completedParents = new Set<number>();
   const nowIso = new Date().toISOString();
 
-  for (const { plan_uuid: planUuid } of linkedPlanRows) {
+  for (const planUuid of linkedPlanUuids) {
     const planRow = getPlanByUuid(db, planUuid);
     if (!planRow || (planRow.status !== 'needs_review' && planRow.status !== 'reviewed')) {
       continue;
@@ -159,18 +217,9 @@ async function applyDraftReadyStatusToLinkedPlans(
     return;
   }
 
-  const linkedPlanRows = db
-    .prepare(
-      `
-      SELECT DISTINCT plan_uuid
-      FROM plan_pr
-      WHERE pr_status_id = ?
-      ORDER BY plan_uuid
-    `
-    )
-    .all(prStatus.id) as Array<{ plan_uuid: string }>;
+  const linkedPlanUuids = getPlanUuidsLinkedToPr(db, project.id, prStatus.id, prStatus.pr_url);
 
-  if (linkedPlanRows.length === 0) {
+  if (linkedPlanUuids.length === 0) {
     return;
   }
 
@@ -181,7 +230,7 @@ async function applyDraftReadyStatusToLinkedPlans(
   const sourceStatus = transition === 'became_ready' ? 'needs_review' : 'reviewed';
   const targetStatus = transition === 'became_ready' ? 'reviewed' : 'needs_review';
 
-  for (const { plan_uuid: planUuid } of linkedPlanRows) {
+  for (const planUuid of linkedPlanUuids) {
     const planRow = getPlanByUuid(db, planUuid);
     if (!planRow || planRow.status !== sourceStatus) {
       continue;

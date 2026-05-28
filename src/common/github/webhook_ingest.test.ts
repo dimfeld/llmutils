@@ -511,6 +511,45 @@ describe('common/github/webhook_ingest', () => {
     }
   });
 
+  test('ingestWebhookEvents moves explicitly linked needs_review plans to reviewed without a plan_pr row', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/74',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 74,
+      title: 'Draft PR',
+      state: 'open',
+      draft: true,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'plan-ready-explicit-url',
+      planId: 74,
+      title: 'Ready explicit URL',
+      branch: 'feature/different-branch-name',
+      filename: '74.plan.md',
+      status: 'needs_review',
+      pullRequest: ['https://github.com/example/repo/pull/74'],
+    });
+
+    enqueuePullRequestEvent({
+      id: 74,
+      deliveryId: 'delivery-ready-explicit-url-transition',
+      action: 'ready_for_review',
+      prNumber: 74,
+      title: 'Draft PR',
+      draft: false,
+      headRef: 'feature/pr-branch',
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(getPlanByUuid(db, 'plan-ready-explicit-url')?.status).toBe('reviewed');
+  });
+
   test('ingestWebhookEvents moves linked reviewed plans back to needs_review when a PR becomes draft', async () => {
     const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
     const pr = upsertPrStatus(db, {
