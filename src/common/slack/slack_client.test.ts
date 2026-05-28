@@ -331,10 +331,14 @@ describe('common/slack/slack_client', () => {
         'section',
         'divider',
         'section',
+        'section',
       ]);
       expect(sectionText(payload.blocks[0])).toBe('*Daily PR digest — octocat/hello-world*');
       expect(sectionText(payload.blocks[1])).toContain('*Approved, not yet merged*');
       expect(sectionText(payload.blocks[3])).toContain('*Awaiting review for > 1 day*');
+      expect(sectionText(payload.blocks[4])).toBe(
+        '<https://github.com/octocat/hello-world/pulls?q=is%3Apr+is%3Aopen+user-review-requested%3A%40me|View all PRs awaiting your review>'
+      );
     });
 
     test('omits divider and stale section when only approved bucket is populated', () => {
@@ -343,7 +347,7 @@ describe('common/slack/slack_client', () => {
         staleAwaitingReview: [],
       });
 
-      expect(payload.blocks.map((block) => block.type)).toEqual(['section', 'section']);
+      expect(payload.blocks.map((block) => block.type)).toEqual(['section', 'section', 'section']);
       expect(serializedBlocks(payload.blocks)).toContain('Approved, not yet merged');
       expect(serializedBlocks(payload.blocks)).not.toContain('Awaiting review');
     });
@@ -354,7 +358,7 @@ describe('common/slack/slack_client', () => {
         staleAwaitingReview: digestBothBuckets.staleAwaitingReview,
       });
 
-      expect(payload.blocks.map((block) => block.type)).toEqual(['section', 'section']);
+      expect(payload.blocks.map((block) => block.type)).toEqual(['section', 'section', 'section']);
       expect(serializedBlocks(payload.blocks)).not.toContain('Approved, not yet merged');
       expect(serializedBlocks(payload.blocks)).toContain('Awaiting review');
     });
@@ -415,6 +419,7 @@ describe('common/slack/slack_client', () => {
         'section',
         'section',
         'divider',
+        'section',
         'section',
       ]);
       expect(approvedText).toContain(

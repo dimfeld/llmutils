@@ -185,7 +185,7 @@ describe('lib/server/slack_notifier', () => {
       await runSlackNotifierOnce(db, buildConfig(), { sender, debounceMs: 0 });
 
       expect(sent).toHaveLength(1);
-      expect(sent[0].payload.blocks[0].text.text).toContain('*Changes:* 3 files changed (+42/-17)');
+      expect(sent[0].payload.blocks[0].text.text).toContain('*Changes:* 3 files (+42/-17)');
     });
 
     test('batching: both rows marked notified after single send', async () => {

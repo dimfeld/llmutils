@@ -168,6 +168,15 @@ function formatStaleDigestLine(entry: DailyDigestEntry): string {
   return `• ${formatPrLink(entry)} by ${formatPlainLogin(entry.author)} — waiting on ${waitingText}`;
 }
 
+function buildReviewRequestedPullsUrl(repoFullName: string): string {
+  const [owner, repo] = repoFullName.split('/', 2);
+  const encodedRepoFullName =
+    owner && repo
+      ? `${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
+      : encodeURIComponent(repoFullName);
+  return `https://github.com/${encodedRepoFullName}/pulls?q=is%3Apr+is%3Aopen+user-review-requested%3A%40me`;
+}
+
 /**
  * Slack rejects a section block whose mrkdwn text exceeds 3000 characters with `invalid_blocks`.
  * Stay comfortably under that so a busy repo's digest still posts.
@@ -279,6 +288,14 @@ export function buildDailyDigestSlackPayload(
       )
     );
   }
+
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `<${buildReviewRequestedPullsUrl(repoFullName)}|View all PRs awaiting your review>`,
+    },
+  });
 
   return {
     channel,
