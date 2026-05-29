@@ -115,7 +115,7 @@ export type Message =
       session_id: string;
     }
 
-  // Thinking token usage update (currently ignored)
+  // Thinking token usage update
   | {
       type: 'system';
       subtype: 'thinking_tokens';
@@ -434,8 +434,15 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
       },
     });
   } else if (message.type === 'system' && message.subtype === 'thinking_tokens') {
-    // Ignore thinking_tokens messages for now
-    return { type: '' };
+    const tokens = message.estimated_tokens;
+    return withMessage({
+      type: message.type,
+      structured: {
+        type: 'llm_status',
+        timestamp: timestamp(),
+        status: tokens != null ? `Thinking... (${tokens} tokens)` : 'Thinking...',
+      },
+    });
   } else if (message.type === 'system' && message.subtype === 'compact_boundary') {
     return withMessage({
       type: message.type,
