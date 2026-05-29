@@ -93,8 +93,8 @@ describe('ReviewIssueCard', () => {
   });
 
   test.each([
-    ['claude-code', 'Claude Code'],
-    ['codex-cli', 'Codex CLI'],
+    ['claude-code', 'Claude'],
+    ['codex-cli', 'Codex'],
     ['combined', 'Combined'],
   ] as const)('shows source badge for %s issues', (source, label) => {
     const issue = makeIssue({ source });

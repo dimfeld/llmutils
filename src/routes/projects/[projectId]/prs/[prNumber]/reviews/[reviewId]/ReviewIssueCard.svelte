@@ -114,9 +114,9 @@
   function formatSource(source: ReviewIssueSource): string {
     switch (source) {
       case 'claude-code':
-        return 'Claude Code';
+        return 'Claude';
       case 'codex-cli':
-        return 'Codex CLI';
+        return 'Codex';
       case 'combined':
         return 'Combined';
     }
