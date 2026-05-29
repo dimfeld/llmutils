@@ -48,6 +48,17 @@ describe('ReviewIssueCard', () => {
     expect(body).toContain('Missing null check on user input');
   });
 
+  test('renders issue content and suggestion with whitespace-pre-wrap so newlines are visible', () => {
+    const issue = makeIssue({
+      content: 'line one\nline two',
+      suggestion: 'first step\nsecond step',
+    });
+    const { body } = render(ReviewIssueCard, { props: defaultProps(issue) });
+    expect(body).toContain('line one\nline two');
+    expect(body).toContain('first step\nsecond step');
+    expect(body).toContain('whitespace-pre-wrap');
+  });
+
   test('shows Edit button in expanded view (unresolved issue starts expanded)', () => {
     const issue = makeIssue({ resolved: 0 });
     const { body } = render(ReviewIssueCard, { props: defaultProps(issue) });

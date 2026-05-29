@@ -218,9 +218,9 @@
         <ReviewIssueEditor {issue} {saving} onSave={handleSave} onCancel={handleCancel} />
       {:else}
         <div class="space-y-1">
-          <p class="text-foreground {isNote ? 'whitespace-pre-wrap' : ''}">{issue.content}</p>
+          <p class="whitespace-pre-wrap text-foreground">{issue.content}</p>
           {#if !isNote && issue.suggestion}
-            <p class="text-muted-foreground">
+            <p class="whitespace-pre-wrap text-muted-foreground">
               <span class="font-medium text-foreground">Suggestion:</span>
               {issue.suggestion}
             </p>
