@@ -270,14 +270,6 @@
               onCopyError={(message) => onCopyError?.(message)}
             />
 
-            {#if issue.source}
-              <span
-                class="ml-auto inline-flex items-center rounded bg-violet-100 px-2 py-1 text-[10px] font-medium text-violet-800 @sm:text-xs dark:bg-violet-900/30 dark:text-violet-300"
-                title="Issue source"
-              >
-                {formatSource(issue.source)}
-              </span>
-            {/if}
           </div>
 
           <div class="flex flex-wrap items-center gap-1.5">
@@ -330,6 +322,15 @@
               <Trash class="size-3 @sm:size-3.5" />
               Delete issue
             </button>
+
+            {#if issue.source}
+              <span
+                class="ml-auto inline-flex items-center rounded bg-violet-100 px-2 py-1 text-[10px] font-medium text-violet-800 @sm:text-xs dark:bg-violet-900/30 dark:text-violet-300"
+                title="Issue source"
+              >
+                {formatSource(issue.source)}
+              </span>
+            {/if}
           </div>
         </div>
       {/if}
