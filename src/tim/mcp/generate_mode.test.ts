@@ -199,6 +199,23 @@ describe('tim MCP generate mode helpers', () => {
     expect(messageText).toContain('Use phased rollouts and keep scope small.');
   });
 
+  test('loadResearchPrompt includes Linear child issue guidance for Linear-linked plans', async () => {
+    await writePlanFile(planPath, {
+      ...basePlan,
+      issue: ['https://linear.app/acme/issue/df-3445/split-linked-child-issues'],
+    });
+
+    const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).toContain('linked to Linear issue DF-3445');
+    expect(messageText).toContain('linear issue view DF-3445');
+    expect(messageText).toContain(
+      'linear issue create --no-interactive --state Todo --parent DF-3445 --project "<project name>"'
+    );
+    expect(messageText).toContain('tim set <child-plan-id> --issue "<new-issue-url>"');
+  });
+
   test('loadQuestionsPrompt encourages iterative questioning', async () => {
     const prompt = await loadQuestionsPrompt({ plan: basePlan.id }, context);
     const message = prompt.messages[0]?.content;
@@ -231,6 +248,23 @@ describe('tim MCP generate mode helpers', () => {
 
     expect(messageText).toContain('# Planning Instructions');
     expect(messageText).toContain('Prefer small, composable steps.');
+  });
+
+  test('loadGeneratePrompt includes Linear child issue guidance for Linear-linked plans', async () => {
+    await writePlanFile(planPath, {
+      ...basePlan,
+      issue: ['https://linear.app/acme/issue/DF-3445/split-linked-child-issues'],
+    });
+
+    const prompt = await loadGeneratePrompt({ plan: basePlan.id }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).toContain('linked to Linear issue DF-3445');
+    expect(messageText).toContain('linear issue view DF-3445');
+    expect(messageText).toContain(
+      'linear issue create --no-interactive --state Todo --parent DF-3445 --project "<project name>"'
+    );
+    expect(messageText).toContain('tim set <child-plan-id> --issue "<new-issue-url>"');
   });
 
   describe('issueDocPaths — Linked Issue Documents section', () => {

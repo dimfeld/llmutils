@@ -246,6 +246,28 @@ These document files are temporary and live in a git-excluded cache under .tim/i
   return `${contextBlock}\n\n${linkedIssueDocumentsContext}`;
 }
 
+function extractLinearIssueKey(issueUrl: string): string | null {
+  const match = issueUrl.match(
+    /^https:\/\/linear\.app\/[^/]+\/issue\/([A-Z][A-Z0-9]*-\d+)(?:\/[^/]*)?$/i
+  );
+
+  return match ? match[1].toUpperCase() : null;
+}
+
+function buildLinearChildIssueGuidance(plan: { issue?: string[] }): string {
+  const parentIssueKey = plan.issue?.map(extractLinearIssueKey).find((key) => key !== null);
+
+  if (!parentIssueKey) {
+    return '';
+  }
+
+  return `
+- Because the parent plan is linked to Linear issue ${parentIssueKey}, create and link a Linear child issue for each child tim plan after that child plan has been created and populated:
+  1. Find the parent's Linear project once with \`linear issue view ${parentIssueKey}\`; the view output shows \`**Project:** <name>\`.
+  2. Create each child issue with project + parent in one command: \`linear issue create --no-interactive --state Todo --parent ${parentIssueKey} --project "<project name>" --title "<title>" --description "<short description>"\`. The last line of output is the new issue URL.
+  3. Link the child tim plan to that new issue URL with \`tim set <child-plan-id> --issue "<new-issue-url>"\`.`;
+}
+
 export async function loadResearchPrompt(
   args: { plan?: string | number; allowMultiplePlans?: unknown },
   context: GenerateModeRegistrationContext
@@ -266,6 +288,7 @@ export async function loadResearchPrompt(
   }
 
   const parentPlanLabel = parentPlanId !== undefined ? String(parentPlanId) : 'the current plan ID';
+  const linearChildIssueGuidance = buildLinearChildIssueGuidance(plan);
   const multiplePlansGuidance = allowMultiplePlans
     ? `
 
@@ -293,7 +316,7 @@ If the user approves the split, create each child plan using 'tim add' (see the 
 - For child plans intended to ship as **stacked PRs** on top of an earlier sibling, also pass \`--base-plan <previous-sibling-plan-id>\` so the new plan's branch is based on its predecessor's branch instead of trunk. The first plan in the stack does not need \`--base-plan\` (it branches from trunk). \`--base-plan\` and \`--depends-on\` are independent: the former stacks the branch, the latter orders the work; for stacked PRs you typically want both pointing at the same predecessor.
 - For each child plan, use a subagent to copy the relevant details and implementation guidance from the contents of plan ${parentPlanLabel} into the child plan's file, and then use tim update-plan-tasks to add tasks to the child plan.
 - Document the stacking/dependency relationship in each child plan's details section
-- Each child plan should be independently implementable and testable, and should deliver real, demonstrable functionality.
+- Each child plan should be independently implementable and testable, and should deliver real, demonstrable functionality.${linearChildIssueGuidance}
 
 Only keep a single plan when the work is genuinely tiny or tightly coupled enough that splitting would add coordination overhead without improving clarity.`
     : '';
@@ -441,11 +464,13 @@ export async function loadGeneratePrompt(
 ) {
   let contextBlock = '';
   let parentPlanId: number | undefined;
+  let currentPlan: Awaited<ReturnType<typeof resolvePlan>>['plan'] | undefined;
   if (args.plan) {
     const { plan, contextBlock: builtContextBlock } = await buildGeneratePromptContext(
       args.plan ?? '',
       context
     );
+    currentPlan = plan;
     contextBlock = builtContextBlock;
     parentPlanId = plan.id;
   }
@@ -453,6 +478,7 @@ export async function loadGeneratePrompt(
   const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans, true);
 
   const parentPlanLabel = parentPlanId !== undefined ? String(parentPlanId) : 'the current plan ID';
+  const linearChildIssueGuidance = currentPlan ? buildLinearChildIssueGuidance(currentPlan) : '';
   const multiplePlansGuidance = allowMultiplePlans
     ? `
 
@@ -477,7 +503,7 @@ If the user approves the split, create each child plan using 'tim add' (see the 
 - For child plans intended to ship as **stacked PRs** on top of an earlier sibling, also pass \`--base-plan <previous-sibling-plan-id>\` so the new plan's branch is based on its predecessor's branch instead of trunk. The first plan in the stack does not need \`--base-plan\` (it branches from trunk). \`--base-plan\` and \`--depends-on\` are independent: the former stacks the branch, the latter orders the work; for stacked PRs you typically want both pointing at the same predecessor.
 - For each child plan, use a subagent to copy the relevant details and implementation guidance from the contents of plan ${parentPlanLabel} into the child plan's file, and then use tim update-plan-tasks to add tasks to the child plan.
 - Document the stacking/dependency relationship in each child plan's details section
-- Each child plan should be independently implementable and testable, and should deliver real, demonstrable functionality that works end-to-end
+- Each child plan should be independently implementable and testable, and should deliver real, demonstrable functionality that works end-to-end${linearChildIssueGuidance}
 
 IMPORTANT: Do NOT split plans purely by architectural layers (frontend/backend, UI/API, client/server) when those layers must ship together to be useful. Each child plan should deliver a complete, working slice that produces real, testable value. (A backend foundation plan followed by stacked UI plans is fine when the foundation is independently useful or the stacking is explicit.)
 
