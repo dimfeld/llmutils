@@ -10,6 +10,7 @@ vi.mock('$lib/remote/session_actions.remote.js', () => ({
   dismissInactiveSessions: vi.fn(),
   dismissSession: vi.fn(),
   endSession: vi.fn(),
+  forceEndSession: vi.fn(),
   openTerminal: vi.fn(),
   sendSessionPromptResponse: vi.fn(),
   sendSessionUserInput: vi.fn(),
@@ -20,6 +21,7 @@ import {
   dismissInactiveSessions,
   dismissSession,
   endSession,
+  forceEndSession,
   openTerminal,
   sendSessionPromptResponse,
   sendSessionUserInput,
@@ -341,6 +343,22 @@ describe('SessionManager remote action wrappers', () => {
     vi.mocked(endSession).mockRejectedValueOnce(new Error('boom'));
 
     await expect(manager.endSession('conn-end')).resolves.toBe(false);
+  });
+
+  test('forceEndSession forwards the remote payload and returns true on success', async () => {
+    const manager = new SessionManager();
+
+    await expect(manager.forceEndSession('conn-force-end')).resolves.toBe(true);
+    expect(vi.mocked(forceEndSession)).toHaveBeenCalledWith({
+      connectionId: 'conn-force-end',
+    });
+  });
+
+  test('forceEndSession returns false when the remote command throws', async () => {
+    const manager = new SessionManager();
+    vi.mocked(forceEndSession).mockRejectedValueOnce(new Error('boom'));
+
+    await expect(manager.forceEndSession('conn-force-end')).resolves.toBe(false);
   });
 
   test('dismissInactiveSessions calls the remote command and returns true on success', async () => {

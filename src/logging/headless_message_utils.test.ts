@@ -21,6 +21,7 @@ describe('headless_message_utils', () => {
       'prompt_response',
       'user_input',
       'end_session',
+      'force_end_session',
       'notification_subscribers_changed',
     ]);
   });
@@ -74,6 +75,9 @@ describe('headless_message_utils', () => {
 
     expect(parseHeadlessServerMessage(JSON.stringify({ type: 'end_session' }))).toEqual({
       type: 'end_session',
+    });
+    expect(parseHeadlessServerMessage(JSON.stringify({ type: 'force_end_session' }))).toEqual({
+      type: 'force_end_session',
     });
     expect(
       parseHeadlessServerMessage(

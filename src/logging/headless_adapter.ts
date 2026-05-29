@@ -60,6 +60,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   private pendingPrompts: Map<string, PendingPromptRequest> = new Map();
   private userInputHandler?: (content: string) => void;
   private endSessionHandler?: () => void;
+  private forceEndSessionHandler?: () => void;
   private hasBrowserNotificationSubscribers = false;
 
   constructor(
@@ -221,6 +222,14 @@ export class HeadlessAdapter implements LoggerAdapter {
           this.wrappedAdapter.warn(`Headless end session handler error: ${err as Error}`);
         }
         break;
+      case 'force_end_session':
+        this.rejectAllPending('Session force ended');
+        try {
+          this.forceEndSessionHandler?.();
+        } catch (err) {
+          this.wrappedAdapter.warn(`Headless force end session handler error: ${err as Error}`);
+        }
+        break;
       case 'notification_subscribers_changed':
         this.hasBrowserNotificationSubscribers = message.hasSubscribers;
         break;
@@ -233,6 +242,10 @@ export class HeadlessAdapter implements LoggerAdapter {
 
   setEndSessionHandler(callback: (() => void) | undefined): void {
     this.endSessionHandler = callback;
+  }
+
+  setForceEndSessionHandler(callback: (() => void) | undefined): void {
+    this.forceEndSessionHandler = callback;
   }
 
   waitForPromptResponse(requestId: string): { promise: Promise<unknown>; cancel: () => void } {

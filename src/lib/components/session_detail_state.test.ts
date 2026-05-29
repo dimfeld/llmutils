@@ -2,9 +2,8 @@ import { describe, expect, test, vi } from 'vitest';
 
 import {
   endSessionAndRefreshPlan,
-  hasUsedEndSession,
+  forceEndSessionAndRefreshPlan,
   isPlanPaneCollapsed,
-  markEndSessionUsed,
   togglePlanPane,
 } from './session_detail_state.js';
 
@@ -14,7 +13,6 @@ describe('session_detail_state', () => {
       getSessionState: vi.fn(() => ({
         planPaneCollapsed: true,
         messageDraft: '',
-        endSessionUsed: false,
       })),
     };
 
@@ -27,7 +25,6 @@ describe('session_detail_state', () => {
       getSessionState: vi.fn(() => ({
         planPaneCollapsed: false,
         messageDraft: 'draft',
-        endSessionUsed: false,
       })),
     };
 
@@ -49,29 +46,7 @@ describe('session_detail_state', () => {
     });
   });
 
-  test('tracks whether end session has already been used', () => {
-    const uiState = {
-      getSessionState: vi.fn(() => ({
-        planPaneCollapsed: false,
-        messageDraft: '',
-        endSessionUsed: true,
-      })),
-      setSessionState: vi.fn(),
-    };
-
-    expect(hasUsedEndSession(uiState as never, 'conn-3')).toBe(true);
-    expect(uiState.getSessionState).toHaveBeenCalledWith('conn-3');
-
-    markEndSessionUsed(uiState as never, 'conn-3');
-    expect(uiState.setSessionState).toHaveBeenCalledWith('conn-3', {
-      endSessionUsed: true,
-    });
-  });
-
   test('ends the session and invalidates plan data when shutdown succeeds', async () => {
-    const uiState = {
-      setSessionState: vi.fn(),
-    };
     const sessionManager = {
       endSession: vi.fn(async () => true),
     };
@@ -80,22 +55,16 @@ describe('session_detail_state', () => {
     await expect(
       endSessionAndRefreshPlan({
         connectionId: 'conn-4',
-        endSessionUsed: false,
         invalidateAll,
         sessionManager,
-        uiState: uiState as never,
       })
     ).resolves.toBe(true);
 
     expect(sessionManager.endSession).toHaveBeenCalledWith('conn-4');
-    expect(uiState.setSessionState).toHaveBeenCalledWith('conn-4', { endSessionUsed: true });
     expect(invalidateAll).toHaveBeenCalledTimes(1);
   });
 
   test('skips plan invalidation when ending the session fails', async () => {
-    const uiState = {
-      setSessionState: vi.fn(),
-    };
     const sessionManager = {
       endSession: vi.fn(async () => false),
     };
@@ -104,15 +73,30 @@ describe('session_detail_state', () => {
     await expect(
       endSessionAndRefreshPlan({
         connectionId: 'conn-5',
-        endSessionUsed: true,
         invalidateAll,
         sessionManager,
-        uiState: uiState as never,
       })
     ).resolves.toBe(false);
 
     expect(sessionManager.endSession).toHaveBeenCalledWith('conn-5');
-    expect(uiState.setSessionState).not.toHaveBeenCalled();
     expect(invalidateAll).not.toHaveBeenCalled();
+  });
+
+  test('force ends the session and invalidates plan data when SIGTERM succeeds', async () => {
+    const sessionManager = {
+      forceEndSession: vi.fn(async () => true),
+    };
+    const invalidateAll = vi.fn(async () => {});
+
+    await expect(
+      forceEndSessionAndRefreshPlan({
+        connectionId: 'conn-6',
+        invalidateAll,
+        sessionManager,
+      })
+    ).resolves.toBe(true);
+
+    expect(sessionManager.forceEndSession).toHaveBeenCalledWith('conn-6');
+    expect(invalidateAll).toHaveBeenCalledTimes(1);
   });
 });

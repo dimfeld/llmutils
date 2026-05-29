@@ -7,7 +7,6 @@ const { sendUserInput, uiState } = vi.hoisted(() => ({
     getSessionState: vi.fn((connectionId: string) => ({
       planPaneCollapsed: false,
       messageDraft: connectionId === 'conn-1' ? 'draft one' : '',
-      endSessionUsed: false,
     })),
     setSessionState: vi.fn(),
   },

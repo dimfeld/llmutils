@@ -38,6 +38,7 @@ vi.mock('$lib/server/terminal_control.js', async (importOriginal) => {
 import {
   openTerminal,
   endSession,
+  forceEndSession,
   dismissInactiveSessions,
   dismissSession,
   sendSessionPromptResponse,
@@ -189,6 +190,23 @@ describe('session remote actions', () => {
     expect(sentMessages).toEqual([
       { type: 'notification_subscribers_changed', hasSubscribers: false },
       { type: 'end_session' },
+    ]);
+  });
+
+  test('forceEndSession validates input and forwards force_end_session', async () => {
+    const connectionId = 'conn-force-end';
+    const sentMessages: HeadlessServerMessage[] = [];
+    currentManager.handleWebSocketConnect(connectionId, (message) => {
+      sentMessages.push(message);
+    });
+
+    await expect(invokeCommand(forceEndSession, undefined as never)).rejects.toBeTruthy();
+
+    await invokeCommand(forceEndSession, { connectionId });
+
+    expect(sentMessages).toEqual([
+      { type: 'notification_subscribers_changed', hasSubscribers: false },
+      { type: 'force_end_session' },
     ]);
   });
 

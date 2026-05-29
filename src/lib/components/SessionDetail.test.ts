@@ -11,13 +11,13 @@ const { sessionManager, uiState } = vi.hoisted(() => ({
     activateTerminalPane: vi.fn(),
     openNewTerminal: vi.fn(),
     endSession: vi.fn(),
+    forceEndSession: vi.fn(),
     acknowledgeSessionAttention: vi.fn(),
   },
   uiState: {
     getSessionState: vi.fn(() => ({
       planPaneCollapsed: false,
       messageDraft: '',
-      endSessionUsed: false,
     })),
     setSessionState: vi.fn(),
   },
@@ -95,11 +95,11 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
 describe('SessionDetail', () => {
   beforeEach(() => {
     sessionManager.endSession.mockReset();
+    sessionManager.forceEndSession.mockReset();
     uiState.getSessionState.mockReset();
     uiState.getSessionState.mockReturnValue({
       planPaneCollapsed: false,
       messageDraft: '',
-      endSessionUsed: false,
     });
     uiState.setSessionState.mockReset();
     getPlanAttentionState.mockReset();
@@ -319,7 +319,6 @@ describe('SessionDetail', () => {
     uiState.getSessionState.mockReturnValue({
       planPaneCollapsed: true,
       messageDraft: '',
-      endSessionUsed: false,
     });
     const session = createSession({
       sessionInfo: {

@@ -80,6 +80,11 @@ export interface HeadlessEndSessionServerMessage {
   type: 'end_session';
 }
 
+/** Server→client message: request that the running session receive SIGTERM. */
+export interface HeadlessForceEndSessionServerMessage {
+  type: 'force_end_session';
+}
+
 /** Server→client message: browser notification subscriber status update. */
 export interface HeadlessNotificationSubscribersMessage {
   type: 'notification_subscribers_changed';
@@ -91,4 +96,5 @@ export type HeadlessServerMessage =
   | HeadlessPromptResponseServerMessage
   | HeadlessUserInputServerMessage
   | HeadlessEndSessionServerMessage
+  | HeadlessForceEndSessionServerMessage
   | HeadlessNotificationSubscribersMessage;

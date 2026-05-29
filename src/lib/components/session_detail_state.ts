@@ -2,12 +2,18 @@ import type { UIStateStore } from '$lib/stores/ui_state.svelte.js';
 
 interface EndSessionAndRefreshPlanDeps {
   connectionId: string;
-  endSessionUsed: boolean;
   invalidateAll: () => Promise<void> | void;
   sessionManager: {
     endSession(connectionId: string): Promise<boolean> | boolean;
   };
-  uiState: UIStateStore;
+}
+
+interface ForceEndSessionAndRefreshPlanDeps {
+  connectionId: string;
+  invalidateAll: () => Promise<void> | void;
+  sessionManager: {
+    forceEndSession(connectionId: string): Promise<boolean> | boolean;
+  };
 }
 
 export function isPlanPaneCollapsed(uiState: UIStateStore, connectionId: string): boolean {
@@ -22,28 +28,28 @@ export function togglePlanPane(
   uiState.setSessionState(connectionId, { planPaneCollapsed: !planPaneCollapsed });
 }
 
-export function hasUsedEndSession(uiState: UIStateStore, connectionId: string): boolean {
-  return uiState.getSessionState(connectionId).endSessionUsed;
-}
-
-export function markEndSessionUsed(uiState: UIStateStore, connectionId: string): void {
-  uiState.setSessionState(connectionId, { endSessionUsed: true });
-}
-
 export async function endSessionAndRefreshPlan({
   connectionId,
-  endSessionUsed,
   invalidateAll,
   sessionManager,
-  uiState,
 }: EndSessionAndRefreshPlanDeps): Promise<boolean> {
   const ended = await sessionManager.endSession(connectionId);
   if (!ended) {
     return false;
   }
 
-  if (!endSessionUsed) {
-    markEndSessionUsed(uiState, connectionId);
+  await invalidateAll();
+  return true;
+}
+
+export async function forceEndSessionAndRefreshPlan({
+  connectionId,
+  invalidateAll,
+  sessionManager,
+}: ForceEndSessionAndRefreshPlanDeps): Promise<boolean> {
+  const ended = await sessionManager.forceEndSession(connectionId);
+  if (!ended) {
+    return false;
   }
 
   await invalidateAll();

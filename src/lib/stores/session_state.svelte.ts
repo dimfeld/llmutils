@@ -5,6 +5,7 @@ import {
   dismissInactiveSessions,
   dismissSession,
   endSession as endSessionRemote,
+  forceEndSession as forceEndSessionRemote,
   openTerminal,
   sendSessionPromptResponse,
   sendSessionUserInput,
@@ -418,6 +419,15 @@ export class SessionManager {
   async endSession(connectionId: string): Promise<boolean> {
     try {
       await endSessionRemote({ connectionId });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async forceEndSession(connectionId: string): Promise<boolean> {
+    try {
+      await forceEndSessionRemote({ connectionId });
       return true;
     } catch {
       return false;

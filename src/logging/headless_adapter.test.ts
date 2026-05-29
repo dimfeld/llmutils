@@ -335,11 +335,15 @@ describe('HeadlessAdapter', () => {
 
     let receivedInput: string | undefined;
     let endSessionCount = 0;
+    let forceEndSessionCount = 0;
     adapter.setUserInputHandler((content) => {
       receivedInput = content;
     });
     adapter.setEndSessionHandler(() => {
       endSessionCount += 1;
+    });
+    adapter.setForceEndSessionHandler(() => {
+      forceEndSessionCount += 1;
     });
 
     const prompt = adapter.waitForPromptResponse('req-1');
@@ -359,8 +363,8 @@ describe('HeadlessAdapter', () => {
 
     ws.send(JSON.stringify({ type: 'end_session' } satisfies HeadlessServerMessage));
     await waitFor(() => endSessionCount === 1);
-    ws.send(JSON.stringify({ type: 'end_session' } satisfies HeadlessServerMessage));
-    await waitFor(() => endSessionCount === 2);
+    ws.send(JSON.stringify({ type: 'force_end_session' } satisfies HeadlessServerMessage));
+    await waitFor(() => forceEndSessionCount === 1);
 
     expect(calls).toContainEqual({
       method: 'sendStructured',

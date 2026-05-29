@@ -1615,6 +1615,20 @@ describe('lib/server/session_manager', () => {
     });
   });
 
+  test('forceEndSession delegates to the registered sender', () => {
+    const sender = vi.fn<(message: HeadlessServerMessage) => void>();
+    manager.handleWebSocketConnect('conn-1', sender);
+
+    const ended = manager.forceEndSession('conn-1');
+    const missing = manager.forceEndSession('missing');
+
+    expect(ended).toBe(true);
+    expect(missing).toBe(false);
+    expect(sender).toHaveBeenCalledWith({
+      type: 'force_end_session',
+    });
+  });
+
   test('broadcasts notification subscriber changes to connected agents', () => {
     const senderA = vi.fn<(message: HeadlessServerMessage) => void>();
     const senderB = vi.fn<(message: HeadlessServerMessage) => void>();

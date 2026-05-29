@@ -13,6 +13,7 @@ export const VALID_HEADLESS_SERVER_TYPES = new Set<HeadlessServerMessage['type']
   'prompt_response',
   'user_input',
   'end_session',
+  'force_end_session',
   'notification_subscribers_changed',
 ]);
 
@@ -88,6 +89,8 @@ export function parseHeadlessServerMessage(payload: string): HeadlessServerMessa
       }
       return parsed as unknown as HeadlessServerMessage;
     case 'end_session':
+      return parsed as unknown as HeadlessServerMessage;
+    case 'force_end_session':
       return parsed as unknown as HeadlessServerMessage;
     case 'notification_subscribers_changed':
       if (typeof parsed.hasSubscribers !== 'boolean') {

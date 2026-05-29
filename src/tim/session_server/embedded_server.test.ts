@@ -186,10 +186,11 @@ describe('session_server/embedded_server', () => {
     ws.send(JSON.stringify({ type: 'user_input', content: 'hello' }));
     ws.send(JSON.stringify({ type: 'prompt_response', requestId: 'req-1', value: 'ok' }));
     ws.send(JSON.stringify({ type: 'end_session' }));
+    ws.send(JSON.stringify({ type: 'force_end_session' }));
     ws.send(JSON.stringify({ type: 'invalid_type' }));
     ws.send(JSON.stringify({ type: 'user_input', content: 123 }));
 
-    await waitFor(() => messages.length === 3);
+    await waitFor(() => messages.length === 4);
     expect(messages).toEqual([
       {
         connectionId: connects[0],
@@ -202,6 +203,10 @@ describe('session_server/embedded_server', () => {
       {
         connectionId: connects[0],
         message: { type: 'end_session' },
+      },
+      {
+        connectionId: connects[0],
+        message: { type: 'force_end_session' },
       },
     ]);
 

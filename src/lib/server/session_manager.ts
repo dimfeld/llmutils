@@ -650,6 +650,10 @@ export class SessionManager {
     return this.trySend(connectionId, { type: 'end_session' });
   }
 
+  forceEndSession(connectionId: string): boolean {
+    return this.trySend(connectionId, { type: 'force_end_session' });
+  }
+
   registerSSESubscriber(): void {
     this.sseSubscriberCount += 1;
     if (this.sseSubscriberCount === 1) {
