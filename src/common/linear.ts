@@ -16,6 +16,7 @@ import type {
   CommentData,
   IssueWithComments,
   IssueDocument,
+  IssueStateTransitionResult,
   ParsedIssueIdentifier,
   UserData,
 } from './issue_tracker/types.ts';
@@ -36,6 +37,24 @@ interface LinearDocumentConnectionLike {
     hasNextPage: boolean;
   };
   fetchNext(): Promise<LinearDocumentConnectionLike>;
+}
+
+interface LinearWorkflowStateNode {
+  id: string;
+  name: string;
+  type?: string;
+}
+
+interface LinearWorkflowStateConnectionLike {
+  nodes: LinearWorkflowStateNode[];
+  pageInfo?: {
+    hasNextPage: boolean;
+  };
+  fetchNext?: () => Promise<LinearWorkflowStateConnectionLike>;
+}
+
+function normalizeLinearStateName(stateName: string): string {
+  return stateName.toLowerCase().replace(/[\s_-]+/g, '');
 }
 
 export function parseLinearIssueIdentifier(spec: string): ParsedIssueIdentifier | null {
@@ -361,6 +380,75 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
     }
   }
 
+  async transitionIssueToInProgressIfReady(
+    identifier: string
+  ): Promise<IssueStateTransitionResult> {
+    debugLog(`Checking Linear issue state before agent run: ${identifier}`);
+
+    const client = getLinearClient(this.config.apiKey);
+    const parsed = this.parseIssueIdentifier(identifier);
+
+    if (!parsed) {
+      throw new Error(`Invalid Linear issue identifier: ${identifier}`);
+    }
+
+    try {
+      const issue = await client.issue(parsed.identifier);
+      if (!issue) {
+        throw new Error(`Issue not found: ${parsed.identifier}`);
+      }
+
+      const state = await issue.state;
+      const fromState = state?.name || 'Unknown';
+      const normalizedFromState = normalizeLinearStateName(fromState);
+      if (normalizedFromState !== 'backlog' && normalizedFromState !== 'todo') {
+        return {
+          identifier: parsed.identifier,
+          fromState,
+          changed: false,
+          reason: 'not-ready-state',
+        };
+      }
+
+      const team = await issue.team;
+      if (!team) {
+        throw new Error(`Issue ${parsed.identifier} has no team`);
+      }
+
+      const states = await this.fetchAllWorkflowStateNodes(await team.states());
+      const inProgressState = states.find(
+        (workflowState) => normalizeLinearStateName(workflowState.name) === 'inprogress'
+      );
+      if (!inProgressState) {
+        return {
+          identifier: parsed.identifier,
+          fromState,
+          changed: false,
+          reason: 'target-state-missing',
+        };
+      }
+
+      await issue.update({ stateId: inProgressState.id });
+
+      debugLog(
+        `Moved Linear issue ${parsed.identifier} from ${fromState} to ${inProgressState.name}`
+      );
+
+      return {
+        identifier: parsed.identifier,
+        fromState,
+        toState: inProgressState.name,
+        changed: true,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to update Linear issue ${parsed.identifier} workflow state: ${errorMessage}`,
+        { cause: error }
+      );
+    }
+  }
+
   /**
    * Fetch all open issues from the user's workspace
    */
@@ -490,6 +578,27 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
     }
 
     return [...documentsById.values()];
+  }
+
+  private async fetchAllWorkflowStateNodes(
+    initialConnection: LinearWorkflowStateConnectionLike
+  ): Promise<LinearWorkflowStateNode[]> {
+    const statesById = new Map<string, LinearWorkflowStateNode>();
+    let currentConnection = initialConnection;
+
+    while (true) {
+      for (const state of currentConnection.nodes) {
+        statesById.set(state.id, state);
+      }
+
+      if (!currentConnection.pageInfo?.hasNextPage || !currentConnection.fetchNext) {
+        break;
+      }
+
+      currentConnection = await currentConnection.fetchNext();
+    }
+
+    return [...statesById.values()];
   }
 
   private addIssueDocument(

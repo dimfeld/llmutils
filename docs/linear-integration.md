@@ -164,6 +164,10 @@ tim agent 456
 tim done 456 --commit
 ```
 
+When `tim agent` starts on a plan linked to Linear issue URLs, it checks each linked
+Linear issue. Issues currently in `Backlog` or `Todo` are moved to `In Progress`
+before execution begins. Other states are left unchanged.
+
 ### Multi-Issue Project Planning
 
 ```bash

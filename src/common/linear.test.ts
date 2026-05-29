@@ -490,6 +490,106 @@ describe('LinearIssueTrackerClient', () => {
     });
   });
 
+  describe('transitionIssueToInProgressIfReady', () => {
+    test.each(['Backlog', 'Todo', 'To Do'])(
+      'moves issue from %s to In Progress',
+      async (fromState) => {
+        const update = vi.fn(async () => ({ success: true }));
+        const states = vi.fn(async () => ({
+          nodes: [
+            { id: 'state-backlog', name: 'Backlog' },
+            { id: 'state-progress', name: 'In Progress' },
+          ],
+          pageInfo: { hasNextPage: false },
+        }));
+        const mockLinearClient = {
+          issue: vi.fn(async () => ({
+            id: 'issue-uuid-123',
+            identifier: 'TEAM-123',
+            state: Promise.resolve({ name: fromState }),
+            team: Promise.resolve({ states }),
+            update,
+          })),
+        };
+
+        vi.mocked(linearClientModule.getLinearClient).mockReturnValue(mockLinearClient as any);
+
+        const client = new LinearIssueTrackerClient(mockConfig);
+        const result = await client.transitionIssueToInProgressIfReady('TEAM-123');
+
+        expect(result).toEqual({
+          identifier: 'TEAM-123',
+          fromState,
+          toState: 'In Progress',
+          changed: true,
+        });
+        expect(update).toHaveBeenCalledWith({ stateId: 'state-progress' });
+      }
+    );
+
+    test('does not move issue that is not in Backlog or Todo', async () => {
+      const update = vi.fn(async () => ({ success: true }));
+      const mockLinearClient = {
+        issue: vi.fn(async () => ({
+          id: 'issue-uuid-123',
+          identifier: 'TEAM-123',
+          state: Promise.resolve({ name: 'In Review' }),
+          team: Promise.resolve({
+            states: vi.fn(async () => ({
+              nodes: [{ id: 'state-progress', name: 'In Progress' }],
+              pageInfo: { hasNextPage: false },
+            })),
+          }),
+          update,
+        })),
+      };
+
+      vi.mocked(linearClientModule.getLinearClient).mockReturnValue(mockLinearClient as any);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.transitionIssueToInProgressIfReady('TEAM-123');
+
+      expect(result).toEqual({
+        identifier: 'TEAM-123',
+        fromState: 'In Review',
+        changed: false,
+        reason: 'not-ready-state',
+      });
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    test('reports missing In Progress state without updating', async () => {
+      const update = vi.fn(async () => ({ success: true }));
+      const mockLinearClient = {
+        issue: vi.fn(async () => ({
+          id: 'issue-uuid-123',
+          identifier: 'TEAM-123',
+          state: Promise.resolve({ name: 'Todo' }),
+          team: Promise.resolve({
+            states: vi.fn(async () => ({
+              nodes: [{ id: 'state-started', name: 'Started' }],
+              pageInfo: { hasNextPage: false },
+            })),
+          }),
+          update,
+        })),
+      };
+
+      vi.mocked(linearClientModule.getLinearClient).mockReturnValue(mockLinearClient as any);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.transitionIssueToInProgressIfReady('TEAM-123');
+
+      expect(result).toEqual({
+        identifier: 'TEAM-123',
+        fromState: 'Todo',
+        changed: false,
+        reason: 'target-state-missing',
+      });
+      expect(update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('fetchIssueDocuments', () => {
     test('maps issue and project documents successfully', async () => {
       const issueConnection = createDocumentConnection([

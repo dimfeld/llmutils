@@ -48,6 +48,7 @@ import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { buildDescriptionFromPlan } from '../../display_utils.js';
 import { executeBatchMode } from './batch_mode.js';
 import { sendFailureReport, timestamp } from './agent_helpers.js';
+import { moveLinearIssuesToInProgressForAgentRun } from './linear_issue_state.js';
 import { markParentInProgress } from './parent_plans.js';
 import { executeStubPlan } from './stub_plan.js';
 import { SummaryCollector } from '../../summary/collector.js';
@@ -438,6 +439,15 @@ export async function timAgent(
     // Check if the plan needs preparation
     const planData = await readPlanFile(currentPlanFile);
     lastKnownPlan = planData;
+    let projectIdForIssueTracker: number | undefined;
+    if (planData.uuid) {
+      const planRow = getPlanByUuid(getDatabase(), planData.uuid);
+      projectIdForIssueTracker = planRow?.project_id;
+    }
+
+    if (!isShuttingDown()) {
+      await moveLinearIssuesToInProgressForAgentRun(planData, config, projectIdForIssueTracker);
+    }
 
     // Update workspace description from plan data (if running in a tracked workspace)
     if (!isShuttingDown()) {

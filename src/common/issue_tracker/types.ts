@@ -110,6 +110,22 @@ export interface IssueDocument {
 }
 
 /**
+ * Result of attempting to move an issue into an active working state.
+ */
+export interface IssueStateTransitionResult {
+  /** Issue identifier, such as TEAM-123 */
+  identifier: string;
+  /** Previous workflow state name */
+  fromState: string;
+  /** Target workflow state name when changed */
+  toState?: string;
+  /** Whether the issue was updated */
+  changed: boolean;
+  /** Why the issue was not updated */
+  reason?: 'not-ready-state' | 'target-state-missing';
+}
+
+/**
  * Parsed issue identifier information
  */
 export interface ParsedIssueIdentifier {
@@ -164,6 +180,12 @@ export interface IssueTrackerClient {
    * @returns Promise resolving to linked issue documents
    */
   fetchIssueDocuments?(identifier: string): Promise<IssueDocument[]>;
+
+  /**
+   * Move an issue to an active working state when it is still waiting to be started.
+   * Trackers that do not support workflow state transitions can omit this method.
+   */
+  transitionIssueToInProgressIfReady?(identifier: string): Promise<IssueStateTransitionResult>;
 
   /**
    * Fetch all open issues (without comments)
