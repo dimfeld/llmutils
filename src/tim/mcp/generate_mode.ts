@@ -264,7 +264,7 @@ function buildLinearChildIssueGuidance(plan: { issue?: string[] }): string {
   return `
 - Because the parent plan is linked to Linear issue ${parentIssueKey}, create and link a Linear child issue for each child tim plan after that child plan has been created and populated:
   1. Find the parent's Linear project once with \`linear issue view ${parentIssueKey}\`; the view output shows \`**Project:** <name>\`.
-  2. Create each child issue with project + parent in one command: \`linear issue create --no-interactive --state Todo --parent ${parentIssueKey} --project "<project name>" --title "<title>" --description "<short description>"\`. The last line of output is the new issue URL.
+  2. Create each child issue with project + parent in one command: \`linear issue create --no-interactive --assignee self --state Todo --parent ${parentIssueKey} --project "<project name>" --title "<title>" --description "<short description>"\`. The last line of output is the new issue URL.
   3. Link the child tim plan to that new issue URL with \`tim set <child-plan-id> --issue "<new-issue-url>"\`.`;
 }
 

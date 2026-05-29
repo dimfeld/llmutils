@@ -211,7 +211,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(messageText).toContain('linked to Linear issue DF-3445');
     expect(messageText).toContain('linear issue view DF-3445');
     expect(messageText).toContain(
-      'linear issue create --no-interactive --state Todo --parent DF-3445 --project "<project name>"'
+      'linear issue create --no-interactive --assignee self --state Todo --parent DF-3445 --project "<project name>"'
     );
     expect(messageText).toContain('tim set <child-plan-id> --issue "<new-issue-url>"');
   });
@@ -262,7 +262,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(messageText).toContain('linked to Linear issue DF-3445');
     expect(messageText).toContain('linear issue view DF-3445');
     expect(messageText).toContain(
-      'linear issue create --no-interactive --state Todo --parent DF-3445 --project "<project name>"'
+      'linear issue create --no-interactive --assignee self --state Todo --parent DF-3445 --project "<project name>"'
     );
     expect(messageText).toContain('tim set <child-plan-id> --issue "<new-issue-url>"');
   });
