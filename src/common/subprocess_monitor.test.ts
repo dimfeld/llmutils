@@ -60,6 +60,24 @@ describe('subprocess monitor rule matching', () => {
     });
   });
 
+  test('ignores string rule matches inside Bash tool specs', () => {
+    const rules = normalizeSubprocessMonitorRules([{ match: 'vitest', timeoutSeconds: 20 }]);
+
+    expect(findSubprocessMonitorMatch('Bash(pnpm run vitest)', rules)).toBeNull();
+    expect(findSubprocessMonitorMatch('Bash(vitest run)', rules)).toBeNull();
+    expect(findSubprocessMonitorMatch('Bash(vitest)', rules)).toBeNull();
+    expect(findSubprocessMonitorMatch('Bash(pnpm run vitest run)', rules)).toBeNull();
+  });
+
+  test('matches string rules when the same term also appears outside a Bash tool spec', () => {
+    const rules = normalizeSubprocessMonitorRules([{ match: 'vitest', timeoutSeconds: 20 }]);
+
+    expect(findSubprocessMonitorMatch('Bash(pnpm run vitest) node vitest run', rules)).toEqual({
+      timeoutMs: 20_000,
+      label: 'vitest',
+    });
+  });
+
   test('matches mixed regex and string rules', () => {
     const rules = normalizeSubprocessMonitorRules([
       {
@@ -82,6 +100,26 @@ describe('subprocess monitor rule matching', () => {
 
     const result = findSubprocessMonitorMatch('node /bin/vitest run', rules);
     expect(result).toEqual({ timeoutMs: 15_000, label: '/vitest/i' });
+  });
+
+  test('ignores regex-object matcher matches inside Bash tool specs', () => {
+    const rules = normalizeSubprocessMonitorRules([
+      { match: { regex: String.raw`vitest(?:\s+run)?`, flags: 'i' }, timeoutSeconds: 15 },
+    ]);
+
+    expect(findSubprocessMonitorMatch('Bash(pnpm run vitest run)', rules)).toBeNull();
+    expect(findSubprocessMonitorMatch('Bash(vitest) node /bin/vitest run', rules)).toEqual({
+      timeoutMs: 15_000,
+      label: String.raw`/vitest(?:\s+run)?/i`,
+    });
+  });
+
+  test('ignores matches inside multiple Bash tool specs', () => {
+    const rules = normalizeSubprocessMonitorRules([{ match: 'vitest', timeoutSeconds: 20 }]);
+
+    expect(
+      findSubprocessMonitorMatch('Bash(vitest) and Bash(pnpm run vitest run)', rules)
+    ).toBeNull();
   });
 
   test('auto-generates label from single string match when no description provided', () => {

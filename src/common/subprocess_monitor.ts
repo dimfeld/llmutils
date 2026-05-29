@@ -31,6 +31,11 @@ type NormalizedMatcher =
       value: RegExp;
     };
 
+type TextSpan = {
+  start: number;
+  end: number;
+};
+
 export type SubprocessMonitorMatch = {
   timeoutMs: number;
   label: string;
@@ -98,6 +103,73 @@ function createWordBoundedMatcher(value: string): RegExp {
   return new RegExp(`\\b${RegExp.escape(value)}\\b`);
 }
 
+function findBashToolSpecSpans(command: string): TextSpan[] {
+  const spans: TextSpan[] = [];
+  let searchFrom = 0;
+
+  while (searchFrom < command.length) {
+    const bashStart = command.indexOf('Bash(', searchFrom);
+    if (bashStart === -1) {
+      break;
+    }
+
+    const contentStart = bashStart + 'Bash('.length;
+    let depth = 1;
+    let index = contentStart;
+
+    while (index < command.length && depth > 0) {
+      const char = command[index];
+      if (char === '(') {
+        depth += 1;
+      } else if (char === ')') {
+        depth -= 1;
+      }
+      index += 1;
+    }
+
+    spans.push({
+      start: contentStart,
+      end: depth === 0 ? index - 1 : command.length,
+    });
+    searchFrom = index;
+  }
+
+  return spans;
+}
+
+function isInsideSpan(start: number, end: number, spans: TextSpan[]): boolean {
+  return spans.some((span) => start >= span.start && end <= span.end);
+}
+
+function createGlobalMatcher(regex: RegExp): RegExp {
+  const flags = regex.flags.includes('g') ? regex.flags : `${regex.flags}g`;
+  return new RegExp(regex.source, flags);
+}
+
+function matcherMatchesOutsideBashToolSpec(
+  command: string,
+  matcher: NormalizedMatcher,
+  bashToolSpecSpans: TextSpan[]
+): boolean {
+  const regex = createGlobalMatcher(matcher.value);
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(command)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+
+    if (!isInsideSpan(start, end, bashToolSpecSpans)) {
+      return true;
+    }
+
+    if (match[0].length === 0) {
+      regex.lastIndex += 1;
+    }
+  }
+
+  return false;
+}
+
 export function normalizeSubprocessMonitorRules(
   rules: SubprocessMonitorRule[]
 ): NormalizedSubprocessMonitorRule[] {
@@ -130,9 +202,12 @@ export function findSubprocessMonitorMatch(
   rules: NormalizedSubprocessMonitorRule[]
 ): SubprocessMonitorMatch | null {
   let bestMatch: SubprocessMonitorMatch | null = null;
+  const bashToolSpecSpans = findBashToolSpecSpans(command);
 
   for (const rule of rules) {
-    const matches = rule.matchers.some((matcher) => matcher.value.test(command));
+    const matches = rule.matchers.some((matcher) =>
+      matcherMatchesOutsideBashToolSpec(command, matcher, bashToolSpecSpans)
+    );
 
     if (!matches) {
       continue;
