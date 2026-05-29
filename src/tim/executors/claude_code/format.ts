@@ -115,6 +115,16 @@ export type Message =
       session_id: string;
     }
 
+  // Thinking token usage update (currently ignored)
+  | {
+      type: 'system';
+      subtype: 'thinking_tokens';
+      estimated_tokens?: number;
+      estimated_tokens_delta?: number;
+      uuid?: string;
+      session_id: string;
+    }
+
   // Compact boundary marker
   | {
       type: 'system';
@@ -423,6 +433,9 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
         status: message.status,
       },
     });
+  } else if (message.type === 'system' && message.subtype === 'thinking_tokens') {
+    // Ignore thinking_tokens messages for now
+    return { type: '' };
   } else if (message.type === 'system' && message.subtype === 'compact_boundary') {
     return withMessage({
       type: message.type,
