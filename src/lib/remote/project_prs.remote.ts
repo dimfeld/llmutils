@@ -7,12 +7,11 @@ import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
 import { normalizeGitHubUsername } from '$common/github/username.js';
 import { resolveGitHubToken } from '$common/github/token.js';
-import { readDotEnvFromDirectory } from '$common/env.js';
 import {
   refreshProjectPrs as refreshProjectPrsService,
   type ProjectPrLink,
 } from '$common/github/project_pr_service.js';
-import { fetchLinearPrReviewUrl } from '$common/linear_pr_review.js';
+import { buildLinearPrReviewUrl } from '$common/linear_pr_review.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import { getServerContext } from '$lib/server/init.js';
 import { withRequiredCheckRollupStates } from '$lib/server/required_check_rollup.js';
@@ -38,12 +37,6 @@ const linearPrReviewUrlSchema = z.object({
   prNumber: z.number().int().positive(),
   prUrl: z.string().url(),
 });
-
-type LinearPrReviewUrlCacheEntry =
-  | { status: 'resolved'; value: string | null }
-  | { status: 'pending'; promise: Promise<string | null> };
-
-const linearPrReviewUrlCache = new Map<string, LinearPrReviewUrlCacheEntry>();
 
 export interface EnrichedProjectPr extends PrStatusDetailWithRequiredChecks {
   linkedPlans: LinkedPlanSummary[];
@@ -388,20 +381,6 @@ async function resolveProjectRepo(projectId: string) {
   return { db, config, parsedProjectId, ownerRepo };
 }
 
-async function getProjectLinearApiKey(projectId: number): Promise<string | undefined> {
-  const { db } = await getServerContext();
-  const preferredGitRoot = getPreferredProjectGitRoot(db, projectId);
-  if (preferredGitRoot) {
-    const workspaceEnv = await readDotEnvFromDirectory(preferredGitRoot);
-    const workspaceKey = workspaceEnv?.LINEAR_API_KEY?.trim();
-    if (workspaceKey) {
-      return workspaceKey;
-    }
-  }
-
-  return process.env.LINEAR_API_KEY?.trim() || undefined;
-}
-
 async function isProjectUsingLinearIssueTracker(projectId: number): Promise<boolean> {
   const { db, config } = await getServerContext();
   const preferredGitRoot = getPreferredProjectGitRoot(db, projectId);
@@ -411,44 +390,6 @@ async function isProjectUsingLinearIssueTracker(projectId: number): Promise<bool
 
   const projectConfig = await loadEffectiveConfig(undefined, { cwd: preferredGitRoot });
   return projectConfig.issueTracker === 'linear';
-}
-
-function getLinearPrReviewUrlCacheKey(projectId: number, prNumber: number): string {
-  return `${projectId}:${prNumber}`;
-}
-
-async function fetchCachedLinearPrReviewUrl({
-  apiKey,
-  projectId,
-  prNumber,
-  prUrl,
-}: {
-  apiKey: string;
-  projectId: number;
-  prNumber: number;
-  prUrl: string;
-}): Promise<string | null> {
-  const cacheKey = getLinearPrReviewUrlCacheKey(projectId, prNumber);
-  const cached = linearPrReviewUrlCache.get(cacheKey);
-  if (cached?.status === 'resolved') {
-    return cached.value;
-  }
-  if (cached?.status === 'pending') {
-    return cached.promise;
-  }
-
-  const promise = fetchLinearPrReviewUrl({ apiKey, prNumber, prUrl })
-    .then((value) => {
-      linearPrReviewUrlCache.set(cacheKey, { status: 'resolved', value });
-      return value;
-    })
-    .catch((err) => {
-      linearPrReviewUrlCache.delete(cacheKey);
-      throw err;
-    });
-
-  linearPrReviewUrlCache.set(cacheKey, { status: 'pending', promise });
-  return promise;
 }
 
 export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
@@ -516,26 +457,7 @@ export const getLinearPrReviewUrl = query(
       return null;
     }
 
-    const apiKey = await getProjectLinearApiKey(numericProjectId);
-    if (!apiKey) {
-      return null;
-    }
-
-    try {
-      return await fetchCachedLinearPrReviewUrl({
-        apiKey,
-        projectId: numericProjectId,
-        prNumber,
-        prUrl,
-      });
-    } catch (err) {
-      console.warn(
-        `[project_prs] Failed to fetch Linear review URL for ${prUrl}: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      );
-      return null;
-    }
+    return buildLinearPrReviewUrl({ prUrl, prNumber });
   }
 );
 

@@ -18,18 +18,14 @@ const {
   refreshProjectPrsService,
   getGitHubUsername,
   resolveGitHubToken,
-  fetchLinearPrReviewUrl,
   loadEffectiveConfig,
-  readDotEnvFromDirectory,
   getPreferredProjectGitRoot,
 } = vi.hoisted(() => ({
   ingestWebhookEvents: vi.fn(),
   refreshProjectPrsService: vi.fn(),
   getGitHubUsername: vi.fn(),
   resolveGitHubToken: vi.fn(),
-  fetchLinearPrReviewUrl: vi.fn(),
   loadEffectiveConfig: vi.fn(),
-  readDotEnvFromDirectory: vi.fn(),
   getPreferredProjectGitRoot: vi.fn(),
 }));
 const mockEmitPrUpdatesForIngestResult = vi.fn();
@@ -40,10 +36,6 @@ vi.mock('$lib/server/init.js', () => ({
     config: currentConfig as never,
     db: currentDb,
   }),
-}));
-
-vi.mock('$common/env.js', () => ({
-  readDotEnvFromDirectory,
 }));
 
 vi.mock('$common/github/webhook_client.js', () => ({
@@ -80,10 +72,6 @@ vi.mock('$common/github/token.js', () => ({
   resolveGitHubToken,
 }));
 
-vi.mock('$common/linear_pr_review.js', () => ({
-  fetchLinearPrReviewUrl,
-}));
-
 vi.mock('$tim/configLoader.js', () => ({
   loadEffectiveConfig,
 }));
@@ -110,9 +98,7 @@ describe('project_prs remote functions', () => {
     refreshProjectPrsService.mockReset();
     getGitHubUsername.mockReset();
     resolveGitHubToken.mockReset();
-    fetchLinearPrReviewUrl.mockReset();
     loadEffectiveConfig.mockReset();
-    readDotEnvFromDirectory.mockReset();
     getPreferredProjectGitRoot.mockReset();
     mockEmitPrUpdatesForIngestResult.mockReset();
     mockSessionManager.emitPrUpdate.mockReset();
@@ -125,9 +111,7 @@ describe('project_prs remote functions', () => {
     refreshProjectPrsService.mockResolvedValue({ newLinks: [] });
     getGitHubUsername.mockResolvedValue('dimfeld');
     resolveGitHubToken.mockReturnValue('token');
-    fetchLinearPrReviewUrl.mockResolvedValue('https://linear.app/acme/review/ABC-123');
     loadEffectiveConfig.mockResolvedValue({ issueTracker: 'linear' });
-    readDotEnvFromDirectory.mockResolvedValue({ LINEAR_API_KEY: 'workspace-linear-key' });
     getPreferredProjectGitRoot.mockReturnValue('/tmp/project-workspace');
   });
 
@@ -167,10 +151,9 @@ describe('project_prs remote functions', () => {
     });
 
     expect(result).toBeNull();
-    expect(fetchLinearPrReviewUrl).not.toHaveBeenCalled();
   });
 
-  test('getLinearPrReviewUrl uses the project workspace Linear key', async () => {
+  test('getLinearPrReviewUrl returns a deterministic linear.review URL for Linear projects', async () => {
     const { getLinearPrReviewUrl } = await import('./project_prs.remote.js');
 
     const result = await invokeQuery(getLinearPrReviewUrl, {
@@ -179,75 +162,23 @@ describe('project_prs remote functions', () => {
       prUrl: 'https://github.com/example/repo/pull/42',
     });
 
-    expect(result).toBe('https://linear.app/acme/review/ABC-123');
-    expect(fetchLinearPrReviewUrl).toHaveBeenCalledWith({
-      apiKey: 'workspace-linear-key',
-      prNumber: 42,
-      prUrl: 'https://github.com/example/repo/pull/42',
-    });
+    expect(result).toBe('https://linear.review/example/repo/pull/42');
   });
 
-  test('getLinearPrReviewUrl caches backend results by project and PR number', async () => {
-    const { getLinearPrReviewUrl } = await import('./project_prs.remote.js');
-
-    const first = await invokeQuery(getLinearPrReviewUrl, {
-      projectId: String(projectId),
-      prNumber: 43,
-      prUrl: 'https://github.com/example/repo/pull/43',
-    });
-    const second = await invokeQuery(getLinearPrReviewUrl, {
-      projectId: String(projectId),
-      prNumber: 43,
-      prUrl: 'https://github.com/example/repo/pull/43',
-    });
-
-    expect(first).toBe('https://linear.app/acme/review/ABC-123');
-    expect(second).toBe('https://linear.app/acme/review/ABC-123');
-    expect(fetchLinearPrReviewUrl).toHaveBeenCalledTimes(1);
-  });
-
-  test('getLinearPrReviewUrl shares in-flight backend lookups', async () => {
-    let resolveLookup: (value: string | null) => void = () => {};
-    fetchLinearPrReviewUrl.mockReturnValueOnce(
-      new Promise<string | null>((resolve) => {
-        resolveLookup = resolve;
-      })
-    );
-    const { getLinearPrReviewUrl } = await import('./project_prs.remote.js');
-
-    const first = invokeQuery(getLinearPrReviewUrl, {
-      projectId: String(projectId),
-      prNumber: 44,
-      prUrl: 'https://github.com/example/repo/pull/44',
-    });
-    const second = invokeQuery(getLinearPrReviewUrl, {
-      projectId: String(projectId),
-      prNumber: 44,
-      prUrl: 'https://github.com/example/repo/pull/44',
-    });
-
-    resolveLookup('https://linear.app/acme/review/ABC-44');
-
-    await expect(Promise.all([first, second])).resolves.toEqual([
-      'https://linear.app/acme/review/ABC-44',
-      'https://linear.app/acme/review/ABC-44',
-    ]);
-    expect(fetchLinearPrReviewUrl).toHaveBeenCalledTimes(1);
-  });
-
-  test('getLinearPrReviewUrl falls back to LINEAR_API_KEY from process env', async () => {
+  test('getLinearPrReviewUrl does not require a Linear API key', async () => {
     const previousApiKey = process.env.LINEAR_API_KEY;
     getPreferredProjectGitRoot.mockReturnValue(null);
     currentConfig = { issueTracker: 'linear' };
-    process.env.LINEAR_API_KEY = 'env-linear-key';
+    delete process.env.LINEAR_API_KEY;
     const { getLinearPrReviewUrl } = await import('./project_prs.remote.js');
 
     try {
-      await invokeQuery(getLinearPrReviewUrl, {
+      const result = await invokeQuery(getLinearPrReviewUrl, {
         projectId: String(projectId),
         prNumber: 45,
         prUrl: 'https://github.com/example/repo/pull/45',
       });
+      expect(result).toBe('https://linear.review/example/repo/pull/45');
     } finally {
       if (previousApiKey === undefined) {
         delete process.env.LINEAR_API_KEY;
@@ -255,12 +186,6 @@ describe('project_prs remote functions', () => {
         process.env.LINEAR_API_KEY = previousApiKey;
       }
     }
-
-    expect(fetchLinearPrReviewUrl).toHaveBeenCalledWith({
-      apiKey: 'env-linear-key',
-      prNumber: 45,
-      prUrl: 'https://github.com/example/repo/pull/45',
-    });
   });
 
   test('refreshProjectPrs returns error when webhook ingestion fails', async () => {
