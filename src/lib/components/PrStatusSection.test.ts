@@ -286,7 +286,7 @@ describe('PrStatusSection', () => {
 
     expect(body).toContain('#42');
     expect(body).toContain('Add feature X');
-    expect(body).toContain('href="https://github.com/owner/repo/pull/42"');
+    expect(body).toContain('href="https://linear.review/owner/repo/pull/42"');
   });
 
   test('renders state badge for open PR', async () => {
@@ -569,7 +569,7 @@ describe('PrStatusSection', () => {
       prStatuses: [detail],
     });
 
-    expect(body).not.toContain('review');
+    expect(body).not.toContain('Reviews');
   });
 
   test('renders review threads section with unresolved count and GitHub links', async () => {

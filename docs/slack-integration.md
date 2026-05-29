@@ -199,7 +199,7 @@ Runs the daily digest immediately for every configured workspace's digest-enable
 
 The notifier posts one Slack channel message per PR once the debounce window has elapsed. The outbound client builds one Slack Block Kit section for that review-request message. The message includes:
 
-- a linked PR title
+- a linked PR title pointing at `linear.review/{owner}/{repo}/pull/{number}`
 - the PR author
 - cached PR size when available (`files changed` and `+/-` counts)
 - requested reviewers, with mapped reviewers as Slack mentions and unmapped reviewers as GitHub logins
@@ -231,7 +231,7 @@ Separate from the event-driven review-request notifier, tim can post a once-per-
 The digest has two sections:
 
 - **Approved, not yet merged** - open, non-draft PRs whose review decision is `APPROVED`.
-- **Awaiting review for > 1 day** - open, non-draft PRs that are not already approved and have an assigned individual reviewer whose last review request is older than the workspace's `staleAfterHours` (default 24h) and who has not reviewed since being requested. Each entry lists the waiting reviewer(s) and how long they've waited.
+- **Awaiting review for > 1 day** - open, non-draft PRs that are not already approved and have an assigned individual reviewer whose last review request is older than the workspace's `staleAfterHours` (default 24h) and who has not reviewed since being requested. Each entry lists the waiting reviewer(s) and how long they've waited. PR entry links point at `linear.review/{owner}/{repo}/pull/{number}`. The footer includes both the GitHub "View all PRs awaiting your review" search link and a Linear reviews link.
 
 If **both** sections are empty for a repo, no message is sent for that repo.
 

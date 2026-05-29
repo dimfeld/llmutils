@@ -99,7 +99,7 @@ describe('common/slack/slack_client', () => {
     test('PR title is rendered as a Slack mrkdwn link', () => {
       const payload = buildReviewRequestSlackPayload('#reviews', testPr, [mappedReviewer]);
       const blockText = payload.blocks[0].text.text;
-      expect(blockText).toContain('<https://github.com/owner/repo/pull/42|Add feature X>');
+      expect(blockText).toContain('<https://linear.review/owner/repo/pull/42|Add feature X>');
     });
 
     test('author is present in the block text', () => {
@@ -337,7 +337,7 @@ describe('common/slack/slack_client', () => {
       expect(sectionText(payload.blocks[1])).toContain('*Approved, not yet merged*');
       expect(sectionText(payload.blocks[3])).toContain('*Awaiting review for > 1 day*');
       expect(sectionText(payload.blocks[4])).toBe(
-        '<https://github.com/octocat/hello-world/pulls?q=is%3Apr+is%3Aopen+user-review-requested%3A%40me|View all PRs awaiting your review>'
+        '<https://github.com/octocat/hello-world/pulls?q=is%3Apr+is%3Aopen+user-review-requested%3A%40me|View all PRs awaiting your review> · <https://linear.app/deviceflow/reviews|Linear>'
       );
     });
 
@@ -371,9 +371,9 @@ describe('common/slack/slack_client', () => {
       );
       const blocks = serializedBlocks(payload.blocks);
 
-      expect(blocks).toContain('<https://github.com/octocat/hello-world/pull/1|Approved PR>');
+      expect(blocks).toContain('<https://linear.review/octocat/hello-world/pull/1|Approved PR>');
       expect(blocks).toContain('`alice`');
-      expect(blocks).toContain('<https://github.com/octocat/hello-world/pull/2|Needs review>');
+      expect(blocks).toContain('<https://linear.review/octocat/hello-world/pull/2|Needs review>');
       expect(blocks).toContain('`bob`');
       expect(blocks).not.toContain('<@');
     });
@@ -424,9 +424,11 @@ describe('common/slack/slack_client', () => {
         'section',
       ]);
       expect(approvedText).toContain(
-        '<https://github.com/octocat/hello-world/pull/9|Approved but waiting>'
+        '<https://linear.review/octocat/hello-world/pull/9|Approved but waiting>'
       );
-      expect(staleText).toContain('<https://github.com/octocat/hello-world/pull/10|Needs review>');
+      expect(staleText).toContain(
+        '<https://linear.review/octocat/hello-world/pull/10|Needs review>'
+      );
       expect(staleText).toContain('`bob` (25 hours)');
       expect(staleText).toContain('— waiting on `bob` (25 hours)');
       expect(serializedBlocks(payload.blocks)).not.toContain('<@');

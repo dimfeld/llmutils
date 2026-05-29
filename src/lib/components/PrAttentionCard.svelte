@@ -1,5 +1,6 @@
 <script lang="ts">
   import ExternalLink from '@lucide/svelte/icons/external-link';
+  import { buildLinearPrReviewUrl } from '$common/linear_pr_review.js';
   import type { PrAttentionItem } from '$lib/utils/dashboard_attention.js';
 
   let {
@@ -48,6 +49,9 @@
 
   let checkDotColor = $derived(checkStatusColors[pr.checkStatus] ?? 'bg-gray-400');
   let prHref = $derived(`/projects/${pr.projectId}/active/pr/${pr.prNumber}`);
+  let externalPrUrl = $derived(
+    buildLinearPrReviewUrl({ prUrl: pr.prUrl, prNumber: pr.prNumber }) ?? pr.prUrl
+  );
 </script>
 
 <div
@@ -100,11 +104,11 @@
     </div>
   </a>
   <a
-    href={pr.prUrl}
+    href={externalPrUrl}
     target="_blank"
     rel="noopener noreferrer"
     class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-gray-200 hover:text-foreground dark:hover:bg-gray-700"
-    title="Open on GitHub"
+    title="Open in Linear Review"
     onclick={(e) => e.stopPropagation()}
   >
     <ExternalLink class="size-3.5" />

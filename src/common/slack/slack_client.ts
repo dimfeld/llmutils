@@ -1,5 +1,6 @@
 import type { TimConfig } from '../../tim/configSchema.js';
 import { error } from '../../logging.js';
+import { buildLinearPrReviewUrl } from '../linear_pr_review.js';
 import { resolveSlackWorkspaceToken } from './slack_config.js';
 
 const SLACK_POST_MESSAGE_URL = 'https://slack.com/api/chat.postMessage';
@@ -148,7 +149,9 @@ function formatPlainLogin(login: string): string {
 }
 
 function formatPrLink(entry: DailyDigestEntry): string {
-  const escapedUrl = escapeSlackMrkdwnText(entry.prUrl);
+  const url =
+    buildLinearPrReviewUrl({ prUrl: entry.prUrl, prNumber: entry.prNumber }) ?? entry.prUrl;
+  const escapedUrl = escapeSlackMrkdwnText(url);
   const escapedTitle = escapeSlackMrkdwnText(entry.title || `PR #${entry.prNumber}`);
   return `<${escapedUrl}|${escapedTitle}>`;
 }
@@ -227,7 +230,8 @@ export function buildReviewRequestSlackPayload(
 ): SlackPostPayload {
   const escapedTitle = escapeSlackMrkdwnText(pr.title);
   const escapedAuthor = escapeSlackMrkdwnText(pr.author);
-  const escapedUrl = escapeSlackMrkdwnText(pr.url);
+  const prUrl = buildLinearPrReviewUrl({ prUrl: pr.url, prNumber: pr.number }) ?? pr.url;
+  const escapedUrl = escapeSlackMrkdwnText(prUrl);
   const reviewerText = formatReviewerList(reviewers);
   const changeStats = formatPrChangeStats(pr);
   const escapedChangeStats = changeStats ? escapeSlackMrkdwnText(changeStats) : null;
@@ -297,7 +301,7 @@ export function buildDailyDigestSlackPayload(
     type: 'section',
     text: {
       type: 'mrkdwn',
-      text: `<${buildReviewRequestedPullsUrl(repoFullName)}|View all PRs awaiting your review>`,
+      text: `<${buildReviewRequestedPullsUrl(repoFullName)}|View all PRs awaiting your review> · <https://linear.app/deviceflow/reviews|Linear>`,
     },
   });
 

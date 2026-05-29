@@ -1,5 +1,3 @@
-import { canonicalizePrUrl } from './github/identifiers.js';
-
 export interface BuildLinearPrReviewUrlOptions {
   prUrl: string | null | undefined;
   prNumber?: number;
@@ -13,17 +11,24 @@ export function buildLinearPrReviewUrl({
     return null;
   }
 
-  let canonicalPrUrl: string;
+  let parsed: URL;
   try {
-    canonicalPrUrl = canonicalizePrUrl(prUrl);
+    parsed = new URL(prUrl);
   } catch {
     return null;
   }
 
-  const parsed = new URL(canonicalPrUrl);
   const [owner, repo, kind, parsedNumber] = parsed.pathname.split('/').filter(Boolean);
   const reviewNumber = prNumber ?? Number(parsedNumber);
-  if (!owner || !repo || kind !== 'pull' || !Number.isInteger(reviewNumber) || reviewNumber <= 0) {
+  const isGitHub = parsed.hostname === 'github.com' || parsed.hostname.endsWith('.github.com');
+  if (
+    !isGitHub ||
+    !owner ||
+    !repo ||
+    (kind !== 'pull' && kind !== 'pulls') ||
+    !Number.isInteger(reviewNumber) ||
+    reviewNumber <= 0
+  ) {
     return null;
   }
 

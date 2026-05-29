@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
+  import { buildLinearPrReviewUrl } from '$common/linear_pr_review.js';
   import {
     fullRefreshPrStatus,
     getPrStatus,
@@ -39,6 +40,15 @@
   let latestReviewGuidesByPrUrl = $derived(prData.latestReviewGuidesByPrUrl);
   function isVisiblePrStatus(status: PrStatusRow): boolean {
     return status.state !== 'closed' || status.merged_at !== null;
+  }
+
+  function getExternalPrUrl(pr: { status: PrStatusRow }): string {
+    return (
+      buildLinearPrReviewUrl({
+        prUrl: pr.status.pr_url,
+        prNumber: pr.status.pr_number,
+      }) ?? pr.status.pr_url
+    );
   }
 
   let effectivePrs = $derived(prData.prStatuses.filter((pr) => isVisiblePrStatus(pr.status)));
@@ -229,13 +239,13 @@
             {/if}
           </a>
           <a
-            href={pr.status.pr_url}
+            href={getExternalPrUrl(pr)}
             target="_blank"
             rel="noopener noreferrer"
             class="shrink-0 rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-            aria-label="View PR #{pr.status.pr_number} in GitHub"
+            aria-label="View PR #{pr.status.pr_number} in Linear Review"
           >
-            View in GitHub
+            View in Linear Review
           </a>
           <a
             href={getGraphitePrUrl(pr)}

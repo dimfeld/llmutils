@@ -1,6 +1,7 @@
 <script lang="ts">
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
+  import { buildLinearPrReviewUrl } from '$common/linear_pr_review.js';
   import PrStatusIndicator from './PrStatusIndicator.svelte';
   import {
     checkRollupToSummaryStatus,
@@ -25,6 +26,13 @@
     selected?: boolean;
     showAuthor?: boolean;
   } = $props();
+
+  let externalPrUrl = $derived(
+    buildLinearPrReviewUrl({
+      prUrl: pr.status.pr_url,
+      prNumber: pr.status.pr_number,
+    }) ?? pr.status.pr_url
+  );
 </script>
 
 <div
@@ -108,12 +116,12 @@
   </a>
 
   <a
-    href={pr.status.pr_url}
+    href={externalPrUrl}
     target="_blank"
     rel="noopener noreferrer"
     class="flex shrink-0 items-center justify-center border-l border-border px-3 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-    aria-label={`Open pull request #${pr.status.pr_number} on GitHub in new window`}
-    title="Open on GitHub in new window"
+    aria-label={`Open pull request #${pr.status.pr_number} in Linear Review in new window`}
+    title="Open in Linear Review in new window"
   >
     <ExternalLink class="size-4" />
   </a>

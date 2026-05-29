@@ -429,7 +429,7 @@ describe('lib/server/slack_notifier', () => {
       const text = payload.blocks[0].text.text;
       expect(text).toContain('My feature branch');
       expect(text).toContain('engineer-x');
-      expect(text).toContain('https://github.com/acme/core/pull/42');
+      expect(text).toContain('https://linear.review/acme/core/pull/42');
     });
 
     test('no pending rows: nothing sent', async () => {

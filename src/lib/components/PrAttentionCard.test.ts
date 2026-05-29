@@ -44,6 +44,16 @@ describe('PrAttentionCard', () => {
     expect(body).toContain('#42');
   });
 
+  test('renders the external PR link through linear.review', () => {
+    const { body } = render(PrAttentionCard, {
+      props: {
+        item: createItem(),
+      },
+    });
+
+    expect(body).toContain('href="https://linear.review/example/repo/pull/42"');
+  });
+
   test('renders compact diff stats when additions and deletions are available', () => {
     const { body } = render(PrAttentionCard, {
       props: {

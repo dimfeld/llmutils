@@ -53,11 +53,11 @@ describe('PrRow', () => {
       },
     });
 
-    expect(body).toContain('href="https://github.com/example/repo/pull/42"');
+    expect(body).toContain('href="https://linear.review/example/repo/pull/42"');
     expect(body).toContain('target="_blank"');
     expect(body).toContain('rel="noopener noreferrer"');
-    expect(body).toContain('aria-label="Open pull request #42 on GitHub in new window"');
-    expect(body).toContain('title="Open on GitHub in new window"');
+    expect(body).toContain('aria-label="Open pull request #42 in Linear Review in new window"');
+    expect(body).toContain('title="Open in Linear Review in new window"');
   });
 
   test('renders a review requested badge when the current user was requested again', () => {
