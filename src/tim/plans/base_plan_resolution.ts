@@ -15,7 +15,7 @@ export interface ResolveEffectivePlanBaseOptions {
   onMissingBasePlanBranch?: (branchName: string) => void;
 }
 
-export type EffectivePlanBaseSource = 'plan' | 'basePlan' | 'trunk';
+export type EffectivePlanBaseSource = 'plan' | 'basePlan' | 'parent' | 'trunk';
 
 export interface EffectivePlanBaseResolution {
   baseBranch: string;
@@ -46,6 +46,39 @@ export async function resolveBasePlanBranch(
   );
 }
 
+export async function resolveParentPlanBaseBranch(
+  plan: PlanSchema,
+  config: TimConfig,
+  currentBaseDir: string
+): Promise<string | undefined> {
+  if (!plan.parent) {
+    return undefined;
+  }
+
+  const parentPlan = (await resolvePlanByNumericId(plan.parent, currentBaseDir)).plan;
+  if (parentPlan.branch) {
+    return parentPlan.branch;
+  }
+
+  const parentBasePlanBranch = await resolveBasePlanBranch(parentPlan, config, currentBaseDir);
+  if (parentBasePlanBranch) {
+    return parentBasePlanBranch;
+  }
+
+  const parentBaseBranch = parentPlan.baseBranch?.trim();
+  if (parentBaseBranch) {
+    return parentBaseBranch;
+  }
+
+  const projectContext = await resolveProjectContext(currentBaseDir);
+  const branchPrefix = resolveBranchPrefix({
+    config,
+    db: getDatabase(),
+    projectId: projectContext.projectId,
+  });
+  return generateBranchNameFromPlan(parentPlan, { branchPrefix });
+}
+
 export async function resolveEffectivePlanBase(
   options: ResolveEffectivePlanBaseOptions
 ): Promise<string> {
@@ -62,23 +95,33 @@ export async function resolveEffectivePlanBaseWithSource(
 
   const trunkBranch = options.trunkBranch ?? (await getTrunkBranch(options.baseDir));
   const basePlanBranch = await resolveBasePlanBranch(options.plan, options.config, options.baseDir);
-  if (!basePlanBranch) {
-    return { baseBranch: trunkBranch, source: 'trunk' };
+  let inheritedBaseBranch = basePlanBranch;
+  let inheritedSource: EffectivePlanBaseSource = 'basePlan';
+  if (!inheritedBaseBranch) {
+    inheritedBaseBranch = await resolveParentPlanBaseBranch(
+      options.plan,
+      options.config,
+      options.baseDir
+    );
+    inheritedSource = 'parent';
+    if (!inheritedBaseBranch) {
+      return { baseBranch: trunkBranch, source: 'trunk' };
+    }
   }
 
-  const existsOnRemote = await remoteBranchExists(options.baseDir, basePlanBranch);
+  const existsOnRemote = await remoteBranchExists(options.baseDir, inheritedBaseBranch);
   if (existsOnRemote) {
     if (options.fetchBasePlanRemote) {
       // JJ callers usually leave this false because remoteBranchExistsJj already
       // runs `jj git fetch --branch`, so a second explicit fetch is redundant.
-      const fetched = await fetchRemoteBranch(options.baseDir, basePlanBranch);
+      const fetched = await fetchRemoteBranch(options.baseDir, inheritedBaseBranch);
       if (!fetched) {
-        throw new Error(`Failed to fetch base plan branch "${basePlanBranch}" from origin.`);
+        throw new Error(`Failed to fetch base plan branch "${inheritedBaseBranch}" from origin.`);
       }
     }
-    return { baseBranch: basePlanBranch, source: 'basePlan' };
+    return { baseBranch: inheritedBaseBranch, source: inheritedSource };
   }
 
-  options.onMissingBasePlanBranch?.(basePlanBranch);
+  options.onMissingBasePlanBranch?.(inheritedBaseBranch);
   return { baseBranch: trunkBranch, source: 'trunk' };
 }

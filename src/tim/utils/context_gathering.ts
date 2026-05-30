@@ -16,6 +16,8 @@ import { generateDiffForReview, getIncrementalSummary } from '../incremental_rev
 import type { DiffResult } from '../incremental_review.js';
 import { getGitRoot } from '../../common/git.js';
 import { log } from '../../logging.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { resolveEffectivePlanBase } from '../plans/base_plan_resolution.js';
 
 /**
  * Result object containing all gathered context for a plan
@@ -59,6 +61,8 @@ export interface ContextGatheringDependencies {
   getIncrementalSummary: typeof getIncrementalSummary;
   resolveRepoRoot: typeof resolveRepoRoot;
   getRepositoryIdentity: typeof getRepositoryIdentity;
+  loadEffectiveConfig: typeof loadEffectiveConfig;
+  resolveEffectivePlanBase: typeof resolveEffectivePlanBase;
 }
 
 /**
@@ -74,6 +78,8 @@ const defaultDependencies: ContextGatheringDependencies = {
   getIncrementalSummary,
   resolveRepoRoot,
   getRepositoryIdentity,
+  loadEffectiveConfig,
+  resolveEffectivePlanBase,
 };
 
 /**
@@ -166,13 +172,22 @@ export async function gatherPlanContext(
     );
   }
 
+  const config = await deps.loadEffectiveConfig(globalOpts.config);
+  const baseBranch =
+    options.base ??
+    (await deps.resolveEffectivePlanBase({
+      plan: planData,
+      config,
+      baseDir: gitRoot,
+    }));
+
   // Handle incremental review options
   const incrementalOptions = {
     incremental: options.incremental || options.sinceLastReview,
     sinceLastReview: options.sinceLastReview,
     sinceCommit: options.since,
     planId: planData.id?.toString(),
-    baseBranch: options.base,
+    baseBranch,
   };
 
   // Generate incremental summary if applicable

@@ -2822,6 +2822,140 @@ describe('setupWorkspace', () => {
     );
   });
 
+  test('uses parent basePlan branch when parent has no explicit branch', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-parent-base-plan-fallback');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-parent-base-plan-fallback');
+
+    await Bun.$`git init`.cwd(baseDir).quiet();
+    await Bun.$`git remote add origin https://example.com/test/repo.git`.cwd(baseDir).quiet();
+
+    await writePlanFile(
+      null,
+      {
+        id: 227,
+        uuid: '22722722-2272-4272-8272-227227227227',
+        title: 'Grandparent base plan',
+        branch: 'feature/grandparent-base',
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+    await writePlanFile(
+      null,
+      {
+        id: 228,
+        uuid: '22822822-2282-4282-8282-228228228228',
+        title: 'Parent without branch',
+        basePlan: 227,
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+
+    const childPlanFile = path.join(baseDir, 'child-parent-base-plan.plan.md');
+    await writePlanFile(
+      childPlanFile,
+      {
+        id: 229,
+        title: 'Child using parent base plan',
+        parent: 228,
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+
+    vi.spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    const prepareSpy = vi.spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+    });
+    vi.spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      {
+        workspace: 'task-parent-base-plan-fallback',
+      },
+      baseDir,
+      childPlanFile,
+      config,
+      'tim generate'
+    );
+
+    expect(prepareSpy).toHaveBeenCalledWith(
+      existingWorkspacePath,
+      expect.objectContaining({
+        baseBranch: 'feature/grandparent-base',
+        branchName: '229-child-using-parent-base-plan',
+      })
+    );
+  });
+
+  test('uses parent baseBranch when parent has no branch or basePlan', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-parent-base-branch-fallback');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-parent-base-branch-fallback');
+
+    await Bun.$`git init`.cwd(baseDir).quiet();
+    await Bun.$`git remote add origin https://example.com/test/repo.git`.cwd(baseDir).quiet();
+
+    await writePlanFile(
+      null,
+      {
+        id: 230,
+        uuid: '23023023-2302-4302-8302-230230230230',
+        title: 'Parent with base branch',
+        baseBranch: 'feature/parent-explicit-base',
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+
+    const childPlanFile = path.join(baseDir, 'child-parent-base-branch.plan.md');
+    await writePlanFile(
+      childPlanFile,
+      {
+        id: 231,
+        title: 'Child using parent base branch',
+        parent: 230,
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+
+    vi.spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    const prepareSpy = vi.spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+    });
+    vi.spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      {
+        workspace: 'task-parent-base-branch-fallback',
+      },
+      baseDir,
+      childPlanFile,
+      config,
+      'tim generate'
+    );
+
+    expect(prepareSpy).toHaveBeenCalledWith(
+      existingWorkspacePath,
+      expect.objectContaining({
+        baseBranch: 'feature/parent-explicit-base',
+        branchName: '231-child-using-parent-base-branch',
+      })
+    );
+  });
+
   describe('base commit tracking in setupWorkspace', () => {
     // These tests exercise the updateBaseCommitTracking logic through setupWorkspace.
     // They use a plan file with a UUID and baseBranch to trigger the tracking code path.

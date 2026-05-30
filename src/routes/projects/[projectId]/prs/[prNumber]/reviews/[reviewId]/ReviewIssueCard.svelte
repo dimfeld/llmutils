@@ -269,7 +269,6 @@
               disabled={actioning}
               onCopyError={(message) => onCopyError?.(message)}
             />
-
           </div>
 
           <div class="flex flex-wrap items-center gap-1.5">

@@ -202,7 +202,7 @@ export async function handleRebaseCommand(
             shouldClearBaseFields = true;
           }
         }
-      } else if (!resolved.plan.baseBranch && resolved.plan.basePlan) {
+      } else if (!resolved.plan.baseBranch && (resolved.plan.basePlan || resolved.plan.parent)) {
         const resolvedBaseBranch = await resolveEffectivePlanBase({
           plan: resolved.plan,
           config: effectiveConfig,

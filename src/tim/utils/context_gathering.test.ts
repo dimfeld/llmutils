@@ -24,6 +24,8 @@ interface MockDependencies {
     remoteUrl: string | null;
     gitRoot: string;
   }>;
+  loadEffectiveConfig: (configPath?: string) => Promise<any>;
+  resolveEffectivePlanBase: (options: any) => Promise<string>;
 }
 
 describe('gatherPlanContext', () => {
@@ -75,6 +77,8 @@ describe('gatherPlanContext', () => {
         remoteUrl: 'git@github.com:test/repo.git',
         gitRoot: repoRoot,
       }),
+      loadEffectiveConfig: async () => ({}),
+      resolveEffectivePlanBase: async () => 'main',
     };
   });
 
@@ -303,5 +307,58 @@ describe('gatherPlanContext', () => {
     expect(capturedOptions.sinceLastReview).toBe(true);
     expect(capturedOptions.sinceCommit).toBe('abc123');
     expect(capturedOptions.planId).toBe('123');
+    expect(capturedOptions.baseBranch).toBe('main');
+  });
+
+  test('should resolve effective plan base for review diffs when no base is provided', async () => {
+    let resolverInput: any;
+    let capturedOptions: any;
+
+    mockDeps.resolveEffectivePlanBase = async (options) => {
+      resolverInput = options;
+      return 'feature/parent-base';
+    };
+    mockDeps.generateDiffForReview = async (_gitRoot: string, options?: any) => {
+      capturedOptions = options;
+      return {
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: options?.baseBranch ?? 'main',
+        diffContent: 'diff',
+      };
+    };
+
+    await gatherPlanContext(123, {}, { config: '/tmp/custom.tim.yml' }, mockDeps);
+
+    expect(resolverInput).toEqual({
+      plan: basePlan,
+      config: {},
+      baseDir: gitRoot,
+    });
+    expect(capturedOptions.baseBranch).toBe('feature/parent-base');
+  });
+
+  test('should let explicit review base override effective plan base resolution', async () => {
+    let resolverCalled = false;
+    let capturedOptions: any;
+
+    mockDeps.resolveEffectivePlanBase = async () => {
+      resolverCalled = true;
+      return 'feature/parent-base';
+    };
+    mockDeps.generateDiffForReview = async (_gitRoot: string, options?: any) => {
+      capturedOptions = options;
+      return {
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: options?.baseBranch ?? 'main',
+        diffContent: 'diff',
+      };
+    };
+
+    await gatherPlanContext(123, { base: 'release/manual-base' }, {}, mockDeps);
+
+    expect(resolverCalled).toBe(false);
+    expect(capturedOptions.baseBranch).toBe('release/manual-base');
   });
 });

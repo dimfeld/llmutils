@@ -20,7 +20,10 @@ import { setPlanBaseTracking } from '../db/plan.js';
 import { updateHeadlessSessionInfo } from '../headless.js';
 import { materializePlan, resolveProjectContext } from '../plan_materialize.js';
 import { readPlanFile, resolvePlanByNumericId } from '../plans.js';
-import { resolveBasePlanBranch } from '../plans/base_plan_resolution.js';
+import {
+  resolveBasePlanBranch,
+  resolveParentPlanBaseBranch,
+} from '../plans/base_plan_resolution.js';
 import type { PlanSchema } from '../planSchema.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
 import { findWorkspaceInfosByTaskId } from './workspace_info.js';
@@ -72,19 +75,8 @@ async function getParentPlanBranch(
   config: TimConfig,
   currentBaseDir: string
 ): Promise<string | undefined> {
-  if (!plan.parent) {
-    return undefined;
-  }
-
   const gitRoot = await getGitRoot(currentBaseDir);
-  const parentPlan = await resolvePlanByNumericId(plan.parent, gitRoot);
-  const projectContext = await resolveProjectContext(currentBaseDir);
-  const branchPrefix = resolveBranchPrefix({
-    config,
-    db: getDatabase(),
-    projectId: projectContext.projectId,
-  });
-  return parentPlan.plan.branch ?? generateBranchNameFromPlan(parentPlan.plan, { branchPrefix });
+  return resolveParentPlanBaseBranch(plan, config, gitRoot);
 }
 
 async function getBasePlanBranch(

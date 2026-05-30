@@ -507,7 +507,7 @@ export async function generateDiffForReview(
     if (!lastReviewMetadata) {
       // No previous review found, fall back to regular diff
       warn('No previous review found for incremental mode, generating full diff...');
-      return generateRegularDiffForReview(gitRoot);
+      return generateRegularDiffForReview(gitRoot, options.baseBranch);
     }
 
     return getIncrementalDiff(
