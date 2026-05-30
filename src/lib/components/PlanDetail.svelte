@@ -1143,6 +1143,28 @@
       </div>
     {/if}
 
+    <!-- Parent -->
+    {#if plan.parent}
+      <div>
+        <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Parent Plan
+        </h3>
+        <a
+          href={planUrl(plan.parent.uuid, plan.parent.projectId)}
+          data-sveltekit-preload-data
+          class="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-left text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+        >
+          {#if plan.parent.planId}
+            <span class="text-xs font-medium text-muted-foreground">#{plan.parent.planId}</span>
+          {/if}
+          <span class="text-foreground">{plan.parent.title ?? 'Unknown plan'}</span>
+          {#if plan.parent.displayStatus}
+            <StatusBadge status={plan.parent.displayStatus} />
+          {/if}
+        </a>
+      </div>
+    {/if}
+
     <!-- Siblings -->
     {#if siblingEntries.length > 0}
       <div>
@@ -1182,28 +1204,6 @@
             </li>
           {/each}
         </ul>
-      </div>
-    {/if}
-
-    <!-- Parent -->
-    {#if plan.parent}
-      <div>
-        <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          Parent Plan
-        </h3>
-        <a
-          href={planUrl(plan.parent.uuid, plan.parent.projectId)}
-          data-sveltekit-preload-data
-          class="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-left text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-        >
-          {#if plan.parent.planId}
-            <span class="text-xs font-medium text-muted-foreground">#{plan.parent.planId}</span>
-          {/if}
-          <span class="text-foreground">{plan.parent.title ?? 'Unknown plan'}</span>
-          {#if plan.parent.displayStatus}
-            <StatusBadge status={plan.parent.displayStatus} />
-          {/if}
-        </a>
       </div>
     {/if}
 
