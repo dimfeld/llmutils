@@ -53,7 +53,7 @@ The `HeadlessAdapter` supports a `setUserInputHandler()` callback, mirroring the
 
 This enables the web UI to send user messages to running agent sessions via the WebSocket connection (the web UI discovers agent processes and connects to their embedded WebSocket servers).
 
-### Headless Adapter End Session
+### Claude Code Headless Adapter End Session
 
 The `HeadlessAdapter` also supports a `setEndSessionHandler()` callback for gracefully ending sessions from the web UI. When `executeWithTerminalInput()` detects a `HeadlessAdapter`, it wires a three-tier handler:
 
@@ -62,6 +62,12 @@ The `HeadlessAdapter` also supports a `setEndSessionHandler()` callback for grac
 3. **Non-interactive (stdin already closed)**: Sends `SIGTERM` to the subprocess as a fallback
 
 The handler also clears tunnel and headless user input handlers, rejects pending prompts with 'Session ended', and removes itself after firing. This enables the web UI's "End Session" button to cleanly terminate running agent sessions regardless of their input mode.
+
+### Codex App-Server Headless End Session
+
+Codex app-server sessions do not use stdin closure or subprocess `SIGTERM` as their graceful end path. In app-server mode, the `HeadlessAdapter` `end_session` handler closes the local input queue and sends `turn/interrupt` for the active Codex turn when a turn id is known. If `end_session` arrives while `turn/start` is still pending, the runner sends `turn/interrupt` as soon as the turn id is returned.
+
+The normal and force web UI end-session actions both use this app-server path for Codex so the Codex side can shut down the turn cleanly instead of relying on subprocess stdin or signals.
 
 ## `executeWithTerminalInput()` Branching
 

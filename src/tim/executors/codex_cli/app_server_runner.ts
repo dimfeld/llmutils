@@ -196,6 +196,7 @@ export async function executeCodexStepViaAppServer(
   let chatTurnId: string | undefined;
   let chatTurnCompleted = true;
   let connectionExitError: Error | undefined;
+  let sessionEndRequested = false;
 
   const clearInactivityTimer = () => {
     if (inactivityTimer) {
@@ -323,6 +324,44 @@ export async function executeCodexStepViaAppServer(
     }
   };
 
+  const throwIfSessionEndRequested = () => {
+    if (sessionEndRequested) {
+      throw new Error('Session ended');
+    }
+  };
+
+  const interruptActiveTurn = () => {
+    const interruptThreadId = threadId;
+    const interruptTurnId = currentTurnId ?? chatTurnId;
+    if (!connection?.isAlive || !interruptThreadId || !interruptTurnId) {
+      return;
+    }
+
+    connection
+      .turnInterrupt({ threadId: interruptThreadId, turnId: interruptTurnId })
+      .catch((err) => {
+        debugLog('Failed to interrupt app-server turn while ending session:', err);
+      });
+  };
+
+  const endActiveSession = () => {
+    if (sessionEndRequested) {
+      return;
+    }
+
+    sessionEndRequested = true;
+    activeInputQueue?.close();
+    interruptActiveTurn();
+
+    if (currentAttemptActive) {
+      currentAttemptActive = false;
+      resolveCurrentTurnStatus('interrupted');
+    }
+
+    clearInactivityTimer();
+    stopRateLimitPolling();
+  };
+
   try {
     connection = await CodexAppServerConnection.create({
       cwd,
@@ -406,6 +445,7 @@ export async function executeCodexStepViaAppServer(
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
           throwIfConnectionExited();
+          throwIfSessionEndRequested();
           currentTurnId = undefined;
           sawFirstNotification = false;
           interruptedByInactivity = false;
@@ -422,6 +462,11 @@ export async function executeCodexStepViaAppServer(
               ...(options?.outputSchema ? { outputSchema: options.outputSchema } : {}),
             })
             .then((turnResult) => {
+              if (sessionEndRequested) {
+                currentTurnId = turnResult.turnId;
+                interruptActiveTurn();
+                return;
+              }
               if (!currentAttemptActive) {
                 return;
               }
@@ -444,6 +489,7 @@ export async function executeCodexStepViaAppServer(
           }
           const status = (await turnCompletedPromise) || 'completed';
           throwIfConnectionExited();
+          throwIfSessionEndRequested();
           currentAttemptActive = false;
           clearInactivityTimer();
           stopRateLimitPolling();
@@ -475,6 +521,8 @@ export async function executeCodexStepViaAppServer(
           clearInactivityTimer();
           stopRateLimitPolling();
 
+          throwIfSessionEndRequested();
+
           if (attempt >= maxAttempts) {
             throw err;
           }
@@ -493,6 +541,7 @@ export async function executeCodexStepViaAppServer(
       let terminalInputReader: TerminalInputReader | undefined;
       let clearTunnelUserInputHandler: () => void = () => {};
       let clearHeadlessUserInputHandler: () => void = () => {};
+      let clearHeadlessEndSessionHandlers: () => void = () => {};
 
       if (terminalInputEnabled) {
         terminalInputReader = new TerminalInputReader({
@@ -547,6 +596,12 @@ export async function executeCodexStepViaAppServer(
         clearHeadlessUserInputHandler = () => {
           loggerAdapter.setUserInputHandler(undefined);
         };
+        loggerAdapter.setEndSessionHandler(endActiveSession);
+        loggerAdapter.setForceEndSessionHandler(endActiveSession);
+        clearHeadlessEndSessionHandlers = () => {
+          loggerAdapter.setEndSessionHandler(undefined);
+          loggerAdapter.setForceEndSessionHandler(undefined);
+        };
       }
 
       const normalizedPrompt = prompt.trim();
@@ -569,6 +624,9 @@ export async function executeCodexStepViaAppServer(
         ...(options?.outputSchema ? { outputSchema: options.outputSchema } : {}),
       });
       currentTurnId = startResult.turnId;
+      if (sessionEndRequested) {
+        interruptActiveTurn();
+      }
       startRateLimitPolling();
       resetInactivityTimer();
 
@@ -604,6 +662,7 @@ export async function executeCodexStepViaAppServer(
 
         const status = (await turnCompletedPromise) || 'completed';
         throwIfConnectionExited();
+        throwIfSessionEndRequested();
         currentAttemptActive = false;
         clearInactivityTimer();
 
@@ -619,6 +678,7 @@ export async function executeCodexStepViaAppServer(
         terminalInputReader?.stop();
         clearTunnelUserInputHandler();
         clearHeadlessUserInputHandler();
+        clearHeadlessEndSessionHandlers();
       }
     } else {
       const inputQueue = new UserInputQueue();
@@ -626,6 +686,7 @@ export async function executeCodexStepViaAppServer(
       let terminalInputReader: TerminalInputReader | undefined;
       let clearTunnelUserInputHandler: () => void = () => {};
       let clearHeadlessUserInputHandler: () => void = () => {};
+      let clearHeadlessEndSessionHandlers: () => void = () => {};
 
       if (prompt.trim().length > 0) {
         inputQueue.push(prompt);
@@ -684,6 +745,12 @@ export async function executeCodexStepViaAppServer(
         clearHeadlessUserInputHandler = () => {
           loggerAdapter.setUserInputHandler(undefined);
         };
+        loggerAdapter.setEndSessionHandler(endActiveSession);
+        loggerAdapter.setForceEndSessionHandler(endActiveSession);
+        clearHeadlessEndSessionHandlers = () => {
+          loggerAdapter.setEndSessionHandler(undefined);
+          loggerAdapter.setForceEndSessionHandler(undefined);
+        };
       }
 
       try {
@@ -717,11 +784,15 @@ export async function executeCodexStepViaAppServer(
             ...(options?.outputSchema ? { outputSchema: options.outputSchema } : {}),
           });
           chatTurnId = startResult.turnId;
+          if (sessionEndRequested) {
+            interruptActiveTurn();
+          }
           startRateLimitPolling();
         };
 
         while (true) {
           throwIfConnectionExited();
+          throwIfSessionEndRequested();
           const nextInput = await inputQueue.next();
           if (nextInput == null) {
             break;
@@ -730,11 +801,13 @@ export async function executeCodexStepViaAppServer(
           await sendChatInput(nextInput);
           successfulTurns += 1;
         }
+        throwIfSessionEndRequested();
       } finally {
         stopRateLimitPolling();
         terminalInputReader?.stop();
         clearTunnelUserInputHandler();
         clearHeadlessUserInputHandler();
+        clearHeadlessEndSessionHandlers();
         inputQueue.close();
         activeInputQueue = undefined;
       }

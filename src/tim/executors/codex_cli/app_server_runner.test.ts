@@ -50,6 +50,8 @@ interface Harness {
   loggerAdapter:
     | {
         setUserInputHandler: ReturnType<typeof vi.fn>;
+        setEndSessionHandler?: ReturnType<typeof vi.fn>;
+        setForceEndSessionHandler?: ReturnType<typeof vi.fn>;
       }
     | undefined;
   connectionCreateOptions: { current?: any };
@@ -128,6 +130,8 @@ async function createHarness(options?: {
 
   class MockHeadlessAdapter {
     setUserInputHandler = vi.fn();
+    setEndSessionHandler = vi.fn();
+    setForceEndSessionHandler = vi.fn();
   }
 
   class MockTunnelAdapter {
@@ -750,6 +754,109 @@ describe('executeCodexStepViaAppServer', () => {
           call[0].content === 'gui input'
       )
     ).toBe(false);
+  });
+
+  test('headless end session interrupts an active chat turn', async () => {
+    const harness = await createHarness({ loggerAdapterKind: 'headless' });
+
+    harness.connection.turnStart.mockImplementationOnce(async () => ({ turnId: 'turn-1' }));
+
+    const result = harness.executeCodexStepViaAppServer(
+      'generate the plan',
+      '/repo',
+      {},
+      { appServerMode: 'chat-session' }
+    );
+
+    await waitFor(
+      () => (harness.loggerAdapter?.setEndSessionHandler?.mock.calls.length ?? 0) === 1
+    );
+    await waitFor(() => harness.connection.turnStart.mock.calls.length === 1);
+
+    const handler = harness.loggerAdapter?.setEndSessionHandler?.mock.calls[0]?.[0] as
+      | (() => void)
+      | undefined;
+    expect(handler).toBeDefined();
+    handler?.();
+
+    await expect(result).rejects.toThrow('Session ended');
+    expect(harness.connection.turnInterrupt).toHaveBeenCalledWith({
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+    });
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+    expect(harness.loggerAdapter?.setEndSessionHandler).toHaveBeenLastCalledWith(undefined);
+    expect(harness.loggerAdapter?.setForceEndSessionHandler).toHaveBeenLastCalledWith(undefined);
+  });
+
+  test('headless end session interrupts once turnStart later returns a turn id', async () => {
+    const harness = await createHarness({ loggerAdapterKind: 'headless' });
+    let resolveTurnStart: ((value: { turnId: string }) => void) | undefined;
+
+    harness.connection.turnStart.mockImplementationOnce(
+      async () =>
+        await new Promise<{ turnId: string }>((resolve) => {
+          resolveTurnStart = resolve;
+        })
+    );
+
+    const result = harness.executeCodexStepViaAppServer(
+      'generate the plan',
+      '/repo',
+      {},
+      { appServerMode: 'chat-session' }
+    );
+
+    await waitFor(
+      () => (harness.loggerAdapter?.setEndSessionHandler?.mock.calls.length ?? 0) === 1
+    );
+    await waitFor(() => harness.connection.turnStart.mock.calls.length === 1);
+
+    const handler = harness.loggerAdapter?.setEndSessionHandler?.mock.calls[0]?.[0] as
+      | (() => void)
+      | undefined;
+    handler?.();
+    expect(harness.connection.turnInterrupt).not.toHaveBeenCalled();
+
+    resolveTurnStart?.({ turnId: 'turn-late' });
+
+    await expect(result).rejects.toThrow('Session ended');
+    expect(harness.connection.turnInterrupt).toHaveBeenCalledWith({
+      threadId: 'thread-1',
+      turnId: 'turn-late',
+    });
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+  });
+
+  test('headless force end session also interrupts an active app-server turn', async () => {
+    const harness = await createHarness({ loggerAdapterKind: 'headless' });
+
+    harness.connection.turnStart.mockImplementationOnce(async () => ({ turnId: 'turn-force' }));
+
+    const result = harness.executeCodexStepViaAppServer(
+      'generate the plan',
+      '/repo',
+      {},
+      { appServerMode: 'chat-session' }
+    );
+
+    await waitFor(
+      () => (harness.loggerAdapter?.setForceEndSessionHandler?.mock.calls.length ?? 0) === 1
+    );
+    await waitFor(() => harness.connection.turnStart.mock.calls.length === 1);
+
+    const handler = harness.loggerAdapter?.setForceEndSessionHandler?.mock.calls[0]?.[0] as
+      | (() => void)
+      | undefined;
+    expect(handler).toBeDefined();
+    handler?.();
+
+    await expect(result).rejects.toThrow('Session ended');
+    expect(harness.connection.turnInterrupt).toHaveBeenCalledWith({
+      threadId: 'thread-1',
+      turnId: 'turn-force',
+    });
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
   });
 
   describe('subprocess monitor wiring', () => {
