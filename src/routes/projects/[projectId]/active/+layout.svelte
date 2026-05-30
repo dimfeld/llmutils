@@ -68,6 +68,8 @@
       attentionItems.prItems.length +
       attentionItems.sessionItems.length
   );
+  let stackedCount = $derived(attentionItems.stackedPlanItems.length);
+  let reviewedCount = $derived(attentionItems.reviewedPlanItems.length);
 
   let runningSessions = $derived(
     deriveRunningNowSessions(sessionManager.sessions.values(), projectId)
@@ -76,7 +78,11 @@
   let readyPlans = $derived(deriveReadyToStartPlans(data.plans, sessionManager.sessions.values()));
 
   let allEmpty = $derived(
-    attentionCount === 0 && runningSessions.length === 0 && readyPlans.length === 0
+    attentionCount === 0 &&
+      stackedCount === 0 &&
+      reviewedCount === 0 &&
+      runningSessions.length === 0 &&
+      readyPlans.length === 0
   );
 
   // Subscribe to PR update events to refresh actionable PR data when available
@@ -166,6 +172,36 @@
                 {projectId}
                 projectName={showProject ? projectNamesById[plan.projectId] : undefined}
                 selected={selectedPlanUuid === plan.uuid}
+              />
+            {/each}
+          </DashboardSection>
+        {/if}
+
+        {#if stackedCount > 0}
+          <DashboardSection title="Stacked" count={stackedCount}>
+            {#each attentionItems.stackedPlanItems as item (item.planUuid)}
+              <NeedsAttentionCard
+                {item}
+                {projectId}
+                projectName={showProject ? projectNamesById[item.projectId] : undefined}
+                selected={selectedPlanUuid === item.planUuid}
+                developmentWorkflow={data.developmentWorkflowByProjectId[item.projectId] ??
+                  'pr-based'}
+              />
+            {/each}
+          </DashboardSection>
+        {/if}
+
+        {#if reviewedCount > 0}
+          <DashboardSection title="Reviewed" count={reviewedCount}>
+            {#each attentionItems.reviewedPlanItems as item (item.planUuid)}
+              <NeedsAttentionCard
+                {item}
+                {projectId}
+                projectName={showProject ? projectNamesById[item.projectId] : undefined}
+                selected={selectedPlanUuid === item.planUuid}
+                developmentWorkflow={data.developmentWorkflowByProjectId[item.projectId] ??
+                  'pr-based'}
               />
             {/each}
           </DashboardSection>

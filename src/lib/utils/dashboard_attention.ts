@@ -59,6 +59,8 @@ export type AttentionItem = PlanAttentionItem | PrAttentionItem;
 
 export interface AttentionItems {
   planItems: PlanAttentionItem[];
+  stackedPlanItems: PlanAttentionItem[];
+  reviewedPlanItems: PlanAttentionItem[];
   prItems: PrAttentionItem[];
   sessionItems: RunningSession[];
 }
@@ -116,6 +118,8 @@ export function deriveAttentionItems(
   }
 
   const planItems: PlanAttentionItem[] = [];
+  const stackedPlanItems: PlanAttentionItem[] = [];
+  const reviewedPlanItems: PlanAttentionItem[] = [];
 
   for (const plan of plans) {
     // Skip plans that already have an active session; they should appear in "Running Now".
@@ -148,7 +152,7 @@ export function deriveAttentionItems(
       }
     }
 
-    // Check for review-complete states that should still remain visible until done.
+    // Check for review states that still need a direct action.
     if (plan.displayStatus === 'needs_review') {
       reasons.push({ type: 'needs_review' });
     } else if (plan.displayStatus === 'reviewed') {
@@ -156,7 +160,7 @@ export function deriveAttentionItems(
     }
 
     if (reasons.length > 0) {
-      planItems.push({
+      const item: PlanAttentionItem = {
         kind: 'plan',
         planUuid: plan.uuid,
         planId: plan.planId,
@@ -171,7 +175,14 @@ export function deriveAttentionItems(
         reviewIssueCount: plan.reviewIssueCount,
         depsFullyResolved: plan.depsFullyResolved,
         reasons,
-      });
+      };
+      if (plan.displayStatus === 'needs_review' && !plan.depsFullyResolved) {
+        stackedPlanItems.push(item);
+      } else if (plan.displayStatus === 'reviewed') {
+        reviewedPlanItems.push(item);
+      } else {
+        planItems.push(item);
+      }
     }
   }
 
@@ -192,6 +203,8 @@ export function deriveAttentionItems(
 
   return {
     planItems,
+    stackedPlanItems,
+    reviewedPlanItems,
     prItems: [...reviewRequestItems, ...otherPrItems],
     sessionItems: notificationSessions,
   };

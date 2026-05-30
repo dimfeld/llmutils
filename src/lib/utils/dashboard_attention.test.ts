@@ -33,6 +33,7 @@ function makePlan(overrides: Partial<EnrichedPlan> & { uuid: string }): Enriched
     issues: [],
     prSummaryStatus: 'none',
     hasPlanPrLinks: false,
+    depsFullyResolved: true,
     tags: [],
     dependencyUuids: [],
     tasks: [],
@@ -88,6 +89,8 @@ describe('deriveAttentionItems', () => {
   test('returns empty when no plans or sessions', () => {
     const result = deriveAttentionItems([], planIndex([]), []);
     expect(result.planItems).toEqual([]);
+    expect(result.stackedPlanItems).toEqual([]);
+    expect(result.reviewedPlanItems).toEqual([]);
     expect(result.prItems).toEqual([]);
   });
 
@@ -117,12 +120,53 @@ describe('deriveAttentionItems', () => {
     expect(result.planItems[0].reasons).toEqual([{ type: 'needs_review' }]);
   });
 
-  test('detects reviewed status', () => {
+  test('returns reviewed status separately', () => {
     const plan = makePlan({ uuid: 'plan-reviewed', displayStatus: 'reviewed' });
 
     const result = deriveAttentionItems([plan], planIndex([]), []);
-    expect(result.planItems).toHaveLength(1);
-    expect(result.planItems[0].reasons).toEqual([{ type: 'reviewed' }]);
+    expect(result.planItems).toEqual([]);
+    expect(result.reviewedPlanItems).toHaveLength(1);
+    expect(result.reviewedPlanItems[0]).toEqual(
+      expect.objectContaining({
+        planUuid: 'plan-reviewed',
+        reasons: [{ type: 'reviewed' }],
+      })
+    );
+  });
+
+  test('returns stacked needs_review plans separately', () => {
+    const plan = makePlan({
+      uuid: 'plan-stacked',
+      displayStatus: 'needs_review',
+      depsFullyResolved: false,
+    });
+
+    const result = deriveAttentionItems([plan], planIndex([]), []);
+    expect(result.planItems).toEqual([]);
+    expect(result.stackedPlanItems).toHaveLength(1);
+    expect(result.stackedPlanItems[0]).toEqual(
+      expect.objectContaining({
+        depsFullyResolved: false,
+        reasons: [{ type: 'needs_review' }],
+      })
+    );
+  });
+
+  test('keeps stacked needs_review plans out of directly actionable plan items', () => {
+    const stacked = makePlan({
+      uuid: 'stacked',
+      displayStatus: 'needs_review',
+      depsFullyResolved: false,
+    });
+    const actionable = makePlan({
+      uuid: 'actionable',
+      displayStatus: 'needs_review',
+      depsFullyResolved: true,
+    });
+
+    const result = deriveAttentionItems([stacked, actionable], planIndex([]), []);
+    expect(result.planItems.map((item) => item.planUuid)).toEqual(['actionable']);
+    expect(result.stackedPlanItems.map((item) => item.planUuid)).toEqual(['stacked']);
   });
 
   test('preserves epic flag on plan attention items', () => {
