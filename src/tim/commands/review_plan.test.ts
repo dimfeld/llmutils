@@ -290,6 +290,45 @@ describe('handlePlanReviewGuideCommand', () => {
     expect(capturedGuidePrompts[0]).not.toContain('## PR Metadata');
   });
 
+  test('creates a completed codex-only plan review with guide and issues', async () => {
+    const { repoDir } = await createRepository({
+      tempDir,
+      dirtyChange: 'export const value = 2;\n',
+    });
+    process.chdir(repoDir);
+    await seedPlan(repoDir);
+
+    await handlePlanReviewGuideCommand('348', { executor: 'codex-cli' }, makeCommand());
+
+    const reviews = getReviewsByPlanUuid(getDatabase(), PLAN_UUID);
+    expect(reviews).toHaveLength(1);
+    expect(reviews[0]).toEqual(
+      expect.objectContaining({
+        plan_uuid: PLAN_UUID,
+        pr_url: null,
+        status: 'complete',
+        review_guide: expect.stringContaining('Stub Plan Review Guide'),
+      })
+    );
+
+    const issues = getReviewIssues(getDatabase(), reviews[0].id);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toEqual(
+      expect.objectContaining({
+        review_id: reviews[0].id,
+        severity: 'major',
+        category: 'bug',
+        source: 'codex-cli',
+      })
+    );
+    expect(capturedGuidePrompts).toHaveLength(1);
+    expect(capturedGuidePrompts[0]).toContain('Plan-only review guides');
+    expect(mockBuildExecutorAndLog.mock.calls.map((call) => call[0])).toEqual([
+      'codex-cli',
+      'codex-cli',
+    ]);
+  });
+
   test('completes in a repository without an origin remote', async () => {
     const { repoDir } = await createRepository({
       tempDir,

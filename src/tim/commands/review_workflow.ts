@@ -52,7 +52,7 @@ interface ExecutorIssueResult {
   source: ReviewIssueSource;
 }
 
-interface ClaudeGuideResult {
+interface GuideResult {
   guideText: string;
 }
 
@@ -1208,7 +1208,7 @@ async function cleanupUnifiedDiffBlocks(options: {
   return { guideText: cleanedGuideText, repairedSectionCount };
 }
 
-async function runClaudeGuide(options: {
+async function runReviewGuide(options: {
   executor: Executor;
   metadata: ReviewSubjectMetadata;
   useJj: boolean;
@@ -1217,7 +1217,7 @@ async function runClaudeGuide(options: {
   guidePath: string;
   reviewId: number;
   planTag?: string;
-}): Promise<ClaudeGuideResult> {
+}): Promise<GuideResult> {
   const subjectTag = getSubjectTag(options.metadata, options.planTag);
   const guidePrompt = buildReviewGuidePrompt({
     metadata: options.metadata,
@@ -1240,7 +1240,7 @@ async function runClaudeGuide(options: {
     guideText = await fs.readFile(options.guidePath, 'utf8');
   } catch (err) {
     throw new Error(
-      `Claude executor completed but did not write the expected review guide to ${options.guidePath}. Check that the prompt instructs the agent to write to this exact path.`,
+      `Review guide executor completed but did not write the expected review guide to ${options.guidePath}. Check that the prompt instructs the agent to write to this exact path.`,
       { cause: err }
     );
   }
@@ -1380,32 +1380,42 @@ export async function runReviewGuideWorkflow(
       await ensureTmpDir(tempPaths.dir);
       const usingJj = await getUsingJj(options.baseDir);
 
-      const executorPromises: Array<Promise<ClaudeGuideResult | ExecutorIssueResult>> = [];
-      const executorOrder: Array<'claude-guide' | ReviewExecutorName> = [];
+      const executorPromises: Array<Promise<GuideResult | ExecutorIssueResult>> = [];
+      const executorOrder: Array<'guide' | ReviewExecutorName> = [];
       const hasClaude = selectedExecutorNames.includes('claude-code');
       const hasCodex = selectedExecutorNames.includes('codex-cli');
-      const concurrentJobCount = (hasClaude ? 2 : 0) + (hasCodex ? 1 : 0);
+      const guideExecutorName: ReviewExecutorName | null = hasClaude
+        ? 'claude-code'
+        : hasCodex
+          ? 'codex-cli'
+          : null;
+      const concurrentJobCount =
+        (guideExecutorName ? 1 : 0) + (hasClaude ? 1 : 0) + (hasCodex ? 1 : 0);
       const isConcurrent = concurrentJobCount > 1;
       const executorTerminalInput = isConcurrent ? false : options.executorTerminalInput;
       const executorNoninteractive = isConcurrent || options.executorNoninteractive;
 
-      if (hasClaude) {
-        executorOrder.push('claude-guide');
-        const claudeGuideExecutor = buildExecutorAndLog(
-          'claude-code',
+      if (guideExecutorName) {
+        executorOrder.push('guide');
+        const guideExecutor = buildExecutorAndLog(
+          guideExecutorName,
           {
             baseDir: options.baseDir,
-            model: options.model ?? options.config.reviewGuide?.model?.claude,
+            model:
+              options.model ??
+              (guideExecutorName === 'claude-code'
+                ? options.config.reviewGuide?.model?.claude
+                : options.config.reviewGuide?.model?.codex),
             terminalInput: executorTerminalInput,
             noninteractive: executorNoninteractive,
           },
           options.config,
-          { reasoningEffort: 'high' }
+          guideExecutorName === 'claude-code' ? { reasoningEffort: 'high' } : {}
         );
 
         executorPromises.push(
-          runClaudeGuide({
-            executor: claudeGuideExecutor,
+          runReviewGuide({
+            executor: guideExecutor,
             metadata: options.metadata,
             useJj: usingJj,
             diffReferences: options.diffCatalog,
@@ -1415,7 +1425,9 @@ export async function runReviewGuideWorkflow(
             planTag: options.planTag,
           })
         );
+      }
 
+      if (hasClaude) {
         executorOrder.push('claude-code');
         const claudeIssuesExecutor = buildExecutorAndLog(
           'claude-code',
@@ -1470,7 +1482,7 @@ export async function runReviewGuideWorkflow(
 
       const settled = await Promise.allSettled(executorPromises);
 
-      let claudeGuideResult: ClaudeGuideResult | null = null;
+      let guideResult: GuideResult | null = null;
       let claudeIssuesResult: ExecutorIssueResult | null = null;
       let codexResult: ExecutorIssueResult | null = null;
 
@@ -1486,8 +1498,8 @@ export async function runReviewGuideWorkflow(
           continue;
         }
 
-        if (executorName === 'claude-guide') {
-          claudeGuideResult = result.value as ClaudeGuideResult;
+        if (executorName === 'guide') {
+          guideResult = result.value as GuideResult;
         } else if (executorName === 'claude-code') {
           claudeIssuesResult = result.value as ExecutorIssueResult;
         } else if (executorName === 'codex-cli') {
@@ -1508,7 +1520,7 @@ export async function runReviewGuideWorkflow(
       }
 
       let finalIssues: StoredReviewIssue[] = [];
-      let reviewGuide = claudeGuideResult?.guideText ?? null;
+      let reviewGuide = guideResult?.guideText ?? null;
       let extractedAnnotations: ExtractedAnnotation[] = [];
 
       if (reviewGuide) {

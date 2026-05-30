@@ -1123,7 +1123,7 @@ describe('review_pr command', () => {
     }
   });
 
-  test('single executor stays interactive via headless input when no TTY is available', async () => {
+  test('codex-only guide and issue jobs use noninteractive mode when no TTY is available', async () => {
     const codexExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
     });
@@ -1142,7 +1142,7 @@ describe('review_pr command', () => {
       (call) => call[0] === 'codex-cli'
     )?.[1];
     expect(codexBuildArgs).toEqual(
-      expect.objectContaining({ noninteractive: false, terminalInput: false })
+      expect.objectContaining({ noninteractive: true, terminalInput: false })
     );
     expect(runWithHeadlessAdapterIfEnabledMock).toHaveBeenCalledWith(
       expect.objectContaining({ command: 'review-guide', interactive: true })
@@ -1213,7 +1213,7 @@ describe('review_pr command', () => {
     }
   });
 
-  test('single executor stays interactive when tunnel input is available without TTY', async () => {
+  test('codex-only guide and issue jobs use noninteractive mode with tunnel input', async () => {
     mockIsTunnelActive.mockReturnValue(true);
     const codexExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
@@ -1233,14 +1233,14 @@ describe('review_pr command', () => {
       (call) => call[0] === 'codex-cli'
     )?.[1];
     expect(codexBuildArgs).toEqual(
-      expect.objectContaining({ noninteractive: false, terminalInput: false })
+      expect.objectContaining({ noninteractive: true, terminalInput: false })
     );
     expect(runWithHeadlessAdapterIfEnabledMock).toHaveBeenCalledWith(
       expect.objectContaining({ command: 'review-guide', enabled: false, interactive: true })
     );
   });
 
-  test('single executor allows interactive mode when TTY is available', async () => {
+  test('codex-only guide and issue jobs disable terminal input when TTY is available', async () => {
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
     try {
@@ -1259,7 +1259,7 @@ describe('review_pr command', () => {
         (call) => call[0] === 'codex-cli'
       )?.[1];
       expect(codexBuildArgs).toEqual(
-        expect.objectContaining({ noninteractive: false, terminalInput: true })
+        expect.objectContaining({ noninteractive: true, terminalInput: false })
       );
     } finally {
       Object.defineProperty(process.stdin, 'isTTY', {
@@ -1435,23 +1435,38 @@ describe('review_pr command', () => {
     expect(mockInsertReviewIssues).toHaveBeenCalledTimes(1);
   });
 
-  test('single executor mode skips combination', async () => {
-    const codexExecute = vi.fn().mockResolvedValue({
-      content: JSON.stringify({
-        issues: [
-          {
-            severity: 'critical',
-            category: 'security',
-            content: 'Critical issue',
-            file: 'src/sec.ts',
-            line: '1',
-            suggestion: 'Fix',
-          },
-        ],
-        recommendations: [],
-        actionItems: [],
-      }),
-    });
+  test('codex-only mode stores guide and skips combination', async () => {
+    const codexExecute = vi
+      .fn()
+      .mockImplementation(async (prompt: string, planInfo: { executionMode: string }) => {
+        if (planInfo.executionMode === 'bare') {
+          expect(prompt).toContain('must produce a complete review guide');
+          await fs.mkdir(path.dirname(guidePath), { recursive: true });
+          await fs.writeFile(guidePath, '# Codex Guide\n\nReview this carefully.', 'utf8');
+          return { content: 'wrote guide' };
+        }
+
+        expect(planInfo.executionMode).toBe('review');
+        expect(prompt).toContain(
+          'standalone PR code review and must return structured JSON issues only'
+        );
+        return {
+          content: JSON.stringify({
+            issues: [
+              {
+                severity: 'critical',
+                category: 'security',
+                content: 'Critical issue',
+                file: 'src/sec.ts',
+                line: '1',
+                suggestion: 'Fix',
+              },
+            ],
+            recommendations: [],
+            actionItems: [],
+          }),
+        };
+      });
 
     mockBuildExecutorAndLog.mockImplementation((name) => {
       expect(name).toBe('codex-cli');
@@ -1464,11 +1479,24 @@ describe('review_pr command', () => {
       makeCommand()
     );
 
-    expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(1);
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(2);
+    expect(codexExecute).toHaveBeenCalledTimes(2);
+    expect(codexExecute.mock.calls.map((call) => call[1]?.executionMode)).toEqual([
+      'bare',
+      'review',
+    ]);
     expect(mockInsertReviewIssues).toHaveBeenCalledTimes(1);
     const inserted = mockInsertReviewIssues.mock.calls[0]?.[1];
     expect(inserted?.issues).toHaveLength(1);
     expect(inserted?.issues?.[0]?.source).toBe('codex-cli');
+    expect(mockUpdateReview).toHaveBeenCalledWith(
+      expect.anything(),
+      501,
+      expect.objectContaining({
+        status: 'complete',
+        reviewGuide: expect.stringContaining('Codex Guide'),
+      })
+    );
   });
 
   test('uses codex results when claude fails and skips combination', async () => {
