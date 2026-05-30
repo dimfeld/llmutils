@@ -2,10 +2,12 @@ import type { Database } from 'bun:sqlite';
 
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
 import {
+  DEFAULT_SLACK_DAILY_DIGEST_WEEKDAYS,
   DEFAULT_SLACK_DAILY_DIGEST_STALE_AFTER_HOURS,
   DEFAULT_SLACK_DAILY_DIGEST_TIME,
   getDefaultSlackDailyDigestTimezone,
   parseSlackDailyDigestTime,
+  slackDailyDigestWeekdayToDayIndex,
 } from '$common/slack/slack_daily_digest_config.js';
 import { postDailyDigestMessage, type SlackPostSender } from '$common/slack/slack_client.js';
 import { resolveSlackWorkspaceToken } from '$common/slack/slack_config.js';
@@ -300,8 +302,11 @@ export function startDailyDigestScheduler(
       workspaceConfig?.dailyDigest?.time ?? DEFAULT_SLACK_DAILY_DIGEST_TIME
     );
     const timeZone = workspaceConfig?.dailyDigest?.timezone ?? getDefaultSlackDailyDigestTimezone();
+    const weekdays = workspaceConfig?.dailyDigest?.weekdays ?? DEFAULT_SLACK_DAILY_DIGEST_WEEKDAYS;
+    const weekdayIndexes = new Set(weekdays.map(slackDailyDigestWeekdayToDayIndex));
+    const weekdaySummary = [...weekdays].sort().join(',');
     const currentMs = nowMs();
-    const targetMs = computeNextFireMs(currentMs, timeZone, hour, minute);
+    const targetMs = computeNextFireMs(currentMs, timeZone, hour, minute, weekdayIndexes);
     const delayMs = Math.min(Math.max(targetMs - currentMs, 0), MAX_TIMEOUT_MS);
 
     clearWorkspaceTimer(workspaceName);
@@ -328,7 +333,7 @@ export function startDailyDigestScheduler(
     timers.set(workspaceName, timer);
 
     console.info(
-      `[daily_digest] Scheduled workspace "${workspaceName}" daily PR digest for ${new Date(targetMs).toISOString()} (${timeZone} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')})`
+      `[daily_digest] Scheduled workspace "${workspaceName}" daily PR digest for ${new Date(targetMs).toISOString()} (${timeZone} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}, weekdays=${weekdaySummary})`
     );
   };
 

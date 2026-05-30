@@ -8,6 +8,7 @@ import {
 } from './executors/schemas.js';
 import { branchPrefixSchema } from './branch_prefix.js';
 import {
+  SLACK_DAILY_DIGEST_WEEKDAYS,
   SLACK_DAILY_DIGEST_TIME_PATTERN,
   isValidIanaTimeZone,
 } from '../common/slack/slack_daily_digest_config.js';
@@ -259,6 +260,10 @@ export const slackWorkspaceConfigSchema = z
           })
           .optional(),
         staleAfterHours: z.number().positive().optional(),
+        weekdays: z
+          .array(z.enum(SLACK_DAILY_DIGEST_WEEKDAYS))
+          .min(1, 'Slack dailyDigest.weekdays must include at least one weekday')
+          .optional(),
       })
       .strict()
       .optional(),

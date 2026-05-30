@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import * as yaml from 'js-yaml';
 import { getTimConfigRoot } from '../common/config_paths.js';
 import {
+  DEFAULT_SLACK_DAILY_DIGEST_WEEKDAYS,
   DEFAULT_SLACK_DAILY_DIGEST_STALE_AFTER_HOURS,
   DEFAULT_SLACK_DAILY_DIGEST_TIME,
   getDefaultSlackDailyDigestTimezone,
@@ -405,6 +406,9 @@ function applyReadTimeDefaults(config: TimConfig): TimConfig {
                   staleAfterHours:
                     workspaceConfig.dailyDigest?.staleAfterHours ??
                     DEFAULT_SLACK_DAILY_DIGEST_STALE_AFTER_HOURS,
+                  weekdays: workspaceConfig.dailyDigest?.weekdays ?? [
+                    ...DEFAULT_SLACK_DAILY_DIGEST_WEEKDAYS,
+                  ],
                 },
               },
             ])

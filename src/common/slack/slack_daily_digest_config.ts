@@ -5,6 +5,27 @@ export interface ParsedSlackDailyDigestTime {
 
 export const DEFAULT_SLACK_DAILY_DIGEST_TIME = '00:00';
 export const DEFAULT_SLACK_DAILY_DIGEST_STALE_AFTER_HOURS = 24;
+export const SLACK_DAILY_DIGEST_WEEKDAYS = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+] as const;
+export type SlackDailyDigestWeekday = (typeof SLACK_DAILY_DIGEST_WEEKDAYS)[number];
+export const DEFAULT_SLACK_DAILY_DIGEST_WEEKDAYS: SlackDailyDigestWeekday[] = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+];
+
+const slackDailyDigestWeekdayToIndex = new Map<SlackDailyDigestWeekday, number>(
+  SLACK_DAILY_DIGEST_WEEKDAYS.map((weekday, index) => [weekday, index])
+);
 
 export function getDefaultSlackDailyDigestTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -40,4 +61,12 @@ export function parseSlackDailyDigestTime(time: string): ParsedSlackDailyDigestT
   }
 
   return { hour, minute };
+}
+
+export function slackDailyDigestWeekdayToDayIndex(weekday: SlackDailyDigestWeekday): number {
+  const dayIndex = slackDailyDigestWeekdayToIndex.get(weekday);
+  if (dayIndex === undefined) {
+    throw new Error(`Invalid Slack daily digest weekday "${weekday}".`);
+  }
+  return dayIndex;
 }

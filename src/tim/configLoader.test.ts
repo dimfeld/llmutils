@@ -1492,6 +1492,7 @@ defaultExecutor: direct-call
                   dailyDigest: {
                     time: '08:15',
                     staleAfterHours: 12,
+                    weekdays: ['tuesday', 'thursday'],
                   },
                 },
                 custom: {
@@ -1514,16 +1515,19 @@ defaultExecutor: direct-call
           time: '00:00',
           timezone: expectedTimezone,
           staleAfterHours: 24,
+          weekdays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
         });
         expect(config.slack?.workspaces?.['personal']?.dailyDigest).toEqual({
           time: '08:15',
           timezone: expectedTimezone,
           staleAfterHours: 12,
+          weekdays: ['tuesday', 'thursday'],
         });
         expect(config.slack?.workspaces?.['custom']?.dailyDigest).toEqual({
           time: '00:00',
           timezone: 'America/New_York',
           staleAfterHours: 48,
+          weekdays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
         });
       } finally {
         if (originalEnv !== undefined) {

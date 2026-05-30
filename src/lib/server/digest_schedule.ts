@@ -93,7 +93,8 @@ export function computeNextFireMs(
   nowMs: number,
   timeZone: string,
   hour: number,
-  minute: number
+  minute: number,
+  allowedWeekdayIndexes?: ReadonlySet<number>
 ): number {
   if (!Number.isFinite(nowMs)) {
     throw new Error(`Invalid current time: ${nowMs}`);
@@ -107,7 +108,7 @@ export function computeNextFireMs(
 
   const nowParts = getZonedDateTimeParts(nowMs, timeZone);
 
-  for (let dayOffset = 0; dayOffset <= 3; dayOffset += 1) {
+  for (let dayOffset = 0; dayOffset <= 14; dayOffset += 1) {
     const candidateDateMs = Date.UTC(
       nowParts.year,
       nowParts.month - 1,
@@ -118,6 +119,9 @@ export function computeNextFireMs(
       0
     );
     const candidateDate = new Date(candidateDateMs);
+    if (allowedWeekdayIndexes && !allowedWeekdayIndexes.has(candidateDate.getUTCDay())) {
+      continue;
+    }
     const candidateMs = wallClockToUtcMs(
       timeZone,
       candidateDate.getUTCFullYear(),

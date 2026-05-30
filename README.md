@@ -307,7 +307,7 @@ slack:
     personal: { token: '${SLACK_PERSONAL_TOKEN}' }
 ```
 
-The token value supports `${ENV_VAR}` expansion at read time. The Slack app bot token needs `chat:write` access for the target channel, and the bot must be invited to that channel. A workspace may also carry an optional `dailyDigest: { time, timezone, staleAfterHours }` schedule for the daily PR digest (see below).
+The token value supports `${ENV_VAR}` expansion at read time. The Slack app bot token needs `chat:write` access for the target channel, and the bot must be invited to that channel. A workspace may also carry an optional `dailyDigest: { time, timezone, staleAfterHours, weekdays }` schedule for the daily PR digest (see below).
 
 Per-repo opt-in is stored in the local database as a `project_setting` named `slack`, so most repos stay silent until explicitly enabled:
 
@@ -339,7 +339,7 @@ The notifier runs in the SvelteKit web server when at least one Slack workspace 
 
 ### Daily PR Digest
 
-Separately, repos can opt into a once-per-day digest (`tim slack digest enable`) that summarizes approved-but-unmerged PRs and non-approved PRs awaiting review longer than the stale threshold (default 24h), posting one message per repo to its configured channel and skipping repos with nothing to report. The schedule (`time`/`timezone`/`staleAfterHours`) is per workspace; it requires webhook polling so the local PR data stays fresh, never uses `@`-mentions, and runs on a per-workspace timer in the web server. Run it on demand with `tim slack digest`, or preview without sending via `tim slack digest --dry-run`.
+Separately, repos can opt into a once-per-day digest (`tim slack digest enable`) that summarizes approved-but-unmerged PRs and non-approved PRs awaiting review longer than the stale threshold (default 24h), posting one message per repo to its configured channel and skipping repos with nothing to report. The schedule (`time`/`timezone`/`staleAfterHours`/`weekdays`) is per workspace, with `weekdays` defaulting to Monday through Friday; it requires webhook polling so the local PR data stays fresh, never uses `@`-mentions, and runs on a per-workspace timer in the web server. Run it on demand with `tim slack digest`, or preview without sending via `tim slack digest --dry-run`.
 
 See [`docs/slack-integration.md`](docs/slack-integration.md) for setup details and current scope.
 

@@ -74,6 +74,38 @@ describe('lib/server/digest_schedule', () => {
     expectZonedTime(resultMs, 'America/New_York', 8, 30);
   });
 
+  test('skips local days outside the allowed weekday set', () => {
+    const fridayAfterTargetMs = Date.parse('2026-01-16T14:00:00.000Z');
+    const mondayOnly = new Set([1]);
+    const resultMs = computeNextFireMs(fridayAfterTargetMs, 'America/New_York', 8, 30, mondayOnly);
+
+    expect(resultMs).toBe(Date.parse('2026-01-19T13:30:00.000Z'));
+    expect(formatZonedMinute(resultMs, 'America/New_York')).toMatchObject({
+      day: '19',
+      hour: '08',
+      minute: '30',
+    });
+  });
+
+  test('uses the local weekday for the configured timezone', () => {
+    const sundayUtcSaturdayHonoluluMs = Date.parse('2026-01-18T08:00:00.000Z');
+    const saturdayOnly = new Set([6]);
+    const resultMs = computeNextFireMs(
+      sundayUtcSaturdayHonoluluMs,
+      'Pacific/Honolulu',
+      23,
+      0,
+      saturdayOnly
+    );
+
+    expect(resultMs).toBe(Date.parse('2026-01-18T09:00:00.000Z'));
+    expect(formatZonedMinute(resultMs, 'Pacific/Honolulu')).toMatchObject({
+      day: '17',
+      hour: '23',
+      minute: '00',
+    });
+  });
+
   test('handles UTC targets directly', () => {
     const nowMs = Date.parse('2026-01-15T07:00:00.000Z');
     const resultMs = computeNextFireMs(nowMs, 'UTC', 8, 30);

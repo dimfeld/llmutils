@@ -13,6 +13,7 @@ describe('configSchema', () => {
                 time: '09:30',
                 timezone: 'America/Los_Angeles',
                 staleAfterHours: 36,
+                weekdays: ['monday', 'wednesday', 'friday'],
               },
             },
           },
@@ -25,6 +26,7 @@ describe('configSchema', () => {
           time: '09:30',
           timezone: 'America/Los_Angeles',
           staleAfterHours: 36,
+          weekdays: ['monday', 'wednesday', 'friday'],
         },
       });
     });
@@ -76,6 +78,32 @@ describe('configSchema', () => {
           })
         ).toThrow();
       }
+    });
+
+    test('requires daily digest weekdays to be known and non-empty', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          slack: {
+            workspaces: {
+              work: {
+                dailyDigest: { weekdays: [] },
+              },
+            },
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          slack: {
+            workspaces: {
+              work: {
+                dailyDigest: { weekdays: ['monday', 'funday'] },
+              },
+            },
+          },
+        })
+      ).toThrow();
     });
 
     test('rejects a malformed daily digest time', () => {

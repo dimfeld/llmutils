@@ -33,13 +33,18 @@ Each workspace has:
   - `time` - `HH:MM` 24-hour local time the digest fires (default `00:00`); rejected at load if not `HH:MM`
   - `timezone` - IANA time zone the `time` is interpreted in (default: the server's local zone); rejected at load if not a valid IANA zone
   - `staleAfterHours` - how long a review request must wait before it is "stale" (default `24`)
+  - `weekdays` - local weekdays when the scheduled digest may fire, using lowercase names (`monday` through `sunday`); defaults to Monday through Friday
 
 ```yaml
 slack:
   workspaces:
     work:
       token: '${SLACK_WORK_TOKEN}'
-      dailyDigest: { time: '09:00', timezone: 'America/New_York', staleAfterHours: 24 }
+      dailyDigest:
+        time: '09:00'
+        timezone: 'America/New_York'
+        staleAfterHours: 24
+        weekdays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
 ```
 
 Token placeholders are expanded from `process.env` at read time. tim fails loudly if a referenced workspace does not exist, if its token is missing or empty, if a referenced environment variable is unset or empty, or if the expanded token is empty. The `dailyDigest` schedule is per workspace (so different workspaces can fire at their own local time); whether a given repo participates is the per-repo `dailyDigest` opt-in below.
@@ -193,7 +198,7 @@ Toggles the [daily PR digest](#daily-pr-digest) for the current repo. `enable` r
 tim slack digest [--dry-run]
 ```
 
-Runs the daily digest immediately for every configured workspace's digest-enabled repos. `--dry-run` computes and prints the two buckets for each repo without posting to Slack (and without requiring a usable token), so you can preview what the scheduled run would send. Without `--dry-run`, it posts to Slack just like the scheduled run.
+Runs the daily digest immediately for every configured workspace's digest-enabled repos. `--dry-run` computes and prints the two buckets for each repo without posting to Slack (and without requiring a usable token), so you can preview what the scheduled run would send. Without `--dry-run`, it posts to Slack just like the scheduled run. Manual runs ignore the configured `weekdays`; weekdays only constrain the web server's scheduled timer.
 
 ## Posted Message Shape
 
