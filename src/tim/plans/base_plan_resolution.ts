@@ -22,6 +22,100 @@ export interface EffectivePlanBaseResolution {
   source: EffectivePlanBaseSource;
 }
 
+export type EffectivePlanBaseDisplaySource =
+  | 'plan'
+  | 'basePlan'
+  | 'parent'
+  | 'parentBasePlan'
+  | 'parentBaseBranch';
+
+export interface EffectivePlanBaseDisplayPlan {
+  planId: number;
+  uuid?: string;
+  title?: string;
+}
+
+export interface EffectivePlanBaseDisplayResolution {
+  baseBranch?: string;
+  source?: EffectivePlanBaseDisplaySource;
+  basePlan?: EffectivePlanBaseDisplayPlan;
+}
+
+export type ResolvePlanByIdForBase = (planId: number) => PlanSchema | undefined;
+
+function baseDisplayPlan(plan: PlanSchema): EffectivePlanBaseDisplayPlan {
+  return {
+    planId: plan.id,
+    uuid: plan.uuid,
+    title: plan.title,
+  };
+}
+
+function branchForPlan(plan: PlanSchema, branchPrefix?: string): string {
+  return plan.branch ?? generateBranchNameFromPlan(plan, { branchPrefix });
+}
+
+export function resolveEffectivePlanBaseDisplay(options: {
+  plan: PlanSchema;
+  resolvePlanById: ResolvePlanByIdForBase;
+  branchPrefix?: string;
+}): EffectivePlanBaseDisplayResolution {
+  const explicitBaseBranch = options.plan.baseBranch?.trim();
+  if (explicitBaseBranch) {
+    return { baseBranch: explicitBaseBranch, source: 'plan' };
+  }
+
+  if (options.plan.basePlan) {
+    const basePlan = options.resolvePlanById(options.plan.basePlan);
+    if (basePlan) {
+      return {
+        baseBranch: branchForPlan(basePlan, options.branchPrefix),
+        source: 'basePlan',
+        basePlan: baseDisplayPlan(basePlan),
+      };
+    }
+  }
+
+  if (!options.plan.parent) {
+    return {};
+  }
+
+  const parentPlan = options.resolvePlanById(options.plan.parent);
+  if (!parentPlan) {
+    return {};
+  }
+
+  if (parentPlan.branch) {
+    return {
+      baseBranch: parentPlan.branch,
+      source: 'parent',
+      basePlan: baseDisplayPlan(parentPlan),
+    };
+  }
+
+  if (parentPlan.basePlan) {
+    const parentBasePlan = options.resolvePlanById(parentPlan.basePlan);
+    if (parentBasePlan) {
+      return {
+        baseBranch: branchForPlan(parentBasePlan, options.branchPrefix),
+        source: 'parentBasePlan',
+        basePlan: baseDisplayPlan(parentBasePlan),
+      };
+    }
+  }
+
+  const parentBaseBranch = parentPlan.baseBranch?.trim();
+  if (parentBaseBranch) {
+    return { baseBranch: parentBaseBranch, source: 'parentBaseBranch' };
+  }
+
+  return {
+    baseBranch: branchForPlan(parentPlan, options.branchPrefix),
+    source: 'parent',
+    basePlan: baseDisplayPlan(parentPlan),
+  };
+}
+
 export async function resolveBasePlanBranch(
   plan: PlanSchema,
   config: TimConfig,

@@ -736,16 +736,17 @@
 
   let dependencyEntries = $derived.by(() => {
     const childUuids = new Set(plan.children.map((c) => c.uuid));
+    const basePlan = plan.effectiveBasePlan ?? plan.basePlan;
     const entries = plan.dependencies.map((dep) => ({
       dep,
-      isBase: plan.basePlan?.uuid === dep.uuid,
+      isBase: basePlan?.uuid === dep.uuid,
       isChild: childUuids.has(dep.uuid),
     }));
-    if (plan.basePlan && !entries.some((entry) => entry.dep.uuid === plan.basePlan!.uuid)) {
+    if (basePlan && !entries.some((entry) => entry.dep.uuid === basePlan.uuid)) {
       entries.push({
-        dep: plan.basePlan,
+        dep: basePlan,
         isBase: true,
-        isChild: childUuids.has(plan.basePlan.uuid),
+        isChild: childUuids.has(basePlan.uuid),
       });
     }
     return entries.sort((a, b) => {
@@ -760,6 +761,9 @@
 
   let childDependencyEntries = $derived(dependencyEntries.filter((e) => e.isChild));
   let nonChildDependencyEntries = $derived(dependencyEntries.filter((e) => !e.isChild));
+  let nonParentDependents = $derived(
+    plan.dependents.filter((dependent) => dependent.uuid !== plan.parent?.uuid)
+  );
 
   function planUrl(uuid: string, depProjectId?: number | null): string {
     const pid = depProjectId ?? projectId;
@@ -1093,13 +1097,13 @@
     {/if}
 
     <!-- Dependents -->
-    {#if plan.dependents.length > 0}
+    {#if nonParentDependents.length > 0}
       <div>
         <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Depended on by
         </h3>
         <ul class="space-y-1">
-          {#each plan.dependents.sort((a, b) => (a.planId ?? 0) - (b.planId ?? 0)) as dep (dep.uuid)}
+          {#each nonParentDependents.sort((a, b) => (a.planId ?? 0) - (b.planId ?? 0)) as dep (dep.uuid)}
             <li class="text-sm">
               <a
                 href={planUrl(dep.uuid, dep.projectId)}
@@ -1188,22 +1192,42 @@
     {/if}
 
     <!-- Branch -->
-    {#if plan.branch}
+    {#if plan.branch || plan.effectiveBaseBranch}
       <div>
         <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          Branch
+          Branches
         </h3>
-        <div class="flex items-center gap-1">
-          <code class="text-xs">{plan.branch}</code>
-          <CopyButton
-            text={plan.branch}
-            mode="icon"
-            iconClass="size-3"
-            className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-            title="Copy branch name"
-            ariaLabel="Copy branch name"
-            onCopied={() => toast.success('Branch name copied')}
-          />
+        <div class="space-y-1">
+          {#if plan.branch}
+            <div class="flex items-center gap-1">
+              <span class="w-16 text-xs text-muted-foreground">Branch</span>
+              <code class="text-xs">{plan.branch}</code>
+              <CopyButton
+                text={plan.branch}
+                mode="icon"
+                iconClass="size-3"
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+                title="Copy branch name"
+                ariaLabel="Copy branch name"
+                onCopied={() => toast.success('Branch name copied')}
+              />
+            </div>
+          {/if}
+          {#if plan.effectiveBaseBranch}
+            <div class="flex items-center gap-1">
+              <span class="w-16 text-xs text-muted-foreground">Base</span>
+              <code class="text-xs">{plan.effectiveBaseBranch}</code>
+              <CopyButton
+                text={plan.effectiveBaseBranch}
+                mode="icon"
+                iconClass="size-3"
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+                title="Copy base branch name"
+                ariaLabel="Copy base branch name"
+                onCopied={() => toast.success('Base branch name copied')}
+              />
+            </div>
+          {/if}
         </div>
       </div>
     {/if}

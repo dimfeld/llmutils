@@ -30,6 +30,11 @@ import {
   type PlanTaskRow,
 } from '$tim/db/plan.js';
 import { listProjects, type Project } from '$tim/db/project.js';
+import { planRowToSchemaInput } from '$tim/plans_db.js';
+import {
+  resolveEffectivePlanBaseDisplay,
+  type EffectivePlanBaseDisplaySource,
+} from '$tim/plans/base_plan_resolution.js';
 import {
   dbValueToWorkspaceType,
   WORKSPACE_TYPE_VALUES,
@@ -140,6 +145,9 @@ export interface PlanDetail extends EnrichedPlan {
   assignment: AssignmentEntry | null;
   parent: EnrichedPlanDependency | null;
   basePlan: EnrichedPlanDependency | null;
+  effectiveBaseBranch: string | null;
+  effectiveBaseBranchSource: EffectivePlanBaseDisplaySource | null;
+  effectiveBasePlan: EnrichedPlanDependency | null;
   prStatuses: PrStatusDetailWithRequiredChecks[];
   reviewIssues: PlanSchema['reviewIssues'];
   artifacts: PlanArtifactWithTransferState[];
@@ -968,6 +976,16 @@ export async function getPlanDetail(
   const referencedPlanUuids = new Set<string>(
     dependencies.map((dependency) => dependency.depends_on_uuid)
   );
+  const projectPlanRows = getPlansByProject(db, plan.project_id);
+  const uuidToPlanId = new Map(projectPlanRows.map((row) => [row.uuid, row.plan_id]));
+  const planByPlanId = new Map(projectPlanRows.map((row) => [row.plan_id, row]));
+  const effectiveBaseResolution = resolveEffectivePlanBaseDisplay({
+    plan: planRowToSchemaInput(plan, [], [], [], uuidToPlanId),
+    resolvePlanById: (planId) => {
+      const row = planByPlanId.get(planId);
+      return row ? planRowToSchemaInput(row, [], [], [], uuidToPlanId) : undefined;
+    },
+  });
 
   if (plan.parent_uuid) {
     referencedPlanUuids.add(plan.parent_uuid);
@@ -975,6 +993,10 @@ export async function getPlanDetail(
 
   if (plan.base_plan_uuid) {
     referencedPlanUuids.add(plan.base_plan_uuid);
+  }
+
+  if (effectiveBaseResolution.basePlan?.uuid) {
+    referencedPlanUuids.add(effectiveBaseResolution.basePlan.uuid);
   }
 
   const dependentRows = db
@@ -1037,6 +1059,9 @@ export async function getPlanDetail(
   const basePlan = plan.base_plan_uuid
     ? toDependencySummary(plan.base_plan_uuid, planByUuid, dependenciesByPlanUuid)
     : null;
+  const effectiveBasePlan = effectiveBaseResolution.basePlan?.uuid
+    ? toDependencySummary(effectiveBaseResolution.basePlan.uuid, planByUuid, dependenciesByPlanUuid)
+    : null;
   const prStatuses = getPrStatusForPlan(db, planUuid, enrichedPlan.pullRequests, {
     includeReviewThreads: true,
   });
@@ -1073,6 +1098,9 @@ export async function getPlanDetail(
     assignment,
     parent,
     basePlan,
+    effectiveBaseBranch: effectiveBaseResolution.baseBranch ?? null,
+    effectiveBaseBranchSource: effectiveBaseResolution.source ?? null,
+    effectiveBasePlan,
     prStatuses: withRequiredCheckRollupStates(db, prStatuses),
     reviewIssues,
     artifacts,

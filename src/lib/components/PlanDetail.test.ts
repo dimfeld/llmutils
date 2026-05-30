@@ -173,6 +173,9 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
     assignment: null,
     parent: null,
     basePlan: null,
+    effectiveBaseBranch: null,
+    effectiveBaseBranchSource: null,
+    effectiveBasePlan: null,
     prStatuses: [makePrStatusDetail()],
     reviewIssues: undefined,
     artifacts: [],
@@ -205,13 +208,51 @@ describe('PlanDetail', () => {
   test('shows branch and PR context when the plan is linked to a known PR', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
-        plan: makePlanDetail(),
+        plan: makePlanDetail({ effectiveBaseBranch: 'main', effectiveBaseBranchSource: 'plan' }),
         projectId: '123',
       },
     });
 
     expect(body).toContain('feature/link-pr');
+    expect(body).toContain('main');
     expect(body).toContain('Linked PR plan');
+  });
+
+  test('does not repeat the parent in the depended-on-by section', () => {
+    const parent = {
+      uuid: 'parent-plan',
+      projectId: 123,
+      planId: 10,
+      title: 'Parent plan',
+      status: 'in_progress' as const,
+      displayStatus: 'in_progress' as const,
+      isResolved: false,
+    };
+    const otherDependent = {
+      uuid: 'other-dependent',
+      projectId: 123,
+      planId: 11,
+      title: 'Other dependent',
+      status: 'pending' as const,
+      displayStatus: 'pending' as const,
+      isResolved: false,
+    };
+
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          parent,
+          dependents: [parent, otherDependent],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('Parent Plan');
+    expect(body).toContain('Parent plan');
+    expect(body).toContain('Depended on by');
+    expect(body).toContain('Other dependent');
+    expect(body.match(/Parent plan/g)).toHaveLength(1);
   });
 
   test('shows Finish for a taskless epic outside needs_review', () => {

@@ -983,6 +983,48 @@ describe('lib/server/db_queries', () => {
     ]);
   });
 
+  test('getPlanDetail computes effective base branch and base plan through parent chain', async () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-grandparent-base',
+      planId: 120,
+      title: 'Grandparent base plan',
+      status: 'pending',
+      priority: 'medium',
+      branch: 'feature/grandparent-base',
+      filename: '120-grandparent-base.plan.md',
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'plan-parent-base-reference',
+      planId: 121,
+      title: 'Parent with base plan',
+      status: 'pending',
+      priority: 'medium',
+      basePlanUuid: 'plan-grandparent-base',
+      filename: '121-parent-base-reference.plan.md',
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'plan-child-inherits-parent-base',
+      planId: 122,
+      title: 'Child inherits parent base plan',
+      status: 'pending',
+      priority: 'medium',
+      parentUuid: 'plan-parent-base-reference',
+      filename: '122-child-inherits-parent-base.plan.md',
+    });
+
+    const detail = await getPlanDetail(db, 'plan-child-inherits-parent-base');
+
+    expect(detail).toMatchObject({
+      effectiveBaseBranch: 'feature/grandparent-base',
+      effectiveBaseBranchSource: 'parentBasePlan',
+      effectiveBasePlan: {
+        uuid: 'plan-grandparent-base',
+        planId: 120,
+        title: 'Grandparent base plan',
+      },
+    });
+  });
+
   test('getPlanDetail includes parsed PR metadata and linked PR status details', async () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-blocked',
