@@ -737,16 +737,19 @@
   let dependencyEntries = $derived.by(() => {
     const childUuids = new Set(plan.children.map((c) => c.uuid));
     const basePlan = plan.effectiveBasePlan ?? plan.basePlan;
+    const siblingUuids = new Set(plan.siblings.map((sibling) => sibling.uuid));
     const entries = plan.dependencies.map((dep) => ({
       dep,
       isBase: basePlan?.uuid === dep.uuid,
       isChild: childUuids.has(dep.uuid),
+      isSibling: siblingUuids.has(dep.uuid),
     }));
     if (basePlan && !entries.some((entry) => entry.dep.uuid === basePlan.uuid)) {
       entries.push({
         dep: basePlan,
         isBase: true,
         isChild: childUuids.has(basePlan.uuid),
+        isSibling: siblingUuids.has(basePlan.uuid),
       });
     }
     return entries.sort((a, b) => {
@@ -760,10 +763,26 @@
   });
 
   let childDependencyEntries = $derived(dependencyEntries.filter((e) => e.isChild));
-  let nonChildDependencyEntries = $derived(dependencyEntries.filter((e) => !e.isChild));
-  let nonParentDependents = $derived(
-    plan.dependents.filter((dependent) => dependent.uuid !== plan.parent?.uuid)
+  let nonChildDependencyEntries = $derived(
+    dependencyEntries.filter((e) => !e.isChild && !e.isSibling)
   );
+  let nonParentDependents = $derived.by(() => {
+    const siblingUuids = new Set(plan.siblings.map((sibling) => sibling.uuid));
+    return plan.dependents.filter(
+      (dependent) => dependent.uuid !== plan.parent?.uuid && !siblingUuids.has(dependent.uuid)
+    );
+  });
+  let siblingEntries = $derived.by(() => {
+    const basePlanUuid = (plan.effectiveBasePlan ?? plan.basePlan)?.uuid;
+    const dependentUuids = new Set(plan.dependents.map((dependent) => dependent.uuid));
+    return plan.siblings
+      .map((sibling) => ({
+        dep: sibling,
+        isBase: sibling.uuid === basePlanUuid,
+        dependsOnCurrent: dependentUuids.has(sibling.uuid),
+      }))
+      .sort((a, b) => (a.dep.planId ?? 0) - (b.dep.planId ?? 0));
+  });
 
   function planUrl(uuid: string, depProjectId?: number | null): string {
     const pid = depProjectId ?? projectId;
@@ -1125,13 +1144,13 @@
     {/if}
 
     <!-- Siblings -->
-    {#if plan.siblings.length > 0}
+    {#if siblingEntries.length > 0}
       <div>
         <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Sibling Plans
         </h3>
         <ul class="space-y-1">
-          {#each plan.siblings.sort((a, b) => (a.planId ?? 0) - (b.planId ?? 0)) as dep (dep.uuid)}
+          {#each siblingEntries as { dep, isBase, dependsOnCurrent } (dep.uuid)}
             <li class="text-sm">
               <a
                 href={planUrl(dep.uuid, dep.projectId)}
@@ -1142,6 +1161,20 @@
                   <span class="text-xs font-medium text-muted-foreground">#{dep.planId}</span>
                 {/if}
                 <span class="text-foreground">{dep.title ?? 'Unknown plan'}</span>
+                {#if isBase}
+                  <span
+                    class="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
+                  >
+                    Base Plan
+                  </span>
+                {/if}
+                {#if dependsOnCurrent}
+                  <span
+                    class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                  >
+                    Depends on this
+                  </span>
+                {/if}
                 {#if dep.displayStatus}
                   <StatusBadge status={dep.displayStatus} />
                 {/if}

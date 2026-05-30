@@ -255,6 +255,47 @@ describe('PlanDetail', () => {
     expect(body.match(/Parent plan/g)).toHaveLength(1);
   });
 
+  test('keeps siblings out of dependency sections and annotates sibling relationships', () => {
+    const baseSibling = {
+      uuid: 'base-sibling',
+      projectId: 123,
+      planId: 20,
+      title: 'Base sibling',
+      status: 'needs_review' as const,
+      displayStatus: 'needs_review' as const,
+      isResolved: false,
+    };
+    const dependentSibling = {
+      uuid: 'dependent-sibling',
+      projectId: 123,
+      planId: 21,
+      title: 'Dependent sibling',
+      status: 'pending' as const,
+      displayStatus: 'pending' as const,
+      isResolved: false,
+    };
+
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          dependencies: [baseSibling],
+          dependents: [dependentSibling],
+          siblings: [baseSibling, dependentSibling],
+          effectiveBasePlan: baseSibling,
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('Sibling Plans');
+    expect(body).toContain('Base sibling');
+    expect(body).toContain('Dependent sibling');
+    expect(body).toContain('Base Plan');
+    expect(body).toContain('Depends on this');
+    expect(body).not.toContain('Depends On');
+    expect(body).not.toContain('Depended on by');
+  });
+
   test('shows Finish for a taskless epic outside needs_review', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
