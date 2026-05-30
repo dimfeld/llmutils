@@ -31,6 +31,7 @@ import {
   DEFAULT_EXECUTOR,
   defaultModelForExecutor,
 } from '../../executors/index.js';
+import type { ClaudeCodeReasoningEffort, CodexReasoningLevel } from '../../executors/schemas.js';
 import type { ExecutorCommonOptions } from '../../executors/types.js';
 import type { PlanSchema } from '../../planSchema.js';
 import {
@@ -131,6 +132,70 @@ export function scheduleOpportunisticArtifactPurge(config: TimConfig): void {
 
 interface AgentGlobalCliOptions {
   config?: string;
+}
+
+type OrchestratorModelKey = 'claude' | 'codex';
+
+function getOrchestratorModelKey(executorName: string): OrchestratorModelKey | undefined {
+  if (executorName === 'claude-code' || executorName === 'claude') {
+    return 'claude';
+  }
+  if (executorName === 'codex-cli' || executorName === 'codex') {
+    return 'codex';
+  }
+  return undefined;
+}
+
+function resolveAgentExecutionModel(
+  executorName: string,
+  options: AgentCommandOptions,
+  config: TimConfig
+): string | undefined {
+  const modelKey = getOrchestratorModelKey(executorName);
+  const configuredOrchestratorModel = modelKey ? config.orchestrator?.model?.[modelKey] : undefined;
+
+  return (
+    options.model ||
+    configuredOrchestratorModel ||
+    config.models?.execution ||
+    defaultModelForExecutor(executorName, 'execution')
+  );
+}
+
+function buildOrchestratorExecutorOptions(
+  executorName: string,
+  config: TimConfig
+): Record<string, unknown> | undefined {
+  const modelKey = getOrchestratorModelKey(executorName);
+  const configuredEffort = modelKey ? config.orchestrator?.effort?.[modelKey] : undefined;
+
+  if (!configuredEffort) {
+    return undefined;
+  }
+
+  if (modelKey === 'claude') {
+    return { reasoningEffort: configuredEffort as ClaudeCodeReasoningEffort };
+  }
+
+  if (modelKey === 'codex') {
+    const codexExecutorOptions = config.executors?.['codex-cli'];
+    const existingReasoning =
+      codexExecutorOptions && 'reasoning' in codexExecutorOptions
+        ? codexExecutorOptions.reasoning
+        : undefined;
+    return {
+      reasoning: {
+        ...(existingReasoning &&
+        typeof existingReasoning === 'object' &&
+        !Array.isArray(existingReasoning)
+          ? existingReasoning
+          : {}),
+        default: configuredEffort as CodexReasoningLevel,
+      },
+    };
+  }
+
+  return undefined;
 }
 
 async function updatePlanTimestampWithAutoSync(
@@ -419,10 +484,7 @@ export async function timAgent(
     // Use orchestrator from CLI options, fallback to config defaultOrchestrator, or fallback to DEFAULT_EXECUTOR
     // Note: defaultOrchestrator and defaultExecutor are independent - agent command uses defaultOrchestrator
     const executorName = options.orchestrator || config.defaultOrchestrator || DEFAULT_EXECUTOR;
-    const agentExecutionModel =
-      options.model ||
-      config.models?.execution ||
-      defaultModelForExecutor(executorName, 'execution');
+    const agentExecutionModel = resolveAgentExecutionModel(executorName, options, config);
 
     // Determine subagent executor: CLI --executor flag -> config defaultSubagentExecutor -> 'dynamic'
     const subagentExecutor = (options.executor || config.defaultSubagentExecutor || 'dynamic') as
@@ -541,9 +603,14 @@ export async function timAgent(
       dynamicSubagentInstructions,
     };
 
-    const executor = options.simple
-      ? buildExecutorAndLog(executorName, sharedExecutorOptions, config, { simpleMode: true })
-      : buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+    const orchestratorExecutorOptions = buildOrchestratorExecutorOptions(executorName, config);
+    const executorOptions = options.simple
+      ? { ...orchestratorExecutorOptions, simpleMode: true }
+      : orchestratorExecutorOptions;
+    const executor =
+      executorOptions !== undefined
+        ? buildExecutorAndLog(executorName, sharedExecutorOptions, config, executorOptions)
+        : buildExecutorAndLog(executorName, sharedExecutorOptions, config);
     const isNonInteractiveReview = !terminalInputEnabled;
     const executionMode: 'normal' | 'simple' | 'tdd' = tddModeEnabled
       ? 'tdd'

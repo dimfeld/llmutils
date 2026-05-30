@@ -127,6 +127,22 @@
                   "staleAfterHours": {
                     "type": "number",
                     "exclusiveMinimum": 0
+                  },
+                  "weekdays": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "sunday",
+                        "monday",
+                        "tuesday",
+                        "wednesday",
+                        "thursday",
+                        "friday",
+                        "saturday"
+                      ]
+                    }
                   }
                 },
                 "additionalProperties": false
@@ -568,6 +584,54 @@
     "defaultOrchestrator": {
       "description": "Default orchestrator to use for the agent command main loop",
       "type": "string"
+    },
+    "orchestrator": {
+      "description": "Model and effort overrides for the agent command main loop orchestrator",
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "object",
+          "properties": {
+            "claude": {
+              "description": "Model override for claude-code orchestrator",
+              "type": "string"
+            },
+            "codex": {
+              "description": "Model override for codex-cli orchestrator",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "effort": {
+          "type": "object",
+          "properties": {
+            "claude": {
+              "description": "Reasoning effort override for claude-code orchestrator",
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ]
+            },
+            "codex": {
+              "description": "Reasoning effort override for codex-cli orchestrator",
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "terminalInput": {
       "description": "Whether terminal input is enabled during Claude Code execution in tim agent",

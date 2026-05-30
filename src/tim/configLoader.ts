@@ -96,6 +96,7 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
   mergeConfigKey('modelApiKeys');
   mergeConfigKey('models');
   mergeConfigKey('notifications');
+  mergeConfigKey('orchestrator');
   mergeConfigKey('paths');
   mergeConfigKey('postApplyCommands');
   mergeConfigKey('planning');
@@ -165,6 +166,32 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
       merged.subagents = mergedSubagents;
     } else {
       merged.subagents = localConfig.subagents;
+    }
+  }
+
+  // Handle orchestrator: deep merge nested model and effort maps
+  if (localConfig.orchestrator !== undefined) {
+    if (mainConfig.orchestrator && localConfig.orchestrator) {
+      merged.orchestrator = {
+        ...mainConfig.orchestrator,
+        ...localConfig.orchestrator,
+        model:
+          mainConfig.orchestrator.model || localConfig.orchestrator.model
+            ? {
+                ...mainConfig.orchestrator.model,
+                ...localConfig.orchestrator.model,
+              }
+            : undefined,
+        effort:
+          mainConfig.orchestrator.effort || localConfig.orchestrator.effort
+            ? {
+                ...mainConfig.orchestrator.effort,
+                ...localConfig.orchestrator.effort,
+              }
+            : undefined,
+      };
+    } else {
+      merged.orchestrator = localConfig.orchestrator;
     }
   }
 

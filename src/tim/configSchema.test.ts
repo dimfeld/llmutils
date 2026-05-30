@@ -1384,6 +1384,62 @@ describe('configSchema', () => {
       expect(result.defaultOrchestrator).toBeUndefined();
     });
 
+    test('accepts orchestrator model and effort overrides per executor', () => {
+      const result = timConfigSchema.parse({
+        orchestrator: {
+          model: {
+            claude: 'opus-4.1',
+            codex: 'gpt-5-codex',
+          },
+          effort: {
+            claude: 'max',
+            codex: 'xhigh',
+          },
+        },
+      });
+
+      expect(result.orchestrator?.model?.claude).toBe('opus-4.1');
+      expect(result.orchestrator?.model?.codex).toBe('gpt-5-codex');
+      expect(result.orchestrator?.effort?.claude).toBe('max');
+      expect(result.orchestrator?.effort?.codex).toBe('xhigh');
+    });
+
+    test('rejects unknown orchestrator model and effort fields', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          orchestrator: {
+            model: { claudeCode: 'opus' },
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          orchestrator: {
+            effort: { openai: 'high' },
+          },
+        })
+      ).toThrow();
+    });
+
+    test('rejects invalid orchestrator effort values', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          orchestrator: {
+            effort: { claude: 'ultra' },
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          orchestrator: {
+            effort: { codex: 'max' },
+          },
+        })
+      ).toThrow();
+    });
+
     test('accepts any string for defaultOrchestrator (not restricted to enum)', () => {
       const config = { defaultOrchestrator: 'codex-cli' };
       const result = timConfigSchema.parse(config);

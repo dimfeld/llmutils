@@ -3,7 +3,9 @@ import { DEFAULT_EXECUTOR } from './constants.js';
 import {
   ClaudeCodeExecutorName,
   CodexCliExecutorName,
+  claudeCodeReasoningEffortSchema,
   claudeCodeOptionsSchema,
+  codexReasoningLevelSchema,
   codexCliOptionsSchema,
 } from './executors/schemas.js';
 import { branchPrefixSchema } from './branch_prefix.js';
@@ -491,6 +493,31 @@ export const timConfigSchema = z
       .string()
       .optional()
       .describe('Default orchestrator to use for the agent command main loop'),
+    /** Model and effort overrides for the agent command main loop orchestrator. */
+    orchestrator: z
+      .object({
+        model: z
+          .object({
+            claude: z.string().optional().describe('Model override for claude-code orchestrator'),
+            codex: z.string().optional().describe('Model override for codex-cli orchestrator'),
+          })
+          .strict()
+          .optional(),
+        effort: z
+          .object({
+            claude: claudeCodeReasoningEffortSchema
+              .optional()
+              .describe('Reasoning effort override for claude-code orchestrator'),
+            codex: codexReasoningLevelSchema
+              .optional()
+              .describe('Reasoning effort override for codex-cli orchestrator'),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional()
+      .describe('Model and effort overrides for the agent command main loop orchestrator'),
     /** Whether terminal input is enabled during Claude Code execution in tim agent */
     terminalInput: z
       .boolean()

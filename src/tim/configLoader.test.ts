@@ -668,6 +668,11 @@ postApplyCommands:
     command: echo "main"
 models:
   execution: "claude-3-sonnet"
+orchestrator:
+  model:
+    claude: "global-opus"
+  effort:
+    codex: "high"
 subagents:
   implementer:
     model:
@@ -686,6 +691,11 @@ postApplyCommands:
     command: echo "local"
 models:
   convert_yaml: "claude-3-haiku"
+orchestrator:
+  model:
+    codex: "local-gpt-5"
+  effort:
+    claude: "xhigh"
 subagents:
   implementer:
     model:
@@ -714,6 +724,11 @@ autoexamples:
 
       expect(config.models?.execution).toBe('claude-3-sonnet'); // from main
       expect(config.models?.convert_yaml).toBe('claude-3-haiku'); // from local
+
+      expect(config.orchestrator?.model?.claude).toBe('global-opus'); // from main
+      expect(config.orchestrator?.model?.codex).toBe('local-gpt-5'); // from local
+      expect(config.orchestrator?.effort?.codex).toBe('high'); // from main
+      expect(config.orchestrator?.effort?.claude).toBe('xhigh'); // from local
 
       expect(config.subagents?.implementer?.model?.claude).toBe('global-sonnet'); // from main
       expect(config.subagents?.implementer?.model?.codex).toBe('gpt-5-codex'); // from local

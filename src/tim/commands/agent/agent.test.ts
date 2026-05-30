@@ -575,6 +575,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     defaultConfig.terminalInput = undefined;
     delete (defaultConfig as any).defaultSubagentExecutor;
     delete (defaultConfig as any).dynamicSubagentInstructions;
+    delete (defaultConfig as any).orchestrator;
     delete (defaultConfig as any).tdd;
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-simple-flag-test-'));
@@ -624,6 +625,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     buildExecutorAndLogSpy.mockReturnValue(testExecutor);
 
     // Reset serial impls to defaults
+    defaultConfig.defaultOrchestrator = 'test-executor';
     serialFindNextActionableItemImpl = () => null;
     serialPrepareNextStepImpl = async () => null;
     serialMarkStepDoneImpl = async () => ({ message: 'Marked', planComplete: false });
@@ -1244,6 +1246,66 @@ describe('timAgent - simple mode flag plumbing', () => {
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
     const [executorName] = buildExecutorAndLogSpy.mock.calls[0];
     expect(executorName).toBe('codex-cli');
+  });
+
+  test('uses claude orchestrator model and effort from config for main loop', async () => {
+    defaultConfig.defaultOrchestrator = 'claude-code';
+    (defaultConfig as any).orchestrator = {
+      model: { claude: 'opus-4.1' },
+      effort: { claude: 'xhigh' },
+    };
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(123, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [executorName, sharedOptions, , executorOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(executorName).toBe('claude-code');
+    expect(sharedOptions.model).toBe('opus-4.1');
+    expect(executorOptions).toEqual({ reasoningEffort: 'xhigh' });
+  });
+
+  test('uses codex orchestrator model and effort from config for main loop', async () => {
+    defaultConfig.defaultOrchestrator = 'codex-cli';
+    defaultConfig.executors = {
+      'codex-cli': {
+        reasoning: {
+          generate: 'high',
+        },
+      },
+    };
+    (defaultConfig as any).orchestrator = {
+      model: { codex: 'gpt-5-codex' },
+      effort: { codex: 'xhigh' },
+    };
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(123, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [executorName, sharedOptions, , executorOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(executorName).toBe('codex-cli');
+    expect(sharedOptions.model).toBe('gpt-5-codex');
+    expect(executorOptions).toEqual({
+      reasoning: {
+        generate: 'high',
+        default: 'xhigh',
+      },
+    });
+  });
+
+  test('CLI model overrides orchestrator model config', async () => {
+    defaultConfig.defaultOrchestrator = 'codex-cli';
+    (defaultConfig as any).orchestrator = {
+      model: { codex: 'gpt-5-codex' },
+    };
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(123, { log: false, model: 'cli-model' } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions.model).toBe('cli-model');
   });
 });
 
