@@ -368,7 +368,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         debug: false,
       }));
 
-      vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+      vi.doMock('./shared/orchestrator_prompt.ts', () => ({
         wrapWithOrchestration: vi.fn((_content: string) => 'WRAPPED_NORMAL'),
         wrapWithOrchestrationSimple: wrapSimple,
         wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED_TDD'),
@@ -1087,7 +1087,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       resetToolUseCache: vi.fn(() => {}),
     }));
 
-    vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+    vi.doMock('./shared/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: vi.fn((content: string) => content),
       wrapWithOrchestrationSimple: vi.fn((content: string) => content),
       wrapWithOrchestrationTdd: vi.fn((content: string) => content),
@@ -1216,7 +1216,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       resetToolUseCache: vi.fn(() => {}),
     }));
 
-    vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+    vi.doMock('./shared/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: vi.fn((_content: string) => 'WRAPPED'),
       wrapWithOrchestrationSimple: vi.fn((_content: string) => 'WRAPPED'),
       wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED'),
@@ -1280,7 +1280,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       resetToolUseCache: vi.fn(() => {}),
     }));
 
-    vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+    vi.doMock('./shared/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: vi.fn((_content: string) => 'WRAPPED'),
       wrapWithOrchestrationSimple: vi.fn((_content: string) => 'WRAPPED'),
       wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED'),
@@ -1345,7 +1345,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       resetToolUseCache: vi.fn(() => {}),
     }));
 
-    vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+    vi.doMock('./shared/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: wrapNormalSpy,
       wrapWithOrchestrationSimple: vi.fn((_content: string) => 'WRAPPED'),
       wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED'),
@@ -1412,7 +1412,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       resetToolUseCache: vi.fn(() => {}),
     }));
 
-    vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+    vi.doMock('./shared/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: vi.fn((_content: string) => 'WRAPPED'),
       wrapWithOrchestrationSimple: wrapSimpleSpy,
       wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED'),
@@ -1477,7 +1477,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       resetToolUseCache: vi.fn(() => {}),
     }));
 
-    vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+    vi.doMock('./shared/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: vi.fn((_content: string) => 'WRAPPED'),
       wrapWithOrchestrationSimple: vi.fn((_content: string) => 'WRAPPED'),
       wrapWithOrchestrationTdd: wrapTddSpy,
@@ -1548,7 +1548,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
         resetToolUseCache: vi.fn(() => {}),
       }));
 
-      vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+      vi.doMock('./shared/orchestrator_prompt.ts', () => ({
         wrapWithOrchestration: vi.fn((_content: string) => 'WRAPPED'),
         wrapWithOrchestrationSimple: vi.fn((_content: string) => 'WRAPPED'),
         wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED'),

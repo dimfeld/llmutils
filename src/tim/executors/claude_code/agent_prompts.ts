@@ -1,5 +1,5 @@
 import type { AgentDefinition } from './agent_generator.ts';
-import { progressSectionGuidance } from './orchestrator_prompt.ts';
+import { progressSectionGuidance } from '../shared/orchestrator_prompt.ts';
 
 const contextTaskFocus = `The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those, but keep in mind that the instructions may not have all the details from the active tasks. The instructions should reference which tasks are being worked on.`;
 

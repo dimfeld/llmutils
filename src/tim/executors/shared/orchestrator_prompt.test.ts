@@ -101,7 +101,7 @@ describe('orchestrator_prompt subagent commands', () => {
       const out = wrapWithOrchestration('Context', '42', { batchMode: false });
       expect(out).toContain('tim subagent implementer 42');
       expect(out).toContain('tim subagent tester 42');
-      expect(out).toContain('Bash tool');
+      expect(out).toContain('shell command tool');
       expect(out).toContain('1800000');
     });
 
@@ -191,7 +191,7 @@ describe('orchestrator_prompt subagent commands', () => {
       const out = wrapWithOrchestrationSimple('Context', '55', { batchMode: false });
       expect(out).toContain('tim subagent implementer 55');
       expect(out).toContain('tim subagent verifier 55');
-      expect(out).toContain('Bash tool');
+      expect(out).toContain('shell command tool');
       expect(out).toContain('1800000');
     });
 

@@ -5,7 +5,7 @@ import type { TimConfig } from '../configSchema';
 import * as processModule from '../../common/process.ts';
 import * as gitModule from '../../common/git.ts';
 import * as formatModule from './claude_code/format.ts';
-import * as orchestratorPromptModule from './claude_code/orchestrator_prompt.ts';
+import * as orchestratorPromptModule from './shared/orchestrator_prompt.ts';
 
 vi.mock('../../common/process.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../common/process.ts')>();
@@ -34,8 +34,8 @@ vi.mock('./claude_code/format.ts', async (importOriginal) => {
   };
 });
 
-vi.mock('./claude_code/orchestrator_prompt.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./claude_code/orchestrator_prompt.ts')>();
+vi.mock('./shared/orchestrator_prompt.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./shared/orchestrator_prompt.ts')>();
   return {
     ...actual,
     wrapWithOrchestration: vi.fn(),

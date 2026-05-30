@@ -25,91 +25,32 @@ describe('CodexCliExecutor - failure detection across agents', () => {
   });
 
   test('implementer failure short-circuits execution and skips auto-mark', async () => {
-    const structuredMessages: Array<{
-      type?: string;
-      phase?: string;
-      success?: boolean;
-      sourceAgent?: string;
-    }> = [];
-
     vi.doMock('../../logging.ts', () => ({
       log: vi.fn(() => {}),
       warn: vi.fn(() => {}),
       error: vi.fn(() => {}),
-      sendStructured: vi.fn(
-        (message: { type?: string; phase?: string; success?: boolean; sourceAgent?: string }) => {
-          structuredMessages.push(message);
-        }
-      ),
+      sendStructured: vi.fn(),
     }));
 
-    // Mock git + plan reading
     vi.doMock('../../common/git.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof import('../../common/git.js')>();
       return {
         ...actual,
         getGitRoot: vi.fn(async () => tempDir),
+        getUsingJj: vi.fn(async () => false),
       };
     });
 
-    vi.doMock('../plans.ts', () => ({
-      readPlanFile: vi.fn(async (_p: string) => ({
-        id: 1,
-        title: 'Plan',
-        tasks: [
-          { title: 'Task A', done: false },
-          { title: 'Task B', done: false },
-        ],
-      })),
-    }));
-
-    // Make spawn succeed and call our provided formatter
-    vi.doMock('../../common/process.ts', () => ({
-      spawnAndLogOutput: vi.fn(async (_args: string[], opts: any) => {
-        if (opts && typeof opts.formatStdout === 'function') opts.formatStdout('ignored');
-        return { exitCode: 0, stdout: '', stderr: '' };
-      }),
-    }));
-
-    // Mock formatter to return a final FAILED message for the current step
-    vi.doMock('./codex_cli/format.ts', () => ({
-      createCodexStdoutFormatter: () => {
-        let final: string | undefined;
-        return {
-          formatChunk: (_chunk: string) => {
-            final = 'FAILED: Implementer hit impossible requirements\nProblems:\n- conflict';
-            return '';
-          },
-          getFinalAgentMessage: () => final,
-          getFailedAgentMessage: () => final,
-          getThreadId: () => undefined,
-          getSessionId: () => undefined,
-        };
-      },
-    }));
-
-    // Mock external_review to break the circular dependency chain
-    // (external_review -> review_runner -> build.ts -> codex_cli.ts circular)
-    vi.doMock('./codex_cli/external_review.ts', () => ({
-      loadReviewHierarchy: vi.fn(async () => ({ parentChain: [], completedChildren: [] })),
-      runExternalReviewForCodex: vi.fn(async () => ({
-        verdict: 'ACCEPTABLE',
-        formattedOutput: 'ok',
-        fixInstructions: '',
-        reviewResult: { issues: [] },
-        rawOutput: '{}',
-        warnings: [],
-      })),
+    const executeCodexStepMock = vi.fn(
+      async () =>
+        'FAILED: Implementer hit impossible requirements\nProblems:\n- conflict\nRequirements:\n- task A'
+    );
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: executeCodexStepMock,
     }));
 
     const { CodexCliExecutor } = await import('./codex_cli.js');
     const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
-
-    // Spy override on private method to ensure not invoked on failure
-    let autoMarkCalled = false;
-    (exec as any).markCompletedTasksFromImplementer = async () => {
-      autoMarkCalled = true;
-    };
 
     const out = (await exec.execute('CTX', {
       planId: '1',
@@ -119,471 +60,104 @@ describe('CodexCliExecutor - failure detection across agents', () => {
       captureOutput: 'result',
     })) as any;
 
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
     expect(out).toBeDefined();
     expect(out.success).toBe(false);
     expect(out.failureDetails?.sourceAgent).toBe('implementer');
     expect(out.failureDetails?.problems).toContain('conflict');
-    expect(autoMarkCalled).toBe(false);
-    expect(
-      structuredMessages.some(
-        (message) =>
-          message.type === 'agent_step_end' &&
-          message.phase === 'implementer' &&
-          message.success === false
-      )
-    ).toBe(true);
-    expect(
-      structuredMessages.some(
-        (message) => message.type === 'failure_report' && message.sourceAgent === 'implementer'
-      )
-    ).toBe(true);
   });
 
-  test('retries implementer when output only contains planning text', async () => {
-    const logMessages: string[] = [];
-    const warnMessages: string[] = [];
-    const structuredMessages: Array<{ type?: string; phase?: string; verdict?: string }> = [];
-
+  test('sends single orchestrator prompt for normal mode execution', async () => {
     vi.doMock('../../logging.ts', () => ({
-      log: vi.fn((...args: any[]) => logMessages.push(args.map(String).join(' '))),
-      warn: vi.fn((...args: any[]) => warnMessages.push(args.map(String).join(' '))),
-      sendStructured: vi.fn((message: { type?: string; phase?: string; verdict?: string }) =>
-        structuredMessages.push(message)
-      ),
-    }));
-
-    // First two calls: no repo changes (sha1 -> sha1), then third call shows changes (sha1 -> sha2)
-    let repoStateCallCount = 0;
-    vi.doMock('../../common/git.ts', async (importOriginal) => {
-      const actual = await importOriginal<typeof import('../../common/git.js')>();
-      return {
-        ...actual,
-        getGitRoot: vi.fn(async () => tempDir),
-        captureRepositoryState: vi.fn(async () => {
-          repoStateCallCount++;
-          // First two calls show same commit (no changes from implementer attempt 1)
-          // Third call shows different commit (changes from implementer attempt 2)
-          if (repoStateCallCount <= 2) {
-            return { currentCommit: 'sha1', hasChanges: false };
-          }
-          return { currentCommit: 'sha2', hasChanges: false };
-        }),
-      };
-    });
-
-    vi.doMock('../plans.ts', () => ({
-      readPlanFile: vi.fn(async () => ({
-        tasks: [
-          { title: 'Task A', done: false },
-          { title: 'Task B', done: true },
-        ],
-      })),
-      writePlanFile: vi.fn(async () => {}),
-    }));
-
-    vi.doMock('./failure_detection.ts', () => ({
-      parseFailedReport: vi.fn(() => ({ failed: false })),
-      detectPlanningWithoutImplementation: vi.fn((output: string, before: any, after: any) => {
-        // Detect planning-only if commit didn't change and output contains plan keywords
-        const commitChanged = before?.currentCommit !== after?.currentCommit;
-        const hasPlanning = output.includes('Plan:') || output.includes('Outline');
-        return {
-          detected: !commitChanged && hasPlanning,
-          commitChanged,
-          workingTreeChanged: false,
-          planningIndicators: hasPlanning ? ['Plan:', 'Outline approach'] : [],
-        };
-      }),
-    }));
-
-    // Track prompts passed to executeCodexStep
-    const prompts: string[] = [];
-    let implementerCallCount = 0;
-
-    vi.doMock('./codex_cli/codex_runner.ts', () => ({
-      executeCodexStep: vi.fn(async (prompt: string) => {
-        prompts.push(prompt);
-
-        if (prompt.includes('IMPLEMENTER')) {
-          implementerCallCount++;
-          if (implementerCallCount === 1) {
-            // First implementer attempt: planning-only output
-            return 'Plan:\n- Investigate files\n- Outline approach';
-          } else {
-            // Second implementer attempt: actual implementation
-            return 'Implementation completed successfully';
-          }
-        }
-        if (prompt.includes('TESTER')) {
-          return 'Tests pass';
-        }
-        if (prompt.includes('REVIEWER')) {
-          return 'All good\nVERDICT: ACCEPTABLE';
-        }
-        return 'Unknown';
-      }),
-    }));
-
-    // Mock task management
-    vi.doMock('./codex_cli/task_management.ts', () => ({
-      categorizeTasks: vi.fn((plan: any) => ({
-        completed: plan.tasks.filter((t: any) => t.done),
-        pending: plan.tasks.filter((t: any) => !t.done),
-      })),
-      logTaskStatus: vi.fn(() => {}),
-      parseCompletedTasksFromImplementer: vi.fn(async () => []),
-      markTasksAsDone: vi.fn(async () => {}),
-    }));
-
-    // Mock context composition
-    vi.doMock('./codex_cli/context_composition.ts', () => ({
-      composeTesterContext: vi.fn(() => `TESTER context`),
-      composeReviewerContext: vi.fn(() => `REVIEWER context`),
-      composeFixReviewContext: vi.fn(() => `REVIEWER fix context`),
-      getFixerPrompt: vi.fn(() => 'Fixer agent prompt'),
-    }));
-
-    // Mock agent helpers
-    vi.doMock('./codex_cli/agent_helpers.ts', () => ({
-      loadAgentInstructionsFor: vi.fn(async () => ''),
-      loadRepositoryReviewDoc: vi.fn(async () => ''),
-      timestamp: vi.fn(() => new Date().toISOString()),
-    }));
-
-    vi.doMock('./codex_cli/external_review.ts', () => ({
-      loadReviewHierarchy: vi.fn(async () => ({ parentChain: [], completedChildren: [] })),
-      runExternalReviewForCodex: vi.fn(async () => ({
-        verdict: 'ACCEPTABLE',
-        formattedOutput: 'All good.\n\nVERDICT: ACCEPTABLE',
-        fixInstructions: 'No issues',
-        reviewResult: {
-          issues: [
-            {
-              severity: 'major',
-              category: 'correctness',
-              content: 'Handle rejected promise',
-              file: 'src/runner.ts',
-              line: 77,
-              suggestion: 'Wrap in try/catch',
-            },
-          ],
-          recommendations: ['add tests'],
-          actionItems: ['handle rejected promise'],
-        },
-        rawOutput: '{}',
-        warnings: [],
-      })),
-    }));
-
-    // Track instruction history
-    const implementerInstructionHistory: string[] = [];
-    vi.doMock('./claude_code/agent_prompts.ts', () => ({
-      getImplementerPrompt: vi.fn(
-        (ctx: string, _planId: string | undefined, instructions: string) => {
-          implementerInstructionHistory.push(instructions || '');
-          return { name: 'impl', description: '', prompt: `IMPLEMENTER\n${ctx}\n${instructions}` };
-        }
-      ),
-      getTesterPrompt: vi.fn((ctx: string) => ({
-        name: 'tester',
-        description: '',
-        prompt: `TESTER\n${ctx}`,
-      })),
-      getReviewerPrompt: vi.fn((ctx: string) => ({
-        name: 'reviewer',
-        description: '',
-        prompt: `REVIEWER\n${ctx}`,
-      })),
-    }));
-
-    // Mock verdict parser
-    vi.doMock('./codex_cli/verdict_parser.ts', () => ({
-      parseReviewerVerdict: vi.fn((output: string) => {
-        if (output.includes('VERDICT: ACCEPTABLE')) return 'ACCEPTABLE';
-        if (output.includes('VERDICT: NEEDS_FIXES')) return 'NEEDS_FIXES';
-        return undefined;
-      }),
-    }));
-
-    const { executeNormalMode } = await import('./codex_cli/normal_mode.js');
-
-    await expect(
-      executeNormalMode(
-        'CTX',
-        {
-          planId: '1',
-          planTitle: 'Plan',
-          planFilePath: `${tempDir}/plan.yml`,
-          executionMode: 'normal',
-        },
-        tempDir,
-        'test-model',
-        {} as any
-      )
-    ).resolves.toBeUndefined();
-
-    // Should have 2 implementer calls (first planning-only, second successful)
-    const implementerPrompts = prompts.filter((p) => p.includes('IMPLEMENTER'));
-    expect(implementerPrompts.length).toBe(2);
-
-    // First instruction shouldn't have retry text
-    expect(implementerInstructionHistory[0]).not.toContain('Please implement the changes now');
-    // Second instruction should have retry text
-    expect(implementerInstructionHistory[1]).toContain(
-      'Please implement the changes now, not just plan them.'
-    );
-
-    // Should have logged retry message
-    expect(
-      logMessages.some((msg) =>
-        msg.includes('Retrying implementer with more explicit instructions (attempt 2/4)')
-      )
-    ).toBe(true);
-    expect(
-      structuredMessages.some(
-        (message) => message.type === 'agent_step_start' && message.phase === 'implementer'
-      )
-    ).toBe(true);
-    expect(
-      structuredMessages.some(
-        (message) => message.type === 'agent_step_end' && message.phase === 'implementer'
-      )
-    ).toBe(true);
-    const reviewResultMessage = structuredMessages.find(
-      (message) => (message as { type?: string }).type === 'review_result'
-    ) as
-      | {
-          verdict?: string;
-          fixInstructions?: string;
-          issues?: Array<{
-            severity: string;
-            category: string;
-            content: string;
-            file: string;
-            line: string;
-            suggestion: string;
-          }>;
-        }
-      | undefined;
-    expect(reviewResultMessage?.verdict).toBe('ACCEPTABLE');
-    expect(reviewResultMessage?.fixInstructions).toBeUndefined();
-    expect(reviewResultMessage?.issues).toEqual([
-      {
-        severity: 'major',
-        category: 'correctness',
-        content: 'Handle rejected promise',
-        file: 'src/runner.ts',
-        line: '77',
-        suggestion: 'Wrap in try/catch',
-      },
-    ]);
-    expect(
-      structuredMessages.some((message) => (message as { type?: string }).type === 'review_verdict')
-    ).toBe(false);
-  });
-
-  test('continues after exhausting planning-only retries', async () => {
-    const logMock = vi.fn(() => {});
-    const warnMock = vi.fn(() => {});
-    vi.doMock('../../logging.ts', () => ({
-      log: logMock,
-      warn: warnMock,
+      log: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
       error: vi.fn(() => {}),
       sendStructured: vi.fn(),
     }));
 
-    const repeatedState = { commitHash: 'sha1', hasChanges: false, statusOutput: undefined };
-    const repoStates = [repeatedState, repeatedState, repeatedState, repeatedState, repeatedState];
+    vi.doMock('../../common/git.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../common/git.js')>();
+      return {
+        ...actual,
+        getGitRoot: vi.fn(async () => tempDir),
+        getUsingJj: vi.fn(async () => false),
+      };
+    });
+
+    // Reset failure_detection to real module (prior test mocks it with fewer exports)
+    vi.doMock('./failure_detection.ts', async (importOriginal) =>
+      importOriginal<typeof import('./failure_detection.js')>()
+    );
+
+    const executeCodexStepMock = vi.fn(async () => 'Implementation complete');
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: executeCodexStepMock,
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    const result = await exec.execute('CTX', {
+      planId: '1',
+      planTitle: 'Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+    });
+
+    expect(result).toBeUndefined();
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toContain('tim subagent implementer 1');
+    expect(prompt).toContain('tim subagent tester 1');
+    expect(prompt).toContain('tim review 1');
+    // Codex must receive the raw plan path, never Claude's `@` file-prefix.
+    expect(prompt).toContain(`${tempDir}/plan.yml`);
+    expect(prompt).not.toContain(`@${tempDir}/plan.yml`);
+  });
+
+  test('routes normal mode to simple wrapper when executor simpleMode is enabled', async () => {
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
+      error: vi.fn(() => {}),
+      sendStructured: vi.fn(),
+    }));
 
     vi.doMock('../../common/git.ts', async (importOriginal) => {
       const actual = await importOriginal<typeof import('../../common/git.js')>();
       return {
         ...actual,
         getGitRoot: vi.fn(async () => tempDir),
-        captureRepositoryState: vi.fn(async () => repoStates.shift() ?? repeatedState),
+        getUsingJj: vi.fn(async () => false),
       };
     });
 
-    vi.doMock('../plans.ts', () => ({
-      readPlanFile: vi.fn(async () => ({
-        tasks: [
-          { title: 'Task A', done: false },
-          { title: 'Task B', done: true },
-        ],
-      })),
-    }));
-
-    vi.doMock('./codex_cli/external_review.ts', () => ({
-      loadReviewHierarchy: vi.fn(async () => ({ parentChain: [], completedChildren: [] })),
-      runExternalReviewForCodex: vi.fn(async () => ({
-        verdict: 'ACCEPTABLE',
-        formattedOutput: 'All good.\n\nVERDICT: ACCEPTABLE',
-        fixInstructions: 'No issues',
-        reviewResult: { issues: [] },
-        rawOutput: '{}',
-        warnings: [],
-      })),
-    }));
-
-    const implementerInstructionHistory: string[] = [];
-    vi.doMock('./claude_code/agent_prompts.ts', () => ({
-      getImplementerPrompt: vi.fn(
-        (ctx: string, _planId: string | undefined, instructions: string) => {
-          implementerInstructionHistory.push(instructions);
-          return { name: 'impl', description: '', prompt: `IMPLEMENTER\n${ctx}\n${instructions}` };
-        }
-      ),
-      getTesterPrompt: vi.fn((ctx: string) => ({
-        name: 'tester',
-        description: '',
-        prompt: `TESTER\n${ctx}`,
-      })),
-      getReviewerPrompt: vi.fn((ctx: string) => ({
-        name: 'reviewer',
-        description: '',
-        prompt: `REVIEWER\n${ctx}`,
-      })),
-    }));
-
-    const finalMessages = [
-      'Plan:\n- Outline investigation',
-      'Plan:\n- Restate approach',
-      'Plan:\n- Still planning',
-      'Plan:\n- One more plan',
-      'Tests pass',
-      'All good\nVERDICT: ACCEPTABLE',
-    ];
-
-    const spawnMock = vi.fn(async (_args: string[], opts: any) => {
-      const message = finalMessages.shift();
-      if (!message) throw new Error('Unexpected extra Codex invocation');
-      if (opts && typeof opts.formatStdout === 'function') {
-        opts.formatStdout(message);
-      }
-      return { exitCode: 0, stdout: '', stderr: '' };
-    });
-
-    vi.doMock('../../common/process.ts', () => ({
-      spawnAndLogOutput: spawnMock,
-    }));
-
-    vi.doMock('./codex_cli/format.ts', () => ({
-      createCodexStdoutFormatter: () => {
-        let final: string | undefined;
-        return {
-          formatChunk: (chunk: string) => {
-            final = chunk;
-            return chunk;
-          },
-          getFinalAgentMessage: () => final,
-          getFailedAgentMessage: () => undefined,
-          getThreadId: () => undefined,
-          getSessionId: () => undefined,
-        };
-      },
-    }));
-
-    vi.doMock('ai', () => ({
-      generateObject: vi.fn(async () => ({ object: { completed_titles: [] } })),
-    }));
-
-    vi.doMock('./codex_cli/task_management.ts', () => ({
-      categorizeTasks: vi.fn((plan: any) => ({
-        completed: plan.tasks.filter((t: any) => t.done),
-        pending: plan.tasks.filter((t: any) => !t.done),
-      })),
-      logTaskStatus: vi.fn(() => {}),
-      parseCompletedTasksFromImplementer: vi.fn(async () => []),
-      markTasksAsDone: vi.fn(async () => {}),
-      appendReviewNotesToPlan: vi.fn(async () => {}),
-    }));
-
-    vi.doMock('./codex_cli/context_composition.ts', () => ({
-      composeTesterContext: vi.fn(() => 'TESTER context'),
-      composeReviewerContext: vi.fn(() => 'REVIEWER context'),
-      composeFixReviewContext: vi.fn(() => 'REVIEWER fix context'),
-      getFixerPrompt: vi.fn(() => 'Fixer agent prompt'),
-    }));
-
-    vi.doMock('./codex_cli/agent_helpers.ts', () => ({
-      loadAgentInstructionsFor: vi.fn(async () => ''),
-      loadRepositoryReviewDoc: vi.fn(async () => ''),
-      timestamp: vi.fn(() => new Date().toISOString()),
-    }));
-
-    vi.doMock('./failure_detection.ts', () => ({
-      parseFailedReport: vi.fn(() => ({ failed: false })),
-      detectPlanningWithoutImplementation: vi.fn((output: string, before: any, after: any) => {
-        const commitChanged = before?.currentCommit !== after?.currentCommit;
-        const hasPlanning = output.includes('Plan:');
-        return {
-          detected: !commitChanged && hasPlanning,
-          commitChanged,
-          workingTreeChanged: false,
-          planningIndicators: hasPlanning ? ['Plan:'] : [],
-        };
-      }),
-    }));
-
-    vi.doMock('../../../logging/tunnel_client.js', () => ({ isTunnelActive: vi.fn(() => false) }));
-    vi.doMock('../../../logging/tunnel_server.js', () => ({
-      createTunnelServer: vi.fn(async () => ({ close: vi.fn() })),
-    }));
-    vi.doMock('../../../logging/tunnel_prompt_handler.js', () => ({
-      createPromptRequestHandler: vi.fn(() => vi.fn()),
-    }));
-    vi.doMock('../../../logging/tunnel_protocol.js', () => ({
-      TIM_OUTPUT_SOCKET: 'TIM_OUTPUT_SOCKET',
-    }));
-
-    // Use real codex_runner.ts so spawnAndLogOutput is called (overrides any stale mock from earlier tests)
-    vi.doMock('./codex_cli/codex_runner.ts', async (importOriginal) =>
-      importOriginal<typeof import('./codex_cli/codex_runner.js')>()
+    vi.doMock('./failure_detection.ts', async (importOriginal) =>
+      importOriginal<typeof import('./failure_detection.js')>()
     );
+
+    const executeCodexStepMock = vi.fn(async () => 'done');
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: executeCodexStepMock,
+    }));
 
     const { CodexCliExecutor } = await import('./codex_cli.js');
-    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+    // Executor configured with simpleMode, but execution mode stays 'normal'.
+    const exec = new CodexCliExecutor({ simpleMode: true }, { baseDir: tempDir }, {} as any);
 
-    await expect(
-      exec.execute('CTX', {
-        planId: '1',
-        planTitle: 'Plan',
-        planFilePath: `${tempDir}/plan.yml`,
-        executionMode: 'normal',
-      })
-    ).resolves.toBeUndefined();
-
-    const implementerPromptsRun = spawnMock.mock.calls.filter((call) => {
-      const args = call[0];
-      const jsonIndex = args.lastIndexOf('--json');
-      const promptIdx = jsonIndex > 0 ? jsonIndex + 1 : args.length - 1;
-      const prompt = args[promptIdx];
-      return typeof prompt === 'string' && prompt.startsWith('IMPLEMENTER');
+    await exec.execute('CTX', {
+      planId: '7',
+      planTitle: 'Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
     });
 
-    expect(implementerPromptsRun.length).toBe(4);
-    expect(implementerInstructionHistory[0]).not.toContain('Please implement the changes now');
-    expect(implementerInstructionHistory[1]).toContain(
-      'Please implement the changes now, not just plan them.'
-    );
-    expect(implementerInstructionHistory[2]).toContain(
-      'IMPORTANT: Execute the actual code changes immediately.'
-    );
-    expect(implementerInstructionHistory[3]).toContain(
-      'CRITICAL: You must write actual code files NOW.'
-    );
-    expect(
-      warnMock.mock.calls.some((args) =>
-        String(args[0]).includes(
-          'Implementer planned without executing changes after exhausting 4 attempts; continuing to tester.'
-        )
-      )
-    ).toBe(true);
-    expect(
-      logMock.mock.calls.filter((args) =>
-        String(args[0]).includes('Retrying implementer with more explicit instructions')
-      )
-    ).toHaveLength(3);
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    // Simple wrapper uses implementer -> verifier, not the normal tester/review loop.
+    expect(prompt).toContain('tim subagent implementer 7');
+    expect(prompt).toContain('tim subagent verifier 7');
+    expect(prompt).not.toContain('tim subagent tester 7');
   });
 
   test('adds sandbox writable roots when using external storage', async () => {
@@ -632,18 +206,6 @@ describe('CodexCliExecutor - failure detection across agents', () => {
         getThreadId: () => undefined,
         getSessionId: () => undefined,
       }),
-    }));
-
-    vi.doMock('./codex_cli/external_review.ts', () => ({
-      loadReviewHierarchy: vi.fn(async () => ({ parentChain: [], completedChildren: [] })),
-      runExternalReviewForCodex: vi.fn(async () => ({
-        verdict: 'ACCEPTABLE',
-        formattedOutput: 'ok',
-        fixInstructions: '',
-        reviewResult: { issues: [] },
-        rawOutput: '{}',
-        warnings: [],
-      })),
     }));
 
     vi.doMock('./failure_detection.ts', async (importOriginal) =>
@@ -743,18 +305,6 @@ describe('CodexCliExecutor - failure detection across agents', () => {
       }),
     }));
 
-    vi.doMock('./codex_cli/external_review.ts', () => ({
-      loadReviewHierarchy: vi.fn(async () => ({ parentChain: [], completedChildren: [] })),
-      runExternalReviewForCodex: vi.fn(async () => ({
-        verdict: 'ACCEPTABLE',
-        formattedOutput: 'ok',
-        fixInstructions: '',
-        reviewResult: { issues: [] },
-        rawOutput: '{}',
-        warnings: [],
-      })),
-    }));
-
     vi.doMock('./failure_detection.ts', async (importOriginal) =>
       importOriginal<typeof import('./failure_detection.js')>()
     );
@@ -810,56 +360,82 @@ describe('CodexCliExecutor - failure detection across agents', () => {
 describe('CodexCliExecutor - tdd execution mode routing', () => {
   const tempDir = '/tmp/codex-routing-test';
 
-  test('routes tdd mode to normal workflow when simple mode is disabled', async () => {
-    const executeNormalModeMock = vi.fn(async () => ({ content: 'normal tdd flow' }));
-    const executeSimpleModeMock = vi.fn(async () => ({ content: 'simple tdd flow' }));
-
-    vi.doMock('./codex_cli/normal_mode.ts', () => ({
-      executeNormalMode: executeNormalModeMock,
+  test('routes tdd mode to orchestrator with TDD wrapper (simpleMode=false)', async () => {
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
+      sendStructured: vi.fn(),
     }));
-    vi.doMock('./codex_cli/simple_mode.ts', () => ({
-      executeSimpleMode: executeSimpleModeMock,
+
+    vi.doMock('../../common/git.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../common/git.js')>();
+      return {
+        ...actual,
+        getGitRoot: vi.fn(async () => tempDir),
+        getUsingJj: vi.fn(async () => false),
+      };
+    });
+
+    const executeCodexStepMock = vi.fn(async () => 'TDD complete');
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: executeCodexStepMock,
     }));
 
     const { CodexCliExecutor } = await import('./codex_cli.js');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir, simpleMode: false }, {} as any);
 
-    const result = await executor.execute('CTX', {
+    await executor.execute('CTX', {
       planId: '175',
       planTitle: 'TDD Plan',
       planFilePath: `${tempDir}/plan.md`,
       executionMode: 'tdd',
     });
 
-    expect(executeNormalModeMock).toHaveBeenCalledTimes(1);
-    expect(executeSimpleModeMock).not.toHaveBeenCalled();
-    expect(result).toEqual({ content: 'normal tdd flow' });
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toContain('tim subagent tdd-tests 175');
+    expect(prompt).toContain('tim subagent implementer 175');
+    expect(prompt).toContain('tim subagent tester 175');
+    expect(prompt).not.toContain('tim subagent verifier');
   });
 
-  test('routes tdd mode to simple workflow when simple mode is enabled', async () => {
-    const executeNormalModeMock = vi.fn(async () => ({ content: 'normal tdd flow' }));
-    const executeSimpleModeMock = vi.fn(async () => ({ content: 'simple tdd flow' }));
-
-    vi.doMock('./codex_cli/normal_mode.ts', () => ({
-      executeNormalMode: executeNormalModeMock,
+  test('routes tdd mode to orchestrator with TDD simple wrapper (simpleMode=true)', async () => {
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
+      sendStructured: vi.fn(),
     }));
-    vi.doMock('./codex_cli/simple_mode.ts', () => ({
-      executeSimpleMode: executeSimpleModeMock,
+
+    vi.doMock('../../common/git.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../common/git.js')>();
+      return {
+        ...actual,
+        getGitRoot: vi.fn(async () => tempDir),
+        getUsingJj: vi.fn(async () => false),
+      };
+    });
+
+    const executeCodexStepMock = vi.fn(async () => 'TDD simple complete');
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: executeCodexStepMock,
     }));
 
     const { CodexCliExecutor } = await import('./codex_cli.js');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir, simpleMode: true }, {} as any);
 
-    const result = await executor.execute('CTX', {
+    await executor.execute('CTX', {
       planId: '175',
       planTitle: 'TDD Plan',
       planFilePath: `${tempDir}/plan.md`,
       executionMode: 'tdd',
     });
 
-    expect(executeSimpleModeMock).toHaveBeenCalledTimes(1);
-    expect(executeNormalModeMock).not.toHaveBeenCalled();
-    expect(result).toEqual({ content: 'simple tdd flow' });
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toContain('tim subagent tdd-tests 175');
+    expect(prompt).toContain('tim subagent implementer 175');
+    expect(prompt).toContain('tim subagent verifier 175');
+    expect(prompt).not.toContain('tim subagent tester');
   });
 });
 
@@ -892,6 +468,452 @@ describe('CodexCliExecutor - planning mode routing', () => {
   });
 });
 
+describe('CodexCliExecutor - orchestrator routing contract', () => {
+  const tempDir = '/tmp/codex-orchestrator-test';
+
+  async function setupOrchestratorMocks(opts?: { useJj?: boolean }) {
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      sendStructured: vi.fn(),
+    }));
+
+    const useJj = opts?.useJj ?? false;
+    vi.doMock('../../common/git.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../common/git.js')>();
+      return {
+        ...actual,
+        getGitRoot: vi.fn(async () => tempDir),
+        getUsingJj: vi.fn(async () => useJj),
+      };
+    });
+
+    // Ensure failure_detection uses the real module (prior tests in the suite may have
+    // registered a partial mock that omits parseFailedReportAnywhere)
+    vi.doMock('./failure_detection.ts', async (importOriginal) =>
+      importOriginal<typeof import('./failure_detection.js')>()
+    );
+
+    const executeCodexStepMock = vi.fn(async () => 'Success output');
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: executeCodexStepMock,
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
+    return { CodexCliExecutor, executeCodexStepMock };
+  }
+
+  test('normal mode: wraps with orchestration and calls executeCodexStep once', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await exec.execute('CTX', {
+      planId: '42',
+      planTitle: 'Test Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    });
+
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toContain('tim subagent implementer 42');
+    expect(prompt).toContain('tim subagent tester 42');
+    expect(prompt).toContain('tim review 42');
+    expect(prompt).toContain('CTX');
+  });
+
+  test('simple mode: implementer + verifier, no tester subagent', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await exec.execute('CTX', {
+      planId: '43',
+      planTitle: 'Simple Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'simple',
+    });
+
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toContain('tim subagent implementer 43');
+    expect(prompt).toContain('tim subagent verifier 43');
+    expect(prompt).not.toContain('tim subagent tester');
+  });
+
+  test('tdd mode simpleMode=false: tdd-tests + tester + review', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir, simpleMode: false }, {} as any);
+
+    await exec.execute('CTX', {
+      planId: '44',
+      planTitle: 'TDD Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'tdd',
+    });
+
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toContain('tim subagent tdd-tests 44');
+    expect(prompt).toContain('tim subagent implementer 44');
+    expect(prompt).toContain('tim subagent tester 44');
+    expect(prompt).not.toContain('tim subagent verifier');
+  });
+
+  test('tdd mode simpleMode=true: tdd-tests + verifier, no tester', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir, simpleMode: true }, {} as any);
+
+    await exec.execute('CTX', {
+      planId: '44',
+      planTitle: 'TDD Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'tdd',
+    });
+
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toContain('tim subagent tdd-tests 44');
+    expect(prompt).toContain('tim subagent implementer 44');
+    expect(prompt).toContain('tim subagent verifier 44');
+    expect(prompt).not.toContain('tim subagent tester');
+  });
+
+  test('passes appServerMode single-turn-with-steering and model to executeCodexStep', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir, model: 'gpt-test-model' }, {} as any);
+
+    await exec.execute('CTX', {
+      planId: '45',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    });
+
+    const options = executeCodexStepMock.mock.calls[0][3];
+    expect(options).toMatchObject({
+      appServerMode: 'single-turn-with-steering',
+      model: 'gpt-test-model',
+    });
+  });
+
+  test('uses reasoningLevel from timConfig executor config', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {
+      executors: { 'codex-cli': { reasoning: { default: 'high' } } },
+    } as any);
+
+    await exec.execute('CTX', {
+      planId: '47',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    });
+
+    const options = executeCodexStepMock.mock.calls[0][3];
+    expect(options).toMatchObject({ reasoningLevel: 'high' });
+  });
+
+  test('defaults reasoningLevel to medium when not configured', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await exec.execute('CTX', {
+      planId: '48',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    });
+
+    const options = executeCodexStepMock.mock.calls[0][3];
+    expect(options).toMatchObject({ reasoningLevel: 'medium' });
+  });
+
+  test('orchestrator effort override on executor options takes precedence over config', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    // agent.ts merges config.orchestrator.effort.codex into the executor options as
+    // reasoning.default; that override must win over the raw timConfig executor default.
+    const exec = new CodexCliExecutor(
+      { reasoning: { default: 'xhigh' } } as any,
+      { baseDir: tempDir },
+      {
+        executors: { 'codex-cli': { reasoning: { default: 'medium' } } },
+      } as any
+    );
+
+    await exec.execute('CTX', {
+      planId: '50',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    });
+
+    const options = executeCodexStepMock.mock.calls[0][3];
+    expect(options).toMatchObject({ reasoningLevel: 'xhigh' });
+  });
+
+  test('subagentExecutor codex-cli: prompt includes -x codex-cli flags', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor(
+      {},
+      { baseDir: tempDir, subagentExecutor: 'codex-cli' },
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: '49',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    });
+
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toContain('-x codex-cli');
+    expect(prompt).not.toContain('-x claude-code');
+  });
+
+  test('subagentExecutor claude-code: prompt includes -x claude-code flags', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor(
+      {},
+      { baseDir: tempDir, subagentExecutor: 'claude-code' },
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: '49',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    });
+
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toContain('-x claude-code');
+    expect(prompt).not.toContain('-x codex-cli');
+  });
+
+  test('subagentExecutor dynamic: prompt includes executor selection guidance', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor(
+      {},
+      {
+        baseDir: tempDir,
+        subagentExecutor: 'dynamic',
+        dynamicSubagentInstructions: 'prefer codex for backend',
+      },
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: '49',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    });
+
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toContain('prefer codex for backend');
+    expect(prompt).toContain('Subagent Executor Selection');
+  });
+
+  test('reviewExecutor propagated in normal mode prompt', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor(
+      {},
+      { baseDir: tempDir, reviewExecutor: 'claude-code' },
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: '50',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    });
+
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toContain('--executor claude-code');
+  });
+
+  test('batchMode=true: prompt includes batch guidance and task marking', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await exec.execute('CTX', {
+      planId: '51',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+      batchMode: true,
+    });
+
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toContain('Batch Task Processing Mode');
+    expect(prompt).toContain('tim set-task-done 51');
+  });
+
+  test('jj guidance included when getUsingJj returns true', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks({
+      useJj: true,
+    });
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await exec.execute('CTX', {
+      planId: '52',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    });
+
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toContain('Jujutsu (jj)');
+  });
+
+  test('jj guidance omitted when getUsingJj returns false', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks({
+      useJj: false,
+    });
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await exec.execute('CTX', {
+      planId: '52',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    });
+
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).not.toContain('Jujutsu (jj)');
+  });
+
+  test('defensive no-wrap when planId is empty: sends raw prompt', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await exec.execute('MY_RAW_CONTEXT', {
+      planId: '',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    });
+
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toBe('MY_RAW_CONTEXT');
+  });
+
+  test('defensive no-wrap when planFilePath is empty: sends raw prompt', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await exec.execute('MY_RAW_CONTEXT', {
+      planId: '53',
+      planTitle: 'Plan',
+      planFilePath: '',
+      executionMode: 'normal',
+    });
+
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
+    const prompt = executeCodexStepMock.mock.calls[0][0] as string;
+    expect(prompt).toBe('MY_RAW_CONTEXT');
+  });
+
+  test('failure output: FAILED line returns success=false with failureDetails', async () => {
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      sendStructured: vi.fn(),
+    }));
+    vi.doMock('../../common/git.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../common/git.js')>();
+      return {
+        ...actual,
+        getGitRoot: vi.fn(async () => tempDir),
+        getUsingJj: vi.fn(async () => false),
+      };
+    });
+    vi.doMock('./failure_detection.ts', async (importOriginal) =>
+      importOriginal<typeof import('./failure_detection.js')>()
+    );
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: vi.fn(
+        async () =>
+          'Some work done\nFAILED: tester reported a failure — tests are broken\nProblems:\n- build errors\nRequirements:\n- passing tests'
+      ),
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    const out = (await exec.execute('CTX', {
+      planId: '54',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    })) as any;
+
+    expect(out).toBeDefined();
+    expect(out.success).toBe(false);
+    expect(out.metadata).toEqual({ phase: 'orchestrator' });
+    expect(out.failureDetails).toBeDefined();
+  });
+});
+
+describe('CodexCliExecutor - routing preservation', () => {
+  const tempDir = '/tmp/codex-routing-preservation-test';
+
+  test('review mode routes to executeReviewMode, not orchestrator', async () => {
+    const executeReviewModeMock = vi.fn(async () => ({ content: 'review result', success: true }));
+    vi.doMock('./codex_cli/review_mode.ts', () => ({
+      executeReviewMode: executeReviewModeMock,
+    }));
+
+    const executeCodexStepMock = vi.fn(async () => 'should not be called');
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: executeCodexStepMock,
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
+    const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await executor.execute('CTX', {
+      planId: '302',
+      planTitle: 'Review Plan',
+      planFilePath: `${tempDir}/plan.md`,
+      executionMode: 'review',
+    });
+
+    expect(executeReviewModeMock).toHaveBeenCalledTimes(1);
+    expect(executeCodexStepMock).not.toHaveBeenCalled();
+  });
+
+  test('bare mode routes to executeBareMode, not orchestrator', async () => {
+    const executeBareModeMock = vi.fn(async () => ({ content: 'bare result' }));
+    vi.doMock('./codex_cli/bare_mode.ts', () => ({
+      executeBareMode: executeBareModeMock,
+    }));
+
+    const executeCodexStepMock = vi.fn(async () => 'should not be called');
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: executeCodexStepMock,
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
+    const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await executor.execute('CTX', {
+      planId: '303',
+      planTitle: 'Bare Plan',
+      planFilePath: `${tempDir}/plan.md`,
+      executionMode: 'bare',
+    });
+
+    expect(executeBareModeMock).toHaveBeenCalledTimes(1);
+    expect(executeCodexStepMock).not.toHaveBeenCalled();
+  });
+});
+
 test('CodexCliExecutor - parseReviewerVerdict', async () => {
   const { parseReviewerVerdict } = await vi.importActual<
     typeof import('./codex_cli/verdict_parser.js')
@@ -918,4 +940,11 @@ test('CodexCliExecutor - parseReviewerVerdict', async () => {
     const result = parseReviewerVerdict(input) as string;
     expect(result, input).toBe(expected);
   }
+});
+
+test('CodexCliExecutor - supportsSubagents is true', async () => {
+  const { CodexCliExecutor } = await import('./codex_cli.js');
+  expect(CodexCliExecutor.supportsSubagents).toBe(true);
+  const exec = new CodexCliExecutor({}, { baseDir: '/tmp' }, {} as any);
+  expect(exec.supportsSubagents).toBe(true);
 });

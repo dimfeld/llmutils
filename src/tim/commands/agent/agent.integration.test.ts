@@ -219,12 +219,12 @@ describe('tim agent integration (execution summaries)', () => {
     expect(content).toContain('✓ Completed plan 123');
   });
 
-  test('serial mode: captures Codex labeled output and records failure on error', async () => {
+  test('serial mode: captures Codex orchestrator output and records failure on error', async () => {
     const plan = {
       id: 321,
       title: 'Test Plan (Serial Codex)',
-      goal: 'Verify codex output parsing + failure',
-      details: 'Ensure labeled sections are parsed',
+      goal: 'Verify codex orchestrator output + failure',
+      details: 'Ensure the single top-level orchestrator result is captured',
       status: 'pending',
       tasks: [
         {
@@ -267,15 +267,10 @@ describe('tim agent integration (execution summaries)', () => {
     expect(content).toContain('Error: executor boom');
     expect(content).toContain('executor boom');
 
-    // Now, run again with a Codex-like combined output to validate parsing
+    // Now, run again with a single orchestrator result (new contract: one top-level result, not labeled phases)
     executorExecuteImpl = async () => ({
-      content: [
-        '=== Codex Implementer ===',
-        'Implementation details here',
-        '',
-        '=== Codex Reviewer ===',
-        'ACCEPTABLE',
-      ].join('\n'),
+      content: 'Orchestrator completed successfully. All tasks done.',
+      metadata: { phase: 'orchestrator' },
     });
 
     const summaryFile2 = path.join(tempDir, 'out', 'summary3.txt');
@@ -294,10 +289,8 @@ describe('tim agent integration (execution summaries)', () => {
     );
 
     const content2 = await fs.readFile(summaryFile2, 'utf8');
-    expect(content2).toContain('Implementer');
-    expect(content2).toContain('Implementation details here');
-    expect(content2).toContain('Reviewer');
-    expect(content2).toContain('ACCEPTABLE');
+    expect(content2).toContain('Execution Summary: Test Plan (Serial Codex)');
+    expect(content2).toContain('Orchestrator completed successfully. All tasks done.');
   });
 
   test('batch mode: aggregates iterations and writes a summary', async () => {

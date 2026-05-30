@@ -78,7 +78,7 @@ describe('Batch Mode Integration Tests', () => {
       debug: false,
       quiet: false,
     }));
-    vi.doMock('./executors/claude_code/orchestrator_prompt.ts', () => ({
+    vi.doMock('./executors/shared/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: mocks.wrapWithOrchestration,
       wrapWithOrchestrationSimple: mocks.wrapWithOrchestrationSimple,
       wrapWithOrchestrationTdd: mocks.wrapWithOrchestrationTdd,

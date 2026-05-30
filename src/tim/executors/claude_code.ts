@@ -25,7 +25,7 @@ import {
   wrapWithOrchestration,
   wrapWithOrchestrationSimple,
   wrapWithOrchestrationTdd,
-} from './claude_code/orchestrator_prompt.ts';
+} from './shared/orchestrator_prompt.ts';
 import {
   parseFailedReportAnywhere,
   detectFailedLineAnywhere,

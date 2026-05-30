@@ -19,6 +19,12 @@ interface OrchestrationOptions {
    * Instructs the orchestrator to use jj commands instead of git.
    */
   useJj?: boolean;
+  /**
+   * Whether plan file references should be prefixed with `@`. Claude Code uses the
+   * `@` prefix to make a file accessible to its Edit tool; other providers (e.g. Codex)
+   * do not use this semantic and should receive the raw path. Defaults to true.
+   */
+  useAtPrefix?: boolean;
 }
 
 const INPUT_COMBINATION_GUIDANCE =
@@ -40,9 +46,9 @@ function buildJjGuidance(options: OrchestrationOptions): string {
 
 function buildInputFileRandomizationGuidance(planId: string): string {
   return `- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp/claude\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
-- When you create an input file for a subagent or reviewer, do not use Bash commands or scripts to generate random numbers or timestamps for the filename.
+- When you create an input file for a subagent or reviewer, do not use shell commands or scripts to generate random numbers or timestamps for the filename.
 - Prefer deterministic names such as \`/tmp/claude/tim-${planId}-<purpose>.md\`, \`/tmp/claude/tim-${planId}-<purpose>-task-1.md\`, or a stable counter-based filename.
-- Recommended pattern: \`/tmp/claude/tim-${planId}-<purpose>-${Date.now() % 10000}.md\`.
+- Recommended pattern: \`/tmp/claude/tim-${planId}-<purpose>-6170.md\`.
 - It is also acceptable to reuse the same filename each time if that is simpler.
 - Always explicitly pass the full path instead of using "$TMPDIR/filename".
 - You can also pipe input to stdin and use \`--input-file -\`.`;
@@ -125,7 +131,7 @@ When selecting which tasks to batch together, consider:
 
 ## Plan File Updates
 
-After successfully completing your selected tasks, you MUST use the Edit tool to update the plan file at: ${options.planFilePath || 'PLAN_FILE_PATH_NOT_PROVIDED'}
+After successfully completing your selected tasks, you MUST edit the plan file at: ${options.planFilePath || 'PLAN_FILE_PATH_NOT_PROVIDED'}
 
 For each completed task, update the YAML structure by setting \`done: true\`. Find each task item using the title. Here's an example:
 
@@ -193,13 +199,13 @@ function buildAvailableAgents(planId: string, options: OrchestrationOptions): st
   const executorFlag = buildSubagentExecutorFlag(options);
   return `## Available Agents
 
-You have access to two specialized agents that you MUST invoke via the Bash tool:
-- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
-- **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
+You have access to two specialized agents that you MUST invoke via the shell command tool:
+- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 
 Code reviews are performed by running \`tim review\` (not a subagent). You can pass additional context to the reviewer via \`--input-file <paths...>\`.
 
-Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.
+Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
 `;
 }
 
@@ -224,12 +230,12 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
       : '';
 
   const implementationSteps = `
-   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
    - Wait for the subagent to complete and review its output`;
 
   const testingPhase = `${options.batchMode ? '3' : '2'}. **Testing Phase**
-   - After implementation is complete, run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - After implementation is complete, run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
    - When choosing an executor dynamically, prefer using the same executor that was used for the implementer to maintain consistency and leverage the same strengths.
    - In the input (\`--input\` or \`--input-file\`), ask the tester to create comprehensive tests for the implemented functionality, if needed
    - Emphasize that tests must test actual implementation code. Testing a reproduction or simulation of the code is useless.
@@ -242,7 +248,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
     : '';
 
   const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
-   - Run \`${reviewCommand}\` using the Bash tool.
+   - Run \`${reviewCommand}\` using the shell command tool.
    - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why. On subsequent review runs, also include a list of any issues from prior review output that you determined were not relevant or acceptable to leave as-is, so the reviewer knows not to flag them again.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${buildFinalBatchReviewGuidance(reviewCommand, options)}
@@ -251,7 +257,7 @@ ${reviewExecutorGuidance}
    - The review output focuses on problems; don't expect positive feedback even if the code is perfect.`;
 
   const finalPhases = `${options.batchMode ? '5' : '4'}. **Notes Phase**
-   ${progressSectionGuidance(options.planFilePath)}
+   ${progressSectionGuidance(options.planFilePath, { useAtPrefix: options.useAtPrefix })}
 
 ${options.batchMode ? '6' : '5'}. **Iteration**
 
@@ -284,7 +290,7 @@ function markTasksDoneGuidance(planId: string) {
 Only perform the following if no subagent failure occurred during this run.
 If any agent emitted a line beginning with 'FAILED:', do not run any of the following commands — stop immediately.
 
-When updating tasks after successful implementation, testing, and review, use the Bash command 'tim set-task-done ${planId} --title "<taskTitle>"'.
+When updating tasks after successful implementation, testing, and review, use the shell command 'tim set-task-done ${planId} --title "<taskTitle>"'.
 To set Task 2 done for plan 165, use 'tim set-task-done 165 --title "do it"'. To set multiple tasks done, run the command multiple times for each task.
 
 After marking tasks done, commit your changes with a descriptive message about what tasks were completed. Do not include attribution comments in the commit message.
@@ -344,7 +350,10 @@ ${markTasksDoneGuidance(planId)}
     : '';
 
   return (
-    baseGuidelines + failureProtocol + batchModeOnly + progressSectionGuidance(options.planFilePath)
+    baseGuidelines +
+    failureProtocol +
+    batchModeOnly +
+    progressSectionGuidance(options.planFilePath, { useAtPrefix: options.useAtPrefix })
   );
 }
 
@@ -417,7 +426,9 @@ export function wrapWithOrchestrationSimple(
   options: OrchestrationOptions = {}
 ): string {
   const batchModeInstructions = buildBatchModeInstructions(options);
-  const progressSection = progressSectionGuidance(options.planFilePath);
+  const progressSection = progressSectionGuidance(options.planFilePath, {
+    useAtPrefix: options.useAtPrefix,
+  });
   const executorFlag = buildSubagentExecutorFlag(options);
   const dynamicGuidance = buildDynamicExecutorGuidance(options);
 
@@ -427,11 +438,11 @@ You are coordinating a tim streamlined two-phase workflow (implement → verify)
 
   const availableAgents = `## Available Agents
 
-You have two specialized subagents that you MUST invoke via the Bash tool:
-- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
-- **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
+You have two specialized subagents that you MUST invoke via the shell command tool:
+- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 
-Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.
+Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
 `;
 
   const taskSelectionPhase = options.batchMode
@@ -454,12 +465,12 @@ You MUST follow this simplified loop:
 
 ${taskSelectionPhase}
    - Explore the repository and create a plan on how to implement the task.
-   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
    - Wait for the subagent to complete and review its output
 
 ${options.batchMode ? '3' : '2'}. **Verification Phase**
-   - Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
    - When choosing an executor dynamically, prefer using the same executor that was used for the implementer to maintain consistency and leverage the same strengths.
    - In the input (\`--input\` or \`--input-file\`), direct the verifier to:
      - Ensure tests exist for new or changed behavior (adding tests if gaps remain)
@@ -549,7 +560,9 @@ export function wrapWithOrchestrationTdd(
   options: OrchestrationOptions = {}
 ): string {
   const batchModeInstructions = buildBatchModeInstructions(options);
-  const progressSection = progressSectionGuidance(options.planFilePath);
+  const progressSection = progressSectionGuidance(options.planFilePath, {
+    useAtPrefix: options.useAtPrefix,
+  });
   const executorFlag = buildSubagentExecutorFlag(options);
   const dynamicGuidance = buildDynamicExecutorGuidance(options);
   const isSimpleTdd = options.simpleMode === true;
@@ -566,23 +579,23 @@ You MUST enforce TDD order:
   const availableAgents = isSimpleTdd
     ? `## Available Agents
 
-You have three specialized subagents that you MUST invoke via the Bash tool:
-- **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
-- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
-- **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
+You have three specialized subagents that you MUST invoke via the shell command tool:
+- **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 
-Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.
+Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
 `
     : `## Available Agents
 
-You have three specialized subagents that you MUST invoke via the Bash tool:
-- **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
-- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
-- **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
+You have three specialized subagents that you MUST invoke via the shell command tool:
+- **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 
 Code reviews are performed by running \`tim review\` (not a subagent).
 
-Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.
+Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
 `;
 
   const taskSelectionPhase = options.batchMode
@@ -623,7 +636,7 @@ Each subagent command may take a long time to complete. Always use a timeout of 
 
   const verificationPhase = isSimpleTdd
     ? `${verificationPhaseNumber}. **Verification Phase**
-   - Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
    - When choosing an executor dynamically, prefer using the same executor that was used for the implementer to maintain consistency and leverage the same strengths.
    - In the input (\`--input\` or \`--input-file\`), include:
      - TDD tests output and implementation summary
@@ -631,7 +644,7 @@ Each subagent command may take a long time to complete. Always use a timeout of 
      - Required quality gates (check, lint, test, etc.)
     - Instruct verifier to confirm the implementation satisfies the previously written tests and report gaps`
     : `${verificationPhaseNumber}. **Testing Phase**
-   - Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), include:
      - TDD tests output and implementer output
      - Which tasks are in scope
@@ -640,7 +653,7 @@ Each subagent command may take a long time to complete. Always use a timeout of 
    - Instruct tester to run tests and fix failures, then report remaining gaps
 
 ${options.batchMode ? '5' : '4'}. **Review Phase**
-   - Run \`${reviewCommand}\` using the Bash tool.
+   - Run \`${reviewCommand}\` using the shell command tool.
    - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why. On subsequent review runs, also include a list of any issues from prior review output that you determined were not relevant or acceptable to leave as-is, so the reviewer knows not to flag them again.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${buildFinalBatchReviewGuidance(reviewCommand, options)}
@@ -658,7 +671,7 @@ ${reviewExecutorGuidance}
 You MUST follow this TDD process:
 
 ${taskSelectionPhase}
-   - Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), specify in-scope tasks and expected behavior to define
    - Explicitly instruct the TDD tests agent to:
      - Write tests first
@@ -667,7 +680,7 @@ ${taskSelectionPhase}
    - Capture and preserve this output for downstream phases
 
 ${implementationPhaseNumber}. **Implementation Phase**
-   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
    - In the input, include the TDD tests output and direct the implementer to make those tests pass
    - Emphasize that implementation should be driven by existing TDD tests, not by adding unrelated new behavior
    - Wait for the subagent to complete and review its output

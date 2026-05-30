@@ -45,6 +45,7 @@ Read the relevant doc before working in these areas:
 - **Git/jj patterns** → `docs/git-jj-patterns.md`
 - **OS process interaction** → `docs/os-process-interaction.md`
 - **Executor stdin conventions** → `docs/executor-stdin-conventions.md`
+- **Codex CLI integration** (execution modes, shared orchestration prompt) → `docs/codex-cli-integration.md`
 - **Implementer / reviewer instructions** → `docs/implementer-instructions.md`, `docs/reviewer-instructions.md`
 - **Sync between nodes** → `docs/sync-between-nodes.md`
 - **Import command** → `docs/import_command.md`

@@ -2,18 +2,18 @@ import * as z from 'zod/v4';
 import type { Executor, ExecutorCommonOptions, ExecutePlanInfo, ExecutorOutput } from './types';
 import type { TimConfig } from '../configSchema';
 import { CodexCliExecutorName, codexCliOptionsSchema } from './schemas.js';
-import { executeNormalMode } from './codex_cli/normal_mode';
-import { executeSimpleMode } from './codex_cli/simple_mode';
 import { executeReviewMode } from './codex_cli/review_mode';
 import { executeBareMode } from './codex_cli/bare_mode';
+import { executeOrchestratorMode } from './codex_cli/orchestrator_mode';
 import { parseReviewerVerdict } from './codex_cli/verdict_parser';
 
 export type CodexCliExecutorOptions = z.infer<typeof codexCliOptionsSchema>;
 
 /**
  * Executor that runs the tim-generated context through the OpenAI Codex CLI.
- * It composes a single prompt that encapsulates the implement → test → review loop,
- * then invokes `codex exec` with that prompt.
+ * For plan-backed normal/simple/TDD execution it sends one orchestration prompt to a
+ * single Codex process, which coordinates the work by delegating to `tim subagent` and
+ * `tim review` commands. Review, planning, and bare modes use their dedicated paths.
  */
 export class CodexCliExecutor implements Executor {
   static name = CodexCliExecutorName;
@@ -23,6 +23,8 @@ export class CodexCliExecutor implements Executor {
     execution: 'gpt-5.5',
     answerPr: 'gpt-5.5',
   };
+  static supportsSubagents = true;
+  readonly supportsSubagents = true;
 
   constructor(
     public options: CodexCliExecutorOptions,
@@ -37,8 +39,6 @@ export class CodexCliExecutor implements Executor {
     if (contextContent == null) {
       throw new Error('Prompt content is required for codex-cli executor');
     }
-
-    const simpleModeEnabled = this.sharedOptions.simpleMode || this.options.simpleMode;
 
     if (planInfo.executionMode === 'review') {
       return executeReviewMode(
@@ -73,48 +73,28 @@ export class CodexCliExecutor implements Executor {
       );
     }
 
-    if (planInfo.executionMode === 'tdd') {
-      if (simpleModeEnabled) {
-        return executeSimpleMode(
-          contextContent,
-          planInfo,
-          this.sharedOptions.baseDir,
-          this.sharedOptions.model,
-          this.timConfig,
-          this.sharedOptions.reviewExecutor
-        );
-      }
+    const orchestratorSharedOptions =
+      this.options.simpleMode === true && this.sharedOptions.simpleMode !== true
+        ? { ...this.sharedOptions, simpleMode: true }
+        : this.sharedOptions;
 
-      return executeNormalMode(
-        contextContent,
-        planInfo,
-        this.sharedOptions.baseDir,
-        this.sharedOptions.model,
-        this.timConfig,
-        this.sharedOptions.reviewExecutor
-      );
-    }
+    // Resolve the orchestrator reasoning level. The orchestrator effort override
+    // (config.orchestrator.effort.codex) is merged into the executor options by
+    // agent.ts, so it lives on this.options.reasoning.default — prefer that over the
+    // raw config default.
+    const reasoningLevel =
+      this.options.reasoning?.default ??
+      this.timConfig.executors?.[CodexCliExecutorName]?.reasoning?.default ??
+      'medium';
 
-    if (
-      planInfo.executionMode === 'simple' ||
-      (planInfo.executionMode === 'normal' && simpleModeEnabled)
-    ) {
-      return executeSimpleMode(
-        contextContent,
-        planInfo,
-        this.sharedOptions.baseDir,
-        this.sharedOptions.model,
-        this.timConfig,
-        this.sharedOptions.reviewExecutor
-      );
-    }
-    return executeNormalMode(
+    return executeOrchestratorMode(
       contextContent,
       planInfo,
       this.sharedOptions.baseDir,
       this.sharedOptions.model,
       this.timConfig,
-      this.sharedOptions.reviewExecutor
+      orchestratorSharedOptions,
+      reasoningLevel
     );
   }
 }
