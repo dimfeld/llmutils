@@ -1,5 +1,6 @@
 <script lang="ts">
   import AppWindow from '@lucide/svelte/icons/app-window';
+  import Pencil from '@lucide/svelte/icons/pencil';
   import Upload from '@lucide/svelte/icons/upload';
   import { toast } from 'svelte-sonner';
 
@@ -848,6 +849,16 @@
         <PriorityBadge priority={plan.priority} />
 
         <div class="ml-auto flex items-center gap-2">
+          <Button
+            href={`/projects/${projectId}/plans/${plan.uuid}/edit`}
+            size="xs"
+            variant="outline"
+            aria-label="Edit plan metadata"
+            title="Edit plan metadata"
+          >
+            <Pencil class="h-3 w-3" />
+            Edit
+          </Button>
           {#if openInEditorEnabled}
             <Button
               onclick={handleOpenInEditor}

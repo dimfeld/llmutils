@@ -1233,6 +1233,18 @@ const migrations: Migration[] = [
         ON github_app_project_installation(app_id, installation_id);
     `,
   },
+  {
+    version: 43,
+    up: `SELECT 1;`,
+    afterUp: (db: Database) => {
+      if (tableExists(db, 'plan_dependency')) {
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_plan_dependency_depends_on_uuid
+            ON plan_dependency(depends_on_uuid);
+        `);
+      }
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

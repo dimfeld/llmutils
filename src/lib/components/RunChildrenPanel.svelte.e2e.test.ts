@@ -14,6 +14,7 @@ import RunChildrenPanel from './RunChildrenPanel.svelte';
 
 vi.mock('$app/navigation', () => ({
   afterNavigate: vi.fn(),
+  goto: vi.fn(),
   invalidateAll: vi.fn(),
 }));
 
@@ -25,6 +26,8 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startReview: vi.fn(),
   startUpdateDocs: vi.fn(),
   startCreatePr: vi.fn(),
+  startPlanReviewGuide: vi.fn(),
+  startProof: vi.fn(),
   finishPlanQuick: vi.fn(),
   openInEditor: vi.fn(),
   startAgentMulti: vi.fn(),
@@ -34,6 +37,10 @@ vi.mock('$lib/remote/review_issue_actions.remote.js', () => ({
   removeReviewIssue: vi.fn(),
   convertReviewIssueToTask: vi.fn(),
   clearReviewIssues: vi.fn(),
+}));
+
+vi.mock('$lib/remote/sync_status.remote.js', () => ({
+  getPlanSyncStatus: vi.fn(() => ({ current: null })),
 }));
 
 vi.mock('./PrStatusSection.svelte', () => ({
@@ -121,7 +128,13 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
     taskCounts: { done: 0, total: 0 },
     reviewIssueCount: 0,
     dependencies: [],
+    dependents: [],
+    siblings: [],
     children: [],
+    basePlan: null,
+    effectiveBasePlan: null,
+    effectiveBaseBranch: null,
+    effectiveBaseBranchSource: null,
     childExternalDependencyStatuses: {},
     assignment: null,
     parent: null,
@@ -166,7 +179,7 @@ describe('RunChildrenPanel', () => {
       }),
     ]);
 
-    await expect.element(page.getByText('Blocked')).toBeInTheDocument();
+    await expect.element(page.getByText('Blocked', { exact: true })).toBeInTheDocument();
   });
 
   test('omits children that are not agent-eligible', async () => {

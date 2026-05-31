@@ -17,11 +17,13 @@
     selectedPlanUuid = null,
     projectNames,
     importIssueHref = null,
+    newPlanHref = null,
   }: {
     plans: EnrichedPlan[];
     selectedPlanUuid?: string | null;
     projectNames?: Record<number, string>;
     importIssueHref?: string | null;
+    newPlanHref?: string | null;
   } = $props();
 
   let projectId = $derived(page.params.projectId);
@@ -194,14 +196,24 @@
         <option value="planId">Plan #</option>
         <option value="priority">Priority</option>
       </select>
-      {#if importIssueHref}
-        <a
-          href={importIssueHref}
-          class="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        >
-          Import Issue
-        </a>
-      {/if}
+      <div class="flex items-center gap-2">
+        {#if newPlanHref}
+          <a
+            href={newPlanHref}
+            class="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            New Plan
+          </a>
+        {/if}
+        {#if importIssueHref}
+          <a
+            href={importIssueHref}
+            class="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            Import Issue
+          </a>
+        {/if}
+      </div>
     </div>
     <FilterChips {activeFilters} {statusCounts} onToggle={toggleFilter} onReset={resetFilters} />
   </div>

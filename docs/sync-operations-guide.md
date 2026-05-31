@@ -76,4 +76,6 @@ At minimum, add focused tests in:
 - `src/tim/sync/server.test.ts` or an apply/snapshot test for catch-up snapshots.
 - Command tests when adding CLI or web entry points.
 
+When testing failure of an atomic sync batch, **assert on the rejected operation status, not on the absence of operation rows.** A batch that fails validation rolls back the user-visible plan/projection state, but it can still leave the `sync_operation` row(s) behind in a rejected status — that is expected bookkeeping, not a leak. A test that asserts "no `sync_operation` rows exist after a failed batch" will be wrong; assert that the operation exists with a rejected status instead.
+
 Run targeted tests first, then `bun run check` and the relevant broader test suite.

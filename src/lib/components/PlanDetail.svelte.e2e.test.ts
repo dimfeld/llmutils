@@ -9,6 +9,7 @@ import PlanDetailComponent from './PlanDetail.svelte';
 
 vi.mock('$app/navigation', () => ({
   afterNavigate: vi.fn(),
+  goto: vi.fn(),
   invalidateAll: vi.fn(),
 }));
 
@@ -20,7 +21,9 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startReview: vi.fn(),
   startUpdateDocs: vi.fn(),
   startCreatePr: vi.fn(),
+  startAgentMulti: vi.fn(),
   startPlanReviewGuide: vi.fn(),
+  startProof: vi.fn(),
   finishPlanQuick: vi.fn(),
   openInEditor: vi.fn(),
 }));
@@ -142,6 +145,14 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
     taskCounts: { done: 0, total: 0 },
     reviewIssueCount: 0,
     dependencies: [],
+    dependents: [],
+    siblings: [],
+    children: [],
+    basePlan: null,
+    effectiveBasePlan: null,
+    effectiveBaseBranch: null,
+    effectiveBaseBranchSource: null,
+    childExternalDependencyStatuses: {},
     assignment: null,
     parent: null,
     prStatuses: [makePrStatusDetail()],
@@ -172,7 +183,9 @@ describe('PlanDetail action selection', () => {
     );
 
     await expect.element(page.getByRole('button', { name: 'Run Agent' })).toBeInTheDocument();
-    await expect.element(page.getByText('Generate')).not.toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: 'Generate', exact: true }))
+      .not.toBeInTheDocument();
   });
 
   test('keeps Run Agent as primary for a simple plan with incomplete tasks', async () => {
@@ -196,7 +209,9 @@ describe('PlanDetail action selection', () => {
     );
 
     await expect.element(page.getByRole('button', { name: 'Run Agent' })).toBeInTheDocument();
-    await expect.element(page.getByText('Generate')).not.toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: 'Generate', exact: true }))
+      .not.toBeInTheDocument();
   });
 
   test('keeps Generate primary and Run Agent in the dropdown for a taskless non-simple plan', async () => {
@@ -209,7 +224,9 @@ describe('PlanDetail action selection', () => {
       })
     );
 
-    await expect.element(page.getByRole('button', { name: 'Generate' })).toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: 'Generate', exact: true }))
+      .toBeInTheDocument();
     await screen.getByRole('button', { name: 'More actions' }).click();
     await expect.element(page.getByRole('menuitem', { name: 'Run Agent' })).toBeInTheDocument();
   });

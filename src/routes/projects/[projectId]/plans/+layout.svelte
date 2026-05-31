@@ -29,6 +29,9 @@
       ? `/projects/${data.projectId}/import`
       : null
   );
+  let newPlanHref = $derived(
+    data.projectId !== 'all' ? `/projects/${data.projectId}/plans/new` : null
+  );
 </script>
 
 <div class="flex h-full w-full">
@@ -40,6 +43,7 @@
         {selectedPlanUuid}
         projectNames={showProject ? projectNamesByPlanProjectId : undefined}
         {importIssueHref}
+        {newPlanHref}
       />
     </div>
   {/key}

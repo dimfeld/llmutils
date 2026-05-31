@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 
 import { loadEffectiveConfig } from '$tim/configLoader.js';
-import { getPlanByUuid } from '$tim/db/plan.js';
+import { getPlanByPlanId, getPlanByUuid } from '$tim/db/plan.js';
 import { listProjects } from '$tim/db/project.js';
 import { getReviewsByPlanUuid, type ReviewWithIssueCounts } from '$tim/db/review.js';
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
@@ -180,13 +180,16 @@ export async function getPlanDetailRouteData(
   options: PlanDetailRouteOptions = {}
 ): Promise<PlanDetailRouteResult | null> {
   // Lightweight lookup to get project_id without full enrichment
-  const planRow = getPlanByUuid(db, planUuid);
+  let planRow = getPlanByUuid(db, planUuid);
+  if (!planRow && routeProjectId !== 'all' && /^\d+$/.test(planUuid)) {
+    planRow = getPlanByPlanId(db, Number(routeProjectId), Number(planUuid));
+  }
   if (!planRow) {
     return null;
   }
 
   const finishConfig = await loadFinishConfigForProject(db, planRow.project_id);
-  const detail = await getPlanDetail(db, planUuid, finishConfig, {
+  const detail = await getPlanDetail(db, planRow.uuid, finishConfig, {
     includeDeletedArtifacts: options.includeDeletedArtifacts,
   });
   if (!detail) {
@@ -194,7 +197,10 @@ export async function getPlanDetailRouteData(
   }
 
   let redirectTo: string | undefined;
-  if (routeProjectId !== 'all' && String(detail.projectId) !== routeProjectId) {
+  if (
+    routeProjectId !== 'all' &&
+    (String(detail.projectId) !== routeProjectId || planUuid !== detail.uuid)
+  ) {
     redirectTo = `/projects/${detail.projectId}/${tab}/${detail.uuid}`;
   }
 

@@ -37,6 +37,7 @@ When reusing code originally written for CLI (same `process.cwd()` as the projec
 - **`state_referenced_locally` + intentional capture-once**: Svelte 5 warns on the `let x = $state(props.y)` pattern. When capture-once is intentional (e.g. an editor form that should not reset on prop refresh mid-edit), wrap the initializer in `untrack(() => ...)` to make intent explicit and silence the warning.
 - **`$derived` is not a drop-in for `$state` when mutating in place**: Writable `$derived` arrays/objects do not re-run dependent derives when you mutate nested properties (`arr[i].prop = x`, `Object.assign(row, patch)`). Before switching a `$state` value to `$derived`, audit all write sites and convert them to immutable reassignment (`arr = arr.map(row => row.id === x.id ? { ...row, ...patch } : row)`).
 - **Editor unmounts inside `{#if expanded}`**: If an inline editor lives inside a collapsible `{#if}` region, a separate collapse button can silently unmount the editor and discard unsaved state. Disable the collapse affordance while editing — don't rely on users to remember to Save/Cancel first.
+- **Use the remote-query resource (`.current`/`.loading`/`.error`) for always-rendered, SSR-compatible components, not a top-level `await`**: A component that is always mounted (e.g. an always-visible picker or form field) and must render under SSR should read a remote query via its resource shape — `query.current`, `query.loading`, `query.error` — instead of a top-level `await getX()` in a `$derived`/markup position. Top-level async derived values can make SSR tests fail with `await_invalid`. Reserve `{#await}` / top-level `await` for content rendered lazily behind a boundary.
 
 ### HTML & Component Gotchas
 
@@ -53,6 +54,7 @@ When reusing code originally written for CLI (same `process.cwd()` as the projec
 - In the client, unwrap remote-function errors with a shared helper (`extractRemoteErrorMessage`) that reads `err.body.message` → string body → `err.message` → `String(err)`. Raw `String(err)` at DOM error sites renders `[object Object]`.
 - Separate remote side-effects from local DB persistence in catch blocks with nested try/catches. Conflating them either (a) records a synthetic failure row for a remote call that actually succeeded or (b) masks the real error when persistence also throws.
 - Validate user-supplied ids at the remote boundary **before** making external API calls. Silently filtering unknown/duplicate/cross-entity ids inside the pipeline turns "invalid selection" into "partial success" — the worst kind of bug to debug. Share the validation between any preview/partition query and the commit command so they can't drift.
+- **Do not collapse a picker/search remote error into empty results.** "No matches found" and "the search failed" are distinct UX states — keep the query's error (`.error`) separate from an empty `.current` and render each differently (empty state vs. error state with retry). Swallowing the error into an empty list hides failures from the user and will be flagged in review.
 
 ### UI Affordance Gating
 
@@ -554,6 +556,133 @@ The dialog stays open with per-button spinners during launch. Dismissal is preve
 - **Session lookup** (`SessionManager.hasActiveSessionForPlan(planUuid, command?)`): Checks whether an active session exists for a given plan UUID. The `command` parameter is optional — when omitted, matches any active session regardless of command type. Used without a command filter for duplicate prevention across all plan-scoped commands.
 - **Launch lock** (`src/lib/server/launch_lock.ts`): In-memory per-plan lock (keyed by UUID, stored on `globalThis` for HMR safety) bridging the gap between process spawn and WebSocket session registration. Exported as a separate module because SvelteKit remote function files can only export `command()` results. Subscribes to `SessionManager.subscribe('session:update')` to clear locks when sessions register.
 - **Primary workspace query** (`getPrimaryWorkspacePath()` in `db_queries.ts`): Resolves the primary workspace path for a project, used as the cwd for spawned processes.
+
+## Plan Metadata Writes (Create / Edit)
+
+The sync-aware backend for web plan creation and metadata editing. This is the server foundation that create/edit UI plans call — no Svelte routes or forms live here, only the service and remote-function layer. Writes never touch SQLite directly; they flow through the sync write router (`src/tim/sync/write_router.ts`), operation folding, and the DB-first/materialization semantics in `docs/sync-operations-guide.md`. The backend reuses the _semantics_ of `tim add` and `tim set` but does not call the CLI handlers, which depend on CLI process context, terminal/editor behavior, and cwd-based project resolution.
+
+Writable metadata fields are `title`, `goal`, `details`, `priority`, `status`, `simple`, `tags`, `parent`, `basePlan`, and `dependencies`. Referenced plans are always identified by **UUID** in payloads — numeric plan IDs are display/search affordances only and are not globally unique.
+
+### Server Service (`src/lib/server/plan_metadata.ts`)
+
+- **`createPlanFromWeb(db, input)`**: Rejects non-concrete project IDs (`all` or non-positive), loads the project row and its preferred git root, loads repo-effective config from that git root, normalizes all fields, validates references, allocates the next numeric plan ID (`reserveNextPlanId`/`previewNextPlanId` depending on write mode), builds a single `plan.create` operation in an atomic sync batch, rematerializes affected parent files, and returns `{ planUuid, projectId, planId }`.
+- **`updatePlanMetadataFromWeb(db, input)`**: Loads the target plan by UUID, validates route project ownership (route `all` is allowed for existing-plan edits, but the plan's _actual_ project controls validation/config/writes), normalizes submitted fields, computes diffs against current DB state, and adds only changed text/scalar/parent/dependency/tag operations to one atomic sync batch. Returns `{ planUuid }`.
+- **Tag validation** loads the effective config from the **target project's preferred git root** (`getPreferredProjectGitRoot`), not `getServerContext().config`, then calls `validateTags()`.
+- **Reference validation** (`resolvePlanMetadataReferences`) enforces same-project references, missing-reference errors, self-reference rejection; parent/dependency cycle rejection and graph consistency are enforced downstream by `operation_fold.ts`.
+- **Status normalization** (`normalizePlanStatus`): Only persisted raw statuses are accepted (`pending`, `in_progress`, `needs_review`, `reviewed`, `done`, `cancelled`, `deferred`). Display-only statuses (`ready`, `blocked`, `recently_done`, exported as `displayOnlyPlanStatuses`) are rejected at this boundary.
+- **Status side effects** (`applyWebStatusUpdateSideEffects`): Mirrors `tim set --status`. For terminal/review statuses (`done`, `needs_review`, `reviewed`, `cancelled`) it runs assignment cleanup (`removeAssignment`) and the parent-completion cascade (`checkAndMarkParentDone`). Plans touched by the cascade are added to the rematerialization set.
+- **Materialized-file consistency**: Primary materialized files under `.tim/plans` are kept in sync. Before writing, existing primary files for the edited plan and its ancestors are synced (`syncMaterializedPlan` with `skipRematerialize`); after the batch commits, only files that already existed are rematerialized (`rematerializeExistingPrimaryPlans`) — web writes don't create materialized files that weren't already present.
+
+### Plan Picker Search (`src/lib/server/plan_picker_queries.ts`)
+
+`searchPlanPickerOptions(db, input)` is a narrow, purpose-built query for relationship pickers (parent / dependency / base-plan autocomplete) — it deliberately does **not** reuse `getPlansForProject()` or `EnrichedPlan`, which are too heavy per keystroke. It:
+
+- Scopes to one concrete `projectId` and searches by title (`LIKE`, escaped) and exact numeric `plan_id`, ordered with exact-ID matches first.
+- Excludes the current plan in edit flows (`currentPlanUuid`).
+- Applies relation-specific eligibility: `basePlan` accepts any other plan; `dependency` excludes plans that already (transitively) depend on the current plan; `parent` excludes ancestors of the current plan and plans the current plan depends on (cycle prevention).
+- Returns only the projection `{ uuid, projectId, planId, title, status, priority, parentUuid, basePlanUuid }`.
+- Bounds work with paging caps (`MAX_FILTERED_CANDIDATE_PAGE_SIZE`, `MAX_FILTERED_CANDIDATE_SCAN`) — filtered search past the cap is best-effort and may omit later matches.
+
+**Picker gotchas (learned the hard way):**
+
+- **Don't apply the SQL `LIMIT` before graph-eligibility filtering.** When a relation type filters candidates by graph eligibility (parent/dependency cycle checks), applying the result `limit` at the SQL level first can truncate the candidate set before any ineligible rows are dropped — valid options then silently disappear from autocomplete. Filtered searches must either push eligibility into SQL or scan in bounded pages (`MAX_FILTERED_CANDIDATE_PAGE_SIZE`/`MAX_FILTERED_CANDIDATE_SCAN`) and apply the limit only after eligibility, never before.
+- **Base-plan eligibility is intentionally lighter than parent/dependency.** A `basePlan` reference is a soft pointer and has no cycle constraints, so it accepts any other plan. Do **not** load the full relationship/ancestry graph for base-plan searches — that graph load is pure cost the base-plan path doesn't need. Only the parent/dependency relation types pay for graph traversal.
+
+### Remote Functions
+
+- **`src/lib/remote/plan_metadata.remote.ts`**: `createPlan` and `updatePlanMetadata` commands. Both call the service and pass any thrown error through `throwStructuredPlanMetadataError`.
+- **`src/lib/remote/plan_picker.remote.ts`**: `searchPlanPicker` query wrapping `searchPlanPickerOptions`.
+
+### Structured Remote Errors (`src/lib/server/plan_metadata_errors.ts`)
+
+Errors are surfaced as structured `error(status, body)` bodies so the UI can render predictable field- and form-level messages. The `PlanMetadataValidationError` class carries a `kind`, `message`, and optional `field`. `toPlanMetadataRemoteError()` maps both `PlanMetadataValidationError` and sync-layer errors (`SyncWriteConflictError`, `SyncConflictError`, `SyncValidationError`, `SyncWriteRejectedError`, `ApplyOperationToPreconditionError`) into the same shape. Error kinds and their HTTP statuses:
+
+| Kind                 | Status | Meaning                             |
+| -------------------- | ------ | ----------------------------------- |
+| `validation_failed`  | 400    | Field/normalization failure         |
+| `invalid_reference`  | 400    | Unknown referenced plan UUID        |
+| `project_mismatch`   | 400    | Reference or route project mismatch |
+| `not_found`          | 404    | Project or plan not found           |
+| `cycle_detected`     | 409    | Parent/dependency cycle             |
+| `sync_conflict`      | 409    | Stale revision / text-merge failure |
+| `persistence_failed` | 500    | Other sync write failure            |
+
+`App.Error` in `src/app.d.ts` is augmented with these `kind` values plus the optional `field`, so the client can read `err.body.field` to attach messages to form inputs.
+
+## Create Plan Route
+
+The web UI for creating a plan. It is the client slice that consumes the "Plan Metadata Writes" backend above — the shared metadata form, relationship pickers, route, and sidebar entry point. The same form is reused in edit mode by the "Edit Plan Route" below (via the `mode` prop).
+
+### Route Structure
+
+```
+src/routes/projects/[projectId]/plans/new/
+├── +page.server.ts   # parent()-based load; redirects when project is not concrete
+└── +page.svelte      # Mounts PlanMetadataForm and calls the createPlan remote command
+```
+
+The server load calls `await parent()` and **redirects to `/projects/all/plans`** when `projectId === 'all'` or the id isn't finite — plan creation requires a concrete project/repository context (the backend rejects all-project creation as defense in depth). For concrete projects it returns `{ numericProjectId }`. Route code stays thin: `+page.svelte` owns only `submitting` / `errorMessage` state and the submit handler, while the form owns all field state.
+
+On submit, `+page.svelte` normalizes the form value into the `createPlan` payload (referenced plans by UUID; empty optionals dropped), then on success calls `invalidateAll()` and `goto('/projects/{projectId}/plans/{result.planUuid}')`. On failure it keeps the form mounted, preserves input, and renders the structured remote error via a local `extractErrorMessage` helper (`err.body.message` → string body → `err.message` → `String(err)`).
+
+### Shared Metadata Form (`src/lib/components/PlanMetadataForm.svelte`)
+
+A mode-aware (`'create' | 'edit'`) form that owns local state for `title`, `goal`, `details`, `priority`, `status`, `simple`, a comma-separated `tags` input, and parent / base-plan / dependency selections. Props: `projectId`, `mode`, `initialValue`, `submitLabel`, `submitting`, `error`, `currentPlanUuid`, `cancelHref`, and an `onsubmit(value)` callback.
+
+- **Defaults**: empty title/optionals, `status: 'pending'`, `priority: 'medium'`, `simple: false`, no relationships.
+- **Initial-value capture is once**: each field initializer is wrapped in `untrack(() => initialValue.x ?? default)` so a prop refresh mid-edit doesn't reset the form (see the `state_referenced_locally` note above).
+- **Status options are persisted raw statuses only** (`pending`, `in_progress`, `needs_review`, `reviewed`, `done`, `cancelled`, `deferred`) — display-only statuses are never offered, matching the backend's `normalizePlanStatus` boundary.
+- **Client validation is minimal**: submit is gated only on a non-empty trimmed title (`canSubmit`); server/domain validation remains authoritative.
+- **Cancel link** resolves to the plan detail page in edit mode (when `currentPlanUuid` is set) or the plans list otherwise, overridable via `cancelHref`.
+
+Payload normalization lives in `src/lib/components/plan_metadata_form_utils.ts` (`normalizePlanMetadataFormPayload`, `parsePlanMetadataTags`) as pure functions so it's unit-testable without the Svelte runtime. Tags are split on commas, trimmed, lowercased, and emptied entries dropped; relationship selections are reduced to their UUIDs.
+
+### Relationship Pickers
+
+Two presentational autocomplete components wrap the `searchPlanPicker` remote query (200ms debounce; searches only while focused with a non-empty query):
+
+- **`PlanPicker.svelte`** — single-select, clearable. Used for parent and base plan. Binds `selected: PlanPickerOption | null`.
+- **`PlanPickerMulti.svelte`** — multi-select, removable chips. Used for dependencies. Binds `selected: PlanPickerOption[]` and filters already-selected UUIDs out of the dropdown.
+
+Both take `relation` (`'parent' | 'basePlan' | 'dependency'`) and an optional `currentPlanUuid` (passed through to the query for edit-flow exclusion / cycle filtering), display `#{planId}: {title}` with the status, store **UUID** selections, and render distinct loading (`Searching...`), error, and empty (`No matching plans`) states in the dropdown.
+
+### Sidebar Entry Point
+
+`PlansList.svelte` takes a `newPlanHref?: string | null` prop and renders a **New Plan** action beside the existing **Import Issue** action when present. `plans/+layout.svelte` derives `newPlanHref` as `/projects/{projectId}/plans/new` only for concrete projects (`null` for `all`), so creation is hidden in `/projects/all/plans`.
+
+### Tests
+
+Component/browser tests cover form defaults, required-title gating, payload normalization, relationship selection, picker loading/empty/selected states, submitting/error states, concrete-project sidebar visibility vs. all-project hiding, remote submission, and success navigation — see `PlanMetadataForm.test.ts`, `plan_metadata_form_utils.test.ts`, `PlanPicker.svelte.e2e.test.ts`, `PlanPickerMulti.svelte.e2e.test.ts`, `PlansList.test.ts`, and `plans/new/page.{server,svelte.e2e,}.test.ts`.
+
+## Edit Plan Route
+
+The web UI for editing an existing plan's metadata. It reuses the shared `PlanMetadataForm` (in `mode="edit"`) and the `updatePlanMetadata` remote command from the "Plan Metadata Writes" backend above. The route lives under the existing plans route tree so the split-view layout (left `PlansList`, right detail pane) stays intact — editing just swaps the right pane from read detail to the form.
+
+### Route Structure
+
+```
+src/routes/projects/[projectId]/plans/[planId]/edit/
+├── +page.server.ts   # Loads the plan via the shared detail path, projects it into the form's initial value
+└── +page.svelte      # Mounts PlanMetadataForm in edit mode and calls the updatePlanMetadata remote command
+```
+
+The server load resolves the target plan with the same UUID-aware path as the plan detail route (`getPlanDetailRouteData(db, planId, projectId, 'plans')`), 404s when the plan is missing, and honors the loader's `redirectTo` (appending `/edit`) so canonicalizing redirects still land on the edit subroute. It maps the loaded plan into a `PlanMetadataFormInitialValue` — `title`, `goal`, `details`, `priority`, `status`, `simple`, `tags`, and `parent`/`basePlan`/`dependencies` projected to `PlanPickerOption`s — and returns the plan UUID, `planId`, `title`, the route project id, the plan's **actual** owning project id, and a `cancelHref` pointing back to `/projects/{routeProjectId}/plans/{planUuid}`.
+
+### All-Project Scoping
+
+The edit route renders under `/projects/all/plans/[planId]/edit` because the plan already identifies its owning project. The form's `projectId` and the `updatePlanMetadata` payload's `projectId` are both set to the plan's **actual** project id (`actualProjectId` from the load), not the synthetic `all` route id — so picker queries and the write scope to the real project. Cancel/back navigation keeps the current route's project id (`all` stays `all`) for coherent in-context browsing.
+
+### Submit & Navigation
+
+`+page.svelte` owns only `submitting` / `errorMessage` state. On submit it calls `updatePlanMetadata` with the plan UUID and the normalized field values (referenced plans by UUID; empty optionals sent as `null`), then on success calls `invalidateAll()` and `goto(cancelHref)` to return to the plan detail page. On failure it keeps the form mounted with the user's current values and renders the structured remote error via `extractPlanMetadataErrorMessage`. The form is wrapped in `{#key data.planUuid}` so navigating between plans remounts it with fresh initial values.
+
+### Detail-Page Edit Affordance
+
+`PlanDetail.svelte` exposes the edit entry point as an **Edit** button (pencil icon) in the header action area linking to `/projects/{projectId}/plans/{plan.uuid}/edit`, using the current route project id so all-project browsing stays coherent. The detail component only navigates — it holds no inline editing state.
+
+### Tests
+
+Component/browser and loader tests cover initial value population from the loaded plan, submitting changed metadata through the `updatePlanMetadata` remote path, navigation/invalidation after success, validation error rendering without losing input, the detail-page edit affordance, and all-project mode scoping to the edited plan's actual project — see `plans/[planId]/edit/page.{server,svelte.e2e}.test.ts`.
 
 ## Issue Import
 

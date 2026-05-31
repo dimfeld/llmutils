@@ -4,7 +4,16 @@ declare global {
   namespace App {
     interface Error {
       message: string;
-      kind?: 'persistence-failed';
+      kind?:
+        | 'validation_failed'
+        | 'not_found'
+        | 'project_mismatch'
+        | 'invalid_reference'
+        | 'cycle_detected'
+        | 'sync_conflict'
+        | 'persistence_failed'
+        | 'persistence-failed';
+      field?: string;
       githubReviewId?: number;
       githubReviewUrl?: string | null;
     }

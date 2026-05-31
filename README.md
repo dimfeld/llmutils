@@ -212,9 +212,9 @@ The main workflow is:
 
 1. **Create or Import an issue**
 
-   Open the project, go to **Plans**, and click **Import Issue**. Paste a Linear issue ID such as `TEAM-123`, a Linear URL, a GitHub issue URL, or another identifier supported by the configured tracker.
+   Open the project, go to **Plans**, and either click **New Plan** to fill in a plan's title, goal, details, priority, status, tags, and parent/base/dependency relationships directly, or click **Import Issue** to pull one in from a tracker. For import, paste a Linear issue ID such as `TEAM-123`, a Linear URL, a GitHub issue URL, or another identifier supported by the configured tracker. Both actions are available only for a concrete project, not the **All Projects** view. To edit an existing plan's metadata later, open it and click the **Edit** button in the plan detail header — this reuses the same form to update those fields.
 
-   You can also create an issue using `tim add` in the CLI.
+   You can also create a plan using `tim add` in the CLI.
 
 2. **Select issue content**
 

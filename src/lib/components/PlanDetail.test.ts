@@ -218,6 +218,18 @@ describe('PlanDetail', () => {
     expect(body).toContain('Linked PR plan');
   });
 
+  test('links to the dedicated metadata edit route using the current route project id', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({ uuid: 'plan-edit-uuid' }),
+        projectId: 'all',
+      },
+    });
+
+    expect(body).toContain('href="/projects/all/plans/plan-edit-uuid/edit"');
+    expect(body).toContain('aria-label="Edit plan metadata"');
+  });
+
   test('does not repeat the parent in the depended-on-by section', () => {
     const parent = {
       uuid: 'parent-plan',
