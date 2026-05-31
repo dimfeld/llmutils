@@ -170,6 +170,24 @@ describe('create_pr command helpers', () => {
       expect(prompt).toContain('Plan ID: 317');
       expect(prompt).toContain('Issue reference: DF-123');
       expect(prompt).toContain('latest(ancestors(trunk()) & ancestors(@))');
+      expect(prompt).toContain('Manual Testing Runbooks section copied from the Plan Context');
+    });
+
+    test('instructs PR creation to preserve runbooks from plan details', () => {
+      const prompt = buildPrCreationPrompt({
+        vcsType: 'git',
+        baseBranch: 'main',
+        planTitle: 'Create PR flow',
+        planDetails: `## Manual Testing Runbooks
+
+### Happy path
+1. Open the dashboard.
+2. Confirm the new widget renders.`,
+      });
+
+      expect(prompt).toContain('Manual Testing Runbooks section copied from the Plan Context');
+      expect(prompt).toContain('preserve the runbook titles, steps, and expected outcomes');
+      expect(prompt).toContain('### Happy path');
     });
 
     test('includes git-specific commands and merge-base reference', () => {

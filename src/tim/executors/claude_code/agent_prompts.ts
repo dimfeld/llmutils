@@ -739,6 +739,12 @@ Your pull request description must include the following sections:
 - Suggest follow-up tasks or related features
 - Mention any limitations of the current implementation
 
+### 7. Manual Testing Runbooks
+- If the plan context includes a "Manual Testing Runbooks" section, copy those runbooks into the PR description
+- Preserve the runbook titles, steps, preconditions, expected outcomes, and recommended proof artifacts so reviewers can manually walk through the delivered feature
+- If completed child plans or subplans include their own runbook sections, include each subplan's runbooks and label which plan they came from
+- If no runbooks are present in the context, omit this section rather than inventing manual steps
+
 ## Output Format
 
 Structure your response as a well-formatted markdown document with:

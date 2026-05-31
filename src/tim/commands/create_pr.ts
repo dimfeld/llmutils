@@ -194,6 +194,7 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
     '- Summary section with bullet points',
     '- Changes section listing important files/modules',
     '- Test plan section with checkboxes',
+    '- Manual Testing Runbooks section copied from the Plan Context when the plan details contain "Manual Testing Runbooks"; preserve the runbook titles, steps, and expected outcomes so reviewers can manually walk through the delivered feature',
     trimmedPlanTitle
       ? `- PR title: "${trimmedPlanTitle}"`
       : '- PR title: use the exact plan title from the Plan Context section',

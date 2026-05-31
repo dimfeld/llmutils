@@ -5,6 +5,7 @@ import {
   getTesterPrompt,
   getReviewerPrompt,
   getVerifierAgentPrompt,
+  getPrDescriptionPrompt,
   FAILED_PROTOCOL_INSTRUCTIONS,
 } from './agent_prompts.ts';
 
@@ -149,5 +150,20 @@ describe('agent_prompts failure protocol integration', () => {
     expect(verifier.prompt).toContain('## Custom Instructions');
     expect(verifier.prompt).toContain('Follow project-specific QA checklist.');
     expect(verifier.prompt).toContain('Progress Reporting');
+  });
+
+  it('directs PR descriptions to copy manual testing runbooks from plan context', () => {
+    const def = getPrDescriptionPrompt(`# Plan Context
+
+## Manual Testing Runbooks
+
+### Dashboard widget
+1. Open the dashboard.
+2. Confirm the widget renders.`);
+
+    expect(def.prompt).toContain('### 7. Manual Testing Runbooks');
+    expect(def.prompt).toContain('copy those runbooks into the PR description');
+    expect(def.prompt).toContain('Preserve the runbook titles, steps, preconditions');
+    expect(def.prompt).toContain('Dashboard widget');
   });
 });
