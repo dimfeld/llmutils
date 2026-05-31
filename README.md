@@ -263,6 +263,7 @@ tim pr link 123 https://github.com/owner/repo/pull/456
 tim pr review-guide https://github.com/owner/repo/pull/456
 tim pr review-guide-comment https://github.com/owner/repo/pull/456   # Concise guide posted as a PR comment
 tim pr review-guide-comment 456 --dry-run                            # Print the guide without posting it
+tim subagent reviewer 123 --print --output-file review.json          # Orchestrator-compatible review entry point
 tim review-guide generate 123                       # Plan-only review guide (no PR required)
 tim review-guide generate 123 --auto-workspace
 tim review-guide list-issues 123                    # Latest guide for plan, plus linked PR guides

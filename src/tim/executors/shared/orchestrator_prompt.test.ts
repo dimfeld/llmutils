@@ -11,7 +11,7 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('Failure Protocol');
     expect(out).toContain('FAILED:');
     expect(out).toContain('Monitor all subagent outputs');
-    expect(out).toContain('tim review');
+    expect(out).toContain('reviewer');
   });
 
   it('mentions progress section update guidance for plan file', () => {
@@ -23,11 +23,11 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('### Current State');
   });
 
-  it('instructs review via tim review instead of reviewer agent', () => {
+  it('instructs review via reviewer subagent', () => {
     const out = wrapWithOrchestration('Context', '123', { batchMode: false });
-    expect(out).toContain('tim review 123 --print');
+    expect(out).toContain('tim subagent reviewer 123 --print');
+    expect(out).toContain('tim subagent reviewer 123 --input "<instructions>"');
     expect(out).toContain('15 minutes');
-    expect(out).not.toContain('tim-reviewer');
   });
 
   it('requires a final full-plan review when a batch completes all remaining tasks', () => {
@@ -43,7 +43,7 @@ describe('orchestrator_prompt failure protocol', () => {
       reviewExecutor: 'codex-cli',
     });
     expect(out).toContain(
-      'tim review 123 --print --output-file <output_path> --executor codex-cli'
+      'tim subagent reviewer 123 --print --output-file <output_path> --executor codex-cli'
     );
   });
 
@@ -54,7 +54,7 @@ describe('orchestrator_prompt failure protocol', () => {
     );
     expect(out).toContain('small logic adjustments');
     expect(out).toContain(
-      'you may skip re-running `tim review 123 --print --output-file <output_path>`'
+      'you may skip re-running `tim subagent reviewer 123 --print --output-file <output_path>`'
     );
   });
 
@@ -271,6 +271,7 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('tim subagent tdd-tests 71');
       expect(out).toContain('tim subagent implementer 71');
       expect(out).toContain('tim subagent tester 71');
+      expect(out).toContain('tim subagent reviewer 71');
       expect(out).toContain('1. **TDD Test Phase**');
       expect(out).toContain('2. **Implementation Phase**');
       expect(out).toContain('3. **Testing Phase**');
@@ -288,7 +289,7 @@ describe('orchestrator_prompt subagent commands', () => {
       );
       expect(out).toContain('small logic adjustments');
       expect(out).toContain(
-        'you may skip re-running `tim review 71 --print --output-file <output_path>`'
+        'you may skip re-running `tim subagent reviewer 71 --print --output-file <output_path>`'
       );
     });
 

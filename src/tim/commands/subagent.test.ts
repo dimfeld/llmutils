@@ -167,7 +167,7 @@ describe('allowed tools in getDefaultAllowedTools', () => {
 });
 
 describe('subagent command registration in tim.ts', () => {
-  test('registers subagent command with all four subcommands', async () => {
+  test('registers subagent command with all five subcommands', async () => {
     const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
     const source = await fs.readFile(sourceFile, 'utf-8');
 
@@ -177,6 +177,7 @@ describe('subagent command registration in tim.ts', () => {
     expect(source).toContain("'tester'");
     expect(source).toContain("'tdd-tests'");
     expect(source).toContain("'verifier'");
+    expect(source).toContain("command('reviewer <planId>')");
   });
 
   test('subcommands accept required options', async () => {
@@ -197,6 +198,15 @@ describe('subagent command registration in tim.ts', () => {
 
     expect(source).toContain("import('./commands/subagent.js')");
     expect(source).toContain('handleSubagentCommand');
+  });
+
+  test('reviewer subcommand delegates to review command handler', async () => {
+    const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
+    const source = await fs.readFile(sourceFile, 'utf-8');
+
+    expect(source).toContain("command('reviewer <planId>')");
+    expect(source).toContain("import('./commands/review.js')");
+    expect(source).toContain('handleReviewCommand(planId, options, reviewCommand)');
   });
 
   test('subcommand default executor is claude-code', async () => {

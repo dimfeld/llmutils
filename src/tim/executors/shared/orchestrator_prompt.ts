@@ -199,11 +199,11 @@ function buildAvailableAgents(planId: string, options: OrchestrationOptions): st
   const executorFlag = buildSubagentExecutorFlag(options);
   return `## Available Agents
 
-You have access to two specialized agents that you MUST invoke via the shell command tool:
+You have access to three specialized agents that you MUST invoke via the shell command tool:
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 
-Code reviews are performed by running \`tim review\` (not a subagent). You can pass additional context to the reviewer via \`--input-file <paths...>\`.
+- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 
 Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
 `;
@@ -330,11 +330,11 @@ Instruct subagents to report any plan changes they believe are necessary in thei
   const failureProtocol = `
 \n## Failure Protocol (Conflicting/Impossible Requirements)
 
-- Monitor all subagent outputs (implementer, tester) and the \`tim review\` output for a line starting with "FAILED:".
-- If any subagent or \`tim review\` emits a FAILED line, you MUST stop orchestration immediately.
+- Monitor all subagent outputs (implementer, tester, reviewer) for a line starting with "FAILED:".
+- If any subagent emits a FAILED line, you MUST stop orchestration immediately.
 - Output a concise failure message and propagate details:
   - First line: FAILED: <agent> reported a failure — <1-sentence summary>
-    - Where <agent> is one of: implementer | tester | fixer | review
+    - Where <agent> is one of: implementer | tester | fixer | reviewer
   - Then include the subagent's detailed report verbatim (requirements, problems, possible solutions).
 - Do NOT proceed to further phases or mark tasks done after a failure.
 - You may add brief additional context if necessary (e.g., which tasks were being processed).`;
@@ -358,7 +358,7 @@ ${markTasksDoneGuidance(planId)}
 }
 
 function buildReviewCommand(planId: string, options: OrchestrationOptions): string {
-  const baseCommand = `tim review ${planId} --print --output-file <output_path>`;
+  const baseCommand = `tim subagent reviewer ${planId} --print --output-file <output_path>`;
   if (options.reviewExecutor) {
     return `${baseCommand} --executor ${options.reviewExecutor}`;
   }
@@ -588,12 +588,11 @@ Each subagent command may take a long time to complete. Always use a timeout of 
 `
     : `## Available Agents
 
-You have three specialized subagents that you MUST invoke via the shell command tool:
+You have four specialized subagents that you MUST invoke via the shell command tool:
 - **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-
-Code reviews are performed by running \`tim review\` (not a subagent).
+- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 
 Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
 `;
@@ -706,7 +705,7 @@ ${iterationPhaseNumber}. **Iteration**
 - If any subagent emits a FAILED line, stop immediately.
 - Output a concise failure message and propagate details:
   - First line: FAILED: <agent> reported a failure — <1-sentence summary>
-    - <agent> must be one of: tdd-tests | implementer | tester | verifier | review | orchestrator
+    - <agent> must be one of: tdd-tests | implementer | tester | verifier | reviewer | orchestrator
   - Then include the subagent's detailed report verbatim.
 - Do NOT continue to other phases or mark tasks done when a failure occurs.
 - You may add brief context (e.g. which tasks were active) if helpful.`;

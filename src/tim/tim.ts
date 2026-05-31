@@ -764,6 +764,110 @@ const executorNames = executors
   .toArray()
   .join(', ');
 
+function addReviewCommandOptions(command: Command): Command {
+  return command
+    .option(`-x, --executor <name>`, 'The executor to use for review execution')
+    .addHelpText('after', `Available executors: ${executorNames}`)
+    .option(
+      '-m, --model <model>',
+      'Specify the LLM model to use for the review. Overrides model from tim config.'
+    )
+    .option('--dry-run', 'Generate and print the review prompt but do not execute it', false)
+    .option('-p, --print', 'Output JSON review results without interactive prompts')
+    .option(
+      '--task-index <indexes...>',
+      'Review only specific task indexes (1-based). Repeatable or comma-separated.'
+    )
+    .option(
+      '--task-title <titles...>',
+      'Review only specific task titles (exact match, case-insensitive). Repeatable or comma-separated.'
+    )
+    .option(
+      '--instructions <text>',
+      'Inline custom instructions for the review. Overrides config file instructions.'
+    )
+    .option(
+      '--instructions-file <path>',
+      'Path to file containing custom review instructions. Overrides config file instructions.'
+    )
+    .option('--input <text>', 'Additional context from the orchestrator (appended to instructions)')
+    .option(
+      '--input-file <paths...>',
+      'Read additional context from file(s) (use "-" to read from stdin). Appended to instructions.'
+    )
+    .option(
+      '--previous-response <path>',
+      'Path to a file containing the previous review response to include in this review prompt.'
+    )
+    .option(
+      '--focus <areas>',
+      'Comma-separated list of focus areas (e.g., security,performance,testing). Overrides config focus areas.'
+    )
+    .option(
+      '--format <format>',
+      'Output format for review results: json, markdown, or terminal. Overrides config setting.',
+      'terminal'
+    )
+    .option(
+      '--serial-both',
+      'When using --executor both, run Claude first and only run Codex if Claude reports no blocking issues.'
+    )
+    .option(
+      '--verbosity <level>',
+      'Output verbosity level: minimal, normal, or detailed.',
+      'normal'
+    )
+    .option(
+      '--output-file <path>',
+      'Save review results to the specified file path. Format determined by --format option.'
+    )
+    .option('--save', 'Save review results to .rmfilter/reviews/ directory with metadata tracking.')
+    .option('--no-save', 'Disable automatic saving of review results (overrides config settings).')
+    .option('--git-note', 'Create a Git note with review summary attached to the current commit.')
+    .option('--no-color', 'Disable colored output in terminal format.')
+    .option(
+      '--show-files',
+      'Include changed files list in output (enabled by default except in minimal verbosity).'
+    )
+    .option('--no-suggestions', 'Hide suggestions in the formatted output.')
+    .option('--incremental', 'Only review changes since the last review for this plan.')
+    .option(
+      '--since-last-review',
+      'Alias for --incremental. Only review changes since the last review.'
+    )
+    .option(
+      '--issues',
+      'Act on previously saved unresolved review issues instead of running a new review.'
+    )
+    .option(
+      '--save-issues',
+      'Save review issues to the plan file in non-interactive mode (e.g. with --print).'
+    )
+    .option('--since <commit>', 'Review changes since the specified commit hash.')
+    .option(
+      '--base <branch>',
+      'Base branch to compare against (defaults to auto-detected main/master/trunk)'
+    )
+    .option('--auto-workspace', 'Automatically select or create a workspace for review')
+    .option('--autofix', 'Automatically fix issues found during review without prompting.')
+    .option('--autofix-all', 'Automatically fix all issues without prompting for selection.')
+    .option('--no-autofix', 'Disable automatic fixing of issues, even if configured elsewhere.')
+    .option(
+      '--create-cleanup-plan',
+      'Create a cleanup plan for selected issues instead of fixing immediately.'
+    )
+    .option(
+      '--cleanup-priority <level>',
+      'Set the priority level for cleanup plan (low, medium, high, urgent)',
+      'medium'
+    )
+    .option('--cleanup-assign <username>', 'Assign the cleanup plan to a user')
+    .option(
+      '-v, --verbose',
+      'When used with --print, show progress output to stderr. Otherwise only JSON output is shown.'
+    );
+}
+
 /**
  * Creates a shared command configuration for agent and run commands with common options.
  * This function encapsulates the complex option setup needed for automated plan execution,
@@ -1489,114 +1593,19 @@ program
     await handleSetCommand(planId, options, command.parent.opts()).catch(handleCommandError);
   });
 
-program
-  .command('review [planId]')
-  .description(
-    'Analyze code changes on current branch against plan requirements using reviewer agent. If no plan is specified, automatically selects the oldest plan that exists only on this branch.'
-  )
-  .option(`-x, --executor <name>`, 'The executor to use for review execution')
-  .addHelpText('after', `Available executors: ${executorNames}`)
-  .option(
-    '-m, --model <model>',
-    'Specify the LLM model to use for the review. Overrides model from tim config.'
-  )
-  .option('--dry-run', 'Generate and print the review prompt but do not execute it', false)
-  .option('-p, --print', 'Output JSON review results without interactive prompts')
-  .option(
-    '--task-index <indexes...>',
-    'Review only specific task indexes (1-based). Repeatable or comma-separated.'
-  )
-  .option(
-    '--task-title <titles...>',
-    'Review only specific task titles (exact match, case-insensitive). Repeatable or comma-separated.'
-  )
-  .option(
-    '--instructions <text>',
-    'Inline custom instructions for the review. Overrides config file instructions.'
-  )
-  .option(
-    '--instructions-file <path>',
-    'Path to file containing custom review instructions. Overrides config file instructions.'
-  )
-  .option('--input <text>', 'Additional context from the orchestrator (appended to instructions)')
-  .option(
-    '--input-file <paths...>',
-    'Read additional context from file(s) (use "-" to read from stdin). Appended to instructions.'
-  )
-  .option(
-    '--previous-response <path>',
-    'Path to a file containing the previous review response to include in this review prompt.'
-  )
-  .option(
-    '--focus <areas>',
-    'Comma-separated list of focus areas (e.g., security,performance,testing). Overrides config focus areas.'
-  )
-  .option(
-    '--format <format>',
-    'Output format for review results: json, markdown, or terminal. Overrides config setting.',
-    'terminal'
-  )
-  .option(
-    '--serial-both',
-    'When using --executor both, run Claude first and only run Codex if Claude reports no blocking issues.'
-  )
-  .option('--verbosity <level>', 'Output verbosity level: minimal, normal, or detailed.', 'normal')
-  .option(
-    '--output-file <path>',
-    'Save review results to the specified file path. Format determined by --format option.'
-  )
-  .option('--save', 'Save review results to .rmfilter/reviews/ directory with metadata tracking.')
-  .option('--no-save', 'Disable automatic saving of review results (overrides config settings).')
-  .option('--git-note', 'Create a Git note with review summary attached to the current commit.')
-  .option('--no-color', 'Disable colored output in terminal format.')
-  .option(
-    '--show-files',
-    'Include changed files list in output (enabled by default except in minimal verbosity).'
-  )
-  .option('--no-suggestions', 'Hide suggestions in the formatted output.')
-  .option('--incremental', 'Only review changes since the last review for this plan.')
-  .option(
-    '--since-last-review',
-    'Alias for --incremental. Only review changes since the last review.'
-  )
-  .option(
-    '--issues',
-    'Act on previously saved unresolved review issues instead of running a new review.'
-  )
-  .option(
-    '--save-issues',
-    'Save review issues to the plan file in non-interactive mode (e.g. with --print).'
-  )
-  .option('--since <commit>', 'Review changes since the specified commit hash.')
-  .option(
-    '--base <branch>',
-    'Base branch to compare against (defaults to auto-detected main/master/trunk)'
-  )
-  .option('--auto-workspace', 'Automatically select or create a workspace for review')
-  .option('--autofix', 'Automatically fix issues found during review without prompting.')
-  .option('--autofix-all', 'Automatically fix all issues without prompting for selection.')
-  .option('--no-autofix', 'Disable automatic fixing of issues, even if configured elsewhere.')
-  .option(
-    '--create-cleanup-plan',
-    'Create a cleanup plan for selected issues instead of fixing immediately.'
-  )
-  .option(
-    '--cleanup-priority <level>',
-    'Set the priority level for cleanup plan (low, medium, high, urgent)',
-    'medium'
-  )
-  .option('--cleanup-assign <username>', 'Assign the cleanup plan to a user')
-  .option(
-    '-v, --verbose',
-    'When used with --print, show progress output to stderr. Otherwise only JSON output is shown.'
-  )
-  .action(async (planIdArg, options, command) => {
-    const { handleReviewCommand } = await import('./commands/review.js');
-    const planId = parseOptionalPlanIdFromCliArg(planIdArg);
-    await runWithCommandTunnelAdapter(async () => {
-      await handleReviewCommand(planId, options, command);
-    }).catch(handleCommandError);
-  });
+addReviewCommandOptions(
+  program
+    .command('review [planId]')
+    .description(
+      'Analyze code changes on current branch against plan requirements using reviewer agent. If no plan is specified, automatically selects the oldest plan that exists only on this branch.'
+    )
+).action(async (planIdArg, options, command) => {
+  const { handleReviewCommand } = await import('./commands/review.js');
+  const planId = parseOptionalPlanIdFromCliArg(planIdArg);
+  await runWithCommandTunnelAdapter(async () => {
+    await handleReviewCommand(planId, options, command);
+  }).catch(handleCommandError);
+});
 
 const reviewGuideCommand = program
   .command('review-guide')
@@ -2082,7 +2091,7 @@ storageCommand
     await handleStorageCleanCommand(names, options).catch(handleCommandError);
   });
 
-// Register the subagent command with implementer, tester, tdd-tests, and verifier subcommands
+// Register the subagent command with implementer, tester, tdd-tests, verifier, and reviewer subcommands
 const subagentCommand = program
   .command('subagent')
   .description('Run a subagent for the orchestrator');
@@ -2111,6 +2120,19 @@ for (const agentType of ['implementer', 'tester', 'tdd-tests', 'verifier'] as co
       }).catch(handleCommandError);
     });
 }
+
+addReviewCommandOptions(
+  subagentCommand
+    .command('reviewer <planId>')
+    .description('Run the reviewer subagent by delegating to tim review')
+).action(async (planIdArg: string, options: any, command: any) => {
+  const { handleReviewCommand } = await import('./commands/review.js');
+  const planId = parsePlanIdFromCliArg(planIdArg);
+  const reviewCommand = { parent: command.parent.parent };
+  await runWithCommandTunnelAdapter(async () => {
+    await handleReviewCommand(planId, options, reviewCommand);
+  }).catch(handleCommandError);
+});
 
 async function run() {
   installStdinDebugTracing();

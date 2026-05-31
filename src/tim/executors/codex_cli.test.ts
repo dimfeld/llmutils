@@ -109,7 +109,7 @@ describe('CodexCliExecutor - failure detection across agents', () => {
     const prompt = executeCodexStepMock.mock.calls[0][0] as string;
     expect(prompt).toContain('tim subagent implementer 1');
     expect(prompt).toContain('tim subagent tester 1');
-    expect(prompt).toContain('tim review 1');
+    expect(prompt).toContain('tim subagent reviewer 1');
     // Codex must receive the raw plan path, never Claude's `@` file-prefix.
     expect(prompt).toContain(`${tempDir}/plan.yml`);
     expect(prompt).not.toContain(`@${tempDir}/plan.yml`);
@@ -396,6 +396,7 @@ describe('CodexCliExecutor - tdd execution mode routing', () => {
     expect(prompt).toContain('tim subagent tdd-tests 175');
     expect(prompt).toContain('tim subagent implementer 175');
     expect(prompt).toContain('tim subagent tester 175');
+    expect(prompt).toContain('tim subagent reviewer 175');
     expect(prompt).not.toContain('tim subagent verifier');
   });
 
@@ -519,7 +520,7 @@ describe('CodexCliExecutor - orchestrator routing contract', () => {
     const prompt = executeCodexStepMock.mock.calls[0][0] as string;
     expect(prompt).toContain('tim subagent implementer 42');
     expect(prompt).toContain('tim subagent tester 42');
-    expect(prompt).toContain('tim review 42');
+    expect(prompt).toContain('tim subagent reviewer 42');
     expect(prompt).toContain('CTX');
   });
 
@@ -557,6 +558,7 @@ describe('CodexCliExecutor - orchestrator routing contract', () => {
     expect(prompt).toContain('tim subagent tdd-tests 44');
     expect(prompt).toContain('tim subagent implementer 44');
     expect(prompt).toContain('tim subagent tester 44');
+    expect(prompt).toContain('tim subagent reviewer 44');
     expect(prompt).not.toContain('tim subagent verifier');
   });
 

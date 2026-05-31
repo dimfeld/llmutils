@@ -12,7 +12,7 @@ the Claude (`src/tim/executors/claude_code.ts`) and Codex
 than driving an implement/test/review loop in TypeScript, they wrap the prompt
 in a single large **orchestration prompt** and launch one top-level process. That
 process then coordinates the actual work by invoking `tim subagent ...` and
-`tim review ...` as shell commands.
+`tim subagent reviewer ...` as shell commands.
 
 Both executors set `supportsSubagents = true`. Codex has native subagent support,
 but the orchestration prompts still delegate through `tim subagent` so each role
@@ -30,14 +30,14 @@ src/tim/executors/shared/orchestrator_prompt.ts
 
 It exports three wrappers, all consumed by both executors:
 
-- `wrapWithOrchestration()` — normal mode: implementer → tester → review.
+- `wrapWithOrchestration()` — normal mode: implementer → tester → reviewer.
 - `wrapWithOrchestrationSimple()` — simple mode: implementer → verifier.
 - `wrapWithOrchestrationTdd()` — TDD mode: `tim subagent tdd-tests` before
-  implementation, then the tester/review path, or the verifier path when simple
+  implementation, then the tester/reviewer path, or the verifier path when simple
   TDD is enabled.
 
 The prompt wording is provider-neutral (e.g. "shell command tool" rather than
-"Bash tool") while preserving the literal `tim subagent ...` and `tim review ...`
+"Bash tool") while preserving the literal `tim subagent ...`
 command examples. The wrappers support `batchMode`, `planFilePath`,
 `reviewExecutor`, `simpleMode`, a fixed `subagentExecutor` (`-x codex-cli` or
 `-x claude-code`), dynamic executor-selection guidance, `useJj` guidance,
@@ -76,16 +76,17 @@ Claude's `retryFastNoopOrchestratorTurn` continuation workaround.
 
 ### Prompt contents by mode
 
-- **Normal** — `tim subagent implementer`, `tim subagent tester`, and `tim review`.
+- **Normal** — `tim subagent implementer`, `tim subagent tester`, and `tim subagent reviewer`.
 - **Simple** — `tim subagent implementer` and `tim subagent verifier`.
-- **TDD** — `tim subagent tdd-tests` before implementation, then tester/review or
+- **TDD** — `tim subagent tdd-tests` before implementation, then tester/reviewer or
   verifier depending on simple mode.
 
 ### Option pass-through
 
 `--executor` / `defaultSubagentExecutor` and dynamic subagent instructions are
 reflected in the orchestration prompt the same way as for Claude.
-`--review-executor` is reflected in normal/TDD prompts that invoke `tim review`.
+`--review-executor` is reflected in normal/TDD prompts that invoke
+`tim subagent reviewer`, which delegates to the `tim review` handler.
 A final Codex orchestrator message containing `FAILED:` returns structured
 failure output, matching the orchestrator-level failure contract used by the
 agent loop.
