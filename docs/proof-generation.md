@@ -8,7 +8,7 @@ A single LLM executor session is the orchestrator. The runner does **not** drive
 
 1. Reads the plan from the database (goal, details, task list with completion state).
 2. Lists changed files on the current branch via the same helper that powers the summary phase.
-3. Splices your project-specific `instructions` verbatim into a prompt that also includes the plan context and changed-file list.
+3. Splices your project-specific `instructions` verbatim into a prompt that also includes the plan context and changed-file list. If the plan details include `Manual Testing Runbooks`, the executor is directed to use those runbooks as the primary demo checklist and produce proof for each runbook.
 4. Prepares `.tim/proofs` inside the workspace. If the directory already exists, its contents are cleared so stale files from a previous run are not re-attached.
 5. Soft-deletes any prior proof artifacts on the plan (matched by a `tim-proof:` message marker) so reruns do not leave duplicates behind.
 6. Runs the configured executor end-to-end. The executor has full Bash, Write, and Read access — it decides which features to demonstrate, drives whatever tooling makes sense, writes media files into the artifacts directory, and finishes by writing a `report.md` summarizing what it did.
@@ -39,6 +39,7 @@ Field notes:
 
 - `mode` controls the automatic agent batch-mode trigger only. `after-completion` runs the phase after final review / lessons updates and before parent cascade. `never` (or omitting `mode`) disables the automatic trigger; the manual CLI and web UI entry points still work as long as `instructions` is present.
 - `instructions` is **prompt material, not a command**. Write it as if you were briefing a new contributor on how proofs work in this repo: what to start, what tooling is available, what conventions to follow, what to demonstrate.
+- Generated plans should include small `Manual Testing Runbooks` in their details. Proof generation will follow those runbooks first, including per-subplan runbook sections, then add any extra proof it finds valuable from the tasks or changed files.
 - `artifactsDir` defaults to `.tim/proofs`. If overridden it must be a workspace-relative path that is a strict descendant of `.tim/`, and must not be one of the reserved tim-managed children (`config`, `plans`, `logs`, `tmp`, `reviews`, `workspaces`, `workspace`, `cache`, `sessions`, `artifacts`). The runner refuses absolute paths, paths that escape the workspace, and symlinked path components when clearing the directory.
 - `.tim/proofs` is added to the tim-managed `.tim/.gitignore` so generated media do not sneak into commits. Custom `artifactsDir` values must still live under `.tim/`, so they inherit the same gitignore.
 

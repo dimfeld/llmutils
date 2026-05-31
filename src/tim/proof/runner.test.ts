@@ -40,7 +40,14 @@ vi.mock('../../common/git.js', async (importOriginal) => {
 
 const PLAN_UUID = '11111111-1111-1111-8111-111111111111';
 const PLAN_GOAL = 'Add a widget to the dashboard';
-const PLAN_DETAILS = 'The widget should display real-time data.';
+const PLAN_DETAILS = `The widget should display real-time data.
+
+## Manual Testing Runbooks
+
+### Dashboard widget renders
+1. Start the web app.
+2. Open the dashboard.
+3. Confirm the real-time widget is visible.`;
 const PLAN_TASKS = [
   {
     uuid: 'aaaa0001-0000-1000-8000-000000000001',
@@ -218,6 +225,19 @@ describe('runProofGeneration', () => {
       expect(prompt).toContain(file);
     }
     expect(prompt).toContain(PROOF_INSTRUCTIONS);
+  });
+
+  test('prompt directs executor to create proof for manual testing runbooks', async () => {
+    const { executor, getPrompt } = makeFakeExecutor();
+    vi.mocked(buildExecutorAndLog).mockReturnValue(executor);
+
+    await runProofGeneration(makeOptions());
+
+    const prompt = getPrompt();
+    expect(prompt).toContain('First look for "Manual Testing Runbooks" sections');
+    expect(prompt).toContain('create proof for each runbook');
+    expect(prompt).toContain('mapping each runbook to the proof you produced');
+    expect(prompt).toContain('Dashboard widget renders');
   });
 
   test('prompt marks tasks with done/not-done state', async () => {

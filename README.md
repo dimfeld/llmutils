@@ -502,7 +502,7 @@ The web UI **Settings** tab stores per-project settings in SQLite. The project-l
 
 The optional `proofGeneration` block opts a project into a phase that captures demo evidence (screenshots, videos, written walkthroughs, …) of a completed plan and attaches it to the plan as artifacts. It is most useful for plans with user-facing changes; for purely backend plans the phase is omitted by not configuring it.
 
-The `instructions` field is **prompt material, not a command**. The configured LLM executor reads the plan goal, task list, the changed-file list for the current branch, and your `instructions`, then drives whatever tooling makes sense (Playwright, curl, scripts, dev server, …) on its own to produce evidence files under `.tim/proofs`. The runner only sets up the directory, runs the executor, and attaches every file it finds underneath when the executor is done. The executor finishes by writing a `report.md` that summarizes what was demonstrated.
+The `instructions` field is **prompt material, not a command**. The configured LLM executor reads the plan goal, details, task list, the changed-file list for the current branch, and your `instructions`, then drives whatever tooling makes sense (Playwright, curl, scripts, dev server, …) on its own to produce evidence files under `.tim/proofs`. When plan details include `Manual Testing Runbooks`, proof generation follows those runbooks first, including per-subplan runbooks, and maps each runbook to evidence in `report.md`. The runner only sets up the directory, runs the executor, and attaches every file it finds underneath when the executor is done. The executor finishes by writing a `report.md` that summarizes what was demonstrated.
 
 ```yaml
 proofGeneration:

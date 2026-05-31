@@ -254,7 +254,7 @@ export function generateClaudeCodeResearchPrompt(
 Generate structured Markdown that preserves your research findings and provides a detailed implementation guide.
 Be very exhaustive and think deeply when creating this content.
 
-Your output should have two distinct sections:
+Your output should have three distinct sections:
 
 ## Research
 
@@ -283,6 +283,24 @@ implements the code will be smart too--but each step should be very clear on wha
 - Reference specific patterns, abstractions, APIs, and documentation files that are relevant to each step.
 - Manual testing steps (these are appropriate here even though we don't want them in the structured tasks that you will generate later).
 - Rationale behind why certain approaches are recommended over alternatives.
+
+## Manual Testing Runbooks
+
+This section provides small, runbook-style walkthroughs that a human or proof-generation agent can follow to
+demonstrate the delivered feature.
+
+Include as many runbooks as needed to demonstrate all user-facing behavior, backend behavior, integrations,
+error states, edge cases, and regressions affected by the change. Each runbook should be scoped to one coherent
+manual walkthrough and should include:
+- A short title describing what the runbook demonstrates.
+- Preconditions, setup, seed data, environment variables, or services that must be running.
+- Numbered steps with exact commands, pages, UI actions, API calls, or inputs to use.
+- Expected outcomes or observations for each meaningful checkpoint.
+- The recommended proof artifact to capture, such as a screenshot, video, command transcript, log excerpt, or
+  generated file.
+
+If the plan is split into subplans, each subplan must have its own "## Manual Testing Runbooks" section in that
+subplan's details. Make each subplan's runbooks cover only the changes delivered by that subplan.
 
 ### Constraints
 

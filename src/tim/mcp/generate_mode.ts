@@ -328,7 +328,7 @@ Only keep a single plan when the work is genuinely tiny or tightly coupled enoug
 
 Use your Todo tools to track progress through these steps:
 - [ ] Perform research - explore the codebase and understand patterns
-- [ ] Generate implementation guide - write Research and Implementation Guide sections to the plan file
+- [ ] Generate implementation guide - write Research, Implementation Guide, and Manual Testing Runbooks sections to the plan file
 - [ ] Ask questions - collaborate with your human partner to refine the plan
 - [ ] Propose plan split - suggest a possible decomposition into sibling child plans and confirm with the user before creating tasks
 - [ ] Add tasks - use the 'tim tools update-plan-tasks' CLI command to add the structured task data
@@ -343,7 +343,7 @@ ${generateClaudeCodePlanningPrompt(contextBlock, {
 
 ${generateClaudeCodeResearchPrompt(`Once your research is complete`)}
 
-Add your research and implementation guide directly to the plan file at ${writablePlanPath}. The output should include both "## Research" and "## Implementation Guide" sections. You can directly edit this file; don't use the tim MCP tools for adding this content.
+Add your research and implementation guide directly to the plan file at ${writablePlanPath}. The output should include "## Research", "## Implementation Guide", and "## Manual Testing Runbooks" sections. You can directly edit this file; don't use the tim MCP tools for adding this content.
 
 When done, collaborate with your human partner to refine this plan. ${questionText}
 

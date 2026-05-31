@@ -183,6 +183,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(message?.text).toContain(
       'Before you create the structured tasks for this plan, you MUST evaluate whether the work should be split'
     );
+    expect(message?.text).toContain('## Manual Testing Runbooks');
   });
 
   test('loadResearchPrompt includes planning instructions from config', async () => {
