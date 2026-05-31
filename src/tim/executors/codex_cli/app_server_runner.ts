@@ -22,6 +22,12 @@ import { TerminalInputReader } from '../claude_code/terminal_input.ts';
 
 const RATE_LIMIT_POLL_INTERVAL_MS = 15 * 60 * 1000;
 
+class SessionEndedError extends Error {
+  constructor() {
+    super('Session ended');
+  }
+}
+
 function getInactivityTimeoutMs(options?: CodexStepOptions): number {
   const inactivityOverride = Number.parseInt(process.env.CODEX_OUTPUT_TIMEOUT_MS || '', 10);
   return (
@@ -326,7 +332,7 @@ export async function executeCodexStepViaAppServer(
 
   const throwIfSessionEndRequested = () => {
     if (sessionEndRequested) {
-      throw new Error('Session ended');
+      throw new SessionEndedError();
     }
   };
 
@@ -827,6 +833,11 @@ export async function executeCodexStepViaAppServer(
 
     throwIfConnectionExited();
     return final;
+  } catch (err) {
+    if (err instanceof SessionEndedError) {
+      return formatter.getFinalAgentMessage() || formatter.getFailedAgentMessage() || '';
+    }
+    throw err;
   } finally {
     clearInactivityTimer();
     activeInputQueue?.close();

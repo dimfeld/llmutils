@@ -779,7 +779,7 @@ describe('executeCodexStepViaAppServer', () => {
     expect(handler).toBeDefined();
     handler?.();
 
-    await expect(result).rejects.toThrow('Session ended');
+    await expect(result).resolves.toBe('final agent message');
     expect(harness.connection.turnInterrupt).toHaveBeenCalledWith({
       threadId: 'thread-1',
       turnId: 'turn-1',
@@ -820,7 +820,7 @@ describe('executeCodexStepViaAppServer', () => {
 
     resolveTurnStart?.({ turnId: 'turn-late' });
 
-    await expect(result).rejects.toThrow('Session ended');
+    await expect(result).resolves.toBe('final agent message');
     expect(harness.connection.turnInterrupt).toHaveBeenCalledWith({
       threadId: 'thread-1',
       turnId: 'turn-late',
@@ -851,7 +851,7 @@ describe('executeCodexStepViaAppServer', () => {
     expect(handler).toBeDefined();
     handler?.();
 
-    await expect(result).rejects.toThrow('Session ended');
+    await expect(result).resolves.toBe('final agent message');
     expect(harness.connection.turnInterrupt).toHaveBeenCalledWith({
       threadId: 'thread-1',
       turnId: 'turn-force',
