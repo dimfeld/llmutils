@@ -1580,6 +1580,10 @@ defaultExecutor: direct-call
                     time: '08:15',
                     staleAfterHours: 12,
                     weekdays: ['tuesday', 'thursday'],
+                    linearMilestones: {
+                      enabled: true,
+                      apiKeyEnv: 'LINEAR_WORK_API_KEY',
+                    },
                   },
                 },
                 custom: {
@@ -1609,6 +1613,10 @@ defaultExecutor: direct-call
           timezone: expectedTimezone,
           staleAfterHours: 12,
           weekdays: ['tuesday', 'thursday'],
+          linearMilestones: {
+            enabled: true,
+            apiKeyEnv: 'LINEAR_WORK_API_KEY',
+          },
         });
         expect(config.slack?.workspaces?.['custom']?.dailyDigest).toEqual({
           time: '00:00',

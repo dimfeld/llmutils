@@ -2,6 +2,10 @@ import type { Database } from 'bun:sqlite';
 
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
 import {
+  fetchLinearMilestonesDueOrOverdue,
+  type LinearMilestoneDigestEntry,
+} from '$common/linear_milestone_digest.js';
+import {
   DEFAULT_SLACK_DAILY_DIGEST_WEEKDAYS,
   DEFAULT_SLACK_DAILY_DIGEST_STALE_AFTER_HOURS,
   DEFAULT_SLACK_DAILY_DIGEST_TIME,
@@ -16,6 +20,7 @@ import {
   SLACK_PROJECT_SETTING_KEY,
 } from '$common/slack/slack_project_setting.js';
 import type { TimConfig } from '$tim/configSchema.js';
+import { debugLog } from '../../logging.js';
 import { listProjects } from '$tim/db/project.js';
 import { getProjectSetting } from '$tim/db/project_settings.js';
 import {
@@ -35,6 +40,7 @@ export interface RunDailyDigestOptions {
   sender?: SlackPostSender;
   nowMs?: number;
   loggedMisconfiguredWorkspaces?: Set<string>;
+  linearMilestonesFetcher?: LinearMilestonesFetcher;
 }
 
 export interface StartDailyDigestSchedulerOptions {
@@ -56,6 +62,17 @@ export interface CollectDailyDigestsOptions {
   includeEmpty?: boolean;
   onProjectError?: (repositoryId: string, error: unknown) => void;
 }
+
+export interface FetchWorkspaceLinearMilestonesOptions {
+  nowMs: number;
+  fetcher?: LinearMilestonesFetcher;
+}
+
+export type LinearMilestonesFetcher = (args: {
+  nowMs: number;
+  timezone: string;
+  apiKey?: string;
+}) => Promise<LinearMilestoneDigestEntry[]>;
 
 export function getEligibleDailyDigestWorkspaces(db: Database, config: TimConfig): string[] {
   const configuredWorkspaces = new Set(Object.keys(config.slack?.workspaces ?? {}));
@@ -175,6 +192,47 @@ export function collectDailyDigestsForWorkspace(
   return collected;
 }
 
+function isPrDigestEmpty(digest: PrDigest): boolean {
+  return (
+    digest.approvedUnmerged.length === 0 &&
+    digest.staleAwaitingReview.length === 0 &&
+    digest.otherReadyForReview.length === 0
+  );
+}
+
+export async function fetchWorkspaceLinearMilestones(
+  config: TimConfig,
+  workspaceName: string,
+  options: FetchWorkspaceLinearMilestonesOptions
+): Promise<LinearMilestoneDigestEntry[]> {
+  const dailyDigestConfig = config.slack?.workspaces?.[workspaceName]?.dailyDigest;
+  const linearMilestonesConfig = dailyDigestConfig?.linearMilestones;
+  if (linearMilestonesConfig?.enabled !== true) {
+    debugLog('[daily_digest] Linear milestones disabled for Slack workspace "%s"', workspaceName);
+    return [];
+  }
+
+  const apiKeyEnv = linearMilestonesConfig.apiKeyEnv ?? 'LINEAR_API_KEY';
+  const apiKey = process.env[apiKeyEnv]?.trim();
+  debugLog(
+    '[daily_digest] Linear milestones enabled for Slack workspace "%s"; apiKeyEnv=%s configured=%s',
+    workspaceName,
+    apiKeyEnv,
+    apiKey ? 'yes' : 'no'
+  );
+  if (!apiKey) {
+    throw new Error(
+      `Slack daily digest Linear milestones are enabled for workspace "${workspaceName}", but ${apiKeyEnv} is not set.`
+    );
+  }
+
+  const timezone =
+    config.slack?.workspaces?.[workspaceName]?.dailyDigest?.timezone ??
+    getDefaultSlackDailyDigestTimezone();
+  const fetcher = options.fetcher ?? fetchLinearMilestonesDueOrOverdue;
+  return await fetcher({ nowMs: options.nowMs, timezone, apiKey });
+}
+
 export async function runDailyDigestForWorkspace(
   db: Database,
   config: TimConfig,
@@ -198,9 +256,22 @@ export async function runDailyDigestForWorkspace(
   }
 
   const nowMs = options.nowMs ?? Date.now();
+  let linearMilestones: LinearMilestoneDigestEntry[] = [];
+  try {
+    linearMilestones = await fetchWorkspaceLinearMilestones(config, workspaceName, {
+      nowMs,
+      fetcher: options.linearMilestonesFetcher,
+    });
+  } catch (error) {
+    console.warn(
+      `[daily_digest] Failed to fetch Linear milestones for workspace ${workspaceName}; continuing with PR digest only`,
+      error
+    );
+  }
 
   const collected = collectDailyDigestsForWorkspace(db, config, workspaceName, {
     nowMs,
+    includeEmpty: linearMilestones.length > 0,
     onProjectError: (repositoryId: string, error: unknown): void => {
       console.error(
         `[daily_digest] Failed to process daily PR digest for project ${repositoryId}`,
@@ -209,14 +280,31 @@ export async function runDailyDigestForWorkspace(
     },
   });
 
+  const channelsWithPrContent = new Set(
+    collected
+      .filter((projectDigest) => !isPrDigestEmpty(projectDigest.digest))
+      .map((projectDigest) => projectDigest.channel)
+  );
+  const milestoneChannels = new Set<string>();
   for (const projectDigest of collected) {
     try {
+      const includeMilestones =
+        linearMilestones.length > 0 &&
+        !milestoneChannels.has(projectDigest.channel) &&
+        (!isPrDigestEmpty(projectDigest.digest) ||
+          !channelsWithPrContent.has(projectDigest.channel));
+      if (includeMilestones) {
+        milestoneChannels.add(projectDigest.channel);
+      }
       const result = await postDailyDigestMessage({
         config,
         workspace: workspaceName,
         channel: projectDigest.channel,
         repoFullName: projectDigest.repoFullName,
-        digest: projectDigest.digest,
+        digest: {
+          ...projectDigest.digest,
+          linearMilestones: includeMilestones ? linearMilestones : [],
+        },
         sender: options.sender,
       });
 
@@ -252,6 +340,7 @@ export async function runAllDailyDigests(
       sender: options.sender,
       nowMs,
       loggedMisconfiguredWorkspaces,
+      linearMilestonesFetcher: options.linearMilestonesFetcher,
     });
   }
 }

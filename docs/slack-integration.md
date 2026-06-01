@@ -198,7 +198,7 @@ Toggles the [daily PR digest](#daily-pr-digest) for the current repo. `enable` r
 tim slack digest [--dry-run]
 ```
 
-Runs the daily digest immediately for every configured workspace's digest-enabled repos. `--dry-run` computes and prints the two buckets for each repo without posting to Slack (and without requiring a usable token), so you can preview what the scheduled run would send. Without `--dry-run`, it posts to Slack just like the scheduled run. Manual runs ignore the configured `weekdays`; weekdays only constrain the web server's scheduled timer.
+Runs the daily digest immediately for every configured workspace's digest-enabled repos. `--dry-run` computes and prints the digest sections for each repo without posting to Slack (and without requiring a usable Slack token), so you can preview what the scheduled run would send. If Linear milestones are enabled for a workspace, dry-run also fetches and prints the due-or-overdue milestone section. Without `--dry-run`, it posts to Slack just like the scheduled run. Manual runs ignore the configured `weekdays`; weekdays only constrain the web server's scheduled timer.
 
 ## Posted Message Shape
 
@@ -233,13 +233,15 @@ If those historical rows include closed or merged PRs, run `tim slack mark-close
 
 Separate from the event-driven review-request notifier, tim can post a once-per-day digest of PRs that are stuck. It is a per-repo opt-in (default off) and posts one message per digest-enabled repo to that repo's configured channel.
 
-The digest has three sections:
+The digest has three PR sections:
 
 - **Approved, not yet merged** - open, non-draft PRs whose review decision is `APPROVED`.
 - **Awaiting review for > 1 day** - open, non-draft PRs that are not already approved and have an assigned individual reviewer whose last review request is older than the workspace's `staleAfterHours` (default 24h) and who has not reviewed since being requested. Each entry lists the waiting reviewer(s) and how long they've waited. PR entry links point at `linear.review/{owner}/{repo}/pull/{number}`. The footer includes both the GitHub "View all PRs awaiting your review" search link and a Linear reviews link.
 - **Other PRs ready for review for > 3 days** - open, non-draft PRs with a recorded `ready_at` timestamp older than three days that were not already shown in the approved or stale-awaiting-review sections. Each entry lists how long the PR has been ready and the time since the previous non-dismissed review, or notes that there has been no previous review.
 
-If **both** sections are empty for a repo, no message is sent for that repo.
+If `dailyDigest.linearMilestones.enabled` is true for a Slack workspace, the digest also includes **Linear milestones due or overdue** once per Slack channel in each workspace run. The section uses the workspace digest timezone to compute the current Monday-through-Sunday week, lists outstanding Linear project milestones that are overdue or due in that range, and includes a milestone owner. The owner is the shared assignee when all linked milestone issues have the same assignee, otherwise the project lead. Set `dailyDigest.linearMilestones.apiKeyEnv` to read a token from a different environment variable; otherwise it reads `LINEAR_API_KEY`.
+
+If all sections are empty for a repo or channel, no message is sent.
 
 What counts as "stale":
 

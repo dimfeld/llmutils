@@ -251,6 +251,60 @@ describe('lib/server/daily_digest', () => {
     );
   });
 
+  test('includes Linear milestones once per Slack channel when enabled', async () => {
+    const originalLinearApiKey = process.env.TEST_LINEAR_API_KEY;
+    process.env.TEST_LINEAR_API_KEY = 'test-linear-key';
+    setupProject('octocat', 'repo-a', { channel: '#shared' });
+    setupProject('octocat', 'repo-b', { channel: '#shared' });
+    setupProject('octocat', 'repo-c', { channel: '#other' });
+    insertPr('octocat', 'repo-b', 1, { title: 'Repo B approved', reviewDecision: 'APPROVED' });
+
+    try {
+      const { sender, sent } = makeFakeSender();
+      await runDailyDigestForWorkspace(
+        db,
+        buildConfig({
+          work: {
+            token: 'xoxb-work-token',
+            dailyDigest: {
+              timezone: 'UTC',
+              staleAfterHours: 24,
+              linearMilestones: { enabled: true, apiKeyEnv: 'TEST_LINEAR_API_KEY' },
+            },
+          },
+        }),
+        'work',
+        {
+          sender,
+          nowMs: NOW_MS,
+          linearMilestonesFetcher: async ({ timezone, apiKey }) => {
+            expect(timezone).toBe('UTC');
+            expect(apiKey).toBe('test-linear-key');
+            return [
+              {
+                milestoneName: 'Beta',
+                targetDate: '2026-01-02',
+                projectName: 'Launch',
+                milestoneOwner: 'Dana',
+              },
+            ];
+          },
+        }
+      );
+
+      expect(sent.map((call) => call.payload.channel).sort()).toEqual(['#other', '#shared']);
+      const sharedPayloads = sent.filter((call) => call.payload.channel === '#shared');
+      expect(sharedPayloads).toHaveLength(1);
+      expect(payloadText(sharedPayloads[0])).toContain('Linear milestones due or overdue');
+      expect(payloadText(sharedPayloads[0])).toContain('Beta');
+      expect(payloadText(sent.find((call) => call.payload.channel === '#other')!)).toContain(
+        'Linear milestones due or overdue'
+      );
+    } finally {
+      restoreEnv('TEST_LINEAR_API_KEY', originalLinearApiKey);
+    }
+  });
+
   test('logs a misconfigured workspace only once with a shared logged set and does not throw', async () => {
     setupProject('octocat', 'hello-world', { channel: '#reviews' });
     insertPr('octocat', 'hello-world', 1, { reviewDecision: 'APPROVED' });

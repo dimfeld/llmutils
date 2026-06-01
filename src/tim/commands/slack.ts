@@ -11,10 +11,12 @@ import {
 import { log } from '../../logging.js';
 import {
   collectDailyDigestsForWorkspace,
+  fetchWorkspaceLinearMilestones,
   getEligibleDailyDigestWorkspaces,
   runAllDailyDigests,
   type CollectedProjectDigest,
 } from '../../lib/server/daily_digest.js';
+import type { LinearMilestoneDigestEntry } from '../../common/linear_milestone_digest.js';
 import type { DigestEntry, PrDigest } from '../../lib/server/pr_digest.js';
 import type { TimConfig } from '../configSchema.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -195,6 +197,24 @@ function formatPrLine(entry: DigestEntry): string {
   return `  - #${entry.prNumber} ${entry.title} (author: ${entry.author})`;
 }
 
+function printLinearMilestonesDryRun(
+  workspaceName: string,
+  milestones: LinearMilestoneDigestEntry[]
+): boolean {
+  if (milestones.length === 0) {
+    return false;
+  }
+
+  log(`  Linear milestones due or overdue (${workspaceName}):`);
+  for (const milestone of milestones) {
+    log(
+      `  - ${milestone.milestoneName} (${milestone.projectName}; owner: ${milestone.milestoneOwner}; due: ${milestone.targetDate})`
+    );
+  }
+
+  return true;
+}
+
 function printDigestDryRunProject(projectDigest: CollectedProjectDigest): void {
   log(
     `${chalk.bold(projectDigest.repoFullName)} (${projectDigest.workspaceName}/${projectDigest.channel})`
@@ -205,7 +225,16 @@ function printDigestDryRunProject(projectDigest: CollectedProjectDigest): void {
     return;
   }
 
+  let printedSection = false;
+  const printSectionBreak = (): void => {
+    if (printedSection) {
+      log('');
+    }
+    printedSection = true;
+  };
+
   if (projectDigest.digest.approvedUnmerged.length > 0) {
+    printSectionBreak();
     log('  Approved, not yet merged:');
     for (const entry of projectDigest.digest.approvedUnmerged) {
       log(formatPrLine(entry));
@@ -213,6 +242,7 @@ function printDigestDryRunProject(projectDigest: CollectedProjectDigest): void {
   }
 
   if (projectDigest.digest.staleAwaitingReview.length > 0) {
+    printSectionBreak();
     log('  Awaiting review for > 1 day:');
     for (const entry of projectDigest.digest.staleAwaitingReview) {
       const reviewers =
@@ -224,6 +254,7 @@ function printDigestDryRunProject(projectDigest: CollectedProjectDigest): void {
   }
 
   if (projectDigest.digest.otherReadyForReview.length > 0) {
+    printSectionBreak();
     log('  Other PRs ready for review for > 3 days:');
     for (const entry of projectDigest.digest.otherReadyForReview) {
       const readyLabel = entry.readyForReviewLabel ?? 'unknown duration';
@@ -380,6 +411,16 @@ export async function handleSlackDigestRunCommand(
     log(chalk.bold('Slack daily PR digest dry run'));
     let printedProjectCount = 0;
     for (const workspaceName of eligibleWorkspaces) {
+      let linearMilestones: LinearMilestoneDigestEntry[] = [];
+      try {
+        linearMilestones = await fetchWorkspaceLinearMilestones(config, workspaceName, { nowMs });
+      } catch (error) {
+        log(
+          chalk.yellow(
+            `Failed to fetch Linear milestones for workspace ${workspaceName}: ${String(error)}`
+          )
+        );
+      }
       const projectDigests = collectDailyDigestsForWorkspace(db, config, workspaceName, {
         nowMs,
         includeEmpty: true,
@@ -388,8 +429,13 @@ export async function handleSlackDigestRunCommand(
         },
       });
 
+      let printedSection = printLinearMilestonesDryRun(workspaceName, linearMilestones);
       for (const projectDigest of projectDigests) {
+        if (printedSection) {
+          log('');
+        }
         printDigestDryRunProject(projectDigest);
+        printedSection = true;
         printedProjectCount += 1;
       }
     }

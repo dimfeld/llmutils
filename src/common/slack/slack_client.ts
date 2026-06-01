@@ -1,5 +1,6 @@
 import type { TimConfig } from '../../tim/configSchema.js';
 import { error } from '../../logging.js';
+import type { LinearMilestoneDigestEntry } from '../linear_milestone_digest.js';
 import { buildLinearPrReviewUrl } from '../linear_pr_review.js';
 import { resolveSlackWorkspaceToken } from './slack_config.js';
 
@@ -88,6 +89,7 @@ export interface DailyDigestPayloadInput {
   approvedUnmerged: DailyDigestEntry[];
   staleAwaitingReview: DailyDigestEntry[];
   otherReadyForReview: DailyDigestEntry[];
+  linearMilestones?: LinearMilestoneDigestEntry[];
 }
 
 export interface PostDailyDigestMessageArgs {
@@ -191,6 +193,32 @@ function formatOtherReadyDigestLine(entry: DailyDigestEntry): string {
   return `• ${formatPrLink(entry)} by ${author} — ready for ${readyLabel}${previousReview}`;
 }
 
+function formatDateLabel(date: string): string {
+  const parsed = Date.parse(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(parsed)) {
+    return date;
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(parsed));
+}
+
+function formatSlackLink(url: string | null | undefined, label: string): string {
+  const escapedLabel = escapeSlackMrkdwnText(label);
+  if (!url) {
+    return escapedLabel;
+  }
+
+  return `<${escapeSlackMrkdwnText(url)}|${escapedLabel}>`;
+}
+
+function formatLinearMilestoneDigestLine(entry: LinearMilestoneDigestEntry): string {
+  return `• ${formatSlackLink(entry.milestoneUrl, entry.milestoneName)} — ${formatSlackLink(entry.projectUrl, entry.projectName)} · owner: ${formatPlainLogin(entry.milestoneOwner)} · due ${escapeSlackMrkdwnText(formatDateLabel(entry.targetDate))}`;
+}
+
 function buildReviewRequestedPullsUrl(repoFullName: string): string {
   const [owner, repo] = repoFullName.split('/', 2);
   const encodedRepoFullName =
@@ -282,6 +310,8 @@ export function buildDailyDigestSlackPayload(
   const approvedCount = digest.approvedUnmerged.length;
   const staleCount = digest.staleAwaitingReview.length;
   const otherReadyCount = digest.otherReadyForReview.length;
+  const linearMilestones = digest.linearMilestones ?? [];
+  const linearMilestoneCount = linearMilestones.length;
   const blocks: SlackBlock[] = [
     {
       type: 'section',
@@ -327,6 +357,19 @@ export function buildDailyDigestSlackPayload(
     );
   }
 
+  if ((approvedCount > 0 || staleCount > 0 || otherReadyCount > 0) && linearMilestoneCount > 0) {
+    blocks.push({ type: 'divider' });
+  }
+
+  if (linearMilestoneCount > 0) {
+    blocks.push(
+      ...buildDigestSectionBlocks(
+        'Linear milestones due or overdue',
+        linearMilestones.map(formatLinearMilestoneDigestLine)
+      )
+    );
+  }
+
   blocks.push({
     type: 'section',
     text: {
@@ -337,7 +380,7 @@ export function buildDailyDigestSlackPayload(
 
   return {
     channel,
-    text: `Daily PR digest for ${repoFullName}: ${approvedCount} approved, ${staleCount} awaiting review, ${otherReadyCount} other ready`,
+    text: `Daily PR digest for ${repoFullName}: ${approvedCount} approved, ${staleCount} awaiting review, ${otherReadyCount} other ready, ${linearMilestoneCount} Linear milestones`,
     blocks,
   };
 }
@@ -434,7 +477,8 @@ export async function postDailyDigestMessage(
   if (
     args.digest.approvedUnmerged.length === 0 &&
     args.digest.staleAwaitingReview.length === 0 &&
-    args.digest.otherReadyForReview.length === 0
+    args.digest.otherReadyForReview.length === 0 &&
+    (args.digest.linearMilestones?.length ?? 0) === 0
   ) {
     return { ok: true };
   }

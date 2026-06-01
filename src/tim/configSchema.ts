@@ -267,6 +267,13 @@ export const slackWorkspaceConfigSchema = z
           .array(z.enum(SLACK_DAILY_DIGEST_WEEKDAYS))
           .min(1, 'Slack dailyDigest.weekdays must include at least one weekday')
           .optional(),
+        linearMilestones: z
+          .object({
+            enabled: z.boolean().optional(),
+            apiKeyEnv: z.string().min(1).optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),

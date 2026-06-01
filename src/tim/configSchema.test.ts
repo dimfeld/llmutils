@@ -149,6 +149,10 @@ describe('configSchema', () => {
                 timezone: 'America/Los_Angeles',
                 staleAfterHours: 36,
                 weekdays: ['monday', 'wednesday', 'friday'],
+                linearMilestones: {
+                  enabled: true,
+                  apiKeyEnv: 'LINEAR_WORK_API_KEY',
+                },
               },
             },
           },
@@ -162,6 +166,10 @@ describe('configSchema', () => {
           timezone: 'America/Los_Angeles',
           staleAfterHours: 36,
           weekdays: ['monday', 'wednesday', 'friday'],
+          linearMilestones: {
+            enabled: true,
+            apiKeyEnv: 'LINEAR_WORK_API_KEY',
+          },
         },
       });
     });
@@ -189,6 +197,25 @@ describe('configSchema', () => {
                 dailyDigest: {
                   time: '09:30',
                   unexpected: true,
+                },
+              },
+            },
+          },
+        })
+      ).toThrow();
+    });
+
+    test('rejects unknown fields in daily digest Linear milestone configuration', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          slack: {
+            workspaces: {
+              work: {
+                dailyDigest: {
+                  linearMilestones: {
+                    enabled: true,
+                    unexpected: true,
+                  },
                 },
               },
             },
