@@ -1125,18 +1125,23 @@ export async function ensureMaterializeDir(repoRoot: string): Promise<string> {
     PROOFS_DIR,
     DEFAULT_WORKSPACE_CLONE_LOCATION,
   ];
-  const sharedIgnoreMatches = await Promise.all(
-    managedDirs.map(async (managedDir) => {
+  const managedFiles = [path.join('.tim', 'config', 'tim.local.yml')];
+  const sharedIgnoreMatches = await Promise.all([
+    ...managedDirs.map(async (managedDir) => {
       const isIgnored = await isIgnoredByGitSharedExcludes(
         repoRoot,
         path.join(managedDir, '__tim_materialize_probe__')
       );
-      return { managedDir, isIgnored };
-    })
-  );
+      return { entry: managedDir, isIgnored };
+    }),
+    ...managedFiles.map(async (managedFile) => {
+      const isIgnored = await isIgnoredByGitSharedExcludes(repoRoot, managedFile);
+      return { entry: managedFile, isIgnored };
+    }),
+  ]);
   const dirsToExclude = sharedIgnoreMatches
-    .filter(({ managedDir, isIgnored }) => !isIgnored && !existingLines.includes(managedDir))
-    .map(({ managedDir }) => managedDir);
+    .filter(({ entry, isIgnored }) => !isIgnored && !existingLines.includes(entry))
+    .map(({ entry }) => entry);
   if (dirsToExclude.length > 0) {
     const suffix = existingContent && !existingContent.endsWith('\n') ? '\n' : '';
     await writeFile(infoExcludePath, existingContent + suffix + dirsToExclude.join('\n') + '\n');

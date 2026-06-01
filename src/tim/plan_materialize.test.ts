@@ -303,6 +303,7 @@ describe('tim plan_materialize', () => {
     expect(excludeContent).toContain('.tim/logs\n');
     expect(excludeContent).toContain('.tim/proofs\n');
     expect(excludeContent).toContain('.tim/issue-docs\n');
+    expect(excludeContent).toContain('.tim/config/tim.local.yml\n');
     await expect(fs.access(path.join(materializeDir, '.gitignore'))).rejects.toMatchObject({
       code: 'ENOENT',
     });
@@ -523,6 +524,7 @@ Details
     expect(after).toContain('.tim/issue-docs');
     expect(after).toContain('.tim/proofs');
     expect(after).toContain('.tim/workspaces');
+    expect(after).toContain('.tim/config/tim.local.yml');
     await expect(fs.access(path.join(materializeDir, '.gitignore'))).rejects.toMatchObject({
       code: 'ENOENT',
     });
