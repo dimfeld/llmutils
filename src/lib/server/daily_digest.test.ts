@@ -223,8 +223,7 @@ describe('lib/server/daily_digest', () => {
 
   test('does not post when the computed digest is empty', async () => {
     setupProject('octocat', 'empty', { channel: '#empty' });
-    const freshPr = insertPr('octocat', 'empty', 1);
-    requestReview(freshPr.status.id, 'fresh-reviewer', REQUESTED_EXACTLY_24_HOURS_AGO);
+    insertPr('octocat', 'empty', 1);
 
     const { sender, sent } = makeFakeSender();
     await runDailyDigestForWorkspace(db, buildConfig(), 'work', { sender, nowMs: NOW_MS });
@@ -416,7 +415,7 @@ describe('lib/server/daily_digest', () => {
     );
   });
 
-  test('uses injected nowMs and excludes exactly-at-threshold requests while including just-past-threshold requests', async () => {
+  test('uses injected nowMs and includes all pending review requests regardless of wait time', async () => {
     setupProject('octocat', 'thresholds', { channel: '#thresholds' });
     const exactlyAtThreshold = insertPr('octocat', 'thresholds', 1);
     const justPastThreshold = insertPr('octocat', 'thresholds', 2);
@@ -428,7 +427,7 @@ describe('lib/server/daily_digest', () => {
 
     expect(sent).toHaveLength(1);
     const blocks = payloadText(sent[0]);
-    expect(blocks).not.toContain('exactly-fresh');
+    expect(blocks).toContain('exactly-fresh');
     expect(blocks).toContain('just-stale');
   });
 

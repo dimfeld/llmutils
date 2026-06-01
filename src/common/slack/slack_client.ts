@@ -338,7 +338,7 @@ export function buildDailyDigestSlackPayload(
   if (staleCount > 0) {
     blocks.push(
       ...buildDigestSectionBlocks(
-        'Awaiting review for > 1 day',
+        'Awaiting review',
         digest.staleAwaitingReview.map(formatStaleDigestLine)
       )
     );

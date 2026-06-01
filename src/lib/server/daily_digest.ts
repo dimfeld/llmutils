@@ -7,7 +7,6 @@ import {
 } from '$common/linear_milestone_digest.js';
 import {
   DEFAULT_SLACK_DAILY_DIGEST_WEEKDAYS,
-  DEFAULT_SLACK_DAILY_DIGEST_STALE_AFTER_HOURS,
   DEFAULT_SLACK_DAILY_DIGEST_TIME,
   getDefaultSlackDailyDigestTimezone,
   parseSlackDailyDigestTime,
@@ -112,9 +111,6 @@ export function collectDailyDigestsForWorkspace(
   options: CollectDailyDigestsOptions = {}
 ): CollectedProjectDigest[] {
   const nowMs = options.nowMs ?? Date.now();
-  const staleAfterHours =
-    config.slack?.workspaces?.[workspaceName]?.dailyDigest?.staleAfterHours ??
-    DEFAULT_SLACK_DAILY_DIGEST_STALE_AFTER_HOURS;
   const collected: CollectedProjectDigest[] = [];
 
   for (const project of listProjects(db)) {
@@ -158,7 +154,7 @@ export function collectDailyDigestsForWorkspace(
       );
       const digest = buildPrDigest(
         { approvedUnmergedRows, staleReviewRequestRows, otherReadyForReviewRows },
-        { nowMs, staleAfterHours }
+        { nowMs }
       );
 
       if (

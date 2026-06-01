@@ -30,7 +30,6 @@ export interface PrDigest {
 
 export interface BuildPrDigestOptions {
   nowMs: number;
-  staleAfterHours: number;
 }
 
 export interface BuildPrDigestInput {
@@ -44,7 +43,6 @@ interface MutableStaleEntry extends DigestEntry {
 }
 
 export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestOptions): PrDigest {
-  const staleThresholdMs = options.staleAfterHours * 3_600_000;
   const otherReadyThresholdMs = 72 * 3_600_000;
   const approvedUnmerged = input.approvedUnmergedRows.map(
     (row: ApprovedUnmergedRow): DigestEntry => ({
@@ -65,12 +63,6 @@ export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestO
 
     const requestedAtMs = parseRequestedAtMs(row.requested_at);
     const waitedMs = options.nowMs - requestedAtMs;
-
-    // Fresh while waited <= threshold; stale only once strictly past it (plan spec:
-    // fresh = ≤ threshold, stale = > threshold).
-    if (waitedMs <= staleThresholdMs) {
-      continue;
-    }
 
     let entry = staleByPrUrl.get(row.pr_url);
     if (!entry) {

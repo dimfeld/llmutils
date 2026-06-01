@@ -346,9 +346,7 @@ describe('tim slack CLI handlers', () => {
       expect(output).toContain('Approved digest PR');
       expect(output).toContain('Waiting digest PR');
       expect(output).toContain('carol');
-      expect(output).toContain(
-        '  - #1 Approved digest PR (author: alice)\n\n  Awaiting review for > 1 day:'
-      );
+      expect(output).toContain('  - #1 Approved digest PR (author: alice)\n\n  Awaiting review:');
     });
 
     test('non-dry run posts computed digests through the injected sender', async () => {

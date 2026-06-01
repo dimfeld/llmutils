@@ -11,7 +11,7 @@ Slack review-request notifications provide:
 - per-repo Slack settings managed by CLI
 - an outbound Slack `chat.postMessage` client for review-request messages
 - a web-server notifier that batches pending individual review requests and posts one Slack channel message per PR
-- a once-per-day [daily PR digest](#daily-pr-digest) of approved-but-unmerged and stale-awaiting-review PRs, per digest-enabled repo
+- a once-per-day [daily PR digest](#daily-pr-digest) of approved-but-unmerged and awaiting-review PRs, per digest-enabled repo
 
 ## Workspace Configuration
 
@@ -32,7 +32,7 @@ Each workspace has:
 - `dailyDigest` (optional) - schedule for the [daily PR digest](#daily-pr-digest):
   - `time` - `HH:MM` 24-hour local time the digest fires (default `00:00`); rejected at load if not `HH:MM`
   - `timezone` - IANA time zone the `time` is interpreted in (default: the server's local zone); rejected at load if not a valid IANA zone
-  - `staleAfterHours` - how long a review request must wait before it is "stale" (default `24`)
+  - `staleAfterHours` - legacy setting retained for compatibility; awaiting-review digest entries no longer use a minimum wait threshold
   - `weekdays` - local weekdays when the scheduled digest may fire, using lowercase names (`monday` through `sunday`); defaults to Monday through Friday
 
 ```yaml
@@ -43,7 +43,6 @@ slack:
       dailyDigest:
         time: '09:00'
         timezone: 'America/New_York'
-        staleAfterHours: 24
         weekdays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
 ```
 
@@ -236,8 +235,8 @@ Separate from the event-driven review-request notifier, tim can post a once-per-
 The digest has three PR sections:
 
 - **Approved, not yet merged** - open, non-draft PRs whose review decision is `APPROVED`.
-- **Awaiting review for > 1 day** - open, non-draft PRs that are not already approved and have an assigned individual reviewer whose last review request is older than the workspace's `staleAfterHours` (default 24h) and who has not reviewed since being requested. Each entry lists the waiting reviewer(s) and how long they've waited. PR entry links point at `linear.review/{owner}/{repo}/pull/{number}`. The footer includes both the GitHub "View all PRs awaiting your review" search link and a Linear reviews link.
-- **Other PRs ready for review for > 3 days** - open, non-draft PRs with a recorded `ready_at` timestamp older than three days that were not already shown in the approved or stale-awaiting-review sections. Each entry lists how long the PR has been ready and the time since the previous non-dismissed review, or notes that there has been no previous review.
+- **Awaiting review** - open, non-draft PRs that are not already approved and have an assigned individual reviewer who has not reviewed since being requested. Each entry lists the waiting reviewer(s) and how long they've waited. PR entry links point at `linear.review/{owner}/{repo}/pull/{number}`. The footer includes both the GitHub "View all PRs awaiting your review" search link and a Linear reviews link.
+- **Other PRs ready for review for > 3 days** - open, non-draft PRs with a recorded `ready_at` timestamp older than three days that were not already shown in the approved or awaiting-review sections. Each entry lists how long the PR has been ready and the time since the previous non-dismissed review, or notes that there has been no previous review.
 
 If `dailyDigest.linearMilestones.enabled` is true for a Slack workspace, the digest also includes **Linear milestones due or overdue** once per Slack channel in each workspace run. The section uses the workspace digest timezone to compute the current Monday-through-Sunday week, lists outstanding Linear project milestones that are overdue or due in that range, and includes a milestone owner. The owner is the shared assignee when all linked milestone issues have the same assignee, otherwise the project lead. Set `dailyDigest.linearMilestones.apiKeyEnv` to read a token from a different environment variable; otherwise it reads `LINEAR_API_KEY`.
 
@@ -246,7 +245,7 @@ If all sections are empty for a repo or channel, no message is sent.
 What counts as "stale":
 
 - The clock starts at `pr_review_request.requested_at` (reset when a reviewer is re-requested).
-- A request is fresh while it has waited `≤ staleAfterHours` and becomes stale only once it has waited strictly longer than that.
+- There is no minimum wait threshold for the digest; pending review requests are included immediately.
 - **Any** submitted review (`APPROVED`, `CHANGES_REQUESTED`, or `COMMENTED`) by that reviewer after the request clears the nudge — the goal is to surface genuinely-silent reviewers. A `DISMISSED` review does not clear it, since a dismissed review means the PR needs attention again.
 - Team review requests are not tracked individually (`pr_review_request` stores only individual logins), so the awaiting-review bucket covers individual reviewers only. A PR whose only request is to a team will not appear in that bucket.
 
@@ -263,7 +262,7 @@ The digest requires, in order:
 
 ### Schedule and Scheduler
 
-The `time`/`timezone`/`staleAfterHours` schedule is configured per workspace (see [Workspace Configuration](#workspace-configuration)), defaulting to `00:00` in the server's local zone with a 24h stale threshold.
+The `time`/`timezone` schedule is configured per workspace (see [Workspace Configuration](#workspace-configuration)), defaulting to `00:00` in the server's local zone.
 
 The scheduler runs inside the SvelteKit web server (`src/hooks.server.ts`), alongside the notifier and webhook poller. It starts only when webhook polling is enabled, at least one workspace is configured, and at least one repo has the digest enabled. It uses one `setTimeout` timer per workspace (not `Bun.cron`, which is UTC-only): on each fire it runs that workspace's digest, then recomputes the next fire from the IANA `timezone` and reschedules, which naturally handles DST transitions (a configured time that does not exist on a spring-forward day rolls to the next valid day). Timers are `unref`'d so they never keep the process alive, and they stop cleanly on shutdown and HMR re-init.
 

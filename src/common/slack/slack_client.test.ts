@@ -336,7 +336,7 @@ describe('common/slack/slack_client', () => {
       ]);
       expect(sectionText(payload.blocks[0])).toBe('*Daily PR digest — octocat/hello-world*');
       expect(sectionText(payload.blocks[1])).toContain('*Approved, not yet merged*');
-      expect(sectionText(payload.blocks[3])).toContain('*Awaiting review for > 1 day*');
+      expect(sectionText(payload.blocks[3])).toContain('*Awaiting review*');
       expect(sectionText(payload.blocks[4])).toBe(
         '<https://github.com/octocat/hello-world/pulls?q=is%3Apr+is%3Aopen+user-review-requested%3A%40me|View all PRs awaiting your review> · <https://linear.app/deviceflow/reviews|Linear>'
       );

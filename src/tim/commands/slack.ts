@@ -221,7 +221,7 @@ function printDigestDryRunProject(projectDigest: CollectedProjectDigest): void {
   );
 
   if (isDigestEmpty(projectDigest.digest)) {
-    log('  Would skip: no approved or stale review-request PRs.');
+    log('  Would skip: no approved or awaiting-review PRs.');
     return;
   }
 
@@ -243,7 +243,7 @@ function printDigestDryRunProject(projectDigest: CollectedProjectDigest): void {
 
   if (projectDigest.digest.staleAwaitingReview.length > 0) {
     printSectionBreak();
-    log('  Awaiting review for > 1 day:');
+    log('  Awaiting review:');
     for (const entry of projectDigest.digest.staleAwaitingReview) {
       const reviewers =
         entry.reviewers

@@ -19,7 +19,7 @@ describe('lib/server/pr_digest', () => {
         staleReviewRequestRows: [],
         otherReadyForReviewRows: [],
       },
-      { nowMs, staleAfterHours: 24 }
+      { nowMs }
     );
 
     expect(digest).toEqual({
@@ -36,7 +36,7 @@ describe('lib/server/pr_digest', () => {
     });
   });
 
-  test('groups stale reviewers by PR and treats the exact threshold as still fresh', () => {
+  test('groups waiting reviewers by PR without applying a minimum wait threshold', () => {
     const digest = buildPrDigest(
       {
         approvedUnmergedRows: [],
@@ -76,11 +76,10 @@ describe('lib/server/pr_digest', () => {
         ],
         otherReadyForReviewRows: [],
       },
-      { nowMs, staleAfterHours: 24 }
+      { nowMs }
     );
 
-    // charlie waited exactly 24h (== threshold) and frank waited just under 24h, so both
-    // are still fresh and excluded. dana (30h) and heidi (24h + 1ms) are stale.
+    // All waiting reviewers are included regardless of how long they have waited.
     expect(digest.staleAwaitingReview).toEqual([
       {
         prUrl: 'https://github.com/octocat/hello-world/pull/2',
@@ -89,9 +88,27 @@ describe('lib/server/pr_digest', () => {
         author: 'bob',
         reviewers: [
           {
+            login: 'charlie',
+            waitedMs: 24 * 3_600_000,
+            waitedLabel: '24 hours',
+          },
+          {
             login: 'dana',
             waitedMs: 30 * 3_600_000,
             waitedLabel: '30 hours',
+          },
+        ],
+      },
+      {
+        prUrl: 'https://github.com/octocat/hello-world/pull/3',
+        prNumber: 3,
+        title: 'Fresh request',
+        author: 'erin',
+        reviewers: [
+          {
+            login: 'frank',
+            waitedMs: 24 * 3_600_000 - 1000,
+            waitedLabel: '23 hours',
           },
         ],
       },
@@ -118,7 +135,7 @@ describe('lib/server/pr_digest', () => {
         staleReviewRequestRows: [],
         otherReadyForReviewRows: [],
       },
-      { nowMs, staleAfterHours: 24 }
+      { nowMs }
     );
 
     expect(digest).toEqual({
@@ -128,7 +145,7 @@ describe('lib/server/pr_digest', () => {
     });
   });
 
-  test('omits approved PRs from the stale awaiting review bucket', () => {
+  test('omits approved PRs from the awaiting review bucket', () => {
     const digest = buildPrDigest(
       {
         approvedUnmergedRows: [
@@ -151,7 +168,7 @@ describe('lib/server/pr_digest', () => {
         ],
         otherReadyForReviewRows: [],
       },
-      { nowMs, staleAfterHours: 24 }
+      { nowMs }
     );
 
     expect(digest.approvedUnmerged).toEqual([
@@ -180,7 +197,7 @@ describe('lib/server/pr_digest', () => {
         ],
         otherReadyForReviewRows: [],
       },
-      { nowMs: Date.parse('2026-01-02T10:00:00.000Z'), staleAfterHours: 1 }
+      { nowMs: Date.parse('2026-01-02T10:00:00.000Z') }
     );
 
     expect(digest.staleAwaitingReview).toEqual([
@@ -213,7 +230,7 @@ describe('lib/server/pr_digest', () => {
           ],
           otherReadyForReviewRows: [],
         },
-        { nowMs, staleAfterHours: 24 }
+        { nowMs }
       )
     ).toThrow('Invalid PR review request timestamp: not-a-date');
   });
@@ -274,7 +291,7 @@ describe('lib/server/pr_digest', () => {
           },
         ],
       },
-      { nowMs, staleAfterHours: 24 }
+      { nowMs }
     );
 
     expect(digest.otherReadyForReview).toEqual([
