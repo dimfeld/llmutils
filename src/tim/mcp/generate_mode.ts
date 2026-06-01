@@ -308,13 +308,13 @@ Consider splitting when:
 
 The user may prefer to split vertically by functional areas, or horizontally (e.g. backend foundation followed by UI), or both. Surface the tradeoffs in your proposal.
 
-If the user approves the split, create each child plan using 'tim add' (see the using-tim skill) with appropriate title, goal, details, and priority. Then:
+If the user approves the split, the main agent should create each child plan using 'tim add' (see the using-tim skill) with appropriate title, goal, initial details, and priority. Then:
 - Each new child plan will get its own plan number, returned by \`tim add\`
 - Set \`--parent ${parentPlanLabel}\` on every child plan
 - Set the parent plan as an epic using \`tim set ${parentPlanLabel} --epic\`
 - Use \`--depends-on\` to enforce ordering when one plan must be done before another
 - For child plans intended to ship as **stacked PRs** on top of an earlier sibling, also pass \`--base-plan <previous-sibling-plan-id>\` so the new plan's branch is based on its predecessor's branch instead of trunk. The first plan in the stack does not need \`--base-plan\` (it branches from trunk). \`--base-plan\` and \`--depends-on\` are independent: the former stacks the branch, the latter orders the work; for stacked PRs you typically want both pointing at the same predecessor.
-- For each child plan, use a subagent to copy the relevant details and implementation guidance from the contents of plan ${parentPlanLabel} into the child plan's file, and then use tim update-plan-tasks to add tasks to the child plan.
+- After creating the child plans and wiring relationships, invoke a subagent for each child plan. Each subagent must edit its assigned child plan file to insert the relevant details and implementation guidance from plan ${parentPlanLabel}, then call \`tim tools update-plan-tasks\` for that child plan. The subagent should make those changes directly; it should not merely return plan details or task content for the main agent to apply.
 - Document the stacking/dependency relationship in each child plan's details section
 - Each child plan should be independently implementable and testable, and should deliver real, demonstrable functionality.${linearChildIssueGuidance}
 
@@ -349,7 +349,7 @@ When done, collaborate with your human partner to refine this plan. ${questionTe
 
 Once the plan is refined and BEFORE adding the structured tasks, work through the "Plan Split Recommendation" section above: propose a possible split into sibling child plans (using \`--base-plan\` to stack them as PRs where appropriate) and confirm with the user whether to apply that split or keep the work in a single plan. Only skip this check for exceptionally small, self-contained changes.
 
-Once the plan is refined and the split decision is made, use 'tim tools update-plan-tasks' on the CLI (as described in the using-tim skill) to add the tasks to the plan file, or if you split, use subagents as described above to populate each child plan. The list of tasks should correspond to the steps in your implementation guide.
+Once the plan is refined and the split decision is made, use 'tim tools update-plan-tasks' on the CLI (as described in the using-tim skill) to add the tasks to the plan file, or if you split, create and wire the child plans yourself and then use subagents as described above to insert details and call \`tim tools update-plan-tasks\` for each child plan. The list of tasks should correspond to the steps in your implementation guide.
 
 After adding the structured tasks, re-read the entire plan file and look for any conflicting requirements between different sections. During the questions and refinement phase, some parts of the document may have been updated while others were not, which can lead to inconsistencies between the goal, details, implementation guide, and tasks. If you find any conflicts, either reconcile them by updating the relevant sections to ensure consistency, or ask the user for clarification if the conflict represents a fundamental ambiguity in the requirements.`;
 
@@ -495,13 +495,13 @@ Consider splitting when:
 3. The plan has distinct areas of functionality that have minimal interdependencies
 4. Breaking it down would reduce cognitive load and make each plan more focused
 
-If the user approves the split, create each child plan using 'tim add' (see the using-tim skill) with appropriate title, goal, details, and priority. Then:
+If the user approves the split, the main agent should create each child plan using 'tim add' (see the using-tim skill) with appropriate title, goal, initial details, and priority. Then:
 - Each new child plan will get its own plan number, returned by \`tim add\`
 - Set \`--parent ${parentPlanLabel}\` on every child plan
 - Set the parent plan as an epic using \`tim set ${parentPlanLabel} --epic\`
 - Use \`--depends-on\` to enforce ordering when one plan must be done before another
 - For child plans intended to ship as **stacked PRs** on top of an earlier sibling, also pass \`--base-plan <previous-sibling-plan-id>\` so the new plan's branch is based on its predecessor's branch instead of trunk. The first plan in the stack does not need \`--base-plan\` (it branches from trunk). \`--base-plan\` and \`--depends-on\` are independent: the former stacks the branch, the latter orders the work; for stacked PRs you typically want both pointing at the same predecessor.
-- For each child plan, use a subagent to copy the relevant details and implementation guidance from the contents of plan ${parentPlanLabel} into the child plan's file, and then use tim update-plan-tasks to add tasks to the child plan.
+- After creating the child plans and wiring relationships, invoke a subagent for each child plan. Each subagent must edit its assigned child plan file to insert the relevant details and implementation guidance from plan ${parentPlanLabel}, then call \`tim tools update-plan-tasks\` for that child plan. The subagent should make those changes directly; it should not merely return plan details or task content for the main agent to apply.
 - Document the stacking/dependency relationship in each child plan's details section
 - Each child plan should be independently implementable and testable, and should deliver real, demonstrable functionality that works end-to-end${linearChildIssueGuidance}
 
@@ -527,7 +527,7 @@ ${generateClaudeCodeGenerationPrompt(contextBlock, {
 
 BEFORE adding the structured tasks, work through the "Plan Split Recommendation" section above: propose a possible split into sibling child plans (using \`--base-plan\` to stack them as PRs where appropriate) and confirm with the user whether to apply that split or keep the work in a single plan. Only skip this check for exceptionally small, self-contained changes.
 
-Once the plan is refined and the split decision is made, use 'tim tools update-plan-tasks' on the CLI (as described in the using-tim skill) to add the tasks to the plan file, or if you split, use subagents as described above to populate each child plan. The list of tasks should correspond to the steps in your implementation guide.
+Once the plan is refined and the split decision is made, use 'tim tools update-plan-tasks' on the CLI (as described in the using-tim skill) to add the tasks to the plan file, or if you split, create and wire the child plans yourself and then use subagents as described above to insert details and call \`tim tools update-plan-tasks\` for each child plan. The list of tasks should correspond to the steps in your implementation guide.
 
 After adding the structured tasks, re-read the entire plan file and look for any conflicting requirements between different sections. During the questions and refinement phase, some parts of the document may have been updated while others were not, which can lead to inconsistencies between the goal, details, implementation guide, and tasks. If you find any conflicts, either reconcile them by updating the relevant sections to ensure consistency, or ask the user for clarification if the conflict represents a fundamental ambiguity in the requirements.`;
 

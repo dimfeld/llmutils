@@ -186,6 +186,17 @@ describe('tim MCP generate mode helpers', () => {
     expect(message?.text).toContain('## Manual Testing Runbooks');
   });
 
+  test('loadResearchPrompt keeps child plan creation with main agent and details/tasks with subagents', async () => {
+    const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).toContain("the main agent should create each child plan using 'tim add'");
+    expect(messageText).toContain('For child plans intended to ship as **stacked PRs**');
+    expect(messageText).toContain('Each subagent must edit its assigned child plan file');
+    expect(messageText).toContain('then call `tim tools update-plan-tasks` for that child plan');
+    expect(messageText).toContain('it should not merely return plan details or task content');
+  });
+
   test('loadResearchPrompt includes planning instructions from config', async () => {
     const instructionFile = path.join(tmpDir, 'planning.md');
     await writeFile(instructionFile, 'Use phased rollouts and keep scope small.');
