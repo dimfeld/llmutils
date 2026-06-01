@@ -30,6 +30,8 @@ import { log } from '../../logging.js';
 import { resolveOrchestratorInput } from '../utils/orchestrator_input.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { materializePlan } from '../plan_materialize.js';
+import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
+import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
 
 export type SubagentType = 'implementer' | 'tester' | 'tdd-tests' | 'verifier';
 
@@ -137,6 +139,12 @@ export async function handleSubagentCommand(
     .join('\n\n');
 
   const planIdLabel = planData.id?.toString() ?? 'unknown';
+  const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(config, gitRoot, {
+    planId: planData.id,
+    planUuid: planData.uuid,
+    planFilePath,
+    branch: planData.branch,
+  });
 
   // Build the agent prompt using the appropriate function
   const agentDefinition = buildAgentDefinition(
@@ -150,9 +158,21 @@ export async function handleSubagentCommand(
   // Execute using the selected executor
   let finalMessage: string;
   if (executorType === 'codex-cli') {
-    finalMessage = await executeWithCodex(agentDefinition.prompt, gitRoot, config, selectedModel);
+    finalMessage = await executeWithCodex(
+      agentDefinition.prompt,
+      gitRoot,
+      config,
+      selectedModel,
+      timEnvironment
+    );
   } else {
-    finalMessage = await executeWithClaude(agentDefinition.prompt, gitRoot, config, selectedModel);
+    finalMessage = await executeWithClaude(
+      agentDefinition.prompt,
+      gitRoot,
+      config,
+      selectedModel,
+      timEnvironment
+    );
   }
 
   if (options.outputFile) {
@@ -218,11 +238,13 @@ async function executeWithCodex(
   prompt: string,
   cwd: string,
   timConfig: TimConfig,
-  model?: string
+  model?: string,
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions
 ): Promise<string> {
   return executeCodexStep(prompt, cwd, timConfig, {
     appServerMode: 'single-turn-with-steering',
     model,
+    timEnvironment,
   });
 }
 
@@ -233,7 +255,8 @@ async function executeWithClaude(
   prompt: string,
   cwd: string,
   timConfig: TimConfig,
-  model?: string
+  model?: string,
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions
 ): Promise<string> {
   const claudeCodeOptions = (timConfig.executors as Record<string, any>)?.['claude-code'] ?? {};
   const isNoninteractive = process.env.TIM_NONINTERACTIVE === 'true';
@@ -246,6 +269,7 @@ async function executeWithClaude(
     prompt,
     cwd,
     timConfig,
+    timEnvironment,
     claudeCodeOptions,
     noninteractive: isNoninteractive,
     model,

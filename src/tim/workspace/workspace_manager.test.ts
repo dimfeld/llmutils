@@ -32,6 +32,7 @@ import {
   createWorkspace,
   findUniqueBranchName,
   prepareExistingWorkspace,
+  runWorkspaceUpdateCommands,
   symlinkLocalConfigs,
 } from './workspace_manager.js';
 import { WorkspaceLock } from './workspace_lock.js';
@@ -428,7 +429,8 @@ describe('createWorkspace', () => {
         }),
       }),
       expect.stringContaining('repo-task-123'),
-      false
+      false,
+      expect.any(Object)
     );
 
     // Verify second command was called with correct parameters
@@ -442,7 +444,8 @@ describe('createWorkspace', () => {
         }),
       }),
       expect.stringContaining('repo-task-123'),
-      false
+      false,
+      expect.any(Object)
     );
   });
 
@@ -918,6 +921,88 @@ describe('createWorkspace', () => {
     );
   });
 
+  test('createWorkspace passes project env context for post-clone target workspace', async () => {
+    const taskId = 'task-project-env';
+    const planPath = path.join(mainRepoRoot, 'project-env-plan.yml');
+    await fs.writeFile(planPath, 'id: 42\nuuid: plan-uuid-42\ntitle: Env Test Plan');
+
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, `repo-${taskId}`);
+
+    const config: TimConfig = {
+      environment: {
+        TIM_WORKSPACE_MARKER: '{{workspaceId}}|{{workspacePath}}|{{branch}}|{{planId}}',
+      },
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+        postCloneCommands: [
+          {
+            title: 'Capture context',
+            command: 'echo test',
+          },
+        ],
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'clone') {
+        await fs.mkdir(targetClonePath, { recursive: true });
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (
+        cmd[0] === 'git' &&
+        cmd[1] === 'rev-parse' &&
+        cmd[2] === '--verify' &&
+        options?.cwd === targetClonePath
+      ) {
+        return { exitCode: 1, stdout: '', stderr: 'unknown revision' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      branchName: 'feature/plan-42',
+      createBranch: true,
+      planData: {
+        id: 42,
+        uuid: 'plan-uuid-42',
+        title: 'Env Test Plan',
+        tasks: [],
+      } as any,
+    });
+
+    expect(result).not.toBeNull();
+    expect(mockExecutePostApplyCommand).toHaveBeenCalledTimes(1);
+    const [commandConfig, overrideGitRoot, printLog, options] =
+      mockExecutePostApplyCommand.mock.calls[0];
+
+    expect(commandConfig.env).toEqual(
+      expect.objectContaining({
+        LLMUTILS_TASK_ID: taskId,
+        LLMUTILS_PLAN_FILE_PATH: path.join(targetClonePath, 'project-env-plan.yml'),
+      })
+    );
+    expect(overrideGitRoot).toBe(targetClonePath);
+    expect(printLog).toBe(false);
+    expect(options?.timEnvironment).toEqual({
+      environment: config.environment,
+      context: expect.objectContaining({
+        workspaceId: taskId,
+        workspaceName: taskId,
+        workspacePath: targetClonePath,
+        repoPath: mainRepoRoot,
+        planId: '42',
+        planUuid: 'plan-uuid-42',
+        planFilePath: path.join(targetClonePath, 'project-env-plan.yml'),
+        branch: 'feature/plan-42',
+      }),
+    });
+  });
+
   test('createWorkspace without plan - LLMUTILS_PLAN_FILE_PATH not set in post-clone commands', async () => {
     // Setup
     const taskId = 'task-no-plan-env';
@@ -981,6 +1066,76 @@ describe('createWorkspace', () => {
     expect(capturedEnv).toBeDefined();
     expect(capturedEnv!.LLMUTILS_TASK_ID).toBe(taskId);
     expect(capturedEnv!.LLMUTILS_PLAN_FILE_PATH).toBeUndefined();
+  });
+
+  test('runWorkspaceUpdateCommands passes project env context and preserves command override precedence', async () => {
+    const workspacePath = path.join(testTempDir, 'workspace-update-target');
+    await fs.mkdir(workspacePath, { recursive: true });
+    const planFilePath = path.join(workspacePath, '.tim', 'plans', '88.plan.md');
+
+    const config: TimConfig = {
+      environment: {
+        TIM_WORKSPACE_MARKER: '{{workspaceId}}|{{workspacePath}}|{{branch}}|{{planId}}',
+        TIM_COMMAND_OVERRIDE: 'project_{{workspaceId}}',
+      },
+      workspaceCreation: {
+        workspaceUpdateCommands: [
+          {
+            title: 'Capture update context',
+            command: 'echo test',
+            env: {
+              TIM_COMMAND_OVERRIDE: 'command_override',
+            },
+          },
+        ],
+      },
+    };
+
+    const success = await runWorkspaceUpdateCommands(
+      workspacePath,
+      config,
+      'update-task',
+      planFilePath,
+      {
+        repoPath: mainRepoRoot,
+        workspaceName: 'Update Workspace',
+        branch: 'feature/update-task',
+        planData: {
+          id: 88,
+          uuid: 'plan-uuid-88',
+          title: 'Update Plan',
+          tasks: [],
+        } as any,
+      }
+    );
+
+    expect(success).toBe(true);
+    expect(mockExecutePostApplyCommand).toHaveBeenCalledTimes(1);
+    const [commandConfig, overrideGitRoot, printLog, options] =
+      mockExecutePostApplyCommand.mock.calls[0];
+
+    expect(commandConfig.env).toEqual(
+      expect.objectContaining({
+        LLMUTILS_TASK_ID: 'update-task',
+        LLMUTILS_PLAN_FILE_PATH: planFilePath,
+        TIM_COMMAND_OVERRIDE: 'command_override',
+      })
+    );
+    expect(overrideGitRoot).toBe(workspacePath);
+    expect(printLog).toBe(false);
+    expect(options?.timEnvironment).toEqual({
+      environment: config.environment,
+      context: expect.objectContaining({
+        workspaceId: 'update-task',
+        workspaceName: 'Update Workspace',
+        workspacePath,
+        repoPath: mainRepoRoot,
+        planId: '88',
+        planUuid: 'plan-uuid-88',
+        planFilePath,
+        branch: 'feature/update-task',
+      }),
+    });
   });
 
   test('createWorkspace verifies new branch naming convention', async () => {

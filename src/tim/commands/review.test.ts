@@ -464,6 +464,20 @@ test('handleReviewCommand supports auto workspace selection', async () => {
       expect.objectContaining({ autoWorkspace: true, cwd: workspaceDir }),
       expect.any(Object)
     );
+    expect(executorsModule.buildExecutorAndLog).toHaveBeenCalledWith(
+      'codex-cli',
+      expect.objectContaining({
+        baseDir: workspaceDir,
+        timEnvironment: expect.objectContaining({
+          context: expect.objectContaining({
+            repoPath: testDir,
+            workspacePath: workspaceDir,
+            planId: '2',
+          }),
+        }),
+      }),
+      expect.objectContaining({ defaultExecutor: 'codex-cli' })
+    );
   } finally {
     setupWorkspaceSpy.mockRestore();
   }

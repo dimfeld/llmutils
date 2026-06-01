@@ -1,4 +1,5 @@
 import type { z } from 'zod/v4';
+import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
 import type { TimConfig } from '../configSchema';
 
 /**
@@ -45,6 +46,11 @@ export interface ExecutorCommonOptions {
    * chat sessions where the user controls the pace of interaction.
    */
   disableInactivityTimeout?: boolean;
+  /**
+   * Project environment rendering options for executor subprocesses.
+   * Explicit executor env values remain the final override layer.
+   */
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
 }
 
 /**

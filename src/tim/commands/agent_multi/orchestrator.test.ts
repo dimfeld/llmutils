@@ -389,6 +389,57 @@ describe('agent-multi orchestrator', () => {
     expect(result.states.get('plan-3')?.status).toBe('failed');
   });
 
+  test('marks async spawn setup failures failed and continues independent work', async () => {
+    const plans = [createPlan(1), createPlan(2), createPlan(3, { dependencies: ['plan-1'] })];
+    const logger = createLogger();
+    const exits = new Map<number, DeferredExit>();
+    const spawnOrder: number[] = [];
+    const spawnAgent: SpawnAgentFn = async (planId: number) => {
+      spawnOrder.push(planId);
+      if (planId === 1) {
+        throw new Error('bad env template');
+      }
+      const exit = createDeferredExit();
+      exits.set(planId, exit);
+      return {
+        pid: planId + 1000,
+        exited: exit.promise,
+      };
+    };
+
+    const runner = new MultiAgentRunner({
+      plans,
+      maxParallel: 2,
+      cwd: '/tmp/repo',
+      spawnAgent,
+      readPlan: async (planUuid: string) => {
+        if (planUuid === 'plan-2') {
+          return { status: 'done' };
+        }
+        return { status: 'pending' };
+      },
+      logger,
+    });
+
+    const run = runner.run();
+    await waitFor(() => expect(spawnOrder).toEqual([1, 2]));
+
+    exits.get(2)?.resolve(0);
+    const result = await run;
+
+    expect(result.success).toBe(false);
+    expect(result.states.get('plan-1')?.status).toBe('failed');
+    expect(result.states.get('plan-1')?.failureReason).toBe('spawn failed: bad env template');
+    expect(result.states.get('plan-2')?.status).toBe('finished');
+    expect(result.states.get('plan-3')?.status).toBe('failed');
+    expect(result.states.get('plan-3')?.failureReason).toBe(
+      'skipped because dependency plan-1 failed'
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      'agent-multi: plan #1 Plan 1 spawn failed: bad env template'
+    );
+  });
+
   test('rejects cycles in selected plans', () => {
     const plans = [
       createPlan(1, { dependencies: ['plan-2'] }),

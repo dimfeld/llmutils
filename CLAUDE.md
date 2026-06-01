@@ -35,6 +35,7 @@ Read the relevant doc before working in these areas:
 - **Database** → `docs/database.md`
 - **Sync operations** (REQUIRED before changing synced plan/project mutations) → `docs/sync-operations-guide.md`
 - **Multi-workspace workflow** → `docs/multi-workspace-workflow.md`
+- **Project environment foundation** (`TIM_*` vars, reserved built-ins, renderer conventions) → `docs/project-environment.md`
 - **Parent-child plan relationships** → `docs/parent-child-relationships.md`
 - **Planning workflow** → `docs/planning.md`
 - **Batch tasks** → `docs/batch-tasks-feature.md`

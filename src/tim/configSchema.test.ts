@@ -1,7 +1,142 @@
 import { test, describe, expect, vi } from 'vitest';
 import { timConfigSchema, getDefaultConfig } from './configSchema.js';
+import {
+  RESERVED_TIM_ENVIRONMENT_VARIABLES,
+  TIM_ENVIRONMENT_CONTEXT_DEFINITIONS,
+} from './environment.js';
 
 describe('configSchema', () => {
+  describe('environment configuration', () => {
+    test('accepts string shorthand and object entries without applying defaults', () => {
+      const result = timConfigSchema.parse({
+        environment: {
+          DATABASE_NAME: 'app_{{ workspaceId ?? planId ?? "main" }}',
+          TIM_DATABASE_NAME: 'app_{{ workspaceId ?? planId ?? "main" }}',
+          TIM_DATABASE_URL: {
+            value: 'postgres://localhost/{{ workspaceId ?? planId ?? "main" }}',
+            precedence: 'override-dotenv',
+          },
+          TIM_APP_MODE: {
+            value: 'development',
+          },
+        },
+      });
+
+      expect(result.environment).toEqual({
+        DATABASE_NAME: 'app_{{ workspaceId ?? planId ?? "main" }}',
+        TIM_DATABASE_NAME: 'app_{{ workspaceId ?? planId ?? "main" }}',
+        TIM_DATABASE_URL: {
+          value: 'postgres://localhost/{{ workspaceId ?? planId ?? "main" }}',
+          precedence: 'override-dotenv',
+        },
+        TIM_APP_MODE: {
+          value: 'development',
+        },
+      });
+    });
+
+    test('does not add an environment default in the zod schema', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.environment).toBeUndefined();
+    });
+
+    test('rejects invalid environment keys', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          environment: {
+            'DATABASE-NAME': 'bad',
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          environment: {
+            tim_DATABASE_NAME: 'bad',
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          environment: {
+            '1DATABASE_NAME': 'bad',
+          },
+        })
+      ).toThrow();
+    });
+
+    test('rejects reserved built-in environment keys', () => {
+      for (const reservedName of RESERVED_TIM_ENVIRONMENT_VARIABLES) {
+        expect(() =>
+          timConfigSchema.parse({
+            environment: {
+              [reservedName]: 'bad',
+            },
+          })
+        ).toThrow();
+      }
+    });
+
+    test('rejects non-string environment values and invalid precedence', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          environment: {
+            TIM_DATABASE_NAME: 123,
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          environment: {
+            TIM_DATABASE_NAME: {
+              value: 'db',
+              precedence: 'always',
+            },
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          environment: {
+            TIM_DATABASE_NAME: {
+              value: 'db',
+              description: 'not supported',
+            },
+          },
+        })
+      ).toThrow();
+    });
+
+    test('keeps reserved built-ins in parity with template placeholders', () => {
+      expect(Object.entries(TIM_ENVIRONMENT_CONTEXT_DEFINITIONS)).toEqual([
+        ['workspaceId', 'TIM_WORKSPACE_ID'],
+        ['workspaceName', 'TIM_WORKSPACE_NAME'],
+        ['workspacePath', 'TIM_WORKSPACE_PATH'],
+        ['repoPath', 'TIM_REPO_PATH'],
+        ['planId', 'TIM_PLAN_ID'],
+        ['planUuid', 'TIM_PLAN_UUID'],
+        ['planFilePath', 'TIM_PLAN_FILE_PATH'],
+        ['branch', 'TIM_BRANCH'],
+      ]);
+      expect(new Set(RESERVED_TIM_ENVIRONMENT_VARIABLES).size).toBe(
+        RESERVED_TIM_ENVIRONMENT_VARIABLES.length
+      );
+    });
+
+    test('allows non-reserved TIM_ process-control variables', () => {
+      const result = timConfigSchema.parse({
+        environment: {
+          TIM_EXECUTOR_MARKER: 'enabled',
+        },
+      });
+
+      expect(result.environment?.TIM_EXECUTOR_MARKER).toBe('enabled');
+    });
+  });
+
   describe('slack workspace configuration', () => {
     test('accepts optional daily digest schedule configuration without applying defaults', () => {
       const result = timConfigSchema.parse({

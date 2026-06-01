@@ -13,6 +13,7 @@ import type { PlanSchema } from '../planSchema.js';
 import { materializePlan } from '../plan_materialize.js';
 import { parsePlanIdFromCliArg, resolvePlanByNumericId } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
+import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 
 interface SimplifyOptions {
   executor?: string;
@@ -120,6 +121,12 @@ export async function runSimplify(
     baseDir,
     model,
     terminalInput: options.terminalInput,
+    timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(effectiveConfig, baseDir, {
+      planId: planData.id,
+      planUuid: planData.uuid,
+      planFilePath,
+      branch: planData.branch,
+    }),
   };
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, effectiveConfig);

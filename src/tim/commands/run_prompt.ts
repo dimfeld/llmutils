@@ -10,6 +10,7 @@ import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
 import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
 import { codexReasoningLevelSchema, type CodexReasoningLevel } from '../executors/schemas.js';
 import {
   extractStructuredMessages,
@@ -18,6 +19,7 @@ import {
 } from '../executors/claude_code/format.js';
 import { createCodexStdoutFormatter } from '../executors/codex_cli/format.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { resolveOptionalPromptInput } from './prompt_input.js';
 
 type ExecutorAlias = 'claude' | 'codex';
@@ -291,6 +293,7 @@ async function executeClaudePrompt(
     jsonSchema?: string;
     allowAllTools?: boolean;
     cwd: string;
+    timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
   }
 ): Promise<string> {
   const args = buildClaudeRunPromptArgs({
@@ -335,6 +338,7 @@ async function executeClaudePrompt(
         CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
         ...tunnelEnv,
       },
+      timEnvironment: options.timEnvironment,
       inactivityTimeoutMs: RUN_PROMPT_INACTIVITY_TIMEOUT_MS,
       initialInactivityTimeoutMs: RUN_PROMPT_INITIAL_INACTIVITY_TIMEOUT_MS,
       onInactivityKill: () => {
@@ -405,6 +409,7 @@ async function executeCodexPrompt(
     cwd: string;
     externalRepositoryConfigDir?: string;
     isUsingExternalStorage?: boolean;
+    timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
   }
 ): Promise<string> {
   let tempDir: string | undefined;
@@ -447,6 +452,7 @@ async function executeCodexPrompt(
         TIM_NOTIFY_SUPPRESS: '1',
         ...(tunnelServer && tunnelSocketPath ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {}),
       },
+      timEnvironment: options.timEnvironment,
       formatStdout: formatter.formatChunk,
       inactivityTimeoutMs: RUN_PROMPT_INACTIVITY_TIMEOUT_MS,
       initialInactivityTimeoutMs: RUN_PROMPT_INITIAL_INACTIVITY_TIMEOUT_MS,
@@ -521,6 +527,8 @@ export async function handleRunPromptCommand(
     stdinIsTTY,
   });
   const allowAllTools = shouldAllowAllTools(deps.envAllowAllTools ?? process.env.ALLOW_ALL_TOOLS);
+  const cwd = process.cwd();
+  const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(config, cwd);
 
   const output = await runWithLogger(
     options.quiet ? runPromptQuietLogger : runPromptStderrLogger,
@@ -540,7 +548,8 @@ export async function handleRunPromptCommand(
               model: options.model,
               jsonSchema: schema,
               allowAllTools,
-              cwd: process.cwd(),
+              cwd,
+              timEnvironment,
             });
           }
 
@@ -552,9 +561,10 @@ export async function handleRunPromptCommand(
             jsonSchema: schema,
             reasoningLevel,
             allowAllTools,
-            cwd: process.cwd(),
+            cwd,
             externalRepositoryConfigDir: config.externalRepositoryConfigDir,
             isUsingExternalStorage: config.isUsingExternalStorage,
+            timEnvironment,
           });
         },
       })

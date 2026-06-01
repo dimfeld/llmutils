@@ -6,6 +6,7 @@ import { createLogFile } from '../../../common/log_files.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { getDatabase } from '../../db/database.js';
 import { getPlanByPlanId, getPlanByUuid, type PlanRow } from '../../db/plan.js';
+import { RESERVED_TIM_ENVIRONMENT_VARIABLE_SET } from '../../environment_templates.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
 import {
   runWithHeadlessAdapterIfEnabled,
@@ -32,6 +33,37 @@ export interface AgentMultiGlobalOptions {
   config?: string;
 }
 
+const TIM_CHILD_ENV_PASSTHROUGH = new Set([
+  // Parent-rendered plan/workspace/project TIM_* values are scrubbed so each
+  // child agent resolves its own context after workspace selection. Keep only
+  // process-control and infrastructure variables that affect how tim itself
+  // starts or locates shared resources.
+  'TIM_DATABASE_FILENAME',
+  'TIM_DEBUG_STDIN',
+  'TIM_ENABLE_OPEN_IN_EDITOR',
+  'TIM_GITHUB_APP_ID',
+  'TIM_GITHUB_APP_INSTALLATION_ID',
+  'TIM_GITHUB_APP_PRIVATE_KEY',
+  'TIM_GITHUB_APP_PRIVATE_KEY_PATH',
+  'TIM_HEADLESS_URL',
+  'TIM_INTERACTIVE',
+  'TIM_LOAD_GLOBAL_CONFIG',
+  'TIM_NO_SERVER',
+  'TIM_NONINTERACTIVE',
+  'TIM_NOTIFY_SUPPRESS',
+  'TIM_NOTIFY_SUPPRESS_INNER',
+  'TIM_OUTPUT_SOCKET',
+  'TIM_SERVER_HOSTNAME',
+  'TIM_SERVER_PORT',
+  'TIM_SKIP_AUTO_CLAIM',
+  'TIM_SUMMARY_ENABLED',
+  'TIM_USER',
+  'TIM_WEBHOOK_POLL_INTERVAL',
+  'TIM_WEBHOOK_SERVER_URL',
+  'TIM_WS_BEARER_TOKEN',
+  'TIM_WS_PORT',
+]);
+
 function toHeadlessPlanSummary(row: PlanRow | null): HeadlessPlanSummary | undefined {
   if (!row) {
     return undefined;
@@ -44,11 +76,12 @@ function toHeadlessPlanSummary(row: PlanRow | null): HeadlessPlanSummary | undef
   };
 }
 
-export async function createBunSpawnAgent(options: { cwd: string }): Promise<SpawnAgentFn> {
-  const env = await buildWorkspaceCommandEnv(options.cwd);
+export async function createBunSpawnAgent(_options: { cwd: string }): Promise<SpawnAgentFn> {
+  const inheritedEnv = scrubParentTimEnvironment(process.env);
   // Parallel agent runs cannot share a primary workspace or interactive stdin.
-  return (planId: number, cwd: string): SpawnAgentResult => {
+  return async (planId: number, cwd: string): Promise<SpawnAgentResult> => {
     const args = buildChildAgentArgs(planId);
+    const env = await buildWorkspaceCommandEnv(cwd, undefined, { inheritedEnv });
 
     const logFile = createLogFile('agent-multi-child', planId);
     try {
@@ -70,6 +103,30 @@ export async function createBunSpawnAgent(options: { cwd: string }): Promise<Spa
       throw err;
     }
   };
+}
+
+function scrubParentTimEnvironment(
+  inheritedEnv: NodeJS.ProcessEnv
+): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {};
+
+  for (const [key, value] of Object.entries(inheritedEnv)) {
+    if (shouldPassParentTimEnvironmentVariable(key)) {
+      env[key] = value;
+    }
+  }
+
+  return env;
+}
+
+function shouldPassParentTimEnvironmentVariable(key: string): boolean {
+  if (!key.startsWith('TIM_')) {
+    return true;
+  }
+  if (RESERVED_TIM_ENVIRONMENT_VARIABLE_SET.has(key)) {
+    return false;
+  }
+  return TIM_CHILD_ENV_PASSTHROUGH.has(key);
 }
 
 export function buildChildAgentArgs(

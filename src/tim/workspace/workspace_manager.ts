@@ -11,6 +11,10 @@ import {
 } from '../../common/git.js';
 import { executePostApplyCommand } from '../actions.js';
 import type { PostApplyCommand, TimConfig } from '../configSchema.js';
+import {
+  buildTimEnvironmentTemplateContext,
+  type TimEnvironmentTemplateContext,
+} from '../environment.js';
 import { WorkspaceLock } from './workspace_lock.js';
 import { getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
@@ -21,6 +25,16 @@ import { readPlanFile } from '../plans.js';
 import { findPrimaryWorkspaceForRepository } from './workspace_info.js';
 import type { PlanSchema } from '../planSchema.js';
 import { DEFAULT_WORKSPACE_CLONE_LOCATION } from './workspace_paths.js';
+
+interface WorkspaceCommandEnvironmentContextInput {
+  repoPath: string;
+  workspaceId: string;
+  workspaceName?: string | null;
+  workspacePath: string;
+  planFilePath?: string;
+  branch?: string;
+  planData?: PlanSchema;
+}
 
 /**
  * Interface representing a created workspace
@@ -45,7 +59,13 @@ export async function runWorkspaceUpdateCommands(
   workspacePath: string,
   config: TimConfig,
   taskId: string,
-  planFilePath?: string
+  planFilePath?: string,
+  environmentContext?: {
+    repoPath?: string;
+    workspaceName?: string | null;
+    branch?: string;
+    planData?: PlanSchema;
+  }
 ): Promise<boolean> {
   const updateCommands = config.workspaceCreation?.workspaceUpdateCommands;
   if (!updateCommands?.length) {
@@ -69,13 +89,51 @@ export async function runWorkspaceUpdateCommands(
     };
 
     log(`Running workspace update command: "${commandConfig.title || commandConfig.command}"`);
-    const success = await executePostApplyCommand(commandWithEnv, workspacePath, false);
+    const success = await executePostApplyCommand(commandWithEnv, workspacePath, false, {
+      timEnvironment: {
+        environment: config.environment,
+        context: buildWorkspaceCommandEnvironmentContext({
+          repoPath: environmentContext?.repoPath ?? workspacePath,
+          workspaceId: taskId,
+          workspaceName: environmentContext?.workspaceName ?? taskId,
+          workspacePath,
+          planFilePath,
+          branch: environmentContext?.branch,
+          planData: environmentContext?.planData,
+        }),
+      },
+    });
     if (!success && !commandConfig.allowFailure) {
       return false;
     }
   }
 
   return true;
+}
+
+function buildWorkspaceCommandEnvironmentContext({
+  repoPath,
+  workspaceId,
+  workspaceName,
+  workspacePath,
+  planFilePath,
+  branch,
+  planData,
+}: WorkspaceCommandEnvironmentContextInput): TimEnvironmentTemplateContext {
+  return buildTimEnvironmentTemplateContext({
+    repoPath,
+    workspace: {
+      workspaceId,
+      workspaceName: workspaceName ?? workspaceId,
+      workspacePath,
+    },
+    plan: {
+      planId: planData?.id,
+      planUuid: planData?.uuid,
+      planFilePath,
+      branch,
+    },
+  });
 }
 
 const COPY_FILE_CLONE_FLAG = fsConstants?.COPYFILE_FICLONE;
@@ -1197,7 +1255,20 @@ export async function createWorkspace(
 
       // Execute the command using executePostApplyCommand with targetClonePath as the git root
       // Note: workingDirectory will be resolved against targetClonePath by executePostApplyCommand
-      const success = await executePostApplyCommand(commandWithEnv, targetClonePath, false);
+      const success = await executePostApplyCommand(commandWithEnv, targetClonePath, false, {
+        timEnvironment: {
+          environment: config.environment,
+          context: buildWorkspaceCommandEnvironmentContext({
+            repoPath: mainRepoRoot,
+            workspaceId: taskId,
+            workspaceName: taskId,
+            workspacePath: targetClonePath,
+            planFilePath: planFilePathInWorkspace,
+            branch: shouldCreateBranch ? branchName : undefined,
+            planData: options?.planData,
+          }),
+        },
+      });
 
       if (!success && !commandConfig.allowFailure) {
         log(`Post-clone command failed and failure is not allowed. Cleaning up workspace.`);

@@ -1,8 +1,15 @@
 import path from 'path';
-import { buildWorkspaceCommandEnv } from '../common/env.js';
+import {
+  buildWorkspaceCommandEnv,
+  type TimWorkspaceCommandEnvironmentOptions,
+} from '../common/env.js';
 import { getGitRoot } from '../common/git.js';
 import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import { type PostApplyCommand } from './configSchema.js';
+
+export interface ExecutePostApplyCommandOptions {
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+}
 
 /**
  * Executes a single post-apply command as defined in the configuration.
@@ -23,7 +30,8 @@ import { type PostApplyCommand } from './configSchema.js';
 export async function executePostApplyCommand(
   commandConfig: PostApplyCommand,
   overrideGitRoot?: string,
-  printLog = true
+  printLog = true,
+  options?: ExecutePostApplyCommandOptions
 ): Promise<boolean> {
   let effectiveGitRoot: string;
   try {
@@ -47,7 +55,9 @@ export async function executePostApplyCommand(
     ? path.resolve(effectiveGitRoot, commandConfig.workingDirectory)
     : effectiveGitRoot;
 
-  const env = await buildWorkspaceCommandEnv(cwd, commandConfig.env);
+  const env = await buildWorkspaceCommandEnv(cwd, commandConfig.env, {
+    timEnvironment: options?.timEnvironment,
+  });
 
   if (printLog) {
     log(boldMarkdownHeaders(`\nRunning post-apply command: "${commandConfig.title}"...`));

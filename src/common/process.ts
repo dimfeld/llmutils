@@ -20,7 +20,7 @@ import { debugLog, log, sendStructured, writeStderr, writeStdout } from '../logg
 import { getUsingJj, hasUncommittedChanges } from './git.js';
 import { debug, quiet, setDebug, setQuiet } from './process_state.js';
 import type { StructuredMessage } from '../logging/structured_messages.js';
-import { buildWorkspaceCommandEnv } from './env.js';
+import { buildWorkspaceCommandEnv, type TimWorkspaceCommandEnvironmentOptions } from './env.js';
 export { debug, quiet, setDebug, setQuiet };
 
 /** The type of executor that may have spawned this process */
@@ -115,6 +115,7 @@ export function logSpawn<
 export type SpawnAndLogOutputOptions = {
   cwd?: string;
   env?: Record<string, string>;
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
   quiet?: boolean;
   stdin?: string;
   formatStdout?: (output: string) => StructuredMessage | StructuredMessage[] | string;
@@ -338,7 +339,9 @@ export async function spawnWithStreamingIO(
   options?: SpawnAndLogOutputOptions
 ): Promise<StreamingProcess> {
   debugLog('Running', cmd, options);
-  const env = await buildWorkspaceCommandEnv(options?.cwd, options?.env);
+  const env = await buildWorkspaceCommandEnv(options?.cwd, options?.env, {
+    timEnvironment: options?.timEnvironment,
+  });
   const proc = Bun.spawn(cmd, {
     cwd: options?.cwd,
     env,
@@ -371,7 +374,9 @@ export async function spawnAndLogOutput(
   }
 
   debugLog('Running', cmd, options);
-  const env = await buildWorkspaceCommandEnv(options?.cwd, options?.env);
+  const env = await buildWorkspaceCommandEnv(options?.cwd, options?.env, {
+    timEnvironment: options?.timEnvironment,
+  });
   log(`> ${cmd.join(' ')}`);
   const proc = Bun.spawn(cmd, {
     cwd: options?.cwd,

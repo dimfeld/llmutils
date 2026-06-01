@@ -1,6 +1,9 @@
 import type { FileSink } from 'bun';
 import { createLineSplitter } from '../../../common/process';
-import { buildWorkspaceCommandEnv } from '../../../common/env.js';
+import {
+  buildWorkspaceCommandEnv,
+  type TimWorkspaceCommandEnvironmentOptions,
+} from '../../../common/env.js';
 import { debugLog, writeStderr } from '../../../logging';
 
 type JsonRpcId = number | string;
@@ -65,6 +68,7 @@ export interface TurnSteerParams {
 export interface ConnectionOptions {
   cwd: string;
   env?: Record<string, string>;
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
   onNotification?: (method: string, params: unknown) => void;
   onServerRequest?: (method: string, id: number, params: unknown) => Promise<unknown>;
   onExit?: (info: { exitCode: number; signal?: NodeJS.Signals }) => void;
@@ -171,7 +175,9 @@ export class CodexAppServerConnection {
   }
 
   static async create(options: ConnectionOptions): Promise<CodexAppServerConnection> {
-    const env = await buildWorkspaceCommandEnv(options.cwd, options.env);
+    const env = await buildWorkspaceCommandEnv(options.cwd, options.env, {
+      timEnvironment: options.timEnvironment,
+    });
     const connection = new CodexAppServerConnection({
       ...options,
       env,

@@ -898,7 +898,13 @@ async function tryReuseExistingWorkspace(
         workspace.workspacePath,
         config,
         workspace.taskId,
-        planFilePathInWorkspace
+        planFilePathInWorkspace,
+        {
+          repoPath: options.mainRepoRoot,
+          workspaceName: workspace.name,
+          branch: prepareResult.actualBranchName,
+          planData: options.planData,
+        }
       );
       if (!updateSuccess) {
         const failureReason = 'Failed to run workspace update commands for workspace reuse';

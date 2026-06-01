@@ -605,6 +605,47 @@ describe('create_pr command helpers', () => {
       expect(prompt).not.toContain('gh pr create --draft --head <branch-name> --base main');
     });
 
+    test('uses original repo path for TIM_REPO_PATH when creating from workspace directory', async () => {
+      const executeMock = vi.fn(async (..._args: unknown[]) => {});
+      mockBuildExecutorAndLog.mockReturnValueOnce({ execute: executeMock } as any);
+      mockGetUsingJj.mockResolvedValueOnce(true);
+      mockGetTrunkBranch.mockResolvedValueOnce('main');
+      vi.spyOn(Bun, 'spawn').mockReturnValueOnce(createSpawnResult(0, JSON.stringify([])));
+
+      await createOrUpdatePrForPlan(
+        {
+          id: 410,
+          uuid: 'plan-410',
+          status: 'needs_review',
+          tasks: [],
+          title: 'Workspace PR',
+          branch: 'feature-410',
+          pullRequest: [],
+        } as unknown as PlanSchema,
+        '/workspaces/repo-410/.tim/plans/410.plan.md',
+        {
+          baseDir: '/workspaces/repo-410',
+          repoPath: '/repo',
+          config: {},
+        }
+      );
+
+      expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          baseDir: '/workspaces/repo-410',
+          timEnvironment: expect.objectContaining({
+            context: expect.objectContaining({
+              repoPath: '/repo',
+              workspacePath: '/workspaces/repo-410',
+            }),
+          }),
+        }),
+        expect.any(Object),
+        expect.any(Object)
+      );
+    });
+
     test('fetches resolved basePlan branch before computing git merge-base', async () => {
       const executeMock = vi.fn(async (..._args: unknown[]) => {});
       mockBuildExecutorAndLog.mockReturnValueOnce({ execute: executeMock } as any);

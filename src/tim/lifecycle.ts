@@ -1,6 +1,9 @@
 import path from 'node:path';
 import { error, log, warn, writeStderr, writeStdout } from '../logging.js';
-import { buildWorkspaceCommandEnv } from '../common/env.js';
+import {
+  buildWorkspaceCommandEnv,
+  type TimWorkspaceCommandEnvironmentOptions,
+} from '../common/env.js';
 import type { LifecycleCommand, LifecycleCommandContext } from './configSchema.js';
 import type { WorkspaceType } from './db/workspace.js';
 import { isShuttingDown } from './shutdown_state.js';
@@ -8,6 +11,10 @@ import { isShuttingDown } from './shutdown_state.js';
 type LifecycleMode = 'run' | 'daemon';
 type StartupState = 'pending' | 'skipped' | 'succeeded' | 'failed' | 'running';
 type LifecycleSubprocess = Bun.Subprocess<'ignore', 'pipe', 'pipe'>;
+
+export interface LifecycleManagerOptions {
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+}
 
 interface LifecycleCommandState {
   command: LifecycleCommand;
@@ -57,7 +64,8 @@ export class LifecycleManager {
     private readonly baseDir: string,
     private readonly workspaceType: WorkspaceType | undefined,
     private readonly commandContext: LifecycleCommandContext = 'agent',
-    private readonly shutdownTimeoutMs = SHUTDOWN_COMMAND_TIMEOUT_MS
+    private readonly shutdownTimeoutMs = SHUTDOWN_COMMAND_TIMEOUT_MS,
+    private readonly options: LifecycleManagerOptions = {}
   ) {
     this.states = (commands ?? []).map((command) => ({
       command,
@@ -384,7 +392,7 @@ export class LifecycleManager {
   private async spawnDaemon(command: LifecycleCommand): Promise<LifecycleSubprocess> {
     const shellCommand = getShellCommand(command.command);
     log(`> ${shellCommand.join(' ')}`);
-    const env = await buildWorkspaceCommandEnv(this.baseDir, command.env);
+    const env = await this.buildCommandEnv(command.env);
     const proc = Bun.spawn(shellCommand, {
       cwd: this.resolveCwd(command),
       detached: true,
@@ -430,7 +438,7 @@ export class LifecycleManager {
   ): Promise<number> {
     const shellCommand = getShellCommand(command.command);
     log(`> ${shellCommand.join(' ')}`);
-    const env = await buildWorkspaceCommandEnv(this.baseDir, commandConfig.env);
+    const env = await this.buildCommandEnv(commandConfig.env);
     const proc = Bun.spawn(shellCommand, {
       cwd: this.resolveCwd(commandConfig),
       detached: command.trackAsShutdown ? true : undefined,
@@ -508,6 +516,14 @@ export class LifecycleManager {
 
   private isProcessRunning(proc: LifecycleSubprocess): boolean {
     return proc.exitCode === null;
+  }
+
+  private async buildCommandEnv(
+    commandEnv: Record<string, string> | undefined
+  ): Promise<Record<string, string>> {
+    return await buildWorkspaceCommandEnv(this.baseDir, commandEnv, {
+      timEnvironment: this.options.timEnvironment,
+    });
   }
 
   private async raceWithTimeout<T>(

@@ -550,6 +550,36 @@ describe('runProofGeneration', () => {
     );
   });
 
+  test('passes proof workspace and plan context through tim environment options', async () => {
+    const config = {
+      ...makeConfig(),
+      environment: {
+        TIM_PROOF_MARKER: 'proof_{{workspacePath}}_{{planId}}_{{planUuid}}',
+      },
+    };
+    const { executor } = makeFakeExecutor();
+    vi.mocked(buildExecutorAndLog).mockReturnValue(executor);
+
+    await runProofGeneration({ ...makeOptions(config), config });
+
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        baseDir: tempDir,
+        timEnvironment: {
+          environment: config.environment,
+          context: expect.objectContaining({
+            repoPath: tempDir,
+            workspacePath: tempDir,
+            planId: '1',
+            planUuid: PLAN_UUID,
+          }),
+        },
+      }),
+      expect.anything()
+    );
+  });
+
   // ─── artifacts directory safety ──────────────────────────────────────────
 
   test('rejects .tim/proofs when it is a symlink pointing outside the workspace', async () => {

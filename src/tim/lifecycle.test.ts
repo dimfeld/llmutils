@@ -282,6 +282,111 @@ describe('LifecycleManager', () => {
     expect(events).toEqual(['start-1', 'start-2', 'stop-2', 'stop-1']);
   });
 
+  test('startup check and shutdown commands receive tim environment with shell expansion', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'env command',
+          check: `printf 'check:%s:%s\\n' "$TIM_LIFECYCLE_MARKER" "$TIM_PLAN_ID" >> ${JSON.stringify(logFile)}; exit 1`,
+          command: `printf 'start:%s:%s\\n' "$TIM_LIFECYCLE_MARKER" "$TIM_PLAN_ID" >> ${JSON.stringify(logFile)}`,
+          shutdown: `printf 'stop:%s:%s\\n' "$TIM_LIFECYCLE_MARKER" "$TIM_PLAN_ID" >> ${JSON.stringify(logFile)}`,
+        },
+      ],
+      tempDir,
+      undefined,
+      'agent',
+      undefined,
+      {
+        timEnvironment: {
+          environment: {
+            TIM_LIFECYCLE_MARKER: 'plan-{{planId}}',
+          },
+          context: {
+            planId: '374',
+          },
+        },
+      }
+    );
+
+    await manager.startup();
+    await manager.shutdown();
+
+    expect(await readLines(logFile)).toEqual([
+      'check:plan-374:374',
+      'start:plan-374:374',
+      'stop:plan-374:374',
+    ]);
+  });
+
+  test('lifecycle command-local env overrides tim project environment', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'override command',
+          command: `printf '%s\\n' "$TIM_LIFECYCLE_MARKER" >> ${JSON.stringify(logFile)}`,
+          env: {
+            TIM_LIFECYCLE_MARKER: 'from-command',
+          },
+        },
+      ],
+      tempDir,
+      undefined,
+      'agent',
+      undefined,
+      {
+        timEnvironment: {
+          environment: {
+            TIM_LIFECYCLE_MARKER: 'from-project-{{planId}}',
+          },
+          context: {
+            planId: '374',
+          },
+        },
+      }
+    );
+
+    await manager.startup();
+
+    expect(await readLines(logFile)).toEqual(['from-command']);
+  });
+
+  test('lifecycle workingDirectory does not change .env or tim environment context', async () => {
+    const childDir = path.join(tempDir, 'child');
+    await fs.mkdir(childDir);
+    await fs.writeFile(path.join(tempDir, '.env'), 'TIM_LIFECYCLE_DOTENV=from-base\n');
+    await fs.writeFile(path.join(childDir, '.env'), 'TIM_LIFECYCLE_DOTENV=from-child\n');
+
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'working directory command',
+          command: `printf '%s|%s|%s\\n' "$PWD" "$TIM_LIFECYCLE_DOTENV" "$TIM_LIFECYCLE_CONTEXT" >> ${JSON.stringify(logFile)}`,
+          workingDirectory: 'child',
+        },
+      ],
+      tempDir,
+      undefined,
+      'agent',
+      undefined,
+      {
+        timEnvironment: {
+          environment: {
+            TIM_LIFECYCLE_CONTEXT: '{{workspaceId}}|{{workspacePath}}',
+          },
+          context: {
+            workspaceId: 'workspace-374',
+            workspacePath: tempDir,
+          },
+        },
+      }
+    );
+
+    await manager.startup();
+
+    const expectedPwd = await fs.realpath(childDir);
+    expect(await readLines(logFile)).toEqual([`${expectedPwd}|from-base|workspace-374|${tempDir}`]);
+  });
+
   test('daemon commands are spawned and terminated during shutdown', async () => {
     const manager = new LifecycleManager(
       [
@@ -302,6 +407,38 @@ describe('LifecycleManager', () => {
     await manager.shutdown();
     const events = await readLines(logFile);
     expect(events).toContain('daemon-term');
+  });
+
+  test('daemon commands receive tim environment', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'env daemon',
+          command: `printf 'daemon:%s:%s\\n' "$TIM_DAEMON_MARKER" "$TIM_PLAN_ID" >> ${JSON.stringify(logFile)}; while true; do sleep 1; done`,
+          mode: 'daemon',
+        },
+      ],
+      tempDir,
+      undefined,
+      'agent',
+      undefined,
+      {
+        timEnvironment: {
+          environment: {
+            TIM_DAEMON_MARKER: 'daemon-{{planId}}',
+          },
+          context: {
+            planId: '374',
+          },
+        },
+      }
+    );
+
+    await manager.startup();
+    await waitForLine(logFile, 'daemon:daemon-374:374');
+    await manager.shutdown();
+
+    expect(await readLines(logFile)).toContain('daemon:daemon-374:374');
   });
 
   test('daemon startup fails when the process exits immediately with a non-zero code', async () => {

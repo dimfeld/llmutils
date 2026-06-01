@@ -1,4 +1,5 @@
 import { commitAll } from '../../../common/process.js';
+import type { TimWorkspaceCommandEnvironmentOptions } from '../../../common/env.js';
 import { boldMarkdownHeaders, log, warn } from '../../../logging.js';
 import { executePostApplyCommand } from '../../actions.js';
 import { type TimConfig } from '../../configSchema.js';
@@ -29,6 +30,7 @@ export async function executeStubPlan({
   finalReview,
   configPath,
   terminalInput,
+  timEnvironment,
 }: {
   config: TimConfig;
   baseDir: string;
@@ -41,6 +43,7 @@ export async function executeStubPlan({
   finalReview?: boolean;
   configPath?: string;
   terminalInput?: boolean;
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
 }): Promise<StubPlanExecutionResult> {
   // Update plan status to in_progress
   if (!isShuttingDown()) {
@@ -105,7 +108,9 @@ export async function executeStubPlan({
       if (isShuttingDown()) {
         return {};
       }
-      const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
+      const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir, true, {
+        timEnvironment,
+      });
       if (!commandSucceeded) {
         throw new Error(`Required command "${commandConfig.title}" failed`);
       }

@@ -583,6 +583,36 @@ describe('executeCodexStepViaAppServer', () => {
     expect(createOptions?.env?.TIM_OUTPUT_SOCKET).toEqual(expect.any(String));
   });
 
+  test('passes project environment options and Codex app-server env overrides to connection', async () => {
+    const harness = await createHarness();
+    const timEnvironment = {
+      environment: {
+        TIM_DATABASE_NAME: 'db_{{planId}}',
+      },
+      context: {
+        planId: '374',
+      },
+    };
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    await harness.executeCodexStepViaAppServer('prompt', '/repo', {}, { timEnvironment });
+
+    expect(harness.connectionCreateOptions.current).toMatchObject({
+      cwd: '/repo',
+      timEnvironment,
+      env: {
+        TIM_EXECUTOR: 'codex',
+        TIM_NOTIFY_SUPPRESS: '1',
+      },
+    });
+  });
+
   test('wires approval handler into app-server connection', async () => {
     const harness = await createHarness();
 

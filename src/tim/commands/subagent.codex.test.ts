@@ -419,6 +419,41 @@ describe('subagent command - prompt construction and executor delegation', () =>
     );
   });
 
+  test('passes plan and repository context through tim environment options', async () => {
+    effectiveConfigOverride = {
+      paths: { tasks: tasksDir },
+      models: {},
+      executors: {},
+      agents: {},
+      environment: {
+        TIM_SUBAGENT_MARKER: 'subagent_{{repoPath}}_{{workspacePath}}_{{planId}}',
+      },
+    };
+    currentPlanData = {
+      ...currentPlanData,
+      uuid: '22222222-2222-4222-8222-222222222222',
+      branch: 'feature/subagent-env',
+    };
+
+    await handleSubagentCommand('implementer', 42, { executor: 'codex-cli' }, {});
+
+    expect(capturedCodexOptions).toEqual(
+      expect.objectContaining({
+        timEnvironment: {
+          environment: effectiveConfigOverride.environment,
+          context: expect.objectContaining({
+            repoPath: tempDir,
+            workspacePath: tempDir,
+            planId: '42',
+            planUuid: '22222222-2222-4222-8222-222222222222',
+            planFilePath,
+            branch: 'feature/subagent-env',
+          }),
+        },
+      })
+    );
+  });
+
   test('uses subagents config model for codex subagent when CLI model is not set', async () => {
     effectiveConfigOverride = {
       paths: { tasks: tasksDir },

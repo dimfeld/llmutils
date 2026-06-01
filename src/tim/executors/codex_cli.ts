@@ -46,7 +46,8 @@ export class CodexCliExecutor implements Executor {
         planInfo,
         this.sharedOptions.baseDir,
         this.sharedOptions.model,
-        this.timConfig
+        this.timConfig,
+        { timEnvironment: this.sharedOptions.timEnvironment }
       );
     }
 
@@ -65,6 +66,7 @@ export class CodexCliExecutor implements Executor {
               ? 'chat-session'
               : 'single-turn',
           terminalInput: this.sharedOptions.terminalInput,
+          timEnvironment: this.sharedOptions.timEnvironment,
           reasoningLevel:
             planInfo.executionMode === 'planning'
               ? (this.timConfig.executors?.[CodexCliExecutorName]?.reasoning?.generate ?? 'high')

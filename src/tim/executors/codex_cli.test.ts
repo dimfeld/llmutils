@@ -357,6 +357,54 @@ describe('CodexCliExecutor - failure detection across agents', () => {
   });
 });
 
+describe('CodexCliExecutor project environment threading', () => {
+  test('passes shared timEnvironment into bare-mode Codex subprocess options', async () => {
+    const executeCodexStep = vi.fn(async () => 'done');
+    vi.doMock('../../common/git.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../common/git.js')>();
+      return {
+        ...actual,
+        getGitRoot: vi.fn(async () => '/tmp/codex-env-threading'),
+      };
+    });
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep,
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
+    const timEnvironment = {
+      environment: {
+        TIM_DATABASE_NAME: 'db_{{planId}}',
+      },
+      context: {
+        planId: '374',
+      },
+    };
+    const executor = new CodexCliExecutor(
+      {},
+      {
+        baseDir: '/tmp/codex-env-threading',
+        timEnvironment,
+      },
+      {} as any
+    );
+
+    await executor.execute('prompt', {
+      planId: '374',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/codex-env-threading/374.plan.md',
+      executionMode: 'bare',
+    });
+
+    expect(executeCodexStep).toHaveBeenCalledWith(
+      'prompt',
+      '/tmp/codex-env-threading',
+      {},
+      expect.objectContaining({ timEnvironment })
+    );
+  });
+});
+
 describe('CodexCliExecutor - tdd execution mode routing', () => {
   const tempDir = '/tmp/codex-routing-test';
 

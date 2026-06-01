@@ -14,6 +14,7 @@ import {
   SLACK_DAILY_DIGEST_TIME_PATTERN,
   isValidIanaTimeZone,
 } from '../common/slack/slack_daily_digest_config.js';
+import { RESERVED_TIM_ENVIRONMENT_VARIABLE_SET } from './environment_templates.js';
 
 /**
  * Schema for a single command to be executed after applying changes.
@@ -296,6 +297,30 @@ export const proofGenerationSchema = z
   })
   .strict();
 
+export const timEnvironmentVariableNameSchema = z
+  .string()
+  .regex(
+    /^[A-Z_][A-Z0-9_]*$/,
+    'Environment variable names must use uppercase letters, digits, and underscores, and must not start with a digit'
+  )
+  .refine((name) => !RESERVED_TIM_ENVIRONMENT_VARIABLE_SET.has(name), {
+    message: 'Reserved TIM built-in environment variables cannot be configured',
+  });
+
+export const timEnvironmentEntrySchema = z.union([
+  z.string(),
+  z
+    .object({
+      value: z.string(),
+      precedence: z.enum(['override-dotenv']).optional(),
+    })
+    .strict(),
+]);
+
+export const timEnvironmentConfigSchema = z
+  .record(timEnvironmentVariableNameSchema, timEnvironmentEntrySchema)
+  .describe('Project-level environment variables rendered at process launch time');
+
 /**
  * Main configuration schema for tim.
  */
@@ -327,6 +352,8 @@ export const timConfigSchema = z
     slack: slackConfigSchema
       .optional()
       .describe('Machine-local Slack workspace configuration for outbound notifications'),
+    /** Project-level environment variables rendered at process launch time. */
+    environment: timEnvironmentConfigSchema.optional(),
     /** Issue tracking service to use for import commands and issue-related operations. Defaults to 'github'. */
     issueTracker: z
       .enum(['github', 'linear'])
@@ -867,6 +894,7 @@ export interface TimRuntimeConfigMetadata {
 export type TimConfig = z.output<typeof timConfigSchema> & TimRuntimeConfigMetadata;
 export type TimConfigInput = z.input<typeof timConfigSchema>;
 export type ProofGenerationConfig = z.output<typeof proofGenerationSchema>;
+export type TimEnvironmentConfig = z.output<typeof timEnvironmentConfigSchema>;
 export type PostApplyCommand = z.output<typeof postApplyCommandSchema>;
 export type LifecycleCommand = z.infer<typeof lifecycleCommandSchema>;
 export type NotificationCommand = z.output<typeof notificationCommandSchema>;

@@ -230,7 +230,8 @@ describe('setupWorkspace', () => {
       existingWorkspacePath,
       config,
       'task-existing-nested-plan',
-      copiedPlanFile
+      copiedPlanFile,
+      expect.any(Object)
     );
   });
 
@@ -369,7 +370,8 @@ describe('setupWorkspace', () => {
       existingWorkspacePath,
       config,
       'task-existing-db-plan',
-      result.planFile
+      result.planFile,
+      expect.any(Object)
     );
   });
 
@@ -832,7 +834,8 @@ describe('setupWorkspace', () => {
       existingWorkspacePath,
       config,
       'task-existing-prep',
-      copiedPlanFile
+      copiedPlanFile,
+      expect.any(Object)
     );
     expect(callOrder).toEqual(['prepare', 'update']);
     expect(result.baseDir).toBe(existingWorkspacePath);
@@ -1010,7 +1013,8 @@ describe('setupWorkspace', () => {
       existingWorkspacePath,
       config,
       'task-existing-copy-fails',
-      undefined
+      undefined,
+      expect.any(Object)
     );
   });
 

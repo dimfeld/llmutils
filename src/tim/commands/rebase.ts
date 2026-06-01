@@ -32,6 +32,7 @@ import { generateBranchNameFromPlan, resolveBranchPrefix } from './branch.js';
 import { findNextPlanFromDb } from './plan_discovery.js';
 import { pullWorkspaceRefIfExists } from './workspace.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
+import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 
 export interface RebaseCommandOptions {
   current?: boolean;
@@ -472,6 +473,16 @@ async function resolveRebaseConflicts(options: {
       options.configTerminalInput !== false &&
       process.stdin.isTTY,
     disableInactivityTimeout: true,
+    timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
+      options.config,
+      options.baseDir,
+      {
+        planId: options.plan.id,
+        planUuid: options.plan.uuid,
+        planFilePath: options.planFilePath,
+        branch: options.plan.branch,
+      }
+    ),
   };
 
   const executor = buildExecutorAndLog(options.executorName, sharedExecutorOptions, options.config);

@@ -59,6 +59,7 @@ import { spawnAndLogOutput } from '../../../common/process.js';
 import { createCodexStdoutFormatter } from './format.js';
 import { executeCodexStep } from './codex_runner.js';
 import { startSubprocessMonitor } from '../../../common/subprocess_monitor.js';
+import { executeCodexStepViaAppServer } from './app_server_runner.js';
 
 describe('executeCodexStep retries', () => {
   beforeEach(() => {
@@ -230,5 +231,54 @@ describe('executeCodexStep subprocess monitor wiring', () => {
     expect(vi.mocked(startSubprocessMonitor)).toHaveBeenCalledOnce();
     const callArg = vi.mocked(startSubprocessMonitor).mock.calls[0][0];
     expect(callArg.pollIntervalSeconds).toBe(10);
+  });
+
+  test('passes project environment options to codex subprocess', async () => {
+    setupSuccessfulSpawn();
+    const timEnvironment = {
+      environment: {
+        TIM_DATABASE_NAME: 'db_{{planId}}',
+      },
+      context: {
+        planId: '374',
+      },
+    };
+
+    await executeCodexStep('prompt', '/tmp', {} as any, {
+      timEnvironment,
+    });
+
+    expect(vi.mocked(spawnAndLogOutput).mock.calls[0][1]).toMatchObject({
+      timEnvironment,
+      env: {
+        TIM_EXECUTOR: 'codex',
+        TIM_NOTIFY_SUPPRESS: '1',
+      },
+    });
+  });
+
+  test('passes project environment options to app-server mode', async () => {
+    process.env.CODEX_USE_APP_SERVER = 'true';
+    const timEnvironment = {
+      environment: {
+        TIM_DATABASE_NAME: 'db_{{planId}}',
+      },
+      context: {
+        planId: '374',
+      },
+    };
+    vi.mocked(executeCodexStepViaAppServer).mockResolvedValue('app-server-output');
+
+    const output = await executeCodexStep('prompt', '/tmp', {} as any, {
+      timEnvironment,
+    });
+
+    expect(output).toBe('app-server-output');
+    expect(vi.mocked(executeCodexStepViaAppServer)).toHaveBeenCalledWith(
+      'prompt',
+      '/tmp',
+      {},
+      expect.objectContaining({ timEnvironment })
+    );
   });
 });

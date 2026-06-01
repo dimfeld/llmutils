@@ -430,6 +430,36 @@ describe('timAgent lifecycle integration', () => {
     expect(CleanupRegistry.getInstance().size).toBe(0);
   });
 
+  test('passes selected workspace and plan environment context to lifecycle commands', async () => {
+    const markerFile = path.join(tempDir, 'lifecycle-env-marker.txt');
+    getWorkspaceInfoByPathSpy.mockReturnValue({
+      taskId: 'workspace-374',
+      name: 'Workspace 374',
+      workspacePath: tempDir,
+      workspaceType: 'auto',
+    });
+    effectiveConfig = {
+      ...effectiveConfig,
+      environment: {
+        TIM_AGENT_LIFECYCLE_MARKER: '{{workspaceId}}|{{workspacePath}}|{{planId}}|{{planFilePath}}',
+      },
+      lifecycle: {
+        commands: [
+          {
+            title: 'Capture lifecycle env',
+            command: `printf '%s' "$TIM_AGENT_LIFECYCLE_MARKER" > ${JSON.stringify(markerFile)}`,
+          },
+        ],
+      },
+    };
+    findNextActionableItemImpl = () => null;
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(1, { log: false, summary: false, serialTasks: true }, {});
+
+    expect(await fs.readFile(markerFile, 'utf-8')).toBe(`workspace-374|${tempDir}|1|${planFile}`);
+  });
+
   test('runs lifecycle shutdown before summary tracking and log closure', async () => {
     const shutdownFile = path.join(tempDir, 'lifecycle-shutdown.txt');
     trackFileChangesSpy.mockImplementation(async () => {

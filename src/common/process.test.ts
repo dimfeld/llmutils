@@ -285,6 +285,52 @@ describe('process utilities', () => {
       }
     });
 
+    it('forwards tim environment options and keeps explicit env overrides final', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'test-spawn-tim-env-'));
+
+      try {
+        await fs.writeFile(
+          path.join(tempDir, '.env'),
+          ['TIM_PROCESS_HELPER_MARKER=from-dotenv', 'TIM_PLAN_ID=from-dotenv'].join('\n')
+        );
+
+        const result = await spawnAndLogOutput(
+          [
+            'sh',
+            '-lc',
+            'printf "%s|%s|%s|%s" "$TIM_PROCESS_HELPER_MARKER" "$TIM_OVERRIDE_DOTENV_MARKER" "$TIM_PLAN_ID" "$TIM_COMMAND_OVERRIDE"',
+          ],
+          {
+            cwd: tempDir,
+            env: {
+              TIM_COMMAND_OVERRIDE: 'from-explicit-override',
+              TIM_PROCESS_HELPER_MARKER: 'from-explicit-override',
+            },
+            timEnvironment: {
+              environment: {
+                TIM_PROCESS_HELPER_MARKER: 'project_{{planId}}',
+                TIM_OVERRIDE_DOTENV_MARKER: {
+                  value: 'override_{{planId}}',
+                  precedence: 'override-dotenv',
+                },
+              },
+              context: {
+                planId: '374',
+              },
+            },
+            quiet: true,
+          }
+        );
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toBe(
+          'from-explicit-override|override_374|374|from-explicit-override'
+        );
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
     it('should format stdout when formatStdout is provided', async () => {
       const result = await spawnAndLogOutput(['echo', 'hello'], {
         formatStdout: (output) => output.toUpperCase(),
@@ -399,6 +445,32 @@ describe('process utilities', () => {
         result.signal === 'SIGTERM' || result.exitCode === 143 || result.exitCode === 137
       ).toBeTruthy();
       expect(duration).toBeLessThan(2000);
+    });
+
+    it('forwards tim environment options while streaming', async () => {
+      const proc = await spawnWithStreamingIO(
+        ['sh', '-lc', 'printf "%s|%s" "$TIM_STREAM_MARKER" "$TIM_PLAN_ID"; cat'],
+        {
+          env: {
+            TIM_STREAM_MARKER: 'from-explicit-override',
+          },
+          timEnvironment: {
+            environment: {
+              TIM_STREAM_MARKER: 'project_{{planId}}',
+            },
+            context: {
+              planId: '374',
+            },
+          },
+          quiet: true,
+        }
+      );
+
+      await proc.stdin.end();
+      const result = await proc.result;
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe('from-explicit-override|374');
     });
   });
 

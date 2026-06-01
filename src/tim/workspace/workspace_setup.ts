@@ -529,6 +529,7 @@ export async function setupWorkspace(
         );
 
         let reusedExistingBranch = false;
+        let preparedBranchName = branchName;
         if (shouldPrepareWorkspaceBranch) {
           let prepareResult = await prepareExistingWorkspace(workspace.path, {
             baseBranch: effectiveCheckoutBranch,
@@ -553,6 +554,7 @@ export async function setupWorkspace(
 
           reusedExistingBranch = prepareResult.reusedExistingBranch ?? false;
           branchCreatedDuringSetup = shouldCreateBranch && !reusedExistingBranch;
+          preparedBranchName = prepareResult.actualBranchName ?? branchName;
         }
 
         let planFileForUpdateCommands: string | undefined = planFile;
@@ -569,7 +571,16 @@ export async function setupWorkspace(
           workspace.path,
           config,
           workspace.taskId,
-          planFileForUpdateCommands
+          planFileForUpdateCommands,
+          {
+            repoPath: baseDir,
+            workspaceName:
+              selectedWorkspace?.workspace.name ??
+              findWorkspaceInfosByTaskId(workspace.taskId)[0]?.name ??
+              workspace.taskId,
+            branch: preparedBranchName,
+            planData,
+          }
         );
         if (!updateSuccess) {
           throw new Error(

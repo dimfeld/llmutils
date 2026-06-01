@@ -89,7 +89,10 @@ export type SpawnAgentResult = {
   pid?: number;
 };
 
-export type SpawnAgentFn = (planId: number, cwd: string) => SpawnAgentResult;
+export type SpawnAgentFn = (
+  planId: number,
+  cwd: string
+) => SpawnAgentResult | Promise<SpawnAgentResult>;
 
 export type ReadPlanFn = (planUuid: string) => Promise<Pick<AgentMultiPlan, 'status'> | null>;
 
@@ -360,7 +363,7 @@ export class MultiAgentRunner {
 
       let child: SpawnAgentResult;
       try {
-        child = this.spawnAgent(next.plan.planId, this.cwd);
+        child = await this.spawnAgent(next.plan.planId, this.cwd);
       } catch (err) {
         next.status = 'failed';
         next.failureReason = `spawn failed: ${err instanceof Error ? err.message : String(err)}`;

@@ -21,6 +21,7 @@ import {
   validateDescriptionOptions,
   sanitizeTitlePrefix,
 } from '../utils/file_validation.js';
+import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 
 /**
  * Options for the description command
@@ -472,6 +473,12 @@ export async function handleDescriptionCommand(
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir: gitRoot,
     model: options.model,
+    timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(config, gitRoot, {
+      planId: planData.id,
+      planUuid: planData.uuid,
+      planFilePath: resolvedPlanFile,
+      branch: planData.branch,
+    }),
   };
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);

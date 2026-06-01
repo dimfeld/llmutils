@@ -1,5 +1,6 @@
 import type { ExecutePlanInfo, ExecutorOutput } from '../types';
 import type { TimConfig } from '../../configSchema';
+import type { TimWorkspaceCommandEnvironmentOptions } from '../../../common/env.js';
 import { CodexCliExecutorName, type CodexReasoningLevel } from '../schemas';
 import { getGitRoot } from '../../../common/git';
 import { log } from '../../../logging';
@@ -21,8 +22,10 @@ export interface ExecuteReviewModeOptions {
     cwd: string,
     config: TimConfig,
     isTaskScoped?: boolean,
-    model?: string
+    model?: string,
+    timEnvironment?: TimWorkspaceCommandEnvironmentOptions
   ) => Promise<string>;
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
 }
 
 export async function executeReviewMode(
@@ -44,7 +47,8 @@ export async function executeReviewMode(
     gitRoot,
     timConfig,
     planInfo.isTaskScoped,
-    model
+    model,
+    options?.timEnvironment
   );
 
   log('Reviewer output captured.');
@@ -83,7 +87,8 @@ async function executeCodexReviewWithSchema(
   cwd: string,
   timConfig: TimConfig,
   isTaskScoped?: boolean,
-  model?: string
+  model?: string,
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions
 ): Promise<string> {
   const useAppServer = isCodexAppServerEnabled();
   let tempDir: string | undefined;
@@ -114,6 +119,7 @@ async function executeCodexReviewWithSchema(
       outputSchema: jsonSchema,
       inactivityTimeoutMs: REVIEW_TIMEOUT_MS,
       reasoningLevel,
+      timEnvironment,
     });
   } finally {
     // Clean up the temporary directory and schema file

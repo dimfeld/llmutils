@@ -498,6 +498,7 @@ export class ClaudeCodeExecutor implements Executor {
       prompt: contextContent + '\n\nBe sure to provide the structured output with your response',
       cwd: gitRoot,
       timConfig: this.timConfig,
+      timEnvironment: this.sharedOptions.timEnvironment,
       claudeCodeOptions: {
         ...this.options,
         reasoningEffort:
@@ -792,6 +793,7 @@ export class ClaudeCodeExecutor implements Executor {
           ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
           CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
         },
+        timEnvironment: this.sharedOptions.timEnvironment,
         cwd: gitRoot,
         inactivityTimeoutMs: disableInactivityTimeout ? undefined : executionTimeoutMs,
         initialInactivityTimeoutMs: disableInactivityTimeout ? undefined : 2 * 60 * 1000,

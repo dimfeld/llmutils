@@ -540,6 +540,7 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
 
   async function setupHarness(options?: {
     timConfig?: any;
+    timEnvironment?: any;
     streaming?: ReturnType<typeof createStreamingProcessMock>;
     normalizeThrows?: Error;
     tunnelActive?: boolean;
@@ -614,7 +615,7 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     const { ClaudeCodeExecutor } = await import('./claude_code.js');
     const executor = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
-      { baseDir: tempDir } as any,
+      { baseDir: tempDir, timEnvironment: options?.timEnvironment } as any,
       options?.timConfig ?? ({} as any)
     );
 
@@ -715,6 +716,31 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
 
     expect(harness.startSubprocessMonitorMock).toHaveBeenCalledOnce();
     expect(monitorStop).toHaveBeenCalledOnce();
+  });
+
+  test('passes shared tim environment options to the direct Claude subprocess', async () => {
+    const timEnvironment = {
+      environment: {
+        TIM_CLAUDE_MARKER: 'claude_{{planId}}',
+      },
+      context: {
+        planId: '374',
+      },
+    };
+    const harness = await setupHarness({ timEnvironment });
+
+    await harness.execute();
+
+    expect(harness.spawnWithStreamingIOMock).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        timEnvironment,
+        env: expect.objectContaining({
+          TIM_EXECUTOR: 'claude',
+          TIM_NOTIFY_SUPPRESS: '1',
+        }),
+      })
+    );
   });
 });
 

@@ -66,6 +66,7 @@ import {
   patchWorkspaceInfo,
   touchWorkspaceInfo,
 } from '../../workspace/workspace_info.js';
+import { buildTimEnvironmentTemplateContext } from '../../environment.js';
 import { setupWorkspace } from '../../workspace/workspace_setup.js';
 import {
   materializePlansForExecution,
@@ -394,6 +395,7 @@ export async function timAgent(
   let currentPlanFile = '';
   let config = getDefaultConfig();
   let currentBaseDir = process.cwd();
+  let originalBaseDir = currentBaseDir;
   let touchedWorkspacePath: string | null = null;
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
   let executionError: Error | undefined;
@@ -454,7 +456,7 @@ export async function timAgent(
       'tim agent'
     );
 
-    const originalBaseDir = currentBaseDir;
+    originalBaseDir = currentBaseDir;
     currentBaseDir = workspaceResult.baseDir;
     currentPlanFile = workspaceResult.planFile;
     touchedWorkspacePath = currentBaseDir;
@@ -543,13 +545,39 @@ export async function timAgent(
       }
     }
 
+    const workspaceInfo = getWorkspaceInfoByPath(currentBaseDir);
+    const timEnvironment = {
+      environment: config.environment,
+      context: buildTimEnvironmentTemplateContext({
+        repoPath: originalBaseDir,
+        workspace: workspaceInfo
+          ? {
+              workspaceId: workspaceInfo.taskId,
+              workspaceName: workspaceInfo.name,
+              workspacePath: workspaceInfo.workspacePath,
+            }
+          : {
+              workspacePath: currentBaseDir,
+            },
+        plan: {
+          planId: planData.id,
+          planUuid: planData.uuid,
+          planFilePath: currentPlanFile,
+          branch: planData.branch ?? recordedBranch,
+        },
+      }),
+    };
+
     if (config.lifecycle?.commands && config.lifecycle.commands.length > 0 && !isShuttingDown()) {
-      const workspaceInfo = getWorkspaceInfoByPath(currentBaseDir);
       lifecycleManager = new LifecycleManager(
         config.lifecycle.commands,
         currentBaseDir,
         workspaceInfo?.workspaceType,
-        'agent'
+        'agent',
+        undefined,
+        {
+          timEnvironment,
+        }
       );
       unregisterLifecycleCleanup = cleanupRegistry.register(() => lifecycleManager?.killDaemons());
       await lifecycleManager.startup();
@@ -601,6 +629,7 @@ export async function timAgent(
       reviewExecutor: options.reviewExecutor,
       subagentExecutor,
       dynamicSubagentInstructions,
+      timEnvironment,
     };
 
     const orchestratorExecutorOptions = buildOrchestratorExecutorOptions(executorName, config);
@@ -672,7 +701,14 @@ export async function timAgent(
         if (isShuttingDown()) {
           return null;
         }
-        const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
+        const commandSucceeded = await executePostApplyCommand(
+          commandConfig,
+          currentBaseDir,
+          true,
+          {
+            timEnvironment,
+          }
+        );
         if (!commandSucceeded) {
           return commandConfig.title;
         }
@@ -702,6 +738,7 @@ export async function timAgent(
           finalReview: options.finalReview,
           configPath: globalCliOptions.config,
           terminalInput: terminalInputEnabled,
+          timEnvironment,
         });
 
         if (stubResult.tasksAppended && stubResult.tasksAppended > 0) {
@@ -749,6 +786,7 @@ export async function timAgent(
             terminalInput: terminalInputEnabled,
             reviewThreadContext: options.reviewThreadContext,
             continuousBatches: options.continuousBatches,
+            timEnvironment,
           },
           summaryEnabled ? summaryCollector : undefined
         );
@@ -1610,6 +1648,7 @@ export async function timAgent(
         try {
           await autoCreatePrForPlan(lastKnownPlan, currentPlanFile || null, {
             baseDir: currentBaseDir,
+            repoPath: originalBaseDir,
             config,
             terminalInput: false,
           });

@@ -4,6 +4,7 @@ import { $ } from 'bun';
 import chalk from 'chalk';
 import type { Database } from 'bun:sqlite';
 import PQueue from 'p-queue';
+import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
 import { getGitRoot, getUsingJj } from '../../common/git.js';
 import { parseLineRange } from '../../common/review_line_range.js';
 import { log, warn, error } from '../../logging.js';
@@ -22,6 +23,10 @@ import {
 import { buildExecutorAndLog } from '../executors/index.js';
 import type { Executor, ExecutorOutput } from '../executors/types.js';
 import {
+  buildTimWorkspaceCommandEnvironmentOptionsForPath,
+  getWorkspaceInfoByPathIfAvailable,
+} from '../environment_options.js';
+import {
   formatSeverityGroupedIssuesForTerminal,
   generateReviewSummary,
   parseJsonReviewOutput,
@@ -33,7 +38,6 @@ import { TMP_DIR } from '../plan_materialize.js';
 import { resolveReviewExecutorSelection, type ReviewExecutorName } from '../review_runner.js';
 import { isShuttingDown } from '../shutdown_state.js';
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
-import { getWorkspaceInfoByPath } from '../workspace/workspace_info.js';
 import {
   COMBINATION_OUTPUT_SCHEMA,
   buildIssueCombinationPrompt,
@@ -113,6 +117,31 @@ export interface RunReviewGuideWorkflowOptions {
   filesReviewed?: number;
   completionLabel?: string;
   planTag?: string;
+}
+
+export function buildReviewGuideWorkflowTimEnvironment(
+  options: Pick<RunReviewGuideWorkflowOptions, 'config' | 'baseDir' | 'metadata'>
+): TimWorkspaceCommandEnvironmentOptions {
+  const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(
+    options.config,
+    options.baseDir,
+    options.metadata.kind === 'plan'
+      ? {
+          planId: options.metadata.planId,
+          planUuid: options.metadata.planUuid,
+          branch: options.metadata.headRef,
+        }
+      : {
+          branch: options.metadata.headBranch,
+        }
+  );
+  return {
+    ...timEnvironment,
+    context: {
+      ...timEnvironment.context,
+      workspacePath: timEnvironment.context.workspacePath ?? options.baseDir,
+    },
+  };
 }
 
 export async function loadCustomReviewInstructions(
@@ -1067,6 +1096,7 @@ function buildUnifiedDiffRepairPrompt(options: {
 async function repairUnifiedDiffBlock(options: {
   config: TimConfig;
   baseDir: string;
+  timEnvironment: TimWorkspaceCommandEnvironmentOptions;
   tempDir: string;
   diffText: string;
   validationError: string;
@@ -1086,6 +1116,7 @@ async function repairUnifiedDiffBlock(options: {
       terminalInput: false,
       noninteractive: true,
       extraAllowedTools: ['Bash(git apply --reverse --check:*)', 'Bash(git apply --check:*)'],
+      timEnvironment: options.timEnvironment,
     },
     options.config,
     { reasoningEffort: 'medium' }
@@ -1130,6 +1161,7 @@ async function repairUnifiedDiffBlock(options: {
 async function cleanupUnifiedDiffBlocks(options: {
   config: TimConfig;
   baseDir: string;
+  timEnvironment: TimWorkspaceCommandEnvironmentOptions;
   tempDir: string;
   guideText: string;
   reviewId: number;
@@ -1173,6 +1205,7 @@ async function cleanupUnifiedDiffBlocks(options: {
           repairUnifiedDiffBlock({
             config: options.config,
             baseDir: options.baseDir,
+            timEnvironment: options.timEnvironment,
             tempDir: options.tempDir,
             diffText: section.diffText,
             validationError: validation.reason,
@@ -1283,6 +1316,7 @@ async function runReviewIssues(options: {
 async function runCombinationStep(options: {
   config: TimConfig;
   baseDir: string;
+  timEnvironment: TimWorkspaceCommandEnvironmentOptions;
   claudeIssues: StoredReviewIssue[];
   codexIssues: StoredReviewIssue[];
   reviewId: number;
@@ -1313,6 +1347,7 @@ async function runCombinationStep(options: {
       model: 'haiku',
       terminalInput: false,
       noninteractive: true,
+      timEnvironment: options.timEnvironment,
     },
     options.config
   );
@@ -1357,6 +1392,7 @@ export async function runReviewGuideWorkflow(
   const tempPaths = getReviewTempPaths(options.baseDir, options.review.id);
   const selectedExecutorNames = getExecutorNames(options.executorSelection);
   const subjectTag = getSubjectTag(options.metadata, options.planTag);
+  const timEnvironment = buildReviewGuideWorkflowTimEnvironment(options);
   let lifecycleManager: LifecycleManager | undefined;
   let workflowError: unknown;
 
@@ -1366,12 +1402,16 @@ export async function runReviewGuideWorkflow(
       options.config.lifecycle.commands.length > 0 &&
       !isShuttingDown()
     ) {
-      const workspaceInfo = getWorkspaceInfoByPath(options.baseDir);
+      const workspaceInfo = getWorkspaceInfoByPathIfAvailable(options.baseDir);
       lifecycleManager = new LifecycleManager(
         options.config.lifecycle.commands,
         options.baseDir,
         workspaceInfo?.workspaceType,
-        'review'
+        'review',
+        undefined,
+        {
+          timEnvironment,
+        }
       );
       await lifecycleManager.startup();
     }
@@ -1408,6 +1448,7 @@ export async function runReviewGuideWorkflow(
                 : options.config.reviewGuide?.model?.codex),
             terminalInput: executorTerminalInput,
             noninteractive: executorNoninteractive,
+            timEnvironment,
           },
           options.config,
           guideExecutorName === 'claude-code' ? { reasoningEffort: 'high' } : {}
@@ -1436,6 +1477,7 @@ export async function runReviewGuideWorkflow(
             model: options.model ?? options.config.reviewGuide?.model?.claude,
             terminalInput: executorTerminalInput,
             noninteractive: executorNoninteractive,
+            timEnvironment,
           },
           options.config,
           { reasoningEffort: 'high' }
@@ -1463,6 +1505,7 @@ export async function runReviewGuideWorkflow(
             model: options.model ?? options.config.reviewGuide?.model?.codex,
             terminalInput: executorTerminalInput,
             noninteractive: executorNoninteractive,
+            timEnvironment,
           },
           options.config
         );
@@ -1528,6 +1571,7 @@ export async function runReviewGuideWorkflow(
           const cleanupResult = await cleanupUnifiedDiffBlocks({
             config: options.config,
             baseDir: options.baseDir,
+            timEnvironment,
             tempDir: tempPaths.dir,
             guideText: reviewGuide,
             reviewId: options.review.id,
@@ -1575,6 +1619,7 @@ export async function runReviewGuideWorkflow(
           finalIssues = await runCombinationStep({
             config: options.config,
             baseDir: options.baseDir,
+            timEnvironment,
             claudeIssues: claudeIssuesResult.issues,
             codexIssues: codexResult.issues,
             reviewId: options.review.id,

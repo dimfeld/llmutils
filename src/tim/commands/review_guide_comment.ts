@@ -37,6 +37,7 @@ import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { gatherPrContext, checkoutPrBranch, resolvePrUrl } from '../utils/pr_context_gathering.js';
 import { buildReviewGuideCommentPrompt, type PrReviewMetadata } from './review_pr_prompt.js';
 import { loadCustomReviewInstructions, resolveProjectContextForRepo } from './review_workflow.js';
+import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 
 /** Hidden marker used to detect an existing review-guide comment so we post at most one per PR. */
 export const REVIEW_GUIDE_COMMENT_MARKER = '<!-- tim:pr-review-guide -->';
@@ -335,6 +336,9 @@ export async function handlePrReviewGuideCommentCommand(
           model: options.model ?? configModel,
           terminalInput: false,
           noninteractive: true,
+          timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(config, baseDir, {
+            branch: prContext.headBranch,
+          }),
         },
         config,
         executorName === ClaudeCodeExecutorName ? { reasoningEffort: 'medium' } : {}

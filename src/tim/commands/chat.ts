@@ -33,6 +33,7 @@ import {
   runPostExecutionWorkspaceSync,
   runPreExecutionWorkspaceSync,
 } from '../workspace/workspace_roundtrip.js';
+import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { LATEST_GPT5_MODEL, LATEST_GPT5_MINI_MODEL } from '../constants.js';
 
 const MODEL_ALIASES = new Map<string, string>([
@@ -320,6 +321,19 @@ export async function handleChatCommand(
           {
             ...sharedExecutorOptions,
             baseDir: currentBaseDir,
+            timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
+              workspaceConfig,
+              currentBaseDir,
+              currentPlanData
+                ? {
+                    planId: currentPlanData.id,
+                    planUuid: currentPlanData.uuid,
+                    planFilePath: currentPlanFile,
+                    branch: currentPlanData.branch,
+                  }
+                : null,
+              configRepoRoot
+            ),
           },
           workspaceConfig
         );

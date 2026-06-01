@@ -40,6 +40,7 @@ import {
 import { findLatestPlanFromDb, findNextReadyDependencyFromDb } from './plan_discovery.js';
 import { resolveProjectContext } from '../plan_materialize.js';
 import { collectIssueDocuments, hasLinearIssueReferences } from './generate_issue_docs.js';
+import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 
 interface GenerateCommandOptions {
   plan?: number;
@@ -340,6 +341,17 @@ export async function handleGenerateCommand(
           terminalInput: terminalInputEnabled,
           closeTerminalInputOnResult: false,
           disableInactivityTimeout: true,
+          timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
+            config,
+            currentBaseDir,
+            {
+              planId: currentPlanId,
+              planUuid: parsedPlan.uuid,
+              planFilePath: currentPlanFile,
+              branch: parsedPlan.branch,
+            },
+            originalBaseDir
+          ),
         };
         const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 

@@ -428,6 +428,65 @@ defaultExecutor: ${DEFAULT_EXECUTOR}
       expect(config.postApplyCommands?.[0].title).toBe('Main Command');
     });
 
+    test('loadEffectiveConfig merges environment maps with local overrides', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          environment: {
+            TIM_APP_MODE: 'repo',
+            TIM_DATABASE_NAME: 'repo_{{ planId }}',
+          },
+        }),
+        'utf-8'
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          environment: {
+            TIM_DATABASE_NAME: {
+              value: 'local_{{ planId }}',
+              precedence: 'override-dotenv',
+            },
+            TIM_LOCAL_ONLY: 'local',
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.environment).toEqual({
+        TIM_APP_MODE: 'repo',
+        TIM_DATABASE_NAME: {
+          value: 'local_{{ planId }}',
+          precedence: 'override-dotenv',
+        },
+        TIM_LOCAL_ONLY: 'local',
+      });
+    });
+
+    test('loadEffectiveConfig does not insert an environment default', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          models: {
+            execution: 'test-model',
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.environment).toBeUndefined();
+    });
+
     test('loadEffectiveConfig merges global config before repository config', async () => {
       // Re-enable global config loading for this test
       const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;
@@ -441,6 +500,10 @@ defaultExecutor: ${DEFAULT_EXECUTOR}
           yaml.stringify({
             defaultExecutor: 'copy-only',
             models: { execution: 'global-exec' },
+            environment: {
+              TIM_FROM_GLOBAL: 'global',
+              TIM_SHARED: 'global',
+            },
             postApplyCommands: [
               {
                 title: 'Global Command',
@@ -457,6 +520,10 @@ defaultExecutor: ${DEFAULT_EXECUTOR}
           yaml.stringify({
             defaultExecutor: 'direct-call',
             models: { convert_yaml: 'repo-convert' },
+            environment: {
+              TIM_SHARED: 'repo',
+              TIM_FROM_REPO: 'repo',
+            },
             postApplyCommands: [
               {
                 title: 'Repo Command',
@@ -472,6 +539,11 @@ defaultExecutor: ${DEFAULT_EXECUTOR}
         expect(config.defaultExecutor).toBe('direct-call');
         expect(config.models?.execution).toBe('global-exec');
         expect(config.models?.convert_yaml).toBe('repo-convert');
+        expect(config.environment).toEqual({
+          TIM_FROM_GLOBAL: 'global',
+          TIM_SHARED: 'repo',
+          TIM_FROM_REPO: 'repo',
+        });
         expect(config.postApplyCommands?.map((command) => command.title)).toEqual([
           'Global Command',
           'Repo Command',

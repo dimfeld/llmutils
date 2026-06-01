@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import type { TimConfig } from '../../configSchema';
 import { spawnAndLogOutput } from '../../../common/process';
+import type { TimWorkspaceCommandEnvironmentOptions } from '../../../common/env.js';
 import {
   normalizeSubprocessMonitorRules,
   startSubprocessMonitor,
@@ -34,6 +35,8 @@ export interface CodexStepOptions {
   appServerMode?: CodexAppServerMode;
   /** Enable local terminal input forwarding for app-server interactive modes. */
   terminalInput?: boolean;
+  /** Project environment rendering options for Codex subprocesses. */
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
 }
 
 /**
@@ -155,6 +158,7 @@ export async function executeCodexStep(
             TIM_NOTIFY_SUPPRESS: '1',
             ...tunnelEnv,
           },
+          timEnvironment: options.timEnvironment,
           formatStdout: formatter ? (chunk: string) => formatter.formatChunk(chunk) : undefined,
           inactivityTimeoutMs,
           initialInactivityTimeoutMs: 60 * 1000, // 1 minute before first output

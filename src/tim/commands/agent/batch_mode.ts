@@ -7,6 +7,7 @@ import { getLoggerAdapter } from '../../../logging/adapter.js';
 import { ConsoleAdapter } from '../../../logging/console.js';
 import { boldMarkdownHeaders, error, log, sendStructured, warn } from '../../../logging.js';
 import { executePostApplyCommand } from '../../actions.js';
+import type { TimWorkspaceCommandEnvironmentOptions } from '../../../common/env.js';
 import { type TimConfig } from '../../configSchema.js';
 import type { Executor } from '../../executors/types.js';
 import { readPlanFile, setPlanStatusById, writePlanFile } from '../../plans.js';
@@ -88,6 +89,7 @@ export async function executeBatchMode(
     terminalInput,
     reviewThreadContext,
     continuousBatches = true,
+    timEnvironment,
   }: {
     currentPlanFile: string;
     config: TimConfig;
@@ -104,6 +106,7 @@ export async function executeBatchMode(
     terminalInput?: boolean;
     reviewThreadContext?: string;
     continuousBatches?: boolean;
+    timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
   },
   summaryCollector?: SummaryCollector
 ) {
@@ -122,7 +125,9 @@ export async function executeBatchMode(
       if (isShuttingDown()) {
         return null;
       }
-      const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
+      const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir, true, {
+        timEnvironment,
+      });
       if (!commandSucceeded) {
         return commandConfig.title;
       }

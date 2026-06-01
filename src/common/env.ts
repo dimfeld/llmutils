@@ -2,6 +2,23 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { findUp } from 'find-up';
 import * as dotenv from 'dotenv';
+import {
+  normalizeTimEnvironmentConfigEntry,
+  renderBuiltInTimEnvironment,
+  renderTimEnvironmentTemplate,
+  type TimEnvironmentConfigEntry,
+  type TimEnvironmentTemplateContext,
+} from '../tim/environment_templates.js';
+
+export interface TimWorkspaceCommandEnvironmentOptions {
+  environment?: Record<string, TimEnvironmentConfigEntry>;
+  context: TimEnvironmentTemplateContext;
+}
+
+export interface BuildWorkspaceCommandEnvOptions {
+  inheritedEnv?: Record<string, string | undefined>;
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+}
 
 export async function loadEnv() {
   const envPath = await findUp('.env');
@@ -46,17 +63,69 @@ export function filterBunNodeFromPath(pathEnv: string | undefined): string | und
 /**
  * Build a child-process environment using:
  * process.env -> workspace .env -> explicit overrides.
+ *
+ * When timEnvironment is provided, project environment variables are rendered
+ * between inherited env and workspace .env by default. Entries with
+ * precedence: override-dotenv are rendered above workspace .env. Reserved
+ * built-ins are rendered above inherited env, project env, and workspace .env.
  */
 export async function buildWorkspaceCommandEnv(
   cwd: string | undefined,
-  overrides?: Record<string, string>
+  overrides?: Record<string, string>,
+  options?: BuildWorkspaceCommandEnvOptions
 ): Promise<Record<string, string>> {
   const workspaceEnv = cwd ? await readDotEnvFromDirectory(cwd) : null;
+  const inheritedEnv = options?.inheritedEnv ?? process.env;
+
+  if (!options?.timEnvironment) {
+    const env = {
+      ...inheritedEnv,
+      ...workspaceEnv,
+      ...overrides,
+    } as Record<string, string>;
+    env.PATH = filterBunNodeFromPath(env.PATH) ?? env.PATH;
+    return env;
+  }
+
+  const renderedProjectEnv = renderProjectTimEnvironment(options.timEnvironment);
   const env = {
-    ...process.env,
+    ...inheritedEnv,
+    ...renderedProjectEnv.normal,
     ...workspaceEnv,
+    ...renderedProjectEnv.overrideDotenv,
+    ...renderedProjectEnv.builtIns,
     ...overrides,
   } as Record<string, string>;
   env.PATH = filterBunNodeFromPath(env.PATH) ?? env.PATH;
   return env;
+}
+
+function renderProjectTimEnvironment(options: TimWorkspaceCommandEnvironmentOptions): {
+  normal: Record<string, string>;
+  overrideDotenv: Record<string, string>;
+  builtIns: Record<string, string>;
+} {
+  const normal: Record<string, string> = {};
+  const overrideDotenv: Record<string, string> = {};
+
+  for (const [variableName, entry] of Object.entries(options.environment ?? {})) {
+    const normalized = normalizeTimEnvironmentConfigEntry(entry);
+    const renderedValue = renderTimEnvironmentTemplate(
+      normalized.value,
+      options.context,
+      variableName
+    );
+
+    if (normalized.precedence === 'override-dotenv') {
+      overrideDotenv[variableName] = renderedValue;
+    } else {
+      normal[variableName] = renderedValue;
+    }
+  }
+
+  return {
+    normal,
+    overrideDotenv,
+    builtIns: renderBuiltInTimEnvironment(options.context),
+  };
 }

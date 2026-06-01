@@ -1305,7 +1305,16 @@ describe('review_pr command', () => {
       ]),
       tempDir,
       undefined,
-      'review'
+      'review',
+      undefined,
+      expect.objectContaining({
+        timEnvironment: expect.objectContaining({
+          context: expect.objectContaining({
+            branch: 'feature/pr',
+            workspacePath: tempDir,
+          }),
+        }),
+      })
     );
 
     const lifecycleInstance = lifecycleManagerMocks.instances[0];

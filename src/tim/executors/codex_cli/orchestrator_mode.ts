@@ -79,6 +79,7 @@ export async function executeOrchestratorMode(
     reasoningLevel: defaultReasoning,
     appServerMode: 'single-turn-with-steering',
     terminalInput: sharedOptions.terminalInput,
+    timEnvironment: sharedOptions.timEnvironment,
   });
 
   const parsed = parseFailedReportAnywhere(output);

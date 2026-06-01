@@ -14,6 +14,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { debugLog, error, log, sendStructured, warn } from '../../../logging.js';
 import { createLineSplitter, spawnWithStreamingIO } from '../../../common/process.js';
+import type { TimWorkspaceCommandEnvironmentOptions } from '../../../common/env.js';
 import {
   normalizeSubprocessMonitorRules,
   startSubprocessMonitor,
@@ -160,6 +161,9 @@ export interface RunClaudeSubprocessOptions {
 
   /** Effective tim configuration for subprocess monitoring and related runtime behavior. */
   timConfig?: TimConfig;
+
+  /** Project environment rendering options for the subprocess. */
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
 
   /** Whether the caller is running in non-interactive mode */
   noninteractive: boolean;
@@ -418,6 +422,7 @@ export async function runClaudeSubprocess(
         ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
         CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
       },
+      timEnvironment: options.timEnvironment,
       cwd,
       inactivityTimeoutMs,
       initialInactivityTimeoutMs,

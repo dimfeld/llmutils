@@ -154,6 +154,39 @@
       },
       "additionalProperties": false
     },
+    "environment": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Z_][A-Z0-9_]*$"
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string"
+              },
+              "precedence": {
+                "type": "string",
+                "enum": [
+                  "override-dotenv"
+                ]
+              }
+            },
+            "required": [
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "description": "Project-level environment variables rendered at process launch time"
+    },
     "issueTracker": {
       "description": "Issue tracking service to use for import commands and issue-related operations",
       "type": "string",

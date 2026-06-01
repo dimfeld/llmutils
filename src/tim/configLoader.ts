@@ -93,6 +93,7 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
 
   mergeConfigKey('answerPr');
   mergeConfigKey('autoexamples');
+  mergeConfigKey('environment');
   mergeConfigKey('modelApiKeys');
   mergeConfigKey('models');
   mergeConfigKey('notifications');

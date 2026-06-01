@@ -38,6 +38,10 @@ vi.mock('../workspace/workspace_setup.js', () => ({
   setupWorkspace: vi.fn(),
 }));
 
+vi.mock('../workspace/workspace_info.js', () => ({
+  getWorkspaceInfoByPath: vi.fn(),
+}));
+
 vi.mock('../workspace/workspace_roundtrip.js', () => ({
   prepareWorkspaceRoundTrip: vi.fn(),
   runPreExecutionWorkspaceSync: vi.fn(),
@@ -57,6 +61,7 @@ import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { runUpdateDocs } from './update-docs.js';
 import { runUpdateLessons } from './update-lessons.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
+import { getWorkspaceInfoByPath } from '../workspace/workspace_info.js';
 import {
   materializePlansForExecution,
   prepareWorkspaceRoundTrip,
@@ -77,6 +82,7 @@ describe('finish command', () => {
   const runUpdateDocsSpy = vi.mocked(runUpdateDocs);
   const runUpdateLessonsSpy = vi.mocked(runUpdateLessons);
   const setupWorkspaceSpy = vi.mocked(setupWorkspace);
+  const getWorkspaceInfoByPathSpy = vi.mocked(getWorkspaceInfoByPath);
   const materializePlanSpy = vi.mocked(materializePlan);
   const executePostApplyCommandSpy = vi.mocked(executePostApplyCommand);
   const prepareWorkspaceRoundTripSpy = vi.mocked(prepareWorkspaceRoundTrip);
@@ -121,6 +127,7 @@ describe('finish command', () => {
     executePostApplyCommandSpy.mockResolvedValue(true);
     runUpdateDocsSpy.mockResolvedValue(undefined);
     runUpdateLessonsSpy.mockResolvedValue(true);
+    getWorkspaceInfoByPathSpy.mockReturnValue(null);
     setupWorkspaceSpy.mockResolvedValue({
       baseDir: '/repo/workspaces/finish',
       planFile: '/repo/workspaces/finish/.tim/plans/314.plan.md',
@@ -456,9 +463,83 @@ describe('finish command', () => {
 
     expect(executePostApplyCommandSpy).toHaveBeenCalledWith(
       { title: 'Post apply', command: 'echo ok' },
-      '/repo'
+      '/repo',
+      true,
+      {
+        timEnvironment: {
+          environment: undefined,
+          context: expect.objectContaining({
+            repoPath: '/repo',
+            workspacePath: '/repo',
+            planId: '314',
+            planUuid: '11111111-1111-4111-8111-111111111111',
+            planFilePath: '/repo/.tim/plans/314.plan.md',
+          }),
+        },
+      }
     );
     expect(executePostApplyCommandSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('passes selected workspace project environment to postApplyCommands', async () => {
+    loadEffectiveConfigSpy.mockResolvedValue({
+      environment: {
+        TIM_DATABASE_NAME: 'tim_{{workspaceId}}_{{planId}}',
+      },
+      updateDocs: {
+        mode: 'manual',
+        applyLessons: true,
+      },
+      postApplyCommands: [
+        {
+          title: 'Post apply',
+          command: 'echo "$TIM_DATABASE_NAME"',
+          env: { TIM_DATABASE_NAME: 'command_override' },
+        },
+      ],
+    } as any);
+    resolvePlanFromDbSpy.mockResolvedValue({
+      plan: {
+        ...basePlan,
+        branch: 'tim/314-finish-plan-command',
+      },
+      planPath: '/repo/.tim/plans/314.plan.md',
+    } as any);
+    getWorkspaceInfoByPathSpy.mockReturnValue({
+      taskId: 'finish-task',
+      name: 'Finish Workspace',
+      workspacePath: '/repo/workspaces/finish',
+    } as any);
+
+    await handleFinishCommand('314', { workspace: 'finish-task' }, buildCommand());
+
+    expect(getWorkspaceInfoByPathSpy).toHaveBeenCalledWith('/repo/workspaces/finish');
+    expect(executePostApplyCommandSpy).toHaveBeenCalledWith(
+      {
+        title: 'Post apply',
+        command: 'echo "$TIM_DATABASE_NAME"',
+        env: { TIM_DATABASE_NAME: 'command_override' },
+      },
+      '/repo/workspaces/finish',
+      true,
+      {
+        timEnvironment: {
+          environment: {
+            TIM_DATABASE_NAME: 'tim_{{workspaceId}}_{{planId}}',
+          },
+          context: expect.objectContaining({
+            repoPath: '/repo',
+            workspaceId: 'finish-task',
+            workspaceName: 'Finish Workspace',
+            workspacePath: '/repo/workspaces/finish',
+            planId: '314',
+            planUuid: '11111111-1111-4111-8111-111111111111',
+            planFilePath: '/repo/workspaces/finish/.tim/plans/314.plan.md',
+            branch: 'tim/314-finish-plan-command',
+          }),
+        },
+      }
+    );
   });
 
   test('throws when postApplyCommands fail after docs/lessons finish', async () => {
@@ -483,7 +564,20 @@ describe('finish command', () => {
     );
     expect(executePostApplyCommandSpy).toHaveBeenCalledWith(
       { title: 'Post apply', command: 'exit 1' },
-      '/repo'
+      '/repo',
+      true,
+      {
+        timEnvironment: {
+          environment: undefined,
+          context: expect.objectContaining({
+            repoPath: '/repo',
+            workspacePath: '/repo',
+            planId: '314',
+            planUuid: '11111111-1111-4111-8111-111111111111',
+            planFilePath: '/repo/.tim/plans/314.plan.md',
+          }),
+        },
+      }
     );
   });
 

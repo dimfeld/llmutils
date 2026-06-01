@@ -21,6 +21,7 @@ import {
   resolveEffectivePlanBaseWithSource,
 } from '../plans/base_plan_resolution.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
+import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -47,6 +48,7 @@ export interface AutoCreatePrOptions {
   model?: string;
   executor?: string;
   baseDir: string;
+  repoPath?: string;
   config: TimConfig;
   terminalInput?: boolean;
 }
@@ -349,6 +351,17 @@ async function runPrCreationExecutor(
     model: options.model ?? 'haiku',
     terminalInput: options.terminalInput ?? false,
     disableInactivityTimeout: true,
+    timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
+      options.config,
+      options.baseDir,
+      {
+        planId: plan.id,
+        planUuid: plan.uuid,
+        planFilePath: planPath,
+        branch: plan.branch,
+      },
+      options.repoPath ?? options.baseDir
+    ),
   };
   const executorOptions =
     (options.executor ?? CLAUDE_CODE_EXECUTOR_NAME) === CLAUDE_CODE_EXECUTOR_NAME
@@ -501,6 +514,7 @@ export async function handleCreatePrCommand(
         executor,
         config,
         terminalInput: effectiveTerminalInput,
+        repoPath: repoRoot,
       });
     },
   });

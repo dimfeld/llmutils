@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
   getPlanByPlanId: vi.fn(),
   getPlanByUuid: vi.fn(),
   getAgentMultiPlansForProject: vi.fn(),
+  buildWorkspaceCommandEnv: vi.fn(async () => ({ PATH: '/usr/bin' })),
   isTunnelActive: vi.fn(),
+  createLogFile: vi.fn(() => ({ fd: 7, path: '/tmp/agent-multi-child.log' })),
   runWithHeadlessAdapterIfEnabled: vi.fn(),
   updateHeadlessSessionInfo: vi.fn(),
   multiAgentRunnerConstructor: vi.fn(),
@@ -20,11 +22,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../common/env.js', () => ({
-  buildWorkspaceCommandEnv: vi.fn(async () => ({ PATH: '/usr/bin' })),
+  buildWorkspaceCommandEnv: mocks.buildWorkspaceCommandEnv,
 }));
 
-vi.mock('../../../lib/server/plan_actions.js', () => ({
-  createLogFile: vi.fn(() => ({ fd: 7, path: '/tmp/agent-multi-child.log' })),
+vi.mock('../../../common/log_files.js', () => ({
+  createLogFile: mocks.createLogFile,
 }));
 
 vi.mock('../../../common/git.js', () => ({
@@ -77,6 +79,7 @@ vi.mock('./orchestrator.js', async (importOriginal) => {
   };
 });
 
+import { buildWorkspaceCommandEnv } from '../../../common/env.js';
 import { buildChildAgentArgs, createBunSpawnAgent, handleAgentMultiCommand } from './command.js';
 
 function makeAgentPlan(overrides: Partial<AgentMultiPlan> = {}): AgentMultiPlan {
@@ -149,6 +152,7 @@ describe('agent-multi command', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   test('createBunSpawnAgent adds safe child flags for plain CLI defaults', async () => {
@@ -160,9 +164,12 @@ describe('agent-multi command', () => {
 
     const spawnAgent = await createBunSpawnAgent({ cwd: '/tmp/repo' });
 
-    const result = spawnAgent(101, '/tmp/repo');
+    const result = await spawnAgent(101, '/tmp/repo');
 
     expect(result.pid).toBe(1234);
+    expect(buildWorkspaceCommandEnv).toHaveBeenCalledWith('/tmp/repo', undefined, {
+      inheritedEnv: expect.any(Object),
+    });
     expect(spawnSpy).toHaveBeenCalledTimes(1);
     const [args, options] = spawnSpy.mock.calls[0];
     expect(args).toEqual(['tim', 'agent', '101', '--auto-workspace', '--no-terminal-input']);
@@ -175,6 +182,84 @@ describe('agent-multi command', () => {
       detached: true,
     });
     expect(closeSpy).toHaveBeenCalledWith(7);
+  });
+
+  test('createBunSpawnAgent builds env per child cwd without parent-rendered tim context', async () => {
+    vi.stubEnv('TIM_PLAN_ID', 'parent-plan');
+    vi.stubEnv('TIM_WORKSPACE_ID', 'parent-workspace');
+    vi.stubEnv('TIM_BRANCH', 'parent-branch');
+    vi.stubEnv('TIM_EXECUTOR', 'parent-executor');
+    vi.stubEnv('TIM_DATABASE_NAME', 'parent-rendered-custom');
+    vi.stubEnv('TIM_DATABASE_FILENAME', 'shared-agent-multi.db');
+    vi.stubEnv('TIM_LOAD_GLOBAL_CONFIG', '0');
+    vi.stubEnv('TIM_OUTPUT_SOCKET', '/tmp/tim.sock');
+    vi.stubEnv('TIM_SUMMARY_ENABLED', '1');
+    vi.stubEnv('NON_TIM_VALUE', 'kept');
+    mocks.buildWorkspaceCommandEnv.mockResolvedValueOnce({ PATH: '/usr/bin', CHILD: 'one' });
+    mocks.buildWorkspaceCommandEnv.mockResolvedValueOnce({ PATH: '/usr/bin', CHILD: 'two' });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue({
+      exited: Promise.resolve(0),
+      pid: 1234,
+    } as never);
+    vi.spyOn(fs, 'closeSync').mockImplementation(() => {});
+
+    const spawnAgent = await createBunSpawnAgent({ cwd: '/tmp/repo' });
+
+    await spawnAgent(101, '/tmp/child-a');
+    await spawnAgent(102, '/tmp/child-b');
+
+    expect(buildWorkspaceCommandEnv).toHaveBeenCalledTimes(2);
+    expect(buildWorkspaceCommandEnv).toHaveBeenNthCalledWith(1, '/tmp/child-a', undefined, {
+      inheritedEnv: expect.objectContaining({
+        TIM_DATABASE_FILENAME: 'shared-agent-multi.db',
+        TIM_LOAD_GLOBAL_CONFIG: '0',
+        TIM_OUTPUT_SOCKET: '/tmp/tim.sock',
+        NON_TIM_VALUE: 'kept',
+      }),
+    });
+    expect(buildWorkspaceCommandEnv).toHaveBeenNthCalledWith(2, '/tmp/child-b', undefined, {
+      inheritedEnv: expect.objectContaining({
+        TIM_DATABASE_FILENAME: 'shared-agent-multi.db',
+        TIM_LOAD_GLOBAL_CONFIG: '0',
+        TIM_OUTPUT_SOCKET: '/tmp/tim.sock',
+        NON_TIM_VALUE: 'kept',
+      }),
+    });
+
+    const inheritedEnv = vi.mocked(buildWorkspaceCommandEnv).mock.calls[0][2]?.inheritedEnv;
+    expect(inheritedEnv).not.toHaveProperty('TIM_PLAN_ID');
+    expect(inheritedEnv).not.toHaveProperty('TIM_WORKSPACE_ID');
+    expect(inheritedEnv).not.toHaveProperty('TIM_BRANCH');
+    expect(inheritedEnv).not.toHaveProperty('TIM_EXECUTOR');
+    expect(inheritedEnv).not.toHaveProperty('TIM_DATABASE_NAME');
+    expect(inheritedEnv).toMatchObject({
+      TIM_DATABASE_FILENAME: 'shared-agent-multi.db',
+      TIM_LOAD_GLOBAL_CONFIG: '0',
+      TIM_OUTPUT_SOCKET: '/tmp/tim.sock',
+      TIM_SUMMARY_ENABLED: '1',
+      NON_TIM_VALUE: 'kept',
+    });
+    expect(spawnSpy.mock.calls[0][1]?.env).toEqual({ PATH: '/usr/bin', CHILD: 'one' });
+    expect(spawnSpy.mock.calls[1][1]?.env).toEqual({ PATH: '/usr/bin', CHILD: 'two' });
+  });
+
+  test('createBunSpawnAgent rejects before spawning when child env construction fails', async () => {
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue({
+      exited: Promise.resolve(0),
+      pid: 1234,
+    } as never);
+    const closeSpy = vi.spyOn(fs, 'closeSync').mockImplementation(() => {});
+    mocks.buildWorkspaceCommandEnv.mockRejectedValueOnce(new Error('bad env template'));
+
+    const spawnAgent = await createBunSpawnAgent({ cwd: '/tmp/repo' });
+
+    await expect(spawnAgent(101, '/tmp/child-a')).rejects.toThrow('bad env template');
+    expect(buildWorkspaceCommandEnv).toHaveBeenCalledWith('/tmp/child-a', undefined, {
+      inheritedEnv: expect.any(Object),
+    });
+    expect(spawnSpy).not.toHaveBeenCalled();
+    expect(mocks.createLogFile).not.toHaveBeenCalled();
+    expect(closeSpy).not.toHaveBeenCalled();
   });
 
   test('child agent args default to non-interactive stdin', () => {

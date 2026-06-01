@@ -1,5 +1,6 @@
 import type { ExecutePlanInfo, ExecutorOutput } from '../types.js';
 import type { TimConfig } from '../../configSchema.js';
+import type { TimWorkspaceCommandEnvironmentOptions } from '../../../common/env.js';
 import { CodexCliExecutorName, type CodexReasoningLevel } from '../schemas.js';
 import { getGitRoot } from '../../../common/git.js';
 import { parseFailedReport } from '../failure_detection.js';
@@ -20,6 +21,7 @@ export async function executeBareMode(
     appServerMode?: CodexAppServerMode;
     terminalInput?: boolean;
     reasoningLevel?: CodexReasoningLevel;
+    timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
   }
 ): Promise<void | ExecutorOutput> {
   const gitRoot = await getGitRoot(baseDir);
@@ -32,6 +34,7 @@ export async function executeBareMode(
   const codexStepOptions = {
     model,
     reasoningLevel: defaultReasoningLevel,
+    timEnvironment: options?.timEnvironment,
     ...(options?.appServerMode ? { appServerMode: options.appServerMode } : {}),
     ...(options?.terminalInput !== undefined ? { terminalInput: options.terminalInput } : {}),
   } as const;

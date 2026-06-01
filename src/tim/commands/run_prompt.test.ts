@@ -457,14 +457,20 @@ describe('handleRunPromptCommand', () => {
       }
     );
 
-    expect(executeCodexPromptFn).toHaveBeenCalledWith('run this prompt', {
-      jsonSchema: '{"type":"object"}',
-      reasoningLevel: undefined,
-      allowAllTools: false,
-      cwd: process.cwd(),
-      externalRepositoryConfigDir: undefined,
-      isUsingExternalStorage: undefined,
-    });
+    expect(executeCodexPromptFn).toHaveBeenCalledWith(
+      'run this prompt',
+      expect.objectContaining({
+        jsonSchema: '{"type":"object"}',
+        reasoningLevel: undefined,
+        allowAllTools: false,
+        cwd: process.cwd(),
+        externalRepositoryConfigDir: undefined,
+        isUsingExternalStorage: undefined,
+        timEnvironment: expect.objectContaining({
+          context: expect.objectContaining({ repoPath: process.cwd() }),
+        }),
+      })
+    );
   });
 
   test('passes allowAllTools=true to claude executor when env value is injected', async () => {
@@ -485,12 +491,18 @@ describe('handleRunPromptCommand', () => {
       }
     );
 
-    expect(executeClaudePromptFn).toHaveBeenCalledWith('run this prompt', {
-      model: undefined,
-      jsonSchema: undefined,
-      allowAllTools: true,
-      cwd: process.cwd(),
-    });
+    expect(executeClaudePromptFn).toHaveBeenCalledWith(
+      'run this prompt',
+      expect.objectContaining({
+        model: undefined,
+        jsonSchema: undefined,
+        allowAllTools: true,
+        cwd: process.cwd(),
+        timEnvironment: expect.objectContaining({
+          context: expect.objectContaining({ repoPath: process.cwd() }),
+        }),
+      })
+    );
   });
 
   test('prefers injected envAllowAllTools over process.env for codex executor', async () => {
@@ -521,13 +533,19 @@ describe('handleRunPromptCommand', () => {
       }
     }
 
-    expect(executeCodexPromptFn).toHaveBeenCalledWith('run this prompt', {
-      jsonSchema: undefined,
-      reasoningLevel: undefined,
-      allowAllTools: false,
-      cwd: process.cwd(),
-      externalRepositoryConfigDir: undefined,
-      isUsingExternalStorage: undefined,
-    });
+    expect(executeCodexPromptFn).toHaveBeenCalledWith(
+      'run this prompt',
+      expect.objectContaining({
+        jsonSchema: undefined,
+        reasoningLevel: undefined,
+        allowAllTools: false,
+        cwd: process.cwd(),
+        externalRepositoryConfigDir: undefined,
+        isUsingExternalStorage: undefined,
+        timEnvironment: expect.objectContaining({
+          context: expect.objectContaining({ repoPath: process.cwd() }),
+        }),
+      })
+    );
   });
 });

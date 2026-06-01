@@ -482,6 +482,7 @@ Important config areas:
 - `subprocessMonitor` - opt-in timeouts for stuck Claude/Codex tool subprocesses
 - `updateDocs` and `applyLessons` - control finalization behavior
 - `artifactRetentionDays` - days before soft-deleted artifacts and artifacts on completed plans are eligible for purge (default 30)
+- `environment` - project-level variables rendered at process launch time with plan/workspace context
 
 The `simplify` block controls the optional code-simplification pass that runs after an agent finishes implementation and before final review. `simplify.mode` accepts `after-completion` (default) or `never`; `simplify.model` and `simplify.executor` (`claude-code` or `codex-cli`) override the executor used for the pass; `simplify.include` and `simplify.exclude` add free-form scoping guidance. The standalone `tim simplify <planId>` command always runs regardless of `simplify.mode`.
 
@@ -497,6 +498,90 @@ simplify:
 ```
 
 The web UI **Settings** tab stores per-project settings in SQLite. The project-level branch prefix there takes precedence over the config file value.
+
+### Project Environment Variables
+
+The top-level `environment` map defines project-level environment variables that tim renders with explicit plan and workspace context at process launch time. These variables and the reserved built-ins are applied across every tim-launched user process: lifecycle commands (startup/check/shutdown/daemon), post-apply commands, workspace post-clone/update commands, the Claude and Codex executor subprocesses (including Codex app-server mode), and the subagent, proof, review, and run-prompt workflows. Internal git/jj repository-maintenance plumbing is intentionally excluded.
+
+```yaml
+environment:
+  DATABASE_NAME: 'app_{{ workspaceId ?? planId ?? "main" }}'
+  DATABASE_URL:
+    value: 'postgres://localhost/{{ workspaceId ?? planId ?? "main" }}'
+    precedence: override-dotenv
+```
+
+**Key rules:**
+
+- Variable names must use uppercase letters, digits, and underscores, and must not start with a digit.
+- String shorthand uses normal priority (workspace `.env` can override it).
+- Object form accepts `value` and optional `precedence: override-dotenv` to override workspace `.env`.
+- Reserved built-in names cannot be redefined (see below).
+
+**Template placeholders:**
+
+| Placeholder     | Meaning                                                        |
+| --------------- | -------------------------------------------------------------- |
+| `workspaceId`   | Stable workspace task ID (recommended for deterministic names) |
+| `workspaceName` | Mutable display name, falling back to `workspaceId` when unset |
+| `workspacePath` | Absolute path to the selected execution workspace              |
+| `repoPath`      | Absolute path to the original/main repository root             |
+| `planId`        | Numeric plan ID                                                |
+| `planUuid`      | Plan UUID                                                      |
+| `planFilePath`  | Materialized plan file path                                    |
+| `branch`        | Plan branch (from plan metadata or generated branch name)      |
+
+Placeholders are referenced as `{{name}}` or `{{ name }}` (whitespace is allowed inside delimiters).
+
+**Fallback expressions:** Use `??` to chain placeholders and quoted literals. The renderer picks the first available, non-empty value:
+
+```yaml
+DB_SUFFIX: '{{ workspaceId ?? planId ?? "main" }}'
+```
+
+- Unknown placeholder names are errors.
+- Known placeholders whose values are unavailable are errors in simple `{{name}}` substitutions. Use a `??` fallback if a value may be absent.
+- If no operand in a fallback chain resolves, tim fails before launching the child process.
+
+**Reserved built-in variables:**
+
+tim automatically provides these environment variables to child processes when their context values are available, even without an `environment` config block:
+
+| Variable             | Corresponds to placeholder |
+| -------------------- | -------------------------- |
+| `TIM_WORKSPACE_ID`   | `workspaceId`              |
+| `TIM_WORKSPACE_NAME` | `workspaceName`            |
+| `TIM_WORKSPACE_PATH` | `workspacePath`            |
+| `TIM_REPO_PATH`      | `repoPath`                 |
+| `TIM_PLAN_ID`        | `planId`                   |
+| `TIM_PLAN_UUID`      | `planUuid`                 |
+| `TIM_PLAN_FILE_PATH` | `planFilePath`             |
+| `TIM_BRANCH`         | `branch`                   |
+
+Built-ins are tim-owned: they override same-named values from inherited shell env and workspace `.env`. Explicit per-command/per-executor `env` overrides are the only way to replace a reserved built-in.
+
+**Precedence (from lowest to highest):**
+
+1. Inherited shell environment (`process.env`)
+2. Normal-priority project `environment` variables
+3. Workspace `.env` file
+4. High-priority project `environment` variables (`precedence: override-dotenv`)
+5. Reserved built-in `TIM_*` context variables
+6. Explicit per-command/per-executor `env` overrides
+
+**Workspace detection foundation:** The context helpers can detect when tim runs inside a registered workspace root or any child directory inside one, select the nearest workspace, and populate workspace context (`workspaceId`, `workspaceName`, `workspacePath`) without needing an explicit workspace flag. In an unregistered primary/main checkout, workspace-specific values are unavailable.
+
+**Lifecycle command references:** Lifecycle commands receive the project environment layer and can reference configured variables with normal shell expansion because they run through a shell:
+
+```yaml
+lifecycle:
+  commands:
+    - title: Create workspace database
+      command: 'createdb "$DATABASE_NAME"'
+      runIn: [agent]
+```
+
+**Secrets:** The `environment` block is for deterministic, non-secret configuration values. Store secrets in your shell environment, global `~/.config/tim/config.yml` (which is not checked into source control), or workspace `.env` files.
 
 ## Proof Generation
 

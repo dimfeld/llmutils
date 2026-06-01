@@ -13,6 +13,8 @@ import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runUpdateDocs } from './update-docs.js';
 import { runUpdateLessons } from './update-lessons.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
+import { buildTimEnvironmentTemplateContext } from '../environment.js';
+import { getWorkspaceInfoByPath } from '../workspace/workspace_info.js';
 import {
   materializePlansForExecution,
   prepareWorkspaceRoundTrip,
@@ -198,8 +200,38 @@ export async function handleFinishCommand(
             return null;
           }
 
+          const workspaceInfo = getWorkspaceInfoByPath(currentBaseDir);
+          const timEnvironment = {
+            environment: config.environment,
+            context: buildTimEnvironmentTemplateContext({
+              repoPath: repoRoot,
+              workspace: workspaceInfo
+                ? {
+                    workspaceId: workspaceInfo.taskId,
+                    workspaceName: workspaceInfo.name,
+                    workspacePath: workspaceInfo.workspacePath,
+                  }
+                : {
+                    workspacePath: currentBaseDir,
+                  },
+              plan: {
+                planId: plan.id,
+                planUuid: plan.uuid,
+                planFilePath: currentPlanFile,
+                branch: plan.branch,
+              },
+            }),
+          };
+
           for (const commandConfig of config.postApplyCommands) {
-            const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
+            const commandSucceeded = await executePostApplyCommand(
+              commandConfig,
+              currentBaseDir,
+              true,
+              {
+                timEnvironment,
+              }
+            );
             if (!commandSucceeded) {
               return commandConfig.title;
             }

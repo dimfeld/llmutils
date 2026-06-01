@@ -18,6 +18,7 @@ import {
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { ensureMaterializeDir, resolveProjectContext } from '../plan_materialize.js';
 import { resolvePlanByUuid } from '../plans.js';
+import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 
 const DEFAULT_PROOF_ARTIFACTS_DIR = '.tim/proofs';
 
@@ -226,6 +227,17 @@ export async function runProofGeneration(options: RunProofGenerationOptions): Pr
     baseDir: options.workspacePath,
     model,
     terminalInput: options.terminalInput,
+    timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
+      options.config,
+      options.workspacePath,
+      {
+        planId: plan.id,
+        planUuid: plan.uuid,
+        planFilePath: planPath,
+        branch: plan.branch,
+      },
+      options.gitRoot
+    ),
   };
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, options.config);
 

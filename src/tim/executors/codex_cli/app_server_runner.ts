@@ -377,6 +377,7 @@ export async function executeCodexStepViaAppServer(
         TIM_NOTIFY_SUPPRESS: '1',
         ...tunnelEnv,
       },
+      timEnvironment: options?.timEnvironment,
       onExit: ({ exitCode, signal }) => {
         handleUnexpectedConnectionExit(exitCode, signal);
       },

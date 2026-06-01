@@ -73,6 +73,7 @@ import which from 'which';
 import { getMaterializedPlanPath, materializePlan, withPlanAutoSync } from '../plan_materialize.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
+import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { isReopenableCompletedStatus } from '../plans/plan_state_utils.js';
 const FIX_EXECUTOR_COMMANDS = {
   'claude-code': 'claude',
@@ -946,12 +947,12 @@ export async function handleReviewCommand(
     }
 
     const executeReviewFlow = async (): Promise<void> => {
+      const originalRepoRoot = await resolveRepoRoot(globalOpts.config, options.cwd);
       const workspaceMode = options.workspace !== undefined || options.autoWorkspace === true;
       if (workspaceMode) {
-        const currentBaseDir = await resolveRepoRoot(globalOpts.config, options.cwd);
         const resolvedPlanForWorkspace =
           initialResolvedPlan ??
-          (await resolveReviewPlanForWriteById(reviewPlanId, currentBaseDir));
+          (await resolveReviewPlanForWriteById(reviewPlanId, originalRepoRoot));
         const workspaceResult = await setupWorkspace(
           {
             workspace: options.workspace,
@@ -961,7 +962,7 @@ export async function handleReviewCommand(
             planUuid: resolvedPlanForWorkspace.plan.uuid,
             allowPrimaryWorkspaceWhenLocked: true,
           },
-          currentBaseDir,
+          originalRepoRoot,
           resolvedPlanForWorkspace.planPath ?? undefined,
           config,
           'tim review'
@@ -1123,6 +1124,17 @@ export async function handleReviewCommand(
         baseDir: gitRoot,
         model: options.model,
         noninteractive: isPrintMode, // Disable permissions prompts in print mode
+        timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
+          config,
+          gitRoot,
+          {
+            planId: planData.id,
+            planUuid: planData.uuid,
+            planFilePath: contextPlanFile,
+            branch: planData.branch,
+          },
+          originalRepoRoot
+        ),
       };
 
       const notifyReviewInput = async (message: string): Promise<void> => {
