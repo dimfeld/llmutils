@@ -595,6 +595,23 @@ describe('configSchema', () => {
       expect(result.lifecycle?.commands?.[0]?.runIn).toEqual(['review']);
     });
 
+    test('accepts proof as a lifecycle command context', () => {
+      const config = {
+        lifecycle: {
+          commands: [
+            {
+              title: 'proof prep',
+              command: 'pnpm install',
+              runIn: ['proof'],
+            },
+          ],
+        },
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.lifecycle?.commands?.[0]?.runIn).toEqual(['proof']);
+    });
+
     test('rejects invalid runIn contexts', () => {
       expect(() =>
         timConfigSchema.parse({

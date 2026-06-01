@@ -64,4 +64,4 @@ Proof generation can be more expensive than the implementation phase itself when
 
 ## Lifecycle services
 
-Proof runs do not implicitly start dev servers, databases, or other long-running dependencies. Either rely on your `lifecycle.commands` to bring those up around agent sessions, or describe the necessary `bun run dev` / `docker compose up` invocations directly in your `instructions` so the executor can start them itself.
+Proof runs start configured `lifecycle.commands` using the `proof` command context after workspace setup and before the proof executor runs. Use `runIn: [proof]` for proof-only setup, omit `runIn` for shared setup, or describe any extra `bun run dev` / `docker compose up` invocations directly in your `instructions` so the executor can start them itself.

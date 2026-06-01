@@ -154,6 +154,45 @@ describe('handleProofCommand', () => {
     expect(callArgs.terminalInput).toBe(false);
   });
 
+  test('runs lifecycle commands in the proof context', async () => {
+    const lifecycleLog = path.join(tempDir, 'proof-lifecycle.log');
+    await fs.writeFile(
+      path.join(tempDir, '.tim', 'config', 'tim.yml'),
+      [
+        'defaultExecutor: codex-cli',
+        'issueTracker: github',
+        'lifecycle:',
+        '  commands:',
+        '    - title: agent only',
+        '      command: >',
+        `        printf 'agent\\n' >> ${JSON.stringify(lifecycleLog)}`,
+        '      runIn: [agent]',
+        '    - title: proof only',
+        '      command: >',
+        `        printf 'proof:%s:%s\\n' "$TIM_PLAN_ID" "$TIM_PLAN_UUID" >> ${JSON.stringify(lifecycleLog)}`,
+        '      shutdown: >',
+        `        printf 'proof-stop\\n' >> ${JSON.stringify(lifecycleLog)}`,
+        '      runIn: [proof]',
+        '',
+      ].join('\n')
+    );
+    clearAllTimCaches();
+
+    await handleProofCommand(
+      1,
+      { terminalInput: false },
+      {
+        parent: {
+          opts: () => ({ config: path.join(tempDir, '.tim', 'config', 'tim.yml') }),
+        },
+      }
+    );
+
+    await expect(fs.readFile(lifecycleLog, 'utf8')).resolves.toBe(
+      `proof:1:${PLAN_UUID}\nproof-stop\n`
+    );
+  });
+
   test('ProofNotConfiguredError is rewritten to a friendly message mentioning config', async () => {
     vi.mocked(runProofGeneration).mockRejectedValueOnce(new ProofNotConfiguredError());
     await expect(

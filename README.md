@@ -581,6 +581,8 @@ lifecycle:
       runIn: [agent]
 ```
 
+Use `runIn: [agent]`, `runIn: [review]`, or `runIn: [proof]` to scope setup to a specific command context. Omit `runIn` for shared setup.
+
 **Secrets:** The `environment` block is for deterministic, non-secret configuration values. Store secrets in your shell environment, global `~/.config/tim/config.yml` (which is not checked into source control), or workspace `.env` files.
 
 ## Proof Generation
@@ -610,6 +612,8 @@ Three entry points trigger proof generation:
 - **Web UI** – the **Generate Proof** action on the plan detail page launches `tim proof` as a detached session that streams output through the normal session-discovery infrastructure. The button is shown only when the project has `proofGeneration.instructions` configured and the plan has at least one completed task or status in `needs_review`/`reviewed`/`done`.
 
 Reruns are idempotent: prior proof artifacts (marked with a `tim-proof:` prefix) are soft-deleted before the new run begins, and `.tim/proofs` is cleared so leftover files from a previous run are not re-attached. If the executor errors mid-run, whatever files it has already written are still attached and the failure is surfaced to the caller. Files exceeding the 100 MB artifact size cap are skipped with a warning. `.tim/proofs` is added to the tim-managed `.tim/.gitignore`.
+
+Before the proof executor runs, `tim proof` starts configured `lifecycle.commands` in the `proof` context after workspace setup, so proof-specific setup can use `runIn: [proof]`.
 
 See [`docs/proof-generation.md`](docs/proof-generation.md) for more detail.
 
