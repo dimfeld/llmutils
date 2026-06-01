@@ -17,6 +17,17 @@ export interface StaleReviewRequestRow {
   requested_at: string;
 }
 
+export interface OtherReadyForReviewRow {
+  pr_url: string;
+  pr_number: number;
+  title: string;
+  author: string;
+  /** UTC ISO timestamp from pr_status.ready_at. */
+  ready_at: string;
+  /** Latest non-dismissed review timestamp, if any. */
+  previous_review_at: string | null;
+}
+
 export interface GetStaleReviewRequestRowsOptions {
   nowMs: number;
 }
@@ -97,4 +108,47 @@ export function getStaleReviewRequestRows(
       `
     )
     .all(owner, repo, nowIso) as StaleReviewRequestRow[];
+}
+
+/**
+ * Returns open, non-draft PRs that are ready for review in the broad GitHub sense.
+ * Callers apply the > 3 day threshold and remove PRs already shown in higher-priority
+ * digest buckets.
+ */
+export function getOtherReadyForReviewRows(
+  db: Database,
+  owner: string,
+  repo: string,
+  options: GetStaleReviewRequestRowsOptions
+): OtherReadyForReviewRow[] {
+  const nowIso = new Date(options.nowMs).toISOString();
+
+  return db
+    .prepare(
+      `
+        SELECT
+          pr_status.pr_url,
+          pr_status.pr_number,
+          COALESCE(pr_status.title, '') AS title,
+          COALESCE(pr_status.author, '') AS author,
+          pr_status.ready_at,
+          (
+            SELECT MAX(pr_review.submitted_at)
+            FROM pr_review
+            WHERE pr_review.pr_status_id = pr_status.id
+              AND pr_review.submitted_at IS NOT NULL
+              AND pr_review.submitted_at <= ?
+              AND pr_review.state != 'DISMISSED'
+          ) AS previous_review_at
+        FROM pr_status
+        WHERE pr_status.owner = ?
+          AND pr_status.repo = ?
+          AND pr_status.state = 'open'
+          AND pr_status.draft = 0
+          AND pr_status.ready_at IS NOT NULL
+          AND pr_status.ready_at <= ?
+        ORDER BY ready_at ASC, pr_status.pr_number ASC, pr_status.id ASC
+      `
+    )
+    .all(nowIso, owner, repo, nowIso) as OtherReadyForReviewRow[];
 }

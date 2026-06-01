@@ -125,6 +125,7 @@ describe('lib/server/daily_digest', () => {
       state?: string;
       draft?: boolean;
       reviewDecision?: string | null;
+      readyAt?: string | null;
     } = {}
   ): UpsertPrStatusResult {
     return upsertPrStatus(db, {
@@ -137,6 +138,7 @@ describe('lib/server/daily_digest', () => {
       state: options.state ?? 'open',
       draft: options.draft ?? false,
       reviewDecision: options.reviewDecision ?? null,
+      readyAt: options.readyAt,
       lastFetchedAt: '2026-01-01T00:00:00.000Z',
     });
   }
@@ -178,6 +180,24 @@ describe('lib/server/daily_digest', () => {
     expect(payloadText(sent[0])).toContain('Needs review');
     expect(payloadText(sent[0])).toContain('`carol` (25 hours)');
     expect(payloadText(sent[0])).not.toContain('<@');
+  });
+
+  test('posts other PRs ready for review for more than three days', async () => {
+    setupProject('octocat', 'other-ready', { channel: '#team-ready' });
+    insertPr('octocat', 'other-ready', 3, {
+      title: 'Old ready PR',
+      author: 'dana',
+      readyAt: '2025-12-29T09:00:00.000Z',
+    });
+
+    const { sender, sent } = makeFakeSender();
+    await runDailyDigestForWorkspace(db, buildConfig(), 'work', { sender, nowMs: NOW_MS });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].payload.channel).toBe('#team-ready');
+    expect(payloadText(sent[0])).toContain('Other PRs ready for review for > 3 days');
+    expect(payloadText(sent[0])).toContain('Old ready PR');
+    expect(payloadText(sent[0])).toContain('no previous review');
   });
 
   test('does not post for projects without digest eligibility', async () => {

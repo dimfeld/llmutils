@@ -184,7 +184,11 @@ function printMappings(mappings: SlackUserMapRow[]): void {
 }
 
 function isDigestEmpty(digest: PrDigest): boolean {
-  return digest.approvedUnmerged.length === 0 && digest.staleAwaitingReview.length === 0;
+  return (
+    digest.approvedUnmerged.length === 0 &&
+    digest.staleAwaitingReview.length === 0 &&
+    digest.otherReadyForReview.length === 0
+  );
 }
 
 function formatPrLine(entry: DigestEntry): string {
@@ -216,6 +220,17 @@ function printDigestDryRunProject(projectDigest: CollectedProjectDigest): void {
           ?.map((reviewer) => `${reviewer.login} (${reviewer.waitedLabel})`)
           .join(', ') ?? 'none';
       log(`${formatPrLine(entry)}; waiting on: ${reviewers}`);
+    }
+  }
+
+  if (projectDigest.digest.otherReadyForReview.length > 0) {
+    log('  Other PRs ready for review for > 3 days:');
+    for (const entry of projectDigest.digest.otherReadyForReview) {
+      const readyLabel = entry.readyForReviewLabel ?? 'unknown duration';
+      const previousReview = entry.previousReviewLabel
+        ? `; previous review: ${entry.previousReviewLabel} ago`
+        : '; previous review: none';
+      log(`${formatPrLine(entry)}; ready for: ${readyLabel}${previousReview}`);
     }
   }
 }

@@ -1,4 +1,8 @@
-import type { ApprovedUnmergedRow, StaleReviewRequestRow } from '../../tim/db/pr_digest.js';
+import type {
+  ApprovedUnmergedRow,
+  OtherReadyForReviewRow,
+  StaleReviewRequestRow,
+} from '../../tim/db/pr_digest.js';
 
 export interface DigestReviewer {
   login: string;
@@ -12,11 +16,16 @@ export interface DigestEntry {
   title: string;
   author: string;
   reviewers?: DigestReviewer[];
+  readyForReviewMs?: number;
+  readyForReviewLabel?: string;
+  previousReviewMs?: number;
+  previousReviewLabel?: string;
 }
 
 export interface PrDigest {
   approvedUnmerged: DigestEntry[];
   staleAwaitingReview: DigestEntry[];
+  otherReadyForReview: DigestEntry[];
 }
 
 export interface BuildPrDigestOptions {
@@ -27,6 +36,7 @@ export interface BuildPrDigestOptions {
 export interface BuildPrDigestInput {
   approvedUnmergedRows: ReadonlyArray<ApprovedUnmergedRow>;
   staleReviewRequestRows: ReadonlyArray<StaleReviewRequestRow>;
+  otherReadyForReviewRows: ReadonlyArray<OtherReadyForReviewRow>;
 }
 
 interface MutableStaleEntry extends DigestEntry {
@@ -35,6 +45,7 @@ interface MutableStaleEntry extends DigestEntry {
 
 export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestOptions): PrDigest {
   const staleThresholdMs = options.staleAfterHours * 3_600_000;
+  const otherReadyThresholdMs = 72 * 3_600_000;
   const approvedUnmerged = input.approvedUnmergedRows.map(
     (row: ApprovedUnmergedRow): DigestEntry => ({
       prUrl: row.pr_url,
@@ -80,9 +91,49 @@ export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestO
     });
   }
 
+  const shownPrUrls = new Set<string>(approvedPrUrls);
+  for (const entry of staleByPrUrl.values()) {
+    shownPrUrls.add(entry.prUrl);
+  }
+
+  const otherReadyForReview: DigestEntry[] = [];
+  for (const row of input.otherReadyForReviewRows) {
+    if (shownPrUrls.has(row.pr_url)) {
+      continue;
+    }
+
+    const readyAtMs = parseDigestTimestampMs(row.ready_at, 'ready_at');
+    const readyForReviewMs = options.nowMs - readyAtMs;
+
+    if (readyForReviewMs <= otherReadyThresholdMs) {
+      continue;
+    }
+
+    const previousReviewMs =
+      row.previous_review_at === null
+        ? undefined
+        : options.nowMs - parseDigestTimestampMs(row.previous_review_at, 'previous_review_at');
+
+    otherReadyForReview.push({
+      prUrl: row.pr_url,
+      prNumber: row.pr_number,
+      title: row.title,
+      author: row.author,
+      readyForReviewMs,
+      readyForReviewLabel: formatWaitDuration(readyForReviewMs),
+      ...(previousReviewMs === undefined
+        ? {}
+        : {
+            previousReviewMs,
+            previousReviewLabel: formatWaitDuration(previousReviewMs),
+          }),
+    });
+  }
+
   return {
     approvedUnmerged,
     staleAwaitingReview: Array.from(staleByPrUrl.values()),
+    otherReadyForReview,
   };
 }
 
@@ -99,9 +150,18 @@ export function formatWaitDuration(waitedMs: number): string {
 }
 
 function parseRequestedAtMs(requestedAt: string): number {
-  const requestedAtMs = Date.parse(requestedAt);
+  return parseDigestTimestampMs(requestedAt, 'requested_at');
+}
+
+function parseDigestTimestampMs(timestamp: string, fieldName: string): number {
+  const requestedAtMs = Date.parse(timestamp);
   if (Number.isNaN(requestedAtMs)) {
-    throw new Error(`Invalid PR review request timestamp: ${requestedAt}`);
+    if (fieldName === 'requested_at') {
+      throw new Error(`Invalid PR review request timestamp: ${timestamp}`);
+    }
+
+    throw new Error(`Invalid PR digest ${fieldName} timestamp: ${timestamp}`);
   }
+
   return requestedAtMs;
 }

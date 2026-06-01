@@ -750,6 +750,9 @@ describe('common/github/webhook_event_handlers', () => {
     expect(result.updated).toBe(true);
     expect(result.prUrl).toBe('https://github.com/example/repo/pull/48');
     expect(result.prDraftTransition).toBe('became_ready');
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/48')?.status.ready_at).toBe(
+      '2026-03-30T12:30:00.000Z'
+    );
     expect(result.apiRefreshTargets).toEqual([
       {
         owner: 'example',
@@ -794,6 +797,9 @@ describe('common/github/webhook_event_handlers', () => {
     expect(result.updated).toBe(true);
     expect(result.prUrl).toBe('https://github.com/example/repo/pull/55');
     expect(result.prDraftTransition).toBe('became_draft');
+    expect(
+      getPrStatusByUrl(db, 'https://github.com/example/repo/pull/55')?.status.ready_at
+    ).toBeNull();
     expect(result.apiRefreshTargets).toEqual([]);
   });
 
@@ -818,6 +824,9 @@ describe('common/github/webhook_event_handlers', () => {
 
     expect(result.updated).toBe(true);
     expect(result.prReadyForReview).toBe(true);
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/60')?.status.ready_at).toBe(
+      '2026-03-30T12:30:00.000Z'
+    );
   });
 
   test('handlePullRequestEvent flags prReadyForReview when a draft PR becomes ready', () => {
@@ -852,6 +861,9 @@ describe('common/github/webhook_event_handlers', () => {
 
     expect(result.prReadyForReview).toBe(true);
     expect(result.prDraftTransition).toBe('became_ready');
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/61')?.status.ready_at).toBe(
+      '2026-03-30T12:30:00.000Z'
+    );
   });
 
   test('handlePullRequestEvent does not flag prReadyForReview for draft opens, draft conversions, or pushes', () => {

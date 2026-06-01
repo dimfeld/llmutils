@@ -316,6 +316,7 @@ describe('common/slack/slack_client', () => {
           ],
         },
       ],
+      otherReadyForReview: [],
     };
 
     test('formats both buckets with header, approved section, divider, and stale section', () => {
@@ -345,6 +346,7 @@ describe('common/slack/slack_client', () => {
       const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
         approvedUnmerged: digestBothBuckets.approvedUnmerged,
         staleAwaitingReview: [],
+        otherReadyForReview: [],
       });
 
       expect(payload.blocks.map((block) => block.type)).toEqual(['section', 'section', 'section']);
@@ -356,6 +358,7 @@ describe('common/slack/slack_client', () => {
       const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
         approvedUnmerged: [],
         staleAwaitingReview: digestBothBuckets.staleAwaitingReview,
+        otherReadyForReview: [],
       });
 
       expect(payload.blocks.map((block) => block.type)).toEqual(['section', 'section', 'section']);
@@ -410,6 +413,7 @@ describe('common/slack/slack_client', () => {
             reviewers: [{ login: 'bob', waitedMs: 90_000_000, waitedLabel: '25 hours' }],
           },
         ],
+        otherReadyForReview: [],
       };
 
       const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', digest);
@@ -431,6 +435,44 @@ describe('common/slack/slack_client', () => {
       );
       expect(staleText).toContain('`bob` (25 hours)');
       expect(staleText).toContain('— waiting on `bob` (25 hours)');
+      expect(serializedBlocks(payload.blocks)).not.toContain('<@');
+    });
+
+    test('renders other ready PRs with ready duration and previous review timing', () => {
+      const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
+        approvedUnmerged: [],
+        staleAwaitingReview: [],
+        otherReadyForReview: [
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/11',
+            prNumber: 11,
+            title: 'Quiet ready PR',
+            author: 'dana',
+            readyForReviewMs: 4 * 24 * 3_600_000,
+            readyForReviewLabel: '4 days',
+            previousReviewMs: 25 * 3_600_000,
+            previousReviewLabel: '25 hours',
+          },
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/12',
+            prNumber: 12,
+            title: 'Never reviewed PR',
+            author: 'erin',
+            readyForReviewMs: 5 * 24 * 3_600_000,
+            readyForReviewLabel: '5 days',
+          },
+        ],
+      });
+
+      const otherReadyText = sectionText(payload.blocks[1]);
+
+      expect(payload.blocks.map((block) => block.type)).toEqual(['section', 'section', 'section']);
+      expect(otherReadyText).toContain('*Other PRs ready for review for > 3 days*');
+      expect(otherReadyText).toContain(
+        '<https://linear.review/octocat/hello-world/pull/11|Quiet ready PR>'
+      );
+      expect(otherReadyText).toContain('ready for 4 days; previous review 25 hours ago');
+      expect(otherReadyText).toContain('ready for 5 days; no previous review');
       expect(serializedBlocks(payload.blocks)).not.toContain('<@');
     });
 
@@ -459,6 +501,7 @@ describe('common/slack/slack_client', () => {
             ],
           },
         ],
+        otherReadyForReview: [],
       });
       const blocks = serializedBlocks(payload.blocks);
 
@@ -485,6 +528,7 @@ describe('common/slack/slack_client', () => {
       const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
         approvedUnmerged,
         staleAwaitingReview: [],
+        otherReadyForReview: [],
       });
 
       const sectionBlocks = payload.blocks.filter((block) => block.type === 'section');
@@ -524,7 +568,7 @@ describe('common/slack/slack_client', () => {
         workspace: 'work',
         channel: '#reviews',
         repoFullName: 'octocat/hello-world',
-        digest: { approvedUnmerged: [], staleAwaitingReview: [] },
+        digest: { approvedUnmerged: [], staleAwaitingReview: [], otherReadyForReview: [] },
         sender: fakeSender,
       });
 
@@ -554,6 +598,7 @@ describe('common/slack/slack_client', () => {
             },
           ],
           staleAwaitingReview: [],
+          otherReadyForReview: [],
         },
         sender: fakeSender,
       });

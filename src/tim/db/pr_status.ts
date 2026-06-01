@@ -26,6 +26,7 @@ export interface PrStatusRow {
   changed_files: number | null;
   pr_updated_at: string | null;
   latest_commit_pushed_at: string | null;
+  ready_at: string | null;
   last_fetched_at: string;
   created_at: string;
   updated_at: string;
@@ -180,6 +181,7 @@ export interface UpsertPrStatusInput {
   deletions?: number | null;
   changedFiles?: number | null;
   latestCommitPushedAt?: string | null;
+  readyAt?: string | null;
   lastFetchedAt: string;
   checks?: StoredPrCheckRunInput[];
   reviews?: StoredPrReviewInput[];
@@ -612,9 +614,10 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           pr_updated_at,
           last_fetched_at,
           latest_commit_pushed_at,
+          ready_at,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
         ON CONFLICT(pr_url) DO UPDATE SET
           owner = excluded.owner,
           repo = excluded.repo,
@@ -637,6 +640,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           pr_updated_at = COALESCE(excluded.pr_updated_at, pr_status.pr_updated_at),
           last_fetched_at = excluded.last_fetched_at,
           latest_commit_pushed_at = COALESCE(excluded.latest_commit_pushed_at, pr_status.latest_commit_pushed_at),
+          ready_at = COALESCE(excluded.ready_at, pr_status.ready_at),
           updated_at = ${SQL_NOW_ISO_UTC}
       `
     ).run(
@@ -661,7 +665,8 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
       nextInput.changedFiles ?? null,
       null,
       nextInput.lastFetchedAt,
-      nextInput.latestCommitPushedAt ?? null
+      nextInput.latestCommitPushedAt ?? null,
+      nextInput.readyAt ?? null
     );
 
     const row = db.prepare('SELECT id FROM pr_status WHERE pr_url = ?').get(nextInput.prUrl) as {
@@ -724,9 +729,10 @@ export function upsertPrStatusMetadata(
             pr_updated_at,
             last_fetched_at,
             latest_commit_pushed_at,
+            ready_at,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
           ON CONFLICT(pr_url) DO UPDATE SET
             owner = excluded.owner,
             repo = excluded.repo,
@@ -749,6 +755,7 @@ export function upsertPrStatusMetadata(
             pr_updated_at = excluded.pr_updated_at,
             last_fetched_at = excluded.last_fetched_at,
             latest_commit_pushed_at = COALESCE(excluded.latest_commit_pushed_at, pr_status.latest_commit_pushed_at),
+            ready_at = CASE WHEN ? THEN excluded.ready_at ELSE pr_status.ready_at END,
             updated_at = ${SQL_NOW_ISO_UTC}
           WHERE excluded.pr_updated_at IS NULL
              OR pr_status.pr_updated_at IS NULL
@@ -777,7 +784,9 @@ export function upsertPrStatusMetadata(
           nextInput.changedFiles ?? null,
           nextInput.prUpdatedAt ?? null,
           nextInput.lastFetchedAt,
-          nextInput.latestCommitPushedAt ?? null
+          nextInput.latestCommitPushedAt ?? null,
+          nextInput.readyAt ?? null,
+          Object.prototype.hasOwnProperty.call(nextInput, 'readyAt') ? 1 : 0
         );
 
       const row = db.prepare('SELECT id FROM pr_status WHERE pr_url = ?').get(nextInput.prUrl) as {

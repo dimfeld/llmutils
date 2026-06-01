@@ -1245,6 +1245,38 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 44,
+    up: `SELECT 1;`,
+    afterUp: (db: Database) => {
+      if (!tableExists(db, 'pr_status')) {
+        return;
+      }
+
+      const columns = tableColumns(db, 'pr_status');
+      if (!columns.has('ready_at')) {
+        db.run('ALTER TABLE pr_status ADD COLUMN ready_at TEXT');
+      }
+      if (!columns.has('state') || !columns.has('draft')) {
+        return;
+      }
+
+      const readyAtSources = [
+        columns.has('latest_commit_pushed_at') ? 'latest_commit_pushed_at' : null,
+        columns.has('pr_updated_at') ? 'pr_updated_at' : null,
+        columns.has('created_at') ? 'created_at' : null,
+      ].filter((source): source is string => source !== null);
+      const readyAtExpression =
+        readyAtSources.length > 0 ? `COALESCE(${readyAtSources.join(', ')})` : 'NULL';
+      db.run(`
+        UPDATE pr_status
+        SET ready_at = ${readyAtExpression}
+        WHERE ready_at IS NULL
+          AND state = 'open'
+          AND draft = 0
+      `);
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

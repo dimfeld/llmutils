@@ -17,6 +17,7 @@ describe('lib/server/pr_digest', () => {
           },
         ],
         staleReviewRequestRows: [],
+        otherReadyForReviewRows: [],
       },
       { nowMs, staleAfterHours: 24 }
     );
@@ -31,6 +32,7 @@ describe('lib/server/pr_digest', () => {
         },
       ],
       staleAwaitingReview: [],
+      otherReadyForReview: [],
     });
   });
 
@@ -72,6 +74,7 @@ describe('lib/server/pr_digest', () => {
             requested_at: '2026-01-01T09:59:59.999Z',
           },
         ],
+        otherReadyForReviewRows: [],
       },
       { nowMs, staleAfterHours: 24 }
     );
@@ -113,6 +116,7 @@ describe('lib/server/pr_digest', () => {
       {
         approvedUnmergedRows: [],
         staleReviewRequestRows: [],
+        otherReadyForReviewRows: [],
       },
       { nowMs, staleAfterHours: 24 }
     );
@@ -120,6 +124,7 @@ describe('lib/server/pr_digest', () => {
     expect(digest).toEqual({
       approvedUnmerged: [],
       staleAwaitingReview: [],
+      otherReadyForReview: [],
     });
   });
 
@@ -144,6 +149,7 @@ describe('lib/server/pr_digest', () => {
             requested_at: '2026-01-01T04:00:00.000Z',
           },
         ],
+        otherReadyForReviewRows: [],
       },
       { nowMs, staleAfterHours: 24 }
     );
@@ -155,6 +161,7 @@ describe('lib/server/pr_digest', () => {
       }),
     ]);
     expect(digest.staleAwaitingReview).toEqual([]);
+    expect(digest.otherReadyForReview).toEqual([]);
   });
 
   test('uses the injected nowMs for wait calculations', () => {
@@ -171,6 +178,7 @@ describe('lib/server/pr_digest', () => {
             requested_at: '2026-01-02T08:00:00.000Z',
           },
         ],
+        otherReadyForReviewRows: [],
       },
       { nowMs: Date.parse('2026-01-02T10:00:00.000Z'), staleAfterHours: 1 }
     );
@@ -203,10 +211,84 @@ describe('lib/server/pr_digest', () => {
               requested_at: 'not-a-date',
             },
           ],
+          otherReadyForReviewRows: [],
         },
         { nowMs, staleAfterHours: 24 }
       )
     ).toThrow('Invalid PR review request timestamp: not-a-date');
+  });
+
+  test('includes other ready PRs only after three days and excludes already shown PRs', () => {
+    const digest = buildPrDigest(
+      {
+        approvedUnmergedRows: [
+          {
+            pr_url: 'https://github.com/octocat/hello-world/pull/7',
+            pr_number: 7,
+            title: 'Approved ready',
+            author: 'alice',
+          },
+        ],
+        staleReviewRequestRows: [
+          {
+            pr_url: 'https://github.com/octocat/hello-world/pull/8',
+            pr_number: 8,
+            title: 'Stale request',
+            author: 'bob',
+            reviewer: 'carol',
+            requested_at: '2025-12-30T10:00:00.000Z',
+          },
+        ],
+        otherReadyForReviewRows: [
+          {
+            pr_url: 'https://github.com/octocat/hello-world/pull/7',
+            pr_number: 7,
+            title: 'Approved ready',
+            author: 'alice',
+            ready_at: '2025-12-29T10:00:00.000Z',
+            previous_review_at: null,
+          },
+          {
+            pr_url: 'https://github.com/octocat/hello-world/pull/8',
+            pr_number: 8,
+            title: 'Stale request',
+            author: 'bob',
+            ready_at: '2025-12-29T10:00:00.000Z',
+            previous_review_at: null,
+          },
+          {
+            pr_url: 'https://github.com/octocat/hello-world/pull/9',
+            pr_number: 9,
+            title: 'Fresh ready',
+            author: 'dana',
+            ready_at: '2025-12-30T10:00:00.000Z',
+            previous_review_at: null,
+          },
+          {
+            pr_url: 'https://github.com/octocat/hello-world/pull/10',
+            pr_number: 10,
+            title: 'Old ready',
+            author: 'erin',
+            ready_at: '2025-12-29T09:59:59.999Z',
+            previous_review_at: '2026-01-01T10:00:00.000Z',
+          },
+        ],
+      },
+      { nowMs, staleAfterHours: 24 }
+    );
+
+    expect(digest.otherReadyForReview).toEqual([
+      {
+        prUrl: 'https://github.com/octocat/hello-world/pull/10',
+        prNumber: 10,
+        title: 'Old ready',
+        author: 'erin',
+        readyForReviewMs: 96 * 3_600_000 + 1,
+        readyForReviewLabel: '4 days',
+        previousReviewMs: 24 * 3_600_000,
+        previousReviewLabel: '24 hours',
+      },
+    ]);
   });
 
   test('formats waits deterministically', () => {

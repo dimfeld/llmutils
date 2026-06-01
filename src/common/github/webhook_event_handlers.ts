@@ -507,6 +507,11 @@ export function handlePullRequestEvent(
         parsed.action === 'synchronize' ||
         parsed.action === 'opened' ||
         parsed.action === 'reopened';
+      const eventTime = pullRequest.updatedAt ?? getNowIsoString();
+      const enteredReadyForReview =
+        state === 'open' &&
+        (parsed.action === 'ready_for_review' ||
+          (parsed.action === 'opened' && !pullRequest.draft));
       const nextDetail = upsertPrStatusMetadata(db, {
         prUrl,
         owner: nextOwner,
@@ -531,6 +536,7 @@ export function handlePullRequestEvent(
         lastFetchedAt: getNowIsoString(),
         labels: pullRequest.labels,
         latestCommitPushedAt: isPushAction ? (pullRequest.updatedAt ?? null) : undefined,
+        readyAt: pullRequest.draft ? null : enteredReadyForReview ? eventTime : undefined,
       });
 
       if (!nextDetail) {
@@ -546,7 +552,6 @@ export function handlePullRequestEvent(
               ? 'became_draft'
               : null;
 
-      const eventTime = pullRequest.updatedAt ?? getNowIsoString();
       if (parsed.action === 'review_requested' && pullRequest.requestedReviewerLogin) {
         reviewRequestChanged =
           upsertPrReviewRequestByReviewer(db, nextDetail.status.id, {

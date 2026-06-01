@@ -2,7 +2,11 @@ import type { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 import { openDatabase } from '$tim/db/database.js';
-import { getApprovedUnmergedRows, getStaleReviewRequestRows } from '$tim/db/pr_digest.js';
+import {
+  getApprovedUnmergedRows,
+  getOtherReadyForReviewRows,
+  getStaleReviewRequestRows,
+} from '$tim/db/pr_digest.js';
 import {
   upsertPrReviewByAuthor,
   upsertPrReviewRequestByReviewer,
@@ -176,6 +180,48 @@ describe('tim db/pr_digest', () => {
     });
   });
 
+  describe('getOtherReadyForReviewRows', () => {
+    test('returns open non-draft PRs with ready_at and latest previous review', () => {
+      const ready = insertPr(50, { readyAt: '2026-01-01T09:00:00.000Z' });
+      review(ready.status.id, 'reviewer-old', 'COMMENTED', '2026-01-01T10:00:00.000Z');
+      review(ready.status.id, 'reviewer-new', 'APPROVED', '2026-01-01T11:00:00.000Z');
+
+      const noReview = insertPr(51, { readyAt: '2026-01-01T08:00:00.000Z' });
+      expect(noReview.status.id).toBeGreaterThan(0);
+
+      const rows = getOtherReadyForReviewRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          pr_number: 51,
+          ready_at: '2026-01-01T08:00:00.000Z',
+          previous_review_at: null,
+        }),
+        expect.objectContaining({
+          pr_number: 50,
+          ready_at: '2026-01-01T09:00:00.000Z',
+          previous_review_at: '2026-01-01T11:00:00.000Z',
+        }),
+      ]);
+    });
+
+    test('excludes PRs without ready_at and PRs not ready for review', () => {
+      insertPr(60);
+      insertPr(61, { readyAt: '2026-01-01T09:00:00.000Z', draft: true });
+      insertPr(62, { readyAt: '2026-01-01T09:00:00.000Z', state: 'closed' });
+      insertPr(63, { readyAt: '2026-01-03T09:00:00.000Z' });
+      insertPr(64, {
+        owner: 'octocat',
+        repo: 'other',
+        readyAt: '2026-01-01T09:00:00.000Z',
+      });
+
+      const rows = getOtherReadyForReviewRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows).toEqual([]);
+    });
+  });
+
   function insertPr(
     prNumber: number,
     options: {
@@ -184,6 +230,7 @@ describe('tim db/pr_digest', () => {
       state?: string;
       draft?: boolean;
       reviewDecision?: string | null;
+      readyAt?: string | null;
     } = {}
   ): ReturnType<typeof upsertPrStatus> {
     const owner = options.owner ?? 'octocat';
@@ -198,6 +245,7 @@ describe('tim db/pr_digest', () => {
       state: options.state ?? 'open',
       draft: options.draft ?? false,
       reviewDecision: options.reviewDecision ?? null,
+      readyAt: options.readyAt,
       lastFetchedAt: '2026-01-01T00:00:00.000Z',
     });
   }

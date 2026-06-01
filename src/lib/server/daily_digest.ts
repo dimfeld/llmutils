@@ -18,7 +18,11 @@ import {
 import type { TimConfig } from '$tim/configSchema.js';
 import { listProjects } from '$tim/db/project.js';
 import { getProjectSetting } from '$tim/db/project_settings.js';
-import { getApprovedUnmergedRows, getStaleReviewRequestRows } from '$tim/db/pr_digest.js';
+import {
+  getApprovedUnmergedRows,
+  getOtherReadyForReviewRows,
+  getStaleReviewRequestRows,
+} from '$tim/db/pr_digest.js';
 
 import { computeNextFireMs } from './digest_schedule.js';
 import { buildPrDigest, type PrDigest } from './pr_digest.js';
@@ -127,15 +131,24 @@ export function collectDailyDigestsForWorkspace(
           nowMs,
         }
       );
+      const otherReadyForReviewRows = getOtherReadyForReviewRows(
+        db,
+        ownerRepo.owner,
+        ownerRepo.repo,
+        {
+          nowMs,
+        }
+      );
       const digest = buildPrDigest(
-        { approvedUnmergedRows, staleReviewRequestRows },
+        { approvedUnmergedRows, staleReviewRequestRows, otherReadyForReviewRows },
         { nowMs, staleAfterHours }
       );
 
       if (
         options.includeEmpty !== true &&
         digest.approvedUnmerged.length === 0 &&
-        digest.staleAwaitingReview.length === 0
+        digest.staleAwaitingReview.length === 0 &&
+        digest.otherReadyForReview.length === 0
       ) {
         continue;
       }

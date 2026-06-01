@@ -233,10 +233,11 @@ If those historical rows include closed or merged PRs, run `tim slack mark-close
 
 Separate from the event-driven review-request notifier, tim can post a once-per-day digest of PRs that are stuck. It is a per-repo opt-in (default off) and posts one message per digest-enabled repo to that repo's configured channel.
 
-The digest has two sections:
+The digest has three sections:
 
 - **Approved, not yet merged** - open, non-draft PRs whose review decision is `APPROVED`.
 - **Awaiting review for > 1 day** - open, non-draft PRs that are not already approved and have an assigned individual reviewer whose last review request is older than the workspace's `staleAfterHours` (default 24h) and who has not reviewed since being requested. Each entry lists the waiting reviewer(s) and how long they've waited. PR entry links point at `linear.review/{owner}/{repo}/pull/{number}`. The footer includes both the GitHub "View all PRs awaiting your review" search link and a Linear reviews link.
+- **Other PRs ready for review for > 3 days** - open, non-draft PRs with a recorded `ready_at` timestamp older than three days that were not already shown in the approved or stale-awaiting-review sections. Each entry lists how long the PR has been ready and the time since the previous non-dismissed review, or notes that there has been no previous review.
 
 If **both** sections are empty for a repo, no message is sent for that repo.
 
@@ -247,7 +248,7 @@ What counts as "stale":
 - **Any** submitted review (`APPROVED`, `CHANGES_REQUESTED`, or `COMMENTED`) by that reviewer after the request clears the nudge — the goal is to surface genuinely-silent reviewers. A `DISMISSED` review does not clear it, since a dismissed review means the PR needs attention again.
 - Team review requests are not tracked individually (`pr_review_request` stores only individual logins), so the awaiting-review bucket covers individual reviewers only. A PR whose only request is to a team will not appear in that bucket.
 
-The digest never uses Slack `@`-mentions: authors and reviewers are always rendered as plain GitHub logins. It is informational and must not ping people daily. A PR that is both approved and still has a stale pending reviewer appears only in the approved section.
+The digest never uses Slack `@`-mentions: authors and reviewers are always rendered as plain GitHub logins. It is informational and must not ping people daily. A PR that qualifies for multiple sections appears only in the first matching section above.
 
 ### Enablement
 

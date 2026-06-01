@@ -83,6 +83,7 @@ describe('tim db/pr_status', () => {
       reviewDecision: 'REVIEW_REQUIRED',
       checkRollupState: 'pending',
       mergedAt: null,
+      readyAt: '2026-03-20T00:02:00.000Z',
       lastFetchedAt: '2026-03-20T00:00:00.000Z',
       checks: [
         {
@@ -107,6 +108,7 @@ describe('tim db/pr_status', () => {
     expect(created.status.author).toBe('alice');
     expect(created.status.requested_reviewers).toBe('[]');
     expect(created.status.created_at).toBeTruthy();
+    expect(created.status.ready_at).toBe('2026-03-20T00:02:00.000Z');
     expect(created.status.check_rollup_state).toBe('pending');
     expect(created.checks.map((check) => check.name)).toEqual(['test']);
     expect(created.checks.map((check) => check.source)).toEqual(['check_run']);
@@ -157,6 +159,7 @@ describe('tim db/pr_status', () => {
     expect(updated.status.requested_reviewers).toBe('["reviewer-2","reviewer-3"]');
     expect(updated.status.review_decision).toBe('APPROVED');
     expect(updated.status.check_rollup_state).toBe('success');
+    expect(updated.status.ready_at).toBe('2026-03-20T00:02:00.000Z');
     expect(updated.checks.map((check) => check.name)).toEqual(['lint']);
     expect(updated.checks.map((check) => check.source)).toEqual(['status_context']);
     expect(updated.reviews.map((review) => review.author)).toEqual(['reviewer-2']);
@@ -176,6 +179,7 @@ describe('tim db/pr_status', () => {
       mergeable: 'MERGEABLE',
       reviewDecision: 'REVIEW_REQUIRED',
       checkRollupState: 'pending',
+      readyAt: '2026-03-20T00:02:00.000Z',
       lastFetchedAt: '2026-03-20T00:00:00.000Z',
       checks: [{ name: 'test', source: 'check_run', status: 'pending' }],
       reviews: [{ author: 'reviewer', state: 'COMMENTED', submittedAt: '2026-03-20T00:01:00Z' }],
@@ -196,6 +200,7 @@ describe('tim db/pr_status', () => {
       checkRollupState: created.status.check_rollup_state,
       requestedReviewers: ['reviewer-2'],
       mergedAt: null,
+      readyAt: null,
       lastFetchedAt: '2026-03-21T00:00:00.000Z',
       labels: [{ name: 'new-label', color: '222222' }],
     });
@@ -205,6 +210,7 @@ describe('tim db/pr_status', () => {
     expect(updated.status.title).toBe('Updated title');
     expect(updated.status.state).toBe('closed');
     expect(updated.status.requested_reviewers).toBe('["reviewer-2"]');
+    expect(updated.status.ready_at).toBeNull();
     expect(updated.checks.map((check) => check.name)).toEqual(['test']);
     expect(updated.reviews.map((review) => review.author)).toEqual(['reviewer']);
     expect(updated.labels.map((label) => label.name)).toEqual(['new-label']);

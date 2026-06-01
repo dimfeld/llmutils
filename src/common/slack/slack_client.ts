@@ -78,11 +78,16 @@ export interface DailyDigestEntry {
   title: string;
   author: string;
   reviewers?: DailyDigestReviewer[];
+  readyForReviewMs?: number;
+  readyForReviewLabel?: string;
+  previousReviewMs?: number;
+  previousReviewLabel?: string;
 }
 
 export interface DailyDigestPayloadInput {
   approvedUnmerged: DailyDigestEntry[];
   staleAwaitingReview: DailyDigestEntry[];
+  otherReadyForReview: DailyDigestEntry[];
 }
 
 export interface PostDailyDigestMessageArgs {
@@ -175,6 +180,17 @@ function formatStaleDigestLine(entry: DailyDigestEntry): string {
   return `• ${formatPrLink(entry)} by ${author} — waiting on ${reviewerLogins} (${escapeSlackMrkdwnText(shortestWait.waitedLabel)})`;
 }
 
+function formatOtherReadyDigestLine(entry: DailyDigestEntry): string {
+  const author = formatPlainLogin(entry.author);
+  const readyLabel = entry.readyForReviewLabel
+    ? escapeSlackMrkdwnText(entry.readyForReviewLabel)
+    : 'unknown duration';
+  const previousReview = entry.previousReviewLabel
+    ? `; previous review ${escapeSlackMrkdwnText(entry.previousReviewLabel)} ago`
+    : '; no previous review';
+  return `• ${formatPrLink(entry)} by ${author} — ready for ${readyLabel}${previousReview}`;
+}
+
 function buildReviewRequestedPullsUrl(repoFullName: string): string {
   const [owner, repo] = repoFullName.split('/', 2);
   const encodedRepoFullName =
@@ -265,6 +281,7 @@ export function buildDailyDigestSlackPayload(
 ): SlackPostPayload {
   const approvedCount = digest.approvedUnmerged.length;
   const staleCount = digest.staleAwaitingReview.length;
+  const otherReadyCount = digest.otherReadyForReview.length;
   const blocks: SlackBlock[] = [
     {
       type: 'section',
@@ -297,6 +314,19 @@ export function buildDailyDigestSlackPayload(
     );
   }
 
+  if ((approvedCount > 0 || staleCount > 0) && otherReadyCount > 0) {
+    blocks.push({ type: 'divider' });
+  }
+
+  if (otherReadyCount > 0) {
+    blocks.push(
+      ...buildDigestSectionBlocks(
+        'Other PRs ready for review for > 3 days',
+        digest.otherReadyForReview.map(formatOtherReadyDigestLine)
+      )
+    );
+  }
+
   blocks.push({
     type: 'section',
     text: {
@@ -307,7 +337,7 @@ export function buildDailyDigestSlackPayload(
 
   return {
     channel,
-    text: `Daily PR digest for ${repoFullName}: ${approvedCount} approved, ${staleCount} awaiting review`,
+    text: `Daily PR digest for ${repoFullName}: ${approvedCount} approved, ${staleCount} awaiting review, ${otherReadyCount} other ready`,
     blocks,
   };
 }
@@ -401,7 +431,11 @@ export async function postReviewRequestMessage(
 export async function postDailyDigestMessage(
   args: PostDailyDigestMessageArgs
 ): Promise<SlackPostResult> {
-  if (args.digest.approvedUnmerged.length === 0 && args.digest.staleAwaitingReview.length === 0) {
+  if (
+    args.digest.approvedUnmerged.length === 0 &&
+    args.digest.staleAwaitingReview.length === 0 &&
+    args.digest.otherReadyForReview.length === 0
+  ) {
     return { ok: true };
   }
 
