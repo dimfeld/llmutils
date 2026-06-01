@@ -38,9 +38,9 @@
   let draftUpdating = $state(false);
   let reviewGuideRunning = $state(false);
   let actionError = $state<string | null>(null);
-  let graphitePrUrl = $derived(
-    `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`
-  );
+  // let graphitePrUrl = $derived(
+  //   `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`
+  // );
   let linearPrReviewUrlQuery = $derived(
     getLinearPrReviewUrl({
       projectId: String(pr.projectId),
@@ -244,7 +244,7 @@
         >
           View in GitHub
         </a>
-        <a
+        <!-- <a
           href={graphitePrUrl}
           target="_blank"
           rel="noopener noreferrer"
@@ -253,7 +253,7 @@
           aria-label={`View PR #${pr.status.pr_number} in Graphite`}
         >
           View in Graphite
-        </a>
+        </a> -->
         {#if linearPrReviewUrl}
           <a
             href={linearPrReviewUrl}

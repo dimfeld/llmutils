@@ -78,7 +78,7 @@ describe('PrDetail', () => {
     expect(body).not.toContain('Review Required');
   });
 
-  test('renders a Graphite link for the current PR', async () => {
+  test('does not render a Graphite link for the current PR', async () => {
     const { body } = await renderWithTooltipProvider(PrDetail, {
       props: {
         pr: createPr(),
@@ -86,8 +86,8 @@ describe('PrDetail', () => {
       },
     });
 
-    expect(body).toContain('View in Graphite');
-    expect(body).toContain('href="https://app.graphite.com/github/pr/example/repo/42"');
+    expect(body).not.toContain('View in Graphite');
+    expect(body).not.toContain('href="https://app.graphite.com/github/pr/example/repo/42"');
   });
 
   test('does not block server render on the Linear review URL lookup', async () => {
@@ -103,7 +103,7 @@ describe('PrDetail', () => {
     });
 
     expect(body).toContain('View in GitHub');
-    expect(body).toContain('View in Graphite');
+    expect(body).not.toContain('View in Graphite');
     expect(body).not.toContain('View in Linear');
     expect(getLinearPrReviewUrl).toHaveBeenCalledWith({
       projectId: '123',

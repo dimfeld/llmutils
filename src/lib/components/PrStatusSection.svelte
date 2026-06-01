@@ -82,9 +82,9 @@
     }
   });
 
-  function getGraphitePrUrl(pr: { status: { owner: string; repo: string; pr_number: number } }) {
-    return `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`;
-  }
+  // function getGraphitePrUrl(pr: { status: { owner: string; repo: string; pr_number: number } }) {
+  //   return `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`;
+  // }
 
   // Reset launch state when navigating to a different plan
   $effect(() => {
@@ -247,7 +247,7 @@
           >
             View in Linear Review
           </a>
-          <a
+          <!-- <a
             href={getGraphitePrUrl(pr)}
             target="_blank"
             rel="noopener noreferrer"
@@ -256,7 +256,7 @@
             aria-label="View PR #{pr.status.pr_number} in Graphite"
           >
             View in Graphite
-          </a>
+          </a> -->
         </div>
 
         <!-- Badges -->

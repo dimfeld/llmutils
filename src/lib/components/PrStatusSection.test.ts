@@ -267,14 +267,14 @@ describe('PrStatusSection', () => {
     expect(body).toContain('https://github.com/owner/repo/issues/42');
   });
 
-  test('renders a Graphite link for each PR row', async () => {
+  test('does not render Graphite links for PR rows', async () => {
     const { body } = await renderSection({
       prUrls: ['https://github.com/owner/repo/pull/42'],
       prStatuses: [makePrDetail()],
     });
 
-    expect(body).toContain('View in Graphite');
-    expect(body).toContain('href="https://app.graphite.com/github/pr/owner/repo/42"');
+    expect(body).not.toContain('View in Graphite');
+    expect(body).not.toContain('href="https://app.graphite.com/github/pr/owner/repo/42"');
   });
 
   test('renders PR number and title as a link', async () => {
