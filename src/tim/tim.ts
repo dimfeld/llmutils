@@ -633,6 +633,7 @@ syncCommand
 syncCommand
   .command('catch-up')
   .description('Fetch and apply canonical sync changes from the main node once')
+  .option('--full', 'Reset this node sync cursor to 0 before catching up')
   .action(async (options, command) => {
     const { handleSyncCatchUpCommand } = await import('./commands/sync.js');
     await handleSyncCatchUpCommand(options, command).catch(handleCommandError);

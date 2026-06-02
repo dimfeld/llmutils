@@ -6,7 +6,11 @@ import { log, warn } from '../../logging.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
-import { getTimNodeCursor, listSyncConflictsByStatus } from '../db/sync_tables.js';
+import {
+  getTimNodeCursor,
+  listSyncConflictsByStatus,
+  resetTimNodeCursor,
+} from '../db/sync_tables.js';
 import {
   getMaterializedPlanPath,
   resolveProjectContext,
@@ -42,6 +46,10 @@ interface SyncNodeCommandDeps {
 
 interface SyncFlushCommandOptions {
   recoverStranded?: boolean;
+}
+
+interface SyncCatchUpCommandOptions {
+  full?: boolean;
 }
 
 interface SyncResolveCommandOptions {
@@ -215,11 +223,14 @@ export async function handleSyncRunCommand(
 }
 
 export async function handleSyncCatchUpCommand(
-  _options: Record<string, never>,
+  options: SyncCatchUpCommandOptions,
   command: Command,
   deps: SyncNodeCommandDeps = {}
 ): Promise<void> {
   const context = await resolvePersistentRunnerContext(command, deps);
+  if (options.full) {
+    resetTimNodeCursor(context.runnerOptions.db, context.runnerOptions.nodeId);
+  }
   await runSyncCatchUpOnce(context.runnerOptions);
   await discoverAndDrainArtifactTransfers(context.runnerOptions);
   log('Sync catch-up completed.');

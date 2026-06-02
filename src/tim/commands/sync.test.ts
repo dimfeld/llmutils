@@ -16,6 +16,7 @@ import { getPlansByProject } from '../db/plan.js';
 import { upsertCanonicalPlanInTransaction, upsertProjectionPlanInTransaction } from '../db/plan.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { getOrCreateProject, getProject } from '../db/project.js';
+import { getTimNodeCursor, updateTimNodeCursor } from '../db/sync_tables.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { materializePlan } from '../plan_materialize.js';
 import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.js';
@@ -149,6 +150,22 @@ describe('tim sync command', () => {
     expect(getArtifactTransfer(db, ARTIFACT_UUID, transferNodeId, 'download')).toMatchObject({
       status: 'succeeded',
     });
+    expect(mockLog).toHaveBeenCalledWith('Sync catch-up completed.');
+  });
+
+  test('sync catch-up --full resets current node cursor before catching up', async () => {
+    const db = createInMemorySyncDb();
+    updateTimNodeCursor(db, NODE_ID, 42);
+    runnerMocks.runSyncCatchUpOnce.mockImplementation(async ({ db: runnerDb, nodeId }) => {
+      expect(getTimNodeCursor(runnerDb, nodeId).last_known_sequence_id).toBe(0);
+    });
+
+    await handleSyncCatchUpCommand({ full: true }, makeCommand() as any, {
+      db,
+      config: persistentSyncConfig(),
+    });
+
+    expect(runnerMocks.runSyncCatchUpOnce).toHaveBeenCalledTimes(1);
     expect(mockLog).toHaveBeenCalledWith('Sync catch-up completed.');
   });
 

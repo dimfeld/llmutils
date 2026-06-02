@@ -191,6 +191,20 @@ export function updateTimNodeCursor(
   return getTimNodeCursor(db, nodeId);
 }
 
+export function resetTimNodeCursor(db: Database, nodeId: string): TimNodeCursorRow {
+  db.prepare(
+    `
+      INSERT INTO tim_node_cursor (node_id, last_known_sequence_id, updated_at)
+      VALUES (?, 0, ${SQL_NOW_ISO_UTC})
+      ON CONFLICT(node_id) DO UPDATE SET
+        last_known_sequence_id = 0,
+        updated_at = ${SQL_NOW_ISO_UTC}
+    `
+  ).run(nodeId);
+
+  return getTimNodeCursor(db, nodeId);
+}
+
 export function insertSyncOperation(
   db: Database,
   operation: Omit<

@@ -129,6 +129,24 @@ For one-shot CLI sync without leaving the web UI running:
 tim sync run
 ```
 
+### Full Catch-Up For Newly Registered Projects
+
+Catch-up cursors are tracked per node, not per project. If a persistent node registers a project after its cursor has already advanced past that project's main-node bootstrap entries, a normal catch-up will not replay those older snapshots.
+
+Register the project on the persistent node first:
+
+```bash
+tim workspace register
+```
+
+Then use a full catch-up after registering the missing project:
+
+```bash
+tim sync catch-up --full
+```
+
+`--full` resets only the current persistent node's local cursor to `0`, then fetches and reapplies canonical snapshots from the main node. Existing synced projects are merged idempotently, so this is the preferred recovery path when one project was missing but other projects were already caught up.
+
 Use separate push and catch-up commands when needed:
 
 ```bash
