@@ -206,11 +206,42 @@ describe('ReviewGuideView', () => {
 
     expect(body).toContain('Linked plan:');
     expect(body).toContain('Submit Review');
+    expect(body).toContain('View in GitHub');
+    expect(body).toContain('href="https://github.com/example/repo/pull/1"');
+    expect(body).toContain('View in Linear');
+    expect(body).toContain('href="https://linear.review/example/repo/pull/1"');
     expect(body).toContain('Submitted in review #12345');
     expect(body).toContain('Add to plan as a task');
     expect(body).toContain('Mark resolved');
     expect(body).toContain('Edit');
     expect(body).toContain('Delete issue');
+  });
+
+  test('shows external PR buttons for plan-created review guides linked through a PR', () => {
+    const { body } = renderWithTooltipProvider(ReviewGuideView, {
+      props: {
+        review: makeReview({
+          pr_url: null,
+          branch: null,
+          plan_uuid: 'plan-uuid-1',
+        }),
+        issues: [],
+        projectId: '1',
+        backHref: '/projects/1/plans/plan-uuid-1',
+        backLabel: 'Back to plan #7001',
+        allowGithubSubmission: true,
+        submissionPrUrl: 'https://github.com/example/repo/pull/42',
+        linkedPlans: [
+          { planUuid: 'plan-uuid-1', planId: 7001, title: 'Plan review', branch: null },
+        ],
+        linkedPlanUuid: 'plan-uuid-1',
+      },
+    });
+
+    expect(body).toContain('View in GitHub');
+    expect(body).toContain('href="https://github.com/example/repo/pull/42"');
+    expect(body).toContain('View in Linear');
+    expect(body).toContain('href="https://linear.review/example/repo/pull/42"');
   });
 
   test('prefers the current PR branch over the stored review branch in the header', () => {

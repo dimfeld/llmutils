@@ -80,9 +80,9 @@ When reusing code originally written for CLI (same `process.cwd()` as the projec
 Two routes render stored review guides, both backed by the shared `src/lib/components/ReviewGuideView.svelte` presentational component:
 
 - PR review: `/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]`
-- Plan review (no PR required): `/projects/[projectId]/plans/[planId]/reviews/[reviewId]` — loader asserts `review.plan_uuid === plan.uuid` (404 on mismatch) and renders `<ReviewGuideView allowGithubSubmission={false} ... />` with a back link to the plan detail page.
+- Plan review (no PR required): `/projects/[projectId]/plans/[planId]/reviews/[reviewId]` — loader asserts `review.plan_uuid === plan.uuid` (404 on mismatch), resolves any single linked PR through the shared review-detail loader, and renders `<ReviewGuideView ... />` with a back link to the plan detail page.
 
-`ReviewGuideView` accepts `{ review, issues, linkedPlans?, reviewThreads?, allowGithubSubmission }`. PR-only features are gated by the single `allowGithubSubmission` prop: linked-plans display, Submit Review dialog, existing GitHub review threads attached under matching guide diffs, the diff-gutter `+` utility / `NewReviewIssueModal` mount, and per-issue resolve/edit/delete controls. Diff-override gating logic lives in `src/lib/components/review_guide_view_utils.ts` so it can be unit-tested independently.
+`ReviewGuideView` accepts `{ review, issues, linkedPlans?, reviewThreads?, submissionPrUrl?, allowGithubSubmission }`. PR-only features are gated by the single `allowGithubSubmission` prop: linked-plans display, Submit Review dialog, existing GitHub review threads attached under matching guide diffs, the diff-gutter `+` utility / `NewReviewIssueModal` mount, and per-issue resolve/edit/delete controls. The header shows View in GitHub and View in Linear buttons whenever the guide has a direct `review.pr_url` or an indirect `submissionPrUrl` from a linked PR. Diff-override gating logic lives in `src/lib/components/review_guide_view_utils.ts` so it can be unit-tested independently.
 
 Shared rendering behavior:
 

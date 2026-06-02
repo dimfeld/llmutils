@@ -20,6 +20,7 @@
   import { computeReviewGuideDiffOverrideFlags } from '$lib/components/review_guide_view_utils.js';
   import { parseMarkdownWithDiffsAndToc, type TocEntry } from '$lib/utils/markdown_parser.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
+  import { buildLinearPrReviewUrl } from '$common/linear_pr_review.js';
   import { Splitpanes, Pane } from 'svelte-splitpanes';
   import type {
     ReviewRow,
@@ -71,6 +72,7 @@
     linkedPlanUuid?: string | null;
     currentBranch?: string | null;
     currentHeadSha?: string | null;
+    submissionPrUrl?: string | null;
     submitAsCommentOnly?: boolean;
     reviewThreads?: PrReviewThreadDetail[];
   }
@@ -87,6 +89,7 @@
     linkedPlanUuid: linkedPlanUuidInput = null,
     currentBranch = null,
     currentHeadSha = null,
+    submissionPrUrl = null,
     submitAsCommentOnly = false,
     reviewThreads = [],
   }: Props = $props();
@@ -165,6 +168,8 @@
     return linkedPlans.find((plan) => plan.planUuid === linkedPlanUuid)?.branch ?? null;
   });
   let displayBranch = $derived(currentBranch ?? review.branch ?? linkedPlanBranch);
+  let effectivePrUrl = $derived(review.pr_url ?? submissionPrUrl);
+  let linearPrReviewUrl = $derived(buildLinearPrReviewUrl({ prUrl: effectivePrUrl }));
 
   let reviewGuideText = $derived(review.review_guide ?? '');
   let parsedGuide = $derived(parseMarkdownWithDiffsAndToc(reviewGuideText));
@@ -992,10 +997,10 @@
 
   function reviewThreadGithubLink(thread: PrReviewThreadDetail): string {
     const databaseId = thread.comments.find((comment) => comment.database_id != null)?.database_id;
-    if (databaseId && review.pr_url) {
-      return `${review.pr_url}#discussion_r${databaseId}`;
+    if (databaseId && effectivePrUrl) {
+      return `${effectivePrUrl}#discussion_r${databaseId}`;
     }
-    return review.pr_url ?? '#';
+    return effectivePrUrl ?? '#';
   }
 
   function reviewThreadLocationLabel(thread: PrReviewThreadDetail): string {
@@ -1121,6 +1126,30 @@
           <Send class="size-3" />
           Submit Review
         </button>
+      {/if}
+      {#if effectivePrUrl}
+        <a
+          href={effectivePrUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-background px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          title="View in GitHub"
+        >
+          <ExternalLink class="size-3" />
+          View in GitHub
+        </a>
+      {/if}
+      {#if linearPrReviewUrl}
+        <a
+          href={linearPrReviewUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-background px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          title="View in Linear"
+        >
+          <ExternalLink class="size-3" />
+          View in Linear
+        </a>
       {/if}
     </div>
 

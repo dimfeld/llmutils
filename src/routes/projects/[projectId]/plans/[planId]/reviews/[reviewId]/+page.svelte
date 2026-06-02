@@ -29,6 +29,7 @@
       ]}
   currentBranch={data.currentBranch}
   currentHeadSha={data.currentHeadSha}
+  submissionPrUrl={data.submissionPrUrl}
   submitAsCommentOnly={data.submitAsCommentOnly}
   reviewThreads={data.reviewThreads}
 />
