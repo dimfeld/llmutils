@@ -562,6 +562,46 @@ describe('sync transport server and clients', () => {
     });
   });
 
+  test('HTTP snapshot fetch accepts large POST body key lists', async () => {
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const server = startTestServer(mainDb);
+
+    const keys = Array.from({ length: 3000 }, (_, index) => `plan:missing-${index}`);
+    keys.push(`plan:${PLAN_UUID}`);
+
+    const snapshots = await httpFetchSnapshots(serverUrl(server), TOKEN, NODE_A, keys);
+
+    expect(snapshots.ok).toBe(true);
+    expect(snapshots.ok && snapshots.value.snapshots).toHaveLength(keys.length);
+    const planSnapshot =
+      snapshots.ok && snapshots.value.snapshots.find((snapshot) => snapshot.type === 'plan');
+    expect(planSnapshot).toMatchObject({
+      type: 'plan',
+      plan: { uuid: PLAN_UUID },
+    });
+  });
+
+  test('HTTP snapshot GET remains available for older clients', async () => {
+    const mainDb = createDb();
+    seedPlan(mainDb);
+    const server = startTestServer(mainDb);
+    const url = new URL('/internal/sync/snapshots', serverUrl(server));
+    url.searchParams.append('keys', `plan:${PLAN_UUID}`);
+
+    const response = await fetch(url, {
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        'x-tim-node-id': NODE_A,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      snapshots: [expect.objectContaining({ type: 'plan' })],
+    });
+  });
+
   test('startup bootstraps existing plans so catch-up from zero can discover them', async () => {
     const mainDb = createDb();
     seedPlan(mainDb);

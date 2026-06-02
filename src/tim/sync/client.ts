@@ -96,11 +96,12 @@ export async function httpFetchSnapshots(
   keys: string[]
 ): Promise<HttpSyncResult<HttpSnapshotFetchResult>> {
   const url = syncUrl(serverUrl, 'internal/sync/snapshots');
-  for (const key of keys) {
-    url.searchParams.append('keys', key);
-  }
   try {
-    const response = await fetch(url, { headers: authHeaders(token, nodeId) });
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: authHeaders(token, nodeId, { 'content-type': 'application/json' }),
+      body: JSON.stringify({ keys }),
+    });
     await assertOk(response, url);
     const payload = await response.json();
     const parsed = SyncSnapshotResponseFrameSchema.extend({

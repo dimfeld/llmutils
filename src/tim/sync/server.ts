@@ -317,12 +317,21 @@ async function handleHttpRequest(
   }
 
   if (url.pathname === '/internal/sync/snapshots') {
-    if (request.method !== 'GET') {
-      return new Response('Method Not Allowed\n', { status: 405, headers: { Allow: 'GET' } });
+    if (request.method !== 'GET' && request.method !== 'POST') {
+      return new Response('Method Not Allowed\n', {
+        status: 405,
+        headers: { Allow: 'GET, POST' },
+      });
     }
-    const keys = url.searchParams.getAll('keys').flatMap((value) => value.split(','));
+    const keyResult =
+      request.method === 'POST'
+        ? await readSnapshotKeysFromBody(request)
+        : { ok: true as const, keys: readSnapshotKeysFromQuery(url) };
+    if (!keyResult.ok) {
+      return jsonResponse({ error: keyResult.error }, { status: keyResult.status });
+    }
     return jsonResponse({
-      snapshots: keys
+      snapshots: keyResult.keys
         .map((key) => loadCanonicalSnapshot(options.db, key))
         .filter((snapshot): snapshot is CanonicalSnapshot => snapshot !== null),
       currentSequenceId: getCurrentSequenceId(options.db),
@@ -538,6 +547,33 @@ async function readJsonBodyWithLimit(request: Request): Promise<JsonBodyResult> 
       error: err instanceof Error ? err.message : 'Invalid JSON request body',
     };
   }
+}
+
+type SnapshotKeysResult =
+  | { ok: true; keys: string[] }
+  | { ok: false; status: number; error: string };
+
+async function readSnapshotKeysFromBody(request: Request): Promise<SnapshotKeysResult> {
+  const bodyResult = await readJsonBodyWithLimit(request);
+  if (!bodyResult.ok) {
+    return bodyResult;
+  }
+  const body = bodyResult.value;
+  if (!body || typeof body !== 'object' || !('keys' in body)) {
+    return { ok: false, status: 400, error: 'Snapshot request body must include keys' };
+  }
+  const keys = (body as { keys: unknown }).keys;
+  if (
+    !Array.isArray(keys) ||
+    !keys.every((key): key is string => typeof key === 'string' && key.length > 0)
+  ) {
+    return { ok: false, status: 400, error: 'Snapshot keys must be non-empty strings' };
+  }
+  return { ok: true, keys };
+}
+
+function readSnapshotKeysFromQuery(url: URL): string[] {
+  return url.searchParams.getAll('keys').flatMap((value) => value.split(','));
 }
 
 function rawByteLength(rawMessage: string | Buffer): number {
