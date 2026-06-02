@@ -114,7 +114,7 @@ describe('bootstrapSyncMetadata', () => {
     expect(isBootstrapCompleted()).toBe(true);
   });
 
-  test('short-circuits after bootstrap has completed', () => {
+  test('after bootstrap has completed, only seeds newly missing targets', () => {
     seedPlan();
 
     expect(bootstrapSyncMetadata(db)).toEqual({
@@ -126,22 +126,27 @@ describe('bootstrapSyncMetadata', () => {
 
     expect(bootstrapSyncMetadata(db)).toEqual({
       projectsSeeded: 0,
-      plansSeeded: 0,
+      plansSeeded: 1,
       settingsSeeded: 0,
     });
     expect(syncSequenceRows().map((row) => row.target_key)).toEqual([
       projectKey(PROJECT_UUID),
       planKey(PLAN_UUID),
+      planKey(SECOND_PLAN_UUID),
     ]);
   });
 
-  test('backfills missing project rows even after older bootstrap completed', () => {
+  test('backfills missing project and plan rows even after older bootstrap completed', () => {
+    seedPlan();
     db.prepare('UPDATE schema_version SET bootstrap_completed = 1').run();
 
     const result = bootstrapSyncMetadata(db);
 
-    expect(result).toEqual({ projectsSeeded: 1, plansSeeded: 0, settingsSeeded: 0 });
-    expect(syncSequenceRows().map((row) => row.target_key)).toEqual([projectKey(PROJECT_UUID)]);
+    expect(result).toEqual({ projectsSeeded: 1, plansSeeded: 1, settingsSeeded: 0 });
+    expect(syncSequenceRows().map((row) => row.target_key)).toEqual([
+      projectKey(PROJECT_UUID),
+      planKey(PLAN_UUID),
+    ]);
   });
 
   test('skips entities already represented in sync_sequence and seeds missing entities', async () => {

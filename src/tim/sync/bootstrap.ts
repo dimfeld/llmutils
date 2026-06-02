@@ -62,11 +62,15 @@ export function bootstrapSyncMetadata(db: Database): BootstrapResult {
     `);
 
     if (bootstrapCompleted === 1) {
-      const projectsSeeded = bootstrapProjects(db, insertSequence, existingTargetKeys);
+      const result = {
+        projectsSeeded: bootstrapProjects(db, insertSequence, existingTargetKeys),
+        plansSeeded: bootstrapPlans(db, insertSequence, existingTargetKeys),
+        settingsSeeded: bootstrapProjectSettings(db, insertSequence, existingTargetKeys),
+      };
       debugLog(
-        `[sync/bootstrap] Bootstrap already completed; seeded missing project rows=${projectsSeeded}`
+        `[sync/bootstrap] Bootstrap already completed; seeded missing rows: projects=${result.projectsSeeded}, plans=${result.plansSeeded}, settings=${result.settingsSeeded}`
       );
-      return { projectsSeeded, plansSeeded: 0, settingsSeeded: 0 };
+      return result;
     }
 
     const result = {
