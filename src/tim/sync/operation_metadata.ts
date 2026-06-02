@@ -46,6 +46,7 @@ export const SYNC_OPERATION_METADATA = {
   'plan_artifact.soft_delete': { entity: 'plan_artifact', baseRevisionTarget: null },
   'plan_artifact.restore': { entity: 'plan_artifact', baseRevisionTarget: null },
   'plan_artifact.hard_delete': { entity: 'plan_artifact', baseRevisionTarget: null },
+  'project.upsert': { entity: 'project', baseRevisionTarget: null },
   'project.delete': { entity: 'project', baseRevisionTarget: null },
   'project_setting.set': { entity: 'project_setting', baseRevisionTarget: null },
   'project_setting.delete': { entity: 'project_setting', baseRevisionTarget: null },
@@ -82,7 +83,7 @@ export function isProjectSettingOperation(
 
 export function isProjectOperation(
   payload: SyncOperationPayload
-): payload is Extract<SyncOperationPayload, { type: 'project.delete' }> {
+): payload is Extract<SyncOperationPayload, { type: 'project.upsert' | 'project.delete' }> {
   return SYNC_OPERATION_METADATA[payload.type].entity === 'project';
 }
 
@@ -121,6 +122,7 @@ export function getSyncOperationPlanRefs(
 
   switch (parsed.type) {
     case 'project.delete':
+    case 'project.upsert':
       break;
     case 'plan.create':
       addRef(parsed.planUuid, 'target');

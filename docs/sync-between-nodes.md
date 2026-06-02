@@ -1,6 +1,6 @@
 # Syncing Between Nodes
 
-`tim` can sync plan and project-setting data between machines through a main node and one or more persistent nodes. This is separate from workspace Git sync: Git still moves code branches, while the node sync transport moves `tim`'s SQLite-backed planning data.
+`tim` can sync project, plan, and project-setting data between machines through a main node and one or more persistent nodes. This is separate from workspace Git sync: Git still moves code branches, while the node sync transport moves `tim`'s SQLite-backed planning data.
 
 The usual topology is:
 
@@ -10,9 +10,29 @@ The usual topology is:
 
 Sync configuration is machine-local. Put it in `~/.config/tim/config.yml`; repository `.tim/config/tim.yml` and `.tim/config/tim.local.yml` files cannot enable sync.
 
+## Project Registration And Matching
+
+The main node owns the shared project list. Sync carries the non-local project fields that identify a repository across machines: project UUID, repository ID, remote URL, remote label, and highest allocated plan ID. Machine-local fields such as workspace paths, `last_git_root`, and external storage paths remain local.
+
+Register a repository workspace on a persistent node before catching up:
+
+```bash
+tim workspace register
+```
+
+Registration creates the local workspace/project row and, when sync is configured, sends the project registration to the main node. If the main node already knows that repository, a full catch-up will adopt the main node's project UUID locally while preserving local path fields.
+
+Then run:
+
+```bash
+tim sync catch-up --full
+```
+
+Use `--full` when a project was registered after this node's cursor had already advanced; normal catch-up is cursor-based and does not replay older project bootstrap entries.
+
 ## What Syncs
 
-Node sync covers canonical `tim` data such as plans, plan tasks, tags, dependencies, review issues, and project settings. Review-guide notes (`review_issue.severity = 'note'`) are local-only annotations and are filtered out at the sync boundary.
+Node sync covers canonical `tim` data such as projects, plans, plan tasks, tags, dependencies, review issues, and project settings. Review-guide notes (`review_issue.severity = 'note'`) are local-only annotations and are filtered out at the sync boundary.
 
 It does not replace:
 
@@ -129,29 +149,12 @@ For one-shot CLI sync without leaving the web UI running:
 tim sync run
 ```
 
-### Full Catch-Up For Newly Registered Projects
-
-Catch-up cursors are tracked per node, not per project. If a persistent node registers a project after its cursor has already advanced past that project's main-node bootstrap entries, a normal catch-up will not replay those older snapshots.
-
-Register the project on the persistent node first:
-
-```bash
-tim workspace register
-```
-
-Then use a full catch-up after registering the missing project:
-
-```bash
-tim sync catch-up --full
-```
-
-`--full` resets only the current persistent node's local cursor to `0`, then fetches and reapplies canonical snapshots from the main node. Existing synced projects are merged idempotently, so this is the preferred recovery path when one project was missing but other projects were already caught up.
-
 Use separate push and catch-up commands when needed:
 
 ```bash
 tim sync push
 tim sync catch-up
+tim sync catch-up --full
 ```
 
 ## Offline Mode

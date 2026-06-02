@@ -27,6 +27,7 @@ import {
   type SyncPlanTagPayload,
   type SyncPlanUpdateTaskTextPayload,
   type SyncProjectDeletePayload,
+  type SyncProjectUpsertPayload,
   type SyncProjectSettingDeletePayload,
   type SyncProjectSettingSetPayload,
 } from './types.js';
@@ -253,6 +254,13 @@ export async function deleteProjectOperation(
   options: SyncOperationConstructorOptions
 ) {
   return buildEnvelope(input.projectUuid, { type: 'project.delete', ...input }, options);
+}
+
+export async function upsertProjectOperation(
+  input: Omit<SyncProjectUpsertPayload, 'type'>,
+  options: SyncOperationConstructorOptions
+) {
+  return buildEnvelope(input.projectUuid, { type: 'project.upsert', ...input }, options);
 }
 
 export async function setProjectSettingOperation(

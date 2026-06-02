@@ -287,6 +287,7 @@ function applyOperationToUnchecked(
       );
     case 'project_setting.set':
     case 'project_setting.delete':
+    case 'project.upsert':
     case 'project.delete':
       throw new Error(
         'applyOperationTo does not handle project/project_setting operations; use entity-specific apply/projection code instead'

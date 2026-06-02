@@ -41,6 +41,7 @@ import {
   setPlanParentOperation,
   setPlanScalarOperation,
   setProjectSettingOperation,
+  upsertProjectOperation,
   updatePlanTaskTextOperation,
   type SyncOperationConstructorOptions,
 } from './operations.js';
@@ -64,6 +65,7 @@ import type {
   SyncPlanCreateTask,
   SyncPlanListName,
   SyncProjectDeletePayload,
+  SyncProjectUpsertPayload,
   SyncReviewIssueValue,
 } from './types.js';
 import { createBatchEnvelope } from './types.js';
@@ -683,6 +685,14 @@ export async function writeProjectDelete(
   input: Omit<SyncProjectDeletePayload, 'type'>
 ): Promise<SyncWriteResult> {
   return routeSyncOperation(db, config, (options) => deleteProjectOperation(input, options));
+}
+
+export async function writeProjectUpsert(
+  db: Database,
+  config: TimConfig,
+  input: Omit<SyncProjectUpsertPayload, 'type'>
+): Promise<SyncWriteResult> {
+  return routeSyncOperation(db, config, (options) => upsertProjectOperation(input, options));
 }
 
 export async function writePlanPromoteTask(

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { MAX_ARTIFACT_BYTES } from '../artifacts/constants.js';
 import { getArtifactByUuid } from '../db/artifact.js';
 import { runMigrations } from '../db/migrations.js';
-import { getOrCreateProject } from '../db/project.js';
+import { getOrCreateProject, getProject, getProjectByUuid } from '../db/project.js';
 import {
   getPlanByUuid,
   getPlanDependenciesByUuid,
@@ -551,7 +551,9 @@ describe('sync transport server and clients', () => {
     expect(getPlanTagsByUuid(mainDb, PLAN_UUID).map((tag) => tag.tag)).toEqual(['offline']);
 
     const catchUp = await httpCatchUp(serverUrl(server), TOKEN, NODE_A, 0);
-    expect(catchUp.ok && catchUp.value.invalidations[0]?.entityKeys).toEqual([`plan:${PLAN_UUID}`]);
+    expect(catchUp.ok && catchUp.value.invalidations.flatMap((item) => item.entityKeys)).toContain(
+      `plan:${PLAN_UUID}`
+    );
 
     const snapshots = await httpFetchSnapshots(serverUrl(server), TOKEN, NODE_A, [
       `plan:${PLAN_UUID}`,
@@ -613,6 +615,64 @@ describe('sync transport server and clients', () => {
     expect(catchUp.ok && catchUp.value.invalidations.flatMap((item) => item.entityKeys)).toContain(
       `plan:${PLAN_UUID}`
     );
+  });
+
+  test('HTTP runner full catch-up creates missing project and plan data', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
+    const server = startTestServer(mainDb);
+
+    await createSyncRunner({
+      db: localDb,
+      serverUrl: serverUrl(server),
+      nodeId: NODE_A,
+      token: TOKEN,
+    }).runOnce();
+
+    expect(getProjectByUuid(localDb, PROJECT_UUID)).toMatchObject({
+      uuid: PROJECT_UUID,
+      repository_id: 'github.com__example__repo',
+    });
+    expect(getProject(localDb, 'github.com__example__repo')?.uuid).toBe(PROJECT_UUID);
+    expect(getPlanByUuid(localDb, PLAN_UUID)).toMatchObject({
+      uuid: PLAN_UUID,
+      title: 'Sync plan',
+    });
+    expect(getPlanTasksByUuid(localDb, PLAN_UUID)).toHaveLength(1);
+  });
+
+  test('project catch-up adopts main UUID while preserving local project paths', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    const localProject = getOrCreateProject(localDb, 'github.com__example__repo', {
+      uuid: '99999999-9999-4999-8999-999999999999',
+      remoteUrl: 'https://github.com/example/repo.git',
+      lastGitRoot: '/local/repo',
+      externalConfigPath: '/local/repo/.tim/config/tim.yml',
+      externalTasksDir: '/local/repo/tasks',
+      remoteLabel: 'local-label',
+    });
+    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
+    const server = startTestServer(mainDb);
+
+    await createSyncRunner({
+      db: localDb,
+      serverUrl: serverUrl(server),
+      nodeId: NODE_A,
+      token: TOKEN,
+    }).runOnce();
+
+    expect(getProjectByUuid(localDb, localProject.uuid)).toBeNull();
+    expect(getProjectByUuid(localDb, PROJECT_UUID)).toMatchObject({
+      uuid: PROJECT_UUID,
+      repository_id: 'github.com__example__repo',
+      last_git_root: '/local/repo',
+      external_config_path: '/local/repo/.tim/config/tim.yml',
+      external_tasks_dir: '/local/repo/tasks',
+    });
   });
 
   test('HTTP fallback rejects operation batches from spoofed origin nodes', async () => {

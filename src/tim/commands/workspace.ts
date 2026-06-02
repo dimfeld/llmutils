@@ -68,6 +68,7 @@ import {
   resolveProjectContext,
 } from '../plan_materialize.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
+import { writeProjectUpsert } from '../sync/write_router.js';
 
 const PRIMARY_REMOTE_NAME = 'primary';
 
@@ -2061,6 +2062,8 @@ export async function handleWorkspaceRegisterCommand(
   },
   _command: Command
 ) {
+  const globalOpts = _command.parent?.parent?.opts?.() ?? {};
+  const config = await loadEffectiveConfig(globalOpts.config);
   const workspaceType = resolveWorkspaceTypeOption(options);
 
   // Resolve workspace path - either from argument or current directory
@@ -2085,6 +2088,13 @@ export async function handleWorkspaceRegisterCommand(
   const db = getDatabase();
   const project = getOrCreateProject(db, identity.repositoryId, {
     remoteUrl: identity.remoteUrl ?? undefined,
+  });
+  await writeProjectUpsert(db, config, {
+    projectUuid: project.uuid,
+    repositoryId: project.repository_id,
+    remoteUrl: project.remote_url,
+    remoteLabel: project.remote_label,
+    highestPlanId: project.highest_plan_id,
   });
 
   const taskId = options.name ?? generateAlphanumericId();

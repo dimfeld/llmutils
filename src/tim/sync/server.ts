@@ -900,7 +900,16 @@ export function loadCanonicalSnapshot(db: Database, entityKey: string): Canonica
 function loadProjectSnapshot(db: Database, projectUuid: string): CanonicalSnapshot | null {
   const project = getProjectByUuid(db, projectUuid);
   if (project) {
-    return null;
+    return {
+      type: 'project',
+      project: {
+        uuid: project.uuid,
+        repositoryId: project.repository_id,
+        remoteUrl: project.remote_url,
+        remoteLabel: project.remote_label,
+        highestPlanId: project.highest_plan_id,
+      },
+    };
   }
   const entityKey = `project:${projectUuid}`;
   const sequence = db

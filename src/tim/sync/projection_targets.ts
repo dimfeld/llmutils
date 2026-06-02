@@ -48,6 +48,9 @@ export function collectProjectionTargetsForPayload(
     return;
   }
   if (isProjectOperation(payload)) {
+    if (payload.type === 'project.upsert') {
+      return;
+    }
     targets.projectUuids.add(payload.projectUuid);
     return;
   }

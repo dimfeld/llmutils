@@ -251,7 +251,7 @@ export async function handleSyncBootstrapCommand(
   requireMainNode(sync, 'tim sync bootstrap');
   const result = bootstrapSyncMetadata(db);
   log(
-    `Bootstrapped sync metadata: ${result.plansSeeded} ${pluralize(result.plansSeeded, 'plan')}, ${result.settingsSeeded} ${pluralize(result.settingsSeeded, 'project setting')}.`
+    `Bootstrapped sync metadata: ${result.projectsSeeded} ${pluralize(result.projectsSeeded, 'project')}, ${result.plansSeeded} ${pluralize(result.plansSeeded, 'plan')}, ${result.settingsSeeded} ${pluralize(result.settingsSeeded, 'project setting')}.`
   );
 }
 

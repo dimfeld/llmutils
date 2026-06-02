@@ -344,7 +344,7 @@ describe('tim sync CLI node commands', () => {
     const messages = mockLog.mock.calls.map((call) => String(call[0]));
     expect(messages).toEqual(
       expect.arrayContaining([
-        expect.stringMatching(/Bootstrapped sync metadata: 1 plan, 1 project setting\./),
+        expect.stringMatching(/Bootstrapped sync metadata: 1 project, 1 plan, 1 project setting\./),
       ])
     );
     const planRows = db

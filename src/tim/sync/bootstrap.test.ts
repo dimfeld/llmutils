@@ -11,7 +11,7 @@ import {
 } from '../db/plan.js';
 import { applyOperation } from './apply.js';
 import { bootstrapSyncMetadata } from './bootstrap.js';
-import { planKey, projectSettingKey } from './entity_keys.js';
+import { planKey, projectKey, projectSettingKey } from './entity_keys.js';
 import { createPlanOperation } from './operations.js';
 import { getCurrentSequenceId } from './server.js';
 
@@ -39,8 +39,17 @@ describe('bootstrapSyncMetadata', () => {
   test('returns zero counts and inserts nothing for an empty database', () => {
     const result = bootstrapSyncMetadata(db);
 
-    expect(result).toEqual({ plansSeeded: 0, settingsSeeded: 0 });
-    expect(syncSequenceRows()).toEqual([]);
+    expect(result).toEqual({ projectsSeeded: 1, plansSeeded: 0, settingsSeeded: 0 });
+    expect(syncSequenceRows()).toEqual([
+      expect.objectContaining({
+        project_uuid: PROJECT_UUID,
+        target_type: 'project',
+        target_key: projectKey(PROJECT_UUID),
+        revision: null,
+        operation_uuid: null,
+        origin_node_id: null,
+      }),
+    ]);
   });
 
   test('seeds existing plans and project settings into sync_sequence', () => {
@@ -50,11 +59,12 @@ describe('bootstrapSyncMetadata', () => {
 
     const result = bootstrapSyncMetadata(db);
 
-    expect(result).toEqual({ plansSeeded: 1, settingsSeeded: 2 });
+    expect(result).toEqual({ projectsSeeded: 1, plansSeeded: 1, settingsSeeded: 2 });
     const rows = syncSequenceRows();
     expect(rows.map((row) => row.target_key).toSorted()).toEqual(
       [
         planKey(PLAN_UUID),
+        projectKey(PROJECT_UUID),
         projectSettingKey(PROJECT_UUID, 'branchPrefix'),
         projectSettingKey(PROJECT_UUID, 'color'),
       ].toSorted()
@@ -62,6 +72,14 @@ describe('bootstrapSyncMetadata', () => {
     expect(rows.filter((row) => row.target_type === 'task')).toEqual([]);
     expect(rows).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          project_uuid: PROJECT_UUID,
+          target_type: 'project',
+          target_key: projectKey(PROJECT_UUID),
+          revision: null,
+          operation_uuid: null,
+          origin_node_id: null,
+        }),
         expect.objectContaining({
           project_uuid: PROJECT_UUID,
           target_type: 'plan',
@@ -90,8 +108,8 @@ describe('bootstrapSyncMetadata', () => {
     const countAfterFirst = syncSequenceCount();
     const second = bootstrapSyncMetadata(db);
 
-    expect(first).toEqual({ plansSeeded: 1, settingsSeeded: 1 });
-    expect(second).toEqual({ plansSeeded: 0, settingsSeeded: 0 });
+    expect(first).toEqual({ projectsSeeded: 1, plansSeeded: 1, settingsSeeded: 1 });
+    expect(second).toEqual({ projectsSeeded: 0, plansSeeded: 0, settingsSeeded: 0 });
     expect(syncSequenceCount()).toBe(countAfterFirst);
     expect(isBootstrapCompleted()).toBe(true);
   });
@@ -99,11 +117,31 @@ describe('bootstrapSyncMetadata', () => {
   test('short-circuits after bootstrap has completed', () => {
     seedPlan();
 
-    expect(bootstrapSyncMetadata(db)).toEqual({ plansSeeded: 1, settingsSeeded: 0 });
+    expect(bootstrapSyncMetadata(db)).toEqual({
+      projectsSeeded: 1,
+      plansSeeded: 1,
+      settingsSeeded: 0,
+    });
     seedSecondPlan();
 
-    expect(bootstrapSyncMetadata(db)).toEqual({ plansSeeded: 0, settingsSeeded: 0 });
-    expect(syncSequenceRows().map((row) => row.target_key)).toEqual([planKey(PLAN_UUID)]);
+    expect(bootstrapSyncMetadata(db)).toEqual({
+      projectsSeeded: 0,
+      plansSeeded: 0,
+      settingsSeeded: 0,
+    });
+    expect(syncSequenceRows().map((row) => row.target_key)).toEqual([
+      projectKey(PROJECT_UUID),
+      planKey(PLAN_UUID),
+    ]);
+  });
+
+  test('backfills missing project rows even after older bootstrap completed', () => {
+    db.prepare('UPDATE schema_version SET bootstrap_completed = 1').run();
+
+    const result = bootstrapSyncMetadata(db);
+
+    expect(result).toEqual({ projectsSeeded: 1, plansSeeded: 0, settingsSeeded: 0 });
+    expect(syncSequenceRows().map((row) => row.target_key)).toEqual([projectKey(PROJECT_UUID)]);
   });
 
   test('skips entities already represented in sync_sequence and seeds missing entities', async () => {
@@ -122,7 +160,7 @@ describe('bootstrapSyncMetadata', () => {
 
     const result = bootstrapSyncMetadata(db);
 
-    expect(result).toEqual({ plansSeeded: 1, settingsSeeded: 0 });
+    expect(result).toEqual({ projectsSeeded: 1, plansSeeded: 1, settingsSeeded: 0 });
     const planRows = syncSequenceRows().filter((row) => row.target_type === 'plan');
     expect(planRows.map((row) => row.target_key).toSorted()).toEqual(
       [planKey(PLAN_UUID), planKey(SECOND_PLAN_UUID)].toSorted()

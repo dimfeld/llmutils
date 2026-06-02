@@ -2,11 +2,16 @@ import type { Database, Statement } from 'bun:sqlite';
 import { debugLog } from '../../logging.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import { isForeignKeyConstraintError, logForeignKeyCheck } from '../db/sqlite_debug.js';
-import { planKey, projectSettingKey } from './entity_keys.js';
+import { planKey, projectKey, projectSettingKey } from './entity_keys.js';
 
 export interface BootstrapResult {
+  projectsSeeded: number;
   plansSeeded: number;
   settingsSeeded: number;
+}
+
+interface ProjectBootstrapRow {
+  project_uuid: string;
 }
 
 interface PlanBootstrapRow {
@@ -29,10 +34,6 @@ export function bootstrapSyncMetadata(db: Database): BootstrapResult {
         .prepare('SELECT bootstrap_completed FROM schema_version ORDER BY rowid DESC LIMIT 1')
         .get() as { bootstrap_completed?: number } | null
     )?.bootstrap_completed;
-    if (bootstrapCompleted === 1) {
-      debugLog('[sync/bootstrap] Bootstrap already completed; skipping');
-      return { plansSeeded: 0, settingsSeeded: 0 };
-    }
 
     // Per-task sync_sequence rows are intentionally not seeded: server.ts's
     // loadTaskSnapshot redirects to loadPlanSnapshot, so a task: invalidation
@@ -60,18 +61,60 @@ export function bootstrapSyncMetadata(db: Database): BootstrapResult {
       VALUES (?, ?, ?, ?, NULL, NULL, ${SQL_NOW_ISO_UTC})
     `);
 
+    if (bootstrapCompleted === 1) {
+      const projectsSeeded = bootstrapProjects(db, insertSequence, existingTargetKeys);
+      debugLog(
+        `[sync/bootstrap] Bootstrap already completed; seeded missing project rows=${projectsSeeded}`
+      );
+      return { projectsSeeded, plansSeeded: 0, settingsSeeded: 0 };
+    }
+
     const result = {
+      projectsSeeded: bootstrapProjects(db, insertSequence, existingTargetKeys),
       plansSeeded: bootstrapPlans(db, insertSequence, existingTargetKeys),
       settingsSeeded: bootstrapProjectSettings(db, insertSequence, existingTargetKeys),
     };
     db.prepare('UPDATE schema_version SET bootstrap_completed = 1').run();
     debugLog(
-      `[sync/bootstrap] Completed bootstrap: plansSeeded=${result.plansSeeded}, settingsSeeded=${result.settingsSeeded}`
+      `[sync/bootstrap] Completed bootstrap: projectsSeeded=${result.projectsSeeded}, plansSeeded=${result.plansSeeded}, settingsSeeded=${result.settingsSeeded}`
     );
     return result;
   });
 
   return runBootstrap.immediate();
+}
+
+function bootstrapProjects(
+  db: Database,
+  insertSequence: Statement,
+  existingTargetKeys: Set<string>
+): number {
+  const rows = db
+    .prepare(
+      `
+        SELECT uuid AS project_uuid
+        FROM project
+        WHERE uuid IS NOT NULL
+        ORDER BY uuid
+      `
+    )
+    .all() as ProjectBootstrapRow[];
+
+  let inserted = 0;
+  for (const row of rows) {
+    const targetKey = projectKey(row.project_uuid);
+    if (existingTargetKeys.has(targetKey)) {
+      continue;
+    }
+    const result = runBootstrapInsert(insertSequence, db, 'project', {
+      projectUuid: row.project_uuid,
+      targetKey,
+      revision: null,
+    });
+    existingTargetKeys.add(targetKey);
+    inserted += result.changes;
+  }
+  return inserted;
 }
 
 function bootstrapPlans(
@@ -151,10 +194,19 @@ function bootstrapProjectSettings(
 function runBootstrapInsert(
   insertSequence: Statement,
   db: Database,
-  targetType: 'plan' | 'project_setting',
+  targetType: 'project' | 'plan' | 'project_setting',
   context: Record<string, unknown>
 ): { changes: number } {
   try {
+    if (targetType === 'project') {
+      const { projectUuid, targetKey, revision } = context as {
+        projectUuid: string;
+        targetKey: string;
+        revision: number | null;
+      };
+      return insertSequence.run(projectUuid, 'project', targetKey, revision);
+    }
+
     if (targetType === 'plan') {
       const { projectUuid, targetKey, revision } = context as {
         projectUuid: string;

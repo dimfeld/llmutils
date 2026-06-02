@@ -29,6 +29,7 @@ import {
   setPlanParentOperation,
   setPlanScalarOperation,
   setProjectSettingOperation,
+  upsertProjectOperation,
   updatePlanTaskTextOperation,
 } from './operations.js';
 
@@ -223,6 +224,14 @@ describe('sync operation exclusions', () => {
       ),
       await deletePlanOperation(PROJECT_UUID, { planUuid: PLAN_UUID }, options),
       await deleteProjectOperation({ projectUuid: PROJECT_UUID }, options),
+      await upsertProjectOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          repositoryId: 'github.com__example__repo',
+          remoteUrl: 'https://github.com/example/repo.git',
+        },
+        options
+      ),
       await setPlanParentOperation(
         PROJECT_UUID,
         { planUuid: PLAN_UUID, newParentUuid: OTHER_PLAN_UUID },

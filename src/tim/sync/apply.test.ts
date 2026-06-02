@@ -6,7 +6,7 @@ import { getAssignment, importAssignment } from '../db/assignment.js';
 import { MAX_ARTIFACT_BYTES } from '../artifacts/constants.js';
 import { getArtifactByUuid } from '../db/artifact.js';
 import { runMigrations } from '../db/migrations.js';
-import { getOrCreateProject, type Project } from '../db/project.js';
+import { getOrCreateProject, getProject, getProjectByUuid, type Project } from '../db/project.js';
 import {
   getPlanByUuid,
   getPlanDependenciesByUuid,
@@ -49,6 +49,7 @@ import {
   setPlanParentOperation,
   setPlanScalarOperation,
   setProjectSettingOperation,
+  upsertProjectOperation,
   updatePlanTaskTextOperation,
 } from './operations.js';
 import { createBatchEnvelope } from './types.js';
@@ -122,6 +123,72 @@ describe('apply helpers', () => {
 });
 
 describe('project.delete', () => {
+  test('project.upsert creates shared project fields on main', async () => {
+    db.prepare('DELETE FROM project WHERE uuid = ?').run(PROJECT_UUID);
+
+    const operation = await upsertProjectOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        repositoryId: 'github.com__example__repo',
+        remoteUrl: 'https://github.com/example/repo.git',
+        remoteLabel: 'example/repo',
+        highestPlanId: 7,
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    const result = applyOperation(db, operation);
+
+    expect(result.status).toBe('applied');
+    expect(result.invalidations).toEqual([`project:${PROJECT_UUID}`]);
+    expect(getProjectByUuid(db, PROJECT_UUID)).toMatchObject({
+      uuid: PROJECT_UUID,
+      repository_id: 'github.com__example__repo',
+      remote_url: 'https://github.com/example/repo.git',
+      remote_label: 'example/repo',
+      highest_plan_id: 7,
+      last_git_root: null,
+      external_config_path: null,
+      external_tasks_dir: null,
+    });
+  });
+
+  test('project.upsert adopts an existing repository row while preserving local paths', async () => {
+    const localUuid = '99999999-9999-4999-8999-999999999999';
+    db.prepare(
+      `
+        UPDATE project
+        SET uuid = ?,
+            last_git_root = '/local/repo',
+            external_config_path = '/local/repo/.tim/config/tim.yml',
+            external_tasks_dir = '/local/repo/tasks'
+        WHERE uuid = ?
+      `
+    ).run(localUuid, PROJECT_UUID);
+
+    const result = applyOperation(
+      db,
+      await upsertProjectOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          repositoryId: 'github.com__example__repo',
+          remoteUrl: null,
+          remoteLabel: null,
+          highestPlanId: 3,
+        },
+        { originNodeId: NODE_A, localSequence: 1 }
+      )
+    );
+
+    expect(result.status).toBe('applied');
+    expect(getProjectByUuid(db, localUuid)).toBeNull();
+    expect(getProject(db, 'github.com__example__repo')).toMatchObject({
+      uuid: PROJECT_UUID,
+      last_git_root: '/local/repo',
+      external_config_path: '/local/repo/.tim/config/tim.yml',
+      external_tasks_dir: '/local/repo/tasks',
+    });
+  });
+
   test('applies through the sync engine and removes project-owned state', async () => {
     seedPlan();
     await applyOperation(

@@ -22,6 +22,7 @@ import {
   setPlanParentOperation,
   setPlanScalarOperation,
   setProjectSettingOperation,
+  upsertProjectOperation,
   updatePlanTaskTextOperation,
 } from './operations.js';
 import { SyncOperationEnvelopeSchema, SyncOperationPayloadSchema } from './types.js';
@@ -121,18 +122,28 @@ describe('sync operation constructors', () => {
         { projectUuid: PROJECT_UUID },
         { originNodeId: 'override-node', localSequence: 14 }
       ),
+      await upsertProjectOperation(
+        {
+          projectUuid: PROJECT_UUID,
+          repositoryId: 'github.com__example__repo',
+          remoteUrl: 'https://github.com/example/repo.git',
+          remoteLabel: 'example/repo',
+          highestPlanId: 12,
+        },
+        { originNodeId: 'override-node', localSequence: 15 }
+      ),
       await setProjectSettingOperation(
         { projectUuid: PROJECT_UUID, setting: 'color', value: 'blue', baseRevision: 1 },
-        { originNodeId: 'override-node', localSequence: 15 }
+        { originNodeId: 'override-node', localSequence: 16 }
       ),
       await deleteProjectSettingOperation(
         { projectUuid: PROJECT_UUID, setting: 'color', baseRevision: 2 },
-        { originNodeId: 'override-node', localSequence: 16 }
+        { originNodeId: 'override-node', localSequence: 17 }
       ),
       await setPlanParentOperation(
         PROJECT_UUID,
         { planUuid: PLAN_UUID, newParentUuid: OTHER_PLAN_UUID },
-        { originNodeId: 'override-node', localSequence: 17 }
+        { originNodeId: 'override-node', localSequence: 18 }
       ),
       await promotePlanTaskOperation(
         PROJECT_UUID,
@@ -143,7 +154,7 @@ describe('sync operation constructors', () => {
           title: 'Promoted plan',
           description: 'From task',
         },
-        { originNodeId: 'override-node', localSequence: 18 }
+        { originNodeId: 'override-node', localSequence: 19 }
       ),
       await buildArtifactAttachOperation(
         {
@@ -156,19 +167,19 @@ describe('sync operation constructors', () => {
           sha256: 'abc123',
           message: 'before fix',
         },
-        { originNodeId: 'override-node', localSequence: 19 }
+        { originNodeId: 'override-node', localSequence: 20 }
       ),
       await buildArtifactSoftDeleteOperation(
         { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
-        { originNodeId: 'override-node', localSequence: 20 }
+        { originNodeId: 'override-node', localSequence: 21 }
       ),
       await buildArtifactRestoreOperation(
         { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
-        { originNodeId: 'override-node', localSequence: 21 }
+        { originNodeId: 'override-node', localSequence: 22 }
       ),
       await buildArtifactHardDeleteOperation(
         { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
-        { originNodeId: 'override-node', localSequence: 22 }
+        { originNodeId: 'override-node', localSequence: 23 }
       ),
     ];
 

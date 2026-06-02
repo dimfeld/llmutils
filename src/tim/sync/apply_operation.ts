@@ -7,6 +7,7 @@ import {
   writeProjectionProjectSettingRow,
 } from '../db/project_settings.js';
 import type { Project } from '../db/project.js';
+import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import { SyncFifoGapError, SyncValidationError } from './errors.js';
 import { createSyncConflict } from './conflicts.js';
 import {
@@ -124,6 +125,37 @@ export function applyOperationInTransaction(
       );
     }
     insertReceivedOperation(db, nextEnvelope, normalizedPayload, batchId, batchAtomic);
+  }
+
+  if (nextEnvelope.op.type === 'project.upsert') {
+    const fifoError = checkFifo(db, nextEnvelope);
+    if (fifoError) {
+      return {
+        status: 'deferred',
+        sequenceIds: [],
+        invalidations: [],
+        acknowledged: false,
+        error: fifoError,
+      };
+    }
+    const mutations = applyProjectUpsert(
+      db,
+      nextEnvelope as SyncOperationEnvelope & {
+        op: Extract<SyncOperationPayload, { type: 'project.upsert' }>;
+      }
+    );
+    const sequenceIds = mutations.map(
+      (mutation) => insertSequence(db, nextEnvelope, mutation).sequence
+    );
+    const invalidations = [...new Set(mutations.map((mutation) => mutation.targetKey))];
+    markOperationApplied(db, nextEnvelope.operationUuid, sequenceIds, invalidations);
+    return {
+      status: 'applied',
+      sequenceId: sequenceIds.at(-1),
+      sequenceIds,
+      invalidations,
+      acknowledged: true,
+    };
   }
 
   const project = db
@@ -344,6 +376,8 @@ function applyPayload(
       );
     case 'project.delete':
       return applyProjectDelete(db, project, { ...envelope, op });
+    case 'project.upsert':
+      return applyProjectUpsert(db, { ...envelope, op });
     case 'project_setting.set':
     case 'project_setting.delete':
       return applyProjectSetting(
@@ -363,6 +397,99 @@ function applyPayload(
       return exhaustive;
     }
   }
+}
+
+function applyProjectUpsert(
+  db: Database,
+  envelope: SyncOperationEnvelope & {
+    op: Extract<SyncOperationPayload, { type: 'project.upsert' }>;
+  }
+): Mutation[] {
+  upsertSyncedProject(db, {
+    uuid: envelope.op.projectUuid,
+    repositoryId: envelope.op.repositoryId,
+    remoteUrl: envelope.op.remoteUrl ?? null,
+    remoteLabel: envelope.op.remoteLabel ?? null,
+    highestPlanId: envelope.op.highestPlanId ?? 0,
+  });
+  return [
+    {
+      targetType: envelope.targetType,
+      targetKey: envelope.targetKey,
+      revision: envelope.op.highestPlanId ?? null,
+    },
+  ];
+}
+
+export function upsertSyncedProject(
+  db: Database,
+  input: {
+    uuid: string;
+    repositoryId: string;
+    remoteUrl: string | null;
+    remoteLabel: string | null;
+    highestPlanId: number;
+  }
+): Project {
+  const byUuid = db
+    .prepare('SELECT * FROM project WHERE uuid = ?')
+    .get(input.uuid) as Project | null;
+  const byRepository = db
+    .prepare('SELECT * FROM project WHERE repository_id = ?')
+    .get(input.repositoryId) as Project | null;
+  if (byUuid && byRepository && byUuid.id !== byRepository.id) {
+    throw new SyncValidationError(
+      `Project UUID ${input.uuid} and repository ${input.repositoryId} refer to different local projects`,
+      { issues: [] }
+    );
+  }
+  const existing = byUuid ?? byRepository;
+  if (!existing) {
+    db.prepare(
+      `
+        INSERT INTO project (
+          uuid,
+          repository_id,
+          remote_url,
+          last_git_root,
+          external_config_path,
+          external_tasks_dir,
+          remote_label,
+          highest_plan_id,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, NULL, NULL, NULL, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+      `
+    ).run(input.uuid, input.repositoryId, input.remoteUrl, input.remoteLabel, input.highestPlanId);
+  } else {
+    db.prepare(
+      `
+        UPDATE project
+        SET uuid = ?,
+            repository_id = ?,
+            remote_url = ?,
+            remote_label = ?,
+            highest_plan_id = max(highest_plan_id, ?),
+            updated_at = ${SQL_NOW_ISO_UTC}
+        WHERE id = ?
+      `
+    ).run(
+      input.uuid,
+      input.repositoryId,
+      input.remoteUrl,
+      input.remoteLabel,
+      input.highestPlanId,
+      existing.id
+    );
+  }
+  const project = db
+    .prepare('SELECT * FROM project WHERE uuid = ?')
+    .get(input.uuid) as Project | null;
+  if (!project) {
+    throw new SyncValidationError(`Failed to upsert synced project ${input.uuid}`, { issues: [] });
+  }
+  return project;
 }
 
 function applyArtifactPayload(

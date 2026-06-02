@@ -340,6 +340,16 @@ export const SyncProjectSettingDeletePayloadSchema = z.object({
 });
 export type SyncProjectSettingDeletePayload = z.infer<typeof SyncProjectSettingDeletePayloadSchema>;
 
+export const SyncProjectUpsertPayloadSchema = z.object({
+  type: z.literal('project.upsert'),
+  projectUuid: SyncUuidSchema,
+  repositoryId: z.string().min(1),
+  remoteUrl: z.string().nullable().optional(),
+  remoteLabel: z.string().nullable().optional(),
+  highestPlanId: z.number().int().nonnegative().optional(),
+});
+export type SyncProjectUpsertPayload = z.infer<typeof SyncProjectUpsertPayloadSchema>;
+
 export const SyncProjectDeletePayloadSchema = z.object({
   type: z.literal('project.delete'),
   projectUuid: SyncUuidSchema,
@@ -421,6 +431,7 @@ export const SyncOperationPayloadSchema = z.discriminatedUnion('type', [
   SyncPlanAddListItemPayloadSchema,
   SyncPlanRemoveListItemPayloadSchema,
   SyncPlanDeletePayloadSchema,
+  SyncProjectUpsertPayloadSchema,
   SyncProjectDeletePayloadSchema,
   SyncProjectSettingSetPayloadSchema,
   SyncProjectSettingDeletePayloadSchema,
@@ -558,6 +569,7 @@ export const SyncOperationTypeSchema = z.enum([
   'plan.add_list_item',
   'plan.remove_list_item',
   'plan.delete',
+  'project.upsert',
   'project.delete',
   'project_setting.set',
   'project_setting.delete',
@@ -572,6 +584,7 @@ export type SyncOperationType = SyncOperationPayload['type'];
 
 export function deriveTargetKey(op: SyncOperationPayload): SyncOperationTarget {
   switch (op.type) {
+    case 'project.upsert':
     case 'project.delete':
       return {
         targetType: 'project',
@@ -619,6 +632,7 @@ export function deriveTargetKey(op: SyncOperationPayload): SyncOperationTarget {
  */
 export function deriveProjectUuid(op: SyncOperationPayload): string {
   if (
+    op.type === 'project.upsert' ||
     op.type === 'project.delete' ||
     op.type === 'project_setting.set' ||
     op.type === 'project_setting.delete'

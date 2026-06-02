@@ -18,6 +18,7 @@ import {
   rebuildPlanProjectionInTransaction,
   rebuildProjectSettingProjection,
 } from './projection.js';
+import { upsertSyncedProject } from './apply_operation.js';
 import { assertValidPayload } from './types.js';
 import {
   replaceArtifactsForPlanSnapshot,
@@ -65,6 +66,17 @@ export interface CanonicalPlanSnapshot {
     tags: string[];
     artifacts?: ArtifactSnapshotRow[];
     artifactTombstones?: ArtifactTombstoneSnapshotRow[];
+  };
+}
+
+export interface CanonicalProjectSnapshot {
+  type: 'project';
+  project: {
+    uuid: string;
+    repositoryId: string;
+    remoteUrl: string | null;
+    remoteLabel: string | null;
+    highestPlanId: number;
   };
 }
 
@@ -116,6 +128,7 @@ export type CanonicalProjectSettingSnapshot =
     };
 
 export type CanonicalSnapshot =
+  | CanonicalProjectSnapshot
   | CanonicalPlanSnapshot
   | CanonicalDeletedPlanSnapshot
   | CanonicalDeletedProjectSnapshot
@@ -124,6 +137,17 @@ export type CanonicalSnapshot =
 
 // Keep in sync with isWorkCompleteStatus in src/tim/plans/plan_state_utils.ts.
 const ASSIGNMENT_CLEANUP_STATUSES = new Set(['done', 'needs_review', 'reviewed', 'cancelled']);
+
+const CanonicalProjectSnapshotSchema = z.object({
+  type: z.literal('project'),
+  project: z.object({
+    uuid: z.string(),
+    repositoryId: z.string().min(1),
+    remoteUrl: z.string().nullable(),
+    remoteLabel: z.string().nullable(),
+    highestPlanId: z.number().int().nonnegative(),
+  }),
+}) satisfies z.ZodType<CanonicalProjectSnapshot>;
 
 const CanonicalPlanSnapshotSchema = z.object({
   type: z.literal('plan'),
@@ -250,6 +274,7 @@ const CanonicalProjectSettingSnapshotSchema = z.union([
 ]) satisfies z.ZodType<CanonicalProjectSettingSnapshot>;
 
 export const CanonicalSnapshotSchema = z.union([
+  CanonicalProjectSnapshotSchema,
   CanonicalPlanSnapshotSchema,
   CanonicalDeletedPlanSnapshotSchema,
   CanonicalDeletedProjectSnapshotSchema,
@@ -273,6 +298,11 @@ export function mergeCanonicalRefresh(db: Database, snapshot: CanonicalSnapshot)
 function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): string[] {
   if (snapshot.type === 'never_existed') {
     return writeNeverExistedSnapshot(db, snapshot);
+  }
+
+  if (snapshot.type === 'project') {
+    upsertSyncedProject(db, snapshot.project);
+    return [];
   }
 
   if (snapshot.type === 'plan_deleted') {
