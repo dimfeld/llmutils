@@ -18,6 +18,10 @@ import {
 import { createApprovalHandler } from './app_server_approval';
 import { createAppServerFormatter } from './app_server_format';
 import type { CodexStepOptions } from './codex_runner';
+import {
+  buildOutputSchemaCorrectionPrompt,
+  validateJsonOutputAgainstSchema,
+} from './schema_output';
 import { TerminalInputReader } from '../claude_code/terminal_input.ts';
 
 const RATE_LIMIT_POLL_INTERVAL_MS = 15 * 60 * 1000;
@@ -157,6 +161,12 @@ export async function executeCodexStepViaAppServer(
   const keepSessionOpen = appServerMode === 'chat-session' && hasInteractiveInputSource;
   const singleTurnSteeringEnabled =
     appServerMode === 'single-turn-with-steering' && hasInteractiveInputSource;
+  const hasOutputSchema = !!(options?.outputSchema || options?.outputSchemaPath);
+  const outputSchemaForValidation =
+    options?.outputSchema ??
+    (options?.outputSchemaPath
+      ? JSON.parse(await fs.readFile(options.outputSchemaPath, 'utf8'))
+      : undefined);
 
   // Create tunnel server for output forwarding from child processes
   let tunnelServer: TunnelServer | undefined;
@@ -821,8 +831,8 @@ export async function executeCodexStepViaAppServer(
     }
 
     throwIfConnectionExited();
-    const failedMsg = formatter.getFailedAgentMessage();
-    const final = failedMsg || formatter.getFinalAgentMessage();
+    let failedMsg = formatter.getFailedAgentMessage();
+    let final = failedMsg || formatter.getFinalAgentMessage();
     if (!final) {
       throwIfConnectionExited();
       if (appServerMode === 'chat-session' && successfulTurns === 0) {
@@ -830,6 +840,33 @@ export async function executeCodexStepViaAppServer(
       }
       error('Codex returned no final agent message. Enable debug logs for details.');
       throw new Error('No final agent message found in Codex output.');
+    }
+
+    if (hasOutputSchema && outputSchemaForValidation) {
+      let validation = validateJsonOutputAgainstSchema(final, outputSchemaForValidation);
+      if (validation.valid) {
+        throwIfConnectionExited();
+        return final;
+      }
+
+      warn(
+        'Codex returned output that does not match the schema; requesting corrected JSON output.'
+      );
+      await executeTurnWithRetry(buildOutputSchemaCorrectionPrompt(final, validation.error));
+      throwIfConnectionExited();
+
+      failedMsg = formatter.getFailedAgentMessage();
+      final = failedMsg || formatter.getFinalAgentMessage();
+      if (!final) {
+        error('Codex returned no final agent message after schema correction.');
+        throw new Error('No final agent message found in Codex output.');
+      }
+      validation = validateJsonOutputAgainstSchema(final, outputSchemaForValidation);
+      if (!validation.valid) {
+        throw new Error(
+          `Codex returned output that does not match the schema.${validation.error ? ` ${validation.error}` : ''}`
+        );
+      }
     }
 
     throwIfConnectionExited();

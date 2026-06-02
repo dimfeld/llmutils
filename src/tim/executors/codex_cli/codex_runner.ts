@@ -17,6 +17,10 @@ import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handl
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
 import { executeCodexStepViaAppServer } from './app_server_runner';
 import { isCodexAppServerEnabled } from './app_server_mode';
+import {
+  buildOutputSchemaCorrectionPrompt,
+  validateJsonOutputAgainstSchema,
+} from './schema_output';
 
 export type CodexAppServerMode = 'single-turn' | 'chat-session' | 'single-turn-with-steering';
 
@@ -53,9 +57,17 @@ export async function executeCodexStep(
     typeof outputSchemaPathOrOptions === 'string'
       ? { outputSchemaPath: outputSchemaPathOrOptions }
       : (outputSchemaPathOrOptions ?? {});
+  const hasOutputSchema = !!(options.outputSchemaPath || options.outputSchema);
+  const outputSchemaForValidation =
+    options.outputSchema ??
+    (options.outputSchemaPath ? await readOutputSchemaFile(options.outputSchemaPath) : undefined);
+  const optionsForExecution =
+    outputSchemaForValidation && !options.outputSchema
+      ? { ...options, outputSchema: outputSchemaForValidation as Record<string, unknown> }
+      : options;
 
   if (isCodexAppServerEnabled()) {
-    return executeCodexStepViaAppServer(prompt, cwd, timConfig, options);
+    return executeCodexStepViaAppServer(prompt, cwd, timConfig, optionsForExecution);
   }
 
   // Validate subprocess monitor rules up front, before any resource allocation,
@@ -127,9 +139,15 @@ export async function executeCodexStep(
   let lastExitCode: number | undefined;
   let lastSignal: NodeJS.Signals | undefined;
   let threadId: string | undefined;
+  let schemaCorrectionRequested = false;
+  let resumePrompt = 'continue';
 
   try {
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    for (
+      let attempt = 1, maxTotalAttempts = hasOutputSchema ? maxAttempts + 1 : maxAttempts;
+      attempt <= maxTotalAttempts;
+      attempt++
+    ) {
       const formatter = createCodexStdoutFormatter();
       const attemptArgs = [...args];
       if (attempt === 1 || !threadId) {
@@ -138,13 +156,8 @@ export async function executeCodexStep(
           warn('Codex retry requested but no thread id was captured; issuing a fresh run.');
         }
       } else {
-        attemptArgs.push(
-          '--json',
-          'resume',
-          threadId,
-          // We just prompt "continue" since we're resuming and it should still have the previous context
-          'continue'
-        );
+        attemptArgs.push('--json', 'resume', threadId, resumePrompt);
+        resumePrompt = 'continue';
       }
 
       let monitorHandle: SubprocessMonitorHandle | undefined;
@@ -221,6 +234,25 @@ export async function executeCodexStep(
         throw new Error('No final agent message found in Codex output.');
       }
 
+      if (outputSchemaForValidation) {
+        const validation = validateJsonOutputAgainstSchema(final, outputSchemaForValidation);
+        if (validation.valid) {
+          return final;
+        }
+        if (!schemaCorrectionRequested && threadId) {
+          schemaCorrectionRequested = true;
+          resumePrompt = buildOutputSchemaCorrectionPrompt(final, validation.error);
+          warn(
+            'Codex returned output that does not match the schema; requesting corrected JSON output.'
+          );
+          continue;
+        }
+
+        throw new Error(
+          `Codex returned output that does not match the schema.${validation.error ? ` ${validation.error}` : ''}`
+        );
+      }
+
       return final;
     }
 
@@ -234,6 +266,11 @@ export async function executeCodexStep(
       await fs.rm(tunnelTempDir, { recursive: true, force: true });
     }
   }
+}
+
+async function readOutputSchemaFile(outputSchemaPath: string): Promise<unknown> {
+  const schemaContent = await fs.readFile(outputSchemaPath, 'utf8');
+  return JSON.parse(schemaContent);
 }
 
 function inferSignalFromExitCode(exitCode: number | null): NodeJS.Signals | undefined {

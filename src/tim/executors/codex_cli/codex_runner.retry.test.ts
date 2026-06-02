@@ -1,4 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 
 const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
 
@@ -255,6 +258,138 @@ describe('executeCodexStep subprocess monitor wiring', () => {
         TIM_NOTIFY_SUPPRESS: '1',
       },
     });
+  });
+
+  test('passes the prompt through unchanged when using an output schema file', async () => {
+    setupSuccessfulSpawn();
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-runner-schema-test-'));
+    const schemaPath = path.join(tempDir, 'schema.json');
+    vi.mocked(createCodexStdoutFormatter).mockReturnValue({
+      formatChunk: () => '',
+      getFinalAgentMessage: () => '{"done":true}',
+      getFailedAgentMessage: () => undefined,
+      getThreadId: () => undefined,
+      getSessionId: () => undefined,
+    } as any);
+
+    try {
+      await fs.writeFile(
+        schemaPath,
+        JSON.stringify({
+          type: 'object',
+          required: ['done'],
+          properties: { done: { type: 'boolean' } },
+          additionalProperties: false,
+        })
+      );
+
+      await executeCodexStep('prompt', '/tmp', {} as any, {
+        outputSchemaPath: schemaPath,
+      });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+
+    const args = vi.mocked(spawnAndLogOutput).mock.calls[0][0];
+    expect(args).toContain('--output-schema');
+    expect(args.at(-2)).toBe('--json');
+    expect(args.at(-1)).toBe('prompt');
+  });
+
+  test('resumes with a correction prompt when schema-backed output is not JSON', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-runner-schema-test-'));
+    const schemaPath = path.join(tempDir, 'schema.json');
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (_args: string[], opts: any) => {
+      if (opts?.formatStdout) {
+        opts.formatStdout('chunk');
+      }
+      return { exitCode: 0, stdout: '', stderr: '', signal: null, killedByInactivity: false };
+    });
+
+    vi.mocked(createCodexStdoutFormatter)
+      .mockReturnValueOnce({
+        formatChunk: () => '',
+        getFinalAgentMessage: () => 'not json',
+        getFailedAgentMessage: () => undefined,
+        getThreadId: () => 'thread-123',
+        getSessionId: () => undefined,
+      } as any)
+      .mockReturnValueOnce({
+        formatChunk: () => '',
+        getFinalAgentMessage: () => '{"ok":true}',
+        getFailedAgentMessage: () => undefined,
+        getThreadId: () => 'thread-123',
+        getSessionId: () => undefined,
+      } as any);
+
+    let output = '';
+    try {
+      await fs.writeFile(
+        schemaPath,
+        JSON.stringify({
+          type: 'object',
+          required: ['ok'],
+          properties: { ok: { type: 'boolean' } },
+          additionalProperties: false,
+        })
+      );
+
+      output = await executeCodexStep('prompt', '/tmp', {} as any, {
+        outputSchemaPath: schemaPath,
+      });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+
+    expect(output).toBe('{"ok":true}');
+    expect(vi.mocked(spawnAndLogOutput)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(spawnAndLogOutput).mock.calls[1][0]).toContain('--output-schema');
+    expect(vi.mocked(spawnAndLogOutput).mock.calls[1][0]).toContain(schemaPath);
+    expect(vi.mocked(spawnAndLogOutput).mock.calls[1][0].slice(-3)).toEqual([
+      'resume',
+      'thread-123',
+      expect.stringContaining('The final output is not valid JSON'),
+    ]);
+  });
+
+  test('resumes with a correction prompt when schema-backed JSON fails schema validation', async () => {
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (_args: string[], opts: any) => {
+      if (opts?.formatStdout) {
+        opts.formatStdout('chunk');
+      }
+      return { exitCode: 0, stdout: '', stderr: '', signal: null, killedByInactivity: false };
+    });
+
+    vi.mocked(createCodexStdoutFormatter)
+      .mockReturnValueOnce({
+        formatChunk: () => '',
+        getFinalAgentMessage: () => '{"ok":"yes"}',
+        getFailedAgentMessage: () => undefined,
+        getThreadId: () => 'thread-123',
+        getSessionId: () => undefined,
+      } as any)
+      .mockReturnValueOnce({
+        formatChunk: () => '',
+        getFinalAgentMessage: () => '{"ok":true}',
+        getFailedAgentMessage: () => undefined,
+        getThreadId: () => 'thread-123',
+        getSessionId: () => undefined,
+      } as any);
+
+    const output = await executeCodexStep('prompt', '/tmp', {} as any, {
+      outputSchema: {
+        type: 'object',
+        required: ['ok'],
+        properties: { ok: { type: 'boolean' } },
+        additionalProperties: false,
+      },
+    });
+
+    expect(output).toBe('{"ok":true}');
+    expect(vi.mocked(spawnAndLogOutput)).toHaveBeenCalledTimes(2);
+    const correctionPrompt = vi.mocked(spawnAndLogOutput).mock.calls[1][0].at(-1);
+    expect(correctionPrompt).toContain('Validation failure:');
+    expect(correctionPrompt).toContain('must be boolean');
   });
 
   test('passes project environment options to app-server mode', async () => {

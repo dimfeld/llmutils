@@ -18,6 +18,10 @@ import {
   resetToolUseCache,
 } from '../executors/claude_code/format.js';
 import { createCodexStdoutFormatter } from '../executors/codex_cli/format.js';
+import {
+  buildOutputSchemaCorrectionPrompt,
+  validateJsonOutputAgainstSchema,
+} from '../executors/codex_cli/schema_output.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { resolveOptionalPromptInput } from './prompt_input.js';
@@ -470,7 +474,7 @@ async function executeCodexPrompt(
       process.exitCode = 1;
     }
 
-    const finalMessage =
+    let finalMessage =
       failedMessage ?? formatter.getFinalAgentResponseMessage() ?? formatter.getFinalAgentMessage();
     const timedOut = killedByTimeout || result.killedByInactivity;
     const hasFinalMessage = !!finalMessage;
@@ -487,6 +491,85 @@ async function executeCodexPrompt(
 
     if (!finalMessage) {
       throw new Error('No final agent message found in Codex output.');
+    }
+
+    const outputSchema = options.jsonSchema ? JSON.parse(options.jsonSchema) : undefined;
+    if (outputSchema) {
+      let validation = validateJsonOutputAgainstSchema(finalMessage, outputSchema);
+      if (validation.valid) {
+        return normalizeStructuredJsonOutput(finalMessage);
+      }
+
+      const threadId = formatter.getThreadId();
+      if (!threadId) {
+        throw new Error(
+          `Codex returned output that does not match the schema.${validation.error ? ` ${validation.error}` : ''}`
+        );
+      }
+
+      warn(
+        'Codex returned output that does not match the schema; requesting corrected JSON output.'
+      );
+      const correctionFormatter = createCodexStdoutFormatter();
+      const correctionArgs = args.slice(0, -2);
+      correctionArgs.push(
+        '--json',
+        'resume',
+        threadId,
+        buildOutputSchemaCorrectionPrompt(finalMessage, validation.error)
+      );
+      let correctionKilledByTimeout = false;
+      const correctionResult = await spawnAndLogOutput(correctionArgs, {
+        cwd: options.cwd,
+        env: {
+          TIM_EXECUTOR: 'codex',
+          AGENT: process.env.AGENT || '1',
+          TIM_NOTIFY_SUPPRESS: '1',
+          ...(tunnelServer && tunnelSocketPath ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {}),
+        },
+        timEnvironment: options.timEnvironment,
+        formatStdout: correctionFormatter.formatChunk,
+        inactivityTimeoutMs: RUN_PROMPT_INACTIVITY_TIMEOUT_MS,
+        initialInactivityTimeoutMs: RUN_PROMPT_INITIAL_INACTIVITY_TIMEOUT_MS,
+        onInactivityKill: () => {
+          correctionKilledByTimeout = true;
+          debugLog(
+            `Codex run-prompt schema correction timed out after ${Math.round(RUN_PROMPT_INACTIVITY_TIMEOUT_MS / 60000)} minutes; terminating.`
+          );
+        },
+      });
+
+      const correctionFinalMessage =
+        correctionFormatter.getFailedAgentMessage() ??
+        correctionFormatter.getFinalAgentResponseMessage() ??
+        correctionFormatter.getFinalAgentMessage();
+      const correctionTimedOut = correctionKilledByTimeout || correctionResult.killedByInactivity;
+      const hasCorrectionFinalMessage = !!correctionFinalMessage;
+
+      if (correctionTimedOut && !hasCorrectionFinalMessage) {
+        throw new Error(
+          `Codex run-prompt schema correction timed out after ${Math.round(RUN_PROMPT_INACTIVITY_TIMEOUT_MS / 60000)} minutes`
+        );
+      }
+
+      if (correctionResult.exitCode !== 0 && !(correctionTimedOut && hasCorrectionFinalMessage)) {
+        throw new Error(
+          `Codex schema correction exited with non-zero exit code: ${correctionResult.exitCode}`
+        );
+      }
+
+      if (!correctionFinalMessage) {
+        throw new Error('No final agent message found in Codex output.');
+      }
+
+      validation = validateJsonOutputAgainstSchema(correctionFinalMessage, outputSchema);
+      if (!validation.valid) {
+        throw new Error(
+          `Codex returned output that does not match the schema.${validation.error ? ` ${validation.error}` : ''}`
+        );
+      }
+
+      finalMessage = correctionFinalMessage;
     }
 
     if (options.jsonSchema) {

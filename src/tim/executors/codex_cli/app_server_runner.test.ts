@@ -520,7 +520,7 @@ describe('executeCodexStepViaAppServer', () => {
   });
 
   test('passes output schema through to turnStart', async () => {
-    const harness = await createHarness();
+    const harness = await createHarness({ finalMessage: '{"status":"ok"}' });
     const outputSchema = {
       type: 'object',
       properties: {
@@ -540,6 +540,90 @@ describe('executeCodexStepViaAppServer', () => {
     expect(harness.connection.turnStart.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ outputSchema })
     );
+  });
+
+  test('starts a correction turn when schema-backed output is not JSON', async () => {
+    const harness = await createHarness();
+    const outputSchema = {
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+      },
+    };
+
+    harness.formatter.getFinalAgentMessage
+      .mockReturnValueOnce('not json')
+      .mockReturnValueOnce('{"status":"ok"}');
+
+    harness.connection.turnStart.mockImplementation(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    const output = await harness.executeCodexStepViaAppServer(
+      'prompt',
+      '/repo',
+      {},
+      { outputSchema }
+    );
+
+    expect(output).toBe('{"status":"ok"}');
+    expect(harness.connection.turnStart).toHaveBeenCalledTimes(2);
+    expect(harness.connection.turnStart.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        outputSchema,
+        input: [{ type: 'text', text: 'prompt' }],
+      })
+    );
+    expect(harness.connection.turnStart.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        outputSchema,
+        input: [
+          {
+            type: 'text',
+            text: expect.stringContaining('The final output is not valid JSON'),
+          },
+        ],
+      })
+    );
+  });
+
+  test('starts a correction turn when schema-backed JSON fails schema validation', async () => {
+    const harness = await createHarness();
+    const outputSchema = {
+      type: 'object',
+      required: ['status'],
+      properties: {
+        status: { type: 'string' },
+      },
+      additionalProperties: false,
+    };
+
+    harness.formatter.getFinalAgentMessage
+      .mockReturnValueOnce('{"status":404}')
+      .mockReturnValueOnce('{"status":"ok"}');
+
+    harness.connection.turnStart.mockImplementation(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    const output = await harness.executeCodexStepViaAppServer(
+      'prompt',
+      '/repo',
+      {},
+      { outputSchema }
+    );
+
+    expect(output).toBe('{"status":"ok"}');
+    expect(harness.connection.turnStart).toHaveBeenCalledTimes(2);
+    const correctionInput = harness.connection.turnStart.mock.calls[1]?.[0]?.input?.[0]?.text;
+    expect(correctionInput).toContain('Validation failure:');
+    expect(correctionInput).toContain('must be string');
   });
 
   test('passes model through to threadStart and turnStart', async () => {
