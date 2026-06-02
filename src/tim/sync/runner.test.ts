@@ -325,6 +325,53 @@ describe('sync runner', () => {
     expect(operationStatus(db, later.operationUuid)).toBe('failed_retryable');
   });
 
+  test('flushPendingOperationsOnce retries operations after a retryable network failure', async () => {
+    const db = createRunnerDb();
+    const queued = await insertQueuedTagOperation(db, 'network-partition');
+    const retryableError = new Error('fetch failed');
+    clientMocks.httpFlushOperations.mockResolvedValueOnce({
+      ok: false,
+      retryable: true,
+      error: retryableError,
+    });
+
+    await expect(
+      flushPendingOperationsOnce({
+        db,
+        serverUrl: 'http://127.0.0.1:9',
+        nodeId: NODE_ID,
+        token: 'token',
+      })
+    ).rejects.toThrow('fetch failed');
+
+    expect(operationStatus(db, queued.operationUuid)).toBe('failed_retryable');
+
+    clientMocks.httpFlushOperations.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        results: [
+          {
+            operationId: queued.operationUuid,
+            status: 'applied',
+            sequenceIds: [101],
+            invalidations: [],
+          },
+        ],
+        currentSequenceId: 101,
+      },
+    });
+
+    await flushPendingOperationsOnce({
+      db,
+      serverUrl: 'http://127.0.0.1:9',
+      nodeId: NODE_ID,
+      token: 'token',
+    });
+
+    expect(clientMocks.httpFlushOperations).toHaveBeenCalledTimes(2);
+    expect(operationStatus(db, queued.operationUuid)).toBe('acked');
+  });
+
   test('flushPendingOperationsOnce rejects plan op by rebuilding projection without rollback fetches', async () => {
     const db = createRunnerDb();
     seedPlan(db);
