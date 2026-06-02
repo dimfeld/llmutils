@@ -12,8 +12,10 @@ import {
 import { getGitHubUsername } from '$common/github/user.js';
 import {
   getLinkedPlansByPrUrl,
+  getPrStatusForPlan,
   getPrStatusByUrl,
   type LinkedPlanSummary,
+  type PrStatusDetail,
   type PrReviewThreadDetail,
 } from '$tim/db/pr_status.js';
 
@@ -29,10 +31,25 @@ export interface ReviewDetailData {
   submissions: PrReviewSubmissionRow[];
   currentBranch: string | null;
   currentHeadSha: string | null;
+  submissionPrUrl: string | null;
   submitAsCommentOnly: boolean;
   linkedPlanUuid: string | null;
   linkedPlans: LinkedPlanSummary[];
   reviewThreads: PrReviewThreadDetail[];
+}
+
+function getSubmissionPrDetail(db: Database, review: ReviewRow): PrStatusDetail | null {
+  if (review.pr_url != null) {
+    return getPrStatusByUrl(db, review.pr_url, { includeReviewThreads: true });
+  }
+  if (review.plan_uuid == null) {
+    return null;
+  }
+
+  const linkedPrs = getPrStatusForPlan(db, review.plan_uuid, undefined, {
+    includeReviewThreads: true,
+  });
+  return linkedPrs.length === 1 ? (linkedPrs[0] ?? null) : null;
 }
 
 export interface ReviewDetailConfig {
@@ -79,16 +96,18 @@ export async function getReviewDetailDataForReview(
   review: ReviewRow,
   config: ReviewDetailConfig = {}
 ): Promise<ReviewDetailData> {
-  const prUrl = review.pr_url;
-  if (prUrl == null) {
-    const issues = getReviewIssues(db, review.id);
-    const submissions = getPrReviewSubmissionsForReview(db, review.id);
+  const issues = getReviewIssues(db, review.id);
+  const submissions = getPrReviewSubmissionsForReview(db, review.id);
+  const prStatus = getSubmissionPrDetail(db, review);
+  const submissionPrUrl = review.pr_url ?? prStatus?.status.pr_url ?? null;
+  if (submissionPrUrl == null) {
     return {
       review,
       issues,
       submissions,
       currentBranch: null,
       currentHeadSha: null,
+      submissionPrUrl: null,
       submitAsCommentOnly: false,
       linkedPlanUuid: review.plan_uuid,
       linkedPlans: [],
@@ -96,13 +115,10 @@ export async function getReviewDetailDataForReview(
     };
   }
 
-  const issues = getReviewIssues(db, review.id);
-  const submissions = getPrReviewSubmissionsForReview(db, review.id);
-  const linkedPlans = getLinkedPlansByPrUrl(db, [prUrl]).get(prUrl) ?? [];
+  const linkedPlans = getLinkedPlansByPrUrl(db, [submissionPrUrl]).get(submissionPrUrl) ?? [];
   const linkedPlanUuid =
     review.plan_uuid ?? (linkedPlans.length === 1 ? (linkedPlans[0]?.planUuid ?? null) : null);
 
-  const prStatus = getPrStatusByUrl(db, prUrl, { includeReviewThreads: true });
   const currentBranch = prStatus?.status.head_branch ?? null;
   const currentHeadSha = prStatus?.status.head_sha ?? null;
   const submitAsCommentOnly = await getSubmitAsCommentOnly(prStatus?.status.author, config);
@@ -114,6 +130,7 @@ export async function getReviewDetailDataForReview(
     submissions,
     currentBranch,
     currentHeadSha,
+    submissionPrUrl,
     submitAsCommentOnly,
     linkedPlanUuid,
     linkedPlans,

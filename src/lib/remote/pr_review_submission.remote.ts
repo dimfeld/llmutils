@@ -27,7 +27,7 @@ import {
   type ReviewRow,
 } from '$tim/db/review.js';
 import type { Database } from 'bun:sqlite';
-import { getPrStatusByUrl } from '$tim/db/pr_status.js';
+import { getPrStatusByUrl, getPrStatusForPlan, type PrStatusDetail } from '$tim/db/pr_status.js';
 
 const reviewSeverityValues = ['critical', 'major', 'minor', 'info'] as const;
 // Update path accepts 'note' because the DB now allows it. The editor never
@@ -174,13 +174,34 @@ function validateSubmittableIssues(
   return selected;
 }
 
-function requireReviewForDiff(review: ReviewRow): {
+function getSubmissionPrDetail(db: Database, review: ReviewRow): PrStatusDetail | null {
+  if (review.pr_url != null) {
+    return getPrStatusByUrl(db, review.pr_url);
+  }
+  if (review.plan_uuid == null) {
+    return null;
+  }
+
+  const linkedPrs = getPrStatusForPlan(db, review.plan_uuid);
+  return linkedPrs.length === 1 ? (linkedPrs[0] ?? null) : null;
+}
+
+function requireReviewForDiff(
+  db: Database,
+  review: ReviewRow
+): {
+  prUrl: string;
   owner: string;
   repo: string;
   baseBranch: string;
 } {
-  const prUrl = requirePrUrl(review);
-  if (!review.base_branch) {
+  const prDetail = getSubmissionPrDetail(db, review);
+  const prUrl = review.pr_url ?? prDetail?.status.pr_url;
+  const baseBranch = review.base_branch ?? prDetail?.status.base_branch;
+  if (!prUrl) {
+    error(400, `Review ${review.id} is not associated with a PR`);
+  }
+  if (!baseBranch) {
     error(400, `Review ${review.id} is missing base_branch; cannot fetch PR diff`);
   }
 
@@ -190,14 +211,15 @@ function requireReviewForDiff(review: ReviewRow): {
     error(400, `Cannot parse owner/repo from PR URL: ${prUrl}`);
   }
 
-  return { owner: match[1], repo: match[2], baseBranch: review.base_branch };
+  return { prUrl, owner: match[1], repo: match[2], baseBranch };
 }
 
-function requirePrUrl(review: ReviewRow): string {
-  if (review.pr_url == null) {
+function requirePrUrl(db: Database, review: ReviewRow): string {
+  const prUrl = review.pr_url ?? getSubmissionPrDetail(db, review)?.status.pr_url;
+  if (prUrl == null) {
     error(400, `Review ${review.id} is not associated with a PR`);
   }
-  return review.pr_url;
+  return prUrl;
 }
 
 export const getSubmissionPartition = command(
@@ -209,7 +231,7 @@ export const getSubmissionPartition = command(
     if (!review) {
       error(404, 'Review not found');
     }
-    requirePrUrl(review);
+    requirePrUrl(db, review);
 
     const selected = filterReviewIssuesForSubmission(
       validateSubmittableIssues(db, reviewId, issueIds)
@@ -236,7 +258,7 @@ export const getSubmissionPartition = command(
         appendToBody: [],
       };
     }
-    const { owner, repo, baseBranch } = requireReviewForDiff(review);
+    const { owner, repo, baseBranch } = requireReviewForDiff(db, review);
     const { diff, usedCommitSha, fellBack } = await fetchDiffWithFallback(
       owner,
       repo,
@@ -551,7 +573,7 @@ export const submitReviewToGitHub = command(
     if (!review) {
       error(404, 'Review not found');
     }
-    const prUrl = requirePrUrl(review);
+    const prUrl = requirePrUrl(db, review);
 
     const selectedIssues = filterReviewIssuesForSubmission(
       validateSubmittableIssues(db, reviewId, issueIds)
@@ -569,7 +591,7 @@ export const submitReviewToGitHub = command(
         fellBackToHead = true;
       }
     } else {
-      const { owner, repo, baseBranch } = requireReviewForDiff(review);
+      const { owner, repo, baseBranch } = requireReviewForDiff(db, review);
       const fetched = await fetchDiffWithFallback(
         owner,
         repo,

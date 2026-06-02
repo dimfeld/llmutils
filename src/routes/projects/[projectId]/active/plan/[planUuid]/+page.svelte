@@ -21,6 +21,7 @@
 {#if result}
   <PlanDetail
     plan={result.plan}
+    reviews={result.reviews}
     {projectId}
     {projectName}
     openInEditorEnabled={result.openInEditorEnabled}

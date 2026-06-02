@@ -14,7 +14,7 @@
   projectId={data.projectId}
   {backHref}
   {backLabel}
-  allowGithubSubmission={data.review.pr_url != null}
+  allowGithubSubmission={data.submissionPrUrl != null}
   submissions={data.submissions}
   linkedPlanUuid={data.linkedPlanUuid ?? data.plan.uuid}
   linkedPlans={data.linkedPlans.length > 0

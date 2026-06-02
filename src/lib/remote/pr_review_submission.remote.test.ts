@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { invokeCommand, invokeQuery } from '$lib/test-utils/invoke_command.js';
 import { openDatabase } from '$tim/db/database.js';
+import { upsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
-import { upsertPrStatus } from '$tim/db/pr_status.js';
+import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import * as reviewDbModule from '$tim/db/review.js';
 import {
   createPrReviewSubmission,
@@ -1094,6 +1095,64 @@ describe('pr_review_submission remote functions', () => {
       event: 'COMMENT',
       githubReviewId: 7779,
     });
+  });
+
+  test('submitReviewToGitHub infers the PR for a plan-only review with one linked PR', async () => {
+    const prUrl = 'https://github.com/example/repo/pull/20522';
+    const projectId = getOrCreateProject(currentDb, `repo-${crypto.randomUUID()}`).id;
+    const planUuid = `plan-${crypto.randomUUID()}`;
+    upsertPlan(currentDb, projectId, {
+      uuid: planUuid,
+      planId: 20522,
+      title: 'Linked plan review',
+      status: 'pending',
+      priority: 'medium',
+      epic: false,
+      filename: '20522.plan.md',
+    });
+    const review = createReview(currentDb, {
+      projectId,
+      planUuid,
+      branch: 'feature/linked-plan-review',
+      baseBranch: 'main',
+      reviewedSha: 'commit-20522',
+      status: 'complete',
+    });
+    const prStatus = upsertPrStatus(currentDb, {
+      prUrl,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 20522,
+      author: 'someone-else',
+      title: 'Linked plan PR',
+      state: 'open',
+      draft: false,
+      headSha: 'commit-20522',
+      baseBranch: 'main',
+      headBranch: 'feature/linked-plan-review',
+      lastFetchedAt: '2026-05-15T00:00:00.000Z',
+    });
+    linkPlanToPr(currentDb, planUuid, prStatus.status.id);
+    submitPrReviewMock.mockResolvedValue({
+      id: 7780,
+      html_url: 'https://github.com/example/repo/pull/20522#pullrequestreview-7780',
+    });
+
+    await invokeCommand(submitReviewToGitHub, {
+      reviewId: review.id,
+      event: 'COMMENT',
+      body: 'Plan review comments',
+      issueIds: [],
+      commitSha: 'commit-20522',
+    });
+
+    expect(submitPrReviewMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prUrl,
+        event: 'COMMENT',
+        commitSha: 'commit-20522',
+      })
+    );
   });
 
   test('submitReviewToGitHub body-only succeeds even when base_branch is missing', async () => {
