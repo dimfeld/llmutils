@@ -14,6 +14,7 @@
     "dev": "bun --bun vite dev",
     "build": "./build.ts",
     "build-web": "bun --bun vite build",
+    "build-all": "bun run dev-install && bun run build-web",
     "preview": "bun --bun vite preview",
     "web-prod": "bun run build-web && PORT=8124 bun build/index.js",
     "prepare": "svelte-kit sync || echo ''",
