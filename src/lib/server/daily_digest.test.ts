@@ -1,4 +1,7 @@
 import type { Database } from 'bun:sqlite';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { constructGitHubRepositoryId } from '$common/github/pull_requests.js';
@@ -9,6 +12,7 @@ import { openDatabase } from '$tim/db/database.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { setProjectSetting } from '$tim/db/project_settings.js';
 import { upsertPrReviewRequestByReviewer, upsertPrStatus } from '$tim/db/pr_status.js';
+import { recordWorkspace } from '$tim/db/workspace.js';
 
 import {
   runAllDailyDigests,
@@ -59,9 +63,11 @@ describe('lib/server/daily_digest', () => {
   let originalWebhookPollInterval: string | undefined;
   let originalWebhookServerUrl: string | undefined;
   let originalWebhookInternalApiToken: string | undefined;
+  let tempDirs: string[];
 
   beforeEach(() => {
     db = openDatabase(':memory:');
+    tempDirs = [];
     originalInfo = console.info;
     console.info = (): void => {};
     originalWebhookPollInterval = process.env.TIM_WEBHOOK_POLL_INTERVAL;
@@ -72,12 +78,13 @@ describe('lib/server/daily_digest', () => {
     delete process.env.WEBHOOK_INTERNAL_API_TOKEN;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     console.info = originalInfo;
     restoreEnv('TIM_WEBHOOK_POLL_INTERVAL', originalWebhookPollInterval);
     restoreEnv('TIM_WEBHOOK_SERVER_URL', originalWebhookServerUrl);
     restoreEnv('WEBHOOK_INTERNAL_API_TOKEN', originalWebhookInternalApiToken);
     db.close(false);
+    await Promise.all(tempDirs.map((tempDir) => fs.rm(tempDir, { recursive: true, force: true })));
   });
 
   function setupProject(
@@ -155,6 +162,18 @@ describe('lib/server/daily_digest', () => {
     process.env.TIM_WEBHOOK_POLL_INTERVAL = '30';
     process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
     process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
+  }
+
+  async function createWorkspaceWithDotEnv(projectId: number, contents: string): Promise<string> {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'daily-digest-workspace-'));
+    tempDirs.push(workspacePath);
+    await fs.writeFile(path.join(workspacePath, '.env'), contents, 'utf8');
+    recordWorkspace(db, {
+      projectId,
+      workspacePath,
+      workspaceType: 'primary',
+    });
+    return workspacePath;
   }
 
   test('posts one digest for a qualifying project to its configured channel', async () => {
@@ -299,6 +318,51 @@ describe('lib/server/daily_digest', () => {
       expect(payloadText(sent.find((call) => call.payload.channel === '#other')!)).toContain(
         'Linear milestones due or overdue'
       );
+    } finally {
+      restoreEnv('TEST_LINEAR_API_KEY', originalLinearApiKey);
+    }
+  });
+
+  test('loads Linear milestone API key from a digest project workspace .env', async () => {
+    const originalLinearApiKey = process.env.TEST_LINEAR_API_KEY;
+    delete process.env.TEST_LINEAR_API_KEY;
+    const projectId = setupProject('octocat', 'repo-with-env', { channel: '#env' });
+    await createWorkspaceWithDotEnv(projectId, 'TEST_LINEAR_API_KEY=workspace-linear-key\n');
+
+    try {
+      const { sender, sent } = makeFakeSender();
+      await runDailyDigestForWorkspace(
+        db,
+        buildConfig({
+          work: {
+            token: 'xoxb-work-token',
+            dailyDigest: {
+              timezone: 'UTC',
+              staleAfterHours: 24,
+              linearMilestones: { enabled: true, apiKeyEnv: 'TEST_LINEAR_API_KEY' },
+            },
+          },
+        }),
+        'work',
+        {
+          sender,
+          nowMs: NOW_MS,
+          linearMilestonesFetcher: async ({ apiKey }) => {
+            expect(apiKey).toBe('workspace-linear-key');
+            return [
+              {
+                milestoneName: 'Workspace Env Beta',
+                targetDate: '2026-01-02',
+                projectName: 'Launch',
+                milestoneOwner: 'Dana',
+              },
+            ];
+          },
+        }
+      );
+
+      expect(sent).toHaveLength(1);
+      expect(payloadText(sent[0])).toContain('Workspace Env Beta');
     } finally {
       restoreEnv('TEST_LINEAR_API_KEY', originalLinearApiKey);
     }

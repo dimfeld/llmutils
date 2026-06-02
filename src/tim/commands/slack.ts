@@ -413,7 +413,9 @@ export async function handleSlackDigestRunCommand(
     for (const workspaceName of eligibleWorkspaces) {
       let linearMilestones: LinearMilestoneDigestEntry[] = [];
       try {
-        linearMilestones = await fetchWorkspaceLinearMilestones(config, workspaceName, { nowMs });
+        linearMilestones = await fetchWorkspaceLinearMilestones(db, config, workspaceName, {
+          nowMs,
+        });
       } catch (error) {
         log(
           chalk.yellow(

@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
+import { readDotEnvFromDirectory } from '$common/env.js';
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
 import {
   fetchLinearMilestonesDueOrOverdue,
@@ -22,6 +23,7 @@ import type { TimConfig } from '$tim/configSchema.js';
 import { debugLog } from '../../logging.js';
 import { listProjects } from '$tim/db/project.js';
 import { getProjectSetting } from '$tim/db/project_settings.js';
+import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import {
   getApprovedUnmergedRows,
   getOtherReadyForReviewRows,
@@ -196,7 +198,52 @@ function isPrDigestEmpty(digest: PrDigest): boolean {
   );
 }
 
+async function getLinearApiKeyFromProjectDotEnv(
+  db: Database,
+  projectId: number,
+  apiKeyEnv: string
+): Promise<string | undefined> {
+  const gitRoot = getPreferredProjectGitRoot(db, projectId);
+  if (!gitRoot) {
+    return undefined;
+  }
+
+  const workspaceEnv = await readDotEnvFromDirectory(gitRoot);
+  return workspaceEnv?.[apiKeyEnv]?.trim() || undefined;
+}
+
+async function resolveWorkspaceLinearApiKey(
+  db: Database,
+  workspaceName: string,
+  apiKeyEnv: string
+): Promise<string | undefined> {
+  for (const project of listProjects(db)) {
+    const setting = parseSlackProjectSetting(
+      getProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY)
+    );
+    const workspace = setting?.workspace?.trim();
+    const channel = setting?.channel?.trim();
+
+    if (
+      setting?.enabled !== true ||
+      setting.dailyDigest !== true ||
+      workspace !== workspaceName ||
+      !channel
+    ) {
+      continue;
+    }
+
+    const apiKey = await getLinearApiKeyFromProjectDotEnv(db, project.id, apiKeyEnv);
+    if (apiKey) {
+      return apiKey;
+    }
+  }
+
+  return process.env[apiKeyEnv]?.trim() || undefined;
+}
+
 export async function fetchWorkspaceLinearMilestones(
+  db: Database,
   config: TimConfig,
   workspaceName: string,
   options: FetchWorkspaceLinearMilestonesOptions
@@ -209,7 +256,7 @@ export async function fetchWorkspaceLinearMilestones(
   }
 
   const apiKeyEnv = linearMilestonesConfig.apiKeyEnv ?? 'LINEAR_API_KEY';
-  const apiKey = process.env[apiKeyEnv]?.trim();
+  const apiKey = await resolveWorkspaceLinearApiKey(db, workspaceName, apiKeyEnv);
   debugLog(
     '[daily_digest] Linear milestones enabled for Slack workspace "%s"; apiKeyEnv=%s configured=%s',
     workspaceName,
@@ -254,7 +301,7 @@ export async function runDailyDigestForWorkspace(
   const nowMs = options.nowMs ?? Date.now();
   let linearMilestones: LinearMilestoneDigestEntry[] = [];
   try {
-    linearMilestones = await fetchWorkspaceLinearMilestones(config, workspaceName, {
+    linearMilestones = await fetchWorkspaceLinearMilestones(db, config, workspaceName, {
       nowMs,
       fetcher: options.linearMilestonesFetcher,
     });
