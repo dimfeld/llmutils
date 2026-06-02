@@ -88,6 +88,72 @@ function extractTextField(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
+function extractStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === 'string') : [];
+}
+
+function extractCollabAgentStates(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function formatCollabAgentStatuses(value: unknown): { status?: string; message?: string | null }[] {
+  const states = extractCollabAgentStates(value);
+  if (!states) {
+    return [];
+  }
+
+  return Object.values(states).flatMap((state) => {
+    if (!state || typeof state !== 'object' || Array.isArray(state)) {
+      return [];
+    }
+    const data = state as Record<string, unknown>;
+    const status = extractTextField(data.status);
+    const message = typeof data.message === 'string' ? data.message : null;
+    if (!status && message == null) {
+      return [];
+    }
+    return [{ status, message }];
+  });
+}
+
+function formatCollabAgentToolSummary(item: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const status = extractTextField(item.status);
+  const senderThreadId = extractTextField(item.senderThreadId);
+  const model = extractTextField(item.model);
+  const reasoningEffort = extractTextField(item.reasoningEffort);
+
+  if (status) {
+    parts.push(`status: ${status}`);
+  }
+  if (senderThreadId) {
+    parts.push(`sender: ${senderThreadId}`);
+  }
+  if (model) {
+    parts.push(`model: ${model}`);
+  }
+  if (reasoningEffort) {
+    parts.push(`reasoning: ${reasoningEffort}`);
+  }
+
+  return parts.join('\n');
+}
+
+function buildCollabAgentToolInput(item: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: extractTextField(item.id),
+    status: extractTextField(item.status),
+    senderThreadId: extractTextField(item.senderThreadId),
+    prompt: typeof item.prompt === 'string' ? item.prompt : null,
+    model: typeof item.model === 'string' ? item.model : null,
+    reasoningEffort: typeof item.reasoningEffort === 'string' ? item.reasoningEffort : null,
+    agentStatuses: formatCollabAgentStatuses(item.agentsStates),
+  };
+}
+
 function extractItemText(item: Record<string, unknown>): string {
   const text = item.text;
   if (typeof text === 'string') {
@@ -523,6 +589,29 @@ export function createAppServerFormatter() {
           status: `codex.mcp_tool.${toolStatus}`,
           detail: toolName,
         },
+      };
+    }
+
+    if (itemType === 'collabagenttoolcall') {
+      const toolName = extractTextField(item.tool) ?? 'unknown';
+      const structured = {
+        type: method === 'item/completed' ? 'llm_tool_result' : 'llm_tool_use',
+        timestamp: ts,
+        toolName,
+        ...(method === 'item/completed'
+          ? {
+              resultSummary: formatCollabAgentToolSummary(item),
+              result: buildCollabAgentToolInput(item),
+            }
+          : {
+              inputSummary: formatCollabAgentToolSummary(item),
+              input: buildCollabAgentToolInput(item),
+            }),
+      } satisfies StructuredMessage;
+
+      return {
+        type: method,
+        structured,
       };
     }
 

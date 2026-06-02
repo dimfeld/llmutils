@@ -280,6 +280,93 @@ describe('createAppServerFormatter', () => {
     );
   });
 
+  test('formats in-progress collab agent tool call items as tool use', () => {
+    const formatter = createAppServerFormatter();
+    const message = formatter.handleNotification('item/started', {
+      item: {
+        type: 'collabAgentToolCall',
+        id: 'call_kd4QFNWL9HhJbFC62SdMqhmR',
+        tool: 'spawnAgent',
+        status: 'inProgress',
+        senderThreadId: '019e8604-87f5-7053-9ac7-92453886d7f8',
+        receiverThreadIds: [],
+        prompt: 'Review the diff.',
+        model: '',
+        reasoningEffort: 'medium',
+        agentsStates: {},
+      },
+    });
+
+    expect(message.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_use',
+        toolName: 'spawnAgent',
+        inputSummary: expect.stringContaining('status: inProgress'),
+        input: expect.objectContaining({
+          id: 'call_kd4QFNWL9HhJbFC62SdMqhmR',
+          status: 'inProgress',
+          senderThreadId: '019e8604-87f5-7053-9ac7-92453886d7f8',
+          prompt: 'Review the diff.',
+          model: '',
+          reasoningEffort: 'medium',
+          agentStatuses: [],
+        }),
+      })
+    );
+  });
+
+  test('formats completed collab agent tool call items as tool results', () => {
+    const formatter = createAppServerFormatter();
+    const message = formatter.handleNotification('item/completed', {
+      item: {
+        type: 'collabAgentToolCall',
+        id: 'call_kd4QFNWL9HhJbFC62SdMqhmR',
+        tool: 'spawnAgent',
+        status: 'completed',
+        senderThreadId: '019e8604-87f5-7053-9ac7-92453886d7f8',
+        receiverThreadIds: ['019e8604-cb34-79f0-ab36-9af1a9bf47ac'],
+        prompt: 'Review the diff.',
+        model: 'gpt-5.5',
+        reasoningEffort: 'medium',
+        agentsStates: {
+          '019e8604-cb34-79f0-ab36-9af1a9bf47ac': {
+            status: 'pendingInit',
+            message: null,
+          },
+        },
+      },
+    });
+
+    expect(message.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_result',
+        toolName: 'spawnAgent',
+        resultSummary: expect.not.stringContaining('019e8604-cb34-79f0-ab36-9af1a9bf47ac'),
+        result: expect.objectContaining({
+          id: 'call_kd4QFNWL9HhJbFC62SdMqhmR',
+          status: 'completed',
+          model: 'gpt-5.5',
+          agentStatuses: [
+            {
+              status: 'pendingInit',
+              message: null,
+            },
+          ],
+        }),
+      })
+    );
+    expect(JSON.stringify(message.structured)).not.toContain(
+      '019e8604-cb34-79f0-ab36-9af1a9bf47ac'
+    );
+    expect(message.structured).not.toEqual(
+      expect.objectContaining({
+        result: expect.objectContaining({
+          receiverThreadIds: expect.anything(),
+        }),
+      })
+    );
+  });
+
   test('skips delta methods', () => {
     const formatter = createAppServerFormatter();
 
