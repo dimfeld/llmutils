@@ -2,7 +2,11 @@ import process from 'node:process';
 
 import type { Handle, ServerInit } from '@sveltejs/kit';
 
-import { shouldStartDailyDigest, startDailyDigestScheduler } from '$lib/server/daily_digest.js';
+import {
+  shouldStartDailyDigest,
+  startDailyDigestScheduler,
+  updateDailyDigestMessagesForPrUrls,
+} from '$lib/server/daily_digest.js';
 import { getServerContext } from '$lib/server/init.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import {
@@ -203,6 +207,11 @@ export const init: ServerInit = async () => {
             .catch((err) =>
               console.warn('[slack_notifier] Failed to kick notifier after PR ingest', err)
             );
+          if (result.prsUpdated.length > 0) {
+            void updateDailyDigestMessagesForPrUrls(db, config, result.prsUpdated).catch((err) =>
+              console.warn('[daily_digest] Failed to update digest messages after PR ingest', err)
+            );
+          }
         },
       });
     const slackNotifier =

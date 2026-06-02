@@ -1,8 +1,16 @@
 import chalk from 'chalk';
 import { table } from 'table';
-import { constructGitHubRepositoryId } from '../../common/github/pull_requests.js';
+import {
+  constructGitHubRepositoryId,
+  parseOwnerRepoFromRepositoryId,
+} from '../../common/github/pull_requests.js';
 import { getGitRepository } from '../../common/git.js';
-import { postSlackTestMessage, type SlackPostSender } from '../../common/slack/slack_client.js';
+import {
+  buildDailyDigestSlackPayload,
+  postSlackTestMessage,
+  type SlackPostSender,
+  type SlackUpdateSender,
+} from '../../common/slack/slack_client.js';
 import {
   parseSlackProjectSetting,
   SLACK_PROJECT_SETTING_KEY,
@@ -13,7 +21,9 @@ import {
   collectDailyDigestsForWorkspace,
   fetchWorkspaceLinearMilestones,
   getEligibleDailyDigestWorkspaces,
+  getWorkspaceDigestDate,
   runAllDailyDigests,
+  runDailyDigestForWorkspace,
   type CollectedProjectDigest,
 } from '../../lib/server/daily_digest.js';
 import type { LinearMilestoneDigestEntry } from '../../common/linear_milestone_digest.js';
@@ -27,6 +37,7 @@ import {
   countClosedPrReviewRequestsPendingNotification,
   markClosedPrReviewRequestsNotified,
 } from '../db/pr_review_request_notifications.js';
+import { getSlackDailyDigestMessage } from '../db/slack_daily_digest_message.js';
 import {
   deleteUserMapping,
   listUserMappings,
@@ -39,6 +50,7 @@ interface RootCommandLike {
   parent?: RootCommandLike;
   opts?: () => {
     config?: string;
+    dryRun?: boolean;
   };
 }
 
@@ -56,6 +68,10 @@ interface SlackMarkClosedNotifiedOptions {
 }
 
 interface SlackDigestRunOptions {
+  dryRun?: boolean;
+}
+
+interface SlackDigestUpdateOptions {
   dryRun?: boolean;
 }
 
@@ -133,6 +149,25 @@ function requireTestOptions(options: SlackTestOptions): {
     options.message?.trim() || `tim Slack test message from ${process.env.USER ?? 'unknown user'}`;
 
   return { workspace, channel, message };
+}
+
+function hasDryRunOption(
+  options: { dryRun?: boolean },
+  command: RootCommandLike | undefined
+): boolean {
+  if (options.dryRun === true) {
+    return true;
+  }
+
+  let current = command;
+  while (current) {
+    if (current.opts?.().dryRun === true) {
+      return true;
+    }
+    current = current.parent;
+  }
+
+  return false;
 }
 
 async function resolveCurrentProject(): Promise<Project> {
@@ -264,6 +299,31 @@ function printDigestDryRunProject(projectDigest: CollectedProjectDigest): void {
       log(`${formatPrLine(entry)}; ready for: ${readyLabel}${previousReview}`);
     }
   }
+}
+
+function printDigestSlackPayloadDryRun(projectDigest: CollectedProjectDigest): void {
+  const payload = buildDailyDigestSlackPayload(
+    projectDigest.channel,
+    projectDigest.repoFullName,
+    projectDigest.digest
+  );
+  log('Slack update payload:');
+  log(`  channel: ${payload.channel}`);
+  log(`  text: ${payload.text}`);
+  log(`  blocks: ${JSON.stringify(payload.blocks, null, 2)}`);
+}
+
+function requireDigestEnabledSetting(
+  setting: SlackProjectSetting | null,
+  repositoryId: string
+): { workspace: string; channel: string } {
+  const workspace = setting?.workspace?.trim();
+  const channel = setting?.channel?.trim();
+  if (setting?.enabled !== true || setting.dailyDigest !== true || !workspace || !channel) {
+    throw new Error(`Slack daily digest is not enabled for ${repositoryId}.`);
+  }
+
+  return { workspace, channel };
 }
 
 export async function handleSlackEnableCommand(
@@ -400,7 +460,7 @@ export async function handleSlackDigestRunCommand(
   const config = await loadConfigForCommand(command);
   const db = getDatabase();
 
-  if (options.dryRun === true) {
+  if (hasDryRunOption(options, command)) {
     const nowMs = Date.now();
     const eligibleWorkspaces = getEligibleDailyDigestWorkspaces(db, config);
     if (eligibleWorkspaces.length === 0) {
@@ -450,6 +510,79 @@ export async function handleSlackDigestRunCommand(
 
   await runAllDailyDigests(db, config, { sender });
   log(chalk.green('Ran Slack daily PR digest.'));
+}
+
+export async function handleSlackDigestUpdateCommand(
+  options: SlackDigestUpdateOptions,
+  command: RootCommandLike | undefined,
+  updateSender?: SlackUpdateSender
+): Promise<void> {
+  const config = await loadConfigForCommand(command);
+  const db = getDatabase();
+  const project = await resolveCurrentProject();
+  const ownerRepo = parseOwnerRepoFromRepositoryId(project.repository_id);
+  if (!ownerRepo) {
+    throw new Error(`Project is not a GitHub repository: ${project.repository_id}`);
+  }
+
+  const setting = parseSlackProjectSetting(
+    getProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY)
+  );
+  const { workspace, channel } = requireDigestEnabledSetting(setting, project.repository_id);
+  validateWorkspaceExists(config, workspace);
+
+  const repoFullName = `${ownerRepo.owner}/${ownerRepo.repo}`;
+  const nowMs = Date.now();
+  const digestDate = getWorkspaceDigestDate(config, workspace, nowMs);
+  const existingMessage = getSlackDailyDigestMessage(
+    db,
+    workspace,
+    channel,
+    repoFullName,
+    digestDate
+  );
+
+  if (hasDryRunOption(options, command)) {
+    log(chalk.bold('Slack daily PR digest update dry run'));
+    log(`Repository: ${repoFullName}`);
+    log(`Lookup: workspace=${workspace}, channel=${channel}, digestDate=${digestDate}`);
+    if (existingMessage) {
+      log(
+        `Stored message: channel=${existingMessage.slack_channel}, ts=${existingMessage.slack_ts}`
+      );
+      log('Would update the stored same-day digest message.');
+    } else {
+      log(chalk.yellow('No stored same-day digest message found; nothing would be updated.'));
+    }
+
+    const projectDigest = collectDailyDigestsForWorkspace(db, config, workspace, {
+      nowMs,
+      includeEmpty: true,
+    }).find((digest) => digest.repoFullName === repoFullName && digest.channel === channel);
+    if (projectDigest) {
+      printDigestDryRunProject(projectDigest);
+      log('');
+      printDigestSlackPayloadDryRun(projectDigest);
+    } else {
+      log('No digest-enabled project entry was found for this repository.');
+    }
+    return;
+  }
+
+  if (!existingMessage) {
+    log(chalk.yellow('No stored same-day digest message found; nothing updated.'));
+    return;
+  }
+
+  log(
+    `Matched stored message: channel=${existingMessage.slack_channel}, ts=${existingMessage.slack_ts}`
+  );
+  await runDailyDigestForWorkspace(db, config, workspace, {
+    updateSender,
+    updateExistingOnly: true,
+    repoFullNames: new Set([repoFullName]),
+  });
+  log(chalk.green(`Updated Slack daily PR digest for ${repoFullName}.`));
 }
 
 export async function handleSlackTestCommand(

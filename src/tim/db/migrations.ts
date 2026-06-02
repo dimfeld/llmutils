@@ -1277,6 +1277,24 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 45,
+    up: `
+      CREATE TABLE IF NOT EXISTS slack_daily_digest_message (
+        workspace TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        repo_full_name TEXT NOT NULL,
+        digest_date TEXT NOT NULL,
+        slack_channel TEXT NOT NULL,
+        slack_ts TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        PRIMARY KEY (workspace, channel, repo_full_name, digest_date)
+      );
+      CREATE INDEX IF NOT EXISTS idx_slack_daily_digest_message_date
+        ON slack_daily_digest_message(workspace, digest_date);
+    `,
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

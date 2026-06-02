@@ -434,6 +434,19 @@ Workspace-scoped GitHub-to-Slack user mappings for review-request notifications 
 
 All mutations are synchronous and wrapped in `db.transaction().immediate()`.
 
+### Slack Daily Digest Messages
+
+Daily digest Slack message coordinates are stored in SQLite (migration v45) so same-day digest refreshes can update the existing per-repo Slack post with `chat.update`.
+
+**Table**:
+
+- `slack_daily_digest_message`: Composite PK `(workspace, channel, repo_full_name, digest_date)`. Columns: `workspace` (configured Slack workspace name), `channel` (configured project Slack channel), `repo_full_name` (`owner/repo`), `digest_date` (workspace-local `YYYY-MM-DD` digest date), `slack_channel` (Slack API channel ID), `slack_ts` (Slack message timestamp), `created_at`/`updated_at` (TEXT NOT NULL, defaulted with `SQL_NOW_ISO_UTC`). Indexed by `(workspace, digest_date)`.
+
+**CRUD module** (`src/tim/db/slack_daily_digest_message.ts`):
+
+- `getSlackDailyDigestMessage(db, workspace, channel, repoFullName, digestDate)`: Returns the stored Slack coordinates or `undefined`.
+- `upsertSlackDailyDigestMessage(db, input)`: Inserts or updates Slack coordinates while preserving `created_at`.
+
 ### Web Query Helpers
 
 `src/lib/server/db_queries.ts` provides enriched read-only queries for the SvelteKit web interface, layered on top of the CRUD functions in `src/tim/db/plan.ts`:

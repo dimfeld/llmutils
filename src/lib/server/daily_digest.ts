@@ -1,7 +1,10 @@
 import type { Database } from 'bun:sqlite';
 
 import { readDotEnvFromDirectory } from '$common/env.js';
-import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
+import {
+  constructGitHubRepositoryId,
+  parseOwnerRepoFromRepositoryId,
+} from '$common/github/pull_requests.js';
 import {
   fetchLinearMilestonesDueOrOverdue,
   type LinearMilestoneDigestEntry,
@@ -13,7 +16,12 @@ import {
   parseSlackDailyDigestTime,
   slackDailyDigestWeekdayToDayIndex,
 } from '$common/slack/slack_daily_digest_config.js';
-import { postDailyDigestMessage, type SlackPostSender } from '$common/slack/slack_client.js';
+import {
+  postDailyDigestMessage,
+  updateDailyDigestMessage,
+  type SlackPostSender,
+  type SlackUpdateSender,
+} from '$common/slack/slack_client.js';
 import { resolveSlackWorkspaceToken } from '$common/slack/slack_config.js';
 import {
   parseSlackProjectSetting,
@@ -23,6 +31,10 @@ import type { TimConfig } from '$tim/configSchema.js';
 import { debugLog } from '../../logging.js';
 import { listProjects } from '$tim/db/project.js';
 import { getProjectSetting } from '$tim/db/project_settings.js';
+import {
+  getSlackDailyDigestMessage,
+  upsertSlackDailyDigestMessage,
+} from '$tim/db/slack_daily_digest_message.js';
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import {
   getApprovedUnmergedRows,
@@ -39,9 +51,12 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
 
 export interface RunDailyDigestOptions {
   sender?: SlackPostSender;
+  updateSender?: SlackUpdateSender;
   nowMs?: number;
   loggedMisconfiguredWorkspaces?: Set<string>;
   linearMilestonesFetcher?: LinearMilestonesFetcher;
+  updateExistingOnly?: boolean;
+  repoFullNames?: ReadonlySet<string>;
 }
 
 export interface StartDailyDigestSchedulerOptions {
@@ -198,6 +213,57 @@ function isPrDigestEmpty(digest: PrDigest): boolean {
   );
 }
 
+export function getWorkspaceDigestDate(
+  config: TimConfig,
+  workspaceName: string,
+  nowMs: number
+): string {
+  const timezone =
+    config.slack?.workspaces?.[workspaceName]?.dailyDigest?.timezone ??
+    getDefaultSlackDailyDigestTimezone();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const values = new Map<string, string>();
+  for (const part of formatter.formatToParts(new Date(nowMs))) {
+    if (part.type !== 'literal') {
+      values.set(part.type, part.value);
+    }
+  }
+
+  const year = values.get('year');
+  const month = values.get('month');
+  const day = values.get('day');
+  if (!year || !month || !day) {
+    throw new Error(`Failed to compute daily digest date for Slack workspace "${workspaceName}"`);
+  }
+
+  return `${year}-${month}-${day}`;
+}
+
+function parseOwnerRepoFromPrUrl(prUrl: string): { owner: string; repo: string } | null {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(prUrl);
+  } catch {
+    return null;
+  }
+
+  if (parsedUrl.hostname !== 'github.com') {
+    return null;
+  }
+
+  const match = /^\/([^/]+)\/([^/]+)\/pull\/\d+$/.exec(parsedUrl.pathname);
+  if (!match) {
+    return null;
+  }
+
+  return { owner: match[1], repo: match[2] };
+}
+
 async function getLinearApiKeyFromProjectDotEnv(
   db: Database,
   projectId: number,
@@ -299,6 +365,7 @@ export async function runDailyDigestForWorkspace(
   }
 
   const nowMs = options.nowMs ?? Date.now();
+  const digestDate = getWorkspaceDigestDate(config, workspaceName, nowMs);
   let linearMilestones: LinearMilestoneDigestEntry[] = [];
   try {
     linearMilestones = await fetchWorkspaceLinearMilestones(db, config, workspaceName, {
@@ -314,7 +381,7 @@ export async function runDailyDigestForWorkspace(
 
   const collected = collectDailyDigestsForWorkspace(db, config, workspaceName, {
     nowMs,
-    includeEmpty: linearMilestones.length > 0,
+    includeEmpty: options.updateExistingOnly === true || linearMilestones.length > 0,
     onProjectError: (repositoryId: string, error: unknown): void => {
       console.error(
         `[daily_digest] Failed to process daily PR digest for project ${repositoryId}`,
@@ -331,6 +398,21 @@ export async function runDailyDigestForWorkspace(
   const milestoneChannels = new Set<string>();
   for (const projectDigest of collected) {
     try {
+      if (options.repoFullNames && !options.repoFullNames.has(projectDigest.repoFullName)) {
+        continue;
+      }
+
+      const existingMessage = getSlackDailyDigestMessage(
+        db,
+        workspaceName,
+        projectDigest.channel,
+        projectDigest.repoFullName,
+        digestDate
+      );
+      if (!existingMessage && options.updateExistingOnly === true) {
+        continue;
+      }
+
       const includeMilestones =
         linearMilestones.length > 0 &&
         !milestoneChannels.has(projectDigest.channel) &&
@@ -339,27 +421,82 @@ export async function runDailyDigestForWorkspace(
       if (includeMilestones) {
         milestoneChannels.add(projectDigest.channel);
       }
-      const result = await postDailyDigestMessage({
-        config,
-        workspace: workspaceName,
-        channel: projectDigest.channel,
-        repoFullName: projectDigest.repoFullName,
-        digest: {
-          ...projectDigest.digest,
-          linearMilestones: includeMilestones ? linearMilestones : [],
-        },
-        sender: options.sender,
-      });
+      const digest = {
+        ...projectDigest.digest,
+        linearMilestones: includeMilestones ? linearMilestones : [],
+      };
+      const result = existingMessage
+        ? await updateDailyDigestMessage({
+            config,
+            workspace: workspaceName,
+            channel: existingMessage.slack_channel,
+            ts: existingMessage.slack_ts,
+            repoFullName: projectDigest.repoFullName,
+            digest,
+            sender: options.updateSender,
+          })
+        : await postDailyDigestMessage({
+            config,
+            workspace: workspaceName,
+            channel: projectDigest.channel,
+            repoFullName: projectDigest.repoFullName,
+            digest,
+            sender: options.sender,
+          });
+
+      const operation = existingMessage ? 'update' : 'post';
+      if (!result.ok && existingMessage) {
+        console.warn(
+          `[daily_digest] Failed to update daily PR digest for ${projectDigest.repoFullName}: ${result.error ?? 'unknown Slack error'}; posting a replacement`
+        );
+        const replacement = await postDailyDigestMessage({
+          config,
+          workspace: workspaceName,
+          channel: projectDigest.channel,
+          repoFullName: projectDigest.repoFullName,
+          digest,
+          sender: options.sender,
+          allowEmpty: true,
+        });
+        if (!replacement.ok) {
+          console.warn(
+            `[daily_digest] Failed to post replacement daily PR digest for ${projectDigest.repoFullName}: ${replacement.error ?? 'unknown Slack error'}`
+          );
+          continue;
+        }
+        if (replacement.channel && replacement.ts) {
+          upsertSlackDailyDigestMessage(db, {
+            workspace: workspaceName,
+            channel: projectDigest.channel,
+            repoFullName: projectDigest.repoFullName,
+            digestDate,
+            slackChannel: replacement.channel,
+            slackTs: replacement.ts,
+          });
+        }
+        continue;
+      }
 
       if (!result.ok) {
         console.warn(
-          `[daily_digest] Failed to post daily PR digest for ${projectDigest.repoFullName}: ${result.error ?? 'unknown Slack error'}`
+          `[daily_digest] Failed to ${operation} daily PR digest for ${projectDigest.repoFullName}: ${result.error ?? 'unknown Slack error'}`
         );
         continue;
       }
 
+      if (result.channel && result.ts) {
+        upsertSlackDailyDigestMessage(db, {
+          workspace: workspaceName,
+          channel: projectDigest.channel,
+          repoFullName: projectDigest.repoFullName,
+          digestDate,
+          slackChannel: result.channel,
+          slackTs: result.ts,
+        });
+      }
+
       console.info(
-        `[daily_digest] Posted daily PR digest for ${projectDigest.repoFullName} to ${workspaceName}/${projectDigest.channel}`
+        `[daily_digest] ${existingMessage ? 'Updated' : 'Posted'} daily PR digest for ${projectDigest.repoFullName} to ${workspaceName}/${projectDigest.channel}`
       );
     } catch (error) {
       console.error(
@@ -381,9 +518,58 @@ export async function runAllDailyDigests(
   for (const workspaceName of Object.keys(config.slack?.workspaces ?? {})) {
     await runDailyDigestForWorkspace(db, config, workspaceName, {
       sender: options.sender,
+      updateSender: options.updateSender,
       nowMs,
       loggedMisconfiguredWorkspaces,
       linearMilestonesFetcher: options.linearMilestonesFetcher,
+      updateExistingOnly: options.updateExistingOnly,
+      repoFullNames: options.repoFullNames,
+    });
+  }
+}
+
+export async function updateDailyDigestMessagesForPrUrls(
+  db: Database,
+  config: TimConfig,
+  prUrls: string[],
+  options: RunDailyDigestOptions = {}
+): Promise<void> {
+  const affectedWorkspaces = new Set<string>();
+  const affectedRepoFullNames = new Set<string>();
+  const repositoryIds = new Set<string>();
+
+  for (const prUrl of prUrls) {
+    const ownerRepo = parseOwnerRepoFromPrUrl(prUrl);
+    if (ownerRepo) {
+      repositoryIds.add(constructGitHubRepositoryId(ownerRepo.owner, ownerRepo.repo));
+      affectedRepoFullNames.add(`${ownerRepo.owner}/${ownerRepo.repo}`);
+    }
+  }
+
+  if (repositoryIds.size === 0) {
+    return;
+  }
+
+  for (const project of listProjects(db)) {
+    if (!repositoryIds.has(project.repository_id)) {
+      continue;
+    }
+
+    const setting = parseSlackProjectSetting(
+      getProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY)
+    );
+    const workspace = setting?.workspace?.trim();
+    const channel = setting?.channel?.trim();
+    if (setting?.enabled === true && setting.dailyDigest === true && workspace && channel) {
+      affectedWorkspaces.add(workspace);
+    }
+  }
+
+  for (const workspaceName of affectedWorkspaces) {
+    await runDailyDigestForWorkspace(db, config, workspaceName, {
+      ...options,
+      updateExistingOnly: true,
+      repoFullNames: affectedRepoFullNames,
     });
   }
 }

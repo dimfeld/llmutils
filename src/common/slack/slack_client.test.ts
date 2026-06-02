@@ -11,16 +11,20 @@ import {
   buildReviewRequestSlackPayload,
   clearSlackClientCache,
   createFetchSlackSender,
+  createFetchSlackUpdateSender,
   getSlackPostSender,
+  getSlackUpdateSender,
   postDailyDigestMessage,
   postReviewRequestMessage,
   postSlackTestMessage,
+  updateDailyDigestMessage,
   type DailyDigestPayloadInput,
   type ReviewRequestPr,
   type ReviewRequestReviewer,
   type SlackBlock,
   type SlackPostResult,
   type SlackPostSenderArgs,
+  type SlackUpdateSenderArgs,
 } from './slack_client.js';
 
 function buildConfig(slack: TimConfig['slack']): TimConfig {
@@ -778,18 +782,30 @@ describe('common/slack/slack_client', () => {
     });
   });
 
+  describe('getSlackUpdateSender caching', () => {
+    test('returns the same updater instance for the same token', () => {
+      const sender1 = getSlackUpdateSender('xoxb-token-a');
+      const sender2 = getSlackUpdateSender('xoxb-token-a');
+      expect(sender1).toBe(sender2);
+    });
+  });
+
   describe('createFetchSlackSender', () => {
     const payload = buildReviewRequestSlackPayload('#reviews', testPr, [mappedReviewer]);
 
-    test('returns ok:true when Slack returns HTTP ok and ok:true body', async () => {
+    test('returns ok:true with message coordinates when Slack returns them', async () => {
       const fetchImpl = vi.fn(async () =>
-        buildFetchResponse({ ok: true, status: 200, jsonBody: { ok: true } })
+        buildFetchResponse({
+          ok: true,
+          status: 200,
+          jsonBody: { ok: true, channel: 'C123', ts: '1710000000.000100' },
+        })
       ) as unknown as typeof fetch;
       const sender = createFetchSlackSender('xoxb-token', fetchImpl);
 
       const result = await sender({ token: 'xoxb-token', payload });
 
-      expect(result).toEqual({ ok: true });
+      expect(result).toEqual({ ok: true, channel: 'C123', ts: '1710000000.000100' });
       expect(fetchImpl).toHaveBeenCalledOnce();
     });
 
@@ -835,6 +851,105 @@ describe('common/slack/slack_client', () => {
       const result = await sender({ token: 'xoxb-token', payload });
 
       expect(result).toEqual({ ok: false, error: 'network down' });
+    });
+  });
+
+  describe('createFetchSlackUpdateSender', () => {
+    const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
+      approvedUnmerged: [
+        {
+          prUrl: 'https://github.com/octocat/hello-world/pull/1',
+          prNumber: 1,
+          title: 'Approved PR',
+          author: 'alice',
+        },
+      ],
+      staleAwaitingReview: [],
+      otherReadyForReview: [],
+    });
+
+    test('calls chat.update with channel, ts, and payload', async () => {
+      const fetchImpl = vi.fn(async () =>
+        buildFetchResponse({
+          ok: true,
+          status: 200,
+          jsonBody: { ok: true, channel: 'C123', ts: '1710000000.000100' },
+        })
+      ) as unknown as typeof fetch;
+      const sender = createFetchSlackUpdateSender('xoxb-token', fetchImpl);
+
+      const result = await sender({
+        token: 'xoxb-token',
+        channel: 'C123',
+        ts: '1710000000.000100',
+        payload,
+      });
+
+      expect(result).toEqual({ ok: true, channel: 'C123', ts: '1710000000.000100' });
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      const request = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body)) as {
+        channel: string;
+        ts: string;
+        text: string;
+      };
+      expect(request.channel).toBe('C123');
+      expect(request.ts).toBe('1710000000.000100');
+      expect(request.text).toContain('Daily PR digest');
+    });
+
+    test('returns failure result on Slack ok:false body without throwing', async () => {
+      const fetchImpl = vi.fn(async () =>
+        buildFetchResponse({
+          ok: true,
+          status: 200,
+          jsonBody: { ok: false, error: 'message_not_found' },
+        })
+      ) as unknown as typeof fetch;
+      const sender = createFetchSlackUpdateSender('xoxb-token', fetchImpl);
+
+      const result = await sender({
+        token: 'xoxb-token',
+        channel: 'C123',
+        ts: '1710000000.000100',
+        payload,
+      });
+
+      expect(result).toEqual({ ok: false, error: 'message_not_found' });
+    });
+  });
+
+  describe('updateDailyDigestMessage with injected sender', () => {
+    const config = buildConfig({
+      workspaces: {
+        work: { token: 'xoxb-test-token' },
+      },
+    });
+
+    test('calls updater with resolved token and existing timestamp', async () => {
+      const calls: SlackUpdateSenderArgs[] = [];
+      const fakeSender = async (args: SlackUpdateSenderArgs): Promise<SlackPostResult> => {
+        calls.push(args);
+        return { ok: true, channel: args.channel, ts: args.ts };
+      };
+
+      const result = await updateDailyDigestMessage({
+        config,
+        workspace: 'work',
+        channel: 'C123',
+        ts: '1710000000.000100',
+        repoFullName: 'octocat/hello-world',
+        digest: {
+          approvedUnmerged: [],
+          staleAwaitingReview: [],
+          otherReadyForReview: [],
+        },
+        sender: fakeSender,
+      });
+
+      expect(result).toEqual({ ok: true, channel: 'C123', ts: '1710000000.000100' });
+      expect(calls).toHaveLength(1);
+      expect(calls[0].token).toBe('xoxb-test-token');
+      expect(calls[0].payload.text).toContain('0 approved');
     });
   });
 });

@@ -5,6 +5,7 @@ import { buildLinearPrReviewUrl } from '../linear_pr_review.js';
 import { resolveSlackWorkspaceToken } from './slack_config.js';
 
 const SLACK_POST_MESSAGE_URL = 'https://slack.com/api/chat.postMessage';
+const SLACK_UPDATE_MESSAGE_URL = 'https://slack.com/api/chat.update';
 
 export interface ReviewRequestReviewer {
   githubLogin: string;
@@ -26,6 +27,8 @@ export interface ReviewRequestPr {
 export interface SlackPostResult {
   ok: boolean;
   error?: string;
+  channel?: string;
+  ts?: string;
 }
 
 export interface SlackSectionBlock {
@@ -54,6 +57,15 @@ export interface SlackPostSenderArgs {
 }
 
 export type SlackPostSender = (args: SlackPostSenderArgs) => Promise<SlackPostResult>;
+
+export interface SlackUpdateSenderArgs {
+  token: string;
+  channel: string;
+  ts: string;
+  payload: SlackPostPayload;
+}
+
+export type SlackUpdateSender = (args: SlackUpdateSenderArgs) => Promise<SlackPostResult>;
 
 export interface PostReviewRequestMessageArgs {
   config: TimConfig;
@@ -99,6 +111,17 @@ export interface PostDailyDigestMessageArgs {
   repoFullName: string;
   digest: DailyDigestPayloadInput;
   sender?: SlackPostSender;
+  allowEmpty?: boolean;
+}
+
+export interface UpdateDailyDigestMessageArgs {
+  config: TimConfig;
+  workspace: string;
+  channel: string;
+  ts: string;
+  repoFullName: string;
+  digest: DailyDigestPayloadInput;
+  sender?: SlackUpdateSender;
 }
 
 export interface PostSlackTestMessageArgs {
@@ -111,6 +134,7 @@ export interface PostSlackTestMessageArgs {
 
 /** Cached Slack senders, keyed by resolved bot token. */
 const cachedSlackSenders = new Map<string, SlackPostSender>();
+const cachedSlackUpdateSenders = new Map<string, SlackUpdateSender>();
 
 function escapeSlackMrkdwnText(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -429,6 +453,8 @@ export function createFetchSlackSender(
       const responseBody = (await response.json().catch(() => null)) as {
         ok?: boolean;
         error?: string;
+        channel?: string;
+        ts?: string;
       } | null;
       if (!responseBody?.ok) {
         const message = responseBody?.error ?? 'Slack chat.postMessage returned ok=false';
@@ -436,10 +462,65 @@ export function createFetchSlackSender(
         return { ok: false, error: message };
       }
 
-      return { ok: true };
+      return {
+        ok: true,
+        channel: typeof responseBody.channel === 'string' ? responseBody.channel : undefined,
+        ts: typeof responseBody.ts === 'string' ? responseBody.ts : undefined,
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       error(`Slack chat.postMessage failed: ${message}`);
+      return { ok: false, error: message };
+    }
+  };
+}
+
+export function createFetchSlackUpdateSender(
+  token: string,
+  fetchImpl: typeof fetch = fetch
+): SlackUpdateSender {
+  return async ({ channel, ts, payload }: SlackUpdateSenderArgs): Promise<SlackPostResult> => {
+    try {
+      const response = await fetchImpl(SLACK_UPDATE_MESSAGE_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+        body: JSON.stringify({
+          ...payload,
+          channel,
+          ts,
+        }),
+      });
+
+      if (!response.ok) {
+        const responseText = await response.text().catch(() => '');
+        const message = `Slack chat.update failed with HTTP ${response.status}${responseText ? `: ${responseText}` : ''}`;
+        error(message);
+        return { ok: false, error: message };
+      }
+
+      const responseBody = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        channel?: string;
+        ts?: string;
+      } | null;
+      if (!responseBody?.ok) {
+        const message = responseBody?.error ?? 'Slack chat.update returned ok=false';
+        error(`Slack chat.update failed: ${message}`);
+        return { ok: false, error: message };
+      }
+
+      return {
+        ok: true,
+        channel: typeof responseBody.channel === 'string' ? responseBody.channel : channel,
+        ts: typeof responseBody.ts === 'string' ? responseBody.ts : ts,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      error(`Slack chat.update failed: ${message}`);
       return { ok: false, error: message };
     }
   };
@@ -456,8 +537,20 @@ export function getSlackPostSender(token: string): SlackPostSender {
   return sender;
 }
 
+export function getSlackUpdateSender(token: string): SlackUpdateSender {
+  const cachedSender = cachedSlackUpdateSenders.get(token);
+  if (cachedSender) {
+    return cachedSender;
+  }
+
+  const sender = createFetchSlackUpdateSender(token);
+  cachedSlackUpdateSenders.set(token, sender);
+  return sender;
+}
+
 export function clearSlackClientCache(): void {
   cachedSlackSenders.clear();
+  cachedSlackUpdateSenders.clear();
 }
 
 export async function postReviewRequestMessage(
@@ -475,6 +568,7 @@ export async function postDailyDigestMessage(
   args: PostDailyDigestMessageArgs
 ): Promise<SlackPostResult> {
   if (
+    args.allowEmpty !== true &&
     args.digest.approvedUnmerged.length === 0 &&
     args.digest.staleAwaitingReview.length === 0 &&
     args.digest.otherReadyForReview.length === 0 &&
@@ -488,6 +582,16 @@ export async function postDailyDigestMessage(
   const sender = args.sender ?? getSlackPostSender(token);
 
   return await sender({ token, payload });
+}
+
+export async function updateDailyDigestMessage(
+  args: UpdateDailyDigestMessageArgs
+): Promise<SlackPostResult> {
+  const token = resolveSlackWorkspaceToken(args.config, args.workspace);
+  const payload = buildDailyDigestSlackPayload(args.channel, args.repoFullName, args.digest);
+  const sender = args.sender ?? getSlackUpdateSender(token);
+
+  return await sender({ token, channel: args.channel, ts: args.ts, payload });
 }
 
 export async function postSlackTestMessage(

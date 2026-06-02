@@ -1366,6 +1366,15 @@ slackDigestCommand
     await handleSlackDigestDisableCommand(options, command).catch(handleCommandError);
   });
 
+slackDigestCommand
+  .command('update')
+  .description('Update the current project daily PR digest message for today')
+  .option('--dry-run', 'Show whether a stored same-day digest message would be updated')
+  .action(async (options, command) => {
+    const { handleSlackDigestUpdateCommand } = await import('./commands/slack.js');
+    await handleSlackDigestUpdateCommand(options, command).catch(handleCommandError);
+  });
+
 slackCommand
   .command('map <github-login> <slack-user-id>')
   .description('Map a GitHub login to a Slack user ID in a workspace')

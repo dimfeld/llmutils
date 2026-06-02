@@ -36,12 +36,14 @@ import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { getProjectSetting, setProjectSetting } from '../db/project_settings.js';
 import { upsertPrReviewRequestByReviewer, upsertPrStatus } from '../db/pr_status.js';
+import { upsertSlackDailyDigestMessage } from '../db/slack_daily_digest_message.js';
 import { getUserMapping, upsertUserMapping } from '../db/slack_user_map.js';
 import {
   handleSlackDisableCommand,
   handleSlackDigestDisableCommand,
   handleSlackDigestEnableCommand,
   handleSlackDigestRunCommand,
+  handleSlackDigestUpdateCommand,
   handleSlackEnableCommand,
   handleSlackListCommand,
   handleSlackMarkClosedNotifiedCommand,
@@ -49,7 +51,11 @@ import {
   handleSlackTestCommand,
   handleSlackUnmapCommand,
 } from './slack.js';
-import type { SlackPostResult, SlackPostSenderArgs } from '../../common/slack/slack_client.js';
+import type {
+  SlackPostResult,
+  SlackPostSenderArgs,
+  SlackUpdateSenderArgs,
+} from '../../common/slack/slack_client.js';
 
 const OWNER = 'testowner';
 const REPO = 'testrepo';
@@ -385,6 +391,183 @@ describe('tim slack CLI handlers', () => {
       expect(JSON.stringify(calls[0].payload.blocks)).toContain('Posted digest PR');
       const { log } = await import('../../logging.js');
       expect(vi.mocked(log)).toHaveBeenCalledWith('Ran Slack daily PR digest.');
+    });
+  });
+
+  describe('handleSlackDigestUpdateCommand', () => {
+    test('dry run reports the stored same-day message for the current repo', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-02T12:00:00.000Z'));
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        dailyDigest: true,
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+      });
+      upsertSlackDailyDigestMessage(db, {
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+        repoFullName: `${OWNER}/${REPO}`,
+        digestDate: '2026-01-02',
+        slackChannel: 'C123',
+        slackTs: '1710000000.000100',
+      });
+      upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/5`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 5,
+        author: 'frank',
+        title: 'Dry run digest PR',
+        state: 'open',
+        draft: false,
+        reviewDecision: 'APPROVED',
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      try {
+        await handleSlackDigestUpdateCommand({ dryRun: true }, fakeCommand);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      const { log } = await import('../../logging.js');
+      const output = vi
+        .mocked(log)
+        .mock.calls.map((call) => String(call[0]))
+        .join('\n');
+      expect(output).toContain('Slack daily PR digest update dry run');
+      expect(output).toContain(`Repository: ${OWNER}/${REPO}`);
+      expect(output).toContain('Stored message: channel=C123, ts=1710000000.000100');
+      expect(output).toContain('Would update the stored same-day digest message.');
+      expect(output).toContain('Dry run digest PR');
+      expect(output).toContain('Slack update payload:');
+      expect(output).toContain(`Daily PR digest for ${OWNER}/${REPO}: 1 approved`);
+      expect(output).toContain('"type": "section"');
+    });
+
+    test('dry run reports when no stored same-day message exists', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-02T12:00:00.000Z'));
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        dailyDigest: true,
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+      });
+
+      try {
+        await handleSlackDigestUpdateCommand({ dryRun: true }, fakeCommand);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      const { log } = await import('../../logging.js');
+      const output = vi
+        .mocked(log)
+        .mock.calls.map((call) => String(call[0]))
+        .join('\n');
+      expect(output).toContain('No stored same-day digest message found');
+    });
+
+    test('treats dryRun on the command object as a dry run', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-02T12:00:00.000Z'));
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        dailyDigest: true,
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+      });
+      upsertSlackDailyDigestMessage(db, {
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+        repoFullName: `${OWNER}/${REPO}`,
+        digestDate: '2026-01-02',
+        slackChannel: 'C123',
+        slackTs: '1710000000.000100',
+      });
+
+      const updates: SlackUpdateSenderArgs[] = [];
+      const fakeUpdateSender = async (args: SlackUpdateSenderArgs): Promise<SlackPostResult> => {
+        updates.push(args);
+        return { ok: true, channel: args.channel, ts: args.ts };
+      };
+      const dryRunCommand = {
+        opts: () => ({ dryRun: true }),
+        parent: { opts: () => ({ config: undefined as string | undefined }) },
+      };
+
+      try {
+        await handleSlackDigestUpdateCommand({}, dryRunCommand, fakeUpdateSender);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(updates).toHaveLength(0);
+      const { log } = await import('../../logging.js');
+      const output = vi
+        .mocked(log)
+        .mock.calls.map((call) => String(call[0]))
+        .join('\n');
+      expect(output).toContain('Slack daily PR digest update dry run');
+      expect(output).toContain('Stored message: channel=C123, ts=1710000000.000100');
+    });
+
+    test('non-dry run updates the stored same-day message', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-02T12:00:00.000Z'));
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        dailyDigest: true,
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+      });
+      upsertSlackDailyDigestMessage(db, {
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+        repoFullName: `${OWNER}/${REPO}`,
+        digestDate: '2026-01-02',
+        slackChannel: 'C123',
+        slackTs: '1710000000.000100',
+      });
+      upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/4`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 4,
+        author: 'erin',
+        title: 'Updated digest PR',
+        state: 'open',
+        draft: false,
+        reviewDecision: 'APPROVED',
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      const updates: SlackUpdateSenderArgs[] = [];
+      const fakeUpdateSender = async (args: SlackUpdateSenderArgs): Promise<SlackPostResult> => {
+        updates.push(args);
+        return { ok: true, channel: args.channel, ts: args.ts };
+      };
+
+      try {
+        await handleSlackDigestUpdateCommand({ dryRun: false }, fakeCommand, fakeUpdateSender);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(updates).toHaveLength(1);
+      expect(updates[0].channel).toBe('C123');
+      expect(updates[0].ts).toBe('1710000000.000100');
+      expect(JSON.stringify(updates[0].payload.blocks)).toContain('Updated digest PR');
     });
   });
 

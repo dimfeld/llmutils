@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { constructGitHubRepositoryId } from '$common/github/pull_requests.js';
-import type { SlackPostSenderArgs } from '$common/slack/slack_client.js';
+import type { SlackPostSenderArgs, SlackUpdateSenderArgs } from '$common/slack/slack_client.js';
 import { SLACK_PROJECT_SETTING_KEY } from '$common/slack/slack_project_setting.js';
 import { getDefaultConfig, type TimConfig } from '$tim/configSchema.js';
 import { openDatabase } from '$tim/db/database.js';
@@ -19,6 +19,7 @@ import {
   runDailyDigestForWorkspace,
   shouldStartDailyDigest,
   startDailyDigestScheduler,
+  updateDailyDigestMessagesForPrUrls,
 } from './daily_digest.js';
 
 type UpsertPrStatusResult = ReturnType<typeof upsertPrStatus>;
@@ -28,6 +29,11 @@ interface FakeSender {
   sent: SlackPostSenderArgs[];
 }
 
+interface FakeUpdateSender {
+  sender: (args: SlackUpdateSenderArgs) => Promise<{ ok: boolean; error?: string }>;
+  updated: SlackUpdateSenderArgs[];
+}
+
 function makeFakeSender(): FakeSender {
   const sent: SlackPostSenderArgs[] = [];
   return {
@@ -35,6 +41,32 @@ function makeFakeSender(): FakeSender {
     sender: async (args: SlackPostSenderArgs): Promise<{ ok: boolean }> => {
       sent.push(args);
       return { ok: true };
+    },
+  };
+}
+
+function makeFakeSenderWithCoordinates(): FakeSender {
+  const sent: SlackPostSenderArgs[] = [];
+  return {
+    sent,
+    sender: async (
+      args: SlackPostSenderArgs
+    ): Promise<{ ok: true; channel: string; ts: string }> => {
+      sent.push(args);
+      return { ok: true, channel: 'C123', ts: `1710000000.000${sent.length}` };
+    },
+  };
+}
+
+function makeFakeUpdateSender(): FakeUpdateSender {
+  const updated: SlackUpdateSenderArgs[] = [];
+  return {
+    updated,
+    sender: async (
+      args: SlackUpdateSenderArgs
+    ): Promise<{ ok: true; channel: string; ts: string }> => {
+      updated.push(args);
+      return { ok: true, channel: args.channel, ts: args.ts };
     },
   };
 }
@@ -267,6 +299,88 @@ describe('lib/server/daily_digest', () => {
     expect(payloadText(sent.find((call) => call.payload.channel === '#b')!)).toContain(
       'Repo B approved'
     );
+  });
+
+  test('updates the same-day per-repo digest message instead of posting again', async () => {
+    setupProject('octocat', 'repo-a', { channel: '#reviews' });
+    insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
+
+    const postSender = makeFakeSenderWithCoordinates();
+    await runDailyDigestForWorkspace(db, buildConfig(), 'work', {
+      sender: postSender.sender,
+      nowMs: NOW_MS,
+    });
+
+    const updateSender = makeFakeUpdateSender();
+    await runDailyDigestForWorkspace(db, buildConfig(), 'work', {
+      sender: postSender.sender,
+      updateSender: updateSender.sender,
+      nowMs: NOW_MS,
+    });
+
+    expect(postSender.sent).toHaveLength(1);
+    expect(updateSender.updated).toHaveLength(1);
+    expect(updateSender.updated[0].channel).toBe('C123');
+    expect(updateSender.updated[0].ts).toBe('1710000000.0001');
+    expect(payloadText({ token: '', payload: updateSender.updated[0].payload })).toContain(
+      'Repo A approved'
+    );
+  });
+
+  test('update-only digest refresh clears a same-day message when the repo digest becomes empty', async () => {
+    setupProject('octocat', 'repo-a', { channel: '#reviews' });
+    insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
+
+    const postSender = makeFakeSenderWithCoordinates();
+    await runDailyDigestForWorkspace(db, buildConfig(), 'work', {
+      sender: postSender.sender,
+      nowMs: NOW_MS,
+    });
+
+    db.prepare("UPDATE pr_status SET state = 'merged' WHERE owner = ? AND repo = ?").run(
+      'octocat',
+      'repo-a'
+    );
+
+    const updateSender = makeFakeUpdateSender();
+    await updateDailyDigestMessagesForPrUrls(
+      db,
+      buildConfig(),
+      ['https://github.com/octocat/repo-a/pull/1'],
+      {
+        sender: postSender.sender,
+        updateSender: updateSender.sender,
+        nowMs: NOW_MS,
+      }
+    );
+
+    expect(postSender.sent).toHaveLength(1);
+    expect(updateSender.updated).toHaveLength(1);
+    expect(updateSender.updated[0].payload.text).toContain('0 approved');
+    expect(payloadText({ token: '', payload: updateSender.updated[0].payload })).not.toContain(
+      'Repo A approved'
+    );
+  });
+
+  test('update-only digest refresh does not post when no same-day message exists', async () => {
+    setupProject('octocat', 'repo-a', { channel: '#reviews' });
+    insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
+
+    const postSender = makeFakeSenderWithCoordinates();
+    const updateSender = makeFakeUpdateSender();
+    await updateDailyDigestMessagesForPrUrls(
+      db,
+      buildConfig(),
+      ['https://github.com/octocat/repo-a/pull/1'],
+      {
+        sender: postSender.sender,
+        updateSender: updateSender.sender,
+        nowMs: NOW_MS,
+      }
+    );
+
+    expect(postSender.sent).toHaveLength(0);
+    expect(updateSender.updated).toHaveLength(0);
   });
 
   test('includes Linear milestones once per Slack channel when enabled', async () => {
