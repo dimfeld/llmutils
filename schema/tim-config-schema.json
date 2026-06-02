@@ -143,6 +143,19 @@
                         "saturday"
                       ]
                     }
+                  },
+                  "linearMilestones": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "apiKeyEnv": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "additionalProperties": false
@@ -572,6 +585,49 @@
             "done",
             "needs_review",
             "always"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "prFix": {
+      "description": "Configuration for the pr fix command",
+      "type": "object",
+      "properties": {
+        "executor": {
+          "description": "Executor to use for PR review thread fixes",
+          "type": "string",
+          "enum": [
+            "claude-code",
+            "codex-cli"
+          ]
+        },
+        "model": {
+          "description": "Model to use for PR review thread fixes",
+          "type": "string"
+        },
+        "effort": {
+          "description": "Reasoning effort to use for PR review thread fixes",
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh"
+              ]
+            }
           ]
         }
       },
