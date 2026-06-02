@@ -1,10 +1,16 @@
 import { renderWithTooltipProvider } from '$lib/test-utils/render_with_tooltip_provider.js';
-import { describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
 import { getLinearPrReviewUrl } from '$lib/remote/project_prs.remote.js';
 import { getPrReviews } from '$lib/remote/pr_reviews.remote.js';
+import type { PrReviewThreadDetail } from '$tim/db/pr_status.js';
 import PrDetail from './PrDetail.svelte';
+
+const mockStartFixThreads = vi.fn();
+const sessionManager = {
+  sessions: new Map<string, { status: string; sessionInfo: { planUuid?: string } }>(),
+};
 
 vi.mock('$lib/remote/project_prs.remote.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/remote/project_prs.remote.js')>(
@@ -25,6 +31,20 @@ vi.mock('$lib/remote/pr_reviews.remote.js', async () => {
     getPrReviews: vi.fn(async () => []),
   };
 });
+
+vi.mock('$lib/remote/review_thread_actions.remote.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('$lib/remote/review_thread_actions.remote.js')
+  >('$lib/remote/review_thread_actions.remote.js');
+  return {
+    ...actual,
+    startFixThreads: (...args: unknown[]) => mockStartFixThreads(...args),
+  };
+});
+
+vi.mock('$lib/stores/session_state.svelte.js', () => ({
+  useSessionManager: () => sessionManager,
+}));
 
 function createPr(): EnrichedProjectPr {
   return {
@@ -65,7 +85,46 @@ function createPr(): EnrichedProjectPr {
   };
 }
 
+function createReviewThread(overrides: Partial<PrReviewThreadDetail> = {}): PrReviewThreadDetail {
+  return {
+    thread: {
+      id: 1,
+      pr_status_id: 1,
+      thread_id: 'thread-1',
+      path: 'src/example.ts',
+      line: 42,
+      original_line: 42,
+      original_start_line: null,
+      start_line: null,
+      diff_side: 'RIGHT',
+      start_diff_side: null,
+      is_resolved: 0,
+      is_outdated: 0,
+      subject_type: 'LINE',
+    },
+    comments: [
+      {
+        id: 1,
+        thread_id: 1,
+        comment_id: 'comment-1',
+        database_id: 1001,
+        author: 'reviewer',
+        body: 'Please fix this',
+        diff_hunk: null,
+        created_at: '2026-03-18T10:00:00.000Z',
+        updated_at: '2026-03-18T10:00:00.000Z',
+      },
+    ],
+    ...overrides,
+  };
+}
+
 describe('PrDetail', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionManager.sessions.clear();
+  });
+
   test('renders the current user review-request label in the badge bar', async () => {
     const { body } = await renderWithTooltipProvider(PrDetail, {
       props: {
@@ -135,6 +194,56 @@ describe('PrDetail', () => {
 
     expect(otherPr.body).not.toContain('Convert to draft');
     expect(otherPr.body).not.toContain('Mark ready for review');
+  });
+
+  test('shows Fix Unresolved for the authenticated author when unresolved threads exist', async () => {
+    const pr = createPr();
+    pr.linkedPlans = [{ planUuid: 'plan-42', planId: 42, title: 'Fix review comments' }];
+    pr.reviewThreads = [createReviewThread()];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        username: 'alice',
+      },
+    });
+
+    expect(body).toContain('Fix Unresolved');
+    expect(body).toContain('aria-label="Fix all unresolved review threads"');
+  });
+
+  test('hides Fix Unresolved when unresolved threads are on another author PR', async () => {
+    const pr = createPr();
+    pr.linkedPlans = [{ planUuid: 'plan-42', planId: 42, title: 'Fix review comments' }];
+    pr.reviewThreads = [createReviewThread()];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        username: 'bob',
+      },
+    });
+
+    expect(body).not.toContain('Fix Unresolved');
+    expect(body).toContain('(1 unresolved)');
+  });
+
+  test('hides Fix Unresolved when the PR does not have exactly one linked plan', async () => {
+    const pr = createPr();
+    pr.reviewThreads = [createReviewThread()];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        username: 'alice',
+      },
+    });
+
+    expect(body).not.toContain('Fix Unresolved');
+    expect(body).toContain('(1 unresolved)');
   });
 
   test('renders full diff stats when additions, deletions, and changed_files are available', async () => {

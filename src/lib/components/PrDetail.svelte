@@ -17,10 +17,17 @@
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { refreshSinglePrStatus, togglePrDraftStatus } from '$lib/remote/pr_status.remote.js';
   import { getLinearPrReviewUrl } from '$lib/remote/project_prs.remote.js';
-  import { startPrReviewGuide } from '$lib/remote/review_thread_actions.remote.js';
+  import { startFixThreads, startPrReviewGuide } from '$lib/remote/review_thread_actions.remote.js';
   import { getPrReviews } from '$lib/remote/pr_reviews.remote.js';
+  import {
+    getFixButtonState,
+    getFixStartResultState,
+  } from '$lib/components/pr_fix_launch_state.js';
+  import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
   import CopyButton from './CopyButton.svelte';
+
+  const sessionManager = useSessionManager();
 
   let {
     pr,
@@ -37,6 +44,8 @@
   let refreshing = $state(false);
   let draftUpdating = $state(false);
   let reviewGuideRunning = $state(false);
+  let fixStarting = $state(false);
+  let fixLaunched = $state(false);
   let actionError = $state<string | null>(null);
   // let graphitePrUrl = $derived(
   //   `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`
@@ -70,6 +79,9 @@
 
   // Get planUuid if there's exactly one linked plan, otherwise undefined
   let planUuid = $derived(pr.linkedPlans.length === 1 ? pr.linkedPlans[0].planUuid : undefined);
+  let unresolvedReviewThreadCount = $derived(
+    pr.reviewThreads?.filter((t) => !t.thread.is_resolved).length ?? 0
+  );
   let isOwnPr = $derived.by(() => {
     if (!username || !pr.status.author) {
       return false;
@@ -79,6 +91,50 @@
   });
   let canToggleDraft = $derived(tokenConfigured && pr.status.state === 'open' && isOwnPr);
   let draftButtonLabel = $derived(pr.status.draft ? 'Mark ready for review' : 'Convert to draft');
+  let canFixUnresolvedThreads = $derived(
+    isOwnPr && planUuid != null && unresolvedReviewThreadCount > 0
+  );
+  let sessionActiveForPlan = $derived.by(() => {
+    if (!planUuid) {
+      return false;
+    }
+
+    for (const session of sessionManager.sessions.values()) {
+      if (session.status === 'active' && session.sessionInfo.planUuid === planUuid) {
+        return true;
+      }
+    }
+
+    return false;
+  });
+  let fixButtonState = $derived(
+    getFixButtonState({
+      refreshing,
+      fixStarting,
+      fixLaunched,
+      sessionActiveForPlan,
+    })
+  );
+
+  $effect(() => {
+    if (sessionActiveForPlan && fixLaunched) {
+      fixLaunched = false;
+    }
+  });
+
+  $effect(() => {
+    void planUuid;
+    fixLaunched = false;
+    fixStarting = false;
+  });
+
+  $effect(() => {
+    if (!fixLaunched) return;
+    const timer = setTimeout(() => {
+      fixLaunched = false;
+    }, 30_000);
+    return () => clearTimeout(timer);
+  });
 
   async function handleRefresh() {
     actionError = null;
@@ -114,6 +170,36 @@
       actionError = err instanceof Error ? err.message : String(err);
     } finally {
       draftUpdating = false;
+    }
+  }
+
+  async function handleStartFix() {
+    if (
+      !canFixUnresolvedThreads ||
+      !planUuid ||
+      fixStarting ||
+      fixLaunched ||
+      sessionActiveForPlan
+    ) {
+      return;
+    }
+
+    const requestPlanUuid = planUuid;
+    actionError = null;
+    fixStarting = true;
+    try {
+      const result = await startFixThreads({ planUuid: requestPlanUuid });
+      if (planUuid !== requestPlanUuid) return;
+      const fixResultState = getFixStartResultState(result.status);
+      fixLaunched = fixResultState.fixLaunched;
+      actionError = fixResultState.message;
+    } catch (err) {
+      if (planUuid !== requestPlanUuid) return;
+      actionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      if (planUuid === requestPlanUuid) {
+        fixStarting = false;
+      }
     }
   }
 
@@ -533,19 +619,30 @@
 
     <!-- Review Threads -->
     {#if pr.reviewThreads?.length}
-      {@const unresolvedCount = pr.reviewThreads.filter((t) => !t.thread.is_resolved).length}
       <details open>
         <summary
           class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
         >
           {pr.reviewThreads.length} review thread{pr.reviewThreads.length === 1 ? '' : 's'}
-          {#if unresolvedCount > 0}
+          {#if unresolvedReviewThreadCount > 0}
             <span class="text-amber-600 dark:text-amber-400">
-              ({unresolvedCount} unresolved)
+              ({unresolvedReviewThreadCount} unresolved)
             </span>
           {/if}
         </summary>
         <div class="mt-1.5 pl-2">
+          {#if canFixUnresolvedThreads}
+            <div class="mb-2 flex justify-end">
+              <button
+                onclick={handleStartFix}
+                disabled={fixButtonState.disabled}
+                class="rounded-md px-2 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 hover:text-amber-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
+                aria-label="Fix all unresolved review threads"
+              >
+                {fixButtonState.label}
+              </button>
+            </div>
+          {/if}
           <PrReviewThreadList
             threads={pr.reviewThreads}
             prUrl={pr.status.pr_url}
