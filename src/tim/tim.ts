@@ -1733,8 +1733,10 @@ prCommand
       'max',
     ])
   )
-  .option('--all', 'Fix all unresolved threads without prompting')
   .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
+  .option('-w, --workspace <name>', 'Use a specific workspace')
+  .option('--nw, --new-workspace', 'Create a new workspace instead of reusing an existing one')
+  .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
   .option('--non-interactive', 'No user prompts')
   .option('--no-terminal-input', 'Disable terminal input')
   .action(async (planIdArg, options, command) => {

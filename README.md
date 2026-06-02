@@ -269,7 +269,7 @@ tim review-guide generate 123 --auto-workspace
 tim review-guide list-issues 123                    # Latest guide for plan, plus linked PR guides
 tim review-guide list-issues feature/my-branch      # Resolve by plan or PR branch
 tim review-guide resolve-issue 42 123
-tim pr fix 123 --all --auto-workspace --executor codex-cli --model gpt-5-codex --effort high
+tim pr fix 123 --auto-workspace --executor codex-cli --model gpt-5-codex --effort high
 tim rebase 123 --auto-workspace
 ```
 

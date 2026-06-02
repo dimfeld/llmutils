@@ -184,7 +184,7 @@ export async function spawnPrFixProcess(planId: number, cwd: string): Promise<Sp
   return spawnTimProcess(
     describeTarget('plan', planId),
     planId,
-    ['pr', 'fix', String(planId), '--all', '--auto-workspace', '--no-terminal-input'],
+    ['pr', 'fix', String(planId), '--auto-workspace', '--no-terminal-input'],
     cwd
   );
 }

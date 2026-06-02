@@ -69,7 +69,9 @@ export class CodexCliExecutor implements Executor {
           timEnvironment: this.sharedOptions.timEnvironment,
           reasoningLevel:
             planInfo.executionMode === 'planning'
-              ? (this.timConfig.executors?.[CodexCliExecutorName]?.reasoning?.generate ?? 'high')
+              ? (this.options.reasoning?.default ??
+                this.timConfig.executors?.[CodexCliExecutorName]?.reasoning?.generate ??
+                'high')
               : undefined,
         }
       );

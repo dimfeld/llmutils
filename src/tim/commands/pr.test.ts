@@ -17,6 +17,12 @@ import { LATEST_GPT5_MODEL } from '../constants.js';
 
 type AnyObject = Record<string, unknown>;
 
+const executorMocks = vi.hoisted(() => ({
+  buildExecutorAndLog: vi.fn(),
+  defaultModelForExecutor: vi.fn(),
+  execute: vi.fn(async (..._args: unknown[]) => {}),
+}));
+
 vi.mock('../../logging.js', () => ({
   log: vi.fn((..._args: unknown[]) => {}),
 }));
@@ -30,6 +36,7 @@ vi.mock('../plan_display.js', () => ({
 
 vi.mock('../workspace/workspace_info.js', () => ({
   getWorkspaceInfoByPath: vi.fn((_cwd: string) => null),
+  touchWorkspaceInfo: vi.fn((_workspacePath: string) => {}),
 }));
 
 vi.mock('../db/database.js', () => ({
@@ -62,10 +69,6 @@ vi.mock('../../common/github/pull_requests.js', () => ({
   resolveReviewThread: vi.fn(async (..._args: unknown[]) => true),
 }));
 
-vi.mock('../../common/input.js', () => ({
-  promptCheckbox: vi.fn(),
-}));
-
 vi.mock('../../common/github/identifiers.js', () => ({
   canonicalizePrUrl: vi.fn((identifier: string) => identifier),
   parsePrOrIssueNumber: vi.fn(async (..._args: unknown[]) => null),
@@ -75,6 +78,12 @@ vi.mock('../../common/github/identifiers.js', () => ({
 
 vi.mock('./agent/agent.js', () => ({
   timAgent: vi.fn(async (..._args: unknown[]) => {}),
+}));
+
+vi.mock('../executors/index.js', () => ({
+  buildExecutorAndLog: executorMocks.buildExecutorAndLog,
+  DEFAULT_EXECUTOR: 'claude-code',
+  defaultModelForExecutor: executorMocks.defaultModelForExecutor,
 }));
 
 vi.mock('../db/pr_status.js', () => ({
@@ -106,13 +115,48 @@ vi.mock('../configLoader.js', () => ({
   loadEffectiveConfig: vi.fn(async (..._args: unknown[]) => ({})),
 }));
 
+vi.mock('../../logging/tunnel_client.js', () => ({
+  isTunnelActive: vi.fn(() => false),
+}));
+
+vi.mock('../headless.js', () => ({
+  runWithHeadlessAdapterIfEnabled: vi.fn(async (options: { callback: () => Promise<unknown> }) =>
+    options.callback()
+  ),
+}));
+
+vi.mock('../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(async (..._args: unknown[]) => ({
+    baseDir: '/tmp/workspace',
+    planFile: '/tmp/workspace/.tim/plans/248.plan.md',
+    branchCreatedDuringSetup: false,
+  })),
+}));
+
+vi.mock('../workspace/workspace_roundtrip.js', () => ({
+  prepareWorkspaceRoundTrip: vi.fn(async () => null),
+  runPreExecutionWorkspaceSync: vi.fn(async () => {}),
+  materializePlansForExecution: vi.fn(async () => undefined),
+  runPostExecutionWorkspaceSync: vi.fn(async () => {}),
+}));
+
 vi.mock('../db/plan_sync.js', () => ({
   syncPlanToDb: vi.fn(async (..._args: unknown[]) => {}),
 }));
 
 import { log as mockLogFn } from '../../logging.js';
 import { resolvePlan as mockResolvePlanFn } from '../plan_display.js';
-import { getWorkspaceInfoByPath as mockGetWorkspaceInfoByPathFn } from '../workspace/workspace_info.js';
+import {
+  getWorkspaceInfoByPath as mockGetWorkspaceInfoByPathFn,
+  touchWorkspaceInfo as mockTouchWorkspaceInfoFn,
+} from '../workspace/workspace_info.js';
+import { setupWorkspace as mockSetupWorkspaceFn } from '../workspace/workspace_setup.js';
+import {
+  materializePlansForExecution as mockMaterializePlansForExecutionFn,
+  prepareWorkspaceRoundTrip as mockPrepareWorkspaceRoundTripFn,
+  runPostExecutionWorkspaceSync as mockRunPostExecutionWorkspaceSyncFn,
+  runPreExecutionWorkspaceSync as mockRunPreExecutionWorkspaceSyncFn,
+} from '../workspace/workspace_roundtrip.js';
 import { getDatabase as mockGetDatabaseFn } from '../db/database.js';
 import {
   refreshPrStatus as mockRefreshPrStatusFn,
@@ -126,7 +170,6 @@ import {
   fetchOpenPullRequests as mockFetchOpenPullRequestsFn,
   resolveReviewThread as mockResolveReviewThreadFn,
 } from '../../common/github/pull_requests.js';
-import { promptCheckbox as mockPromptCheckboxFn } from '../../common/input.js';
 import {
   canonicalizePrUrl as mockCanonicalizePrUrlFn,
   deduplicatePrUrls as mockDeduplicatePrUrlsFn,
@@ -147,8 +190,14 @@ import {
   writePlanFile as mockWritePlanFileFn,
 } from '../plans.js';
 import { loadEffectiveConfig as mockLoadEffectiveConfigFn } from '../configLoader.js';
+import { isTunnelActive as mockIsTunnelActiveFn } from '../../logging/tunnel_client.js';
+import { runWithHeadlessAdapterIfEnabled as mockRunWithHeadlessAdapterIfEnabledFn } from '../headless.js';
 import { syncPlanToDb as mockSyncPlanToDbFn } from '../db/plan_sync.js';
 import { timAgent as mockTimAgentFn } from './agent/agent.js';
+import {
+  buildExecutorAndLog as mockBuildExecutorAndLogFn,
+  defaultModelForExecutor as mockDefaultModelForExecutorFn,
+} from '../executors/index.js';
 
 const mockLog = vi.mocked(mockLogFn);
 const mockResolvePlan = vi.mocked(mockResolvePlanFn);
@@ -171,14 +220,24 @@ const mockCleanOrphanedPrStatus = vi.mocked(mockCleanOrphanedPrStatusFn);
 const mockAddReplyToReviewThread = vi.mocked(mockAddReplyToReviewThreadFn);
 const mockFetchOpenPullRequests = vi.mocked(mockFetchOpenPullRequestsFn);
 const mockResolveReviewThread = vi.mocked(mockResolveReviewThreadFn);
-const mockPromptCheckbox = vi.mocked(mockPromptCheckboxFn);
 const mockReadPlanFile = vi.mocked(mockReadPlanFileFn);
 const mockResolvePlanFromDb = vi.mocked(mockResolvePlanFromDbFn);
 const mockResolvePlanByUuid = vi.mocked(mockResolvePlanByUuidFn);
 const mockWritePlanFile = vi.mocked(mockWritePlanFileFn);
 const mockLoadEffectiveConfig = vi.mocked(mockLoadEffectiveConfigFn);
+const mockIsTunnelActive = vi.mocked(mockIsTunnelActiveFn);
+const mockRunWithHeadlessAdapterIfEnabled = vi.mocked(mockRunWithHeadlessAdapterIfEnabledFn);
 const mockSyncPlanToDb = vi.mocked(mockSyncPlanToDbFn);
 const mockTimAgent = vi.mocked(mockTimAgentFn);
+const mockBuildExecutorAndLog = vi.mocked(mockBuildExecutorAndLogFn);
+const mockDefaultModelForExecutor = vi.mocked(mockDefaultModelForExecutorFn);
+const mockExecutorExecute = executorMocks.execute;
+const mockTouchWorkspaceInfo = vi.mocked(mockTouchWorkspaceInfoFn);
+const mockSetupWorkspace = vi.mocked(mockSetupWorkspaceFn);
+const mockPrepareWorkspaceRoundTrip = vi.mocked(mockPrepareWorkspaceRoundTripFn);
+const mockRunPreExecutionWorkspaceSync = vi.mocked(mockRunPreExecutionWorkspaceSyncFn);
+const mockMaterializePlansForExecution = vi.mocked(mockMaterializePlansForExecutionFn);
+const mockRunPostExecutionWorkspaceSync = vi.mocked(mockRunPostExecutionWorkspaceSyncFn);
 
 let logs: string[] = [];
 let dbHandle: AnyObject;
@@ -272,13 +331,25 @@ describe('tim/commands/pr', () => {
     mockAddReplyToReviewThread.mockClear();
     mockFetchOpenPullRequests.mockClear();
     mockResolveReviewThread.mockClear();
-    mockPromptCheckbox.mockClear();
     mockReadPlanFile.mockClear();
     mockResolvePlanFromDb.mockClear();
     mockResolvePlanByUuid.mockClear();
     mockWritePlanFile.mockClear();
     mockLoadEffectiveConfig.mockReset();
     mockLoadEffectiveConfig.mockResolvedValue({});
+    mockIsTunnelActive.mockReset();
+    mockIsTunnelActive.mockReturnValue(false);
+    mockRunWithHeadlessAdapterIfEnabled.mockClear();
+    mockRunWithHeadlessAdapterIfEnabled.mockImplementation(
+      async (options: { callback: () => Promise<unknown> }) => options.callback()
+    );
+    mockBuildExecutorAndLog.mockReset();
+    mockBuildExecutorAndLog.mockReturnValue({ execute: mockExecutorExecute } as any);
+    mockDefaultModelForExecutor.mockReset();
+    mockDefaultModelForExecutor.mockImplementation((executorId: string) =>
+      executorId === 'codex-cli' ? 'gpt-5.5' : 'opus'
+    );
+    mockExecutorExecute.mockClear();
     mockSyncPlanToDb.mockClear();
     mockTimAgent.mockClear();
     mockLog.mockImplementation((...args: unknown[]) => {
@@ -289,6 +360,22 @@ describe('tim/commands/pr', () => {
       planPath: currentPlanPath,
     }));
     mockGetWorkspaceInfoByPath.mockImplementation(() => currentWorkspaceInfo);
+    mockTouchWorkspaceInfo.mockReset();
+    mockTouchWorkspaceInfo.mockImplementation(() => {});
+    mockSetupWorkspace.mockReset();
+    mockSetupWorkspace.mockResolvedValue({
+      baseDir: '/tmp/workspace',
+      planFile: '/tmp/workspace/.tim/plans/248.plan.md',
+      branchCreatedDuringSetup: false,
+    } as any);
+    mockPrepareWorkspaceRoundTrip.mockReset();
+    mockPrepareWorkspaceRoundTrip.mockResolvedValue(null);
+    mockRunPreExecutionWorkspaceSync.mockReset();
+    mockRunPreExecutionWorkspaceSync.mockResolvedValue(undefined);
+    mockMaterializePlansForExecution.mockReset();
+    mockMaterializePlansForExecution.mockResolvedValue(undefined);
+    mockRunPostExecutionWorkspaceSync.mockReset();
+    mockRunPostExecutionWorkspaceSync.mockResolvedValue(undefined);
     mockGetDatabase.mockImplementation(() => dbHandle);
     mockRefreshPrStatus.mockImplementation(async (_db: unknown, prUrl: string) => {
       const detail = currentRefreshedStatuses.get(prUrl);
@@ -348,7 +435,6 @@ describe('tim/commands/pr', () => {
     mockAddReplyToReviewThread.mockImplementation(async () => true);
     mockFetchOpenPullRequests.mockImplementation(async () => []);
     mockResolveReviewThread.mockImplementation(async () => true);
-    mockPromptCheckbox.mockResolvedValue([]);
     mockReadPlanFile.mockImplementation(async () => currentPersistedPlan);
     mockResolvePlanFromDb.mockImplementation(async () => ({
       plan: currentPersistedPlan,
@@ -1194,6 +1280,14 @@ describe('tim/commands/pr', () => {
     expect(prompt).toContain('gh pr view');
     expect(prompt).toContain('gh api repos/:owner/:repo/pulls/<number>/comments');
     expect(prompt).toContain('general PR feedback');
+    expect(prompt).toContain('## User Feedback');
+    expect(prompt).toContain(
+      'After fetching the review comments and related feedback, list the comments for the user before making code changes.'
+    );
+    expect(prompt).toContain(
+      'Ask the user for feedback on which review comments to address and how.'
+    );
+    expect(prompt).toContain('otherwise wait for direction before implementing fixes');
     expect(prompt).toContain('tim pr reply <Thread ID> "explanation of fix"');
     expect(prompt).toContain('Do not mark review comments or threads resolved.');
     expect(prompt).not.toContain('tim pr resolve <Thread ID>');
@@ -1230,12 +1324,11 @@ describe('tim/commands/pr', () => {
 
     await handlePrFixCommand(248, {}, createNestedCommand());
 
-    expect(mockPromptCheckbox).not.toHaveBeenCalled();
-    expect(mockTimAgent).not.toHaveBeenCalled();
+    expect(mockExecutorExecute).not.toHaveBeenCalled();
     expect(logs).toContain('Plan 248 has no unresolved PR review threads.');
   });
 
-  test('pr fix prompts for thread selection in interactive mode and forwards selected context', async () => {
+  test('pr fix forwards unresolved thread seed context without prompting', async () => {
     currentAutoLinkedDetails = [
       {
         ...createPrDetail(701, 'Explicit PR', 'success'),
@@ -1255,7 +1348,6 @@ describe('tim/commands/pr', () => {
         ],
       },
     ];
-    mockPromptCheckbox.mockResolvedValueOnce([1]);
 
     await handlePrFixCommand(
       248,
@@ -1263,46 +1355,23 @@ describe('tim/commands/pr', () => {
       createNestedCommand()
     );
 
-    expect(mockPromptCheckbox).toHaveBeenCalledWith(
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+      'codex-cli',
       expect.objectContaining({
-        message: 'Select review threads to fix:',
-        choices: expect.arrayContaining([
-          expect.objectContaining({
-            name: 'src/auth.ts:42 - "Add a null check"',
-            value: 0,
-            description: expect.stringContaining('Diff context:\n@@ -40,2 +40,4 @@'),
-            checked: true,
-          }),
-          expect.objectContaining({
-            name: 'src/user.ts:88 - "Handle the empty state"',
-            value: 1,
-            checked: true,
-          }),
-        ]),
-      })
-    );
-    expect(mockTimAgent).toHaveBeenCalledWith(
-      248,
-      expect.objectContaining({
-        orchestrator: 'codex-cli',
         model: LATEST_GPT5_MODEL,
-        reviewThreadContext: expect.stringContaining(
-          'gh pr view https://github.com/example/repo/pull/701'
-        ),
+        terminalInput: true,
       }),
-      { config: '/tmp/tim.yml' }
+      expect.any(Object),
+      undefined
     );
-    // executor should NOT leak through — it would be misinterpreted as sub-agent executor
-    expect(mockTimAgent.mock.calls[0]?.[1]).not.toHaveProperty('executor');
-    expect(String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '')).not.toContain(
-      'src/auth.ts:42'
+    expect(mockExecutorExecute).toHaveBeenCalledWith(
+      expect.stringContaining('gh pr view https://github.com/example/repo/pull/701'),
+      expect.objectContaining({ executionMode: 'planning', planId: '248' })
     );
-    expect(String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '')).not.toContain(
-      'src/user.ts:88'
-    );
-    expect(String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '')).not.toContain(
-      'tim pr resolve'
-    );
+    const context = String(mockExecutorExecute.mock.calls[0]?.[0] ?? '');
+    expect(context).not.toContain('src/auth.ts:42');
+    expect(context).not.toContain('src/user.ts:88');
+    expect(context).not.toContain('tim pr resolve');
   });
 
   test('pr fix uses all unresolved threads without prompting in non-interactive mode', async () => {
@@ -1322,20 +1391,22 @@ describe('tim/commands/pr', () => {
 
     await handlePrFixCommand(248, { nonInteractive: true }, createNestedCommand());
 
-    expect(mockPromptCheckbox).not.toHaveBeenCalled();
-    expect(mockTimAgent).toHaveBeenCalledWith(
-      248,
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+      'claude-code',
       expect.objectContaining({
-        nonInteractive: true,
-        reviewThreadContext: expect.stringContaining(
-          'gh pr view https://github.com/example/repo/pull/701'
-        ),
+        noninteractive: true,
+        terminalInput: false,
       }),
-      { config: '/tmp/tim.yml' }
+      expect.any(Object),
+      undefined
+    );
+    expect(mockExecutorExecute).toHaveBeenCalledWith(
+      expect.stringContaining('gh pr view https://github.com/example/repo/pull/701'),
+      expect.objectContaining({ executionMode: 'planning' })
     );
   });
 
-  test('pr fix skips prompting when --all flag is set', async () => {
+  test('pr fix wraps execution in HeadlessAdapter with plan metadata', async () => {
     currentAutoLinkedDetails = [
       {
         ...createPrDetail(701, 'Explicit PR', 'success'),
@@ -1346,23 +1417,148 @@ describe('tim/commands/pr', () => {
             line: 42,
             comments: [{ body: 'Add a null check.' }],
           }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand(248, {}, createNestedCommand());
+
+    expect(mockRunWithHeadlessAdapterIfEnabled).toHaveBeenCalledTimes(1);
+    expect(mockRunWithHeadlessAdapterIfEnabled).toHaveBeenCalledWith(
+      expect.objectContaining({
+        enabled: true,
+        command: 'pr-fix',
+        interactive: true,
+        plan: {
+          id: 248,
+          uuid: 'plan-248',
+          title: 'PR status monitoring',
+        },
+      })
+    );
+    expect(typeof mockRunWithHeadlessAdapterIfEnabled.mock.calls[0]?.[0].callback).toBe('function');
+  });
+
+  test('pr fix keeps headless session interactive when terminal input is disabled', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
           createReviewThreadDetail({
-            threadId: 'thread-2',
-            path: 'src/user.ts',
-            line: 10,
-            comments: [{ body: 'Missing validation.' }],
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Add a null check.' }],
           }),
         ],
       },
     ];
 
-    await handlePrFixCommand(248, { all: true }, createNestedCommand());
+    await handlePrFixCommand(248, { terminalInput: false }, createNestedCommand());
 
-    expect(mockPromptCheckbox).not.toHaveBeenCalled();
-    const context = String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '');
-    expect(context).toContain('gh pr view https://github.com/example/repo/pull/701');
-    expect(context).not.toContain('src/auth.ts:42');
-    expect(context).not.toContain('src/user.ts:10');
+    expect(mockRunWithHeadlessAdapterIfEnabled).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'pr-fix',
+        interactive: true,
+      })
+    );
+  });
+
+  test('pr fix marks headless session non-interactive in non-interactive mode', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Add a null check.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand(248, { nonInteractive: true }, createNestedCommand());
+
+    expect(mockRunWithHeadlessAdapterIfEnabled).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'pr-fix',
+        interactive: false,
+      })
+    );
+  });
+
+  test('pr fix uses auto workspace round trip before executor execution', async () => {
+    currentPlan.branch = 'feature/pr-status-monitoring';
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Add a null check.' }],
+          }),
+        ],
+      },
+    ];
+    const roundTripContext = {
+      executionWorkspacePath: '/tmp/workspace',
+      primaryWorkspacePath: tempDir,
+      refName: 'feature/pr-status-monitoring',
+      branchCreatedDuringSetup: false,
+    };
+    mockPrepareWorkspaceRoundTrip.mockResolvedValueOnce(roundTripContext as any);
+    mockMaterializePlansForExecution.mockResolvedValueOnce('/tmp/workspace/.tim/plans/248.plan.md');
+
+    await handlePrFixCommand(
+      248,
+      { autoWorkspace: true, workspaceSync: true },
+      createNestedCommand()
+    );
+
+    expect(mockSetupWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        autoWorkspace: true,
+        planId: 248,
+        planUuid: 'plan-248',
+        checkoutBranch: 'feature/pr-status-monitoring',
+      }),
+      expect.any(String),
+      currentPlanPath,
+      expect.any(Object),
+      'tim pr fix'
+    );
+    expect(mockPrepareWorkspaceRoundTrip).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspacePath: '/tmp/workspace',
+        workspaceSyncEnabled: true,
+        branchCreatedDuringSetup: false,
+      })
+    );
+    expect(mockRunPreExecutionWorkspaceSync).toHaveBeenCalledWith(roundTripContext);
+    expect(mockMaterializePlansForExecution).toHaveBeenCalledWith('/tmp/workspace', 248);
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+      'claude-code',
+      expect.objectContaining({
+        baseDir: '/tmp/workspace',
+      }),
+      expect.any(Object),
+      undefined
+    );
+    expect(mockExecutorExecute).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        planFilePath: '/tmp/workspace/.tim/plans/248.plan.md',
+      })
+    );
+    expect(mockRunPostExecutionWorkspaceSync).toHaveBeenCalledWith(
+      roundTripContext,
+      'PR review fixes'
+    );
+    expect(mockTouchWorkspaceInfo).toHaveBeenCalledWith('/tmp/workspace');
   });
 
   test('pr fix requires GITHUB_TOKEN', async () => {
@@ -1374,7 +1570,7 @@ describe('tim/commands/pr', () => {
     );
 
     expect(mockResolvePlan).not.toHaveBeenCalled();
-    expect(mockTimAgent).not.toHaveBeenCalled();
+    expect(mockExecutorExecute).not.toHaveBeenCalled();
   });
 
   test('pr fix filters out resolved threads and only passes unresolved ones', async () => {
@@ -1399,36 +1595,13 @@ describe('tim/commands/pr', () => {
       },
     ];
 
-    await handlePrFixCommand(248, { all: true }, createNestedCommand());
+    await handlePrFixCommand(248, {}, createNestedCommand());
 
-    const context = String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '');
+    const context = String(mockExecutorExecute.mock.calls[0]?.[0] ?? '');
     expect(context).toContain('gh pr view https://github.com/example/repo/pull/701');
     expect(context).not.toContain('src/new.ts:20');
     expect(context).not.toContain('src/old.ts:5');
     expect(context).not.toContain('thread-resolved');
-  });
-
-  test('pr fix returns early when user deselects all threads in interactive mode', async () => {
-    currentAutoLinkedDetails = [
-      {
-        ...createPrDetail(701, 'Explicit PR', 'success'),
-        reviewThreads: [
-          createReviewThreadDetail({
-            threadId: 'thread-1',
-            path: 'src/auth.ts',
-            line: 42,
-            comments: [{ body: 'Fix this.' }],
-          }),
-        ],
-      },
-    ];
-    mockPromptCheckbox.mockResolvedValueOnce([]);
-
-    await handlePrFixCommand(248, {}, createNestedCommand());
-
-    expect(mockPromptCheckbox).toHaveBeenCalled();
-    expect(mockTimAgent).not.toHaveBeenCalled();
-    expect(logs).toContain('No review threads selected for fixing.');
   });
 
   test('pr fix collects unresolved threads from multiple PRs', async () => {
@@ -1457,9 +1630,9 @@ describe('tim/commands/pr', () => {
       },
     ];
 
-    await handlePrFixCommand(248, { all: true }, createNestedCommand());
+    await handlePrFixCommand(248, {}, createNestedCommand());
 
-    const context = String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '');
+    const context = String(mockExecutorExecute.mock.calls[0]?.[0] ?? '');
     expect(context).toContain('https://github.com/example/repo/pull/701');
     expect(context).toContain('https://github.com/example/repo/pull/702');
     expect(context).not.toContain('src/auth.ts:10');
@@ -1483,8 +1656,7 @@ describe('tim/commands/pr', () => {
 
     await handlePrFixCommand(248, { terminalInput: false }, createNestedCommand());
 
-    expect(mockPromptCheckbox).not.toHaveBeenCalled();
-    expect(mockTimAgent).toHaveBeenCalled();
+    expect(mockExecutorExecute).toHaveBeenCalled();
   });
 
   test('pr fix canonicalizes explicit plan PR URLs before looking up cached status rows', async () => {
@@ -1507,7 +1679,7 @@ describe('tim/commands/pr', () => {
       },
     ];
 
-    await handlePrFixCommand(248, { all: true }, createNestedCommand());
+    await handlePrFixCommand(248, {}, createNestedCommand());
 
     expect(mockDeduplicatePrUrls).toHaveBeenCalledWith([
       'https://github.com/example/repo/pulls/701?tab=checks',
@@ -1518,7 +1690,7 @@ describe('tim/commands/pr', () => {
       ['https://github.com/example/repo/pull/701'],
       expect.objectContaining({ includeReviewThreads: true })
     );
-    expect(mockTimAgent).toHaveBeenCalled();
+    expect(mockExecutorExecute).toHaveBeenCalled();
   });
 
   test('pr fix preserves explicit orchestrator when no --executor value is provided', async () => {
@@ -1536,18 +1708,15 @@ describe('tim/commands/pr', () => {
       },
     ];
 
-    await handlePrFixCommand(
-      248,
-      { all: true, orchestrator: 'claude-code' },
-      createNestedCommand()
-    );
+    await handlePrFixCommand(248, { orchestrator: 'claude-code' }, createNestedCommand());
 
-    expect(mockTimAgent).toHaveBeenCalledWith(
-      248,
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+      'claude-code',
       expect.objectContaining({
-        orchestrator: 'claude-code',
+        model: 'opus',
       }),
-      { config: '/tmp/tim.yml' }
+      expect.any(Object),
+      undefined
     );
   });
 
@@ -1573,16 +1742,17 @@ describe('tim/commands/pr', () => {
       },
     } as any);
 
-    await handlePrFixCommand(248, { all: true }, createNestedCommand());
+    await handlePrFixCommand(248, {}, createNestedCommand());
 
-    expect(mockTimAgent).toHaveBeenCalledWith(
-      248,
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+      'codex-cli',
       expect.objectContaining({
-        orchestrator: 'codex-cli',
         model: 'gpt-5-codex',
-        effort: 'xhigh',
       }),
-      { config: '/tmp/tim.yml' }
+      expect.any(Object),
+      expect.objectContaining({
+        reasoning: expect.objectContaining({ default: 'xhigh' }),
+      })
     );
   });
 
@@ -1611,7 +1781,6 @@ describe('tim/commands/pr', () => {
     await handlePrFixCommand(
       248,
       {
-        all: true,
         executor: 'codex-cli',
         model: 'gpt-5-codex',
         effort: 'xhigh',
@@ -1619,14 +1788,15 @@ describe('tim/commands/pr', () => {
       createNestedCommand()
     );
 
-    expect(mockTimAgent).toHaveBeenCalledWith(
-      248,
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+      'codex-cli',
       expect.objectContaining({
-        orchestrator: 'codex-cli',
         model: 'gpt-5-codex',
-        effort: 'xhigh',
       }),
-      { config: '/tmp/tim.yml' }
+      expect.any(Object),
+      expect.objectContaining({
+        reasoning: expect.objectContaining({ default: 'xhigh' }),
+      })
     );
   });
 

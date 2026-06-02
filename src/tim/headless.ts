@@ -31,7 +31,8 @@ export type HeadlessCommand =
   | 'rebase'
   | 'update-docs'
   | 'proof'
-  | 'pr-create';
+  | 'pr-create'
+  | 'pr-fix';
 
 interface RunWithHeadlessOptions<T> {
   enabled: boolean;

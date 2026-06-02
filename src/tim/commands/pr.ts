@@ -18,9 +18,9 @@ import {
   fetchOpenPullRequests,
   resolveReviewThread,
 } from '../../common/github/pull_requests.js';
-import { promptCheckbox } from '../../common/input.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
-import { log } from '../../logging.js';
+import { log, warn } from '../../logging.js';
+import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
 import {
@@ -35,7 +35,6 @@ import {
   type PrStatusDetail,
   type PrStatusRow,
 } from '../db/pr_status.js';
-import { getReviewThreadDisplayLine } from './review.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   parsePlanIdFromCliArg,
@@ -44,7 +43,28 @@ import {
   writePlanFile,
 } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
-import { getWorkspaceInfoByPath } from '../workspace/workspace_info.js';
+import { getWorkspaceInfoByPath, touchWorkspaceInfo } from '../workspace/workspace_info.js';
+import { setupWorkspace } from '../workspace/workspace_setup.js';
+import {
+  materializePlansForExecution,
+  prepareWorkspaceRoundTrip,
+  runPostExecutionWorkspaceSync,
+  runPreExecutionWorkspaceSync,
+} from '../workspace/workspace_roundtrip.js';
+import {
+  buildExecutorAndLog,
+  DEFAULT_EXECUTOR,
+  defaultModelForExecutor,
+} from '../executors/index.js';
+import type { ExecutorCommonOptions } from '../executors/types.js';
+import {
+  ClaudeCodeExecutorName,
+  CodexCliExecutorName,
+  type ClaudeCodeReasoningEffort,
+  type CodexReasoningLevel,
+} from '../executors/schemas.js';
+import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
+import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -57,13 +77,53 @@ interface PrStatusCommandOptions {
   forceRefresh?: boolean;
 }
 
-function getFirstThreadSentence(thread: PrReviewThreadDetail): string {
-  const firstComment = thread.comments[0]?.body?.trim() ?? '';
-  return firstComment.split(/[.\n]/)[0]?.trim().slice(0, 80) ?? '';
+function getPrFixExecutorKey(executorName: string): 'claude' | 'codex' | undefined {
+  if (executorName === ClaudeCodeExecutorName || executorName === 'claude') {
+    return 'claude';
+  }
+  if (executorName === CodexCliExecutorName || executorName === 'codex') {
+    return 'codex';
+  }
+  return undefined;
 }
 
-function isPrFixInteractive(options: Record<string, unknown>): boolean {
-  return options.terminalInput !== false && options.nonInteractive !== true;
+function buildPrFixExecutorOptions(
+  executorName: string,
+  effort: string | undefined,
+  config: Awaited<ReturnType<typeof loadEffectiveConfig>>
+): Record<string, unknown> | undefined {
+  if (!effort) {
+    return undefined;
+  }
+
+  const executorKey = getPrFixExecutorKey(executorName);
+  if (executorKey === 'claude') {
+    return { reasoningEffort: effort as ClaudeCodeReasoningEffort };
+  }
+
+  if (executorKey === 'codex') {
+    const codexExecutorOptions = config.executors?.[CodexCliExecutorName];
+    const existingReasoning =
+      codexExecutorOptions && 'reasoning' in codexExecutorOptions
+        ? codexExecutorOptions.reasoning
+        : undefined;
+    return {
+      reasoning: {
+        ...(existingReasoning &&
+        typeof existingReasoning === 'object' &&
+        !Array.isArray(existingReasoning)
+          ? existingReasoning
+          : {}),
+        default: effort as CodexReasoningLevel,
+      },
+    };
+  }
+
+  return undefined;
+}
+
+function resolveStringOption(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
 function getRootOptions(command: RootCommandLike | undefined): { config?: string } {
@@ -693,16 +753,23 @@ export function buildReviewThreadFixPrompt(
   );
 
   prompt.push(
+    '## User Feedback',
+    '',
+    'After fetching the review comments and related feedback, list the comments for the user before making code changes. Include enough context to distinguish each item, such as author, file, line, comment summary, and whether it is a review-thread comment or general PR feedback.',
+    '',
+    'Ask the user for feedback on which review comments to address and how. If the user has already given clear instructions, follow those instructions; otherwise wait for direction before implementing fixes.',
+    '',
     '## Responsibilities',
     '',
     '1. Read the fetched PR comments, review comments, review threads, and reviews, then identify the actionable AI feedback.',
     '2. Inspect the surrounding code to understand the intent behind each comment. When additional context is needed, diff against the base branch, which is probably `main`.',
-    '3. Apply focused changes that resolve the raised concerns without altering unrelated code.',
-    '4. Run type checking, linting, and tests appropriate to the files you changed. Add tests only when necessary to cover the fixes.',
-    '5. Reply to each addressed review thread with a concise explanation of what changed using:',
+    '3. Ask the user for feedback on which review comments to address and how, as described above.',
+    '4. Apply focused changes that resolve the raised concerns without altering unrelated code.',
+    '5. Run type checking, linting, and tests appropriate to the files you changed. Add tests only when necessary to cover the fixes.',
+    '6. Reply to each addressed review thread with a concise explanation of what changed using:',
     '   `tim pr reply <Thread ID> "explanation of fix"`',
-    '6. For addressed feedback that was not a review-thread comment, leave an appropriate PR comment reply describing the change.',
-    '7. Before finishing, make sure you have reviewed all fetched AI comments.',
+    '7. For addressed feedback that was not a review-thread comment, leave an appropriate PR comment reply describing the change.',
+    '8. Before finishing, make sure you have reviewed all fetched AI comments.',
     '',
     'Do not mark review comments or threads resolved.',
     'Do not update the status of the issue or PR.',
@@ -725,9 +792,59 @@ export async function handlePrFixCommand(
     throw new Error('GITHUB_TOKEN environment variable is required for PR status commands');
   }
 
-  const { plan, planPath } = await resolvePlanForCommand(planId, command);
+  const { plan, planPath, repoRoot } = await resolvePlanForCommand(planId, command);
   const globalOptions = getRootOptions(command);
   const config = await loadEffectiveConfig(globalOptions.config);
+  const noninteractive = options.nonInteractive === true;
+  const terminalInputEnabled =
+    !noninteractive &&
+    process.stdin.isTTY === true &&
+    options.terminalInput !== false &&
+    config.terminalInput !== false;
+
+  await runWithHeadlessAdapterIfEnabled({
+    enabled: !isTunnelActive(),
+    command: 'pr-fix',
+    interactive: !noninteractive,
+    plan: {
+      id: plan.id,
+      uuid: plan.uuid,
+      title: plan.title,
+    },
+    callback: async () => {
+      await executePrFixCommand({
+        planId,
+        options,
+        plan,
+        planPath,
+        repoRoot,
+        config,
+        noninteractive,
+        terminalInputEnabled,
+      });
+    },
+  });
+}
+
+async function executePrFixCommand({
+  planId,
+  options,
+  plan,
+  planPath,
+  repoRoot,
+  config,
+  noninteractive,
+  terminalInputEnabled,
+}: {
+  planId: number;
+  options: Record<string, unknown>;
+  plan: PlanSchema;
+  planPath: string | null;
+  repoRoot: string;
+  config: Awaited<ReturnType<typeof loadEffectiveConfig>>;
+  noninteractive: boolean;
+  terminalInputEnabled: boolean;
+}): Promise<void> {
   const planUuid = requirePlanUuid(plan, planPath ?? `plan ${plan.id}`);
   const db = getDatabase();
   const dedupedUrls = plan.pullRequest?.length
@@ -752,66 +869,138 @@ export async function handlePrFixCommand(
     return;
   }
 
-  let selectedThreads = unresolvedThreads;
-  if (options.all !== true && isPrFixInteractive(options)) {
-    const selectedIndexes = await promptCheckbox({
-      message: 'Select review threads to fix:',
-      choices: unresolvedThreads.map((entry, index) => {
-        const line = getReviewThreadDisplayLine(entry.thread);
-        const location =
-          line != null ? `${entry.thread.thread.path}:${line}` : entry.thread.thread.path;
-        const firstSentence = getFirstThreadSentence(entry.thread);
-        const diffHunk = entry.thread.comments[0]?.diff_hunk?.trim();
-        const commentBodies = entry.thread.comments
-          .map((comment) => comment.body?.trim())
-          .filter((body): body is string => Boolean(body));
-        return {
-          name: `${location} - "${firstSentence || 'No comment summary'}"`,
-          value: index,
-          description: [...commentBodies, ...(diffHunk ? [`Diff context:\n${diffHunk}`] : [])].join(
-            '\n---\n'
-          ),
-          checked: true,
-        };
-      }),
-      pageSize: 15,
-    });
-
-    selectedThreads = selectedIndexes
-      .map((index) => unresolvedThreads[index])
-      .filter((entry): entry is (typeof unresolvedThreads)[number] => entry != null);
-  }
-
-  if (selectedThreads.length === 0) {
-    log('No review threads selected for fixing.');
-    return;
-  }
-
-  const fixPrompt = buildReviewThreadFixPrompt(plan, selectedThreads);
-  const { timAgent } = await import('./agent/agent.js');
-  const { executor: _executor, ...restOptions } = options;
+  const fixPrompt = buildReviewThreadFixPrompt(plan, unresolvedThreads);
   const configuredPrFix = config.prFix;
-  const fixOptions = {
-    ...restOptions,
-    orchestrator:
-      (typeof options.executor === 'string' && options.executor.trim().length > 0
-        ? options.executor
-        : undefined) ??
-      (typeof options.orchestrator === 'string' && options.orchestrator.trim().length > 0
-        ? options.orchestrator
-        : undefined) ??
-      configuredPrFix?.executor,
-    model:
-      typeof options.model === 'string' && options.model.trim().length > 0
-        ? options.model
-        : configuredPrFix?.model,
-    effort:
-      typeof options.effort === 'string' && options.effort.trim().length > 0
-        ? options.effort
-        : configuredPrFix?.effort,
-    reviewThreadContext: fixPrompt,
-  };
-  await timAgent(planId, fixOptions, globalOptions);
+
+  const executorName =
+    resolveStringOption(options.executor) ??
+    resolveStringOption(options.orchestrator) ??
+    configuredPrFix?.executor ??
+    config.defaultExecutor ??
+    DEFAULT_EXECUTOR;
+  const model =
+    resolveStringOption(options.model) ??
+    configuredPrFix?.model ??
+    config.models?.execution ??
+    defaultModelForExecutor(executorName, 'execution');
+  const effort = resolveStringOption(options.effort) ?? configuredPrFix?.effort;
+
+  let currentBaseDir = repoRoot;
+  let currentPlanFile = planPath ?? '';
+  let touchedWorkspacePath: string | null = null;
+  let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
+  let executionError: unknown;
+
+  try {
+    const workspaceMode =
+      options.workspace !== undefined ||
+      options.autoWorkspace === true ||
+      options.newWorkspace === true;
+
+    if (workspaceMode) {
+      const workspaceResult = await setupWorkspace(
+        {
+          workspace: resolveStringOption(options.workspace),
+          autoWorkspace: options.autoWorkspace === true,
+          newWorkspace: options.newWorkspace === true,
+          nonInteractive: noninteractive,
+          planId: plan.id,
+          planUuid: plan.uuid,
+          checkoutBranch: plan.branch,
+          createBranch: false,
+          allowPrimaryWorkspaceWhenLocked: true,
+        },
+        currentBaseDir,
+        currentPlanFile || undefined,
+        config,
+        'tim pr fix'
+      );
+
+      currentBaseDir = workspaceResult.baseDir;
+      currentPlanFile = workspaceResult.planFile;
+      touchedWorkspacePath = currentBaseDir;
+
+      if (path.resolve(currentBaseDir) !== path.resolve(repoRoot)) {
+        roundTripContext = await prepareWorkspaceRoundTrip({
+          workspacePath: currentBaseDir,
+          workspaceSyncEnabled: options.workspaceSync !== false,
+          branchCreatedDuringSetup: workspaceResult.branchCreatedDuringSetup,
+        });
+      }
+
+      if (roundTripContext) {
+        await runPreExecutionWorkspaceSync(roundTripContext);
+
+        const materializedPlanFile = await materializePlansForExecution(currentBaseDir, plan.id);
+        if (materializedPlanFile) {
+          currentPlanFile = materializedPlanFile;
+        }
+      }
+    }
+
+    const sharedExecutorOptions: ExecutorCommonOptions = {
+      baseDir: currentBaseDir,
+      model,
+      noninteractive: noninteractive ? true : undefined,
+      terminalInput: terminalInputEnabled,
+      closeTerminalInputOnResult: false,
+      disableInactivityTimeout: true,
+      timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
+        config,
+        currentBaseDir,
+        {
+          planId: plan.id,
+          planUuid: plan.uuid,
+          planFilePath: currentPlanFile || undefined,
+          branch: plan.branch,
+        },
+        repoRoot
+      ),
+    };
+    const executor = buildExecutorAndLog(
+      executorName,
+      sharedExecutorOptions,
+      config,
+      buildPrFixExecutorOptions(executorName, effort, config)
+    );
+
+    await executor.execute(fixPrompt, {
+      planId: String(plan.id ?? planId),
+      planTitle: plan.title || `Plan ${plan.id ?? planId}`,
+      planFilePath: currentPlanFile,
+      executionMode: 'planning',
+    });
+  } catch (err) {
+    executionError = err;
+  } finally {
+    let roundTripError: unknown;
+    if (roundTripContext) {
+      try {
+        await runPostExecutionWorkspaceSync(roundTripContext, 'PR review fixes');
+      } catch (err) {
+        roundTripError = err;
+      }
+    }
+
+    if (touchedWorkspacePath) {
+      try {
+        touchWorkspaceInfo(touchedWorkspacePath);
+      } catch (err) {
+        warn(`Failed to update workspace last used time: ${err as Error}`);
+      }
+    }
+
+    if (executionError) {
+      if (roundTripError) {
+        warn(`Workspace sync failed after PR fix error: ${roundTripError as Error}`);
+      }
+      throw executionError;
+    }
+
+    if (roundTripError) {
+      throw roundTripError;
+    }
+  }
 }
 
 export async function handlePrLinkCommand(
