@@ -131,19 +131,10 @@ async function createImmediateExitDaemonCommand(
   exitCode: number,
   line?: string
 ): Promise<string> {
-  const scriptPath = path.join(path.dirname(filePath), `immediate-exit-${exitCode}.cjs`);
-  await fs.writeFile(
-    scriptPath,
-    [
-      `const fs = require('node:fs');`,
-      ...(line
-        ? [`fs.appendFileSync(${JSON.stringify(filePath)}, ${JSON.stringify(line + '\n')});`]
-        : []),
-      `process.exit(${exitCode});`,
-    ].join('\n'),
-    'utf8'
-  );
-  return `exec node ${JSON.stringify(scriptPath)}`;
+  const appendLine = line
+    ? `printf '%s\\n' ${JSON.stringify(line)} >> ${JSON.stringify(filePath)}; `
+    : '';
+  return `${appendLine}exit ${exitCode}`;
 }
 
 async function createDelayedExitDaemonCommand(

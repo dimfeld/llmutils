@@ -1583,6 +1583,30 @@ describe('configSchema', () => {
       expect(result.orchestrator?.effort?.codex).toBe('xhigh');
     });
 
+    test('accepts prFix executor, model, and effort configuration', () => {
+      const result = timConfigSchema.parse({
+        prFix: {
+          executor: 'codex-cli',
+          model: 'gpt-5-codex',
+          effort: 'xhigh',
+        },
+      });
+
+      expect(result.prFix?.executor).toBe('codex-cli');
+      expect(result.prFix?.model).toBe('gpt-5-codex');
+      expect(result.prFix?.effort).toBe('xhigh');
+    });
+
+    test('rejects invalid prFix executor values', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          prFix: {
+            executor: 'copy-paste',
+          },
+        })
+      ).toThrow();
+    });
+
     test('rejects unknown orchestrator model and effort fields', () => {
       expect(() =>
         timConfigSchema.parse({

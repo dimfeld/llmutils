@@ -108,6 +108,7 @@ interface AgentCommandOptions {
   tdd?: boolean;
   terminalInput?: boolean;
   reviewExecutor?: string;
+  effort?: string;
   updateDocs?: 'after-iteration' | 'after-completion' | 'after-review' | 'manual' | 'never';
   summary?: boolean;
   summaryFile?: string;
@@ -165,17 +166,19 @@ function resolveAgentExecutionModel(
 
 function buildOrchestratorExecutorOptions(
   executorName: string,
+  options: AgentCommandOptions,
   config: TimConfig
 ): Record<string, unknown> | undefined {
   const modelKey = getOrchestratorModelKey(executorName);
   const configuredEffort = modelKey ? config.orchestrator?.effort?.[modelKey] : undefined;
+  const configuredOrCliEffort = options.effort || configuredEffort;
 
-  if (!configuredEffort) {
+  if (!configuredOrCliEffort) {
     return undefined;
   }
 
   if (modelKey === 'claude') {
-    return { reasoningEffort: configuredEffort as ClaudeCodeReasoningEffort };
+    return { reasoningEffort: configuredOrCliEffort as ClaudeCodeReasoningEffort };
   }
 
   if (modelKey === 'codex') {
@@ -191,7 +194,7 @@ function buildOrchestratorExecutorOptions(
         !Array.isArray(existingReasoning)
           ? existingReasoning
           : {}),
-        default: configuredEffort as CodexReasoningLevel,
+        default: configuredOrCliEffort as CodexReasoningLevel,
       },
     };
   }
@@ -632,7 +635,11 @@ export async function timAgent(
       timEnvironment,
     };
 
-    const orchestratorExecutorOptions = buildOrchestratorExecutorOptions(executorName, config);
+    const orchestratorExecutorOptions = buildOrchestratorExecutorOptions(
+      executorName,
+      options,
+      config
+    );
     const executorOptions = options.simple
       ? { ...orchestratorExecutorOptions, simpleMode: true }
       : orchestratorExecutorOptions;

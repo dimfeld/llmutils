@@ -61,6 +61,7 @@ describe('Codex CLI review mode', () => {
       '/tmp/repo-review',
       {},
       undefined,
+      undefined,
       undefined
     );
     expect(result?.content).toBe('REVIEW OUTPUT');

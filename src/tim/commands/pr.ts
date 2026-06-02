@@ -21,6 +21,7 @@ import {
 import { promptCheckbox } from '../../common/input.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { log } from '../../logging.js';
+import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
 import {
   cleanOrphanedPrStatus,
@@ -644,14 +645,23 @@ export function buildReviewThreadFixPrompt(
   planData: PlanSchema,
   threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>
 ): string {
+  const prUrls = [...new Set(threads.map(({ prUrl }) => prUrl))];
+  const branch = planData.branch?.trim() || 'Current working branch';
+  const prSelector = planData.branch?.trim() || prUrls[0] || '<pr-url-or-branch>';
   const prompt = [
-    '# Review Thread Fix Request',
+    '# Address Pull Request Review Comments',
+    '',
+    'You are addressing review comments on a pull request for the current branch.',
+    '',
+    'The PR branch and PR URLs are already known from the plan context below; do not spend time auto-discovering the branch.',
+    'Fetch the full PR feedback yourself before changing code so review threads, general PR comments, and reviews that are not tied to a diff line are all included.',
     '',
     '## Plan Context',
     '',
     `**Plan ID:** ${planData.id}`,
     `**Title:** ${planData.title}`,
     `**Goal:** ${planData.goal ?? 'No goal provided'}`,
+    `**Branch:** ${branch}`,
     '',
   ];
 
@@ -659,53 +669,48 @@ export function buildReviewThreadFixPrompt(
     prompt.push('**Details:**', planData.details, '');
   }
 
-  prompt.push('## Review Threads to Fix', '');
-
-  if (threads.length === 0) {
-    prompt.push('No review threads were selected.', '');
-  } else {
-    for (const [index, { thread, prUrl }] of threads.entries()) {
-      const displayLine = getReviewThreadDisplayLine(thread);
-      const location =
-        displayLine != null ? `${thread.thread.path}:${displayLine}` : thread.thread.path;
-
-      prompt.push(`### Thread ${index + 1}: ${location}`);
-      prompt.push(`**PR URL:** ${prUrl}`);
-      prompt.push(`**Thread ID:** ${thread.thread.thread_id}`);
-      prompt.push(`**File:** ${thread.thread.path}`);
-      if (displayLine != null) {
-        prompt.push(`**Line:** ${displayLine}`);
-      }
-
-      const diffHunk = thread.comments[0]?.diff_hunk?.trim();
-      if (diffHunk) {
-        prompt.push('', '**Diff Hunk:**', '```diff', diffHunk, '```');
-      }
-
-      if (thread.comments.length > 0) {
-        prompt.push('', '**Comments:**');
-        for (const comment of thread.comments) {
-          prompt.push(
-            `- ${comment.author ?? 'unknown'}: ${(comment.body?.trim() || '(no body)').trim()}`
-          );
-        }
-      } else {
-        prompt.push('', '**Comments:**', '- No comment bodies were captured for this thread.');
-      }
-
-      prompt.push('');
+  if (prUrls.length > 0) {
+    prompt.push('## Pull Request URLs', '');
+    for (const prUrl of prUrls) {
+      prompt.push(`- ${prUrl}`);
     }
+    prompt.push('');
   }
 
   prompt.push(
-    '## Instructions',
+    '## Fetch Full Review Feedback',
     '',
-    'Fix each issue described in the review threads above.',
-    'Focus on the specific files and lines mentioned, but make any adjacent changes needed for a correct fix.',
-    "After fixing each thread, use the Thread ID shown in that thread's section to run:",
-    '  `tim pr reply <Thread ID> "explanation of fix"` — with a concise explanation of what you changed',
-    '  `tim pr resolve <Thread ID>` — to mark the thread resolved on GitHub',
-    'Do not skip the reply or resolve steps for any thread you addressed.'
+    'Before making code changes, fetch the complete PR feedback for the branch/PR above:',
+    `- \`gh pr view ${prSelector} --json number,title,headRefName,baseRefName,url,author,reviewDecision\``,
+    `- \`gh pr view ${prSelector} --comments\``,
+    '- `gh api repos/:owner/:repo/pulls/<number>/comments` for line-level review comments',
+    '- `gh api repos/:owner/:repo/pulls/<number>/reviews` for submitted review summaries',
+    '',
+    'List the comments you found in your working notes before implementing fixes, including author, file, line when present, comment summary, and whether each item is a review-thread comment or general PR feedback.',
+    '',
+    'For feedback that is not a review-thread comment, leave an appropriate PR comment describing the change after addressing it.',
+    ''
+  );
+
+  prompt.push(
+    '## Responsibilities',
+    '',
+    '1. Read the fetched PR comments, review comments, review threads, and reviews, then identify the actionable AI feedback.',
+    '2. Inspect the surrounding code to understand the intent behind each comment. When additional context is needed, diff against the base branch, which is probably `main`.',
+    '3. Apply focused changes that resolve the raised concerns without altering unrelated code.',
+    '4. Run type checking, linting, and tests appropriate to the files you changed. Add tests only when necessary to cover the fixes.',
+    '5. Reply to each addressed review thread with a concise explanation of what changed using:',
+    '   `tim pr reply <Thread ID> "explanation of fix"`',
+    '6. For addressed feedback that was not a review-thread comment, leave an appropriate PR comment reply describing the change.',
+    '7. Before finishing, make sure you have reviewed all fetched AI comments.',
+    '',
+    'Do not mark review comments or threads resolved.',
+    'Do not update the status of the issue or PR.',
+    'Do not request or re-request reviews.',
+    '',
+    'Block comments can apply to multiple lines of code. Single-line comments can also apply to multiple lines; infer the intended scope from the comment and surrounding code.',
+    '',
+    'When done, print the GitHub URL for the PR, but use `https://linear.review` as the domain instead of `https://github.com`.'
   );
 
   return prompt.join('\n');
@@ -721,6 +726,8 @@ export async function handlePrFixCommand(
   }
 
   const { plan, planPath } = await resolvePlanForCommand(planId, command);
+  const globalOptions = getRootOptions(command);
+  const config = await loadEffectiveConfig(globalOptions.config);
   const planUuid = requirePlanUuid(plan, planPath ?? `plan ${plan.id}`);
   const db = getDatabase();
   const dedupedUrls = plan.pullRequest?.length
@@ -783,6 +790,7 @@ export async function handlePrFixCommand(
   const fixPrompt = buildReviewThreadFixPrompt(plan, selectedThreads);
   const { timAgent } = await import('./agent/agent.js');
   const { executor: _executor, ...restOptions } = options;
+  const configuredPrFix = config.prFix;
   const fixOptions = {
     ...restOptions,
     orchestrator:
@@ -791,10 +799,19 @@ export async function handlePrFixCommand(
         : undefined) ??
       (typeof options.orchestrator === 'string' && options.orchestrator.trim().length > 0
         ? options.orchestrator
-        : undefined),
+        : undefined) ??
+      configuredPrFix?.executor,
+    model:
+      typeof options.model === 'string' && options.model.trim().length > 0
+        ? options.model
+        : configuredPrFix?.model,
+    effort:
+      typeof options.effort === 'string' && options.effort.trim().length > 0
+        ? options.effort
+        : configuredPrFix?.effort,
     reviewThreadContext: fixPrompt,
   };
-  await timAgent(planId, fixOptions, getRootOptions(command));
+  await timAgent(planId, fixOptions, globalOptions);
 }
 
 export async function handlePrLinkCommand(

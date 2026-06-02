@@ -497,6 +497,22 @@ export const timConfigSchema = z
       .strict()
       .optional()
       .describe('Configuration for PR creation behavior'),
+    /** Default settings for PR review thread fixes */
+    prFix: z
+      .object({
+        executor: z
+          .enum([ClaudeCodeExecutorName, CodexCliExecutorName])
+          .optional()
+          .describe('Executor to use for PR review thread fixes'),
+        model: z.string().optional().describe('Model to use for PR review thread fixes'),
+        effort: z
+          .union([claudeCodeReasoningEffortSchema, codexReasoningLevelSchema])
+          .optional()
+          .describe('Reasoning effort to use for PR review thread fixes'),
+      })
+      .strict()
+      .optional()
+      .describe('Configuration for the pr fix command'),
     developmentWorkflow: z
       .enum(['pr-based', 'trunk-based'])
       .optional()

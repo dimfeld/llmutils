@@ -1418,6 +1418,39 @@ defaultExecutor: direct-call
       expect(config.prCreation?.autoCreatePr).toBe('needs_review');
     });
 
+    test('loadEffectiveConfig deep merges prFix from local config', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          prFix: {
+            executor: 'claude-code',
+            model: 'opus',
+            effort: 'high',
+          },
+        }),
+        'utf-8'
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          prFix: {
+            model: 'sonnet',
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.prFix?.executor).toBe('claude-code');
+      expect(config.prFix?.model).toBe('sonnet');
+      expect(config.prFix?.effort).toBe('high');
+    });
+
     test('loadEffectiveConfig deep merges simplify from local config', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       const localConfigPath = path.join(configDir, 'tim.local.yml');

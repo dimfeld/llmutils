@@ -1720,8 +1720,19 @@ prCommand
 prCommand
   .command('fix <planId>')
   .description('Fix unresolved PR review threads using an AI agent')
-  .option('-x, --executor <name>', 'The executor to use')
+  .addOption(
+    new Option('-x, --executor <name>', 'The executor to use').choices(['claude-code', 'codex-cli'])
+  )
   .option('-m, --model <model>', 'Model override')
+  .addOption(
+    new Option('--effort <level>', 'Reasoning effort override').choices([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+  )
   .option('--all', 'Fix all unresolved threads without prompting')
   .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
   .option('--non-interactive', 'No user prompts')

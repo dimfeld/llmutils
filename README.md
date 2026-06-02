@@ -269,7 +269,7 @@ tim review-guide generate 123 --auto-workspace
 tim review-guide list-issues 123                    # Latest guide for plan, plus linked PR guides
 tim review-guide list-issues feature/my-branch      # Resolve by plan or PR branch
 tim review-guide resolve-issue 42 123
-tim pr fix 123 --all --auto-workspace
+tim pr fix 123 --all --auto-workspace --executor codex-cli --model gpt-5-codex --effort high
 tim rebase 123 --auto-workspace
 ```
 
@@ -278,6 +278,15 @@ tim rebase 123 --auto-workspace
 `tim review-guide list-issues <planId|branch|prUrl>` finds the latest stored review guide for the resolved plan or PR and includes linked guides from the other object when a plan is linked to a PR or a PR is linked to a plan. By default it shows unresolved actionable issues; use `--all` to include resolved issues. `tim review-guide resolve-issue <issueId> [planId|branch|prUrl]` marks an issue resolved, and the optional target validates that the issue belongs to the latest review guide.
 
 Review guides can include non-actionable `<annotation file="..." line="...">...</annotation>` callouts. These render as Notes in the guide viewer sidebar and inline diff overlay, but are not submitted to GitHub or converted into cleanup work.
+
+`tim pr fix <planId>` starts an agent to address PR review feedback. It uses cached unresolved review threads as a seed list, then instructs the agent to fetch full PR comments, review comments, and submitted reviews with `gh` so general PR feedback that is not anchored to a diff line can also be handled. The agent replies to addressed review threads or leaves an appropriate PR comment for general feedback, but does not resolve threads or request reviews. Configure defaults with `prFix.executor`, `prFix.model`, and `prFix.effort`; CLI flags override config values.
+
+```yaml
+prFix:
+  executor: codex-cli
+  model: gpt-5-codex
+  effort: high
+```
 
 ### Automatic PR review-guide comments
 
