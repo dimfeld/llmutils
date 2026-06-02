@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { invokeCommand, invokeQuery } from '$lib/test-utils/invoke_command.js';
 import { openDatabase } from '$tim/db/database.js';
 import { getOrCreateProject } from '$tim/db/project.js';
+import { upsertPrStatus } from '$tim/db/pr_status.js';
 import * as reviewDbModule from '$tim/db/review.js';
 import {
   createPrReviewSubmission,
@@ -1050,6 +1051,48 @@ describe('pr_review_submission remote functions', () => {
       githubReviewId: 7777,
       inlineCount: 0,
       appendedCount: 0,
+    });
+  });
+
+  test('submitReviewToGitHub coerces non-comment events to COMMENT on self-authored PRs', async () => {
+    const prUrl = 'https://github.com/example/repo/pull/20521';
+    const review = seedReview(prUrl);
+    upsertPrStatus(currentDb, {
+      prUrl,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 20521,
+      author: 'configured-reviewer',
+      title: 'Self-authored PR',
+      state: 'open',
+      draft: false,
+      headSha: 'commit-20521',
+      baseBranch: 'main',
+      headBranch: 'feature/self-authored',
+      lastFetchedAt: '2026-05-15T00:00:00.000Z',
+    });
+    submitPrReviewMock.mockResolvedValue({
+      id: 7779,
+      html_url: 'https://github.com/example/repo/pull/20521#pullrequestreview-7779',
+    });
+
+    await invokeCommand(submitReviewToGitHub, {
+      reviewId: review.id,
+      event: 'APPROVE',
+      body: 'Leaving comments on my own PR',
+      issueIds: [],
+      commitSha: 'commit-20521',
+    });
+
+    expect(submitPrReviewMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'COMMENT',
+        commitSha: 'commit-20521',
+      })
+    );
+    expect(getPrReviewSubmissionsForReview(currentDb, review.id)[0]).toMatchObject({
+      event: 'COMMENT',
+      githubReviewId: 7779,
     });
   });
 

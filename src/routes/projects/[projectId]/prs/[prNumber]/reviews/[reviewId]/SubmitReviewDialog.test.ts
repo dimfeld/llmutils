@@ -48,6 +48,18 @@ describe('SubmitReviewDialog', () => {
     expect(body).toContain('submit-review-body');
   });
 
+  test('omits status radio options in comment-only mode', () => {
+    const issues = [makeIssue()];
+    const { body } = render(SubmitReviewDialog, {
+      props: defaultProps(issues, { submitAsCommentOnly: true }),
+    });
+    expect(body).toContain('Submit review to GitHub');
+    expect(body).not.toContain('Status');
+    expect(body).not.toContain('APPROVE');
+    expect(body).not.toContain('REQUEST CHANGES');
+    expect(body).toContain('submit-review-body');
+  });
+
   test('lists submittable issues and hides resolved + already-submitted ones', () => {
     const issues = [
       makeIssue({ id: 1, content: 'Visible unresolved' }),

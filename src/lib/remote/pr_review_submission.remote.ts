@@ -27,6 +27,7 @@ import {
   type ReviewRow,
 } from '$tim/db/review.js';
 import type { Database } from 'bun:sqlite';
+import { getPrStatusByUrl } from '$tim/db/pr_status.js';
 
 const reviewSeverityValues = ['critical', 'major', 'minor', 'info'] as const;
 // Update path accepts 'note' because the DB now allows it. The editor never
@@ -518,6 +519,29 @@ function getErrorMessage(errorValue: unknown): string {
   return String(errorValue);
 }
 
+async function resolveSubmissionEvent(
+  db: Database,
+  prUrl: string,
+  requestedEvent: (typeof reviewSubmissionEventValues)[number],
+  githubUsername: string | null | undefined
+): Promise<(typeof reviewSubmissionEventValues)[number]> {
+  if (requestedEvent === 'COMMENT') {
+    return requestedEvent;
+  }
+
+  const prAuthor = getPrStatusByUrl(db, prUrl)?.status.author;
+  if (prAuthor == null) {
+    return requestedEvent;
+  }
+
+  const currentUser = await getGitHubUsername({ githubUsername });
+  if (currentUser != null && currentUser.toLowerCase() === prAuthor.toLowerCase()) {
+    return 'COMMENT';
+  }
+
+  return requestedEvent;
+}
+
 export const submitReviewToGitHub = command(
   submitReviewToGitHubSchema,
   async ({ reviewId, event, body, issueIds, commitSha, fallbackCommitSha }) => {
@@ -564,6 +588,7 @@ export const submitReviewToGitHub = command(
     }
     const comments = reviewCommentsSchema.parse(buildReviewComments(inlineable));
     const finalBody = appendIssuesToBody(body, appendToBody);
+    const resolvedEvent = await resolveSubmissionEvent(db, prUrl, event, config.githubUsername);
 
     const submittedBy = await getGitHubUsername({ githubUsername: config.githubUsername });
 
@@ -572,7 +597,7 @@ export const submitReviewToGitHub = command(
       submissionResult = await submitPrReview({
         prUrl,
         commitSha: usedCommitSha,
-        event,
+        event: resolvedEvent,
         body: finalBody,
         comments,
       });
@@ -582,7 +607,7 @@ export const submitReviewToGitHub = command(
           reviewId,
           githubReviewId: null,
           githubReviewUrl: null,
-          event,
+          event: resolvedEvent,
           body: finalBody,
           commitSha: usedCommitSha,
           submittedBy,
@@ -607,7 +632,7 @@ export const submitReviewToGitHub = command(
             reviewId,
             githubReviewId: submissionResult.id,
             githubReviewUrl: submissionResult.html_url,
-            event,
+            event: resolvedEvent,
             body: finalBody,
             commitSha: usedCommitSha,
             submittedBy,
@@ -632,7 +657,7 @@ export const submitReviewToGitHub = command(
           `already exists on GitHub.`,
         githubReviewId: submissionResult.id,
         githubReviewUrl: submissionResult.html_url,
-      });
+      } as never);
     }
 
     return {

@@ -17,6 +17,7 @@
   linkedPlanUuid={data.linkedPlanUuid}
   currentBranch={data.currentBranch}
   currentHeadSha={data.currentHeadSha}
+  submitAsCommentOnly={data.submitAsCommentOnly}
   reviewThreads={data.reviewThreads}
   {projectId}
   backHref="/projects/{projectId}/prs/{prNumber}"

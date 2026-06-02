@@ -71,6 +71,7 @@
     linkedPlanUuid?: string | null;
     currentBranch?: string | null;
     currentHeadSha?: string | null;
+    submitAsCommentOnly?: boolean;
     reviewThreads?: PrReviewThreadDetail[];
   }
 
@@ -86,6 +87,7 @@
     linkedPlanUuid: linkedPlanUuidInput = null,
     currentBranch = null,
     currentHeadSha = null,
+    submitAsCommentOnly = false,
     reviewThreads = [],
   }: Props = $props();
 
@@ -1373,6 +1375,7 @@
       reviewId={review.id}
       reviewedSha={review.reviewed_sha}
       {currentHeadSha}
+      {submitAsCommentOnly}
       {issues}
       onClose={closeSubmitDialog}
       onSubmitted={handleSubmitted}

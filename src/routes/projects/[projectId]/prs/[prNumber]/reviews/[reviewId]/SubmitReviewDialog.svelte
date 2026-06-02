@@ -28,13 +28,22 @@
     reviewId: number;
     reviewedSha: string | null;
     currentHeadSha: string | null;
+    submitAsCommentOnly?: boolean;
     issues: ReviewIssueRow[];
     onClose: () => void;
     onSubmitted: (result: SubmitResult) => void;
   }
 
-  let { open, reviewId, reviewedSha, currentHeadSha, issues, onClose, onSubmitted }: Props =
-    $props();
+  let {
+    open,
+    reviewId,
+    reviewedSha,
+    currentHeadSha,
+    submitAsCommentOnly = false,
+    issues,
+    onClose,
+    onSubmitted,
+  }: Props = $props();
 
   // Submittable: not resolved AND not already submitted AND not a note
   // (notes are local-only and never sent to GitHub).
@@ -121,7 +130,7 @@
     try {
       const submission = await submitReviewToGitHub({
         reviewId,
-        event,
+        event: submitAsCommentOnly ? 'COMMENT' : event,
         body,
         issueIds,
         commitSha,
@@ -221,23 +230,25 @@
               </div>
             {/if}
 
-            <fieldset class="space-y-2">
-              <legend class="text-xs font-medium text-foreground">Status</legend>
-              <div class="flex flex-wrap gap-3 text-sm">
-                {#each ['COMMENT', 'APPROVE', 'REQUEST_CHANGES'] as opt (opt)}
-                  <label class="inline-flex cursor-pointer items-center gap-1.5">
-                    <input
-                      type="radio"
-                      name="submit-review-event"
-                      value={opt}
-                      checked={event === opt}
-                      onchange={() => (event = opt as SubmitEvent)}
-                    />
-                    <span>{opt.replaceAll('_', ' ')}</span>
-                  </label>
-                {/each}
-              </div>
-            </fieldset>
+            {#if !submitAsCommentOnly}
+              <fieldset class="space-y-2">
+                <legend class="text-xs font-medium text-foreground">Status</legend>
+                <div class="flex flex-wrap gap-3 text-sm">
+                  {#each ['COMMENT', 'APPROVE', 'REQUEST_CHANGES'] as opt (opt)}
+                    <label class="inline-flex cursor-pointer items-center gap-1.5">
+                      <input
+                        type="radio"
+                        name="submit-review-event"
+                        value={opt}
+                        checked={event === opt}
+                        onchange={() => (event = opt as SubmitEvent)}
+                      />
+                      <span>{opt.replaceAll('_', ' ')}</span>
+                    </label>
+                  {/each}
+                </div>
+              </fieldset>
+            {/if}
 
             <div class="space-y-1">
               <Label for="submit-review-body" class="text-xs text-muted-foreground">Body</Label>

@@ -14,14 +14,21 @@
   projectId={data.projectId}
   {backHref}
   {backLabel}
-  allowGithubSubmission={false}
-  linkedPlanUuid={data.plan.uuid}
-  linkedPlans={[
-    {
-      planUuid: data.plan.uuid,
-      planId: data.plan.planId,
-      title: data.plan.title,
-      branch: data.plan.branch,
-    },
-  ]}
+  allowGithubSubmission={data.review.pr_url != null}
+  submissions={data.submissions}
+  linkedPlanUuid={data.linkedPlanUuid ?? data.plan.uuid}
+  linkedPlans={data.linkedPlans.length > 0
+    ? data.linkedPlans
+    : [
+        {
+          planUuid: data.plan.uuid,
+          planId: data.plan.planId,
+          title: data.plan.title,
+          branch: data.plan.branch,
+        },
+      ]}
+  currentBranch={data.currentBranch}
+  currentHeadSha={data.currentHeadSha}
+  submitAsCommentOnly={data.submitAsCommentOnly}
+  reviewThreads={data.reviewThreads}
 />

@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { upsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
+import { upsertPrStatus } from '$tim/db/pr_status.js';
 import { createReview, insertReviewIssues } from '$tim/db/review.js';
 
 let currentDb: Database;
@@ -90,6 +91,50 @@ describe('projects/[projectId]/plans/[planId]/reviews/[reviewId]/+page.server', 
     expect(result.projectId).toBe(String(projectId));
     expect(result.issues).toHaveLength(1);
     expect(result.issues[0].id).toBe(issue.id);
+    expect(result.submissions).toEqual([]);
+    expect(result.currentBranch).toBeNull();
+    expect(result.currentHeadSha).toBeNull();
+    expect(result.submitAsCommentOnly).toBe(false);
+  });
+
+  test('includes PR submission context when a plan review is linked to a PR', async () => {
+    const prUrl = 'https://github.com/example/repo/pull/7210';
+    upsertPrStatus(currentDb, {
+      prUrl,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 7210,
+      author: 'configured-reviewer',
+      title: 'Plan-linked PR',
+      state: 'open',
+      draft: false,
+      headSha: 'current-head-sha',
+      baseBranch: 'main',
+      headBranch: 'feature/plan-linked-pr',
+      lastFetchedAt: '2026-05-15T00:00:00.000Z',
+    });
+    const review = createReview(currentDb, {
+      projectId,
+      planUuid,
+      prUrl,
+      branch: 'feature/plan-linked-pr',
+      baseBranch: 'main',
+      reviewedSha: 'reviewed-sha',
+      status: 'complete',
+      reviewGuide: '# Guide',
+    });
+
+    const result = await invokeLoad({
+      projectId: String(projectId),
+      planId: planUuid,
+      reviewId: String(review.id),
+    });
+
+    expect(result.review.id).toBe(review.id);
+    expect(result.currentBranch).toBe('feature/plan-linked-pr');
+    expect(result.currentHeadSha).toBe('current-head-sha');
+    expect(result.linkedPlanUuid).toBe(planUuid);
+    expect(result.submitAsCommentOnly).toBe(false);
   });
 
   test('returns 404 when plan does not exist', async () => {

@@ -1,11 +1,12 @@
 import { error } from '@sveltejs/kit';
 import { getServerContext } from '$lib/server/init.js';
-import { getReviewById, getReviewIssues } from '$tim/db/review.js';
+import { getReviewById } from '$tim/db/review.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
+import { getReviewDetailDataForReview } from '../../../../prs/[prNumber]/reviews/[reviewId]/review_data.server.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
-  const { db } = await getServerContext();
+  const { db, config } = await getServerContext();
   const reviewId = Number(params.reviewId);
 
   if (!Number.isFinite(reviewId)) {
@@ -30,11 +31,10 @@ export const load: PageServerLoad = async ({ params }) => {
     error(404, 'Review not found for plan');
   }
 
-  const issues = getReviewIssues(db, reviewId);
+  const reviewDetail = await getReviewDetailDataForReview(db, review, config);
 
   return {
-    review,
-    issues,
+    ...reviewDetail,
     plan: { uuid: plan.uuid, planId: plan.plan_id, title: plan.title, branch: plan.branch },
     projectId: routeProjectId,
   };

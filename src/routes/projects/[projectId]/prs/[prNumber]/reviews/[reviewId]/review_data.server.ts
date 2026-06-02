@@ -9,6 +9,7 @@ import {
   type ReviewIssueRow,
   type ReviewRow,
 } from '$tim/db/review.js';
+import { getGitHubUsername } from '$common/github/user.js';
 import {
   getLinkedPlansByPrUrl,
   getPrStatusByUrl,
@@ -28,9 +29,14 @@ export interface ReviewDetailData {
   submissions: PrReviewSubmissionRow[];
   currentBranch: string | null;
   currentHeadSha: string | null;
+  submitAsCommentOnly: boolean;
   linkedPlanUuid: string | null;
   linkedPlans: LinkedPlanSummary[];
   reviewThreads: PrReviewThreadDetail[];
+}
+
+export interface ReviewDetailConfig {
+  githubUsername?: string | null;
 }
 
 function parseRouteInteger(value: string, label: string): number {
@@ -56,7 +62,70 @@ function getPrNumberFromUrl(prUrl: string): number | null {
   }
 }
 
-export function getReviewDetailData(db: Database, params: ReviewDataParams): ReviewDetailData {
+async function getSubmitAsCommentOnly(
+  prAuthor: string | null | undefined,
+  config: ReviewDetailConfig
+): Promise<boolean> {
+  if (prAuthor == null) {
+    return false;
+  }
+
+  const currentUser = await getGitHubUsername({ githubUsername: config.githubUsername });
+  return currentUser != null && currentUser.toLowerCase() === prAuthor.toLowerCase();
+}
+
+export async function getReviewDetailDataForReview(
+  db: Database,
+  review: ReviewRow,
+  config: ReviewDetailConfig = {}
+): Promise<ReviewDetailData> {
+  const prUrl = review.pr_url;
+  if (prUrl == null) {
+    const issues = getReviewIssues(db, review.id);
+    const submissions = getPrReviewSubmissionsForReview(db, review.id);
+    return {
+      review,
+      issues,
+      submissions,
+      currentBranch: null,
+      currentHeadSha: null,
+      submitAsCommentOnly: false,
+      linkedPlanUuid: review.plan_uuid,
+      linkedPlans: [],
+      reviewThreads: [],
+    };
+  }
+
+  const issues = getReviewIssues(db, review.id);
+  const submissions = getPrReviewSubmissionsForReview(db, review.id);
+  const linkedPlans = getLinkedPlansByPrUrl(db, [prUrl]).get(prUrl) ?? [];
+  const linkedPlanUuid =
+    review.plan_uuid ?? (linkedPlans.length === 1 ? (linkedPlans[0]?.planUuid ?? null) : null);
+
+  const prStatus = getPrStatusByUrl(db, prUrl, { includeReviewThreads: true });
+  const currentBranch = prStatus?.status.head_branch ?? null;
+  const currentHeadSha = prStatus?.status.head_sha ?? null;
+  const submitAsCommentOnly = await getSubmitAsCommentOnly(prStatus?.status.author, config);
+  const reviewThreads = prStatus?.reviewThreads ?? [];
+
+  return {
+    review,
+    issues,
+    submissions,
+    currentBranch,
+    currentHeadSha,
+    submitAsCommentOnly,
+    linkedPlanUuid,
+    linkedPlans,
+    reviewThreads,
+  };
+}
+
+export async function getReviewDetailData(
+  db: Database,
+  params: ReviewDataParams,
+  config: ReviewDetailConfig = {}
+): Promise<ReviewDetailData> {
   const projectId = parseRouteInteger(params.projectId, 'Project');
   const prNumber = parseRouteInteger(params.prNumber, 'Pull request');
   const reviewId = parseRouteInteger(params.reviewId, 'Review');
@@ -73,24 +142,5 @@ export function getReviewDetailData(db: Database, params: ReviewDataParams): Rev
     error(404, 'Review not found');
   }
 
-  const issues = getReviewIssues(db, reviewId);
-  const submissions = getPrReviewSubmissionsForReview(db, reviewId);
-  const linkedPlans = getLinkedPlansByPrUrl(db, [prUrl]).get(prUrl) ?? [];
-  const linkedPlanUuid = linkedPlans.length === 1 ? (linkedPlans[0]?.planUuid ?? null) : null;
-
-  const prStatus = getPrStatusByUrl(db, prUrl, { includeReviewThreads: true });
-  const currentBranch = prStatus?.status.head_branch ?? null;
-  const currentHeadSha = prStatus?.status.head_sha ?? null;
-  const reviewThreads = prStatus?.reviewThreads ?? [];
-
-  return {
-    review,
-    issues,
-    submissions,
-    currentBranch,
-    currentHeadSha,
-    linkedPlanUuid,
-    linkedPlans,
-    reviewThreads,
-  };
+  return getReviewDetailDataForReview(db, review, config);
 }
