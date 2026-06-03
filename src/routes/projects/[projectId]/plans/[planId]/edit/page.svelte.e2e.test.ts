@@ -24,6 +24,7 @@ function makeInitialValue() {
   return {
     title: 'Current edit title',
     goal: 'Current edit goal',
+    note: 'Current edit note',
     details: 'Current edit details',
     priority: 'high',
     status: 'in_progress',
@@ -97,6 +98,7 @@ describe('edit plan page interaction', () => {
           planUuid: 'target-plan-uuid',
           title: 'Updated edit title',
           goal: 'Current edit goal',
+          note: 'Current edit note',
           details: 'Current edit details',
           priority: 'high',
           status: 'in_progress',

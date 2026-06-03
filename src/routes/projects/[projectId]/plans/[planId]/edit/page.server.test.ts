@@ -50,6 +50,7 @@ describe('projects/[projectId]/plans/[planId]/edit/+page.server', () => {
       planId: 42,
       title: 'Edit target',
       goal: 'Current goal',
+      note: 'Current note',
       details: 'Current details',
       priority: 'high',
       status: 'in_progress',
@@ -76,6 +77,7 @@ describe('projects/[projectId]/plans/[planId]/edit/+page.server', () => {
       initialValue: {
         title: 'Edit target',
         goal: 'Current goal',
+        note: 'Current note',
         details: 'Current details',
         priority: 'high',
         status: 'in_progress',

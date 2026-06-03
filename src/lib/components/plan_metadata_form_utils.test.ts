@@ -38,6 +38,7 @@ describe('plan metadata form utils', () => {
       normalizePlanMetadataFormPayload({
         title: '  Create plan UI  ',
         goal: '  Make the web flow work  ',
+        note: '  Internal context  ',
         details: '  More detail  ',
         priority: 'high',
         status: 'needs_review',
@@ -50,6 +51,7 @@ describe('plan metadata form utils', () => {
     ).toEqual({
       title: 'Create plan UI',
       goal: 'Make the web flow work',
+      note: 'Internal context',
       details: 'More detail',
       priority: 'high',
       status: 'needs_review',
@@ -66,6 +68,7 @@ describe('plan metadata form utils', () => {
       normalizePlanMetadataFormPayload({
         title: 'Standalone plan',
         goal: '',
+        note: '',
         details: '',
         priority: 'medium',
         status: 'pending',
@@ -80,6 +83,7 @@ describe('plan metadata form utils', () => {
       basePlanUuid: null,
       dependencyUuids: [],
       tags: [],
+      note: '',
     });
   });
 });

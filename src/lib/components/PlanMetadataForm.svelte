@@ -13,6 +13,7 @@
   export interface PlanMetadataFormValue {
     title: string;
     goal: string;
+    note: string;
     details: string;
     priority: string;
     status: string;
@@ -28,6 +29,7 @@
   export interface PlanMetadataFormInitialValue {
     title?: string;
     goal?: string;
+    note?: string;
     details?: string;
     priority?: string;
     status?: string;
@@ -92,6 +94,7 @@
 
   let title = $state(untrack(() => initialValue.title ?? ''));
   let goal = $state(untrack(() => initialValue.goal ?? ''));
+  let note = $state(untrack(() => initialValue.note ?? ''));
   let details = $state(untrack(() => initialValue.details ?? ''));
   let priority = $state(untrack(() => initialValue.priority ?? 'medium'));
   let status = $state(untrack(() => initialValue.status ?? 'pending'));
@@ -106,6 +109,7 @@
       normalizePlanMetadataFormPayload({
         title: initialValue.title ?? '',
         goal: initialValue.goal ?? '',
+        note: initialValue.note ?? '',
         details: initialValue.details ?? '',
         priority: initialValue.priority ?? 'medium',
         status: initialValue.status ?? 'pending',
@@ -122,6 +126,7 @@
       normalizePlanMetadataFormPayload({
         title,
         goal,
+        note,
         details,
         priority,
         status,
@@ -148,6 +153,7 @@
     const value: PlanMetadataFormValue = normalizePlanMetadataFormPayload({
       title,
       goal,
+      note,
       details,
       priority,
       status,
@@ -202,6 +208,14 @@
         placeholder="Additional context, requirements, or notes (Markdown supported)"
         bind:value={details}
       />
+    </div>
+  </div>
+
+  <!-- Note -->
+  <div class="rounded-lg border border-border p-4">
+    <div class="space-y-3">
+      <Label for="plan-note" class="text-sm font-medium text-foreground">Note</Label>
+      <Textarea id="plan-note" placeholder="Internal note (Markdown supported)" bind:value={note} />
     </div>
   </div>
 

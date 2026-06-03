@@ -81,6 +81,7 @@ describe('plan metadata validation helpers', () => {
       {
         title: '  Add web metadata  ',
         goal: '  Make metadata editable  ',
+        note: '  Keep internal context  ',
         details: '   ',
         priority: 'high',
         status: 'in_progress',
@@ -96,6 +97,7 @@ describe('plan metadata validation helpers', () => {
     expect(normalized).toEqual({
       title: 'Add web metadata',
       goal: 'Make metadata editable',
+      note: 'Keep internal context',
       details: null,
       priority: 'high',
       status: 'in_progress',
@@ -552,6 +554,7 @@ describe('updatePlanMetadataFromWeb', () => {
       planId: 6,
       title: 'Original title',
       goal: 'Original goal',
+      note: 'Original note',
       details: 'Original details',
       priority: 'medium',
       status: 'pending',
@@ -587,6 +590,7 @@ describe('updatePlanMetadataFromWeb', () => {
       planUuid,
       title: '  Updated title  ',
       goal: '  Updated goal  ',
+      note: '  Updated note  ',
       details: '  Updated details  ',
       priority: 'high',
       status: 'in_progress',
@@ -600,6 +604,7 @@ describe('updatePlanMetadataFromWeb', () => {
     expect(getPlanByUuid(db, planUuid)).toMatchObject({
       title: 'Updated title',
       goal: 'Updated goal',
+      note: 'Updated note',
       details: 'Updated details',
       priority: 'high',
       status: 'in_progress',
@@ -611,6 +616,7 @@ describe('updatePlanMetadataFromWeb', () => {
       getPlanDependenciesByUuid(db, planUuid).map((dependency) => dependency.depends_on_uuid)
     ).toEqual([newDependencyUuid]);
     expect(syncOperationRows().map((row) => row.operation_type)).toEqual([
+      'plan.patch_text',
       'plan.patch_text',
       'plan.patch_text',
       'plan.patch_text',

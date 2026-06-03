@@ -1,10 +1,12 @@
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi, type Mock } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 
 import type { PlanDetail } from '$lib/server/db_queries.js';
 import type { PrStatusRow } from '$tim/db/pr_status.js';
 import type { PrStatusDetailWithRequiredChecks } from '$lib/server/required_check_rollup.js';
+import { invalidateAll } from '$app/navigation';
+import { updatePlanMetadata } from '$lib/remote/plan_metadata.remote.js';
 import PlanDetailComponent from './PlanDetail.svelte';
 
 vi.mock('$app/navigation', () => ({
@@ -36,6 +38,10 @@ vi.mock('$lib/remote/review_issue_actions.remote.js', () => ({
 
 vi.mock('$lib/remote/sync_status.remote.js', () => ({
   getPlanSyncStatus: vi.fn(() => ({ current: null })),
+}));
+
+vi.mock('$lib/remote/plan_metadata.remote.js', () => ({
+  updatePlanMetadata: vi.fn(),
 }));
 
 vi.mock('./PrStatusSection.svelte', () => ({
@@ -141,6 +147,7 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
     canUpdateDocs: false,
     tags: [],
     dependencyUuids: [],
+    note: null,
     tasks: [],
     taskCounts: { done: 0, total: 0 },
     reviewIssueCount: 0,
@@ -229,5 +236,66 @@ describe('PlanDetail action selection', () => {
       .toBeInTheDocument();
     await screen.getByRole('button', { name: 'More actions' }).click();
     await expect.element(page.getByRole('menuitem', { name: 'Run Agent' })).toBeInTheDocument();
+  });
+});
+
+describe('PlanDetail note editor', () => {
+  test('saves note changes inline through the metadata update command', async () => {
+    (updatePlanMetadata as Mock).mockResolvedValueOnce({ planUuid: 'plan-1' });
+    (invalidateAll as Mock).mockResolvedValueOnce(undefined);
+
+    renderPlan(
+      makePlanDetail({
+        note: 'Existing note',
+        prStatuses: [],
+      })
+    );
+
+    await page.getByRole('button', { name: 'Edit note' }).click();
+    await page.getByLabelText('Plan note').fill('Updated note');
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    await vi.waitFor(() => {
+      expect(updatePlanMetadata).toHaveBeenCalledWith({
+        projectId: 123,
+        planUuid: 'plan-1',
+        note: 'Updated note',
+      });
+    });
+    await vi.waitFor(() => {
+      expect(invalidateAll).toHaveBeenCalled();
+    });
+  });
+
+  test('submits note changes with command-enter from the textarea', async () => {
+    (updatePlanMetadata as Mock).mockResolvedValueOnce({ planUuid: 'plan-1' });
+    (invalidateAll as Mock).mockResolvedValueOnce(undefined);
+
+    renderPlan(
+      makePlanDetail({
+        note: 'Existing note',
+        prStatuses: [],
+      })
+    );
+
+    await page.getByRole('button', { name: 'Edit note' }).click();
+    await page.getByLabelText('Plan note').fill('Keyboard note');
+    const textarea = document.querySelector('[aria-label="Plan note"]') as HTMLTextAreaElement;
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+
+    await vi.waitFor(() => {
+      expect(updatePlanMetadata).toHaveBeenCalledWith({
+        projectId: 123,
+        planUuid: 'plan-1',
+        note: 'Keyboard note',
+      });
+    });
   });
 });

@@ -48,6 +48,7 @@ export type RawPlanStatus = PlanRow['status'];
 export interface WebPlanMetadataInput {
   title?: string | null;
   goal?: string | null;
+  note?: string | null;
   details?: string | null;
   priority?: string | null;
   status?: string | null;
@@ -68,6 +69,7 @@ export interface NormalizePlanMetadataOptions {
 export interface NormalizedPlanMetadataInput {
   title?: string;
   goal?: string | null;
+  note?: string | null;
   details?: string | null;
   priority?: Priority | null;
   status?: RawPlanStatus;
@@ -335,6 +337,7 @@ export async function normalizeWebPlanMetadataInput(
   return {
     title: normalizePlanTitle(input.title, options),
     goal: normalizeNullableText(input.goal, 'goal'),
+    note: normalizeNullableText(input.note, 'note'),
     details: normalizeNullableText(input.details, 'details'),
     priority: normalizePlanPriority(input.priority),
     status: normalizePlanStatus(input.status),
@@ -589,6 +592,19 @@ export async function updatePlanMetadataFromWeb(
     }
   }
 
+  if (normalized.note !== undefined) {
+    const nextNote = normalized.note ?? '';
+    if (nextNote !== planTextValue(syncedPlan.note)) {
+      addPlanPatchTextToBatch(batch, project.uuid, {
+        planUuid: syncedPlan.uuid,
+        field: 'note',
+        base: planTextValue(syncedPlan.note),
+        new: nextNote,
+        baseRevision: syncedPlan.revision,
+      });
+    }
+  }
+
   if (normalized.priority !== undefined && normalized.priority !== syncedPlan.priority) {
     addPlanSetScalarToBatch(batch, project.uuid, {
       planUuid: syncedPlan.uuid,
@@ -753,6 +769,7 @@ export async function createPlanFromWeb(
     numericPlanId: planId,
     title: normalized.title!,
     goal: normalized.goal ?? undefined,
+    note: normalized.note ?? undefined,
     details: normalized.details ?? undefined,
     status: normalized.status ?? 'pending',
     priority: normalized.priority ?? 'medium',

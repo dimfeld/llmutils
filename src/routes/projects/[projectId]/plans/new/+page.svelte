@@ -20,6 +20,7 @@
         projectId: data.numericProjectId,
         title: value.title,
         goal: value.goal || null,
+        note: value.note || null,
         details: value.details || null,
         priority: value.priority,
         status: value.status,

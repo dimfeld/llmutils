@@ -9,8 +9,10 @@
   import type { PrStatusRow } from '$tim/db/pr_status.js';
   import { renderMarkdown } from '$lib/utils/markdown_parser.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { afterNavigate, invalidateAll } from '$app/navigation';
+  import { updatePlanMetadata } from '$lib/remote/plan_metadata.remote.js';
+  import { extractPlanMetadataErrorMessage } from './plan_metadata_form_utils.js';
   import {
     startGenerate,
     startAgent,
@@ -42,6 +44,7 @@
   import PlanArtifactsList from './PlanArtifactsList.svelte';
   import PlanArtifactUploader from './PlanArtifactUploader.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
+  import { Textarea } from '$lib/components/ui/textarea/index.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import * as Collapsible from '$lib/components/ui/collapsible/index.js';
   import ActionButtonWithDropdown, { type ActionItem } from './ActionButtonWithDropdown.svelte';
@@ -399,6 +402,51 @@
   let errorMessage: string | null = $state(null);
   let successMessage: { text: string; connectionId?: string } | null = $state(null);
   let reviewIssueSubmitting: number | 'clear' | null = $state(null);
+  let editingNote = $state(false);
+  let noteDraft = $state(untrack(() => plan.note ?? ''));
+  let savingNote = $state(false);
+  let noteErrorMessage: string | null = $state(null);
+  let noteDirty = $derived(noteDraft.trim() !== (plan.note ?? '').trim());
+  let canSaveNote = $derived(editingNote && noteDirty && !savingNote);
+
+  function startNoteEdit() {
+    noteDraft = plan.note ?? '';
+    noteErrorMessage = null;
+    editingNote = true;
+  }
+
+  function cancelNoteEdit() {
+    noteDraft = plan.note ?? '';
+    noteErrorMessage = null;
+    editingNote = false;
+  }
+
+  async function handleSaveNote() {
+    if (!canSaveNote) return;
+    savingNote = true;
+    noteErrorMessage = null;
+    try {
+      await updatePlanMetadata({
+        projectId: plan.projectId,
+        planUuid: plan.uuid,
+        note: noteDraft || null,
+      });
+      await invalidateAll();
+      editingNote = false;
+      toast.success('Note saved');
+    } catch (err) {
+      noteErrorMessage = extractPlanMetadataErrorMessage(err);
+    } finally {
+      savingNote = false;
+    }
+  }
+
+  function handleNoteKeydown(event: KeyboardEvent) {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      void handleSaveNote();
+    }
+  }
 
   async function handleRemoveReviewIssue(index: number) {
     if (reviewIssueSubmitting !== null) return;
@@ -459,6 +507,10 @@
       chatDialogOpen = false;
       startedSuccessfully = false;
       reviewIssueSubmitting = null;
+      editingNote = false;
+      noteDraft = plan.note ?? '';
+      savingNote = false;
+      noteErrorMessage = null;
       clearStartedTimeout();
       errorMessage = null;
       successMessage = null;
@@ -974,16 +1026,51 @@
     {/if}
 
     <!-- Note -->
-    {#if plan.note}
-      <div>
-        <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          Note
-        </h3>
+    <div>
+      <div class="mb-1 flex items-center gap-2">
+        <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Note</h3>
+        {#if !editingNote}
+          <Button
+            onclick={startNoteEdit}
+            size="icon-xs"
+            variant="ghost"
+            aria-label={plan.note ? 'Edit note' : 'Add note'}
+            title={plan.note ? 'Edit note' : 'Add note'}
+          >
+            <Pencil class="h-3 w-3" />
+          </Button>
+        {/if}
+      </div>
+      {#if editingNote}
+        <div class="space-y-2">
+          <Textarea
+            id="plan-note-inline"
+            placeholder="Internal note (Markdown supported)"
+            bind:value={noteDraft}
+            disabled={savingNote}
+            aria-label="Plan note"
+            onkeydown={handleNoteKeydown}
+          />
+          <div class="flex items-center gap-2">
+            <Button onclick={handleSaveNote} disabled={!canSaveNote} size="xs">
+              {savingNote ? 'Saving...' : 'Save'}
+            </Button>
+            <Button onclick={cancelNoteEdit} disabled={savingNote} size="xs" variant="outline">
+              Cancel
+            </Button>
+            {#if noteErrorMessage}
+              <p class="text-sm text-red-600 dark:text-red-400">{noteErrorMessage}</p>
+            {/if}
+          </div>
+        </div>
+      {:else if plan.note}
         <div class="plan-rendered-content text-sm text-foreground">
           {@html renderMarkdown(plan.note)}
         </div>
-      </div>
-    {/if}
+      {:else}
+        <p class="text-sm text-muted-foreground">No note</p>
+      {/if}
+    </div>
 
     <!-- Tasks -->
     {#if plan.tasks.length > 0}

@@ -31,6 +31,10 @@ vi.mock('$lib/remote/sync_status.remote.js', () => ({
   getPlanSyncStatus: vi.fn(() => ({ current: null })),
 }));
 
+vi.mock('$lib/remote/plan_metadata.remote.js', () => ({
+  updatePlanMetadata: vi.fn(),
+}));
+
 vi.mock('$lib/remote/review_issue_actions.remote.js', () => ({
   removeReviewIssue: vi.fn(),
   convertReviewIssueToTask: vi.fn(),

@@ -9,6 +9,7 @@ import { getServerContext } from '$lib/server/init.js';
 const planMetadataFieldsSchema = z.object({
   title: z.string().nullable().optional(),
   goal: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
   details: z.string().nullable().optional(),
   priority: z.string().nullable().optional(),
   status: z.string().nullable().optional(),

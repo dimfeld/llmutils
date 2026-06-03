@@ -48,6 +48,7 @@ export const load: PageServerLoad = async ({ params }) => {
   const initialValue: PlanMetadataFormInitialValue = {
     title: planDetail.title ?? '',
     goal: planDetail.goal ?? '',
+    note: planDetail.note ?? '',
     details: planDetail.details ?? '',
     priority: planDetail.priority ?? 'medium',
     status: planDetail.status,
