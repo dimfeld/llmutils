@@ -49,6 +49,8 @@ export interface SlackPostPayload {
   channel: string;
   text: string;
   blocks: SlackBlock[];
+  unfurl_links?: boolean;
+  unfurl_media?: boolean;
 }
 
 export interface SlackPostSenderArgs {
@@ -405,6 +407,8 @@ export function buildDailyDigestSlackPayload(
   return {
     channel,
     text: `Daily PR digest for ${repoFullName}: ${approvedCount} approved, ${staleCount} awaiting review, ${otherReadyCount} other ready, ${linearMilestoneCount} Linear milestones`,
+    unfurl_links: false,
+    unfurl_media: false,
     blocks,
   };
 }

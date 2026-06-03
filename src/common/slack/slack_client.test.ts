@@ -344,6 +344,8 @@ describe('common/slack/slack_client', () => {
       expect(sectionText(payload.blocks[4])).toBe(
         '<https://github.com/octocat/hello-world/pulls?q=is%3Apr+is%3Aopen+user-review-requested%3A%40me|View all PRs awaiting your review> · <https://linear.app/deviceflow/reviews|Linear>'
       );
+      expect(payload.unfurl_links).toBe(false);
+      expect(payload.unfurl_media).toBe(false);
     });
 
     test('omits divider and stale section when only approved bucket is populated', () => {
@@ -703,6 +705,8 @@ describe('common/slack/slack_client', () => {
       expect(calls).toHaveLength(1);
       expect(calls[0].token).toBe('xoxb-test-token');
       expect(calls[0].payload.channel).toBe('#reviews');
+      expect(calls[0].payload.unfurl_links).toBe(false);
+      expect(calls[0].payload.unfurl_media).toBe(false);
       expect(serializedBlocks(calls[0].payload.blocks)).toContain('Approved PR');
     });
   });
@@ -891,10 +895,14 @@ describe('common/slack/slack_client', () => {
         channel: string;
         ts: string;
         text: string;
+        unfurl_links: boolean;
+        unfurl_media: boolean;
       };
       expect(request.channel).toBe('C123');
       expect(request.ts).toBe('1710000000.000100');
       expect(request.text).toContain('Daily PR digest');
+      expect(request.unfurl_links).toBe(false);
+      expect(request.unfurl_media).toBe(false);
     });
 
     test('returns failure result on Slack ok:false body without throwing', async () => {
@@ -949,6 +957,8 @@ describe('common/slack/slack_client', () => {
       expect(result).toEqual({ ok: true, channel: 'C123', ts: '1710000000.000100' });
       expect(calls).toHaveLength(1);
       expect(calls[0].token).toBe('xoxb-test-token');
+      expect(calls[0].payload.unfurl_links).toBe(false);
+      expect(calls[0].payload.unfurl_media).toBe(false);
       expect(calls[0].payload.text).toContain('0 approved');
     });
   });
