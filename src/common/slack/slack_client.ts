@@ -3,6 +3,7 @@ import { error } from '../../logging.js';
 import type { LinearMilestoneDigestEntry } from '../linear_milestone_digest.js';
 import { buildLinearPrReviewUrl } from '../linear_pr_review.js';
 import { resolveSlackWorkspaceToken } from './slack_config.js';
+import { DEFAULT_SLACK_DAILY_DIGEST_DEFAULT_GROUP_NAME } from './slack_daily_digest_config.js';
 
 const SLACK_POST_MESSAGE_URL = 'https://slack.com/api/chat.postMessage';
 const SLACK_UPDATE_MESSAGE_URL = 'https://slack.com/api/chat.update';
@@ -93,10 +94,24 @@ export interface DailyDigestEntry {
   title: string;
   author: string;
   reviewers?: DailyDigestReviewer[];
+  /** Label names on the PR, used to group awaiting-review entries into prioritized sections. */
+  labels?: string[];
   readyForReviewMs?: number;
   readyForReviewLabel?: string;
   previousReviewMs?: number;
   previousReviewLabel?: string;
+}
+
+/** A configured prioritized review group: PRs carrying `label` are listed under `name`. */
+export interface DigestReviewGroupConfig {
+  name: string;
+  label: string;
+}
+
+export interface DigestReviewGroupingOptions {
+  reviewGroups?: DigestReviewGroupConfig[];
+  /** Section title for awaiting-review PRs matching no configured group. */
+  defaultGroupName?: string;
 }
 
 export interface DailyDigestPayloadInput {
@@ -328,10 +343,98 @@ export function buildReviewRequestSlackPayload(
   };
 }
 
+/**
+ * Reads the prioritized review-group configuration for a workspace's daily digest. Returns an
+ * empty `reviewGroups` (i.e. no grouping) when none is configured. `defaultGroupName` falls back
+ * to {@link DEFAULT_SLACK_DAILY_DIGEST_DEFAULT_GROUP_NAME}.
+ */
+export function resolveDigestReviewGrouping(
+  config: TimConfig,
+  workspace: string
+): DigestReviewGroupingOptions {
+  const dailyDigest = config.slack?.workspaces?.[workspace]?.dailyDigest;
+  return {
+    reviewGroups: dailyDigest?.reviewGroups ?? [],
+    defaultGroupName:
+      dailyDigest?.defaultGroupName ?? DEFAULT_SLACK_DAILY_DIGEST_DEFAULT_GROUP_NAME,
+  };
+}
+
+interface ResolvedReviewGroup {
+  name: string;
+  /** The configured label this group matches, or null for the trailing default group. */
+  label: string | null;
+  entries: DailyDigestEntry[];
+}
+
+/**
+ * Partitions awaiting-review entries into the configured prioritized groups (in config order),
+ * with a trailing default group for entries matching no configured label. A PR matching multiple
+ * configured labels is placed in the highest-priority (earliest) group only (first-match-wins).
+ */
+function partitionStaleEntriesByGroup(
+  entries: DailyDigestEntry[],
+  reviewGroups: DigestReviewGroupConfig[],
+  defaultGroupName: string
+): ResolvedReviewGroup[] {
+  const groups: ResolvedReviewGroup[] = reviewGroups.map((group) => ({
+    name: group.name,
+    label: group.label,
+    entries: [],
+  }));
+  const defaultGroup: ResolvedReviewGroup = { name: defaultGroupName, label: null, entries: [] };
+
+  for (const entry of entries) {
+    const labels = entry.labels ?? [];
+    const matchIndex = reviewGroups.findIndex((group) => labels.includes(group.label));
+    if (matchIndex === -1) {
+      defaultGroup.entries.push(entry);
+    } else {
+      groups[matchIndex].entries.push(entry);
+    }
+  }
+
+  return [...groups, defaultGroup];
+}
+
+/**
+ * Renders the awaiting-review bucket. With no configured review groups this is a single
+ * "Awaiting review" section (unchanged behavior). With groups configured, each non-empty group
+ * becomes its own "Awaiting review — {name} ({label})" section in priority order; the trailing
+ * default group has no label suffix.
+ */
+function buildStaleAwaitingReviewBlocks(
+  entries: DailyDigestEntry[],
+  grouping: DigestReviewGroupingOptions | undefined
+): SlackSectionBlock[] {
+  const reviewGroups = grouping?.reviewGroups ?? [];
+  if (reviewGroups.length === 0) {
+    return buildDigestSectionBlocks('Awaiting review', entries.map(formatStaleDigestLine));
+  }
+
+  const defaultGroupName =
+    grouping?.defaultGroupName ?? DEFAULT_SLACK_DAILY_DIGEST_DEFAULT_GROUP_NAME;
+  const blocks: SlackSectionBlock[] = [];
+  for (const group of partitionStaleEntriesByGroup(entries, reviewGroups, defaultGroupName)) {
+    if (group.entries.length === 0) {
+      continue;
+    }
+    const labelSuffix = group.label ? ` (${escapeSlackMrkdwnText(group.label)})` : '';
+    blocks.push(
+      ...buildDigestSectionBlocks(
+        `Awaiting review — ${group.name}${labelSuffix}`,
+        group.entries.map(formatStaleDigestLine)
+      )
+    );
+  }
+  return blocks;
+}
+
 export function buildDailyDigestSlackPayload(
   channel: string,
   repoFullName: string,
-  digest: DailyDigestPayloadInput
+  digest: DailyDigestPayloadInput,
+  grouping?: DigestReviewGroupingOptions
 ): SlackPostPayload {
   const approvedCount = digest.approvedUnmerged.length;
   const staleCount = digest.staleAwaitingReview.length;
@@ -362,12 +465,7 @@ export function buildDailyDigestSlackPayload(
   }
 
   if (staleCount > 0) {
-    blocks.push(
-      ...buildDigestSectionBlocks(
-        'Awaiting review',
-        digest.staleAwaitingReview.map(formatStaleDigestLine)
-      )
-    );
+    blocks.push(...buildStaleAwaitingReviewBlocks(digest.staleAwaitingReview, grouping));
   }
 
   if ((approvedCount > 0 || staleCount > 0) && otherReadyCount > 0) {
@@ -582,7 +680,13 @@ export async function postDailyDigestMessage(
   }
 
   const token = resolveSlackWorkspaceToken(args.config, args.workspace);
-  const payload = buildDailyDigestSlackPayload(args.channel, args.repoFullName, args.digest);
+  const grouping = resolveDigestReviewGrouping(args.config, args.workspace);
+  const payload = buildDailyDigestSlackPayload(
+    args.channel,
+    args.repoFullName,
+    args.digest,
+    grouping
+  );
   const sender = args.sender ?? getSlackPostSender(token);
 
   return await sender({ token, payload });
@@ -592,7 +696,13 @@ export async function updateDailyDigestMessage(
   args: UpdateDailyDigestMessageArgs
 ): Promise<SlackPostResult> {
   const token = resolveSlackWorkspaceToken(args.config, args.workspace);
-  const payload = buildDailyDigestSlackPayload(args.channel, args.repoFullName, args.digest);
+  const grouping = resolveDigestReviewGrouping(args.config, args.workspace);
+  const payload = buildDailyDigestSlackPayload(
+    args.channel,
+    args.repoFullName,
+    args.digest,
+    grouping
+  );
   const sender = args.sender ?? getSlackUpdateSender(token);
 
   return await sender({ token, channel: args.channel, ts: args.ts, payload });

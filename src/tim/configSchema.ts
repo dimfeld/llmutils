@@ -267,6 +267,23 @@ export const slackWorkspaceConfigSchema = z
           .array(z.enum(SLACK_DAILY_DIGEST_WEEKDAYS))
           .min(1, 'Slack dailyDigest.weekdays must include at least one weekday')
           .optional(),
+        reviewGroups: z
+          .array(
+            z
+              .object({
+                name: z.string().min(1, 'Slack dailyDigest.reviewGroups[].name must not be empty'),
+                label: z
+                  .string()
+                  .min(1, 'Slack dailyDigest.reviewGroups[].label must not be empty'),
+              })
+              .strict()
+          )
+          .min(1, 'Slack dailyDigest.reviewGroups must include at least one group')
+          .optional(),
+        defaultGroupName: z
+          .string()
+          .min(1, 'Slack dailyDigest.defaultGroupName must not be empty')
+          .optional(),
         linearMilestones: z
           .object({
             enabled: z.boolean().optional(),

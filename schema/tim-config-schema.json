@@ -144,6 +144,32 @@
                       ]
                     }
                   },
+                  "reviewGroups": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "label"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "defaultGroupName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
                   "linearMilestones": {
                     "type": "object",
                     "properties": {
@@ -1339,7 +1365,7 @@
           }
         },
         "applyLessons": {
-          "description": "Whether to apply lessons learned to documentation after plan completion",
+          "description": "Deprecated: retained for backward compatibility, but ignored by agent execution",
           "type": "boolean"
         }
       },

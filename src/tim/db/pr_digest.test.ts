@@ -157,6 +157,20 @@ describe('tim db/pr_digest', () => {
       expect(rows).toEqual([]);
     });
 
+    test('returns newline-joined PR labels and null when a PR has none', () => {
+      const labeled = insertPr(45, { labels: ['review-p-0', 'bug'] });
+      requestReview(labeled.status.id, 'reviewer-labeled', REQUESTED_AT);
+
+      const unlabeled = insertPr(46);
+      requestReview(unlabeled.status.id, 'reviewer-unlabeled', REQUESTED_AT);
+
+      const rows = getStaleReviewRequestRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+      const byNumber = new Map(rows.map((row) => [row.pr_number, row]));
+
+      expect(byNumber.get(45)?.labels?.split('\n').sort()).toEqual(['bug', 'review-p-0']);
+      expect(byNumber.get(46)?.labels).toBeNull();
+    });
+
     test('uses the injected nowMs as the upper bound without applying the stale threshold', () => {
       const atNow = insertPr(40);
       requestReview(atNow.status.id, 'reviewer-at-now', new Date(NOW_MS).toISOString());
@@ -231,6 +245,7 @@ describe('tim db/pr_digest', () => {
       draft?: boolean;
       reviewDecision?: string | null;
       readyAt?: string | null;
+      labels?: string[];
     } = {}
   ): ReturnType<typeof upsertPrStatus> {
     const owner = options.owner ?? 'octocat';
@@ -247,6 +262,7 @@ describe('tim db/pr_digest', () => {
       reviewDecision: options.reviewDecision ?? null,
       readyAt: options.readyAt,
       lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      labels: options.labels?.map((name) => ({ name })),
     });
   }
 

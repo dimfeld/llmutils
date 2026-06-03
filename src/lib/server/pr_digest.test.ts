@@ -48,6 +48,7 @@ describe('lib/server/pr_digest', () => {
             author: 'bob',
             reviewer: 'charlie',
             requested_at: '2026-01-01T10:00:00.000Z',
+            labels: 'review-p-0\nbug',
           },
           {
             pr_url: 'https://github.com/octocat/hello-world/pull/2',
@@ -56,6 +57,7 @@ describe('lib/server/pr_digest', () => {
             author: 'bob',
             reviewer: 'dana',
             requested_at: '2026-01-01T04:00:00.000Z',
+            labels: 'review-p-0\nbug',
           },
           {
             pr_url: 'https://github.com/octocat/hello-world/pull/3',
@@ -64,6 +66,7 @@ describe('lib/server/pr_digest', () => {
             author: 'erin',
             reviewer: 'frank',
             requested_at: '2026-01-01T10:00:01.000Z',
+            labels: null,
           },
           {
             pr_url: 'https://github.com/octocat/hello-world/pull/4',
@@ -72,6 +75,7 @@ describe('lib/server/pr_digest', () => {
             author: 'grace',
             reviewer: 'heidi',
             requested_at: '2026-01-01T09:59:59.999Z',
+            labels: null,
           },
         ],
         otherReadyForReviewRows: [],
@@ -86,6 +90,7 @@ describe('lib/server/pr_digest', () => {
         prNumber: 2,
         title: 'Add feature',
         author: 'bob',
+        labels: ['review-p-0', 'bug'],
         reviewers: [
           {
             login: 'charlie',
@@ -104,6 +109,7 @@ describe('lib/server/pr_digest', () => {
         prNumber: 3,
         title: 'Fresh request',
         author: 'erin',
+        labels: [],
         reviewers: [
           {
             login: 'frank',
@@ -117,6 +123,7 @@ describe('lib/server/pr_digest', () => {
         prNumber: 4,
         title: 'Another stale PR',
         author: 'grace',
+        labels: [],
         reviewers: [
           {
             login: 'heidi',
@@ -164,6 +171,7 @@ describe('lib/server/pr_digest', () => {
             author: 'mallory',
             reviewer: 'nina',
             requested_at: '2026-01-01T04:00:00.000Z',
+            labels: null,
           },
         ],
         otherReadyForReviewRows: [],
@@ -193,6 +201,7 @@ describe('lib/server/pr_digest', () => {
             author: 'ivan',
             reviewer: 'judy',
             requested_at: '2026-01-02T08:00:00.000Z',
+            labels: null,
           },
         ],
         otherReadyForReviewRows: [],
@@ -226,6 +235,7 @@ describe('lib/server/pr_digest', () => {
               author: 'kate',
               reviewer: 'li',
               requested_at: 'not-a-date',
+              labels: null,
             },
           ],
           otherReadyForReviewRows: [],
@@ -254,6 +264,7 @@ describe('lib/server/pr_digest', () => {
             author: 'bob',
             reviewer: 'carol',
             requested_at: '2025-12-30T10:00:00.000Z',
+            labels: null,
           },
         ],
         otherReadyForReviewRows: [

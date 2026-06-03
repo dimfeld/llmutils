@@ -15,6 +15,8 @@ export interface StaleReviewRequestRow {
   reviewer: string;
   /** UTC ISO timestamp from pr_review_request.requested_at. */
   requested_at: string;
+  /** Newline-separated label names on the PR, or null when it has no labels. */
+  labels: string | null;
 }
 
 export interface OtherReadyForReviewRow {
@@ -84,7 +86,12 @@ export function getStaleReviewRequestRows(
           COALESCE(pr_status.title, '') AS title,
           COALESCE(pr_status.author, '') AS author,
           pr_review_request.reviewer,
-          pr_review_request.requested_at
+          pr_review_request.requested_at,
+          (
+            SELECT GROUP_CONCAT(pr_label.name, char(10))
+            FROM pr_label
+            WHERE pr_label.pr_status_id = pr_status.id
+          ) AS labels
         FROM pr_review_request
         INNER JOIN pr_status ON pr_status.id = pr_review_request.pr_status_id
         WHERE pr_status.owner = ?

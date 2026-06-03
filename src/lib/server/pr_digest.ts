@@ -16,6 +16,8 @@ export interface DigestEntry {
   title: string;
   author: string;
   reviewers?: DigestReviewer[];
+  /** Label names on the PR, used to group awaiting-review entries in the Slack digest. */
+  labels?: string[];
   readyForReviewMs?: number;
   readyForReviewLabel?: string;
   previousReviewMs?: number;
@@ -72,6 +74,7 @@ export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestO
         title: row.title,
         author: row.author,
         reviewers: [],
+        labels: parseLabels(row.labels),
       };
       staleByPrUrl.set(row.pr_url, entry);
     }
@@ -139,6 +142,16 @@ export function formatWaitDuration(waitedMs: number): string {
   }
 
   return `${waitedHours} ${waitedHours === 1 ? 'hour' : 'hours'}`;
+}
+
+function parseLabels(labels: string | null): string[] {
+  if (!labels) {
+    return [];
+  }
+  return labels
+    .split('\n')
+    .map((label) => label.trim())
+    .filter((label) => label.length > 0);
 }
 
 function parseRequestedAtMs(requestedAt: string): number {

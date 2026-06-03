@@ -34,6 +34,8 @@ Each workspace has:
   - `timezone` - IANA time zone the `time` is interpreted in (default: the server's local zone); rejected at load if not a valid IANA zone
   - `staleAfterHours` - legacy setting retained for compatibility; awaiting-review digest entries no longer use a minimum wait threshold
   - `weekdays` - local weekdays when the scheduled digest may fire, using lowercase names (`monday` through `sunday`); defaults to Monday through Friday
+  - `reviewGroups` (optional) - prioritized grouping for the "Awaiting review" section. An ordered list of `{ name, label }` entries: PRs carrying the matching GitHub `label` are listed under a `*Awaiting review — {name} ({label})*` section, in the order the groups are configured. A PR matching more than one configured label is placed only in the highest-priority (earliest) group. PRs matching no configured label fall into a trailing default group (rendered without a label suffix). Empty groups are omitted. When `reviewGroups` is absent, the section renders as a single ungrouped `*Awaiting review*` block (unchanged behavior).
+  - `defaultGroupName` (optional) - title for the trailing default group when `reviewGroups` is set (default `Regular Priority`)
 
 ```yaml
 slack:
@@ -44,6 +46,10 @@ slack:
         time: '09:00'
         timezone: 'America/New_York'
         weekdays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+        reviewGroups:
+          - { name: 'ASAP', label: 'review-p-0' }
+          - { name: 'High Priority', label: 'review-p-1' }
+        defaultGroupName: 'Regular Priority'
 ```
 
 Token placeholders are expanded from `process.env` at read time. tim fails loudly if a referenced workspace does not exist, if its token is missing or empty, if a referenced environment variable is unset or empty, or if the expanded token is empty. The `dailyDigest` schedule is per workspace (so different workspaces can fire at their own local time); whether a given repo participates is the per-repo `dailyDigest` opt-in below.
@@ -243,7 +249,7 @@ Separate from the event-driven review-request notifier, tim can post a once-per-
 The digest has three PR sections:
 
 - **Approved, not yet merged** - open, non-draft PRs whose review decision is `APPROVED`.
-- **Awaiting review** - open, non-draft PRs that are not already approved and have an assigned individual reviewer who has not reviewed since being requested. Each entry lists the waiting reviewer(s) and how long they've waited. PR entry links point at `linear.review/{owner}/{repo}/pull/{number}`. The footer includes both the GitHub "View all PRs awaiting your review" search link and a Linear reviews link.
+- **Awaiting review** - open, non-draft PRs that are not already approved and have an assigned individual reviewer who has not reviewed since being requested. Each entry lists the waiting reviewer(s) and how long they've waited. PR entry links point at `linear.review/{owner}/{repo}/pull/{number}`. The footer includes both the GitHub "View all PRs awaiting your review" search link and a Linear reviews link. When `dailyDigest.reviewGroups` is configured (see [config](#config)), this section is split into prioritized `*Awaiting review — {name} ({label})*` subsections by PR label, with unmatched PRs in a trailing default group.
 - **Other PRs ready for review for > 3 days** - open, non-draft PRs with a recorded `ready_at` timestamp older than three days that were not already shown in the approved or awaiting-review sections. Each entry lists how long the PR has been ready and the time since the previous non-dismissed review, or notes that there has been no previous review.
 
 If `dailyDigest.linearMilestones.enabled` is true for a Slack workspace, the digest also includes **Linear milestones due or overdue** once per Slack channel in each workspace run. The section uses the workspace digest timezone to compute the current Monday-through-Sunday week, lists outstanding Linear project milestones that are overdue or due in that range, and includes a milestone owner. The owner is the shared assignee when all linked milestone issues have the same assignee, otherwise the project lead. Set `dailyDigest.linearMilestones.apiKeyEnv` to read a token from a different environment variable; otherwise it reads `LINEAR_API_KEY`.

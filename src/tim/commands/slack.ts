@@ -8,6 +8,7 @@ import { getGitRepository } from '../../common/git.js';
 import {
   buildDailyDigestSlackPayload,
   postSlackTestMessage,
+  resolveDigestReviewGrouping,
   type SlackPostSender,
   type SlackUpdateSender,
 } from '../../common/slack/slack_client.js';
@@ -301,11 +302,16 @@ function printDigestDryRunProject(projectDigest: CollectedProjectDigest): void {
   }
 }
 
-function printDigestSlackPayloadDryRun(projectDigest: CollectedProjectDigest): void {
+function printDigestSlackPayloadDryRun(
+  projectDigest: CollectedProjectDigest,
+  config: TimConfig,
+  workspace: string
+): void {
   const payload = buildDailyDigestSlackPayload(
     projectDigest.channel,
     projectDigest.repoFullName,
-    projectDigest.digest
+    projectDigest.digest,
+    resolveDigestReviewGrouping(config, workspace)
   );
   log('Slack update payload:');
   log(`  channel: ${payload.channel}`);
@@ -562,7 +568,7 @@ export async function handleSlackDigestUpdateCommand(
     if (projectDigest) {
       printDigestDryRunProject(projectDigest);
       log('');
-      printDigestSlackPayloadDryRun(projectDigest);
+      printDigestSlackPayloadDryRun(projectDigest, config, workspace);
     } else {
       log('No digest-enabled project entry was found for this repository.');
     }

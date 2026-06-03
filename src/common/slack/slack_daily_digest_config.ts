@@ -5,6 +5,8 @@ export interface ParsedSlackDailyDigestTime {
 
 export const DEFAULT_SLACK_DAILY_DIGEST_TIME = '00:00';
 export const DEFAULT_SLACK_DAILY_DIGEST_STALE_AFTER_HOURS = 24;
+/** Section title for awaiting-review PRs that don't match any configured review group. */
+export const DEFAULT_SLACK_DAILY_DIGEST_DEFAULT_GROUP_NAME = 'Regular Priority';
 export const SLACK_DAILY_DIGEST_WEEKDAYS = [
   'sunday',
   'monday',

@@ -610,6 +610,138 @@ describe('common/slack/slack_client', () => {
       ).length;
       expect(titleOccurrences).toBe(1);
     });
+
+    describe('prioritized review groups', () => {
+      const groupedDigest: DailyDigestPayloadInput = {
+        approvedUnmerged: [],
+        otherReadyForReview: [],
+        staleAwaitingReview: [
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/10',
+            prNumber: 10,
+            title: 'Critical fix',
+            author: 'alice',
+            labels: ['review-p-0'],
+            reviewers: [{ login: 'carol', waitedMs: 90_000_000, waitedLabel: '25 hours' }],
+          },
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/11',
+            prNumber: 11,
+            title: 'Important change',
+            author: 'bob',
+            labels: ['review-p-1'],
+            reviewers: [{ login: 'dave', waitedMs: 90_000_000, waitedLabel: '25 hours' }],
+          },
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/12',
+            prNumber: 12,
+            title: 'Routine cleanup',
+            author: 'erin',
+            labels: ['chore'],
+            reviewers: [{ login: 'frank', waitedMs: 90_000_000, waitedLabel: '25 hours' }],
+          },
+        ],
+      };
+      const grouping = {
+        reviewGroups: [
+          { name: 'ASAP', label: 'review-p-0' },
+          { name: 'High Priority', label: 'review-p-1' },
+        ],
+        defaultGroupName: 'Regular Priority',
+      };
+
+      test('renders configured groups in priority order with a default group for the rest', () => {
+        const payload = buildDailyDigestSlackPayload(
+          '#reviews',
+          'octocat/hello-world',
+          groupedDigest,
+          grouping
+        );
+        const text = serializedBlocks(payload.blocks);
+
+        expect(text).toContain('*Awaiting review — ASAP (review-p-0)*');
+        expect(text).toContain('*Awaiting review — High Priority (review-p-1)*');
+        // The trailing default group has no label suffix.
+        expect(text).toContain('*Awaiting review — Regular Priority*');
+        // No ungrouped "Awaiting review" title when grouping is active.
+        expect(text).not.toContain('*Awaiting review*');
+
+        // Sections appear in configured order, default last.
+        const asapIndex = text.indexOf('— ASAP');
+        const highIndex = text.indexOf('— High Priority');
+        const regularIndex = text.indexOf('— Regular Priority');
+        expect(asapIndex).toBeLessThan(highIndex);
+        expect(highIndex).toBeLessThan(regularIndex);
+
+        // Each PR lands under its group.
+        const asapText = sectionText(
+          payload.blocks.find((block) => sectionText(block).includes('— ASAP'))
+        );
+        expect(asapText).toContain('Critical fix');
+        expect(asapText).not.toContain('Important change');
+      });
+
+      test('places a PR matching multiple labels in the highest-priority group only', () => {
+        const payload = buildDailyDigestSlackPayload(
+          '#reviews',
+          'octocat/hello-world',
+          {
+            ...groupedDigest,
+            staleAwaitingReview: [
+              {
+                prUrl: 'https://github.com/octocat/hello-world/pull/20',
+                prNumber: 20,
+                title: 'Double labeled',
+                author: 'alice',
+                labels: ['review-p-1', 'review-p-0'],
+                reviewers: [{ login: 'carol', waitedMs: 90_000_000, waitedLabel: '25 hours' }],
+              },
+            ],
+          },
+          grouping
+        );
+
+        const asapText = sectionText(
+          payload.blocks.find((block) => sectionText(block).includes('— ASAP'))
+        );
+        expect(asapText).toContain('Double labeled');
+        // Only one section carries the PR title (no High Priority duplicate).
+        const occurrences = payload.blocks.filter((block) =>
+          sectionText(block).includes('Double labeled')
+        ).length;
+        expect(occurrences).toBe(1);
+      });
+
+      test('omits empty groups', () => {
+        const payload = buildDailyDigestSlackPayload(
+          '#reviews',
+          'octocat/hello-world',
+          {
+            ...groupedDigest,
+            staleAwaitingReview: [groupedDigest.staleAwaitingReview[2]],
+          },
+          grouping
+        );
+        const text = serializedBlocks(payload.blocks);
+
+        expect(text).not.toContain('— ASAP');
+        expect(text).not.toContain('— High Priority');
+        expect(text).toContain('— Regular Priority');
+      });
+
+      test('falls back to the ungrouped section when no review groups are configured', () => {
+        const payload = buildDailyDigestSlackPayload(
+          '#reviews',
+          'octocat/hello-world',
+          groupedDigest,
+          { reviewGroups: [] }
+        );
+        const text = serializedBlocks(payload.blocks);
+
+        expect(text).toContain('*Awaiting review*');
+        expect(text).not.toContain('— ASAP');
+      });
+    });
   });
 
   describe('postDailyDigestMessage with injected sender', () => {
@@ -637,6 +769,59 @@ describe('common/slack/slack_client', () => {
 
       expect(result).toEqual({ ok: true });
       expect(calls).toHaveLength(0);
+    });
+
+    test('applies the workspace reviewGroups config to the posted payload', async () => {
+      const groupedConfig = buildConfig({
+        workspaces: {
+          work: {
+            token: 'xoxb-test-token',
+            dailyDigest: {
+              reviewGroups: [{ name: 'ASAP', label: 'review-p-0' }],
+            },
+          },
+        },
+      });
+      const calls: SlackPostSenderArgs[] = [];
+      const fakeSender = async (args: SlackPostSenderArgs): Promise<SlackPostResult> => {
+        calls.push(args);
+        return { ok: true };
+      };
+
+      const result = await postDailyDigestMessage({
+        config: groupedConfig,
+        workspace: 'work',
+        channel: '#reviews',
+        repoFullName: 'octocat/hello-world',
+        digest: {
+          approvedUnmerged: [],
+          otherReadyForReview: [],
+          staleAwaitingReview: [
+            {
+              prUrl: 'https://github.com/octocat/hello-world/pull/2',
+              prNumber: 2,
+              title: 'Critical fix',
+              author: 'bob',
+              labels: ['review-p-0'],
+              reviewers: [{ login: 'carol', waitedMs: 90_000_000, waitedLabel: '25 hours' }],
+            },
+            {
+              prUrl: 'https://github.com/octocat/hello-world/pull/3',
+              prNumber: 3,
+              title: 'Routine change',
+              author: 'erin',
+              labels: [],
+              reviewers: [{ login: 'frank', waitedMs: 90_000_000, waitedLabel: '25 hours' }],
+            },
+          ],
+        },
+        sender: fakeSender,
+      });
+
+      expect(result).toEqual({ ok: true });
+      const text = serializedBlocks(calls[0].payload.blocks);
+      expect(text).toContain('*Awaiting review — ASAP (review-p-0)*');
+      expect(text).toContain('*Awaiting review — Regular Priority*');
     });
 
     test('posts when only Linear milestone content is present', async () => {
