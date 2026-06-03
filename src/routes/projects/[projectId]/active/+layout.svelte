@@ -64,10 +64,9 @@
     )
   );
   let attentionCount = $derived(
-    attentionItems.planItems.length +
-      attentionItems.prItems.length +
-      attentionItems.sessionItems.length
+    attentionItems.planItems.length + attentionItems.sessionItems.length
   );
+  let prReviewCount = $derived(attentionItems.prItems.length);
   let stackedCount = $derived(attentionItems.stackedPlanItems.length);
   let reviewedCount = $derived(attentionItems.reviewedPlanItems.length);
 
@@ -79,6 +78,7 @@
 
   let allEmpty = $derived(
     attentionCount === 0 &&
+      prReviewCount === 0 &&
       stackedCount === 0 &&
       reviewedCount === 0 &&
       runningSessions.length === 0 &&
@@ -132,21 +132,20 @@
                 />
               {/each}
             {/if}
-            {#if attentionItems.prItems.length > 0}
-              {#if attentionItems.planItems.length > 0 || attentionItems.sessionItems.length > 0}
-                <div class="my-1 border-t border-border/50"></div>
-              {/if}
-              <p class="px-1 text-xs text-muted-foreground">Pull Requests</p>
-              {#each attentionItems.prItems as item (item.actionablePr.prUrl)}
-                <PrAttentionCard
-                  {item}
-                  projectName={showProject
-                    ? projectNamesById[item.actionablePr.projectId]
-                    : undefined}
-                  selected={selectedPrNumber === item.actionablePr.prNumber}
-                />
-              {/each}
-            {/if}
+          </DashboardSection>
+        {/if}
+
+        {#if prReviewCount > 0}
+          <DashboardSection title="PRs to Review" count={prReviewCount}>
+            {#each attentionItems.prItems as item (item.actionablePr.prUrl)}
+              <PrAttentionCard
+                {item}
+                projectName={showProject
+                  ? projectNamesById[item.actionablePr.projectId]
+                  : undefined}
+                selected={selectedPrNumber === item.actionablePr.prNumber}
+              />
+            {/each}
           </DashboardSection>
         {/if}
 
