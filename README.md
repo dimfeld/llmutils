@@ -489,7 +489,7 @@ Important config areas:
 - `githubUsername` - avoids an API call when classifying PRs
 - `lifecycle.commands` - start/stop dev servers or services around agent runs
 - `subprocessMonitor` - opt-in timeouts for stuck Claude/Codex tool subprocesses
-- `updateDocs` and `applyLessons` - control finalization behavior
+- `updateDocs` - controls automatic agent documentation updates; `applyLessons` is retained for manual finalization compatibility
 - `artifactRetentionDays` - days before soft-deleted artifacts and artifacts on completed plans are eligible for purge (default 30)
 - `environment` - project-level variables rendered at process launch time with plan/workspace context
 
@@ -616,7 +616,7 @@ proofGeneration:
 
 Three entry points trigger proof generation:
 
-- **Agent batch mode** – when `proofGeneration.mode` is `after-completion`, the agent runs the proof phase after the final review (and lessons/docs updates) and before parent-cascade and the final commit. Failures here never block the rest of the post-completion pipeline.
+- **Agent batch mode** – when `proofGeneration.mode` is `after-completion`, the agent runs the proof phase after the final review and documentation updates, and before parent-cascade and the final commit. Failures here never block the rest of the post-completion pipeline.
 - **CLI** – `tim proof <planId>` runs the phase manually. Pass `--auto-workspace` to use the plan's assigned workspace, `--executor <name>` and `--model <model>` to override the configured defaults.
 - **Web UI** – the **Generate Proof** action on the plan detail page launches `tim proof` as a detached session that streams output through the normal session-discovery infrastructure. The button is shown only when the project has `proofGeneration.instructions` configured and the plan has at least one completed task or status in `needs_review`/`reviewed`/`done`.
 

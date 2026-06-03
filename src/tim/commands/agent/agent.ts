@@ -56,7 +56,6 @@ import { SummaryCollector } from '../../summary/collector.js';
 import { writeOrDisplaySummary } from '../../summary/display.js';
 import { autoClaimPlan, isAutoClaimEnabled } from '../../assignments/auto_claim.js';
 import { runUpdateDocs } from '../update-docs.js';
-import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
 import { sendNotification } from '../../notifications.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
@@ -117,7 +116,6 @@ interface AgentCommandOptions {
   dryRun?: boolean;
   finalReview?: boolean;
   steps?: string;
-  applyLessons?: boolean;
   reviewThreadContext?: string;
 }
 
@@ -787,7 +785,6 @@ export async function timAgent(
             maxSteps,
             executionMode,
             updateDocsMode,
-            applyLessons: options.applyLessons,
             finalReview: options.finalReview,
             configPath: globalCliOptions.config,
             terminalInput: terminalInputEnabled,
@@ -1184,62 +1181,6 @@ export async function timAgent(
               log('Skipping documentation update because final review produced follow-up work.');
             }
 
-            if (
-              planStillCompleteAfterReview &&
-              updateDocsMode !== 'manual' &&
-              (config.updateDocs?.applyLessons || options.applyLessons)
-            ) {
-              if (isShuttingDown()) break;
-
-              try {
-                const lessonsUpdateResult = await runUpdateLessons(
-                  planData,
-                  currentPlanFile,
-                  config,
-                  {
-                    executor: config.updateDocs?.executor,
-                    model: config.updateDocs?.model,
-                    baseDir: currentBaseDir,
-                    nonInteractive: noninteractive,
-                    terminalInput: terminalInputEnabled,
-                  }
-                );
-                if (lessonsUpdateResult === true || lessonsUpdateResult === 'skipped-no-lessons') {
-                  await updatePlanTimestampWithAutoSync(
-                    currentPlanFile,
-                    currentBaseDir,
-                    config,
-                    (plan) => {
-                      plan.lessonsAppliedAt = new Date().toISOString();
-                    }
-                  );
-                }
-              } catch (err) {
-                error('Failed to apply lessons learned:', err as Error);
-                // Don't stop execution for lessons update failures
-              }
-
-              if (!isShuttingDown()) {
-                const failedAfterLessonsPostApplyCommand = await runPostApplyCommands();
-                if (failedAfterLessonsPostApplyCommand) {
-                  error(
-                    `Agent stopping because required command "${failedAfterLessonsPostApplyCommand}" failed.`
-                  );
-                  hasError = true;
-                  recordFailure(`Post-apply command failed: ${failedAfterLessonsPostApplyCommand}`);
-                  if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
-                  break;
-                }
-              }
-            } else if (
-              !planStillCompleteAfterReview &&
-              (config.updateDocs?.applyLessons || options.applyLessons)
-            ) {
-              log(
-                'Skipping lessons-learned documentation update because final review produced follow-up work.'
-              );
-            }
-
             break;
           }
           sendStructured({
@@ -1527,54 +1468,6 @@ export async function timAgent(
                 recordFailure(
                   `Post-apply command failed: ${failedAfterReviewDocsPostApplyCommand}`
                 );
-                if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
-                break;
-              }
-            }
-          }
-
-          if (
-            updateDocsMode !== 'manual' &&
-            (config.updateDocs?.applyLessons || options.applyLessons)
-          ) {
-            if (isShuttingDown()) break;
-
-            try {
-              const lessonsUpdateResult = await runUpdateLessons(
-                planData,
-                currentPlanFile,
-                config,
-                {
-                  executor: config.updateDocs?.executor,
-                  model: config.updateDocs?.model,
-                  baseDir: currentBaseDir,
-                  nonInteractive: noninteractive,
-                  terminalInput: terminalInputEnabled,
-                }
-              );
-              if (lessonsUpdateResult === true || lessonsUpdateResult === 'skipped-no-lessons') {
-                await updatePlanTimestampWithAutoSync(
-                  currentPlanFile,
-                  currentBaseDir,
-                  config,
-                  (plan) => {
-                    plan.lessonsAppliedAt = new Date().toISOString();
-                  }
-                );
-              }
-            } catch (err) {
-              error('Failed to apply lessons learned:', err as Error);
-              // Don't stop execution for lessons update failures
-            }
-
-            if (!isShuttingDown()) {
-              const failedAfterLessonsPostApplyCommand = await runPostApplyCommands();
-              if (failedAfterLessonsPostApplyCommand) {
-                error(
-                  `Agent stopping because required command "${failedAfterLessonsPostApplyCommand}" failed.`
-                );
-                hasError = true;
-                recordFailure(`Post-apply command failed: ${failedAfterLessonsPostApplyCommand}`);
                 if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
                 break;
               }

@@ -959,7 +959,6 @@ function createAgentCommand(command: Command, description: string) {
       '--update-docs <mode>',
       'Override when to update documentation: never, after-iteration, after-completion, after-review'
     )
-    .option('--apply-lessons', 'Apply lessons learned to documentation after plan completion')
     .allowExcessArguments(true)
     .allowUnknownOption(true)
     .action(async (planIdArg, options, command) => {

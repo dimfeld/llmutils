@@ -37,7 +37,7 @@ proofGeneration:
 
 Field notes:
 
-- `mode` controls the automatic agent batch-mode trigger only. `after-completion` runs the phase after final review / lessons updates and before parent cascade. `never` (or omitting `mode`) disables the automatic trigger; the manual CLI and web UI entry points still work as long as `instructions` is present.
+- `mode` controls the automatic agent batch-mode trigger only. `after-completion` runs the phase after final review and documentation updates, and before parent cascade. `never` (or omitting `mode`) disables the automatic trigger; the manual CLI and web UI entry points still work as long as `instructions` is present.
 - `instructions` is **prompt material, not a command**. Write it as if you were briefing a new contributor on how proofs work in this repo: what to start, what tooling is available, what conventions to follow, what to demonstrate.
 - Generated plans should include small `Manual Testing Runbooks` in their details. Proof generation will follow those runbooks first, including per-subplan runbook sections, then add any extra proof it finds valuable from the tasks or changed files.
 - `artifactsDir` defaults to `.tim/proofs`. If overridden it must be a workspace-relative path that is a strict descendant of `.tim/`, and must not be one of the reserved tim-managed children (`config`, `plans`, `logs`, `tmp`, `reviews`, `workspaces`, `workspace`, `cache`, `sessions`, `artifacts`). The runner refuses absolute paths, paths that escape the workspace, and symlinked path components when clearing the directory.

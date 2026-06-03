@@ -18,7 +18,6 @@ import { sendFailureReport, timestamp } from './agent_helpers.js';
 import type { SummaryCollector } from '../../summary/collector.js';
 import { runSimplify } from '../simplify.js';
 import { runUpdateDocs } from '../update-docs.js';
-import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
 import { ProofNotConfiguredError, runProofGeneration } from '../../proof/runner.js';
 import { isShuttingDown } from '../../shutdown_state.js';
@@ -83,7 +82,6 @@ export async function executeBatchMode(
     executorName,
     executionMode = 'normal',
     updateDocsMode = 'never',
-    applyLessons = false,
     finalReview,
     configPath,
     terminalInput,
@@ -100,7 +98,6 @@ export async function executeBatchMode(
     executorName?: string;
     executionMode?: 'normal' | 'simple' | 'tdd';
     updateDocsMode?: 'never' | 'after-iteration' | 'after-completion' | 'after-review' | 'manual';
-    applyLessons?: boolean;
     finalReview?: boolean;
     configPath?: string;
     terminalInput?: boolean;
@@ -631,52 +628,6 @@ Available tasks:\n\n${taskDescriptions}`,
           }
         } else if (updateDocsMode === 'after-review') {
           log('Skipping documentation update because final review produced follow-up work.');
-        }
-
-        if (
-          planStillCompleteAfterReview &&
-          updateDocsMode !== 'manual' &&
-          (config.updateDocs?.applyLessons || applyLessons)
-        ) {
-          if (isShuttingDown()) {
-            break;
-          }
-
-          try {
-            const lessonsUpdateResult = await runUpdateLessons(planData, currentPlanFile, config, {
-              executor: config.updateDocs?.executor,
-              model: config.updateDocs?.model,
-              baseDir,
-              terminalInput,
-            });
-            if (lessonsUpdateResult === true || lessonsUpdateResult === 'skipped-no-lessons') {
-              await updatePlanTimestampWithAutoSync(currentPlanFile, baseDir, config, (plan) => {
-                plan.lessonsAppliedAt = new Date().toISOString();
-              });
-            }
-          } catch (err) {
-            error('Failed to apply lessons learned:', err as Error);
-            // Don't stop execution for lessons update failures
-          }
-
-          if (!isShuttingDown()) {
-            const failedAfterLessonsPostApplyCommand = await runPostApplyCommands();
-            if (failedAfterLessonsPostApplyCommand) {
-              error(
-                `Batch mode stopping because required command "${failedAfterLessonsPostApplyCommand}" failed.`
-              );
-              hasError = true;
-              if (summaryCollector) summaryCollector.addError('Post-apply command failed');
-              break;
-            }
-          }
-        } else if (
-          !planStillCompleteAfterReview &&
-          (config.updateDocs?.applyLessons || applyLessons)
-        ) {
-          log(
-            'Skipping lessons-learned documentation update because final review produced follow-up work.'
-          );
         }
 
         if (isShuttingDown()) {

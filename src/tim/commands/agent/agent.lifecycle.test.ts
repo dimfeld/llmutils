@@ -711,8 +711,8 @@ describe('timAgent lifecycle integration', () => {
     expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
   });
 
-  test('manual mode skips both docs and lessons after plan completion (serial step)', async () => {
-    effectiveConfig.updateDocs = { mode: 'manual', applyLessons: true };
+  test('manual mode skips docs after plan completion (serial step)', async () => {
+    effectiveConfig.updateDocs = { mode: 'manual' };
 
     markStepDoneSpy.mockImplementationOnce(async () => ({
       message: 'Step marked',
@@ -738,8 +738,8 @@ describe('timAgent lifecycle integration', () => {
     expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
   });
 
-  test('manual mode skips both docs and lessons after plan completion (serial task)', async () => {
-    effectiveConfig.updateDocs = { mode: 'manual', applyLessons: true };
+  test('manual mode skips docs after plan completion (serial task)', async () => {
+    effectiveConfig.updateDocs = { mode: 'manual' };
 
     markTaskDoneSpy.mockImplementationOnce(async () => ({
       message: 'Task marked',
@@ -841,40 +841,8 @@ describe('timAgent lifecycle integration', () => {
     expect(new Date(updatedPlan.docsUpdatedAt!).toISOString()).toBe(updatedPlan.docsUpdatedAt);
   });
 
-  test('lessonsAppliedAt is set after successful runUpdateLessons (serial step)', async () => {
-    effectiveConfig.updateDocs = { mode: 'after-completion', applyLessons: true };
-
-    markStepDoneSpy.mockImplementationOnce(async () => ({
-      message: 'Step marked',
-      planComplete: true,
-    }));
-
-    let itemReturned = false;
-    findNextActionableItemImpl = () => {
-      if (itemReturned) return null;
-      itemReturned = true;
-      return {
-        type: 'step',
-        taskIndex: 0,
-        stepIndex: 0,
-        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
-      };
-    };
-
-    const { timAgent } = await import('./agent.js');
-    await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
-
-    expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
-
-    const updatedPlan = await readPlanFile(planFile);
-    expect(updatedPlan.lessonsAppliedAt).toBeDefined();
-    expect(new Date(updatedPlan.lessonsAppliedAt!).toISOString()).toBe(
-      updatedPlan.lessonsAppliedAt
-    );
-  });
-
-  test('after-review mode runs docs and lessons after a clean final review in serial task mode', async () => {
-    effectiveConfig.updateDocs = { mode: 'after-review', applyLessons: true };
+  test('after-review mode runs docs after a clean final review in serial task mode', async () => {
+    effectiveConfig.updateDocs = { mode: 'after-review' };
 
     const reviewModule = await import('../review.js');
     vi.mocked(reviewModule.handleReviewCommand).mockResolvedValueOnce({
@@ -909,15 +877,15 @@ describe('timAgent lifecycle integration', () => {
     await timAgent(1, { log: false, summary: false, serialTasks: true }, {});
 
     expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
-    expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+    expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
 
     const updatedPlan = await readPlanFile(planFile);
     expect(updatedPlan.docsUpdatedAt).toBeDefined();
-    expect(updatedPlan.lessonsAppliedAt).toBeDefined();
+    expect(updatedPlan.lessonsAppliedAt).toBeUndefined();
   });
 
-  test('after-review mode runs docs and lessons when final review is skipped in serial task mode', async () => {
-    effectiveConfig.updateDocs = { mode: 'after-review', applyLessons: true };
+  test('after-review mode runs docs when final review is skipped in serial task mode', async () => {
+    effectiveConfig.updateDocs = { mode: 'after-review' };
 
     markTaskDoneSpy.mockImplementationOnce(async () => ({
       message: 'Task marked',
@@ -945,15 +913,15 @@ describe('timAgent lifecycle integration', () => {
     await timAgent(1, { log: false, summary: false, serialTasks: true }, {});
 
     expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
-    expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+    expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
 
     const updatedPlan = await readPlanFile(planFile);
     expect(updatedPlan.docsUpdatedAt).toBeDefined();
-    expect(updatedPlan.lessonsAppliedAt).toBeDefined();
+    expect(updatedPlan.lessonsAppliedAt).toBeUndefined();
   });
 
   test('after-review mode runs docs when final review saves issues in serial task mode', async () => {
-    effectiveConfig.updateDocs = { mode: 'after-review', applyLessons: true };
+    effectiveConfig.updateDocs = { mode: 'after-review' };
 
     const reviewModule = await import('../review.js');
     vi.mocked(reviewModule.handleReviewCommand).mockResolvedValueOnce({
@@ -1029,41 +997,8 @@ describe('timAgent lifecycle integration', () => {
     expect(updatedPlan.docsUpdatedAt).toBeUndefined();
   });
 
-  test('lessonsAppliedAt is NOT set when runUpdateLessons throws', async () => {
-    effectiveConfig.updateDocs = { mode: 'after-completion', applyLessons: true };
-
-    runUpdateLessonsSpy.mockImplementationOnce(async () => {
-      throw new Error('lessons failed');
-    });
-
-    markStepDoneSpy.mockImplementationOnce(async () => ({
-      message: 'Step marked',
-      planComplete: true,
-    }));
-
-    let itemReturned = false;
-    findNextActionableItemImpl = () => {
-      if (itemReturned) return null;
-      itemReturned = true;
-      return {
-        type: 'step',
-        taskIndex: 0,
-        stepIndex: 0,
-        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
-      };
-    };
-
-    const { timAgent } = await import('./agent.js');
-    await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
-
-    expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
-
-    const updatedPlan = await readPlanFile(planFile);
-    expect(updatedPlan.lessonsAppliedAt).toBeUndefined();
-  });
-
-  test('both docsUpdatedAt and lessonsAppliedAt are set when both run successfully', async () => {
-    effectiveConfig.updateDocs = { mode: 'after-completion', applyLessons: true };
+  test('agent does not automatically apply lessons after completion', async () => {
+    effectiveConfig.updateDocs = { mode: 'after-completion' };
 
     markStepDoneSpy.mockImplementationOnce(async () => ({
       message: 'Step marked',
@@ -1086,117 +1021,11 @@ describe('timAgent lifecycle integration', () => {
     await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
 
     expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
-    expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+    expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
 
     const updatedPlan = await readPlanFile(planFile);
     expect(updatedPlan.docsUpdatedAt).toBeDefined();
-    expect(updatedPlan.lessonsAppliedAt).toBeDefined();
-    // Both should be valid ISO timestamps
-    expect(new Date(updatedPlan.docsUpdatedAt!).toISOString()).toBe(updatedPlan.docsUpdatedAt);
-    expect(new Date(updatedPlan.lessonsAppliedAt!).toISOString()).toBe(
-      updatedPlan.lessonsAppliedAt
-    );
-  });
-
-  test('lessonsAppliedAt is set when runUpdateLessons is skipped due to no lessons', async () => {
-    effectiveConfig.updateDocs = { mode: 'after-completion', applyLessons: true };
-
-    runUpdateLessonsSpy.mockImplementationOnce(async () => 'skipped-no-lessons' as const);
-
-    markStepDoneSpy.mockImplementationOnce(async () => ({
-      message: 'Step marked',
-      planComplete: true,
-    }));
-
-    let itemReturned = false;
-    findNextActionableItemImpl = () => {
-      if (itemReturned) return null;
-      itemReturned = true;
-      return {
-        type: 'step',
-        taskIndex: 0,
-        stepIndex: 0,
-        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
-      };
-    };
-
-    const { timAgent } = await import('./agent.js');
-    await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
-
-    expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
-
-    const updatedPlan = await readPlanFile(planFile);
-    expect(updatedPlan.lessonsAppliedAt).toBeDefined();
-    expect(new Date(updatedPlan.lessonsAppliedAt!).toISOString()).toBe(
-      updatedPlan.lessonsAppliedAt
-    );
-  });
-
-  test('lessonsAppliedAt is NOT set when runUpdateLessons returns false', async () => {
-    effectiveConfig.updateDocs = { mode: 'after-completion', applyLessons: true };
-
-    runUpdateLessonsSpy.mockImplementationOnce(async () => false);
-
-    markStepDoneSpy.mockImplementationOnce(async () => ({
-      message: 'Step marked',
-      planComplete: true,
-    }));
-
-    let itemReturned = false;
-    findNextActionableItemImpl = () => {
-      if (itemReturned) return null;
-      itemReturned = true;
-      return {
-        type: 'step',
-        taskIndex: 0,
-        stepIndex: 0,
-        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
-      };
-    };
-
-    const { timAgent } = await import('./agent.js');
-    await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
-
-    expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
-
-    const updatedPlan = await readPlanFile(planFile);
     expect(updatedPlan.lessonsAppliedAt).toBeUndefined();
-  });
-
-  test('manual mode with applyLessons CLI flag still skips lessons', async () => {
-    effectiveConfig.updateDocs = { mode: 'manual' };
-
-    markStepDoneSpy.mockImplementationOnce(async () => ({
-      message: 'Step marked',
-      planComplete: true,
-    }));
-
-    let itemReturned = false;
-    findNextActionableItemImpl = () => {
-      if (itemReturned) return null;
-      itemReturned = true;
-      return {
-        type: 'step',
-        taskIndex: 0,
-        stepIndex: 0,
-        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
-      };
-    };
-
-    const { timAgent } = await import('./agent.js');
-    await timAgent(
-      1,
-      {
-        log: false,
-        summary: false,
-        serialTasks: true,
-        finalReview: false,
-        applyLessons: true,
-      },
-      {}
-    );
-
-    expect(runUpdateDocsSpy).not.toHaveBeenCalled();
-    expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
+    expect(new Date(updatedPlan.docsUpdatedAt!).toISOString()).toBe(updatedPlan.docsUpdatedAt);
   });
 });

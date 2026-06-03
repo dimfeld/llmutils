@@ -841,7 +841,7 @@ export const timConfigSchema = z
          * - 'after-iteration': Update docs after each agent loop iteration
          * - 'after-completion': Update docs only when the entire plan is complete
          * - 'after-review': Update docs only when the agent run finishes without review issues
-         * - 'manual': Skip docs and lessons in agent; use 'tim finish' to run them
+         * - 'manual': Skip docs in agent; use 'tim finish' to run finalization
          */
         mode: z
           .enum(['never', 'after-iteration', 'after-completion', 'after-review', 'manual'])
@@ -868,11 +868,13 @@ export const timConfigSchema = z
           .describe(
             'Descriptions of files or patterns to exclude - these files should never be edited during doc updates'
           ),
-        /** Whether to apply lessons learned to documentation after plan completion */
+        /** Deprecated: retained for backward compatibility, but ignored by agent execution */
         applyLessons: z
           .boolean()
           .optional()
-          .describe('Whether to apply lessons learned to documentation after plan completion'),
+          .describe(
+            'Deprecated: retained for backward compatibility, but ignored by agent execution'
+          ),
       })
       .strict()
       .optional()

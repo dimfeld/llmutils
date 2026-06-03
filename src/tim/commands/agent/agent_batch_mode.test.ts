@@ -1013,45 +1013,6 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       expect(executePostApplyCommandSpy).toHaveBeenCalledTimes(2);
     });
 
-    test('post-apply commands run again after lessons update', async () => {
-      await createPlanFile({
-        tasks: [
-          {
-            title: 'Task 1',
-            description: 'First task',
-            steps: [{ prompt: 'Do task 1', done: false }],
-          },
-        ],
-      });
-
-      loadEffectiveConfigSpy.mockResolvedValue({
-        models: { execution: 'test-model' },
-        postApplyCommands: [{ title: 'Test Command', command: 'echo test' }],
-        updateDocs: { mode: 'never', applyLessons: true },
-      });
-
-      executorExecuteSpy.mockImplementation(async () => {
-        await createPlanFile({
-          tasks: [
-            {
-              title: 'Task 1',
-              description: 'First task',
-              steps: [{ prompt: 'Do task 1', done: true }],
-              done: true,
-            },
-          ],
-        });
-      });
-
-      const options = { log: false, nonInteractive: true, finalReview: false } as any;
-      const globalCliOptions = {};
-
-      await timAgent(1, options, globalCliOptions);
-
-      expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
-      expect(executePostApplyCommandSpy).toHaveBeenCalledTimes(2);
-    });
-
     test('batch mode skips after-iteration docs when shutdown is requested after execution', async () => {
       await createPlanFile({
         tasks: [
@@ -1155,63 +1116,6 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       }
 
       expect(runUpdateDocsSpy).not.toHaveBeenCalled();
-    });
-
-    test('batch mode skips lessons update when shutdown is requested after plan status is updated', async () => {
-      await createPlanFile({
-        tasks: [
-          {
-            title: 'Task 1',
-            description: 'First task',
-            steps: [{ prompt: 'Do task 1', done: false }],
-          },
-        ],
-      });
-
-      loadEffectiveConfigSpy.mockResolvedValue({
-        models: { execution: 'test-model' },
-        postApplyCommands: [],
-        updateDocs: { mode: 'never', applyLessons: true },
-      });
-
-      executorExecuteSpy.mockImplementationOnce(async () => {
-        await createPlanFile({
-          tasks: [
-            {
-              title: 'Task 1',
-              description: 'First task',
-              steps: [{ prompt: 'Do task 1', done: true }],
-              done: true,
-            },
-          ],
-        });
-      });
-
-      setPlanStatusSpy.mockImplementationOnce(async (filePath: string, status: string) => {
-        const content = await fs.readFile(filePath, 'utf-8');
-        const planData = yaml.parse(content.replace(/^#.*\n/, ''));
-        planData.status = status;
-        planData.updatedAt = new Date().toISOString();
-        const schemaComment =
-          '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
-        await fs.writeFile(filePath, schemaComment + yaml.stringify(planData));
-        setShuttingDown(130);
-      });
-
-      const originalExit = process.exit;
-      process.exit = ((code?: number) => {
-        throw new Error(`process.exit(${code})`);
-      }) as typeof process.exit;
-
-      try {
-        await expect(
-          timAgent(1, { log: false, nonInteractive: true, finalReview: false }, {})
-        ).rejects.toThrow('process.exit(130)');
-      } finally {
-        process.exit = originalExit;
-      }
-
-      expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -1689,7 +1593,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
   });
 
   describe('finalization timestamps and manual mode', () => {
-    test('after-review mode runs docs and lessons when final review is clean', async () => {
+    test('after-review mode runs docs when final review is clean', async () => {
       await createPlanFile({
         tasks: [
           {
@@ -1708,7 +1612,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       loadEffectiveConfigSpy.mockResolvedValue({
         models: { execution: 'test-model' },
         postApplyCommands: [],
-        updateDocs: { mode: 'after-review', applyLessons: true },
+        updateDocs: { mode: 'after-review' },
       });
 
       handleReviewCommandSpy.mockResolvedValue({ tasksAppended: 0, issuesSaved: 0 });
@@ -1735,15 +1639,15 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       await timAgent(1, options, {});
 
       expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
-      expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+      expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
 
       const finalContent = await fs.readFile(planFile, 'utf-8');
       const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
       expect(finalPlan.docsUpdatedAt).toBeDefined();
-      expect(finalPlan.lessonsAppliedAt).toBeDefined();
+      expect(finalPlan.lessonsAppliedAt).toBeUndefined();
     });
 
-    test('after-review mode runs docs and lessons when final review is skipped', async () => {
+    test('after-review mode runs docs when final review is skipped', async () => {
       await createPlanFile({
         tasks: [
           {
@@ -1757,7 +1661,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       loadEffectiveConfigSpy.mockResolvedValue({
         models: { execution: 'test-model' },
         postApplyCommands: [],
-        updateDocs: { mode: 'after-review', applyLessons: true },
+        updateDocs: { mode: 'after-review' },
       });
 
       executorExecuteSpy.mockImplementation(async () => {
@@ -1778,12 +1682,12 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
       expect(handleReviewCommandSpy).not.toHaveBeenCalled();
       expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
-      expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+      expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
 
       const finalContent = await fs.readFile(planFile, 'utf-8');
       const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
       expect(finalPlan.docsUpdatedAt).toBeDefined();
-      expect(finalPlan.lessonsAppliedAt).toBeDefined();
+      expect(finalPlan.lessonsAppliedAt).toBeUndefined();
     });
 
     test('after-review mode runs docs when final review saves issues', async () => {
@@ -1805,7 +1709,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       loadEffectiveConfigSpy.mockResolvedValue({
         models: { execution: 'test-model' },
         postApplyCommands: [],
-        updateDocs: { mode: 'after-review', applyLessons: true },
+        updateDocs: { mode: 'after-review' },
       });
 
       handleReviewCommandSpy.mockResolvedValue({ tasksAppended: 0, issuesSaved: 2 });
@@ -1958,7 +1862,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       expect(new Date(finalPlan.docsUpdatedAt).toISOString()).toBe(finalPlan.docsUpdatedAt);
     });
 
-    test('lessonsAppliedAt is set when runUpdateLessons returns true', async () => {
+    test('batch mode does not automatically apply lessons after completion', async () => {
       await createPlanFile({
         tasks: [
           {
@@ -1972,10 +1876,8 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       loadEffectiveConfigSpy.mockResolvedValue({
         models: { execution: 'test-model' },
         postApplyCommands: [],
-        updateDocs: { mode: 'never', applyLessons: true },
+        updateDocs: { mode: 'after-completion' },
       });
-
-      runUpdateLessonsSpy.mockResolvedValue(true);
 
       executorExecuteSpy.mockImplementation(async () => {
         await createPlanFile({
@@ -1995,104 +1897,15 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
       await timAgent(1, options, globalCliOptions);
 
-      expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
-
-      const finalContent = await fs.readFile(planFile, 'utf-8');
-      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
-      expect(finalPlan.lessonsAppliedAt).toBeDefined();
-      expect(new Date(finalPlan.lessonsAppliedAt).toISOString()).toBe(finalPlan.lessonsAppliedAt);
-    });
-
-    test('lessonsAppliedAt is set when runUpdateLessons returns skipped-no-lessons', async () => {
-      await createPlanFile({
-        tasks: [
-          {
-            title: 'Task 1',
-            description: 'First task',
-            steps: [{ prompt: 'Do task 1', done: false }],
-          },
-        ],
-      });
-
-      loadEffectiveConfigSpy.mockResolvedValue({
-        models: { execution: 'test-model' },
-        postApplyCommands: [],
-        updateDocs: { mode: 'never', applyLessons: true },
-      });
-
-      runUpdateLessonsSpy.mockResolvedValue('skipped-no-lessons' as const);
-
-      executorExecuteSpy.mockImplementation(async () => {
-        await createPlanFile({
-          tasks: [
-            {
-              title: 'Task 1',
-              description: 'First task',
-              steps: [{ prompt: 'Do task 1', done: true }],
-              done: true,
-            },
-          ],
-        });
-      });
-
-      const options = { log: false, nonInteractive: true, finalReview: false } as any;
-      const globalCliOptions = {};
-
-      await timAgent(1, options, globalCliOptions);
-
-      expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
-
-      const finalContent = await fs.readFile(planFile, 'utf-8');
-      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
-      expect(finalPlan.lessonsAppliedAt).toBeDefined();
-      expect(new Date(finalPlan.lessonsAppliedAt).toISOString()).toBe(finalPlan.lessonsAppliedAt);
-    });
-
-    test('lessonsAppliedAt is NOT set when runUpdateLessons returns false', async () => {
-      await createPlanFile({
-        tasks: [
-          {
-            title: 'Task 1',
-            description: 'First task',
-            steps: [{ prompt: 'Do task 1', done: false }],
-          },
-        ],
-      });
-
-      loadEffectiveConfigSpy.mockResolvedValue({
-        models: { execution: 'test-model' },
-        postApplyCommands: [],
-        updateDocs: { mode: 'never', applyLessons: true },
-      });
-
-      runUpdateLessonsSpy.mockResolvedValue(false);
-
-      executorExecuteSpy.mockImplementation(async () => {
-        await createPlanFile({
-          tasks: [
-            {
-              title: 'Task 1',
-              description: 'First task',
-              steps: [{ prompt: 'Do task 1', done: true }],
-              done: true,
-            },
-          ],
-        });
-      });
-
-      const options = { log: false, nonInteractive: true, finalReview: false } as any;
-      const globalCliOptions = {};
-
-      await timAgent(1, options, globalCliOptions);
-
-      expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+      expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
+      expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
 
       const finalContent = await fs.readFile(planFile, 'utf-8');
       const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
       expect(finalPlan.lessonsAppliedAt).toBeUndefined();
     });
 
-    test('manual mode skips both docs and lessons', async () => {
+    test('manual mode skips docs', async () => {
       await createPlanFile({
         tasks: [
           {
@@ -2106,7 +1919,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       loadEffectiveConfigSpy.mockResolvedValue({
         models: { execution: 'test-model' },
         postApplyCommands: [],
-        updateDocs: { mode: 'manual', applyLessons: true },
+        updateDocs: { mode: 'manual' },
       });
 
       executorExecuteSpy.mockImplementation(async () => {
