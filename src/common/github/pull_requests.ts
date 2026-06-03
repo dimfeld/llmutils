@@ -769,6 +769,12 @@ export interface PostedPullRequestComment {
   htmlUrl: string | null;
 }
 
+export interface PostedPullRequestReviewCommentReply {
+  id: number;
+  nodeId: string | null;
+  htmlUrl: string | null;
+}
+
 export interface GitHubRequestAuthOptions {
   authToken?: string;
 }
@@ -795,6 +801,44 @@ export async function postPullRequestComment(
   return {
     id: response.data.id,
     htmlUrl: response.data.html_url ?? null,
+  };
+}
+
+/**
+ * Posts an immediate reply to an existing top-level pull request review comment.
+ * Unlike addPullRequestReviewThreadReply without a review ID, this REST endpoint
+ * publishes the reply immediately instead of creating a pending review.
+ */
+export async function createPullRequestReviewCommentReply(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  commentId: number,
+  body: string,
+  options: GitHubRequestAuthOptions = {}
+): Promise<PostedPullRequestReviewCommentReply> {
+  const octokit = getOctokit(options.authToken);
+  const response = await octokit.request(
+    'POST /repos/{owner}/{repo}/pulls/{pull_number}/comments/{comment_id}/replies',
+    {
+      owner,
+      repo,
+      pull_number: prNumber,
+      comment_id: commentId,
+      body,
+    }
+  );
+
+  const data = response.data as {
+    id: number;
+    node_id?: string | null;
+    html_url?: string | null;
+  };
+
+  return {
+    id: data.id,
+    nodeId: data.node_id ?? null,
+    htmlUrl: data.html_url ?? null,
   };
 }
 

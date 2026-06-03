@@ -16,7 +16,10 @@ import {
 import { clearLaunchLock, isPlanLaunching, setLaunchLock } from '$lib/server/launch_lock.js';
 import { spawnPrFixProcess, spawnPrReviewGuideProcess } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
-import { addReplyToReviewThread, resolveReviewThread } from '$common/github/pull_requests.js';
+import {
+  createPullRequestReviewCommentReply,
+  resolveReviewThread,
+} from '$common/github/pull_requests.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import { createTaskFromReviewThread } from '$tim/commands/review.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
@@ -223,8 +226,45 @@ export const replyToThread = command(
       error(404, 'Review thread not found');
     }
 
-    const success = await addReplyToReviewThread(threadId, body);
-    if (success) {
+    const prStatus = db
+      .prepare(
+        `
+          SELECT owner, repo, pr_number
+          FROM pr_status
+          WHERE id = ?
+        `
+      )
+      .get(prStatusId) as { owner: string; repo: string; pr_number: number } | null;
+    if (!prStatus) {
+      error(404, 'Pull request not found');
+    }
+
+    const topLevelComment = db
+      .prepare(
+        `
+          SELECT database_id
+          FROM pr_review_thread_comment
+          WHERE review_thread_id = ? AND database_id IS NOT NULL
+          ORDER BY id
+          LIMIT 1
+        `
+      )
+      .get(threadRow.id) as Pick<PrReviewThreadCommentRow, 'database_id'> | null;
+    if (!topLevelComment?.database_id) {
+      error(
+        400,
+        'Cannot reply to this review thread because its top-level GitHub comment ID is not cached. Refresh PR status and try again.'
+      );
+    }
+
+    const reply = await createPullRequestReviewCommentReply(
+      prStatus.owner,
+      prStatus.repo,
+      prStatus.pr_number,
+      topLevelComment.database_id,
+      body
+    );
+    if (reply) {
       const author = (await getGitHubUsername({ githubUsername: config.githubUsername })) || 'You';
 
       // Use a subquery to re-resolve the thread row by stable key, in case a
@@ -248,8 +288,8 @@ export const replyToThread = command(
       `
         )
         .run(
-          `local-reply-${crypto.randomUUID()}`,
-          null,
+          reply.nodeId ?? `github-review-comment-${reply.id}`,
+          reply.id,
           author,
           body,
           null,
@@ -265,7 +305,7 @@ export const replyToThread = command(
       }
     }
 
-    return { success };
+    return { success: true };
   }
 );
 

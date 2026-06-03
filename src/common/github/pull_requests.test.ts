@@ -646,6 +646,50 @@ describe('postPullRequestComment', () => {
   });
 });
 
+describe('createPullRequestReviewCommentReply', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('creates an immediate review comment reply through the REST endpoint', async () => {
+    const request = vi.fn(async () => ({
+      data: {
+        id: 1234,
+        node_id: 'PRRC_reply',
+        html_url: 'https://github.com/example/repo/pull/5#discussion_r1234',
+      },
+    }));
+    vi.mocked(octokitModule.getOctokit).mockReturnValue({
+      request,
+    } as unknown as ReturnType<typeof octokitModule.getOctokit>);
+
+    const { createPullRequestReviewCommentReply } = await import('./pull_requests.ts');
+    const result = await createPullRequestReviewCommentReply(
+      'example',
+      'repo',
+      5,
+      987,
+      'fixed this'
+    );
+
+    expect(request).toHaveBeenCalledWith(
+      'POST /repos/{owner}/{repo}/pulls/{pull_number}/comments/{comment_id}/replies',
+      {
+        owner: 'example',
+        repo: 'repo',
+        pull_number: 5,
+        comment_id: 987,
+        body: 'fixed this',
+      }
+    );
+    expect(result).toEqual({
+      id: 1234,
+      nodeId: 'PRRC_reply',
+      htmlUrl: 'https://github.com/example/repo/pull/5#discussion_r1234',
+    });
+  });
+});
+
 describe('updatePullRequestComment', () => {
   afterEach(() => {
     vi.restoreAllMocks();

@@ -30,8 +30,17 @@ vi.mock('$lib/server/session_context.js', () => ({
   getSessionManager: () => currentManager,
 }));
 
-const { addReplyToReviewThreadMock, resolveReviewThreadMock } = vi.hoisted(() => ({
-  addReplyToReviewThreadMock: vi.fn<(threadId: string, body: string) => Promise<boolean>>(),
+const { createPullRequestReviewCommentReplyMock, resolveReviewThreadMock } = vi.hoisted(() => ({
+  createPullRequestReviewCommentReplyMock:
+    vi.fn<
+      (
+        owner: string,
+        repo: string,
+        prNumber: number,
+        commentId: number,
+        body: string
+      ) => Promise<{ id: number; nodeId: string | null; htmlUrl: string | null }>
+    >(),
   resolveReviewThreadMock: vi.fn<(threadId: string) => Promise<boolean>>(),
 }));
 
@@ -50,7 +59,7 @@ const { spawnPrFixProcessMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('$common/github/pull_requests.js', () => ({
-  addReplyToReviewThread: addReplyToReviewThreadMock,
+  createPullRequestReviewCommentReply: createPullRequestReviewCommentReplyMock,
   resolveReviewThread: resolveReviewThreadMock,
 }));
 
@@ -123,7 +132,7 @@ describe('convertThreadToTask', () => {
     currentManager = new SessionManager(currentDb);
     currentConfig = defaultConfig();
     projectId = getOrCreateProject(currentDb, 'repo-review-thread-actions').id;
-    addReplyToReviewThreadMock.mockReset();
+    createPullRequestReviewCommentReplyMock.mockReset();
     resolveReviewThreadMock.mockReset();
     spawnPrFixProcessMock.mockReset();
   });
@@ -740,7 +749,7 @@ describe('resolveThread', () => {
     currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
     currentConfig = defaultConfig();
     projectId = getOrCreateProject(currentDb, 'repo-review-thread-resolve').id;
-    addReplyToReviewThreadMock.mockReset();
+    createPullRequestReviewCommentReplyMock.mockReset();
     resolveReviewThreadMock.mockReset();
   });
 
@@ -927,7 +936,7 @@ describe('replyToThread', () => {
     currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
     currentConfig = defaultConfig();
     projectId = getOrCreateProject(currentDb, 'repo-review-thread-reply').id;
-    addReplyToReviewThreadMock.mockReset();
+    createPullRequestReviewCommentReplyMock.mockReset();
     resolveReviewThreadMock.mockReset();
   });
 
@@ -939,7 +948,7 @@ describe('replyToThread', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('posts a reply to the GitHub review thread', async () => {
+  test('posts a published reply to the top-level GitHub review comment', async () => {
     const { prStatusId } = seedPlanWithThread({
       projectId,
       planUuid: 'plan-reply-thread',
@@ -950,10 +959,22 @@ describe('replyToThread', () => {
         line: 4,
         isResolved: false,
         isOutdated: false,
-        comments: [],
+        comments: [
+          {
+            commentId: 'PRRC_top_level',
+            databaseId: 98765,
+            author: 'reviewer',
+            body: 'Please fix this.',
+            state: 'SUBMITTED',
+          },
+        ],
       },
     });
-    addReplyToReviewThreadMock.mockResolvedValue(true);
+    createPullRequestReviewCommentReplyMock.mockResolvedValue({
+      id: 123456,
+      nodeId: 'PRRC_reply',
+      htmlUrl: 'https://github.com/owner/repo/pull/42#discussion_r123456',
+    });
 
     await expect(
       invokeCommand(replyToThread, {
@@ -963,8 +984,11 @@ describe('replyToThread', () => {
       })
     ).resolves.toEqual({ success: true });
 
-    expect(addReplyToReviewThreadMock).toHaveBeenCalledWith(
-      'PRRT_reply_me',
+    expect(createPullRequestReviewCommentReplyMock).toHaveBeenCalledWith(
+      'owner',
+      'repo',
+      42,
+      98765,
       'Fixed in the latest commit.'
     );
     expect(
@@ -988,11 +1012,11 @@ describe('replyToThread', () => {
       body: 'Fixed in the latest commit.',
       state: 'SUBMITTED',
       diff_hunk: null,
-      database_id: null,
+      database_id: 123456,
     });
   });
 
-  test('returns success false when GitHub reply fails', async () => {
+  test('rejects reply when the top-level GitHub review comment ID is not cached', async () => {
     const { prStatusId } = seedPlanWithThread({
       projectId,
       planUuid: 'plan-reply-thread-fail',
@@ -1006,15 +1030,20 @@ describe('replyToThread', () => {
         comments: [],
       },
     });
-    addReplyToReviewThreadMock.mockResolvedValue(false);
-
     await expect(
       invokeCommand(replyToThread, {
         prStatusId,
         threadId: 'PRRT_reply_fail',
         body: 'Attempted reply.',
       })
-    ).resolves.toEqual({ success: false });
+    ).rejects.toMatchObject({
+      status: 400,
+      body: {
+        message:
+          'Cannot reply to this review thread because its top-level GitHub comment ID is not cached. Refresh PR status and try again.',
+      },
+    });
+    expect(createPullRequestReviewCommentReplyMock).not.toHaveBeenCalled();
     expect(
       currentDb
         .prepare(
@@ -1043,10 +1072,17 @@ describe('replyToThread', () => {
         line: 12,
         isResolved: false,
         isOutdated: false,
-        comments: [],
+        comments: [
+          {
+            commentId: 'PRRC_throw_top_level',
+            databaseId: 22222,
+            body: 'Please fix this.',
+            state: 'SUBMITTED',
+          },
+        ],
       },
     });
-    addReplyToReviewThreadMock.mockRejectedValue(new Error('Network error'));
+    createPullRequestReviewCommentReplyMock.mockRejectedValue(new Error('Network error'));
 
     await expect(
       invokeCommand(replyToThread, {
@@ -1085,7 +1121,7 @@ describe('replyToThread', () => {
       status: 404,
       body: { message: 'Review thread not found' },
     });
-    expect(addReplyToReviewThreadMock).not.toHaveBeenCalled();
+    expect(createPullRequestReviewCommentReplyMock).not.toHaveBeenCalled();
   });
 });
 
@@ -1102,7 +1138,7 @@ describe('startFixThreads', () => {
     currentManager = new SessionManager(currentDb);
     currentConfig = defaultConfig();
     projectId = getOrCreateProject(currentDb, 'repo-review-thread-start-fix').id;
-    addReplyToReviewThreadMock.mockReset();
+    createPullRequestReviewCommentReplyMock.mockReset();
     resolveReviewThreadMock.mockReset();
     spawnPrFixProcessMock.mockReset();
   });
