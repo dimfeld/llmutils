@@ -14,4 +14,12 @@ describe('pr fix command registration in tim.ts', () => {
     expect(prFixBlock).toContain("'-x, --executor <name>'");
     expect(prFixBlock).not.toContain("'-x, --orchestrator <name>'");
   });
+
+  test('registers tim pr comment command', async () => {
+    const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
+    const source = await fs.readFile(sourceFile, 'utf8');
+
+    expect(source).toContain(".command('comment <pr> <body...>')");
+    expect(source).toContain('handlePrCommentCommand');
+  });
 });

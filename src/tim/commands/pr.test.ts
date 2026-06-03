@@ -6,6 +6,7 @@ import { beforeAll, afterAll, beforeEach, describe, expect, vi, test } from 'vit
 import { clearGitHubTokenCache } from '../../common/github/token.js';
 import {
   buildReviewThreadFixPrompt,
+  handlePrCommentCommand,
   handlePrFixCommand,
   handlePrStatusCommand,
   handlePrLinkCommand,
@@ -66,6 +67,10 @@ vi.mock('../../common/github/webhook_ingest.js', () => ({
 vi.mock('../../common/github/pull_requests.js', () => ({
   addReplyToReviewThread: vi.fn(async (..._args: unknown[]) => true),
   fetchOpenPullRequests: vi.fn(async (..._args: unknown[]) => []),
+  postPullRequestComment: vi.fn(async (..._args: unknown[]) => ({
+    id: 123,
+    htmlUrl: 'https://github.com/example/repo/pull/701#issuecomment-123',
+  })),
   resolveReviewThread: vi.fn(async (..._args: unknown[]) => true),
 }));
 
@@ -168,6 +173,7 @@ import { ingestWebhookEvents as mockIngestWebhookEventsFn } from '../../common/g
 import {
   addReplyToReviewThread as mockAddReplyToReviewThreadFn,
   fetchOpenPullRequests as mockFetchOpenPullRequestsFn,
+  postPullRequestComment as mockPostPullRequestCommentFn,
   resolveReviewThread as mockResolveReviewThreadFn,
 } from '../../common/github/pull_requests.js';
 import {
@@ -219,6 +225,7 @@ const mockUnlinkPlanFromPr = vi.mocked(mockUnlinkPlanFromPrFn);
 const mockCleanOrphanedPrStatus = vi.mocked(mockCleanOrphanedPrStatusFn);
 const mockAddReplyToReviewThread = vi.mocked(mockAddReplyToReviewThreadFn);
 const mockFetchOpenPullRequests = vi.mocked(mockFetchOpenPullRequestsFn);
+const mockPostPullRequestComment = vi.mocked(mockPostPullRequestCommentFn);
 const mockResolveReviewThread = vi.mocked(mockResolveReviewThreadFn);
 const mockReadPlanFile = vi.mocked(mockReadPlanFileFn);
 const mockResolvePlanFromDb = vi.mocked(mockResolvePlanFromDbFn);
@@ -254,6 +261,7 @@ let currentPersistedPlan: AnyObject;
 const handlePrCommand = {
   handlePrStatusCommand,
   handlePrLinkCommand,
+  handlePrCommentCommand,
   handlePrReplyCommand,
   handlePrResolveCommand,
   handlePrUnlinkCommand,
@@ -330,6 +338,7 @@ describe('tim/commands/pr', () => {
     mockCleanOrphanedPrStatus.mockClear();
     mockAddReplyToReviewThread.mockClear();
     mockFetchOpenPullRequests.mockClear();
+    mockPostPullRequestComment.mockClear();
     mockResolveReviewThread.mockClear();
     mockReadPlanFile.mockClear();
     mockResolvePlanFromDb.mockClear();
@@ -379,10 +388,16 @@ describe('tim/commands/pr', () => {
     mockGetDatabase.mockImplementation(() => dbHandle);
     mockRefreshPrStatus.mockImplementation(async (_db: unknown, prUrl: string) => {
       const detail = currentRefreshedStatuses.get(prUrl);
-      if (!detail) {
-        throw new Error(`Unexpected PR URL in test: ${prUrl}`);
+      if (detail) {
+        return detail;
       }
-      return detail;
+      const autoLinkedDetail = currentAutoLinkedDetails.find(
+        (candidate) => candidate.status?.pr_url === prUrl
+      );
+      if (autoLinkedDetail) {
+        return autoLinkedDetail;
+      }
+      throw new Error(`Unexpected PR URL in test: ${prUrl}`);
     });
     mockEnsurePrStatusFresh.mockImplementation(async (_db: unknown, prUrl: string) => {
       const detail = currentRefreshedStatuses.get(prUrl);
@@ -434,6 +449,10 @@ describe('tim/commands/pr', () => {
     mockCleanOrphanedPrStatus.mockImplementation(() => {});
     mockAddReplyToReviewThread.mockImplementation(async () => true);
     mockFetchOpenPullRequests.mockImplementation(async () => []);
+    mockPostPullRequestComment.mockImplementation(async () => ({
+      id: 123,
+      htmlUrl: 'https://github.com/example/repo/pull/701#issuecomment-123',
+    }));
     mockResolveReviewThread.mockImplementation(async () => true);
     mockReadPlanFile.mockImplementation(async () => currentPersistedPlan);
     mockResolvePlanFromDb.mockImplementation(async () => ({
@@ -1223,6 +1242,39 @@ describe('tim/commands/pr', () => {
     );
   });
 
+  test('comment posts a standalone PR comment and logs success', async () => {
+    currentParsedIdentifier = { owner: 'example', repo: 'repo', number: 701 };
+
+    await handlePrCommand.handlePrCommentCommand(
+      'https://github.com/example/repo/pull/701',
+      'Fixed related feedback'
+    );
+
+    expect(mockPostPullRequestComment).toHaveBeenCalledWith(
+      'example',
+      'repo',
+      701,
+      'Fixed related feedback'
+    );
+    expect(
+      logs.some((line) =>
+        line.includes(
+          'Commented on example/repo#701: https://github.com/example/repo/pull/701#issuecomment-123'
+        )
+      )
+    ).toBe(true);
+  });
+
+  test('comment throws when the PR identifier cannot be parsed', async () => {
+    currentParsedIdentifier = null;
+
+    await expect(handlePrCommand.handlePrCommentCommand('not-a-pr', 'Comment')).rejects.toThrow(
+      'Could not parse pull request identifier: not-a-pr'
+    );
+
+    expect(mockPostPullRequestComment).not.toHaveBeenCalled();
+  });
+
   test('resolve resolves the GitHub review thread and logs success', async () => {
     await handlePrCommand.handlePrResolveCommand('thread-456');
 
@@ -1238,7 +1290,7 @@ describe('tim/commands/pr', () => {
     );
   });
 
-  test('buildReviewThreadFixPrompt includes plan and PR fetch context without cached thread bodies', () => {
+  test('buildReviewThreadFixPrompt includes fetched review thread comments grouped by PRRT thread ID', () => {
     const prompt = buildReviewThreadFixPrompt(
       {
         id: 251,
@@ -1274,15 +1326,15 @@ describe('tim/commands/pr', () => {
     expect(prompt).toContain('**Title:** Review Comment Actions');
     expect(prompt).toContain('**Goal:** Automatically address unresolved review feedback');
     expect(prompt).toContain('- https://github.com/example/repo/pull/123');
-    expect(prompt).toContain(
-      'gh pr view https://github.com/example/repo/pull/123 --json number,title,headRefName,baseRefName,url,author,reviewDecision'
-    );
-    expect(prompt).toContain('gh pr view');
-    expect(prompt).toContain('gh api repos/:owner/:repo/pulls/<number>/comments');
-    expect(prompt).toContain('general PR feedback');
+    expect(prompt).toContain('## Unresolved Review Threads');
+    expect(prompt).toContain('- PRRT thread ID: thread-123');
+    expect(prompt).toContain('This logic needs a null check.');
+    expect(prompt).toContain('Please add a test too.');
+    expect(prompt).toContain('## Additional PR Feedback');
+    expect(prompt).toContain('tim pr comment <PR URL or owner/repo#number> "explanation of fix"');
     expect(prompt).toContain('## User Feedback');
     expect(prompt).toContain(
-      'After fetching the review comments and related feedback, list the comments for the user before making code changes.'
+      'List the review threads above for the user before making code changes.'
     );
     expect(prompt).toContain(
       'Ask the user for feedback on which review comments to address and how.'
@@ -1291,8 +1343,7 @@ describe('tim/commands/pr', () => {
     expect(prompt).toContain('tim pr reply <Thread ID> "explanation of fix"');
     expect(prompt).toContain('Do not mark review comments or threads resolved.');
     expect(prompt).not.toContain('tim pr resolve <Thread ID>');
-    expect(prompt).not.toContain('thread-123');
-    expect(prompt).not.toContain('This logic needs a null check.');
+    expect(prompt).not.toContain('gh pr view');
   });
 
   test('buildReviewThreadFixPrompt handles no PR URLs', () => {
@@ -1304,7 +1355,7 @@ describe('tim/commands/pr', () => {
       []
     );
 
-    expect(prompt).toContain('gh pr view <pr-url-or-branch>');
+    expect(prompt).toContain('No unresolved review threads were provided.');
   });
 
   test('pr fix returns early when there are no unresolved review threads', async () => {
@@ -1328,7 +1379,7 @@ describe('tim/commands/pr', () => {
     expect(logs).toContain('Plan 248 has no unresolved PR review threads.');
   });
 
-  test('pr fix forwards unresolved thread seed context without prompting', async () => {
+  test('pr fix fetches and forwards unresolved review thread details without prompting', async () => {
     currentAutoLinkedDetails = [
       {
         ...createPrDetail(701, 'Explicit PR', 'success'),
@@ -1365,12 +1416,18 @@ describe('tim/commands/pr', () => {
       undefined
     );
     expect(mockExecutorExecute).toHaveBeenCalledWith(
-      expect.stringContaining('gh pr view https://github.com/example/repo/pull/701'),
+      expect.stringContaining('- PRRT thread ID: thread-1'),
       expect.objectContaining({ executionMode: 'planning', planId: '248' })
     );
     const context = String(mockExecutorExecute.mock.calls[0]?.[0] ?? '');
-    expect(context).not.toContain('src/auth.ts:42');
-    expect(context).not.toContain('src/user.ts:88');
+    expect(mockRefreshPrStatus).toHaveBeenCalledWith(
+      dbHandle,
+      'https://github.com/example/repo/pull/701'
+    );
+    expect(context).toContain('src/auth.ts:42');
+    expect(context).toContain('src/user.ts:88');
+    expect(context).toContain('Add a null check.');
+    expect(context).toContain('Handle the empty state.');
     expect(context).not.toContain('tim pr resolve');
   });
 
@@ -1401,7 +1458,7 @@ describe('tim/commands/pr', () => {
       undefined
     );
     expect(mockExecutorExecute).toHaveBeenCalledWith(
-      expect.stringContaining('gh pr view https://github.com/example/repo/pull/701'),
+      expect.stringContaining('- PRRT thread ID: thread-1'),
       expect.objectContaining({ executionMode: 'planning' })
     );
   });
@@ -1598,8 +1655,9 @@ describe('tim/commands/pr', () => {
     await handlePrFixCommand(248, {}, createNestedCommand());
 
     const context = String(mockExecutorExecute.mock.calls[0]?.[0] ?? '');
-    expect(context).toContain('gh pr view https://github.com/example/repo/pull/701');
-    expect(context).not.toContain('src/new.ts:20');
+    expect(context).toContain('https://github.com/example/repo/pull/701');
+    expect(context).toContain('src/new.ts:20');
+    expect(context).toContain('thread-unresolved');
     expect(context).not.toContain('src/old.ts:5');
     expect(context).not.toContain('thread-resolved');
   });
@@ -1635,8 +1693,8 @@ describe('tim/commands/pr', () => {
     const context = String(mockExecutorExecute.mock.calls[0]?.[0] ?? '');
     expect(context).toContain('https://github.com/example/repo/pull/701');
     expect(context).toContain('https://github.com/example/repo/pull/702');
-    expect(context).not.toContain('src/auth.ts:10');
-    expect(context).not.toContain('src/user.ts:20');
+    expect(context).toContain('src/auth.ts:10');
+    expect(context).toContain('src/user.ts:20');
   });
 
   test('pr fix skips prompting when terminalInput is false', async () => {
@@ -1828,7 +1886,7 @@ describe('tim/commands/pr', () => {
     expect(prompt).toContain('https://linear.review');
   });
 
-  test('buildReviewThreadFixPrompt uses branch as the gh PR selector when present', () => {
+  test('buildReviewThreadFixPrompt includes branch context without gh fetch instructions', () => {
     const prompt = buildReviewThreadFixPrompt(
       { id: 1, title: 'Test', branch: 'feature/x' } as any,
       [
@@ -1844,10 +1902,9 @@ describe('tim/commands/pr', () => {
       ]
     );
 
-    expect(prompt).toContain(
-      'gh pr view feature/x --json number,title,headRefName,baseRefName,url,author,reviewDecision'
-    );
-    expect(prompt).toContain('gh pr view feature/x --comments');
+    expect(prompt).toContain('**Branch:** feature/x');
+    expect(prompt).toContain('- PRRT thread ID: thread-1');
+    expect(prompt).not.toContain('gh pr view');
   });
 
   test('buildReviewThreadFixPrompt omits goal line for plan without goal', () => {
@@ -1889,8 +1946,10 @@ describe('tim/commands/pr', () => {
 
     expect(prompt).toContain('- https://github.com/example/repo/pull/10');
     expect(prompt).toContain('- https://github.com/example/repo/pull/20');
-    expect(prompt).not.toContain('thread-a');
-    expect(prompt).not.toContain('thread-b');
+    expect(prompt).toContain('- PRRT thread ID: thread-a');
+    expect(prompt).toContain('- PRRT thread ID: thread-b');
+    expect(prompt).toContain('Fix A.');
+    expect(prompt).toContain('Fix B.');
   });
 
   test('resolve updates local DB cache after successful GitHub mutation', async () => {

@@ -16,6 +16,7 @@ import { resolveGitHubToken } from '../../common/github/token.js';
 import {
   addReplyToReviewThread,
   fetchOpenPullRequests,
+  postPullRequestComment,
   resolveReviewThread,
 } from '../../common/github/pull_requests.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
@@ -681,6 +682,21 @@ export async function handlePrReplyCommand(threadId: string, body: string): Prom
   log(chalk.green(`Replied to review thread ${threadId}`));
 }
 
+export async function handlePrCommentCommand(prIdentifier: string, body: string): Promise<void> {
+  if (!resolveGitHubToken()) {
+    throw new Error('GITHUB_TOKEN environment variable is required to comment on pull requests');
+  }
+
+  const parsed = await parsePrOrIssueNumber(prIdentifier);
+  if (!parsed) {
+    throw new Error(`Could not parse pull request identifier: ${prIdentifier}`);
+  }
+
+  const comment = await postPullRequestComment(parsed.owner, parsed.repo, parsed.number, body);
+  const location = comment.htmlUrl ? `: ${comment.htmlUrl}` : '';
+  log(chalk.green(`Commented on ${parsed.owner}/${parsed.repo}#${parsed.number}${location}`));
+}
+
 export async function handlePrResolveCommand(threadId: string): Promise<void> {
   const success = await resolveReviewThread(threadId);
 
@@ -701,20 +717,92 @@ export async function handlePrResolveCommand(threadId: string): Promise<void> {
   log(chalk.green(`Resolved review thread ${threadId}`));
 }
 
+function formatNullableLine(label: string, value: string | number | null | undefined): string {
+  return `- ${label}: ${value ?? 'n/a'}`;
+}
+
+function formatReviewThreadLocation(thread: PrReviewThreadDetail): string {
+  const startLine = thread.thread.start_line ?? thread.thread.original_start_line;
+  const endLine = thread.thread.line ?? thread.thread.original_line;
+
+  if (startLine && endLine && startLine !== endLine) {
+    return `${thread.thread.path}:${startLine}-${endLine}`;
+  }
+
+  const line = endLine ?? startLine;
+  return line ? `${thread.thread.path}:${line}` : thread.thread.path;
+}
+
+function indentBlock(value: string, spaces: number): string {
+  const prefix = ' '.repeat(spaces);
+  return value
+    .split('\n')
+    .map((line) => `${prefix}${line}`)
+    .join('\n');
+}
+
+function formatReviewThreadForPrompt(
+  item: { thread: PrReviewThreadDetail; prUrl: string },
+  index: number
+): string[] {
+  const { thread, prUrl } = item;
+  const lines = [
+    `### Thread ${index + 1}: ${formatReviewThreadLocation(thread)}`,
+    '',
+    formatNullableLine('PR', prUrl),
+    formatNullableLine('PRRT thread ID', thread.thread.thread_id),
+    formatNullableLine('File', thread.thread.path),
+    formatNullableLine('Line', thread.thread.line),
+    formatNullableLine('Original line', thread.thread.original_line),
+    formatNullableLine('Start line', thread.thread.start_line),
+    formatNullableLine('Original start line', thread.thread.original_start_line),
+    formatNullableLine('Outdated', thread.thread.is_outdated ? 'yes' : 'no'),
+    '',
+    'Related comments in this review thread:',
+  ];
+
+  if (thread.comments.length === 0) {
+    lines.push('- No comments were returned for this thread.', '');
+    return lines;
+  }
+
+  thread.comments.forEach((comment, commentIndex) => {
+    lines.push(
+      '',
+      `#### Comment ${commentIndex + 1}`,
+      '',
+      formatNullableLine('Comment ID', comment.comment_id),
+      formatNullableLine('Database ID', comment.database_id),
+      formatNullableLine('Author', comment.author),
+      formatNullableLine('Created at', comment.created_at),
+      formatNullableLine('State', comment.state),
+      '',
+      'Body:',
+      '',
+      indentBlock(comment.body ?? '(empty)', 2)
+    );
+
+    if (comment.diff_hunk) {
+      lines.push('', 'Diff hunk:', '', '```diff', comment.diff_hunk, '```');
+    }
+  });
+
+  lines.push('');
+  return lines;
+}
+
 export function buildReviewThreadFixPrompt(
   planData: PlanSchema,
   threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>
 ): string {
   const prUrls = [...new Set(threads.map(({ prUrl }) => prUrl))];
   const branch = planData.branch?.trim() || 'Current working branch';
-  const prSelector = planData.branch?.trim() || prUrls[0] || '<pr-url-or-branch>';
   const prompt = [
     '# Address Pull Request Review Comments',
     '',
     'You are addressing review comments on a pull request for the current branch.',
     '',
-    'The PR branch and PR URLs are already known from the plan context below; do not spend time auto-discovering the branch.',
-    'Fetch the full PR feedback yourself before changing code so review threads, general PR comments, and reviews that are not tied to a diff line are all included.',
+    'The PR branch, PR URLs, unresolved review threads, and related review-thread comments are already provided below; do not spend time auto-discovering or re-fetching them before starting.',
     '',
     '## Plan Context',
     '',
@@ -738,24 +826,34 @@ export function buildReviewThreadFixPrompt(
   }
 
   prompt.push(
-    '## Fetch Full Review Feedback',
+    '## Unresolved Review Threads',
     '',
-    'Before making code changes, fetch the complete PR feedback for the branch/PR above:',
-    `- \`gh pr view ${prSelector} --json number,title,headRefName,baseRefName,url,author,reviewDecision\``,
-    `- \`gh pr view ${prSelector} --comments\``,
-    '- `gh api repos/:owner/:repo/pulls/<number>/comments` for line-level review comments',
-    '- `gh api repos/:owner/:repo/pulls/<number>/reviews` for submitted review summaries',
+    'Each thread below includes the PRRT thread ID to use with `tim pr reply` and all comments currently linked to that review thread.'
+  );
+
+  if (threads.length === 0) {
+    prompt.push('', 'No unresolved review threads were provided.', '');
+  } else {
+    prompt.push('');
+    threads.forEach((thread, index) => {
+      prompt.push(...formatReviewThreadForPrompt(thread, index));
+    });
+  }
+
+  prompt.push(
+    '## Additional PR Feedback',
     '',
-    'List the comments you found in your working notes before implementing fixes, including author, file, line when present, comment summary, and whether each item is a review-thread comment or general PR feedback.',
+    'If the fetched thread data points to related PR feedback that is not represented as a review thread, address it when appropriate and leave a standalone PR comment using:',
+    '   `tim pr comment <PR URL or owner/repo#number> "explanation of fix"`',
     '',
-    'For feedback that is not a review-thread comment, leave an appropriate PR comment describing the change after addressing it.',
+    'Do not use `gh` to post review-thread replies or standalone PR comments unless `tim pr reply` or `tim pr comment` fails.',
     ''
   );
 
   prompt.push(
     '## User Feedback',
     '',
-    'After fetching the review comments and related feedback, list the comments for the user before making code changes. Include enough context to distinguish each item, such as author, file, line, comment summary, and whether it is a review-thread comment or general PR feedback.',
+    'List the review threads above for the user before making code changes. Include enough context to distinguish each item, such as author, file, line, and comment summary.',
     '',
     'Ask the user for feedback on which review comments to address and how. If the user has already given clear instructions, follow those instructions; otherwise wait for direction before implementing fixes.',
     '',
@@ -768,8 +866,9 @@ export function buildReviewThreadFixPrompt(
     '5. Run type checking, linting, and tests appropriate to the files you changed. Add tests only when necessary to cover the fixes.',
     '6. Reply to each addressed review thread with a concise explanation of what changed using:',
     '   `tim pr reply <Thread ID> "explanation of fix"`',
-    '7. For addressed feedback that was not a review-thread comment, leave an appropriate PR comment reply describing the change.',
-    '8. Before finishing, make sure you have reviewed all fetched AI comments.',
+    '7. For addressed feedback that was not a review-thread comment, leave an appropriate PR comment describing the change using:',
+    '   `tim pr comment <PR URL or owner/repo#number> "explanation of fix"`',
+    '8. Before finishing, make sure you have reviewed all provided AI comments.',
     '',
     'Do not mark review comments or threads resolved.',
     'Do not update the status of the issue or PR.',
@@ -781,6 +880,43 @@ export function buildReviewThreadFixPrompt(
   );
 
   return prompt.join('\n');
+}
+
+async function refreshPrFixStatuses(
+  db: ReturnType<typeof getDatabase>,
+  planUuid: string,
+  prUrls: string[] | undefined
+): Promise<PrStatusDetail[]> {
+  const cachedStatuses = getPrStatusForPlan(db, planUuid, prUrls, {
+    includeReviewThreads: true,
+  });
+  const urlsToRefresh = [
+    ...new Set([...(prUrls ?? []), ...cachedStatuses.map((detail) => detail.status.pr_url)]),
+  ];
+
+  if (urlsToRefresh.length === 0) {
+    return cachedStatuses;
+  }
+
+  const refreshedStatuses: PrStatusDetail[] = [];
+  const errors: string[] = [];
+  for (const prUrl of urlsToRefresh) {
+    try {
+      refreshedStatuses.push(await refreshPrStatus(db, prUrl));
+    } catch (err) {
+      errors.push(`${prUrl}: ${(err as Error).message}`);
+    }
+  }
+
+  if (errors.length > 0 && refreshedStatuses.length === 0) {
+    throw new Error(`Failed to fetch PR review data: ${errors.join('; ')}`);
+  }
+
+  for (const errorMessage of errors) {
+    log(chalk.yellow(`Warning: failed to fetch PR review data for ${errorMessage}`));
+  }
+
+  return refreshedStatuses;
 }
 
 export async function handlePrFixCommand(
@@ -851,9 +987,7 @@ async function executePrFixCommand({
     ? deduplicatePrUrls(plan.pullRequest).valid
     : undefined;
   const prUrls = dedupedUrls?.length ? dedupedUrls : undefined;
-  const prStatuses = getPrStatusForPlan(db, planUuid, prUrls, {
-    includeReviewThreads: true,
-  });
+  const prStatuses = await refreshPrFixStatuses(db, planUuid, prUrls);
 
   const unresolvedThreads: Array<{ thread: PrReviewThreadDetail; prUrl: string }> = [];
   for (const prStatus of prStatuses) {
