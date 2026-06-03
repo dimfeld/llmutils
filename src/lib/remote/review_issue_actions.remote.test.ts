@@ -461,6 +461,61 @@ describe('review issue remote actions', () => {
     expect(tasks[1]?.revision).toBe(1);
   });
 
+  test('addReviewIssueToPlanTask appends a task for a plan-spawned review without a PR', async () => {
+    const planUuid = '00000000-0000-4000-8000-000000000260';
+    seedPlan({
+      uuid: planUuid,
+      planId: 270,
+      status: 'needs_review',
+      tasks: [{ title: 'Existing task', description: 'Already there', done: false }],
+    });
+    const review = seedReview({
+      planUuid,
+      branch: 'feature/review-issue-task-plan-spawned',
+    });
+    const issue = seedReviewIssue(
+      review.id,
+      makeIssue('critical', 'testing', 'Missing regression coverage', 'src/example.ts', 42)
+    );
+
+    expect(review.pr_url).toBeNull();
+    expect(review.plan_uuid).toBe(planUuid);
+
+    await invokeCommand(addReviewIssueToPlanTask, {
+      reviewId: review.id,
+      issueId: issue.id,
+      planUuid,
+    });
+
+    const plan = getPlanByUuid(currentDb, planUuid);
+    const tasks = getPlanTasksByUuid(currentDb, planUuid);
+
+    expect(plan?.status).toBe('in_progress');
+    expect(tasks).toHaveLength(2);
+    expect(tasks[1]?.description).toContain(`[source:review-issue:${issue.id}]`);
+  });
+
+  test('addReviewIssueToPlanTask rejects a plan-spawned review for a different plan', async () => {
+    seedPlan({ uuid: '00000000-0000-4000-8000-000000000261', planId: 271 });
+    seedPlan({ uuid: '00000000-0000-4000-8000-000000000262', planId: 272 });
+    const review = seedReview({
+      planUuid: '00000000-0000-4000-8000-000000000261',
+      branch: 'feature/review-issue-task-plan-mismatch',
+    });
+    const issue = seedReviewIssue(review.id, makeIssue('major', 'bug', 'Mismatched plan'));
+
+    await expect(
+      invokeCommand(addReviewIssueToPlanTask, {
+        reviewId: review.id,
+        issueId: issue.id,
+        planUuid: '00000000-0000-4000-8000-000000000262',
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { message: `Review ${review.id} is not associated with this plan` },
+    });
+  });
+
   test('addReviewIssueToPlanTask allows only one concurrent conversion for the same issue', async () => {
     const review = seedReview({
       prUrl: 'https://github.com/example/repo/pull/406',
@@ -673,16 +728,19 @@ describe('review issue remote actions', () => {
 
   function seedReview({
     prUrl,
+    planUuid,
     branch,
     baseBranch = 'main',
   }: {
-    prUrl: string;
+    prUrl?: string;
+    planUuid?: string;
     branch: string;
     baseBranch?: string;
   }) {
     return createReview(currentDb, {
       projectId,
       prUrl,
+      planUuid,
       branch,
       baseBranch,
       status: 'complete',

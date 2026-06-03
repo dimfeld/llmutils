@@ -50,11 +50,28 @@ const reviewIssueTaskSchema = z.object({
   planUuid: z.string().min(1),
 });
 
-function requirePrUrlForReview(review: { id: number; pr_url: string | null }): string {
-  if (review.pr_url == null) {
-    error(400, `Review ${review.id} is not associated with a PR`);
+/**
+ * Verify that a review is associated with the given plan, either directly (the
+ * review was spawned from the plan and carries its `plan_uuid`) or indirectly
+ * (the review's PR is linked to exactly this plan).
+ */
+function assertReviewLinkedToPlan(
+  db: Database,
+  review: { id: number; pr_url: string | null; plan_uuid: string | null },
+  planUuid: string
+): void {
+  if (review.plan_uuid === planUuid) {
+    return;
   }
-  return review.pr_url;
+
+  if (review.pr_url == null) {
+    error(400, `Review ${review.id} is not associated with this plan`);
+  }
+
+  const linkedPlans = getLinkedPlansByPrUrl(db, [review.pr_url]).get(review.pr_url) ?? [];
+  if (linkedPlans.length !== 1 || linkedPlans[0]?.planUuid !== planUuid) {
+    error(400, 'PR is not linked to this plan');
+  }
 }
 
 export const removeReviewIssue = command(issueIndexSchema, async ({ planUuid, issueIndex }) => {
@@ -197,11 +214,7 @@ export const addReviewIssueToPlanTask = command(
       error(404, 'Review issue not found');
     }
 
-    const prUrl = requirePrUrlForReview(review);
-    const linkedPlans = getLinkedPlansByPrUrl(db, [prUrl]).get(prUrl) ?? [];
-    if (linkedPlans.length !== 1 || linkedPlans[0]?.planUuid !== planUuid) {
-      error(400, 'PR is not linked to this plan');
-    }
+    assertReviewLinkedToPlan(db, review, planUuid);
 
     const plan = getPlanByUuid(db, planUuid);
     if (!plan) {
@@ -258,11 +271,7 @@ function assertReviewIssueCanBeAddedToPlanTask(
     error(404, 'Review issue not found');
   }
 
-  const prUrl = requirePrUrlForReview(review);
-  const linkedPlans = getLinkedPlansByPrUrl(db, [prUrl]).get(prUrl) ?? [];
-  if (linkedPlans.length !== 1 || linkedPlans[0]?.planUuid !== planUuid) {
-    error(400, 'PR is not linked to this plan');
-  }
+  assertReviewLinkedToPlan(db, review, planUuid);
 
   if (!getPlanByUuid(db, planUuid)) {
     error(404, 'Plan not found');
