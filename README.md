@@ -591,6 +591,17 @@ lifecycle:
       runIn: [agent]
 ```
 
+Each command may define `command` (run at startup), `shutdown` (run when the agent run ends), or both. For `mode: daemon`, `command` starts a background process and `shutdown` (optional) stops it gracefully; daemons are also force-killed on exit if no `shutdown` is given. Shutdown commands run in reverse config order.
+
+**Shutdown-only commands:** Omit `command` and provide only `shutdown` to run something exclusively at shutdown (for cleanup that has no startup counterpart):
+
+```yaml
+lifecycle:
+  commands:
+    - title: Tear down test database
+      shutdown: 'dropdb "$DATABASE_NAME"'
+```
+
 Use `runIn: [agent]`, `runIn: [review]`, or `runIn: [proof]` to scope setup to a specific command context. Omit `runIn` for shared setup.
 
 **Secrets:** The `environment` block is for deterministic, non-secret configuration values. Store secrets in your shell environment, global `~/.config/tim/config.yml` (which is not checked into source control), or workspace `.env` files.

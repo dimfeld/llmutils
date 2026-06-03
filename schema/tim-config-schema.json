@@ -310,6 +310,7 @@
                 "type": "string"
               },
               "command": {
+                "description": "Command to run at startup. Omit to declare a shutdown-only command (requires a shutdown command).",
                 "type": "string"
               },
               "mode": {
@@ -365,8 +366,7 @@
               }
             },
             "required": [
-              "title",
-              "command"
+              "title"
             ]
           }
         }

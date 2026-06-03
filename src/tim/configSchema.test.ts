@@ -588,6 +588,43 @@ describe('configSchema', () => {
       expect(result.lifecycle?.commands?.[0]?.onlyWorkspaceType).toBe('auto');
     });
 
+    test('accepts a shutdown-only lifecycle command without a startup command', () => {
+      const config = {
+        lifecycle: {
+          commands: [
+            {
+              title: 'cleanup',
+              shutdown: 'docker compose down',
+            },
+          ],
+        },
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.lifecycle?.commands?.[0]?.command).toBeUndefined();
+      expect(result.lifecycle?.commands?.[0]?.shutdown).toBe('docker compose down');
+    });
+
+    test('rejects a lifecycle command with neither command nor shutdown', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          lifecycle: {
+            commands: [{ title: 'empty' }],
+          },
+        })
+      ).toThrow();
+    });
+
+    test('rejects a daemon-mode lifecycle command without a command', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          lifecycle: {
+            commands: [{ title: 'daemon', mode: 'daemon', shutdown: 'stop' }],
+          },
+        })
+      ).toThrow();
+    });
+
     test('accepts lifecycle commands with runIn contexts', () => {
       const config = {
         lifecycle: {

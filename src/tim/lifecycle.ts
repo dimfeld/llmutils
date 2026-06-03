@@ -162,8 +162,16 @@ export class LifecycleManager {
         continue;
       }
 
-      log(`Running lifecycle command "${command.title}"...`);
       state.shouldRunShutdown = Boolean(command.shutdown);
+
+      if (!command.command) {
+        // Shutdown-only command: nothing to run at startup, just register the
+        // shutdown handler that ran above.
+        state.startupState = 'skipped';
+        continue;
+      }
+
+      log(`Running lifecycle command "${command.title}"...`);
       let exitCode: number;
       try {
         exitCode = await this.runShellCommand(command, {
@@ -390,6 +398,10 @@ export class LifecycleManager {
   }
 
   private async spawnDaemon(command: LifecycleCommand): Promise<LifecycleSubprocess> {
+    if (!command.command) {
+      // Guarded by the config schema, which requires a command for daemon mode.
+      throw new Error(`Lifecycle daemon "${command.title}" is missing a command to run.`);
+    }
     const shellCommand = getShellCommand(command.command);
     log(`> ${shellCommand.join(' ')}`);
     const env = await this.buildCommandEnv(command.env);

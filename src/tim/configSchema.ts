@@ -37,29 +37,54 @@ export const postApplyCommandSchema = z.object({
 export const lifecycleCommandContextSchema = z.enum(['agent', 'review', 'proof']);
 export type LifecycleCommandContext = z.infer<typeof lifecycleCommandContextSchema>;
 
-export const lifecycleCommandSchema = z.object({
-  title: z.string(),
-  command: z.string(),
-  mode: z
-    .enum(['run', 'daemon'])
-    .optional()
-    .describe('Whether to run the command and wait for it to finish or run it in the background.'),
-  check: z
-    .string()
-    .optional()
-    .describe('Command to check if a daemon mode lifecycle command has finished initializting'),
-  shutdown: z.string().optional().describe('Command to shutdown a daemon mode lifecycle command'),
-  workingDirectory: z.string().optional(),
-  env: z.record(z.string(), z.string()).optional(),
-  allowFailure: z.boolean().optional(),
-  onlyWorkspaceType: z.enum(['auto', 'standard', 'primary']).optional(),
-  runIn: z
-    .array(lifecycleCommandContextSchema)
-    .optional()
-    .describe(
-      'Optional list of command contexts in which this lifecycle command should run. Omit to run in all contexts.'
-    ),
-});
+export const lifecycleCommandSchema = z
+  .object({
+    title: z.string(),
+    command: z
+      .string()
+      .optional()
+      .describe(
+        'Command to run at startup. Omit to declare a shutdown-only command (requires a shutdown command).'
+      ),
+    mode: z
+      .enum(['run', 'daemon'])
+      .optional()
+      .describe(
+        'Whether to run the command and wait for it to finish or run it in the background.'
+      ),
+    check: z
+      .string()
+      .optional()
+      .describe('Command to check if a daemon mode lifecycle command has finished initializting'),
+    shutdown: z.string().optional().describe('Command to shutdown a daemon mode lifecycle command'),
+    workingDirectory: z.string().optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    allowFailure: z.boolean().optional(),
+    onlyWorkspaceType: z.enum(['auto', 'standard', 'primary']).optional(),
+    runIn: z
+      .array(lifecycleCommandContextSchema)
+      .optional()
+      .describe(
+        'Optional list of command contexts in which this lifecycle command should run. Omit to run in all contexts.'
+      ),
+  })
+  .superRefine((cmd, ctx) => {
+    if (!cmd.command && !cmd.shutdown) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'A lifecycle command must define "command", "shutdown", or both.',
+        path: ['command'],
+      });
+    }
+
+    if (!cmd.command && cmd.mode === 'daemon') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'A daemon-mode lifecycle command requires a "command" to run.',
+        path: ['command'],
+      });
+    }
+  });
 
 export const subprocessMonitorMatcherSchema = z.union([
   z.string().min(1),

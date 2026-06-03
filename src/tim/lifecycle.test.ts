@@ -273,6 +273,33 @@ describe('LifecycleManager', () => {
     expect(events).toEqual(['start-1', 'start-2', 'stop-2', 'stop-1']);
   });
 
+  test('shutdown-only command runs nothing at startup but runs on shutdown', async () => {
+    const events = await startupAndShutdown([
+      {
+        title: 'shutdown only',
+        shutdown: appendLineCommand(logFile, 'stop-only'),
+      },
+    ]);
+
+    expect(events).toEqual(['stop-only']);
+  });
+
+  test('shutdown-only command still runs alongside ordinary commands in reverse order', async () => {
+    const events = await startupAndShutdown([
+      {
+        title: 'shutdown only',
+        shutdown: appendLineCommand(logFile, 'stop-cleanup'),
+      },
+      {
+        title: 'normal',
+        command: appendLineCommand(logFile, 'start-normal'),
+        shutdown: appendLineCommand(logFile, 'stop-normal'),
+      },
+    ]);
+
+    expect(events).toEqual(['start-normal', 'stop-normal', 'stop-cleanup']);
+  });
+
   test('startup check and shutdown commands receive tim environment with shell expansion', async () => {
     const manager = new LifecycleManager(
       [
