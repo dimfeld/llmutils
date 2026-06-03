@@ -1696,14 +1696,6 @@ prCommand
   });
 
 prCommand
-  .command('reply <threadId> <body...>')
-  .description('Reply to a GitHub PR review thread')
-  .action(async (threadId, body) => {
-    const { handlePrReplyCommand } = await import('./commands/pr.js');
-    await handlePrReplyCommand(threadId, body.join(' ')).catch(handleCommandError);
-  });
-
-prCommand
   .command('comment <pr> <body...>')
   .description('Add a standalone comment to a GitHub PR')
   .action(async (pr, body) => {

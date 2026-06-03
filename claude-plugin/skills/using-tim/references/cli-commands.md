@@ -386,7 +386,7 @@ tim pr description 123 --copy
 
 ### tim pr fix
 
-Fix unresolved PR review threads by spawning an agent session. The agent receives review thread context (file paths, line numbers, diff hunks, comment bodies) and uses `tim pr reply` and `tim pr resolve` to respond to and resolve threads after making code changes.
+Fix unresolved PR review threads by spawning an agent session. The agent receives review thread context (file paths, line numbers, diff hunks, comment bodies, and PRRT thread IDs). Agents should batch addressed review-thread replies with GitHub GraphQL by creating one pending review per PR, adding `addPullRequestReviewThreadReply` replies with `pullRequestReviewId`, and submitting the review with `submitPullRequestReview(event: COMMENT)`. Use `tim pr comment` only for feedback that is not represented as a review thread, and do not resolve review threads.
 
 ```bash
 tim pr fix 123                                 # Interactive thread selection
@@ -397,17 +397,9 @@ tim pr fix 123 --auto-workspace                # Auto-select workspace
 tim pr fix 123 --all --no-terminal-input       # Non-interactive (web UI mode)
 ```
 
-### tim pr reply
-
-Post a reply to a PR review thread via the GitHub API. Primarily used by agents during `tim pr fix` execution.
-
-```bash
-tim pr reply <threadId> "Your reply message"
-```
-
 ### tim pr resolve
 
-Resolve a PR review thread via the GitHub API. Primarily used by agents during `tim pr fix` execution.
+Resolve a PR review thread via the GitHub API. This is a manual command; `tim pr fix` agents are instructed not to resolve threads.
 
 ```bash
 tim pr resolve <threadId>

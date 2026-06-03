@@ -14,7 +14,6 @@ import {
 } from '../../common/github/webhook_ingest.js';
 import { resolveGitHubToken } from '../../common/github/token.js';
 import {
-  addReplyToReviewThread,
   fetchOpenPullRequests,
   postPullRequestComment,
   resolveReviewThread,
@@ -672,16 +671,6 @@ export async function handlePrStatusCommand(
   }
 }
 
-export async function handlePrReplyCommand(threadId: string, body: string): Promise<void> {
-  const success = await addReplyToReviewThread(threadId, body);
-
-  if (!success) {
-    throw new Error(`Failed to reply to review thread ${threadId}`);
-  }
-
-  log(chalk.green(`Replied to review thread ${threadId}`));
-}
-
 export async function handlePrCommentCommand(prIdentifier: string, body: string): Promise<void> {
   if (!resolveGitHubToken()) {
     throw new Error('GITHUB_TOKEN environment variable is required to comment on pull requests');
@@ -828,7 +817,7 @@ export function buildReviewThreadFixPrompt(
   prompt.push(
     '## Unresolved Review Threads',
     '',
-    'Each thread below includes the PRRT thread ID to use with `tim pr reply` and all comments currently linked to that review thread.'
+    'Each thread below includes the PRRT thread ID and all comments currently linked to that review thread.'
   );
 
   if (threads.length === 0) {
@@ -846,7 +835,7 @@ export function buildReviewThreadFixPrompt(
     'If the fetched thread data points to related PR feedback that is not represented as a review thread, address it when appropriate and leave a standalone PR comment using:',
     '   `tim pr comment <PR URL or owner/repo#number> "explanation of fix"`',
     '',
-    'Do not use `gh` to post review-thread replies or standalone PR comments unless `tim pr reply` or `tim pr comment` fails.',
+    'Do not use standalone PR comments for review-thread replies. Use GraphQL review-thread replies for review threads, and `tim pr comment` only for feedback that is not represented as a review thread.',
     ''
   );
 
@@ -864,11 +853,26 @@ export function buildReviewThreadFixPrompt(
     '3. Ask the user for feedback on which review comments to address and how, as described above.',
     '4. Apply focused changes that resolve the raised concerns without altering unrelated code.',
     '5. Run type checking, linting, and tests appropriate to the files you changed. Add tests only when necessary to cover the fixes.',
-    '6. Reply to each addressed review thread with a concise explanation of what changed using:',
-    '   `tim pr reply <Thread ID> "explanation of fix"`',
+    '6. Reply to each addressed review thread with a concise explanation of what changed using one pending GraphQL review per PR, then submit that pending review with event `COMMENT`.',
     '7. For addressed feedback that was not a review-thread comment, leave an appropriate PR comment describing the change using:',
     '   `tim pr comment <PR URL or owner/repo#number> "explanation of fix"`',
     '8. Before finishing, make sure you have reviewed all provided AI comments.',
+    '',
+    '## GraphQL Review Reply Workflow',
+    '',
+    'Batch review-thread replies through GitHub GraphQL instead of a tim CLI command:',
+    '',
+    '1. Group addressed threads by PR URL.',
+    '2. For each PR, get its PR node ID. You can query the PR by owner/repo/number from the PR URL:',
+    "   `gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){id}}}' -f owner=OWNER -f repo=REPO -F number=NUMBER`",
+    '3. Create one pending review for that PR and save the returned `pullRequestReview.id`:',
+    '   `mutation($pr:ID!){addPullRequestReview(input:{pullRequestId:$pr}){pullRequestReview{id}}}`',
+    '4. Add each addressed thread reply to that pending review with the provided PRRT thread ID:',
+    '   `mutation($review:ID!,$thread:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewId:$review,pullRequestReviewThreadId:$thread,body:$body}){comment{id url}}}`',
+    '5. Submit the pending review so the replies are published:',
+    '   `mutation($review:ID!){submitPullRequestReview(input:{pullRequestReviewId:$review,event:COMMENT}){pullRequestReview{id url state}}}`',
+    '',
+    'Do not leave a pending review unsubmitted. If a GraphQL mutation fails, report the failing PR URL, thread ID, and mutation step.',
     '',
     'Do not mark review comments or threads resolved.',
     'Do not update the status of the issue or PR.',

@@ -280,7 +280,7 @@ tim rebase 123 --auto-workspace
 
 Review guides can include non-actionable `<annotation file="..." line="...">...</annotation>` callouts. These render as Notes in the guide viewer sidebar and inline diff overlay, but are not submitted to GitHub or converted into cleanup work.
 
-`tim pr fix <planId>` starts an agent to address PR review feedback. Before launching the agent, tim refreshes the linked PR status from GitHub and injects unresolved review threads into the prompt with each PRRT thread ID and its related comments grouped together. The agent replies to addressed review threads with `tim pr reply` or leaves standalone PR comments with `tim pr comment`, but does not resolve threads or request reviews. Configure defaults with `prFix.executor`, `prFix.model`, and `prFix.effort`; CLI flags override config values.
+`tim pr fix <planId>` starts an agent to address PR review feedback. Before launching the agent, tim refreshes the linked PR status from GitHub and injects unresolved review threads into the prompt with each PRRT thread ID and its related comments grouped together. The agent batches addressed review-thread replies through GitHub GraphQL pending reviews, submits those reviews, and uses `tim pr comment` only for feedback that is not represented as a review thread. It does not resolve threads or request reviews. Configure defaults with `prFix.executor`, `prFix.model`, and `prFix.effort`; CLI flags override config values.
 
 ```yaml
 prFix:

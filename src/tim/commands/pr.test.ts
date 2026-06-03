@@ -10,7 +10,6 @@ import {
   handlePrFixCommand,
   handlePrStatusCommand,
   handlePrLinkCommand,
-  handlePrReplyCommand,
   handlePrResolveCommand,
   handlePrUnlinkCommand,
 } from './pr.js';
@@ -65,7 +64,6 @@ vi.mock('../../common/github/webhook_ingest.js', () => ({
 }));
 
 vi.mock('../../common/github/pull_requests.js', () => ({
-  addReplyToReviewThread: vi.fn(async (..._args: unknown[]) => true),
   fetchOpenPullRequests: vi.fn(async (..._args: unknown[]) => []),
   postPullRequestComment: vi.fn(async (..._args: unknown[]) => ({
     id: 123,
@@ -171,7 +169,6 @@ import {
 import { getWebhookServerUrl as mockGetWebhookServerUrlFn } from '../../common/github/webhook_client.js';
 import { ingestWebhookEvents as mockIngestWebhookEventsFn } from '../../common/github/webhook_ingest.js';
 import {
-  addReplyToReviewThread as mockAddReplyToReviewThreadFn,
   fetchOpenPullRequests as mockFetchOpenPullRequestsFn,
   postPullRequestComment as mockPostPullRequestCommentFn,
   resolveReviewThread as mockResolveReviewThreadFn,
@@ -223,7 +220,6 @@ const mockGetPrStatusForPlan = vi.mocked(mockGetPrStatusForPlanFn);
 const mockLinkPlanToPr = vi.mocked(mockLinkPlanToPrFn);
 const mockUnlinkPlanFromPr = vi.mocked(mockUnlinkPlanFromPrFn);
 const mockCleanOrphanedPrStatus = vi.mocked(mockCleanOrphanedPrStatusFn);
-const mockAddReplyToReviewThread = vi.mocked(mockAddReplyToReviewThreadFn);
 const mockFetchOpenPullRequests = vi.mocked(mockFetchOpenPullRequestsFn);
 const mockPostPullRequestComment = vi.mocked(mockPostPullRequestCommentFn);
 const mockResolveReviewThread = vi.mocked(mockResolveReviewThreadFn);
@@ -262,7 +258,6 @@ const handlePrCommand = {
   handlePrStatusCommand,
   handlePrLinkCommand,
   handlePrCommentCommand,
-  handlePrReplyCommand,
   handlePrResolveCommand,
   handlePrUnlinkCommand,
 };
@@ -336,7 +331,6 @@ describe('tim/commands/pr', () => {
     mockLinkPlanToPr.mockClear();
     mockUnlinkPlanFromPr.mockClear();
     mockCleanOrphanedPrStatus.mockClear();
-    mockAddReplyToReviewThread.mockClear();
     mockFetchOpenPullRequests.mockClear();
     mockPostPullRequestComment.mockClear();
     mockResolveReviewThread.mockClear();
@@ -447,7 +441,6 @@ describe('tim/commands/pr', () => {
     mockLinkPlanToPr.mockImplementation(() => {});
     mockUnlinkPlanFromPr.mockImplementation(() => {});
     mockCleanOrphanedPrStatus.mockImplementation(() => {});
-    mockAddReplyToReviewThread.mockImplementation(async () => true);
     mockFetchOpenPullRequests.mockImplementation(async () => []);
     mockPostPullRequestComment.mockImplementation(async () => ({
       id: 123,
@@ -1227,21 +1220,6 @@ describe('tim/commands/pr', () => {
     expect(mockSyncPlanPrLinks).not.toHaveBeenCalled();
   });
 
-  test('reply posts to the GitHub review thread and logs success', async () => {
-    await handlePrCommand.handlePrReplyCommand('thread-123', 'Fixed this');
-
-    expect(mockAddReplyToReviewThread).toHaveBeenCalledWith('thread-123', 'Fixed this');
-    expect(logs.some((line) => line.includes('Replied to review thread thread-123'))).toBe(true);
-  });
-
-  test('reply throws when posting to the GitHub review thread fails', async () => {
-    mockAddReplyToReviewThread.mockResolvedValueOnce(false);
-
-    await expect(handlePrCommand.handlePrReplyCommand('thread-123', 'Fixed this')).rejects.toThrow(
-      'Failed to reply to review thread thread-123'
-    );
-  });
-
   test('comment posts a standalone PR comment and logs success', async () => {
     currentParsedIdentifier = { owner: 'example', repo: 'repo', number: 701 };
 
@@ -1340,8 +1318,18 @@ describe('tim/commands/pr', () => {
       'Ask the user for feedback on which review comments to address and how.'
     );
     expect(prompt).toContain('otherwise wait for direction before implementing fixes');
-    expect(prompt).toContain('tim pr reply <Thread ID> "explanation of fix"');
+    expect(prompt).toContain('## GraphQL Review Reply Workflow');
+    expect(prompt).toContain('Group addressed threads by PR URL.');
+    expect(prompt).toContain('addPullRequestReview(input:{pullRequestId:$pr})');
+    expect(prompt).toContain(
+      'addPullRequestReviewThreadReply(input:{pullRequestReviewId:$review,pullRequestReviewThreadId:$thread,body:$body})'
+    );
+    expect(prompt).toContain(
+      'submitPullRequestReview(input:{pullRequestReviewId:$review,event:COMMENT})'
+    );
+    expect(prompt).toContain('Do not leave a pending review unsubmitted.');
     expect(prompt).toContain('Do not mark review comments or threads resolved.');
+    expect(prompt).not.toContain('tim pr reply');
     expect(prompt).not.toContain('tim pr resolve <Thread ID>');
     expect(prompt).not.toContain('gh pr view');
   });
@@ -1881,7 +1869,9 @@ describe('tim/commands/pr', () => {
 
     expect(prompt).toContain('**Branch:** 248-pr-status-monitoring');
     expect(prompt).toContain('Do not mark review comments or threads resolved.');
-    expect(prompt).toContain('tim pr reply <Thread ID>');
+    expect(prompt).toContain('one pending GraphQL review per PR');
+    expect(prompt).toContain('submitPullRequestReview');
+    expect(prompt).not.toContain('tim pr reply');
     expect(prompt).not.toContain('tim pr resolve');
     expect(prompt).toContain('https://linear.review');
   });
