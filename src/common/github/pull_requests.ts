@@ -599,55 +599,6 @@ export function parseDiff(diff: string) {
 }
 
 /**
- * Adds a reply comment to a pull request review thread
- * @param pullRequestReviewThreadId The ID of the review thread to reply to
- * @param body The content of the reply comment
- * @returns Promise that resolves to true if the comment was added successfully, false otherwise
- */
-export async function addReplyToReviewThread(
-  pullRequestReviewThreadId: string,
-  body: string
-): Promise<boolean> {
-  const token = resolveGitHubToken();
-  if (!token) {
-    error('GITHUB_TOKEN is not set. Cannot post reply to review thread.');
-    return false;
-  }
-
-  const octokit = getOctokit();
-
-  const mutation = `
-    mutation AddReplyToThread($threadId: ID!, $body: String!) {
-      addPullRequestReviewThreadReply(
-        input: {
-          pullRequestReviewThreadId: $threadId,
-          body: $body
-        }
-      ) {
-        comment {
-          id
-          url
-        }
-      }
-    }
-  `;
-
-  try {
-    await octokit.graphql(mutation, {
-      threadId: pullRequestReviewThreadId,
-      body,
-    });
-
-    debugLog(`Successfully added reply to thread ${pullRequestReviewThreadId}`);
-    return true;
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    warn(`Failed to add reply to thread ${pullRequestReviewThreadId}: ${errorMessage}`);
-    return false;
-  }
-}
-
-/**
  * Resolves a pull request review thread
  * @param threadId The GraphQL node ID of the review thread to resolve
  * @returns Promise that resolves to true if the thread was resolved successfully, false otherwise
