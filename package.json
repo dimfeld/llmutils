@@ -2,8 +2,7 @@
   "name": "llmutils",
   "private": true,
   "bin": {
-    "tim": "./src/tim/tim.ts",
-    "tim-web": "'./build/index.js"
+    "tim": "./src/tim/tim.ts"
   },
   "type": "module",
   "module": "src/index.ts",
