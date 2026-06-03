@@ -676,6 +676,23 @@ describe('configSchema', () => {
       expect(result.lifecycle?.commands?.[0]?.runIn).toEqual(['proof']);
     });
 
+    test('accepts pr-fix as a lifecycle command context', () => {
+      const config = {
+        lifecycle: {
+          commands: [
+            {
+              title: 'PR fix prep',
+              command: 'pnpm install',
+              runIn: ['pr-fix'],
+            },
+          ],
+        },
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.lifecycle?.commands?.[0]?.runIn).toEqual(['pr-fix']);
+    });
+
     test('rejects invalid runIn contexts', () => {
       expect(() =>
         timConfigSchema.parse({

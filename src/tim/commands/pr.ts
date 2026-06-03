@@ -65,6 +65,8 @@ import {
 } from '../executors/schemas.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { LifecycleManager } from '../lifecycle.js';
+import { isShuttingDown } from '../shutdown_state.js';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -1027,6 +1029,7 @@ async function executePrFixCommand({
   let currentPlanFile = planPath ?? '';
   let touchedWorkspacePath: string | null = null;
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
+  let lifecycleManager: LifecycleManager | undefined;
   let executionError: unknown;
 
   try {
@@ -1076,6 +1079,30 @@ async function executePrFixCommand({
       }
     }
 
+    const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(
+      config,
+      currentBaseDir,
+      {
+        planId: plan.id,
+        planUuid: plan.uuid,
+        planFilePath: currentPlanFile || undefined,
+        branch: plan.branch,
+      },
+      repoRoot
+    );
+    if (config.lifecycle?.commands && config.lifecycle.commands.length > 0 && !isShuttingDown()) {
+      const workspaceInfo = getWorkspaceInfoByPath(currentBaseDir);
+      lifecycleManager = new LifecycleManager(
+        config.lifecycle.commands,
+        currentBaseDir,
+        workspaceInfo?.workspaceType,
+        'pr-fix',
+        undefined,
+        { timEnvironment }
+      );
+      await lifecycleManager.startup();
+    }
+
     const sharedExecutorOptions: ExecutorCommonOptions = {
       baseDir: currentBaseDir,
       model,
@@ -1083,17 +1110,7 @@ async function executePrFixCommand({
       terminalInput: terminalInputEnabled,
       closeTerminalInputOnResult: false,
       disableInactivityTimeout: true,
-      timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
-        config,
-        currentBaseDir,
-        {
-          planId: plan.id,
-          planUuid: plan.uuid,
-          planFilePath: currentPlanFile || undefined,
-          branch: plan.branch,
-        },
-        repoRoot
-      ),
+      timEnvironment,
     };
     const executor = buildExecutorAndLog(
       executorName,
@@ -1112,6 +1129,15 @@ async function executePrFixCommand({
     executionError = err;
   } finally {
     let roundTripError: unknown;
+    let lifecycleShutdownError: unknown;
+    if (lifecycleManager) {
+      try {
+        await lifecycleManager.shutdown();
+      } catch (err) {
+        lifecycleShutdownError = err;
+      }
+    }
+
     if (roundTripContext) {
       try {
         await runPostExecutionWorkspaceSync(roundTripContext, 'PR review fixes');
@@ -1129,10 +1155,17 @@ async function executePrFixCommand({
     }
 
     if (executionError) {
+      if (lifecycleShutdownError) {
+        warn(`Lifecycle shutdown failed after PR fix error: ${lifecycleShutdownError as Error}`);
+      }
       if (roundTripError) {
         warn(`Workspace sync failed after PR fix error: ${roundTripError as Error}`);
       }
       throw executionError;
+    }
+
+    if (lifecycleShutdownError) {
+      throw lifecycleShutdownError;
     }
 
     if (roundTripError) {

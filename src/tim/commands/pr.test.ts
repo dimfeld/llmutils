@@ -23,6 +23,12 @@ const executorMocks = vi.hoisted(() => ({
   execute: vi.fn(async (..._args: unknown[]) => {}),
 }));
 
+const lifecycleMocks = vi.hoisted(() => ({
+  ctor: vi.fn(),
+  startup: vi.fn(async () => {}),
+  shutdown: vi.fn(async () => {}),
+}));
+
 vi.mock('../../logging.js', () => ({
   log: vi.fn((..._args: unknown[]) => {}),
 }));
@@ -126,6 +132,17 @@ vi.mock('../headless.js', () => ({
   runWithHeadlessAdapterIfEnabled: vi.fn(async (options: { callback: () => Promise<unknown> }) =>
     options.callback()
   ),
+}));
+
+vi.mock('../lifecycle.js', () => ({
+  LifecycleManager: class {
+    constructor(...args: unknown[]) {
+      lifecycleMocks.ctor(...args);
+    }
+
+    startup = lifecycleMocks.startup;
+    shutdown = lifecycleMocks.shutdown;
+  },
 }));
 
 vi.mock('../workspace/workspace_setup.js', () => ({
@@ -353,6 +370,9 @@ describe('tim/commands/pr', () => {
       executorId === 'codex-cli' ? 'gpt-5.5' : 'opus'
     );
     mockExecutorExecute.mockClear();
+    lifecycleMocks.ctor.mockClear();
+    lifecycleMocks.startup.mockClear();
+    lifecycleMocks.shutdown.mockClear();
     mockSyncPlanToDb.mockClear();
     mockTimAgent.mockClear();
     mockLog.mockImplementation((...args: unknown[]) => {
@@ -1604,6 +1624,69 @@ describe('tim/commands/pr', () => {
       'PR review fixes'
     );
     expect(mockTouchWorkspaceInfo).toHaveBeenCalledWith('/tmp/workspace');
+  });
+
+  test('pr fix runs lifecycle hooks in pr-fix context for the selected workspace', async () => {
+    currentPlan.branch = 'feature/pr-status-monitoring';
+    currentWorkspaceInfo = {
+      workspaceType: 'auto',
+    };
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Add a null check.' }],
+          }),
+        ],
+      },
+    ];
+    mockLoadEffectiveConfig.mockResolvedValueOnce({
+      lifecycle: {
+        commands: [
+          {
+            title: 'PR fix setup',
+            command: 'pnpm install',
+            shutdown: 'pnpm stop',
+            runIn: ['pr-fix'],
+          },
+        ],
+      },
+    } as any);
+
+    await handlePrFixCommand(248, { autoWorkspace: true }, createNestedCommand());
+
+    expect(lifecycleMocks.ctor).toHaveBeenCalledWith(
+      [
+        {
+          title: 'PR fix setup',
+          command: 'pnpm install',
+          shutdown: 'pnpm stop',
+          runIn: ['pr-fix'],
+        },
+      ],
+      '/tmp/workspace',
+      'auto',
+      'pr-fix',
+      undefined,
+      {
+        timEnvironment: expect.objectContaining({
+          context: expect.objectContaining({
+            planId: '248',
+            planUuid: 'plan-248',
+            planFilePath: '/tmp/workspace/.tim/plans/248.plan.md',
+            branch: 'feature/pr-status-monitoring',
+            workspacePath: '/tmp/workspace',
+          }),
+        }),
+      }
+    );
+    expect(lifecycleMocks.startup).toHaveBeenCalledTimes(1);
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    expect(lifecycleMocks.shutdown).toHaveBeenCalledTimes(1);
   });
 
   test('pr fix requires GITHUB_TOKEN', async () => {
