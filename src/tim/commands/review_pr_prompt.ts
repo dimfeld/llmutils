@@ -286,10 +286,19 @@ ${getDiffInstructions(metadata, useJj)}
 
 ## Required Workflow
 1. Determine the full set of changed files from the PR diff.
-2. Group the changes into a small number of logical sections (e.g. core logic, data model, API, UI, tests, docs). Aim for the fewest sections that capture the shape of the change.
-3. For each section, write 1-3 sentences summarizing what changed and why, so a reviewer understands the change without opening every file. Use parallel subagents if it makes sense.
-4. Identify the specific places a human reviewer should pay special attention to: risky logic, security/permission/auth concerns, data migrations, concurrency, error handling, public API or schema changes, missing tests, or anything subtle. Reference concrete files (and line numbers where helpful) using \`path/to/file.ts:42\` style.
-5. If nothing in the PR warrants special scrutiny, say so plainly instead of inventing concerns.
+2. If this is a jj-enabled repository, run this command to compute non-test change stats and include the result in the review guide so reviewers can judge review burden:
+
+\`\`\`bash
+jj diff --stat \\
+  -f 'latest(heads(bookmarks() & ancestors(@--)) | fork_point(@ | main), 1)' \\
+  'all() ~ (glob:"**/*.spec.*" | glob:"**/*.test.*")'
+\`\`\`
+
+If the file list is large, place the detailed file list inside a \`<details>\` block and show only the summary line with total files and lines changed outside the details block.
+3. Group the changes into a small number of logical sections (e.g. core logic, data model, API, UI, tests, docs). Aim for the fewest sections that capture the shape of the change.
+4. For each section, write 1-3 sentences summarizing what changed and why, so a reviewer understands the change without opening every file. Use parallel subagents if it makes sense.
+5. Identify the specific places a human reviewer should pay special attention to: risky logic, security/permission/auth concerns, data migrations, concurrency, error handling, public API or schema changes, missing tests, or anything subtle. Reference concrete files (and line numbers where helpful) using \`path/to/file.ts:42\` style.
+6. If nothing in the PR warrants special scrutiny, say so plainly instead of inventing concerns.
 
 ## Output Format
 Write GitHub-flavored markdown using this structure:
@@ -298,6 +307,9 @@ Write GitHub-flavored markdown using this structure:
 ## Review Guide
 
 _Brief one or two sentence overview of the change._
+
+### Non-test change stats
+<summary line from jj diff --stat, or "Not available" when the repository is not jj-enabled>
 
 ### Sections
 - **<section name>** — what changed and why.

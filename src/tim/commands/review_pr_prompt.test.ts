@@ -82,6 +82,13 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('Pay special attention to');
     expect(prompt).toContain('Group the changes into a small number of logical sections');
     expect(prompt).toContain('Do not paste diffs or large code blocks');
+    expect(prompt).toContain('Non-test change stats');
+    expect(prompt).toContain(
+      "jj diff --stat \\\n  -f 'latest(heads(bookmarks() & ancestors(@--)) | fork_point(@ | main), 1)'"
+    );
+    expect(prompt).toContain('glob:"**/*.spec.*"');
+    expect(prompt).toContain('glob:"**/*.test.*"');
+    expect(prompt).toContain('place the detailed file list inside a `<details>` block');
     expect(prompt).toContain('/work/.tim/tmp/pr-review-guide-comment-42.md');
   });
 
