@@ -28,7 +28,11 @@ import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { clearPlanBaseTracking, setPlanBaseTracking } from '../db/plan.js';
 import { resolveEffectivePlanBase } from '../plans/base_plan_resolution.js';
-import { generateBranchNameFromPlan, resolveBranchPrefix } from './branch.js';
+import {
+  generateBranchNameFromPlan,
+  resolveBranchPrefix,
+  resolveParentPlanForBranchName,
+} from './branch.js';
 import { findNextPlanFromDb } from './plan_discovery.js';
 import { pullWorkspaceRefIfExists } from './workspace.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
@@ -100,6 +104,7 @@ export async function handleRebaseCommand(
   const branchName = resolved.plan.branch
     ? resolved.plan.branch
     : generateBranchNameFromPlan(resolved.plan, {
+        parentPlan: await resolveParentPlanForBranchName(resolved.plan, resolved.repoRoot),
         branchPrefix: resolveBranchPrefix({
           config: effectiveConfig,
           db: getDatabase(),

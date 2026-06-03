@@ -82,11 +82,11 @@ export function resolveBranchPrefix(options: {
 
 export function generateBranchNameFromPlan(
   plan: PlanSchema,
-  options?: { branchPrefix?: string }
+  options?: { branchPrefix?: string; parentPlan?: PlanSchema }
 ): string {
   const title = plan.title || plan.goal || 'plan';
   const slug = slugify(title);
-  const issueId = getIssueIdFromPlanIssues(plan);
+  const issueId = getIssueIdFromPlanIssues(plan, options?.parentPlan);
   const slugSegment = slug.length > 0 ? slug : undefined;
   const branchPrefix = normalizeBranchPrefix(options?.branchPrefix);
   if (branchPrefix.length >= MAX_BRANCH_NAME_LENGTH) {
@@ -103,24 +103,82 @@ export function generateBranchNameFromPlan(
   }
 }
 
-function getIssueIdFromPlanIssues(plan: PlanSchema): string | undefined {
+interface BranchIssueReference {
+  branchIssueId: string;
+  identity: string;
+}
+
+function parseBranchIssueReference(rawIssue: string): BranchIssueReference | undefined {
+  const linearParsedIssue = parseLinearIssueIdentifier(rawIssue);
+  if (linearParsedIssue) {
+    const identifier = linearParsedIssue.identifier.toLowerCase();
+    const owner = linearParsedIssue.owner?.toLowerCase();
+    return {
+      branchIssueId: identifier,
+      identity: owner ? `linear:${owner}:${identifier}` : `linear:${identifier}`,
+    };
+  }
+
+  const githubParsedIssue = parseGitHubIssueIdentifier(rawIssue);
+  if (githubParsedIssue) {
+    const identifier = githubParsedIssue.identifier;
+    const owner = githubParsedIssue.owner?.toLowerCase();
+    const repo = githubParsedIssue.repo?.toLowerCase();
+    return {
+      branchIssueId: `gh-${identifier}`,
+      identity: owner && repo ? `github:${owner}/${repo}:${identifier}` : `github:${identifier}`,
+    };
+  }
+
+  return undefined;
+}
+
+function getIssueIdFromPlanIssues(
+  plan: PlanSchema,
+  parentPlan: PlanSchema | undefined
+): string | undefined {
   if (!plan.issue || plan.issue.length === 0) {
     return undefined;
   }
 
-  for (const rawIssue of plan.issue) {
-    const linearParsedIssue = parseLinearIssueIdentifier(rawIssue);
-    if (linearParsedIssue) {
-      return linearParsedIssue.identifier?.toLowerCase();
-    }
+  const planIssueReferences = plan.issue
+    .map((rawIssue) => parseBranchIssueReference(rawIssue))
+    .filter((issueReference) => issueReference !== undefined);
 
-    const githubParsedIssue = parseGitHubIssueIdentifier(rawIssue);
-    if (githubParsedIssue) {
-      return `gh-${githubParsedIssue.identifier}`;
+  if (planIssueReferences.length === 0) {
+    return undefined;
+  }
+
+  if (plan.parent && parentPlan?.issue && parentPlan.issue.length > 0) {
+    const parentIssueIdentities = new Set(
+      parentPlan.issue
+        .map((rawIssue) => parseBranchIssueReference(rawIssue)?.identity)
+        .filter((identity) => identity !== undefined)
+    );
+    const childOnlyIssue = planIssueReferences.find(
+      (issueReference) => !parentIssueIdentities.has(issueReference.identity)
+    );
+    if (childOnlyIssue) {
+      return childOnlyIssue.branchIssueId;
     }
   }
 
-  return undefined;
+  return planIssueReferences[0].branchIssueId;
+}
+
+export async function resolveParentPlanForBranchName(
+  plan: PlanSchema,
+  repoRoot: string
+): Promise<PlanSchema | undefined> {
+  if (!plan.parent) {
+    return undefined;
+  }
+
+  try {
+    return (await resolvePlanByNumericId(plan.parent, repoRoot)).plan;
+  } catch {
+    return undefined;
+  }
 }
 
 function buildBranchNameWithId(
@@ -254,6 +312,7 @@ export async function handleBranchCommand(
         ? await loadEffectiveConfig(globalOpts.config, { cwd: selectedPlanRepoRoot })
         : config;
     branchName = generateBranchNameFromPlan(plan, {
+      parentPlan: await resolveParentPlanForBranchName(plan, selectedPlanRepoRoot),
       branchPrefix: resolveBranchPrefix({
         config: effectiveConfig,
         db: getDatabase(),

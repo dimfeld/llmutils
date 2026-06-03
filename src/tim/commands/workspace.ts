@@ -45,7 +45,11 @@ import { getIssueTracker } from '../../common/issue_tracker/factory.js';
 import { importSingleIssue } from './import/import.js';
 import { parseIssueInput, type ParsedIssueInput } from '../issue_utils.js';
 import { spawnAndLogOutput } from '../../common/process.js';
-import { generateBranchNameFromPlan, resolveBranchPrefix } from './branch.js';
+import {
+  generateBranchNameFromPlan,
+  resolveBranchPrefix,
+  resolveParentPlanForBranchName,
+} from './branch.js';
 import {
   findPrimaryWorkspaceForRepository,
   findWorkspaceInfosByRepositoryId,
@@ -1429,6 +1433,7 @@ export async function handleWorkspacePullPlanCommand(
     options.branch ??
     plan.branch ??
     generateBranchNameFromPlan(plan, {
+      parentPlan: await resolveParentPlanForBranchName(plan, repoRoot),
       branchPrefix: resolveBranchPrefix({
         config: await loadEffectiveConfig(globalOpts.config, { cwd: repoRoot }),
         db: getDatabase(),

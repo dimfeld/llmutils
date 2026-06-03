@@ -89,6 +89,59 @@ describe('generateBranchNameFromPlan', () => {
     expect(name).toBe('123-implement-oauth-login-gh-1471');
   });
 
+  test('prefers an issue that exists only on the child plan', () => {
+    const name = generateBranchNameFromPlan(
+      {
+        id: 123,
+        title: 'Implement OAuth Login',
+        goal: 'Add OAuth login support',
+        status: 'pending',
+        parent: 100,
+        issue: [
+          'https://linear.app/my-org/issue/DF-1471',
+          'https://linear.app/my-org/issue/DF-1472',
+        ],
+        tasks: [],
+      },
+      {
+        parentPlan: {
+          id: 100,
+          title: 'Parent Auth Project',
+          status: 'pending',
+          issue: ['https://linear.app/my-org/issue/DF-1471'],
+          tasks: [],
+        },
+      }
+    );
+
+    expect(name).toBe('123-implement-oauth-login-df-1472');
+  });
+
+  test('falls back to the first child issue when every child issue exists on the parent', () => {
+    const name = generateBranchNameFromPlan(
+      {
+        id: 123,
+        title: 'Implement OAuth Login',
+        goal: 'Add OAuth login support',
+        status: 'pending',
+        parent: 100,
+        issue: ['https://github.com/owner/repo/issues/1471'],
+        tasks: [],
+      },
+      {
+        parentPlan: {
+          id: 100,
+          title: 'Parent Auth Project',
+          status: 'pending',
+          issue: ['owner/repo#1471'],
+          tasks: [],
+        },
+      }
+    );
+
+    expect(name).toBe('123-implement-oauth-login-gh-1471');
+  });
+
   test('truncates slug to keep branch names at or under 63 characters', () => {
     const name = generateBranchNameFromPlan({
       id: 123,

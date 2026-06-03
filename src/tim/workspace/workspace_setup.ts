@@ -12,7 +12,11 @@ import {
 } from '../../common/git.js';
 import { logSpawn } from '../../common/process.js';
 import { error, log, sendStructured, warn } from '../../logging.js';
-import { generateBranchNameFromPlan, resolveBranchPrefix } from '../commands/branch.js';
+import {
+  generateBranchNameFromPlan,
+  resolveBranchPrefix,
+  resolveParentPlanForBranchName,
+} from '../commands/branch.js';
 import type { TimConfig } from '../configSchema.js';
 import { getDatabase } from '../db/database.js';
 import type { PlanBaseTrackingUpdate } from '../db/plan.js';
@@ -121,7 +125,10 @@ async function resolveWorkspaceBranchContext(
         db: getDatabase(),
         projectId: projectContext.projectId,
       });
-      branchName = generateBranchNameFromPlan(planData, { branchPrefix });
+      branchName = generateBranchNameFromPlan(planData, {
+        branchPrefix,
+        parentPlan: await resolveParentPlanForBranchName(planData, currentBaseDir),
+      });
     }
 
     if (!baseBranch) {
