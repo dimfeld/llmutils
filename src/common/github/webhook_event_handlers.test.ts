@@ -764,6 +764,41 @@ describe('common/github/webhook_event_handlers', () => {
     ]);
   });
 
+  test('handlePullRequestEvent reports ready transition for an applied ready_for_review action even when cache is already non-draft', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/49',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 49,
+      title: 'Ready PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-30T12:00:00.000Z',
+    });
+
+    const result = handlePullRequestEvent(db, {
+      action: 'ready_for_review',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 49,
+        title: 'Ready PR',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-49', ref: 'feature/ready' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T12:30:00.000Z',
+      },
+    });
+
+    expect(result.updated).toBe(true);
+    expect(result.prUrl).toBe('https://github.com/example/repo/pull/49');
+    expect(result.prDraftTransition).toBe('became_ready');
+  });
+
   test('handlePullRequestEvent reports when a ready PR is converted back to draft', () => {
     upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/55',

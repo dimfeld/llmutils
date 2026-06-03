@@ -41,7 +41,10 @@ import { invertPlanIdToUuidMap, planRowToSchemaInput } from '../../tim/plans_db.
 import { toPlanUpsertInput } from '../../tim/db/plan_sync.js';
 import { type PlanSchema } from '../../tim/planSchema.js';
 import { getDefaultConfig } from '../../tim/configSchema.js';
+import { loadEffectiveConfig } from '../../tim/configLoader.js';
 import { getPrStatusByRepoAndNumber } from '../../tim/db/pr_status.js';
+import { routeSyncOperation } from '../../tim/sync/write_router.js';
+import { setPlanScalarOperation } from '../../tim/sync/operations.js';
 
 function isMergedPrPayload(payload: unknown): payload is {
   pull_request: { number: number; merged_at?: string | null; state?: string };
@@ -223,12 +226,12 @@ async function applyDraftReadyStatusToLinkedPlans(
     return;
   }
 
-  const planRows = getPlansByProject(db, project.id);
-  const planIdToUuid = new Map(planRows.map((row) => [row.plan_id, row.uuid]));
-  const uuidToPlanId = invertPlanIdToUuidMap(planIdToUuid);
-  const nowIso = new Date().toISOString();
   const sourceStatus = transition === 'became_ready' ? 'needs_review' : 'reviewed';
   const targetStatus = transition === 'became_ready' ? 'reviewed' : 'needs_review';
+  const config = await loadEffectiveConfig(undefined, {
+    cwd: project.last_git_root ?? undefined,
+    quiet: true,
+  });
 
   for (const planUuid of linkedPlanUuids) {
     const planRow = getPlanByUuid(db, planUuid);
@@ -236,30 +239,24 @@ async function applyDraftReadyStatusToLinkedPlans(
       continue;
     }
 
-    const plan = planRowToSchemaInput(
-      planRow,
-      getPlanTasksByUuid(db, planUuid).map((task) => ({
-        title: task.title,
-        description: task.description,
-        done: task.done === 1,
-      })),
-      getPlanDependenciesByUuid(db, planUuid).map((dependency) => dependency.depends_on_uuid),
-      getPlanTagsByUuid(db, planUuid).map((tag) => tag.tag),
-      uuidToPlanId
+    await routeSyncOperation(
+      db,
+      config,
+      (options) =>
+        setPlanScalarOperation(
+          project.uuid,
+          {
+            planUuid,
+            field: 'status',
+            value: targetStatus,
+            baseRevision: planRow.revision,
+          },
+          options
+        ),
+      { applyOptions: { cleanupAssignmentsOnStatusChange: false } }
     );
-
-    const updatedPlan: PlanSchema = {
-      ...plan,
-      status: targetStatus,
-      updatedAt: nowIso,
-    };
-
-    upsertPlan(db, project.id, {
-      ...toPlanUpsertInput(updatedPlan, planIdToUuid),
-      forceOverwrite: true,
-    });
     console.log(
-      `[webhook-ingest] auto-updated plan ${plan.id ?? planUuid} status ${sourceStatus} -> ${targetStatus} after PR ${owner}/${repo}#${prNumber} ${transition}`
+      `[webhook-ingest] auto-updated plan ${planRow.plan_id ?? planUuid} status ${sourceStatus} -> ${targetStatus} after PR ${owner}/${repo}#${prNumber} ${transition}`
     );
   }
 }

@@ -550,7 +550,11 @@ export function handlePullRequestEvent(
             ? 'became_ready'
             : !wasDraft && pullRequest.draft
               ? 'became_draft'
-              : null;
+              : parsed.action === 'ready_for_review' && state === 'open' && !pullRequest.draft
+                ? 'became_ready'
+                : parsed.action === 'converted_to_draft' && state === 'open' && pullRequest.draft
+                  ? 'became_draft'
+                  : null;
 
       if (parsed.action === 'review_requested' && pullRequest.requestedReviewerLogin) {
         reviewRequestChanged =

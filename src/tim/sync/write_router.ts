@@ -154,7 +154,8 @@ export async function routeSyncOperation(
       ...options.applyOptions,
       localMainNodeId: originNodeId,
       preserveRequestedPlanIds: mode === 'local-operation',
-      cleanupAssignmentsOnStatusChange: mode !== 'local-operation',
+      cleanupAssignmentsOnStatusChange:
+        options.applyOptions?.cleanupAssignmentsOnStatusChange ?? mode !== 'local-operation',
     });
   });
   try {
@@ -278,7 +279,8 @@ async function routeSyncBatchWithMode(
     ...options.applyOptions,
     localMainNodeId: originNodeId,
     preserveRequestedPlanIds: mode === 'local-operation',
-    cleanupAssignmentsOnStatusChange: mode !== 'local-operation',
+    cleanupAssignmentsOnStatusChange:
+      options.applyOptions?.cleanupAssignmentsOnStatusChange ?? mode !== 'local-operation',
   });
   const conflict = result.results.find(
     (item): item is ApplyOperationResult & { status: 'conflict' } => item.status === 'conflict'

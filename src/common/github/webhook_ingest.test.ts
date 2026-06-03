@@ -460,8 +460,14 @@ describe('common/github/webhook_ingest', () => {
       lastFetchedAt: '2026-03-30T09:00:00.000Z',
     });
     const guardedStatuses = ['in_progress', 'done', 'pending'] as const;
+    const readySourceUuid = '00000000-0000-4000-8000-000000000070';
+    const readyGuardUuids = new Map([
+      ['in_progress', '00000000-0000-4000-8000-000000000071'],
+      ['done', '00000000-0000-4000-8000-000000000072'],
+      ['pending', '00000000-0000-4000-8000-000000000073'],
+    ]);
     upsertPlan(db, projectId, {
-      uuid: 'plan-ready-source',
+      uuid: readySourceUuid,
       planId: 70,
       title: 'Ready source',
       branch: 'feature/ready-source',
@@ -470,7 +476,7 @@ describe('common/github/webhook_ingest', () => {
     });
     for (const [index, status] of guardedStatuses.entries()) {
       upsertPlan(db, projectId, {
-        uuid: `plan-ready-guard-${status}`,
+        uuid: readyGuardUuids.get(status)!,
         planId: 71 + index,
         title: `Ready guard ${status}`,
         branch: `feature/ready-guard-${status}`,
@@ -478,11 +484,11 @@ describe('common/github/webhook_ingest', () => {
         status,
       });
     }
-    linkPlanToPr('plan-ready-source', pr.status.id);
+    linkPlanToPr(readySourceUuid, pr.status.id);
     for (const status of guardedStatuses) {
-      linkPlanToPr(`plan-ready-guard-${status}`, pr.status.id);
+      linkPlanToPr(readyGuardUuids.get(status)!, pr.status.id);
     }
-    claimAssignment(db, projectId, 'plan-ready-source', 70, null, 'alice');
+    claimAssignment(db, projectId, readySourceUuid, 70, null, 'alice');
 
     enqueuePullRequestEvent({
       id: 70,
@@ -500,14 +506,14 @@ describe('common/github/webhook_ingest', () => {
 
     expect(result.errors).toEqual([]);
     expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/70']);
-    expect(getPlanByUuid(db, 'plan-ready-source')?.status).toBe('reviewed');
+    expect(getPlanByUuid(db, readySourceUuid)?.status).toBe('reviewed');
     expect(logSpy).toHaveBeenCalledWith(
       '[webhook-ingest] auto-updated plan 70 status needs_review -> reviewed after PR example/repo#70 became_ready'
     );
     logSpy.mockRestore();
-    expect(getAssignment(db, projectId, 'plan-ready-source')).not.toBeNull();
+    expect(getAssignment(db, projectId, readySourceUuid)).not.toBeNull();
     for (const status of guardedStatuses) {
-      expect(getPlanByUuid(db, `plan-ready-guard-${status}`)?.status).toBe(status);
+      expect(getPlanByUuid(db, readyGuardUuids.get(status)!)?.status).toBe(status);
     }
   });
 
@@ -523,8 +529,9 @@ describe('common/github/webhook_ingest', () => {
       draft: true,
       lastFetchedAt: '2026-03-30T09:00:00.000Z',
     });
+    const explicitPlanUuid = '00000000-0000-4000-8000-000000000074';
     upsertPlan(db, projectId, {
-      uuid: 'plan-ready-explicit-url',
+      uuid: explicitPlanUuid,
       planId: 74,
       title: 'Ready explicit URL',
       branch: 'feature/different-branch-name',
@@ -547,7 +554,47 @@ describe('common/github/webhook_ingest', () => {
     const result = await ingestWebhookEvents(db);
 
     expect(result.errors).toEqual([]);
-    expect(getPlanByUuid(db, 'plan-ready-explicit-url')?.status).toBe('reviewed');
+    expect(getPlanByUuid(db, explicitPlanUuid)?.status).toBe('reviewed');
+  });
+
+  test('ingestWebhookEvents moves linked needs_review plans to reviewed when ready event is applied after cache already says non-draft', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    const pr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/75',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 75,
+      title: 'Ready PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const cacheNonDraftPlanUuid = '00000000-0000-4000-8000-000000000075';
+    upsertPlan(db, projectId, {
+      uuid: cacheNonDraftPlanUuid,
+      planId: 75,
+      title: 'Ready cache non-draft',
+      branch: 'feature/ready-cache-nondraft',
+      filename: '75.plan.md',
+      status: 'needs_review',
+    });
+    linkPlanToPr(cacheNonDraftPlanUuid, pr.status.id);
+
+    enqueuePullRequestEvent({
+      id: 75,
+      deliveryId: 'delivery-ready-cache-nondraft',
+      action: 'ready_for_review',
+      prNumber: 75,
+      title: 'Ready PR',
+      draft: false,
+      headRef: 'feature/ready-cache-nondraft',
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(getPlanByUuid(db, cacheNonDraftPlanUuid)?.status).toBe('reviewed');
   });
 
   test('ingestWebhookEvents moves linked reviewed plans back to needs_review when a PR becomes draft', async () => {
@@ -563,8 +610,15 @@ describe('common/github/webhook_ingest', () => {
       lastFetchedAt: '2026-03-30T09:00:00.000Z',
     });
     const guardedStatuses = ['needs_review', 'in_progress', 'done', 'pending'] as const;
+    const draftSourceUuid = '00000000-0000-4000-8000-000000000080';
+    const draftGuardUuids = new Map([
+      ['needs_review', '00000000-0000-4000-8000-000000000081'],
+      ['in_progress', '00000000-0000-4000-8000-000000000082'],
+      ['done', '00000000-0000-4000-8000-000000000083'],
+      ['pending', '00000000-0000-4000-8000-000000000084'],
+    ]);
     upsertPlan(db, projectId, {
-      uuid: 'plan-draft-source',
+      uuid: draftSourceUuid,
       planId: 80,
       title: 'Draft source',
       branch: 'feature/draft-source',
@@ -573,7 +627,7 @@ describe('common/github/webhook_ingest', () => {
     });
     for (const [index, status] of guardedStatuses.entries()) {
       upsertPlan(db, projectId, {
-        uuid: `plan-draft-guard-${status}`,
+        uuid: draftGuardUuids.get(status)!,
         planId: 81 + index,
         title: `Draft guard ${status}`,
         branch: `feature/draft-guard-${status}`,
@@ -581,11 +635,11 @@ describe('common/github/webhook_ingest', () => {
         status,
       });
     }
-    linkPlanToPr('plan-draft-source', pr.status.id);
+    linkPlanToPr(draftSourceUuid, pr.status.id);
     for (const status of guardedStatuses) {
-      linkPlanToPr(`plan-draft-guard-${status}`, pr.status.id);
+      linkPlanToPr(draftGuardUuids.get(status)!, pr.status.id);
     }
-    claimAssignment(db, projectId, 'plan-draft-source', 80, null, 'alice');
+    claimAssignment(db, projectId, draftSourceUuid, 80, null, 'alice');
 
     enqueuePullRequestEvent({
       id: 71,
@@ -601,10 +655,10 @@ describe('common/github/webhook_ingest', () => {
 
     expect(result.errors).toEqual([]);
     expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/71']);
-    expect(getPlanByUuid(db, 'plan-draft-source')?.status).toBe('needs_review');
-    expect(getAssignment(db, projectId, 'plan-draft-source')).not.toBeNull();
+    expect(getPlanByUuid(db, draftSourceUuid)?.status).toBe('needs_review');
+    expect(getAssignment(db, projectId, draftSourceUuid)).not.toBeNull();
     for (const status of guardedStatuses) {
-      expect(getPlanByUuid(db, `plan-draft-guard-${status}`)?.status).toBe(status);
+      expect(getPlanByUuid(db, draftGuardUuids.get(status)!)?.status).toBe(status);
     }
   });
 
