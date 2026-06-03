@@ -416,6 +416,16 @@
             </span>
           {/if}
         </span>
+        {#if thread.comments[0]?.created_at}
+          {@const firstCreatedAt = thread.comments[0].created_at}
+          {@const lastCreatedAt = thread.comments[thread.comments.length - 1]?.created_at}
+          <span class="text-muted-foreground" title={firstCreatedAt}>
+            {formatRelativeTime(firstCreatedAt)}
+            {#if lastCreatedAt && lastCreatedAt !== firstCreatedAt}
+              <span title={lastCreatedAt}>· last {formatRelativeTime(lastCreatedAt)}</span>
+            {/if}
+          </span>
+        {/if}
         {@render threadControls(thread, isResolved)}
       </summary>
 
