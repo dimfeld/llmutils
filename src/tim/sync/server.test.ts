@@ -1459,7 +1459,12 @@ describe('sync transport server and clients', () => {
     clients.push(client);
     client.start();
 
-    await waitFor(() => listPendingOperations(localDb, { originNodeId: NODE_A }).length === 0);
+    await waitFor(
+      () =>
+        listPendingOperations(localDb, { originNodeId: NODE_A }).length === 0 &&
+        getPlanTagsByUuid(mainDb, PLAN_UUID).some((tag) => tag.tag === 'first-project') &&
+        getPlanTagsByUuid(mainDb, SECOND_PLAN_UUID).some((tag) => tag.tag === 'second-project')
+    );
 
     expect(getPlanTagsByUuid(mainDb, PLAN_UUID).map((tag) => tag.tag)).toEqual(['first-project']);
     expect(getPlanTagsByUuid(mainDb, SECOND_PLAN_UUID).map((tag) => tag.tag)).toEqual([

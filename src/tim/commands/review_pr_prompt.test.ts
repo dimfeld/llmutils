@@ -82,14 +82,28 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('Pay special attention to');
     expect(prompt).toContain('Group the changes into a small number of logical sections');
     expect(prompt).toContain('Do not paste diffs or large code blocks');
+    expect(prompt).not.toContain('Non-test change stats');
+    expect(prompt).not.toContain('Not available');
+    expect(prompt).not.toContain('jj diff');
+    expect(prompt).toContain('/work/.tim/tmp/pr-review-guide-comment-42.md');
+  });
+
+  test('buildReviewGuideCommentPrompt includes jj non-test stats when requested', () => {
+    const prompt = buildReviewGuideCommentPrompt({
+      metadata: METADATA,
+      outputPath: '/work/.tim/tmp/pr-review-guide-comment-42.md',
+      useJj: true,
+    });
+
+    expect(prompt).toContain('Repository is jj-based');
     expect(prompt).toContain('Non-test change stats');
+    expect(prompt).toContain('### Non-test change stats\n<summary line from jj diff --stat>');
     expect(prompt).toContain(
       "jj diff --stat \\\n  -f 'latest(heads(bookmarks() & ancestors(@--)) | fork_point(@ | main), 1)'"
     );
     expect(prompt).toContain('glob:"**/*.spec.*"');
     expect(prompt).toContain('glob:"**/*.test.*"');
     expect(prompt).toContain('place the detailed file list inside a `<details>` block');
-    expect(prompt).toContain('/work/.tim/tmp/pr-review-guide-comment-42.md');
   });
 
   test('buildReviewGuideCommentPrompt uses jj diff instructions when requested', () => {
