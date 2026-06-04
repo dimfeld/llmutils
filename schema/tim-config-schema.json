@@ -360,7 +360,8 @@
                   "enum": [
                     "agent",
                     "review",
-                    "proof"
+                    "proof",
+                    "pr-fix"
                   ]
                 }
               }
