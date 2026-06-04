@@ -1,6 +1,7 @@
 import { describe, test, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as net from 'net';
 import * as path from 'path';
+import * as fs from 'fs/promises';
 
 const selectResponses: Array<string | Error> = [];
 const checkboxResponses: Array<string[] | Error> = [];
@@ -133,6 +134,20 @@ describe('permissions socket server line buffering', () => {
       requestId: 'test-1',
       approved: true,
     });
+  });
+
+  test('passes logfile path to the generated MCP config', async () => {
+    const result = await setupPermissionsMcp({
+      allowedTools: ['Edit'],
+    });
+    cleanups.push(result.cleanup);
+
+    const config = JSON.parse(await fs.readFile(result.mcpConfigFile, 'utf8'));
+    const args = config.mcpServers.permissions.args;
+
+    expect(result.logFile).toBe(path.join(result.tempDir, 'permissions-mcp.log'));
+    expect(args.at(-2)).toBe(path.join(result.tempDir, 'permissions.sock'));
+    expect(args.at(-1)).toBe(result.logFile);
   });
 
   test('handles a message split across two chunks', async () => {

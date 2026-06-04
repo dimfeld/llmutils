@@ -44,6 +44,8 @@ interface PermissionsMcpSetupResult {
   mcpConfigFile: string;
   /** The temporary directory created for MCP config and socket */
   tempDir: string;
+  /** Path to the permissions MCP log file */
+  logFile: string;
   /** The Unix socket server handling permission requests */
   socketServer: net.Server;
   /** Cleanup function to tear down all resources */
@@ -684,6 +686,7 @@ export async function setupPermissionsMcp(
   // Create a temporary directory for the MCP config and socket
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-subagent-mcp-'));
   const socketPath = path.join(tempDir, 'permissions.sock');
+  const logFile = path.join(tempDir, 'permissions-mcp.log');
 
   // Create the socket server
   const socketServer = await createPermissionSocketServer(socketPath, allowedToolsMap, {
@@ -715,7 +718,7 @@ export async function setupPermissionsMcp(
       permissions: {
         type: 'stdio',
         command: 'bun',
-        args: [permissionsMcpPath, socketPath],
+        args: [permissionsMcpPath, socketPath, logFile],
       },
     },
   };
@@ -724,6 +727,7 @@ export async function setupPermissionsMcp(
   const mcpConfigFile = path.join(tempDir, 'mcp-config.json');
   const mcpConfigContent = JSON.stringify(mcpConfig, null, 2);
   debugLog('MCP config file content:', mcpConfigContent);
+  log(`Permissions MCP log file: ${logFile}`);
   await fs.writeFile(mcpConfigFile, mcpConfigContent);
 
   const cleanup = async () => {
@@ -736,6 +740,7 @@ export async function setupPermissionsMcp(
   return {
     mcpConfigFile,
     tempDir,
+    logFile,
     socketServer,
     cleanup,
   };

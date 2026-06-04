@@ -7,6 +7,7 @@
 import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import * as net from 'net';
+import * as fs from 'fs';
 
 // Define the schema for the permission prompt input
 export const PermissionInputSchema = z.object({
@@ -42,11 +43,62 @@ const MAX_JSON_SIZE = 1024 * 1024;
 
 // Buffer for accumulating partial JSON messages
 let messageBuffer = '';
+let logFilePath: string | undefined;
+
+function formatLogValue(value: unknown): string {
+  if (value instanceof Error) {
+    return `${value.name}: ${value.message}${value.stack ? `\n${value.stack}` : ''}`;
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function writeLog(message: string, ...values: unknown[]): void {
+  if (!logFilePath) {
+    return;
+  }
+
+  const renderedValues = values.map(formatLogValue);
+  const line = `[${new Date().toISOString()}] ${[message, ...renderedValues].join(' ')}\n`;
+
+  try {
+    fs.appendFileSync(logFilePath, line);
+  } catch (err) {
+    console.error('Failed to write permissions MCP log:', err);
+  }
+}
+
+function configureLogging(nextLogFilePath: string | undefined): void {
+  logFilePath = nextLogFilePath;
+  if (!logFilePath) {
+    return;
+  }
+
+  writeLog('Permissions MCP log initialized:', logFilePath);
+
+  process.on('uncaughtException', (err: Error) => {
+    writeLog('Uncaught exception:', err);
+    process.exit(1);
+  });
+
+  process.on('unhandledRejection', (reason: unknown) => {
+    writeLog('Unhandled rejection:', reason);
+  });
+}
 
 // Test helper function to clean up for testing (for testing only)
 export function cleanupForTests() {
   pendingRequests.clear();
   messageBuffer = '';
+  logFilePath = undefined;
   if (parentSocket) {
     parentSocket.removeAllListeners();
     parentSocket = null;
@@ -75,6 +127,7 @@ export function setParentSocket(socket: net.Socket | null) {
         messageBuffer = messageBuffer.slice(newlineIndex + 1);
 
         if (messageStr.length > MAX_JSON_SIZE) {
+          writeLog('Message too large, ignoring:', messageStr.length);
           console.error('Message too large, ignoring');
           continue;
         }
@@ -83,18 +136,21 @@ export function setParentSocket(socket: net.Socket | null) {
           const message = JSON.parse(messageStr);
           handleParentResponse(message);
         } catch (err) {
+          writeLog('Failed to parse JSON message:', err);
           console.error('Failed to parse JSON message:', err);
         }
       }
 
       // Prevent buffer from growing too large
       if (messageBuffer.length > MAX_JSON_SIZE) {
+        writeLog('Message buffer too large, clearing:', messageBuffer.length);
         console.error('Message buffer too large, clearing');
         messageBuffer = '';
       }
     });
 
     socket.on('error', (err) => {
+      writeLog('Socket error:', err);
       console.error('Socket error:', err);
       // Reject all pending requests
       for (const [, reject] of pendingRequests.entries()) {
@@ -104,6 +160,7 @@ export function setParentSocket(socket: net.Socket | null) {
     });
 
     socket.on('close', () => {
+      writeLog('Socket closed');
       // Reject all pending requests
       for (const [, reject] of pendingRequests.entries()) {
         reject(new Error('Socket connection closed'));
@@ -119,8 +176,9 @@ export function setParentSocket(socket: net.Socket | null) {
 
 // Connect to the parent process via Unix socket
 function connectToParent(socketPath: string) {
+  writeLog('Connecting to parent socket:', socketPath);
   parentSocket = net.createConnection(socketPath, () => {
-    // Connection established
+    writeLog('Connected to parent socket');
   });
 
   // Handle incoming data from parent process
@@ -134,6 +192,7 @@ function connectToParent(socketPath: string) {
       messageBuffer = messageBuffer.slice(newlineIndex + 1);
 
       if (messageStr.length > MAX_JSON_SIZE) {
+        writeLog('Message too large, ignoring:', messageStr.length);
         console.error('Message too large, ignoring');
         continue;
       }
@@ -142,18 +201,21 @@ function connectToParent(socketPath: string) {
         const message = JSON.parse(messageStr);
         handleParentResponse(message);
       } catch (err) {
+        writeLog('Failed to parse JSON message:', err);
         console.error('Failed to parse JSON message:', err);
       }
     }
 
     // Prevent buffer from growing too large
     if (messageBuffer.length > MAX_JSON_SIZE) {
+      writeLog('Message buffer too large, clearing:', messageBuffer.length);
       console.error('Message buffer too large, clearing');
       messageBuffer = '';
     }
   });
 
   parentSocket.on('error', (err) => {
+    writeLog('Socket error:', err);
     console.error('Socket error:', err);
     // Reject all pending requests
     for (const [, reject] of pendingRequests.entries()) {
@@ -164,6 +226,7 @@ function connectToParent(socketPath: string) {
   });
 
   parentSocket.on('close', () => {
+    writeLog('Socket closed');
     // Reject all pending requests
     for (const [, reject] of pendingRequests.entries()) {
       reject(new Error('Socket connection closed'));
@@ -176,12 +239,14 @@ function connectToParent(socketPath: string) {
 // Handle responses from the parent process
 function handleParentResponse(message: any) {
   if (!message.requestId) {
+    writeLog('Received message without requestId:', message);
     console.error('Received message without requestId:', message);
     return;
   }
 
   const resolver = pendingRequests.get(message.requestId);
   if (!resolver) {
+    writeLog('No pending request found for requestId:', message.requestId);
     console.error('No pending request found for requestId:', message.requestId);
     return;
   }
@@ -189,11 +254,17 @@ function handleParentResponse(message: any) {
   pendingRequests.delete(message.requestId);
 
   if (message.type === 'permission_response') {
+    writeLog('Received permission response:', {
+      requestId: message.requestId,
+      approved: message.approved,
+      hasUpdatedInput: message.updatedInput !== undefined,
+    });
     resolver({
       approved: message.approved,
       updatedInput: message.updatedInput,
     });
   } else {
+    writeLog('Unknown response type:', message.type);
     console.error('Unknown response type:', message.type);
     resolver({ approved: false });
   }
@@ -219,11 +290,13 @@ async function requestPermissionFromParent(
 
     // Store the resolver for this request
     pendingRequests.set(requestId, resolve);
+    writeLog('Sending permission request:', { requestId, tool_name, input });
 
     // Set up a timeout to clean up pending requests
     const timeout = setTimeout(
       () => {
         pendingRequests.delete(requestId);
+        writeLog('Permission request timed out:', { requestId, tool_name });
         reject(new Error('Permission request timed out'));
       },
       1000 * 60 * 600
@@ -242,6 +315,7 @@ async function requestPermissionFromParent(
     } catch (err) {
       clearTimeout(timeout);
       pendingRequests.delete(requestId);
+      writeLog('Failed to send permission request:', err);
       reject(err as Error);
     }
   });
@@ -256,6 +330,7 @@ server.addTool({
     try {
       // Request permission from the parent process
       const response = await requestPermissionFromParent(tool_name, input);
+      writeLog('Permission request completed:', { tool_name, approved: response.approved });
 
       // Return the response based on user's decision
       return {
@@ -277,6 +352,7 @@ server.addTool({
         ],
       };
     } catch (err) {
+      writeLog('Permission request failed:', err);
       // If communication fails, deny by default
       return {
         content: [
@@ -297,7 +373,10 @@ server.addTool({
 if (import.meta.main) {
   // Get the Unix socket path from command line argument
   const socketPath = process.argv[2];
+  const nextLogFilePath = process.argv[3];
+  configureLogging(nextLogFilePath);
   if (!socketPath) {
+    writeLog('Unix socket path was not provided');
     console.error('Unix socket path must be provided as command line argument');
     process.exit(1);
   }
@@ -307,6 +386,7 @@ if (import.meta.main) {
   process.stdin.on('close', () => parentSocket?.end());
 
   // Start the MCP server in stdio mode
+  writeLog('Starting permissions MCP server');
   await server.start({
     transportType: 'stdio',
   });
