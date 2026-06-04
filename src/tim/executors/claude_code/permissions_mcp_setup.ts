@@ -67,6 +67,35 @@ interface PermissionsMcpOptions {
   workingDirectory?: string;
 }
 
+export async function resolvePermissionsMcpPath(
+  executableDir: string = path.dirname(process.execPath)
+): Promise<string> {
+  // Resolve the path to the permissions MCP script
+  // Try .ts first (development), fall back to .js (compiled)
+  // Use import.meta.dir (Bun) or import.meta.dirname (Node.js v20+) or URL-based fallback
+  const currentDir =
+    (import.meta as { dir?: string; dirname?: string }).dir ??
+    (import.meta as { dirname?: string }).dirname ??
+    path.dirname(new URL(import.meta.url).pathname);
+  const distPath = './claude_code/permissions_mcp.js';
+  const candidates: string[] = [
+    path.resolve(executableDir, distPath),
+    path.resolve(path.dirname(process.argv0), distPath),
+    path.resolve(currentDir, './permissions_mcp.ts'),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  return candidates.at(-1) as string;
+}
+
 function parseCommandTokens(command: string): string[] {
   const tokens: string[] = [];
   let currentToken = '';
@@ -697,20 +726,7 @@ export async function setupPermissionsMcp(
     workingDirectory: options.workingDirectory,
   });
 
-  // Resolve the path to the permissions MCP script
-  // Try .ts first (development), fall back to .js (compiled)
-  // Use import.meta.dir (Bun) or import.meta.dirname (Node.js v20+) or URL-based fallback
-  const currentDir =
-    (import.meta as { dir?: string; dirname?: string }).dir ??
-    (import.meta as { dirname?: string }).dirname ??
-    path.dirname(new URL(import.meta.url).pathname);
-  let permissionsMcpPath = path.resolve(currentDir, './permissions_mcp.ts');
-  try {
-    await fs.access(permissionsMcpPath);
-  } catch {
-    const dir = path.dirname(process.argv0);
-    permissionsMcpPath = path.resolve(dir, './claude_code/permissions_mcp.js');
-  }
+  const permissionsMcpPath = await resolvePermissionsMcpPath();
 
   // Build the MCP config
   const mcpConfig = {
