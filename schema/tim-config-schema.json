@@ -114,6 +114,15 @@
               "token": {
                 "type": "string"
               },
+              "reviewNotifier": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
               "dailyDigest": {
                 "type": "object",
                 "properties": {
