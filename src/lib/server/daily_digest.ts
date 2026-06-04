@@ -99,8 +99,16 @@ export type LinearMilestonesFetcher = (args: {
   apiKey?: string;
 }) => Promise<LinearMilestoneDigestEntry[]>;
 
+function isDailyDigestEnabledForWorkspace(config: TimConfig, workspaceName: string): boolean {
+  return config.slack?.workspaces?.[workspaceName]?.dailyDigest?.enabled === true;
+}
+
 export function getEligibleDailyDigestWorkspaces(db: Database, config: TimConfig): string[] {
-  const configuredWorkspaces = new Set(Object.keys(config.slack?.workspaces ?? {}));
+  const configuredWorkspaces = new Set(
+    Object.entries(config.slack?.workspaces ?? {})
+      .filter(([, workspaceConfig]) => workspaceConfig.dailyDigest?.enabled === true)
+      .map(([workspaceName]) => workspaceName)
+  );
   if (configuredWorkspaces.size === 0) {
     return [];
   }
@@ -136,6 +144,10 @@ export function collectDailyDigestsForWorkspace(
   workspaceName: string,
   options: CollectDailyDigestsOptions = {}
 ): CollectedProjectDigest[] {
+  if (!isDailyDigestEnabledForWorkspace(config, workspaceName)) {
+    return [];
+  }
+
   const nowMs = options.nowMs ?? Date.now();
   const collected: CollectedProjectDigest[] = [];
 
@@ -403,6 +415,10 @@ export async function runDailyDigestForWorkspace(
   workspaceName: string,
   options: RunDailyDigestOptions = {}
 ): Promise<void> {
+  if (!isDailyDigestEnabledForWorkspace(config, workspaceName)) {
+    return;
+  }
+
   let token: string;
   try {
     token = resolveSlackWorkspaceToken(config, workspaceName);
@@ -600,7 +616,7 @@ export async function runAllDailyDigests(
   const nowMs = options.nowMs ?? Date.now();
   const loggedMisconfiguredWorkspaces = options.loggedMisconfiguredWorkspaces ?? new Set<string>();
 
-  for (const workspaceName of Object.keys(config.slack?.workspaces ?? {})) {
+  for (const workspaceName of getEligibleDailyDigestWorkspaces(db, config)) {
     await runDailyDigestForWorkspace(db, config, workspaceName, {
       sender: options.sender,
       updateSender: options.updateSender,
@@ -647,7 +663,13 @@ export async function updateDailyDigestMessagesForPrUrls(
     );
     const workspace = setting?.workspace?.trim();
     const channel = setting?.channel?.trim();
-    if (setting?.enabled === true && setting.dailyDigest === true && workspace && channel) {
+    if (
+      setting?.enabled === true &&
+      setting.dailyDigest === true &&
+      workspace &&
+      channel &&
+      isDailyDigestEnabledForWorkspace(config, workspace)
+    ) {
       affectedWorkspaces.add(workspace);
     }
   }

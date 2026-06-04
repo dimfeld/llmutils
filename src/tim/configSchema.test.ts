@@ -148,6 +148,7 @@ describe('configSchema', () => {
                 enabled: true,
               },
               dailyDigest: {
+                enabled: true,
                 time: '09:30',
                 timezone: 'America/Los_Angeles',
                 staleAfterHours: 36,
@@ -168,6 +169,7 @@ describe('configSchema', () => {
           enabled: true,
         },
         dailyDigest: {
+          enabled: true,
           time: '09:30',
           timezone: 'America/Los_Angeles',
           staleAfterHours: 36,
@@ -192,6 +194,23 @@ describe('configSchema', () => {
       });
 
       expect(result.slack?.workspaces?.work?.dailyDigest).toBeUndefined();
+    });
+
+    test('does not add daily digest enabled defaults in the zod schema', () => {
+      const result = timConfigSchema.parse({
+        slack: {
+          workspaces: {
+            work: {
+              token: '${SLACK_WORK_TOKEN}',
+              dailyDigest: {
+                time: '09:30',
+              },
+            },
+          },
+        },
+      });
+
+      expect(result.slack?.workspaces?.work?.dailyDigest?.enabled).toBeUndefined();
     });
 
     test('does not add review notifier defaults in the zod schema', () => {

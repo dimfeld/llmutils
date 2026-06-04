@@ -66,7 +66,7 @@ const SLACK_PROJECT_SETTING_KEY = 'slack';
 const configWithWorkspace = {
   slack: {
     workspaces: {
-      [WORKSPACE_NAME]: { token: 'xoxb-test-token' },
+      [WORKSPACE_NAME]: { token: 'xoxb-test-token', dailyDigest: { enabled: true } },
     },
   },
 };
@@ -287,7 +287,7 @@ describe('tim slack CLI handlers', () => {
           workspaces: {
             [WORKSPACE_NAME]: {
               token: '${TIM_SLACK_DIGEST_TEST_UNSET_TOKEN}',
-              dailyDigest: { staleAfterHours: 24 },
+              dailyDigest: { enabled: true, staleAfterHours: 24 },
             },
           },
         },

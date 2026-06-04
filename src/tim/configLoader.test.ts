@@ -1658,6 +1658,7 @@ defaultExecutor: direct-call
                 personal: {
                   token: 'xoxb-personal-token',
                   dailyDigest: {
+                    enabled: true,
                     time: '08:15',
                     staleAfterHours: 12,
                     weekdays: ['tuesday', 'thursday'],
@@ -1690,6 +1691,7 @@ defaultExecutor: direct-call
           weekdays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
         });
         expect(config.slack?.workspaces?.['personal']?.dailyDigest).toEqual({
+          enabled: true,
           time: '08:15',
           timezone: expectedTimezone,
           staleAfterHours: 12,

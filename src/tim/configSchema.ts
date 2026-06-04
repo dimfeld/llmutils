@@ -279,6 +279,7 @@ export const slackWorkspaceConfigSchema = z
       .optional(),
     dailyDigest: z
       .object({
+        enabled: z.boolean().optional(),
         time: z
           .string()
           .regex(

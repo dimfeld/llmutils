@@ -34,6 +34,7 @@ Each workspace has:
 - `token` - the Slack bot token, either literal or containing `${ENV_VAR}` placeholders
 - `reviewNotifier.enabled` (optional) - set to `true` to opt this workspace into event-driven review-request messages. Missing or `false` disables review-request messages for repos targeting this workspace.
 - `dailyDigest` (optional) - schedule for the [daily PR digest](#daily-pr-digest):
+  - `enabled` - set to `true` to opt this workspace into daily digest runs. Missing or `false` disables daily digests for repos targeting this workspace.
   - `time` - `HH:MM` 24-hour local time the digest fires (default `00:00`); rejected at load if not `HH:MM`
   - `timezone` - IANA time zone the `time` is interpreted in (default: the server's local zone); rejected at load if not a valid IANA zone
   - `staleAfterHours` - legacy setting retained for compatibility; awaiting-review digest entries no longer use a minimum wait threshold
@@ -49,6 +50,7 @@ slack:
       reviewNotifier:
         enabled: true
       dailyDigest:
+        enabled: true
         time: '09:00'
         timezone: 'America/New_York'
         weekdays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
@@ -58,7 +60,7 @@ slack:
         defaultGroupName: 'Regular Priority'
 ```
 
-Token placeholders are expanded from `process.env` at read time. tim fails loudly if a referenced workspace does not exist, if its token is missing or empty, if a referenced environment variable is unset or empty, or if the expanded token is empty. Review-request messages are opt-in per workspace through `reviewNotifier.enabled: true`; the `dailyDigest` schedule is per workspace (so different workspaces can fire at their own local time); whether a given repo participates is the per-repo `dailyDigest` opt-in below.
+Token placeholders are expanded from `process.env` at read time. tim fails loudly if a referenced workspace does not exist, if its token is missing or empty, if a referenced environment variable is unset or empty, or if the expanded token is empty. Review-request messages are opt-in per workspace through `reviewNotifier.enabled: true`; daily digests are opt-in per workspace through `dailyDigest.enabled: true`, with the `dailyDigest` schedule also per workspace (so different workspaces can fire at their own local time). Whether a given repo participates is the per-repo `dailyDigest` opt-in below.
 
 ## Slack App Setup
 
@@ -99,7 +101,7 @@ Repos opt in through a `project_setting` row named `slack`, with this shape:
 }
 ```
 
-These settings are written by the `tim slack` CLI and stored in the local database, not in committed config. One repo targets one workspace and one channel. Repos without an enabled Slack setting do not send review-request notifications, and repos targeting a workspace without `reviewNotifier.enabled: true` are skipped. `dailyDigest` is a separate opt-in (default off) that enables the [daily PR digest](#daily-pr-digest) for the repo; it posts to the same workspace and channel as review-request notifications and requires Slack to already be enabled.
+These settings are written by the `tim slack` CLI and stored in the local database, not in committed config. One repo targets one workspace and one channel. Repos without an enabled Slack setting do not send review-request notifications, and repos targeting a workspace without `reviewNotifier.enabled: true` are skipped. `dailyDigest` is a separate repo opt-in (default off) for the [daily PR digest](#daily-pr-digest); digest posts also require the target workspace to have `dailyDigest.enabled: true`.
 
 The `enable`, `disable`, and `list` commands resolve the current GitHub repository from the working directory and look up the matching tim project. Run them from a checkout that tim already knows as a project.
 
@@ -204,7 +206,7 @@ tim slack digest enable
 tim slack digest disable
 ```
 
-Toggles the [daily PR digest](#daily-pr-digest) for the current repo. `enable` requires Slack to already be enabled for the repo (a workspace and channel must be set) and errors clearly otherwise. The digest posts to the same channel as review-request notifications.
+Toggles the [daily PR digest](#daily-pr-digest) for the current repo. `enable` requires Slack to already be enabled for the repo (a workspace and channel must be set) and errors clearly otherwise. The digest posts to the same channel as review-request notifications when the target workspace also has `dailyDigest.enabled: true`.
 
 ### Run the Daily Digest Now
 
@@ -212,7 +214,7 @@ Toggles the [daily PR digest](#daily-pr-digest) for the current repo. `enable` r
 tim slack digest [--dry-run]
 ```
 
-Runs the daily digest immediately for every configured workspace's digest-enabled repos. `--dry-run` computes and prints the digest sections for each repo without posting to Slack (and without requiring a usable Slack token), so you can preview what the scheduled run would send. If Linear milestones are enabled for a workspace, dry-run also fetches and prints the due-or-overdue milestone section. Without `--dry-run`, it posts to Slack just like the scheduled run. Manual runs ignore the configured `weekdays`; weekdays only constrain the web server's scheduled timer.
+Runs the daily digest immediately for every workspace with `dailyDigest.enabled: true` and digest-enabled repos. `--dry-run` computes and prints the digest sections for each repo without posting to Slack (and without requiring a usable Slack token), so you can preview what the scheduled run would send. If Linear milestones are enabled for a workspace, dry-run also fetches and prints the due-or-overdue milestone section. Without `--dry-run`, it posts to Slack just like the scheduled run. Manual runs ignore the configured `weekdays`; weekdays only constrain the web server's scheduled timer.
 
 ### Update Today's Daily Digest
 
@@ -253,7 +255,7 @@ If those historical rows include closed or merged PRs, run `tim slack mark-close
 
 ## Daily PR Digest
 
-Separate from the event-driven review-request notifier, tim can post a once-per-day digest of PRs that are stuck. It is a per-repo opt-in (default off) and posts one message per digest-enabled repo to that repo's configured channel. The Slack `channel` and `ts` returned by `chat.postMessage` are stored per workspace, channel, repo, and local digest date so same-day refreshes can update the message in place. When a new daily digest post is created, tim pins the new post and unpins the latest previous digest post for that repo/channel; same-day updates keep the existing pin.
+Separate from the event-driven review-request notifier, tim can post a once-per-day digest of PRs that are stuck. It requires both workspace opt-in (`dailyDigest.enabled: true`) and per-repo opt-in (`tim slack digest enable`), then posts one message per digest-enabled repo to that repo's configured channel. The Slack `channel` and `ts` returned by `chat.postMessage` are stored per workspace, channel, repo, and local digest date so same-day refreshes can update the message in place. When a new daily digest post is created, tim pins the new post and unpins the latest previous digest post for that repo/channel; same-day updates keep the existing pin.
 
 The digest has three PR sections:
 
@@ -279,15 +281,16 @@ The digest never uses Slack `@`-mentions: authors and reviewers are always rende
 The digest requires, in order:
 
 1. A Slack workspace token in global config (same as review-request notifications).
-2. The repo enabled for Slack (`tim slack enable --workspace <w> --channel <#c>`).
-3. The digest opted in for the repo (`tim slack digest enable`).
-4. **Webhook polling enabled** — the digest reads PR data exclusively from the local database, which is kept fresh by GitHub webhook ingestion. It does not fetch from GitHub. (Open PR status is retained until the PR closes so the digest has a durable, complete source.)
+2. The workspace opted into daily digest runs (`dailyDigest.enabled: true`).
+3. The repo enabled for Slack (`tim slack enable --workspace <w> --channel <#c>`).
+4. The digest opted in for the repo (`tim slack digest enable`).
+5. **Webhook polling enabled** — the digest reads PR data exclusively from the local database, which is kept fresh by GitHub webhook ingestion. It does not fetch from GitHub. (Open PR status is retained until the PR closes so the digest has a durable, complete source.)
 
 ### Schedule and Scheduler
 
 The `time`/`timezone` schedule is configured per workspace (see [Workspace Configuration](#workspace-configuration)), defaulting to `00:00` in the server's local zone.
 
-The scheduler runs inside the SvelteKit web server (`src/hooks.server.ts`), alongside the notifier and webhook poller. It starts only when webhook polling is enabled, at least one workspace is configured, and at least one repo has the digest enabled. It uses one `setTimeout` timer per workspace (not `Bun.cron`, which is UTC-only): on each fire it runs that workspace's digest, then recomputes the next fire from the IANA `timezone` and reschedules, which naturally handles DST transitions (a configured time that does not exist on a spring-forward day rolls to the next valid day). Timers are `unref`'d so they never keep the process alive, and they stop cleanly on shutdown and HMR re-init.
+The scheduler runs inside the SvelteKit web server (`src/hooks.server.ts`), alongside the notifier and webhook poller. It starts only when webhook polling is enabled, at least one workspace has `dailyDigest.enabled: true`, and at least one repo targeting that workspace has the digest enabled. It uses one `setTimeout` timer per eligible workspace (not `Bun.cron`, which is UTC-only): on each fire it runs that workspace's digest, then recomputes the next fire from the IANA `timezone` and reschedules, which naturally handles DST transitions (a configured time that does not exist on a spring-forward day rolls to the next valid day). Timers are `unref`'d so they never keep the process alive, and they stop cleanly on shutdown and HMR re-init.
 
 A misconfigured workspace (missing or unusable token) is logged once and skipped without aborting the run or affecting other workspaces' projects. Each repo is processed in isolation, so one repo's failure does not block the others.
 
@@ -295,7 +298,7 @@ The digest is a stateless snapshot — unlike the review-request notifier, it ha
 
 ### Manual Run
 
-`tim slack digest` runs the digest immediately for all configured workspaces; `tim slack digest --dry-run` previews the computed buckets without posting (and without requiring a usable token). See [Run the Daily Digest Now](#run-the-daily-digest-now).
+`tim slack digest` runs the digest immediately for all workspaces with `dailyDigest.enabled: true`; `tim slack digest --dry-run` previews the computed buckets without posting (and without requiring a usable token). See [Run the Daily Digest Now](#run-the-daily-digest-now).
 
 ## Example Setup
 
@@ -312,6 +315,8 @@ slack:
       token: '${SLACK_WORK_TOKEN}'
       reviewNotifier:
         enabled: true
+      dailyDigest:
+        enabled: true
 ```
 
 From a repo that exists as a tim project:
@@ -322,9 +327,10 @@ tim slack test --workspace work --channel "#code-reviews"
 tim slack map your-github-login U123456789 --workspace work --display "Your Name"
 tim slack list
 
-# Optional: opt this repo into the daily PR digest, then preview it
+# Optional: after the workspace has dailyDigest.enabled: true, opt this repo into
+# the daily PR digest, then preview it
 tim slack digest enable
 tim slack digest --dry-run
 ```
 
-With the web server running and webhook polling configured, review requests in enabled repos use these settings and mappings automatically. Digest-enabled repos additionally receive the daily digest at the workspace's configured `time`/`timezone`.
+With the web server running and webhook polling configured, review requests in enabled repos use these settings and mappings automatically. Digest-enabled repos in workspaces with `dailyDigest.enabled: true` additionally receive the daily digest at the workspace's configured `time`/`timezone`.

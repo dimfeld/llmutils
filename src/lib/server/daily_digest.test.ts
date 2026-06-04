@@ -95,7 +95,7 @@ function buildConfig(
   workspaces: NonNullable<TimConfig['slack']>['workspaces'] = {
     work: {
       token: 'xoxb-work-token',
-      dailyDigest: { staleAfterHours: 24 },
+      dailyDigest: { enabled: true, staleAfterHours: 24 },
     },
   }
 ): TimConfig {
@@ -494,6 +494,7 @@ describe('lib/server/daily_digest', () => {
           work: {
             token: 'xoxb-work-token',
             dailyDigest: {
+              enabled: true,
               timezone: 'UTC',
               staleAfterHours: 24,
               linearMilestones: { enabled: true, apiKeyEnv: 'TEST_LINEAR_API_KEY' },
@@ -546,6 +547,7 @@ describe('lib/server/daily_digest', () => {
           work: {
             token: 'xoxb-work-token',
             dailyDigest: {
+              enabled: true,
               timezone: 'UTC',
               staleAfterHours: 24,
               linearMilestones: { enabled: true, apiKeyEnv: 'TEST_LINEAR_API_KEY' },
@@ -583,7 +585,10 @@ describe('lib/server/daily_digest', () => {
     delete process.env.TIM_DAILY_DIGEST_UNSET_TOKEN;
 
     const config = buildConfig({
-      work: { token: '${TIM_DAILY_DIGEST_UNSET_TOKEN}' },
+      work: {
+        token: '${TIM_DAILY_DIGEST_UNSET_TOKEN}',
+        dailyDigest: { enabled: true, staleAfterHours: 24 },
+      },
     });
     const logged = new Set<string>();
     const errorMessages: string[] = [];
@@ -672,8 +677,8 @@ describe('lib/server/daily_digest', () => {
     await runAllDailyDigests(
       db,
       buildConfig({
-        work: { token: 'xoxb-work-token', dailyDigest: { staleAfterHours: 24 } },
-        other: { token: 'xoxb-other-token', dailyDigest: { staleAfterHours: 24 } },
+        work: { token: 'xoxb-work-token', dailyDigest: { enabled: true, staleAfterHours: 24 } },
+        other: { token: 'xoxb-other-token', dailyDigest: { enabled: true, staleAfterHours: 24 } },
       }),
       { sender, nowMs: NOW_MS }
     );
@@ -686,6 +691,47 @@ describe('lib/server/daily_digest', () => {
     expect(payloadText(sent.find((call) => call.payload.channel === '#other')!)).toContain(
       '`other-reviewer` (25 hours)'
     );
+  });
+
+  test('runAllDailyDigests skips workspaces without daily digest opt-in', async () => {
+    setupProject('octocat', 'work-repo', { workspace: 'work', channel: '#work' });
+    setupProject('octocat', 'other-repo', { workspace: 'other', channel: '#other' });
+    insertPr('octocat', 'work-repo', 1, { title: 'Work approved', reviewDecision: 'APPROVED' });
+    insertPr('octocat', 'other-repo', 1, { title: 'Other approved', reviewDecision: 'APPROVED' });
+
+    const { sender, sent } = makeFakeSender();
+    await runAllDailyDigests(
+      db,
+      buildConfig({
+        work: { token: 'xoxb-work-token', dailyDigest: { enabled: true, staleAfterHours: 24 } },
+        other: { token: 'xoxb-other-token', dailyDigest: { staleAfterHours: 24 } },
+      }),
+      { sender, nowMs: NOW_MS }
+    );
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].payload.channel).toBe('#work');
+    expect(payloadText(sent[0])).toContain('Work approved');
+  });
+
+  test('runDailyDigestForWorkspace skips workspace without daily digest opt-in', async () => {
+    setupProject('octocat', 'disabled-workspace', { channel: '#disabled' });
+    insertPr('octocat', 'disabled-workspace', 1, {
+      title: 'Should not post',
+      reviewDecision: 'APPROVED',
+    });
+
+    const { sender, sent } = makeFakeSender();
+    await runDailyDigestForWorkspace(
+      db,
+      buildConfig({
+        work: { token: 'xoxb-work-token', dailyDigest: { staleAfterHours: 24 } },
+      }),
+      'work',
+      { sender, nowMs: NOW_MS }
+    );
+
+    expect(sent).toHaveLength(0);
   });
 
   test('uses injected nowMs and includes all pending review requests regardless of wait time', async () => {
@@ -716,6 +762,20 @@ describe('lib/server/daily_digest', () => {
       setupProject('octocat', 'eligible', { channel: '#reviews' });
 
       expect(shouldStartDailyDigest(db, getDefaultConfig())).toBe(false);
+    });
+
+    test('returns false when matching workspace has not opted into daily digest', () => {
+      enableWebhookPollingEnv();
+      setupProject('octocat', 'eligible', { channel: '#reviews' });
+
+      expect(
+        shouldStartDailyDigest(
+          db,
+          buildConfig({
+            work: { token: 'xoxb-work-token', dailyDigest: { staleAfterHours: 24 } },
+          })
+        )
+      ).toBe(false);
     });
 
     test('returns false when configured workspaces have no matching digest-enabled project', () => {
@@ -815,11 +875,11 @@ describe('lib/server/daily_digest', () => {
         buildConfig({
           work: {
             token: 'xoxb-work-token',
-            dailyDigest: { time: '00:00', timezone: 'UTC', staleAfterHours: 24 },
+            dailyDigest: { enabled: true, time: '00:00', timezone: 'UTC', staleAfterHours: 24 },
           },
           noneligible: {
             token: '${TIM_DAILY_DIGEST_NONELIGIBLE_TOKEN}',
-            dailyDigest: { time: '00:00', timezone: 'UTC', staleAfterHours: 24 },
+            dailyDigest: { enabled: true, time: '00:00', timezone: 'UTC', staleAfterHours: 24 },
           },
         }),
         {
@@ -857,7 +917,7 @@ describe('lib/server/daily_digest', () => {
         buildConfig({
           work: {
             token: 'xoxb-work-token',
-            dailyDigest: { time: '12:01', timezone: 'UTC', staleAfterHours: 24 },
+            dailyDigest: { enabled: true, time: '12:01', timezone: 'UTC', staleAfterHours: 24 },
           },
         }),
         {
