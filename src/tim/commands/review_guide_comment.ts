@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { Database } from 'bun:sqlite';
-import { getGitRoot } from '../../common/git.js';
+import { getGitRoot, getUsingJj } from '../../common/git.js';
 import { parsePrOrIssueNumber } from '../../common/github/identifiers.js';
 import { getGitHubAppInstallationTokenForOwner } from '../../common/github/app_auth.js';
 import {
@@ -42,6 +42,8 @@ import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environmen
 /** Hidden marker used to detect an existing review-guide comment so we post at most one per PR. */
 export const REVIEW_GUIDE_COMMENT_MARKER = '<!-- tim:pr-review-guide -->';
 const UPDATED_AT_FOOTER_PREFIX = 'Updated at';
+const BRANCH_BASE_REVSET = 'latest(heads(bookmarks() & ancestors(@--)) | fork_point(@ | main), 1)';
+const NON_TEST_CHANGE_STATS_FILESET = 'all() ~ (glob:"**/*.spec.*" | glob:"**/*.test.*")';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -98,6 +100,36 @@ function buildPrMetadata(context: Awaited<ReturnType<typeof gatherPrContext>>): 
     owner: context.owner,
     repo: context.repo,
   };
+}
+
+async function loadJjNonTestChangeStats(baseDir: string): Promise<string | null> {
+  if (!(await getUsingJj(baseDir))) {
+    return null;
+  }
+
+  const proc = Bun.spawn(
+    ['jj', 'diff', '--stat', '-f', BRANCH_BASE_REVSET, NON_TEST_CHANGE_STATS_FILESET],
+    {
+      cwd: baseDir,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    }
+  );
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+
+  if (exitCode !== 0) {
+    warn(
+      `Failed to compute jj non-test change stats for review guide comment: ${stderr.trim() || `exit code ${exitCode}`}`
+    );
+    return null;
+  }
+
+  const trimmed = stdout.trim();
+  return trimmed || null;
 }
 
 function updateReviewGuideCommentSessionInfo(
@@ -317,6 +349,7 @@ export async function handlePrReviewGuideCommentCommand(
       // checkoutPrBranch uses Git fetch/checkout even for colocated jj repositories, so the
       // executor must diff against the detached Git HEAD instead of the jj working-copy revision.
       const useJjDiffInstructions = false;
+      const nonTestChangeStats = await loadJjNonTestChangeStats(baseDir);
       const customInstructions = await loadCustomReviewInstructions(config, baseDir);
       const metadata = buildPrMetadata(prContext);
 
@@ -350,6 +383,7 @@ export async function handlePrReviewGuideCommentCommand(
             metadata,
             outputPath,
             useJj: useJjDiffInstructions,
+            nonTestChangeStats,
             customInstructions,
           }),
           {

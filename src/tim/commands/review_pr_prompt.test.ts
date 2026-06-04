@@ -106,6 +106,23 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('place the detailed file list inside a `<details>` block');
   });
 
+  test('buildReviewGuideCommentPrompt can include precomputed stats with git diff instructions', () => {
+    const prompt = buildReviewGuideCommentPrompt({
+      metadata: METADATA,
+      outputPath: '/work/.tim/tmp/pr-review-guide-comment-42.md',
+      useJj: false,
+      nonTestChangeStats: '2 files changed, 45 insertions(+)',
+    });
+
+    expect(prompt).toContain('Repository is git-based');
+    expect(prompt).toContain("git merge-base 'origin/main' HEAD");
+    expect(prompt).toContain('Precomputed non-test change stats');
+    expect(prompt).toContain('2 files changed, 45 insertions(+)');
+    expect(prompt).toContain('### Non-test change stats');
+    expect(prompt).not.toContain('Repository is jj-based');
+    expect(prompt).not.toContain('jj diff');
+  });
+
   test('buildReviewGuideCommentPrompt uses jj diff instructions when requested', () => {
     const prompt = buildReviewGuideCommentPrompt({
       metadata: METADATA,

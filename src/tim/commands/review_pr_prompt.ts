@@ -265,6 +265,7 @@ interface ReviewGuideCommentPromptOptions {
   /** Absolute path the agent must write the finished comment markdown to. */
   outputPath: string;
   useJj: boolean;
+  nonTestChangeStats?: string | null;
   customInstructions?: string;
 }
 
@@ -275,9 +276,13 @@ interface ReviewGuideCommentPromptOptions {
  * and focused on where a human reviewer should look closely.
  */
 export function buildReviewGuideCommentPrompt(options: ReviewGuideCommentPromptOptions): string {
-  const { metadata, outputPath, useJj, customInstructions } = options;
-  const nonTestStatsInstructions = useJj
-    ? `2. Run this command to compute non-test change stats and include the result in the review guide so reviewers can judge review burden:
+  const { metadata, outputPath, useJj, nonTestChangeStats, customInstructions } = options;
+  const trimmedNonTestChangeStats = nonTestChangeStats?.trim();
+  const hasPrecomputedNonTestStats = Boolean(trimmedNonTestChangeStats);
+  const shouldIncludeNonTestStats = useJj || hasPrecomputedNonTestStats;
+  const nonTestStatsInstructions =
+    useJj && !hasPrecomputedNonTestStats
+      ? `2. Run this command to compute non-test change stats and include the result in the review guide so reviewers can judge review burden:
 
 \`\`\`bash
 jj diff --stat \\
@@ -286,11 +291,21 @@ jj diff --stat \\
 \`\`\`
 
 If the file list is large, place the detailed file list inside a \`<details>\` block and show only the summary line with total files and lines changed outside the details block.`
+      : hasPrecomputedNonTestStats
+        ? `2. Include the precomputed non-test change stats from the section below in the review guide so reviewers can judge review burden.`
+        : '';
+  const precomputedNonTestStatsSection = hasPrecomputedNonTestStats
+    ? `
+## Precomputed non-test change stats
+\`\`\`text
+${trimmedNonTestChangeStats}
+\`\`\`
+`
     : '';
-  const nonTestStatsFormat = useJj
+  const nonTestStatsFormat = shouldIncludeNonTestStats
     ? `
 ### Non-test change stats
-<summary line from jj diff --stat>
+${hasPrecomputedNonTestStats ? '<copy the precomputed summary line and, when useful, compact details>' : '<summary line from jj diff --stat>'}
 `
     : '';
 
@@ -301,14 +316,15 @@ ${formatPrMetadata(metadata)}
 
 ## Diff Discovery
 ${getDiffInstructions(metadata, useJj)}
+${precomputedNonTestStatsSection}
 
 ## Required Workflow
 1. Determine the full set of changed files from the PR diff.
 ${nonTestStatsInstructions}
-${useJj ? '3' : '2'}. Group the changes into a small number of logical sections (e.g. core logic, data model, API, UI, tests, docs). Aim for the fewest sections that capture the shape of the change.
-${useJj ? '4' : '3'}. For each section, write 1-3 sentences summarizing what changed and why, so a reviewer understands the change without opening every file. Use parallel subagents if it makes sense.
-${useJj ? '5' : '4'}. Identify the specific places a human reviewer should pay special attention to: risky logic, security/permission/auth concerns, data migrations, concurrency, error handling, public API or schema changes, missing tests, or anything subtle. Reference concrete files (and line numbers where helpful) using \`path/to/file.ts:42\` style.
-${useJj ? '6' : '5'}. If nothing in the PR warrants special scrutiny, say so plainly instead of inventing concerns.
+${shouldIncludeNonTestStats ? '3' : '2'}. Group the changes into a small number of logical sections (e.g. core logic, data model, API, UI, tests, docs). Aim for the fewest sections that capture the shape of the change.
+${shouldIncludeNonTestStats ? '4' : '3'}. For each section, write 1-3 sentences summarizing what changed and why, so a reviewer understands the change without opening every file. Use parallel subagents if it makes sense.
+${shouldIncludeNonTestStats ? '5' : '4'}. Identify the specific places a human reviewer should pay special attention to: risky logic, security/permission/auth concerns, data migrations, concurrency, error handling, public API or schema changes, missing tests, or anything subtle. Reference concrete files (and line numbers where helpful) using \`path/to/file.ts:42\` style.
+${shouldIncludeNonTestStats ? '6' : '5'}. If nothing in the PR warrants special scrutiny, say so plainly instead of inventing concerns.
 
 ## Output Format
 Write GitHub-flavored markdown using this structure:

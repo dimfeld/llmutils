@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -141,6 +141,7 @@ function makeCommand(config?: string) {
 describe('review_guide_comment', () => {
   let tempDir: string;
   let capturedPrompt = '';
+  let spawnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -184,6 +185,20 @@ describe('review_guide_comment', () => {
     mockLoadCustomReviewInstructions.mockResolvedValue('');
     mockPostPullRequestComment.mockResolvedValue({ id: 123, htmlUrl: 'https://comment/123' });
     mockUpdatePullRequestComment.mockResolvedValue({ id: 123, htmlUrl: 'https://comment/123' });
+    spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue({
+      stdout: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('2 files changed, 45 insertions(+)\n'));
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      exited: Promise.resolve(0),
+    } as any);
     mockBuildExecutorAndLog.mockReturnValue({
       execute: vi.fn(async (prompt: string) => {
         capturedPrompt = prompt;
@@ -197,7 +212,11 @@ describe('review_guide_comment', () => {
     } as any);
   });
 
-  test('uses Git diff instructions after Git checkout in jj workspaces', async () => {
+  afterEach(() => {
+    spawnSpy.mockRestore();
+  });
+
+  test('uses Git diff instructions and injects precomputed jj stats in jj workspaces', async () => {
     await handlePrReviewGuideCommentCommand(
       '42',
       { executor: 'codex-cli', force: true },
@@ -212,7 +231,18 @@ describe('review_guide_comment', () => {
         cwd: tempDir,
       })
     );
-    expect(mockGetUsingJj).not.toHaveBeenCalled();
+    expect(mockGetUsingJj).toHaveBeenCalledWith(tempDir);
+    expect(spawnSpy).toHaveBeenCalledWith(
+      [
+        'jj',
+        'diff',
+        '--stat',
+        '-f',
+        'latest(heads(bookmarks() & ancestors(@--)) | fork_point(@ | main), 1)',
+        'all() ~ (glob:"**/*.spec.*" | glob:"**/*.test.*")',
+      ],
+      expect.objectContaining({ cwd: tempDir })
+    );
     expect(mockGetGitHubAppInstallationTokenForOwner).toHaveBeenCalledWith('acme');
     expect(mockFindPullRequestCommentByMarker).toHaveBeenCalledWith(
       'acme',
@@ -231,6 +261,9 @@ describe('review_guide_comment', () => {
     expect(mockLog).toHaveBeenCalledWith('## Review Guide\n\nGenerated guide.');
     expect(capturedPrompt).toContain('Repository is git-based');
     expect(capturedPrompt).toContain("git merge-base 'origin/main' HEAD");
+    expect(capturedPrompt).toContain('Precomputed non-test change stats');
+    expect(capturedPrompt).toContain('2 files changed, 45 insertions(+)');
+    expect(capturedPrompt).toContain('### Non-test change stats');
     expect(capturedPrompt).not.toContain('Repository is jj-based');
     expect(capturedPrompt).not.toContain('jj diff');
   });
