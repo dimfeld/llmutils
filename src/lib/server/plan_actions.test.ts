@@ -58,8 +58,11 @@ function createFakeProcess(options: {
 }
 
 describe('lib/server/plan_actions', () => {
+  const originalTimPath = process.env.TIM_PATH;
+
   beforeEach(() => {
     vi.useFakeTimers();
+    delete process.env.TIM_PATH;
     vi.setSystemTime(new Date('2026-04-19T00:00:00.000Z'));
     vi.mocked(fs.mkdirSync).mockImplementation(() => {});
     vi.mocked(fs.openSync).mockReturnValue(7);
@@ -72,6 +75,11 @@ describe('lib/server/plan_actions', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    if (originalTimPath === undefined) {
+      delete process.env.TIM_PATH;
+    } else {
+      process.env.TIM_PATH = originalTimPath;
+    }
     vi.restoreAllMocks();
   });
 
@@ -84,7 +92,8 @@ describe('lib/server/plan_actions', () => {
     const result = await resultPromise;
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
-    const [, options] = spawnSpy.mock.calls[0];
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual(['tim', 'generate', '189', '--auto-workspace', '--no-terminal-input']);
     expect(options).toMatchObject({
       cwd: '/tmp/primary-workspace',
       stdin: 'ignore',
@@ -104,6 +113,42 @@ describe('lib/server/plan_actions', () => {
     expect(vi.mocked(console.info)).toHaveBeenCalledWith(
       '[web-ui] tim generate 189 --auto-workspace --no-terminal-input for plan 189 is running detached'
     );
+  });
+
+  test('spawnGenerateProcess uses TIM_PATH as the tim executable when set', async () => {
+    process.env.TIM_PATH = '/opt/tim/bin/tim';
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnGenerateProcess(189, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args] = spawnSpy.mock.calls[0];
+    expect(args).toEqual([
+      '/opt/tim/bin/tim',
+      'generate',
+      '189',
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
+    expect(result).toEqual({ success: true, planId: 189 });
+  });
+
+  test('spawnGenerateProcess falls back to tim when TIM_PATH is blank', async () => {
+    process.env.TIM_PATH = '   ';
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnGenerateProcess(189, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args] = spawnSpy.mock.calls[0];
+    expect(args).toEqual(['tim', 'generate', '189', '--auto-workspace', '--no-terminal-input']);
+    expect(result).toEqual({ success: true, planId: 189 });
   });
 
   test('spawnGenerateProcess returns stderr when the process exits during the early-exit window', async () => {

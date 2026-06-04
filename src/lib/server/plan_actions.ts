@@ -35,6 +35,10 @@ function describeCommand(args: string[]): string {
   return ['tim', ...args].join(' ');
 }
 
+function resolveTimExecutable(): string {
+  return process.env.TIM_PATH?.trim() || 'tim';
+}
+
 function describeTarget(kind: 'plan' | 'pr', id: number): string {
   return `${kind} ${id}`;
 }
@@ -55,7 +59,7 @@ async function spawnTimProcess(
     logFile = createLogFile(command, planId);
     const env = await buildWorkspaceCommandEnv(cwd, envOverrides);
 
-    proc = Bun.spawn(['tim', ...args], {
+    proc = Bun.spawn([resolveTimExecutable(), ...args], {
       cwd,
       env,
       stdin: 'ignore',
