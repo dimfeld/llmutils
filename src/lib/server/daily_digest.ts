@@ -17,8 +17,11 @@ import {
   slackDailyDigestWeekdayToDayIndex,
 } from '$common/slack/slack_daily_digest_config.js';
 import {
+  getSlackPinSender,
+  getSlackUnpinSender,
   postDailyDigestMessage,
   updateDailyDigestMessage,
+  type SlackPinSender,
   type SlackPostSender,
   type SlackUpdateSender,
 } from '$common/slack/slack_client.js';
@@ -32,7 +35,9 @@ import { debugLog } from '../../logging.js';
 import { listProjects } from '$tim/db/project.js';
 import { getProjectSetting } from '$tim/db/project_settings.js';
 import {
+  getLatestSlackDailyDigestMessageBeforeDate,
   getSlackDailyDigestMessage,
+  type SlackDailyDigestMessageRow,
   upsertSlackDailyDigestMessage,
 } from '$tim/db/slack_daily_digest_message.js';
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
@@ -52,6 +57,8 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
 export interface RunDailyDigestOptions {
   sender?: SlackPostSender;
   updateSender?: SlackUpdateSender;
+  pinSender?: SlackPinSender;
+  unpinSender?: SlackPinSender;
   nowMs?: number;
   loggedMisconfiguredWorkspaces?: Set<string>;
   linearMilestonesFetcher?: LinearMilestonesFetcher;
@@ -61,6 +68,8 @@ export interface RunDailyDigestOptions {
 
 export interface StartDailyDigestSchedulerOptions {
   sender?: SlackPostSender;
+  pinSender?: SlackPinSender;
+  unpinSender?: SlackPinSender;
   nowMs?: () => number;
 }
 
@@ -244,6 +253,52 @@ export function getWorkspaceDigestDate(
   return `${year}-${month}-${day}`;
 }
 
+async function pinNewDailyDigestMessage(args: {
+  token: string;
+  workspaceName: string;
+  repoFullName: string;
+  newMessage: { channel: string; ts: string };
+  previousMessage?: SlackDailyDigestMessageRow;
+  pinSender?: SlackPinSender;
+  unpinSender?: SlackPinSender;
+}): Promise<void> {
+  const pinSender = args.pinSender ?? getSlackPinSender(args.token);
+  const pinResult = await pinSender({
+    token: args.token,
+    channel: args.newMessage.channel,
+    ts: args.newMessage.ts,
+  });
+
+  if (!pinResult.ok) {
+    console.warn(
+      `[daily_digest] Failed to pin daily PR digest for ${args.repoFullName}: ${pinResult.error ?? 'unknown Slack error'}`
+    );
+    return;
+  }
+
+  const previousMessage = args.previousMessage;
+  if (
+    !previousMessage ||
+    (previousMessage.slack_channel === args.newMessage.channel &&
+      previousMessage.slack_ts === args.newMessage.ts)
+  ) {
+    return;
+  }
+
+  const unpinSender = args.unpinSender ?? getSlackUnpinSender(args.token);
+  const unpinResult = await unpinSender({
+    token: args.token,
+    channel: previousMessage.slack_channel,
+    ts: previousMessage.slack_ts,
+  });
+
+  if (!unpinResult.ok) {
+    console.warn(
+      `[daily_digest] Failed to unpin previous daily PR digest for ${args.repoFullName}: ${unpinResult.error ?? 'unknown Slack error'}`
+    );
+  }
+}
+
 function parseOwnerRepoFromPrUrl(prUrl: string): { owner: string; repo: string } | null {
   let parsedUrl: URL;
   try {
@@ -348,8 +403,9 @@ export async function runDailyDigestForWorkspace(
   workspaceName: string,
   options: RunDailyDigestOptions = {}
 ): Promise<void> {
+  let token: string;
   try {
-    resolveSlackWorkspaceToken(config, workspaceName);
+    token = resolveSlackWorkspaceToken(config, workspaceName);
   } catch (error) {
     if (
       !options.loggedMisconfiguredWorkspaces ||
@@ -412,6 +468,15 @@ export async function runDailyDigestForWorkspace(
       if (!existingMessage && options.updateExistingOnly === true) {
         continue;
       }
+      const previousMessage = existingMessage
+        ? undefined
+        : getLatestSlackDailyDigestMessageBeforeDate(
+            db,
+            workspaceName,
+            projectDigest.channel,
+            projectDigest.repoFullName,
+            digestDate
+          );
 
       const includeMilestones =
         linearMilestones.length > 0 &&
@@ -473,6 +538,15 @@ export async function runDailyDigestForWorkspace(
             slackChannel: replacement.channel,
             slackTs: replacement.ts,
           });
+          await pinNewDailyDigestMessage({
+            token,
+            workspaceName,
+            repoFullName: projectDigest.repoFullName,
+            newMessage: { channel: replacement.channel, ts: replacement.ts },
+            previousMessage: existingMessage,
+            pinSender: options.pinSender,
+            unpinSender: options.unpinSender,
+          });
         }
         continue;
       }
@@ -493,6 +567,17 @@ export async function runDailyDigestForWorkspace(
           slackChannel: result.channel,
           slackTs: result.ts,
         });
+        if (!existingMessage) {
+          await pinNewDailyDigestMessage({
+            token,
+            workspaceName,
+            repoFullName: projectDigest.repoFullName,
+            newMessage: { channel: result.channel, ts: result.ts },
+            previousMessage,
+            pinSender: options.pinSender,
+            unpinSender: options.unpinSender,
+          });
+        }
       }
 
       console.info(
@@ -519,6 +604,8 @@ export async function runAllDailyDigests(
     await runDailyDigestForWorkspace(db, config, workspaceName, {
       sender: options.sender,
       updateSender: options.updateSender,
+      pinSender: options.pinSender,
+      unpinSender: options.unpinSender,
       nowMs,
       loggedMisconfiguredWorkspaces,
       linearMilestonesFetcher: options.linearMilestonesFetcher,
@@ -610,6 +697,8 @@ export function startDailyDigestScheduler(
     try {
       await runDailyDigestForWorkspace(db, config, workspaceName, {
         sender: options.sender,
+        pinSender: options.pinSender,
+        unpinSender: options.unpinSender,
         nowMs: nowMs(),
         loggedMisconfiguredWorkspaces,
       });

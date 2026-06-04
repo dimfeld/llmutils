@@ -6,6 +6,7 @@ import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
+  getLatestSlackDailyDigestMessageBeforeDate,
   getSlackDailyDigestMessage,
   upsertSlackDailyDigestMessage,
 } from './slack_daily_digest_message.js';
@@ -87,5 +88,43 @@ describe('tim db/slack_daily_digest_message', () => {
     expect(second?.created_at).toBe(first?.created_at);
     expect(second?.slack_channel).toBe('C456');
     expect(second?.slack_ts).toBe('1710000001.000200');
+  });
+
+  test('retrieves the latest stored Slack message before a digest date', () => {
+    upsertSlackDailyDigestMessage(db, {
+      workspace: 'work',
+      channel: '#reviews',
+      repoFullName: 'octocat/hello-world',
+      digestDate: '2026-01-01',
+      slackChannel: 'C123',
+      slackTs: '1710000000.000100',
+    });
+    upsertSlackDailyDigestMessage(db, {
+      workspace: 'work',
+      channel: '#reviews',
+      repoFullName: 'octocat/hello-world',
+      digestDate: '2026-01-03',
+      slackChannel: 'C123',
+      slackTs: '1710000002.000300',
+    });
+    upsertSlackDailyDigestMessage(db, {
+      workspace: 'work',
+      channel: '#reviews',
+      repoFullName: 'octocat/hello-world',
+      digestDate: '2026-01-02',
+      slackChannel: 'C123',
+      slackTs: '1710000001.000200',
+    });
+
+    const row = getLatestSlackDailyDigestMessageBeforeDate(
+      db,
+      'work',
+      '#reviews',
+      'octocat/hello-world',
+      '2026-01-03'
+    );
+
+    expect(row?.digest_date).toBe('2026-01-02');
+    expect(row?.slack_ts).toBe('1710000001.000200');
   });
 });

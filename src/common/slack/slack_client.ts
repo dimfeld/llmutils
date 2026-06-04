@@ -7,6 +7,8 @@ import { DEFAULT_SLACK_DAILY_DIGEST_DEFAULT_GROUP_NAME } from './slack_daily_dig
 
 const SLACK_POST_MESSAGE_URL = 'https://slack.com/api/chat.postMessage';
 const SLACK_UPDATE_MESSAGE_URL = 'https://slack.com/api/chat.update';
+const SLACK_PIN_MESSAGE_URL = 'https://slack.com/api/pins.add';
+const SLACK_UNPIN_MESSAGE_URL = 'https://slack.com/api/pins.remove';
 
 export interface ReviewRequestReviewer {
   githubLogin: string;
@@ -69,6 +71,14 @@ export interface SlackUpdateSenderArgs {
 }
 
 export type SlackUpdateSender = (args: SlackUpdateSenderArgs) => Promise<SlackPostResult>;
+
+export interface SlackPinSenderArgs {
+  token: string;
+  channel: string;
+  ts: string;
+}
+
+export type SlackPinSender = (args: SlackPinSenderArgs) => Promise<SlackPostResult>;
 
 export interface PostReviewRequestMessageArgs {
   config: TimConfig;
@@ -152,6 +162,8 @@ export interface PostSlackTestMessageArgs {
 /** Cached Slack senders, keyed by resolved bot token. */
 const cachedSlackSenders = new Map<string, SlackPostSender>();
 const cachedSlackUpdateSenders = new Map<string, SlackUpdateSender>();
+const cachedSlackPinSenders = new Map<string, SlackPinSender>();
+const cachedSlackUnpinSenders = new Map<string, SlackPinSender>();
 
 function escapeSlackMrkdwnText(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -628,6 +640,68 @@ export function createFetchSlackUpdateSender(
   };
 }
 
+function createFetchSlackPinOperationSender(
+  token: string,
+  url: string,
+  operation: 'pins.add' | 'pins.remove',
+  fetchImpl: typeof fetch = fetch
+): SlackPinSender {
+  return async ({ channel, ts }: SlackPinSenderArgs): Promise<SlackPostResult> => {
+    try {
+      const response = await fetchImpl(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+        body: JSON.stringify({ channel, timestamp: ts }),
+      });
+
+      if (!response.ok) {
+        const responseText = await response.text().catch(() => '');
+        const message = `Slack ${operation} failed with HTTP ${response.status}${responseText ? `: ${responseText}` : ''}`;
+        error(message);
+        return { ok: false, error: message };
+      }
+
+      const responseBody = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
+      if (!responseBody?.ok) {
+        const message = responseBody?.error ?? `Slack ${operation} returned ok=false`;
+        error(`Slack ${operation} failed: ${message}`);
+        return { ok: false, error: message };
+      }
+
+      return { ok: true, channel, ts };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      error(`Slack ${operation} failed: ${message}`);
+      return { ok: false, error: message };
+    }
+  };
+}
+
+export function createFetchSlackPinSender(
+  token: string,
+  fetchImpl: typeof fetch = fetch
+): SlackPinSender {
+  return createFetchSlackPinOperationSender(token, SLACK_PIN_MESSAGE_URL, 'pins.add', fetchImpl);
+}
+
+export function createFetchSlackUnpinSender(
+  token: string,
+  fetchImpl: typeof fetch = fetch
+): SlackPinSender {
+  return createFetchSlackPinOperationSender(
+    token,
+    SLACK_UNPIN_MESSAGE_URL,
+    'pins.remove',
+    fetchImpl
+  );
+}
+
 export function getSlackPostSender(token: string): SlackPostSender {
   const cachedSender = cachedSlackSenders.get(token);
   if (cachedSender) {
@@ -650,9 +724,33 @@ export function getSlackUpdateSender(token: string): SlackUpdateSender {
   return sender;
 }
 
+export function getSlackPinSender(token: string): SlackPinSender {
+  const cachedSender = cachedSlackPinSenders.get(token);
+  if (cachedSender) {
+    return cachedSender;
+  }
+
+  const sender = createFetchSlackPinSender(token);
+  cachedSlackPinSenders.set(token, sender);
+  return sender;
+}
+
+export function getSlackUnpinSender(token: string): SlackPinSender {
+  const cachedSender = cachedSlackUnpinSenders.get(token);
+  if (cachedSender) {
+    return cachedSender;
+  }
+
+  const sender = createFetchSlackUnpinSender(token);
+  cachedSlackUnpinSenders.set(token, sender);
+  return sender;
+}
+
 export function clearSlackClientCache(): void {
   cachedSlackSenders.clear();
   cachedSlackUpdateSenders.clear();
+  cachedSlackPinSenders.clear();
+  cachedSlackUnpinSenders.clear();
 }
 
 export async function postReviewRequestMessage(

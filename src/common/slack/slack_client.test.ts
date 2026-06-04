@@ -10,9 +10,13 @@ import {
   buildSlackTestMessagePayload,
   buildReviewRequestSlackPayload,
   clearSlackClientCache,
+  createFetchSlackPinSender,
   createFetchSlackSender,
+  createFetchSlackUnpinSender,
   createFetchSlackUpdateSender,
+  getSlackPinSender,
   getSlackPostSender,
+  getSlackUnpinSender,
   getSlackUpdateSender,
   postDailyDigestMessage,
   postReviewRequestMessage,
@@ -979,6 +983,22 @@ describe('common/slack/slack_client', () => {
     });
   });
 
+  describe('getSlackPinSender caching', () => {
+    test('returns the same pin sender instance for the same token', () => {
+      const sender1 = getSlackPinSender('xoxb-token-a');
+      const sender2 = getSlackPinSender('xoxb-token-a');
+      expect(sender1).toBe(sender2);
+    });
+  });
+
+  describe('getSlackUnpinSender caching', () => {
+    test('returns the same unpin sender instance for the same token', () => {
+      const sender1 = getSlackUnpinSender('xoxb-token-a');
+      const sender2 = getSlackUnpinSender('xoxb-token-a');
+      expect(sender1).toBe(sender2);
+    });
+  });
+
   describe('createFetchSlackSender', () => {
     const payload = buildReviewRequestSlackPayload('#reviews', testPr, [mappedReviewer]);
 
@@ -1108,6 +1128,81 @@ describe('common/slack/slack_client', () => {
       });
 
       expect(result).toEqual({ ok: false, error: 'message_not_found' });
+    });
+  });
+
+  describe('createFetchSlackPinSender', () => {
+    test('calls pins.add with channel and timestamp', async () => {
+      const fetchImpl = vi.fn(async () =>
+        buildFetchResponse({
+          ok: true,
+          status: 200,
+          jsonBody: { ok: true },
+        })
+      ) as unknown as typeof fetch;
+      const sender = createFetchSlackPinSender('xoxb-token', fetchImpl);
+
+      const result = await sender({
+        token: 'xoxb-token',
+        channel: 'C123',
+        ts: '1710000000.000100',
+      });
+
+      expect(result).toEqual({ ok: true, channel: 'C123', ts: '1710000000.000100' });
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect(String(fetchImpl.mock.calls[0][0])).toBe('https://slack.com/api/pins.add');
+      const request = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body)) as {
+        channel: string;
+        timestamp: string;
+      };
+      expect(request).toEqual({ channel: 'C123', timestamp: '1710000000.000100' });
+    });
+
+    test('returns failure result on Slack ok:false body without throwing', async () => {
+      const fetchImpl = vi.fn(async () =>
+        buildFetchResponse({
+          ok: true,
+          status: 200,
+          jsonBody: { ok: false, error: 'missing_scope' },
+        })
+      ) as unknown as typeof fetch;
+      const sender = createFetchSlackPinSender('xoxb-token', fetchImpl);
+
+      const result = await sender({
+        token: 'xoxb-token',
+        channel: 'C123',
+        ts: '1710000000.000100',
+      });
+
+      expect(result).toEqual({ ok: false, error: 'missing_scope' });
+    });
+  });
+
+  describe('createFetchSlackUnpinSender', () => {
+    test('calls pins.remove with channel and timestamp', async () => {
+      const fetchImpl = vi.fn(async () =>
+        buildFetchResponse({
+          ok: true,
+          status: 200,
+          jsonBody: { ok: true },
+        })
+      ) as unknown as typeof fetch;
+      const sender = createFetchSlackUnpinSender('xoxb-token', fetchImpl);
+
+      const result = await sender({
+        token: 'xoxb-token',
+        channel: 'C123',
+        ts: '1710000000.000100',
+      });
+
+      expect(result).toEqual({ ok: true, channel: 'C123', ts: '1710000000.000100' });
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect(String(fetchImpl.mock.calls[0][0])).toBe('https://slack.com/api/pins.remove');
+      const request = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body)) as {
+        channel: string;
+        timestamp: string;
+      };
+      expect(request).toEqual({ channel: 'C123', timestamp: '1710000000.000100' });
     });
   });
 

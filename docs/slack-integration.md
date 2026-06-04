@@ -58,7 +58,7 @@ Token placeholders are expanded from `process.env` at read time. tim fails loudl
 
 Create or configure a Slack app for each workspace that should receive review-request messages.
 
-1. Give the bot token `chat:write`.
+1. Give the bot token `chat:write`. Daily digest pin/unpin behavior also needs `pins:write`; digest posts still send if pinning fails, but tim logs a warning.
 2. Store the token in an environment variable, such as `SLACK_WORK_TOKEN`.
 3. Add the workspace entry to `~/.config/tim/config.yml`.
 4. Invite the bot to each channel that a repo will use.
@@ -244,7 +244,7 @@ If those historical rows include closed or merged PRs, run `tim slack mark-close
 
 ## Daily PR Digest
 
-Separate from the event-driven review-request notifier, tim can post a once-per-day digest of PRs that are stuck. It is a per-repo opt-in (default off) and posts one message per digest-enabled repo to that repo's configured channel. The Slack `channel` and `ts` returned by `chat.postMessage` are stored per workspace, channel, repo, and local digest date so same-day refreshes can update the message in place.
+Separate from the event-driven review-request notifier, tim can post a once-per-day digest of PRs that are stuck. It is a per-repo opt-in (default off) and posts one message per digest-enabled repo to that repo's configured channel. The Slack `channel` and `ts` returned by `chat.postMessage` are stored per workspace, channel, repo, and local digest date so same-day refreshes can update the message in place. When a new daily digest post is created, tim pins the new post and unpins the latest previous digest post for that repo/channel; same-day updates keep the existing pin.
 
 The digest has three PR sections:
 

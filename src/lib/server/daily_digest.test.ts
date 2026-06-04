@@ -5,7 +5,11 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { constructGitHubRepositoryId } from '$common/github/pull_requests.js';
-import type { SlackPostSenderArgs, SlackUpdateSenderArgs } from '$common/slack/slack_client.js';
+import type {
+  SlackPinSenderArgs,
+  SlackPostSenderArgs,
+  SlackUpdateSenderArgs,
+} from '$common/slack/slack_client.js';
 import { SLACK_PROJECT_SETTING_KEY } from '$common/slack/slack_project_setting.js';
 import { getDefaultConfig, type TimConfig } from '$tim/configSchema.js';
 import { openDatabase } from '$tim/db/database.js';
@@ -32,6 +36,11 @@ interface FakeSender {
 interface FakeUpdateSender {
   sender: (args: SlackUpdateSenderArgs) => Promise<{ ok: boolean; error?: string }>;
   updated: SlackUpdateSenderArgs[];
+}
+
+interface FakePinSender {
+  sender: (args: SlackPinSenderArgs) => Promise<{ ok: boolean; error?: string }>;
+  calls: SlackPinSenderArgs[];
 }
 
 function makeFakeSender(): FakeSender {
@@ -67,6 +76,17 @@ function makeFakeUpdateSender(): FakeUpdateSender {
     ): Promise<{ ok: true; channel: string; ts: string }> => {
       updated.push(args);
       return { ok: true, channel: args.channel, ts: args.ts };
+    },
+  };
+}
+
+function makeFakePinSender(): FakePinSender {
+  const calls: SlackPinSenderArgs[] = [];
+  return {
+    calls,
+    sender: async (args: SlackPinSenderArgs): Promise<{ ok: true }> => {
+      calls.push(args);
+      return { ok: true };
     },
   };
 }
@@ -325,6 +345,81 @@ describe('lib/server/daily_digest', () => {
     expect(payloadText({ token: '', payload: updateSender.updated[0].payload })).toContain(
       'Repo A approved'
     );
+  });
+
+  test('pins a newly posted daily digest message', async () => {
+    setupProject('octocat', 'repo-a', { channel: '#reviews' });
+    insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
+
+    const postSender = makeFakeSenderWithCoordinates();
+    const pinSender = makeFakePinSender();
+    await runDailyDigestForWorkspace(db, buildConfig(), 'work', {
+      sender: postSender.sender,
+      pinSender: pinSender.sender,
+      nowMs: NOW_MS,
+    });
+
+    expect(pinSender.calls).toEqual([
+      { token: 'xoxb-work-token', channel: 'C123', ts: '1710000000.0001' },
+    ]);
+  });
+
+  test('pins the new daily digest and unpins the previous digest when posting a later date', async () => {
+    setupProject('octocat', 'repo-a', { channel: '#reviews' });
+    insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
+
+    const postSender = makeFakeSenderWithCoordinates();
+    const pinSender = makeFakePinSender();
+    const unpinSender = makeFakePinSender();
+    await runDailyDigestForWorkspace(db, buildConfig(), 'work', {
+      sender: postSender.sender,
+      pinSender: pinSender.sender,
+      unpinSender: unpinSender.sender,
+      nowMs: NOW_MS,
+    });
+    await runDailyDigestForWorkspace(db, buildConfig(), 'work', {
+      sender: postSender.sender,
+      pinSender: pinSender.sender,
+      unpinSender: unpinSender.sender,
+      nowMs: NOW_MS + 24 * 60 * 60 * 1000,
+    });
+
+    expect(postSender.sent).toHaveLength(2);
+    expect(pinSender.calls).toEqual([
+      { token: 'xoxb-work-token', channel: 'C123', ts: '1710000000.0001' },
+      { token: 'xoxb-work-token', channel: 'C123', ts: '1710000000.0002' },
+    ]);
+    expect(unpinSender.calls).toEqual([
+      { token: 'xoxb-work-token', channel: 'C123', ts: '1710000000.0001' },
+    ]);
+  });
+
+  test('does not pin or unpin when updating the same-day digest message', async () => {
+    setupProject('octocat', 'repo-a', { channel: '#reviews' });
+    insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
+
+    const postSender = makeFakeSenderWithCoordinates();
+    const pinSender = makeFakePinSender();
+    const unpinSender = makeFakePinSender();
+    await runDailyDigestForWorkspace(db, buildConfig(), 'work', {
+      sender: postSender.sender,
+      pinSender: pinSender.sender,
+      unpinSender: unpinSender.sender,
+      nowMs: NOW_MS,
+    });
+
+    const updateSender = makeFakeUpdateSender();
+    await runDailyDigestForWorkspace(db, buildConfig(), 'work', {
+      sender: postSender.sender,
+      updateSender: updateSender.sender,
+      pinSender: pinSender.sender,
+      unpinSender: unpinSender.sender,
+      nowMs: NOW_MS,
+    });
+
+    expect(updateSender.updated).toHaveLength(1);
+    expect(pinSender.calls).toHaveLength(1);
+    expect(unpinSender.calls).toHaveLength(0);
   });
 
   test('update-only digest refresh clears a same-day message when the repo digest becomes empty', async () => {

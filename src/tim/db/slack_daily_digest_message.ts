@@ -52,6 +52,39 @@ export function getSlackDailyDigestMessage(
   return row ?? undefined;
 }
 
+export function getLatestSlackDailyDigestMessageBeforeDate(
+  db: Database,
+  workspace: string,
+  channel: string,
+  repoFullName: string,
+  beforeDigestDate: string
+): SlackDailyDigestMessageRow | undefined {
+  const row = db
+    .prepare(
+      `
+        SELECT
+          workspace,
+          channel,
+          repo_full_name,
+          digest_date,
+          slack_channel,
+          slack_ts,
+          created_at,
+          updated_at
+        FROM slack_daily_digest_message
+        WHERE workspace = ?
+          AND channel = ?
+          AND repo_full_name = ?
+          AND digest_date < ?
+        ORDER BY digest_date DESC, updated_at DESC
+        LIMIT 1
+      `
+    )
+    .get(workspace, channel, repoFullName, beforeDigestDate) as SlackDailyDigestMessageRow | null;
+
+  return row ?? undefined;
+}
+
 export function upsertSlackDailyDigestMessage(
   db: Database,
   input: UpsertSlackDailyDigestMessageInput
