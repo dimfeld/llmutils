@@ -68,6 +68,17 @@ describe('agent_prompts failure protocol integration', () => {
     );
   });
 
+  it('includes structural maintainability guidance in reviewer prompt', () => {
+    const def = getReviewerPrompt(context);
+    expect(def.prompt).toContain('Structural Maintainability');
+    expect(def.prompt).toContain(
+      'Behavior-preserving simplifications that would delete whole branches'
+    );
+    expect(def.prompt).toContain('change that pushes a file over 1,000 lines');
+    expect(def.prompt).toContain('Do not use vague suggestions like "consider refactoring"');
+    expect(def.prompt).toContain('do not omit real correctness, security, testing');
+  });
+
   it('can include PR review scope guidance in reviewer prompt when requested', () => {
     const def = getReviewerPrompt(
       context,

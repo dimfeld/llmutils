@@ -362,7 +362,7 @@ export function buildReviewGuideIssuesFollowUpPrompt(
 
 ## Instructions
 - Re-read the guide and the underlying diff context before writing issues.
-- Focus on actionable correctness, security, testing, performance, and compliance findings.
+- Focus on actionable correctness, security, testing, performance, compliance, maintainability, and architecture findings.
 - Do not convert non-actionable review-guide annotations into JSON issues; annotations are already recorded as notes.
 - Output MUST be valid JSON matching the schema below.
 - Write the JSON to: \`${options.issuesPath}\`

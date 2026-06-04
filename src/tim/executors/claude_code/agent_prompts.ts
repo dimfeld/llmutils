@@ -76,6 +76,15 @@ When you reference files in your findings, use file paths relative to the projec
 - Missing required documentation or comments where mandated
 - Newly dead code or unreachable code paths that should be removed
 
+### Structural Maintainability (HIGH/MEDIUM PRIORITY)
+- Behavior-preserving simplifications that would delete whole branches, helpers, modes, layers, or concepts instead of merely rearranging complexity
+- New ad-hoc conditionals, one-off flags, nullable modes, or scattered special cases that tangle an existing flow
+- Abstractions that add indirection without reducing complexity: pass-through helpers, identity wrappers, generic machinery hiding simple data shapes, or refactors that move code without reducing concepts
+- Feature-specific logic leaking into shared paths instead of living in the canonical owning module or using existing helper APIs
+- Unnecessary optionality, \`any\`, \`unknown\`, casts, or silent fallback branches that obscure a clearer invariant or boundary
+- File growth that makes a module harder to scan; a change that pushes a file over 1,000 lines needs strong justification or extraction
+- Orchestration that is more sequential or less atomic than necessary when that makes the implementation harder to reason about
+
 ### Performance Issues (MEDIUM PRIORITY)
 - Inefficient algorithms (O(n²) where O(n) is possible)
 - Unnecessary file I/O or network calls
@@ -94,6 +103,20 @@ When you reference files in your findings, use file paths relative to the projec
 ## Check for the Same Issue Elsewhere
 
 When you find an issue, check whether the same pattern exists in other related files or nearby code paths. The fixer agent works best when it has a complete list of every location that needs attention, rather than discovering additional instances in later review rounds. Flag all affected files and line numbers explicitly so that fixes can be comprehensive in a single pass.
+
+## Structural Review Questions
+
+For meaningful changes, ask:
+- Is there a simpler structure that preserves behavior while deleting concepts, branches, or helper layers?
+- Did the diff add branching complexity where a typed model, policy object, dispatcher, or dedicated helper would make the flow clearer?
+- Is each abstraction earning its keep, or is it only wrapping or relabeling simple behavior?
+- Is this logic in the right file and layer, using the existing canonical helper where one exists?
+- Do casts, optional fields, or fallback branches hide an invariant that should be explicit at the boundary?
+- Did a cohesive file become larger, more coupled, more stateful, or harder to scan?
+
+For major or critical maintainability findings, include a concrete structural remedy. Name what should move, which branch or helper should disappear, which abstraction should collapse, or which existing module should own the logic. Do not use vague suggestions like "consider refactoring" for these findings.
+
+Prefer high-conviction structural findings over minor cleanup notes, but do not omit real correctness, security, testing, performance, or maintainability issues. Once you find a real pattern, still identify all affected locations so the fixer can address it in one pass.
 
 ## Pre-existing Issues
 

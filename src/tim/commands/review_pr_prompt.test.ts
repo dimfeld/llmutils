@@ -177,6 +177,7 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('.tim/tmp/review-issues.json');
     expect(prompt).toContain('"properties"');
     expect(prompt).toContain('"issues"');
+    expect(prompt).toContain('maintainability, and architecture findings');
   });
 
   test('buildStandaloneReviewIssuesPrompt includes categories without plan context', () => {
@@ -191,6 +192,9 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('## Critical Issues to Flag');
     expect(prompt).toContain('Code Correctness (HIGH PRIORITY)');
     expect(prompt).toContain('Security Vulnerabilities (HIGH PRIORITY)');
+    expect(prompt).toContain('Structural Maintainability (HIGH/MEDIUM PRIORITY)');
+    expect(prompt).toContain('Behavior-preserving simplifications');
+    expect(prompt).toContain('Do not use vague suggestions like "consider refactoring"');
     expect(prompt).toContain('Do not include plan/task context');
     expect(prompt).toContain('Do not provide a verdict');
     expect(prompt).toContain('For PR reviews, also check for outdated documentation');
