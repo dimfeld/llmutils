@@ -1030,7 +1030,45 @@ export function upsertPrReviewByAuthor(
         submitted_at = excluded.submitted_at
       WHERE excluded.submitted_at IS NULL
          OR pr_review.submitted_at IS NULL
-         OR excluded.submitted_at >= pr_review.submitted_at
+         OR (
+           excluded.submitted_at > pr_review.submitted_at
+           AND (
+             CASE excluded.state
+               WHEN 'DISMISSED' THEN 4
+               WHEN 'CHANGES_REQUESTED' THEN 3
+               WHEN 'APPROVED' THEN 2
+               WHEN 'COMMENTED' THEN 1
+               WHEN 'PENDING' THEN 0
+               ELSE 0
+             END >= 2
+             OR CASE pr_review.state
+               WHEN 'DISMISSED' THEN 4
+               WHEN 'CHANGES_REQUESTED' THEN 3
+               WHEN 'APPROVED' THEN 2
+               WHEN 'COMMENTED' THEN 1
+               WHEN 'PENDING' THEN 0
+               ELSE 0
+             END < 2
+           )
+         )
+         OR (
+           excluded.submitted_at = pr_review.submitted_at
+           AND CASE excluded.state
+             WHEN 'DISMISSED' THEN 4
+             WHEN 'CHANGES_REQUESTED' THEN 3
+             WHEN 'APPROVED' THEN 2
+             WHEN 'COMMENTED' THEN 1
+             WHEN 'PENDING' THEN 0
+             ELSE 0
+           END >= CASE pr_review.state
+             WHEN 'DISMISSED' THEN 4
+             WHEN 'CHANGES_REQUESTED' THEN 3
+             WHEN 'APPROVED' THEN 2
+             WHEN 'COMMENTED' THEN 1
+             WHEN 'PENDING' THEN 0
+             ELSE 0
+           END
+         )
     `
     )
     .run(prStatusId, input.author, input.state, input.body ?? null, input.submittedAt ?? null);

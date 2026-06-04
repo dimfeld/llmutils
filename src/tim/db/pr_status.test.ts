@@ -1200,6 +1200,125 @@ describe('tim db/pr_status', () => {
     });
   });
 
+  test('upsertPrReviewByAuthor does not let equal-time comments downgrade approvals', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1342',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1342,
+      title: 'Equal timestamp review PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const submittedAt = '2026-03-20T00:02:00.000Z';
+    expect(
+      upsertPrReviewByAuthor(db, detail.status.id, {
+        author: 'reviewer',
+        state: 'APPROVED',
+        body: 'Approved this',
+        submittedAt,
+      })
+    ).toBe(true);
+    expect(
+      upsertPrReviewByAuthor(db, detail.status.id, {
+        author: 'reviewer',
+        state: 'COMMENTED',
+        body: 'A same-time comment event',
+        submittedAt,
+      })
+    ).toBe(false);
+
+    const refreshed = getPrStatusByUrl(db, detail.status.pr_url);
+    expect(refreshed?.reviews).toHaveLength(1);
+    expect(refreshed?.reviews[0]).toMatchObject({
+      author: 'reviewer',
+      state: 'APPROVED',
+      body: 'Approved this',
+      submitted_at: submittedAt,
+    });
+  });
+
+  test('upsertPrReviewByAuthor does not let later comments downgrade approvals', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1392',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1392,
+      title: 'Later comment review PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(
+      upsertPrReviewByAuthor(db, detail.status.id, {
+        author: 'reviewer',
+        state: 'APPROVED',
+        body: 'Approved this',
+        submittedAt: '2026-03-20T00:02:00.000Z',
+      })
+    ).toBe(true);
+    expect(
+      upsertPrReviewByAuthor(db, detail.status.id, {
+        author: 'reviewer',
+        state: 'COMMENTED',
+        body: 'A later comment event',
+        submittedAt: '2026-03-20T00:03:00.000Z',
+      })
+    ).toBe(false);
+
+    const refreshed = getPrStatusByUrl(db, detail.status.pr_url);
+    expect(refreshed?.reviews).toHaveLength(1);
+    expect(refreshed?.reviews[0]).toMatchObject({
+      author: 'reviewer',
+      state: 'APPROVED',
+      body: 'Approved this',
+      submitted_at: '2026-03-20T00:02:00.000Z',
+    });
+  });
+
+  test('upsertPrReviewByAuthor allows equal-time decision states to replace comments', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1442',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1442,
+      title: 'Equal timestamp decision PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const submittedAt = '2026-03-20T00:02:00.000Z';
+    expect(
+      upsertPrReviewByAuthor(db, detail.status.id, {
+        author: 'reviewer',
+        state: 'COMMENTED',
+        body: 'Just a comment',
+        submittedAt,
+      })
+    ).toBe(true);
+    expect(
+      upsertPrReviewByAuthor(db, detail.status.id, {
+        author: 'reviewer',
+        state: 'APPROVED',
+        body: 'Approved at the same timestamp',
+        submittedAt,
+      })
+    ).toBe(true);
+
+    const refreshed = getPrStatusByUrl(db, detail.status.pr_url);
+    expect(refreshed?.reviews).toHaveLength(1);
+    expect(refreshed?.reviews[0]).toMatchObject({
+      author: 'reviewer',
+      state: 'APPROVED',
+      body: 'Approved at the same timestamp',
+      submitted_at: submittedAt,
+    });
+  });
+
   test('recomputeCheckRollupState applies failure, pending, success, and empty rollup rules', () => {
     const detail = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/1043',
