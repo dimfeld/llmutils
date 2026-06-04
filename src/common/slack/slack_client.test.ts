@@ -310,6 +310,8 @@ describe('common/slack/slack_client', () => {
           prNumber: 1,
           title: 'Approved PR',
           author: 'alice',
+          approvedMs: 86_400_000,
+          approvedLabel: '24 hours',
         },
       ],
       staleAwaitingReview: [
@@ -386,6 +388,7 @@ describe('common/slack/slack_client', () => {
 
       expect(blocks).toContain('<https://linear.review/octocat/hello-world/pull/1|Approved PR>');
       expect(blocks).toContain('`alice`');
+      expect(blocks).toContain('approved 24 hours ago');
       expect(blocks).toContain('<https://linear.review/octocat/hello-world/pull/2|Needs review>');
       expect(blocks).toContain('`bob`');
       expect(blocks).not.toContain('<@');

@@ -5,6 +5,8 @@ export interface ApprovedUnmergedRow {
   pr_number: number;
   title: string;
   author: string;
+  /** Latest approval review timestamp, if known. */
+  approved_at: string | null;
 }
 
 export interface StaleReviewRequestRow {
@@ -46,7 +48,14 @@ export function getApprovedUnmergedRows(
           pr_status.pr_url,
           pr_status.pr_number,
           COALESCE(pr_status.title, '') AS title,
-          COALESCE(pr_status.author, '') AS author
+          COALESCE(pr_status.author, '') AS author,
+          (
+            SELECT MAX(pr_review.submitted_at)
+            FROM pr_review
+            WHERE pr_review.pr_status_id = pr_status.id
+              AND pr_review.state = 'APPROVED'
+              AND pr_review.submitted_at IS NOT NULL
+          ) AS approved_at
         FROM pr_status
         WHERE pr_status.owner = ?
           AND pr_status.repo = ?

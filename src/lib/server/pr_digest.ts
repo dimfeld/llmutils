@@ -22,6 +22,8 @@ export interface DigestEntry {
   readyForReviewLabel?: string;
   previousReviewMs?: number;
   previousReviewLabel?: string;
+  approvedMs?: number;
+  approvedLabel?: string;
 }
 
 export interface PrDigest {
@@ -47,12 +49,25 @@ interface MutableStaleEntry extends DigestEntry {
 export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestOptions): PrDigest {
   const otherReadyThresholdMs = 72 * 3_600_000;
   const approvedUnmerged = input.approvedUnmergedRows.map(
-    (row: ApprovedUnmergedRow): DigestEntry => ({
-      prUrl: row.pr_url,
-      prNumber: row.pr_number,
-      title: row.title,
-      author: row.author,
-    })
+    (row: ApprovedUnmergedRow): DigestEntry => {
+      const approvedMs =
+        row.approved_at === null
+          ? undefined
+          : options.nowMs - parseDigestTimestampMs(row.approved_at, 'approved_at');
+
+      return {
+        prUrl: row.pr_url,
+        prNumber: row.pr_number,
+        title: row.title,
+        author: row.author,
+        ...(approvedMs === undefined
+          ? {}
+          : {
+              approvedMs,
+              approvedLabel: formatWaitDuration(approvedMs),
+            }),
+      };
+    }
   );
   const approvedPrUrls = new Set(approvedUnmerged.map((entry: DigestEntry): string => entry.prUrl));
 

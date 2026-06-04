@@ -35,7 +35,11 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { getProjectSetting, setProjectSetting } from '../db/project_settings.js';
-import { upsertPrReviewRequestByReviewer, upsertPrStatus } from '../db/pr_status.js';
+import {
+  upsertPrReviewByAuthor,
+  upsertPrReviewRequestByReviewer,
+  upsertPrStatus,
+} from '../db/pr_status.js';
 import { upsertSlackDailyDigestMessage } from '../db/slack_daily_digest_message.js';
 import { getUserMapping, upsertUserMapping } from '../db/slack_user_map.js';
 import {
@@ -328,6 +332,11 @@ describe('tim slack CLI handlers', () => {
         lastFetchedAt: '2026-01-01T00:00:00.000Z',
       });
       expect(approved.status.id).toBeGreaterThan(0);
+      upsertPrReviewByAuthor(db, approved.status.id, {
+        author: 'reviewer-approved',
+        state: 'APPROVED',
+        submittedAt: '2026-01-01T00:00:00.000Z',
+      });
       upsertPrReviewRequestByReviewer(db, stale.status.id, {
         reviewer: 'carol',
         action: 'requested',
@@ -353,7 +362,9 @@ describe('tim slack CLI handlers', () => {
       expect(output).toContain('Approved digest PR');
       expect(output).toContain('Waiting digest PR');
       expect(output).toContain('carol');
-      expect(output).toContain('  - #1 Approved digest PR (author: alice)\n\n  Awaiting review:');
+      expect(output).toMatch(
+        /  - #1 Approved digest PR \(author: alice; approved: \d+ days ago\)\n\n  Awaiting review:/
+      );
     });
 
     test('non-dry run posts computed digests through the injected sender', async () => {

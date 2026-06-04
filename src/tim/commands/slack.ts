@@ -249,7 +249,8 @@ function isDigestEmpty(digest: PrDigest): boolean {
 }
 
 function formatPrLine(entry: DigestEntry): string {
-  return `  - #${entry.prNumber} ${entry.title} (author: ${entry.author})`;
+  const approved = entry.approvedLabel ? `; approved: ${entry.approvedLabel} ago` : '';
+  return `  - #${entry.prNumber} ${entry.title} (author: ${entry.author}${approved})`;
 }
 
 function printLinearMilestonesDryRun(

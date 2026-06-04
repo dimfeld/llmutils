@@ -26,7 +26,9 @@ describe('tim db/pr_digest', () => {
 
   describe('getApprovedUnmergedRows', () => {
     test('returns only open approved non-draft PRs scoped to the repo', () => {
-      insertPr(1, { reviewDecision: 'APPROVED' });
+      const approved = insertPr(1, { reviewDecision: 'APPROVED' });
+      review(approved.status.id, 'reviewer-old', 'APPROVED', '2026-01-01T09:00:00.000Z');
+      review(approved.status.id, 'reviewer-new', 'APPROVED', '2026-01-01T10:00:00.000Z');
       insertPr(2, { reviewDecision: 'APPROVED', draft: true });
       insertPr(3, { reviewDecision: 'REVIEW_REQUIRED' });
       insertPr(4, { reviewDecision: 'CHANGES_REQUESTED' });
@@ -44,7 +46,21 @@ describe('tim db/pr_digest', () => {
           pr_number: 1,
           title: 'PR 1',
           author: 'author-1',
+          approved_at: '2026-01-01T10:00:00.000Z',
         },
+      ]);
+    });
+
+    test('returns null approval time when local approval review rows are missing', () => {
+      insertPr(10, { reviewDecision: 'APPROVED' });
+
+      const rows = getApprovedUnmergedRows(db, 'octocat', 'hello-world');
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          pr_number: 10,
+          approved_at: null,
+        }),
       ]);
     });
   });

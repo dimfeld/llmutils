@@ -259,7 +259,7 @@ Separate from the event-driven review-request notifier, tim can post a once-per-
 
 The digest has three PR sections:
 
-- **Approved, not yet merged** - open, non-draft PRs whose review decision is `APPROVED`.
+- **Approved, not yet merged** - open, non-draft PRs whose review decision is `APPROVED`. Entries include how long ago the latest known approval was submitted when local review data has that timestamp.
 - **Awaiting review** - open, non-draft PRs that are not already approved and have an assigned individual reviewer who has not reviewed since being requested. Each entry lists the waiting reviewer(s) and how long they've waited. PR entry links point at `linear.review/{owner}/{repo}/pull/{number}`. The footer includes both the GitHub "View all PRs awaiting your review" search link and a Linear reviews link. When `dailyDigest.reviewGroups` is configured (see [config](#config)), this section is split into prioritized `*Awaiting review — {name} ({label})*` subsections by PR label, with unmatched PRs in a trailing default group.
 - **Other PRs ready for review for > 3 days** - open, non-draft PRs with a recorded `ready_at` timestamp older than three days that were not already shown in the approved or awaiting-review sections. Each entry lists how long the PR has been ready and the time since the previous non-dismissed review, or notes that there has been no previous review.
 

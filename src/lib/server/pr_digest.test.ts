@@ -14,6 +14,7 @@ describe('lib/server/pr_digest', () => {
             pr_number: 1,
             title: 'Fix bug',
             author: 'alice',
+            approved_at: '2026-01-01T10:00:00.000Z',
           },
         ],
         staleReviewRequestRows: [],
@@ -29,11 +30,41 @@ describe('lib/server/pr_digest', () => {
           prNumber: 1,
           title: 'Fix bug',
           author: 'alice',
+          approvedMs: 24 * 3_600_000,
+          approvedLabel: '24 hours',
         },
       ],
       staleAwaitingReview: [],
       otherReadyForReview: [],
     });
+  });
+
+  test('passes through approved-unmerged rows without approval timestamps', () => {
+    const digest = buildPrDigest(
+      {
+        approvedUnmergedRows: [
+          {
+            pr_url: 'https://github.com/octocat/hello-world/pull/1',
+            pr_number: 1,
+            title: 'Fix bug',
+            author: 'alice',
+            approved_at: null,
+          },
+        ],
+        staleReviewRequestRows: [],
+        otherReadyForReviewRows: [],
+      },
+      { nowMs }
+    );
+
+    expect(digest.approvedUnmerged).toEqual([
+      {
+        prUrl: 'https://github.com/octocat/hello-world/pull/1',
+        prNumber: 1,
+        title: 'Fix bug',
+        author: 'alice',
+      },
+    ]);
   });
 
   test('groups waiting reviewers by PR without applying a minimum wait threshold', () => {
@@ -161,6 +192,7 @@ describe('lib/server/pr_digest', () => {
             pr_number: 7,
             title: 'Approved but still waiting',
             author: 'mallory',
+            approved_at: null,
           },
         ],
         staleReviewRequestRows: [
@@ -245,6 +277,27 @@ describe('lib/server/pr_digest', () => {
     ).toThrow('Invalid PR review request timestamp: not-a-date');
   });
 
+  test('throws a clear error for malformed approved_at timestamps', () => {
+    expect(() =>
+      buildPrDigest(
+        {
+          approvedUnmergedRows: [
+            {
+              pr_url: 'https://github.com/octocat/hello-world/pull/6',
+              pr_number: 6,
+              title: 'Bad timestamp',
+              author: 'kate',
+              approved_at: 'not-a-date',
+            },
+          ],
+          staleReviewRequestRows: [],
+          otherReadyForReviewRows: [],
+        },
+        { nowMs }
+      )
+    ).toThrow('Invalid PR digest approved_at timestamp: not-a-date');
+  });
+
   test('includes other ready PRs only after three days and excludes already shown PRs', () => {
     const digest = buildPrDigest(
       {
@@ -254,6 +307,7 @@ describe('lib/server/pr_digest', () => {
             pr_number: 7,
             title: 'Approved ready',
             author: 'alice',
+            approved_at: null,
           },
         ],
         staleReviewRequestRows: [

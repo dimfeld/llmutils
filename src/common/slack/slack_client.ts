@@ -110,6 +110,8 @@ export interface DailyDigestEntry {
   readyForReviewLabel?: string;
   previousReviewMs?: number;
   previousReviewLabel?: string;
+  approvedMs?: number;
+  approvedLabel?: string;
 }
 
 /** A configured prioritized review group: PRs carrying `label` are listed under `name`. */
@@ -217,7 +219,10 @@ function formatPrLink(entry: DailyDigestEntry): string {
 }
 
 function formatApprovedDigestLine(entry: DailyDigestEntry): string {
-  return `• ${formatPrLink(entry)} by ${formatPlainLogin(entry.author)}`;
+  const approved = entry.approvedLabel
+    ? ` — approved ${escapeSlackMrkdwnText(entry.approvedLabel)} ago`
+    : '';
+  return `• ${formatPrLink(entry)} by ${formatPlainLogin(entry.author)}${approved}`;
 }
 
 function formatStaleDigestLine(entry: DailyDigestEntry): string {
