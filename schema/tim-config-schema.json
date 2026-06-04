@@ -193,6 +193,17 @@
       },
       "additionalProperties": false
     },
+    "githubWebhooks": {
+      "description": "Machine-local GitHub webhook ingestion behavior",
+      "type": "object",
+      "properties": {
+        "planStatusUpdates": {
+          "description": "Whether GitHub webhook ingestion may automatically update linked plan statuses",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "environment": {
       "type": "object",
       "propertyNames": {

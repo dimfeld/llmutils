@@ -331,6 +331,17 @@ export const slackConfigSchema = z
 export type SlackWorkspaceConfig = z.infer<typeof slackWorkspaceConfigSchema>;
 export type SlackConfigInput = z.infer<typeof slackConfigSchema>;
 
+export const githubWebhooksConfigSchema = z
+  .object({
+    planStatusUpdates: z
+      .boolean()
+      .optional()
+      .describe('Whether GitHub webhook ingestion may automatically update linked plan statuses'),
+  })
+  .strict();
+
+export type GitHubWebhooksConfigInput = z.infer<typeof githubWebhooksConfigSchema>;
+
 export const proofGenerationSchema = z
   .object({
     mode: z
@@ -401,6 +412,10 @@ export const timConfigSchema = z
     slack: slackConfigSchema
       .optional()
       .describe('Machine-local Slack workspace configuration for outbound notifications'),
+    /** GitHub webhook ingestion behavior. */
+    githubWebhooks: githubWebhooksConfigSchema
+      .optional()
+      .describe('Machine-local GitHub webhook ingestion behavior'),
     /** Project-level environment variables rendered at process launch time. */
     environment: timEnvironmentConfigSchema.optional(),
     /** Issue tracking service to use for import commands and issue-related operations. Defaults to 'github'. */

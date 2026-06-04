@@ -555,6 +555,54 @@ defaultExecutor: ${DEFAULT_EXECUTOR}
       }
     });
 
+    test('loadEffectiveConfig keeps GitHub webhook settings global-only', async () => {
+      const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;
+      delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+
+      try {
+        const globalConfigPath = path.join(fakeHomeDir, '.config', 'tim', 'config.yml');
+        await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await fs.writeFile(
+          globalConfigPath,
+          yaml.stringify({
+            githubWebhooks: {
+              planStatusUpdates: false,
+            },
+          }),
+          'utf-8'
+        );
+
+        const mainConfigPath = path.join(configDir, 'tim.yml');
+        const localConfigPath = path.join(configDir, 'tim.local.yml');
+        await fs.writeFile(
+          mainConfigPath,
+          yaml.stringify({
+            githubWebhooks: {
+              planStatusUpdates: true,
+            },
+          }),
+          'utf-8'
+        );
+        await fs.writeFile(
+          localConfigPath,
+          yaml.stringify({
+            githubWebhooks: {
+              planStatusUpdates: true,
+            },
+          }),
+          'utf-8'
+        );
+
+        const config = await loadEffectiveConfig();
+
+        expect(config.githubWebhooks?.planStatusUpdates).toBe(false);
+      } finally {
+        if (originalEnv !== undefined) {
+          process.env.TIM_LOAD_GLOBAL_CONFIG = originalEnv;
+        }
+      }
+    });
+
     test('loadEffectiveConfig skips global merge when override path matches global config', async () => {
       // Re-enable global config loading for this test
       const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;

@@ -148,6 +148,17 @@ export WEBHOOK_INTERNAL_API_TOKEN="..."
 export TIM_WEBHOOK_POLL_INTERVAL="30"
 ```
 
+Webhook ingestion updates the local PR cache by default and may also update linked plan statuses:
+draft-to-ready PRs move linked plans from `needs_review` to `reviewed`, draft conversions move
+`reviewed` plans back to `needs_review`, and merged PRs can mark fully finished linked plans `done`.
+Set this in the global config (`~/.config/tim/config.yml`) to keep webhook PR cache updates but disable
+those automatic plan status changes:
+
+```yaml
+githubWebhooks:
+  planStatusUpdates: false
+```
+
 ## Workspaces
 
 `tim` is designed to run AI work outside your main checkout. A project should have one primary workspace and any number of execution workspaces.

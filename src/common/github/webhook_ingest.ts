@@ -45,6 +45,7 @@ import { loadEffectiveConfig } from '../../tim/configLoader.js';
 import { getPrStatusByRepoAndNumber } from '../../tim/db/pr_status.js';
 import { routeSyncOperation } from '../../tim/sync/write_router.js';
 import { setPlanScalarOperation } from '../../tim/sync/operations.js';
+import type { TimConfig } from '../../tim/configSchema.js';
 
 function isMergedPrPayload(payload: unknown): payload is {
   pull_request: { number: number; merged_at?: string | null; state?: string };
@@ -277,6 +278,10 @@ export interface IngestResult {
   errors: string[];
 }
 
+export interface IngestWebhookEventsOptions {
+  planStatusUpdates?: boolean;
+}
+
 export function formatWebhookIngestErrors(errors: string[]): string | undefined {
   return errors.length > 0 ? `Webhook ingestion had issues: ${errors.join('; ')}` : undefined;
 }
@@ -285,7 +290,14 @@ function formatIngestError(eventId: number, message: string): string {
   return `webhook event ${eventId}: ${message}`;
 }
 
-export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
+function areWebhookPlanStatusUpdatesEnabled(config: Pick<TimConfig, 'githubWebhooks'>): boolean {
+  return config.githubWebhooks?.planStatusUpdates !== false;
+}
+
+export async function ingestWebhookEvents(
+  db: Database,
+  options: IngestWebhookEventsOptions = {}
+): Promise<IngestResult> {
   const serverUrl = getWebhookServerUrl();
   if (!serverUrl) {
     return { eventsIngested: 0, prsUpdated: [], prsReadyForReview: [], errors: [] };
@@ -301,6 +313,10 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
       errors: ['WEBHOOK_INTERNAL_API_TOKEN is not configured but TIM_WEBHOOK_SERVER_URL is set'],
     };
   }
+
+  const planStatusUpdatesEnabled =
+    options.planStatusUpdates ??
+    areWebhookPlanStatusUpdatesEnabled(await loadEffectiveConfig(undefined, { quiet: true }));
 
   const BATCH_SIZE = 500;
   const prsUpdated = new Set<string>();
@@ -407,7 +423,12 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
           }
         }
 
-        if (event.eventType === 'pull_request' && result.updated && result.prDraftTransition) {
+        if (
+          planStatusUpdatesEnabled &&
+          event.eventType === 'pull_request' &&
+          result.updated &&
+          result.prDraftTransition
+        ) {
           const pullRequest = (payload as { pull_request?: { number?: unknown } }).pull_request;
           if (event.repositoryFullName && typeof pullRequest?.number === 'number') {
             const [owner, repo] = event.repositoryFullName.split('/');
@@ -432,6 +453,7 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
         }
 
         if (
+          planStatusUpdatesEnabled &&
           event.eventType === 'pull_request' &&
           isMergedPrPayload(payload) &&
           typeof payload.pull_request.number === 'number'

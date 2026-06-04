@@ -517,6 +517,48 @@ describe('common/github/webhook_ingest', () => {
     }
   });
 
+  test('ingestWebhookEvents leaves draft/ready linked plan statuses unchanged when plan status updates are disabled', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    const pr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/76',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 76,
+      title: 'Draft PR',
+      state: 'open',
+      draft: true,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const planUuid = '00000000-0000-4000-8000-000000000076';
+    upsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 76,
+      title: 'Ready source disabled',
+      branch: 'feature/ready-source-disabled',
+      filename: '76.plan.md',
+      status: 'needs_review',
+    });
+    linkPlanToPr(planUuid, pr.status.id);
+
+    enqueuePullRequestEvent({
+      id: 76,
+      deliveryId: 'delivery-ready-transition-disabled',
+      action: 'ready_for_review',
+      prNumber: 76,
+      title: 'Draft PR',
+      draft: false,
+      headRef: 'feature/ready-source-disabled',
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db, { planStatusUpdates: false });
+
+    expect(result.errors).toEqual([]);
+    expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/76']);
+    expect(getPlanByUuid(db, planUuid)?.status).toBe('needs_review');
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/76')?.status.draft).toBe(0);
+  });
+
   test('ingestWebhookEvents moves explicitly linked needs_review plans to reviewed without a plan_pr row', async () => {
     const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
     upsertPrStatus(db, {
@@ -820,6 +862,43 @@ describe('common/github/webhook_ingest', () => {
     logSpy.mockRestore();
     expect(plan?.docs_updated_at).toBe('2026-03-30T09:30:00.000Z');
     expect(plan?.lessons_applied_at).toBe('2026-03-30T09:45:00.000Z');
+  });
+
+  test('ingestWebhookEvents leaves merged linked plans unchanged when plan status updates are disabled', async () => {
+    upsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
+      uuid: 'plan-merged-disabled',
+      planId: 4,
+      title: 'Plan merged disabled',
+      branch: 'feature/webhook-merged-disabled',
+      filename: '4.plan.md',
+      status: 'needs_review',
+      tasks: [
+        { title: 'Task 1', description: 'Done', done: true },
+        { title: 'Task 2', description: 'Done', done: true },
+      ],
+    });
+
+    enqueuePullRequestEvent({
+      id: 18,
+      deliveryId: 'delivery-merged-disabled',
+      action: 'closed',
+      prNumber: 54,
+      title: 'Webhook PR Merged Disabled',
+      state: 'closed',
+      draft: false,
+      mergedAt: '2026-03-30T13:00:00.000Z',
+      headSha: 'sha-54',
+      headRef: 'feature/webhook-merged-disabled',
+      receivedAt: '2026-03-30T13:00:00.000Z',
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db, { planStatusUpdates: false });
+    const plan = getPlanByUuid(db, 'plan-merged-disabled');
+
+    expect(result.errors).toEqual([]);
+    expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/54']);
+    expect(plan?.status).toBe('needs_review');
   });
 
   test('ingestWebhookEvents marks a linked needs_review plan done when the PR is merged even without docs/lessons timestamps', async () => {

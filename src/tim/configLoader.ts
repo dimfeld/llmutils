@@ -104,6 +104,7 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
   mergeConfigKey('prCreation');
   mergeConfigKey('prFix');
   mergeConfigKey('proofGeneration');
+  mergeConfigKey('githubWebhooks');
   mergeConfigKey('simplify');
   mergeConfigKey('subagents');
   mergeConfigKey('tags');
@@ -287,7 +288,7 @@ export async function findGlobalConfigPath(): Promise<string | null> {
  */
 export async function loadConfig(
   configPath: string | null,
-  options: { stripSync?: boolean; stripSlack?: boolean } = {}
+  options: { stripSync?: boolean; stripSlack?: boolean; stripGitHubWebhooks?: boolean } = {}
 ): Promise<TimConfig> {
   if (configPath === null) {
     debugLog('No configuration file specified or found. Using default configuration.');
@@ -317,11 +318,11 @@ export async function loadConfig(
     return getDefaultConfig(); // Return default on YAML parse error as requested
   }
 
-  // Sync and Slack are machine-local: when loading repo/local configs, strip
+  // Sync, Slack, and GitHub webhook behavior are machine-local: when loading repo/local configs, strip
   // those keys before validation so a misconfigured repo can't break loading
   // and can't smuggle machine-local config into the merge result.
   if (
-    (options.stripSync || options.stripSlack) &&
+    (options.stripSync || options.stripSlack || options.stripGitHubWebhooks) &&
     parsedYaml &&
     typeof parsedYaml === 'object' &&
     !Array.isArray(parsedYaml)
@@ -332,6 +333,9 @@ export async function loadConfig(
     }
     if (options.stripSlack) {
       delete configRecord.slack;
+    }
+    if (options.stripGitHubWebhooks) {
+      delete configRecord.githubWebhooks;
     }
   }
 
@@ -497,23 +501,29 @@ export async function loadEffectiveConfig(
       resolvedGlobalConfigPath === resolvedConfigPath
     );
     const shouldLoadGlobal = Boolean(globalConfigPath && !configIsGlobal);
-    // The global config is the only legitimate source of `sync`. When the user
+    // The global config is the only legitimate source of machine-local config. When the user
     // explicitly points --config at the global file, treat that file as the
-    // sync source instead of stripping its sync block as if it were a repo.
+    // source instead of stripping those blocks as if it were a repo.
     const globalConfig =
       shouldLoadGlobal && globalConfigPath ? await loadConfig(globalConfigPath) : undefined;
     const configExists = configPath ? await Bun.file(configPath).exists() : false;
     const baseConfig = getDefaultConfig();
     const config = configExists
-      ? await loadConfig(configPath, { stripSync: !configIsGlobal, stripSlack: !configIsGlobal })
+      ? await loadConfig(configPath, {
+          stripSync: !configIsGlobal,
+          stripSlack: !configIsGlobal,
+          stripGitHubWebhooks: !configIsGlobal,
+        })
       : undefined;
     const localConfigPath = await findLocalConfigPath(configPath);
     let effectiveConfig: TimConfig;
 
-    // sync and Slack config are machine-local and must come only from the global config
+    // sync, Slack, and GitHub webhook config are machine-local and must come only from the global config
     // (or an explicit --config pointing at the global file).
     const machineLocalSync = globalConfig?.sync ?? (configIsGlobal ? config?.sync : undefined);
     const machineLocalSlack = globalConfig?.slack ?? (configIsGlobal ? config?.slack : undefined);
+    const machineLocalGitHubWebhooks =
+      globalConfig?.githubWebhooks ?? (configIsGlobal ? config?.githubWebhooks : undefined);
 
     if (globalConfig) {
       effectiveConfig = mergeConfigs(baseConfig, globalConfig);
@@ -530,6 +540,7 @@ export async function loadEffectiveConfig(
         const localConfig = await loadConfig(localConfigPath, {
           stripSync: true,
           stripSlack: true,
+          stripGitHubWebhooks: true,
         });
         effectiveConfig = mergeConfigs(effectiveConfig, localConfig);
 
@@ -571,6 +582,14 @@ export async function loadEffectiveConfig(
       effectiveConfig = { ...effectiveConfig, slack: machineLocalSlack };
     } else {
       const { slack: _stripped, ...rest } = effectiveConfig;
+      effectiveConfig = rest as TimConfig;
+    }
+
+    // Restore machine-local GitHub webhook settings from the global config; repo/local configs cannot influence it.
+    if (machineLocalGitHubWebhooks !== undefined) {
+      effectiveConfig = { ...effectiveConfig, githubWebhooks: machineLocalGitHubWebhooks };
+    } else {
+      const { githubWebhooks: _stripped, ...rest } = effectiveConfig;
       effectiveConfig = rest as TimConfig;
     }
 
