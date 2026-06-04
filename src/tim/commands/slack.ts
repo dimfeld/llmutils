@@ -9,6 +9,7 @@ import {
   buildDailyDigestSlackPayload,
   postSlackTestMessage,
   resolveDigestReviewGrouping,
+  type SlackPinSender,
   type SlackPostSender,
   type SlackUpdateSender,
 } from '../../common/slack/slack_client.js';
@@ -52,6 +53,7 @@ interface RootCommandLike {
   opts?: () => {
     config?: string;
     dryRun?: boolean;
+    pin?: boolean;
   };
 }
 
@@ -74,6 +76,7 @@ interface SlackDigestRunOptions {
 
 interface SlackDigestUpdateOptions {
   dryRun?: boolean;
+  pin?: boolean;
 }
 
 interface SlackWorkspaceOption {
@@ -163,6 +166,22 @@ function hasDryRunOption(
   let current = command;
   while (current) {
     if (current.opts?.().dryRun === true) {
+      return true;
+    }
+    current = current.parent;
+  }
+
+  return false;
+}
+
+function hasPinOption(options: { pin?: boolean }, command: RootCommandLike | undefined): boolean {
+  if (options.pin === true) {
+    return true;
+  }
+
+  let current = command;
+  while (current) {
+    if (current.opts?.().pin === true) {
       return true;
     }
     current = current.parent;
@@ -521,7 +540,9 @@ export async function handleSlackDigestRunCommand(
 export async function handleSlackDigestUpdateCommand(
   options: SlackDigestUpdateOptions,
   command: RootCommandLike | undefined,
-  updateSender?: SlackUpdateSender
+  updateSender?: SlackUpdateSender,
+  pinSender?: SlackPinSender,
+  unpinSender?: SlackPinSender
 ): Promise<void> {
   const config = await loadConfigForCommand(command);
   const db = getDatabase();
@@ -548,6 +569,7 @@ export async function handleSlackDigestUpdateCommand(
     digestDate
   );
 
+  const shouldPin = hasPinOption(options, command);
   if (hasDryRunOption(options, command)) {
     log(chalk.bold('Slack daily PR digest update dry run'));
     log(`Repository: ${repoFullName}`);
@@ -557,6 +579,9 @@ export async function handleSlackDigestUpdateCommand(
         `Stored message: channel=${existingMessage.slack_channel}, ts=${existingMessage.slack_ts}`
       );
       log('Would update the stored same-day digest message.');
+      if (shouldPin) {
+        log('Would pin the stored same-day digest message and unpin the previous digest message.');
+      }
     } else {
       log(chalk.yellow('No stored same-day digest message found; nothing would be updated.'));
     }
@@ -587,6 +612,9 @@ export async function handleSlackDigestUpdateCommand(
     updateSender,
     updateExistingOnly: true,
     repoFullNames: new Set([repoFullName]),
+    pinUpdatedExisting: shouldPin,
+    pinSender,
+    unpinSender,
   });
   log(chalk.green(`Updated Slack daily PR digest for ${repoFullName}.`));
 }

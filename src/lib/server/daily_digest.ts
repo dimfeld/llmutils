@@ -64,6 +64,7 @@ export interface RunDailyDigestOptions {
   linearMilestonesFetcher?: LinearMilestonesFetcher;
   updateExistingOnly?: boolean;
   repoFullNames?: ReadonlySet<string>;
+  pinUpdatedExisting?: boolean;
 }
 
 export interface StartDailyDigestSchedulerOptions {
@@ -484,15 +485,16 @@ export async function runDailyDigestForWorkspace(
       if (!existingMessage && options.updateExistingOnly === true) {
         continue;
       }
-      const previousMessage = existingMessage
-        ? undefined
-        : getLatestSlackDailyDigestMessageBeforeDate(
-            db,
-            workspaceName,
-            projectDigest.channel,
-            projectDigest.repoFullName,
-            digestDate
-          );
+      const previousMessage =
+        existingMessage && options.pinUpdatedExisting !== true
+          ? undefined
+          : getLatestSlackDailyDigestMessageBeforeDate(
+              db,
+              workspaceName,
+              projectDigest.channel,
+              projectDigest.repoFullName,
+              digestDate
+            );
 
       const includeMilestones =
         linearMilestones.length > 0 &&
@@ -583,7 +585,7 @@ export async function runDailyDigestForWorkspace(
           slackChannel: result.channel,
           slackTs: result.ts,
         });
-        if (!existingMessage) {
+        if (!existingMessage || options.pinUpdatedExisting === true) {
           await pinNewDailyDigestMessage({
             token,
             workspaceName,

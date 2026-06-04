@@ -1369,6 +1369,7 @@ slackDigestCommand
   .command('update')
   .description('Update the current project daily PR digest message for today')
   .option('--dry-run', 'Show whether a stored same-day digest message would be updated')
+  .option('--pin', 'Pin the updated digest message and unpin the previous digest message')
   .action(async (options, command) => {
     const { handleSlackDigestUpdateCommand } = await import('./commands/slack.js');
     await handleSlackDigestUpdateCommand(options, command).catch(handleCommandError);

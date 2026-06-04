@@ -54,6 +54,7 @@ import {
 import type {
   SlackPostResult,
   SlackPostSenderArgs,
+  SlackPinSenderArgs,
   SlackUpdateSenderArgs,
 } from '../../common/slack/slack_client.js';
 
@@ -568,6 +569,83 @@ describe('tim slack CLI handlers', () => {
       expect(updates[0].channel).toBe('C123');
       expect(updates[0].ts).toBe('1710000000.000100');
       expect(JSON.stringify(updates[0].payload.blocks)).toContain('Updated digest PR');
+    });
+
+    test('non-dry run with pin pins the stored same-day message and unpins the previous digest', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-02T12:00:00.000Z'));
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        dailyDigest: true,
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+      });
+      upsertSlackDailyDigestMessage(db, {
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+        repoFullName: `${OWNER}/${REPO}`,
+        digestDate: '2026-01-01',
+        slackChannel: 'C123',
+        slackTs: '1710000000.000099',
+      });
+      upsertSlackDailyDigestMessage(db, {
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+        repoFullName: `${OWNER}/${REPO}`,
+        digestDate: '2026-01-02',
+        slackChannel: 'C123',
+        slackTs: '1710000000.000100',
+      });
+      upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/4`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 4,
+        author: 'erin',
+        title: 'Updated digest PR',
+        state: 'open',
+        draft: false,
+        reviewDecision: 'APPROVED',
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      const updates: SlackUpdateSenderArgs[] = [];
+      const pins: SlackPinSenderArgs[] = [];
+      const unpins: SlackPinSenderArgs[] = [];
+      const fakeUpdateSender = async (args: SlackUpdateSenderArgs): Promise<SlackPostResult> => {
+        updates.push(args);
+        return { ok: true, channel: args.channel, ts: args.ts };
+      };
+      const fakePinSender = async (args: SlackPinSenderArgs): Promise<SlackPostResult> => {
+        pins.push(args);
+        return { ok: true };
+      };
+      const fakeUnpinSender = async (args: SlackPinSenderArgs): Promise<SlackPostResult> => {
+        unpins.push(args);
+        return { ok: true };
+      };
+
+      try {
+        await handleSlackDigestUpdateCommand(
+          { dryRun: false, pin: true },
+          fakeCommand,
+          fakeUpdateSender,
+          fakePinSender,
+          fakeUnpinSender
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(updates).toHaveLength(1);
+      expect(pins).toEqual([
+        { token: 'xoxb-test-token', channel: 'C123', ts: '1710000000.000100' },
+      ]);
+      expect(unpins).toEqual([
+        { token: 'xoxb-test-token', channel: 'C123', ts: '1710000000.000099' },
+      ]);
     });
   });
 
