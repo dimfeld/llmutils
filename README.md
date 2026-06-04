@@ -357,7 +357,7 @@ tim slack digest [--dry-run]
 Workspace names must exist in `slack.workspaces`. User mappings are keyed by `(workspace, github_login)` and shared across repos in that Slack workspace; mapped reviewers render as Slack mentions, while unmapped reviewers are named by GitHub login without a ping.
 Use `tim slack mark-closed-notified` to suppress pending historical review-request notifications for cached closed or merged PRs.
 
-The notifier runs in the SvelteKit web server when at least one Slack workspace is configured. It is kicked by GitHub webhook ingestion and also checks about every 15 seconds. Review requests on the same PR are batched with a fixed 30-second debounce, then marked notified in the DB after Slack confirms the post.
+The notifier runs in the SvelteKit web server when at least one Slack workspace has `reviewNotifier.enabled: true`. It is kicked by GitHub webhook ingestion and also checks about every 15 seconds. Review requests on the same PR are batched with a fixed 30-second debounce, then marked notified in the DB after Slack confirms the post.
 
 ### Daily PR Digest
 

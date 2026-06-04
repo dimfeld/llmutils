@@ -55,7 +55,9 @@ interface PendingPrGroup {
 }
 
 export function shouldRunSlackNotifier(config: TimConfig): boolean {
-  return Object.keys(config.slack?.workspaces ?? {}).length > 0;
+  return Object.values(config.slack?.workspaces ?? {}).some(
+    (workspace) => workspace.reviewNotifier?.enabled === true
+  );
 }
 
 export function shouldStartSlackNotifier(config: TimConfig): boolean {
@@ -145,6 +147,10 @@ async function processPendingPrGroup(
   const workspace = setting?.workspace?.trim();
   const channel = setting?.channel?.trim();
   if (setting?.enabled !== true || !workspace || !channel) {
+    return;
+  }
+  const workspaceConfig = config.slack?.workspaces?.[workspace];
+  if (workspaceConfig && workspaceConfig.reviewNotifier?.enabled !== true) {
     return;
   }
 

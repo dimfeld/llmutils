@@ -411,7 +411,7 @@ Per-project key-value settings stored in the database (migration v16). Used by t
 - `setProjectSetting(db, projectId, setting, value)`: INSERT OR REPLACE with `JSON.stringify(value)`.
 - `deleteProjectSetting(db, projectId, setting)`: Returns boolean indicating whether the setting existed.
 
-Per-repo Slack settings are stored here under the `slack` setting key (JSON `{ enabled, workspace, channel }`), written by the `tim slack` CLI. See [`slack-integration.md`](slack-integration.md).
+Per-repo Slack settings are stored here under the `slack` setting key (JSON `{ enabled, workspace, channel }`), written by the `tim slack` CLI. Review-request messages also require the target global Slack workspace to opt in with `reviewNotifier.enabled: true`. See [`slack-integration.md`](slack-integration.md).
 
 ### Slack User Mappings
 

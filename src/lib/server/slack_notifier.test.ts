@@ -43,7 +43,7 @@ function buildConfig(workspaceName = 'work', token = 'xoxb-test-token'): TimConf
     ...getDefaultConfig(),
     slack: {
       workspaces: {
-        [workspaceName]: { token },
+        [workspaceName]: { token, reviewNotifier: { enabled: true } },
       },
     },
   };
@@ -136,7 +136,27 @@ describe('lib/server/slack_notifier', () => {
       expect(shouldRunSlackNotifier(config)).toBe(false);
     });
 
-    test('returns true when at least one workspace is configured', () => {
+    test('returns false when workspaces are configured without review notifier opt-in', () => {
+      const config: TimConfig = {
+        ...getDefaultConfig(),
+        slack: { workspaces: { work: { token: 'xoxb-test-token' } } },
+      };
+      expect(shouldRunSlackNotifier(config)).toBe(false);
+    });
+
+    test('returns false when review notifier is explicitly disabled', () => {
+      const config: TimConfig = {
+        ...getDefaultConfig(),
+        slack: {
+          workspaces: {
+            work: { token: 'xoxb-test-token', reviewNotifier: { enabled: false } },
+          },
+        },
+      };
+      expect(shouldRunSlackNotifier(config)).toBe(false);
+    });
+
+    test('returns true when at least one workspace opts in to review notifier', () => {
       expect(shouldRunSlackNotifier(buildConfig())).toBe(true);
     });
   });
@@ -144,6 +164,15 @@ describe('lib/server/slack_notifier', () => {
   describe('startSlackNotifier', () => {
     test('returns null when no workspaces configured', () => {
       const handle = startSlackNotifier(db, getDefaultConfig());
+      expect(handle).toBeNull();
+    });
+
+    test('returns null when workspaces do not opt in to review notifier', () => {
+      const config: TimConfig = {
+        ...getDefaultConfig(),
+        slack: { workspaces: { work: { token: 'xoxb-test-token' } } },
+      };
+      const handle = startSlackNotifier(db, config);
       expect(handle).toBeNull();
     });
 
@@ -175,6 +204,21 @@ describe('lib/server/slack_notifier', () => {
       const blockText = payload.blocks[0].text.text;
       expect(blockText).toContain('reviewer-a');
       expect(blockText).toContain('reviewer-b');
+    });
+
+    test('skips review requests for workspace without review notifier opt-in', async () => {
+      const { prStatusId } = setupEnabledProject();
+      insertReviewRequest(db, prStatusId, 'reviewer-a', minsAgo(2));
+
+      const config: TimConfig = {
+        ...getDefaultConfig(),
+        slack: { workspaces: { work: { token: 'xoxb-test-token' } } },
+      };
+      const { sender, sent } = makeFakeSender();
+      await runSlackNotifierOnce(db, config, { sender, debounceMs: 0 });
+
+      expect(sent).toHaveLength(0);
+      expect(getPendingReviewRequestNotifications(db)).toHaveLength(1);
     });
 
     test('passes cached PR change stats into the Slack message', async () => {

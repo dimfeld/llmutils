@@ -271,6 +271,12 @@ export type SyncConfigInput = z.infer<typeof syncConfigSchema>;
 export const slackWorkspaceConfigSchema = z
   .object({
     token: z.string().optional(),
+    reviewNotifier: z
+      .object({
+        enabled: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
     dailyDigest: z
       .object({
         time: z

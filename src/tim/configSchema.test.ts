@@ -144,6 +144,9 @@ describe('configSchema', () => {
           workspaces: {
             work: {
               token: '${SLACK_WORK_TOKEN}',
+              reviewNotifier: {
+                enabled: true,
+              },
               dailyDigest: {
                 time: '09:30',
                 timezone: 'America/Los_Angeles',
@@ -161,6 +164,9 @@ describe('configSchema', () => {
 
       expect(result.slack?.workspaces?.work).toEqual({
         token: '${SLACK_WORK_TOKEN}',
+        reviewNotifier: {
+          enabled: true,
+        },
         dailyDigest: {
           time: '09:30',
           timezone: 'America/Los_Angeles',
@@ -186,6 +192,37 @@ describe('configSchema', () => {
       });
 
       expect(result.slack?.workspaces?.work?.dailyDigest).toBeUndefined();
+    });
+
+    test('does not add review notifier defaults in the zod schema', () => {
+      const result = timConfigSchema.parse({
+        slack: {
+          workspaces: {
+            work: {
+              token: '${SLACK_WORK_TOKEN}',
+            },
+          },
+        },
+      });
+
+      expect(result.slack?.workspaces?.work?.reviewNotifier).toBeUndefined();
+    });
+
+    test('rejects unknown fields in review notifier configuration', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          slack: {
+            workspaces: {
+              work: {
+                reviewNotifier: {
+                  enabled: true,
+                  unexpected: true,
+                },
+              },
+            },
+          },
+        })
+      ).toThrow();
     });
 
     test('rejects unknown fields in daily digest configuration', () => {

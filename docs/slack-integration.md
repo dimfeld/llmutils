@@ -20,7 +20,10 @@ Slack workspaces are named in global tim config:
 ```yaml
 slack:
   workspaces:
-    work: { token: '${SLACK_WORK_TOKEN}' }
+    work:
+      token: '${SLACK_WORK_TOKEN}'
+      reviewNotifier:
+        enabled: true
     personal: { token: '${SLACK_PERSONAL_TOKEN}' }
 ```
 
@@ -29,6 +32,7 @@ The `slack` block is machine-local, mirroring `sync`: tim strips it from repo an
 Each workspace has:
 
 - `token` - the Slack bot token, either literal or containing `${ENV_VAR}` placeholders
+- `reviewNotifier.enabled` (optional) - set to `true` to opt this workspace into event-driven review-request messages. Missing or `false` disables review-request messages for repos targeting this workspace.
 - `dailyDigest` (optional) - schedule for the [daily PR digest](#daily-pr-digest):
   - `time` - `HH:MM` 24-hour local time the digest fires (default `00:00`); rejected at load if not `HH:MM`
   - `timezone` - IANA time zone the `time` is interpreted in (default: the server's local zone); rejected at load if not a valid IANA zone
@@ -42,6 +46,8 @@ slack:
   workspaces:
     work:
       token: '${SLACK_WORK_TOKEN}'
+      reviewNotifier:
+        enabled: true
       dailyDigest:
         time: '09:00'
         timezone: 'America/New_York'
@@ -52,7 +58,7 @@ slack:
         defaultGroupName: 'Regular Priority'
 ```
 
-Token placeholders are expanded from `process.env` at read time. tim fails loudly if a referenced workspace does not exist, if its token is missing or empty, if a referenced environment variable is unset or empty, or if the expanded token is empty. The `dailyDigest` schedule is per workspace (so different workspaces can fire at their own local time); whether a given repo participates is the per-repo `dailyDigest` opt-in below.
+Token placeholders are expanded from `process.env` at read time. tim fails loudly if a referenced workspace does not exist, if its token is missing or empty, if a referenced environment variable is unset or empty, or if the expanded token is empty. Review-request messages are opt-in per workspace through `reviewNotifier.enabled: true`; the `dailyDigest` schedule is per workspace (so different workspaces can fire at their own local time); whether a given repo participates is the per-repo `dailyDigest` opt-in below.
 
 ## Slack App Setup
 
@@ -74,7 +80,10 @@ Example global config:
 ```yaml
 slack:
   workspaces:
-    work: { token: '${SLACK_WORK_TOKEN}' }
+    work:
+      token: '${SLACK_WORK_TOKEN}'
+      reviewNotifier:
+        enabled: true
 ```
 
 ## Per-Repo Settings
@@ -90,7 +99,7 @@ Repos opt in through a `project_setting` row named `slack`, with this shape:
 }
 ```
 
-These settings are written by the `tim slack` CLI and stored in the local database, not in committed config. One repo targets one workspace and one channel. Repos without an enabled Slack setting do not send notifications. `dailyDigest` is a separate opt-in (default off) that enables the [daily PR digest](#daily-pr-digest) for the repo; it posts to the same workspace and channel as review-request notifications and requires Slack to already be enabled.
+These settings are written by the `tim slack` CLI and stored in the local database, not in committed config. One repo targets one workspace and one channel. Repos without an enabled Slack setting do not send review-request notifications, and repos targeting a workspace without `reviewNotifier.enabled: true` are skipped. `dailyDigest` is a separate opt-in (default off) that enables the [daily PR digest](#daily-pr-digest) for the repo; it posts to the same workspace and channel as review-request notifications and requires Slack to already be enabled.
 
 The `enable`, `disable`, and `list` commands resolve the current GitHub repository from the working directory and look up the matching tim project. Run them from a checkout that tim already knows as a project.
 
@@ -226,9 +235,9 @@ The fallback text also includes the PR title, author, cached PR size when availa
 
 ## Notifier Behavior
 
-The notifier runs inside the SvelteKit web server, next to the GitHub webhook poller. It starts from `src/hooks.server.ts` when webhook polling is active and at least one Slack workspace is configured. It is kicked after webhook ingestion reports PR updates through the poller's `onPrUpdated` callback, and it also runs on a low-frequency internal interval of about 15 seconds so a PR can send after its debounce window even if no later webhook arrives.
+The notifier runs inside the SvelteKit web server, next to the GitHub webhook poller. It starts from `src/hooks.server.ts` when webhook polling is active and at least one Slack workspace has `reviewNotifier.enabled: true`. It is kicked after webhook ingestion reports PR updates through the poller's `onPrUpdated` callback, and it also runs on a low-frequency internal interval of about 15 seconds so a PR can send after its debounce window even if no later webhook arrives.
 
-On each tick, the notifier reads pending review requests from `pr_review_request` joined to `pr_status`, using `removed_at IS NULL AND notified_at IS NULL` and `pr_status.state = 'open'`. It groups rows by PR, resolves the PR repo to a tim project, reads that project's `slack` setting, and skips repos that are not enabled. If an enabled repo references an undefined workspace or a workspace with no usable token, the notifier logs a loud error and leaves those rows pending.
+On each tick, the notifier reads pending review requests from `pr_review_request` joined to `pr_status`, using `removed_at IS NULL AND notified_at IS NULL` and `pr_status.state = 'open'`. It groups rows by PR, resolves the PR repo to a tim project, reads that project's `slack` setting, and skips repos that are not enabled or target a workspace without review-notifier opt-in. If an enabled repo references an undefined workspace or a workspace with no usable token, the notifier logs a loud error and leaves those rows pending.
 
 Debounce is fixed at 30 seconds per PR. A PR is eligible only after `now - max(requested_at)` across its pending reviewers is at least 30 seconds. Because the notifier re-queries pending rows each tick, reviewers added within the window join the same message.
 
@@ -299,7 +308,10 @@ export SLACK_WORK_TOKEN="xoxb-..."
 ```yaml
 slack:
   workspaces:
-    work: { token: '${SLACK_WORK_TOKEN}' }
+    work:
+      token: '${SLACK_WORK_TOKEN}'
+      reviewNotifier:
+        enabled: true
 ```
 
 From a repo that exists as a tim project:
