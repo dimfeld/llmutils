@@ -365,6 +365,7 @@ export function buildReviewGuideIssuesFollowUpPrompt(
 - Focus on actionable correctness, security, testing, performance, compliance, maintainability, and architecture findings.
 - Do not convert non-actionable review-guide annotations into JSON issues; annotations are already recorded as notes.
 - Output MUST be valid JSON matching the schema below.
+- Issue content and suggestions are JSON string values, but Markdown inside those strings is allowed and encouraged when it improves readability.
 - Write the JSON to: \`${options.issuesPath}\`
 - Do not include markdown fences inside the JSON file.
 
@@ -404,6 +405,7 @@ ${buildReviewerCriticalIssuesGuidance()}
 - Return valid JSON matching the schema below.
 - Focus on concrete, actionable issues tied to changed code.
 - Prefer fewer high-signal findings over speculative noise.
+- Issue content and suggestions are JSON string values, but Markdown inside those strings is allowed and encouraged when it improves readability.
 ${planContextInstruction}
 - Do not provide a verdict; only return the JSON issues payload.
 - Use the same severity bar as the reviewer prompt: only report genuine issues that would matter in review.

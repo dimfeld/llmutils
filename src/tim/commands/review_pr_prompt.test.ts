@@ -178,6 +178,7 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('"properties"');
     expect(prompt).toContain('"issues"');
     expect(prompt).toContain('maintainability, and architecture findings');
+    expect(prompt).toContain('Markdown inside those strings is allowed and encouraged');
   });
 
   test('buildStandaloneReviewIssuesPrompt includes categories without plan context', () => {
@@ -201,6 +202,7 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('Do not run tests, type checking, linting, formatting');
     expect(prompt).not.toContain('## Review Scope');
     expect(prompt).toContain('"issues"');
+    expect(prompt).toContain('Markdown inside those strings is allowed and encouraged');
   });
 
   test('buildStandaloneReviewIssuesPrompt includes jj commands when useJj is true', () => {
