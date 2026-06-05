@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { format as formatMessage } from 'node:util';
 
 vi.mock('../../logging.js', () => ({
   log: vi.fn(),
@@ -61,6 +62,7 @@ import type {
   SlackPinSenderArgs,
   SlackUpdateSenderArgs,
 } from '../../common/slack/slack_client.js';
+import { setDebug } from '../../common/process_state.js';
 
 const OWNER = 'testowner';
 const REPO = 'testrepo';
@@ -103,6 +105,7 @@ describe('tim slack CLI handlers', () => {
 
   afterEach(async () => {
     vi.clearAllMocks();
+    setDebug(false);
     closeDatabaseForTesting();
 
     if (originalXdgConfigHome === undefined) {
@@ -365,6 +368,180 @@ describe('tim slack CLI handlers', () => {
       expect(output).toMatch(
         /  - #1 Approved digest PR \(author: alice; approved: \d+ days ago\)\n\n  Awaiting review:/
       );
+    });
+
+    test('debug dry run logs review request state used to build awaiting-review entries', async () => {
+      setDebug(true);
+      vi.mocked(loadEffectiveConfig).mockResolvedValue({
+        slack: {
+          workspaces: {
+            [WORKSPACE_NAME]: {
+              token: '${TIM_SLACK_DIGEST_TEST_UNSET_TOKEN}',
+              dailyDigest: { enabled: true },
+            },
+          },
+        },
+      } as any);
+      delete process.env.TIM_SLACK_DIGEST_TEST_UNSET_TOKEN;
+
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        dailyDigest: true,
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+      });
+      const waiting = upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/3005`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 3005,
+        author: 'alice',
+        title: 'Debug digest PR',
+        state: 'open',
+        draft: false,
+        reviewDecision: null,
+        readyAt: '2026-01-01T00:00:00.000Z',
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+      upsertPrReviewRequestByReviewer(db, waiting.status.id, {
+        reviewer: 'carol',
+        action: 'requested',
+        eventAt: '2026-01-01T00:00:00.000Z',
+      });
+      upsertPrReviewByAuthor(db, waiting.status.id, {
+        author: 'carol',
+        state: 'COMMENTED',
+        submittedAt: '2026-01-01T01:00:00.000Z',
+      });
+
+      await handleSlackDigestRunCommand({ dryRun: true }, fakeCommand);
+
+      const { debugLog } = await import('../../logging.js');
+      const debugOutput = vi
+        .mocked(debugLog)
+        .mock.calls.map((call) => formatMessage(...call))
+        .join('\n');
+      expect(debugOutput).toContain(`PR digest input for ${OWNER}/${REPO}`);
+      expect(debugOutput).toContain(`Review request debug for ${OWNER}/${REPO}#3005`);
+      expect(debugOutput).toContain('requestReviewer=carol');
+      expect(debugOutput).toContain('requestState=active-request');
+      expect(debugOutput).toContain(
+        'requestedReviewerClearingReview=carol:COMMENTED@2026-01-01T01:00:00.000Z'
+      );
+      expect(debugOutput).toContain(
+        'reviewerClearingReview=carol:COMMENTED@2026-01-01T01:00:00.000Z'
+      );
+      expect(debugOutput).toContain('latestPrReviews=[carol:COMMENTED@2026-01-01T01:00:00.000Z]');
+    });
+
+    test('dry run groups awaiting-review entries by configured labels', async () => {
+      vi.mocked(loadEffectiveConfig).mockResolvedValue({
+        slack: {
+          workspaces: {
+            [WORKSPACE_NAME]: {
+              token: '${TIM_SLACK_DIGEST_TEST_UNSET_TOKEN}',
+              dailyDigest: {
+                enabled: true,
+                reviewGroups: [
+                  { name: 'ASAP', label: 'review-p-0' },
+                  { name: 'High Priority', label: 'review-p-1' },
+                ],
+                defaultGroupName: 'Regular Priority',
+              },
+            },
+          },
+        },
+      } as any);
+      delete process.env.TIM_SLACK_DIGEST_TEST_UNSET_TOKEN;
+
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        dailyDigest: true,
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+      });
+
+      const urgent = upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/10`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 10,
+        author: 'alice',
+        title: 'Urgent digest PR',
+        state: 'open',
+        draft: false,
+        reviewDecision: null,
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+        labels: [{ name: 'review-p-0' }],
+      });
+      const high = upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/11`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 11,
+        author: 'bob',
+        title: 'High priority digest PR',
+        state: 'open',
+        draft: false,
+        reviewDecision: null,
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+        labels: [{ name: 'review-p-1' }],
+      });
+      const regular = upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/12`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 12,
+        author: 'chris',
+        title: 'Regular digest PR',
+        state: 'open',
+        draft: false,
+        reviewDecision: null,
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+        labels: [{ name: 'bug' }],
+      });
+
+      upsertPrReviewRequestByReviewer(db, urgent.status.id, {
+        reviewer: 'reviewer-urgent',
+        action: 'requested',
+        eventAt: '2026-01-01T00:00:00.000Z',
+      });
+      upsertPrReviewRequestByReviewer(db, high.status.id, {
+        reviewer: 'reviewer-high',
+        action: 'requested',
+        eventAt: '2026-01-01T00:00:00.000Z',
+      });
+      upsertPrReviewRequestByReviewer(db, regular.status.id, {
+        reviewer: 'reviewer-regular',
+        action: 'requested',
+        eventAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      await handleSlackDigestRunCommand({ dryRun: true }, fakeCommand);
+
+      const { log } = await import('../../logging.js');
+      const output = vi
+        .mocked(log)
+        .mock.calls.map((call) => String(call[0]))
+        .join('\n');
+      expect(output).toContain('  Awaiting review — ASAP (review-p-0):');
+      expect(output).toContain('  Awaiting review — High Priority (review-p-1):');
+      expect(output).toContain('  Awaiting review — Regular Priority:');
+      expect(output).not.toContain('  Awaiting review:\n');
+
+      const asapIndex = output.indexOf('Awaiting review — ASAP');
+      const highIndex = output.indexOf('Awaiting review — High Priority');
+      const regularIndex = output.indexOf('Awaiting review — Regular Priority');
+      expect(asapIndex).toBeGreaterThanOrEqual(0);
+      expect(asapIndex).toBeLessThan(highIndex);
+      expect(highIndex).toBeLessThan(regularIndex);
+      expect(output.indexOf('Urgent digest PR')).toBeGreaterThan(asapIndex);
+      expect(output.indexOf('High priority digest PR')).toBeGreaterThan(highIndex);
+      expect(output.indexOf('Regular digest PR')).toBeGreaterThan(regularIndex);
     });
 
     test('non-dry run posts computed digests through the injected sender', async () => {

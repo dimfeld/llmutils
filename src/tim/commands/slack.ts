@@ -9,6 +9,7 @@ import {
   buildDailyDigestSlackPayload,
   postSlackTestMessage,
   resolveDigestReviewGrouping,
+  type DigestReviewGroupingOptions,
   type SlackPinSender,
   type SlackPostSender,
   type SlackUpdateSender,
@@ -85,6 +86,12 @@ interface SlackWorkspaceOption {
 
 interface SlackMapOptions extends SlackWorkspaceOption {
   display?: string;
+}
+
+interface AwaitingReviewDryRunGroup {
+  name: string;
+  label: string | null;
+  entries: DigestEntry[];
 }
 
 function getRootOptions(command: RootCommandLike | undefined): { config?: string } {
@@ -253,6 +260,42 @@ function formatPrLine(entry: DigestEntry): string {
   return `  - #${entry.prNumber} ${entry.title} (author: ${entry.author}${approved})`;
 }
 
+function formatAwaitingReviewLine(entry: DigestEntry): string {
+  const reviewers =
+    entry.reviewers?.map((reviewer) => `${reviewer.login} (${reviewer.waitedLabel})`).join(', ') ??
+    'none';
+  return `${formatPrLine(entry)}; waiting on: ${reviewers}`;
+}
+
+function partitionAwaitingReviewDryRunGroups(
+  entries: ReadonlyArray<DigestEntry>,
+  grouping: DigestReviewGroupingOptions
+): AwaitingReviewDryRunGroup[] {
+  const reviewGroups = grouping.reviewGroups ?? [];
+  const groups: AwaitingReviewDryRunGroup[] = reviewGroups.map((group) => ({
+    name: group.name,
+    label: group.label,
+    entries: [],
+  }));
+  const defaultGroup: AwaitingReviewDryRunGroup = {
+    name: grouping.defaultGroupName ?? 'Regular Priority',
+    label: null,
+    entries: [],
+  };
+
+  for (const entry of entries) {
+    const labels = entry.labels ?? [];
+    const matchIndex = reviewGroups.findIndex((group) => labels.includes(group.label));
+    if (matchIndex === -1) {
+      defaultGroup.entries.push(entry);
+    } else {
+      groups[matchIndex]?.entries.push(entry);
+    }
+  }
+
+  return [...groups, defaultGroup].filter((group) => group.entries.length > 0);
+}
+
 function printLinearMilestonesDryRun(
   workspaceName: string,
   milestones: LinearMilestoneDigestEntry[]
@@ -271,7 +314,10 @@ function printLinearMilestonesDryRun(
   return true;
 }
 
-function printDigestDryRunProject(projectDigest: CollectedProjectDigest): void {
+function printDigestDryRunProject(
+  projectDigest: CollectedProjectDigest,
+  grouping: DigestReviewGroupingOptions
+): void {
   log(
     `${chalk.bold(projectDigest.repoFullName)} (${projectDigest.workspaceName}/${projectDigest.channel})`
   );
@@ -298,14 +344,25 @@ function printDigestDryRunProject(projectDigest: CollectedProjectDigest): void {
   }
 
   if (projectDigest.digest.staleAwaitingReview.length > 0) {
-    printSectionBreak();
-    log('  Awaiting review:');
-    for (const entry of projectDigest.digest.staleAwaitingReview) {
-      const reviewers =
-        entry.reviewers
-          ?.map((reviewer) => `${reviewer.login} (${reviewer.waitedLabel})`)
-          .join(', ') ?? 'none';
-      log(`${formatPrLine(entry)}; waiting on: ${reviewers}`);
+    const reviewGroups = grouping.reviewGroups ?? [];
+    if (reviewGroups.length === 0) {
+      printSectionBreak();
+      log('  Awaiting review:');
+      for (const entry of projectDigest.digest.staleAwaitingReview) {
+        log(formatAwaitingReviewLine(entry));
+      }
+    } else {
+      for (const group of partitionAwaitingReviewDryRunGroups(
+        projectDigest.digest.staleAwaitingReview,
+        grouping
+      )) {
+        printSectionBreak();
+        const labelSuffix = group.label ? ` (${group.label})` : '';
+        log(`  Awaiting review — ${group.name}${labelSuffix}:`);
+        for (const entry of group.entries) {
+          log(formatAwaitingReviewLine(entry));
+        }
+      }
     }
   }
 
@@ -518,11 +575,12 @@ export async function handleSlackDigestRunCommand(
       });
 
       let printedSection = printLinearMilestonesDryRun(workspaceName, linearMilestones);
+      const grouping = resolveDigestReviewGrouping(config, workspaceName);
       for (const projectDigest of projectDigests) {
         if (printedSection) {
           log('');
         }
-        printDigestDryRunProject(projectDigest);
+        printDigestDryRunProject(projectDigest, grouping);
         printedSection = true;
         printedProjectCount += 1;
       }
@@ -592,7 +650,7 @@ export async function handleSlackDigestUpdateCommand(
       includeEmpty: true,
     }).find((digest) => digest.repoFullName === repoFullName && digest.channel === channel);
     if (projectDigest) {
-      printDigestDryRunProject(projectDigest);
+      printDigestDryRunProject(projectDigest, resolveDigestReviewGrouping(config, workspace));
       log('');
       printDigestSlackPayloadDryRun(projectDigest, config, workspace);
     } else {

@@ -31,6 +31,7 @@ import {
   SLACK_PROJECT_SETTING_KEY,
 } from '$common/slack/slack_project_setting.js';
 import type { TimConfig } from '$tim/configSchema.js';
+import { debug as debugEnabled } from '../../common/process_state.js';
 import { debugLog } from '../../logging.js';
 import { listProjects } from '$tim/db/project.js';
 import { getProjectSetting } from '$tim/db/project_settings.js';
@@ -44,7 +45,9 @@ import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import {
   getApprovedUnmergedRows,
   getOtherReadyForReviewRows,
+  getReviewRequestDebugRows,
   getStaleReviewRequestRows,
+  type ReviewRequestDebugRow,
 } from '$tim/db/pr_digest.js';
 
 import { computeNextFireMs } from './digest_schedule.js';
@@ -195,6 +198,24 @@ export function collectDailyDigestsForWorkspace(
         { approvedUnmergedRows, staleReviewRequestRows, otherReadyForReviewRows },
         { nowMs }
       );
+      const repoFullName = `${ownerRepo.owner}/${ownerRepo.repo}`;
+
+      if (debugEnabled) {
+        debugLog(
+          '[daily_digest] PR digest input for %s: approvedRows=%d staleRequestRows=%d otherReadyRows=%d outputApproved=%d outputAwaiting=%d outputOtherReady=%d',
+          repoFullName,
+          approvedUnmergedRows.length,
+          staleReviewRequestRows.length,
+          otherReadyForReviewRows.length,
+          digest.approvedUnmerged.length,
+          digest.staleAwaitingReview.length,
+          digest.otherReadyForReview.length
+        );
+        logReviewRequestDebugRows(
+          repoFullName,
+          getReviewRequestDebugRows(db, ownerRepo.owner, ownerRepo.repo)
+        );
+      }
 
       if (
         options.includeEmpty !== true &&
@@ -205,7 +226,6 @@ export function collectDailyDigestsForWorkspace(
         continue;
       }
 
-      const repoFullName = `${ownerRepo.owner}/${ownerRepo.repo}`;
       collected.push({
         workspaceName,
         owner: ownerRepo.owner,
@@ -225,6 +245,61 @@ export function collectDailyDigestsForWorkspace(
   }
 
   return collected;
+}
+
+function logReviewRequestDebugRows(
+  repoFullName: string,
+  rows: ReadonlyArray<ReviewRequestDebugRow>
+): void {
+  if (rows.length === 0) {
+    debugLog(
+      '[daily_digest] Review request debug for %s: no open non-draft PR reviews/requests',
+      repoFullName
+    );
+    return;
+  }
+
+  for (const row of rows) {
+    const requestState =
+      row.request_reviewer === null
+        ? 'no-request'
+        : row.removed_at === null
+          ? 'active-request'
+          : 'removed-request';
+    const clearingReview =
+      row.clearing_review_author === null
+        ? 'none'
+        : `${row.clearing_review_author}:${row.clearing_review_state}@${row.clearing_review_submitted_at}`;
+    const requestedReviewerClearingReview =
+      row.pr_clearing_review_author === null
+        ? 'none'
+        : `${row.pr_clearing_review_author}:${row.pr_clearing_review_state}@${row.pr_clearing_review_submitted_at}`;
+    const latestReviewerReview =
+      row.latest_reviewer_review_state === null
+        ? 'none'
+        : `${row.latest_reviewer_review_state}@${row.latest_reviewer_review_submitted_at}`;
+    const latestPrReviews = row.latest_pr_reviews?.replaceAll('\n', ', ') ?? 'none';
+
+    debugLog(
+      '[daily_digest] Review request debug for %s#%d: title=%o author=%s reviewDecision=%s readyAt=%s requestReviewer=%s requestState=%s requestedAt=%s removedAt=%s requestVersion=%s latestActiveRequestedAt=%s requestedReviewerClearingReview=%s reviewerClearingReview=%s latestReviewerReview=%s latestPrReviews=[%s]',
+      repoFullName,
+      row.pr_number,
+      row.title,
+      row.author,
+      row.review_decision ?? 'null',
+      row.ready_at ?? 'null',
+      row.request_reviewer ?? 'null',
+      requestState,
+      row.requested_at ?? 'null',
+      row.removed_at ?? 'null',
+      row.request_version === null ? 'null' : String(row.request_version),
+      row.latest_active_requested_at ?? 'null',
+      requestedReviewerClearingReview,
+      clearingReview,
+      latestReviewerReview,
+      latestPrReviews
+    );
+  }
 }
 
 function isPrDigestEmpty(digest: PrDigest): boolean {

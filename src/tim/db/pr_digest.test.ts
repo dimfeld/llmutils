@@ -66,7 +66,7 @@ describe('tim db/pr_digest', () => {
   });
 
   describe('getStaleReviewRequestRows', () => {
-    test('returns requests older than now where the reviewer has not reviewed since request', () => {
+    test('returns requests older than now where no one has reviewed since the latest request', () => {
       const noReview = insertPr(10);
       requestReview(noReview.status.id, 'reviewer-no-review', REQUESTED_AT);
 
@@ -104,11 +104,6 @@ describe('tim db/pr_digest', () => {
         expect.objectContaining({
           pr_number: 12,
           reviewer: 'reviewer-dismissed',
-          requested_at: REQUESTED_AT,
-        }),
-        expect.objectContaining({
-          pr_number: 13,
-          reviewer: 'reviewer-silent',
           requested_at: REQUESTED_AT,
         }),
       ]);
@@ -171,6 +166,67 @@ describe('tim db/pr_digest', () => {
       const rows = getStaleReviewRequestRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
 
       expect(rows).toEqual([]);
+    });
+
+    test('treats a review from any active requested reviewer after the latest request as reviewed', () => {
+      const pr = insertPr(35);
+      requestReview(pr.status.id, 'reviewer-silent', '2026-01-01T10:00:00.000Z');
+      requestReview(pr.status.id, 'reviewer-latest', '2026-01-01T11:00:00.000Z');
+      review(pr.status.id, 'reviewer-silent', 'COMMENTED', '2026-01-01T11:30:00.000Z');
+
+      const rows = getStaleReviewRequestRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows).toEqual([]);
+    });
+
+    test('does not treat a review from an unrequested author as reviewed', () => {
+      const pr = insertPr(38);
+      requestReview(pr.status.id, 'reviewer-silent', '2026-01-01T10:00:00.000Z');
+      review(pr.status.id, 'unrequested-bot', 'COMMENTED', '2026-01-01T11:00:00.000Z');
+
+      const rows = getStaleReviewRequestRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          pr_number: 38,
+          reviewer: 'reviewer-silent',
+        }),
+      ]);
+    });
+
+    test('does not treat a review from the PR author as reviewed', () => {
+      const pr = insertPr(37);
+      requestReview(pr.status.id, 'reviewer-silent', '2026-01-01T10:00:00.000Z');
+      review(pr.status.id, 'author-37', 'COMMENTED', '2026-01-01T11:00:00.000Z');
+
+      const rows = getStaleReviewRequestRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          pr_number: 37,
+          reviewer: 'reviewer-silent',
+        }),
+      ]);
+    });
+
+    test('keeps requests when the latest review is before the latest active request', () => {
+      const pr = insertPr(36);
+      requestReview(pr.status.id, 'reviewer-first', '2026-01-01T10:00:00.000Z');
+      review(pr.status.id, 'reviewer-other', 'COMMENTED', '2026-01-01T10:30:00.000Z');
+      requestReview(pr.status.id, 'reviewer-second', '2026-01-01T11:00:00.000Z');
+
+      const rows = getStaleReviewRequestRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          pr_number: 36,
+          reviewer: 'reviewer-first',
+        }),
+        expect.objectContaining({
+          pr_number: 36,
+          reviewer: 'reviewer-second',
+        }),
+      ]);
     });
 
     test('returns newline-joined PR labels and null when a PR has none', () => {
