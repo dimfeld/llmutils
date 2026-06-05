@@ -918,6 +918,19 @@ describe('configSchema', () => {
     });
   });
 
+  describe('workspaceCreation cloneMethod', () => {
+    test('accepts cow as the platform-neutral copy-on-write clone method', () => {
+      const result = timConfigSchema.parse({
+        workspaceCreation: {
+          cloneMethod: 'cow',
+          sourceDirectory: '.',
+        },
+      });
+
+      expect(result.workspaceCreation?.cloneMethod).toBe('cow');
+    });
+  });
+
   describe('schema validation with issueTracker and other fields', () => {
     test('should validate complete config with issueTracker', () => {
       const config = {

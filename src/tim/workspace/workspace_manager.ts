@@ -1,7 +1,6 @@
 import * as fs from 'node:fs/promises';
 import { constants as fsConstants, type Dirent, type Stats } from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 import PQueue from 'p-queue';
 import { debugLog, log } from '../../logging.js';
 import { spawnAndLogOutput } from '../../common/process.js';
@@ -503,21 +502,15 @@ async function cloneWithCp(
 }
 
 /**
- * Clone using macOS APFS copy-on-write (fastest on compatible systems)
+ * Clone using filesystem copy-on-write/reflink when available.
  */
-async function cloneWithMacCow(
+async function cloneWithCow(
   sourceDir: string,
   targetPath: string,
   extraGlobs?: string[]
 ): Promise<boolean> {
-  // Check if we're on macOS
-  if (os.platform() !== 'darwin') {
-    log('mac-cow clone method is only available on macOS');
-    return false;
-  }
-
   try {
-    log(`Creating APFS copy-on-write clone ${sourceDir} to ${targetPath}`);
+    log(`Creating copy-on-write clone ${sourceDir} to ${targetPath}`);
     const copySuccess = await cloneUsingFileList(sourceDir, targetPath, {
       extraGlobs,
       useCloneFlag: true,
@@ -553,7 +546,7 @@ async function cloneWithMacCow(
 }
 
 /**
- * Set up git remote for copied repositories (cp and mac-cow methods)
+ * Set up git remote for copied repositories (cp and cow methods)
  */
 async function setupGitRemote(targetPath: string, repositoryUrl?: string): Promise<void> {
   if (!repositoryUrl) {
@@ -905,6 +898,8 @@ export async function createWorkspace(
 
   const workspaceConfig = config.workspaceCreation;
   const cloneMethod = workspaceConfig.cloneMethod || 'git';
+  const isCopyMethod = cloneMethod === 'cp' || cloneMethod === 'cow' || cloneMethod === 'mac-cow';
+  const isCowMethod = cloneMethod === 'cow' || cloneMethod === 'mac-cow';
   const extraCopyGlobs = workspaceConfig.copyAdditionalGlobs;
 
   // Validate required parameters for each clone method
@@ -932,8 +927,8 @@ export async function createWorkspace(
         return null;
       }
     }
-  } else if (cloneMethod === 'cp' || cloneMethod === 'mac-cow') {
-    // For cp and mac-cow methods, default to primary workspace or mainRepoRoot if source directory not specified
+  } else if (isCopyMethod) {
+    // For filesystem copy methods, default to primary workspace or mainRepoRoot if source directory not specified
     if (!sourceDirectory) {
       // Check if there's a primary workspace for this repository we can use as the source
       try {
@@ -1038,8 +1033,8 @@ export async function createWorkspace(
     cloneSuccess = await cloneWithGit(repositoryUrl, targetClonePath, mainRepoRoot);
   } else if (cloneMethod === 'cp' && sourceDirectory) {
     cloneSuccess = await cloneWithCp(sourceDirectory, targetClonePath, extraCopyGlobs);
-  } else if (cloneMethod === 'mac-cow' && sourceDirectory) {
-    cloneSuccess = await cloneWithMacCow(sourceDirectory, targetClonePath, extraCopyGlobs);
+  } else if (isCowMethod && sourceDirectory) {
+    cloneSuccess = await cloneWithCow(sourceDirectory, targetClonePath, extraCopyGlobs);
   }
 
   if (!cloneSuccess) {
@@ -1047,7 +1042,7 @@ export async function createWorkspace(
   }
 
   // Step 5: Set up git remote for copy methods
-  if ((cloneMethod === 'cp' || cloneMethod === 'mac-cow') && repositoryUrl) {
+  if (isCopyMethod && repositoryUrl) {
     await setupGitRemote(targetClonePath, repositoryUrl);
   }
 
@@ -1089,7 +1084,7 @@ export async function createWorkspace(
   try {
     if (shouldCreateBranch) {
       let copiedWorkspaceFetchSucceeded = false;
-      if (cloneMethod === 'cp' || cloneMethod === 'mac-cow') {
+      if (isCopyMethod) {
         const fetchResult = await fetchInWorkspace(targetClonePath, isJj, hasRemote, allowOffline);
         if (!fetchResult.success) {
           log(fetchResult.error ?? 'Failed to fetch in new workspace');

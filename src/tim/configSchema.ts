@@ -131,9 +131,10 @@ export const workspaceCreationConfigSchema = z.object({
    * Method to use for cloning/copying the repository.
    * - 'git': Standard git clone (default)
    * - 'cp': Copy using cp command (requires sourceDirectory)
-   * - 'mac-cow': Copy using macOS APFS copy-on-write (requires sourceDirectory and macOS)
+   * - 'cow': Copy using filesystem copy-on-write/reflink when supported (requires sourceDirectory)
+   * - 'mac-cow': Alias for 'cow'
    */
-  cloneMethod: z.enum(['git', 'cp', 'mac-cow']).optional(),
+  cloneMethod: z.enum(['git', 'cp', 'cow', 'mac-cow']).optional(),
   /**
    * URL of the repository to clone.
    * Required for 'git' method. If not provided for git method, it will be inferred from the current repository's remote origin.
@@ -141,7 +142,7 @@ export const workspaceCreationConfigSchema = z.object({
   repositoryUrl: z.string().optional(),
   /**
    * Local source directory to copy from.
-   * Required for 'cp' and 'mac-cow' methods. Should be an absolute path or relative to the main repository root.
+   * Required for 'cp', 'cow', and 'mac-cow' methods. Should be an absolute path or relative to the main repository root.
    */
   sourceDirectory: z.string().optional(),
   /**

@@ -3,14 +3,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 
-vi.mock('node:os', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:os')>();
-  return {
-    ...actual,
-    platform: vi.fn(() => 'linux'), // default mock
-  };
-});
-
 vi.mock('../../logging.js', () => ({
   log: vi.fn(),
   debugLog: vi.fn(),
@@ -1791,59 +1783,60 @@ describe('createWorkspace', () => {
     expect(gitPointer).toBe('gitdir: ../actual.git');
   });
 
-  test('createWorkspace with mac-cow clone method prefers clone-on-write copy', async () => {
-    const taskId = 'task-mac-cow-test';
-    const sourceDirectory = path.join(testTempDir, 'source');
-    const cloneLocation = path.join(testTempDir, 'clones');
-    const targetClonePath = path.join(cloneLocation, 'source-task-mac-cow-test');
+  test.each(['cow', 'mac-cow'] as const)(
+    'createWorkspace with %s clone method prefers clone-on-write copy',
+    async (cloneMethod) => {
+      const taskId = `task-${cloneMethod}-test`;
+      const sourceDirectory = path.join(testTempDir, 'source');
+      const cloneLocation = path.join(testTempDir, 'clones');
+      const targetClonePath = path.join(cloneLocation, `source-${taskId}`);
 
-    await fs.mkdir(sourceDirectory, { recursive: true });
-    await fs.writeFile(path.join(sourceDirectory, 'test.txt'), 'test content');
+      await fs.mkdir(sourceDirectory, { recursive: true });
+      await fs.writeFile(path.join(sourceDirectory, 'test.txt'), 'test content');
 
-    vi.mocked(os.platform).mockReturnValue('darwin');
+      const config: TimConfig = {
+        workspaceCreation: {
+          cloneMethod,
+          sourceDirectory,
+          cloneLocation,
+        },
+      };
 
-    const config: TimConfig = {
-      workspaceCreation: {
-        cloneMethod: 'mac-cow',
-        sourceDirectory,
-        cloneLocation,
-      },
-    };
+      mockSpawnAndLogOutput.mockImplementation(
+        async (cmd: string[], options?: { cwd?: string }) => {
+          if (cmd[0] === 'git' && cmd[1] === 'remote' && cmd[2] === 'get-url') {
+            return { exitCode: 1, stdout: '', stderr: 'no remote origin' };
+          }
 
-    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
-      if (cmd[0] === 'git' && cmd[1] === 'remote' && cmd[2] === 'get-url') {
-        return { exitCode: 1, stdout: '', stderr: 'no remote origin' };
-      }
+          if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+            expect(options?.cwd).toBe(sourceDirectory);
+            return { exitCode: 0, stdout: 'test.txt\u0000', stderr: '' };
+          }
 
-      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
-        expect(options?.cwd).toBe(sourceDirectory);
-        return { exitCode: 0, stdout: 'test.txt\u0000', stderr: '' };
-      }
+          if (cmd[0] === 'git' && cmd[1] === 'init') {
+            expect(options?.cwd).toBe(targetClonePath);
+            return { exitCode: 0, stdout: '', stderr: '' };
+          }
 
-      if (cmd[0] === 'git' && cmd[1] === 'init') {
-        expect(options?.cwd).toBe(targetClonePath);
-        return { exitCode: 0, stdout: '', stderr: '' };
-      }
+          if (cmd[0] === 'git' && cmd[1] === 'checkout') {
+            expect(options?.cwd).toBe(targetClonePath);
+            return { exitCode: 0, stdout: '', stderr: '' };
+          }
 
-      if (cmd[0] === 'git' && cmd[1] === 'checkout') {
-        expect(options?.cwd).toBe(targetClonePath);
-        return { exitCode: 0, stdout: '', stderr: '' };
-      }
+          return { exitCode: 0, stdout: '', stderr: '' };
+        }
+      );
 
-      return { exitCode: 0, stdout: '', stderr: '' };
-    });
+      const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
 
-    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+      expect(result).not.toBeNull();
+      expect(result?.path).toBe(targetClonePath);
+      expect(mockLog).not.toHaveBeenCalledWith('Falling back to regular copy method');
 
-    expect(result).not.toBeNull();
-    expect(result?.path).toBe(targetClonePath);
-    expect(mockLog).not.toHaveBeenCalledWith('Falling back to regular copy method');
-
-    const copiedContent = await fs.readFile(path.join(targetClonePath, 'test.txt'), 'utf-8');
-    expect(copiedContent).toBe('test content');
-
-    vi.mocked(os.platform).mockReset();
-  });
+      const copiedContent = await fs.readFile(path.join(targetClonePath, 'test.txt'), 'utf-8');
+      expect(copiedContent).toBe('test content');
+    }
+  );
 
   test('createWorkspace with missing source directory should fail', async () => {
     // Setup
@@ -3100,8 +3093,6 @@ describe('createWorkspace', () => {
     await fs.mkdir(sourceDirectory, { recursive: true });
     await fs.writeFile(path.join(sourceDirectory, 'tracked.txt'), 'tracked');
 
-    vi.mocked(os.platform).mockReturnValue('darwin');
-
     const config: TimConfig = {
       workspaceCreation: {
         cloneMethod: 'mac-cow',
@@ -3149,8 +3140,6 @@ describe('createWorkspace', () => {
     const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
       createBranch: true,
     });
-
-    vi.mocked(os.platform).mockReset();
 
     expect(result).not.toBeNull();
     // Local-only branch deleted and recreated from base

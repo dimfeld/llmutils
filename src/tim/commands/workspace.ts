@@ -1009,9 +1009,9 @@ export async function handleWorkspaceAddCommand(
   };
 
   // Validate clone method if provided
-  if (options.cloneMethod && !['git', 'cp', 'mac-cow'].includes(options.cloneMethod)) {
+  if (options.cloneMethod && !['git', 'cp', 'cow', 'mac-cow'].includes(options.cloneMethod)) {
     throw new Error(
-      `Invalid clone method: ${options.cloneMethod}. Must be one of: git, cp, mac-cow`
+      `Invalid clone method: ${options.cloneMethod}. Must be one of: git, cp, cow, mac-cow`
     );
   }
 
