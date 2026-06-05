@@ -405,6 +405,13 @@ function withSource(issues: ReviewIssue[], source: ReviewIssueSource): StoredRev
   }));
 }
 
+function withSimplificationIssueIds(issues: StoredReviewIssue[]): StoredReviewIssue[] {
+  return issues.map((issue, index) => ({
+    ...issue,
+    id: `simplify-${index + 1}`,
+  }));
+}
+
 function parseCombinationIssues(rawOutput: string): StoredReviewIssue[] {
   const candidate = tryExtractJsonCandidate(rawOutput);
   if (!candidate) {
@@ -1612,7 +1619,7 @@ export async function runReviewGuideWorkflow(
       if (codexSimplificationResult) {
         const mergedCodexIssues = [
           ...(codexResult?.issues ?? []),
-          ...codexSimplificationResult.issues,
+          ...withSimplificationIssueIds(codexSimplificationResult.issues),
         ];
         if (codexResult || mergedCodexIssues.length > 0) {
           codexResult = {

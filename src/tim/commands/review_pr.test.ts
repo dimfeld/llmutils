@@ -1587,6 +1587,112 @@ describe('review_pr command', () => {
     });
   });
 
+  test('rewrites codex simplification issue ids before combination', async () => {
+    const claudeExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('must produce a complete review guide')) {
+        await fs.mkdir(path.dirname(guidePath), { recursive: true });
+        await fs.writeFile(guidePath, '# Claude Guide\n\nReview this carefully.', 'utf8');
+        return { content: 'wrote guide' };
+      }
+
+      return {
+        content: JSON.stringify({
+          issues: [
+            {
+              severity: 'major',
+              category: 'bug',
+              content: 'Claude issue',
+              file: 'src/a.ts',
+              line: '10',
+              suggestion: 'Fix A',
+            },
+          ],
+          recommendations: [],
+          actionItems: [],
+        }),
+      };
+    });
+
+    const codexExecute = vi.fn().mockImplementation((prompt: string) => {
+      if (prompt.includes('standalone PR simplification review')) {
+        return {
+          content: JSON.stringify({
+            issues: [
+              {
+                severity: 'minor',
+                category: 'style',
+                content: 'Simplification issue',
+                file: 'src/c.ts',
+                line: '30',
+                suggestion: 'Fix C',
+              },
+            ],
+            recommendations: [],
+            actionItems: [],
+          }),
+        };
+      }
+
+      return {
+        content: JSON.stringify({
+          issues: [
+            {
+              severity: 'minor',
+              category: 'style',
+              content: 'Codex issue',
+              file: 'src/b.ts',
+              line: '20',
+              suggestion: 'Fix B',
+            },
+          ],
+          recommendations: [],
+          actionItems: [],
+        }),
+      };
+    });
+
+    const haikuExecute = vi.fn().mockResolvedValue({
+      content: JSON.stringify({
+        issues: [
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'Merged issue',
+            file: 'src/a.ts',
+            line: '10',
+            suggestion: 'Fix merged',
+            source: 'combined',
+          },
+        ],
+        recommendations: [],
+        actionItems: [],
+      }),
+    });
+
+    mockBuildExecutorAndLog.mockImplementation((name, sharedOptions) => {
+      if (name === 'claude-code' && (sharedOptions as any)?.model === 'haiku') {
+        return { execute: haikuExecute } as any;
+      }
+      if (name === 'claude-code') {
+        return { execute: claudeExecute } as any;
+      }
+      if (name === 'codex-cli') {
+        return { execute: codexExecute } as any;
+      }
+      throw new Error(`Unexpected executor ${name}`);
+    });
+
+    await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
+
+    const combinationPrompt = String(haikuExecute.mock.calls[0]?.[0] ?? '');
+    const codexInput = combinationPrompt.match(
+      /## Codex Issues Input\n```json\n([\s\S]*?)\n```/
+    )?.[1];
+    expect(codexInput).toContain('"id": "issue-1"');
+    expect(codexInput).toContain('"id": "simplify-1"');
+    expect(codexInput?.match(/"id": "issue-1"/g)).toHaveLength(1);
+  });
+
   test('uses codex results when claude fails and skips combination', async () => {
     const claudeExecute = vi.fn().mockRejectedValue(new Error('claude failed'));
     const codexExecute = vi.fn().mockResolvedValue({
