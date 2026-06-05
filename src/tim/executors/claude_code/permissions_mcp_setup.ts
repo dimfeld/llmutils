@@ -71,7 +71,7 @@ export async function resolvePermissionsMcpPath(
   executableDir: string = path.dirname(process.execPath)
 ): Promise<string> {
   // Resolve the path to the permissions MCP script
-  // Try .ts first (development), fall back to .js (compiled)
+  // Prefer the compiled script relative to the executable, then fall back to the local source file.
   // Use import.meta.dir (Bun) or import.meta.dirname (Node.js v20+) or URL-based fallback
   const currentDir =
     (import.meta as { dir?: string; dirname?: string }).dir ??

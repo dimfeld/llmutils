@@ -3,6 +3,7 @@ import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { fileURLToPath } from 'url';
 
 const selectResponses: Array<string | Error> = [];
 const checkboxResponses: Array<string[] | Error> = [];
@@ -67,37 +68,33 @@ const { resolvePermissionsMcpPath, setupPermissionsMcp } =
   await import('./permissions_mcp_setup.js');
 
 describe('permissions MCP path resolution', () => {
-  test('prefers the local permissions_mcp.ts when present', async () => {
+  test('prefers the compiled permissions_mcp.js under the executable directory', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-permissions-path-'));
-    const currentDir = path.join(tempRoot, 'current');
     const execDir = path.join(tempRoot, 'exec');
-    const tsPath = path.join(currentDir, 'permissions_mcp.ts');
     const jsPath = path.join(execDir, 'claude_code', 'permissions_mcp.js');
 
     try {
-      await fs.mkdir(currentDir, { recursive: true });
       await fs.mkdir(path.dirname(jsPath), { recursive: true });
-      await fs.writeFile(tsPath, '');
       await fs.writeFile(jsPath, '');
 
-      await expect(resolvePermissionsMcpPath(currentDir, execDir)).resolves.toBe(tsPath);
+      await expect(resolvePermissionsMcpPath(execDir)).resolves.toBe(jsPath);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
   });
 
-  test('falls back to the executable directory when the local ts file is missing', async () => {
+  test('falls back to the local permissions_mcp.ts when compiled script is missing', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-permissions-path-'));
-    const currentDir = path.join(tempRoot, 'current');
     const execDir = path.join(tempRoot, 'exec');
-    const jsPath = path.join(execDir, 'claude_code', 'permissions_mcp.js');
+    const localSourcePath = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      'permissions_mcp.ts'
+    );
 
     try {
-      await fs.mkdir(currentDir, { recursive: true });
-      await fs.mkdir(path.dirname(jsPath), { recursive: true });
-      await fs.writeFile(jsPath, '');
+      await fs.mkdir(execDir, { recursive: true });
 
-      await expect(resolvePermissionsMcpPath(currentDir, execDir)).resolves.toBe(jsPath);
+      await expect(resolvePermissionsMcpPath(execDir)).resolves.toBe(localSourcePath);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
