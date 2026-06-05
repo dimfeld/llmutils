@@ -231,6 +231,14 @@ export async function handlePrReviewGuideCommentCommand(
   const config = await loadEffectiveConfig(globalOpts.config, { cwd: initialRepoRoot });
   const tunnelActive = isTunnelActive();
 
+  // Review guide comment generation is opt-in via the global config (default false).
+  if (config.githubWebhooks?.reviewGuideComments !== true) {
+    log(
+      'Review guide comment generation is disabled. Set `githubWebhooks.reviewGuideComments: true` in your tim config to enable it.'
+    );
+    return;
+  }
+
   // When invoked by the webhook trigger, respect the project opt-in before doing any work.
   if (options.auto) {
     const project = await resolveCurrentProject(initialRepoRoot);

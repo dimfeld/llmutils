@@ -14,7 +14,11 @@ vi.mock('./db_queries.js', () => ({
 vi.mock('./plan_actions.js', () => ({
   spawnPrReviewGuideCommentProcess: vi.fn(),
 }));
+vi.mock('../../tim/configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
 
+import { loadEffectiveConfig } from '../../tim/configLoader.js';
 import { getProject } from '../../tim/db/project.js';
 import { getProjectSetting } from '../../tim/db/project_settings.js';
 import { getPrimaryWorkspacePath } from './db_queries.js';
@@ -35,6 +39,9 @@ describe('triggerReviewGuideComments', () => {
     vi.mocked(getProject).mockReturnValue({ id: 1 } as never);
     vi.mocked(getProjectSetting).mockReturnValue({ enabled: true });
     vi.mocked(getPrimaryWorkspacePath).mockReturnValue('/workspaces/primary');
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      githubWebhooks: { reviewGuideComments: true },
+    } as never);
     vi.mocked(spawnPrReviewGuideCommentProcess).mockResolvedValue({
       success: true,
       planId: 7,
@@ -49,6 +56,26 @@ describe('triggerReviewGuideComments', () => {
     await triggerReviewGuideComments(fakeDb, [READY_PR]);
 
     expect(spawnPrReviewGuideCommentProcess).toHaveBeenCalledWith(7, '/workspaces/primary');
+  });
+
+  test('does not spawn when the global config setting is disabled', async () => {
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      githubWebhooks: { reviewGuideComments: false },
+    } as never);
+
+    await triggerReviewGuideComments(fakeDb, [READY_PR]);
+
+    expect(getProjectSetting).not.toHaveBeenCalled();
+    expect(spawnPrReviewGuideCommentProcess).not.toHaveBeenCalled();
+  });
+
+  test('does not spawn when the global config setting is absent', async () => {
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({} as never);
+
+    await triggerReviewGuideComments(fakeDb, [READY_PR]);
+
+    expect(getProjectSetting).not.toHaveBeenCalled();
+    expect(spawnPrReviewGuideCommentProcess).not.toHaveBeenCalled();
   });
 
   test('does not spawn when the project setting is disabled', async () => {

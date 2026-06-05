@@ -344,6 +344,12 @@ export const githubWebhooksConfigSchema = z
       .boolean()
       .optional()
       .describe('Whether GitHub webhook ingestion may automatically update linked plan statuses'),
+    reviewGuideComments: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether to generate review guide comments on pull requests (default false). Gates both the manual command and the webhook auto-trigger.'
+      ),
   })
   .strict();
 

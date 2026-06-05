@@ -212,6 +212,10 @@
         "planStatusUpdates": {
           "description": "Whether GitHub webhook ingestion may automatically update linked plan statuses",
           "type": "boolean"
+        },
+        "reviewGuideComments": {
+          "description": "Whether to generate review guide comments on pull requests (default false). Gates both the manual command and the webhook auto-trigger.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false
