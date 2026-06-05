@@ -2,7 +2,6 @@ import { describe, expect, test } from 'vitest';
 import {
   buildIssueCombinationPrompt,
   buildReviewGuideCommentPrompt,
-  buildReviewGuideIssuesFollowUpPrompt,
   buildReviewGuidePrompt,
   buildStandaloneReviewIssuesPrompt,
   COMBINATION_OUTPUT_SCHEMA,
@@ -164,21 +163,6 @@ describe('review_pr_prompt', () => {
 
     expect(prompt).toContain("jj diff --from 'heads(::@ & ::main@origin)'");
     expect(prompt).not.toContain('git merge-base');
-  });
-
-  test('buildReviewGuideIssuesFollowUpPrompt includes guide path, issues path, and schema', () => {
-    const prompt = buildReviewGuideIssuesFollowUpPrompt({
-      guidePath: '.tim/tmp/review-guide.md',
-      issuesPath: '.tim/tmp/review-issues.json',
-    });
-
-    expect(prompt.length).toBeGreaterThan(0);
-    expect(prompt).toContain('.tim/tmp/review-guide.md');
-    expect(prompt).toContain('.tim/tmp/review-issues.json');
-    expect(prompt).toContain('"properties"');
-    expect(prompt).toContain('"issues"');
-    expect(prompt).toContain('maintainability, and architecture findings');
-    expect(prompt).toContain('Markdown inside those strings is allowed and encouraged');
   });
 
   test('buildStandaloneReviewIssuesPrompt includes categories without plan context', () => {

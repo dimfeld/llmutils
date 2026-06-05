@@ -354,28 +354,6 @@ Write the finished markdown comment (and nothing else) to:
 \`${outputPath}\`${maybeCustomInstructions(customInstructions)}`;
 }
 
-export function buildReviewGuideIssuesFollowUpPrompt(
-  options: ReviewGuideIssuesFollowUpPromptOptions
-): string {
-  const schema = renderSchema();
-  return `Using the guide you just wrote at \`${options.guidePath}\`, now produce structured review issues.
-
-## Instructions
-- Re-read the guide and the underlying diff context before writing issues.
-- Focus on actionable correctness, security, testing, performance, compliance, maintainability, and architecture findings.
-- Do not convert non-actionable review-guide annotations into JSON issues; annotations are already recorded as notes.
-- Output MUST be valid JSON matching the schema below.
-- Issue content and suggestions are JSON string values, but Markdown inside those strings is allowed and encouraged when it improves readability.
-- Write the JSON to: \`${options.issuesPath}\`
-- Do not include markdown fences inside the JSON file.
-
-## Required JSON Schema
-\`\`\`json
-${schema}
-\`\`\`
-`;
-}
-
 export function buildStandaloneReviewIssuesPrompt(
   options: StandaloneReviewIssuesPromptOptions
 ): string {
