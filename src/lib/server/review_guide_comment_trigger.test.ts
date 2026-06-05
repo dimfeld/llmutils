@@ -30,6 +30,7 @@ const READY_PR: ReadyForReviewPr = {
   repo: 'repo',
   prNumber: 7,
   prUrl: 'https://github.com/example/repo/pull/7',
+  readyForReviewAt: '2026-01-01T12:00:00.000Z',
 };
 
 const fakeDb = {} as never;
@@ -61,6 +62,20 @@ describe('triggerReviewGuideComments', () => {
   test('does not spawn when the global config setting is disabled', async () => {
     vi.mocked(loadEffectiveConfig).mockResolvedValue({
       githubWebhooks: { reviewGuideComments: false },
+    } as never);
+
+    await triggerReviewGuideComments(fakeDb, [READY_PR]);
+
+    expect(getProjectSetting).not.toHaveBeenCalled();
+    expect(spawnPrReviewGuideCommentProcess).not.toHaveBeenCalled();
+  });
+
+  test('does not spawn when the ready event is before the side-effect cutoff', async () => {
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      githubWebhooks: {
+        reviewGuideComments: true,
+        ignoreSideEffectsBefore: '2026-01-01T12:00:01.000Z',
+      },
     } as never);
 
     await triggerReviewGuideComments(fakeDb, [READY_PR]);

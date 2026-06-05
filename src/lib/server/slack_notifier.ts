@@ -17,8 +17,10 @@ import { getProjectSetting } from '$tim/db/project_settings.js';
 import {
   getPendingReviewRequestNotifications,
   markReviewRequestsNotified,
+  markReviewRequestsNotifiedBefore,
   type PendingReviewRequestNotification,
 } from '$tim/db/pr_review_request_notifications.js';
+import { getWebhookSideEffectCutoff } from '$common/github/webhook_side_effects.js';
 import { getUserMapping } from '$tim/db/slack_user_map.js';
 
 import type { SlackNotifierHandle } from './session_context.js';
@@ -222,6 +224,16 @@ export async function runSlackNotifierOnce(
   config: TimConfig,
   options: RunSlackNotifierOnceOptions = {}
 ): Promise<void> {
+  const cutoff = getWebhookSideEffectCutoff(config);
+  if (cutoff) {
+    const suppressed = markReviewRequestsNotifiedBefore(db, cutoff);
+    if (suppressed > 0) {
+      console.info(
+        `[slack_notifier] Marked ${suppressed} review-request notification${suppressed === 1 ? '' : 's'} before ${cutoff} as already notified`
+      );
+    }
+  }
+
   const pending = getPendingReviewRequestNotifications(db);
   if (pending.length === 0) {
     return;

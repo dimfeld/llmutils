@@ -6,6 +6,7 @@ import {
   isReviewGuideCommentEnabled,
   REVIEW_GUIDE_COMMENT_PROJECT_SETTING_KEY,
 } from '$common/github/review_guide_comment_setting.js';
+import { isWebhookSideEffectAllowed } from '$common/github/webhook_side_effects.js';
 
 import { loadEffectiveConfig } from '../../tim/configLoader.js';
 import { getProject } from '../../tim/db/project.js';
@@ -40,6 +41,9 @@ export async function triggerReviewGuideComments(
       }
 
       const config = await loadEffectiveConfig(undefined, { cwd: primaryWorkspacePath });
+      if (!isWebhookSideEffectAllowed(config, pr.readyForReviewAt)) {
+        continue;
+      }
       if (config.githubWebhooks?.reviewGuideComments !== true) {
         continue;
       }

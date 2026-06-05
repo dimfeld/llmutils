@@ -403,6 +403,31 @@ describe('lib/server/slack_notifier', () => {
       expect(sent2).toHaveLength(0);
     });
 
+    test('marks old pending review requests as notified without sending when side-effect cutoff is set', async () => {
+      const { prStatusId } = setupEnabledProject();
+      insertReviewRequest(db, prStatusId, 'old-reviewer', '2026-01-01T10:00:00.000Z');
+      insertReviewRequest(db, prStatusId, 'new-reviewer', '2026-01-01T12:00:00.000Z');
+
+      const { sender, sent } = makeFakeSender();
+      await runSlackNotifierOnce(
+        db,
+        {
+          ...buildConfig(),
+          githubWebhooks: { ignoreSideEffectsBefore: '2026-01-01T11:00:00.000Z' },
+        },
+        {
+          sender,
+          debounceMs: 0,
+          nowMs: Date.parse('2026-01-01T12:01:00.000Z'),
+        }
+      );
+
+      expect(sent).toHaveLength(1);
+      expect(sent[0].payload.text).toContain('new-reviewer');
+      expect(sent[0].payload.text).not.toContain('old-reviewer');
+      expect(getPendingReviewRequestNotifications(db)).toHaveLength(0);
+    });
+
     test('failure path: notified_at stays null so row is eligible for retry', async () => {
       const { prStatusId } = setupEnabledProject();
       insertReviewRequest(db, prStatusId, 'reviewer', minsAgo(2));

@@ -350,6 +350,13 @@ export const githubWebhooksConfigSchema = z
       .describe(
         'Whether to generate review guide comments on pull requests (default false). Gates both the manual command and the webhook auto-trigger.'
       ),
+    ignoreSideEffectsBefore: z
+      .string()
+      .datetime()
+      .optional()
+      .describe(
+        'Suppress webhook-derived outbound side effects, such as Slack review-request notifications and automatic review-guide comments, for events before this timestamp.'
+      ),
   })
   .strict();
 

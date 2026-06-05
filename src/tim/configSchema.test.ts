@@ -355,6 +355,23 @@ describe('configSchema', () => {
       }
     });
 
+    test('validates GitHub webhook side-effect cutoff timestamps', () => {
+      const result = timConfigSchema.parse({
+        githubWebhooks: {
+          ignoreSideEffectsBefore: '2026-01-01T12:00:00.000Z',
+        },
+      });
+      expect(result.githubWebhooks?.ignoreSideEffectsBefore).toBe('2026-01-01T12:00:00.000Z');
+
+      expect(() =>
+        timConfigSchema.parse({
+          githubWebhooks: {
+            ignoreSideEffectsBefore: 'not-a-date',
+          },
+        })
+      ).toThrow();
+    });
+
     test('rejects an invalid IANA timezone', () => {
       expect(() =>
         timConfigSchema.parse({

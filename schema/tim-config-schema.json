@@ -216,6 +216,12 @@
         "reviewGuideComments": {
           "description": "Whether to generate review guide comments on pull requests (default false). Gates both the manual command and the webhook auto-trigger.",
           "type": "boolean"
+        },
+        "ignoreSideEffectsBefore": {
+          "description": "Suppress webhook-derived outbound side effects, such as Slack review-request notifications and automatic review-guide comments, for events before this timestamp.",
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
         }
       },
       "additionalProperties": false

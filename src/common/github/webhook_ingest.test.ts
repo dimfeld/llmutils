@@ -1189,6 +1189,7 @@ describe('common/github/webhook_ingest', () => {
           repo: 'repo',
           prNumber: 54,
           prUrl: 'https://github.com/example/repo/pull/54',
+          readyForReviewAt: '2026-03-30T10:05:00.000Z',
         },
       ],
       errors: [],

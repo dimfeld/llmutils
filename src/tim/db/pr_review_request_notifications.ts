@@ -52,6 +52,23 @@ export function getPendingReviewRequestNotifications(
     .all() as PendingReviewRequestNotification[];
 }
 
+export function markReviewRequestsNotifiedBefore(db: Database, cutoff: string): number {
+  const result = db
+    .prepare(
+      `
+        UPDATE pr_review_request
+        SET notified_at = ${SQL_NOW_ISO_UTC}
+        WHERE removed_at IS NULL
+          AND notified_at IS NULL
+          AND requested_at IS NOT NULL
+          AND unixepoch(requested_at) < unixepoch(?)
+      `
+    )
+    .run(cutoff);
+
+  return result.changes;
+}
+
 export function markReviewRequestsNotified(
   db: Database,
   rows: ReadonlyArray<{ id: number; request_version: number }>

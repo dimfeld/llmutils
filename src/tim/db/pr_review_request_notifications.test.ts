@@ -12,6 +12,7 @@ import {
   getPendingReviewRequestNotifications,
   markClosedPrReviewRequestsNotified,
   markReviewRequestsNotified,
+  markReviewRequestsNotifiedBefore,
 } from '$tim/db/pr_review_request_notifications.js';
 import { constructGitHubRepositoryId } from '$common/github/pull_requests.js';
 
@@ -112,6 +113,32 @@ describe('tim db/pr_review_request_notifications', () => {
 
       const rows = getPendingReviewRequestNotifications(db);
       expect(rows).toHaveLength(0);
+    });
+
+    test('marks pending rows before a cutoff as notified', () => {
+      upsertPrReviewRequestByReviewer(db, prStatusId, {
+        reviewer: 'old-reviewer',
+        action: 'requested',
+        eventAt: '2026-01-01T10:00:00.000Z',
+      });
+      upsertPrReviewRequestByReviewer(db, prStatusId, {
+        reviewer: 'cutoff-reviewer',
+        action: 'requested',
+        eventAt: '2026-01-01T11:00:00.000Z',
+      });
+      upsertPrReviewRequestByReviewer(db, prStatusId, {
+        reviewer: 'new-reviewer',
+        action: 'requested',
+        eventAt: '2026-01-01T11:00:00.001Z',
+      });
+
+      const marked = markReviewRequestsNotifiedBefore(db, '2026-01-01T11:00:00.000Z');
+
+      expect(marked).toBe(1);
+      expect(getPendingReviewRequestNotifications(db).map((row) => row.reviewer)).toEqual([
+        'cutoff-reviewer',
+        'new-reviewer',
+      ]);
     });
 
     test('includes joined pr_status fields correctly', () => {

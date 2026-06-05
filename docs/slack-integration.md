@@ -249,7 +249,7 @@ Notification state is durable in the database. After Slack confirms a successful
 
 Marking is guarded by a per-row `request_version`. The notifier records each pending row's version when it reads the batch, and marks `notified_at` only where the version still matches. If a reviewer is removed and re-requested while a Slack send is in flight, the re-request bumps `request_version` (and resets `notified_at` to null), so the stale mark does not apply and the fresh request is picked up on a later tick. A reviewer re-requested after a prior notification is therefore notified again, since the re-request clears `notified_at`.
 
-When Slack is first enabled for a repo that already has outstanding unremoved review requests, those historical pending rows still have `notified_at` set to null. The notifier will post them once after the debounce window passes. This one-time first-enable burst is intentional in v1; there is no historical backfill suppression.
+When Slack is first enabled for a repo that already has outstanding unremoved review requests, those historical pending rows still have `notified_at` set to null. The notifier will post them once after the debounce window passes unless the machine-local global config sets `githubWebhooks.ignoreSideEffectsBefore` to a later ISO timestamp. With that cutoff set, pending review-request rows whose `requested_at` is before the cutoff are marked notified without posting to Slack.
 
 If those historical rows include closed or merged PRs, run `tim slack mark-closed-notified` to suppress them.
 

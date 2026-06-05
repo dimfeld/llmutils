@@ -46,6 +46,7 @@ import { getPrStatusByRepoAndNumber } from '../../tim/db/pr_status.js';
 import { routeSyncOperation } from '../../tim/sync/write_router.js';
 import { setPlanScalarOperation } from '../../tim/sync/operations.js';
 import type { TimConfig } from '../../tim/configSchema.js';
+import { isWebhookSideEffectAllowed } from './webhook_side_effects.js';
 
 function isMergedPrPayload(payload: unknown): payload is {
   pull_request: { number: number; merged_at?: string | null; state?: string };
@@ -268,6 +269,7 @@ export interface ReadyForReviewPr {
   repo: string;
   prNumber: number;
   prUrl: string;
+  readyForReviewAt: string;
 }
 
 export interface IngestResult {
@@ -314,9 +316,9 @@ export async function ingestWebhookEvents(
     };
   }
 
+  const config = await loadEffectiveConfig(undefined, { quiet: true });
   const planStatusUpdatesEnabled =
-    options.planStatusUpdates ??
-    areWebhookPlanStatusUpdatesEnabled(await loadEffectiveConfig(undefined, { quiet: true }));
+    options.planStatusUpdates ?? areWebhookPlanStatusUpdatesEnabled(config);
 
   const BATCH_SIZE = 500;
   const prsUpdated = new Set<string>();
@@ -409,7 +411,8 @@ export async function ingestWebhookEvents(
           event.eventType === 'pull_request' &&
           result.prReadyForReview &&
           result.prUrl &&
-          event.repositoryFullName
+          event.repositoryFullName &&
+          isWebhookSideEffectAllowed(config, event.receivedAt)
         ) {
           const pullRequest = (payload as { pull_request?: { number?: unknown } }).pull_request;
           const [owner, repo] = event.repositoryFullName.split('/');
@@ -419,6 +422,7 @@ export async function ingestWebhookEvents(
               repo,
               prNumber: pullRequest.number,
               prUrl: result.prUrl,
+              readyForReviewAt: event.receivedAt,
             });
           }
         }
