@@ -72,11 +72,13 @@ describe('agent_prompts failure protocol integration', () => {
     const def = getReviewerPrompt(context);
     expect(def.prompt).toContain('Simplification Review');
     expect(def.prompt).toContain(
-      'preserves behavior while deleting concepts, branches, or helper layers'
+      'preserve behavior while making the implementation dramatically simpler'
     );
     expect(def.prompt).toContain('push a file from under 1,000 lines');
-    expect(def.prompt).toContain('Do not use vague suggestions like "consider refactoring"');
-    expect(def.prompt).toContain('Prefer high-conviction structural findings');
+    expect(def.prompt).toContain(
+      '"Consider refactoring" or "this could be cleaner" is NOT a suggestion'
+    );
+    expect(def.prompt).toContain('Prefer a small number of high-conviction structural comments');
   });
 
   it('can include PR review scope guidance in reviewer prompt when requested', () => {

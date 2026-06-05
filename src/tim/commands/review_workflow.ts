@@ -311,7 +311,7 @@ export async function loadReviewGuideDiffCatalog(options: {
 
   log(`Generating review diff catalog from ${options.baseSha} to ${options.reviewedSha}.`);
   const result =
-    await $`git diff --no-color --find-renames ${options.baseSha} ${options.reviewedSha}`
+    await $`git diff --no-color --find-renames --diff-algorithm=histogram --indent-heuristic ${options.baseSha} ${options.reviewedSha}`
       .cwd(options.baseDir)
       .quiet()
       .nothrow();
