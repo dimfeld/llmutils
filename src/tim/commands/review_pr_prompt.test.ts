@@ -4,6 +4,7 @@ import {
   buildReviewGuideCommentPrompt,
   buildReviewGuidePrompt,
   buildStandaloneReviewIssuesPrompt,
+  buildStandaloneSimplificationReviewPrompt,
   COMBINATION_OUTPUT_SCHEMA,
   type PrReviewMetadata,
   type PlanReviewMetadata,
@@ -177,9 +178,8 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('## Critical Issues to Flag');
     expect(prompt).toContain('Code Correctness (HIGH PRIORITY)');
     expect(prompt).toContain('Security Vulnerabilities (HIGH PRIORITY)');
-    expect(prompt).toContain('Structural Maintainability (HIGH/MEDIUM PRIORITY)');
-    expect(prompt).toContain('Behavior-preserving simplifications');
-    expect(prompt).toContain('Do not use vague suggestions like "consider refactoring"');
+    expect(prompt).not.toContain('## Simplification Review');
+    expect(prompt).not.toContain('Behavior-preserving simplifications');
     expect(prompt).toContain('Do not include plan/task context');
     expect(prompt).toContain('Do not provide a verdict');
     expect(prompt).toContain('For PR reviews, also check for outdated documentation');
@@ -187,6 +187,18 @@ describe('review_pr_prompt', () => {
     expect(prompt).not.toContain('## Review Scope');
     expect(prompt).toContain('"issues"');
     expect(prompt).toContain('Markdown inside those strings is allowed and encouraged');
+  });
+
+  test('buildStandaloneSimplificationReviewPrompt focuses only on simplification issues', () => {
+    const prompt = buildStandaloneSimplificationReviewPrompt({
+      metadata: METADATA,
+      useJj: false,
+    });
+
+    expect(prompt).toContain('standalone PR simplification review');
+    expect(prompt).toContain('## Simplification Review');
+    expect(prompt).not.toContain('## Critical Issues to Flag');
+    expect(prompt).toContain('"issues"');
   });
 
   test('buildStandaloneReviewIssuesPrompt includes jj commands when useJj is true', () => {

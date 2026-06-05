@@ -42,6 +42,7 @@ import {
   COMBINATION_OUTPUT_SCHEMA,
   buildIssueCombinationPrompt,
   buildReviewGuidePrompt,
+  buildStandaloneSimplificationReviewPrompt,
   buildStandaloneReviewIssuesPrompt,
   type ReviewGuideDiffReference,
   type ReviewSubjectMetadata,
@@ -1313,6 +1314,37 @@ async function runReviewIssues(options: {
   };
 }
 
+async function runSimplificationReviewIssues(options: {
+  executor: Executor;
+  metadata: ReviewSubjectMetadata;
+  useJj: boolean;
+  customInstructions?: string;
+  reviewId: number;
+  planTag?: string;
+}): Promise<ExecutorIssueResult> {
+  const subjectTag = getSubjectTag(options.metadata, options.planTag);
+  const prompt = buildStandaloneSimplificationReviewPrompt({
+    metadata: options.metadata,
+    useJj: options.useJj,
+    customInstructions: options.customInstructions,
+  });
+
+  const rawOutput = await options.executor.execute(prompt, {
+    planId: String(options.reviewId),
+    planTitle: `${options.metadata.kind === 'pr' ? 'PR' : 'Plan'} simplification review: ${subjectTag}`,
+    planFilePath: '',
+    captureOutput: 'result',
+    executionMode: 'review',
+  });
+
+  const parsed = parseJsonReviewOutput(tryExtractJsonCandidate(normalizeExecutorOutput(rawOutput)));
+
+  return {
+    issues: withSource(parsed.issues, 'codex-cli'),
+    source: 'codex-cli',
+  };
+}
+
 async function runCombinationStep(options: {
   config: TimConfig;
   baseDir: string;
@@ -1421,7 +1453,7 @@ export async function runReviewGuideWorkflow(
       const usingJj = await getUsingJj(options.baseDir);
 
       const executorPromises: Array<Promise<GuideResult | ExecutorIssueResult>> = [];
-      const executorOrder: Array<'guide' | ReviewExecutorName> = [];
+      const executorOrder: Array<'guide' | ReviewExecutorName | 'codex-simplification'> = [];
       const hasClaude = selectedExecutorNames.includes('claude-code');
       const hasCodex = selectedExecutorNames.includes('codex-cli');
       const guideExecutorName: ReviewExecutorName | null = hasClaude
@@ -1521,6 +1553,30 @@ export async function runReviewGuideWorkflow(
             source: 'codex-cli',
           })
         );
+
+        executorOrder.push('codex-simplification');
+        const codexSimplificationExecutor = buildExecutorAndLog(
+          'codex-cli',
+          {
+            baseDir: options.baseDir,
+            model: options.model ?? options.config.reviewGuide?.model?.codex,
+            terminalInput: executorTerminalInput,
+            noninteractive: executorNoninteractive,
+            timEnvironment,
+          },
+          options.config
+        );
+
+        executorPromises.push(
+          runSimplificationReviewIssues({
+            executor: codexSimplificationExecutor,
+            metadata: options.metadata,
+            useJj: usingJj,
+            customInstructions: options.customInstructions,
+            reviewId: options.review.id,
+            planTag: options.planTag,
+          })
+        );
       }
 
       const settled = await Promise.allSettled(executorPromises);
@@ -1528,6 +1584,7 @@ export async function runReviewGuideWorkflow(
       let guideResult: GuideResult | null = null;
       let claudeIssuesResult: ExecutorIssueResult | null = null;
       let codexResult: ExecutorIssueResult | null = null;
+      let codexSimplificationResult: ExecutorIssueResult | null = null;
 
       for (let index = 0; index < settled.length; index++) {
         const result = settled[index];
@@ -1547,6 +1604,21 @@ export async function runReviewGuideWorkflow(
           claudeIssuesResult = result.value as ExecutorIssueResult;
         } else if (executorName === 'codex-cli') {
           codexResult = result.value as ExecutorIssueResult;
+        } else if (executorName === 'codex-simplification') {
+          codexSimplificationResult = result.value as ExecutorIssueResult;
+        }
+      }
+
+      if (codexSimplificationResult) {
+        const mergedCodexIssues = [
+          ...(codexResult?.issues ?? []),
+          ...codexSimplificationResult.issues,
+        ];
+        if (codexResult || mergedCodexIssues.length > 0) {
+          codexResult = {
+            issues: mergedCodexIssues,
+            source: 'codex-cli',
+          };
         }
       }
 

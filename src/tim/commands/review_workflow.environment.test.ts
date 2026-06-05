@@ -124,7 +124,7 @@ describe('runReviewGuideWorkflow environment context', () => {
       | undefined;
     const executorOptions = vi.mocked(buildExecutorAndLog).mock.calls.map((call) => call[1]);
 
-    expect(executorOptions).toHaveLength(4);
+    expect(executorOptions).toHaveLength(5);
     for (const options of executorOptions) {
       expect(options.timEnvironment).toBe(lifecycleOptions?.timEnvironment);
     }

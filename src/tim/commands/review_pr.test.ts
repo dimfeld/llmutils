@@ -233,10 +233,30 @@ function installExecutorMock(options: {
       if (!options.codexExecute) {
         throw new Error('Unexpected Codex executor request');
       }
-      return { execute: options.codexExecute } as any;
+      return {
+        execute: (prompt: string, ...args: unknown[]) => {
+          if (prompt.includes('standalone PR simplification review')) {
+            return Promise.resolve({
+              content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+            });
+          }
+          return options.codexExecute!(prompt, ...args);
+        },
+      } as any;
     }
 
     throw new Error(`Unexpected executor ${name}`);
+  });
+}
+
+function codexJsonUnlessSimplification(payload: unknown): ReturnType<typeof vi.fn> {
+  return vi.fn().mockImplementation((prompt: string) => {
+    if (prompt.includes('standalone PR simplification review')) {
+      return {
+        content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+      };
+    }
+    return { content: JSON.stringify(payload) };
   });
 }
 
@@ -1456,6 +1476,11 @@ describe('review_pr command', () => {
         }
 
         expect(planInfo.executionMode).toBe('review');
+        if (prompt.includes('standalone PR simplification review')) {
+          return {
+            content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+          };
+        }
         expect(prompt).toContain(
           'standalone PR code review and must return structured JSON issues only'
         );
@@ -1488,10 +1513,11 @@ describe('review_pr command', () => {
       makeCommand()
     );
 
-    expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(2);
-    expect(codexExecute).toHaveBeenCalledTimes(2);
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(3);
+    expect(codexExecute).toHaveBeenCalledTimes(3);
     expect(codexExecute.mock.calls.map((call) => call[1]?.executionMode)).toEqual([
       'bare',
+      'review',
       'review',
     ]);
     expect(mockInsertReviewIssues).toHaveBeenCalledTimes(1);
@@ -1506,6 +1532,59 @@ describe('review_pr command', () => {
         reviewGuide: expect.stringContaining('Codex Guide'),
       })
     );
+  });
+
+  test('codex simplification review issues are stored with review issues', async () => {
+    const codexExecute = vi
+      .fn()
+      .mockImplementation(async (prompt: string, planInfo: { executionMode: string }) => {
+        if (planInfo.executionMode === 'bare') {
+          await fs.mkdir(path.dirname(guidePath), { recursive: true });
+          await fs.writeFile(guidePath, '# Codex Guide\n\nReview this carefully.', 'utf8');
+          return { content: 'wrote guide' };
+        }
+
+        if (prompt.includes('standalone PR simplification review')) {
+          return {
+            content: JSON.stringify({
+              issues: [
+                {
+                  severity: 'minor',
+                  category: 'style',
+                  content: 'Simplify duplicated branch handling',
+                  file: 'src/simplify.ts',
+                  line: '12',
+                  suggestion: 'Collapse the duplicated branches into one helper.',
+                },
+              ],
+              recommendations: [],
+              actionItems: [],
+            }),
+          };
+        }
+
+        return {
+          content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+        };
+      });
+
+    mockBuildExecutorAndLog.mockImplementation((name) => {
+      expect(name).toBe('codex-cli');
+      return { execute: codexExecute } as any;
+    });
+
+    await handleReviewGuideCommand(
+      '42',
+      { executor: 'codex-cli', terminalInput: false },
+      makeCommand()
+    );
+
+    const inserted = mockInsertReviewIssues.mock.calls[0]?.[1];
+    expect(inserted?.issues).toHaveLength(1);
+    expect(inserted?.issues?.[0]).toMatchObject({
+      content: 'Simplify duplicated branch handling',
+      source: 'codex-cli',
+    });
   });
 
   test('uses codex results when claude fails and skips combination', async () => {
@@ -1531,7 +1610,7 @@ describe('review_pr command', () => {
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
-    expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(3);
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(4);
     const inserted = mockInsertReviewIssues.mock.calls[0]?.[1];
     expect(inserted?.issues).toHaveLength(1);
     expect(inserted?.issues?.[0]?.content).toBe('Codex-only issue');
@@ -1583,7 +1662,7 @@ describe('review_pr command', () => {
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
-    expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(3);
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(4);
     const inserted = mockInsertReviewIssues.mock.calls[0]?.[1];
     expect(inserted?.issues).toHaveLength(1);
     expect(inserted?.issues?.[0]?.content).toBe('Claude-only issue');
@@ -1893,21 +1972,19 @@ describe('review_pr command', () => {
   });
 
   test('stores startLine and end line separately when issue line is a range', async () => {
-    const codexExecute = vi.fn().mockResolvedValue({
-      content: JSON.stringify({
-        issues: [
-          {
-            severity: 'major',
-            category: 'bug',
-            content: 'Range issue',
-            file: 'src/range.ts',
-            line: '10-20',
-            suggestion: 'Fix range',
-          },
-        ],
-        recommendations: [],
-        actionItems: [],
-      }),
+    const codexExecute = codexJsonUnlessSimplification({
+      issues: [
+        {
+          severity: 'major',
+          category: 'bug',
+          content: 'Range issue',
+          file: 'src/range.ts',
+          line: '10-20',
+          suggestion: 'Fix range',
+        },
+      ],
+      recommendations: [],
+      actionItems: [],
     });
     mockBuildExecutorAndLog.mockReturnValue({ execute: codexExecute } as any);
 
@@ -1927,21 +2004,19 @@ describe('review_pr command', () => {
   });
 
   test('stores startLine and end line separately when issue line is an en-dash range', async () => {
-    const codexExecute = vi.fn().mockResolvedValue({
-      content: JSON.stringify({
-        issues: [
-          {
-            severity: 'major',
-            category: 'bug',
-            content: 'En-dash range issue',
-            file: 'src/range.ts',
-            line: '10\u201320', // en-dash U+2013
-            suggestion: 'Fix range',
-          },
-        ],
-        recommendations: [],
-        actionItems: [],
-      }),
+    const codexExecute = codexJsonUnlessSimplification({
+      issues: [
+        {
+          severity: 'major',
+          category: 'bug',
+          content: 'En-dash range issue',
+          file: 'src/range.ts',
+          line: '10\u201320', // en-dash U+2013
+          suggestion: 'Fix range',
+        },
+      ],
+      recommendations: [],
+      actionItems: [],
     });
     mockBuildExecutorAndLog.mockReturnValue({ execute: codexExecute } as any);
 
@@ -1961,21 +2036,19 @@ describe('review_pr command', () => {
   });
 
   test('stores null startLine for plain line number', async () => {
-    const codexExecute = vi.fn().mockResolvedValue({
-      content: JSON.stringify({
-        issues: [
-          {
-            severity: 'minor',
-            category: 'style',
-            content: 'Plain line issue',
-            file: 'src/plain.ts',
-            line: '42',
-            suggestion: 'Fix it',
-          },
-        ],
-        recommendations: [],
-        actionItems: [],
-      }),
+    const codexExecute = codexJsonUnlessSimplification({
+      issues: [
+        {
+          severity: 'minor',
+          category: 'style',
+          content: 'Plain line issue',
+          file: 'src/plain.ts',
+          line: '42',
+          suggestion: 'Fix it',
+        },
+      ],
+      recommendations: [],
+      actionItems: [],
     });
     mockBuildExecutorAndLog.mockReturnValue({ execute: codexExecute } as any);
 
@@ -2075,21 +2148,19 @@ describe('review_pr command', () => {
   });
 
   test('stores null startLine for non-range string line value', async () => {
-    const codexExecute = vi.fn().mockResolvedValue({
-      content: JSON.stringify({
-        issues: [
-          {
-            severity: 'minor',
-            category: 'style',
-            content: 'Non-range string issue',
-            file: 'src/y.ts',
-            line: 'L100',
-            suggestion: '',
-          },
-        ],
-        recommendations: [],
-        actionItems: [],
-      }),
+    const codexExecute = codexJsonUnlessSimplification({
+      issues: [
+        {
+          severity: 'minor',
+          category: 'style',
+          content: 'Non-range string issue',
+          file: 'src/y.ts',
+          line: 'L100',
+          suggestion: '',
+        },
+      ],
+      recommendations: [],
+      actionItems: [],
     });
     mockBuildExecutorAndLog.mockReturnValue({ execute: codexExecute } as any);
 

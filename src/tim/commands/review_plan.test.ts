@@ -199,6 +199,10 @@ function installExecutorMock(capturedGuidePrompts: string[]): void {
         return 'wrote guide';
       }
 
+      if (prompt.includes('simplification review')) {
+        return JSON.stringify({ issues: [], recommendations: [], actionItems: [] });
+      }
+
       return JSON.stringify({
         issues: [
           {
@@ -324,6 +328,7 @@ describe('handlePlanReviewGuideCommand', () => {
     expect(capturedGuidePrompts).toHaveLength(1);
     expect(capturedGuidePrompts[0]).toContain('Plan-only review guides');
     expect(mockBuildExecutorAndLog.mock.calls.map((call) => call[0])).toEqual([
+      'codex-cli',
       'codex-cli',
       'codex-cli',
     ]);

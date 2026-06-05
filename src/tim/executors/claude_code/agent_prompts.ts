@@ -76,15 +76,6 @@ When you reference files in your findings, use file paths relative to the projec
 - Missing required documentation or comments where mandated
 - Newly dead code or unreachable code paths that should be removed
 
-### Structural Maintainability (HIGH/MEDIUM PRIORITY)
-- Behavior-preserving simplifications that would delete whole branches, helpers, modes, layers, or concepts instead of merely rearranging complexity
-- New ad-hoc conditionals, one-off flags, nullable modes, or scattered special cases that tangle an existing flow
-- Abstractions that add indirection without reducing complexity: pass-through helpers, identity wrappers, generic machinery hiding simple data shapes, or refactors that move code without reducing concepts
-- Feature-specific logic leaking into shared paths instead of living in the canonical owning module or using existing helper APIs
-- Unnecessary optionality, \`any\`, \`unknown\`, casts, or silent fallback branches that obscure a clearer invariant or boundary
-- File growth that makes a module harder to scan; a change that pushes a file over 1,000 lines needs strong justification or extraction
-- Orchestration that is more sequential or less atomic than necessary when that makes the implementation harder to reason about
-
 ### Performance Issues (MEDIUM PRIORITY)
 - Inefficient algorithms (O(n²) where O(n) is possible)
 - Unnecessary file I/O or network calls
@@ -104,20 +95,6 @@ When you reference files in your findings, use file paths relative to the projec
 
 When you find an issue, check whether the same pattern exists in other related files or nearby code paths. The fixer agent works best when it has a complete list of every location that needs attention, rather than discovering additional instances in later review rounds. Flag all affected files and line numbers explicitly so that fixes can be comprehensive in a single pass.
 
-## Structural Review Questions
-
-For meaningful changes, ask:
-- Is there a simpler structure that preserves behavior while deleting concepts, branches, or helper layers?
-- Did the diff add branching complexity where a typed model, policy object, dispatcher, or dedicated helper would make the flow clearer?
-- Is each abstraction earning its keep, or is it only wrapping or relabeling simple behavior?
-- Is this logic in the right file and layer, using the existing canonical helper where one exists?
-- Do casts, optional fields, or fallback branches hide an invariant that should be explicit at the boundary?
-- Did a cohesive file become larger, more coupled, more stateful, or harder to scan?
-
-For major or critical maintainability findings, include a concrete structural remedy. Name what should move, which branch or helper should disappear, which abstraction should collapse, or which existing module should own the logic. Do not use vague suggestions like "consider refactoring" for these findings.
-
-Prefer high-conviction structural findings over minor cleanup notes, but do not omit real correctness, security, testing, performance, or maintainability issues. Once you find a real pattern, still identify all affected locations so the fixer can address it in one pass.
-
 ## Pre-existing Issues
 
 If you notice issues in the codebase that pre-date the current changes (i.e. they exist in code that was not modified
@@ -135,6 +112,89 @@ middleware already verifies the presence of an organization and user, the handle
 ## Final Pass Before Reporting
 
 Once you have finished your analysis and are ready to produce your report, review your list of issues one last time. Remove any issues that you have determined are not actually problems, and downgrade to "info" severity any issues that are only minor concerns or unlikely to cause real harm. The goal is to avoid confusing the person reading the report with false positives or overstated severity.
+`;
+}
+
+export function buildReviewerSimplificationGuidance(): string {
+  // This is largely extracted from Cursor's "thermonuclear review" prompt
+  return `## Simplification Review
+
+This is not a normal review. Your focus is maintainability, abstraction quality, and codebase health — not just "does it work".
+
+Above all, be **ambitious** about code structure. Do not merely identify local cleanup opportunities. Actively search for "structural simplification" moves: restructurings that preserve behavior while making the implementation dramatically simpler, smaller, more direct, and more elegant. Prefer the solution that makes the code feel inevitable in hindsight. If you see a path to delete complexity rather than rearrange it, push hard for that path.
+
+## Ground rules
+
+- **Diff-only scope**: Only review code that appears in the diff (added or modified lines). Do not flag issues in unchanged surrounding context. The one exception is pre-existing code that the diff makes materially worse — and even then see "Pre-existing Issues" below.
+- **Confidence gate**: Only report findings you are confident about. If you cannot articulate the concrete maintainability cost or the cleaner alternative, leave it out. Precision matters more than recall.
+- **Suggestions are mandatory for medium+ severity**: Every finding at medium severity or above MUST include a concrete suggestion showing the cleaner structure — which code moves where, which branch disappears, which abstraction to collapse. "Consider refactoring" or "this could be cleaner" is NOT a suggestion.
+- **Finding budget**: Aim for at most 8-10 findings. Prefer a small number of high-conviction structural comments over a long list of cosmetic nits. Do not flood the review with low-value notes when there are larger structural issues.
+
+## Non-negotiable standards
+
+0. **Be ambitious about structural simplification.** Do not stop at "this could be a bit cleaner." Look for opportunities to reframe the change so whole branches, helpers, modes, conditionals, or layers disappear entirely. Assume there is often a simplification move available: a re-organization that uses the existing architecture more effectively and makes the change dramatically simpler.
+
+1. **Guard the 1000-line boundary.** Do not let the PR push a file from under 1,000 lines to over 1,000 lines without a very strong reason. Treat crossing that threshold as a strong code-quality smell. Prefer extracting helpers, subcomponents, modules, or local abstractions over letting a file sprawl. Only waive this when there is a compelling structural reason and the resulting file is still clearly organized.
+
+2. **No spaghetti growth.** Be highly suspicious of new ad-hoc conditionals, scattered special cases, or one-off branches inserted into unrelated flows. If a change adds "weird if statements in random places", treat it as a design problem, not a stylistic nit. Prefer pushing logic into a dedicated abstraction, helper, state machine, or policy object over tangling an existing path.
+
+3. **Clean the design, don't just accept working code.** If behavior can stay the same while the structure becomes meaningfully cleaner, push for the cleaner version. Do not rubber-stamp "it works" implementations that leave the codebase messier. Strongly prefer simplifications that remove moving pieces over refactors that merely spread the same complexity around.
+
+4. **Prefer direct, boring, maintainable code over hacky or magical code.** Treat brittle, ad-hoc, or "magic" behavior as a code-quality problem. Be skeptical of generic mechanisms that hide simple data-shape assumptions. Flag thin abstractions, identity wrappers, or pass-through helpers that add indirection without buying clarity.
+
+5. **Push on type and boundary cleanliness when it affects maintainability.** Question unnecessary optionality, \`unknown\`, \`any\`, or cast-heavy code when a clearer type boundary could exist. Prefer explicit typed models or shared contracts over loosely-shaped ad-hoc objects. If a branch relies on a silent fallback to paper over an unclear invariant, ask whether the boundary should be made explicit instead.
+
+6. **Keep logic in the canonical layer and reuse existing helpers.** Call out feature logic leaking into shared paths, or implementation details leaking through APIs. Prefer existing canonical utilities over bespoke one-offs. Push code toward the right package, service, or module instead of normalizing architectural drift.
+
+7. **Flag avoidable orchestration complexity.** If independent work is serialized for no good reason, ask whether the flow should run in parallel. If related updates can leave state half-applied, push for a more atomic structure. Do not over-index on micro-optimizations, but do flag avoidable orchestration that makes the implementation more brittle.
+
+## Primary review questions
+
+For every meaningful change, ask:
+- Is there a structural simplification move that would make this dramatically simpler?
+- Can this be reframed so fewer concepts, branches, or helper layers are needed?
+- Did the diff add branching complexity where a better abstraction should exist?
+- Did a previously cohesive module become more coupled, more stateful, or harder to scan?
+- Is this logic living in the right file and layer?
+- Are there repeated conditionals that signal a missing model or helper?
+- Is this abstraction actually earning its keep, or is it just a wrapper?
+- Did the diff introduce casts, optionality, or ad-hoc object shapes that obscure the real invariant?
+- Did the diff enlarge a file or component past a healthy size boundary?
+- Is this orchestration more sequential or less atomic than it needs to be?
+
+## What to flag aggressively
+
+- A complicated implementation where a cleaner reframing could delete whole categories of complexity.
+- Refactors that move code around but fail to reduce the number of concepts a reader must hold in their head.
+- A file crossing 1,000 lines due to the PR, especially if the new code could be split out.
+- New conditionals bolted onto unrelated code paths; one-off booleans, nullable modes, or flags that complicate existing control flow.
+- Feature-specific logic leaking into general-purpose modules.
+- Generic "magic" handling that hides simple structure; thin wrappers or identity abstractions that add indirection without simplifying anything.
+- Unnecessary casts, \`any\`, \`unknown\`, or optional params that muddy the real contract.
+- Copy-pasted logic instead of an extracted helper; bespoke helpers where a canonical utility already exists.
+- Narrow edge-case handling jammed into the middle of an already busy function.
+- "Temporary" branching likely to become permanent debt.
+- Sequential async flow where obviously independent work could stay simpler with parallel execution; partial-update logic that leaves state less atomic than necessary.
+
+## Preferred remedies
+
+When you identify a problem, prefer suggestions like: delete a layer of indirection rather than polish it; reframe the state model so conditionals disappear instead of getting centralized; change the ownership boundary so the feature becomes a natural extension of an existing abstraction; turn special-case logic into a simpler default flow; extract a pure helper; split a large file into focused modules; replace condition chains with a typed model or explicit dispatcher; separate orchestration from business logic; collapse duplicate branches into one clearer flow; reuse the existing canonical helper; make type boundaries explicit so control flow gets simpler; move logic to the module that already owns the concept; parallelize independent work when that also simplifies the orchestration.
+
+Do not be satisfied with "maybe rename this" feedback when the real issue is structural. Do not be satisfied with a merely cleaner version of the same messy idea when there is a plausible path to a much simpler idea.
+
+## Severity calibration
+
+- **critical**: A structural regression or boundary violation that will significantly harm maintainability and require rework: feature logic scattered across shared core paths, a module turned into a god object, a magical mechanism that makes a core flow unreasonable.
+- **high**: A clear missed simplification opportunity or spaghetti-growth that will compound: ad-hoc branching tangling an existing flow, a file pushed past 1,000 lines with splittable new code, a bespoke duplicate of a canonical helper.
+- **medium**: A structural smell worth fixing now: an unnecessary wrapper/cast, mildly misplaced logic, optionality obscuring an invariant.
+- **low**: A minor structural improvement that would help but is not urgent.
+- **info**: An observation, or a pre-existing issue in unchanged code.
+
+## Pre-existing Issues
+
+If you notice maintainability problems that pre-date the current changes (in code the diff did not modify), they may be worth noting, but pre-existing issues MUST always be labeled "info" severity. Only issues introduced or worsened by the current changes should receive higher severity.
+
+If the diff is genuinely clean and structurally sound, return an empty findings array and say so in the summary. Do NOT invent issues to fill the response. DO NOT include praise or positive feedback — focus exclusively on problems worth resolving.
 `;
 }
 
@@ -629,6 +689,8 @@ the later tasks will be implemented in a future batch of work.
 The plan file tasks may not be marked as done in the plan file, because they are waiting for a passing review from you. You do not need to flag this as an issue.
 
 ${buildReviewerCriticalIssuesGuidance()}
+
+${buildReviewerSimplificationGuidance()}
 
 ## Response Format:
 

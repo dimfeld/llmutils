@@ -3,6 +3,7 @@ import {
   buildReviewerCriticalIssuesGuidance,
   buildPrReviewScopeGuidance,
   buildReviewerPromptIntro,
+  buildReviewerSimplificationGuidance,
 } from '../executors/claude_code/agent_prompts.js';
 
 const REVIEW_CATEGORIES_SECTION = `### Critical Issue Categories
@@ -74,6 +75,12 @@ interface ReviewGuideIssuesFollowUpPromptOptions {
 }
 
 interface StandaloneReviewIssuesPromptOptions {
+  metadata: ReviewSubjectMetadata;
+  useJj: boolean;
+  customInstructions?: string;
+}
+
+interface StandaloneSimplificationReviewPromptOptions {
   metadata: ReviewSubjectMetadata;
   useJj: boolean;
   customInstructions?: string;
@@ -387,6 +394,48 @@ ${buildReviewerCriticalIssuesGuidance()}
 ${planContextInstruction}
 - Do not provide a verdict; only return the JSON issues payload.
 - Use the same severity bar as the reviewer prompt: only report genuine issues that would matter in review.
+
+## Required JSON Schema
+\`\`\`json
+${schema}
+\`\`\`${maybeCustomInstructions(customInstructions)}`;
+}
+
+export function buildStandaloneSimplificationReviewPrompt(
+  options: StandaloneSimplificationReviewPromptOptions
+): string {
+  const { metadata, useJj, customInstructions } = options;
+  const schema = renderSchema();
+  const subjectLabel = metadata.kind === 'pr' ? 'PR' : 'plan implementation';
+  const planContextInstruction =
+    metadata.kind === 'pr'
+      ? '- Do not include plan/task context; this is PR-only simplification review.'
+      : '- Use the plan/task context only to understand the intended behavior that simplifications must preserve.';
+
+  return `${buildReviewerPromptIntro(false)}You are performing a standalone ${subjectLabel} simplification review and must return structured JSON issues only.
+
+## Scope
+- Focus only on meaningful opportunities to simplify the changed code while preserving behavior.
+- Do not report correctness, security, testing, documentation, or performance issues unless the simplification itself is the actionable remedy.
+- Do not duplicate issues that a normal correctness/code-quality review would report unless the core concern is avoidable complexity.
+
+## ${getSubjectMetadataHeading(metadata)}
+${formatSubjectMetadata(metadata)}
+
+## Diff Discovery
+${getDiffInstructions(metadata, useJj)}
+
+${buildReviewerSimplificationGuidance()}
+
+## Output Requirements
+- Return valid JSON matching the schema below.
+- Focus on concrete, actionable simplification opportunities tied to changed code.
+- Prefer fewer high-signal findings over speculative cleanup notes.
+- Issue content and suggestions are JSON string values, but Markdown inside those strings is allowed and encouraged when it improves readability.
+${planContextInstruction}
+- Do not provide a verdict; only return the JSON issues payload.
+- Use the same severity bar as the reviewer prompt: only report genuine issues that would matter in review.
+- Use \`style\` for code-structure simplification findings unless another category is clearly more accurate.
 
 ## Required JSON Schema
 \`\`\`json
