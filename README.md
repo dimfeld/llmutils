@@ -17,6 +17,25 @@ For global CLI installation from this repo, `bun run dev-install` currently uses
 
 Long-running `tim` workflows call an executor such as Claude Code or Codex CLI. Install and authenticate whichever executor your project config uses.
 
+### Recommended Codex configuration
+
+If you use the Codex CLI executor, adding the following entries to your `~/.codex/config.toml` lets Codex run unattended with workspace write access and network enabled, while still routing risky operations through a reviewer subagent:
+
+```toml
+sandbox_mode = "workspace-write"
+approvals_reviewer = "guardian_subagent"
+
+[sandbox_workspace_write]
+network_access = true
+writable_roots = [
+  # Various global package manager paths
+]
+```
+
+Add the paths your global package managers write to (for example, the directories used by `pnpm`, `npm`, `bun`, or `cargo`) to `writable_roots` so installs and tooling work without per-command approvals.
+
+Setting `sandbox_mode = "workspace-write"` also lets Codex automatically trust newly created auto-workspaces, so you won't be prompted to approve each fresh workspace before Codex starts working in it.
+
 ## Install the CLI
 
 Clone this repository, install dependencies, then build and register the command:
