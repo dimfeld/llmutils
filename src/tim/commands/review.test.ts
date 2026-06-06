@@ -4503,6 +4503,51 @@ Updated by branch-name autofix
       setupWorkspaceSpy.mockRestore();
     }
   });
+
+  test('rejects --save-issues for branch target before workspace or executor allocation', async () => {
+    const setupWorkspaceSpy = vi.spyOn(workspaceSetupModule, 'setupWorkspace');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+
+    try {
+      await expect(
+        handleReviewCommand(
+          undefined,
+          { branch: 'feature/some-branch', saveIssues: true },
+          { parent: { opts: () => ({}) } }
+        )
+      ).rejects.toThrow('--save-issues requires a plan-backed review target.');
+
+      expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+      expect(executorsModule.buildExecutorAndLog).not.toHaveBeenCalled();
+      expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
+    } finally {
+      setupWorkspaceSpy.mockRestore();
+    }
+  });
+
+  test('exits early without calling executor when current target has no changes', async () => {
+    await createCommittedBaseline(testDir);
+    const setupWorkspaceSpy = vi.spyOn(workspaceSetupModule, 'setupWorkspace');
+
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+    vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue('feature/no-changes');
+
+    try {
+      await expect(
+        handleReviewCommand(
+          undefined,
+          { current: true, noSave: true, noAutofix: true },
+          { parent: { opts: () => ({}) } }
+        )
+      ).resolves.toEqual({ tasksAppended: 0, issuesSaved: 0 });
+
+      expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+      expect(executorsModule.buildExecutorAndLog).not.toHaveBeenCalled();
+      expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
+    } finally {
+      setupWorkspaceSpy.mockRestore();
+    }
+  });
 });
 
 describe('JSON output mode integration', () => {
