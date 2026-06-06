@@ -85,7 +85,7 @@ interface PrStatusCommandOptions {
   forceRefresh?: boolean;
 }
 
-export interface PrFixCommandOptions extends Record<string, unknown> {
+export interface PrFixCommandOptions {
   pr?: string;
   plan?: string | number;
   current?: boolean;
@@ -1237,10 +1237,15 @@ export async function resolvePrFixTarget(
     };
   }
 
+  // Force a fresh PR status fetch so unresolved review threads reflect the current
+  // state of the PR, matching the plan-backed path's unconditional refresh. `pr fix`
+  // acts on currently-unresolved threads, so acting on stale cached threads risks
+  // replying to already-resolved threads or missing new ones.
   const prContext = await gatherPrContext({
     db,
     prUrlOrNumber: intent.prUrlOrNumber,
     cwd: repoRoot,
+    maxStatusAgeMs: 0,
   });
   const repoIdentity = await getRepositoryIdentity({ cwd: repoRoot });
   validatePrMatchesCurrentRepository(
