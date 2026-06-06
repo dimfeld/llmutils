@@ -296,6 +296,10 @@ tim pr review-guide https://github.com/owner/repo/pull/456
 tim pr review-guide-comment https://github.com/owner/repo/pull/456   # Concise guide posted as a PR comment
 tim pr review-guide-comment 456 --dry-run                            # Print the guide without posting it
 tim subagent reviewer 123 --print --output-file review.json          # Orchestrator-compatible review entry point
+tim review 123                                      # Review a plan's work
+tim review --current                                # Review the current worktree, no plan required
+tim review --branch feature/my-branch --base main   # Review an explicit branch in a prepared workspace
+tim review --pr 456                                 # Review an explicit PR (current repo only)
 tim review-guide generate 123                       # Plan-only review guide (no PR required)
 tim review-guide generate 123 --auto-workspace
 tim review-guide list-issues 123                    # Latest guide for plan, plus linked PR guides
@@ -305,6 +309,8 @@ tim pr fix 123 --auto-workspace --executor codex-cli --model gpt-5-codex --effor
 tim pr comment https://github.com/owner/repo/pull/456 "Fixed the related feedback"
 tim rebase 123 --auto-workspace
 ```
+
+`tim review [planId]` reviews a plan's work. It can also run **without a plan** against three planless targets: `--current` reviews the current worktree in place (no branch switch, no workspace), `--branch <branch>` prepares a managed workspace on the requested branch (your current checkout is left untouched), and `--pr <pr-url-or-number>` prepares the head branch of a PR that belongs to the current repository. With no arguments, `tim review` first tries the existing branch-name plan auto-selection (for branches named like `123-*`), and falls back to a current-worktree planless review when no plan can be inferred — it never auto-selects a linked PR. Planless reviews are ephemeral: they save no issues, write no plan metadata, and skip plan status/notification updates, so plan-owned options such as `--save-issues`, `--incremental`, and `--create-cleanup-plan` are rejected up front. Honor `--base` to choose the diff base for any planless mode.
 
 `tim review-guide generate <planId>` generates a review guide for a plan that does not yet have an associated PR. It reuses the same pipeline as `tim pr review-guide` and stores results in the `review` table, keyed by the plan's UUID instead of a PR URL. With `--auto-workspace`, it routes through the managed workspace and reviews the latest committed state; without it, it runs in the current working tree and includes uncommitted changes in the diff.
 
