@@ -115,6 +115,20 @@ describe('resolveReviewTarget', () => {
     expect(deps.resolveRepoRoot).not.toHaveBeenCalled();
   });
 
+  test('resolves an explicit plan target without fabricating plan data', async () => {
+    const deps = createDeps();
+
+    const target = await resolveReviewTarget({ planId: 377, options: {} }, deps);
+
+    expect(target).toEqual({
+      kind: 'plan',
+      planId: 377,
+      planPath: null,
+      repoRoot: '/repo',
+    });
+    expect(deps.resolvePlanByNumericId).not.toHaveBeenCalled();
+  });
+
   test('uses branch-name plan auto-selection before falling back to current worktree', async () => {
     const deps = createDeps({
       getCurrentBranchName: vi.fn(async () => '377-planless-review-targets'),

@@ -12,6 +12,13 @@ interface MockDependencies {
     plan: PlanSchema;
     planPath: string | null;
   }>;
+  resolvePlanByUuid: (
+    uuid: string,
+    repoRoot: string
+  ) => Promise<{
+    plan: PlanSchema;
+    planPath: string | null;
+  }>;
   loadPlansFromDb: (searchDir: string, repositoryId: string) => { plans: Map<number, PlanSchema> };
   generateDiffForReview: (gitRoot: string, options?: any) => Promise<DiffResult>;
   getGitRoot: (cwd?: string) => Promise<string>;
@@ -57,6 +64,10 @@ describe('gatherPlanContext', () => {
 
     mockDeps = {
       resolvePlanByNumericId: async () => ({
+        plan: basePlan,
+        planPath: planFile,
+      }),
+      resolvePlanByUuid: async () => ({
         plan: basePlan,
         planPath: planFile,
       }),

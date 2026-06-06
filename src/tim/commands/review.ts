@@ -7,9 +7,11 @@ import { join, dirname, isAbsolute } from 'node:path';
 import { fetchRemoteBranch, getCurrentCommitHash } from '../../common/git.js';
 import { promptCheckbox, promptSelect } from '../../common/input.js';
 import {
+  parsePlanIdentifier,
   parseOptionalPlanIdFromCliArg,
   readPlanFile,
   resolvePlanByNumericId,
+  resolvePlanByUuid,
   writePlanFile,
   writePlanToDb,
 } from '../plans.js';
@@ -76,6 +78,7 @@ import { setupWorkspace } from '../workspace/workspace_setup.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { isReopenableCompletedStatus } from '../plans/plan_state_utils.js';
 import {
+  createExplicitPlanTarget,
   resolveReviewTarget,
   type CurrentWorktreeReviewTarget,
   type BranchReviewTarget,
@@ -1497,19 +1500,10 @@ export async function handleReviewCommand(
       typeof planId === 'string' && !/^\d+$/.test(planId.trim()) ? planId : undefined;
     const reviewTarget =
       nonNumericPlanRef !== undefined
-        ? ({
-            kind: 'plan',
-            planId: nonNumericPlanRef,
-            planPath: null,
-            plan: {
-              id: undefined,
-              status: 'pending',
-              title: '',
-              goal: '',
-              tasks: [],
-            },
-            repoRoot: await resolveRepoRoot(globalOpts.config, options.cwd),
-          } as unknown as PlanReviewTarget)
+        ? createExplicitPlanTarget(
+            nonNumericPlanRef,
+            await resolveRepoRoot(globalOpts.config, options.cwd)
+          )
         : await resolveReviewTarget({
             planId: typeof planId === 'string' ? parseOptionalPlanIdFromCliArg(planId) : planId,
             options,
@@ -1522,7 +1516,10 @@ export async function handleReviewCommand(
     const planTarget: PlanReviewTarget | undefined =
       reviewTarget.kind === 'plan' ? reviewTarget : undefined;
     if (planTarget?.autoSelected?.selectionReason === 'branch-name') {
-      reviewLog(chalk.cyan(`Auto-selected plan: ${planTarget.plan.id} - ${planTarget.plan.title}`));
+      const resolvedPlan = planTarget.plan;
+      if (resolvedPlan) {
+        reviewLog(chalk.cyan(`Auto-selected plan: ${resolvedPlan.id} - ${resolvedPlan.title}`));
+      }
       if (planTarget.autoSelected.displayPath) {
         reviewLog(chalk.gray(`Plan file: ${planTarget.autoSelected.displayPath}`));
       }
@@ -1532,23 +1529,27 @@ export async function handleReviewCommand(
     let initialResolvedPlan: Awaited<ReturnType<typeof resolveReviewPlanForWriteById>> | undefined;
     let resolvedPlanFilePath: string | undefined;
     if (planTarget?.autoSelected?.selectionReason === 'branch-name') {
+      const resolvedPlan = planTarget.plan;
+      if (!resolvedPlan) {
+        throw new Error('Auto-selected review target is missing resolved plan metadata.');
+      }
       const repoRoot = planTarget.repoRoot;
-      const existingPath = await materializedPlanFileExists(repoRoot, planTarget.plan.id);
+      const existingPath = await materializedPlanFileExists(repoRoot, resolvedPlan.id);
       let materializedPath: string;
       if (existingPath) {
         // Validate the existing file belongs to this plan before reusing it
         const filePlan = await readPlanFile(existingPath);
-        if (filePlan.id !== planTarget.plan.id) {
+        if (filePlan.id !== resolvedPlan.id) {
           // File has wrong ID — re-materialize from DB
-          materializedPath = await materializePlan(planTarget.plan.id, repoRoot);
+          materializedPath = await materializePlan(resolvedPlan.id, repoRoot);
         } else {
           materializedPath = existingPath;
         }
       } else {
-        materializedPath = await materializePlan(planTarget.plan.id, repoRoot);
+        materializedPath = await materializePlan(resolvedPlan.id, repoRoot);
       }
       initialResolvedPlan = {
-        plan: structuredClone(planTarget.plan),
+        plan: structuredClone(resolvedPlan),
         planPath: materializedPath,
         repoRoot,
       };
@@ -2792,14 +2793,18 @@ export async function reopenParentForAppendedReviewTasks(
 }
 
 async function resolveReviewPlanForWriteById(
-  planId: number,
+  planId: number | string,
   repoRoot: string
 ): Promise<{
   plan: PlanSchema;
   planPath: string | null;
   repoRoot: string;
 }> {
-  const resolvedPlan = await resolvePlanByNumericId(planId, repoRoot);
+  const parsedIdentifier = parsePlanIdentifier(planId);
+  const resolvedPlan =
+    parsedIdentifier.planId !== undefined
+      ? await resolvePlanByNumericId(parsedIdentifier.planId, repoRoot)
+      : await resolvePlanByUuid(parsedIdentifier.uuid ?? String(planId), repoRoot);
   return {
     plan: resolvedPlan.plan,
     planPath: resolvedPlan.planPath,

@@ -6,7 +6,7 @@
 
 import chalk from 'chalk';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
-import { resolvePlanByNumericId } from '../plans.js';
+import { parsePlanIdentifier, resolvePlanByNumericId, resolvePlanByUuid } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
@@ -53,6 +53,7 @@ export interface PlanContext {
  */
 export interface ContextGatheringDependencies {
   resolvePlanByNumericId: typeof resolvePlanByNumericId;
+  resolvePlanByUuid: typeof resolvePlanByUuid;
   loadPlansFromDb: typeof loadPlansFromDb;
   generateDiffForReview: typeof generateDiffForReview;
   getGitRoot: typeof getGitRoot;
@@ -70,6 +71,7 @@ export interface ContextGatheringDependencies {
  */
 const defaultDependencies: ContextGatheringDependencies = {
   resolvePlanByNumericId,
+  resolvePlanByUuid,
   loadPlansFromDb,
   generateDiffForReview,
   getGitRoot,
@@ -82,6 +84,21 @@ const defaultDependencies: ContextGatheringDependencies = {
   resolveEffectivePlanBase,
 };
 
+async function resolvePlanByReviewIdentifier(
+  planId: number | string,
+  repoRoot: string,
+  deps: ContextGatheringDependencies
+): Promise<Awaited<ReturnType<typeof resolvePlanByNumericId>>> {
+  const parsedIdentifier = parsePlanIdentifier(planId);
+  if (parsedIdentifier.planId !== undefined) {
+    return deps.resolvePlanByNumericId(parsedIdentifier.planId, repoRoot);
+  }
+  if (parsedIdentifier.uuid !== undefined) {
+    return deps.resolvePlanByUuid(parsedIdentifier.uuid, repoRoot);
+  }
+  return deps.resolvePlanByUuid(String(planId), repoRoot);
+}
+
 /**
  * Gathers comprehensive context for a plan including hierarchy and diff information.
  * This function encapsulates the context-gathering logic previously embedded in handleReviewCommand.
@@ -93,7 +110,7 @@ const defaultDependencies: ContextGatheringDependencies = {
  * @returns Promise<PlanContext> containing all gathered context
  */
 export async function gatherPlanContext(
-  planId: number,
+  planId: number | string,
   options: {
     incremental?: boolean;
     sinceLastReview?: boolean;
@@ -107,7 +124,7 @@ export async function gatherPlanContext(
   deps: ContextGatheringDependencies = defaultDependencies
 ): Promise<PlanContext> {
   const repoRoot = await deps.resolveRepoRoot(globalOpts.config, options.cwd);
-  const resolvedPlan = await deps.resolvePlanByNumericId(planId, repoRoot);
+  const resolvedPlan = await resolvePlanByReviewIdentifier(planId, repoRoot, deps);
   const planData = resolvedPlan.plan;
   const resolvedPlanFile = resolvedPlan.planPath ?? String(planData.id ?? planId);
 

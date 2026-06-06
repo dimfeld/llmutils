@@ -17,10 +17,10 @@ import { gatherPrContext, type PrReviewContext } from '../utils/pr_context_gathe
 
 export interface PlanReviewTarget {
   kind: 'plan';
-  planId: number;
+  planId: number | string;
   planUuid?: string;
   planPath: string | null;
-  plan: PlanSchema;
+  plan?: PlanSchema;
   repoRoot: string;
   planBranch?: string;
   autoSelected?: {
@@ -140,18 +140,14 @@ function validateTargetSelectorConflicts(
   }
 }
 
-function createExplicitPlanTarget(planId: number, repoRoot: string): PlanReviewTarget {
+export function createExplicitPlanTarget(
+  planId: number | string,
+  repoRoot: string
+): PlanReviewTarget {
   return {
     kind: 'plan',
     planId,
     planPath: null,
-    plan: {
-      id: planId,
-      status: 'pending',
-      title: '',
-      goal: '',
-      tasks: [],
-    },
     repoRoot,
   };
 }
