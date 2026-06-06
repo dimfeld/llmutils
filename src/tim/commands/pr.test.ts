@@ -119,6 +119,14 @@ vi.mock('../../common/git.js', () => ({
   getGitRepository: vi.fn(async () => 'example/repo'),
 }));
 
+vi.mock('../assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(async () => ({
+    repositoryId: 'github.com__example__repo',
+    remoteUrl: 'https://github.com/example/repo.git',
+    gitRoot: '/tmp/example-repo',
+  })),
+}));
+
 vi.mock('./agent/agent.js', () => ({
   timAgent: vi.fn(async (..._args: unknown[]) => {}),
 }));
@@ -277,6 +285,7 @@ import {
   validatePrIdentifier as mockValidatePrIdentifierFn,
 } from '../../common/github/identifiers.js';
 import { getGitRepository as mockGetGitRepositoryFn } from '../../common/git.js';
+import { getRepositoryIdentity as mockGetRepositoryIdentityFn } from '../assignments/workspace_identifier.js';
 import {
   getPrStatusByUrl as mockGetPrStatusByUrlFn,
   getPrStatusForPlan as mockGetPrStatusForPlanFn,
@@ -321,6 +330,7 @@ const mockDeduplicatePrUrls = vi.mocked(mockDeduplicatePrUrlsFn);
 const mockParsePrOrIssueNumber = vi.mocked(mockParsePrOrIssueNumberFn);
 const mockValidatePrIdentifier = vi.mocked(mockValidatePrIdentifierFn);
 const mockGetGitRepository = vi.mocked(mockGetGitRepositoryFn);
+const mockGetRepositoryIdentity = vi.mocked(mockGetRepositoryIdentityFn);
 const mockGetPrStatusByUrl = vi.mocked(mockGetPrStatusByUrlFn);
 const mockGetPrStatusForPlan = vi.mocked(mockGetPrStatusForPlanFn);
 const mockLinkPlanToPr = vi.mocked(mockLinkPlanToPrFn);
@@ -439,6 +449,7 @@ describe('tim/commands/pr', () => {
     mockParsePrOrIssueNumber.mockClear();
     mockValidatePrIdentifier.mockClear();
     mockGetGitRepository.mockReset();
+    mockGetRepositoryIdentity.mockReset();
     mockGetPrStatusByUrl.mockClear();
     mockGetPrStatusForPlan.mockClear();
     mockLinkPlanToPr.mockClear();
@@ -558,6 +569,11 @@ describe('tim/commands/pr', () => {
     mockParsePrOrIssueNumber.mockImplementation(async () => currentParsedIdentifier);
     mockValidatePrIdentifier.mockImplementation(() => {});
     mockGetGitRepository.mockResolvedValue('example/repo');
+    mockGetRepositoryIdentity.mockResolvedValue({
+      repositoryId: 'github.com__example__repo',
+      remoteUrl: 'https://github.com/example/repo.git',
+      gitRoot: '/tmp/example-repo',
+    });
     mockDeduplicatePrUrls.mockImplementation((urls: string[]) => ({ valid: urls, invalid: [] }));
     mockGetPrStatusByUrl.mockImplementation((_db: unknown, prUrl: string) => {
       // Check per-URL map first, then fall back to single cached detail
@@ -597,7 +613,7 @@ describe('tim/commands/pr', () => {
     mockTimAgent.mockImplementation(async () => {});
   });
 
-  test('refresh defaults to the current repository project and fetches all open PR statuses', async () => {
+  test('refresh defaults to the current repository project identity and fetches all open PR statuses', async () => {
     mockRefreshProjectPrs.mockResolvedValue({
       refreshed: [
         { status: { pr_number: 1 } },
@@ -611,10 +627,13 @@ describe('tim/commands/pr', () => {
 
     await handlePrCommand.handlePrRefreshCommand(undefined, { opts: () => ({}) });
 
-    expect(mockGetGitRepository).toHaveBeenCalledTimes(1);
-    expect(mockGetProject).toHaveBeenCalledWith(dbHandle, 'example/repo');
+    expect(mockGetRepositoryIdentity).toHaveBeenCalledTimes(1);
+    expect(mockGetGitRepository).not.toHaveBeenCalled();
+    expect(mockGetProject).toHaveBeenCalledWith(dbHandle, 'github.com__example__repo');
     expect(mockRefreshProjectPrs).toHaveBeenCalledWith(dbHandle, 7, 'dimfeld');
-    expect(logs).toContain('Refreshed project 7 (example/repo): 3 open PRs, 1 new plan link.');
+    expect(logs).toContain(
+      'Refreshed project 7 (github.com__example__repo): 3 open PRs, 1 new plan link.'
+    );
     expect(logs.at(-1)).toContain('PR refresh complete: 1 project, 3 open PRs, 1 new plan link.');
   });
 
@@ -628,7 +647,7 @@ describe('tim/commands/pr', () => {
 
     await handlePrCommand.handlePrRefreshCommand('42', { opts: () => ({}) });
 
-    expect(mockGetGitRepository).not.toHaveBeenCalled();
+    expect(mockGetRepositoryIdentity).not.toHaveBeenCalled();
     expect(mockGetProjectById).toHaveBeenCalledWith(dbHandle, 42);
     expect(mockRefreshProjectPrs).toHaveBeenCalledWith(dbHandle, 42, 'dimfeld');
     expect(logs).toContain('Refreshed project 42 (example/repo): 1 open PR, 0 new plan links.');

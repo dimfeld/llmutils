@@ -23,6 +23,7 @@ import {
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
 import { getProject, getProjectById, listProjects, type Project } from '../db/project.js';
@@ -105,11 +106,11 @@ function getPrFixExecutorKey(executorName: string): 'claude' | 'codex' | undefin
 async function resolvePrRefreshTarget(target: string | undefined): Promise<PrRefreshTarget> {
   const db = getDatabase();
   if (!target) {
-    const repositoryId = await getGitRepository();
-    const project = getProject(db, repositoryId);
+    const repository = await getRepositoryIdentity();
+    const project = getProject(db, repository.repositoryId);
     if (!project) {
       throw new Error(
-        `No tim project found for current repository ${repositoryId}. Run from a registered project checkout or pass a project id.`
+        `No tim project found for current repository ${repository.repositoryId}. Run from a registered project checkout or pass a project id.`
       );
     }
     return project;
