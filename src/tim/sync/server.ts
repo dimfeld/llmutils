@@ -99,12 +99,19 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
 
   function broadcast(frame: SyncServerFrame, excludeConnectionId?: string): void {
     const payload = JSON.stringify(frame);
+    let recipientCount = 0;
     for (const [connectionId, ws] of sockets) {
       const connection = connections.get(connectionId);
       if (connectionId === excludeConnectionId || !connection?.authenticated) {
         continue;
       }
       ws.send(payload);
+      recipientCount++;
+    }
+    if (frame.type === 'invalidate') {
+      console.info(
+        `[sync] Broadcast invalidate (seq=${frame.sequenceId}, keys=${frame.entityKeys.length}, recipients=${recipientCount})`
+      );
     }
   }
 
@@ -155,6 +162,7 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
         const connectionId = ws.data.connectionId;
         sockets.set(connectionId, ws);
         connections.set(connectionId, { connectionId, nodeId: null, authenticated: false });
+        console.info(`[sync] WebSocket connection opened (connId=${connectionId})`);
         helloTimers.set(
           connectionId,
           setTimeout(() => {
@@ -211,10 +219,14 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
             }
             updateTimNodeCursor(options.db, frame.nodeId, frame.lastKnownSequenceId);
           }
+          const currentSeq = getCurrentSequenceId(options.db);
+          console.info(
+            `[sync] Node authenticated (node=${frame.nodeId}, cursor=${frame.lastKnownSequenceId ?? 0}, mainSeq=${currentSeq})`
+          );
           send(ws, {
             type: 'hello_ack',
             mainNodeId: options.mainNodeId,
-            currentSequenceId: getCurrentSequenceId(options.db),
+            currentSequenceId: currentSeq,
           });
           return;
         }
@@ -223,6 +235,14 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
       },
       close(ws) {
         const connectionId = ws.data.connectionId;
+        const connection = connections.get(connectionId);
+        if (connection?.authenticated) {
+          console.info(
+            `[sync] Node disconnected (node=${connection.nodeId}, connId=${connectionId})`
+          );
+        } else {
+          console.info(`[sync] Unauthenticated connection closed (connId=${connectionId})`);
+        }
         clearTimeout(helloTimers.get(connectionId));
         helloTimers.delete(connectionId);
         sockets.delete(connectionId);

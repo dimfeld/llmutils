@@ -205,11 +205,16 @@ class WebSocketSyncClient implements SyncClient {
     this.connecting = true;
     this.helloAccepted = false;
 
-    const ws = new WebSocket(wsUrl(this.options.serverUrl, 'sync/ws'));
+    const serverUrl = this.options.serverUrl;
+    console.info(`[sync] Connecting to main node at ${serverUrl}`);
+    const ws = new WebSocket(wsUrl(serverUrl, 'sync/ws'));
     this.ws = ws;
 
     ws.addEventListener('open', () => {
       const cursor = getTimNodeCursor(this.options.db, this.options.nodeId);
+      console.info(
+        `[sync] WebSocket open, sending hello (node=${this.options.nodeId}, cursor=${cursor.last_known_sequence_id})`
+      );
       this.send({
         type: 'hello',
         nodeId: this.options.nodeId,
@@ -244,18 +249,29 @@ class WebSocketSyncClient implements SyncClient {
           this.connecting = false;
           this.helloAccepted = true;
           this.reconnectAttempts = 0;
+          console.info(
+            `[sync] hello_ack received (main=${frame.mainNodeId}, mainSeq=${frame.currentSequenceId})`
+          );
           this.events.emit('connected', frame);
           this.startFlushLoop();
           resetSendingOperations(this.options.db, { originNodeId: this.options.nodeId });
           await this.catchUpFrom(getTimNodeCursor(this.options.db, this.options.nodeId));
           await this.flushPending();
           return;
-        case 'catch_up_response':
+        case 'catch_up_response': {
+          const prevCursor = getTimNodeCursor(
+            this.options.db,
+            this.options.nodeId
+          ).last_known_sequence_id;
           await this.applyInvalidations(frame.invalidations);
           updateTimNodeCursor(this.options.db, this.options.nodeId, frame.currentSequenceId);
+          console.info(
+            `[sync] catch_up complete (cursor ${prevCursor} -> ${frame.currentSequenceId}, ${frame.invalidations.length} invalidations)`
+          );
           this.catchUpWaiter?.resolve();
           this.catchUpWaiter = null;
           return;
+        }
         case 'op_result':
           await this.handleOperationResults(frame);
           return;
@@ -263,6 +279,9 @@ class WebSocketSyncClient implements SyncClient {
           await this.handleOperationResults(frame);
           return;
         case 'invalidate':
+          console.info(
+            `[sync] invalidate received (seq=${frame.sequenceId}, keys=${frame.entityKeys.length})`
+          );
           await this.applyInvalidations([
             { sequenceId: frame.sequenceId, entityKeys: frame.entityKeys },
           ]);
@@ -484,6 +503,7 @@ class WebSocketSyncClient implements SyncClient {
     this.stopFlushLoop();
     this.rejectWaiters(new Error('Sync WebSocket disconnected'));
     if (wasConnected) {
+      console.info(`[sync] Disconnected from main node`);
       this.events.emit('disconnected');
     }
     if (!this.stopped && this.options.reconnect !== false) {
@@ -497,10 +517,12 @@ class WebSocketSyncClient implements SyncClient {
     const exponential = Math.min(maxDelay, minDelay * 2 ** this.reconnectAttempts);
     this.reconnectAttempts += 1;
     const jitter = Math.floor(Math.random() * Math.min(1_000, exponential * 0.25));
+    const delay = exponential + jitter;
+    console.info(`[sync] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
-    }, exponential + jitter);
+    }, delay);
   }
 
   private async waitUntilConnected(timeoutMs = 5_000): Promise<void> {
@@ -550,12 +572,14 @@ class WebSocketSyncClient implements SyncClient {
   }
 
   private failConnection(error: Error): void {
+    console.info(`[sync] Connection failed: ${error.message}`);
     this.emitError(error);
     this.rejectWaiters(error);
     this.ws?.close();
   }
 
   private emitError(error: unknown): void {
+    console.info(`[sync] Error: ${error instanceof Error ? error.message : String(error)}`);
     if (this.events.listenerCount('error') === 0) {
       return;
     }
