@@ -3932,9 +3932,10 @@ Updated by branch-name autofix
     expect(updatedPlan.tasks?.[0]?.done).toBe(true);
   });
 
-  test('throws when the branch name does not identify a DB plan', async () => {
+  test('falls back to current target when the branch name does not identify a DB plan', async () => {
     vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
     vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue(null as any);
+    vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
 
     const mockCommand = {
       parent: {
@@ -3943,14 +3944,15 @@ Updated by branch-name autofix
     };
 
     await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
-      'No plan ID specified and no suitable plans found'
+      'Planless current review execution is not yet implemented'
     );
   });
 
-  test('throws when the branch name matches the pattern but the DB plan does not exist', async () => {
+  test('falls back to current target when the branch name matches the pattern but the DB plan does not exist', async () => {
     vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
     vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
     vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue('999-missing-plan');
+    vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
 
     const mockCommand = {
       parent: {
@@ -3959,7 +3961,7 @@ Updated by branch-name autofix
     };
 
     await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
-      'No plan ID specified and no suitable plans found'
+      'Planless current review execution is not yet implemented'
     );
   });
 });

@@ -4,11 +4,10 @@
 import chalk from 'chalk';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname, isAbsolute } from 'node:path';
-import { getCurrentBranchName, getCurrentCommitHash } from '../../common/git.js';
+import { getCurrentCommitHash } from '../../common/git.js';
 import { promptCheckbox, promptSelect } from '../../common/input.js';
 import {
-  PlanNotFoundError,
-  parsePlanIdFromCliArg,
+  parseOptionalPlanIdFromCliArg,
   readPlanFile,
   resolvePlanByNumericId,
   writePlanFile,
@@ -75,6 +74,7 @@ import { resolveRepoRoot } from '../plan_repo_root.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { isReopenableCompletedStatus } from '../plans/plan_state_utils.js';
+import { resolveReviewTarget, type PlanReviewTarget } from './review_target.js';
 const FIX_EXECUTOR_COMMANDS = {
   'claude-code': 'claude',
   'codex-cli': 'codex',
@@ -316,47 +316,6 @@ type ReviewIssueWorkflowResult = {
   savedIssuesForLater: boolean;
   skipNotification: boolean;
 };
-
-type AutoSelectedReviewPlan = {
-  plan: PlanSchema;
-  planRef: string;
-  repoRoot?: string;
-  selectionReason: 'branch-name';
-  displayPath?: string;
-};
-
-async function autoSelectPlanForReview(
-  cwd?: string,
-  configPath?: string
-): Promise<AutoSelectedReviewPlan | null> {
-  const repoRoot = await resolveRepoRoot(configPath, cwd ?? process.cwd());
-  const branchName = await getCurrentBranchName(repoRoot);
-  const planIdMatch = branchName?.match(/^(\d+)-/);
-
-  if (planIdMatch) {
-    try {
-      const resolved = await resolvePlanByNumericId(
-        parsePlanIdFromCliArg(planIdMatch[1]),
-        repoRoot
-      );
-      return {
-        plan: resolved.plan,
-        planRef: String(resolved.plan.id),
-        repoRoot,
-        selectionReason: 'branch-name',
-        displayPath: resolved.planPath ?? undefined,
-      };
-    } catch (err) {
-      // If the plan wasn't found in the DB, return null so the caller can report
-      // the error. Re-throw unexpected errors (DB failures, malformed rows, etc.)
-      if (!(err instanceof PlanNotFoundError)) {
-        throw err;
-      }
-    }
-  }
-
-  return null;
-}
 
 export async function saveReviewIssuesToPlan(
   planId: number,
@@ -769,7 +728,7 @@ async function handleReviewIssueActions(params: {
 }
 
 export async function handleReviewCommand(
-  planId: number | undefined,
+  planId: number | string | undefined,
   options: any,
   command: any
 ): Promise<ReviewCommandResult> {
@@ -833,9 +792,6 @@ export async function handleReviewCommand(
     // else: suppress in quiet print mode
   };
 
-  // If no planId is provided, try to auto-select one from branch-specific plans
-  let resolvedPlanId = planId;
-  let autoSelectedPlanForReview: AutoSelectedReviewPlan | null = null;
   try {
     try {
       config = await loadEffectiveConfig(globalOpts.config);
@@ -844,56 +800,60 @@ export async function handleReviewCommand(
       throw err;
     }
 
-    if (!resolvedPlanId) {
-      const autoSelectedPlan = await autoSelectPlanForReview(options.cwd, globalOpts.config);
-
-      if (!autoSelectedPlan) {
-        throw new Error(
-          'No plan ID specified and no suitable plans found. Please specify a plan ID explicitly.'
-        );
-      }
-
-      reviewLog(
-        chalk.cyan(
-          `Auto-selected plan: ${autoSelectedPlan.plan.id} - ${autoSelectedPlan.plan.title}`
-        )
-      );
-      if (autoSelectedPlan.displayPath) {
-        reviewLog(chalk.gray(`Plan file: ${autoSelectedPlan.displayPath}`));
-      }
-
-      autoSelectedPlanForReview = autoSelectedPlan;
-      resolvedPlanId = autoSelectedPlan.plan.id;
+    const nonNumericPlanRef =
+      typeof planId === 'string' && !/^\d+$/.test(planId.trim()) ? planId : undefined;
+    const reviewTarget =
+      nonNumericPlanRef !== undefined
+        ? ({
+            kind: 'plan',
+            planId: nonNumericPlanRef,
+            planPath: null,
+            plan: {
+              id: undefined,
+              status: 'pending',
+              title: '',
+              goal: '',
+              tasks: [],
+            },
+            repoRoot: await resolveRepoRoot(globalOpts.config, options.cwd),
+          } as unknown as PlanReviewTarget)
+        : await resolveReviewTarget({
+            planId: typeof planId === 'string' ? parseOptionalPlanIdFromCliArg(planId) : planId,
+            options,
+            configPath: globalOpts.config,
+          });
+    if (reviewTarget.kind !== 'plan') {
+      throw new Error(`Planless ${reviewTarget.kind} review execution is not yet implemented`);
     }
-    if (!resolvedPlanId) {
-      throw new Error('No plan ID resolved for review.');
+    const planTarget: PlanReviewTarget = reviewTarget;
+    if (planTarget.autoSelected?.selectionReason === 'branch-name') {
+      reviewLog(chalk.cyan(`Auto-selected plan: ${planTarget.plan.id} - ${planTarget.plan.title}`));
+      if (planTarget.autoSelected.displayPath) {
+        reviewLog(chalk.gray(`Plan file: ${planTarget.autoSelected.displayPath}`));
+      }
     }
-    const reviewPlanId = resolvedPlanId;
+
+    const reviewPlanId = planTarget.planId;
     let initialResolvedPlan: Awaited<ReturnType<typeof resolveReviewPlanForWriteById>> | undefined;
     let resolvedPlanFilePath: string | undefined;
-    if (autoSelectedPlanForReview?.selectionReason === 'branch-name') {
-      const repoRoot =
-        autoSelectedPlanForReview.repoRoot ??
-        (await resolveRepoRoot(globalOpts.config, options.cwd));
-      const existingPath = await materializedPlanFileExists(
-        repoRoot,
-        autoSelectedPlanForReview.plan.id
-      );
+    if (planTarget.autoSelected?.selectionReason === 'branch-name') {
+      const repoRoot = planTarget.repoRoot;
+      const existingPath = await materializedPlanFileExists(repoRoot, planTarget.plan.id);
       let materializedPath: string;
       if (existingPath) {
         // Validate the existing file belongs to this plan before reusing it
         const filePlan = await readPlanFile(existingPath);
-        if (filePlan.id !== autoSelectedPlanForReview.plan.id) {
+        if (filePlan.id !== planTarget.plan.id) {
           // File has wrong ID — re-materialize from DB
-          materializedPath = await materializePlan(autoSelectedPlanForReview.plan.id, repoRoot);
+          materializedPath = await materializePlan(planTarget.plan.id, repoRoot);
         } else {
           materializedPath = existingPath;
         }
       } else {
-        materializedPath = await materializePlan(autoSelectedPlanForReview.plan.id, repoRoot);
+        materializedPath = await materializePlan(planTarget.plan.id, repoRoot);
       }
       initialResolvedPlan = {
-        plan: structuredClone(autoSelectedPlanForReview.plan),
+        plan: structuredClone(planTarget.plan),
         planPath: materializedPath,
         repoRoot,
       };

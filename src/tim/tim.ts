@@ -1609,6 +1609,9 @@ addReviewCommandOptions(
     .description(
       'Analyze code changes on current branch against plan requirements using reviewer agent. If no plan is specified, automatically selects the oldest plan that exists only on this branch.'
     )
+    .option('--current', 'Review the current worktree without requiring a plan')
+    .option('--branch <branch>', 'Review an explicit branch without requiring a plan')
+    .option('--pr <pr-url-or-number>', 'Review an explicit pull request without requiring a plan')
 ).action(async (planIdArg, options, command) => {
   const { handleReviewCommand } = await import('./commands/review.js');
   const planId = parseOptionalPlanIdFromCliArg(planIdArg);

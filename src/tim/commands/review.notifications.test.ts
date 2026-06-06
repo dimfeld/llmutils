@@ -37,10 +37,13 @@ vi.mock('../configLoader.js', () => ({
 
 vi.mock('../../common/git.js', () => ({
   getGitRoot: vi.fn(),
+  getGitRepository: vi.fn(),
   getCurrentCommitHash: vi.fn(),
   getTrunkBranch: vi.fn(),
   getUsingJj: vi.fn(),
   getCurrentBranchName: vi.fn(),
+  getWorkingCopyStatus: vi.fn(),
+  remoteBranchExists: vi.fn(),
 }));
 
 vi.mock('../../logging/tunnel_client.js', () => ({
