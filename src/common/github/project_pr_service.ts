@@ -10,7 +10,12 @@ import { normalizeGitHubUsername } from './username.js';
 import { getPlansByProject } from '../../tim/db/plan.js';
 import { getProjectById } from '../../tim/db/project.js';
 import { SQL_NOW_ISO_UTC } from '../../tim/db/sql_utils.js';
-import { linkPlanToPr, upsertPrStatus, type PrStatusDetail } from '../../tim/db/pr_status.js';
+import {
+  getPrStatusByUrl,
+  linkPlanToPr,
+  upsertPrStatus,
+  type PrStatusDetail,
+} from '../../tim/db/pr_status.js';
 
 const PR_FETCH_CONCURRENCY = 5;
 const BRANCH_MERGE_REQUIREMENTS_MAX_AGE_MS = 30 * 60 * 1000;
@@ -40,12 +45,21 @@ function buildPrUrl(owner: string, repo: string, prNumber: number): string {
   return `https://github.com/${owner}/${repo}/pull/${prNumber}`;
 }
 
+function getReadyAtBackfill(fullStatus: PrFullStatus): string | null {
+  if (fullStatus.state !== 'open' || fullStatus.isDraft) {
+    return null;
+  }
+
+  return fullStatus.latestCommitPushedAt ?? fullStatus.updatedAt ?? fullStatus.createdAt ?? null;
+}
+
 function buildUpsertPrStatusInput(
   owner: string,
   repo: string,
   fullStatus: PrFullStatus,
   requestedReviewers: string[],
-  lastFetchedAt: string
+  lastFetchedAt: string,
+  existingReadyAt: string | null
 ) {
   return {
     prUrl: buildPrUrl(owner, repo, fullStatus.number),
@@ -65,6 +79,7 @@ function buildUpsertPrStatusInput(
     checkRollupState: fullStatus.checkRollupState,
     mergedAt: fullStatus.mergedAt,
     latestCommitPushedAt: fullStatus.latestCommitPushedAt,
+    readyAt: existingReadyAt ?? getReadyAtBackfill(fullStatus),
     additions: fullStatus.additions,
     deletions: fullStatus.deletions,
     changedFiles: fullStatus.changedFiles,
@@ -178,18 +193,20 @@ export async function refreshProjectPrs(
 
   // Phase 3: Write all data to DB in a single transaction
   const writePhase = db.transaction(() => {
-    const details = fullStatuses.map(({ prNumber, fullStatus }) =>
-      upsertPrStatus(
+    const details = fullStatuses.map(({ prNumber, fullStatus }) => {
+      const prUrl = buildPrUrl(owner, repo, fullStatus.number);
+      return upsertPrStatus(
         db,
         buildUpsertPrStatusInput(
           owner,
           repo,
           fullStatus,
           requestedReviewersByPrNumber.get(prNumber) ?? [],
-          lastFetchedAt
+          lastFetchedAt,
+          getPrStatusByUrl(db, prUrl)?.status.ready_at ?? null
         )
-      )
-    );
+      );
+    });
     const openPrNumbers = fullStatuses.map(({ prNumber }) => prNumber);
     const staleOpenPrsQuery =
       openPrNumbers.length > 0

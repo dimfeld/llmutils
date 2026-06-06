@@ -65,6 +65,8 @@ export interface PrFullStatus {
   title: string;
   state: PrState;
   isDraft: boolean;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   mergeable: PrMergeableState;
   mergedAt: string | null;
   headSha: string | null;
@@ -147,6 +149,8 @@ interface GraphQlPullRequestFullStatus {
   title: string;
   state: string;
   isDraft: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
   mergeable: string | null;
   mergedAt: string | null;
   headRefOid: string | null;
@@ -260,6 +264,8 @@ const fullStatusQuery = `
         title
         state
         isDraft
+        createdAt
+        updatedAt
         mergeable
         mergedAt
         additions
@@ -847,6 +853,8 @@ export async function fetchPrFullStatus(
     title: pullRequest.title,
     state: normalizePrState(pullRequest.state),
     isDraft: pullRequest.isDraft,
+    createdAt: pullRequest.createdAt,
+    updatedAt: pullRequest.updatedAt,
     mergeable: normalizeMergeableState(pullRequest.mergeable),
     mergedAt: pullRequest.mergedAt,
     headSha: pullRequest.headRefOid,

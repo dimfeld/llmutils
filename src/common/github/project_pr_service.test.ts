@@ -76,6 +76,8 @@ function makeFullStatus(prNumber: number, overrides: Record<string, unknown> = {
     checks: [],
     checkRollupState: 'pending' as const,
     latestCommitPushedAt: null,
+    createdAt: `2026-01-${String(prNumber).padStart(2, '0')}T08:00:00.000Z`,
+    updatedAt: `2026-01-${String(prNumber).padStart(2, '0')}T09:00:00.000Z`,
     additions: null,
     deletions: null,
     changedFiles: null,
@@ -239,6 +241,128 @@ describe('common/github/project_pr_service', () => {
     expect(result.authored[0]?.status.additions).toBe(42);
     expect(result.authored[0]?.status.deletions).toBe(17);
     expect(result.authored[0]?.status.changed_files).toBe(3);
+  });
+
+  test('refreshProjectPrs backfills ready_at for open non-draft PRs when missing', async () => {
+    vi.mocked(fetchOpenPullRequestsWithReviewers).mockImplementation(async () => [
+      makePr({
+        number: 11,
+        title: 'Ready PR',
+        headRefName: 'feature/ready',
+        userLogin: 'dimfeld',
+      }),
+    ]);
+    vi.mocked(partitionUserRelevantOpenPrs).mockImplementation((prs) => ({
+      authored: prs,
+      reviewing: [],
+    }));
+    vi.mocked(fetchPrFullStatus).mockImplementation(async () =>
+      makeFullStatus(11, {
+        title: 'Ready PR',
+        headRefName: 'feature/ready',
+        latestCommitPushedAt: '2026-02-01T10:00:00.000Z',
+        updatedAt: '2026-02-01T09:00:00.000Z',
+        createdAt: '2026-02-01T08:00:00.000Z',
+      })
+    );
+
+    const { refreshProjectPrs } = await import('./project_pr_service.ts');
+    await refreshProjectPrs(db, projectId, 'dimfeld');
+
+    const [detail] = getPrStatusesForRepo(db, 'example', 'repo');
+    expect(detail?.status.ready_at).toBe('2026-02-01T10:00:00.000Z');
+  });
+
+  test('refreshProjectPrs falls back to updated_at then created_at for ready_at backfill', async () => {
+    vi.mocked(fetchOpenPullRequestsWithReviewers).mockImplementation(async () => [
+      makePr({
+        number: 11,
+        title: 'Ready PR',
+        headRefName: 'feature/ready',
+        userLogin: 'dimfeld',
+      }),
+    ]);
+    vi.mocked(partitionUserRelevantOpenPrs).mockImplementation((prs) => ({
+      authored: prs,
+      reviewing: [],
+    }));
+
+    const { refreshProjectPrs } = await import('./project_pr_service.ts');
+    vi.mocked(fetchPrFullStatus).mockImplementationOnce(async () =>
+      makeFullStatus(11, {
+        latestCommitPushedAt: null,
+        updatedAt: '2026-02-01T09:00:00.000Z',
+        createdAt: '2026-02-01T08:00:00.000Z',
+      })
+    );
+    await refreshProjectPrs(db, projectId, 'dimfeld');
+    expect(getPrStatusesForRepo(db, 'example', 'repo')[0]?.status.ready_at).toBe(
+      '2026-02-01T09:00:00.000Z'
+    );
+
+    vi.mocked(fetchPrFullStatus).mockImplementationOnce(async () =>
+      makeFullStatus(11, {
+        latestCommitPushedAt: null,
+        updatedAt: null,
+        createdAt: '2026-02-01T08:00:00.000Z',
+      })
+    );
+    db.prepare('UPDATE pr_status SET ready_at = NULL WHERE pr_number = 11').run();
+    await refreshProjectPrs(db, projectId, 'dimfeld');
+    expect(getPrStatusesForRepo(db, 'example', 'repo')[0]?.status.ready_at).toBe(
+      '2026-02-01T08:00:00.000Z'
+    );
+  });
+
+  test('refreshProjectPrs preserves existing ready_at and does not backfill drafts', async () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/11',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 11,
+      title: 'Existing ready PR',
+      state: 'open',
+      draft: false,
+      readyAt: '2026-01-01T00:00:00.000Z',
+      lastFetchedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    vi.mocked(fetchOpenPullRequestsWithReviewers).mockImplementation(async () => [
+      makePr({
+        number: 11,
+        title: 'Existing ready PR',
+        headRefName: 'feature/ready',
+        userLogin: 'dimfeld',
+      }),
+      makePr({
+        number: 12,
+        title: 'Draft PR',
+        headRefName: 'feature/draft',
+        userLogin: 'dimfeld',
+      }),
+    ]);
+    vi.mocked(partitionUserRelevantOpenPrs).mockImplementation((prs) => ({
+      authored: prs,
+      reviewing: [],
+    }));
+    vi.mocked(fetchPrFullStatus).mockImplementation(
+      async (_owner: string, _repo: string, prNumber: number) =>
+        makeFullStatus(prNumber, {
+          isDraft: prNumber === 12,
+          latestCommitPushedAt: '2026-02-01T10:00:00.000Z',
+          updatedAt: '2026-02-01T09:00:00.000Z',
+          createdAt: '2026-02-01T08:00:00.000Z',
+        })
+    );
+
+    const { refreshProjectPrs } = await import('./project_pr_service.ts');
+    await refreshProjectPrs(db, projectId, 'dimfeld');
+
+    const details = getPrStatusesForRepo(db, 'example', 'repo');
+    expect(details.find((detail) => detail.status.pr_number === 11)?.status.ready_at).toBe(
+      '2026-01-01T00:00:00.000Z'
+    );
+    expect(details.find((detail) => detail.status.pr_number === 12)?.status.ready_at).toBeNull();
   });
 
   test('refreshProjectPrs caches branch merge requirements once per base branch', async () => {
