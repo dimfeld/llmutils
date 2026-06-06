@@ -276,6 +276,45 @@ describe('review notifications', () => {
     expect(input.message).toContain('completed');
   });
 
+  test('passes structural review prompt builder for full-plan reviews', async () => {
+    const { handleReviewCommand } = await import('./review.js');
+
+    await handleReviewCommand(123, { noSave: true, noAutofix: true }, mockCommand);
+
+    const runOptions = runReviewSpy.mock.calls[0]?.[0];
+    expect(runOptions.buildStructuralPrompt).toEqual(expect.any(Function));
+    const prompt = runOptions.buildStructuralPrompt({ executorName: 'codex-cli' });
+    expect(prompt).toContain('standalone plan implementation simplification review');
+    expect(prompt).toContain('## Simplification Review');
+    expect(prompt).toContain('Notify Plan');
+  });
+
+  test('omits structural review prompt builder for task-scoped reviews', async () => {
+    gatherPlanContextSpy.mockResolvedValueOnce({
+      resolvedPlanFile: planFile,
+      planData: {
+        ...basePlan,
+        tasks: [{ title: 'Scoped task', description: 'Only this task' }],
+      },
+      repoRoot: tempDir,
+      gitRoot: tempDir,
+      parentChain: [],
+      completedChildren: [],
+      diffResult: { ...baseDiff },
+      noChangesDetected: false,
+    } as any);
+    const { handleReviewCommand } = await import('./review.js');
+
+    await handleReviewCommand(
+      123,
+      { noSave: true, noAutofix: true, taskIndex: ['1'] },
+      mockCommand
+    );
+
+    const runOptions = runReviewSpy.mock.calls[0]?.[0];
+    expect(runOptions.buildStructuralPrompt).toBeUndefined();
+  });
+
   test('emits review_done when config load fails', async () => {
     loadEffectiveConfigSpy.mockRejectedValueOnce(new Error('config boom'));
 

@@ -125,6 +125,73 @@ describe('review_runner', () => {
     expect(result.reviewResult.actionItems).toEqual(['Claude action', 'Codex action']);
   });
 
+  test('runReview adds Codex structural simplification findings when requested', async () => {
+    const codexOutputs = [
+      {
+        issues: [
+          {
+            severity: 'minor',
+            category: 'bug',
+            content: 'Normal issue',
+            file: 'src/normal.ts',
+            line: '10',
+            suggestion: 'Fix normal issue',
+          },
+        ],
+        recommendations: ['Normal rec'],
+        actionItems: [],
+      },
+      {
+        issues: [
+          {
+            severity: 'major',
+            category: 'style',
+            content: 'Structural issue',
+            file: 'src/structure.ts',
+            line: '5',
+            suggestion: 'Simplify the structure',
+          },
+        ],
+        recommendations: ['Structural rec'],
+        actionItems: [],
+      },
+    ];
+
+    const codexExecute = vi.fn(async () => JSON.stringify(codexOutputs.shift()));
+    const codexExecutor: Executor = { execute: codexExecute };
+
+    vi.mocked(buildExecutorAndLog).mockImplementation(() => codexExecutor);
+
+    const buildStructuralPrompt = vi.fn(() => 'structural prompt');
+    const { runReview } = await import('./review_runner.js');
+    const result = await runReview({
+      executorSelection: 'codex-cli',
+      config: { defaultExecutor: 'codex-cli' } as any,
+      sharedExecutorOptions: { baseDir: '/tmp' },
+      buildPrompt: vi.fn(() => 'normal prompt'),
+      buildStructuralPrompt,
+      planInfo: {
+        planId: '11',
+        planTitle: 'Structural Plan',
+        planFilePath: '/tmp/plan.yml',
+        baseBranch: 'main',
+        changedFiles: ['src/normal.ts', 'src/structure.ts'],
+      },
+    });
+
+    expect(codexExecute).toHaveBeenCalledTimes(2);
+    expect(buildStructuralPrompt).toHaveBeenCalledWith({ executorName: 'codex-cli' });
+    expect(result.usedExecutors).toEqual(['codex-cli']);
+    expect(result.reviewResult.issues.map((issue) => issue.content)).toEqual([
+      'Normal issue',
+      'Structural issue',
+    ]);
+    expect(result.reviewResult.issues.map((issue) => issue.source)).toEqual([
+      'codex-cli',
+      'codex-cli',
+    ]);
+  });
+
   test('runReview serializes both executors and skips codex on blocking Claude issues', async () => {
     const claudeOutput = {
       issues: [

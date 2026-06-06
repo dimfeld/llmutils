@@ -4,7 +4,7 @@
 import chalk from 'chalk';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname, isAbsolute } from 'node:path';
-import { getCurrentBranchName, getCurrentCommitHash } from '../../common/git.js';
+import { getCurrentBranchName, getCurrentCommitHash, getUsingJj } from '../../common/git.js';
 import { promptCheckbox, promptSelect } from '../../common/input.js';
 import {
   PlanNotFoundError,
@@ -57,6 +57,7 @@ import {
   runReview,
   type ReviewExecutorName,
   type ReviewPromptBuilder,
+  type StructuralReviewPromptBuilder,
 } from '../review_runner.js';
 import { createHeadlessAdapterForCommand, updateHeadlessSessionInfo } from '../headless.js';
 import { toStructuredReviewIssues } from '../review_structured_message.js';
@@ -75,6 +76,10 @@ import { resolveRepoRoot } from '../plan_repo_root.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { isReopenableCompletedStatus } from '../plans/plan_state_utils.js';
+import {
+  buildStandaloneSimplificationReviewPrompt,
+  type PlanReviewMetadata,
+} from './review_pr_prompt.js';
 const FIX_EXECUTOR_COMMANDS = {
   'claude-code': 'claude',
   'codex-cli': 'codex',
@@ -1248,6 +1253,22 @@ export async function handleReviewCommand(
           remainingTasks,
           previousReviewResponse
         );
+      const reviewUsesJj = await getUsingJj(gitRoot);
+      const reviewHeadRef = planData.branch ?? (await getCurrentBranchName(gitRoot)) ?? 'HEAD';
+      const buildStructuralPrompt: StructuralReviewPromptBuilder | undefined = !isScoped
+        ? () =>
+            buildStandaloneSimplificationReviewPrompt({
+              metadata: buildPlanReviewMetadata({
+                planData,
+                parentChain,
+                completedChildren,
+                baseBranch: diffResult.baseBranch,
+                headRef: reviewHeadRef,
+              }),
+              useJj: reviewUsesJj,
+              customInstructions: customInstructions || undefined,
+            })
+        : undefined;
 
       // Execute the review
       if (options.dryRun) {
@@ -1264,6 +1285,10 @@ export async function handleReviewCommand(
             log(chalk.cyan(`\n### Executor: ${preparedExecutor.name}\n`));
           }
           log(preparedExecutor.prompt);
+        }
+        if (buildStructuralPrompt && prepared.some((entry) => entry.name === 'codex-cli')) {
+          log(chalk.cyan(`\n### Executor: codex-cli structural simplification\n`));
+          log(await buildStructuralPrompt({ executorName: 'codex-cli' }));
         }
         log('\n--dry-run mode: Would execute the above prompt');
         skipNotification = true;
@@ -1297,6 +1322,7 @@ export async function handleReviewCommand(
             config,
             sharedExecutorOptions,
             buildPrompt,
+            buildStructuralPrompt,
             planInfo,
           });
 
@@ -1946,6 +1972,46 @@ export function formatPreviousReviewContext(
 
 function getPlanCacheKey(planData: PlanSchema): string {
   return planData.id?.toString() ?? planData.uuid ?? 'unknown';
+}
+
+function buildPlanReviewMetadata(options: {
+  planData: PlanSchema;
+  parentChain: PlanSchema[];
+  completedChildren: PlanSchema[];
+  baseBranch: string;
+  headRef: string;
+}): PlanReviewMetadata {
+  if (typeof options.planData.id !== 'number') {
+    throw new Error('Plan must have a numeric ID for structural review metadata.');
+  }
+
+  return {
+    kind: 'plan',
+    planId: options.planData.id,
+    planUuid: options.planData.uuid ?? '',
+    title: options.planData.title ?? 'Untitled Plan',
+    goal: options.planData.goal ?? null,
+    details: options.planData.details ?? null,
+    tasks:
+      options.planData.tasks?.map((task) => ({
+        title: task.title,
+        status: task.done ? 'done' : null,
+      })) ?? [],
+    parentChain: options.parentChain
+      .filter((plan) => typeof plan.id === 'number')
+      .map((plan) => ({
+        planId: plan.id as number,
+        title: plan.title ?? 'Untitled Plan',
+      })),
+    completedChildren: options.completedChildren
+      .filter((plan) => typeof plan.id === 'number')
+      .map((plan) => ({
+        planId: plan.id as number,
+        title: plan.title ?? 'Untitled Plan',
+      })),
+    baseBranch: options.baseBranch,
+    headRef: options.headRef,
+  };
 }
 
 async function loadPreviousReviewContext(

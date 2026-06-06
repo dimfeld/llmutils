@@ -72,9 +72,13 @@ vi.mock('../../common/git.js', async (importOriginal) => {
   };
 });
 
-vi.mock('../executors/claude_code/agent_prompts.js', () => ({
-  getReviewerPrompt: vi.fn(),
-}));
+vi.mock('../executors/claude_code/agent_prompts.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof agentPromptsModule>();
+  return {
+    ...actual,
+    getReviewerPrompt: vi.fn(),
+  };
+});
 
 vi.mock('@inquirer/prompts', () => ({
   confirm: vi.fn(),
@@ -639,7 +643,7 @@ test('uses review default executor from config when no executor option passed', 
 
   await handleReviewCommand(1, { noSave: true }, mockCommand);
 
-  expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
 });
 
 describe('generateDiffForReview', () => {
@@ -1467,7 +1471,7 @@ describe('integration with executor system', () => {
     }
     const parsed = JSON.parse(output.slice(jsonStart, jsonEnd + 1));
     expect(parsed.planId).toBe('1');
-    expect(parsed.issues).toHaveLength(1);
+    expect(parsed.issues).toHaveLength(2);
   });
 });
 
@@ -1707,7 +1711,7 @@ describe('Parent plan context handling', () => {
     await handleReviewCommand(101, {}, mockCommand);
 
     expect(gatherPlanContextMock).toHaveBeenCalledTimes(1);
-    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
   });
 });
 

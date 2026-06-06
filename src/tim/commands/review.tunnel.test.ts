@@ -37,9 +37,13 @@ vi.mock('../executors/index.js', () => ({
   DEFAULT_EXECUTOR: 'codex-cli',
 }));
 
-vi.mock('../executors/claude_code/agent_prompts.js', () => ({
-  getReviewerPrompt: vi.fn(),
-}));
+vi.mock('../executors/claude_code/agent_prompts.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof agentPromptsModule>();
+  return {
+    ...actual,
+    getReviewerPrompt: vi.fn(),
+  };
+});
 
 vi.mock('../../common/git.js', () => ({
   getGitRoot: vi.fn(),

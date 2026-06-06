@@ -25,6 +25,10 @@ export type ReviewPromptBuilder = (options: {
   useSubagents: boolean;
 }) => string;
 
+export type StructuralReviewPromptBuilder = (options: {
+  executorName: Extract<ReviewExecutorName, 'codex-cli'>;
+}) => string;
+
 export interface ReviewPlanInfo {
   planId: string;
   planTitle: string;
@@ -53,6 +57,8 @@ export interface ReviewRunOptions extends PrepareReviewExecutorsOptions {
   allowPartialFailures?: boolean;
   /** When true and both executors are selected, run Claude first then conditionally Codex. */
   serialBoth?: boolean;
+  /** Optional Codex-only structural simplification review for full-plan runs. */
+  buildStructuralPrompt?: StructuralReviewPromptBuilder;
 }
 
 export interface ReviewRunResult {
@@ -183,6 +189,17 @@ export async function runReview(options: ReviewRunOptions): Promise<ReviewRunRes
   const warnings: string[] = [];
   const executorOutputs: Partial<Record<ReviewExecutorName, string>> = {};
 
+  const codexPreparedExecutor = preparedExecutors.find((executor) => executor.name === 'codex-cli');
+  const structuralPreparedExecutor =
+    codexPreparedExecutor && options.buildStructuralPrompt
+      ? {
+          name: 'codex-cli' as const,
+          executor: buildExecutorAndLog('codex-cli', options.sharedExecutorOptions, options.config),
+          prompt: options.buildStructuralPrompt({ executorName: 'codex-cli' }),
+          structural: true,
+        }
+      : null;
+
   const shouldRunSerial = options.serialBoth === true && preparedExecutors.length > 1;
 
   const executionResults = shouldRunSerial
@@ -190,6 +207,12 @@ export async function runReview(options: ReviewRunOptions): Promise<ReviewRunRes
     : await Promise.all(
         preparedExecutors.map((prepared) => executeWithRetry(prepared, options.planInfo))
       );
+  const codexReviewSucceeded = executionResults.some(
+    (result) => result.name === 'codex-cli' && 'rawOutput' in result
+  );
+  if (structuralPreparedExecutor && codexReviewSucceeded) {
+    executionResults.push(await executeWithRetry(structuralPreparedExecutor, options.planInfo));
+  }
 
   // Process results and parse outputs
   const results = executionResults.map((result) => {
@@ -256,7 +279,7 @@ export async function runReview(options: ReviewRunOptions): Promise<ReviewRunRes
     reviewResult,
     rawOutput,
     executorOutputs,
-    usedExecutors: successfulResults.map((result) => result.name),
+    usedExecutors: [...new Set(successfulResults.map((result) => result.name))],
     warnings,
   };
 }
