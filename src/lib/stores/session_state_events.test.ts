@@ -477,6 +477,71 @@ describe('applySessionEvent', () => {
     expect(state.sessions.get(session.connectionId)).toBe(session);
   });
 
+  test('sessionsByPrUrl is populated when a session with linkedPrUrl is added', () => {
+    const state = createState();
+    const session = createSession('conn-pr');
+    session.sessionInfo = {
+      ...session.sessionInfo,
+      linkedPrUrl: 'https://github.com/owner/repo/pull/42',
+    };
+
+    applySessionEvent('session:new', { session }, state);
+
+    expect(state.sessionsByPrUrl.get('https://github.com/owner/repo/pull/42')).toEqual([session]);
+    expect(state.sessions.get('conn-pr')).toBe(session);
+  });
+
+  test('sessionsByPrUrl is updated when a session:update changes the linkedPrUrl', () => {
+    const session = createSession('conn-pr-update');
+    session.sessionInfo = {
+      ...session.sessionInfo,
+      linkedPrUrl: 'https://github.com/owner/repo/pull/10',
+    };
+    const state = createState(session);
+    // Manually seed the index as applySessionEvent would have done
+    state.sessionsByPrUrl.set('https://github.com/owner/repo/pull/10', [session]);
+
+    const updatedSession = {
+      ...session,
+      sessionInfo: {
+        ...session.sessionInfo,
+        linkedPrUrl: 'https://github.com/owner/repo/pull/11',
+      },
+    };
+
+    applySessionEvent('session:update', { session: updatedSession }, state);
+
+    expect(state.sessionsByPrUrl.get('https://github.com/owner/repo/pull/10')).toBeUndefined();
+    const pr11Sessions = state.sessionsByPrUrl.get('https://github.com/owner/repo/pull/11');
+    expect(pr11Sessions).toBeDefined();
+    expect(pr11Sessions?.map((s) => s.connectionId)).toContain('conn-pr-update');
+  });
+
+  test('sessionsByPrUrl is cleared when session:list repopulates sessions', () => {
+    const state = createState();
+    state.sessionsByPrUrl.set('https://github.com/owner/repo/pull/42', []);
+
+    const prSession = createSession('conn-pr-list');
+    prSession.sessionInfo = {
+      ...prSession.sessionInfo,
+      linkedPrUrl: 'https://github.com/owner/repo/pull/99',
+    };
+
+    applySessionEvent('session:list', { sessions: [prSession] }, state);
+
+    expect(state.sessionsByPrUrl.get('https://github.com/owner/repo/pull/42')).toBeUndefined();
+    expect(state.sessionsByPrUrl.get('https://github.com/owner/repo/pull/99')).toBeDefined();
+  });
+
+  test('sessionsByPrUrl is not affected by sessions without linkedPrUrl', () => {
+    const state = createState();
+    const session = createSession('conn-no-pr');
+
+    applySessionEvent('session:new', { session }, state);
+
+    expect([...state.sessionsByPrUrl.keys()]).toHaveLength(0);
+  });
+
   test('pr:updated leaves the session store unchanged', () => {
     const session = createSession();
     const state = createState(session);

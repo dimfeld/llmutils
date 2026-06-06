@@ -27,6 +27,7 @@ import {
   spawnAgentProcess,
   spawnChatProcess,
   spawnGenerateProcess,
+  spawnPrFixForPrProcess,
   spawnRebaseProcess,
   spawnUpdateDocsProcess,
 } from './plan_actions.js';
@@ -458,5 +459,82 @@ describe('lib/server/plan_actions', () => {
     const filename = formatLogFileName(189, 'generate', new Date('2026-04-19T00:00:00.000Z'));
 
     expect(filename).toBe('189-2026-04-19T00-00-00-000Z-generate.log');
+  });
+
+  test('spawnPrFixForPrProcess spawns tim pr fix --pr with the PR URL and auto-workspace flags', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const prUrl = 'https://github.com/owner/repo/pull/5';
+    const resultPromise = spawnPrFixForPrProcess(prUrl, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual([
+      'tim',
+      'pr',
+      'fix',
+      '--pr',
+      prUrl,
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
+    expect(options).toMatchObject({
+      cwd: '/tmp/primary-workspace',
+      stdin: 'ignore',
+      detached: true,
+    });
+    expect(proc.unref).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ success: true });
+    expect((result as { planId?: number }).planId).toBeUndefined();
+  });
+
+  test('spawnPrFixForPrProcess returns earlyExit true when process exits with code 0', async () => {
+    const proc = createFakeProcess({ exitCode: 0 });
+    vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnPrFixForPrProcess(
+      'https://github.com/owner/repo/pull/5',
+      '/tmp/primary-workspace'
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await resultPromise;
+
+    expect(result).toEqual({ success: true, earlyExit: true });
+    expect((result as { planId?: number }).planId).toBeUndefined();
+  });
+
+  test('spawnPrFixForPrProcess returns error when process exits with non-zero code', async () => {
+    const proc = createFakeProcess({ exitCode: 1, stderrText: 'token error' });
+    vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+    vi.mocked(fs.readFileSync).mockReturnValue('token error' as never);
+
+    const resultPromise = spawnPrFixForPrProcess(
+      'https://github.com/owner/repo/pull/5',
+      '/tmp/primary-workspace'
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await resultPromise;
+
+    expect(proc.unref).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false, error: 'token error' });
+  });
+
+  test('spawnPrFixForPrProcess returns a spawn error when Bun.spawn throws', async () => {
+    vi.spyOn(Bun, 'spawn').mockImplementation(() => {
+      throw new Error('spawn failed');
+    });
+
+    const result = await spawnPrFixForPrProcess(
+      'https://github.com/owner/repo/pull/5',
+      '/tmp/primary-workspace'
+    );
+
+    expect(result).toEqual({
+      success: false,
+      error: 'Failed to start tim pr: Error: spawn failed',
+    });
   });
 });
