@@ -18,12 +18,20 @@ export interface SpawnProcessSuccess {
   earlyExit?: boolean;
 }
 
+export interface SpawnTargetProcessSuccess {
+  success: true;
+  planId?: number;
+  /** True when the process exited with code 0 within the early-exit check window. */
+  earlyExit?: boolean;
+}
+
 export interface SpawnProcessFailure {
   success: false;
   error: string;
 }
 
 export type SpawnProcessResult = SpawnProcessSuccess | SpawnProcessFailure;
+export type SpawnTargetProcessResult = SpawnTargetProcessSuccess | SpawnProcessFailure;
 
 function waitForSpawnWindow(delayMs = EARLY_EXIT_CHECK_DELAY_MS): Promise<void> {
   return new Promise((resolve) => {
@@ -39,24 +47,24 @@ function resolveTimExecutable(): string {
   return process.env.TIM_PATH?.trim() || 'tim';
 }
 
-function describeTarget(kind: 'plan' | 'pr', id: number): string {
+function describeTarget(kind: 'plan' | 'pr', id: number | string): string {
   return `${kind} ${id}`;
 }
 
 async function spawnTimProcess(
   targetLabel: string,
-  planId: number,
+  planId: number | null,
   args: string[],
   cwd: string,
   envOverrides?: Record<string, string>
-): Promise<SpawnProcessResult> {
+): Promise<SpawnTargetProcessResult> {
   let proc: ReturnType<typeof Bun.spawn>;
   let logFile: LogFileInfo | undefined;
 
   try {
     const command = args[0];
     console.info(`[web-ui] Starting ${describeCommand(args)} for ${targetLabel} in ${cwd}`);
-    logFile = createLogFile(command, planId);
+    logFile = createLogFile(command, planId ?? 0);
     const env = await buildWorkspaceCommandEnv(cwd, envOverrides);
 
     proc = Bun.spawn([resolveTimExecutable(), ...args], {
@@ -92,7 +100,7 @@ async function spawnTimProcess(
       console.info(
         `[web-ui] ${describeCommand(args)} for ${targetLabel} exited successfully during startup`
       );
-      return { success: true, planId, earlyExit: true };
+      return { success: true, ...(planId == null ? {} : { planId }), earlyExit: true };
     }
     const logContents = fs.readFileSync(logFile.path, 'utf-8').trim();
     console.warn(
@@ -106,14 +114,25 @@ async function spawnTimProcess(
 
   proc.unref();
   console.info(`[web-ui] ${describeCommand(args)} for ${targetLabel} is running detached`);
-  return { success: true, planId };
+  return { success: true, ...(planId == null ? {} : { planId }) };
+}
+
+async function spawnPlanTimProcess(
+  targetLabel: string,
+  planId: number,
+  args: string[],
+  cwd: string,
+  envOverrides?: Record<string, string>
+): Promise<SpawnProcessResult> {
+  const result = await spawnTimProcess(targetLabel, planId, args, cwd, envOverrides);
+  return result.success ? { ...result, planId } : result;
 }
 
 export async function spawnGenerateProcess(
   planId: number,
   cwd: string
 ): Promise<SpawnProcessResult> {
-  return spawnTimProcess(
+  return spawnPlanTimProcess(
     describeTarget('plan', planId),
     planId,
     ['generate', String(planId), '--auto-workspace', '--no-terminal-input'],
@@ -122,7 +141,7 @@ export async function spawnGenerateProcess(
 }
 
 export async function spawnAgentProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
-  return spawnTimProcess(
+  return spawnPlanTimProcess(
     describeTarget('plan', planId),
     planId,
     ['agent', String(planId), '--auto-workspace', '--no-terminal-input'],
@@ -139,7 +158,7 @@ export async function spawnAgentMultiProcess(
     return { success: false, error: 'At least one plan ID is required.' };
   }
 
-  return spawnTimProcess(
+  return spawnPlanTimProcess(
     `epic ${epicPlanId} plans ${planIds.join(', ')}`,
     epicPlanId,
     [
@@ -159,7 +178,7 @@ export async function spawnChatProcess(
   cwd: string,
   executor: 'claude' | 'codex'
 ): Promise<SpawnProcessResult> {
-  return spawnTimProcess(
+  return spawnPlanTimProcess(
     describeTarget('plan', planId),
     planId,
     [
@@ -176,7 +195,7 @@ export async function spawnChatProcess(
 }
 
 export async function spawnRebaseProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
-  return spawnTimProcess(
+  return spawnPlanTimProcess(
     describeTarget('plan', planId),
     planId,
     ['rebase', String(planId), '--auto-workspace', '--no-terminal-input'],
@@ -185,10 +204,22 @@ export async function spawnRebaseProcess(planId: number, cwd: string): Promise<S
 }
 
 export async function spawnPrFixProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
-  return spawnTimProcess(
+  return spawnPlanTimProcess(
     describeTarget('plan', planId),
     planId,
     ['pr', 'fix', String(planId), '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
+}
+
+export async function spawnPrFixForPrProcess(
+  prUrlOrNumber: string,
+  cwd: string
+): Promise<SpawnTargetProcessResult> {
+  return spawnTimProcess(
+    describeTarget('pr', prUrlOrNumber),
+    null,
+    ['pr', 'fix', '--pr', prUrlOrNumber, '--auto-workspace', '--no-terminal-input'],
     cwd
   );
 }
@@ -197,7 +228,7 @@ export async function spawnPrCreateProcess(
   planId: number,
   cwd: string
 ): Promise<SpawnProcessResult> {
-  return spawnTimProcess(
+  return spawnPlanTimProcess(
     describeTarget('plan', planId),
     planId,
     ['pr', 'create', String(planId), '--auto-workspace', '--no-terminal-input'],
@@ -206,7 +237,7 @@ export async function spawnPrCreateProcess(
 }
 
 export async function spawnReviewProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
-  return spawnTimProcess(
+  return spawnPlanTimProcess(
     describeTarget('plan', planId),
     planId,
     [
@@ -222,7 +253,7 @@ export async function spawnReviewProcess(planId: number, cwd: string): Promise<S
 }
 
 export async function spawnProofProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
-  return spawnTimProcess(
+  return spawnPlanTimProcess(
     describeTarget('plan', planId),
     planId,
     ['proof', String(planId), '--auto-workspace', '--no-terminal-input'],
@@ -234,7 +265,7 @@ export async function spawnUpdateDocsProcess(
   planId: number,
   cwd: string
 ): Promise<SpawnProcessResult> {
-  return spawnTimProcess(
+  return spawnPlanTimProcess(
     describeTarget('plan', planId),
     planId,
     ['update-docs', String(planId), '--auto-workspace', '--no-terminal-input'],
@@ -246,7 +277,7 @@ export async function spawnPrReviewGuideProcess(
   prNumber: number,
   cwd: string
 ): Promise<SpawnProcessResult> {
-  return spawnTimProcess(
+  return spawnPlanTimProcess(
     describeTarget('pr', prNumber),
     prNumber,
     ['pr', 'review-guide', String(prNumber), '--auto-workspace'],
@@ -258,7 +289,7 @@ export async function spawnPlanReviewGuideProcess(
   planId: number,
   cwd: string
 ): Promise<SpawnProcessResult> {
-  return spawnTimProcess(
+  return spawnPlanTimProcess(
     describeTarget('plan', planId),
     planId,
     ['review-guide', 'generate', String(planId), '--auto-workspace'],
@@ -270,7 +301,7 @@ export async function spawnPrReviewGuideCommentProcess(
   prNumber: number,
   cwd: string
 ): Promise<SpawnProcessResult> {
-  return spawnTimProcess(
+  return spawnPlanTimProcess(
     describeTarget('pr', prNumber),
     prNumber,
     [

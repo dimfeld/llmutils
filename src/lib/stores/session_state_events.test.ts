@@ -61,6 +61,7 @@ function createSession(connectionId = 'conn-1'): SessionData {
 function createState(initialSession?: SessionData) {
   const sessions = new Map<string, SessionData>();
   const sessionsByPlanUuid = new Map<string, SessionData[]>();
+  const sessionsByPrUrl = new Map<string, SessionData[]>();
   if (initialSession) {
     sessions.set(initialSession.connectionId, initialSession);
   }
@@ -71,6 +72,7 @@ function createState(initialSession?: SessionData) {
   return {
     sessions,
     sessionsByPlanUuid,
+    sessionsByPrUrl,
     getInitialized: () => initialized,
     setInitialized: (value: boolean) => {
       initialized = value;

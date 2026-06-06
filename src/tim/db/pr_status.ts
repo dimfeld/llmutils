@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { tryCanonicalizePrUrl } from '../../common/github/identifiers.js';
 import { parseOwnerRepoFromRepositoryId } from '../../common/github/pull_requests.js';
+import { getProjectById } from './project.js';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 export interface PrStatusRow {
@@ -867,6 +868,42 @@ export function getPrStatusByUrl(
     (db.prepare('SELECT id FROM pr_status WHERE pr_url = ?').get(canonicalPrUrl) as {
       id: number;
     } | null) ?? null;
+
+  if (!row) {
+    return null;
+  }
+
+  return getDetailById(db, row.id, options);
+}
+
+export function getPrStatusByProjectAndNumber(
+  db: Database,
+  projectId: number,
+  prNumber: number,
+  options?: { includeReviewThreads?: boolean }
+): PrStatusDetail | null {
+  const project = getProjectById(db, projectId);
+  if (!project) {
+    return null;
+  }
+
+  const ownerRepo = parseOwnerRepoFromRepositoryId(project.repository_id);
+  if (!ownerRepo) {
+    return null;
+  }
+
+  const row =
+    (db
+      .prepare(
+        `
+          SELECT id
+          FROM pr_status
+          WHERE owner = ?
+            AND repo = ?
+            AND pr_number = ?
+        `
+      )
+      .get(ownerRepo.owner, ownerRepo.repo, prNumber) as { id: number } | null) ?? null;
 
   if (!row) {
     return null;

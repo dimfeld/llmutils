@@ -44,7 +44,17 @@ const { createPullRequestReviewCommentReplyMock, resolveReviewThreadMock } = vi.
   resolveReviewThreadMock: vi.fn<(threadId: string) => Promise<boolean>>(),
 }));
 
-const { spawnPrFixProcessMock } = vi.hoisted(() => ({
+const { spawnPrFixForPrProcessMock, spawnPrFixProcessMock } = vi.hoisted(() => ({
+  spawnPrFixForPrProcessMock: vi.fn<
+    (
+      prUrlOrNumber: string,
+      cwd: string
+    ) => Promise<{
+      success: boolean;
+      error?: string;
+      earlyExit?: boolean;
+    }>
+  >(),
   spawnPrFixProcessMock: vi.fn<
     (
       planId: number,
@@ -64,6 +74,8 @@ vi.mock('$common/github/pull_requests.js', () => ({
 }));
 
 vi.mock('$lib/server/plan_actions.js', () => ({
+  spawnPrFixForPrProcess: (...args: Parameters<typeof spawnPrFixForPrProcessMock>) =>
+    spawnPrFixForPrProcessMock(...args),
   spawnPrFixProcess: (...args: Parameters<typeof spawnPrFixProcessMock>) =>
     spawnPrFixProcessMock(...args),
 }));
@@ -134,6 +146,7 @@ describe('convertThreadToTask', () => {
     projectId = getOrCreateProject(currentDb, 'repo-review-thread-actions').id;
     createPullRequestReviewCommentReplyMock.mockReset();
     resolveReviewThreadMock.mockReset();
+    spawnPrFixForPrProcessMock.mockReset();
     spawnPrFixProcessMock.mockReset();
   });
 
@@ -1140,6 +1153,7 @@ describe('startFixThreads', () => {
     projectId = getOrCreateProject(currentDb, 'repo-review-thread-start-fix').id;
     createPullRequestReviewCommentReplyMock.mockReset();
     resolveReviewThreadMock.mockReset();
+    spawnPrFixForPrProcessMock.mockReset();
     spawnPrFixProcessMock.mockReset();
   });
 

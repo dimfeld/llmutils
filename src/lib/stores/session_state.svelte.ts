@@ -59,6 +59,7 @@ export class SessionManager {
   projectsById = new SvelteMap<number, ProjectInfo>();
   rateLimitState: RateLimitState = $state.raw({ entries: [] });
   sessionsByPlanUuid = new SvelteMap<string, SessionData[]>();
+  sessionsByPrUrl = new SvelteMap<string, SessionData[]>();
 
   eventSource: EventSource | null = null;
   reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -174,6 +175,26 @@ export class SessionManager {
     return this.unreadNotifications.get(session.connectionId) === true;
   }
 
+  hasActiveSessionForPr(
+    canonicalPrUrl: string,
+    command?: string | string[]
+  ): { active: boolean; connectionId?: string } {
+    for (const session of this.sessionsByPrUrl.get(canonicalPrUrl) ?? []) {
+      if (
+        session.status === 'active' &&
+        session.sessionInfo.linkedPrUrl === canonicalPrUrl &&
+        (command == null ||
+          (Array.isArray(command)
+            ? command.includes(session.sessionInfo.command)
+            : session.sessionInfo.command === command))
+      ) {
+        return { active: true, connectionId: session.connectionId };
+      }
+    }
+
+    return { active: false };
+  }
+
   sessionsWithNotification = $derived.by(() => {
     const result: SessionData[] = [];
     for (const session of this.sessions.values()) {
@@ -211,6 +232,7 @@ export class SessionManager {
     const state: SessionStoreMutableState = {
       sessions: this.sessions,
       sessionsByPlanUuid: this.sessionsByPlanUuid,
+      sessionsByPrUrl: this.sessionsByPrUrl,
       setInitialized: (value) => {
         this.initialized = value;
       },
