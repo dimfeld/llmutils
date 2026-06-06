@@ -898,8 +898,8 @@ export function getPrStatusByProjectAndNumber(
         `
           SELECT id
           FROM pr_status
-          WHERE owner = ?
-            AND repo = ?
+          WHERE owner = ? COLLATE NOCASE
+            AND repo = ? COLLATE NOCASE
             AND pr_number = ?
         `
       )
