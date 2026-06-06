@@ -6,6 +6,8 @@ import { beforeAll, afterAll, beforeEach, describe, expect, vi, test } from 'vit
 import { clearGitHubTokenCache } from '../../common/github/token.js';
 import {
   buildReviewThreadFixPrompt,
+  buildPrReviewThreadFixPrompt,
+  buildReviewThreadFixInstructions,
   handlePrCommentCommand,
   handlePrFixCommand,
   handlePrRefreshCommand,
@@ -13,6 +15,9 @@ import {
   handlePrLinkCommand,
   handlePrResolveCommand,
   handlePrUnlinkCommand,
+  resolvePrFixTargetIntent,
+  resolvePrFixTarget,
+  type PullRequestFixTarget,
 } from './pr.js';
 import { LATEST_GPT5_MODEL } from '../constants.js';
 
@@ -261,6 +266,10 @@ vi.mock('../db/plan_sync.js', () => ({
   syncPlanToDb: vi.fn(async (..._args: unknown[]) => {}),
 }));
 
+vi.mock('../utils/pr_context_gathering.js', () => ({
+  gatherPrContext: vi.fn(async (..._args: unknown[]) => ({})),
+}));
+
 import { log as mockLogFn } from '../../logging.js';
 import { resolvePlan as mockResolvePlanFn } from '../plan_display.js';
 import {
@@ -320,6 +329,7 @@ import { isTunnelActive as mockIsTunnelActiveFn } from '../../logging/tunnel_cli
 import { runWithHeadlessAdapterIfEnabled as mockRunWithHeadlessAdapterIfEnabledFn } from '../headless.js';
 import { syncPlanToDb as mockSyncPlanToDbFn } from '../db/plan_sync.js';
 import { timAgent as mockTimAgentFn } from './agent/agent.js';
+import { gatherPrContext as mockGatherPrContextFn } from '../utils/pr_context_gathering.js';
 import {
   buildExecutorAndLog as mockBuildExecutorAndLogFn,
   defaultModelForExecutor as mockDefaultModelForExecutorFn,
@@ -364,6 +374,7 @@ const mockSyncPlanToDb = vi.mocked(mockSyncPlanToDbFn);
 const mockTimAgent = vi.mocked(mockTimAgentFn);
 const mockBuildExecutorAndLog = vi.mocked(mockBuildExecutorAndLogFn);
 const mockDefaultModelForExecutor = vi.mocked(mockDefaultModelForExecutorFn);
+const mockGatherPrContext = vi.mocked(mockGatherPrContextFn);
 const mockExecutorExecute = executorMocks.execute;
 const mockTouchWorkspaceInfo = vi.mocked(mockTouchWorkspaceInfoFn);
 const mockSetupWorkspace = vi.mocked(mockSetupWorkspaceFn);
@@ -622,6 +633,17 @@ describe('tim/commands/pr', () => {
     });
     mockSyncPlanToDb.mockImplementation(async () => {});
     mockTimAgent.mockImplementation(async () => {});
+    mockGatherPrContext.mockReset();
+    mockGatherPrContext.mockResolvedValue({
+      prUrl: 'https://github.com/example/repo/pull/42',
+      prNumber: 42,
+      owner: 'example',
+      repo: 'repo',
+      baseBranch: 'main',
+      headBranch: 'feature/my-pr',
+      headSha: 'abc123def456',
+      prStatus: {},
+    } as any);
   });
 
   test('refresh defaults to the current repository project identity and fetches all open PR statuses', async () => {
@@ -2221,6 +2243,431 @@ describe('tim/commands/pr', () => {
     expect(prompt).toContain('- PRRT thread ID: thread-b');
     expect(prompt).toContain('Fix A.');
     expect(prompt).toContain('Fix B.');
+  });
+
+  // ---------------------------------------------------------------------------
+  // resolvePrFixTargetIntent (pure function — no mock interaction)
+  // ---------------------------------------------------------------------------
+
+  describe('resolvePrFixTargetIntent', () => {
+    test('numeric positional string returns plan mode with parsed planId', () => {
+      expect(resolvePrFixTargetIntent('123', {})).toEqual({ mode: 'plan', planId: 123 });
+    });
+
+    test('numeric positional number returns plan mode with planId', () => {
+      expect(resolvePrFixTargetIntent(123, {})).toEqual({ mode: 'plan', planId: 123 });
+    });
+
+    test('--plan option returns plan mode', () => {
+      expect(resolvePrFixTargetIntent(undefined, { plan: '456' })).toEqual({
+        mode: 'plan',
+        planId: 456,
+      });
+    });
+
+    test('--pr option with number string returns PR mode', () => {
+      expect(resolvePrFixTargetIntent(undefined, { pr: '789' })).toEqual({
+        mode: 'pr',
+        prUrlOrNumber: '789',
+      });
+    });
+
+    test('--pr option with GitHub URL returns PR mode', () => {
+      const url = 'https://github.com/owner/repo/pull/5';
+      expect(resolvePrFixTargetIntent(undefined, { pr: url })).toEqual({
+        mode: 'pr',
+        prUrlOrNumber: url,
+      });
+    });
+
+    test('GitHub URL positional returns PR mode', () => {
+      const url = 'https://github.com/owner/repo/pull/5';
+      expect(resolvePrFixTargetIntent(url, {})).toEqual({ mode: 'pr', prUrlOrNumber: url });
+    });
+
+    test('owner/repo#number positional returns PR mode', () => {
+      expect(resolvePrFixTargetIntent('owner/repo#5', {})).toEqual({
+        mode: 'pr',
+        prUrlOrNumber: 'owner/repo#5',
+      });
+    });
+
+    test('positional with slash returns PR mode', () => {
+      expect(resolvePrFixTargetIntent('owner/repo', {})).toEqual({
+        mode: 'pr',
+        prUrlOrNumber: 'owner/repo',
+      });
+    });
+
+    test('no positional and no options returns plan mode with undefined planId', () => {
+      expect(resolvePrFixTargetIntent(undefined, {})).toEqual({ mode: 'plan' });
+    });
+
+    test('--current throws with message pointing to tim review --current', () => {
+      expect(() => resolvePrFixTargetIntent(undefined, { current: true })).toThrow(
+        'tim review --current'
+      );
+    });
+
+    test('--branch throws with message pointing to tim review --branch', () => {
+      expect(() => resolvePrFixTargetIntent(undefined, { branch: 'feature/x' })).toThrow(
+        'tim review --branch'
+      );
+    });
+
+    test('--current beats --pr (still throws)', () => {
+      expect(() => resolvePrFixTargetIntent(undefined, { current: true, pr: '123' })).toThrow(
+        'tim review --current'
+      );
+    });
+
+    test('--pr beats numeric positional', () => {
+      expect(
+        resolvePrFixTargetIntent('123', { pr: 'https://github.com/owner/repo/pull/5' })
+      ).toEqual({
+        mode: 'pr',
+        prUrlOrNumber: 'https://github.com/owner/repo/pull/5',
+      });
+    });
+
+    test('--pr beats --plan', () => {
+      expect(resolvePrFixTargetIntent(undefined, { pr: '5', plan: '123' })).toEqual({
+        mode: 'pr',
+        prUrlOrNumber: '5',
+      });
+    });
+
+    test('bogus non-numeric non-url positional throws ambiguity error', () => {
+      expect(() => resolvePrFixTargetIntent('notaplan', {})).toThrow('notaplan');
+    });
+
+    test('single-word non-numeric non-url like "abc" throws', () => {
+      expect(() => resolvePrFixTargetIntent('abc', {})).toThrow();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // resolvePrFixTarget — PR mode
+  // ---------------------------------------------------------------------------
+
+  describe('resolvePrFixTarget (PR mode)', () => {
+    function makePrStatusDetail(
+      prNumber: number,
+      title: string,
+      author: string,
+      threads: AnyObject[] = []
+    ): AnyObject {
+      return {
+        ...createPrDetail(prNumber, title, 'success'),
+        status: {
+          ...createPrDetail(prNumber, title, 'success').status,
+          title,
+          author,
+        },
+        reviewThreads: threads,
+      };
+    }
+
+    test('returns PullRequestFixTarget with PR metadata and no plan fields', async () => {
+      currentCachedDetail = makePrStatusDetail(42, 'My PR', 'alice');
+      mockGetRepositoryIdentity.mockResolvedValueOnce({
+        repositoryId: 'example/repo',
+        remoteUrl: 'https://github.com/example/repo.git',
+        gitRoot: '/tmp/example-repo',
+      });
+
+      const target = await resolvePrFixTarget(
+        { mode: 'pr', prUrlOrNumber: '42' },
+        createNestedCommand()
+      );
+
+      expect(target.kind).toBe('pr');
+      const prTarget = target as PullRequestFixTarget;
+      expect(prTarget.canonicalPrUrl).toBe('https://github.com/example/repo/pull/42');
+      expect(prTarget.prNumber).toBe(42);
+      expect(prTarget.owner).toBe('example');
+      expect(prTarget.repo).toBe('repo');
+      expect(prTarget.baseBranch).toBe('main');
+      expect(prTarget.headBranch).toBe('feature/my-pr');
+      expect(prTarget.headSha).toBe('abc123def456');
+      expect(prTarget.title).toBe('My PR');
+      expect(prTarget.author).toBe('alice');
+      expect('plan' in prTarget).toBe(false);
+      expect('planPath' in prTarget).toBe(false);
+      expect('planId' in prTarget).toBe(false);
+    });
+
+    test('rejects PR from a different repository', async () => {
+      mockGatherPrContext.mockResolvedValueOnce({
+        prUrl: 'https://github.com/other/project/pull/99',
+        prNumber: 99,
+        owner: 'other',
+        repo: 'project',
+        baseBranch: 'main',
+        headBranch: 'feature/other',
+        headSha: 'deadbeef',
+        prStatus: {},
+      } as any);
+      mockGetRepositoryIdentity.mockResolvedValueOnce({
+        repositoryId: 'example/repo',
+        remoteUrl: 'https://github.com/example/repo.git',
+        gitRoot: '/tmp/example-repo',
+      });
+
+      await expect(
+        resolvePrFixTarget({ mode: 'pr', prUrlOrNumber: '99' }, createNestedCommand())
+      ).rejects.toThrow(/other\/project.*example\/repo|example\/repo.*other\/project/i);
+    });
+
+    test('throws when PR status is not found in DB', async () => {
+      currentCachedDetail = null;
+      mockGetRepositoryIdentity.mockResolvedValueOnce({
+        repositoryId: 'example/repo',
+        remoteUrl: 'https://github.com/example/repo.git',
+        gitRoot: '/tmp/example-repo',
+      });
+
+      await expect(
+        resolvePrFixTarget({ mode: 'pr', prUrlOrNumber: '42' }, createNestedCommand())
+      ).rejects.toThrow(/Failed to load PR review data/);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // handlePrFixCommand — PR mode (no-unresolved-threads and GITHUB_TOKEN)
+  // ---------------------------------------------------------------------------
+
+  describe('handlePrFixCommand — PR mode', () => {
+    function setupPrModeTarget(threads: AnyObject[] = []) {
+      mockGetRepositoryIdentity.mockResolvedValue({
+        repositoryId: 'example/repo',
+        remoteUrl: 'https://github.com/example/repo.git',
+        gitRoot: '/tmp/example-repo',
+      });
+      currentCachedDetail = {
+        ...createPrDetail(42, 'My PR', 'success'),
+        status: {
+          ...createPrDetail(42, 'My PR', 'success').status,
+          title: 'My PR',
+          author: 'alice',
+        },
+        reviewThreads: threads,
+      };
+    }
+
+    test('logs clear message and does not launch executor when PR has no unresolved threads', async () => {
+      setupPrModeTarget([
+        createReviewThreadDetail({
+          threadId: 'thread-resolved',
+          path: 'src/auth.ts',
+          line: 10,
+          isResolved: 1,
+        }),
+      ]);
+
+      await handlePrFixCommand(undefined, { pr: '42' }, createNestedCommand());
+
+      expect(mockExecutorExecute).not.toHaveBeenCalled();
+      expect(logs.some((l) => l.includes('no unresolved PR review threads'))).toBe(true);
+    });
+
+    test('throws when GITHUB_TOKEN is missing, before any PR resolution', async () => {
+      delete process.env.GITHUB_TOKEN;
+      setupPrModeTarget();
+
+      await expect(
+        handlePrFixCommand(undefined, { pr: '42' }, createNestedCommand())
+      ).rejects.toThrow(/GITHUB_TOKEN/);
+
+      expect(mockGatherPrContext).not.toHaveBeenCalled();
+    });
+
+    test('throws with not-yet-wired error when PR has unresolved threads', async () => {
+      setupPrModeTarget([
+        createReviewThreadDetail({
+          threadId: 'thread-1',
+          path: 'src/file.ts',
+          line: 1,
+          comments: [{ body: 'Fix this.' }],
+        }),
+      ]);
+
+      await expect(
+        handlePrFixCommand(undefined, { pr: '42' }, createNestedCommand())
+      ).rejects.toThrow(/not wired/i);
+
+      expect(mockExecutorExecute).not.toHaveBeenCalled();
+    });
+
+    test('rejects --current flag with guidance message', async () => {
+      await expect(
+        handlePrFixCommand(undefined, { current: true }, createNestedCommand())
+      ).rejects.toThrow('tim review --current');
+    });
+
+    test('rejects --branch flag with guidance message', async () => {
+      await expect(
+        handlePrFixCommand(undefined, { branch: 'feature/x' }, createNestedCommand())
+      ).rejects.toThrow('tim review --branch');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // buildPrReviewThreadFixPrompt
+  // ---------------------------------------------------------------------------
+
+  describe('buildPrReviewThreadFixPrompt', () => {
+    function makePrTarget(overrides: Partial<PullRequestFixTarget> = {}): PullRequestFixTarget {
+      return {
+        kind: 'pr',
+        repoRoot: '/tmp/repo',
+        canonicalPrUrl: 'https://github.com/example/repo/pull/42',
+        prNumber: 42,
+        owner: 'example',
+        repo: 'repo',
+        title: 'My Pull Request',
+        author: 'alice',
+        baseBranch: 'main',
+        headBranch: 'feature/my-pr',
+        headSha: 'abc123def456',
+        prStatus: {} as any,
+        ...overrides,
+      };
+    }
+
+    test('includes Pull Request Context section with all fields', () => {
+      const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
+
+      expect(prompt).toContain('## Pull Request Context');
+      expect(prompt).toContain('**PR URL:** https://github.com/example/repo/pull/42');
+      expect(prompt).toContain('**PR Number:** 42');
+      expect(prompt).toContain('**Repository:** example/repo');
+      expect(prompt).toContain('**Title:** My Pull Request');
+      expect(prompt).toContain('**Author:** alice');
+      expect(prompt).toContain('**Base Branch:** main');
+      expect(prompt).toContain('**Head Branch:** feature/my-pr');
+      expect(prompt).toContain('**Head SHA:** abc123def456');
+    });
+
+    test('includes no-plan disclaimer', () => {
+      const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
+
+      expect(prompt).toContain(
+        'No tim plan is associated with this run; do not update plan files, plan tasks, plan status, or plan assignments.'
+      );
+    });
+
+    test('does NOT contain Plan Context section', () => {
+      const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
+
+      expect(prompt).not.toContain('## Plan Context');
+      expect(prompt).not.toContain('**Plan ID:**');
+    });
+
+    test('omits Author line when author is undefined', () => {
+      const prompt = buildPrReviewThreadFixPrompt(makePrTarget({ author: undefined }), []);
+
+      expect(prompt).not.toContain('**Author:**');
+    });
+
+    test('uses "No title provided" when title is undefined', () => {
+      const prompt = buildPrReviewThreadFixPrompt(makePrTarget({ title: undefined }), []);
+
+      expect(prompt).toContain('**Title:** No title provided');
+    });
+
+    test('includes unresolved review thread IDs and comments', () => {
+      const threads = [
+        {
+          prUrl: 'https://github.com/example/repo/pull/42',
+          thread: createReviewThreadDetail({
+            threadId: 'thread-x',
+            path: 'src/auth.ts',
+            line: 55,
+            comments: [
+              { author: 'reviewer', body: 'Needs null check.' },
+              { author: 'bot', body: 'And a test.' },
+            ],
+          }),
+        },
+      ];
+
+      const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), threads);
+
+      expect(prompt).toContain('## Unresolved Review Threads');
+      expect(prompt).toContain('- PRRT thread ID: thread-x');
+      expect(prompt).toContain('Needs null check.');
+      expect(prompt).toContain('And a test.');
+    });
+
+    test('includes GraphQL review reply workflow instructions', () => {
+      const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
+
+      expect(prompt).toContain('## GraphQL Review Reply Workflow');
+      expect(prompt).toContain('addPullRequestReview(input:{pullRequestId:$pr})');
+      expect(prompt).toContain(
+        'addPullRequestReviewThreadReply(input:{pullRequestReviewId:$review,pullRequestReviewThreadId:$thread,body:$body})'
+      );
+      expect(prompt).toContain(
+        'submitPullRequestReview(input:{pullRequestReviewId:$review,event:COMMENT})'
+      );
+      expect(prompt).toContain('Do not leave a pending review unsubmitted.');
+    });
+
+    test('includes AI Response prefix requirement', () => {
+      const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
+
+      expect(prompt).toContain('must start with `AI Response: `');
+    });
+
+    test('includes no-resolve and no-request-review restrictions', () => {
+      const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
+
+      expect(prompt).toContain('Do not mark review comments or threads resolved.');
+      expect(prompt).toContain('Do not update the status of the issue or PR.');
+      expect(prompt).toContain('Do not request or re-request reviews.');
+    });
+
+    test('no threads renders empty-thread notice', () => {
+      const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
+
+      expect(prompt).toContain('No unresolved review threads were provided.');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // buildReviewThreadFixInstructions (shared helper)
+  // ---------------------------------------------------------------------------
+
+  describe('buildReviewThreadFixInstructions', () => {
+    test('returns array of strings containing instruction sections', () => {
+      const lines = buildReviewThreadFixInstructions([]);
+
+      const joined = lines.join('\n');
+      expect(joined).toContain('## Unresolved Review Threads');
+      expect(joined).toContain('## GraphQL Review Reply Workflow');
+      expect(joined).toContain('## Additional PR Feedback');
+      expect(joined).toContain('## User Feedback');
+      expect(joined).toContain('AI Response: ');
+    });
+
+    test('includes thread details when threads are provided', () => {
+      const lines = buildReviewThreadFixInstructions([
+        {
+          prUrl: 'https://github.com/example/repo/pull/1',
+          thread: createReviewThreadDetail({
+            threadId: 'shared-thread',
+            path: 'src/x.ts',
+            line: 10,
+            comments: [{ body: 'Shared comment.' }],
+          }),
+        },
+      ]);
+
+      const joined = lines.join('\n');
+      expect(joined).toContain('- PRRT thread ID: shared-thread');
+      expect(joined).toContain('Shared comment.');
+    });
   });
 
   test('resolve updates local DB cache after successful GitHub mutation', async () => {
