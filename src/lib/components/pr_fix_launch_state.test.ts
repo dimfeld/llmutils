@@ -15,8 +15,15 @@ describe('pr_fix_launch_state', () => {
     });
   });
 
-  test('getFixStartResultState returns user-facing plan message for already_running status', () => {
+  test('getFixStartResultState returns user-facing plan message for already_running status (default target)', () => {
     expect(getFixStartResultState('already_running')).toEqual({
+      fixLaunched: false,
+      message: ALREADY_RUNNING_MESSAGE,
+    });
+  });
+
+  test('getFixStartResultState returns user-facing plan message for already_running with explicit plan target', () => {
+    expect(getFixStartResultState('already_running', 'plan')).toEqual({
       fixLaunched: false,
       message: ALREADY_RUNNING_MESSAGE,
     });

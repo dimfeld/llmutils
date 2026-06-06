@@ -248,6 +248,59 @@ describe('PrDetail', () => {
     expect(body).toContain('(1 unresolved)');
   });
 
+  test('shows Session Active on the fix button when hasActiveSessionForPr returns active', async () => {
+    sessionManager.hasActiveSessionForPr.mockReturnValueOnce({ active: true });
+    const pr = createPr();
+    pr.linkedPlans = [];
+    pr.reviewThreads = [createReviewThread()];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        username: 'alice',
+      },
+    });
+
+    expect(body).toContain('Session Active');
+    expect(body).toContain('aria-label="Fix all unresolved review threads"');
+    expect(body).toContain('<button disabled=""');
+  });
+
+  test('does not show Convert to Task in the review thread list when no plan is linked', async () => {
+    const pr = createPr();
+    pr.linkedPlans = [];
+    pr.reviewThreads = [createReviewThread()];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        username: 'alice',
+      },
+    });
+
+    expect(body).toContain('Fix Unresolved');
+    expect(body).not.toContain('Convert to Task');
+  });
+
+  test('shows Convert to Task in review thread list when a plan is linked', async () => {
+    const pr = createPr();
+    pr.linkedPlans = [{ planUuid: 'plan-42', planId: 42, title: 'Fix comments' }];
+    pr.reviewThreads = [createReviewThread()];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        username: 'alice',
+      },
+    });
+
+    expect(body).toContain('Fix Unresolved');
+    expect(body).toContain('Convert to Task');
+  });
+
   test('renders full diff stats when additions, deletions, and changed_files are available', async () => {
     const pr = createPr();
     pr.status.additions = 42;
