@@ -2476,6 +2476,25 @@ describe('tim/commands/pr', () => {
       );
     });
 
+    test('ensurePrFixHeadBranchPushableOnOrigin passes when head branch is present on origin', async () => {
+      const mockBranchExists = vi.fn(async () => true);
+
+      await expect(
+        ensurePrFixHeadBranchPushableOnOrigin(
+          {
+            canonicalPrUrl: 'https://github.com/example/repo/pull/99',
+            repoRoot: '/tmp/repo',
+            headBranch: 'feature/my-branch',
+          },
+          {
+            remoteBranchExistsGit: mockBranchExists,
+          }
+        )
+      ).resolves.toBeUndefined();
+
+      expect(mockBranchExists).toHaveBeenCalledWith('/tmp/repo', 'feature/my-branch');
+    });
+
     test('fetchPrFixBaseBranch throws clearly when base fetch fails', async () => {
       await expect(
         fetchPrFixBaseBranch('/tmp/workspace', 'main', {
@@ -2661,6 +2680,49 @@ describe('tim/commands/pr', () => {
       await expect(
         handlePrFixCommand(undefined, { branch: 'feature/x' }, createNestedCommand())
       ).rejects.toThrow('tim review --branch');
+    });
+
+    test('fork check throws before workspace is allocated when head branch is absent on origin', async () => {
+      setupPrModeTarget([
+        createReviewThreadDetail({
+          threadId: 'thread-fork',
+          path: 'src/file.ts',
+          line: 1,
+          comments: [{ body: 'Fix this.' }],
+        }),
+      ]);
+      mockRemoteBranchExistsGit.mockResolvedValue(false);
+
+      await expect(
+        handlePrFixCommand(undefined, { pr: '42' }, createNestedCommand())
+      ).rejects.toThrow(
+        'tim pr fix cannot safely mutate fork PR https://github.com/example/repo/pull/42: head branch "feature/my-pr" is not present on origin, so changes cannot be pushed back. Fork PR fix support is not implemented yet.'
+      );
+
+      expect(mockSetupWorkspace).not.toHaveBeenCalled();
+    });
+
+    test('current checkout is not switched: setupWorkspace is called with autoWorkspace true, not on repoRoot directly', async () => {
+      setupPrModeTarget([
+        createReviewThreadDetail({
+          threadId: 'thread-1',
+          path: 'src/file.ts',
+          line: 1,
+          comments: [{ body: 'Fix this.' }],
+        }),
+      ]);
+      const repoRoot = '/tmp/example-repo';
+
+      await handlePrFixCommand(undefined, { pr: '42' }, createNestedCommand());
+
+      const setupCall = mockSetupWorkspace.mock.calls[0];
+      expect(setupCall).toBeDefined();
+      const workspaceOpts = setupCall?.[0] as Record<string, unknown>;
+      // autoWorkspace: true means a managed workspace is selected, not the current checkout
+      expect(workspaceOpts).toHaveProperty('autoWorkspace', true);
+      // The workspace base dir passed to setupWorkspace is the repoRoot, not a forced current-checkout path
+      // The important thing is that no workspace option forces use of the exact repoRoot as working directory
+      expect(workspaceOpts).not.toHaveProperty('workspace', repoRoot);
     });
   });
 
