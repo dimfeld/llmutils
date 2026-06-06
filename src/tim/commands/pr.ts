@@ -1412,6 +1412,15 @@ async function executePrFixCommand({
 
   if (target.kind === 'pr') {
     await ensurePrFixHeadBranchPushableOnOrigin(target);
+    // Patch PR identity into the headless session as early as possible (before
+    // workspace setup) so `hasActiveSessionForPr` can detect this run immediately.
+    // Otherwise a slow workspace setup could outlast the launch lock and let a
+    // duplicate launch slip past both guards. workspacePath is patched in later.
+    updateHeadlessSessionInfo({
+      linkedPrUrl: target.canonicalPrUrl,
+      linkedPrNumber: target.prNumber,
+      linkedPrTitle: target.title,
+    });
   }
 
   const repoRoot = target.repoRoot;

@@ -73,3 +73,6 @@ vite.config.ts.timestamp-*
 
 # Stray bare repo fixtures (tests must use temp dirs)
 /origin.git/
+
+# Vitest debug attachments (transient)
+.vitest-attachments/
