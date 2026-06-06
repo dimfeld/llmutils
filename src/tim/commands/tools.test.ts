@@ -14,6 +14,7 @@ import {
   getPlanTool,
   listReadyPlansTool,
   managePlanTaskTool,
+  generateTasksParameters,
   updatePlanDetailsTool,
   updatePlanTasksTool,
 } from '../tools/index.js';
@@ -383,6 +384,50 @@ describe('tim tools CLI handlers', () => {
 
     const mcpOutput = await mcpUpdatePlanTasks(args, context, { log: createNoopLogger() });
     expect(mcpOutput).toBe(toolOutput.text);
+  });
+
+  test('update-plan-tasks accepts a numeric string plan ID', async () => {
+    const planFile = path.join(tasksDir, '17-string-plan-id.plan.md');
+    const plan: PlanSchema = {
+      id: 17,
+      title: 'String Plan ID',
+      goal: 'Update tasks with a string plan ID',
+      details: 'Initial details',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await writeDbBackedPlan(planFile, plan);
+
+    const args = generateTasksParameters.parse({
+      plan: '17',
+      tasks: [
+        {
+          title: 'Task from string ID',
+          description: 'The schema should coerce the plan ID to a number.',
+        },
+      ],
+    });
+
+    expect(args.plan).toBe(17);
+
+    const result = await updatePlanTasksTool(args, createToolContext());
+    expect(result.text).toContain('Successfully updated plan');
+
+    const { plan: storedPlan } = await resolvePlanByNumericId(17, tempDir);
+    expect(storedPlan.tasks).toHaveLength(1);
+    expect(storedPlan.tasks[0]?.title).toBe('Task from string ID');
+  });
+
+  test('update-plan-tasks rejects non-clean string plan IDs', () => {
+    for (const plan of ['17-plan', '1.5', '-1', '0', '']) {
+      expect(() =>
+        generateTasksParameters.parse({
+          plan,
+          tasks: [{ title: 'Task', description: 'Description' }],
+        })
+      ).toThrow();
+    }
   });
 
   test('update-plan-tasks accepts detail as alias for description', async () => {

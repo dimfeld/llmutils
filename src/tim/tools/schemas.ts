@@ -1,4 +1,5 @@
 import * as z from 'zod/v4';
+import { parsePlanIdFromCliArg } from '../plans.js';
 import { prioritySchema } from '../planSchema.js';
 
 // Simplified task schema for tool parameters
@@ -20,6 +21,26 @@ const taskSchema = z
       message: 'Either description, detail, or details must be provided',
     }
   );
+
+const numericPlanIdSchema = z
+  .union([
+    z.number().int().positive(),
+    z.string().refine(
+      (value) => {
+        try {
+          parsePlanIdFromCliArg(value);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      {
+        message: 'Expected a positive numeric plan ID',
+      }
+    ),
+  ])
+  .transform((value) => (typeof value === 'number' ? value : parsePlanIdFromCliArg(value)))
+  .describe('Numeric plan ID');
 
 export const addPlanTaskParameters = z
   .object({
@@ -54,7 +75,7 @@ export const removePlanTaskParameters = z
 
 export const generateTasksParameters = z
   .object({
-    plan: z.number().int().positive().describe('Numeric plan ID'),
+    plan: numericPlanIdSchema,
     title: z.string().optional().describe('Plan title'),
     goal: z.string().optional().describe('High-level goal of the plan'),
     details: z.string().optional().describe('Additional details about the plan in markdown format'),
