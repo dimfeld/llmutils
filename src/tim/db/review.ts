@@ -790,6 +790,8 @@ export interface ReviewGuideSummary extends ReviewWithIssueCounts {
   pr_title: string | null;
 }
 
+const REVIEW_GUIDE_SUMMARY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 export function getReviewsByPrUrl(
   db: Database,
   prUrl: string,
@@ -851,8 +853,13 @@ export function listLatestReviewGuideSummaries(
   db: Database,
   options: { projectId?: number | 'all'; limit?: number } = {}
 ): ReviewGuideSummary[] {
-  const conditions = ['r.review_guide IS NOT NULL', "TRIM(r.review_guide) != ''"];
-  const params: Array<number | string> = [];
+  const generatedAfter = new Date(Date.now() - REVIEW_GUIDE_SUMMARY_WINDOW_MS).toISOString();
+  const conditions = [
+    'r.review_guide IS NOT NULL',
+    "TRIM(r.review_guide) != ''",
+    'r.created_at >= ?',
+  ];
+  const params: Array<number | string> = [generatedAfter];
 
   if (options.projectId !== undefined && options.projectId !== 'all') {
     conditions.push('r.project_id = ?');

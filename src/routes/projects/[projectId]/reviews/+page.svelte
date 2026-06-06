@@ -76,7 +76,7 @@
       <div>
         <h1 class="text-xl font-semibold text-foreground">Review Guides</h1>
         <p class="mt-1 text-sm text-muted-foreground">
-          Latest generated guide per plan or pull request
+          Latest generated guide per plan or pull request from the past week
         </p>
       </div>
       <div class="text-sm text-muted-foreground tabular-nums">
@@ -147,7 +147,7 @@
       </div>
     {:else}
       <div class="rounded-lg border border-dashed border-border px-6 py-10 text-center">
-        <p class="text-sm text-muted-foreground">No generated review guides yet.</p>
+        <p class="text-sm text-muted-foreground">No review guides generated in the past week.</p>
       </div>
     {/if}
   </div>

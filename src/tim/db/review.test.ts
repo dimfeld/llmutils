@@ -575,6 +575,17 @@ describe('tim db/review', () => {
         reviewGuide: '# Other project guide',
         status: 'complete',
       });
+      const staleGuide = createReview(db, {
+        projectId,
+        prUrl: 'https://github.com/example/repo/pull/99',
+        branch: 'feature/stale-guide',
+        reviewGuide: '# Stale guide',
+        status: 'complete',
+      });
+      db.prepare('UPDATE review SET created_at = ? WHERE id = ?').run(
+        new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+        staleGuide.id
+      );
 
       insertReviewIssues(db, {
         reviewId: latestPlan.id,
@@ -602,6 +613,7 @@ describe('tim db/review', () => {
 
       const projectSummaries = listLatestReviewGuideSummaries(db, { projectId });
       expect(projectSummaries.map((summary) => summary.id)).toEqual([prGuide.id, latestPlan.id]);
+      expect(projectSummaries.some((summary) => summary.id === staleGuide.id)).toBe(false);
       expect(projectSummaries[1].plan_id).toBe(101);
       expect(projectSummaries[1].plan_title).toBe('Plan 101');
       expect(projectSummaries[1].issue_count).toBe(2);
