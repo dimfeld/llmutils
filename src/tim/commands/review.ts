@@ -6,15 +6,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname, isAbsolute } from 'node:path';
 import { fetchRemoteBranch, getCurrentCommitHash } from '../../common/git.js';
 import { promptCheckbox, promptSelect } from '../../common/input.js';
-import {
-  parsePlanIdentifier,
-  parseOptionalPlanIdFromCliArg,
-  readPlanFile,
-  resolvePlanByNumericId,
-  resolvePlanByUuid,
-  writePlanFile,
-  writePlanToDb,
-} from '../plans.js';
+import { readPlanFile, resolvePlanByNumericId, writePlanFile, writePlanToDb } from '../plans.js';
 import { log, warn, runWithLogger, sendStructured } from '../../logging.js';
 import { getLoggerAdapter, type LoggerAdapter } from '../../logging/adapter.js';
 import type { StructuredMessage } from '../../logging/structured_messages.js';
@@ -78,7 +70,6 @@ import { setupWorkspace } from '../workspace/workspace_setup.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { isReopenableCompletedStatus } from '../plans/plan_state_utils.js';
 import {
-  createExplicitPlanTarget,
   resolveReviewTarget,
   type CurrentWorktreeReviewTarget,
   type BranchReviewTarget,
@@ -1416,7 +1407,7 @@ async function handleReviewIssueActions(params: {
 }
 
 export async function handleReviewCommand(
-  planId: number | string | undefined,
+  planId: number | undefined,
   options: ReviewCommandOptions,
   command: any
 ): Promise<ReviewCommandResult> {
@@ -1496,19 +1487,11 @@ export async function handleReviewCommand(
       validatePlanlessReviewOptions(options);
     }
 
-    const nonNumericPlanRef =
-      typeof planId === 'string' && !/^\d+$/.test(planId.trim()) ? planId : undefined;
-    const reviewTarget =
-      nonNumericPlanRef !== undefined
-        ? createExplicitPlanTarget(
-            nonNumericPlanRef,
-            await resolveRepoRoot(globalOpts.config, options.cwd)
-          )
-        : await resolveReviewTarget({
-            planId: typeof planId === 'string' ? parseOptionalPlanIdFromCliArg(planId) : planId,
-            options,
-            configPath: globalOpts.config,
-          });
+    const reviewTarget = await resolveReviewTarget({
+      planId,
+      options,
+      configPath: globalOpts.config,
+    });
     if (reviewTarget.kind !== 'plan' && !hasExplicitPlanlessSelector) {
       validatePlanlessReviewOptions(options);
     }
@@ -2793,18 +2776,14 @@ export async function reopenParentForAppendedReviewTasks(
 }
 
 async function resolveReviewPlanForWriteById(
-  planId: number | string,
+  planId: number,
   repoRoot: string
 ): Promise<{
   plan: PlanSchema;
   planPath: string | null;
   repoRoot: string;
 }> {
-  const parsedIdentifier = parsePlanIdentifier(planId);
-  const resolvedPlan =
-    parsedIdentifier.planId !== undefined
-      ? await resolvePlanByNumericId(parsedIdentifier.planId, repoRoot)
-      : await resolvePlanByUuid(parsedIdentifier.uuid ?? String(planId), repoRoot);
+  const resolvedPlan = await resolvePlanByNumericId(planId, repoRoot);
   return {
     plan: resolvedPlan.plan,
     planPath: resolvedPlan.planPath,

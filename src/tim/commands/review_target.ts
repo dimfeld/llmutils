@@ -17,7 +17,7 @@ import { gatherPrContext, type PrReviewContext } from '../utils/pr_context_gathe
 
 export interface PlanReviewTarget {
   kind: 'plan';
-  planId: number | string;
+  planId: number;
   planUuid?: string;
   planPath: string | null;
   plan?: PlanSchema;
@@ -140,10 +140,7 @@ function validateTargetSelectorConflicts(
   }
 }
 
-export function createExplicitPlanTarget(
-  planId: number | string,
-  repoRoot: string
-): PlanReviewTarget {
+export function createExplicitPlanTarget(planId: number, repoRoot: string): PlanReviewTarget {
   return {
     kind: 'plan',
     planId,
