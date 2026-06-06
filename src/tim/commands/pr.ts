@@ -6,7 +6,7 @@ import {
   deduplicatePrUrls,
   parsePrOrIssueNumber,
 } from '../../common/github/identifiers.js';
-import { getGitRepository } from '../../common/git.js';
+import { fetchRemoteBranch, getGitRepository, remoteBranchExistsGit } from '../../common/git.js';
 import { getWebhookServerUrl } from '../../common/github/webhook_client.js';
 import {
   formatWebhookIngestErrors,
@@ -30,6 +30,7 @@ import { getDatabase } from '../db/database.js';
 import { getProject, getProjectById, listProjects, type Project } from '../db/project.js';
 import {
   cleanOrphanedPrStatus,
+  getLinkedPlansByPrUrl,
   getPrStatusForPlan,
   getPrStatusByUrl,
   linkPlanToPr,
@@ -69,7 +70,7 @@ import {
   type CodexReasoningLevel,
 } from '../executors/schemas.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
-import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { runWithHeadlessAdapterIfEnabled, updateHeadlessSessionInfo } from '../headless.js';
 import { LifecycleManager } from '../lifecycle.js';
 import { isShuttingDown } from '../shutdown_state.js';
 import { gatherPrContext } from '../utils/pr_context_gathering.js';
@@ -1322,6 +1323,61 @@ export async function handlePrFixCommand(
   });
 }
 
+export interface PrFixHeadBranchValidationDependencies {
+  remoteBranchExistsGit?: (repoRoot: string, headBranch: string) => Promise<boolean>;
+}
+
+export async function ensurePrFixHeadBranchPushableOnOrigin(
+  target: Pick<PullRequestFixTarget, 'canonicalPrUrl' | 'repoRoot' | 'headBranch'>,
+  deps: PrFixHeadBranchValidationDependencies = {}
+): Promise<void> {
+  const branchExists = await (deps.remoteBranchExistsGit ?? remoteBranchExistsGit)(
+    target.repoRoot,
+    target.headBranch
+  );
+
+  if (!branchExists) {
+    throw new Error(
+      `tim pr fix cannot safely mutate fork PR ${target.canonicalPrUrl}: head branch "${target.headBranch}" is not present on origin, so changes cannot be pushed back. Fork PR fix support is not implemented yet.`
+    );
+  }
+}
+
+export interface PrFixBaseBranchFetchDependencies {
+  fetchRemoteBranch?: (workspacePath: string, baseBranch: string) => Promise<boolean>;
+}
+
+export async function fetchPrFixBaseBranch(
+  workspacePath: string,
+  baseBranch: string,
+  deps: PrFixBaseBranchFetchDependencies = {}
+): Promise<void> {
+  const fetched = await (deps.fetchRemoteBranch ?? fetchRemoteBranch)(workspacePath, baseBranch);
+  if (!fetched) {
+    throw new Error(`Failed to fetch base branch "${baseBranch}" for PR fix.`);
+  }
+}
+
+function updatePrFixHeadlessSessionInfo(
+  db: ReturnType<typeof getDatabase>,
+  target: PullRequestFixTarget,
+  workspacePath: string
+): void {
+  const linkedPlan = getLinkedPlansByPrUrl(db, [target.canonicalPrUrl]).get(
+    target.canonicalPrUrl
+  )?.[0];
+
+  updateHeadlessSessionInfo({
+    linkedPrUrl: target.canonicalPrUrl,
+    linkedPrNumber: target.prNumber,
+    linkedPrTitle: target.title,
+    linkedPlanId: linkedPlan?.planId,
+    linkedPlanUuid: linkedPlan?.planUuid,
+    linkedPlanTitle: linkedPlan?.title ?? undefined,
+    workspacePath,
+  });
+}
+
 async function executePrFixCommand({
   target,
   options,
@@ -1353,12 +1409,10 @@ async function executePrFixCommand({
       : buildPrReviewThreadFixPrompt(target, unresolvedThreads);
 
   if (target.kind === 'pr') {
-    throw new Error(
-      'PR-only pr fix target resolution and prompt construction are implemented, but PR workspace/env execution is not wired yet. Continue with Tasks 5 and 6 before launching PR-only fixes.'
-    );
+    await ensurePrFixHeadBranchPushableOnOrigin(target);
   }
 
-  const { plan, planPath, repoRoot, planId } = target;
+  const repoRoot = target.repoRoot;
   const configuredPrFix = config.prFix;
 
   const executorName =
@@ -1375,7 +1429,7 @@ async function executePrFixCommand({
   const effort = resolveStringOption(options.effort) ?? configuredPrFix?.effort;
 
   let currentBaseDir = repoRoot;
-  let currentPlanFile = planPath ?? '';
+  let currentPlanFile = target.kind === 'plan' ? (target.planPath ?? '') : '';
   let touchedWorkspacePath: string | null = null;
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
   let lifecycleManager: LifecycleManager | undefined;
@@ -1386,20 +1440,38 @@ async function executePrFixCommand({
       options.workspace !== undefined ||
       options.autoWorkspace === true ||
       options.newWorkspace === true;
+    const shouldUseWorkspace = target.kind === 'pr' || workspaceMode;
 
-    if (workspaceMode) {
+    if (target.kind === 'pr' && !workspaceMode) {
+      log(
+        'Selecting a managed workspace for PR fix because mutating a PR branch must not use the current checkout.'
+      );
+    }
+
+    if (shouldUseWorkspace) {
       const workspaceResult = await setupWorkspace(
-        {
-          workspace: resolveStringOption(options.workspace),
-          autoWorkspace: options.autoWorkspace === true,
-          newWorkspace: options.newWorkspace === true,
-          nonInteractive: noninteractive,
-          planId: plan.id,
-          planUuid: plan.uuid,
-          checkoutBranch: plan.branch,
-          createBranch: false,
-          allowPrimaryWorkspaceWhenLocked: true,
-        },
+        target.kind === 'plan'
+          ? {
+              workspace: resolveStringOption(options.workspace),
+              autoWorkspace: options.autoWorkspace === true,
+              newWorkspace: options.newWorkspace === true,
+              nonInteractive: noninteractive,
+              planId: target.plan.id,
+              planUuid: target.plan.uuid,
+              checkoutBranch: target.plan.branch,
+              createBranch: false,
+              allowPrimaryWorkspaceWhenLocked: true,
+            }
+          : {
+              workspace: resolveStringOption(options.workspace),
+              autoWorkspace: options.autoWorkspace === true || !workspaceMode,
+              newWorkspace: options.newWorkspace === true,
+              nonInteractive: noninteractive,
+              branchName: target.headBranch,
+              checkoutBranch: target.headBranch,
+              createBranch: false,
+              allowPrimaryWorkspaceWhenLocked: true,
+            },
         currentBaseDir,
         currentPlanFile || undefined,
         config,
@@ -1409,6 +1481,11 @@ async function executePrFixCommand({
       currentBaseDir = workspaceResult.baseDir;
       currentPlanFile = workspaceResult.planFile;
       touchedWorkspacePath = currentBaseDir;
+
+      if (target.kind === 'pr') {
+        await fetchPrFixBaseBranch(currentBaseDir, target.baseBranch);
+        updatePrFixHeadlessSessionInfo(getDatabase(), target, currentBaseDir);
+      }
 
       if (path.resolve(currentBaseDir) !== path.resolve(repoRoot)) {
         roundTripContext = await prepareWorkspaceRoundTrip({
@@ -1421,9 +1498,14 @@ async function executePrFixCommand({
       if (roundTripContext) {
         await runPreExecutionWorkspaceSync(roundTripContext);
 
-        const materializedPlanFile = await materializePlansForExecution(currentBaseDir, plan.id);
-        if (materializedPlanFile) {
-          currentPlanFile = materializedPlanFile;
+        if (target.kind === 'plan') {
+          const materializedPlanFile = await materializePlansForExecution(
+            currentBaseDir,
+            target.plan.id
+          );
+          if (materializedPlanFile) {
+            currentPlanFile = materializedPlanFile;
+          }
         }
       }
     }
@@ -1431,12 +1513,14 @@ async function executePrFixCommand({
     const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(
       config,
       currentBaseDir,
-      {
-        planId: plan.id,
-        planUuid: plan.uuid,
-        planFilePath: currentPlanFile || undefined,
-        branch: plan.branch,
-      },
+      target.kind === 'plan'
+        ? {
+            planId: target.plan.id,
+            planUuid: target.plan.uuid,
+            planFilePath: currentPlanFile || undefined,
+            branch: target.plan.branch,
+          }
+        : null,
       repoRoot
     );
     if (config.lifecycle?.commands && config.lifecycle.commands.length > 0 && !isShuttingDown()) {
@@ -1468,12 +1552,20 @@ async function executePrFixCommand({
       buildPrFixExecutorOptions(executorName, effort, config)
     );
 
-    await executor.execute(fixPrompt, {
-      planId: String(plan.id ?? planId),
-      planTitle: plan.title || `Plan ${plan.id ?? planId}`,
-      planFilePath: currentPlanFile,
-      executionMode: 'planning',
-    });
+    if (target.kind === 'plan') {
+      await executor.execute(fixPrompt, {
+        planId: String(target.plan.id ?? target.planId),
+        planTitle: target.plan.title || `Plan ${target.plan.id ?? target.planId}`,
+        planFilePath: currentPlanFile,
+        executionMode: 'planning',
+      });
+    } else {
+      await executor.execute(fixPrompt, {
+        planId: `pr-${target.prNumber}`,
+        planTitle: target.title || `PR #${target.prNumber}`,
+        executionMode: 'planning',
+      });
+    }
   } catch (err) {
     executionError = err;
   } finally {

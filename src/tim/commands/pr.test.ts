@@ -15,6 +15,8 @@ import {
   handlePrLinkCommand,
   handlePrResolveCommand,
   handlePrUnlinkCommand,
+  ensurePrFixHeadBranchPushableOnOrigin,
+  fetchPrFixBaseBranch,
   resolvePrFixTargetIntent,
   resolvePrFixTarget,
   type PullRequestFixTarget,
@@ -125,9 +127,11 @@ vi.mock('../../common/github/identifiers.js', () => ({
 }));
 
 vi.mock('../../common/git.js', () => ({
+  fetchRemoteBranch: vi.fn(async () => true),
   getGitRepository: vi.fn(async () => 'example/repo'),
   getGitRoot: vi.fn(async () => process.cwd()),
   getUsingJj: vi.fn(async () => false),
+  remoteBranchExistsGit: vi.fn(async () => true),
   getWorkingCopyStatus: vi.fn(async () => ({
     clean: true,
     hasChanges: false,
@@ -154,6 +158,7 @@ vi.mock('../executors/index.js', () => ({
 }));
 
 vi.mock('../db/pr_status.js', () => ({
+  getLinkedPlansByPrUrl: vi.fn(() => new Map()),
   getPrStatusByUrl: vi.fn((_db: unknown, _prUrl: string) => null),
   getPrStatusForPlan: vi.fn((_db: unknown, _planUuid: string, _prUrls?: string[]) => []),
   linkPlanToPr: vi.fn((_db: unknown, _planUuid: string, _prStatusId: number) => {}),
@@ -234,6 +239,7 @@ vi.mock('../headless.js', () => ({
   runWithHeadlessAdapterIfEnabled: vi.fn(async (options: { callback: () => Promise<unknown> }) =>
     options.callback()
   ),
+  updateHeadlessSessionInfo: vi.fn(),
 }));
 
 vi.mock('../lifecycle.js', () => ({
@@ -304,9 +310,14 @@ import {
   parsePrOrIssueNumber as mockParsePrOrIssueNumberFn,
   validatePrIdentifier as mockValidatePrIdentifierFn,
 } from '../../common/github/identifiers.js';
-import { getGitRepository as mockGetGitRepositoryFn } from '../../common/git.js';
+import {
+  fetchRemoteBranch as mockFetchRemoteBranchFn,
+  getGitRepository as mockGetGitRepositoryFn,
+  remoteBranchExistsGit as mockRemoteBranchExistsGitFn,
+} from '../../common/git.js';
 import { getRepositoryIdentity as mockGetRepositoryIdentityFn } from '../assignments/workspace_identifier.js';
 import {
+  getLinkedPlansByPrUrl as mockGetLinkedPlansByPrUrlFn,
   getPrStatusByUrl as mockGetPrStatusByUrlFn,
   getPrStatusForPlan as mockGetPrStatusForPlanFn,
   linkPlanToPr as mockLinkPlanToPrFn,
@@ -326,7 +337,10 @@ import {
 } from '../plans.js';
 import { loadEffectiveConfig as mockLoadEffectiveConfigFn } from '../configLoader.js';
 import { isTunnelActive as mockIsTunnelActiveFn } from '../../logging/tunnel_client.js';
-import { runWithHeadlessAdapterIfEnabled as mockRunWithHeadlessAdapterIfEnabledFn } from '../headless.js';
+import {
+  runWithHeadlessAdapterIfEnabled as mockRunWithHeadlessAdapterIfEnabledFn,
+  updateHeadlessSessionInfo as mockUpdateHeadlessSessionInfoFn,
+} from '../headless.js';
 import { syncPlanToDb as mockSyncPlanToDbFn } from '../db/plan_sync.js';
 import { timAgent as mockTimAgentFn } from './agent/agent.js';
 import { gatherPrContext as mockGatherPrContextFn } from '../utils/pr_context_gathering.js';
@@ -350,8 +364,11 @@ const mockCanonicalizePrUrl = vi.mocked(mockCanonicalizePrUrlFn);
 const mockDeduplicatePrUrls = vi.mocked(mockDeduplicatePrUrlsFn);
 const mockParsePrOrIssueNumber = vi.mocked(mockParsePrOrIssueNumberFn);
 const mockValidatePrIdentifier = vi.mocked(mockValidatePrIdentifierFn);
+const mockFetchRemoteBranch = vi.mocked(mockFetchRemoteBranchFn);
 const mockGetGitRepository = vi.mocked(mockGetGitRepositoryFn);
+const mockRemoteBranchExistsGit = vi.mocked(mockRemoteBranchExistsGitFn);
 const mockGetRepositoryIdentity = vi.mocked(mockGetRepositoryIdentityFn);
+const mockGetLinkedPlansByPrUrl = vi.mocked(mockGetLinkedPlansByPrUrlFn);
 const mockGetPrStatusByUrl = vi.mocked(mockGetPrStatusByUrlFn);
 const mockGetPrStatusForPlan = vi.mocked(mockGetPrStatusForPlanFn);
 const mockLinkPlanToPr = vi.mocked(mockLinkPlanToPrFn);
@@ -370,6 +387,7 @@ const mockWritePlanFile = vi.mocked(mockWritePlanFileFn);
 const mockLoadEffectiveConfig = vi.mocked(mockLoadEffectiveConfigFn);
 const mockIsTunnelActive = vi.mocked(mockIsTunnelActiveFn);
 const mockRunWithHeadlessAdapterIfEnabled = vi.mocked(mockRunWithHeadlessAdapterIfEnabledFn);
+const mockUpdateHeadlessSessionInfo = vi.mocked(mockUpdateHeadlessSessionInfoFn);
 const mockSyncPlanToDb = vi.mocked(mockSyncPlanToDbFn);
 const mockTimAgent = vi.mocked(mockTimAgentFn);
 const mockBuildExecutorAndLog = vi.mocked(mockBuildExecutorAndLogFn);
@@ -470,8 +488,14 @@ describe('tim/commands/pr', () => {
     mockDeduplicatePrUrls.mockClear();
     mockParsePrOrIssueNumber.mockClear();
     mockValidatePrIdentifier.mockClear();
+    mockFetchRemoteBranch.mockReset();
+    mockFetchRemoteBranch.mockResolvedValue(true);
     mockGetGitRepository.mockReset();
+    mockRemoteBranchExistsGit.mockReset();
+    mockRemoteBranchExistsGit.mockResolvedValue(true);
     mockGetRepositoryIdentity.mockReset();
+    mockGetLinkedPlansByPrUrl.mockReset();
+    mockGetLinkedPlansByPrUrl.mockReturnValue(new Map());
     mockGetPrStatusByUrl.mockClear();
     mockGetPrStatusForPlan.mockClear();
     mockLinkPlanToPr.mockClear();
@@ -495,6 +519,7 @@ describe('tim/commands/pr', () => {
     mockRunWithHeadlessAdapterIfEnabled.mockImplementation(
       async (options: { callback: () => Promise<unknown> }) => options.callback()
     );
+    mockUpdateHeadlessSessionInfo.mockReset();
     mockBuildExecutorAndLog.mockReset();
     mockBuildExecutorAndLog.mockReturnValue({ execute: mockExecutorExecute } as any);
     mockDefaultModelForExecutor.mockReset();
@@ -2433,6 +2458,33 @@ describe('tim/commands/pr', () => {
     });
   });
 
+  describe('PR fix workspace helpers', () => {
+    test('ensurePrFixHeadBranchPushableOnOrigin rejects fork-like PR branches missing on origin', async () => {
+      await expect(
+        ensurePrFixHeadBranchPushableOnOrigin(
+          {
+            canonicalPrUrl: 'https://github.com/example/repo/pull/42',
+            repoRoot: '/tmp/repo',
+            headBranch: 'contributor/fork-branch',
+          },
+          {
+            remoteBranchExistsGit: vi.fn(async () => false),
+          }
+        )
+      ).rejects.toThrow(
+        'tim pr fix cannot safely mutate fork PR https://github.com/example/repo/pull/42: head branch "contributor/fork-branch" is not present on origin, so changes cannot be pushed back. Fork PR fix support is not implemented yet.'
+      );
+    });
+
+    test('fetchPrFixBaseBranch throws clearly when base fetch fails', async () => {
+      await expect(
+        fetchPrFixBaseBranch('/tmp/workspace', 'main', {
+          fetchRemoteBranch: vi.fn(async () => false),
+        })
+      ).rejects.toThrow('Failed to fetch base branch "main" for PR fix.');
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // handlePrFixCommand — PR mode (no-unresolved-threads and GITHUB_TOKEN)
   // ---------------------------------------------------------------------------
@@ -2482,7 +2534,96 @@ describe('tim/commands/pr', () => {
       expect(mockGatherPrContext).not.toHaveBeenCalled();
     });
 
-    test('throws with not-yet-wired error when PR has unresolved threads', async () => {
+    test('executes PR target in managed workspace on PR head branch without plan metadata', async () => {
+      setupPrModeTarget([
+        createReviewThreadDetail({
+          threadId: 'thread-1',
+          path: 'src/file.ts',
+          line: 1,
+          comments: [{ body: 'Fix this.' }],
+        }),
+      ]);
+      const roundTripContext = {
+        executionWorkspacePath: '/tmp/workspace',
+        primaryWorkspacePath: tempDir,
+        refName: 'feature/my-pr',
+        branchCreatedDuringSetup: false,
+      };
+      mockPrepareWorkspaceRoundTrip.mockResolvedValueOnce(roundTripContext as any);
+      mockGetLinkedPlansByPrUrl.mockReturnValueOnce(
+        new Map([
+          [
+            'https://github.com/example/repo/pull/42',
+            [
+              {
+                planId: 777,
+                planUuid: 'plan-777',
+                title: 'Linked display plan',
+                branch: 'feature/linked',
+              },
+            ],
+          ],
+        ])
+      );
+
+      await handlePrFixCommand(undefined, { pr: '42' }, createNestedCommand());
+
+      expect(mockRemoteBranchExistsGit).toHaveBeenCalledWith(expect.any(String), 'feature/my-pr');
+      expect(mockSetupWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          autoWorkspace: true,
+          branchName: 'feature/my-pr',
+          checkoutBranch: 'feature/my-pr',
+          createBranch: false,
+        }),
+        expect.any(String),
+        undefined,
+        expect.any(Object),
+        'tim pr fix'
+      );
+      const workspaceOptions = mockSetupWorkspace.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(workspaceOptions).not.toHaveProperty('planId');
+      expect(workspaceOptions).not.toHaveProperty('planUuid');
+      expect(mockFetchRemoteBranch).toHaveBeenCalledWith('/tmp/workspace', 'main');
+      expect(mockUpdateHeadlessSessionInfo).toHaveBeenCalledWith({
+        linkedPrUrl: 'https://github.com/example/repo/pull/42',
+        linkedPrNumber: 42,
+        linkedPrTitle: 'My PR',
+        linkedPlanId: 777,
+        linkedPlanUuid: 'plan-777',
+        linkedPlanTitle: 'Linked display plan',
+        workspacePath: '/tmp/workspace',
+      });
+      expect(mockMaterializePlansForExecution).not.toHaveBeenCalled();
+      expect(mockRunPreExecutionWorkspaceSync).toHaveBeenCalledWith(roundTripContext);
+      expect(mockRunPostExecutionWorkspaceSync).toHaveBeenCalledWith(
+        roundTripContext,
+        'PR review fixes'
+      );
+      expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+        'claude-code',
+        expect.objectContaining({
+          baseDir: '/tmp/workspace',
+          timEnvironment: expect.not.objectContaining({
+            plan: expect.anything(),
+          }),
+        }),
+        expect.any(Object),
+        undefined
+      );
+      expect(mockExecutorExecute).toHaveBeenCalledWith(
+        expect.stringContaining('- PRRT thread ID: thread-1'),
+        {
+          planId: 'pr-42',
+          planTitle: 'My PR',
+          executionMode: 'planning',
+        }
+      );
+      expect(mockExecutorExecute.mock.calls[0]?.[1]).not.toHaveProperty('planFilePath');
+      expect(logs).not.toContain('Plan 248 has no unresolved PR review threads.');
+    });
+
+    test('defaults bare PR target to auto workspace and logs why', async () => {
       setupPrModeTarget([
         createReviewThreadDetail({
           threadId: 'thread-1',
@@ -2492,11 +2633,22 @@ describe('tim/commands/pr', () => {
         }),
       ]);
 
-      await expect(
-        handlePrFixCommand(undefined, { pr: '42' }, createNestedCommand())
-      ).rejects.toThrow(/not wired/i);
+      await handlePrFixCommand(undefined, { pr: '42' }, createNestedCommand());
 
-      expect(mockExecutorExecute).not.toHaveBeenCalled();
+      expect(mockSetupWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          autoWorkspace: true,
+          branchName: 'feature/my-pr',
+          checkoutBranch: 'feature/my-pr',
+        }),
+        expect.any(String),
+        undefined,
+        expect.any(Object),
+        'tim pr fix'
+      );
+      expect(logs).toContain(
+        'Selecting a managed workspace for PR fix because mutating a PR branch must not use the current checkout.'
+      );
     });
 
     test('rejects --current flag with guidance message', async () => {

@@ -589,7 +589,7 @@ export class ClaudeCodeExecutor implements Executor {
     let promptContent = contextContent;
 
     const planId = planInfo.planId;
-    const planFilePath = planInfo.planFilePath;
+    const planFilePath = planInfo.planFilePath ?? '';
     const planContextAvailable = planId.trim().length > 0 && planFilePath.trim().length > 0;
 
     // In batch mode, prepend the plan file with @ prefix to make it accessible to Edit tool
