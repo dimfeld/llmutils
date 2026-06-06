@@ -16,6 +16,7 @@ import { resolveGitHubToken } from '../../common/github/token.js';
 import { getGitHubUsername } from '../../common/github/user.js';
 import { refreshProjectPrs } from '../../common/github/project_pr_service.js';
 import {
+  parseOwnerRepoFromRepositoryId,
   fetchOpenPullRequests,
   postPullRequestComment,
   resolveReviewThread,
@@ -71,6 +72,7 @@ import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environmen
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { LifecycleManager } from '../lifecycle.js';
 import { isShuttingDown } from '../shutdown_state.js';
+import { gatherPrContext } from '../utils/pr_context_gathering.js';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -82,6 +84,53 @@ interface RootCommandLike {
 interface PrStatusCommandOptions {
   forceRefresh?: boolean;
 }
+
+export interface PrFixCommandOptions extends Record<string, unknown> {
+  pr?: string;
+  plan?: string | number;
+  current?: boolean;
+  branch?: string;
+  executor?: string;
+  orchestrator?: string;
+  model?: string;
+  effort?: string;
+  autoWorkspace?: boolean;
+  workspace?: string;
+  newWorkspace?: boolean;
+  workspaceSync?: boolean;
+  nonInteractive?: boolean;
+  terminalInput?: boolean;
+}
+
+export interface PlanPrFixTarget {
+  kind: 'plan';
+  planId: number;
+  plan: PlanSchema;
+  planPath: string | null;
+  repoRoot: string;
+  prStatuses: PrStatusDetail[];
+}
+
+export interface PullRequestFixTarget {
+  kind: 'pr';
+  repoRoot: string;
+  canonicalPrUrl: string;
+  prNumber: number;
+  owner: string;
+  repo: string;
+  title?: string;
+  author?: string;
+  baseBranch: string;
+  headBranch: string;
+  headSha: string;
+  prStatus: PrStatusDetail;
+}
+
+export type PrFixTarget = PlanPrFixTarget | PullRequestFixTarget;
+
+export type PrFixTargetIntent =
+  | { mode: 'plan'; planId?: number }
+  | { mode: 'pr'; prUrlOrNumber: string };
 
 type PrRefreshTarget = Project | 'all';
 
@@ -232,6 +281,60 @@ function getRootOptions(command: RootCommandLike | undefined): { config?: string
   }
 
   return current?.opts?.() ?? {};
+}
+
+function isNumericIdentifier(value: string): boolean {
+  return /^\d+$/.test(value.trim());
+}
+
+function isUnambiguousPrIdentifier(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.includes('github.com') || trimmed.includes('/') || trimmed.includes('#');
+}
+
+export function resolvePrFixTargetIntent(
+  positionalArg: string | number | undefined,
+  options: PrFixCommandOptions
+): PrFixTargetIntent {
+  if (options.current === true) {
+    throw new Error(
+      'tim pr fix requires unresolved GitHub PR review threads and does not support --current. Use tim review --current for current-checkout review work.'
+    );
+  }
+
+  const branch = resolveStringOption(options.branch);
+  if (branch) {
+    throw new Error(
+      'tim pr fix requires unresolved GitHub PR review threads and does not support --branch. Use tim review --branch for branch review work.'
+    );
+  }
+
+  const prOption = resolveStringOption(options.pr);
+  if (prOption) {
+    return { mode: 'pr', prUrlOrNumber: prOption };
+  }
+
+  if (options.plan !== undefined) {
+    return { mode: 'plan', planId: parsePlanIdFromCliArg(String(options.plan)) };
+  }
+
+  const positional =
+    typeof positionalArg === 'number' ? String(positionalArg) : resolveStringOption(positionalArg);
+  if (!positional) {
+    return { mode: 'plan' };
+  }
+
+  if (isNumericIdentifier(positional)) {
+    return { mode: 'plan', planId: parsePlanIdFromCliArg(positional) };
+  }
+
+  if (isUnambiguousPrIdentifier(positional)) {
+    return { mode: 'pr', prUrlOrNumber: positional };
+  }
+
+  throw new Error(
+    `Could not resolve PR fix target "${positional}". Use "tim pr fix <planId>", "tim pr fix --plan <planId>", or "tim pr fix --pr <pr-url-or-number>". URL-like positional PR identifiers such as GitHub URLs or owner/repo#123 are also supported.`
+  );
 }
 
 function getWorkspacePlanReference(cwd: string): number | null {
@@ -913,11 +1016,56 @@ export function buildReviewThreadFixPrompt(
     prompt.push('');
   }
 
+  prompt.push(...buildReviewThreadFixInstructions(threads));
+
+  return prompt.join('\n');
+}
+
+export function buildPrReviewThreadFixPrompt(
+  target: PullRequestFixTarget,
+  threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>
+): string {
+  const prompt = [
+    '# Address Pull Request Review Comments',
+    '',
+    'You are addressing review comments on a pull request for the current branch.',
+    '',
+    'The PR branch, PR URLs, unresolved review threads, and related review-thread comments are already provided below; do not spend time auto-discovering or re-fetching them before starting.',
+    '',
+    '## Pull Request Context',
+    '',
+    `**PR URL:** ${target.canonicalPrUrl}`,
+    `**PR Number:** ${target.prNumber}`,
+    `**Repository:** ${target.owner}/${target.repo}`,
+    `**Title:** ${target.title ?? 'No title provided'}`,
+  ];
+
+  if (target.author) {
+    prompt.push(`**Author:** ${target.author}`);
+  }
+
   prompt.push(
+    `**Base Branch:** ${target.baseBranch}`,
+    `**Head Branch:** ${target.headBranch}`,
+    `**Head SHA:** ${target.headSha}`,
+    '',
+    'No tim plan is associated with this run; do not update plan files, plan tasks, plan status, or plan assignments.',
+    ''
+  );
+
+  prompt.push(...buildReviewThreadFixInstructions(threads));
+
+  return prompt.join('\n');
+}
+
+export function buildReviewThreadFixInstructions(
+  threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>
+): string[] {
+  const prompt = [
     '## Unresolved Review Threads',
     '',
-    'Each thread below includes the PRRT thread ID and all comments currently linked to that review thread.'
-  );
+    'Each thread below includes the PRRT thread ID and all comments currently linked to that review thread.',
+  ];
 
   if (threads.length === 0) {
     prompt.push('', 'No unresolved review threads were provided.', '');
@@ -984,7 +1132,7 @@ export function buildReviewThreadFixPrompt(
     'When done, print the GitHub URL for the PR, but use `https://linear.review` as the domain instead of `https://github.com`.'
   );
 
-  return prompt.join('\n');
+  return prompt;
 }
 
 async function refreshPrFixStatuses(
@@ -1024,16 +1172,118 @@ async function refreshPrFixStatuses(
   return refreshedStatuses;
 }
 
+function validatePrMatchesCurrentRepository(
+  target: { canonicalPrUrl: string; owner: string; repo: string },
+  repositoryId: string
+): void {
+  const parsedRepositoryId = parseOwnerRepoFromRepositoryId(repositoryId);
+  if (!parsedRepositoryId) {
+    throw new Error(
+      `Cannot validate repository identity: ${repositoryId} is not a recognized GitHub repository. This command only works with GitHub PRs.`
+    );
+  }
+
+  if (
+    parsedRepositoryId.owner.toLowerCase() !== target.owner.toLowerCase() ||
+    parsedRepositoryId.repo.toLowerCase() !== target.repo.toLowerCase()
+  ) {
+    throw new Error(
+      `PR ${target.canonicalPrUrl} belongs to ${target.owner}/${target.repo}, but the current repository is ${parsedRepositoryId.owner}/${parsedRepositoryId.repo}. Run this command from inside the matching repository.`
+    );
+  }
+}
+
+function getUnresolvedReviewThreads(
+  prStatuses: PrStatusDetail[]
+): Array<{ thread: PrReviewThreadDetail; prUrl: string }> {
+  const unresolvedThreads: Array<{ thread: PrReviewThreadDetail; prUrl: string }> = [];
+  for (const prStatus of prStatuses) {
+    for (const reviewThread of prStatus.reviewThreads ?? []) {
+      if (!reviewThread.thread.is_resolved) {
+        unresolvedThreads.push({ thread: reviewThread, prUrl: prStatus.status.pr_url });
+      }
+    }
+  }
+  return unresolvedThreads;
+}
+
+export async function resolvePrFixTarget(
+  intent: PrFixTargetIntent,
+  command: RootCommandLike | undefined
+): Promise<PrFixTarget> {
+  const globalOptions = getRootOptions(command);
+  const repoRoot = await resolveRepoRoot(globalOptions.config, process.cwd());
+  const db = getDatabase();
+
+  if (intent.mode === 'plan') {
+    const {
+      plan,
+      planPath,
+      repoRoot: planRepoRoot,
+    } = await resolvePlanForCommand(intent.planId, command);
+    const planUuid = requirePlanUuid(plan, planPath ?? `plan ${plan.id}`);
+    const dedupedUrls = plan.pullRequest?.length
+      ? deduplicatePrUrls(plan.pullRequest).valid
+      : undefined;
+    const prUrls = dedupedUrls?.length ? dedupedUrls : undefined;
+    const prStatuses = await refreshPrFixStatuses(db, planUuid, prUrls);
+    return {
+      kind: 'plan',
+      planId: intent.planId ?? plan.id,
+      plan,
+      planPath,
+      repoRoot: planRepoRoot,
+      prStatuses,
+    };
+  }
+
+  const prContext = await gatherPrContext({
+    db,
+    prUrlOrNumber: intent.prUrlOrNumber,
+    cwd: repoRoot,
+  });
+  const repoIdentity = await getRepositoryIdentity({ cwd: repoRoot });
+  validatePrMatchesCurrentRepository(
+    {
+      canonicalPrUrl: prContext.prUrl,
+      owner: prContext.owner,
+      repo: prContext.repo,
+    },
+    repoIdentity.repositoryId
+  );
+  const prStatus = getPrStatusByUrl(db, prContext.prUrl, { includeReviewThreads: true });
+  if (!prStatus) {
+    throw new Error(`Failed to load PR review data for ${prContext.prUrl}.`);
+  }
+
+  return {
+    kind: 'pr',
+    repoRoot,
+    canonicalPrUrl: prContext.prUrl,
+    prNumber: prContext.prNumber,
+    owner: prContext.owner,
+    repo: prContext.repo,
+    title: prStatus.status.title ?? undefined,
+    author: prStatus.status.author ?? undefined,
+    baseBranch: prContext.baseBranch,
+    headBranch: prContext.headBranch,
+    headSha: prContext.headSha,
+    prStatus,
+  };
+}
+
 export async function handlePrFixCommand(
-  planId: number,
-  options: Record<string, unknown>,
+  positionalArg: string | number | undefined,
+  options: PrFixCommandOptions,
   command: RootCommandLike
 ): Promise<void> {
+  const intent = resolvePrFixTargetIntent(positionalArg, options);
+
   if (!resolveGitHubToken()) {
     throw new Error('GITHUB_TOKEN environment variable is required for PR status commands');
   }
 
-  const { plan, planPath, repoRoot } = await resolvePlanForCommand(planId, command);
+  const target = await resolvePrFixTarget(intent, command);
   const globalOptions = getRootOptions(command);
   const config = await loadEffectiveConfig(globalOptions.config);
   const noninteractive = options.nonInteractive === true;
@@ -1047,18 +1297,18 @@ export async function handlePrFixCommand(
     enabled: !isTunnelActive(),
     command: 'pr-fix',
     interactive: !noninteractive,
-    plan: {
-      id: plan.id,
-      uuid: plan.uuid,
-      title: plan.title,
-    },
+    plan:
+      target.kind === 'plan'
+        ? {
+            id: target.plan.id,
+            uuid: target.plan.uuid,
+            title: target.plan.title,
+          }
+        : undefined,
     callback: async () => {
       await executePrFixCommand({
-        planId,
+        target,
         options,
-        plan,
-        planPath,
-        repoRoot,
         config,
         noninteractive,
         terminalInputEnabled,
@@ -1068,47 +1318,42 @@ export async function handlePrFixCommand(
 }
 
 async function executePrFixCommand({
-  planId,
+  target,
   options,
-  plan,
-  planPath,
-  repoRoot,
   config,
   noninteractive,
   terminalInputEnabled,
 }: {
-  planId: number;
-  options: Record<string, unknown>;
-  plan: PlanSchema;
-  planPath: string | null;
-  repoRoot: string;
+  target: PrFixTarget;
+  options: PrFixCommandOptions;
   config: Awaited<ReturnType<typeof loadEffectiveConfig>>;
   noninteractive: boolean;
   terminalInputEnabled: boolean;
 }): Promise<void> {
-  const planUuid = requirePlanUuid(plan, planPath ?? `plan ${plan.id}`);
-  const db = getDatabase();
-  const dedupedUrls = plan.pullRequest?.length
-    ? deduplicatePrUrls(plan.pullRequest).valid
-    : undefined;
-  const prUrls = dedupedUrls?.length ? dedupedUrls : undefined;
-  const prStatuses = await refreshPrFixStatuses(db, planUuid, prUrls);
-
-  const unresolvedThreads: Array<{ thread: PrReviewThreadDetail; prUrl: string }> = [];
-  for (const prStatus of prStatuses) {
-    for (const reviewThread of prStatus.reviewThreads ?? []) {
-      if (!reviewThread.thread.is_resolved) {
-        unresolvedThreads.push({ thread: reviewThread, prUrl: prStatus.status.pr_url });
-      }
-    }
-  }
+  const prStatuses = target.kind === 'plan' ? target.prStatuses : [target.prStatus];
+  const unresolvedThreads = getUnresolvedReviewThreads(prStatuses);
 
   if (unresolvedThreads.length === 0) {
-    log(`Plan ${plan.id} has no unresolved PR review threads.`);
+    if (target.kind === 'plan') {
+      log(`Plan ${target.plan.id} has no unresolved PR review threads.`);
+    } else {
+      log(`PR ${target.canonicalPrUrl} has no unresolved PR review threads.`);
+    }
     return;
   }
 
-  const fixPrompt = buildReviewThreadFixPrompt(plan, unresolvedThreads);
+  const fixPrompt =
+    target.kind === 'plan'
+      ? buildReviewThreadFixPrompt(target.plan, unresolvedThreads)
+      : buildPrReviewThreadFixPrompt(target, unresolvedThreads);
+
+  if (target.kind === 'pr') {
+    throw new Error(
+      'PR-only pr fix target resolution and prompt construction are implemented, but PR workspace/env execution is not wired yet. Continue with Tasks 5 and 6 before launching PR-only fixes.'
+    );
+  }
+
+  const { plan, planPath, repoRoot, planId } = target;
   const configuredPrFix = config.prFix;
 
   const executorName =

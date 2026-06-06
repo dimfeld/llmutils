@@ -100,6 +100,10 @@ vi.mock('../../common/github/webhook_ingest.js', () => ({
 }));
 
 vi.mock('../../common/github/pull_requests.js', () => ({
+  parseOwnerRepoFromRepositoryId: vi.fn((repositoryId: string) => {
+    const [owner, repo] = repositoryId.split('/');
+    return owner && repo ? { owner, repo } : null;
+  }),
   fetchOpenPullRequests: vi.fn(async (..._args: unknown[]) => []),
   postPullRequestComment: vi.fn(async (..._args: unknown[]) => ({
     id: 123,
@@ -117,6 +121,13 @@ vi.mock('../../common/github/identifiers.js', () => ({
 
 vi.mock('../../common/git.js', () => ({
   getGitRepository: vi.fn(async () => 'example/repo'),
+  getGitRoot: vi.fn(async () => process.cwd()),
+  getUsingJj: vi.fn(async () => false),
+  getWorkingCopyStatus: vi.fn(async () => ({
+    clean: true,
+    hasChanges: false,
+    changedFiles: [],
+  })),
 }));
 
 vi.mock('../assignments/workspace_identifier.js', () => ({

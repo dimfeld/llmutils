@@ -1739,8 +1739,12 @@ prCommand
   });
 
 prCommand
-  .command('fix <planId>')
+  .command('fix [planIdOrPr]')
   .description('Fix unresolved PR review threads using an AI agent')
+  .option('--pr <pr-url-or-number>', 'Fix unresolved review threads for a PR without a plan')
+  .option('--plan <planId>', 'Fix unresolved review threads for a plan-linked PR')
+  .option('--current', 'Unsupported for pr fix; use tim review --current')
+  .option('--branch <branch>', 'Unsupported for pr fix; use tim review --branch')
   .addOption(
     new Option('-x, --executor <name>', 'The executor to use').choices(['claude-code', 'codex-cli'])
   )
@@ -1760,10 +1764,9 @@ prCommand
   .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
   .option('--non-interactive', 'No user prompts')
   .option('--no-terminal-input', 'Disable terminal input')
-  .action(async (planIdArg, options, command) => {
+  .action(async (planIdOrPr, options, command) => {
     const { handlePrFixCommand } = await import('./commands/pr.js');
-    const planId = parsePlanIdFromCliArg(planIdArg);
-    await handlePrFixCommand(planId, options, command).catch(handleCommandError);
+    await handlePrFixCommand(planIdOrPr, options, command).catch(handleCommandError);
   });
 
 const prReviewGuideCommand = prCommand
