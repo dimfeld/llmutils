@@ -941,7 +941,7 @@ export function buildReviewThreadFixPrompt(
   prompt.push(
     '## User Feedback',
     '',
-    'List the review threads above for the user before making code changes. Include enough context to distinguish each item, such as author, file, line, and comment summary.',
+    'List the review threads above for the user before making code changes. Show the whole contents of each issue/comment, including enough context to distinguish each item, such as author, file, and line.',
     '',
     'Ask the user for feedback on which review comments to address and how. If the user has already given clear instructions, follow those instructions; otherwise wait for direction before implementing fixes.',
     '',
@@ -956,6 +956,8 @@ export function buildReviewThreadFixPrompt(
     '7. For addressed feedback that was not a review-thread comment, leave an appropriate PR comment describing the change using:',
     '   `tim pr comment <PR URL or owner/repo#number> "explanation of fix"`',
     '8. Before finishing, make sure you have reviewed all provided AI comments.',
+    '',
+    'Every comment posted to the PR, including review-thread replies and standalone PR comments, must start with `AI Response: ` so it is clear the message came from the bot and not the actual user.',
     '',
     '## GraphQL Review Reply Workflow',
     '',

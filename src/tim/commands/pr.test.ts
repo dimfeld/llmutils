@@ -1517,9 +1517,7 @@ describe('tim/commands/pr', () => {
     expect(prompt).toContain('## Additional PR Feedback');
     expect(prompt).toContain('tim pr comment <PR URL or owner/repo#number> "explanation of fix"');
     expect(prompt).toContain('## User Feedback');
-    expect(prompt).toContain(
-      'List the review threads above for the user before making code changes.'
-    );
+    expect(prompt).toContain('Show the whole contents of each issue/comment');
     expect(prompt).toContain(
       'Ask the user for feedback on which review comments to address and how.'
     );
@@ -1534,6 +1532,9 @@ describe('tim/commands/pr', () => {
       'submitPullRequestReview(input:{pullRequestReviewId:$review,event:COMMENT})'
     );
     expect(prompt).toContain('Do not leave a pending review unsubmitted.');
+    expect(prompt).toContain(
+      'Every comment posted to the PR, including review-thread replies and standalone PR comments, must start with `AI Response: `'
+    );
     expect(prompt).toContain('Do not mark review comments or threads resolved.');
     expect(prompt).not.toContain('tim pr reply');
     expect(prompt).not.toContain('tim pr resolve <Thread ID>');
