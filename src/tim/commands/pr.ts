@@ -13,6 +13,8 @@ import {
   ingestWebhookEvents,
 } from '../../common/github/webhook_ingest.js';
 import { resolveGitHubToken } from '../../common/github/token.js';
+import { getGitHubUsername } from '../../common/github/user.js';
+import { refreshProjectPrs } from '../../common/github/project_pr_service.js';
 import {
   fetchOpenPullRequests,
   postPullRequestComment,
@@ -23,6 +25,7 @@ import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
+import { getProject, getProjectById, listProjects, type Project } from '../db/project.js';
 import {
   cleanOrphanedPrStatus,
   getPrStatusForPlan,
@@ -79,6 +82,16 @@ interface PrStatusCommandOptions {
   forceRefresh?: boolean;
 }
 
+type PrRefreshTarget = Project | 'all';
+
+function getRootCommand(command: RootCommandLike): RootCommandLike {
+  let cursor = command;
+  while (cursor.parent) {
+    cursor = cursor.parent;
+  }
+  return cursor;
+}
+
 function getPrFixExecutorKey(executorName: string): 'claude' | 'codex' | undefined {
   if (executorName === ClaudeCodeExecutorName || executorName === 'claude') {
     return 'claude';
@@ -87,6 +100,89 @@ function getPrFixExecutorKey(executorName: string): 'claude' | 'codex' | undefin
     return 'codex';
   }
   return undefined;
+}
+
+async function resolvePrRefreshTarget(target: string | undefined): Promise<PrRefreshTarget> {
+  const db = getDatabase();
+  if (!target) {
+    const repositoryId = await getGitRepository();
+    const project = getProject(db, repositoryId);
+    if (!project) {
+      throw new Error(
+        `No tim project found for current repository ${repositoryId}. Run from a registered project checkout or pass a project id.`
+      );
+    }
+    return project;
+  }
+
+  if (target === 'all') {
+    return 'all';
+  }
+
+  const projectId = Number(target);
+  if (!Number.isInteger(projectId) || projectId <= 0 || String(projectId) !== target) {
+    throw new Error(`Expected a numeric project id or "all", got "${target}".`);
+  }
+
+  const project = getProjectById(db, projectId);
+  if (!project) {
+    throw new Error(`Project ${projectId} not found.`);
+  }
+  return project;
+}
+
+function formatRefreshProjectLabel(project: Project): string {
+  return `project ${project.id} (${project.repository_id})`;
+}
+
+export async function handlePrRefreshCommand(
+  target: string | undefined,
+  command: RootCommandLike
+): Promise<void> {
+  if (!resolveGitHubToken()) {
+    throw new Error('GITHUB_TOKEN environment variable is required for PR refresh commands');
+  }
+
+  const rootCommand = getRootCommand(command);
+  const globalOpts = typeof rootCommand?.opts === 'function' ? rootCommand.opts() : {};
+  const config = await loadEffectiveConfig(globalOpts.config);
+  const username = await getGitHubUsername({ githubUsername: config.githubUsername });
+  if (!username) {
+    throw new Error('Could not resolve GitHub username');
+  }
+
+  const db = getDatabase();
+  const resolvedTarget = await resolvePrRefreshTarget(target);
+  const projects = resolvedTarget === 'all' ? listProjects(db) : [resolvedTarget];
+
+  let refreshedProjectCount = 0;
+  let refreshedPrCount = 0;
+  let newLinkCount = 0;
+
+  for (const project of projects) {
+    try {
+      const result = await refreshProjectPrs(db, project.id, username);
+      refreshedProjectCount += 1;
+      refreshedPrCount += result.refreshed.length;
+      newLinkCount += result.newLinks.length;
+      log(
+        `Refreshed ${formatRefreshProjectLabel(project)}: ${result.refreshed.length} open PR${result.refreshed.length === 1 ? '' : 's'}, ${result.newLinks.length} new plan link${result.newLinks.length === 1 ? '' : 's'}.`
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (resolvedTarget === 'all') {
+        log(chalk.yellow(`Skipping ${formatRefreshProjectLabel(project)}: ${message}`));
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  log(
+    chalk.green(
+      `PR refresh complete: ${refreshedProjectCount} project${refreshedProjectCount === 1 ? '' : 's'}, ${refreshedPrCount} open PR${refreshedPrCount === 1 ? '' : 's'}, ${newLinkCount} new plan link${newLinkCount === 1 ? '' : 's'}.`
+    )
+  );
 }
 
 function buildPrFixExecutorOptions(

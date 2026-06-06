@@ -8,6 +8,7 @@ import {
   buildReviewThreadFixPrompt,
   handlePrCommentCommand,
   handlePrFixCommand,
+  handlePrRefreshCommand,
   handlePrStatusCommand,
   handlePrLinkCommand,
   handlePrResolveCommand,
@@ -16,6 +17,22 @@ import {
 import { LATEST_GPT5_MODEL } from '../constants.js';
 
 type AnyObject = Record<string, unknown>;
+
+function makeProject(id: number, repositoryId = 'example/repo'): AnyObject {
+  return {
+    id,
+    uuid: `project-${id}`,
+    repository_id: repositoryId,
+    remote_url: null,
+    last_git_root: null,
+    external_config_path: null,
+    external_tasks_dir: null,
+    remote_label: null,
+    highest_plan_id: 0,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  };
+}
 
 const executorMocks = vi.hoisted(() => ({
   buildExecutorAndLog: vi.fn(),
@@ -55,6 +72,19 @@ vi.mock('../../common/github/pr_status_service.js', () => ({
   syncPlanPrLinks: vi.fn(async (..._args: unknown[]) => []),
 }));
 
+vi.mock('../../common/github/project_pr_service.js', () => ({
+  refreshProjectPrs: vi.fn(async (..._args: unknown[]) => ({
+    refreshed: [],
+    authored: [],
+    reviewing: [],
+    newLinks: [],
+  })),
+}));
+
+vi.mock('../../common/github/user.js', () => ({
+  getGitHubUsername: vi.fn(async () => 'dimfeld'),
+}));
+
 vi.mock('../../common/github/webhook_client.js', () => ({
   getWebhookServerUrl: vi.fn(() => null),
 }));
@@ -85,6 +115,10 @@ vi.mock('../../common/github/identifiers.js', () => ({
   deduplicatePrUrls: vi.fn((urls: string[]) => ({ valid: urls, invalid: [] })),
 }));
 
+vi.mock('../../common/git.js', () => ({
+  getGitRepository: vi.fn(async () => 'example/repo'),
+}));
+
 vi.mock('./agent/agent.js', () => ({
   timAgent: vi.fn(async (..._args: unknown[]) => {}),
 }));
@@ -101,6 +135,50 @@ vi.mock('../db/pr_status.js', () => ({
   linkPlanToPr: vi.fn((_db: unknown, _planUuid: string, _prStatusId: number) => {}),
   unlinkPlanFromPr: vi.fn((_db: unknown, _planUuid: string, _prStatusId: number) => {}),
   cleanOrphanedPrStatus: vi.fn((_db: unknown) => {}),
+}));
+
+vi.mock('../db/project.js', () => ({
+  getProject: vi.fn((_db: unknown, repositoryId: string) => ({
+    id: 7,
+    uuid: 'project-7',
+    repository_id: repositoryId,
+    remote_url: null,
+    last_git_root: null,
+    external_config_path: null,
+    external_tasks_dir: null,
+    remote_label: null,
+    highest_plan_id: 0,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  })),
+  getProjectById: vi.fn((_db: unknown, projectId: number) => ({
+    id: projectId,
+    uuid: `project-${projectId}`,
+    repository_id: 'example/repo',
+    remote_url: null,
+    last_git_root: null,
+    external_config_path: null,
+    external_tasks_dir: null,
+    remote_label: null,
+    highest_plan_id: 0,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  })),
+  listProjects: vi.fn(() => [
+    {
+      id: 7,
+      uuid: 'project-7',
+      repository_id: 'example/repo',
+      remote_url: null,
+      last_git_root: null,
+      external_config_path: null,
+      external_tasks_dir: null,
+      remote_label: null,
+      highest_plan_id: 0,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    },
+  ]),
 }));
 
 vi.mock('../plans.js', async (importOriginal) => {
@@ -183,6 +261,8 @@ import {
   ensurePrStatusFresh as mockEnsurePrStatusFreshFn,
   syncPlanPrLinks as mockSyncPlanPrLinksFn,
 } from '../../common/github/pr_status_service.js';
+import { refreshProjectPrs as mockRefreshProjectPrsFn } from '../../common/github/project_pr_service.js';
+import { getGitHubUsername as mockGetGitHubUsernameFn } from '../../common/github/user.js';
 import { getWebhookServerUrl as mockGetWebhookServerUrlFn } from '../../common/github/webhook_client.js';
 import { ingestWebhookEvents as mockIngestWebhookEventsFn } from '../../common/github/webhook_ingest.js';
 import {
@@ -196,6 +276,7 @@ import {
   parsePrOrIssueNumber as mockParsePrOrIssueNumberFn,
   validatePrIdentifier as mockValidatePrIdentifierFn,
 } from '../../common/github/identifiers.js';
+import { getGitRepository as mockGetGitRepositoryFn } from '../../common/git.js';
 import {
   getPrStatusByUrl as mockGetPrStatusByUrlFn,
   getPrStatusForPlan as mockGetPrStatusForPlanFn,
@@ -203,6 +284,11 @@ import {
   unlinkPlanFromPr as mockUnlinkPlanFromPrFn,
   cleanOrphanedPrStatus as mockCleanOrphanedPrStatusFn,
 } from '../db/pr_status.js';
+import {
+  getProject as mockGetProjectFn,
+  getProjectById as mockGetProjectByIdFn,
+  listProjects as mockListProjectsFn,
+} from '../db/project.js';
 import {
   readPlanFile as mockReadPlanFileFn,
   resolvePlanByNumericId as mockResolvePlanFromDbFn,
@@ -226,17 +312,23 @@ const mockGetDatabase = vi.mocked(mockGetDatabaseFn);
 const mockRefreshPrStatus = vi.mocked(mockRefreshPrStatusFn);
 const mockEnsurePrStatusFresh = vi.mocked(mockEnsurePrStatusFreshFn);
 const mockSyncPlanPrLinks = vi.mocked(mockSyncPlanPrLinksFn);
+const mockRefreshProjectPrs = vi.mocked(mockRefreshProjectPrsFn);
+const mockGetGitHubUsername = vi.mocked(mockGetGitHubUsernameFn);
 const mockGetWebhookServerUrl = vi.mocked(mockGetWebhookServerUrlFn);
 const mockIngestWebhookEvents = vi.mocked(mockIngestWebhookEventsFn);
 const mockCanonicalizePrUrl = vi.mocked(mockCanonicalizePrUrlFn);
 const mockDeduplicatePrUrls = vi.mocked(mockDeduplicatePrUrlsFn);
 const mockParsePrOrIssueNumber = vi.mocked(mockParsePrOrIssueNumberFn);
 const mockValidatePrIdentifier = vi.mocked(mockValidatePrIdentifierFn);
+const mockGetGitRepository = vi.mocked(mockGetGitRepositoryFn);
 const mockGetPrStatusByUrl = vi.mocked(mockGetPrStatusByUrlFn);
 const mockGetPrStatusForPlan = vi.mocked(mockGetPrStatusForPlanFn);
 const mockLinkPlanToPr = vi.mocked(mockLinkPlanToPrFn);
 const mockUnlinkPlanFromPr = vi.mocked(mockUnlinkPlanFromPrFn);
 const mockCleanOrphanedPrStatus = vi.mocked(mockCleanOrphanedPrStatusFn);
+const mockGetProject = vi.mocked(mockGetProjectFn);
+const mockGetProjectById = vi.mocked(mockGetProjectByIdFn);
+const mockListProjects = vi.mocked(mockListProjectsFn);
 const mockFetchOpenPullRequests = vi.mocked(mockFetchOpenPullRequestsFn);
 const mockPostPullRequestComment = vi.mocked(mockPostPullRequestCommentFn);
 const mockResolveReviewThread = vi.mocked(mockResolveReviewThreadFn);
@@ -273,6 +365,7 @@ let currentPersistedPlan: AnyObject;
 
 const handlePrCommand = {
   handlePrStatusCommand,
+  handlePrRefreshCommand,
   handlePrLinkCommand,
   handlePrCommentCommand,
   handlePrResolveCommand,
@@ -337,17 +430,23 @@ describe('tim/commands/pr', () => {
     mockRefreshPrStatus.mockClear();
     mockEnsurePrStatusFresh.mockClear();
     mockSyncPlanPrLinks.mockClear();
+    mockRefreshProjectPrs.mockReset();
+    mockGetGitHubUsername.mockReset();
     mockGetWebhookServerUrl.mockClear();
     mockIngestWebhookEvents.mockClear();
     mockCanonicalizePrUrl.mockClear();
     mockDeduplicatePrUrls.mockClear();
     mockParsePrOrIssueNumber.mockClear();
     mockValidatePrIdentifier.mockClear();
+    mockGetGitRepository.mockReset();
     mockGetPrStatusByUrl.mockClear();
     mockGetPrStatusForPlan.mockClear();
     mockLinkPlanToPr.mockClear();
     mockUnlinkPlanFromPr.mockClear();
     mockCleanOrphanedPrStatus.mockClear();
+    mockGetProject.mockReset();
+    mockGetProjectById.mockReset();
+    mockListProjects.mockReset();
     mockFetchOpenPullRequests.mockClear();
     mockPostPullRequestComment.mockClear();
     mockResolveReviewThread.mockClear();
@@ -421,6 +520,13 @@ describe('tim/commands/pr', () => {
       return detail;
     });
     mockSyncPlanPrLinks.mockImplementation(async () => currentSyncedStatuses);
+    mockRefreshProjectPrs.mockResolvedValue({
+      refreshed: [],
+      authored: [],
+      reviewing: [],
+      newLinks: [],
+    });
+    mockGetGitHubUsername.mockResolvedValue('dimfeld');
     mockGetWebhookServerUrl.mockImplementation(() => currentWebhookServerUrl);
     mockIngestWebhookEvents.mockImplementation(async () => ({
       eventsIngested: 0,
@@ -451,6 +557,7 @@ describe('tim/commands/pr', () => {
     });
     mockParsePrOrIssueNumber.mockImplementation(async () => currentParsedIdentifier);
     mockValidatePrIdentifier.mockImplementation(() => {});
+    mockGetGitRepository.mockResolvedValue('example/repo');
     mockDeduplicatePrUrls.mockImplementation((urls: string[]) => ({ valid: urls, invalid: [] }));
     mockGetPrStatusByUrl.mockImplementation((_db: unknown, prUrl: string) => {
       // Check per-URL map first, then fall back to single cached detail
@@ -461,6 +568,13 @@ describe('tim/commands/pr', () => {
     mockLinkPlanToPr.mockImplementation(() => {});
     mockUnlinkPlanFromPr.mockImplementation(() => {});
     mockCleanOrphanedPrStatus.mockImplementation(() => {});
+    mockGetProject.mockImplementation(
+      (_db: unknown, repositoryId: string) => makeProject(7, repositoryId) as any
+    );
+    mockGetProjectById.mockImplementation(
+      (_db: unknown, projectId: number) => makeProject(projectId) as any
+    );
+    mockListProjects.mockReturnValue([makeProject(7), makeProject(8, 'example/other')] as any);
     mockFetchOpenPullRequests.mockImplementation(async () => []);
     mockPostPullRequestComment.mockImplementation(async () => ({
       id: 123,
@@ -481,6 +595,59 @@ describe('tim/commands/pr', () => {
     });
     mockSyncPlanToDb.mockImplementation(async () => {});
     mockTimAgent.mockImplementation(async () => {});
+  });
+
+  test('refresh defaults to the current repository project and fetches all open PR statuses', async () => {
+    mockRefreshProjectPrs.mockResolvedValue({
+      refreshed: [
+        { status: { pr_number: 1 } },
+        { status: { pr_number: 2 } },
+        { status: { pr_number: 3 } },
+      ] as any,
+      authored: [{ status: { pr_number: 1 } }] as any,
+      reviewing: [{ status: { pr_number: 2 } }] as any,
+      newLinks: [{ prUrl: 'https://github.com/example/repo/pull/1', planId: 248 }],
+    });
+
+    await handlePrCommand.handlePrRefreshCommand(undefined, { opts: () => ({}) });
+
+    expect(mockGetGitRepository).toHaveBeenCalledTimes(1);
+    expect(mockGetProject).toHaveBeenCalledWith(dbHandle, 'example/repo');
+    expect(mockRefreshProjectPrs).toHaveBeenCalledWith(dbHandle, 7, 'dimfeld');
+    expect(logs).toContain('Refreshed project 7 (example/repo): 3 open PRs, 1 new plan link.');
+    expect(logs.at(-1)).toContain('PR refresh complete: 1 project, 3 open PRs, 1 new plan link.');
+  });
+
+  test('refresh accepts an explicit project id', async () => {
+    mockRefreshProjectPrs.mockResolvedValue({
+      refreshed: [{ status: { pr_number: 9 } }] as any,
+      authored: [],
+      reviewing: [],
+      newLinks: [],
+    });
+
+    await handlePrCommand.handlePrRefreshCommand('42', { opts: () => ({}) });
+
+    expect(mockGetGitRepository).not.toHaveBeenCalled();
+    expect(mockGetProjectById).toHaveBeenCalledWith(dbHandle, 42);
+    expect(mockRefreshProjectPrs).toHaveBeenCalledWith(dbHandle, 42, 'dimfeld');
+    expect(logs).toContain('Refreshed project 42 (example/repo): 1 open PR, 0 new plan links.');
+  });
+
+  test('refresh all processes every registered GitHub project', async () => {
+    mockRefreshProjectPrs.mockResolvedValue({
+      refreshed: [{ status: { pr_number: 9 } }] as any,
+      authored: [],
+      reviewing: [],
+      newLinks: [],
+    });
+
+    await handlePrCommand.handlePrRefreshCommand('all', { opts: () => ({}) });
+
+    expect(mockListProjects).toHaveBeenCalledWith(dbHandle);
+    expect(mockRefreshProjectPrs).toHaveBeenCalledWith(dbHandle, 7, 'dimfeld');
+    expect(mockRefreshProjectPrs).toHaveBeenCalledWith(dbHandle, 8, 'dimfeld');
+    expect(logs.at(-1)).toContain('PR refresh complete: 2 projects, 2 open PRs, 0 new plan links.');
   });
 
   test('status resolves the current workspace plan and syncs each linked PR atomically', async () => {

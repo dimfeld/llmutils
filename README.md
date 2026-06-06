@@ -289,6 +289,8 @@ Useful CLI commands:
 
 ```bash
 tim pr status 123
+tim pr refresh                         # Fetch all open PR statuses for the current repo
+tim pr refresh all                     # Fetch all open PR statuses for every registered repo
 tim pr link 123 https://github.com/owner/repo/pull/456
 tim pr review-guide https://github.com/owner/repo/pull/456
 tim pr review-guide-comment https://github.com/owner/repo/pull/456   # Concise guide posted as a PR comment

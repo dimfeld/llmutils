@@ -21,6 +21,7 @@ export interface ProjectPrLink {
 }
 
 export interface RefreshProjectPrsResult {
+  refreshed: PrStatusDetail[];
   authored: PrStatusDetail[];
   reviewing: PrStatusDetail[];
   newLinks: ProjectPrLink[];
@@ -274,7 +275,7 @@ export async function refreshProjectPrs(
       }
     }
 
-    return { authored, reviewing, newLinks };
+    return { refreshed: details, authored, reviewing, newLinks };
   });
 
   return writePhase.immediate();

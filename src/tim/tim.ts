@@ -1679,6 +1679,14 @@ prCommand
   });
 
 prCommand
+  .command('refresh [projectId|all]')
+  .description('Fetch all open GitHub PR statuses for a project or all projects')
+  .action(async (target, _options, command) => {
+    const { handlePrRefreshCommand } = await import('./commands/pr.js');
+    await handlePrRefreshCommand(target, command).catch(handleCommandError);
+  });
+
+prCommand
   .command('link <planId> [prUrlOrBranch]')
   .description('Link a GitHub PR to a plan (accepts PR URL, branch name, or auto-detects)')
   .action(async (planIdArg, prUrl, options, command) => {
