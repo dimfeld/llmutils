@@ -20,7 +20,7 @@ import { formatStructuredMessage } from '../../logging/console_formatter.js';
 import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig, loadGlobalConfigForNotifications } from '../configLoader.js';
-import { getDefaultConfig } from '../configSchema.js';
+import { getDefaultConfig, type TimConfig } from '../configSchema.js';
 import type { HeadlessPlanSummary } from '../headless.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
@@ -392,6 +392,54 @@ type PlanlessReviewTarget =
   | BranchReviewTarget
   | PullRequestReviewTarget;
 
+interface ReviewCommandOptions {
+  cwd?: string;
+  current?: boolean;
+  branch?: string;
+  pr?: string;
+  plan?: number;
+  base?: string;
+  workspace?: string;
+  autoWorkspace?: boolean;
+  nonInteractive?: boolean;
+  model?: string;
+  print?: boolean;
+  verbose?: boolean;
+  executor?: ReviewExecutorName | 'both' | string;
+  serialBoth?: boolean;
+  dryRun?: boolean;
+  format?: string;
+  verbosity?: VerbosityLevel;
+  outputFile?: string;
+  save?: boolean;
+  noSave?: boolean;
+  gitNote?: boolean;
+  noColor?: boolean;
+  showFiles?: boolean;
+  noSuggestions?: boolean;
+  incremental?: boolean;
+  sinceLastReview?: boolean;
+  issues?: boolean;
+  saveIssues?: boolean;
+  since?: string;
+  autofix?: boolean;
+  autofixAll?: boolean;
+  noAutofix?: boolean;
+  createCleanupPlan?: boolean;
+  cleanupPriority?: CleanupPlanOptions['priority'];
+  cleanupAssign?: string;
+  taskIndex?: string | string[];
+  taskTitle?: string | string[];
+  instructions?: string;
+  instructionsFile?: string;
+  input?: string;
+  inputFile?: string | string[];
+  previousResponse?: string;
+  focus?: string;
+}
+
+type ReviewLog = (...args: unknown[]) => void;
+
 interface PlanlessExecutionContext {
   target: PlanlessReviewTarget;
   baseDir: string;
@@ -403,9 +451,9 @@ interface PlanlessExecutionContext {
 }
 
 const PLANLESS_REVIEW_REJECTED_OPTIONS: Array<{
-  key: string;
+  key: keyof ReviewCommandOptions;
   flag: string;
-  rejectWhen: (options: any) => boolean;
+  rejectWhen: (options: ReviewCommandOptions) => boolean;
 }> = [
   {
     key: 'saveIssues',
@@ -443,12 +491,16 @@ const PLANLESS_REVIEW_REJECTED_OPTIONS: Array<{
   },
 ];
 
-function validatePlanlessReviewOptions(options: any): void {
+function validatePlanlessReviewOptions(options: ReviewCommandOptions): void {
   for (const rejected of PLANLESS_REVIEW_REJECTED_OPTIONS) {
     if (rejected.rejectWhen(options)) {
       throw new Error(`${rejected.flag} requires a plan-backed review target.`);
     }
   }
+}
+
+function normalizeReviewExecutorName(value: string | undefined): ReviewExecutorName | null {
+  return value === 'claude-code' || value === 'codex-cli' ? value : null;
 }
 
 function getPlanlessTargetLabel(target: PlanlessReviewTarget): string {
@@ -518,13 +570,11 @@ function buildPlanlessDiffGuidance(baseBranch: string): string[] {
 export function buildPlanlessReviewPrompt(
   target: PlanlessReviewTarget,
   diffResult: DiffResult,
+  baseDir: string,
   includeDiff: boolean = false,
   useSubagents: boolean = false,
   customInstructions?: string,
-  previousReviewResponse?: string,
-  baseDir: string = target.kind === 'current'
-    ? target.worktreePath
-    : (target.workspacePath ?? target.repoRoot)
+  previousReviewResponse?: string
 ): string {
   const changedFilesSection = [
     `# Code Changes to Review`,
@@ -661,16 +711,253 @@ async function tryFetchBaseBranch(baseDir: string, baseBranch: string): Promise<
   }
 }
 
+interface ResolvedReviewPromptContext {
+  customInstructions: string;
+  previousReviewResponse?: string;
+}
+
+async function resolveReviewPromptContext(params: {
+  options: ReviewCommandOptions;
+  config: TimConfig;
+  baseDir: string;
+  reviewLog: ReviewLog;
+}): Promise<ResolvedReviewPromptContext> {
+  const { options, config, baseDir, reviewLog } = params;
+  let customInstructions = '';
+  let previousReviewResponse: string | undefined;
+
+  if (options.instructions) {
+    customInstructions = options.instructions;
+    reviewLog(chalk.gray('Using inline custom instructions from CLI'));
+  } else if (options.instructionsFile) {
+    try {
+      const instructionsPath = validateInstructionsFilePath(options.instructionsFile, baseDir);
+      customInstructions = await readFile(instructionsPath, 'utf-8');
+      reviewLog(chalk.gray(`Using custom instructions from CLI file: ${options.instructionsFile}`));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      reviewLog(
+        chalk.yellow(
+          `Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${errorMessage}`
+        )
+      );
+    }
+  } else if (config.review?.customInstructionsPath) {
+    try {
+      const instructionsPath = validateInstructionsFilePath(
+        config.review.customInstructionsPath,
+        baseDir
+      );
+      customInstructions = await readFile(instructionsPath, 'utf-8');
+      reviewLog(
+        chalk.gray(`Using custom instructions from config: ${config.review.customInstructionsPath}`)
+      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      reviewLog(
+        chalk.yellow(
+          `Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${errorMessage}`
+        )
+      );
+    }
+  } else {
+    customInstructions = (await loadAgentInstructionsFor('reviewer', baseDir, config)) ?? '';
+  }
+
+  if (options.previousResponse) {
+    try {
+      previousReviewResponse = await readFile(options.previousResponse, 'utf-8');
+      reviewLog(
+        chalk.gray(`Using previous review response from file: ${options.previousResponse}`)
+      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      reviewLog(
+        chalk.yellow(
+          `Warning: Could not read previous review response file: ${options.previousResponse}. ${errorMessage}`
+        )
+      );
+    }
+  }
+
+  const orchestratorInput = await resolveOrchestratorInput(options);
+  if (orchestratorInput?.trim()) {
+    reviewLog(chalk.gray('Using additional context from --input / --input-file'));
+    customInstructions = customInstructions
+      ? `${customInstructions}\n\n## Additional Context from Orchestrator\n\n${orchestratorInput}`
+      : `## Additional Context from Orchestrator\n\n${orchestratorInput}`;
+  }
+
+  let focusAreas: string[] = [];
+  if (options.focus) {
+    const rawFocusAreas = options.focus
+      .split(',')
+      .map((area: string) => area.trim())
+      .filter(Boolean);
+    try {
+      focusAreas = validateFocusAreas(rawFocusAreas);
+      reviewLog(chalk.gray(`Using focus areas from CLI: ${focusAreas.join(', ')}`));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      reviewLog(chalk.yellow(`Warning: Invalid focus areas from CLI: ${errorMessage}`));
+      focusAreas = [];
+    }
+  } else if (config.review?.focusAreas && config.review.focusAreas.length > 0) {
+    try {
+      focusAreas = validateFocusAreas(config.review.focusAreas);
+      reviewLog(chalk.gray(`Using focus areas from config: ${focusAreas.join(', ')}`));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      reviewLog(chalk.yellow(`Warning: Invalid focus areas from config: ${errorMessage}`));
+      focusAreas = [];
+    }
+  }
+
+  if (focusAreas.length > 0) {
+    const focusInstruction = `Focus on: ${focusAreas.join(', ')}`;
+    customInstructions = customInstructions
+      ? `${customInstructions}\n\n${focusInstruction}`
+      : focusInstruction;
+  }
+
+  return { customInstructions, previousReviewResponse };
+}
+
+interface ReviewFormatAndPersistResult {
+  formattedOutput: string;
+  hasIssues: boolean;
+  currentCommitHash: string;
+}
+
+async function formatAndPersistReviewResult(params: {
+  reviewResult: ReviewResult;
+  rawOutput: string;
+  baseDir: string;
+  baseBranch: string;
+  changedFiles: string[];
+  targetId: string;
+  targetTitle: string;
+  historyId: string;
+  options: ReviewCommandOptions;
+  config: TimConfig;
+  isPrintMode: boolean;
+  reviewLog: ReviewLog;
+  gitNoteSummary: (metadata: ReviewMetadata) => string;
+}): Promise<ReviewFormatAndPersistResult> {
+  const {
+    reviewResult,
+    rawOutput,
+    baseDir,
+    baseBranch,
+    changedFiles,
+    targetId,
+    targetTitle,
+    historyId,
+    options,
+    config,
+    isPrintMode,
+    reviewLog,
+    gitNoteSummary,
+  } = params;
+  const outputFormat = isPrintMode
+    ? 'json'
+    : options.format || config.review?.outputFormat || 'terminal';
+  const verbosity: VerbosityLevel = isPrintMode ? 'detailed' : options.verbosity || 'detailed';
+
+  if (!['json', 'markdown', 'terminal'].includes(outputFormat)) {
+    log(chalk.yellow(`Warning: Invalid format '${outputFormat}', using 'terminal'`));
+  }
+
+  const formatterOptions: FormatterOptions = {
+    verbosity,
+    showFiles: isPrintMode ? true : options.showFiles !== false && verbosity !== 'minimal',
+    showSuggestions: isPrintMode ? true : !options.noSuggestions,
+    colorEnabled: !options.noColor && outputFormat === 'terminal',
+  };
+
+  const formatter = createFormatter(
+    outputFormat === 'json' || outputFormat === 'markdown' ? outputFormat : 'terminal'
+  );
+  const formattedOutput = formatter.format(reviewResult, formatterOptions);
+  const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
+  const currentCommitHash = (await getCurrentCommitHash(baseDir, true)) ?? 'unknown';
+  const shouldSave =
+    options.save ||
+    (config.review?.autoSave && !options.noSave) ||
+    (!options.noSave && !options.outputFile && !config.review?.saveLocation);
+
+  if (shouldSave) {
+    try {
+      const reviewsDir = await createReviewsDirectory(baseDir);
+      if (currentCommitHash !== 'unknown') {
+        const metadata: ReviewMetadata = {
+          planId: targetId,
+          planTitle: targetTitle,
+          commitHash: currentCommitHash,
+          timestamp: new Date(),
+          reviewer: process.env.USER || process.env.USERNAME,
+          baseBranch,
+          changedFiles,
+        };
+
+        const savedPath = await saveReviewResult(reviewsDir, formattedOutput, metadata);
+        reviewLog(chalk.cyan(`Review saved to: ${savedPath}`));
+
+        if (options.gitNote) {
+          const noteCreated = await createGitNote(
+            baseDir,
+            currentCommitHash,
+            gitNoteSummary(metadata)
+          );
+          if (noteCreated) {
+            reviewLog(chalk.cyan('Git note created with review summary'));
+          } else {
+            reviewLog(chalk.yellow('Warning: Could not create Git note'));
+          }
+        }
+      } else {
+        reviewLog(chalk.yellow('Warning: Could not save review - unable to determine commit hash'));
+      }
+    } catch (persistenceErr) {
+      const persistenceErrorMessage =
+        persistenceErr instanceof Error ? persistenceErr.message : String(persistenceErr);
+      reviewLog(
+        chalk.yellow(`Warning: Could not save review to history: ${persistenceErrorMessage}`)
+      );
+    }
+  }
+
+  if (options.outputFile) {
+    await saveReviewResultWithErrorHandling(options.outputFile, formattedOutput, log);
+  } else if (config.review?.saveLocation) {
+    try {
+      const saveDir = isAbsolute(config.review.saveLocation)
+        ? config.review.saveLocation
+        : join(baseDir, config.review.saveLocation);
+      const safeHistoryId = historyId.replace(/[^a-zA-Z0-9._-]+/g, '-');
+      const timestampValue = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `review-${safeHistoryId}-${timestampValue}${formatter.getFileExtension()}`;
+      const savePath = join(saveDir, filename);
+      await saveReviewResultWithErrorHandling(savePath, formattedOutput, log);
+    } catch (saveErr) {
+      const saveErrorMessage = saveErr instanceof Error ? saveErr.message : String(saveErr);
+      reviewLog(chalk.yellow(`Warning: Could not prepare save location: ${saveErrorMessage}`));
+    }
+  }
+
+  return { formattedOutput, hasIssues, currentCommitHash };
+}
+
 async function buildPlanlessExecutionContext(
   target: PlanlessReviewTarget,
-  options: any,
-  config: any
+  options: ReviewCommandOptions,
+  config: TimConfig
 ): Promise<PlanlessExecutionContext> {
   let baseDir: string;
   if (target.kind === 'current') {
     baseDir = target.worktreePath;
+    await tryFetchBaseBranch(baseDir, target.baseBranch);
   } else {
-    await tryFetchBaseBranch(target.repoRoot, target.baseBranch);
     const workspaceResult = await setupWorkspace(
       {
         workspace: options.workspace,
@@ -680,6 +967,7 @@ async function buildPlanlessExecutionContext(
         branchName: target.kind === 'branch' ? target.requestedBranch : target.headBranch,
         createBranch: false,
         allowPrimaryWorkspaceWhenLocked: false,
+        requireWorkspace: true,
       },
       target.repoRoot,
       undefined,
@@ -687,7 +975,6 @@ async function buildPlanlessExecutionContext(
       'tim review'
     );
     baseDir = workspaceResult.baseDir;
-    target.workspacePath = baseDir;
     await tryFetchBaseBranch(baseDir, target.baseBranch);
   }
 
@@ -710,11 +997,11 @@ async function runPlanlessAutofix(params: {
   context: PlanlessExecutionContext;
   reviewResult: ReviewResult;
   reviewExecutorName: ReviewExecutorName | null;
-  options: any;
+  options: ReviewCommandOptions;
   isInteractiveEnv: boolean;
   isPrintMode: boolean;
   sharedExecutorOptions: ExecutorCommonOptions;
-  config: any;
+  config: TimConfig;
   notifyReviewInput: (message: string) => Promise<void>;
 }): Promise<boolean> {
   const {
@@ -826,13 +1113,13 @@ async function handleReviewIssueActions(params: {
   planRefForWrite: number;
   planFileForWrite: string;
   executionPlanFile: string;
-  options: any;
+  options: ReviewCommandOptions;
   isInteractiveEnv: boolean;
   isPrintMode: boolean;
   taskScopeNote?: string;
   isScoped: boolean;
   sharedExecutorOptions: ExecutorCommonOptions;
-  config: any;
+  config: TimConfig;
   globalOpts: any;
   notifyReviewInput: (message: string) => Promise<void>;
 }): Promise<ReviewIssueWorkflowResult> {
@@ -1127,7 +1414,7 @@ async function handleReviewIssueActions(params: {
 
 export async function handleReviewCommand(
   planId: number | string | undefined,
-  options: any,
+  options: ReviewCommandOptions,
   command: any
 ): Promise<ReviewCommandResult> {
   const isPrintMode = options.print === true;
@@ -1198,6 +1485,14 @@ export async function handleReviewCommand(
       throw err;
     }
 
+    const hasExplicitPlanlessSelector =
+      options.current === true ||
+      (typeof options.branch === 'string' && options.branch.trim().length > 0) ||
+      (typeof options.pr === 'string' && options.pr.trim().length > 0);
+    if (hasExplicitPlanlessSelector) {
+      validatePlanlessReviewOptions(options);
+    }
+
     const nonNumericPlanRef =
       typeof planId === 'string' && !/^\d+$/.test(planId.trim()) ? planId : undefined;
     const reviewTarget =
@@ -1220,7 +1515,7 @@ export async function handleReviewCommand(
             options,
             configPath: globalOpts.config,
           });
-    if (reviewTarget.kind !== 'plan') {
+    if (reviewTarget.kind !== 'plan' && !hasExplicitPlanlessSelector) {
       validatePlanlessReviewOptions(options);
     }
 
@@ -1335,110 +1630,12 @@ export async function handleReviewCommand(
         reviewLog(chalk.green(`Reviewing target: ${planlessContext.targetTitle}`));
         reviewLog(chalk.gray(`Base branch: ${planlessContext.baseBranch}`));
 
-        let customInstructions = '';
-        let previousReviewResponse: string | undefined;
-
-        if (options.instructions) {
-          customInstructions = options.instructions;
-          reviewLog(chalk.gray('Using inline custom instructions from CLI'));
-        } else if (options.instructionsFile) {
-          try {
-            const instructionsPath = validateInstructionsFilePath(
-              options.instructionsFile,
-              planlessContext.baseDir
-            );
-            customInstructions = await readFile(instructionsPath, 'utf-8');
-            reviewLog(
-              chalk.gray(`Using custom instructions from CLI file: ${options.instructionsFile}`)
-            );
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            reviewLog(
-              chalk.yellow(
-                `Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${errorMessage}`
-              )
-            );
-          }
-        } else if (config.review?.customInstructionsPath) {
-          try {
-            const instructionsPath = validateInstructionsFilePath(
-              config.review.customInstructionsPath,
-              planlessContext.baseDir
-            );
-            customInstructions = await readFile(instructionsPath, 'utf-8');
-            reviewLog(
-              chalk.gray(
-                `Using custom instructions from config: ${config.review.customInstructionsPath}`
-              )
-            );
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            reviewLog(
-              chalk.yellow(
-                `Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${errorMessage}`
-              )
-            );
-          }
-        } else {
-          customInstructions =
-            (await loadAgentInstructionsFor('reviewer', planlessContext.baseDir, config)) ?? '';
-        }
-
-        if (options.previousResponse) {
-          try {
-            previousReviewResponse = await readFile(options.previousResponse, 'utf-8');
-            reviewLog(
-              chalk.gray(`Using previous review response from file: ${options.previousResponse}`)
-            );
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            reviewLog(
-              chalk.yellow(
-                `Warning: Could not read previous review response file: ${options.previousResponse}. ${errorMessage}`
-              )
-            );
-          }
-        }
-
-        const orchestratorInput = await resolveOrchestratorInput(options);
-        if (orchestratorInput?.trim()) {
-          reviewLog(chalk.gray('Using additional context from --input / --input-file'));
-          customInstructions = customInstructions
-            ? `${customInstructions}\n\n## Additional Context from Orchestrator\n\n${orchestratorInput}`
-            : `## Additional Context from Orchestrator\n\n${orchestratorInput}`;
-        }
-
-        let focusAreas: string[] = [];
-        if (options.focus) {
-          const rawFocusAreas = options.focus
-            .split(',')
-            .map((area: string) => area.trim())
-            .filter(Boolean);
-          try {
-            focusAreas = validateFocusAreas(rawFocusAreas);
-            reviewLog(chalk.gray(`Using focus areas from CLI: ${focusAreas.join(', ')}`));
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            reviewLog(chalk.yellow(`Warning: Invalid focus areas from CLI: ${errorMessage}`));
-            focusAreas = [];
-          }
-        } else if (config.review?.focusAreas && config.review.focusAreas.length > 0) {
-          try {
-            focusAreas = validateFocusAreas(config.review.focusAreas);
-            reviewLog(chalk.gray(`Using focus areas from config: ${focusAreas.join(', ')}`));
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            reviewLog(chalk.yellow(`Warning: Invalid focus areas from config: ${errorMessage}`));
-            focusAreas = [];
-          }
-        }
-
-        if (focusAreas.length > 0) {
-          const focusInstruction = `Focus on: ${focusAreas.join(', ')}`;
-          customInstructions = customInstructions
-            ? `${customInstructions}\n\n${focusInstruction}`
-            : focusInstruction;
-        }
+        const { customInstructions, previousReviewResponse } = await resolveReviewPromptContext({
+          options,
+          config,
+          baseDir: planlessContext.baseDir,
+          reviewLog,
+        });
 
         const sharedExecutorOptions: ExecutorCommonOptions = {
           baseDir: planlessContext.baseDir,
@@ -1469,11 +1666,11 @@ export async function handleReviewCommand(
           buildPlanlessReviewPrompt(
             reviewTarget,
             planlessContext.diffResult,
+            planlessContext.baseDir,
             includeDiff,
             useSubagents,
             customInstructions,
-            previousReviewResponse,
-            planlessContext.baseDir
+            previousReviewResponse
           );
 
         if (options.dryRun) {
@@ -1539,31 +1736,22 @@ export async function handleReviewCommand(
             throw new Error('Review completed without a usable executor result.');
           }
 
-          const outputFormat = isPrintMode
-            ? 'json'
-            : options.format || config.review?.outputFormat || 'terminal';
-          const verbosity: VerbosityLevel = isPrintMode
-            ? 'detailed'
-            : options.verbosity || 'detailed';
-
-          if (!['json', 'markdown', 'terminal'].includes(outputFormat)) {
-            log(chalk.yellow(`Warning: Invalid format '${outputFormat}', using 'terminal'`));
-          }
-
-          const formatterOptions: FormatterOptions = {
-            verbosity,
-            showFiles: isPrintMode ? true : options.showFiles !== false && verbosity !== 'minimal',
-            showSuggestions: isPrintMode ? true : !options.noSuggestions,
-            colorEnabled: !options.noColor && outputFormat === 'terminal',
-          };
-
-          const formatter = createFormatter(
-            outputFormat === 'json' || outputFormat === 'markdown' ? outputFormat : 'terminal'
-          );
-          const formattedOutput = formatter.format(reviewResult, formatterOptions);
-          const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
-          const currentCommitHash =
-            (await getCurrentCommitHash(planlessContext.baseDir, true)) ?? 'unknown';
+          const { formattedOutput, hasIssues } = await formatAndPersistReviewResult({
+            reviewResult,
+            rawOutput,
+            baseDir: planlessContext.baseDir,
+            baseBranch: planlessContext.baseBranch,
+            changedFiles: planlessContext.diffResult.changedFiles,
+            targetId: planlessContext.targetId,
+            targetTitle: planlessContext.targetTitle,
+            historyId: planlessContext.targetId,
+            options,
+            config,
+            isPrintMode,
+            reviewLog,
+            gitNoteSummary: (metadata) =>
+              `Code review completed for ${metadata.planId}: ${metadata.planTitle}`,
+          });
 
           sendStructured({
             type: 'review_result',
@@ -1597,77 +1785,6 @@ export async function handleReviewCommand(
                 chalk.yellow(
                   'Review issues were found. Planless review findings are ephemeral and were not saved to a plan.'
                 )
-              );
-            }
-          }
-
-          const shouldSave =
-            options.save ||
-            (config.review?.autoSave && !options.noSave) ||
-            (!options.noSave && !options.outputFile && !config.review?.saveLocation);
-
-          if (shouldSave) {
-            try {
-              const reviewsDir = await createReviewsDirectory(planlessContext.baseDir);
-              if (currentCommitHash !== 'unknown') {
-                const metadata: ReviewMetadata = {
-                  planId: planlessContext.targetId,
-                  planTitle: planlessContext.targetTitle,
-                  commitHash: currentCommitHash,
-                  timestamp: new Date(),
-                  reviewer: process.env.USER || process.env.USERNAME,
-                  baseBranch: planlessContext.baseBranch,
-                  changedFiles: planlessContext.diffResult.changedFiles,
-                };
-
-                const savedPath = await saveReviewResult(reviewsDir, formattedOutput, metadata);
-                reviewLog(chalk.cyan(`Review saved to: ${savedPath}`));
-
-                if (options.gitNote) {
-                  const reviewSummary = `Code review completed for ${metadata.planId}: ${metadata.planTitle}`;
-                  const noteCreated = await createGitNote(
-                    planlessContext.baseDir,
-                    currentCommitHash,
-                    reviewSummary
-                  );
-                  if (noteCreated) {
-                    reviewLog(chalk.cyan('Git note created with review summary'));
-                  } else {
-                    reviewLog(chalk.yellow('Warning: Could not create Git note'));
-                  }
-                }
-              } else {
-                reviewLog(
-                  chalk.yellow('Warning: Could not save review - unable to determine commit hash')
-                );
-              }
-            } catch (persistenceErr) {
-              const persistenceErrorMessage =
-                persistenceErr instanceof Error ? persistenceErr.message : String(persistenceErr);
-              reviewLog(
-                chalk.yellow(
-                  `Warning: Could not save review to history: ${persistenceErrorMessage}`
-                )
-              );
-            }
-          }
-
-          if (options.outputFile) {
-            await saveReviewResultWithErrorHandling(options.outputFile, formattedOutput, log);
-          } else if (config.review?.saveLocation) {
-            try {
-              const saveDir = isAbsolute(config.review.saveLocation)
-                ? config.review.saveLocation
-                : join(planlessContext.baseDir, config.review.saveLocation);
-              const safeTargetId = planlessContext.targetId.replace(/[^a-zA-Z0-9._-]+/g, '-');
-              const timestampValue = new Date().toISOString().replace(/[:.]/g, '-');
-              const filename = `review-${safeTargetId}-${timestampValue}${formatter.getFileExtension()}`;
-              const savePath = join(saveDir, filename);
-              await saveReviewResultWithErrorHandling(savePath, formattedOutput, log);
-            } catch (saveErr) {
-              const saveErrorMessage = saveErr instanceof Error ? saveErr.message : String(saveErr);
-              reviewLog(
-                chalk.yellow(`Warning: Could not prepare save location: ${saveErrorMessage}`)
               );
             }
           }
@@ -1757,114 +1874,12 @@ export async function handleReviewCommand(
       // Use gitRoot from context (derived from resolved repoRoot, not CWD)
       notifyCwd = gitRoot;
 
-      // Load custom instructions
-      let customInstructions = '';
-      let previousReviewResponse: string | undefined;
-
-      // First try CLI options (CLI takes precedence)
-      if (options.instructions) {
-        customInstructions = options.instructions;
-        reviewLog(chalk.gray('Using inline custom instructions from CLI'));
-      } else if (options.instructionsFile) {
-        try {
-          const instructionsPath = validateInstructionsFilePath(options.instructionsFile, gitRoot);
-          customInstructions = await readFile(instructionsPath, 'utf-8');
-          reviewLog(
-            chalk.gray(`Using custom instructions from CLI file: ${options.instructionsFile}`)
-          );
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          reviewLog(
-            chalk.yellow(
-              `Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${errorMessage}`
-            )
-          );
-        }
-      } else if (config.review?.customInstructionsPath) {
-        // Fall back to config file instructions
-        try {
-          const instructionsPath = validateInstructionsFilePath(
-            config.review.customInstructionsPath,
-            gitRoot
-          );
-          customInstructions = await readFile(instructionsPath, 'utf-8');
-          reviewLog(
-            chalk.gray(
-              `Using custom instructions from config: ${config.review.customInstructionsPath}`
-            )
-          );
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          reviewLog(
-            chalk.yellow(
-              `Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${errorMessage}`
-            )
-          );
-        }
-      } else {
-        // Fall back to agents.reviewer.instructions
-        customInstructions = (await loadAgentInstructionsFor('reviewer', gitRoot, config)) ?? '';
-      }
-
-      if (options.previousResponse) {
-        try {
-          previousReviewResponse = await readFile(options.previousResponse, 'utf-8');
-          reviewLog(
-            chalk.gray(`Using previous review response from file: ${options.previousResponse}`)
-          );
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          reviewLog(
-            chalk.yellow(
-              `Warning: Could not read previous review response file: ${options.previousResponse}. ${errorMessage}`
-            )
-          );
-        }
-      }
-
-      // Resolve orchestrator-provided input (--input / --input-file)
-      const orchestratorInput = await resolveOrchestratorInput(options);
-      if (orchestratorInput?.trim()) {
-        reviewLog(chalk.gray('Using additional context from --input / --input-file'));
-        customInstructions = customInstructions
-          ? `${customInstructions}\n\n## Additional Context from Orchestrator\n\n${orchestratorInput}`
-          : `## Additional Context from Orchestrator\n\n${orchestratorInput}`;
-      }
-
-      // Handle focus areas
-      let focusAreas: string[] = [];
-      if (options.focus) {
-        // CLI focus areas override config
-        const rawFocusAreas = options.focus
-          .split(',')
-          .map((area: string) => area.trim())
-          .filter(Boolean);
-        try {
-          focusAreas = validateFocusAreas(rawFocusAreas);
-          reviewLog(chalk.gray(`Using focus areas from CLI: ${focusAreas.join(', ')}`));
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          reviewLog(chalk.yellow(`Warning: Invalid focus areas from CLI: ${errorMessage}`));
-          focusAreas = [];
-        }
-      } else if (config.review?.focusAreas && config.review.focusAreas.length > 0) {
-        try {
-          focusAreas = validateFocusAreas(config.review.focusAreas);
-          reviewLog(chalk.gray(`Using focus areas from config: ${focusAreas.join(', ')}`));
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          reviewLog(chalk.yellow(`Warning: Invalid focus areas from config: ${errorMessage}`));
-          focusAreas = [];
-        }
-      }
-
-      // Add focus areas to custom instructions if provided
-      if (focusAreas.length > 0) {
-        const focusInstruction = `Focus on: ${focusAreas.join(', ')}`;
-        customInstructions = customInstructions
-          ? `${customInstructions}\n\n${focusInstruction}`
-          : focusInstruction;
-      }
+      const { customInstructions, previousReviewResponse } = await resolveReviewPromptContext({
+        options,
+        config,
+        baseDir: gitRoot,
+        reviewLog,
+      });
 
       const sharedExecutorOptions: ExecutorCommonOptions = {
         baseDir: gitRoot,
@@ -1954,7 +1969,9 @@ export async function handleReviewCommand(
         const actionResult = await handleReviewIssueActions({
           issues: savedIssues,
           reviewResult: savedReviewResult,
-          reviewExecutorName: options.executor || config.defaultExecutor,
+          reviewExecutorName: normalizeReviewExecutorName(
+            options.executor ?? config.defaultExecutor
+          ),
           planData,
           scopedPlanData,
           diffResult,
@@ -2063,34 +2080,23 @@ export async function handleReviewCommand(
           throw new Error('Review completed without a usable executor result.');
         }
 
-        // Determine format and verbosity from options or config
-        const outputFormat = isPrintMode
-          ? 'json'
-          : options.format || config.review?.outputFormat || 'terminal';
-        const verbosity: VerbosityLevel = isPrintMode
-          ? 'detailed'
-          : options.verbosity || 'detailed';
-
-        // Validate format
-        if (!['json', 'markdown', 'terminal'].includes(outputFormat)) {
-          log(chalk.yellow(`Warning: Invalid format '${outputFormat}', using 'terminal'`));
-        }
-
-        // Create formatter options
-        const formatterOptions: FormatterOptions = {
-          verbosity,
-          showFiles: isPrintMode ? true : options.showFiles !== false && verbosity !== 'minimal',
-          showSuggestions: isPrintMode ? true : !options.noSuggestions,
-          colorEnabled: !options.noColor && outputFormat === 'terminal',
-        };
-
-        // Format the review result
-        const formatter = createFormatter(
-          outputFormat === 'json' || outputFormat === 'markdown' ? outputFormat : 'terminal'
-        );
-        const formattedOutput = formatter.format(reviewResult, formatterOptions);
-        const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
-        const currentCommitHash = (await getCurrentCommitHash(gitRoot, true)) ?? 'unknown';
+        const { formattedOutput, hasIssues, currentCommitHash } =
+          await formatAndPersistReviewResult({
+            reviewResult,
+            rawOutput,
+            baseDir: gitRoot,
+            baseBranch: diffResult.baseBranch,
+            changedFiles: diffResult.changedFiles,
+            targetId: planData.id?.toString() ?? 'unknown',
+            targetTitle: planData.title ?? 'Untitled Plan',
+            historyId: planData.id?.toString() ?? 'unknown',
+            options,
+            config,
+            isPrintMode,
+            reviewLog,
+            gitNoteSummary: (metadata) =>
+              `Code review completed for plan ${metadata.planId}: ${metadata.planTitle}`,
+          });
 
         if (!hasIssues && planData.reviewIssues) {
           await clearSavedReviewIssues(contextPlanId, gitRoot);
@@ -2174,77 +2180,6 @@ export async function handleReviewCommand(
               chalk.green(
                 `Saved ${reviewResult.issues.length} review issue${reviewResult.issues.length === 1 ? '' : 's'} for later.`
               )
-            );
-          }
-        }
-
-        // Persistence logic - save to structured review history
-        const shouldSave =
-          options.save ||
-          (config.review?.autoSave && !options.noSave) ||
-          (!options.noSave && !options.outputFile && !config.review?.saveLocation);
-
-        if (shouldSave) {
-          try {
-            const reviewsDir = await createReviewsDirectory(gitRoot);
-
-            if (currentCommitHash !== 'unknown') {
-              const metadata: ReviewMetadata = {
-                planId: planData.id?.toString() ?? 'unknown',
-                planTitle: planData.title ?? 'Untitled Plan',
-                commitHash: currentCommitHash,
-                timestamp: new Date(),
-                reviewer: process.env.USER || process.env.USERNAME,
-                baseBranch: diffResult.baseBranch,
-                changedFiles: diffResult.changedFiles,
-              };
-
-              const savedPath = await saveReviewResult(reviewsDir, formattedOutput, metadata);
-              reviewLog(chalk.cyan(`Review saved to: ${savedPath}`));
-
-              // Create Git note if requested
-              if (options.gitNote) {
-                const reviewSummary = `Code review completed for plan ${metadata.planId}: ${metadata.planTitle}`;
-                const noteCreated = await createGitNote(gitRoot, currentCommitHash, reviewSummary);
-                if (noteCreated) {
-                  reviewLog(chalk.cyan('Git note created with review summary'));
-                } else {
-                  reviewLog(chalk.yellow('Warning: Could not create Git note'));
-                }
-              }
-            } else {
-              reviewLog(
-                chalk.yellow('Warning: Could not save review - unable to determine commit hash')
-              );
-            }
-          } catch (persistenceErr) {
-            const persistenceErrorMessage =
-              persistenceErr instanceof Error ? persistenceErr.message : String(persistenceErr);
-            reviewLog(
-              chalk.yellow(`Warning: Could not save review to history: ${persistenceErrorMessage}`)
-            );
-          }
-        }
-
-        // Save to file if requested with comprehensive error handling
-        if (options.outputFile) {
-          await saveReviewResultWithErrorHandling(options.outputFile, formattedOutput, log);
-        } else if (config.review?.saveLocation) {
-          // Use config save location if no explicit output file
-          try {
-            const saveDir = isAbsolute(config.review.saveLocation)
-              ? config.review.saveLocation
-              : join(gitRoot, config.review.saveLocation);
-
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const filename = `review-${planData.id}-${timestamp}${formatter.getFileExtension()}`;
-            const savePath = join(saveDir, filename);
-
-            await saveReviewResultWithErrorHandling(savePath, formattedOutput, log);
-          } catch (saveErr) {
-            const saveErrorMessage = saveErr instanceof Error ? saveErr.message : String(saveErr);
-            reviewLog(
-              chalk.yellow(`Warning: Could not prepare save location: ${saveErrorMessage}`)
             );
           }
         }

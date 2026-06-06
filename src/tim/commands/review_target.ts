@@ -2,7 +2,6 @@ import { $ } from 'bun';
 import type { Database } from 'bun:sqlite';
 import {
   getCurrentBranchName,
-  getGitRoot,
   getTrunkBranch,
   getUsingJj,
   remoteBranchExists,
@@ -43,11 +42,6 @@ export interface BranchReviewTarget {
   repoRoot: string;
   requestedBranch: string;
   baseBranch: string;
-  workspacePath?: string;
-  checkout: {
-    branchExistsLocally: boolean;
-    branchExistsRemotely: boolean;
-  };
 }
 
 export interface PullRequestReviewTarget {
@@ -61,7 +55,6 @@ export interface PullRequestReviewTarget {
   baseBranch: string;
   headBranch: string;
   headSha: string;
-  workspacePath?: string;
   prStatusId?: number;
   prStatus: PrStatusRow;
 }
@@ -93,8 +86,6 @@ export interface ReviewTargetDependencies {
   resolvePlanByNumericId: typeof resolvePlanByNumericId;
   getCurrentBranchName: typeof getCurrentBranchName;
   getTrunkBranch: typeof getTrunkBranch;
-  getGitRoot: typeof getGitRoot;
-  getUsingJj: typeof getUsingJj;
   remoteBranchExists: typeof remoteBranchExists;
   getRepositoryIdentity: typeof getRepositoryIdentity;
   gatherPrContext: typeof gatherPrContext;
@@ -107,8 +98,6 @@ const defaultDependencies: ReviewTargetDependencies = {
   resolvePlanByNumericId,
   getCurrentBranchName,
   getTrunkBranch,
-  getGitRoot,
-  getUsingJj,
   remoteBranchExists,
   getRepositoryIdentity,
   gatherPrContext,
@@ -281,10 +270,6 @@ async function resolveBranchTarget(
     repoRoot,
     requestedBranch,
     baseBranch,
-    checkout: {
-      branchExistsLocally: localExists,
-      branchExistsRemotely: remoteExists,
-    },
   };
 }
 
@@ -361,6 +346,10 @@ export async function resolveReviewTarget(
   const prSelector = normalizeSelectorValue(input.options.pr);
   if (prSelector) {
     return resolvePrTarget(repoRoot, prSelector, input.options, deps);
+  }
+
+  if (input.options.current === true) {
+    return resolveCurrentTarget(repoRoot, input.options, deps);
   }
 
   const autoSelectedPlan = await autoSelectPlanFromBranch(repoRoot, deps);

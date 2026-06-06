@@ -1098,7 +1098,11 @@ describe('buildPlanlessReviewPrompt', () => {
         worktreePath: '/repo',
       },
       createPlanlessDiff(),
-      false
+      '/repo',
+      false,
+      false,
+      undefined,
+      undefined
     );
 
     expect(prompt).toContain('# Review Target');
@@ -1125,13 +1129,13 @@ describe('buildPlanlessReviewPrompt', () => {
         repoRoot: '/repo',
         requestedBranch: 'feature/review-target',
         baseBranch: 'release/base',
-        workspacePath: '/repo/.tim/workspaces/feature-review-target',
-        checkout: {
-          branchExistsLocally: true,
-          branchExistsRemotely: false,
-        },
       },
-      createPlanlessDiff({ baseBranch: 'release/base' })
+      createPlanlessDiff({ baseBranch: 'release/base' }),
+      '/repo/.tim/workspaces/feature-review-target',
+      false,
+      false,
+      undefined,
+      undefined
     );
 
     expect(prompt).toContain('**Target Kind:** branch');
@@ -1153,7 +1157,6 @@ describe('buildPlanlessReviewPrompt', () => {
       baseBranch: 'main',
       headBranch: 'feature/planless-review',
       headSha: 'deadbeef',
-      workspacePath: '/repo/.tim/workspaces/pr-123',
       prStatusId: 44,
       prStatus: {
         id: 44,
@@ -1185,7 +1188,15 @@ describe('buildPlanlessReviewPrompt', () => {
       },
     };
 
-    const prompt = buildPlanlessReviewPrompt(target, createPlanlessDiff());
+    const prompt = buildPlanlessReviewPrompt(
+      target,
+      createPlanlessDiff(),
+      '/repo/.tim/workspaces/pr-123',
+      false,
+      false,
+      undefined,
+      undefined
+    );
 
     expect(prompt).toContain('**Target Kind:** pr');
     expect(prompt).toContain('**PR URL:** https://github.com/acme/review-tests/pull/123');
@@ -1207,7 +1218,11 @@ describe('buildPlanlessReviewPrompt', () => {
         worktreePath: '/repo',
       },
       createPlanlessDiff(),
-      true
+      '/repo',
+      true,
+      false,
+      undefined,
+      undefined
     );
 
     expect(prompt).toContain('**Full Diff:**');
@@ -4253,6 +4268,28 @@ Updated by branch-name autofix
     }
   });
 
+  test('rejects plan-owned options for PR target before PR resolution or workspace allocation', async () => {
+    const setupWorkspaceSpy = vi.spyOn(workspaceSetupModule, 'setupWorkspace');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+
+    try {
+      await expect(
+        handleReviewCommand(
+          undefined,
+          { pr: '123', saveIssues: true },
+          { parent: { opts: () => ({}) } }
+        )
+      ).rejects.toThrow('--save-issues requires a plan-backed review target.');
+
+      expect(prContextGatheringModule.gatherPrContext).not.toHaveBeenCalled();
+      expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+      expect(executorsModule.buildExecutorAndLog).not.toHaveBeenCalled();
+      expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
+    } finally {
+      setupWorkspaceSpy.mockRestore();
+    }
+  });
+
   test('explicit --current reviews the current worktree without workspace switching or plan context', async () => {
     await createTrackedWorktreeChange(
       testDir,
@@ -4344,6 +4381,7 @@ Updated by branch-name autofix
           checkoutBranch: 'feature/branch-target',
           branchName: 'feature/branch-target',
           createBranch: false,
+          requireWorkspace: true,
         }),
         testDir,
         undefined,
@@ -4443,6 +4481,7 @@ Updated by branch-name autofix
           checkoutBranch: 'feature/pr-review',
           branchName: 'feature/pr-review',
           createBranch: false,
+          requireWorkspace: true,
         }),
         testDir,
         undefined,

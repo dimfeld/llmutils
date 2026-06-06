@@ -22,8 +22,6 @@ function createDeps(overrides: Partial<ReviewTargetDependencies> = {}): ReviewTa
     })),
     getCurrentBranchName: vi.fn(async () => 'feature/no-plan'),
     getTrunkBranch: vi.fn(async () => 'main'),
-    getGitRoot: vi.fn(async () => '/repo'),
-    getUsingJj: vi.fn(async () => false),
     remoteBranchExists: vi.fn(async () => false),
     getRepositoryIdentity: vi.fn(async () => ({
       repositoryId: 'github.com__acme__widgets',
@@ -132,6 +130,23 @@ describe('resolveReviewTarget', () => {
     expect(deps.resolvePlanByNumericId).toHaveBeenCalledWith(377, '/repo');
   });
 
+  test('resolves explicit --current before branch-name plan auto-selection', async () => {
+    const deps = createDeps({
+      getCurrentBranchName: vi.fn(async () => '377-planless-review-targets'),
+    });
+
+    const target = await resolveReviewTarget({ options: { current: true } }, deps);
+
+    expect(target).toMatchObject({
+      kind: 'current',
+      repoRoot: '/repo',
+      currentBranch: '377-planless-review-targets',
+      baseBranch: 'main',
+      worktreePath: '/repo',
+    });
+    expect(deps.resolvePlanByNumericId).not.toHaveBeenCalled();
+  });
+
   test('falls back to current worktree when branch-name auto-selection finds no plan', async () => {
     const deps = createDeps({
       getCurrentBranchName: vi.fn(async () => '999-missing-plan'),
@@ -168,10 +183,6 @@ describe('resolveReviewTarget', () => {
       repoRoot: '/repo',
       requestedBranch: 'feature/review-me',
       baseBranch: 'release/base',
-      checkout: {
-        branchExistsLocally: true,
-        branchExistsRemotely: false,
-      },
     });
     expect(deps.remoteBranchExists).not.toHaveBeenCalled();
   });
