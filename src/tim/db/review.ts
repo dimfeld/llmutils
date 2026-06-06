@@ -783,6 +783,13 @@ export interface ReviewWithIssueCounts extends ReviewRow {
   unresolved_count: number;
 }
 
+export interface ReviewGuideSummary extends ReviewWithIssueCounts {
+  plan_id: number | null;
+  plan_title: string | null;
+  pr_number: number | null;
+  pr_title: string | null;
+}
+
 export function getReviewsByPrUrl(
   db: Database,
   prUrl: string,
@@ -838,6 +845,55 @@ export function getReviewsByPlanUuid(
       `
     )
     .all(planUuid, ...linkedPrUrls) as ReviewWithIssueCounts[];
+}
+
+export function listLatestReviewGuideSummaries(
+  db: Database,
+  options: { projectId?: number | 'all'; limit?: number } = {}
+): ReviewGuideSummary[] {
+  const conditions = ['r.review_guide IS NOT NULL', "TRIM(r.review_guide) != ''"];
+  const params: Array<number | string> = [];
+
+  if (options.projectId !== undefined && options.projectId !== 'all') {
+    conditions.push('r.project_id = ?');
+    params.push(options.projectId);
+  }
+
+  params.push(options.limit ?? 100);
+
+  return db
+    .prepare(
+      `
+        WITH ranked_reviews AS (
+          SELECT
+            r.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY COALESCE('plan:' || r.plan_uuid, 'pr:' || r.pr_url)
+              ORDER BY r.created_at DESC, r.id DESC
+            ) AS target_rank
+          FROM review r
+          WHERE ${conditions.join(' AND ')}
+            AND (r.plan_uuid IS NOT NULL OR r.pr_url IS NOT NULL)
+        )
+        SELECT
+          r.*,
+          p.plan_id AS plan_id,
+          p.title AS plan_title,
+          ps.pr_number AS pr_number,
+          ps.title AS pr_title,
+          COUNT(CASE WHEN ri.severity <> 'note' THEN ri.id END) AS issue_count,
+          COALESCE(SUM(CASE WHEN ri.severity <> 'note' AND ri.resolved = 0 THEN 1 ELSE 0 END), 0) AS unresolved_count
+        FROM ranked_reviews r
+        LEFT JOIN plan p ON p.uuid = r.plan_uuid
+        LEFT JOIN pr_status ps ON ps.pr_url = r.pr_url
+        LEFT JOIN review_issue ri ON ri.review_id = r.id
+        WHERE r.target_rank = 1
+        GROUP BY r.id
+        ORDER BY r.created_at DESC, r.id DESC
+        LIMIT ?
+      `
+    )
+    .all(...params) as ReviewGuideSummary[];
 }
 
 export function getReviewsForProject(

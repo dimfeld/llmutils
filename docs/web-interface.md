@@ -70,7 +70,7 @@ When reusing code originally written for CLI (same `process.cwd()` as the projec
 ## Architecture
 
 - Route structure: `/projects/[projectId]/{tab}` where `projectId` is a numeric ID or `all`
-- Tabs: `sessions`, `active`, `plans`, `settings` (settings tab hidden for `all` pseudo-project)
+- Tabs: `sessions`, `active`, `prs`, `reviews`, `plans`, `settings` (settings tab hidden for `all` pseudo-project)
 - `src/lib/server/plans_browser.ts` is the abstraction layer between route handlers and `db_queries.ts`
 - Display statuses (`blocked`, `recently_done`) are computed server-side in `db_queries.ts`, not stored in DB
 - Cookie-based project persistence: `src/lib/stores/project.svelte.ts` manages the last-selected project ID (httpOnly cookie, server-read only)
@@ -81,6 +81,8 @@ Two routes render stored review guides, both backed by the shared `src/lib/compo
 
 - PR review: `/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]`
 - Plan review (no PR required): `/projects/[projectId]/plans/[planId]/reviews/[reviewId]` — loader asserts `review.plan_uuid === plan.uuid` (404 on mismatch), resolves any single linked PR through the shared review-detail loader, and renders `<ReviewGuideView ... />` with a back link to the plan detail page.
+
+The top-level `/projects/[projectId]/reviews` page lists recent generated review guides with their plan or PR target, project, issue count, status, and generated time. It shows only the most recent guide per target, grouping by `plan_uuid` when present and otherwise by `pr_url`; `/projects/all/reviews` includes every project.
 
 `ReviewGuideView` accepts `{ review, issues, linkedPlans?, reviewThreads?, submissionPrUrl?, allowGithubSubmission }`. PR-only features are gated by the single `allowGithubSubmission` prop: linked-plans display, Submit Review dialog, existing GitHub review threads attached under matching guide diffs, the diff-gutter `+` utility / `NewReviewIssueModal` mount, and per-issue resolve/edit/delete controls. The header shows View in GitHub and View in Linear buttons whenever the guide has a direct `review.pr_url` or an indirect `submissionPrUrl` from a linked PR. Diff-override gating logic lives in `src/lib/components/review_guide_view_utils.ts` so it can be unit-tested independently.
 

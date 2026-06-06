@@ -17,6 +17,7 @@ import {
   getReviewsByPlanUuid,
   getReviewsByPrUrl,
   getReviewsForProject,
+  listLatestReviewGuideSummaries,
   insertReviewIssues,
   markIssuesSubmitted,
   updateReview,
@@ -536,6 +537,82 @@ describe('tim db/review', () => {
       expect(reviews[2].id).toBe(first.id);
       expect(reviews[0].issue_count).toBe(0);
       expect(reviews[0].unresolved_count).toBe(0);
+    });
+
+    test('listLatestReviewGuideSummaries returns latest generated guide per plan or PR with issue counts', () => {
+      createPlan(PLAN_UUID_1, 101);
+      createPlan(PLAN_UUID_2, 102);
+
+      createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        reviewGuide: '# Older plan guide',
+        status: 'complete',
+      });
+      const latestPlan = createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_1,
+        reviewGuide: '# Latest plan guide',
+        status: 'complete',
+      });
+      const prGuide = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/review-summary',
+        reviewGuide: '# PR guide',
+        status: 'complete',
+      });
+      createReview(db, {
+        projectId,
+        planUuid: PLAN_UUID_2,
+        reviewGuide: '   ',
+        status: 'complete',
+      });
+      const otherProjectGuide = createReview(db, {
+        projectId: otherProjectId,
+        prUrl: PR_URL_2,
+        branch: 'feature/other-project',
+        reviewGuide: '# Other project guide',
+        status: 'complete',
+      });
+
+      insertReviewIssues(db, {
+        reviewId: latestPlan.id,
+        issues: [
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'Fix this',
+            resolved: false,
+          },
+          {
+            severity: 'minor',
+            category: 'style',
+            content: 'Already fixed',
+            resolved: true,
+          },
+          {
+            severity: 'note',
+            category: 'other',
+            content: 'Context note',
+            resolved: false,
+          },
+        ],
+      });
+
+      const projectSummaries = listLatestReviewGuideSummaries(db, { projectId });
+      expect(projectSummaries.map((summary) => summary.id)).toEqual([prGuide.id, latestPlan.id]);
+      expect(projectSummaries[1].plan_id).toBe(101);
+      expect(projectSummaries[1].plan_title).toBe('Plan 101');
+      expect(projectSummaries[1].issue_count).toBe(2);
+      expect(projectSummaries[1].unresolved_count).toBe(1);
+
+      const allSummaries = listLatestReviewGuideSummaries(db, { projectId: 'all' });
+      expect(allSummaries.map((summary) => summary.id)).toEqual([
+        otherProjectGuide.id,
+        prGuide.id,
+        latestPlan.id,
+      ]);
     });
 
     test('getReviewsByPlanUuid includes PR-only reviews for linked PR URLs', () => {

@@ -5,7 +5,6 @@
   import { page } from '$app/state';
   import type { Snippet } from 'svelte';
   import { goto } from '$app/navigation';
-  import { resolve } from '$app/paths';
   import { setSessionManager } from '$lib/stores/session_state.svelte.js';
   import { setUIState } from '$lib/stores/ui_state.svelte.js';
   import { initSessionNotifications } from '$lib/stores/session_notifications.js';
@@ -72,7 +71,7 @@
     }
   });
 
-  const baseTabSlugs = ['sessions', 'active', 'prs', 'plans'] as const;
+  const baseTabSlugs = ['sessions', 'active', 'prs', 'reviews', 'plans'] as const;
   const projectTabSlugs = [...baseTabSlugs, 'settings'] as const;
 
   function handleShortcuts(event: KeyboardEvent) {
@@ -108,12 +107,12 @@
             : currentTab;
         // Ctrl+Shift+1 = all projects, Ctrl+Shift+2..9 = projects in sidebar order
         if (projectIndex === 1) {
-          void goto(resolve(projectUrl('all', tab)));
+          void goto(projectUrl('all', tab));
           return true;
         } else {
           const project = getSidebarOrderedProjects(data.projects)[projectIndex - 2];
           if (project) {
-            void goto(resolve(projectUrl(String(project.id), tab)));
+            void goto(projectUrl(String(project.id), tab));
             return true;
           }
         }
@@ -146,7 +145,7 @@
     if ('serviceWorker' in navigator) {
       const hadController = !!navigator.serviceWorker.controller;
       navigator.serviceWorker
-        .register(resolve('/service-worker.js'))
+        .register('/service-worker.js')
         .catch((err) => console.warn('Service worker registration failed:', err));
       const onControllerChange = () => {
         if (hadController) location.reload();
@@ -171,7 +170,7 @@
 <ModeWatcher defaultMode="system" themeColors={{ dark: '#0c0a09', light: '#1f2937' }} />
 
 <svelte:window onkeydown={handleShortcuts} />
-<svelte:head><link rel="icon" href={resolve('/favicon.png')} /></svelte:head>
+<svelte:head><link rel="icon" href="/favicon.png" /></svelte:head>
 
 <Tooltip.Provider delayDuration={500}>
   <div class="flex h-screen min-h-screen flex-col bg-background">
@@ -182,7 +181,7 @@
       Skip to main content
     </a>
     <header class="flex items-center justify-between bg-gray-800 px-4 py-2 dark:bg-gray-900">
-      <a href={resolve('/')} class="text-lg font-semibold text-white" title="Home"> tim </a>
+      <a href="/" class="text-lg font-semibold text-white" title="Home"> tim </a>
       <div class="flex items-center gap-2">
         <TabNav {projectId} {showSessionsAttentionDot} />
         <Tooltip.Root>

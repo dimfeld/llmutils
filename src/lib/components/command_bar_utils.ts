@@ -52,6 +52,7 @@ export const ALL_NAV_ITEMS: NavItem[] = [
   { label: 'Sessions', slug: 'sessions', keywords: 'sessions agents running' },
   { label: 'Active Work', slug: 'active', keywords: 'active work dashboard attention' },
   { label: 'Pull Requests', slug: 'prs', keywords: 'pull requests prs github' },
+  { label: 'Review Guides', slug: 'reviews', keywords: 'review guides generated issues' },
   { label: 'Plans', slug: 'plans', keywords: 'plans list browse' },
   { label: 'Import', slug: 'import', keywords: 'import issue issues tracker clipboard paste' },
   { label: 'Settings', slug: 'settings', keywords: 'settings configuration' },

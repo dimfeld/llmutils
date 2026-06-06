@@ -11,6 +11,7 @@
     { label: 'Sessions', slug: 'sessions' },
     { label: 'Active Work', slug: 'active' },
     { label: 'Pull Requests', slug: 'prs' },
+    { label: 'Review Guides', slug: 'reviews' },
     { label: 'Plans', slug: 'plans' },
   ];
 

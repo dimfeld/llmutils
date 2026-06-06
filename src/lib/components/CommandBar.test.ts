@@ -74,6 +74,7 @@ describe('command_bar_utils', () => {
       'sessions',
       'active',
       'prs',
+      'reviews',
       'plans',
       'import',
       'settings',
