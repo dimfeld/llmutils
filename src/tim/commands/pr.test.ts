@@ -131,7 +131,7 @@ vi.mock('../../common/git.js', () => ({
   getGitRepository: vi.fn(async () => 'example/repo'),
   getGitRoot: vi.fn(async () => process.cwd()),
   getUsingJj: vi.fn(async () => false),
-  remoteBranchExistsGit: vi.fn(async () => true),
+  remoteBranchExists: vi.fn(async () => true),
   getWorkingCopyStatus: vi.fn(async () => ({
     clean: true,
     hasChanges: false,
@@ -313,7 +313,7 @@ import {
 import {
   fetchRemoteBranch as mockFetchRemoteBranchFn,
   getGitRepository as mockGetGitRepositoryFn,
-  remoteBranchExistsGit as mockRemoteBranchExistsGitFn,
+  remoteBranchExists as mockRemoteBranchExistsFn,
 } from '../../common/git.js';
 import { getRepositoryIdentity as mockGetRepositoryIdentityFn } from '../assignments/workspace_identifier.js';
 import {
@@ -366,7 +366,7 @@ const mockParsePrOrIssueNumber = vi.mocked(mockParsePrOrIssueNumberFn);
 const mockValidatePrIdentifier = vi.mocked(mockValidatePrIdentifierFn);
 const mockFetchRemoteBranch = vi.mocked(mockFetchRemoteBranchFn);
 const mockGetGitRepository = vi.mocked(mockGetGitRepositoryFn);
-const mockRemoteBranchExistsGit = vi.mocked(mockRemoteBranchExistsGitFn);
+const mockRemoteBranchExists = vi.mocked(mockRemoteBranchExistsFn);
 const mockGetRepositoryIdentity = vi.mocked(mockGetRepositoryIdentityFn);
 const mockGetLinkedPlansByPrUrl = vi.mocked(mockGetLinkedPlansByPrUrlFn);
 const mockGetPrStatusByUrl = vi.mocked(mockGetPrStatusByUrlFn);
@@ -491,8 +491,8 @@ describe('tim/commands/pr', () => {
     mockFetchRemoteBranch.mockReset();
     mockFetchRemoteBranch.mockResolvedValue(true);
     mockGetGitRepository.mockReset();
-    mockRemoteBranchExistsGit.mockReset();
-    mockRemoteBranchExistsGit.mockResolvedValue(true);
+    mockRemoteBranchExists.mockReset();
+    mockRemoteBranchExists.mockResolvedValue(true);
     mockGetRepositoryIdentity.mockReset();
     mockGetLinkedPlansByPrUrl.mockReset();
     mockGetLinkedPlansByPrUrl.mockReturnValue(new Map());
@@ -2468,7 +2468,7 @@ describe('tim/commands/pr', () => {
             headBranch: 'contributor/fork-branch',
           },
           {
-            remoteBranchExistsGit: vi.fn(async () => false),
+            remoteBranchExists: vi.fn(async () => false),
           }
         )
       ).rejects.toThrow(
@@ -2487,7 +2487,7 @@ describe('tim/commands/pr', () => {
             headBranch: 'feature/my-branch',
           },
           {
-            remoteBranchExistsGit: mockBranchExists,
+            remoteBranchExists: mockBranchExists,
           }
         )
       ).resolves.toBeUndefined();
@@ -2587,7 +2587,7 @@ describe('tim/commands/pr', () => {
 
       await handlePrFixCommand(undefined, { pr: '42' }, createNestedCommand());
 
-      expect(mockRemoteBranchExistsGit).toHaveBeenCalledWith(expect.any(String), 'feature/my-pr');
+      expect(mockRemoteBranchExists).toHaveBeenCalledWith(expect.any(String), 'feature/my-pr');
       expect(mockSetupWorkspace).toHaveBeenCalledWith(
         expect.objectContaining({
           autoWorkspace: true,
@@ -2691,7 +2691,7 @@ describe('tim/commands/pr', () => {
           comments: [{ body: 'Fix this.' }],
         }),
       ]);
-      mockRemoteBranchExistsGit.mockResolvedValue(false);
+      mockRemoteBranchExists.mockResolvedValue(false);
 
       await expect(
         handlePrFixCommand(undefined, { pr: '42' }, createNestedCommand())
@@ -2723,6 +2723,27 @@ describe('tim/commands/pr', () => {
       // The workspace base dir passed to setupWorkspace is the repoRoot, not a forced current-checkout path
       // The important thing is that no workspace option forces use of the exact repoRoot as working directory
       expect(workspaceOpts).not.toHaveProperty('workspace', repoRoot);
+    });
+
+    test('--new-workspace alone still forces a managed workspace (autoWorkspace true)', async () => {
+      setupPrModeTarget([
+        createReviewThreadDetail({
+          threadId: 'thread-1',
+          path: 'src/file.ts',
+          line: 1,
+          comments: [{ body: 'Fix this.' }],
+        }),
+      ]);
+
+      // Without an explicit --workspace name, PR mode must auto-select a managed
+      // workspace even when only --new-workspace is passed; otherwise setupWorkspace's
+      // `workspace || autoWorkspace` guard would be skipped and the current checkout
+      // would be mutated.
+      await handlePrFixCommand(undefined, { pr: '42', newWorkspace: true }, createNestedCommand());
+
+      const workspaceOpts = mockSetupWorkspace.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(workspaceOpts).toHaveProperty('autoWorkspace', true);
+      expect(workspaceOpts).toHaveProperty('newWorkspace', true);
     });
   });
 

@@ -6,7 +6,7 @@ import {
   deduplicatePrUrls,
   parsePrOrIssueNumber,
 } from '../../common/github/identifiers.js';
-import { fetchRemoteBranch, getGitRepository, remoteBranchExistsGit } from '../../common/git.js';
+import { fetchRemoteBranch, getGitRepository, remoteBranchExists } from '../../common/git.js';
 import { getWebhookServerUrl } from '../../common/github/webhook_client.js';
 import {
   formatWebhookIngestErrors,
@@ -1324,14 +1324,16 @@ export async function handlePrFixCommand(
 }
 
 export interface PrFixHeadBranchValidationDependencies {
-  remoteBranchExistsGit?: (repoRoot: string, headBranch: string) => Promise<boolean>;
+  remoteBranchExists?: (repoRoot: string, headBranch: string) => Promise<boolean>;
 }
 
 export async function ensurePrFixHeadBranchPushableOnOrigin(
   target: Pick<PullRequestFixTarget, 'canonicalPrUrl' | 'repoRoot' | 'headBranch'>,
   deps: PrFixHeadBranchValidationDependencies = {}
 ): Promise<void> {
-  const branchExists = await (deps.remoteBranchExistsGit ?? remoteBranchExistsGit)(
+  // Use the jj-aware dispatcher so the fork check works in non-colocated jj repos,
+  // where the plain `git ls-remote` path cannot reach the backing store.
+  const branchExists = await (deps.remoteBranchExists ?? remoteBranchExists)(
     target.repoRoot,
     target.headBranch
   );
@@ -1464,7 +1466,15 @@ async function executePrFixCommand({
             }
           : {
               workspace: resolveStringOption(options.workspace),
-              autoWorkspace: options.autoWorkspace === true || !workspaceMode,
+              // PR fix must always run in a managed workspace so it never mutates the
+              // user's current checkout. Force auto-selection unless an explicit
+              // workspace name was given (which routes through the named-workspace path).
+              // This also covers `--new-workspace` alone, which otherwise would not
+              // satisfy setupWorkspace's `workspace || autoWorkspace` guard.
+              autoWorkspace:
+                resolveStringOption(options.workspace) === undefined
+                  ? true
+                  : options.autoWorkspace === true,
               newWorkspace: options.newWorkspace === true,
               nonInteractive: noninteractive,
               branchName: target.headBranch,
