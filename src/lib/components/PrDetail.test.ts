@@ -7,9 +7,10 @@ import { getPrReviews } from '$lib/remote/pr_reviews.remote.js';
 import type { PrReviewThreadDetail } from '$tim/db/pr_status.js';
 import PrDetail from './PrDetail.svelte';
 
-const mockStartFixThreads = vi.fn();
+const mockStartFixPrThreads = vi.fn();
 const sessionManager = {
   sessions: new Map<string, { status: string; sessionInfo: { planUuid?: string } }>(),
+  hasActiveSessionForPr: vi.fn(() => ({ active: false }) as { active: boolean }),
 };
 
 vi.mock('$lib/remote/project_prs.remote.js', async () => {
@@ -38,7 +39,7 @@ vi.mock('$lib/remote/review_thread_actions.remote.js', async () => {
   >('$lib/remote/review_thread_actions.remote.js');
   return {
     ...actual,
-    startFixThreads: (...args: unknown[]) => mockStartFixThreads(...args),
+    startFixPrThreads: (...args: unknown[]) => mockStartFixPrThreads(...args),
   };
 });
 
@@ -230,8 +231,9 @@ describe('PrDetail', () => {
     expect(body).toContain('(1 unresolved)');
   });
 
-  test('hides Fix Unresolved when the PR does not have exactly one linked plan', async () => {
+  test('shows Fix Unresolved for an own PR with unresolved threads even when no plan is linked', async () => {
     const pr = createPr();
+    pr.linkedPlans = [];
     pr.reviewThreads = [createReviewThread()];
 
     const { body } = await renderWithTooltipProvider(PrDetail, {
@@ -242,7 +244,7 @@ describe('PrDetail', () => {
       },
     });
 
-    expect(body).not.toContain('Fix Unresolved');
+    expect(body).toContain('Fix Unresolved');
     expect(body).toContain('(1 unresolved)');
   });
 

@@ -70,6 +70,13 @@
         {/if}
         {session.planTitle}
       </span>
+    {:else if session.prNumber != null || session.prTitle}
+      <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+        {#if session.prNumber != null}
+          <span class="text-xs text-muted-foreground">PR #{session.prNumber}</span>
+        {/if}
+        {session.prTitle ?? ''}
+      </span>
     {:else}
       <span class="min-w-0 flex-1 truncate text-sm text-muted-foreground italic">No plan</span>
     {/if}

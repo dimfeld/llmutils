@@ -72,7 +72,7 @@
   let fixStarting = $state(false);
   let fixLaunched = $state(false);
   let fixButtonState = $derived(
-    getFixButtonState({ refreshing, fixStarting, fixLaunched, sessionActiveForPlan })
+    getFixButtonState({ refreshing, fixStarting, fixLaunched, sessionActive: sessionActiveForPlan })
   );
 
   // Reset fixLaunched when session discovery catches up or plan changes

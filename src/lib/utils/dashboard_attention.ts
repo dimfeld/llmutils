@@ -72,6 +72,9 @@ export interface RunningSession {
   planUuid: string | null;
   planId: number | null;
   planTitle: string | null;
+  prUrl: string | null;
+  prNumber: number | null;
+  prTitle: string | null;
   workspacePath: string | null;
   command: string;
   connectedAt: string;
@@ -80,7 +83,7 @@ export interface RunningSession {
 
 // --- Derivation functions ---
 
-const AGENT_COMMANDS = new Set(['agent', 'agent-multi', 'generate', 'chat', 'pr-create']);
+const AGENT_COMMANDS = new Set(['agent', 'agent-multi', 'generate', 'chat', 'pr-create', 'pr-fix']);
 
 export function indexSessionsByPlanUuid(
   sessions: Iterable<SessionData>
@@ -227,6 +230,9 @@ export function deriveRunningNowSessions(
       planUuid: session.sessionInfo.planUuid ?? null,
       planId: session.sessionInfo.planId ?? null,
       planTitle: session.sessionInfo.planTitle ?? null,
+      prUrl: session.sessionInfo.linkedPrUrl ?? null,
+      prNumber: session.sessionInfo.linkedPrNumber ?? null,
+      prTitle: session.sessionInfo.linkedPrTitle ?? null,
       workspacePath: session.sessionInfo.workspacePath ?? null,
       command: session.sessionInfo.command,
       connectedAt: session.connectedAt,
