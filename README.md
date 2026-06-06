@@ -306,6 +306,7 @@ tim review-guide list-issues 123                    # Latest guide for plan, plu
 tim review-guide list-issues feature/my-branch      # Resolve by plan or PR branch
 tim review-guide resolve-issue 42 123
 tim pr fix 123 --auto-workspace --executor codex-cli --model gpt-5-codex --effort high
+tim pr fix --pr 456 --auto-workspace                 # Fix review threads on a PR with no linked plan
 tim pr comment https://github.com/owner/repo/pull/456 "Fixed the related feedback"
 tim rebase 123 --auto-workspace
 ```
@@ -319,6 +320,8 @@ tim rebase 123 --auto-workspace
 Review guides can include non-actionable `<annotation file="..." line="...">...</annotation>` callouts. These render as Notes in the guide viewer sidebar and inline diff overlay, but are not submitted to GitHub or converted into cleanup work.
 
 `tim pr fix <planId>` starts an agent to address PR review feedback. Before launching the agent, tim refreshes the linked PR status from GitHub and injects unresolved review threads into the prompt with each PRRT thread ID and its related comments grouped together. The agent batches addressed review-thread replies through GitHub GraphQL pending reviews, submits those reviews, and uses `tim pr comment` only for feedback that is not represented as a review thread. It does not resolve threads or request reviews. Configure defaults with `prFix.executor`, `prFix.model`, and `prFix.effort`; CLI flags override config values.
+
+`tim pr fix --pr <pr-url-or-number>` runs the same review-thread fixing flow **without a linked plan**, against any PR in the current repository. It builds a Pull Request Context prompt (no plan context) and instructs the agent not to touch plan files, tasks, status, or assignments. The numeric positional form (`tim pr fix 123`) still means plan ID 123 — PR numbers must be passed via `--pr` (URL-like positionals are also accepted). Unlike `tim review`, `pr fix` requires a PR because its source material is unresolved GitHub review threads, so `--current`/`--branch` are rejected with a pointer to `tim review`. No-plan PR fix always prepares a managed workspace on the PR head branch (it never switches your current checkout or runs detached) and fails clearly for fork PRs whose head branch is not present on `origin`. The PR detail page's **Fix Unresolved** action launches this no-plan flow for your own PRs with unresolved threads even when no plan is linked, and running sessions are labeled by PR identity.
 
 ```yaml
 prFix:
