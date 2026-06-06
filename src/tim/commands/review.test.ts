@@ -3936,6 +3936,13 @@ Updated by branch-name autofix
     vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
     vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue(null as any);
     vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockRejectedValue(
+      new Error('plan context should not be gathered for current target fallback')
+    );
+    await writeFile(join(testDir, 'README.md'), '# test\n');
+    await Bun.$`git add README.md`.cwd(testDir).quiet();
+    await Bun.$`git commit -m initial`.cwd(testDir).quiet();
+    await Bun.$`git branch -M main`.cwd(testDir).quiet();
 
     const mockCommand = {
       parent: {
@@ -3943,9 +3950,11 @@ Updated by branch-name autofix
       },
     };
 
-    await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
-      'Planless current review execution is not yet implemented'
-    );
+    await expect(handleReviewCommand(undefined, { noSave: true }, mockCommand)).resolves.toEqual({
+      tasksAppended: 0,
+      issuesSaved: 0,
+    });
+    expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
   });
 
   test('falls back to current target when the branch name matches the pattern but the DB plan does not exist', async () => {
@@ -3953,6 +3962,13 @@ Updated by branch-name autofix
     vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
     vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue('999-missing-plan');
     vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockRejectedValue(
+      new Error('plan context should not be gathered for missing branch plan fallback')
+    );
+    await writeFile(join(testDir, 'README.md'), '# test\n');
+    await Bun.$`git add README.md`.cwd(testDir).quiet();
+    await Bun.$`git commit -m initial`.cwd(testDir).quiet();
+    await Bun.$`git branch -M main`.cwd(testDir).quiet();
 
     const mockCommand = {
       parent: {
@@ -3960,9 +3976,11 @@ Updated by branch-name autofix
       },
     };
 
-    await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
-      'Planless current review execution is not yet implemented'
-    );
+    await expect(handleReviewCommand(undefined, { noSave: true }, mockCommand)).resolves.toEqual({
+      tasksAppended: 0,
+      issuesSaved: 0,
+    });
+    expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
   });
 });
 
