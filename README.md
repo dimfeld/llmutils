@@ -446,6 +446,18 @@ tim materialize 123
 tim sync 123
 ```
 
+Open an interactive shell in a plan/branch/PR workspace:
+
+```bash
+tim shell 123                          # Login shell in plan 123's workspace
+tim shell --branch feature/my-branch   # Or for a branch
+tim shell --pr 456                     # Or for a PR head branch
+```
+
+`tim shell` sets up/switches to the correct workspace (same options as `tim agent`) and spawns a `zsh -l` login shell inside a PTY in that directory. The shell is exposed as a `pty` session over the embedded session server (started without a bearer token so the web server can discover it), and the web server relays it to browser clients over a `/pty` websocket.
+
+**Web terminal view.** Opening a PTY session in the web UI renders a live `@wterm/dom` interactive terminal instead of the structured message list. The text input box is hidden — all input goes through the focused terminal. Output streams in real-time with full color and cursor-movement support. Resizing the browser window sends a resize event to the shell. When the shell exits, the session transitions to offline/ended. See `docs/web-interface.md` ("PTY Sessions") for the relay protocol and `Terminal.svelte` details.
+
 Update metadata and tasks:
 
 ```bash

@@ -440,6 +440,59 @@ describe('createHeadlessAdapterForCommand', () => {
     }
   });
 
+  test('can disable bearer tokens for discoverable shell embedded servers', async () => {
+    tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-test-'));
+    process.env.XDG_CACHE_HOME = tempCacheDir;
+    process.env.TIM_SERVER_PORT = '0';
+    process.env.TIM_SERVER_HOSTNAME = '127.0.0.1';
+    process.env.TIM_WS_BEARER_TOKEN = 'secret-token';
+
+    const shellAdapter = await createHeadlessAdapterForCommand({
+      command: 'shell',
+      interactive: true,
+      disableBearerToken: true,
+      sessionInfo: { pty: true },
+    });
+
+    try {
+      const shellSessionInfo = listSessionInfoFiles()[0];
+      expect(shellSessionInfo).toMatchObject({
+        pid: process.pid,
+        command: 'shell',
+      });
+      expect(shellSessionInfo?.token).toBeUndefined();
+
+      const shellPort = (shellAdapter as any).sessionServer.port as number;
+      const shellClient = await openWebSocket(`ws://127.0.0.1:${shellPort}/tim-agent`);
+      try {
+        expect(await waitForMessage(shellClient)).toMatchObject({
+          type: 'session_info',
+          command: 'shell',
+          pty: true,
+        });
+      } finally {
+        shellClient.close();
+      }
+    } finally {
+      await shellAdapter.destroy();
+    }
+
+    const normalAdapter = await createHeadlessAdapterForCommand({
+      command: 'agent',
+      interactive: true,
+    });
+
+    try {
+      expect(listSessionInfoFiles()[0]).toMatchObject({
+        pid: process.pid,
+        command: 'agent',
+        token: true,
+      });
+    } finally {
+      await normalAdapter.destroy();
+    }
+  });
+
   test('uses a requested TIM_SERVER_PORT and enforces bearer auth on the embedded server', async () => {
     tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-test-'));
     process.env.XDG_CACHE_HOME = tempCacheDir;

@@ -16,6 +16,7 @@ import type {
   TodoUpdateItem,
 } from '../../logging/structured_messages.js';
 import type { TunnelMessage } from '../../logging/tunnel_protocol.js';
+import { debugLog } from '../../logging.js';
 import { listProjects } from '$tim/db/project.js';
 import { parseGitRemoteUrl } from '$common/git_url_parser.js';
 import {
@@ -113,6 +114,7 @@ export interface SessionPlanTask {
 export interface SessionData {
   connectionId: string;
   sessionInfo: HeadlessSessionInfo;
+  pty: boolean;
   status: SessionStatus;
   projectId: number | null;
   planContent: string | null;
@@ -159,6 +161,7 @@ export interface SessionManagerEvents {
 type SessionEventName = keyof SessionManagerEvents;
 type SessionEventListener<T extends SessionEventName> = (payload: SessionManagerEvents[T]) => void;
 type AgentSender = (message: HeadlessServerMessage) => void;
+export type PtySubscriber = (data: string) => void;
 
 interface SessionInternals {
   deferredPromptEvents: ActivePrompt[];
@@ -182,6 +185,15 @@ const NOTIFICATION_SEQ = 0;
 const MAX_NOTIFICATION_MESSAGES = 200;
 const MAX_SESSION_MESSAGES = 5000;
 const MAX_SNAPSHOT_MESSAGES = 500;
+const MAX_PTY_OUTPUT_CACHE_BYTES = 256 * 1024;
+// Also bound the cache by frame count so a flood of empty/tiny pty_output frames
+// (which add ~0 decoded bytes) cannot grow `frames` without bound under the byte cap.
+const MAX_PTY_OUTPUT_CACHE_FRAMES = 4096;
+
+interface PtyOutputCache {
+  frames: string[];
+  byteCount: number;
+}
 
 function stripStructuredMessage(message: StructuredMessage): StructuredMessagePayload {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -256,6 +268,21 @@ function selectSessionCandidate(
   }
 
   return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+function estimateBase64DecodedByteLength(data: string): number {
+  if (data.length === 0) {
+    return 0;
+  }
+
+  let padding = 0;
+  if (data.endsWith('==')) {
+    padding = 2;
+  } else if (data.endsWith('=')) {
+    padding = 1;
+  }
+
+  return Math.max(0, Math.floor((data.length * 3) / 4) - padding);
 }
 
 export function formatTunnelMessage(
@@ -363,6 +390,8 @@ export class SessionManager {
   private readonly sessionsByPlanUuid = new SvelteMap<string, SessionData[]>();
   private readonly sessionsByPrUrl = new SvelteMap<string, SessionData[]>();
   private readonly senders = new Map<string, AgentSender>();
+  private readonly ptySubscribers = new Map<string, Set<PtySubscriber>>();
+  private readonly ptyOutputCaches = new Map<string, PtyOutputCache>();
   private readonly internals = new Map<string, SessionInternals>();
   private readonly rateLimitStore = new RateLimitStore();
   private projectIdByRemote: Map<string, number> | null = null;
@@ -377,6 +406,7 @@ export class SessionManager {
     const session: SessionData = {
       connectionId,
       sessionInfo: { command: 'unknown' },
+      pty: false,
       status: 'active',
       projectId: null,
       planContent: null,
@@ -446,6 +476,9 @@ export class SessionManager {
         session.sessionInfo = {
           command: message.command,
           interactive: message.interactive,
+          pty: message.pty,
+          cols: message.cols,
+          rows: message.rows,
           sessionId: message.sessionId,
           planId: message.planId,
           planUuid: message.planUuid,
@@ -461,6 +494,7 @@ export class SessionManager {
           terminalPaneId: message.terminalPaneId,
           terminalType: message.terminalType,
         };
+        session.pty = message.pty === true;
         session.groupKey = sessionGroupKey(message.gitRemote, message.workspacePath);
         session.projectId = this.resolveProjectId(message.gitRemote);
 
@@ -531,6 +565,11 @@ export class SessionManager {
 
         return;
       }
+      case 'pty_output':
+        if (session.pty) {
+          this.broadcastPtyOutput(connectionId, message.data);
+        }
+        return;
       case 'session_ended':
         // The agent is shutting down gracefully. This message confirms all prior
         // messages have been sent. The actual disconnect event will follow shortly.
@@ -565,6 +604,7 @@ export class SessionManager {
       ({
         connectionId,
         sessionInfo,
+        pty: false,
         status: 'notification',
         projectId: this.resolveProjectId(payload.gitRemote),
         planContent: null,
@@ -658,6 +698,21 @@ export class SessionManager {
     });
   }
 
+  sendPtyInput(connectionId: string, data: string): boolean {
+    return this.trySend(connectionId, {
+      type: 'pty_input',
+      data,
+    });
+  }
+
+  sendPtyResize(connectionId: string, cols: number, rows: number): boolean {
+    return this.trySend(connectionId, {
+      type: 'pty_resize',
+      cols,
+      rows,
+    });
+  }
+
   endSession(connectionId: string): boolean {
     return this.trySend(connectionId, { type: 'end_session' });
   }
@@ -678,6 +733,103 @@ export class SessionManager {
     if (this.sseSubscriberCount === 0) {
       this.broadcastNotificationSubscribers(false);
     }
+  }
+
+  registerPtySubscriber(connectionId: string, send: PtySubscriber): () => void {
+    let subscribers = this.ptySubscribers.get(connectionId);
+    if (!subscribers) {
+      subscribers = new Set<PtySubscriber>();
+      this.ptySubscribers.set(connectionId, subscribers);
+    }
+
+    subscribers.add(send);
+    this.replayCachedPtyOutput(connectionId, send);
+
+    return (): void => {
+      this.unregisterPtySubscriber(connectionId, send);
+    };
+  }
+
+  private unregisterPtySubscriber(connectionId: string, send: PtySubscriber): void {
+    const subscribers = this.ptySubscribers.get(connectionId);
+    if (!subscribers) {
+      return;
+    }
+
+    subscribers.delete(send);
+    if (subscribers.size === 0) {
+      this.ptySubscribers.delete(connectionId);
+    }
+  }
+
+  private broadcastPtyOutput(connectionId: string, data: string): void {
+    this.appendPtyOutputCache(connectionId, data);
+
+    const subscribers = this.ptySubscribers.get(connectionId);
+    if (!subscribers) {
+      return;
+    }
+
+    for (const subscriber of subscribers) {
+      try {
+        subscriber(data);
+      } catch (error) {
+        debugLog(`Removing PTY subscriber for connection ${connectionId} after send error:`, error);
+        this.unregisterPtySubscriber(connectionId, subscriber);
+      }
+    }
+  }
+
+  private replayCachedPtyOutput(connectionId: string, subscriber: PtySubscriber): void {
+    const cache = this.ptyOutputCaches.get(connectionId);
+    if (!cache) {
+      return;
+    }
+
+    for (const frame of cache.frames) {
+      try {
+        subscriber(frame);
+      } catch (error) {
+        debugLog(
+          `Removing PTY subscriber for connection ${connectionId} after replay send error:`,
+          error
+        );
+        this.unregisterPtySubscriber(connectionId, subscriber);
+        return;
+      }
+    }
+  }
+
+  private appendPtyOutputCache(connectionId: string, data: string): void {
+    const frameByteCount = estimateBase64DecodedByteLength(data);
+    const cache = this.ptyOutputCaches.get(connectionId) ?? { frames: [], byteCount: 0 };
+
+    cache.frames.push(data);
+    cache.byteCount += frameByteCount;
+
+    // Evict oldest frames while over either cap, but always keep at least the most
+    // recent frame so a single oversized frame still replays a populated screen.
+    while (
+      (cache.byteCount > MAX_PTY_OUTPUT_CACHE_BYTES ||
+        cache.frames.length > MAX_PTY_OUTPUT_CACHE_FRAMES) &&
+      cache.frames.length > 1
+    ) {
+      const evictedFrame = cache.frames.shift();
+      if (evictedFrame == null) {
+        break;
+      }
+      cache.byteCount = Math.max(
+        0,
+        cache.byteCount - estimateBase64DecodedByteLength(evictedFrame)
+      );
+    }
+
+    this.ptyOutputCaches.set(connectionId, cache);
+  }
+
+  private clearPtySessionState(connectionId: string): void {
+    this.ptySubscribers.delete(connectionId);
+    this.ptyOutputCaches.delete(connectionId);
   }
 
   private trySend(connectionId: string, message: HeadlessServerMessage): boolean {
@@ -706,6 +858,7 @@ export class SessionManager {
     this.removeSessionFromPrUrlIndex(session);
     this.sessions.delete(connectionId);
     this.senders.delete(connectionId);
+    this.clearPtySessionState(connectionId);
     this.internals.delete(connectionId);
     this.emit('session:dismissed', { connectionId });
     return true;
@@ -719,6 +872,7 @@ export class SessionManager {
         this.removeSessionFromPrUrlIndex(session);
         this.sessions.delete(connectionId);
         this.senders.delete(connectionId);
+        this.clearPtySessionState(connectionId);
         this.internals.delete(connectionId);
         this.emit('session:dismissed', { connectionId });
         dismissed++;

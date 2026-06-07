@@ -14,6 +14,7 @@
   import SessionMessage from './SessionMessage.svelte';
   import PromptRenderer from './PromptRenderer.svelte';
   import MessageInput from './MessageInput.svelte';
+  import Terminal from './Terminal.svelte';
   import PlanContentPane from './PlanContentPane.svelte';
   import {
     endSessionAndRefreshPlan,
@@ -122,7 +123,14 @@
     }
   });
 
-  let showInput = $derived(session.status === 'active' && session.sessionInfo.interactive);
+  // PTY sessions render a live terminal that talks to the standalone Bun.serve
+  // websocket on this port (surfaced by +layout.server.ts), instead of the
+  // message list + input box.
+  let ptyWebSocketPort = $derived(page.data.ptyWebSocketPort as number);
+
+  let showInput = $derived(
+    !session.pty && session.status === 'active' && session.sessionInfo.interactive
+  );
   let hasTerminalPane = $derived(
     session.sessionInfo.terminalType === 'wezterm' && Boolean(session.sessionInfo.terminalPaneId)
   );
@@ -584,44 +592,57 @@
   </div>
 
   {#snippet messagesPane()}
-    <!-- Prompt area (fixed above messages) -->
-    {#if !session.isReplaying && activePrompt}
-      <div class="max-h-1/2 overflow-y-auto">
-        {#if queuedPromptCount > 0}
-          <div class="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-            {queuedPromptCount} more pending
-          </div>
-        {/if}
-        {#key activePrompt.requestId}
-          <PromptRenderer prompt={activePrompt} connectionId={session.connectionId} />
-        {/key}
+    {#if session.pty}
+      <!-- PTY sessions render a live interactive terminal instead of the message
+           list, and the input box is hidden (all input goes through the terminal). -->
+      <div class="h-0 min-h-0 flex-1 overflow-hidden">
+        <Terminal
+          connectionId={session.connectionId}
+          wsPort={ptyWebSocketPort}
+          cols={session.sessionInfo.cols}
+          rows={session.sessionInfo.rows}
+        />
       </div>
-    {/if}
-
-    <!-- Scrollable message list -->
-    <div
-      class="h-0 min-h-0 flex-1 overflow-y-auto bg-gray-900 p-4 font-mono text-sm focus:outline-none"
-      tabindex="0"
-      role="region"
-      aria-label="Messages"
-      bind:this={scrollContainer}
-      onscroll={handleScroll}
-      onscrollend={handleScrollEnd}
-    >
-      {#if session.messages.length === 0}
-        <p class="text-gray-500">No messages yet</p>
-      {:else}
-        {#each session.messages as message, index (message.id)}
-          <SessionMessage {message} disableContentVisibility={index >= fullRenderStartIndex} />
-        {/each}
+    {:else}
+      <!-- Prompt area (fixed above messages) -->
+      {#if !session.isReplaying && activePrompt}
+        <div class="max-h-1/2 overflow-y-auto">
+          {#if queuedPromptCount > 0}
+            <div class="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+              {queuedPromptCount} more pending
+            </div>
+          {/if}
+          {#key activePrompt.requestId}
+            <PromptRenderer prompt={activePrompt} connectionId={session.connectionId} />
+          {/key}
+        </div>
       {/if}
-    </div>
 
-    <!-- Message input bar (hidden when offline or non-interactive) -->
-    {#if showInput}
-      <div class="shrink-0">
-        <MessageInput connectionId={session.connectionId} />
+      <!-- Scrollable message list -->
+      <div
+        class="h-0 min-h-0 flex-1 overflow-y-auto bg-gray-900 p-4 font-mono text-sm focus:outline-none"
+        tabindex="0"
+        role="region"
+        aria-label="Messages"
+        bind:this={scrollContainer}
+        onscroll={handleScroll}
+        onscrollend={handleScrollEnd}
+      >
+        {#if session.messages.length === 0}
+          <p class="text-gray-500">No messages yet</p>
+        {:else}
+          {#each session.messages as message, index (message.id)}
+            <SessionMessage {message} disableContentVisibility={index >= fullRenderStartIndex} />
+          {/each}
+        {/if}
       </div>
+
+      <!-- Message input bar (hidden when offline or non-interactive) -->
+      {#if showInput}
+        <div class="shrink-0">
+          <MessageInput connectionId={session.connectionId} />
+        </div>
+      {/if}
     {/if}
   {/snippet}
 

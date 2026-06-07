@@ -60,6 +60,9 @@ export default defineConfig({
             headless: true,
             ui: false,
             api: { port: 0 },
+            // Don't write screenshot artifacts on failure — they get committed
+            // incidentally and add noise without serving as real baselines.
+            screenshotFailures: false,
             instances: [{ browser: 'chromium', headless: true }],
           },
           env: playwrightTestEnv,

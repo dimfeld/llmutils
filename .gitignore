@@ -76,3 +76,6 @@ vite.config.ts.timestamp-*
 
 # Vitest debug attachments (transient)
 .vitest-attachments/
+
+# vitest-browser-svelte screenshot artifacts (regenerated on failing runs)
+__screenshots__/

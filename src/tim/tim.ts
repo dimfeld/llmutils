@@ -1070,6 +1070,41 @@ program
   });
 
 program
+  .command('shell [planId]')
+  .description('Start a login shell in a PTY after preparing a tim workspace')
+  .option(
+    '-w, --workspace <id>',
+    'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
+  )
+  .option(
+    '--aw, --auto-workspace',
+    'Automatically select an available workspace or create a new one'
+  )
+  .option(
+    '--nw, --new-workspace',
+    'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
+  )
+  .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
+  .option('--plan <planId>', 'Plan ID to use for branch/workspace assignment')
+  .option('--branch <branch>', 'Branch to check out in the prepared workspace')
+  .option('--pr <pr-url-or-number>', 'Pull request to check out in the prepared workspace')
+  .option('--shell <path>', 'Shell binary to spawn (defaults to $SHELL or zsh)')
+  .option('--cols <cols>', 'Initial PTY column count', (value: string) =>
+    parsePositiveIntegerOption(value, '--cols')
+  )
+  .option('--rows <rows>', 'Initial PTY row count', (value: string) =>
+    parsePositiveIntegerOption(value, '--rows')
+  )
+  .action(async (planIdArg, options, command) => {
+    const { handleShellCommand } = await import('./commands/pty.js');
+    const planId = parseOptionalPlanIdFromCliArg(planIdArg);
+    if (options.plan !== undefined) {
+      options.plan = parsePlanIdFromCliArg(options.plan);
+    }
+    await handleShellCommand(planId, options, command).catch(handleCommandError);
+  });
+
+program
   .command('run-prompt [prompt]')
   .description(
     'Run a one-shot prompt through Claude Code or Codex CLI. Result is printed to stdout.'

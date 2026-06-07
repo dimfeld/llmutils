@@ -567,6 +567,23 @@ tim init --minimal                     # Minimal config
 tim init --force                       # Overwrite existing
 ```
 
+### tim shell
+
+Open an interactive login shell (`zsh -l` by default) inside the workspace for a plan, branch, or PR. Sets up and/or switches to the correct workspace (honoring the standard workspace/branch/plan/PR options), then spawns the shell in a PTY whose working directory is the prepared workspace. The shell is exposed as a `pty` session over the embedded session server, so it is also reachable/streamable like other tim sessions.
+
+```bash
+tim shell 123                          # Workspace for plan 123
+tim shell --plan 123                   # Equivalent
+tim shell --branch feature/my-branch   # Workspace for a branch
+tim shell --pr 456                     # Workspace for a PR head branch
+tim shell 123 --auto-workspace         # Find or create workspace
+tim shell 123 --workspace feature-xyz  # Specific workspace
+tim shell --shell bash                 # Override the shell binary (falls back to $SHELL, then zsh)
+tim shell 123 --cols 120 --rows 40     # Initial PTY size (defaults to the current terminal)
+```
+
+A plan ID may be given positionally or with `--plan`, but not both. `--pr` cannot be combined with a plan ID, `--plan`, or `--branch`; `--branch` cannot be combined with a plan ID or `--plan`.
+
 ### tim mcp-server
 
 Start the MCP server.

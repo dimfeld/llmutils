@@ -23,3 +23,7 @@ declare global {
     // interface Platform {}
   }
 }
+
+// `@wterm/dom/css` is a CSS-only package subpath export (no type declarations);
+// declare it so the side-effect import in Terminal.svelte type-checks.
+declare module '@wterm/dom/css';

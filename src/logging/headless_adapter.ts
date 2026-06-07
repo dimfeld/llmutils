@@ -4,6 +4,7 @@ import type {
   HeadlessOutputMessage,
   HeadlessPlanContentMessage,
   HeadlessPlanTask,
+  HeadlessPtyOutputMessage,
   HeadlessServerMessage,
   HeadlessSessionInfo,
 } from './headless_protocol.js';
@@ -28,6 +29,7 @@ interface HistoryEntry {
 
 interface HeadlessAdapterOptions {
   maxBufferBytes?: number;
+  maxPtyBufferBytes?: number;
   serverPort?: number;
   serverHostname?: string;
   bearerToken?: string;
@@ -40,11 +42,13 @@ interface PendingPromptRequest {
 }
 
 const DEFAULT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
+const DEFAULT_MAX_PTY_BUFFER_BYTES = 512 * 1024;
 
 export class HeadlessAdapter implements LoggerAdapter {
   private sessionInfo: HeadlessSessionInfo;
   private readonly wrappedAdapter: LoggerAdapter;
   private readonly maxBufferBytes: number;
+  private readonly maxPtyBufferBytes: number;
   private readonly bearerToken?: string;
   private readonly serverHostname?: string;
   private readonly serverSessionId?: string;
@@ -53,12 +57,16 @@ export class HeadlessAdapter implements LoggerAdapter {
   private sessionServer: EmbeddedServerHandle | undefined;
   private history: HistoryEntry[] = [];
   private historyOutputBytes = 0;
+  private ptyBuffer: Uint8Array[] = [];
+  private ptyBufferBytes = 0;
   private destroyed = false;
   private nextOutputSequence = 1;
   private latestPlanContent: string | null = null;
   private latestPlanTasks: HeadlessPlanTask[] = [];
   private pendingPrompts: Map<string, PendingPromptRequest> = new Map();
   private userInputHandler?: (content: string) => void;
+  private ptyInputHandler?: (bytes: Uint8Array) => void;
+  private ptyResizeHandler?: (cols: number, rows: number) => void;
   private endSessionHandler?: () => void;
   private forceEndSessionHandler?: () => void;
   private hasBrowserNotificationSubscribers = false;
@@ -71,6 +79,7 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.sessionInfo = sessionInfo;
     this.wrappedAdapter = wrappedAdapter;
     this.maxBufferBytes = options?.maxBufferBytes ?? DEFAULT_MAX_BUFFER_BYTES;
+    this.maxPtyBufferBytes = options?.maxPtyBufferBytes ?? DEFAULT_MAX_PTY_BUFFER_BYTES;
     this.bearerToken = options?.bearerToken;
     this.serverHostname = options?.serverHostname;
 
@@ -147,6 +156,18 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.sessionServer.broadcast(message);
   }
 
+  broadcastPtyOutput(bytes: Uint8Array): void {
+    if (this.destroyed) {
+      return;
+    }
+
+    const storedBytes = new Uint8Array(bytes);
+    this.enqueuePtyBytes(storedBytes);
+
+    const message = this.ptyOutputFrame(bytes);
+    this.sessionServer?.broadcastRaw(JSON.stringify(message));
+  }
+
   destroySync(): void {
     this.destroyed = true;
     this.rejectAllPending();
@@ -214,6 +235,20 @@ export class HeadlessAdapter implements LoggerAdapter {
           this.wrappedAdapter.warn(`Headless user input handler error: ${err as Error}`);
         }
         break;
+      case 'pty_input':
+        try {
+          this.ptyInputHandler?.(Buffer.from(message.data, 'base64'));
+        } catch (err) {
+          this.wrappedAdapter.warn(`Headless PTY input handler error: ${err as Error}`);
+        }
+        break;
+      case 'pty_resize':
+        try {
+          this.ptyResizeHandler?.(message.cols, message.rows);
+        } catch (err) {
+          this.wrappedAdapter.warn(`Headless PTY resize handler error: ${err as Error}`);
+        }
+        break;
       case 'end_session':
         this.rejectAllPending('Session ended');
         try {
@@ -238,6 +273,14 @@ export class HeadlessAdapter implements LoggerAdapter {
 
   setUserInputHandler(callback: ((content: string) => void) | undefined): void {
     this.userInputHandler = callback;
+  }
+
+  setPtyInputHandler(callback: ((bytes: Uint8Array) => void) | undefined): void {
+    this.ptyInputHandler = callback;
+  }
+
+  setPtyResizeHandler(callback: ((cols: number, rows: number) => void) | undefined): void {
+    this.ptyResizeHandler = callback;
   }
 
   setEndSessionHandler(callback: (() => void) | undefined): void {
@@ -316,6 +359,50 @@ export class HeadlessAdapter implements LoggerAdapter {
     }
   }
 
+  private enqueuePtyBytes(bytes: Uint8Array): void {
+    if (this.maxPtyBufferBytes <= 0 || bytes.byteLength === 0) {
+      return;
+    }
+
+    if (bytes.byteLength > this.maxPtyBufferBytes) {
+      const start = bytes.byteLength - this.maxPtyBufferBytes;
+      const sliced = bytes.slice(start);
+      this.ptyBuffer = [sliced];
+      this.ptyBufferBytes = sliced.byteLength;
+      return;
+    }
+
+    this.ptyBuffer.push(bytes);
+    this.ptyBufferBytes += bytes.byteLength;
+    this.enforcePtyBufferLimit();
+  }
+
+  private enforcePtyBufferLimit(): void {
+    while (this.ptyBufferBytes > this.maxPtyBufferBytes && this.ptyBuffer.length > 0) {
+      const first = this.ptyBuffer[0];
+      if (!first) {
+        break;
+      }
+      const bytesToDrop = this.ptyBufferBytes - this.maxPtyBufferBytes;
+      if (bytesToDrop >= first.byteLength) {
+        this.ptyBuffer.shift();
+        this.ptyBufferBytes -= first.byteLength;
+        continue;
+      }
+
+      this.ptyBuffer[0] = first.slice(bytesToDrop);
+      this.ptyBufferBytes -= bytesToDrop;
+      break;
+    }
+  }
+
+  private ptyOutputFrame(bytes: Uint8Array): HeadlessPtyOutputMessage {
+    return {
+      type: 'pty_output',
+      data: Buffer.from(bytes).toString('base64'),
+    };
+  }
+
   private sendReplayToServerClient(connectionId: string): void {
     const server = this.sessionServer;
     if (!server) {
@@ -327,6 +414,13 @@ export class HeadlessAdapter implements LoggerAdapter {
       type: 'session_info',
       sessionId: this.serverSessionId,
     });
+    if (this.sessionInfo.pty) {
+      for (const entry of this.ptyBuffer) {
+        server.sendTo(connectionId, this.ptyOutputFrame(entry));
+      }
+      return;
+    }
+
     if (this.latestPlanContent != null) {
       server.sendTo(connectionId, {
         type: 'plan_content',

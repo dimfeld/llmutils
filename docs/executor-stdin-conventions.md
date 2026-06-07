@@ -110,7 +110,7 @@ These patterns apply to any executor that manages a subprocess with piped stdio 
 
 ## Workspace Locking Conventions
 
-`tim agent`, `tim generate`, and `tim chat` (when workspace options are provided) use `setupWorkspace()` from `workspace_setup.ts` for workspace selection and locking. Key invariants and gotchas:
+`tim agent`, `tim generate`, `tim chat`, and `tim shell` (when workspace options are provided, or when a plan/branch/PR target forces a workspace) use `setupWorkspace()` from `workspace_setup.ts` for workspace selection and locking. Key invariants and gotchas:
 
 - **Execution must always hold a lock.** Even when no workspace flags are provided and the command falls back to cwd, it must acquire a PID lock on cwd before returning. Early returns from the workspace selection branches must not skip this.
 - **`createWorkspace()` acquires persistent locks, not PID locks.** Persistent locks are not released by signal handlers. For signal-based cleanup to work, the persistent lock must be released and re-acquired as a PID lock after workspace creation. This is handled inside `setupWorkspace()`.

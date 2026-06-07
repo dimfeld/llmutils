@@ -32,7 +32,8 @@ export type HeadlessCommand =
   | 'update-docs'
   | 'proof'
   | 'pr-create'
-  | 'pr-fix';
+  | 'pr-fix'
+  | 'shell';
 
 interface RunWithHeadlessOptions<T> {
   enabled: boolean;
@@ -46,6 +47,14 @@ interface CreateHeadlessAdapterOptions {
   command: HeadlessCommand;
   interactive: boolean;
   plan?: HeadlessPlanSummary;
+  sessionInfo?: Partial<HeadlessSessionInfo>;
+  /**
+   * When true, the embedded server starts without a bearer token even if
+   * TIM_WS_BEARER_TOKEN is set. `tim shell` needs this because
+   * SessionDiscoveryClient skips token-authenticated sessions, so the PTY
+   * agent must be discoverable without a token.
+   */
+  disableBearerToken?: boolean;
 }
 
 export function resolveHeadlessUrl(config: Pick<TimConfig, 'headless'>): string {
@@ -144,9 +153,12 @@ export async function createHeadlessAdapterForCommand({
   command,
   interactive,
   plan,
+  sessionInfo: sessionInfoPatch,
+  disableBearerToken,
 }: CreateHeadlessAdapterOptions): Promise<HeadlessAdapter> {
   const sessionInfo = await buildHeadlessSessionInfo(command, interactive, plan);
-  return createHeadlessAdapter(sessionInfo);
+  Object.assign(sessionInfo, sessionInfoPatch);
+  return createHeadlessAdapter(sessionInfo, { disableBearerToken });
 }
 
 export function updateHeadlessSessionInfo(patch: Partial<HeadlessSessionInfo>): void {
@@ -158,7 +170,10 @@ export function updateHeadlessSessionInfo(patch: Partial<HeadlessSessionInfo>): 
   adapter.updateSessionInfo(patch);
 }
 
-function createHeadlessAdapter(sessionInfo: HeadlessSessionInfo): HeadlessAdapter {
+function createHeadlessAdapter(
+  sessionInfo: HeadlessSessionInfo,
+  { disableBearerToken = false }: { disableBearerToken?: boolean } = {}
+): HeadlessAdapter {
   const wrappedAdapter = getLoggerAdapter();
   const noServer = process.env.TIM_NO_SERVER === '1';
   const portStr = process.env.TIM_SERVER_PORT?.trim();
@@ -176,7 +191,9 @@ function createHeadlessAdapter(sessionInfo: HeadlessSessionInfo): HeadlessAdapte
       serverPort = 0;
     }
   }
-  const bearerToken = process.env.TIM_WS_BEARER_TOKEN?.trim() || undefined;
+  const bearerToken = disableBearerToken
+    ? undefined
+    : process.env.TIM_WS_BEARER_TOKEN?.trim() || undefined;
   const serverHostname = process.env.TIM_SERVER_HOSTNAME?.trim() || undefined;
   const options = {
     serverPort,

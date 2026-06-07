@@ -4,6 +4,9 @@ export interface HeadlessSessionInfo {
   sessionId?: string;
   command: string;
   interactive?: boolean;
+  pty?: boolean;
+  cols?: number;
+  rows?: number;
   planId?: number;
   planUuid?: string;
   planTitle?: string;
@@ -27,6 +30,11 @@ export interface HeadlessOutputMessage {
   type: 'output';
   seq: number;
   message: TunnelMessage;
+}
+
+export interface HeadlessPtyOutputMessage {
+  type: 'pty_output';
+  data: string;
 }
 
 export interface HeadlessReplayStartMessage {
@@ -56,6 +64,7 @@ export interface HeadlessSessionEndedMessage {
 export type HeadlessMessage =
   | HeadlessSessionInfoMessage
   | HeadlessOutputMessage
+  | HeadlessPtyOutputMessage
   | HeadlessReplayStartMessage
   | HeadlessReplayEndMessage
   | HeadlessPlanContentMessage
@@ -73,6 +82,19 @@ export interface HeadlessPromptResponseServerMessage {
 export interface HeadlessUserInputServerMessage {
   type: 'user_input';
   content: string;
+}
+
+/** Server→client message: raw PTY input bytes encoded as base64. */
+export interface HeadlessPtyInputServerMessage {
+  type: 'pty_input';
+  data: string;
+}
+
+/** Server→client message: PTY terminal resize request. */
+export interface HeadlessPtyResizeServerMessage {
+  type: 'pty_resize';
+  cols: number;
+  rows: number;
 }
 
 /** Server→client message: request that the running session end gracefully. */
@@ -95,6 +117,8 @@ export interface HeadlessNotificationSubscribersMessage {
 export type HeadlessServerMessage =
   | HeadlessPromptResponseServerMessage
   | HeadlessUserInputServerMessage
+  | HeadlessPtyInputServerMessage
+  | HeadlessPtyResizeServerMessage
   | HeadlessEndSessionServerMessage
   | HeadlessForceEndSessionServerMessage
   | HeadlessNotificationSubscribersMessage;

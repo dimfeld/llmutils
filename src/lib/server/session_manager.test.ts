@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { Buffer } from 'node:buffer';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -1963,5 +1964,409 @@ describe('lib/server/session_manager', () => {
       active: true,
       connectionId: 'generate-active',
     });
+  });
+
+  // PTY threading tests (Tasks 1 and 2 from plan 381)
+  function createPtySession(connectionId: string): void {
+    manager.handleWebSocketConnect(connectionId, vi.fn());
+    manager.handleWebSocketMessage(connectionId, {
+      type: 'session_info',
+      command: 'shell',
+      interactive: true,
+      pty: true,
+      workspacePath: `/tmp/${connectionId}`,
+    });
+  }
+
+  function sendPtyOutput(connectionId: string, data: string): void {
+    manager.handleWebSocketMessage(connectionId, {
+      type: 'pty_output',
+      data,
+    });
+  }
+
+  function base64Frame(byteLength: number, fill: number): string {
+    return Buffer.alloc(byteLength, fill).toString('base64');
+  }
+
+  test('session_info with pty:true sets session.pty to true; non-pty session_info leaves pty false', () => {
+    manager.handleWebSocketConnect('conn-pty', vi.fn());
+    manager.handleWebSocketMessage('conn-pty', {
+      type: 'session_info',
+      command: 'shell',
+      interactive: true,
+      pty: true,
+      workspacePath: '/tmp/ws-pty',
+    });
+
+    const ptySession = manager.getSessionSnapshot().sessions[0];
+    expect(ptySession.pty).toBe(true);
+
+    manager.handleWebSocketConnect('conn-plain', vi.fn());
+    manager.handleWebSocketMessage('conn-plain', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      workspacePath: '/tmp/ws-plain',
+    });
+
+    const plainSession = manager
+      .getSessionSnapshot()
+      .sessions.find((s) => s.connectionId === 'conn-plain');
+    expect(plainSession?.pty).toBe(false);
+  });
+
+  test('pty_output for a PTY session is delivered to a registered subscriber and NOT added to session.messages', () => {
+    const subscriber = vi.fn<(data: string) => void>();
+
+    manager.handleWebSocketConnect('conn-pty', vi.fn());
+    manager.handleWebSocketMessage('conn-pty', {
+      type: 'session_info',
+      command: 'shell',
+      interactive: true,
+      pty: true,
+      workspacePath: '/tmp/ws-pty',
+    });
+
+    manager.registerPtySubscriber('conn-pty', subscriber);
+
+    // 'dGVzdA==' is base64 for "test"
+    manager.handleWebSocketMessage('conn-pty', {
+      type: 'pty_output',
+      data: 'dGVzdA==',
+    });
+
+    expect(subscriber).toHaveBeenCalledTimes(1);
+    expect(subscriber).toHaveBeenCalledWith('dGVzdA==');
+
+    const session = manager.getSessionSnapshot().sessions[0];
+    expect(session.messages).toHaveLength(0);
+  });
+
+  test('pty_output for a non-PTY session is ignored by PTY routing', () => {
+    const subscriber = vi.fn<(data: string) => void>();
+
+    manager.handleWebSocketConnect('conn-plain', vi.fn());
+    manager.handleWebSocketMessage('conn-plain', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      workspacePath: '/tmp/ws-plain',
+    });
+
+    manager.registerPtySubscriber('conn-plain', subscriber);
+
+    manager.handleWebSocketMessage('conn-plain', {
+      type: 'pty_output',
+      data: 'dGVzdA==',
+    });
+
+    expect(subscriber).not.toHaveBeenCalled();
+  });
+
+  test('multiple subscribers for the same connectionId all receive pty_output broadcast', () => {
+    const subscriber1 = vi.fn<(data: string) => void>();
+    const subscriber2 = vi.fn<(data: string) => void>();
+    const subscriber3 = vi.fn<(data: string) => void>();
+
+    manager.handleWebSocketConnect('conn-pty', vi.fn());
+    manager.handleWebSocketMessage('conn-pty', {
+      type: 'session_info',
+      command: 'shell',
+      interactive: true,
+      pty: true,
+      workspacePath: '/tmp/ws-pty',
+    });
+
+    manager.registerPtySubscriber('conn-pty', subscriber1);
+    manager.registerPtySubscriber('conn-pty', subscriber2);
+    manager.registerPtySubscriber('conn-pty', subscriber3);
+
+    manager.handleWebSocketMessage('conn-pty', {
+      type: 'pty_output',
+      data: 'AAAA',
+    });
+
+    expect(subscriber1).toHaveBeenCalledTimes(1);
+    expect(subscriber1).toHaveBeenCalledWith('AAAA');
+    expect(subscriber2).toHaveBeenCalledTimes(1);
+    expect(subscriber2).toHaveBeenCalledWith('AAAA');
+    expect(subscriber3).toHaveBeenCalledTimes(1);
+    expect(subscriber3).toHaveBeenCalledWith('AAAA');
+
+    // Messages are still not added to session.messages
+    const session = manager.getSessionSnapshot().sessions[0];
+    expect(session.messages).toHaveLength(0);
+  });
+
+  test('unsubscribe function from registerPtySubscriber stops delivery to that subscriber', () => {
+    const subscriber1 = vi.fn<(data: string) => void>();
+    const subscriber2 = vi.fn<(data: string) => void>();
+
+    manager.handleWebSocketConnect('conn-pty', vi.fn());
+    manager.handleWebSocketMessage('conn-pty', {
+      type: 'session_info',
+      command: 'shell',
+      interactive: true,
+      pty: true,
+      workspacePath: '/tmp/ws-pty',
+    });
+
+    const unsubscribe1 = manager.registerPtySubscriber('conn-pty', subscriber1);
+    manager.registerPtySubscriber('conn-pty', subscriber2);
+
+    // Both receive initial output
+    manager.handleWebSocketMessage('conn-pty', {
+      type: 'pty_output',
+      data: 'dGVzdA==',
+    });
+
+    expect(subscriber1).toHaveBeenCalledTimes(1);
+    expect(subscriber2).toHaveBeenCalledTimes(1);
+
+    // Unsubscribe subscriber1
+    unsubscribe1();
+
+    // Only subscriber2 receives subsequent output
+    manager.handleWebSocketMessage('conn-pty', {
+      type: 'pty_output',
+      data: 'AAAA',
+    });
+
+    expect(subscriber1).toHaveBeenCalledTimes(1);
+    expect(subscriber2).toHaveBeenCalledTimes(2);
+    expect(subscriber2).toHaveBeenNthCalledWith(2, 'AAAA');
+  });
+
+  test('sendPtyInput sends pty_input message to registered sender and returns false when no sender', () => {
+    const sender = vi.fn<(message: HeadlessServerMessage) => void>();
+    manager.handleWebSocketConnect('conn-pty', sender);
+
+    const sent = manager.sendPtyInput('conn-pty', 'dGVzdA==');
+    const missing = manager.sendPtyInput('no-such-connection', 'dGVzdA==');
+
+    expect(sent).toBe(true);
+    expect(missing).toBe(false);
+    expect(sender).toHaveBeenCalledWith({
+      type: 'pty_input',
+      data: 'dGVzdA==',
+    });
+    // sender also receives notification_subscribers_changed on connect; filter to pty_input only
+    const ptyInputCalls = sender.mock.calls.filter(([msg]) => msg.type === 'pty_input');
+    expect(ptyInputCalls).toHaveLength(1);
+    expect(ptyInputCalls[0][0]).toEqual({ type: 'pty_input', data: 'dGVzdA==' });
+  });
+
+  test('sendPtyResize sends pty_resize message to registered sender and returns false when no sender', () => {
+    const sender = vi.fn<(message: HeadlessServerMessage) => void>();
+    manager.handleWebSocketConnect('conn-pty', sender);
+
+    const sent = manager.sendPtyResize('conn-pty', 120, 40);
+    const missing = manager.sendPtyResize('no-such-connection', 80, 24);
+
+    expect(sent).toBe(true);
+    expect(missing).toBe(false);
+
+    const ptyResizeCalls = sender.mock.calls.filter(([msg]) => msg.type === 'pty_resize');
+    expect(ptyResizeCalls).toHaveLength(1);
+    expect(ptyResizeCalls[0][0]).toEqual({ type: 'pty_resize', cols: 120, rows: 40 });
+  });
+
+  test('sendPtyInput and sendPtyResize both return false when connection has no registered sender', () => {
+    expect(manager.sendPtyInput('ghost', 'AAAA')).toBe(false);
+    expect(manager.sendPtyResize('ghost', 80, 24)).toBe(false);
+  });
+
+  test('pty_output messages from multiple connections are routed to their respective subscribers only', () => {
+    const subscriberA = vi.fn<(data: string) => void>();
+    const subscriberB = vi.fn<(data: string) => void>();
+
+    manager.handleWebSocketConnect('conn-a', vi.fn());
+    manager.handleWebSocketMessage('conn-a', {
+      type: 'session_info',
+      command: 'shell',
+      interactive: true,
+      pty: true,
+      workspacePath: '/tmp/ws-a',
+    });
+
+    manager.handleWebSocketConnect('conn-b', vi.fn());
+    manager.handleWebSocketMessage('conn-b', {
+      type: 'session_info',
+      command: 'shell',
+      interactive: true,
+      pty: true,
+      workspacePath: '/tmp/ws-b',
+    });
+
+    manager.registerPtySubscriber('conn-a', subscriberA);
+    manager.registerPtySubscriber('conn-b', subscriberB);
+
+    manager.handleWebSocketMessage('conn-a', {
+      type: 'pty_output',
+      data: 'dGVzdA==',
+    });
+
+    expect(subscriberA).toHaveBeenCalledTimes(1);
+    expect(subscriberB).not.toHaveBeenCalled();
+
+    manager.handleWebSocketMessage('conn-b', {
+      type: 'pty_output',
+      data: 'AAAA',
+    });
+
+    expect(subscriberA).toHaveBeenCalledTimes(1);
+    expect(subscriberB).toHaveBeenCalledTimes(1);
+  });
+
+  test('late-joining PTY subscriber receives cached backlog in order and then live output reaches all viewers', () => {
+    const receivedA: string[] = [];
+    const receivedB: string[] = [];
+    const frame1 = Buffer.from('first frame').toString('base64');
+    const frame2 = Buffer.from('second frame').toString('base64');
+    const frame3 = Buffer.from('third frame').toString('base64');
+    const liveFrame = Buffer.from('live frame').toString('base64');
+
+    createPtySession('conn-pty');
+    manager.registerPtySubscriber('conn-pty', (data: string): void => {
+      receivedA.push(data);
+    });
+
+    sendPtyOutput('conn-pty', frame1);
+    sendPtyOutput('conn-pty', frame2);
+    sendPtyOutput('conn-pty', frame3);
+
+    manager.registerPtySubscriber('conn-pty', (data: string): void => {
+      receivedB.push(data);
+    });
+
+    expect(receivedA).toEqual([frame1, frame2, frame3]);
+    expect(receivedB).toEqual([frame1, frame2, frame3]);
+
+    sendPtyOutput('conn-pty', liveFrame);
+
+    expect(receivedA).toEqual([frame1, frame2, frame3, liveFrame]);
+    expect(receivedB).toEqual([frame1, frame2, frame3, liveFrame]);
+
+    const session = manager.getSessionSnapshot().sessions[0];
+    expect(session.messages).toHaveLength(0);
+  });
+
+  test('PTY output cache survives subscriber churn and replays to a reconnecting viewer', () => {
+    const firstViewer: string[] = [];
+    const reconnectingViewer: string[] = [];
+    const frame1 = Buffer.from('prompt').toString('base64');
+    const frame2 = Buffer.from('screen').toString('base64');
+
+    createPtySession('conn-pty');
+    const unsubscribe = manager.registerPtySubscriber('conn-pty', (data: string): void => {
+      firstViewer.push(data);
+    });
+
+    sendPtyOutput('conn-pty', frame1);
+    sendPtyOutput('conn-pty', frame2);
+    unsubscribe();
+
+    manager.registerPtySubscriber('conn-pty', (data: string): void => {
+      reconnectingViewer.push(data);
+    });
+
+    expect(firstViewer).toEqual([frame1, frame2]);
+    expect(reconnectingViewer).toEqual([frame1, frame2]);
+  });
+
+  test('PTY backlog replay is delivered before subsequent live frames for a fresh subscriber', () => {
+    const received: string[] = [];
+    const backlogFrame = Buffer.from('backlog').toString('base64');
+    const liveFrame = Buffer.from('live').toString('base64');
+
+    createPtySession('conn-pty');
+    sendPtyOutput('conn-pty', backlogFrame);
+
+    manager.registerPtySubscriber('conn-pty', (data: string): void => {
+      received.push(data);
+    });
+    sendPtyOutput('conn-pty', liveFrame);
+
+    expect(received).toEqual([backlogFrame, liveFrame]);
+  });
+
+  test('PTY output cache evicts oldest frames when decoded byte size exceeds the cap', () => {
+    const received: string[] = [];
+    const frame1 = base64Frame(128 * 1024, 1);
+    const frame2 = base64Frame(128 * 1024, 2);
+    const frame3 = base64Frame(128 * 1024, 3);
+
+    createPtySession('conn-pty');
+    sendPtyOutput('conn-pty', frame1);
+    sendPtyOutput('conn-pty', frame2);
+    sendPtyOutput('conn-pty', frame3);
+
+    manager.registerPtySubscriber('conn-pty', (data: string): void => {
+      received.push(data);
+    });
+
+    expect(received).toEqual([frame2, frame3]);
+    expect(received).not.toContain(frame1);
+  });
+
+  test('PTY output cache is bounded by frame count so a flood of empty frames cannot grow unbounded', () => {
+    const received: string[] = [];
+    const emptyFrame = ''; // valid base64 payload that decodes to 0 bytes
+
+    createPtySession('conn-pty');
+    // Push far more empty frames than the frame-count cap; byteCount stays 0 the
+    // whole time, so only the frame-count bound can prevent unbounded growth.
+    for (let i = 0; i < 5000; i++) {
+      sendPtyOutput('conn-pty', emptyFrame);
+    }
+
+    manager.registerPtySubscriber('conn-pty', (data: string): void => {
+      received.push(data);
+    });
+
+    // Replayed backlog must be bounded (well under the number of frames pushed).
+    expect(received.length).toBeLessThanOrEqual(4096);
+    expect(received.length).toBeGreaterThan(0);
+    expect(received.every((frame) => frame === emptyFrame)).toBe(true);
+  });
+
+  test('PTY output cache retains a single frame larger than the byte cap so replay is not blank', () => {
+    const received: string[] = [];
+    // A single frame whose decoded size exceeds the 256KB byte cap.
+    const hugeFrame = base64Frame(512 * 1024, 7);
+
+    createPtySession('conn-pty');
+    sendPtyOutput('conn-pty', hugeFrame);
+
+    manager.registerPtySubscriber('conn-pty', (data: string): void => {
+      received.push(data);
+    });
+
+    // The most-recent frame must survive eviction so a late joiner sees content.
+    expect(received).toEqual([hugeFrame]);
+  });
+
+  test('dismissSession clears PTY output cache for removed sessions', () => {
+    const beforeDismiss: string[] = [];
+    const afterDismiss: string[] = [];
+    const frame = Buffer.from('cached before dismiss').toString('base64');
+
+    createPtySession('conn-pty');
+    sendPtyOutput('conn-pty', frame);
+
+    manager.registerPtySubscriber('conn-pty', (data: string): void => {
+      beforeDismiss.push(data);
+    });
+    expect(beforeDismiss).toEqual([frame]);
+
+    manager.handleWebSocketDisconnect('conn-pty');
+    expect(manager.dismissSession('conn-pty')).toBe(true);
+
+    manager.registerPtySubscriber('conn-pty', (data: string): void => {
+      afterDismiss.push(data);
+    });
+
+    expect(afterDismiss).toEqual([]);
   });
 });

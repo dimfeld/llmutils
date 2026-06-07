@@ -172,6 +172,113 @@ describe('HeadlessAdapter', () => {
     await adapter.destroy();
   });
 
+  it('sends PTY session info and buffered output without structured replay markers', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter(
+      {
+        command: 'shell',
+        pty: true,
+        cols: 100,
+        rows: 30,
+        workspacePath: '/tmp/workspace',
+      },
+      wrapped,
+      {
+        maxPtyBufferBytes: 32,
+      }
+    );
+
+    adapter.log('structured-before-connect');
+    adapter.broadcastPtyOutput(Buffer.from('before-1\n'));
+    adapter.broadcastPtyOutput(Buffer.from('before-2\n'));
+
+    const port = (adapter as any).sessionServer.port as number;
+    const ws = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+    const messages: HeadlessMessage[] = [];
+    ws.addEventListener('message', (event) => {
+      const parsed = parseMessage(event.data as string);
+      if (parsed) {
+        messages.push(parsed);
+      }
+    });
+
+    await waitFor(() => messages.filter((message) => message.type === 'pty_output').length === 2);
+    adapter.broadcastPtyOutput(Buffer.from('live\n'));
+    await waitFor(() => messages.filter((message) => message.type === 'pty_output').length === 3);
+
+    expect(messages[0]).toMatchObject({
+      type: 'session_info',
+      command: 'shell',
+      pty: true,
+      cols: 100,
+      rows: 30,
+      workspacePath: '/tmp/workspace',
+      sessionId: expect.any(String),
+    });
+    expect(messages.some((message) => message.type === 'replay_start')).toBe(false);
+    expect(messages.some((message) => message.type === 'replay_end')).toBe(false);
+    expect(messages.some((message) => message.type === 'output')).toBe(false);
+    expect(
+      messages
+        .filter((message) => message.type === 'pty_output')
+        .map((message) => Buffer.from(message.data, 'base64').toString('utf8'))
+    ).toEqual(['before-1\n', 'before-2\n', 'live\n']);
+
+    ws.close();
+    await adapter.destroy();
+  });
+
+  it('replays bounded PTY backlog to later embedded-server clients', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'shell', pty: true }, wrapped, {
+      maxPtyBufferBytes: 10,
+    });
+
+    adapter.broadcastPtyOutput(Buffer.from('12345'));
+    adapter.broadcastPtyOutput(Buffer.from('abcdef'));
+
+    const port = (adapter as any).sessionServer.port as number;
+    const ws = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+    const messages: HeadlessMessage[] = [];
+    ws.addEventListener('message', (event) => {
+      const parsed = parseMessage(event.data as string);
+      if (parsed) {
+        messages.push(parsed);
+      }
+    });
+
+    await waitFor(() => messages.some((message) => message.type === 'pty_output'));
+
+    expect(
+      messages
+        .filter((message) => message.type === 'pty_output')
+        .map((message) => Buffer.from(message.data, 'base64').toString('utf8'))
+        .join('')
+    ).toBe('2345abcdef');
+
+    adapter.broadcastPtyOutput(Buffer.from('0123456789ABCDE'));
+    const ws2 = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+    const secondMessages: HeadlessMessage[] = [];
+    ws2.addEventListener('message', (event) => {
+      const parsed = parseMessage(event.data as string);
+      if (parsed) {
+        secondMessages.push(parsed);
+      }
+    });
+
+    await waitFor(() => secondMessages.some((message) => message.type === 'pty_output'));
+
+    expect(
+      secondMessages
+        .filter((message) => message.type === 'pty_output')
+        .map((message) => Buffer.from(message.data, 'base64').toString('utf8'))
+    ).toEqual(['56789ABCDE']);
+
+    ws.close();
+    ws2.close();
+    await adapter.destroy();
+  });
+
   it('broadcasts live output and updated session info to embedded-server clients', async () => {
     const { adapter: wrapped } = createRecordingAdapter();
     const adapter = createTestHeadlessAdapter(
@@ -377,6 +484,40 @@ describe('HeadlessAdapter', () => {
         },
       ],
     });
+
+    ws.close();
+    await adapter.destroy();
+  });
+
+  it('routes PTY input and resize messages from embedded-server clients', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'shell', pty: true }, wrapped);
+    const port = (adapter as any).sessionServer.port as number;
+    const ws = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+
+    let receivedInput: string | undefined;
+    let receivedResize: { cols: number; rows: number } | undefined;
+    adapter.setPtyInputHandler((bytes) => {
+      receivedInput = Buffer.from(bytes).toString('utf8');
+    });
+    adapter.setPtyResizeHandler((cols, rows) => {
+      receivedResize = { cols, rows };
+    });
+
+    ws.send(
+      JSON.stringify({
+        type: 'pty_input',
+        data: Buffer.from('echo hello\r').toString('base64'),
+      } satisfies HeadlessServerMessage)
+    );
+    await waitFor(() => receivedInput === 'echo hello\r');
+
+    ws.send(
+      JSON.stringify({ type: 'pty_resize', cols: 132, rows: 43 } satisfies HeadlessServerMessage)
+    );
+    await waitFor(() => receivedResize?.cols === 132 && receivedResize.rows === 43);
+
+    expect(receivedResize).toEqual({ cols: 132, rows: 43 });
 
     ws.close();
     await adapter.destroy();

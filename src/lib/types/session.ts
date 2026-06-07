@@ -126,6 +126,9 @@ export interface ActivePrompt {
 export interface HeadlessSessionInfo {
   command: string;
   interactive?: boolean;
+  pty?: boolean;
+  cols?: number;
+  rows?: number;
   sessionId?: string;
   planId?: number;
   planUuid?: string;
@@ -151,6 +154,7 @@ export interface SessionPlanTask {
 export interface SessionData {
   connectionId: string;
   sessionInfo: HeadlessSessionInfo;
+  pty: boolean;
   status: SessionStatus;
   projectId: number | null;
   planContent: string | null;
