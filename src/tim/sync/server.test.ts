@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { MAX_ARTIFACT_BYTES } from '../artifacts/constants.js';
+import type { TimConfig } from '../configSchema.js';
 import { getArtifactByUuid } from '../db/artifact.js';
 import { runMigrations } from '../db/migrations.js';
 import { getOrCreateProject, getProject, getProjectByUuid } from '../db/project.js';
@@ -37,6 +38,7 @@ import { mergeCanonicalRefresh } from './snapshots.js';
 import { createBatchEnvelope } from './types.js';
 import { pruneSyncSequence } from './retention.js';
 import { createSyncRunner } from './runner.js';
+import { writePlanAddTag } from './write_router.js';
 import {
   getCurrentSequenceId,
   loadCanonicalSnapshot,
@@ -1250,6 +1252,38 @@ describe('sync transport server and clients', () => {
 
     await waitFor(() => getPlanTagsByUuid(localDb, PLAN_UUID).some((tag) => tag.tag === 'missed'));
     expect(getTimNodeCursor(localDb, NODE_A).last_known_sequence_id).toBeGreaterThan(0);
+  });
+
+  test('connected persistent client receives main-node local routed writes', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    seedPlan(localDb);
+    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
+    const server = startTestServer(mainDb);
+    const client = createSyncClient({
+      db: localDb,
+      serverUrl: serverUrl(server),
+      nodeId: NODE_A,
+      token: TOKEN,
+      reconnect: false,
+    });
+    clients.push(client);
+    client.start();
+    await waitFor(() => client.getStatus().connected);
+
+    const config = { sync: { role: 'main', nodeId: 'main-node' } } as TimConfig;
+    await writePlanAddTag(mainDb, config, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      tag: 'main-local',
+    });
+
+    await waitFor(() =>
+      getPlanTagsByUuid(localDb, PLAN_UUID).some((tag) => tag.tag === 'main-local')
+    );
+    expect(getTimNodeCursor(localDb, NODE_A).last_known_sequence_id).toBe(
+      getCurrentSequenceId(mainDb)
+    );
   });
 
   test('catch-up after reconnect applies missed plan deletions', async () => {

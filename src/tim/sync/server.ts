@@ -20,7 +20,12 @@ import { getProjectByUuid } from '../db/project.js';
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
 import { isSecureTransport } from '../../webhooks/security.js';
 import { verifyNodeToken } from './auth.js';
-import { applyBatch, applyOperation, type ApplyOperationResult } from './apply.js';
+import {
+  applyBatch,
+  applyOperation,
+  type ApplyBatchResult,
+  type ApplyOperationResult,
+} from './apply.js';
 import { SyncFifoGapError, SyncValidationError } from './errors.js';
 import type { CanonicalSnapshot } from './snapshots.js';
 import {
@@ -73,6 +78,31 @@ interface SyncWebSocketData {
 }
 
 type BunServerWebSocket = import('bun').ServerWebSocket<SyncWebSocketData>;
+type SyncInvalidationBroadcaster = (frame: SyncServerFrame) => void;
+
+const localMainInvalidationSubscribers = new WeakMap<Database, Set<SyncInvalidationBroadcaster>>();
+
+export function broadcastLocalMainSyncResult(
+  db: Database,
+  result: Pick<ApplyOperationResult | ApplyBatchResult, 'sequenceIds' | 'invalidations'>
+): void {
+  const sequenceId = result.sequenceIds.at(-1);
+  if (!sequenceId || result.invalidations.length === 0) {
+    return;
+  }
+  const subscribers = localMainInvalidationSubscribers.get(db);
+  if (!subscribers || subscribers.size === 0) {
+    return;
+  }
+  const frame: SyncServerFrame = {
+    type: 'invalidate',
+    sequenceId,
+    entityKeys: result.invalidations,
+  };
+  for (const subscriber of subscribers) {
+    subscriber(frame);
+  }
+}
 
 export function startSyncServer(options: StartSyncServerOptions): SyncServerHandle {
   const port = options.port ?? DEFAULT_SYNC_SERVER_PORT;
@@ -114,6 +144,13 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
       );
     }
   }
+
+  let localMainBroadcastSubscribers = localMainInvalidationSubscribers.get(options.db);
+  if (!localMainBroadcastSubscribers) {
+    localMainBroadcastSubscribers = new Set();
+    localMainInvalidationSubscribers.set(options.db, localMainBroadcastSubscribers);
+  }
+  localMainBroadcastSubscribers.add(broadcast);
 
   function authenticate(nodeId: string, token: string | null | undefined): boolean {
     return verifyNodeToken({
@@ -268,6 +305,7 @@ export function startSyncServer(options: StartSyncServerOptions): SyncServerHand
         clearTimeout(timer);
       }
       helloTimers.clear();
+      localMainInvalidationSubscribers.get(options.db)?.delete(broadcast);
       void server.stop(true);
     },
     broadcast: (frame) => broadcast(frame),
@@ -624,6 +662,14 @@ function handleAuthenticatedFrame(
       ws.send(JSON.stringify({ type: 'pong' } satisfies SyncServerFrame));
       return;
     case 'pong':
+      return;
+    case 'sequence_status_request':
+      ws.send(
+        JSON.stringify({
+          type: 'sequence_status_response',
+          currentSequenceId: getCurrentSequenceId(options.db),
+        } satisfies SyncServerFrame)
+      );
       return;
     case 'catch_up_request':
       if (!isValidClientCursor(options.db, frame.sinceSequenceId)) {

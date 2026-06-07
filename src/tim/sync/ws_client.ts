@@ -42,6 +42,8 @@ export interface SyncClientOptions {
   minReconnectDelayMs?: number;
   maxReconnectDelayMs?: number;
   snapshotRequestTimeoutMs?: number;
+  sequencePollIntervalMs?: number;
+  sequencePollQuietMs?: number;
 }
 
 export interface SyncClientStatus {
@@ -88,6 +90,8 @@ class WebSocketSyncClient implements SyncClient {
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private flushSafetyTimer: ReturnType<typeof setInterval> | null = null;
+  private sequenceStatusTimer: ReturnType<typeof setInterval> | null = null;
+  private lastServerActivityAt = 0;
   private unsubscribeQueueChanges: (() => void) | null = null;
   private flushPromise: Promise<void> | null = null;
   private flushDirty = false;
@@ -146,6 +150,7 @@ class WebSocketSyncClient implements SyncClient {
     this.connecting = false;
     this.helloAccepted = false;
     this.stopFlushLoop();
+    this.stopSequenceStatusLoop();
     this.unsubscribeQueueChanges?.();
     this.unsubscribeQueueChanges = null;
   }
@@ -222,14 +227,14 @@ class WebSocketSyncClient implements SyncClient {
         lastKnownSequenceId: cursor.last_known_sequence_id,
       });
     });
-    ws.addEventListener('message', (event) => this.handleMessage(event.data));
+    ws.addEventListener('message', (event) => this.handleMessage(event.data, ws));
     ws.addEventListener('close', () => this.handleDisconnect());
     ws.addEventListener('error', () => {
       this.emitError(new Error('Sync WebSocket error'));
     });
   }
 
-  private async handleMessage(data: unknown): Promise<void> {
+  private async handleMessage(data: unknown, ws: WebSocket): Promise<void> {
     let frame: SyncServerFrame;
     try {
       frame = SyncServerFrameSchema.parse(JSON.parse(rawToString(data)));
@@ -238,10 +243,12 @@ class WebSocketSyncClient implements SyncClient {
         new SyncClientProtocolError(
           err instanceof Error ? err.message : 'Invalid sync server frame',
           err
-        )
+        ),
+        ws
       );
       return;
     }
+    this.lastServerActivityAt = Date.now();
 
     try {
       switch (frame.type) {
@@ -254,6 +261,7 @@ class WebSocketSyncClient implements SyncClient {
           );
           this.events.emit('connected', frame);
           this.startFlushLoop();
+          this.startSequenceStatusLoop();
           resetSendingOperations(this.options.db, { originNodeId: this.options.nodeId });
           await this.catchUpFrom(getTimNodeCursor(this.options.db, this.options.nodeId));
           await this.flushPending();
@@ -296,6 +304,9 @@ class WebSocketSyncClient implements SyncClient {
           return;
         case 'pong':
           return;
+        case 'sequence_status_response':
+          await this.handleSequenceStatus(frame.currentSequenceId);
+          return;
         case 'error': {
           const error = new Error(frame.message);
           this.emitError(error);
@@ -311,7 +322,8 @@ class WebSocketSyncClient implements SyncClient {
       this.failConnection(
         err instanceof Error
           ? err
-          : new SyncClientProtocolError('Sync server frame processing failed', err)
+          : new SyncClientProtocolError('Sync server frame processing failed', err),
+        ws
       );
     }
   }
@@ -414,6 +426,53 @@ class WebSocketSyncClient implements SyncClient {
     }
     clearInterval(this.flushSafetyTimer);
     this.flushSafetyTimer = null;
+  }
+
+  private startSequenceStatusLoop(): void {
+    if (this.sequenceStatusTimer) {
+      return;
+    }
+    const intervalMs = this.options.sequencePollIntervalMs ?? 60_000;
+    if (intervalMs <= 0) {
+      return;
+    }
+    this.sequenceStatusTimer = setInterval(() => {
+      if (!this.isConnected()) {
+        return;
+      }
+      const quietMs = this.options.sequencePollQuietMs ?? 60_000;
+      if (Date.now() - this.lastServerActivityAt < quietMs) {
+        return;
+      }
+      try {
+        this.send({ type: 'sequence_status_request' });
+      } catch (err) {
+        this.emitError(err);
+      }
+    }, intervalMs);
+    this.sequenceStatusTimer.unref?.();
+  }
+
+  private stopSequenceStatusLoop(): void {
+    if (!this.sequenceStatusTimer) {
+      return;
+    }
+    clearInterval(this.sequenceStatusTimer);
+    this.sequenceStatusTimer = null;
+  }
+
+  private async handleSequenceStatus(currentSequenceId: number): Promise<void> {
+    if (this.catchUpWaiter) {
+      return;
+    }
+    const cursor = getTimNodeCursor(this.options.db, this.options.nodeId);
+    if (currentSequenceId <= cursor.last_known_sequence_id) {
+      return;
+    }
+    console.info(
+      `[sync] main sequence ahead (cursor=${cursor.last_known_sequence_id}, mainSeq=${currentSequenceId}); requesting catch-up`
+    );
+    await this.catchUpFrom(cursor);
   }
 
   private async handleOperationResults(
@@ -571,7 +630,11 @@ class WebSocketSyncClient implements SyncClient {
     this.flushWaiter = null;
   }
 
-  private failConnection(error: Error): void {
+  private failConnection(error: Error, ws: WebSocket | null = this.ws): void {
+    if (ws && ws !== this.ws) {
+      ws.close();
+      return;
+    }
     console.info(`[sync] Connection failed: ${error.message}`);
     this.emitError(error);
     this.rejectWaiters(error);

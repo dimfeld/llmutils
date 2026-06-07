@@ -690,6 +690,47 @@ describe('sync WebSocket client', () => {
     });
   });
 
+  test('periodic sequence status catches up external main DB writes without broadcast', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    seedPlan(localDb);
+    upsertTimNode(localDb, { nodeId: NODE_A, role: 'persistent' });
+    const server = startServer(mainDb);
+    const client = createSyncClient({
+      db: localDb,
+      serverUrl: `http://${server.hostname}:${server.port}`,
+      nodeId: NODE_A,
+      token: TOKEN,
+      reconnect: false,
+      sequencePollIntervalMs: 10,
+      sequencePollQuietMs: 0,
+    });
+    clients.push(client);
+    client.start();
+    await waitFor(() => client.getStatus().connected);
+    await waitFor(
+      () =>
+        getTimNodeCursor(localDb, NODE_A).last_known_sequence_id === getCurrentSequenceId(mainDb)
+    );
+
+    await applyOperation(
+      mainDb,
+      await addPlanTagOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, tag: 'external-main' },
+        { originNodeId: 'main-node', localSequence: 1 }
+      )
+    );
+
+    await waitFor(() =>
+      getPlanTagsByUuid(localDb, PLAN_UUID).some((tag) => tag.tag === 'external-main')
+    );
+    expect(getTimNodeCursor(localDb, NODE_A).last_known_sequence_id).toBe(
+      getCurrentSequenceId(mainDb)
+    );
+  });
+
   test('rowsToFlushFrames refuses to send a partial batch subset', async () => {
     const localDb = createDb();
     seedPlan(localDb);

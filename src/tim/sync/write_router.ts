@@ -71,6 +71,7 @@ import type {
 import { createBatchEnvelope } from './types.js';
 import { resolveWriteMode, type WriteMode } from './write_mode.js';
 import { repairClearedRejectedSequenceMarkers } from './sequence_repair.js';
+import { broadcastLocalMainSyncResult } from './server.js';
 
 export type SyncWriteResult =
   | {
@@ -172,6 +173,9 @@ export async function routeSyncOperation(
     throw error;
   }
   if (result.status === 'applied') {
+    if (mode === 'sync-main') {
+      broadcastLocalMainSyncResult(db, result);
+    }
     return {
       mode: 'applied',
       operation,
@@ -300,6 +304,9 @@ async function routeSyncBatchWithMode(
     );
   }
   if (result.status === 'applied') {
+    if (mode === 'sync-main') {
+      broadcastLocalMainSyncResult(db, result);
+    }
     return {
       mode: 'applied',
       batch,

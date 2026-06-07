@@ -87,6 +87,13 @@ export const SyncSnapshotResponseFrameSchema = z.object({
 
 export const SyncPingFrameSchema = z.object({ type: z.literal('ping') });
 export const SyncPongFrameSchema = z.object({ type: z.literal('pong') });
+export const SyncSequenceStatusRequestFrameSchema = z.object({
+  type: z.literal('sequence_status_request'),
+});
+export const SyncSequenceStatusResponseFrameSchema = z.object({
+  type: z.literal('sequence_status_response'),
+  currentSequenceId: SyncSequenceIdSchema,
+});
 
 export const SyncErrorFrameSchema = z.object({
   type: z.literal('error'),
@@ -102,6 +109,7 @@ export const SyncClientFrameSchema = z.discriminatedUnion('type', [
   SyncSnapshotRequestFrameSchema,
   SyncPingFrameSchema,
   SyncPongFrameSchema,
+  SyncSequenceStatusRequestFrameSchema,
 ]);
 
 export const SyncServerFrameSchema = z.discriminatedUnion('type', [
@@ -113,6 +121,7 @@ export const SyncServerFrameSchema = z.discriminatedUnion('type', [
   SyncSnapshotResponseFrameSchema,
   SyncPingFrameSchema,
   SyncPongFrameSchema,
+  SyncSequenceStatusResponseFrameSchema,
   SyncErrorFrameSchema,
 ]);
 
@@ -130,6 +139,8 @@ export const SyncFrameSchema = z.discriminatedUnion('type', [
   SyncSnapshotResponseFrameSchema,
   SyncPingFrameSchema,
   SyncPongFrameSchema,
+  SyncSequenceStatusRequestFrameSchema,
+  SyncSequenceStatusResponseFrameSchema,
   SyncErrorFrameSchema,
 ]);
 
@@ -146,6 +157,8 @@ export type SyncCatchUpInvalidation = z.infer<typeof SyncCatchUpInvalidationSche
 export type SyncCatchUpResponseFrame = z.infer<typeof SyncCatchUpResponseFrameSchema>;
 export type SyncSnapshotRequestFrame = z.infer<typeof SyncSnapshotRequestFrameSchema>;
 export type SyncSnapshotResponseFrame = z.infer<typeof SyncSnapshotResponseFrameSchema>;
+export type SyncSequenceStatusRequestFrame = z.infer<typeof SyncSequenceStatusRequestFrameSchema>;
+export type SyncSequenceStatusResponseFrame = z.infer<typeof SyncSequenceStatusResponseFrameSchema>;
 export type SyncErrorFrame = z.infer<typeof SyncErrorFrameSchema>;
 export type SyncClientFrame = z.infer<typeof SyncClientFrameSchema>;
 export type SyncServerFrame = z.infer<typeof SyncServerFrameSchema>;
