@@ -17,13 +17,17 @@
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { refreshSinglePrStatus, togglePrDraftStatus } from '$lib/remote/pr_status.remote.js';
   import { getLinearPrReviewUrl } from '$lib/remote/project_prs.remote.js';
-  import { startFixThreads, startPrReviewGuide } from '$lib/remote/review_thread_actions.remote.js';
+  import {
+    startFixPrThreads,
+    startPrReviewGuide,
+  } from '$lib/remote/review_thread_actions.remote.js';
   import { getPrReviews } from '$lib/remote/pr_reviews.remote.js';
   import {
     getFixButtonState,
     getFixStartResultState,
   } from '$lib/components/pr_fix_launch_state.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
+  import { tryCanonicalizePrUrl } from '$common/github/identifiers.js';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
   import CopyButton from './CopyButton.svelte';
 
@@ -91,41 +95,36 @@
   });
   let canToggleDraft = $derived(tokenConfigured && pr.status.state === 'open' && isOwnPr);
   let draftButtonLabel = $derived(pr.status.draft ? 'Mark ready for review' : 'Convert to draft');
-  let canFixUnresolvedThreads = $derived(
-    isOwnPr && planUuid != null && unresolvedReviewThreadCount > 0
-  );
-  let sessionActiveForPlan = $derived.by(() => {
-    if (!planUuid) {
+  let canFixUnresolvedThreads = $derived(isOwnPr && unresolvedReviewThreadCount > 0);
+  let canonicalPrUrl = $derived(tryCanonicalizePrUrl(pr.status.pr_url));
+  let sessionActive = $derived.by(() => {
+    if (!canonicalPrUrl) {
       return false;
     }
 
-    for (const session of sessionManager.sessions.values()) {
-      if (session.status === 'active' && session.sessionInfo.planUuid === planUuid) {
-        return true;
-      }
-    }
-
-    return false;
+    return sessionManager.hasActiveSessionForPr(canonicalPrUrl).active;
   });
   let fixButtonState = $derived(
     getFixButtonState({
       refreshing,
       fixStarting,
       fixLaunched,
-      sessionActiveForPlan,
+      sessionActive,
     })
   );
 
   $effect(() => {
-    if (sessionActiveForPlan && fixLaunched) {
+    if (sessionActive && fixLaunched) {
       fixLaunched = false;
     }
   });
 
+  // Reset optimistic launch state when navigating to a different PR.
   $effect(() => {
-    void planUuid;
+    void pr.status.pr_number;
     fixLaunched = false;
     fixStarting = false;
+    actionError = null;
   });
 
   $effect(() => {
@@ -174,30 +173,27 @@
   }
 
   async function handleStartFix() {
-    if (
-      !canFixUnresolvedThreads ||
-      !planUuid ||
-      fixStarting ||
-      fixLaunched ||
-      sessionActiveForPlan
-    ) {
+    if (!canFixUnresolvedThreads || fixStarting || fixLaunched || sessionActive) {
       return;
     }
 
-    const requestPlanUuid = planUuid;
+    const requestPrNumber = pr.status.pr_number;
     actionError = null;
     fixStarting = true;
     try {
-      const result = await startFixThreads({ planUuid: requestPlanUuid });
-      if (planUuid !== requestPlanUuid) return;
-      const fixResultState = getFixStartResultState(result.status);
+      const result = await startFixPrThreads({
+        projectId: Number(projectId),
+        prNumber: requestPrNumber,
+      });
+      if (pr.status.pr_number !== requestPrNumber) return;
+      const fixResultState = getFixStartResultState(result.status, 'pr');
       fixLaunched = fixResultState.fixLaunched;
       actionError = fixResultState.message;
     } catch (err) {
-      if (planUuid !== requestPlanUuid) return;
+      if (pr.status.pr_number !== requestPrNumber) return;
       actionError = err instanceof Error ? err.message : String(err);
     } finally {
-      if (planUuid === requestPlanUuid) {
+      if (pr.status.pr_number === requestPrNumber) {
         fixStarting = false;
       }
     }

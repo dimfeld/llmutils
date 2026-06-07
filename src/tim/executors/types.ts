@@ -61,8 +61,8 @@ export interface ExecutePlanInfo {
   planId: string;
   /** The plan title */
   planTitle: string;
-  /** The path to the plan file */
-  planFilePath: string;
+  /** The path to the plan file, when execution is associated with a real tim plan. */
+  planFilePath?: string;
   /** Whether batch mode is enabled for processing multiple tasks */
   batchMode?: boolean;
   /**

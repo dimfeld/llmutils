@@ -541,6 +541,32 @@ describe('CodexCliExecutor - planning mode routing', () => {
       expect.objectContaining({ reasoningLevel: 'xhigh' })
     );
   });
+
+  test('planning execution with missing planFilePath normalizes to empty string without error', async () => {
+    const executeBareModeMock = vi.fn(async () => ({ content: 'planning flow no-plan' }));
+
+    vi.doMock('./codex_cli/bare_mode.ts', () => ({
+      executeBareMode: executeBareModeMock,
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
+    const executor = new CodexCliExecutor({}, { baseDir: tempDir, terminalInput: true }, {} as any);
+
+    // Omitting planFilePath simulates no-plan PR fix mode
+    await expect(
+      executor.execute('CTX', {
+        planId: 'pr-42',
+        planTitle: 'My PR',
+        executionMode: 'planning',
+      })
+    ).resolves.toBeDefined();
+
+    expect(executeBareModeMock).toHaveBeenCalledTimes(1);
+    // The prompt passed to bare mode should be the original CTX, not wrapped with orchestration
+    // (because planFilePath is empty → planContextAvailable is false)
+    const promptArg = executeBareModeMock.mock.calls[0]?.[0];
+    expect(promptArg).toBe('CTX');
+  });
 });
 
 describe('CodexCliExecutor - orchestrator routing contract', () => {

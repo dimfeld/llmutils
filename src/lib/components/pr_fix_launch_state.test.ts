@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   ALREADY_RUNNING_MESSAGE,
+  ALREADY_RUNNING_PR_MESSAGE,
   getFixButtonState,
   getFixStartResultState,
 } from './pr_fix_launch_state.js';
@@ -14,10 +15,24 @@ describe('pr_fix_launch_state', () => {
     });
   });
 
-  test('getFixStartResultState returns user-facing message for already_running status', () => {
+  test('getFixStartResultState returns user-facing plan message for already_running status (default target)', () => {
     expect(getFixStartResultState('already_running')).toEqual({
       fixLaunched: false,
       message: ALREADY_RUNNING_MESSAGE,
+    });
+  });
+
+  test('getFixStartResultState returns user-facing plan message for already_running with explicit plan target', () => {
+    expect(getFixStartResultState('already_running', 'plan')).toEqual({
+      fixLaunched: false,
+      message: ALREADY_RUNNING_MESSAGE,
+    });
+  });
+
+  test('getFixStartResultState returns PR message for already_running PR target', () => {
+    expect(getFixStartResultState('already_running', 'pr')).toEqual({
+      fixLaunched: false,
+      message: ALREADY_RUNNING_PR_MESSAGE,
     });
   });
 
@@ -27,7 +42,7 @@ describe('pr_fix_launch_state', () => {
         refreshing: false,
         fixStarting: false,
         fixLaunched: true,
-        sessionActiveForPlan: false,
+        sessionActive: false,
       })
     ).toEqual({
       disabled: true,
@@ -41,7 +56,7 @@ describe('pr_fix_launch_state', () => {
         refreshing: false,
         fixStarting: false,
         fixLaunched: false,
-        sessionActiveForPlan: true,
+        sessionActive: true,
       })
     ).toEqual({
       disabled: true,

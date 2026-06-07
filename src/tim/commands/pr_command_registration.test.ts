@@ -7,10 +7,14 @@ describe('pr fix command registration in tim.ts', () => {
     const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
     const source = await fs.readFile(sourceFile, 'utf8');
 
-    const prFixBlockStart = source.indexOf(".command('fix <planId>')");
+    const prFixBlockStart = source.indexOf(".command('fix [planIdOrPr]')");
     expect(prFixBlockStart).toBeGreaterThanOrEqual(0);
 
-    const prFixBlock = source.slice(prFixBlockStart, prFixBlockStart + 700);
+    const prFixBlock = source.slice(prFixBlockStart, prFixBlockStart + 1000);
+    expect(prFixBlock).toContain("'--pr <pr-url-or-number>'");
+    expect(prFixBlock).toContain("'--plan <planId>'");
+    expect(prFixBlock).toContain("'--current'");
+    expect(prFixBlock).toContain("'--branch <branch>'");
     expect(prFixBlock).toContain("'-x, --executor <name>'");
     expect(prFixBlock).not.toContain("'-x, --orchestrator <name>'");
   });

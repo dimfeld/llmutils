@@ -47,10 +47,13 @@ vi.mock('../executors/claude_code/agent_prompts.js', async (importOriginal) => {
 
 vi.mock('../../common/git.js', () => ({
   getGitRoot: vi.fn(),
+  getGitRepository: vi.fn(),
   getCurrentCommitHash: vi.fn(),
   getTrunkBranch: vi.fn(),
   getUsingJj: vi.fn(),
   getCurrentBranchName: vi.fn(),
+  getWorkingCopyStatus: vi.fn(),
+  remoteBranchExists: vi.fn(),
 }));
 
 vi.mock('../../logging.js', async (importOriginal) => {

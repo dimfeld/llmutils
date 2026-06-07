@@ -147,6 +147,15 @@
         <span class="shrink-0 tabular-nums">{taskCounts.done}/{taskCounts.total}</span>
       {/if}
     </div>
+  {:else if session.sessionInfo.linkedPrNumber != null || session.sessionInfo.linkedPrTitle}
+    <div class="mt-0.5 flex min-w-0 items-center gap-1 pl-4 text-xs text-muted-foreground">
+      {#if session.sessionInfo.linkedPrNumber != null}
+        <span class="shrink-0 font-medium text-muted-foreground"
+          >PR #{session.sessionInfo.linkedPrNumber}</span
+        >
+      {/if}
+      <span class="min-w-0 flex-1 truncate">{session.sessionInfo.linkedPrTitle ?? ''}</span>
+    </div>
   {/if}
   {#if workspaceLabel}
     <div class="mt-0.5 truncate pl-4 text-xs text-muted-foreground">{workspaceLabel}</div>

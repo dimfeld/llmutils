@@ -44,7 +44,17 @@ const { createPullRequestReviewCommentReplyMock, resolveReviewThreadMock } = vi.
   resolveReviewThreadMock: vi.fn<(threadId: string) => Promise<boolean>>(),
 }));
 
-const { spawnPrFixProcessMock } = vi.hoisted(() => ({
+const { spawnPrFixForPrProcessMock, spawnPrFixProcessMock } = vi.hoisted(() => ({
+  spawnPrFixForPrProcessMock: vi.fn<
+    (
+      prUrlOrNumber: string,
+      cwd: string
+    ) => Promise<{
+      success: boolean;
+      error?: string;
+      earlyExit?: boolean;
+    }>
+  >(),
   spawnPrFixProcessMock: vi.fn<
     (
       planId: number,
@@ -58,12 +68,18 @@ const { spawnPrFixProcessMock } = vi.hoisted(() => ({
   >(),
 }));
 
-vi.mock('$common/github/pull_requests.js', () => ({
-  createPullRequestReviewCommentReply: createPullRequestReviewCommentReplyMock,
-  resolveReviewThread: resolveReviewThreadMock,
-}));
+vi.mock('$common/github/pull_requests.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$common/github/pull_requests.js')>();
+  return {
+    ...actual,
+    createPullRequestReviewCommentReply: createPullRequestReviewCommentReplyMock,
+    resolveReviewThread: resolveReviewThreadMock,
+  };
+});
 
 vi.mock('$lib/server/plan_actions.js', () => ({
+  spawnPrFixForPrProcess: (...args: Parameters<typeof spawnPrFixForPrProcessMock>) =>
+    spawnPrFixForPrProcessMock(...args),
   spawnPrFixProcess: (...args: Parameters<typeof spawnPrFixProcessMock>) =>
     spawnPrFixProcessMock(...args),
 }));
@@ -72,9 +88,19 @@ import {
   convertThreadToTask,
   replyToThread,
   resolveThread,
+  startFixPrThreads,
   startFixThreads,
 } from './review_thread_actions.remote.js';
-import { isPlanLaunching, resetLaunchLockState, setLaunchLock } from '$lib/server/launch_lock.js';
+import {
+  clearPrLaunchLock,
+  isPlanLaunching,
+  isPrLaunching,
+  planTargetKey,
+  prTargetKey,
+  resetLaunchLockState,
+  setLaunchLock,
+  setPrLaunchLock,
+} from '$lib/server/launch_lock.js';
 
 function seedPlanWithThread(options: {
   projectId: number;
@@ -134,6 +160,7 @@ describe('convertThreadToTask', () => {
     projectId = getOrCreateProject(currentDb, 'repo-review-thread-actions').id;
     createPullRequestReviewCommentReplyMock.mockReset();
     resolveReviewThreadMock.mockReset();
+    spawnPrFixForPrProcessMock.mockReset();
     spawnPrFixProcessMock.mockReset();
   });
 
@@ -1125,6 +1152,101 @@ describe('replyToThread', () => {
   });
 });
 
+describe('launch_lock PR target keys', () => {
+  let tempDir: string;
+
+  beforeAll(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-launch-lock-test-'));
+  });
+
+  beforeEach(() => {
+    currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
+    currentManager = new SessionManager(currentDb);
+    currentConfig = defaultConfig();
+  });
+
+  afterEach(() => {
+    resetLaunchLockState();
+    currentDb.close(false);
+  });
+
+  afterAll(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('setPrLaunchLock marks isPrLaunching true and clearPrLaunchLock clears it', () => {
+    const url = 'https://github.com/owner/repo/pull/1';
+    expect(isPrLaunching(url)).toBe(false);
+
+    setPrLaunchLock(url);
+    expect(isPrLaunching(url)).toBe(true);
+
+    clearPrLaunchLock(url);
+    expect(isPrLaunching(url)).toBe(false);
+  });
+
+  test('plan and PR locks are independent via plan:/pr: namespace', () => {
+    const uuid = 'plan-uuid-ns';
+    const url = 'https://github.com/owner/repo/pull/2';
+
+    expect(planTargetKey(uuid)).toBe(`plan:${uuid}`);
+    expect(prTargetKey(url)).toBe(`pr:${url}`);
+
+    setLaunchLock(uuid);
+    expect(isPlanLaunching(uuid)).toBe(true);
+    // plan UUID string is not treated as a PR URL
+    expect(isPrLaunching(uuid)).toBe(false);
+
+    setPrLaunchLock(url);
+    expect(isPrLaunching(url)).toBe(true);
+    // PR URL is not treated as a plan UUID
+    expect(isPlanLaunching(url)).toBe(false);
+  });
+
+  test('session:update subscriber clears PR lock when session reports linkedPrUrl', () => {
+    const url = 'https://github.com/owner/repo/pull/3';
+    // setPrLaunchLock installs the session:update listener on currentManager
+    setPrLaunchLock(url);
+    expect(isPrLaunching(url)).toBe(true);
+
+    currentManager.handleWebSocketConnect('conn-pr-lock-clear', () => {});
+    currentManager.handleWebSocketMessage('conn-pr-lock-clear', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      linkedPrUrl: url,
+      workspacePath: '/tmp/ws-pr-lock-clear',
+    });
+
+    expect(isPrLaunching(url)).toBe(false);
+  });
+
+  test('session:update subscriber clears plan lock when session reports planUuid', () => {
+    const planUuid = 'plan-lock-clear-uuid';
+    setLaunchLock(planUuid);
+    expect(isPlanLaunching(planUuid)).toBe(true);
+
+    currentManager.handleWebSocketConnect('conn-plan-lock-clear', () => {});
+    currentManager.handleWebSocketMessage('conn-plan-lock-clear', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      planId: 42,
+      planUuid,
+      workspacePath: '/tmp/ws-plan-lock-clear',
+    });
+
+    expect(isPlanLaunching(planUuid)).toBe(false);
+  });
+
+  test('existing plan-lock tests still pass: setLaunchLock / isPlanLaunching roundtrip', () => {
+    const uuid = 'roundtrip-plan-uuid';
+    expect(isPlanLaunching(uuid)).toBe(false);
+    setLaunchLock(uuid);
+    expect(isPlanLaunching(uuid)).toBe(true);
+  });
+});
+
 describe('startFixThreads', () => {
   let tempDir: string;
   let projectId: number;
@@ -1140,6 +1262,7 @@ describe('startFixThreads', () => {
     projectId = getOrCreateProject(currentDb, 'repo-review-thread-start-fix').id;
     createPullRequestReviewCommentReplyMock.mockReset();
     resolveReviewThreadMock.mockReset();
+    spawnPrFixForPrProcessMock.mockReset();
     spawnPrFixProcessMock.mockReset();
   });
 
@@ -1269,5 +1392,279 @@ describe('startFixThreads', () => {
 
     expect(spawnPrFixProcessMock).toHaveBeenCalledWith(403, '/tmp/primary-workspace');
     expect(isPlanLaunching('plan-start-fix')).toBe(true);
+  });
+});
+
+describe('startFixPrThreads', () => {
+  let tempDir: string;
+  // Use a project with a repository_id that encodes owner/repo so getPrStatusByProjectAndNumber works.
+  const REPO_ID = 'github.com__owner__repo';
+  const PR_URL = 'https://github.com/owner/repo/pull/42';
+  const CANONICAL_PR_URL = 'https://github.com/owner/repo/pull/42';
+
+  function seedPrStatusWithUnresolvedThread(db: ReturnType<typeof openDatabase>, prNumber = 42) {
+    const thread: StoredPrReviewThreadInput = {
+      threadId: `PRRT_pr_fix_${prNumber}`,
+      path: 'src/pr_fix.ts',
+      line: 7,
+      isResolved: false,
+      isOutdated: false,
+      comments: [
+        {
+          commentId: `IC_pr_fix_${prNumber}`,
+          body: 'Please fix this review comment.',
+          state: 'SUBMITTED',
+        },
+      ],
+    };
+    return upsertPrStatus(db, {
+      prUrl: `https://github.com/owner/repo/pull/${prNumber}`,
+      owner: 'owner',
+      repo: 'repo',
+      prNumber,
+      state: 'OPEN',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+      reviewThreads: [thread],
+    });
+  }
+
+  beforeAll(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-start-fix-pr-threads-test-'));
+  });
+
+  beforeEach(() => {
+    currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
+    currentManager = new SessionManager(currentDb);
+    currentConfig = defaultConfig();
+    // Use repository_id with owner/repo format
+    getOrCreateProject(currentDb, REPO_ID);
+    spawnPrFixForPrProcessMock.mockReset();
+    spawnPrFixProcessMock.mockReset();
+  });
+
+  afterEach(() => {
+    resetLaunchLockState();
+    currentDb.close(false);
+  });
+
+  afterAll(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  function getProjectId(): number {
+    return getOrCreateProject(currentDb, REPO_ID).id;
+  }
+
+  test('spawns spawnPrFixForPrProcess with canonical PR URL when unresolved threads exist without a linked plan', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnPrFixForPrProcessMock.mockResolvedValue({ success: true });
+
+    const result = await invokeCommand(startFixPrThreads, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
+    expect(spawnPrFixForPrProcessMock).toHaveBeenCalledWith(
+      CANONICAL_PR_URL,
+      '/tmp/pr-primary-workspace'
+    );
+    expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
+  });
+
+  test('sets PR launch lock after spawn succeeds', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnPrFixForPrProcessMock.mockResolvedValue({ success: true });
+
+    await invokeCommand(startFixPrThreads, { projectId, prNumber: 42 });
+
+    expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
+    expect(spawnPrFixProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('clears PR launch lock when spawn returns earlyExit', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnPrFixForPrProcessMock.mockResolvedValue({ success: true, earlyExit: true });
+
+    await invokeCommand(startFixPrThreads, { projectId, prNumber: 42 });
+
+    expect(isPrLaunching(CANONICAL_PR_URL)).toBe(false);
+  });
+
+  test('clears PR launch lock and throws when spawn returns failure', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnPrFixForPrProcessMock.mockResolvedValue({ success: false, error: 'binary not found' });
+
+    await expect(
+      invokeCommand(startFixPrThreads, { projectId, prNumber: 42 })
+    ).rejects.toMatchObject({
+      status: 500,
+      body: { message: 'binary not found' },
+    });
+    expect(isPrLaunching(CANONICAL_PR_URL)).toBe(false);
+  });
+
+  test('returns already_running when an active session exists for the PR URL', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+
+    currentManager.handleWebSocketConnect('conn-pr-active', () => {});
+    currentManager.handleWebSocketMessage('conn-pr-active', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      linkedPrUrl: CANONICAL_PR_URL,
+      workspacePath: '/tmp/ws-pr-active',
+    });
+
+    const result = await invokeCommand(startFixPrThreads, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({ status: 'already_running', connectionId: 'conn-pr-active' });
+    expect(spawnPrFixForPrProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('returns already_running when a PR launch lock already exists', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    setPrLaunchLock(CANONICAL_PR_URL);
+
+    const result = await invokeCommand(startFixPrThreads, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({ status: 'already_running' });
+    expect(spawnPrFixForPrProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('rejects when no unresolved review threads exist', async () => {
+    const projectId = getProjectId();
+    // Seed PR with all threads resolved
+    upsertPrStatus(currentDb, {
+      prUrl: PR_URL,
+      owner: 'owner',
+      repo: 'repo',
+      prNumber: 42,
+      state: 'OPEN',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+      reviewThreads: [
+        {
+          threadId: 'PRRT_resolved_pr',
+          path: 'src/resolved.ts',
+          line: 1,
+          isResolved: true,
+          isOutdated: false,
+          comments: [],
+        },
+      ],
+    });
+
+    await expect(
+      invokeCommand(startFixPrThreads, { projectId, prNumber: 42 })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'No unresolved review threads to fix' },
+    });
+    expect(spawnPrFixForPrProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('rejects when PR number does not exist in the project', async () => {
+    const projectId = getProjectId();
+    // No PR status seeded for prNumber 999
+
+    await expect(
+      invokeCommand(startFixPrThreads, { projectId, prNumber: 999 })
+    ).rejects.toMatchObject({
+      status: 404,
+      body: { message: 'PR not found' },
+    });
+  });
+
+  test('rejects when projectId does not match the PR owner/repo', async () => {
+    // Create a project for a different owner/repo
+    const otherProject = getOrCreateProject(currentDb, 'github.com__other__other-repo');
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+
+    await expect(
+      invokeCommand(startFixPrThreads, { projectId: otherProject.id, prNumber: 42 })
+    ).rejects.toMatchObject({
+      status: 404,
+      body: { message: 'PR not found' },
+    });
+  });
+
+  test('rejects when project does not have a primary workspace', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    // No workspace recorded
+
+    await expect(
+      invokeCommand(startFixPrThreads, { projectId, prNumber: 42 })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'Project does not have a primary workspace' },
+    });
+    expect(spawnPrFixForPrProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('plan-backed startFixThreads still works correctly alongside PR-target launch', async () => {
+    // Verify plan-backed path is not broken by the PR additions
+    const planProjectId = getOrCreateProject(currentDb, 'github.com__plan__repo').id;
+    const { prStatusId } = seedPlanWithThread({
+      projectId: planProjectId,
+      planUuid: 'plan-alongside-pr',
+      planId: 500,
+      thread: {
+        threadId: 'PRRT_alongside',
+        path: 'src/alongside.ts',
+        line: 3,
+        isResolved: false,
+        isOutdated: false,
+        comments: [{ commentId: 'IC_alongside', body: 'Fix this too.', state: 'SUBMITTED' }],
+      },
+      pullRequest: ['https://github.com/plan/repo/pull/1'],
+    });
+    recordWorkspace(currentDb, {
+      projectId: planProjectId,
+      workspacePath: '/tmp/plan-alongside-workspace',
+      workspaceType: 'primary',
+    });
+    spawnPrFixProcessMock.mockResolvedValue({ success: true, planId: 500 });
+
+    const result = await invokeCommand(startFixThreads, { planUuid: 'plan-alongside-pr' });
+
+    expect(result).toEqual({ status: 'started', planId: 500 });
+    expect(spawnPrFixProcessMock).toHaveBeenCalledWith(500, '/tmp/plan-alongside-workspace');
+    expect(spawnPrFixForPrProcessMock).not.toHaveBeenCalled();
   });
 });

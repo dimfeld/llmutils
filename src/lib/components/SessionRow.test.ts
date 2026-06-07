@@ -161,4 +161,62 @@ describe('SessionRow', () => {
 
     expect(body).not.toContain('aria-label="Needs attention"');
   });
+
+  test('shows plan identity when plan info is present', async () => {
+    const { body } = await render(SessionRow, {
+      props: {
+        session: createSession({
+          sessionInfo: {
+            command: 'agent',
+            planId: 55,
+            planTitle: 'Add feature',
+            workspacePath: '/tmp/ws',
+          },
+        }),
+        href: '/projects/1/sessions/conn-1',
+      },
+    });
+
+    expect(body).toContain('#55');
+    expect(body).toContain('Add feature');
+    expect(body).not.toContain('PR #');
+  });
+
+  test('shows PR identity for a no-plan PR fix session', async () => {
+    const { body } = await render(SessionRow, {
+      props: {
+        session: createSession({
+          sessionInfo: {
+            command: 'pr-fix',
+            linkedPrNumber: 7,
+            linkedPrTitle: 'Fix the thing',
+            workspacePath: '/tmp/ws',
+          },
+        }),
+        href: '/projects/1/sessions/conn-1',
+      },
+    });
+
+    expect(body).toContain('PR #7');
+    expect(body).toContain('Fix the thing');
+    expect(body).not.toContain('Add feature');
+  });
+
+  test('shows PR number when prNumber is set and no planTitle', async () => {
+    const { body } = await render(SessionRow, {
+      props: {
+        session: createSession({
+          sessionInfo: {
+            command: 'pr-fix',
+            linkedPrNumber: 12,
+            linkedPrTitle: null,
+            workspacePath: '/tmp/ws',
+          },
+        }),
+        href: '/projects/1/sessions/conn-1',
+      },
+    });
+
+    expect(body).toContain('PR #12');
+  });
 });

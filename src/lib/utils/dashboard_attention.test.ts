@@ -533,8 +533,41 @@ describe('deriveRunningNowSessions', () => {
       planUuid: 'uuid-1',
       planId: 42,
       planTitle: 'A Plan',
+      prUrl: null,
+      prNumber: null,
+      prTitle: null,
       workspacePath: '/workspace',
       command: 'agent',
+      connectedAt: '2026-01-01T12:00:00Z',
+      projectId: 3,
+    });
+  });
+
+  test('maps PR identity for no-plan PR fix sessions', () => {
+    const session = makeSession({
+      connectionId: 'pr-fix-1',
+      sessionInfo: {
+        command: 'pr-fix',
+        linkedPrUrl: 'https://github.com/owner/repo/pull/7',
+        linkedPrNumber: 7,
+        linkedPrTitle: 'Fix the thing',
+        workspacePath: '/workspace',
+      },
+      connectedAt: '2026-01-01T12:00:00Z',
+      projectId: 3,
+    });
+
+    const result = deriveRunningNowSessions([session], 'all');
+    expect(result[0]).toEqual({
+      connectionId: 'pr-fix-1',
+      planUuid: null,
+      planId: null,
+      planTitle: null,
+      prUrl: 'https://github.com/owner/repo/pull/7',
+      prNumber: 7,
+      prTitle: 'Fix the thing',
+      workspacePath: '/workspace',
+      command: 'pr-fix',
       connectedAt: '2026-01-01T12:00:00Z',
       projectId: 3,
     });

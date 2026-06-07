@@ -49,6 +49,8 @@ export interface WorkspaceSetupOptions {
   planUuid?: string;
   // Checkout-only branch used to prepare/select workspaces without affecting tracking.
   checkoutBranch?: string;
+  // Explicit branch/bookmark name for no-plan workspace preparation.
+  branchName?: string;
   createBranch?: boolean;
   allowPrimaryWorkspaceWhenLocked?: boolean;
 }
@@ -92,7 +94,7 @@ async function getBasePlanBranch(
 }
 
 async function resolveWorkspaceBranchContext(
-  options: Pick<WorkspaceSetupOptions, 'planId' | 'checkoutBranch'>,
+  options: Pick<WorkspaceSetupOptions, 'planId' | 'checkoutBranch' | 'branchName'>,
   currentBaseDir: string,
   currentPlanFile: string | undefined,
   config: TimConfig
@@ -171,7 +173,7 @@ async function resolveWorkspaceBranchContext(
 
   return {
     planData,
-    branchName,
+    branchName: options.branchName ?? branchName,
     baseBranch,
     checkoutBranch: options.checkoutBranch,
     baseBranchSource,

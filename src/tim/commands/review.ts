@@ -4,16 +4,14 @@
 import chalk from 'chalk';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname, isAbsolute } from 'node:path';
-import { getCurrentBranchName, getCurrentCommitHash, getUsingJj } from '../../common/git.js';
-import { promptCheckbox, promptSelect } from '../../common/input.js';
 import {
-  PlanNotFoundError,
-  parsePlanIdFromCliArg,
-  readPlanFile,
-  resolvePlanByNumericId,
-  writePlanFile,
-  writePlanToDb,
-} from '../plans.js';
+  fetchRemoteBranch,
+  getCurrentBranchName,
+  getCurrentCommitHash,
+  getUsingJj,
+} from '../../common/git.js';
+import { promptCheckbox, promptSelect } from '../../common/input.js';
+import { readPlanFile, resolvePlanByNumericId, writePlanFile, writePlanToDb } from '../plans.js';
 import { log, warn, runWithLogger, sendStructured } from '../../logging.js';
 import { getLoggerAdapter, type LoggerAdapter } from '../../logging/adapter.js';
 import type { StructuredMessage } from '../../logging/structured_messages.js';
@@ -21,7 +19,7 @@ import { formatStructuredMessage } from '../../logging/console_formatter.js';
 import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig, loadGlobalConfigForNotifications } from '../configLoader.js';
-import { getDefaultConfig } from '../configSchema.js';
+import { getDefaultConfig, type TimConfig } from '../configSchema.js';
 import type { HeadlessPlanSummary } from '../headless.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
@@ -46,6 +44,7 @@ import {
 } from '../review_persistence.js';
 import {
   storeLastReviewMetadata,
+  generateDiffForReview,
   type IncrementalReviewMetadata,
   type DiffResult,
 } from '../incremental_review.js';
@@ -80,6 +79,13 @@ import {
   buildStandaloneSimplificationReviewPrompt,
   type PlanReviewMetadata,
 } from './review_pr_prompt.js';
+import {
+  resolveReviewTarget,
+  type CurrentWorktreeReviewTarget,
+  type BranchReviewTarget,
+  type PlanReviewTarget,
+  type PullRequestReviewTarget,
+} from './review_target.js';
 const FIX_EXECUTOR_COMMANDS = {
   'claude-code': 'claude',
   'codex-cli': 'codex',
@@ -322,47 +328,6 @@ type ReviewIssueWorkflowResult = {
   skipNotification: boolean;
 };
 
-type AutoSelectedReviewPlan = {
-  plan: PlanSchema;
-  planRef: string;
-  repoRoot?: string;
-  selectionReason: 'branch-name';
-  displayPath?: string;
-};
-
-async function autoSelectPlanForReview(
-  cwd?: string,
-  configPath?: string
-): Promise<AutoSelectedReviewPlan | null> {
-  const repoRoot = await resolveRepoRoot(configPath, cwd ?? process.cwd());
-  const branchName = await getCurrentBranchName(repoRoot);
-  const planIdMatch = branchName?.match(/^(\d+)-/);
-
-  if (planIdMatch) {
-    try {
-      const resolved = await resolvePlanByNumericId(
-        parsePlanIdFromCliArg(planIdMatch[1]),
-        repoRoot
-      );
-      return {
-        plan: resolved.plan,
-        planRef: String(resolved.plan.id),
-        repoRoot,
-        selectionReason: 'branch-name',
-        displayPath: resolved.planPath ?? undefined,
-      };
-    } catch (err) {
-      // If the plan wasn't found in the DB, return null so the caller can report
-      // the error. Re-throw unexpected errors (DB failures, malformed rows, etc.)
-      if (!(err instanceof PlanNotFoundError)) {
-        throw err;
-      }
-    }
-  }
-
-  return null;
-}
-
 export async function saveReviewIssuesToPlan(
   planId: number,
   issues: readonly ReviewIssue[],
@@ -426,6 +391,684 @@ function createReviewResultFromSavedIssues(
   };
 }
 
+type PlanlessReviewTarget =
+  | CurrentWorktreeReviewTarget
+  | BranchReviewTarget
+  | PullRequestReviewTarget;
+
+interface ReviewCommandOptions {
+  cwd?: string;
+  current?: boolean;
+  branch?: string;
+  pr?: string;
+  plan?: number;
+  base?: string;
+  workspace?: string;
+  autoWorkspace?: boolean;
+  nonInteractive?: boolean;
+  model?: string;
+  print?: boolean;
+  verbose?: boolean;
+  executor?: ReviewExecutorName | 'both' | string;
+  serialBoth?: boolean;
+  dryRun?: boolean;
+  format?: string;
+  verbosity?: VerbosityLevel;
+  outputFile?: string;
+  save?: boolean;
+  noSave?: boolean;
+  gitNote?: boolean;
+  noColor?: boolean;
+  showFiles?: boolean;
+  noSuggestions?: boolean;
+  incremental?: boolean;
+  sinceLastReview?: boolean;
+  issues?: boolean;
+  saveIssues?: boolean;
+  since?: string;
+  autofix?: boolean;
+  autofixAll?: boolean;
+  noAutofix?: boolean;
+  createCleanupPlan?: boolean;
+  cleanupPriority?: CleanupPlanOptions['priority'];
+  cleanupAssign?: string;
+  taskIndex?: string | string[];
+  taskTitle?: string | string[];
+  instructions?: string;
+  instructionsFile?: string;
+  input?: string;
+  inputFile?: string | string[];
+  previousResponse?: string;
+  focus?: string;
+}
+
+type ReviewLog = (...args: unknown[]) => void;
+
+interface PlanlessExecutionContext {
+  target: PlanlessReviewTarget;
+  baseDir: string;
+  repoRoot: string;
+  baseBranch: string;
+  targetId: string;
+  targetTitle: string;
+  diffResult: DiffResult;
+}
+
+const PLANLESS_REVIEW_REJECTED_OPTIONS: Array<{
+  key: keyof ReviewCommandOptions;
+  flag: string;
+  rejectWhen: (options: ReviewCommandOptions) => boolean;
+}> = [
+  {
+    key: 'saveIssues',
+    flag: '--save-issues',
+    rejectWhen: (options) => options.saveIssues === true,
+  },
+  { key: 'issues', flag: '--issues', rejectWhen: (options) => options.issues === true },
+  { key: 'taskIndex', flag: '--task-index', rejectWhen: (options) => options.taskIndex != null },
+  { key: 'taskTitle', flag: '--task-title', rejectWhen: (options) => options.taskTitle != null },
+  {
+    key: 'createCleanupPlan',
+    flag: '--create-cleanup-plan',
+    rejectWhen: (options) => options.createCleanupPlan === true,
+  },
+  {
+    key: 'cleanupPriority',
+    flag: '--cleanup-priority',
+    rejectWhen: (options) =>
+      options.cleanupPriority != null && options.cleanupPriority !== 'medium',
+  },
+  {
+    key: 'cleanupAssign',
+    flag: '--cleanup-assign',
+    rejectWhen: (options) => options.cleanupAssign != null,
+  },
+  {
+    key: 'incremental',
+    flag: '--incremental',
+    rejectWhen: (options) => options.incremental === true,
+  },
+  {
+    key: 'sinceLastReview',
+    flag: '--since-last-review',
+    rejectWhen: (options) => options.sinceLastReview === true,
+  },
+];
+
+function validatePlanlessReviewOptions(options: ReviewCommandOptions): void {
+  for (const rejected of PLANLESS_REVIEW_REJECTED_OPTIONS) {
+    if (rejected.rejectWhen(options)) {
+      throw new Error(`${rejected.flag} requires a plan-backed review target.`);
+    }
+  }
+}
+
+function normalizeReviewExecutorName(value: string | undefined): ReviewExecutorName | null {
+  return value === 'claude-code' || value === 'codex-cli' ? value : null;
+}
+
+function getPlanlessTargetLabel(target: PlanlessReviewTarget): string {
+  switch (target.kind) {
+    case 'current':
+      return `current worktree${target.currentBranch ? ` (${target.currentBranch})` : ''}`;
+    case 'branch':
+      return `branch ${target.requestedBranch}`;
+    case 'pr':
+      return `PR #${target.prNumber}${target.title ? `: ${target.title}` : ''}`;
+  }
+}
+
+function getPlanlessTargetId(target: PlanlessReviewTarget): string {
+  switch (target.kind) {
+    case 'current':
+      return target.currentBranch ? `current:${target.currentBranch}` : 'current';
+    case 'branch':
+      return `branch:${target.requestedBranch}`;
+    case 'pr':
+      return `pr:${target.prNumber}`;
+  }
+}
+
+function formatPlanlessTargetMetadata(target: PlanlessReviewTarget, baseDir: string): string[] {
+  const lines = [
+    `# Review Target`,
+    ``,
+    `**Target Kind:** ${target.kind}`,
+    `**Repository Root:** ${target.repoRoot}`,
+    `**Worktree Path:** ${baseDir}`,
+    `**Base Branch:** ${target.baseBranch}`,
+  ];
+
+  switch (target.kind) {
+    case 'current':
+      lines.push(`**Current Branch:** ${target.currentBranch ?? '(detached or unknown)'}`);
+      break;
+    case 'branch':
+      lines.push(`**Requested Branch:** ${target.requestedBranch}`);
+      break;
+    case 'pr':
+      lines.push(
+        `**PR URL:** ${target.canonicalPrUrl}`,
+        `**PR Number:** #${target.prNumber}`,
+        `**PR Title:** ${target.title ?? '(unknown)'}`,
+        `**Repository:** ${target.owner}/${target.repo}`,
+        `**Head Branch:** ${target.headBranch}`,
+        `**Head SHA:** ${target.headSha}`
+      );
+      break;
+  }
+
+  return lines;
+}
+
+function buildPlanlessDiffGuidance(baseBranch: string): string[] {
+  return [
+    `# Diff Guidance`,
+    ``,
+    `Review only changes reachable from the selected target relative to the selected base.`,
+    `For git repositories, use \`origin/${baseBranch}\` as the base ref, for example: \`git merge-base origin/${baseBranch} HEAD\` then \`git diff <merge-base>\`.`,
+    `For jj repositories, use \`${baseBranch}@origin\` as the base bookmark, for example: \`jj diff --from 'heads(::@ & ::${baseBranch}@origin)'\`.`,
+  ];
+}
+
+export function buildPlanlessReviewPrompt(
+  target: PlanlessReviewTarget,
+  diffResult: DiffResult,
+  baseDir: string,
+  includeDiff: boolean = false,
+  useSubagents: boolean = false,
+  customInstructions?: string,
+  previousReviewResponse?: string
+): string {
+  const changedFilesSection = [
+    `# Code Changes to Review`,
+    ``,
+    `**Diff Base:** ${diffResult.mergeBaseCommit ?? diffResult.baseBranch}`,
+    `**Changed Files (${diffResult.changedFiles.length}):**`,
+    ...diffResult.changedFiles.map((file) => `- ${file}`),
+  ];
+
+  if (includeDiff) {
+    changedFilesSection.push(``, `**Full Diff:**`, ``, '```diff', diffResult.diffContent, '```');
+  }
+
+  const contextContent = [
+    ...formatPlanlessTargetMetadata(target, baseDir),
+    ``,
+    ...buildPlanlessDiffGuidance(target.baseBranch),
+    ``,
+    `# Planless Review Semantics`,
+    ``,
+    `This review is not associated with a tim plan. Findings are ephemeral for this run and must not be saved to plan tasks, plan files, cleanup plans, or plan-owned review issue queues.`,
+    ``,
+    ...changedFilesSection,
+    ``,
+    ...(previousReviewResponse?.trim()
+      ? [
+          `# Previous Fixer Response`,
+          ``,
+          `We just ran a round of fixing in response to a previous review. The final output from the fixing work is below. Please conduct a general review of the target, taking this fixer output into account:`,
+          ``,
+          previousReviewResponse.trim(),
+          ``,
+        ]
+      : []),
+    `# Review Instructions`,
+    ``,
+    `Please review the code changes above in the context of the selected target. Focus on:`,
+    `1. **Correctness:** Look for bugs, logic errors, security issues, and performance problems`,
+    `2. **Completeness:** Are the changed files coherent and complete for the target branch or PR?`,
+    `3. **Error Handling:** Are edge cases and error conditions properly handled?`,
+    `4. **Testing:** Are the changes adequately tested?`,
+    `5. **Maintainability:** Do the changes fit existing project conventions?`,
+    ``,
+    `**Pre-existing Issues:** If you notice concerns in code that was not modified by these changes, they may still be worth noting. However, any pre-existing issues MUST be labeled as "info" severity. Only issues introduced or affected by the current changes should receive higher severity ratings.`,
+    ``,
+  ].join('\n');
+
+  const reviewerPromptWithContext = getReviewerPrompt(
+    contextContent,
+    getPlanlessTargetId(target),
+    customInstructions,
+    undefined,
+    useSubagents
+  );
+
+  return reviewerPromptWithContext.prompt;
+}
+
+function buildPlanlessAutofixPrompt(
+  context: PlanlessExecutionContext,
+  reviewResult: ReviewResult,
+  selectedIssues?: ReviewIssue[] | null
+): string {
+  const prompt = [
+    `# Autofix Request`,
+    ``,
+    ...formatPlanlessTargetMetadata(context.target, context.baseDir),
+    ``,
+    `This autofix run is not associated with a tim plan. Do not update plan files, plan tasks, cleanup plans, or plan-owned review issue queues.`,
+    ``,
+    `## Review Findings`,
+    ``,
+    `A code review has identified the following issues that need to be fixed:`,
+    ``,
+  ];
+
+  const issuesToFix = filterActionableReviewIssues(selectedIssues || reviewResult.issues);
+  if (issuesToFix.length > 0) {
+    if (
+      selectedIssues &&
+      reviewResult.issues &&
+      selectedIssues.length < reviewResult.issues.length
+    ) {
+      prompt.push(
+        `Note: ${selectedIssues.length} of ${reviewResult.issues.length} issues selected for fixing.`,
+        ``
+      );
+    }
+
+    issuesToFix.forEach((issue, index) => {
+      prompt.push(`### Issue ${index + 1}: ${issue.content || 'Unnamed Issue'}`);
+      if (issue.file) {
+        prompt.push(`**File:** ${issue.file}`);
+      }
+      if (issue.severity) {
+        prompt.push(`**Severity:** ${issue.severity}`);
+      }
+      prompt.push(``);
+    });
+  } else {
+    prompt.push(
+      `**Review Output:**`,
+      reviewResult.rawOutput || 'No specific issues identified.',
+      ``
+    );
+  }
+
+  prompt.push(
+    `## Files to Fix`,
+    ``,
+    `**Diff Base:** ${context.diffResult.mergeBaseCommit ?? context.diffResult.baseBranch}`,
+    `**Changed Files:**`,
+    ...context.diffResult.changedFiles.map((file) => `- ${file}`),
+    ``,
+    `## Instructions`,
+    ``,
+    `Please fix the selected issues while preserving the target branch/PR intent.`,
+    `After making changes, run relevant tests or checks where practical.`,
+    `Do not commit, push, or resolve PR review threads unless explicitly requested by the user.`
+  );
+
+  return prompt.join('\n');
+}
+
+async function tryFetchBaseBranch(baseDir: string, baseBranch: string): Promise<void> {
+  try {
+    const fetched = await fetchRemoteBranch(baseDir, baseBranch);
+    if (!fetched) {
+      warn(chalk.yellow(`Warning: Could not fetch base branch '${baseBranch}' from origin.`));
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    warn(chalk.yellow(`Warning: Could not fetch base branch '${baseBranch}': ${message}`));
+  }
+}
+
+interface ResolvedReviewPromptContext {
+  customInstructions: string;
+  previousReviewResponse?: string;
+}
+
+async function resolveReviewPromptContext(params: {
+  options: ReviewCommandOptions;
+  config: TimConfig;
+  baseDir: string;
+  reviewLog: ReviewLog;
+}): Promise<ResolvedReviewPromptContext> {
+  const { options, config, baseDir, reviewLog } = params;
+  let customInstructions = '';
+  let previousReviewResponse: string | undefined;
+
+  if (options.instructions) {
+    customInstructions = options.instructions;
+    reviewLog(chalk.gray('Using inline custom instructions from CLI'));
+  } else if (options.instructionsFile) {
+    try {
+      const instructionsPath = validateInstructionsFilePath(options.instructionsFile, baseDir);
+      customInstructions = await readFile(instructionsPath, 'utf-8');
+      reviewLog(chalk.gray(`Using custom instructions from CLI file: ${options.instructionsFile}`));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      reviewLog(
+        chalk.yellow(
+          `Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${errorMessage}`
+        )
+      );
+    }
+  } else if (config.review?.customInstructionsPath) {
+    try {
+      const instructionsPath = validateInstructionsFilePath(
+        config.review.customInstructionsPath,
+        baseDir
+      );
+      customInstructions = await readFile(instructionsPath, 'utf-8');
+      reviewLog(
+        chalk.gray(`Using custom instructions from config: ${config.review.customInstructionsPath}`)
+      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      reviewLog(
+        chalk.yellow(
+          `Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${errorMessage}`
+        )
+      );
+    }
+  } else {
+    customInstructions = (await loadAgentInstructionsFor('reviewer', baseDir, config)) ?? '';
+  }
+
+  if (options.previousResponse) {
+    try {
+      previousReviewResponse = await readFile(options.previousResponse, 'utf-8');
+      reviewLog(
+        chalk.gray(`Using previous review response from file: ${options.previousResponse}`)
+      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      reviewLog(
+        chalk.yellow(
+          `Warning: Could not read previous review response file: ${options.previousResponse}. ${errorMessage}`
+        )
+      );
+    }
+  }
+
+  const orchestratorInput = await resolveOrchestratorInput(options);
+  if (orchestratorInput?.trim()) {
+    reviewLog(chalk.gray('Using additional context from --input / --input-file'));
+    customInstructions = customInstructions
+      ? `${customInstructions}\n\n## Additional Context from Orchestrator\n\n${orchestratorInput}`
+      : `## Additional Context from Orchestrator\n\n${orchestratorInput}`;
+  }
+
+  let focusAreas: string[] = [];
+  if (options.focus) {
+    const rawFocusAreas = options.focus
+      .split(',')
+      .map((area: string) => area.trim())
+      .filter(Boolean);
+    try {
+      focusAreas = validateFocusAreas(rawFocusAreas);
+      reviewLog(chalk.gray(`Using focus areas from CLI: ${focusAreas.join(', ')}`));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      reviewLog(chalk.yellow(`Warning: Invalid focus areas from CLI: ${errorMessage}`));
+      focusAreas = [];
+    }
+  } else if (config.review?.focusAreas && config.review.focusAreas.length > 0) {
+    try {
+      focusAreas = validateFocusAreas(config.review.focusAreas);
+      reviewLog(chalk.gray(`Using focus areas from config: ${focusAreas.join(', ')}`));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      reviewLog(chalk.yellow(`Warning: Invalid focus areas from config: ${errorMessage}`));
+      focusAreas = [];
+    }
+  }
+
+  if (focusAreas.length > 0) {
+    const focusInstruction = `Focus on: ${focusAreas.join(', ')}`;
+    customInstructions = customInstructions
+      ? `${customInstructions}\n\n${focusInstruction}`
+      : focusInstruction;
+  }
+
+  return { customInstructions, previousReviewResponse };
+}
+
+interface ReviewFormatAndPersistResult {
+  formattedOutput: string;
+  hasIssues: boolean;
+  currentCommitHash: string;
+}
+
+async function formatAndPersistReviewResult(params: {
+  reviewResult: ReviewResult;
+  rawOutput: string;
+  baseDir: string;
+  baseBranch: string;
+  changedFiles: string[];
+  targetId: string;
+  targetTitle: string;
+  historyId: string;
+  options: ReviewCommandOptions;
+  config: TimConfig;
+  isPrintMode: boolean;
+  reviewLog: ReviewLog;
+  gitNoteSummary: (metadata: ReviewMetadata) => string;
+}): Promise<ReviewFormatAndPersistResult> {
+  const {
+    reviewResult,
+    rawOutput,
+    baseDir,
+    baseBranch,
+    changedFiles,
+    targetId,
+    targetTitle,
+    historyId,
+    options,
+    config,
+    isPrintMode,
+    reviewLog,
+    gitNoteSummary,
+  } = params;
+  const outputFormat = isPrintMode
+    ? 'json'
+    : options.format || config.review?.outputFormat || 'terminal';
+  const verbosity: VerbosityLevel = isPrintMode ? 'detailed' : options.verbosity || 'detailed';
+
+  if (!['json', 'markdown', 'terminal'].includes(outputFormat)) {
+    log(chalk.yellow(`Warning: Invalid format '${outputFormat}', using 'terminal'`));
+  }
+
+  const formatterOptions: FormatterOptions = {
+    verbosity,
+    showFiles: isPrintMode ? true : options.showFiles !== false && verbosity !== 'minimal',
+    showSuggestions: isPrintMode ? true : !options.noSuggestions,
+    colorEnabled: !options.noColor && outputFormat === 'terminal',
+  };
+
+  const formatter = createFormatter(
+    outputFormat === 'json' || outputFormat === 'markdown' ? outputFormat : 'terminal'
+  );
+  const formattedOutput = formatter.format(reviewResult, formatterOptions);
+  const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
+  const currentCommitHash = (await getCurrentCommitHash(baseDir, true)) ?? 'unknown';
+  const shouldSave =
+    options.save ||
+    (config.review?.autoSave && !options.noSave) ||
+    (!options.noSave && !options.outputFile && !config.review?.saveLocation);
+
+  if (shouldSave) {
+    try {
+      const reviewsDir = await createReviewsDirectory(baseDir);
+      if (currentCommitHash !== 'unknown') {
+        const metadata: ReviewMetadata = {
+          planId: targetId,
+          planTitle: targetTitle,
+          commitHash: currentCommitHash,
+          timestamp: new Date(),
+          reviewer: process.env.USER || process.env.USERNAME,
+          baseBranch,
+          changedFiles,
+        };
+
+        const savedPath = await saveReviewResult(reviewsDir, formattedOutput, metadata);
+        reviewLog(chalk.cyan(`Review saved to: ${savedPath}`));
+
+        if (options.gitNote) {
+          const noteCreated = await createGitNote(
+            baseDir,
+            currentCommitHash,
+            gitNoteSummary(metadata)
+          );
+          if (noteCreated) {
+            reviewLog(chalk.cyan('Git note created with review summary'));
+          } else {
+            reviewLog(chalk.yellow('Warning: Could not create Git note'));
+          }
+        }
+      } else {
+        reviewLog(chalk.yellow('Warning: Could not save review - unable to determine commit hash'));
+      }
+    } catch (persistenceErr) {
+      const persistenceErrorMessage =
+        persistenceErr instanceof Error ? persistenceErr.message : String(persistenceErr);
+      reviewLog(
+        chalk.yellow(`Warning: Could not save review to history: ${persistenceErrorMessage}`)
+      );
+    }
+  }
+
+  if (options.outputFile) {
+    await saveReviewResultWithErrorHandling(options.outputFile, formattedOutput, log);
+  } else if (config.review?.saveLocation) {
+    try {
+      const saveDir = isAbsolute(config.review.saveLocation)
+        ? config.review.saveLocation
+        : join(baseDir, config.review.saveLocation);
+      const safeHistoryId = historyId.replace(/[^a-zA-Z0-9._-]+/g, '-');
+      const timestampValue = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `review-${safeHistoryId}-${timestampValue}${formatter.getFileExtension()}`;
+      const savePath = join(saveDir, filename);
+      await saveReviewResultWithErrorHandling(savePath, formattedOutput, log);
+    } catch (saveErr) {
+      const saveErrorMessage = saveErr instanceof Error ? saveErr.message : String(saveErr);
+      reviewLog(chalk.yellow(`Warning: Could not prepare save location: ${saveErrorMessage}`));
+    }
+  }
+
+  return { formattedOutput, hasIssues, currentCommitHash };
+}
+
+async function buildPlanlessExecutionContext(
+  target: PlanlessReviewTarget,
+  options: ReviewCommandOptions,
+  config: TimConfig
+): Promise<PlanlessExecutionContext> {
+  let baseDir: string;
+  if (target.kind === 'current') {
+    baseDir = target.worktreePath;
+    await tryFetchBaseBranch(baseDir, target.baseBranch);
+  } else {
+    const workspaceResult = await setupWorkspace(
+      {
+        workspace: options.workspace,
+        autoWorkspace: options.autoWorkspace !== false,
+        nonInteractive: options.nonInteractive,
+        checkoutBranch: target.kind === 'branch' ? target.requestedBranch : target.headBranch,
+        branchName: target.kind === 'branch' ? target.requestedBranch : target.headBranch,
+        createBranch: false,
+        allowPrimaryWorkspaceWhenLocked: false,
+        requireWorkspace: true,
+      },
+      target.repoRoot,
+      undefined,
+      config,
+      'tim review'
+    );
+    baseDir = workspaceResult.baseDir;
+    await tryFetchBaseBranch(baseDir, target.baseBranch);
+  }
+
+  const diffResult = await generateDiffForReview(baseDir, {
+    baseBranch: target.baseBranch,
+    sinceCommit: options.since,
+  });
+  return {
+    target,
+    baseDir,
+    repoRoot: target.repoRoot,
+    baseBranch: target.baseBranch,
+    targetId: getPlanlessTargetId(target),
+    targetTitle: getPlanlessTargetLabel(target),
+    diffResult,
+  };
+}
+
+async function runPlanlessAutofix(params: {
+  context: PlanlessExecutionContext;
+  reviewResult: ReviewResult;
+  reviewExecutorName: ReviewExecutorName | null;
+  options: ReviewCommandOptions;
+  isInteractiveEnv: boolean;
+  isPrintMode: boolean;
+  sharedExecutorOptions: ExecutorCommonOptions;
+  config: TimConfig;
+  notifyReviewInput: (message: string) => Promise<void>;
+}): Promise<boolean> {
+  const {
+    context,
+    reviewResult,
+    reviewExecutorName,
+    options,
+    isInteractiveEnv,
+    isPrintMode,
+    sharedExecutorOptions,
+    config,
+    notifyReviewInput,
+  } = params;
+  const actionableIssues = filterActionableReviewIssues(reviewResult.issues);
+  const noAutofixRequested = options.noAutofix === true || options.autofix === false;
+  if (isPrintMode || noAutofixRequested) {
+    return false;
+  }
+
+  let shouldAutofix = false;
+  let selectedIssues: ReviewIssue[] | null = null;
+  if (options.autofixAll) {
+    selectedIssues = actionableIssues;
+    shouldAutofix = actionableIssues.length > 0;
+  } else if (options.autofix) {
+    if (actionableIssues.length > 0) {
+      selectedIssues = isInteractiveEnv
+        ? await selectIssuesToFix(actionableIssues, 'fix', () =>
+            notifyReviewInput('Review needs input: select issues for autofix.')
+          )
+        : actionableIssues;
+      shouldAutofix = selectedIssues.length > 0;
+    }
+  }
+
+  if (!shouldAutofix) {
+    return false;
+  }
+
+  const executorName = reviewExecutorName ?? options.executor ?? config.defaultExecutor;
+  if (!executorName) {
+    throw new Error('No executor available for autofix.');
+  }
+
+  sendStructured({
+    type: 'workflow_progress',
+    timestamp: timestamp(),
+    phase: 'autofix',
+    message: 'Executing autofix',
+  });
+
+  const autofixExecutor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+  await autofixExecutor.execute(buildPlanlessAutofixPrompt(context, reviewResult, selectedIssues), {
+    planId: context.targetId,
+    planTitle: `${context.targetTitle} - Autofix`,
+    planFilePath: '',
+    captureOutput: 'none',
+    executionMode: 'normal',
+  });
+  log(chalk.green('Autofix execution completed successfully!'));
+  return true;
+}
+
 async function promptForReviewIssueAction(
   notifyReviewInput: (message: string) => Promise<void>
 ): Promise<ReviewIssueAction> {
@@ -474,13 +1117,13 @@ async function handleReviewIssueActions(params: {
   planRefForWrite: number;
   planFileForWrite: string;
   executionPlanFile: string;
-  options: any;
+  options: ReviewCommandOptions;
   isInteractiveEnv: boolean;
   isPrintMode: boolean;
   taskScopeNote?: string;
   isScoped: boolean;
   sharedExecutorOptions: ExecutorCommonOptions;
-  config: any;
+  config: TimConfig;
   globalOpts: any;
   notifyReviewInput: (message: string) => Promise<void>;
 }): Promise<ReviewIssueWorkflowResult> {
@@ -775,7 +1418,7 @@ async function handleReviewIssueActions(params: {
 
 export async function handleReviewCommand(
   planId: number | undefined,
-  options: any,
+  options: ReviewCommandOptions,
   command: any
 ): Promise<ReviewCommandResult> {
   const isPrintMode = options.print === true;
@@ -838,9 +1481,6 @@ export async function handleReviewCommand(
     // else: suppress in quiet print mode
   };
 
-  // If no planId is provided, try to auto-select one from branch-specific plans
-  let resolvedPlanId = planId;
-  let autoSelectedPlanForReview: AutoSelectedReviewPlan | null = null;
   try {
     try {
       config = await loadEffectiveConfig(globalOpts.config);
@@ -849,56 +1489,60 @@ export async function handleReviewCommand(
       throw err;
     }
 
-    if (!resolvedPlanId) {
-      const autoSelectedPlan = await autoSelectPlanForReview(options.cwd, globalOpts.config);
-
-      if (!autoSelectedPlan) {
-        throw new Error(
-          'No plan ID specified and no suitable plans found. Please specify a plan ID explicitly.'
-        );
-      }
-
-      reviewLog(
-        chalk.cyan(
-          `Auto-selected plan: ${autoSelectedPlan.plan.id} - ${autoSelectedPlan.plan.title}`
-        )
-      );
-      if (autoSelectedPlan.displayPath) {
-        reviewLog(chalk.gray(`Plan file: ${autoSelectedPlan.displayPath}`));
-      }
-
-      autoSelectedPlanForReview = autoSelectedPlan;
-      resolvedPlanId = autoSelectedPlan.plan.id;
+    const hasExplicitPlanlessSelector =
+      options.current === true ||
+      (typeof options.branch === 'string' && options.branch.trim().length > 0) ||
+      (typeof options.pr === 'string' && options.pr.trim().length > 0);
+    if (hasExplicitPlanlessSelector) {
+      validatePlanlessReviewOptions(options);
     }
-    if (!resolvedPlanId) {
-      throw new Error('No plan ID resolved for review.');
+
+    const reviewTarget = await resolveReviewTarget({
+      planId,
+      options,
+      configPath: globalOpts.config,
+    });
+    if (reviewTarget.kind !== 'plan' && !hasExplicitPlanlessSelector) {
+      validatePlanlessReviewOptions(options);
     }
-    const reviewPlanId = resolvedPlanId;
+
+    const planTarget: PlanReviewTarget | undefined =
+      reviewTarget.kind === 'plan' ? reviewTarget : undefined;
+    if (planTarget?.autoSelected?.selectionReason === 'branch-name') {
+      const resolvedPlan = planTarget.plan;
+      if (resolvedPlan) {
+        reviewLog(chalk.cyan(`Auto-selected plan: ${resolvedPlan.id} - ${resolvedPlan.title}`));
+      }
+      if (planTarget.autoSelected.displayPath) {
+        reviewLog(chalk.gray(`Plan file: ${planTarget.autoSelected.displayPath}`));
+      }
+    }
+
+    const reviewPlanId = planTarget?.planId;
     let initialResolvedPlan: Awaited<ReturnType<typeof resolveReviewPlanForWriteById>> | undefined;
     let resolvedPlanFilePath: string | undefined;
-    if (autoSelectedPlanForReview?.selectionReason === 'branch-name') {
-      const repoRoot =
-        autoSelectedPlanForReview.repoRoot ??
-        (await resolveRepoRoot(globalOpts.config, options.cwd));
-      const existingPath = await materializedPlanFileExists(
-        repoRoot,
-        autoSelectedPlanForReview.plan.id
-      );
+    if (planTarget?.autoSelected?.selectionReason === 'branch-name') {
+      const resolvedPlan = planTarget.plan;
+      if (!resolvedPlan) {
+        throw new Error('Auto-selected review target is missing resolved plan metadata.');
+      }
+      const repoRoot = planTarget.repoRoot;
+      const existingPath = await materializedPlanFileExists(repoRoot, resolvedPlan.id);
       let materializedPath: string;
       if (existingPath) {
         // Validate the existing file belongs to this plan before reusing it
         const filePlan = await readPlanFile(existingPath);
-        if (filePlan.id !== autoSelectedPlanForReview.plan.id) {
+        if (filePlan.id !== resolvedPlan.id) {
           // File has wrong ID — re-materialize from DB
-          materializedPath = await materializePlan(autoSelectedPlanForReview.plan.id, repoRoot);
+          materializedPath = await materializePlan(resolvedPlan.id, repoRoot);
         } else {
           materializedPath = existingPath;
         }
       } else {
-        materializedPath = await materializePlan(autoSelectedPlanForReview.plan.id, repoRoot);
+        materializedPath = await materializePlan(resolvedPlan.id, repoRoot);
       }
       initialResolvedPlan = {
-        plan: structuredClone(autoSelectedPlanForReview.plan),
+        plan: structuredClone(resolvedPlan),
         planPath: materializedPath,
         repoRoot,
       };
@@ -912,19 +1556,22 @@ export async function handleReviewCommand(
     // both redirected away from stdout AND mirrored to the WebSocket.
     if (!tunnelActive) {
       let planSummary: HeadlessPlanSummary | undefined;
-      try {
-        const planSummaryRepoRoot =
-          initialResolvedPlan?.repoRoot ?? (await resolveRepoRoot(globalOpts.config, options.cwd));
-        const { plan } =
-          initialResolvedPlan ??
-          (await resolveReviewPlanForWriteById(reviewPlanId, planSummaryRepoRoot));
-        planSummary = {
-          id: plan.id,
-          uuid: plan.uuid,
-          title: plan.title,
-        };
-      } catch {
-        // No-op: missing plan metadata should not block review execution.
+      if (planTarget) {
+        try {
+          const planSummaryRepoRoot =
+            initialResolvedPlan?.repoRoot ??
+            (await resolveRepoRoot(globalOpts.config, options.cwd));
+          const { plan } =
+            initialResolvedPlan ??
+            (await resolveReviewPlanForWriteById(planTarget.planId, planSummaryRepoRoot));
+          planSummary = {
+            id: plan.id,
+            uuid: plan.uuid,
+            title: plan.title,
+          };
+        } catch {
+          // No-op: missing plan metadata should not block review execution.
+        }
       }
 
       const currentAdapter = getLoggerAdapter();
@@ -952,6 +1599,211 @@ export async function handleReviewCommand(
     }
 
     const executeReviewFlow = async (): Promise<void> => {
+      if (reviewTarget.kind !== 'plan') {
+        const planlessContext = await buildPlanlessExecutionContext(reviewTarget, options, config);
+        notifyCwd = planlessContext.baseDir;
+        updateHeadlessSessionInfo({ workspacePath: planlessContext.baseDir });
+        if (reviewTarget.kind === 'pr') {
+          updateHeadlessSessionInfo({
+            linkedPrUrl: reviewTarget.canonicalPrUrl,
+            linkedPrNumber: reviewTarget.prNumber,
+            linkedPrTitle: reviewTarget.title,
+          });
+        }
+
+        if (!planlessContext.diffResult.hasChanges) {
+          reviewLog(
+            chalk.yellow(
+              `No changes detected compared to ${planlessContext.baseBranch}. Nothing to review.`
+            )
+          );
+          skipNotification = true;
+          return;
+        }
+
+        reviewLog(chalk.green(`Reviewing target: ${planlessContext.targetTitle}`));
+        reviewLog(chalk.gray(`Base branch: ${planlessContext.baseBranch}`));
+
+        const { customInstructions, previousReviewResponse } = await resolveReviewPromptContext({
+          options,
+          config,
+          baseDir: planlessContext.baseDir,
+          reviewLog,
+        });
+
+        const sharedExecutorOptions: ExecutorCommonOptions = {
+          baseDir: planlessContext.baseDir,
+          model: options.model,
+          noninteractive: isPrintMode,
+          timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
+            config,
+            planlessContext.baseDir,
+            null,
+            planlessContext.repoRoot
+          ),
+        };
+
+        const notifyReviewInput = async (message: string): Promise<void> => {
+          if (!isInteractiveEnv) {
+            return;
+          }
+          await sendNotification(config, {
+            command: 'review',
+            event: 'review_input',
+            status: 'input',
+            message,
+            cwd: planlessContext.baseDir,
+          });
+        };
+
+        const buildPrompt: ReviewPromptBuilder = ({ includeDiff, useSubagents }) =>
+          buildPlanlessReviewPrompt(
+            reviewTarget,
+            planlessContext.diffResult,
+            planlessContext.baseDir,
+            includeDiff,
+            useSubagents,
+            customInstructions,
+            previousReviewResponse
+          );
+
+        if (options.dryRun) {
+          const prepared = await prepareReviewExecutors({
+            executorSelection: options.executor,
+            config,
+            sharedExecutorOptions,
+            buildPrompt,
+          });
+
+          log(chalk.cyan('\n## Dry Run - Generated Review Prompt\n'));
+          for (const preparedExecutor of prepared) {
+            if (prepared.length > 1) {
+              log(chalk.cyan(`\n### Executor: ${preparedExecutor.name}\n`));
+            }
+            log(preparedExecutor.prompt);
+          }
+          log('\n--dry-run mode: Would execute the above prompt');
+          skipNotification = true;
+          return;
+        }
+
+        sendStructured({
+          type: 'review_start',
+          timestamp: timestamp(),
+          executor: options.executor || config.defaultExecutor,
+        });
+
+        try {
+          const planInfo = {
+            planId: planlessContext.targetId,
+            planTitle: planlessContext.targetTitle,
+            planFilePath: '',
+            baseBranch: planlessContext.baseBranch,
+            changedFiles: planlessContext.diffResult.changedFiles,
+            isTaskScoped: false,
+          };
+
+          const runReviewCall = () =>
+            runReview({
+              executorSelection: options.executor,
+              serialBoth: options.serialBoth,
+              config,
+              sharedExecutorOptions,
+              buildPrompt,
+              planInfo,
+            });
+
+          const reviewOutput = isPrintMode
+            ? await withReviewLogger(runReviewCall)
+            : await runReviewCall();
+
+          if (reviewOutput.warnings.length > 0) {
+            for (const warning of reviewOutput.warnings) {
+              warn(chalk.yellow(warning));
+            }
+          }
+
+          const reviewResult = reviewOutput.reviewResult;
+          const rawOutput = reviewOutput.rawOutput;
+          const reviewExecutorName = reviewOutput.usedExecutors[0];
+          if (!reviewExecutorName) {
+            throw new Error('Review completed without a usable executor result.');
+          }
+
+          const { formattedOutput, hasIssues } = await formatAndPersistReviewResult({
+            reviewResult,
+            rawOutput,
+            baseDir: planlessContext.baseDir,
+            baseBranch: planlessContext.baseBranch,
+            changedFiles: planlessContext.diffResult.changedFiles,
+            targetId: planlessContext.targetId,
+            targetTitle: planlessContext.targetTitle,
+            historyId: planlessContext.targetId,
+            options,
+            config,
+            isPrintMode,
+            reviewLog,
+            gitNoteSummary: (metadata) =>
+              `Code review completed for ${metadata.planId}: ${metadata.planTitle}`,
+          });
+
+          sendStructured({
+            type: 'review_result',
+            timestamp: timestamp(),
+            verdict: hasIssues ? 'NEEDS_FIXES' : 'ACCEPTABLE',
+            fixInstructions: hasIssues ? reviewResult.actionItems.join('\n') : undefined,
+            issues: toStructuredReviewIssues(reviewResult.issues),
+            recommendations: reviewResult.recommendations,
+            actionItems: reviewResult.actionItems,
+          });
+
+          if (tunnelActive || isPrintMode) {
+            console.log(formattedOutput);
+            await Bun.sleep(500);
+          }
+
+          if (hasIssues && !isPrintMode) {
+            const didAutofix = await runPlanlessAutofix({
+              context: planlessContext,
+              reviewResult,
+              reviewExecutorName,
+              options,
+              isInteractiveEnv,
+              isPrintMode,
+              sharedExecutorOptions,
+              config,
+              notifyReviewInput,
+            });
+            if (!didAutofix) {
+              reviewLog(
+                chalk.yellow(
+                  'Review issues were found. Planless review findings are ephemeral and were not saved to a plan.'
+                )
+              );
+            }
+          }
+
+          reviewLog(chalk.green('\nCode review completed successfully!'));
+          completionMessage = 'Review completed successfully.';
+          completionStatus = 'success';
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          const contextualError = `Review execution failed: ${errorMessage}`;
+          if (err instanceof Error && err.stack) {
+            log(chalk.gray(`Stack trace: ${err.stack}`));
+          }
+          completionMessage = `Review failed: ${errorMessage}`;
+          completionStatus = 'error';
+          completionErrorMessage = errorMessage;
+          throw new Error(contextualError, { cause: err });
+        }
+        return;
+      }
+
+      if (!planTarget || reviewPlanId === undefined) {
+        throw new Error('Plan-backed review target is missing plan metadata.');
+      }
+
       const originalRepoRoot = await resolveRepoRoot(globalOpts.config, options.cwd);
       const workspaceMode = options.workspace !== undefined || options.autoWorkspace === true;
       if (workspaceMode) {
@@ -1016,114 +1868,12 @@ export async function handleReviewCommand(
       // Use gitRoot from context (derived from resolved repoRoot, not CWD)
       notifyCwd = gitRoot;
 
-      // Load custom instructions
-      let customInstructions = '';
-      let previousReviewResponse: string | undefined;
-
-      // First try CLI options (CLI takes precedence)
-      if (options.instructions) {
-        customInstructions = options.instructions;
-        reviewLog(chalk.gray('Using inline custom instructions from CLI'));
-      } else if (options.instructionsFile) {
-        try {
-          const instructionsPath = validateInstructionsFilePath(options.instructionsFile, gitRoot);
-          customInstructions = await readFile(instructionsPath, 'utf-8');
-          reviewLog(
-            chalk.gray(`Using custom instructions from CLI file: ${options.instructionsFile}`)
-          );
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          reviewLog(
-            chalk.yellow(
-              `Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${errorMessage}`
-            )
-          );
-        }
-      } else if (config.review?.customInstructionsPath) {
-        // Fall back to config file instructions
-        try {
-          const instructionsPath = validateInstructionsFilePath(
-            config.review.customInstructionsPath,
-            gitRoot
-          );
-          customInstructions = await readFile(instructionsPath, 'utf-8');
-          reviewLog(
-            chalk.gray(
-              `Using custom instructions from config: ${config.review.customInstructionsPath}`
-            )
-          );
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          reviewLog(
-            chalk.yellow(
-              `Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${errorMessage}`
-            )
-          );
-        }
-      } else {
-        // Fall back to agents.reviewer.instructions
-        customInstructions = (await loadAgentInstructionsFor('reviewer', gitRoot, config)) ?? '';
-      }
-
-      if (options.previousResponse) {
-        try {
-          previousReviewResponse = await readFile(options.previousResponse, 'utf-8');
-          reviewLog(
-            chalk.gray(`Using previous review response from file: ${options.previousResponse}`)
-          );
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          reviewLog(
-            chalk.yellow(
-              `Warning: Could not read previous review response file: ${options.previousResponse}. ${errorMessage}`
-            )
-          );
-        }
-      }
-
-      // Resolve orchestrator-provided input (--input / --input-file)
-      const orchestratorInput = await resolveOrchestratorInput(options);
-      if (orchestratorInput?.trim()) {
-        reviewLog(chalk.gray('Using additional context from --input / --input-file'));
-        customInstructions = customInstructions
-          ? `${customInstructions}\n\n## Additional Context from Orchestrator\n\n${orchestratorInput}`
-          : `## Additional Context from Orchestrator\n\n${orchestratorInput}`;
-      }
-
-      // Handle focus areas
-      let focusAreas: string[] = [];
-      if (options.focus) {
-        // CLI focus areas override config
-        const rawFocusAreas = options.focus
-          .split(',')
-          .map((area: string) => area.trim())
-          .filter(Boolean);
-        try {
-          focusAreas = validateFocusAreas(rawFocusAreas);
-          reviewLog(chalk.gray(`Using focus areas from CLI: ${focusAreas.join(', ')}`));
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          reviewLog(chalk.yellow(`Warning: Invalid focus areas from CLI: ${errorMessage}`));
-          focusAreas = [];
-        }
-      } else if (config.review?.focusAreas && config.review.focusAreas.length > 0) {
-        try {
-          focusAreas = validateFocusAreas(config.review.focusAreas);
-          reviewLog(chalk.gray(`Using focus areas from config: ${focusAreas.join(', ')}`));
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          reviewLog(chalk.yellow(`Warning: Invalid focus areas from config: ${errorMessage}`));
-          focusAreas = [];
-        }
-      }
-
-      // Add focus areas to custom instructions if provided
-      if (focusAreas.length > 0) {
-        const focusInstruction = `Focus on: ${focusAreas.join(', ')}`;
-        customInstructions = customInstructions
-          ? `${customInstructions}\n\n${focusInstruction}`
-          : focusInstruction;
-      }
+      const { customInstructions, previousReviewResponse } = await resolveReviewPromptContext({
+        options,
+        config,
+        baseDir: gitRoot,
+        reviewLog,
+      });
 
       const sharedExecutorOptions: ExecutorCommonOptions = {
         baseDir: gitRoot,
@@ -1213,7 +1963,9 @@ export async function handleReviewCommand(
         const actionResult = await handleReviewIssueActions({
           issues: savedIssues,
           reviewResult: savedReviewResult,
-          reviewExecutorName: options.executor || config.defaultExecutor,
+          reviewExecutorName: normalizeReviewExecutorName(
+            options.executor ?? config.defaultExecutor
+          ),
           planData,
           scopedPlanData,
           diffResult,
@@ -1343,34 +2095,23 @@ export async function handleReviewCommand(
           throw new Error('Review completed without a usable executor result.');
         }
 
-        // Determine format and verbosity from options or config
-        const outputFormat = isPrintMode
-          ? 'json'
-          : options.format || config.review?.outputFormat || 'terminal';
-        const verbosity: VerbosityLevel = isPrintMode
-          ? 'detailed'
-          : options.verbosity || 'detailed';
-
-        // Validate format
-        if (!['json', 'markdown', 'terminal'].includes(outputFormat)) {
-          log(chalk.yellow(`Warning: Invalid format '${outputFormat}', using 'terminal'`));
-        }
-
-        // Create formatter options
-        const formatterOptions: FormatterOptions = {
-          verbosity,
-          showFiles: isPrintMode ? true : options.showFiles !== false && verbosity !== 'minimal',
-          showSuggestions: isPrintMode ? true : !options.noSuggestions,
-          colorEnabled: !options.noColor && outputFormat === 'terminal',
-        };
-
-        // Format the review result
-        const formatter = createFormatter(
-          outputFormat === 'json' || outputFormat === 'markdown' ? outputFormat : 'terminal'
-        );
-        const formattedOutput = formatter.format(reviewResult, formatterOptions);
-        const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
-        const currentCommitHash = (await getCurrentCommitHash(gitRoot, true)) ?? 'unknown';
+        const { formattedOutput, hasIssues, currentCommitHash } =
+          await formatAndPersistReviewResult({
+            reviewResult,
+            rawOutput,
+            baseDir: gitRoot,
+            baseBranch: diffResult.baseBranch,
+            changedFiles: diffResult.changedFiles,
+            targetId: planData.id?.toString() ?? 'unknown',
+            targetTitle: planData.title ?? 'Untitled Plan',
+            historyId: planData.id?.toString() ?? 'unknown',
+            options,
+            config,
+            isPrintMode,
+            reviewLog,
+            gitNoteSummary: (metadata) =>
+              `Code review completed for plan ${metadata.planId}: ${metadata.planTitle}`,
+          });
 
         if (!hasIssues && planData.reviewIssues) {
           await clearSavedReviewIssues(contextPlanId, gitRoot);
@@ -1454,77 +2195,6 @@ export async function handleReviewCommand(
               chalk.green(
                 `Saved ${reviewResult.issues.length} review issue${reviewResult.issues.length === 1 ? '' : 's'} for later.`
               )
-            );
-          }
-        }
-
-        // Persistence logic - save to structured review history
-        const shouldSave =
-          options.save ||
-          (config.review?.autoSave && !options.noSave) ||
-          (!options.noSave && !options.outputFile && !config.review?.saveLocation);
-
-        if (shouldSave) {
-          try {
-            const reviewsDir = await createReviewsDirectory(gitRoot);
-
-            if (currentCommitHash !== 'unknown') {
-              const metadata: ReviewMetadata = {
-                planId: planData.id?.toString() ?? 'unknown',
-                planTitle: planData.title ?? 'Untitled Plan',
-                commitHash: currentCommitHash,
-                timestamp: new Date(),
-                reviewer: process.env.USER || process.env.USERNAME,
-                baseBranch: diffResult.baseBranch,
-                changedFiles: diffResult.changedFiles,
-              };
-
-              const savedPath = await saveReviewResult(reviewsDir, formattedOutput, metadata);
-              reviewLog(chalk.cyan(`Review saved to: ${savedPath}`));
-
-              // Create Git note if requested
-              if (options.gitNote) {
-                const reviewSummary = `Code review completed for plan ${metadata.planId}: ${metadata.planTitle}`;
-                const noteCreated = await createGitNote(gitRoot, currentCommitHash, reviewSummary);
-                if (noteCreated) {
-                  reviewLog(chalk.cyan('Git note created with review summary'));
-                } else {
-                  reviewLog(chalk.yellow('Warning: Could not create Git note'));
-                }
-              }
-            } else {
-              reviewLog(
-                chalk.yellow('Warning: Could not save review - unable to determine commit hash')
-              );
-            }
-          } catch (persistenceErr) {
-            const persistenceErrorMessage =
-              persistenceErr instanceof Error ? persistenceErr.message : String(persistenceErr);
-            reviewLog(
-              chalk.yellow(`Warning: Could not save review to history: ${persistenceErrorMessage}`)
-            );
-          }
-        }
-
-        // Save to file if requested with comprehensive error handling
-        if (options.outputFile) {
-          await saveReviewResultWithErrorHandling(options.outputFile, formattedOutput, log);
-        } else if (config.review?.saveLocation) {
-          // Use config save location if no explicit output file
-          try {
-            const saveDir = isAbsolute(config.review.saveLocation)
-              ? config.review.saveLocation
-              : join(gitRoot, config.review.saveLocation);
-
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const filename = `review-${planData.id}-${timestamp}${formatter.getFileExtension()}`;
-            const savePath = join(saveDir, filename);
-
-            await saveReviewResultWithErrorHandling(savePath, formattedOutput, log);
-          } catch (saveErr) {
-            const saveErrorMessage = saveErr instanceof Error ? saveErr.message : String(saveErr);
-            reviewLog(
-              chalk.yellow(`Warning: Could not prepare save location: ${saveErrorMessage}`)
             );
           }
         }

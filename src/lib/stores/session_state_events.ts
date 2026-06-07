@@ -23,10 +23,59 @@ interface SessionPlanMapLike {
 export interface SessionStoreMutableState {
   sessions: SessionMapLike;
   sessionsByPlanUuid: SessionPlanMapLike;
+  sessionsByPrUrl: SessionPlanMapLike;
   setInitialized(value: boolean): void;
   getSelectedSessionId(): string | null;
   setSelectedSessionId(value: string | null): void;
   setRateLimitState?(state: RateLimitState): void;
+}
+
+function syncSessionListIndex(
+  index: SessionPlanMapLike,
+  existing: SessionData | undefined,
+  next: SessionData | undefined,
+  getKey: (session: SessionData) => string | null | undefined
+): void {
+  const previousKey = existing ? (getKey(existing) ?? null) : null;
+  const nextKey = next ? (getKey(next) ?? null) : null;
+
+  if (previousKey && previousKey !== nextKey) {
+    const previousSessions = index.get(previousKey);
+    if (previousSessions) {
+      const nextPreviousSessions = previousSessions.filter(
+        (session) => session.connectionId !== existing?.connectionId
+      );
+      if (nextPreviousSessions.length === 0) {
+        index.delete(previousKey);
+      } else if (nextPreviousSessions.length !== previousSessions.length) {
+        index.set(previousKey, nextPreviousSessions);
+      }
+    }
+  }
+
+  if (!nextKey || !next) {
+    return;
+  }
+
+  const indexedSessions = index.get(nextKey);
+  if (!indexedSessions) {
+    index.set(nextKey, [next]);
+    return;
+  }
+
+  const existingIndex = indexedSessions.findIndex(
+    (session) => session.connectionId === next.connectionId
+  );
+  if (existingIndex === -1) {
+    index.set(nextKey, [...indexedSessions, next]);
+    return;
+  }
+
+  if (indexedSessions[existingIndex] !== next) {
+    const updatedSessions = [...indexedSessions];
+    updatedSessions[existingIndex] = next;
+    index.set(nextKey, updatedSessions);
+  }
 }
 
 /** Maximum number of messages retained per session in the client-side store. */
@@ -48,46 +97,25 @@ function syncSessionPlanIndex(
   existing: SessionData | undefined,
   next: SessionData | undefined
 ): void {
-  const previousPlanUuid = existing?.sessionInfo.planUuid ?? null;
-  const nextPlanUuid = next?.sessionInfo.planUuid ?? null;
-
-  if (previousPlanUuid && previousPlanUuid !== nextPlanUuid) {
-    const previousSessions = state.sessionsByPlanUuid.get(previousPlanUuid);
-    if (previousSessions) {
-      const nextPreviousSessions = previousSessions.filter(
-        (session) => session.connectionId !== existing?.connectionId
-      );
-      if (nextPreviousSessions.length === 0) {
-        state.sessionsByPlanUuid.delete(previousPlanUuid);
-      } else if (nextPreviousSessions.length !== previousSessions.length) {
-        state.sessionsByPlanUuid.set(previousPlanUuid, nextPreviousSessions);
-      }
-    }
-  }
-
-  if (!nextPlanUuid || !next) {
-    return;
-  }
-
-  const indexedSessions = state.sessionsByPlanUuid.get(nextPlanUuid);
-  if (!indexedSessions) {
-    state.sessionsByPlanUuid.set(nextPlanUuid, [next]);
-    return;
-  }
-
-  const existingIndex = indexedSessions.findIndex(
-    (session) => session.connectionId === next.connectionId
+  syncSessionListIndex(
+    state.sessionsByPlanUuid,
+    existing,
+    next,
+    (session) => session.sessionInfo.planUuid
   );
-  if (existingIndex === -1) {
-    state.sessionsByPlanUuid.set(nextPlanUuid, [...indexedSessions, next]);
-    return;
-  }
+}
 
-  if (indexedSessions[existingIndex] !== next) {
-    const updatedSessions = [...indexedSessions];
-    updatedSessions[existingIndex] = next;
-    state.sessionsByPlanUuid.set(nextPlanUuid, updatedSessions);
-  }
+function syncSessionPrIndex(
+  state: SessionStoreMutableState,
+  existing: SessionData | undefined,
+  next: SessionData | undefined
+): void {
+  syncSessionListIndex(
+    state.sessionsByPrUrl,
+    existing,
+    next,
+    (session) => session.sessionInfo.linkedPrUrl
+  );
 }
 
 function setSession(
@@ -100,6 +128,7 @@ function setSession(
     existing ? mergeSessionPreservingMessages(existing, incoming) : incoming
   );
   syncSessionPlanIndex(state, existing, state.sessions.get(incoming.connectionId));
+  syncSessionPrIndex(state, existing, state.sessions.get(incoming.connectionId));
 }
 
 export function parseSessionEventPayload<T>(data: string): T | null {
@@ -128,6 +157,7 @@ export function applySessionEvent<TEventName extends SessionClientEventName>(
     case 'session:list': {
       state.sessions.clear();
       state.sessionsByPlanUuid.clear();
+      state.sessionsByPrUrl.clear();
       for (const session of event.payload.sessions) {
         setSession(state, session);
       }
@@ -196,18 +226,9 @@ export function applySessionEvent<TEventName extends SessionClientEventName>(
     }
     case 'session:dismissed': {
       const existing = state.sessions.get(event.payload.connectionId);
-      if (existing?.sessionInfo.planUuid) {
-        const sessions = state.sessionsByPlanUuid.get(existing.sessionInfo.planUuid);
-        if (sessions) {
-          const nextSessions = sessions.filter(
-            (session) => session.connectionId !== event.payload.connectionId
-          );
-          if (nextSessions.length === 0) {
-            state.sessionsByPlanUuid.delete(existing.sessionInfo.planUuid);
-          } else if (nextSessions.length !== sessions.length) {
-            state.sessionsByPlanUuid.set(existing.sessionInfo.planUuid, nextSessions);
-          }
-        }
+      if (existing) {
+        syncSessionPlanIndex(state, existing, undefined);
+        syncSessionPrIndex(state, existing, undefined);
       }
       state.sessions.delete(event.payload.connectionId);
       if (state.getSelectedSessionId() === event.payload.connectionId) {

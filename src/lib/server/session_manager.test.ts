@@ -1781,6 +1781,124 @@ describe('lib/server/session_manager', () => {
     expect(indexedSessions.sessionsByPlanUuid.get('plan-43')).toBeUndefined();
   });
 
+  test('keeps sessionsByPrUrl in sync when sessions move between PRs and are dismissed', () => {
+    const indexedSessions = manager as unknown as {
+      sessionsByPrUrl: Map<
+        string,
+        Array<{
+          connectionId: string;
+          status: string;
+          sessionInfo: { linkedPrUrl?: string | null };
+        }>
+      >;
+    };
+
+    manager.handleWebSocketConnect('conn-pr-1', vi.fn());
+    manager.handleWebSocketMessage('conn-pr-1', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      linkedPrUrl: 'https://github.com/owner/repo/pull/10',
+      workspacePath: '/tmp/ws-pr-1',
+    });
+
+    expect(
+      indexedSessions.sessionsByPrUrl
+        .get('https://github.com/owner/repo/pull/10')
+        ?.map((s) => s.connectionId)
+    ).toEqual(['conn-pr-1']);
+
+    // Moving to a different PR URL removes from old index and adds to new
+    manager.handleWebSocketMessage('conn-pr-1', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      linkedPrUrl: 'https://github.com/owner/repo/pull/11',
+      workspacePath: '/tmp/ws-pr-2',
+    });
+
+    expect(
+      indexedSessions.sessionsByPrUrl.get('https://github.com/owner/repo/pull/10')
+    ).toBeUndefined();
+    expect(
+      indexedSessions.sessionsByPrUrl
+        .get('https://github.com/owner/repo/pull/11')
+        ?.map((s) => s.connectionId)
+    ).toEqual(['conn-pr-1']);
+
+    // Disconnect keeps session in index but marks it offline
+    manager.handleWebSocketDisconnect('conn-pr-1');
+    expect(
+      indexedSessions.sessionsByPrUrl.get('https://github.com/owner/repo/pull/11')?.[0]?.status
+    ).toBe('offline');
+
+    // Dismissal removes from index entirely
+    manager.dismissSession('conn-pr-1');
+    expect(
+      indexedSessions.sessionsByPrUrl.get('https://github.com/owner/repo/pull/11')
+    ).toBeUndefined();
+  });
+
+  test('hasActiveSessionForPr returns only matching active sessions', () => {
+    const prUrl1 = 'https://github.com/owner/repo/pull/20';
+    const prUrl2 = 'https://github.com/owner/repo/pull/21';
+
+    manager.handleWebSocketConnect('pr-fix-active', () => {});
+    manager.handleWebSocketMessage('pr-fix-active', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      linkedPrUrl: prUrl1,
+      workspacePath: '/tmp/ws-pr-fix',
+    });
+
+    manager.handleWebSocketConnect('pr-fix-offline', () => {});
+    manager.handleWebSocketMessage('pr-fix-offline', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      linkedPrUrl: prUrl1,
+      workspacePath: '/tmp/ws-pr-fix-offline',
+    });
+    manager.handleWebSocketDisconnect('pr-fix-offline');
+
+    manager.handleWebSocketConnect('pr-fix-other', () => {});
+    manager.handleWebSocketMessage('pr-fix-other', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      linkedPrUrl: prUrl2,
+      workspacePath: '/tmp/ws-pr-fix-other',
+    });
+
+    // Active session for pr1 found
+    expect(manager.hasActiveSessionForPr(prUrl1)).toEqual({
+      active: true,
+      connectionId: 'pr-fix-active',
+    });
+    // Command filter: matching command found
+    expect(manager.hasActiveSessionForPr(prUrl1, 'agent')).toEqual({
+      active: true,
+      connectionId: 'pr-fix-active',
+    });
+    // Command filter: non-matching command
+    expect(manager.hasActiveSessionForPr(prUrl1, 'generate')).toEqual({ active: false });
+    // Array of commands
+    expect(manager.hasActiveSessionForPr(prUrl1, ['agent', 'generate'])).toEqual({
+      active: true,
+      connectionId: 'pr-fix-active',
+    });
+    // Unknown PR URL
+    expect(manager.hasActiveSessionForPr('https://github.com/owner/repo/pull/99')).toEqual({
+      active: false,
+    });
+    // Other PR has its own session
+    expect(manager.hasActiveSessionForPr(prUrl2)).toEqual({
+      active: true,
+      connectionId: 'pr-fix-other',
+    });
+  });
+
   test('hasActiveSessionForPlan returns only matching active sessions', () => {
     manager.handleWebSocketConnect('generate-active', () => {});
     manager.handleWebSocketMessage('generate-active', {

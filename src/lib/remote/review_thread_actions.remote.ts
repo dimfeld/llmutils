@@ -13,8 +13,19 @@ import {
   loadPlanSchemaFromRow,
   writeSinglePlanMutationViaBatch,
 } from '$lib/server/plan_batch_write.js';
-import { clearLaunchLock, isPlanLaunching, setLaunchLock } from '$lib/server/launch_lock.js';
-import { spawnPrFixProcess, spawnPrReviewGuideProcess } from '$lib/server/plan_actions.js';
+import {
+  clearLaunchLock,
+  clearPrLaunchLock,
+  isPlanLaunching,
+  isPrLaunching,
+  setLaunchLock,
+  setPrLaunchLock,
+} from '$lib/server/launch_lock.js';
+import {
+  spawnPrFixForPrProcess,
+  spawnPrFixProcess,
+  spawnPrReviewGuideProcess,
+} from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import {
   createPullRequestReviewCommentReply,
@@ -25,6 +36,7 @@ import { createTaskFromReviewThread } from '$tim/commands/review.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import {
   getPrStatusForPlan,
+  getPrStatusByProjectAndNumber,
   type PrReviewThreadCommentRow,
   type PrReviewThreadDetail,
   type PrReviewThreadRow,
@@ -373,6 +385,70 @@ export const startFixThreads = command(startFixThreadsSchema, async ({ planUuid 
 
   return { status: 'started' as const, planId: plan.plan_id };
 });
+
+const startFixPrThreadsSchema = z.object({
+  projectId: z.number().int(),
+  prNumber: z.number().int(),
+});
+
+export const startFixPrThreads = command(
+  startFixPrThreadsSchema,
+  async ({ projectId, prNumber }) => {
+    const { db } = await getServerContext();
+
+    const prStatus = getPrStatusByProjectAndNumber(db, projectId, prNumber, {
+      includeReviewThreads: true,
+    });
+    if (!prStatus) {
+      error(404, 'PR not found');
+    }
+
+    const canonicalPrUrl = tryCanonicalizePrUrl(prStatus.status.pr_url);
+    if (!canonicalPrUrl) {
+      error(404, 'PR not found');
+    }
+
+    const hasUnresolvedThreads = prStatus.reviewThreads?.some((rt) => !rt.thread.is_resolved);
+    if (!hasUnresolvedThreads) {
+      error(400, 'No unresolved review threads to fix');
+    }
+
+    const activeSession = getSessionManager().hasActiveSessionForPr(canonicalPrUrl);
+    if (activeSession.active) {
+      return { status: 'already_running' as const, connectionId: activeSession.connectionId };
+    }
+
+    if (isPrLaunching(canonicalPrUrl)) {
+      return { status: 'already_running' as const };
+    }
+
+    const primaryWorkspacePath = getPrimaryWorkspacePath(db, projectId);
+    if (!primaryWorkspacePath) {
+      error(400, 'Project does not have a primary workspace');
+    }
+
+    setPrLaunchLock(canonicalPrUrl);
+
+    let result;
+    try {
+      result = await spawnPrFixForPrProcess(canonicalPrUrl, primaryWorkspacePath);
+    } catch (e) {
+      clearPrLaunchLock(canonicalPrUrl);
+      throw e;
+    }
+
+    if (!result.success) {
+      clearPrLaunchLock(canonicalPrUrl);
+      error(500, result.error);
+    }
+
+    if (result.earlyExit) {
+      clearPrLaunchLock(canonicalPrUrl);
+    }
+
+    return { status: 'started' as const, prUrl: canonicalPrUrl };
+  }
+);
 
 const startPrReviewGuideSchema = z.object({
   projectId: z.number().int(),

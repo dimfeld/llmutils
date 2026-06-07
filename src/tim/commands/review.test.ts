@@ -6,6 +6,7 @@ import {
   handleReviewCommand,
   appendIssuesToPlanTasks,
   buildReviewPrompt,
+  buildPlanlessReviewPrompt,
   detectIssuesInReview,
   buildAutofixPrompt,
   reopenParentForAppendedReviewTasks,
@@ -33,6 +34,11 @@ import * as agentPromptsModule from '../executors/claude_code/agent_prompts.js';
 import * as inquirerModule from '@inquirer/prompts';
 import * as loggingModule from '../../logging.js';
 import * as workspaceSetupModule from '../workspace/workspace_setup.js';
+import * as prContextGatheringModule from '../utils/pr_context_gathering.js';
+import * as workspaceIdentifierModule from '../assignments/workspace_identifier.js';
+import * as headlessModule from '../headless.js';
+import type { DiffResult } from '../incremental_review.js';
+import type { PullRequestReviewTarget } from './review_target.js';
 
 vi.mock('../notifications.js', () => ({
   sendNotification: vi.fn(),
@@ -69,6 +75,8 @@ vi.mock('../../common/git.js', async (importOriginal) => {
     getUsingJj: vi.fn(),
     getCurrentCommitHash: vi.fn(),
     getCurrentBranchName: vi.fn(),
+    getMergeBase: vi.fn(),
+    remoteBranchExists: vi.fn(),
   };
 });
 
@@ -96,6 +104,30 @@ vi.mock('../../logging.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../utils/pr_context_gathering.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof prContextGatheringModule>();
+  return {
+    ...actual,
+    gatherPrContext: vi.fn(),
+  };
+});
+
+vi.mock('../assignments/workspace_identifier.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof workspaceIdentifierModule>();
+  return {
+    ...actual,
+    getRepositoryIdentity: vi.fn(),
+  };
+});
+
+vi.mock('../headless.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof headlessModule>();
+  return {
+    ...actual,
+    updateHeadlessSessionInfo: vi.fn(),
+  };
+});
+
 let testDir: string;
 let sendNotificationSpy: ReturnType<typeof vi.fn>;
 let originalCwd: string;
@@ -109,6 +141,37 @@ function createMockPlanContext(overrides: Record<string, unknown> = {}) {
     repoRoot: testDir,
     gitRoot: testDir,
     ...overrides,
+  };
+}
+
+async function createCommittedBaseline(repoDir: string): Promise<void> {
+  await writeFile(join(repoDir, 'README.md'), '# baseline\n');
+  await Bun.$`git add README.md`.cwd(repoDir).quiet();
+  await Bun.$`git -c user.name=Test -c user.email=test@example.com commit -m baseline`
+    .cwd(repoDir)
+    .quiet();
+  await Bun.$`git branch -M main`.cwd(repoDir).quiet();
+}
+
+async function createTrackedWorktreeChange(
+  repoDir: string,
+  fileName: string,
+  initialContent: string,
+  changedContent: string
+): Promise<void> {
+  await writeFile(join(repoDir, fileName), initialContent);
+  await Bun.$`git add ${fileName}`.cwd(repoDir).quiet();
+  await Bun.$`git -c user.name=Test -c user.email=test@example.com commit -m add-${fileName}`
+    .cwd(repoDir)
+    .quiet();
+  await writeFile(join(repoDir, fileName), changedContent);
+}
+
+function createMockReviewExecutor(
+  output: string = '{"issues":[],"recommendations":[],"actionItems":[]}'
+): { execute: ReturnType<typeof vi.fn> } {
+  return {
+    execute: vi.fn(async () => output),
   };
 }
 
@@ -134,6 +197,15 @@ beforeEach(async () => {
   promptCheckboxSpy.mockResolvedValue([] as any);
 
   vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+  vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
+  vi.mocked(gitModule.getUsingJj).mockResolvedValue(false);
+  vi.mocked(gitModule.getMergeBase).mockResolvedValue('HEAD' as any);
+  vi.mocked(gitModule.remoteBranchExists).mockResolvedValue(false);
+  vi.mocked(workspaceIdentifierModule.getRepositoryIdentity).mockResolvedValue({
+    repositoryId: 'github.com__acme__review-tests',
+    remoteUrl: 'https://github.com/acme/review-tests.git',
+    gitRoot: testDir,
+  } as any);
 });
 
 afterEach(async () => {
@@ -992,6 +1064,175 @@ index 1234567..abcdefg 100644
     expect(prompt).toContain('5. **Task Five**');
     expect(prompt).not.toContain('1. **Task Two**');
     expect(prompt).not.toContain('2. **Task Five**');
+  });
+});
+
+describe('buildPlanlessReviewPrompt', () => {
+  beforeEach(() => {
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          name: 'reviewer',
+          description: 'Reviews code',
+          prompt: contextContent,
+        }) as any
+    );
+  });
+
+  function createPlanlessDiff(overrides: Partial<DiffResult> = {}): DiffResult {
+    return {
+      hasChanges: true,
+      changedFiles: ['src/review.ts', 'src/review.test.ts'],
+      baseBranch: 'main',
+      mergeBaseCommit: 'abc123',
+      diffContent: `diff --git a/src/review.ts b/src/review.ts
+@@ -1 +1,2 @@
++export const changed = true;`,
+      ...overrides,
+    };
+  }
+
+  test('includes current target metadata and excludes plan context', () => {
+    const prompt = buildPlanlessReviewPrompt(
+      {
+        kind: 'current',
+        repoRoot: '/repo',
+        currentBranch: 'feature/current-review',
+        baseBranch: 'main',
+        worktreePath: '/repo',
+      },
+      createPlanlessDiff(),
+      '/repo',
+      false,
+      false,
+      undefined,
+      undefined
+    );
+
+    expect(prompt).toContain('# Review Target');
+    expect(prompt).toContain('**Target Kind:** current');
+    expect(prompt).toContain('**Current Branch:** feature/current-review');
+    expect(prompt).toContain('**Base Branch:** main');
+    expect(prompt).toContain('origin/main');
+    expect(prompt).toContain('main@origin');
+    expect(prompt).toContain('not associated with a tim plan');
+    expect(prompt).toContain('Findings are ephemeral');
+    expect(prompt).toContain('- src/review.ts');
+    expect(prompt).toContain('- src/review.test.ts');
+    expect(prompt).not.toContain('Plan Context');
+    expect(prompt).not.toContain('Plan Hierarchy');
+    expect(prompt).not.toContain('Plan Tasks');
+    expect(prompt).not.toContain('Plan Progress');
+    expect(prompt).not.toContain('saved issue');
+  });
+
+  test('includes branch target requested branch and base', () => {
+    const prompt = buildPlanlessReviewPrompt(
+      {
+        kind: 'branch',
+        repoRoot: '/repo',
+        requestedBranch: 'feature/review-target',
+        baseBranch: 'release/base',
+      },
+      createPlanlessDiff({ baseBranch: 'release/base' }),
+      '/repo/.tim/workspaces/feature-review-target',
+      false,
+      false,
+      undefined,
+      undefined
+    );
+
+    expect(prompt).toContain('**Target Kind:** branch');
+    expect(prompt).toContain('**Requested Branch:** feature/review-target');
+    expect(prompt).toContain('**Base Branch:** release/base');
+    expect(prompt).toContain('origin/release/base');
+    expect(prompt).toContain('release/base@origin');
+  });
+
+  test('includes PR target metadata', () => {
+    const target: PullRequestReviewTarget = {
+      kind: 'pr',
+      repoRoot: '/repo',
+      canonicalPrUrl: 'https://github.com/acme/review-tests/pull/123',
+      prNumber: 123,
+      title: 'Add planless review',
+      owner: 'acme',
+      repo: 'review-tests',
+      baseBranch: 'main',
+      headBranch: 'feature/planless-review',
+      headSha: 'deadbeef',
+      prStatusId: 44,
+      prStatus: {
+        id: 44,
+        pr_url: 'https://github.com/acme/review-tests/pull/123',
+        owner: 'acme',
+        repo: 'review-tests',
+        pr_number: 123,
+        author: 'octocat',
+        title: 'Add planless review',
+        state: 'OPEN',
+        draft: 0,
+        mergeable: 'MERGEABLE',
+        head_sha: 'deadbeef',
+        base_branch: 'main',
+        head_branch: 'feature/planless-review',
+        requested_reviewers: null,
+        review_decision: null,
+        check_rollup_state: null,
+        merged_at: null,
+        additions: 4,
+        deletions: 2,
+        changed_files: 2,
+        pr_updated_at: null,
+        latest_commit_pushed_at: null,
+        ready_at: null,
+        last_fetched_at: '2026-06-05T00:00:00.000Z',
+        created_at: '2026-06-05T00:00:00.000Z',
+        updated_at: '2026-06-05T00:00:00.000Z',
+      },
+    };
+
+    const prompt = buildPlanlessReviewPrompt(
+      target,
+      createPlanlessDiff(),
+      '/repo/.tim/workspaces/pr-123',
+      false,
+      false,
+      undefined,
+      undefined
+    );
+
+    expect(prompt).toContain('**Target Kind:** pr');
+    expect(prompt).toContain('**PR URL:** https://github.com/acme/review-tests/pull/123');
+    expect(prompt).toContain('**PR Number:** #123');
+    expect(prompt).toContain('**PR Title:** Add planless review');
+    expect(prompt).toContain('**Repository:** acme/review-tests');
+    expect(prompt).toContain('**Head Branch:** feature/planless-review');
+    expect(prompt).toContain('**Head SHA:** deadbeef');
+    expect(prompt).toContain('**Base Branch:** main');
+  });
+
+  test('appends full diff when requested', () => {
+    const prompt = buildPlanlessReviewPrompt(
+      {
+        kind: 'current',
+        repoRoot: '/repo',
+        currentBranch: 'feature/current-review',
+        baseBranch: 'main',
+        worktreePath: '/repo',
+      },
+      createPlanlessDiff(),
+      '/repo',
+      true,
+      false,
+      undefined,
+      undefined
+    );
+
+    expect(prompt).toContain('**Full Diff:**');
+    expect(prompt).toContain('```diff');
+    expect(prompt).toContain('diff --git a/src/review.ts b/src/review.ts');
+    expect(prompt).toContain('+export const changed = true;');
   });
 });
 
@@ -3936,9 +4177,17 @@ Updated by branch-name autofix
     expect(updatedPlan.tasks?.[0]?.done).toBe(true);
   });
 
-  test('throws when the branch name does not identify a DB plan', async () => {
+  test('falls back to current target when the branch name does not identify a DB plan', async () => {
     vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
     vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue(null as any);
+    vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockRejectedValue(
+      new Error('plan context should not be gathered for current target fallback')
+    );
+    await writeFile(join(testDir, 'README.md'), '# test\n');
+    await Bun.$`git add README.md`.cwd(testDir).quiet();
+    await Bun.$`git commit -m initial`.cwd(testDir).quiet();
+    await Bun.$`git branch -M main`.cwd(testDir).quiet();
 
     const mockCommand = {
       parent: {
@@ -3946,15 +4195,25 @@ Updated by branch-name autofix
       },
     };
 
-    await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
-      'No plan ID specified and no suitable plans found'
-    );
+    await expect(handleReviewCommand(undefined, { noSave: true }, mockCommand)).resolves.toEqual({
+      tasksAppended: 0,
+      issuesSaved: 0,
+    });
+    expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
   });
 
-  test('throws when the branch name matches the pattern but the DB plan does not exist', async () => {
+  test('falls back to current target when the branch name matches the pattern but the DB plan does not exist', async () => {
     vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
     vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
     vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue('999-missing-plan');
+    vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockRejectedValue(
+      new Error('plan context should not be gathered for missing branch plan fallback')
+    );
+    await writeFile(join(testDir, 'README.md'), '# test\n');
+    await Bun.$`git add README.md`.cwd(testDir).quiet();
+    await Bun.$`git commit -m initial`.cwd(testDir).quiet();
+    await Bun.$`git branch -M main`.cwd(testDir).quiet();
 
     const mockCommand = {
       parent: {
@@ -3962,9 +4221,336 @@ Updated by branch-name autofix
       },
     };
 
-    await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
-      'No plan ID specified and no suitable plans found'
+    await expect(handleReviewCommand(undefined, { noSave: true }, mockCommand)).resolves.toEqual({
+      tasksAppended: 0,
+      issuesSaved: 0,
+    });
+    expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
+  });
+
+  test('rejects --save-issues for current target before workspace or executor allocation', async () => {
+    const setupWorkspaceSpy = vi.spyOn(workspaceSetupModule, 'setupWorkspace');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+    vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue('feature/no-plan');
+
+    try {
+      await expect(
+        handleReviewCommand(
+          undefined,
+          { current: true, saveIssues: true },
+          { parent: { opts: () => ({}) } }
+        )
+      ).rejects.toThrow('--save-issues requires a plan-backed review target.');
+
+      expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+      expect(executorsModule.buildExecutorAndLog).not.toHaveBeenCalled();
+      expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
+    } finally {
+      setupWorkspaceSpy.mockRestore();
+    }
+  });
+
+  test('rejects --incremental for current target before workspace or executor allocation', async () => {
+    const setupWorkspaceSpy = vi.spyOn(workspaceSetupModule, 'setupWorkspace');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+    vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue('feature/no-plan');
+
+    try {
+      await expect(
+        handleReviewCommand(
+          undefined,
+          { current: true, incremental: true },
+          { parent: { opts: () => ({}) } }
+        )
+      ).rejects.toThrow('--incremental requires a plan-backed review target.');
+
+      expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+      expect(executorsModule.buildExecutorAndLog).not.toHaveBeenCalled();
+      expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
+    } finally {
+      setupWorkspaceSpy.mockRestore();
+    }
+  });
+
+  test('rejects plan-owned options for PR target before PR resolution or workspace allocation', async () => {
+    const setupWorkspaceSpy = vi.spyOn(workspaceSetupModule, 'setupWorkspace');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+
+    try {
+      await expect(
+        handleReviewCommand(
+          undefined,
+          { pr: '123', saveIssues: true },
+          { parent: { opts: () => ({}) } }
+        )
+      ).rejects.toThrow('--save-issues requires a plan-backed review target.');
+
+      expect(prContextGatheringModule.gatherPrContext).not.toHaveBeenCalled();
+      expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+      expect(executorsModule.buildExecutorAndLog).not.toHaveBeenCalled();
+      expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
+    } finally {
+      setupWorkspaceSpy.mockRestore();
+    }
+  });
+
+  test('explicit --current reviews the current worktree without workspace switching or plan context', async () => {
+    await createTrackedWorktreeChange(
+      testDir,
+      'current-target.ts',
+      'export const value = 1;\n',
+      'export const value = 2;\n'
     );
+    const setupWorkspaceSpy = vi.spyOn(workspaceSetupModule, 'setupWorkspace');
+    const mockExecutor = createMockReviewExecutor();
+
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'codex-cli',
+    } as any);
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+    vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue('feature/current-target');
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) => ({ prompt: contextContent }) as any
+    );
+
+    try {
+      await expect(
+        handleReviewCommand(
+          undefined,
+          { current: true, noSave: true, noAutofix: true },
+          { parent: { opts: () => ({}) } }
+        )
+      ).resolves.toEqual({ tasksAppended: 0, issuesSaved: 0 });
+
+      expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+      expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
+      expect(executorsModule.buildExecutorAndLog).toHaveBeenCalledWith(
+        'codex-cli',
+        expect.objectContaining({
+          baseDir: testDir,
+          timEnvironment: expect.not.objectContaining({
+            TIM_PLAN_ID: expect.anything(),
+          }),
+        }),
+        expect.objectContaining({ defaultExecutor: 'codex-cli' })
+      );
+      expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+      const prompt = mockExecutor.execute.mock.calls[0]?.[0] as string;
+      expect(prompt).toContain('**Target Kind:** current');
+      expect(prompt).toContain('**Current Branch:** feature/current-target');
+      expect(prompt).toContain('**Base Branch:** main');
+      expect(prompt).not.toContain('Plan Tasks');
+    } finally {
+      setupWorkspaceSpy.mockRestore();
+    }
+  });
+
+  test('explicit --branch prepares a workspace on the requested branch without switching current checkout', async () => {
+    await createCommittedBaseline(testDir);
+    await Bun.$`git checkout -b feature/branch-target`.cwd(testDir).quiet();
+    await Bun.$`git checkout main`.cwd(testDir).quiet();
+    const originalBranch = (
+      await Bun.$`git rev-parse --abbrev-ref HEAD`.cwd(testDir).text()
+    ).trim();
+    const workspaceDir = await mkdtemp(join(tmpdir(), 'tim-review-branch-workspace-'));
+    await Bun.$`git init`.cwd(workspaceDir).quiet();
+    await createTrackedWorktreeChange(
+      workspaceDir,
+      'branch-target.ts',
+      'export const branchValue = 1;\n',
+      'export const branchValue = 2;\n'
+    );
+    const setupWorkspaceSpy = vi
+      .spyOn(workspaceSetupModule, 'setupWorkspace')
+      .mockResolvedValue({ baseDir: workspaceDir } as any);
+    const mockExecutor = createMockReviewExecutor();
+
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'codex-cli',
+    } as any);
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) => ({ prompt: contextContent }) as any
+    );
+
+    try {
+      await handleReviewCommand(
+        undefined,
+        { branch: 'feature/branch-target', base: 'main', noSave: true, noAutofix: true },
+        { parent: { opts: () => ({}) } }
+      );
+
+      expect(setupWorkspaceSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          checkoutBranch: 'feature/branch-target',
+          branchName: 'feature/branch-target',
+          createBranch: false,
+          requireWorkspace: true,
+        }),
+        testDir,
+        undefined,
+        expect.objectContaining({ defaultExecutor: 'codex-cli' }),
+        'tim review'
+      );
+      const currentBranch = (
+        await Bun.$`git rev-parse --abbrev-ref HEAD`.cwd(testDir).text()
+      ).trim();
+      expect(currentBranch).toBe(originalBranch);
+      expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
+      const prompt = mockExecutor.execute.mock.calls[0]?.[0] as string;
+      expect(prompt).toContain('**Target Kind:** branch');
+      expect(prompt).toContain('**Requested Branch:** feature/branch-target');
+      expect(prompt).toContain('**Base Branch:** main');
+    } finally {
+      setupWorkspaceSpy.mockRestore();
+    }
+  });
+
+  test('explicit --pr populates PR session metadata and planless PR prompt context', async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), 'tim-review-pr-workspace-'));
+    await Bun.$`git init`.cwd(workspaceDir).quiet();
+    await createTrackedWorktreeChange(
+      workspaceDir,
+      'pr-target.ts',
+      'export const prValue = 1;\n',
+      'export const prValue = 2;\n'
+    );
+    const setupWorkspaceSpy = vi
+      .spyOn(workspaceSetupModule, 'setupWorkspace')
+      .mockResolvedValue({ baseDir: workspaceDir } as any);
+    const mockExecutor = createMockReviewExecutor();
+
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'codex-cli',
+    } as any);
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) => ({ prompt: contextContent }) as any
+    );
+    vi.mocked(prContextGatheringModule.gatherPrContext).mockResolvedValue({
+      prStatus: {
+        id: 1234,
+        pr_url: 'https://github.com/acme/review-tests/pull/123',
+        owner: 'acme',
+        repo: 'review-tests',
+        pr_number: 123,
+        author: 'octocat',
+        title: 'Add planless PR review',
+        state: 'OPEN',
+        draft: 0,
+        mergeable: 'MERGEABLE',
+        head_sha: 'feedface',
+        base_branch: 'main',
+        head_branch: 'feature/pr-review',
+        requested_reviewers: null,
+        review_decision: null,
+        check_rollup_state: null,
+        merged_at: null,
+        additions: 3,
+        deletions: 1,
+        changed_files: 1,
+        pr_updated_at: null,
+        latest_commit_pushed_at: null,
+        ready_at: null,
+        last_fetched_at: '2026-06-05T00:00:00.000Z',
+        created_at: '2026-06-05T00:00:00.000Z',
+        updated_at: '2026-06-05T00:00:00.000Z',
+      },
+      baseBranch: 'main',
+      headBranch: 'feature/pr-review',
+      headSha: 'feedface',
+      owner: 'acme',
+      repo: 'review-tests',
+      prNumber: 123,
+      prUrl: 'https://github.com/acme/review-tests/pull/123',
+    } as any);
+
+    try {
+      await handleReviewCommand(
+        undefined,
+        { pr: '123', noSave: true, noAutofix: true },
+        { parent: { opts: () => ({}) } }
+      );
+
+      expect(headlessModule.updateHeadlessSessionInfo).toHaveBeenCalledWith({
+        linkedPrUrl: 'https://github.com/acme/review-tests/pull/123',
+        linkedPrNumber: 123,
+        linkedPrTitle: 'Add planless PR review',
+      });
+      expect(headlessModule.updateHeadlessSessionInfo).toHaveBeenCalledWith({
+        workspacePath: workspaceDir,
+      });
+      expect(setupWorkspaceSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          checkoutBranch: 'feature/pr-review',
+          branchName: 'feature/pr-review',
+          createBranch: false,
+          requireWorkspace: true,
+        }),
+        testDir,
+        undefined,
+        expect.objectContaining({ defaultExecutor: 'codex-cli' }),
+        'tim review'
+      );
+      const prompt = mockExecutor.execute.mock.calls[0]?.[0] as string;
+      expect(prompt).toContain('**Target Kind:** pr');
+      expect(prompt).toContain('**PR URL:** https://github.com/acme/review-tests/pull/123');
+      expect(prompt).toContain('**PR Number:** #123');
+      expect(prompt).toContain('**PR Title:** Add planless PR review');
+      expect(prompt).toContain('**Repository:** acme/review-tests');
+      expect(prompt).toContain('**Head Branch:** feature/pr-review');
+      expect(prompt).toContain('**Head SHA:** feedface');
+      expect(prompt).not.toContain('Plan Tasks');
+      expect(prompt).not.toContain('Plan Progress');
+      expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
+    } finally {
+      setupWorkspaceSpy.mockRestore();
+    }
+  });
+
+  test('rejects --save-issues for branch target before workspace or executor allocation', async () => {
+    const setupWorkspaceSpy = vi.spyOn(workspaceSetupModule, 'setupWorkspace');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+
+    try {
+      await expect(
+        handleReviewCommand(
+          undefined,
+          { branch: 'feature/some-branch', saveIssues: true },
+          { parent: { opts: () => ({}) } }
+        )
+      ).rejects.toThrow('--save-issues requires a plan-backed review target.');
+
+      expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+      expect(executorsModule.buildExecutorAndLog).not.toHaveBeenCalled();
+      expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
+    } finally {
+      setupWorkspaceSpy.mockRestore();
+    }
+  });
+
+  test('exits early without calling executor when current target has no changes', async () => {
+    await createCommittedBaseline(testDir);
+    const setupWorkspaceSpy = vi.spyOn(workspaceSetupModule, 'setupWorkspace');
+
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+    vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue('feature/no-changes');
+
+    try {
+      await expect(
+        handleReviewCommand(
+          undefined,
+          { current: true, noSave: true, noAutofix: true },
+          { parent: { opts: () => ({}) } }
+        )
+      ).resolves.toEqual({ tasksAppended: 0, issuesSaved: 0 });
+
+      expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+      expect(executorsModule.buildExecutorAndLog).not.toHaveBeenCalled();
+      expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();
+    } finally {
+      setupWorkspaceSpy.mockRestore();
+    }
   });
 });
 

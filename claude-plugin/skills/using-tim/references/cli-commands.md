@@ -395,7 +395,10 @@ tim pr fix 123 --executor claude-code          # Specify executor
 tim pr fix 123 --model claude-sonnet-4-5-20250514  # Model override
 tim pr fix 123 --auto-workspace                # Auto-select workspace
 tim pr fix 123 --all --no-terminal-input       # Non-interactive (web UI mode)
+tim pr fix --pr 456 --auto-workspace           # No linked plan: fix a PR by URL/number
 ```
+
+The numeric positional (`tim pr fix 123`) always means plan ID 123. Pass `--pr <pr-url-or-number>` to fix review threads on a PR that has no linked plan; the agent receives a Pull Request Context prompt (no plan context) and is told not to modify plan files, tasks, status, or assignments. No-plan PR fix always prepares a managed workspace on the PR head branch — it never switches your current checkout, never runs detached, and fails clearly for fork PRs whose head branch is not on `origin`. Because its source material is unresolved GitHub review threads, `pr fix` requires a PR target and rejects `--current`/`--branch` (those belong to `tim review`).
 
 ### tim pr resolve
 

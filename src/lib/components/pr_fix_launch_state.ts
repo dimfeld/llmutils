@@ -1,10 +1,11 @@
 export const ALREADY_RUNNING_MESSAGE = 'A session is already running for this plan';
+export const ALREADY_RUNNING_PR_MESSAGE = 'A session is already running for this PR';
 
 export interface FixButtonStateInput {
   refreshing: boolean;
   fixStarting: boolean;
   fixLaunched: boolean;
-  sessionActiveForPlan: boolean;
+  sessionActive: boolean;
 }
 
 export interface FixButtonState {
@@ -16,7 +17,7 @@ export function getFixButtonState({
   refreshing,
   fixStarting,
   fixLaunched,
-  sessionActiveForPlan,
+  sessionActive,
 }: FixButtonStateInput): FixButtonState {
   if (fixStarting) {
     return { disabled: true, label: 'Starting...' };
@@ -26,7 +27,7 @@ export function getFixButtonState({
     return { disabled: true, label: 'Fix Started' };
   }
 
-  if (sessionActiveForPlan) {
+  if (sessionActive) {
     return { disabled: true, label: 'Session Active' };
   }
 
@@ -36,12 +37,18 @@ export function getFixButtonState({
   };
 }
 
-export function getFixStartResultState(status: 'started' | 'already_running'): {
+export function getFixStartResultState(
+  status: 'started' | 'already_running',
+  target: 'plan' | 'pr' = 'plan'
+): {
   fixLaunched: boolean;
   message: string | null;
 } {
   if (status === 'already_running') {
-    return { fixLaunched: false, message: ALREADY_RUNNING_MESSAGE };
+    return {
+      fixLaunched: false,
+      message: target === 'pr' ? ALREADY_RUNNING_PR_MESSAGE : ALREADY_RUNNING_MESSAGE,
+    };
   }
 
   return { fixLaunched: true, message: null };

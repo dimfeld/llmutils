@@ -1609,6 +1609,9 @@ addReviewCommandOptions(
     .description(
       'Analyze code changes on current branch against plan requirements using reviewer agent. If no plan is specified, automatically selects the oldest plan that exists only on this branch.'
     )
+    .option('--current', 'Review the current worktree without requiring a plan')
+    .option('--branch <branch>', 'Review an explicit branch without requiring a plan')
+    .option('--pr <pr-url-or-number>', 'Review an explicit pull request without requiring a plan')
 ).action(async (planIdArg, options, command) => {
   const { handleReviewCommand } = await import('./commands/review.js');
   const planId = parseOptionalPlanIdFromCliArg(planIdArg);
@@ -1736,8 +1739,12 @@ prCommand
   });
 
 prCommand
-  .command('fix <planId>')
+  .command('fix [planIdOrPr]')
   .description('Fix unresolved PR review threads using an AI agent')
+  .option('--pr <pr-url-or-number>', 'Fix unresolved review threads for a PR without a plan')
+  .option('--plan <planId>', 'Fix unresolved review threads for a plan-linked PR')
+  .option('--current', 'Unsupported for pr fix; use tim review --current')
+  .option('--branch <branch>', 'Unsupported for pr fix; use tim review --branch')
   .addOption(
     new Option('-x, --executor <name>', 'The executor to use').choices(['claude-code', 'codex-cli'])
   )
@@ -1757,10 +1764,9 @@ prCommand
   .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
   .option('--non-interactive', 'No user prompts')
   .option('--no-terminal-input', 'Disable terminal input')
-  .action(async (planIdArg, options, command) => {
+  .action(async (planIdOrPr, options, command) => {
     const { handlePrFixCommand } = await import('./commands/pr.js');
-    const planId = parsePlanIdFromCliArg(planIdArg);
-    await handlePrFixCommand(planId, options, command).catch(handleCommandError);
+    await handlePrFixCommand(planIdOrPr, options, command).catch(handleCommandError);
   });
 
 const prReviewGuideCommand = prCommand
