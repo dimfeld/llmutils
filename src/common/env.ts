@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { findUp } from 'find-up';
+import { findUp } from 'find-up-simple';
 import * as dotenv from 'dotenv';
 import {
   normalizeTimEnvironmentConfigEntry,

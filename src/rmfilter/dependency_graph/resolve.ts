@@ -7,7 +7,7 @@ import {
   type Package as PackageJson,
 } from 'resolve.exports';
 import { packageUp } from 'package-up';
-import { findUp } from 'find-up';
+import { findUp } from 'find-up-simple';
 import { cachePromise, type FnCache } from '../../common/process.ts';
 import { importCandidates, jsExtensions } from './filenames.ts';
 

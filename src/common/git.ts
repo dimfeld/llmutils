@@ -15,7 +15,7 @@
  */
 
 import { $ } from 'bun';
-import { findUp } from 'find-up';
+import { findUp } from 'find-up-simple';
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 import { debugLog, log } from '../logging.ts';

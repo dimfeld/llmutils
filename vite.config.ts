@@ -33,6 +33,14 @@ const playwrightTestEnv = createPlaywrightTestEnv();
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit(), devtoolsJson()],
+  resolve: {
+    external: ['bun'],
+  },
+  build: {
+    rolldownOptions: {
+      external: ['bun'],
+    },
+  },
   server: {
     port: process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 8124,
     watch: {
