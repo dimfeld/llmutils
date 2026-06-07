@@ -198,7 +198,7 @@ export async function buildExecutionPromptWithoutSteps(
     const relativePlanPath = path.isAbsolute(planFilePath)
       ? path.relative(gitRoot, planFilePath)
       : planFilePath;
-    const planFileReference = `\n## Plan File\n\n- ${relativePlanPath}: This is the plan file whose contents are above. You can read or edit this file if you need to check the plan again.\n`;
+    const planFileReference = `\n## Plan File\n\n- ${relativePlanPath}: This is the plan file whose contents are above. You can read or edit this file if you need to check the plan again. Plan files in \`.tim/plans\` are excluded from source control, so they do not need to be committed.\n`;
     promptParts.push(planFileReference);
 
     // Add task files if available

@@ -398,6 +398,9 @@ describe('prompt_builder', () => {
 
         expect(result).toContain('## Plan File');
         expect(result).toContain('batch-plan.yml: This is the plan file ');
+        expect(result).toContain(
+          'Plan files in `.tim/plans` are excluded from source control, so they do not need to be committed.'
+        );
       });
 
       test('uses relative path from git root for plan file reference', async () => {
