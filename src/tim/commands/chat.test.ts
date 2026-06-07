@@ -239,6 +239,7 @@ describe('handleChatCommand', () => {
       planTitle: 'Chat Session',
       planFilePath: '',
       executionMode: 'bare',
+      interactiveSession: true,
     });
   });
 

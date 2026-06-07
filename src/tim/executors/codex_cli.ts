@@ -62,7 +62,9 @@ export class CodexCliExecutor implements Executor {
         this.timConfig,
         {
           appServerMode:
-            planInfo.planId === 'chat' || planInfo.executionMode === 'planning'
+            planInfo.interactiveSession === true ||
+            planInfo.planId === 'chat' ||
+            planInfo.executionMode === 'planning'
               ? 'chat-session'
               : 'single-turn',
           terminalInput: this.sharedOptions.terminalInput,

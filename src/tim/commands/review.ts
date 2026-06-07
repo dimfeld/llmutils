@@ -396,7 +396,7 @@ type PlanlessReviewTarget =
   | BranchReviewTarget
   | PullRequestReviewTarget;
 
-interface ReviewCommandOptions {
+export interface ReviewCommandOptions {
   cwd?: string;
   current?: boolean;
   branch?: string;
@@ -2040,7 +2040,7 @@ export async function handleReviewCommand(
         }
         if (buildStructuralPrompt && prepared.some((entry) => entry.name === 'codex-cli')) {
           log(chalk.cyan(`\n### Executor: codex-cli structural simplification\n`));
-          log(await buildStructuralPrompt({ executorName: 'codex-cli' }));
+          log(buildStructuralPrompt({ executorName: 'codex-cli' }));
         }
         log('\n--dry-run mode: Would execute the above prompt');
         skipNotification = true;

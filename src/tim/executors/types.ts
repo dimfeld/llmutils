@@ -82,6 +82,11 @@ export interface ExecutePlanInfo {
    * - 'bare': Single-shot execution for any operation (no orchestration, no workflow)
    */
   executionMode: 'normal' | 'simple' | 'tdd' | 'review' | 'planning' | 'bare';
+  /**
+   * When true, bare-mode executors should start a terminal-attached,
+   * user-paced interactive session instead of a single-turn run.
+   */
+  interactiveSession?: boolean;
   /** When true, this review is scoped to specific tasks (not the full plan) */
   isTaskScoped?: boolean;
   /**

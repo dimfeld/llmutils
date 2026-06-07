@@ -1050,3 +1050,91 @@ test('CodexCliExecutor - supportsSubagents is true', async () => {
   const exec = new CodexCliExecutor({}, { baseDir: '/tmp' }, {} as any);
   expect(exec.supportsSubagents).toBe(true);
 });
+
+describe('CodexCliExecutor - bare mode appServerMode routing', () => {
+  const tempDir = '/tmp/codex-routing-test';
+
+  function setupCommonMocks(): void {
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
+      error: vi.fn(() => {}),
+      sendStructured: vi.fn(),
+    }));
+    vi.doMock('../../common/git.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../common/git.js')>();
+      return {
+        ...actual,
+        getGitRoot: vi.fn(async () => tempDir),
+        getUsingJj: vi.fn(async () => false),
+      };
+    });
+    vi.doMock('./failure_detection.ts', () => ({
+      parseFailedReport: vi.fn(() => ({ failed: false })),
+    }));
+  }
+
+  test('bare mode with interactiveSession: true routes to chat-session appServerMode', async () => {
+    setupCommonMocks();
+
+    const executeBareMock = vi.fn(async () => undefined);
+    vi.doMock('./codex_cli/bare_mode.ts', () => ({ executeBareMode: executeBareMock }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await exec.execute('PROMPT', {
+      planId: 'autoreview',
+      planTitle: 'Autoreview',
+      planFilePath: '',
+      executionMode: 'bare',
+      interactiveSession: true,
+    });
+
+    expect(executeBareMock).toHaveBeenCalledTimes(1);
+    const opts = executeBareMock.mock.calls[0][5] as { appServerMode: string };
+    expect(opts.appServerMode).toBe('chat-session');
+  });
+
+  test('bare mode without interactiveSession routes to single-turn appServerMode', async () => {
+    setupCommonMocks();
+
+    const executeBareMock = vi.fn(async () => undefined);
+    vi.doMock('./codex_cli/bare_mode.ts', () => ({ executeBareMode: executeBareMock }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await exec.execute('PROMPT', {
+      planId: 'some-plan',
+      planTitle: 'Some Plan',
+      planFilePath: '',
+      executionMode: 'bare',
+    });
+
+    expect(executeBareMock).toHaveBeenCalledTimes(1);
+    const opts = executeBareMock.mock.calls[0][5] as { appServerMode: string };
+    expect(opts.appServerMode).toBe('single-turn');
+  });
+
+  test('bare mode with planId "chat" routes to chat-session appServerMode', async () => {
+    setupCommonMocks();
+
+    const executeBareMock = vi.fn(async () => undefined);
+    vi.doMock('./codex_cli/bare_mode.ts', () => ({ executeBareMode: executeBareMock }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await exec.execute('PROMPT', {
+      planId: 'chat',
+      planTitle: 'Chat',
+      planFilePath: '',
+      executionMode: 'bare',
+    });
+
+    expect(executeBareMock).toHaveBeenCalledTimes(1);
+    const opts = executeBareMock.mock.calls[0][5] as { appServerMode: string };
+    expect(opts.appServerMode).toBe('chat-session');
+  });
+});

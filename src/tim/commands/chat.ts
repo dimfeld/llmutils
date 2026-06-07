@@ -14,7 +14,7 @@ import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import { ClaudeCodeExecutorName, CodexCliExecutorName } from '../executors/schemas.js';
 import { isCodexAppServerEnabled } from '../executors/codex_cli/app_server_mode.js';
-import type { ExecutorCommonOptions } from '../executors/types.js';
+import { buildInteractiveExecutorOptions } from '../executors/shared/interactive_options.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
 import { resolveProjectContext } from '../plan_materialize.js';
 import { readPlanFile } from '../plans.js';
@@ -93,7 +93,11 @@ async function updateWorkspaceDescriptionFromPlan(
   }
 }
 
-function resolveChatExecutor(input: string | undefined): string | undefined {
+export function resolveChatModel(model: string | undefined): string | undefined {
+  return model ? (MODEL_ALIASES.get(model.trim().toLowerCase()) ?? model) : undefined;
+}
+
+export function resolveChatExecutor(input: string | undefined): string | undefined {
   if (!input) {
     return undefined;
   }
@@ -101,7 +105,7 @@ function resolveChatExecutor(input: string | undefined): string | undefined {
   return CHAT_EXECUTOR_ALIASES.get(input.trim().toLowerCase());
 }
 
-function inferExecutorFromModel(model: string | undefined): string | undefined {
+export function inferExecutorFromModel(model: string | undefined): string | undefined {
   if (!model) {
     return undefined;
   }
@@ -113,6 +117,38 @@ function inferExecutorFromModel(model: string | undefined): string | undefined {
     return CodexCliExecutorName;
   }
   return undefined;
+}
+
+/**
+ * Resolve the executor name for an interactive command (chat/autoreview), applying the same
+ * alias resolution, model inference, throw-on-explicit-unsupported, and warn-on-config-default
+ * fallback behavior. Shared so the two commands cannot drift.
+ */
+export function resolveInteractiveExecutor(params: {
+  explicitExecutor: string | undefined;
+  configDefaultExecutor: string | undefined;
+  resolvedModel: string | undefined;
+  commandName: string;
+}): string {
+  const requestedExecutorRaw = params.explicitExecutor ?? params.configDefaultExecutor;
+  const requestedExecutor =
+    resolveChatExecutor(requestedExecutorRaw) ??
+    (params.explicitExecutor === undefined
+      ? inferExecutorFromModel(params.resolvedModel)
+      : undefined);
+  if (requestedExecutorRaw && !requestedExecutor) {
+    const allowed = [...CHAT_EXECUTOR_ALIASES.keys()].join(', ');
+    if (params.explicitExecutor) {
+      throw new Error(
+        `Executor '${requestedExecutorRaw}' is not supported by '${params.commandName}'. Supported executors: ${allowed}`
+      );
+    }
+    // config.defaultExecutor is incompatible, fall back to DEFAULT_EXECUTOR
+    console.warn(
+      `Warning: defaultExecutor '${requestedExecutorRaw}' is not supported by '${params.commandName}'. Falling back to '${DEFAULT_EXECUTOR}'.`
+    );
+  }
+  return requestedExecutor ?? DEFAULT_EXECUTOR;
 }
 
 export async function resolveOptionalPromptText(
@@ -161,9 +197,7 @@ export async function handleChatCommand(
     }
   }
 
-  const resolvedModel = options.model
-    ? (MODEL_ALIASES.get(options.model.trim().toLowerCase()) ?? options.model)
-    : undefined;
+  const resolvedModel = resolveChatModel(options.model);
   const tunnelActive = isTunnelActive();
   const noninteractive = options.nonInteractive === true;
   // Resolve repo root from config/plan arg once, for both plan resolution and workspace setup
@@ -176,31 +210,23 @@ export async function handleChatCommand(
       ? config
       : await loadEffectiveConfig(globalOpts.config, { cwd: configRepoRoot });
 
-  const requestedExecutorRaw = options.executor ?? workspaceConfig.defaultExecutor;
-  const requestedExecutor =
-    resolveChatExecutor(requestedExecutorRaw) ??
-    (options.executor === undefined ? inferExecutorFromModel(resolvedModel) : undefined);
-  if (requestedExecutorRaw && !requestedExecutor) {
-    const allowed = [...CHAT_EXECUTOR_ALIASES.keys()].join(', ');
-    if (options.executor) {
-      throw new Error(
-        `Executor '${requestedExecutorRaw}' is not supported by 'tim chat'. Supported executors: ${allowed}`
-      );
-    }
-    // config.defaultExecutor is incompatible, fall back to DEFAULT_EXECUTOR
-    console.warn(
-      `Warning: defaultExecutor '${requestedExecutorRaw}' is not supported by 'tim chat'. Falling back to '${DEFAULT_EXECUTOR}'.`
-    );
-  }
-  const executorName = requestedExecutor ?? DEFAULT_EXECUTOR;
+  const executorName = resolveInteractiveExecutor({
+    explicitExecutor: options.executor,
+    configDefaultExecutor: workspaceConfig.defaultExecutor,
+    resolvedModel,
+    commandName: 'tim chat',
+  });
   const codexAppServerEnabled = isCodexAppServerEnabled();
-  const canUseTerminalInput =
-    !noninteractive &&
-    process.stdin.isTTY &&
-    options.terminalInput !== false &&
-    workspaceConfig.terminalInput !== false;
-  const terminalInputEnabled =
-    executorName === CodexCliExecutorName && !codexAppServerEnabled ? false : canUseTerminalInput;
+  const { sharedExecutorOptions, terminalInputEnabled } = buildInteractiveExecutorOptions({
+    baseDir: process.cwd(),
+    model: resolvedModel,
+    noninteractive,
+    executorName,
+    requestedTerminalInput: options.terminalInput,
+    configTerminalInput: workspaceConfig.terminalInput,
+    stdinIsTTY: process.stdin.isTTY,
+    codexAppServerEnabled,
+  });
   const prompt = await resolveOptionalPromptText(promptText, {
     promptFile: options.promptFile,
     stdinIsTTY: process.stdin.isTTY,
@@ -215,15 +241,6 @@ export async function handleChatCommand(
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
   let executionError: unknown;
   let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
-
-  const sharedExecutorOptions: ExecutorCommonOptions = {
-    baseDir: process.cwd(),
-    model: resolvedModel,
-    noninteractive: noninteractive ? true : undefined,
-    terminalInput: terminalInputEnabled,
-    closeTerminalInputOnResult: false,
-    disableInactivityTimeout: true,
-  };
 
   if (options.plan) {
     const resolvedPlan = await resolvePlanByNumericId(options.plan, configRepoRoot);
@@ -351,6 +368,7 @@ export async function handleChatCommand(
           planTitle: currentPlanData?.title || 'Chat Session',
           planFilePath: currentPlanFile,
           executionMode: 'bare',
+          interactiveSession: true,
         });
 
         if (currentPlanFile) {

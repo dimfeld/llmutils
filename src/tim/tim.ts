@@ -1049,6 +1049,27 @@ program
   });
 
 program
+  .command('autoreview [planId]')
+  .description('Start an interactive review/fix loop for a plan, worktree, branch, or PR')
+  .option(
+    '-x, --executor <name>',
+    'Executor to use: claude/claude-code (default) or codex/codex-cli'
+  )
+  .option('-m, --model <model>', 'Model to use')
+  .option('--current', 'Review the current worktree without requiring a plan')
+  .option('--branch <branch>', 'Review an explicit branch without requiring a plan')
+  .option('--pr <pr-url-or-number>', 'Review an explicit pull request without requiring a plan')
+  .option('--base <branch>', 'Base branch to compare against')
+  .option('--non-interactive', 'Disable interactive terminal input')
+  .option('--no-terminal-input', 'Disable terminal input forwarding')
+  .option('--dry-run', 'Print the generated autoreview prompt without launching an agent', false)
+  .action(async (planIdArg, options, command) => {
+    const { handleAutoreviewCommand } = await import('./commands/autoreview.js');
+    const planId = parseOptionalPlanIdFromCliArg(planIdArg);
+    await handleAutoreviewCommand(planId, options, command).catch(handleCommandError);
+  });
+
+program
   .command('run-prompt [prompt]')
   .description(
     'Run a one-shot prompt through Claude Code or Codex CLI. Result is printed to stdout.'
