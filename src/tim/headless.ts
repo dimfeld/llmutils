@@ -28,6 +28,7 @@ export type HeadlessCommand =
   | 'run-prompt'
   | 'generate'
   | 'chat'
+  | 'autoreview'
   | 'rebase'
   | 'update-docs'
   | 'proof'

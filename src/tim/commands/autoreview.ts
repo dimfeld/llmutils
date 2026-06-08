@@ -1,15 +1,29 @@
 import * as path from 'node:path';
 import { getUsingJj } from '../../common/git.js';
+import { getLoggerAdapter } from '../../logging/adapter.js';
+import { HeadlessAdapter } from '../../logging/headless_adapter.js';
+import { isTunnelActive } from '../../logging/tunnel_client.js';
+import { warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { isCodexAppServerEnabled } from '../executors/codex_cli/app_server_mode.js';
 import { buildInteractiveExecutorOptions } from '../executors/shared/interactive_options.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
+import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { watchPlanFile } from '../plan_file_watcher.js';
 import { resolvePlanByNumericId } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { resolveReviewTarget, type ReviewTarget } from './review_target.js';
 import { resolveChatModel, resolveInteractiveExecutor, type ChatGlobalOptions } from './chat.js';
 import { type ReviewCommandOptions } from './review.js';
+import { touchWorkspaceInfo } from '../workspace/workspace_info.js';
+import { setupWorkspace } from '../workspace/workspace_setup.js';
+import {
+  materializePlansForExecution,
+  prepareWorkspaceRoundTrip,
+  runPostExecutionWorkspaceSync,
+  runPreExecutionWorkspaceSync,
+} from '../workspace/workspace_roundtrip.js';
 
 export interface AutoreviewCommandOptions extends Pick<
   ReviewCommandOptions,
@@ -17,6 +31,11 @@ export interface AutoreviewCommandOptions extends Pick<
 > {
   nonInteractive?: boolean;
   terminalInput?: boolean;
+  headlessAdapter?: boolean;
+  workspace?: string;
+  autoWorkspace?: boolean;
+  newWorkspace?: boolean;
+  workspaceSync?: boolean;
   dryRun?: boolean;
 }
 
@@ -197,6 +216,7 @@ export async function handleAutoreviewCommand(
   }
 
   const noninteractive = options.nonInteractive === true;
+  const tunnelActive = isTunnelActive();
   const { sharedExecutorOptions } = buildInteractiveExecutorOptions({
     baseDir: reviewTarget.repoRoot,
     model: resolvedModel,
@@ -208,32 +228,156 @@ export async function handleAutoreviewCommand(
     codexAppServerEnabled: isCodexAppServerEnabled(),
   });
   const planContext = await resolvePlanExecutionContext(reviewTarget);
-  const executor = buildExecutorAndLog(
-    executorName,
-    {
-      ...sharedExecutorOptions,
-      timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
-        config,
-        reviewTarget.repoRoot,
-        planContext.planData
-          ? {
-              planId: planContext.planData.id,
-              planUuid: planContext.planData.uuid,
-              planFilePath: planContext.planFilePath,
-              branch: planContext.planData.branch,
-            }
-          : null,
-        reviewTarget.repoRoot
-      ),
-    },
-    config
-  );
 
-  await executor.execute(prompt, {
-    planId: planContext.planId,
-    planTitle: planContext.planTitle,
-    planFilePath: planContext.planFilePath,
-    executionMode: 'bare',
-    interactiveSession: true,
+  await runWithHeadlessAdapterIfEnabled({
+    enabled: options.headlessAdapter === true || !tunnelActive,
+    command: 'autoreview',
+    interactive: !noninteractive,
+    plan: planContext.planData
+      ? {
+          id: planContext.planData.id,
+          uuid: planContext.planData.uuid,
+          title: planContext.planData.title,
+        }
+      : undefined,
+    callback: async () => {
+      let currentBaseDir = reviewTarget.repoRoot;
+      let currentPlanFile = planContext.planFilePath;
+      let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
+      let touchedWorkspacePath: string | null = null;
+      let executionError: unknown;
+      let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
+
+      try {
+        const workspaceRequested =
+          options.workspace !== undefined ||
+          options.autoWorkspace === true ||
+          options.newWorkspace === true;
+        const useWorkspace = workspaceRequested || reviewTarget.kind !== 'current';
+
+        if (useWorkspace) {
+          let checkoutBranch: string | undefined;
+          if (reviewTarget.kind === 'plan' && planContext.planData) {
+            checkoutBranch = planContext.planData.branch;
+          } else if (reviewTarget.kind === 'branch') {
+            checkoutBranch = reviewTarget.requestedBranch;
+          } else if (reviewTarget.kind === 'pr') {
+            checkoutBranch = reviewTarget.headBranch;
+          }
+
+          const workspaceResult = await setupWorkspace(
+            {
+              workspace: options.workspace,
+              autoWorkspace: options.autoWorkspace === true || !options.workspace,
+              newWorkspace: options.newWorkspace,
+              nonInteractive: options.nonInteractive,
+              requireWorkspace: false,
+              planId: planContext.planData?.id,
+              planUuid: planContext.planData?.uuid,
+              checkoutBranch,
+              branchName: checkoutBranch,
+              createBranch: checkoutBranch ? false : undefined,
+              allowPrimaryWorkspaceWhenLocked: true,
+            },
+            reviewTarget.repoRoot,
+            currentPlanFile || undefined,
+            config,
+            'tim autoreview'
+          );
+          currentBaseDir = workspaceResult.baseDir;
+          currentPlanFile = workspaceResult.planFile;
+          touchedWorkspacePath = currentBaseDir;
+
+          if (path.resolve(currentBaseDir) !== path.resolve(reviewTarget.repoRoot)) {
+            roundTripContext = await prepareWorkspaceRoundTrip({
+              workspacePath: currentBaseDir,
+              workspaceSyncEnabled: options.workspaceSync !== false,
+              branchCreatedDuringSetup: workspaceResult.branchCreatedDuringSetup,
+            });
+          }
+
+          if (roundTripContext) {
+            await runPreExecutionWorkspaceSync(roundTripContext);
+
+            const materializedPlanFile = await materializePlansForExecution(
+              currentBaseDir,
+              planContext.planData?.id
+            );
+            if (materializedPlanFile) {
+              currentPlanFile = materializedPlanFile;
+            }
+          }
+        }
+
+        const executor = buildExecutorAndLog(
+          executorName,
+          {
+            ...sharedExecutorOptions,
+            baseDir: currentBaseDir,
+            timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
+              config,
+              currentBaseDir,
+              planContext.planData
+                ? {
+                    planId: planContext.planData.id,
+                    planUuid: planContext.planData.uuid,
+                    planFilePath: currentPlanFile,
+                    branch: planContext.planData.branch,
+                  }
+                : null,
+              reviewTarget.repoRoot
+            ),
+          },
+          config
+        );
+
+        const loggerAdapter = getLoggerAdapter();
+        if (currentPlanFile && loggerAdapter instanceof HeadlessAdapter) {
+          planWatcher = watchPlanFile(currentPlanFile, ({ content, tasks }) => {
+            loggerAdapter.sendPlanContent(content, tasks);
+          });
+        }
+
+        await executor.execute(prompt, {
+          planId: planContext.planId,
+          planTitle: planContext.planTitle,
+          planFilePath: currentPlanFile,
+          executionMode: 'bare',
+          interactiveSession: true,
+        });
+      } catch (err) {
+        executionError = err;
+      } finally {
+        await planWatcher?.closeAndFlush();
+
+        let roundTripError: unknown;
+        if (roundTripContext) {
+          try {
+            await runPostExecutionWorkspaceSync(roundTripContext, 'autoreview session');
+          } catch (err) {
+            roundTripError = err;
+          }
+        }
+
+        if (touchedWorkspacePath) {
+          try {
+            touchWorkspaceInfo(touchedWorkspacePath);
+          } catch (err) {
+            warn(`Failed to update workspace last used time: ${err as Error}`);
+          }
+        }
+
+        if (executionError) {
+          if (roundTripError) {
+            warn(`Workspace sync failed after autoreview error: ${roundTripError as Error}`);
+          }
+          throw executionError;
+        }
+
+        if (roundTripError) {
+          throw roundTripError;
+        }
+      }
+    },
   });
 }

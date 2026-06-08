@@ -1062,6 +1062,14 @@ program
   .option('--base <branch>', 'Base branch to compare against')
   .option('--non-interactive', 'Disable interactive terminal input')
   .option('--no-terminal-input', 'Disable terminal input forwarding')
+  .option(
+    '--headless-adapter',
+    'Wrap autoreview output in a headless adapter even when tunnel forwarding is active'
+  )
+  .option('-w, --workspace <workspace>', 'Use a specific managed workspace')
+  .option('--aw, --auto-workspace', 'Automatically select a managed workspace')
+  .option('--nw, --new-workspace', 'Create a new managed workspace')
+  .option('--no-workspace-sync', 'Disable workspace pre/post sync for managed workspace execution')
   .option('--dry-run', 'Print the generated autoreview prompt without launching an agent', false)
   .action(async (planIdArg, options, command) => {
     const { handleAutoreviewCommand } = await import('./commands/autoreview.js');

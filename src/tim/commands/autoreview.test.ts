@@ -44,8 +44,31 @@ vi.mock('../environment_options.js', () => ({
   buildTimWorkspaceCommandEnvironmentOptionsForPath: vi.fn(),
 }));
 
+vi.mock('../headless.js', () => ({
+  runWithHeadlessAdapterIfEnabled: vi.fn(async (options: any) => options.callback()),
+}));
+
+vi.mock('../../logging/tunnel_client.js', () => ({
+  isTunnelActive: vi.fn(),
+}));
+
 vi.mock('../db/database.js', () => ({
   getDatabase: vi.fn(),
+}));
+
+vi.mock('../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(),
+}));
+
+vi.mock('../workspace/workspace_roundtrip.js', () => ({
+  prepareWorkspaceRoundTrip: vi.fn(),
+  runPreExecutionWorkspaceSync: vi.fn(),
+  runPostExecutionWorkspaceSync: vi.fn(),
+  materializePlansForExecution: vi.fn(),
+}));
+
+vi.mock('../workspace/workspace_info.js', () => ({
+  touchWorkspaceInfo: vi.fn(),
 }));
 
 vi.mock('../assignments/workspace_identifier.js', () => ({
@@ -79,6 +102,16 @@ import {
 import { resolvePlanByNumericId } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
+import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { isTunnelActive } from '../../logging/tunnel_client.js';
+import { setupWorkspace } from '../workspace/workspace_setup.js';
+import {
+  materializePlansForExecution,
+  prepareWorkspaceRoundTrip,
+  runPostExecutionWorkspaceSync,
+  runPreExecutionWorkspaceSync,
+} from '../workspace/workspace_roundtrip.js';
+import { touchWorkspaceInfo } from '../workspace/workspace_info.js';
 
 // ─── buildAutoreviewPrompt unit tests ───────────────────────────────────────
 
@@ -289,6 +322,18 @@ describe('handleAutoreviewCommand', () => {
     vi.mocked(getTrunkBranch).mockResolvedValue('main');
     vi.mocked(resolveRepoRoot).mockResolvedValue('/repo-root');
     vi.mocked(buildTimWorkspaceCommandEnvironmentOptionsForPath).mockReturnValue({} as any);
+    vi.mocked(runWithHeadlessAdapterIfEnabled).mockImplementation(async (options: any) =>
+      options.callback()
+    );
+    vi.mocked(isTunnelActive).mockReturnValue(false);
+    vi.mocked(setupWorkspace).mockResolvedValue({
+      baseDir: '/repo-root/workspaces/autoreview',
+      planFile: '/repo-root/workspaces/autoreview/.tim/plans/376.plan.md',
+      workspaceTaskId: 'autoreview',
+      branchCreatedDuringSetup: false,
+    });
+    vi.mocked(prepareWorkspaceRoundTrip).mockResolvedValue(null as any);
+    vi.mocked(materializePlansForExecution).mockResolvedValue(null);
     vi.mocked(resolvePlanByNumericId).mockResolvedValue({
       plan: {
         id: 376,
@@ -524,6 +569,97 @@ describe('handleAutoreviewCommand', () => {
     });
   });
 
+  test('wraps execution in a headless autoreview session', async () => {
+    const options: AutoreviewCommandOptions = { current: true, nonInteractive: true };
+    await handleAutoreviewCommand(undefined, options, {});
+
+    expect(vi.mocked(runWithHeadlessAdapterIfEnabled)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(runWithHeadlessAdapterIfEnabled).mock.calls[0][0]).toMatchObject({
+      enabled: true,
+      command: 'autoreview',
+      interactive: false,
+    });
+  });
+
+  test('passes plan metadata to headless autoreview session', async () => {
+    const options: AutoreviewCommandOptions = { nonInteractive: true };
+    await handleAutoreviewCommand(376, options, {});
+
+    expect(vi.mocked(runWithHeadlessAdapterIfEnabled).mock.calls[0][0]).toMatchObject({
+      command: 'autoreview',
+      plan: {
+        id: 376,
+        uuid: 'plan-uuid-376',
+        title: 'autoreview command',
+      },
+    });
+  });
+
+  test('plan-backed autoreview uses an auto workspace by default', async () => {
+    const options: AutoreviewCommandOptions = { nonInteractive: true };
+    await handleAutoreviewCommand(376, options, {});
+
+    expect(vi.mocked(setupWorkspace)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        autoWorkspace: true,
+        planId: 376,
+        planUuid: 'plan-uuid-376',
+      }),
+      '/repo-root',
+      '/repo-root/.tim/plans/376.plan.md',
+      expect.any(Object),
+      'tim autoreview'
+    );
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][1]).toMatchObject({
+      baseDir: '/repo-root/workspaces/autoreview',
+    });
+  });
+
+  test('current autoreview stays in the current repo unless workspace is requested', async () => {
+    const options: AutoreviewCommandOptions = { current: true, nonInteractive: true };
+    await handleAutoreviewCommand(undefined, options, {});
+
+    expect(vi.mocked(setupWorkspace)).not.toHaveBeenCalled();
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][1]).toMatchObject({
+      baseDir: '/repo-root',
+    });
+  });
+
+  test('runs workspace roundtrip hooks around managed workspace execution', async () => {
+    const roundTripContext = {
+      executionWorkspacePath: '/repo-root/workspaces/autoreview',
+      primaryWorkspacePath: '/repo-root',
+      refName: 'feature/autoreview',
+      branchCreatedDuringSetup: false,
+    };
+    vi.mocked(prepareWorkspaceRoundTrip).mockResolvedValueOnce(roundTripContext as any);
+    vi.mocked(materializePlansForExecution).mockResolvedValueOnce(
+      '/repo-root/workspaces/autoreview/.tim/plans/376.materialized.md'
+    );
+
+    const options: AutoreviewCommandOptions = { nonInteractive: true };
+    await handleAutoreviewCommand(376, options, {});
+
+    expect(vi.mocked(prepareWorkspaceRoundTrip)).toHaveBeenCalledWith({
+      workspacePath: '/repo-root/workspaces/autoreview',
+      workspaceSyncEnabled: true,
+      branchCreatedDuringSetup: false,
+    });
+    expect(vi.mocked(runPreExecutionWorkspaceSync)).toHaveBeenCalledWith(roundTripContext);
+    expect(vi.mocked(materializePlansForExecution)).toHaveBeenCalledWith(
+      '/repo-root/workspaces/autoreview',
+      376
+    );
+    expect(vi.mocked(runPostExecutionWorkspaceSync)).toHaveBeenCalledWith(
+      roundTripContext,
+      'autoreview session'
+    );
+    expect(vi.mocked(touchWorkspaceInfo)).toHaveBeenCalledWith('/repo-root/workspaces/autoreview');
+    expect(mockExecutorExecute.mock.calls[0][1]).toMatchObject({
+      planFilePath: '/repo-root/workspaces/autoreview/.tim/plans/376.materialized.md',
+    });
+  });
+
   test('planless execute call uses autoreview sentinel planId', async () => {
     const options: AutoreviewCommandOptions = { current: true, nonInteractive: true };
     await handleAutoreviewCommand(undefined, options, {});
@@ -755,8 +891,8 @@ describe('handleAutoreviewCommand - target resolution with real git', () => {
     // Plan target must not append --base
     expect(prompt).not.toContain('--base');
 
-    // Executor was built with the real temp dir as baseDir
+    // Executor was built with the managed workspace as baseDir
     const buildArgs = vi.mocked(buildExecutorAndLog).mock.calls[0][1];
-    expect(buildArgs.baseDir).toBe(tempDir);
+    expect(buildArgs.baseDir).toBe('/repo-root/workspaces/autoreview');
   });
 });
