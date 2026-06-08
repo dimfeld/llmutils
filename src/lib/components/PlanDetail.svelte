@@ -239,7 +239,7 @@
 
     let primary: ActionItem;
     let menuItems: ActionItem[] = [];
-    let secondaryAction: ActionItem | null = shellItem;
+    let fixedActions: ActionItem[] = [autoreviewItem, shellItem];
 
     if (showUpdateDocs) {
       // Show "Update Docs" as primary, with "Finish" in dropdown
@@ -247,7 +247,7 @@
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (isEligibleForReview) menuItems.push(reviewItem);
-      menuItems.push(autoreviewItem, chatItem);
+      menuItems.push(chatItem);
       menuItems.push(finishItem);
       if (isEligibleForProof) menuItems.push(proofItem);
     } else if (showFinish) {
@@ -256,42 +256,42 @@
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (isEligibleForReview) menuItems.push(reviewItem);
-      menuItems.push(autoreviewItem, chatItem);
+      menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
     } else if (showAgentOnly) {
       primary = agentItem;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
-      menuItems.push(autoreviewItem, chatItem);
+      menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
     } else if (showGenerateWithAgent) {
       if (isSimplePlan) {
         primary = agentItem;
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
-        menuItems.push(autoreviewItem, chatItem);
+        menuItems.push(chatItem);
         if (isEligibleForProof) menuItems.push(proofItem);
       } else {
         primary = generateItem;
         menuItems.push(agentItem);
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
-        menuItems.push(autoreviewItem, chatItem);
+        menuItems.push(chatItem);
         if (isEligibleForProof) menuItems.push(proofItem);
       }
     } else {
       primary = shellItem;
-      secondaryAction = null;
+      fixedActions = [autoreviewItem];
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (showUpdateDocsInDropdown) {
         menuItems.push(finishNoMarkDoneItem);
       }
-      menuItems.push(autoreviewItem, chatItem);
+      menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
     }
 
-    return { primary, menuItems, secondaryAction };
+    return { primary, menuItems, fixedActions };
   });
 
   // Active session detection is independent of eligibility so the "Running" link
@@ -1029,25 +1029,25 @@
                       : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
             </a>
           {:else}
-            {@const { primary, menuItems, secondaryAction } = actionConfig}
+            {@const { primary, menuItems, fixedActions } = actionConfig}
             <ActionButtonWithDropdown {primary} {menuItems} disabled={controlsDisabled} size="xs" />
-            {#if secondaryAction}
+            {#each fixedActions as action}
               <Button
-                onclick={secondaryAction.onclick}
+                onclick={action.onclick}
                 disabled={controlsDisabled}
                 size="xs"
-                class={secondaryAction.colorClass}
+                class={action.colorClass}
               >
-                {#if secondaryAction.starting}
+                {#if action.starting}
                   <span
                     class="inline-block h-2 w-2 animate-spin rounded-full border-2 border-white border-t-transparent"
                   ></span>
-                  {secondaryAction.startingLabel}
+                  {action.startingLabel}
                 {:else}
-                  {secondaryAction.label}
+                  {action.label}
                 {/if}
               </Button>
-            {/if}
+            {/each}
           {/if}
         </div>
       </div>

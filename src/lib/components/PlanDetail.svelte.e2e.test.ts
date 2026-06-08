@@ -236,6 +236,12 @@ describe('PlanDetail action selection', () => {
     await expect
       .element(page.getByRole('button', { name: 'Actions', exact: true }))
       .toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: 'Autoreview', exact: true }))
+      .toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: 'Shell', exact: true }))
+      .toBeInTheDocument();
     await screen.getByRole('button', { name: 'Actions', exact: true }).click();
     await expect.element(page.getByRole('menuitem', { name: 'Generate' })).toBeInTheDocument();
     await expect.element(page.getByRole('menuitem', { name: 'Run Agent' })).toBeInTheDocument();

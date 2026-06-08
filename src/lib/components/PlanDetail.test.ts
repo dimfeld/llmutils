@@ -69,6 +69,7 @@ vi.mock('./ActionButtonWithDropdown.svelte', () => ({
     props: {
       primary: { label: string };
       menuItems?: Array<{ label: string }>;
+      fixedActions?: Array<{ label: string }>;
     }
   ) => {
     if (props.menuItems?.length) {
@@ -79,6 +80,9 @@ vi.mock('./ActionButtonWithDropdown.svelte', () => ({
       }
     } else {
       payload.push(`<div data-testid="action-config"><button>${props.primary.label}</button>`);
+    }
+    for (const item of props.fixedActions ?? []) {
+      payload.push(`<button data-fixed-action>${item.label}</button>`);
     }
     payload.push('</div>');
   },
@@ -452,6 +456,9 @@ describe('PlanDetail', () => {
 
     expect(body).toContain('<div data-testid="action-config"><button>Actions</button>');
     expect(body).toContain('Run Agent');
+    expect(body).toContain('Autoreview');
+    expect(body).toContain('Shell');
+    expect(body).not.toContain('<button>Autoreview</button>');
     expect(body.indexOf('Generate')).toBeLessThan(body.indexOf('Run Agent'));
   });
 
