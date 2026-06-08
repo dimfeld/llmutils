@@ -186,6 +186,8 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('Do not run tests, type checking, linting, formatting');
     expect(prompt).not.toContain('## Review Scope');
     expect(prompt).toContain('## Review Requirements');
+    expect(prompt).toContain('Report every high-confidence actionable issue');
+    expect(prompt).toContain('do not stop after a small sample of findings');
     expect(prompt).not.toContain('## Output Requirements');
     expect(prompt).not.toContain('## Required JSON Schema');
     expect(prompt).not.toContain('"issues"');
@@ -201,6 +203,8 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('## Simplification Review');
     expect(prompt).not.toContain('## Critical Issues to Flag');
     expect(prompt).toContain('## Review Requirements');
+    expect(prompt).toContain('Report every high-confidence simplification issue');
+    expect(prompt).toContain('do not stop after a small sample of findings');
     expect(prompt).not.toContain('## Output Requirements');
     expect(prompt).not.toContain('## Required JSON Schema');
     expect(prompt).not.toContain('"issues"');

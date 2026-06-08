@@ -51,7 +51,7 @@ describe('buildOutputSchemaCorrectionPrompt', () => {
     expect(prompt).toContain('"status"');
     expect(prompt).toContain('The final output is not valid JSON');
     expect(prompt).toContain(
-      'Do not repeat, quote, summarize, or repair the previous invalid output'
+      'If the previous output was the intended output, then convert it to JSON'
     );
     expect(prompt).not.toContain('Previous invalid final output');
     expect(prompt).not.toContain('```');

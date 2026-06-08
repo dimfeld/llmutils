@@ -6,6 +6,7 @@ import {
   getReviewerPrompt,
   getVerifierAgentPrompt,
   getPrDescriptionPrompt,
+  buildReviewerSimplificationGuidance,
   FAILED_PROTOCOL_INSTRUCTIONS,
 } from './agent_prompts.ts';
 
@@ -68,17 +69,32 @@ describe('agent_prompts failure protocol integration', () => {
     );
   });
 
-  it('includes structural maintainability guidance in reviewer prompt', () => {
+  it('does not include structural simplification guidance in the normal reviewer prompt', () => {
     const def = getReviewerPrompt(context);
-    expect(def.prompt).toContain('Simplification Review');
-    expect(def.prompt).toContain(
+    expect(def.prompt).not.toContain('Simplification Review');
+    expect(def.prompt).not.toContain('No artificial finding cap');
+    expect(def.prompt).not.toContain('Report every high-conviction structural issue');
+  });
+
+  it('defines structural maintainability guidance for standalone simplification reviews', () => {
+    const guidance = buildReviewerSimplificationGuidance();
+    expect(guidance).toContain('Simplification Review');
+    expect(guidance).toContain(
       'preserve behavior while making the implementation dramatically simpler'
     );
-    expect(def.prompt).toContain('push a file from under 1,000 lines');
-    expect(def.prompt).toContain(
+    expect(guidance).toContain('push a file from under 1,000 lines');
+    expect(guidance).toContain(
       '"Consider refactoring" or "this could be cleaner" is NOT a suggestion'
     );
-    expect(def.prompt).toContain('Prefer a small number of high-conviction structural comments');
+    expect(guidance).toContain('No artificial finding cap');
+    expect(guidance).toContain('Report every high-conviction structural issue');
+    expect(guidance).not.toContain('Aim for at most 8-10 findings');
+  });
+
+  it('does not encourage reviewer prompts to stop after a small sample of findings', () => {
+    const def = getReviewerPrompt(context);
+    expect(def.prompt).toContain('Report every high-confidence actionable issue');
+    expect(def.prompt).toContain('Do not stop after a small sample of findings');
   });
 
   it('can include PR review scope guidance in reviewer prompt when requested', () => {

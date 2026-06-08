@@ -382,7 +382,7 @@ ${buildReviewerCriticalIssuesGuidance()}
 
 ## Review Requirements
 - Focus on concrete, actionable issues tied to changed code.
-- Prefer fewer high-signal findings over speculative noise.
+- Report every high-confidence actionable issue you find. Avoid speculative noise, but do not stop after a small sample of findings.
 ${planContextInstruction}
 - Do not provide a verdict.
 - Use the same severity bar as the reviewer prompt: only report genuine issues that would matter in review.
@@ -416,7 +416,7 @@ ${buildReviewerSimplificationGuidance()}
 
 ## Review Requirements
 - Focus on concrete, actionable simplification opportunities tied to changed code.
-- Prefer fewer high-signal findings over speculative cleanup notes.
+- Report every high-confidence simplification issue you find. Avoid speculative cleanup notes, but do not stop after a small sample of findings.
 ${planContextInstruction}
 - Do not provide a verdict.
 - Use the same severity bar as the reviewer prompt: only report genuine issues that would matter in review.

@@ -56,8 +56,7 @@ You are running with an output JSON schema. Your next and final response MUST be
 
 ${schemaSection}
 
-Do not output markdown, markdown fences, prose, comments, explanations, or any text outside the JSON value. Markdown is unacceptable as the final output.
-Do not repeat, quote, summarize, or repair the previous invalid output. Produce a fresh JSON value from the original task context and the schema above.
+If the previous output was the intended output, then convert it to JSON conforming to the schema above. Otherwise, produce a fresh JSON value from the original task context and the schema above.
 
 The JSON value must start with "{" and end with "}".${errorSection}`;
 }

@@ -95,6 +95,8 @@ When you reference files in your findings, use file paths relative to the projec
 
 When you find an issue, check whether the same pattern exists in other related files or nearby code paths. The fixer agent works best when it has a complete list of every location that needs attention, rather than discovering additional instances in later review rounds. Flag all affected files and line numbers explicitly so that fixes can be comprehensive in a single pass.
 
+Do not stop after a small sample of findings. Report every high-confidence actionable issue you find in the changed code, while still excluding speculative, cosmetic, or low-value notes.
+
 ## Pre-existing Issues
 
 If you notice issues in the codebase that pre-date the current changes (i.e. they exist in code that was not modified
@@ -128,7 +130,7 @@ Above all, be **ambitious** about code structure. Do not merely identify local c
 - **Diff-only scope**: Only review code that appears in the diff (added or modified lines). Do not flag issues in unchanged surrounding context. The one exception is pre-existing code that the diff makes materially worse — and even then see "Pre-existing Issues" below.
 - **Confidence gate**: Only report findings you are confident about. If you cannot articulate the concrete maintainability cost or the cleaner alternative, leave it out. Precision matters more than recall.
 - **Suggestions are mandatory for medium+ severity**: Every finding at medium severity or above MUST include a concrete suggestion showing the cleaner structure — which code moves where, which branch disappears, which abstraction to collapse. "Consider refactoring" or "this could be cleaner" is NOT a suggestion.
-- **Finding budget**: Aim for at most 8-10 findings. Prefer a small number of high-conviction structural comments over a long list of cosmetic nits. Do not flood the review with low-value notes when there are larger structural issues.
+- **No artificial finding cap**: Report every high-conviction structural issue you find in the changed code. Avoid cosmetic nits and speculative cleanup notes, but do not suppress real structural problems because several have already been found.
 
 ## Non-negotiable standards
 
@@ -707,7 +709,6 @@ The plan file tasks may not be marked as done in the plan file, because they are
 
 ${buildReviewerCriticalIssuesGuidance()}
 
-${buildReviewerSimplificationGuidance()}
 ${responseFormatGuidance}
 
 DO NOT include praise, encouragement, or positive feedback. Focus exclusively on identifying problems that need to be resolved.
