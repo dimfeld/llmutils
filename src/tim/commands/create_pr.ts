@@ -15,6 +15,7 @@ import { buildExecutorAndLog } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
+import { materializeRelatedPlans } from '../plan_materialize.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { loadPlansFromDb } from '../plans_db.js';
@@ -393,6 +394,9 @@ async function runPrCreationExecutor(
     mergeBase = resolved;
   }
   const issueRef = plan.issue?.[0];
+  if (planPath && plan.id) {
+    await materializeRelatedPlans(plan.id, options.baseDir);
+  }
   const siblingPlans = await collectSiblingPlanScope(plan, options.baseDir, options.repoPath);
   const prPrompt = buildPrCreationPrompt({
     vcsType: usingJj ? 'jj' : 'git',

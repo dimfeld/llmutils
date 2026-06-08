@@ -57,6 +57,7 @@ vi.mock('../executors/index.js', () => ({
 }));
 
 vi.mock('../plan_materialize.js', () => ({
+  materializeRelatedPlans: vi.fn(async (..._args: unknown[]) => []),
   resolveProjectContext: vi.fn(async (..._args: unknown[]) => ({ projectId: 1 })),
 }));
 
@@ -93,7 +94,10 @@ import {
   remoteBranchExists as mockRemoteBranchExistsFn,
 } from '../../common/git.js';
 import { buildExecutorAndLog as mockBuildExecutorAndLogFn } from '../executors/index.js';
-import { resolveProjectContext as mockResolveProjectContextFn } from '../plan_materialize.js';
+import {
+  materializeRelatedPlans as mockMaterializeRelatedPlansFn,
+  resolveProjectContext as mockResolveProjectContextFn,
+} from '../plan_materialize.js';
 import { resolveBranchPrefix as mockResolveBranchPrefixFn } from './branch.js';
 
 const mockWritePlanFile = vi.mocked(mockWritePlanFileFn);
@@ -110,6 +114,7 @@ const mockGetTrunkBranch = vi.mocked(mockGetTrunkBranchFn);
 const mockGetUsingJj = vi.mocked(mockGetUsingJjFn);
 const mockRemoteBranchExists = vi.mocked(mockRemoteBranchExistsFn);
 const mockBuildExecutorAndLog = vi.mocked(mockBuildExecutorAndLogFn);
+const mockMaterializeRelatedPlans = vi.mocked(mockMaterializeRelatedPlansFn);
 const mockResolveProjectContext = vi.mocked(mockResolveProjectContextFn);
 const mockResolveBranchPrefix = vi.mocked(mockResolveBranchPrefixFn);
 
@@ -129,6 +134,7 @@ describe('create_pr command helpers', () => {
     mockGetMergeBase.mockResolvedValue('merge-base-sha');
     mockGetTrunkBranch.mockResolvedValue('main');
     mockRemoteBranchExists.mockResolvedValue(true);
+    mockMaterializeRelatedPlans.mockResolvedValue([]);
     mockResolveProjectContext.mockResolvedValue({ projectId: 1 } as any);
     mockResolveBranchPrefix.mockReturnValue('team/');
     mockResolvePlanByNumericId.mockResolvedValue({
@@ -666,6 +672,55 @@ describe('create_pr command helpers', () => {
         expect.any(Object),
         expect.any(Object)
       );
+    });
+
+    test('materializes related plans when current plan has a materialized file', async () => {
+      mockGetUsingJj.mockResolvedValueOnce(true);
+      vi.spyOn(Bun, 'spawn').mockReturnValueOnce(createSpawnResult(0, JSON.stringify([])));
+
+      await createOrUpdatePrForPlan(
+        {
+          id: 411,
+          uuid: 'plan-411',
+          status: 'needs_review',
+          tasks: [],
+          title: 'Materialized PR',
+          branch: 'feature-411',
+          pullRequest: [],
+        } as unknown as PlanSchema,
+        '/repo/.tim/plans/411.plan.md',
+        {
+          baseDir: '/repo',
+          config: {},
+        }
+      );
+
+      expect(mockMaterializeRelatedPlans).toHaveBeenCalledWith(411, '/repo');
+      expect(mockMaterializeRelatedPlans).toHaveBeenCalledTimes(1);
+    });
+
+    test('does not materialize related plans for DB-only current plan', async () => {
+      mockGetUsingJj.mockResolvedValueOnce(true);
+      vi.spyOn(Bun, 'spawn').mockReturnValueOnce(createSpawnResult(0, JSON.stringify([])));
+
+      await createOrUpdatePrForPlan(
+        {
+          id: 412,
+          uuid: 'plan-412',
+          status: 'needs_review',
+          tasks: [],
+          title: 'DB-only PR',
+          branch: 'feature-412',
+          pullRequest: [],
+        } as unknown as PlanSchema,
+        null,
+        {
+          baseDir: '/repo',
+          config: {},
+        }
+      );
+
+      expect(mockMaterializeRelatedPlans).not.toHaveBeenCalled();
     });
 
     test('fetches resolved basePlan branch before computing git merge-base', async () => {
