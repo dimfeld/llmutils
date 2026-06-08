@@ -23,6 +23,8 @@ import {
   spawnPlanReviewGuideProcess,
   spawnReviewProcess,
   spawnProofProcess,
+  spawnAutoreviewProcess,
+  spawnShellProcess,
 } from '$lib/server/plan_actions.js';
 import { isPlanEligibleForProof, isProofConfigured } from '$lib/utils/proof_eligibility.js';
 import { getSessionManager } from '$lib/server/session_context.js';
@@ -435,6 +437,34 @@ export const startReview = command(startReviewSchema, async ({ planUuid }) => {
     isPlanEligibleForReview,
     'Plan is not eligible for review',
     spawnReviewProcess
+  );
+});
+
+const startAutoreviewSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startAutoreview = command(startAutoreviewSchema, async ({ planUuid }) => {
+  return launchTimCommand(
+    'autoreview',
+    planUuid,
+    isPlanEligibleForChat,
+    'Plan is not eligible for autoreview',
+    spawnAutoreviewProcess
+  );
+});
+
+const startShellSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startShell = command(startShellSchema, async ({ planUuid }) => {
+  return launchTimCommand(
+    'shell',
+    planUuid,
+    isPlanEligibleForChat,
+    'Plan is not eligible for shell',
+    spawnShellProcess
   );
 });
 

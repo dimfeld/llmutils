@@ -224,6 +224,51 @@ export async function spawnPrFixForPrProcess(
   );
 }
 
+export async function spawnAutoreviewProcess(
+  planId: number,
+  cwd: string
+): Promise<SpawnProcessResult> {
+  return spawnPlanTimProcess(
+    describeTarget('plan', planId),
+    planId,
+    ['autoreview', String(planId), '--no-terminal-input'],
+    cwd
+  );
+}
+
+export async function spawnAutoreviewForPrProcess(
+  prUrlOrNumber: string,
+  cwd: string
+): Promise<SpawnTargetProcessResult> {
+  return spawnTimProcess(
+    describeTarget('pr', prUrlOrNumber),
+    null,
+    ['autoreview', '--pr', prUrlOrNumber, '--no-terminal-input'],
+    cwd
+  );
+}
+
+export async function spawnShellProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
+  return spawnPlanTimProcess(
+    describeTarget('plan', planId),
+    planId,
+    ['shell', String(planId), '--auto-workspace', '--non-interactive'],
+    cwd
+  );
+}
+
+export async function spawnShellForPrProcess(
+  prUrlOrNumber: string,
+  cwd: string
+): Promise<SpawnTargetProcessResult> {
+  return spawnTimProcess(
+    describeTarget('pr', prUrlOrNumber),
+    null,
+    ['shell', '--pr', prUrlOrNumber, '--auto-workspace', '--non-interactive'],
+    cwd
+  );
+}
+
 export async function spawnPrCreateProcess(
   planId: number,
   cwd: string

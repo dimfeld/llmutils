@@ -18,7 +18,9 @@
   import { refreshSinglePrStatus, togglePrDraftStatus } from '$lib/remote/pr_status.remote.js';
   import { getLinearPrReviewUrl } from '$lib/remote/project_prs.remote.js';
   import {
+    startPrAutoreview,
     startFixPrThreads,
+    startPrShell,
     startPrReviewGuide,
   } from '$lib/remote/review_thread_actions.remote.js';
   import { getPrReviews } from '$lib/remote/pr_reviews.remote.js';
@@ -49,6 +51,8 @@
   let draftUpdating = $state(false);
   let reviewGuideRunning = $state(false);
   let fixStarting = $state(false);
+  let autoreviewStarting = $state(false);
+  let shellStarting = $state(false);
   let fixLaunched = $state(false);
   let actionError = $state<string | null>(null);
   // let graphitePrUrl = $derived(
@@ -124,6 +128,8 @@
     void pr.status.pr_number;
     fixLaunched = false;
     fixStarting = false;
+    autoreviewStarting = false;
+    shellStarting = false;
     actionError = null;
   });
 
@@ -215,6 +221,58 @@
       actionError = err instanceof Error ? err.message : String(err);
     } finally {
       reviewGuideRunning = false;
+    }
+  }
+
+  async function handleStartAutoreview() {
+    if (autoreviewStarting || sessionActive) {
+      return;
+    }
+
+    const requestPrNumber = pr.status.pr_number;
+    actionError = null;
+    autoreviewStarting = true;
+    try {
+      const result = await startPrAutoreview({
+        projectId: Number(projectId),
+        prNumber: requestPrNumber,
+      });
+      if (pr.status.pr_number !== requestPrNumber) return;
+      actionError =
+        result.status === 'already_running' ? 'A session is already running for this PR' : null;
+    } catch (err) {
+      if (pr.status.pr_number !== requestPrNumber) return;
+      actionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      if (pr.status.pr_number === requestPrNumber) {
+        autoreviewStarting = false;
+      }
+    }
+  }
+
+  async function handleStartShell() {
+    if (shellStarting || sessionActive) {
+      return;
+    }
+
+    const requestPrNumber = pr.status.pr_number;
+    actionError = null;
+    shellStarting = true;
+    try {
+      const result = await startPrShell({
+        projectId: Number(projectId),
+        prNumber: requestPrNumber,
+      });
+      if (pr.status.pr_number !== requestPrNumber) return;
+      actionError =
+        result.status === 'already_running' ? 'A session is already running for this PR' : null;
+    } catch (err) {
+      if (pr.status.pr_number !== requestPrNumber) return;
+      actionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      if (pr.status.pr_number === requestPrNumber) {
+        shellStarting = false;
+      }
     }
   }
 
@@ -348,6 +406,22 @@
             View in Linear
           </a>
         {/if}
+        <button
+          onclick={handleStartAutoreview}
+          disabled={autoreviewStarting || sessionActive}
+          class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+          title="Run autoreview for this PR"
+        >
+          {autoreviewStarting ? 'Starting...' : 'Autoreview'}
+        </button>
+        <button
+          onclick={handleStartShell}
+          disabled={shellStarting || sessionActive}
+          class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+          title="Open a tim shell for this PR"
+        >
+          {shellStarting ? 'Starting...' : 'Shell'}
+        </button>
         {#if canToggleDraft}
           <button
             onclick={handleToggleDraftStatus}

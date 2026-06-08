@@ -19,6 +19,8 @@
     startChat,
     startRebase,
     startReview,
+    startAutoreview,
+    startShell,
     startUpdateDocs,
     startCreatePr,
     startPlanReviewGuide,
@@ -199,6 +201,20 @@
       colorClass: '',
       starting: startingReview,
     };
+    const autoreviewItem: ActionItem = {
+      label: 'Autoreview',
+      startingLabel: 'Starting Autoreview…',
+      onclick: handleAutoreview,
+      colorClass: '',
+      starting: startingAutoreview,
+    };
+    const shellItem: ActionItem = {
+      label: 'Shell',
+      startingLabel: 'Starting Shell…',
+      onclick: handleShell,
+      colorClass: '',
+      starting: startingShell,
+    };
     const createPrItem: ActionItem = {
       label: 'Create PR',
       startingLabel: 'Starting PR Creation…',
@@ -223,7 +239,7 @@
 
     let primary: ActionItem;
     let menuItems: ActionItem[] = [];
-    let showSeparateChatButton = true;
+    let secondaryAction: ActionItem | null = shellItem;
 
     if (showUpdateDocs) {
       // Show "Update Docs" as primary, with "Finish" in dropdown
@@ -231,6 +247,7 @@
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (isEligibleForReview) menuItems.push(reviewItem);
+      menuItems.push(autoreviewItem, chatItem);
       menuItems.push(finishItem);
       if (isEligibleForProof) menuItems.push(proofItem);
     } else if (showFinish) {
@@ -239,38 +256,43 @@
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (isEligibleForReview) menuItems.push(reviewItem);
+      menuItems.push(autoreviewItem, chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
     } else if (showAgentOnly) {
       primary = agentItem;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
+      menuItems.push(autoreviewItem, chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
     } else if (showGenerateWithAgent) {
       if (isSimplePlan) {
         primary = agentItem;
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
+        menuItems.push(autoreviewItem, chatItem);
         if (isEligibleForProof) menuItems.push(proofItem);
       } else {
         primary = generateItem;
         menuItems.push(agentItem);
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
+        menuItems.push(autoreviewItem, chatItem);
         if (isEligibleForProof) menuItems.push(proofItem);
       }
     } else {
-      // showChatOnly
+      // showChatOnly: keep chat as the primary action and omit a duplicate dropdown entry.
       primary = chatItem;
-      showSeparateChatButton = false;
+      secondaryAction = null;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (showUpdateDocsInDropdown) {
         menuItems.push(finishNoMarkDoneItem);
       }
+      menuItems.push(autoreviewItem, shellItem);
       if (isEligibleForProof) menuItems.push(proofItem);
     }
 
-    return { primary, menuItems, chatAction: chatItem, showSeparateChatButton };
+    return { primary, menuItems, secondaryAction };
   });
 
   // Active session detection is independent of eligibility so the "Running" link
@@ -306,6 +328,8 @@
   let startingAgent = $state(false);
   let startingRebase = $state(false);
   let startingReview = $state(false);
+  let startingAutoreview = $state(false);
+  let startingShell = $state(false);
   let startingChat: 'claude' | 'codex' | false = $state(false);
   let startingFinish = $state(false);
   let startingCreatePr = $state(false);
@@ -498,6 +522,8 @@
       startingAgent = false;
       startingRebase = false;
       startingReview = false;
+      startingAutoreview = false;
+      startingShell = false;
       startingChat = false;
       startingFinish = false;
       startingCreatePr = false;
@@ -572,6 +598,8 @@
       startingAgent ||
       startingRebase ||
       startingReview ||
+      startingAutoreview ||
+      startingShell ||
       startingChat ||
       startingFinish ||
       startingCreatePr ||
@@ -645,6 +673,50 @@
       errorMessage = `${err as Error}`;
     } finally {
       startingReview = false;
+    }
+  }
+
+  async function handleAutoreview() {
+    startingAutoreview = true;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      const result = await startAutoreview({ planUuid: plan.uuid });
+      if (result.status === 'already_running') {
+        successMessage = {
+          text: 'A session is already running for this plan',
+          connectionId: result.connectionId,
+        };
+      } else {
+        successMessage = { text: 'Autoreview started' };
+      }
+      setStartedSuccessfully();
+    } catch (err) {
+      errorMessage = `${err as Error}`;
+    } finally {
+      startingAutoreview = false;
+    }
+  }
+
+  async function handleShell() {
+    startingShell = true;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      const result = await startShell({ planUuid: plan.uuid });
+      if (result.status === 'already_running') {
+        successMessage = {
+          text: 'A session is already running for this plan',
+          connectionId: result.connectionId,
+        };
+      } else {
+        successMessage = { text: 'Shell started' };
+      }
+      setStartedSuccessfully();
+    } catch (err) {
+      errorMessage = `${err as Error}`;
+    } finally {
+      startingShell = false;
     }
   }
 
@@ -958,22 +1030,22 @@
                       : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
             </a>
           {:else}
-            {@const { primary, menuItems, chatAction, showSeparateChatButton } = actionConfig}
+            {@const { primary, menuItems, secondaryAction } = actionConfig}
             <ActionButtonWithDropdown {primary} {menuItems} disabled={controlsDisabled} size="xs" />
-            {#if showSeparateChatButton}
+            {#if secondaryAction}
               <Button
-                onclick={chatAction.onclick}
+                onclick={secondaryAction.onclick}
                 disabled={controlsDisabled}
                 size="xs"
-                class={chatAction.colorClass}
+                class={secondaryAction.colorClass}
               >
-                {#if chatAction.starting}
+                {#if secondaryAction.starting}
                   <span
                     class="inline-block h-2 w-2 animate-spin rounded-full border-2 border-white border-t-transparent"
                   ></span>
-                  {chatAction.startingLabel}
+                  {secondaryAction.startingLabel}
                 {:else}
-                  {chatAction.label}
+                  {secondaryAction.label}
                 {/if}
               </Button>
             {/if}

@@ -44,7 +44,22 @@ const { createPullRequestReviewCommentReplyMock, resolveReviewThreadMock } = vi.
   resolveReviewThreadMock: vi.fn<(threadId: string) => Promise<boolean>>(),
 }));
 
-const { spawnPrFixForPrProcessMock, spawnPrFixProcessMock } = vi.hoisted(() => ({
+const {
+  spawnAutoreviewForPrProcessMock,
+  spawnPrFixForPrProcessMock,
+  spawnPrFixProcessMock,
+  spawnShellForPrProcessMock,
+} = vi.hoisted(() => ({
+  spawnAutoreviewForPrProcessMock: vi.fn<
+    (
+      prUrlOrNumber: string,
+      cwd: string
+    ) => Promise<{
+      success: boolean;
+      error?: string;
+      earlyExit?: boolean;
+    }>
+  >(),
   spawnPrFixForPrProcessMock: vi.fn<
     (
       prUrlOrNumber: string,
@@ -66,6 +81,16 @@ const { spawnPrFixForPrProcessMock, spawnPrFixProcessMock } = vi.hoisted(() => (
       earlyExit?: boolean;
     }>
   >(),
+  spawnShellForPrProcessMock: vi.fn<
+    (
+      prUrlOrNumber: string,
+      cwd: string
+    ) => Promise<{
+      success: boolean;
+      error?: string;
+      earlyExit?: boolean;
+    }>
+  >(),
 }));
 
 vi.mock('$common/github/pull_requests.js', async (importOriginal) => {
@@ -78,10 +103,14 @@ vi.mock('$common/github/pull_requests.js', async (importOriginal) => {
 });
 
 vi.mock('$lib/server/plan_actions.js', () => ({
+  spawnAutoreviewForPrProcess: (...args: Parameters<typeof spawnAutoreviewForPrProcessMock>) =>
+    spawnAutoreviewForPrProcessMock(...args),
   spawnPrFixForPrProcess: (...args: Parameters<typeof spawnPrFixForPrProcessMock>) =>
     spawnPrFixForPrProcessMock(...args),
   spawnPrFixProcess: (...args: Parameters<typeof spawnPrFixProcessMock>) =>
     spawnPrFixProcessMock(...args),
+  spawnShellForPrProcess: (...args: Parameters<typeof spawnShellForPrProcessMock>) =>
+    spawnShellForPrProcessMock(...args),
 }));
 
 import {
@@ -90,6 +119,8 @@ import {
   resolveThread,
   startFixPrThreads,
   startFixThreads,
+  startPrAutoreview,
+  startPrShell,
 } from './review_thread_actions.remote.js';
 import {
   clearPrLaunchLock,
@@ -160,8 +191,10 @@ describe('convertThreadToTask', () => {
     projectId = getOrCreateProject(currentDb, 'repo-review-thread-actions').id;
     createPullRequestReviewCommentReplyMock.mockReset();
     resolveReviewThreadMock.mockReset();
+    spawnAutoreviewForPrProcessMock.mockReset();
     spawnPrFixForPrProcessMock.mockReset();
     spawnPrFixProcessMock.mockReset();
+    spawnShellForPrProcessMock.mockReset();
   });
 
   afterEach(() => {
@@ -1439,8 +1472,10 @@ describe('startFixPrThreads', () => {
     currentConfig = defaultConfig();
     // Use repository_id with owner/repo format
     getOrCreateProject(currentDb, REPO_ID);
+    spawnAutoreviewForPrProcessMock.mockReset();
     spawnPrFixForPrProcessMock.mockReset();
     spawnPrFixProcessMock.mockReset();
+    spawnShellForPrProcessMock.mockReset();
   });
 
   afterEach(() => {
@@ -1470,6 +1505,46 @@ describe('startFixPrThreads', () => {
 
     expect(result).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
     expect(spawnPrFixForPrProcessMock).toHaveBeenCalledWith(
+      CANONICAL_PR_URL,
+      '/tmp/pr-primary-workspace'
+    );
+    expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
+  });
+
+  test('spawns tim autoreview for a PR with the canonical PR URL', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnAutoreviewForPrProcessMock.mockResolvedValue({ success: true });
+
+    const result = await invokeCommand(startPrAutoreview, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
+    expect(spawnAutoreviewForPrProcessMock).toHaveBeenCalledWith(
+      CANONICAL_PR_URL,
+      '/tmp/pr-primary-workspace'
+    );
+    expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
+  });
+
+  test('spawns tim shell for a PR with the canonical PR URL', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnShellForPrProcessMock.mockResolvedValue({ success: true });
+
+    const result = await invokeCommand(startPrShell, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
+    expect(spawnShellForPrProcessMock).toHaveBeenCalledWith(
       CANONICAL_PR_URL,
       '/tmp/pr-primary-workspace'
     );

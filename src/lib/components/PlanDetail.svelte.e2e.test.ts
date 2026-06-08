@@ -21,6 +21,8 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startChat: vi.fn(),
   startRebase: vi.fn(),
   startReview: vi.fn(),
+  startAutoreview: vi.fn(),
+  startShell: vi.fn(),
   startUpdateDocs: vi.fn(),
   startCreatePr: vi.fn(),
   startAgentMulti: vi.fn(),

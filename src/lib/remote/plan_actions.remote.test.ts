@@ -24,6 +24,8 @@ const spawnPrCreateProcessMock = vi.fn();
 const spawnUpdateDocsProcessMock = vi.fn();
 const spawnPlanReviewGuideProcessMock = vi.fn();
 const spawnProofProcessMock = vi.fn();
+const spawnAutoreviewProcessMock = vi.fn();
+const spawnShellProcessMock = vi.fn();
 const loadEffectiveConfigMock = vi.fn();
 
 vi.mock('$lib/server/init.js', () => ({
@@ -58,6 +60,10 @@ vi.mock('$lib/server/plan_actions.js', () => ({
     spawnPlanReviewGuideProcessMock(...args),
   spawnProofProcess: (...args: Parameters<typeof spawnProofProcessMock>) =>
     spawnProofProcessMock(...args),
+  spawnAutoreviewProcess: (...args: Parameters<typeof spawnAutoreviewProcessMock>) =>
+    spawnAutoreviewProcessMock(...args),
+  spawnShellProcess: (...args: Parameters<typeof spawnShellProcessMock>) =>
+    spawnShellProcessMock(...args),
 }));
 
 vi.mock('$tim/configLoader.js', () => ({
@@ -77,6 +83,8 @@ import {
   startRebase,
   startPlanReviewGuide,
   startProof,
+  startAutoreview,
+  startShell,
 } from './plan_actions.remote.js';
 
 describe('plan remote actions', () => {
@@ -100,6 +108,8 @@ describe('plan remote actions', () => {
     spawnUpdateDocsProcessMock.mockReset();
     spawnPlanReviewGuideProcessMock.mockReset();
     spawnProofProcessMock.mockReset();
+    spawnAutoreviewProcessMock.mockReset();
+    spawnShellProcessMock.mockReset();
     loadEffectiveConfigMock.mockReset();
 
     projectId = getOrCreateProject(currentDb, 'repo-plan-actions', {
@@ -1568,6 +1578,85 @@ describe('plan remote actions', () => {
       });
       expect(spawnChatProcessMock).toHaveBeenCalledWith(2114, '/tmp/primary-workspace-b', 'claude');
       expect(isPlanLaunching('chat-plan-lock-a')).toBe(true);
+    });
+  });
+
+  describe('startAutoreview', () => {
+    test('spawns tim autoreview from the primary workspace', async () => {
+      seedPlan({ uuid: 'autoreview-plan', planId: 2201, status: 'needs_review' });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnAutoreviewProcessMock.mockResolvedValue({ success: true, planId: 2201 });
+
+      await expect(
+        invokeCommand(startAutoreview, { planUuid: 'autoreview-plan' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2201,
+      });
+      expect(spawnAutoreviewProcessMock).toHaveBeenCalledWith(2201, '/tmp/primary-workspace');
+    });
+
+    test('returns already_running when a session exists on the same plan', async () => {
+      seedPlan({ uuid: 'autoreview-plan-running', planId: 2202 });
+      currentManager.handleWebSocketConnect('conn-autoreview-running', () => {});
+      currentManager.handleWebSocketMessage('conn-autoreview-running', {
+        type: 'session_info',
+        command: 'autoreview',
+        interactive: true,
+        planId: 2202,
+        planUuid: 'autoreview-plan-running',
+        workspacePath: '/tmp/primary-workspace',
+      });
+
+      await expect(
+        invokeCommand(startAutoreview, { planUuid: 'autoreview-plan-running' })
+      ).resolves.toEqual({
+        status: 'already_running',
+        connectionId: 'conn-autoreview-running',
+      });
+      expect(spawnAutoreviewProcessMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('startShell', () => {
+    test('spawns tim shell from the primary workspace', async () => {
+      seedPlan({ uuid: 'shell-plan', planId: 2301, status: 'in_progress' });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnShellProcessMock.mockResolvedValue({ success: true, planId: 2301 });
+
+      await expect(invokeCommand(startShell, { planUuid: 'shell-plan' })).resolves.toEqual({
+        status: 'started',
+        planId: 2301,
+      });
+      expect(spawnShellProcessMock).toHaveBeenCalledWith(2301, '/tmp/primary-workspace');
+    });
+
+    test('returns already_running when a session exists on the same plan', async () => {
+      seedPlan({ uuid: 'shell-plan-running', planId: 2302 });
+      currentManager.handleWebSocketConnect('conn-shell-running', () => {});
+      currentManager.handleWebSocketMessage('conn-shell-running', {
+        type: 'session_info',
+        command: 'shell',
+        interactive: true,
+        pty: true,
+        planId: 2302,
+        planUuid: 'shell-plan-running',
+        workspacePath: '/tmp/primary-workspace',
+      });
+
+      await expect(invokeCommand(startShell, { planUuid: 'shell-plan-running' })).resolves.toEqual({
+        status: 'already_running',
+        connectionId: 'conn-shell-running',
+      });
+      expect(spawnShellProcessMock).not.toHaveBeenCalled();
     });
   });
 

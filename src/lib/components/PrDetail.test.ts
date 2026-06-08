@@ -8,6 +8,8 @@ import type { PrReviewThreadDetail } from '$tim/db/pr_status.js';
 import PrDetail from './PrDetail.svelte';
 
 const mockStartFixPrThreads = vi.fn();
+const mockStartPrAutoreview = vi.fn();
+const mockStartPrShell = vi.fn();
 const sessionManager = {
   sessions: new Map<string, { status: string; sessionInfo: { planUuid?: string } }>(),
   hasActiveSessionForPr: vi.fn(() => ({ active: false }) as { active: boolean }),
@@ -39,7 +41,9 @@ vi.mock('$lib/remote/review_thread_actions.remote.js', async () => {
   >('$lib/remote/review_thread_actions.remote.js');
   return {
     ...actual,
+    startPrAutoreview: (...args: unknown[]) => mockStartPrAutoreview(...args),
     startFixPrThreads: (...args: unknown[]) => mockStartFixPrThreads(...args),
+    startPrShell: (...args: unknown[]) => mockStartPrShell(...args),
   };
 });
 

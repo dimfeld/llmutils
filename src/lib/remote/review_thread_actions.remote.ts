@@ -22,9 +22,12 @@ import {
   setPrLaunchLock,
 } from '$lib/server/launch_lock.js';
 import {
+  spawnAutoreviewForPrProcess,
   spawnPrFixForPrProcess,
   spawnPrFixProcess,
   spawnPrReviewGuideProcess,
+  spawnShellForPrProcess,
+  type SpawnTargetProcessResult,
 } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import {
@@ -454,6 +457,73 @@ const startPrReviewGuideSchema = z.object({
   projectId: z.number().int(),
   prNumber: z.number().int(),
 });
+
+async function launchPrTimCommand(
+  commandName: string,
+  projectId: number,
+  prNumber: number,
+  spawnProcess: (prUrlOrNumber: string, cwd: string) => Promise<SpawnTargetProcessResult>
+): Promise<
+  { status: 'started'; prUrl: string } | { status: 'already_running'; connectionId?: string }
+> {
+  const { db } = await getServerContext();
+
+  const prStatus = getPrStatusByProjectAndNumber(db, projectId, prNumber);
+  if (!prStatus) {
+    error(404, 'PR not found');
+  }
+
+  const canonicalPrUrl = tryCanonicalizePrUrl(prStatus.status.pr_url);
+  if (!canonicalPrUrl) {
+    error(404, 'PR not found');
+  }
+
+  const activeSession = getSessionManager().hasActiveSessionForPr(canonicalPrUrl);
+  if (activeSession.active) {
+    return { status: 'already_running', connectionId: activeSession.connectionId };
+  }
+
+  if (isPrLaunching(canonicalPrUrl)) {
+    return { status: 'already_running' };
+  }
+
+  const primaryWorkspacePath = getPrimaryWorkspacePath(db, projectId);
+  if (!primaryWorkspacePath) {
+    error(400, 'Project does not have a primary workspace');
+  }
+
+  setPrLaunchLock(canonicalPrUrl);
+
+  let result;
+  try {
+    result = await spawnProcess(canonicalPrUrl, primaryWorkspacePath);
+  } catch (e) {
+    clearPrLaunchLock(canonicalPrUrl);
+    throw e;
+  }
+
+  if (!result.success) {
+    clearPrLaunchLock(canonicalPrUrl);
+    error(500, result.error);
+  }
+
+  if (result.earlyExit) {
+    clearPrLaunchLock(canonicalPrUrl);
+  }
+
+  console.info(`[web-ui] tim ${commandName} for PR ${prNumber} is running detached`);
+  return { status: 'started', prUrl: canonicalPrUrl };
+}
+
+export const startPrAutoreview = command(
+  startPrReviewGuideSchema,
+  async ({ projectId, prNumber }) =>
+    launchPrTimCommand('autoreview', projectId, prNumber, spawnAutoreviewForPrProcess)
+);
+
+export const startPrShell = command(startPrReviewGuideSchema, async ({ projectId, prNumber }) =>
+  launchPrTimCommand('shell', projectId, prNumber, spawnShellForPrProcess)
+);
 
 export const startPrReviewGuide = command(
   startPrReviewGuideSchema,
