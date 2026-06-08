@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { WTerm } from '@wterm/dom';
+  import { GhosttyCore } from '@wterm/ghostty';
   import '@wterm/dom/css';
 
   let {
@@ -110,7 +111,9 @@
 
     lastCols = cols;
     lastRows = rows;
+    const core = await GhosttyCore.load();
     const terminal = new WTerm(container, {
+      core,
       cols,
       rows,
       autoResize: true,
