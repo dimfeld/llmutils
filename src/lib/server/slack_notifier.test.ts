@@ -542,6 +542,87 @@ describe('lib/server/slack_notifier', () => {
       expect(sent2[0].payload.blocks[0].text.text).toContain('alice');
     });
 
+    test('mixed new and re-requested reviewers are annotated in the message', async () => {
+      const { prStatusId } = setupEnabledProject();
+      upsertPrReviewRequestByReviewer(db, prStatusId, {
+        reviewer: 'alice',
+        action: 'requested',
+        eventAt: '2026-01-01T10:00:00.000Z',
+      });
+
+      const { sender: firstSender, sent: firstSent } = makeFakeSender();
+      await runSlackNotifierOnce(db, buildConfig(), {
+        sender: firstSender,
+        debounceMs: 0,
+        nowMs: Date.parse('2026-01-01T10:01:00.000Z'),
+      });
+      expect(firstSent).toHaveLength(1);
+
+      upsertPrReviewRequestByReviewer(db, prStatusId, {
+        reviewer: 'alice',
+        action: 'requested',
+        eventAt: '2026-01-01T10:02:00.000Z',
+      });
+      upsertPrReviewRequestByReviewer(db, prStatusId, {
+        reviewer: 'bob',
+        action: 'requested',
+        eventAt: '2026-01-01T10:02:00.000Z',
+      });
+
+      const { sender, sent } = makeFakeSender();
+      await runSlackNotifierOnce(db, buildConfig(), {
+        sender,
+        debounceMs: 0,
+        nowMs: Date.parse('2026-01-01T10:03:00.000Z'),
+      });
+
+      expect(sent).toHaveLength(1);
+      const blockText = sent[0].payload.blocks[0].text.text;
+      expect(blockText).toContain('*Review Requested:*');
+      expect(blockText).toContain('`alice` (re-request)');
+      expect(blockText).toContain('`bob` (new)');
+    });
+
+    test('all re-requested reviewers use the re-request title', async () => {
+      const { prStatusId } = setupEnabledProject();
+      for (const reviewer of ['alice', 'bob']) {
+        upsertPrReviewRequestByReviewer(db, prStatusId, {
+          reviewer,
+          action: 'requested',
+          eventAt: '2026-01-01T10:00:00.000Z',
+        });
+      }
+
+      const { sender: firstSender, sent: firstSent } = makeFakeSender();
+      await runSlackNotifierOnce(db, buildConfig(), {
+        sender: firstSender,
+        debounceMs: 0,
+        nowMs: Date.parse('2026-01-01T10:01:00.000Z'),
+      });
+      expect(firstSent).toHaveLength(1);
+
+      for (const reviewer of ['alice', 'bob']) {
+        upsertPrReviewRequestByReviewer(db, prStatusId, {
+          reviewer,
+          action: 'requested',
+          eventAt: '2026-01-01T10:02:00.000Z',
+        });
+      }
+
+      const { sender, sent } = makeFakeSender();
+      await runSlackNotifierOnce(db, buildConfig(), {
+        sender,
+        debounceMs: 0,
+        nowMs: Date.parse('2026-01-01T10:03:00.000Z'),
+      });
+
+      expect(sent).toHaveLength(1);
+      const blockText = sent[0].payload.blocks[0].text.text;
+      expect(blockText).toContain('*Review Re-Requested:*');
+      expect(blockText).toContain('`alice` (re-request)');
+      expect(blockText).toContain('`bob` (re-request)');
+    });
+
     test('misconfigured workspace is logged only once per workspace name', async () => {
       const { prStatusId } = setupEnabledProject('octocat', 'hello-world', 'work');
       insertReviewRequest(db, prStatusId, 'reviewer', minsAgo(2));

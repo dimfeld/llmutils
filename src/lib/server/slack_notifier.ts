@@ -126,6 +126,7 @@ function buildReviewers(
     return {
       githubLogin: row.reviewer,
       slackUserId: mapping?.slack_user_id ?? null,
+      requestKind: row.previously_requested ? 're-request' : 'new',
     };
   });
 }

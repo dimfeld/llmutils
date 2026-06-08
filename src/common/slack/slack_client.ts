@@ -13,6 +13,7 @@ const SLACK_UNPIN_MESSAGE_URL = 'https://slack.com/api/pins.remove';
 export interface ReviewRequestReviewer {
   githubLogin: string;
   slackUserId?: string | null;
+  requestKind?: 'new' | 're-request';
 }
 
 export interface ReviewRequestPr {
@@ -177,11 +178,12 @@ function escapeSlackCodeSpan(value: string): string {
 
 function formatReviewer(reviewer: ReviewRequestReviewer): string {
   const slackUserId = reviewer.slackUserId?.trim();
+  const kindSuffix = reviewer.requestKind ? ` (${reviewer.requestKind})` : '';
   if (slackUserId) {
-    return `<@${escapeSlackMrkdwnText(slackUserId)}>`;
+    return `<@${escapeSlackMrkdwnText(slackUserId)}>${kindSuffix}`;
   }
 
-  return `\`${escapeSlackCodeSpan(reviewer.githubLogin)}\``;
+  return `\`${escapeSlackCodeSpan(reviewer.githubLogin)}\`${kindSuffix}`;
 }
 
 function formatReviewerList(reviewers: ReviewRequestReviewer[]): string {
@@ -190,6 +192,17 @@ function formatReviewerList(reviewers: ReviewRequestReviewer[]): string {
   }
 
   return reviewers.map(formatReviewer).join(', ');
+}
+
+function getReviewRequestTitle(reviewers: ReviewRequestReviewer[]): string {
+  if (
+    reviewers.length > 0 &&
+    reviewers.every((reviewer) => reviewer.requestKind === 're-request')
+  ) {
+    return 'Review Re-Requested';
+  }
+
+  return 'Review Requested';
 }
 
 function formatPrChangeStats(pr: ReviewRequestPr): string | null {
@@ -335,14 +348,22 @@ export function buildReviewRequestSlackPayload(
   const prUrl = buildLinearPrReviewUrl({ prUrl: pr.url, prNumber: pr.number }) ?? pr.url;
   const escapedUrl = escapeSlackMrkdwnText(prUrl);
   const reviewerText = formatReviewerList(reviewers);
+  const title = getReviewRequestTitle(reviewers);
   const changeStats = formatPrChangeStats(pr);
   const escapedChangeStats = changeStats ? escapeSlackMrkdwnText(changeStats) : null;
   const fallbackReviewers =
     reviewers.length > 0
-      ? reviewers.map((reviewer) => escapeSlackMrkdwnText(reviewer.githubLogin)).join(', ')
+      ? reviewers
+          .map((reviewer) => {
+            const escapedLogin = escapeSlackMrkdwnText(reviewer.githubLogin);
+            return reviewer.requestKind
+              ? `${escapedLogin} (${reviewer.requestKind})`
+              : escapedLogin;
+          })
+          .join(', ')
       : 'none';
   const fallbackStats = escapedChangeStats ? ` (${escapedChangeStats})` : '';
-  const fallbackText = `Review requested on ${escapedTitle} by ${escapedAuthor}${fallbackStats}: ${fallbackReviewers}`;
+  const fallbackText = `${title} on ${escapedTitle} by ${escapedAuthor}${fallbackStats}: ${fallbackReviewers}`;
   const statsLine = escapedChangeStats ? `\n*Changes:* ${escapedChangeStats}` : '';
 
   return {
@@ -353,7 +374,7 @@ export function buildReviewRequestSlackPayload(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Review requested:* <${escapedUrl}|${escapedTitle}>\n*Author:* ${escapedAuthor}${statsLine}\n*Reviewers:* ${reviewerText}`,
+          text: `*${title}:* <${escapedUrl}|${escapedTitle}>\n*Author:* ${escapedAuthor}${statsLine}\n*Reviewers:* ${reviewerText}`,
         },
       },
     ],

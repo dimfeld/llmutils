@@ -8,6 +8,7 @@ export interface PendingReviewRequestNotification {
   requested_at: string | null;
   last_event_at: string;
   request_version: number;
+  previously_requested: number;
   owner: string;
   repo: string;
   pr_url: string;
@@ -32,6 +33,7 @@ export function getPendingReviewRequestNotifications(
           pr_review_request.requested_at,
           pr_review_request.last_event_at,
           pr_review_request.request_version,
+          CASE WHEN pr_review_request.request_version > 0 THEN 1 ELSE 0 END AS previously_requested,
           pr_status.owner,
           pr_status.repo,
           pr_status.pr_url,

@@ -104,6 +104,30 @@ describe('common/slack/slack_client', () => {
       expect(blockText).toContain('<@U123BOB>, `carol`, `dave`');
     });
 
+    test('annotates mixed new and re-requested reviewers', () => {
+      const payload = buildReviewRequestSlackPayload('#reviews', testPr, [
+        { ...mappedReviewer, requestKind: 'new' },
+        { ...unmappedReviewer, requestKind: 're-request' },
+      ]);
+      const blockText = payload.blocks[0].text.text;
+
+      expect(blockText).toContain('*Review Requested:*');
+      expect(blockText).toContain('<@U123BOB> (new), `carol` (re-request)');
+      expect(payload.text).toContain('bob (new), carol (re-request)');
+    });
+
+    test('uses re-request title when all reviewers were previously requested', () => {
+      const payload = buildReviewRequestSlackPayload('#reviews', testPr, [
+        { ...mappedReviewer, requestKind: 're-request' },
+        { ...unmappedReviewer, requestKind: 're-request' },
+      ]);
+      const blockText = payload.blocks[0].text.text;
+
+      expect(blockText).toContain('*Review Re-Requested:*');
+      expect(blockText).toContain('<@U123BOB> (re-request), `carol` (re-request)');
+      expect(payload.text).toContain('Review Re-Requested on Add feature X');
+    });
+
     test('PR title is rendered as a Slack mrkdwn link', () => {
       const payload = buildReviewRequestSlackPayload('#reviews', testPr, [mappedReviewer]);
       const blockText = payload.blocks[0].text.text;
