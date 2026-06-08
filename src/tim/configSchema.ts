@@ -34,7 +34,14 @@ export const postApplyCommandSchema = z.object({
   hideOutputOnSuccess: z.boolean().optional().default(false),
 });
 
-export const lifecycleCommandContextSchema = z.enum(['agent', 'review', 'proof', 'pr-fix']);
+export const lifecycleCommandContextSchema = z.enum([
+  'agent',
+  'review',
+  'proof',
+  'pr-fix',
+  'shell',
+  'autoreview',
+]);
 export type LifecycleCommandContext = z.infer<typeof lifecycleCommandContextSchema>;
 
 export const lifecycleCommandSchema = z

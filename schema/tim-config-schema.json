@@ -394,7 +394,9 @@
                     "agent",
                     "review",
                     "proof",
-                    "pr-fix"
+                    "pr-fix",
+                    "shell",
+                    "autoreview"
                   ]
                 }
               }

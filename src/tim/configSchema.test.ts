@@ -766,6 +766,40 @@ describe('configSchema', () => {
       expect(result.lifecycle?.commands?.[0]?.runIn).toEqual(['pr-fix']);
     });
 
+    test('accepts shell as a lifecycle command context', () => {
+      const config = {
+        lifecycle: {
+          commands: [
+            {
+              title: 'shell prep',
+              command: 'pnpm install',
+              runIn: ['shell'],
+            },
+          ],
+        },
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.lifecycle?.commands?.[0]?.runIn).toEqual(['shell']);
+    });
+
+    test('accepts autoreview as a lifecycle command context', () => {
+      const config = {
+        lifecycle: {
+          commands: [
+            {
+              title: 'autoreview prep',
+              command: 'pnpm install',
+              runIn: ['autoreview'],
+            },
+          ],
+        },
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.lifecycle?.commands?.[0]?.runIn).toEqual(['autoreview']);
+    });
+
     test('rejects invalid runIn contexts', () => {
       expect(() =>
         timConfigSchema.parse({

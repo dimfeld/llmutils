@@ -42,6 +42,7 @@ vi.mock('../executors/codex_cli/app_server_mode.js', () => ({
 
 vi.mock('../environment_options.js', () => ({
   buildTimWorkspaceCommandEnvironmentOptionsForPath: vi.fn(),
+  getWorkspaceInfoByPathIfAvailable: vi.fn(),
 }));
 
 vi.mock('../headless.js', () => ({
@@ -69,6 +70,22 @@ vi.mock('../workspace/workspace_roundtrip.js', () => ({
 
 vi.mock('../workspace/workspace_info.js', () => ({
   touchWorkspaceInfo: vi.fn(),
+}));
+
+const lifecycleMocks = vi.hoisted(() => ({
+  startup: vi.fn(),
+  shutdown: vi.fn(),
+  ctor: vi.fn(),
+}));
+
+vi.mock('../lifecycle.js', () => ({
+  LifecycleManager: vi.fn(function (this: unknown, ...args: unknown[]) {
+    lifecycleMocks.ctor(...args);
+    return {
+      startup: lifecycleMocks.startup,
+      shutdown: lifecycleMocks.shutdown,
+    };
+  }),
 }));
 
 vi.mock('../assignments/workspace_identifier.js', () => ({
@@ -102,6 +119,7 @@ import {
 import { resolvePlanByNumericId } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
+import { LifecycleManager } from '../lifecycle.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
@@ -314,6 +332,8 @@ describe('handleAutoreviewCommand', () => {
       defaultExecutor: undefined,
       terminalInput: true,
     } as any);
+    lifecycleMocks.startup.mockResolvedValue(undefined);
+    lifecycleMocks.shutdown.mockResolvedValue(undefined);
 
     vi.mocked(buildExecutorAndLog).mockReturnValue(mockExecutor as any);
     vi.mocked(isCodexAppServerEnabled).mockReturnValue(false);
@@ -658,6 +678,43 @@ describe('handleAutoreviewCommand', () => {
     expect(mockExecutorExecute.mock.calls[0][1]).toMatchObject({
       planFilePath: '/repo-root/workspaces/autoreview/.tim/plans/376.materialized.md',
     });
+  });
+
+  test('runs lifecycle hooks in autoreview context after workspace setup', async () => {
+    const lifecycleCommands = [
+      {
+        title: 'Autoreview prep',
+        command: 'pnpm install',
+        runIn: ['autoreview'],
+      },
+    ];
+    const timEnvironment = { context: { workspacePath: '/repo-root/workspaces/autoreview' } };
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: undefined,
+      terminalInput: true,
+      lifecycle: {
+        commands: lifecycleCommands,
+      },
+    } as any);
+    vi.mocked(buildTimWorkspaceCommandEnvironmentOptionsForPath).mockReturnValue(
+      timEnvironment as any
+    );
+
+    const options: AutoreviewCommandOptions = { nonInteractive: true };
+    await handleAutoreviewCommand(376, options, {});
+
+    expect(LifecycleManager).toHaveBeenCalledWith(
+      lifecycleCommands,
+      '/repo-root/workspaces/autoreview',
+      undefined,
+      'autoreview',
+      undefined,
+      {
+        timEnvironment,
+      }
+    );
+    expect(lifecycleMocks.startup).toHaveBeenCalledBefore(mockExecutorExecute);
+    expect(lifecycleMocks.shutdown).toHaveBeenCalledTimes(1);
   });
 
   test('planless execute call uses autoreview sentinel planId', async () => {

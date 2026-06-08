@@ -671,7 +671,7 @@ lifecycle:
       shutdown: 'dropdb "$DATABASE_NAME"'
 ```
 
-Use `runIn: [agent]`, `runIn: [review]`, or `runIn: [proof]` to scope setup to a specific command context. Omit `runIn` for shared setup.
+Use `runIn: [agent]`, `runIn: [review]`, `runIn: [proof]`, `runIn: [pr-fix]`, `runIn: [shell]`, or `runIn: [autoreview]` to scope setup to a specific command context. Omit `runIn` for shared setup.
 
 **Secrets:** The `environment` block is for deterministic, non-secret configuration values. Store secrets in your shell environment, global `~/.config/tim/config.yml` (which is not checked into source control), or workspace `.env` files.
 

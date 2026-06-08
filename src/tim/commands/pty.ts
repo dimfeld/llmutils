@@ -7,8 +7,12 @@ import { runWithLogger } from '../../logging/adapter.js';
 import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
-import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
+import {
+  buildTimWorkspaceCommandEnvironmentOptionsForPath,
+  getWorkspaceInfoByPathIfAvailable,
+} from '../environment_options.js';
 import { createHeadlessAdapterForCommand } from '../headless.js';
+import { LifecycleManager } from '../lifecycle.js';
 import { resolveProjectContext } from '../plan_materialize.js';
 import { resolvePlanByNumericId } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
@@ -274,23 +278,24 @@ export async function handleShellCommand(
 
   const { cols, rows } = resolveTerminalSize(options);
   const shellBinary = resolveShellBinary(options.shell);
+  const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(
+    config,
+    baseDir,
+    target.plan
+      ? {
+          planId: target.plan.id,
+          planUuid: target.plan.uuid,
+          planFilePath: currentPlanFile,
+          branch: target.plan.branch,
+        }
+      : null,
+    path.resolve(target.repoRoot)
+  );
   const env = await buildWorkspaceCommandEnv(
     baseDir,
     { TERM: 'xterm-256color' },
     {
-      timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
-        config,
-        baseDir,
-        target.plan
-          ? {
-              planId: target.plan.id,
-              planUuid: target.plan.uuid,
-              planFilePath: currentPlanFile,
-              branch: target.plan.branch,
-            }
-          : null,
-        path.resolve(target.repoRoot)
-      ),
+      timEnvironment,
     }
   );
   const adapter = await createHeadlessAdapterForCommand({
@@ -320,14 +325,34 @@ export async function handleShellCommand(
 
   try {
     await runWithLogger(adapter, async (): Promise<void> => {
-      await runPtyShellSession({
-        adapter,
-        cwd: baseDir,
-        shellBinary,
-        env,
-        cols,
-        rows,
-      });
+      let lifecycleManager: LifecycleManager | undefined;
+      if (config.lifecycle?.commands && config.lifecycle.commands.length > 0) {
+        const workspaceInfo = getWorkspaceInfoByPathIfAvailable(baseDir);
+        lifecycleManager = new LifecycleManager(
+          config.lifecycle.commands,
+          baseDir,
+          workspaceInfo?.workspaceType,
+          'shell',
+          undefined,
+          {
+            timEnvironment,
+          }
+        );
+        await lifecycleManager.startup();
+      }
+
+      try {
+        await runPtyShellSession({
+          adapter,
+          cwd: baseDir,
+          shellBinary,
+          env,
+          cols,
+          rows,
+        });
+      } finally {
+        await lifecycleManager?.shutdown();
+      }
     });
   } finally {
     await adapter.destroy();

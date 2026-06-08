@@ -8,8 +8,12 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { isCodexAppServerEnabled } from '../executors/codex_cli/app_server_mode.js';
 import { buildInteractiveExecutorOptions } from '../executors/shared/interactive_options.js';
-import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
+import {
+  buildTimWorkspaceCommandEnvironmentOptionsForPath,
+  getWorkspaceInfoByPathIfAvailable,
+} from '../environment_options.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { LifecycleManager } from '../lifecycle.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
 import { resolvePlanByNumericId } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -247,6 +251,7 @@ export async function handleAutoreviewCommand(
       let touchedWorkspacePath: string | null = null;
       let executionError: unknown;
       let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
+      let lifecycleManager: LifecycleManager | undefined;
 
       try {
         const workspaceRequested =
@@ -309,24 +314,41 @@ export async function handleAutoreviewCommand(
           }
         }
 
+        const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(
+          config,
+          currentBaseDir,
+          planContext.planData
+            ? {
+                planId: planContext.planData.id,
+                planUuid: planContext.planData.uuid,
+                planFilePath: currentPlanFile,
+                branch: planContext.planData.branch,
+              }
+            : null,
+          reviewTarget.repoRoot
+        );
+
+        if (config.lifecycle?.commands && config.lifecycle.commands.length > 0) {
+          const workspaceInfo = getWorkspaceInfoByPathIfAvailable(currentBaseDir);
+          lifecycleManager = new LifecycleManager(
+            config.lifecycle.commands,
+            currentBaseDir,
+            workspaceInfo?.workspaceType,
+            'autoreview',
+            undefined,
+            {
+              timEnvironment,
+            }
+          );
+          await lifecycleManager.startup();
+        }
+
         const executor = buildExecutorAndLog(
           executorName,
           {
             ...sharedExecutorOptions,
             baseDir: currentBaseDir,
-            timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
-              config,
-              currentBaseDir,
-              planContext.planData
-                ? {
-                    planId: planContext.planData.id,
-                    planUuid: planContext.planData.uuid,
-                    planFilePath: currentPlanFile,
-                    branch: planContext.planData.branch,
-                  }
-                : null,
-              reviewTarget.repoRoot
-            ),
+            timEnvironment,
           },
           config
         );
@@ -350,6 +372,15 @@ export async function handleAutoreviewCommand(
       } finally {
         await planWatcher?.closeAndFlush();
 
+        let lifecycleShutdownError: unknown;
+        if (lifecycleManager) {
+          try {
+            await lifecycleManager.shutdown();
+          } catch (err) {
+            lifecycleShutdownError = err;
+          }
+        }
+
         let roundTripError: unknown;
         if (roundTripContext) {
           try {
@@ -368,10 +399,19 @@ export async function handleAutoreviewCommand(
         }
 
         if (executionError) {
+          if (lifecycleShutdownError) {
+            warn(
+              `Lifecycle shutdown failed after autoreview error: ${lifecycleShutdownError as Error}`
+            );
+          }
           if (roundTripError) {
             warn(`Workspace sync failed after autoreview error: ${roundTripError as Error}`);
           }
           throw executionError;
+        }
+
+        if (lifecycleShutdownError) {
+          throw lifecycleShutdownError;
         }
 
         if (roundTripError) {
