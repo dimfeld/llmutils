@@ -39,7 +39,7 @@ export function validateJsonOutputAgainstSchema(
 }
 
 export function buildOutputSchemaCorrectionPrompt(
-  previousOutput: string,
+  schema: unknown,
   validationError?: string
 ): string {
   const errorSection = validationError
@@ -48,14 +48,16 @@ export function buildOutputSchemaCorrectionPrompt(
 Validation failure:
 ${validationError}`
     : '';
+  const schemaSection = JSON.stringify(schema, null, 2);
 
   return `Your previous final output did not satisfy the required output contract.
 
-You are running with an output JSON schema. Your next and final response MUST be raw valid JSON that conforms to the provided JSON schema.
+You are running with an output JSON schema. Your next and final response MUST be one raw JSON value that conforms exactly to this JSON schema:
+
+${schemaSection}
 
 Do not output markdown, markdown fences, prose, comments, explanations, or any text outside the JSON value. Markdown is unacceptable as the final output.
-${errorSection}
+Do not repeat, quote, summarize, or repair the previous invalid output. Produce a fresh JSON value from the original task context and the schema above.
 
-Previous invalid final output:
-${previousOutput}`;
+The JSON value must start with "{" and end with "}".${errorSection}`;
 }

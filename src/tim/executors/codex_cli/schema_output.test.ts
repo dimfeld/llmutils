@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import { validateJsonOutputAgainstSchema } from './schema_output.js';
+import {
+  buildOutputSchemaCorrectionPrompt,
+  validateJsonOutputAgainstSchema,
+} from './schema_output.js';
 
 describe('validateJsonOutputAgainstSchema', () => {
   const schema = {
@@ -27,5 +30,30 @@ describe('validateJsonOutputAgainstSchema', () => {
 
     expect(result.valid).toBe(false);
     expect(result.error).toContain('must be string');
+  });
+});
+
+describe('buildOutputSchemaCorrectionPrompt', () => {
+  test('includes the schema and validation error without repeating invalid output', () => {
+    const prompt = buildOutputSchemaCorrectionPrompt(
+      {
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+      'The final output is not valid JSON'
+    );
+
+    expect(prompt).toContain('"required": [');
+    expect(prompt).toContain('"status"');
+    expect(prompt).toContain('The final output is not valid JSON');
+    expect(prompt).toContain(
+      'Do not repeat, quote, summarize, or repair the previous invalid output'
+    );
+    expect(prompt).not.toContain('Previous invalid final output');
+    expect(prompt).not.toContain('```');
   });
 });

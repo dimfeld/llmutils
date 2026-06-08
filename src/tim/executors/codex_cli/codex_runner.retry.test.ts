@@ -350,6 +350,11 @@ describe('executeCodexStep subprocess monitor wiring', () => {
       'thread-123',
       expect.stringContaining('The final output is not valid JSON'),
     ]);
+    const correctionPrompt = vi.mocked(spawnAndLogOutput).mock.calls[1][0].at(-1);
+    expect(correctionPrompt).toContain('"required": [');
+    expect(correctionPrompt).toContain('"ok"');
+    expect(correctionPrompt).not.toContain('Previous invalid final output');
+    expect(correctionPrompt).not.toContain('\nnot json');
   });
 
   test('resumes with a correction prompt when schema-backed JSON fails schema validation', async () => {
@@ -390,6 +395,8 @@ describe('executeCodexStep subprocess monitor wiring', () => {
     const correctionPrompt = vi.mocked(spawnAndLogOutput).mock.calls[1][0].at(-1);
     expect(correctionPrompt).toContain('Validation failure:');
     expect(correctionPrompt).toContain('must be boolean');
+    expect(correctionPrompt).toContain('"ok"');
+    expect(correctionPrompt).not.toContain('{"ok":"yes"}');
   });
 
   test('passes project environment options to app-server mode', async () => {

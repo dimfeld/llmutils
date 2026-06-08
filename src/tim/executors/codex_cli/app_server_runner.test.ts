@@ -588,6 +588,10 @@ describe('executeCodexStepViaAppServer', () => {
         ],
       })
     );
+    const correctionInput = harness.connection.turnStart.mock.calls[1]?.[0]?.input?.[0]?.text;
+    expect(correctionInput).toContain('"status"');
+    expect(correctionInput).not.toContain('Previous invalid final output');
+    expect(correctionInput).not.toContain('\nnot json');
   });
 
   test('starts a correction turn when schema-backed JSON fails schema validation', async () => {
@@ -624,6 +628,8 @@ describe('executeCodexStepViaAppServer', () => {
     const correctionInput = harness.connection.turnStart.mock.calls[1]?.[0]?.input?.[0]?.text;
     expect(correctionInput).toContain('Validation failure:');
     expect(correctionInput).toContain('must be string');
+    expect(correctionInput).toContain('"status"');
+    expect(correctionInput).not.toContain('{"status":404}');
   });
 
   test('passes model through to threadStart and turnStart', async () => {

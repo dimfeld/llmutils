@@ -852,7 +852,9 @@ export async function executeCodexStepViaAppServer(
       warn(
         'Codex returned output that does not match the schema; requesting corrected JSON output.'
       );
-      await executeTurnWithRetry(buildOutputSchemaCorrectionPrompt(final, validation.error));
+      await executeTurnWithRetry(
+        buildOutputSchemaCorrectionPrompt(outputSchemaForValidation, validation.error)
+      );
       throwIfConnectionExited();
 
       failedMsg = formatter.getFailedAgentMessage();

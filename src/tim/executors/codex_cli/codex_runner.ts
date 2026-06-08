@@ -241,7 +241,10 @@ export async function executeCodexStep(
         }
         if (!schemaCorrectionRequested && threadId) {
           schemaCorrectionRequested = true;
-          resumePrompt = buildOutputSchemaCorrectionPrompt(final, validation.error);
+          resumePrompt = buildOutputSchemaCorrectionPrompt(
+            outputSchemaForValidation,
+            validation.error
+          );
           warn(
             'Codex returned output that does not match the schema; requesting corrected JSON output.'
           );
