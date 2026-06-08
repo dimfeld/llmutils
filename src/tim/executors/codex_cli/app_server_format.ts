@@ -450,6 +450,8 @@ export function createAppServerFormatter() {
       }
       if (failed) {
         state.failedAgentMessage = text;
+      } else {
+        state.failedAgentMessage = undefined;
       }
 
       return {

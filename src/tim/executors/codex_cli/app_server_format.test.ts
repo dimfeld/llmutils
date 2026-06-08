@@ -133,6 +133,26 @@ describe('createAppServerFormatter', () => {
     expect(formatter.getFailedAgentMessage()).toContain('FAILED: unable to proceed');
   });
 
+  test('clears stale failed message when a later agent message succeeds', () => {
+    const formatter = createAppServerFormatter();
+
+    formatter.handleNotification('item/completed', {
+      item: {
+        type: 'agentMessage',
+        text: 'FAILED: malformed schema output',
+      },
+    });
+    formatter.handleNotification('item/completed', {
+      item: {
+        type: 'agentMessage',
+        text: '{"status":"ok"}',
+      },
+    });
+
+    expect(formatter.getFinalAgentMessage()).toBe('{"status":"ok"}');
+    expect(formatter.getFailedAgentMessage()).toBeUndefined();
+  });
+
   test('formats reasoning item notifications', () => {
     const formatter = createAppServerFormatter();
     const message = formatter.handleNotification('item/started', {
