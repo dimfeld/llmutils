@@ -12,6 +12,7 @@ import {
   buildTimWorkspaceCommandEnvironmentOptionsForPath,
   getWorkspaceInfoByPathIfAvailable,
 } from '../environment_options.js';
+import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { LifecycleManager } from '../lifecycle.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
@@ -47,6 +48,23 @@ export interface BuildAutoreviewPromptOptions {
   target: ReviewTarget;
   useJj?: boolean;
   base?: string;
+}
+
+const TIM_AUTOREVIEW_ENV = 'TIM_AUTOREVIEW';
+
+function withAutoreviewEnvironment(
+  timEnvironment: TimWorkspaceCommandEnvironmentOptions
+): TimWorkspaceCommandEnvironmentOptions {
+  return {
+    ...timEnvironment,
+    environment: {
+      ...timEnvironment.environment,
+      [TIM_AUTOREVIEW_ENV]: {
+        value: '1',
+        precedence: 'override-dotenv',
+      },
+    },
+  };
 }
 
 function appendBase(command: string, base: string | undefined): string {
@@ -348,7 +366,7 @@ export async function handleAutoreviewCommand(
           {
             ...sharedExecutorOptions,
             baseDir: currentBaseDir,
-            timEnvironment,
+            timEnvironment: withAutoreviewEnvironment(timEnvironment),
           },
           config
         );

@@ -60,3 +60,29 @@ If the previous output was the intended output, then convert it to JSON conformi
 
 The JSON value must start with "{" and end with "}".${errorSection}`;
 }
+
+export function buildOutputSchemaConversionPrompt(options: {
+  schema: unknown;
+  failedOutput: string;
+  validationError?: string;
+}): string {
+  const errorSection = options.validationError
+    ? `
+
+Validation failure from the previous attempt:
+${options.validationError}`
+    : '';
+  const schemaSection = JSON.stringify(options.schema, null, 2);
+
+  return `Convert the following failed model output into one raw JSON value that conforms exactly to the provided JSON schema.
+
+Do not perform the original task again. Do not add new information. Preserve the substance of the failed output, but express it using the schema.
+Do not output markdown, markdown fences, prose, comments, explanations, or any text outside the JSON value.
+The JSON value must start with "{" and end with "}".
+
+## JSON Schema
+${schemaSection}${errorSection}
+
+## Failed Output To Convert
+${options.failedOutput}`;
+}

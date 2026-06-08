@@ -23,6 +23,9 @@ Annotation syntax:
 - Multi-line annotation content is rendered verbatim with whitespace preserved.
 - Do not place annotation tags inside \`\`\`unified-diff\`\`\` fences; tags inside fenced diff blocks are treated as literal diff text and are not extracted.`;
 
+const ASSUME_CHECKS_PASS_SECTION = `## Check Assumptions
+Do not run tests, type checking, linting, formatting, or similar verification commands. Assume automated checks pass unless the provided context already shows otherwise.`;
+
 export interface PrReviewMetadata {
   kind: 'pr';
   prUrl: string;
@@ -236,6 +239,8 @@ ${getDiffInstructions(metadata, useJj)}
 
 ${renderDiffReferenceCatalog(diffReferences)}
 
+${ASSUME_CHECKS_PASS_SECTION}
+
 ${REVIEW_GUIDE_ANNOTATIONS_SECTION}
 
 ## Required Workflow
@@ -320,6 +325,8 @@ ${formatPrMetadata(metadata)}
 ${getDiffInstructions(metadata, useJj)}
 ${precomputedNonTestStatsSection}
 
+${ASSUME_CHECKS_PASS_SECTION}
+
 ## Required Workflow
 1. Determine the full set of changed files from the PR diff.
 ${nonTestStatsInstructions}
@@ -380,6 +387,8 @@ ${getDiffInstructions(metadata, useJj)}
 
 ${buildReviewerCriticalIssuesGuidance()}
 
+${ASSUME_CHECKS_PASS_SECTION}
+
 ## Review Requirements
 - Focus on concrete, actionable issues tied to changed code.
 - Report every high-confidence actionable issue you find. Avoid speculative noise, but do not stop after a small sample of findings.
@@ -413,6 +422,8 @@ ${formatSubjectMetadata(metadata)}
 ${getDiffInstructions(metadata, useJj)}
 
 ${buildReviewerSimplificationGuidance()}
+
+${ASSUME_CHECKS_PASS_SECTION}
 
 ## Review Requirements
 - Focus on concrete, actionable simplification opportunities tied to changed code.

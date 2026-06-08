@@ -67,6 +67,8 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('Group files into functional sections');
     expect(prompt).toContain('copied verbatim from the relevant `git diff` output');
     expect(prompt).toContain('Never truncate or omit any part of a diff');
+    expect(prompt).toContain('Do not run tests, type checking, linting, formatting');
+    expect(prompt).toContain('Assume automated checks pass');
   });
 
   test('buildReviewGuideCommentPrompt produces a concise, comment-oriented prompt', () => {
@@ -86,6 +88,8 @@ describe('review_pr_prompt', () => {
     expect(prompt).not.toContain('Not available');
     expect(prompt).not.toContain('jj diff');
     expect(prompt).toContain('/work/.tim/tmp/pr-review-guide-comment-42.md');
+    expect(prompt).toContain('Do not run tests, type checking, linting, formatting');
+    expect(prompt).toContain('Assume automated checks pass');
   });
 
   test('buildReviewGuideCommentPrompt includes jj non-test stats when requested', () => {
@@ -184,6 +188,7 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('Do not provide a verdict');
     expect(prompt).toContain('For PR reviews, also check for outdated documentation');
     expect(prompt).toContain('Do not run tests, type checking, linting, formatting');
+    expect(prompt).toContain('Assume automated checks pass');
     expect(prompt).not.toContain('## Review Scope');
     expect(prompt).toContain('## Review Requirements');
     expect(prompt).toContain('Report every high-confidence actionable issue');
@@ -203,6 +208,8 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('## Simplification Review');
     expect(prompt).not.toContain('## Critical Issues to Flag');
     expect(prompt).toContain('## Review Requirements');
+    expect(prompt).toContain('Do not run tests, type checking, linting, formatting');
+    expect(prompt).toContain('Assume automated checks pass');
     expect(prompt).toContain('Report every high-confidence simplification issue');
     expect(prompt).toContain('do not stop after a small sample of findings');
     expect(prompt).not.toContain('## Output Requirements');

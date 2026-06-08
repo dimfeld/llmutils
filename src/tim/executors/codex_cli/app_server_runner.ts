@@ -19,6 +19,7 @@ import { createApprovalHandler } from './app_server_approval';
 import { createAppServerFormatter } from './app_server_format';
 import type { CodexStepOptions } from './codex_runner';
 import {
+  buildOutputSchemaConversionPrompt,
   buildOutputSchemaCorrectionPrompt,
   validateJsonOutputAgainstSchema,
 } from './schema_output';
@@ -455,7 +456,7 @@ export async function executeCodexStepViaAppServer(
     });
     threadId = threadResult.threadId;
     const activeConnection = connection;
-    const activeThreadId = threadId;
+    let activeThreadId = threadId;
 
     const executeTurnWithRetry = async (initialInput: string): Promise<void> => {
       let promptForAttempt = initialInput;
@@ -848,6 +849,8 @@ export async function executeCodexStepViaAppServer(
         throwIfConnectionExited();
         return final;
       }
+      const firstSchemaInvalidOutput = final;
+      const firstSchemaValidationError = validation.error;
 
       warn(
         'Codex returned output that does not match the schema; requesting corrected JSON output.'
@@ -865,9 +868,38 @@ export async function executeCodexStepViaAppServer(
       }
       validation = validateJsonOutputAgainstSchema(final, outputSchemaForValidation);
       if (!validation.valid) {
-        throw new Error(
-          `Codex returned output that does not match the schema.${validation.error ? ` ${validation.error}` : ''}`
+        warn(
+          'Codex schema correction still did not match the schema; starting a fresh JSON conversion run.'
         );
+        const conversionThreadResult = await activeConnection.threadStart({
+          cwd,
+          approvalPolicy,
+          sandbox,
+          model,
+        });
+        activeThreadId = conversionThreadResult.threadId;
+        threadId = activeThreadId;
+        await executeTurnWithRetry(
+          buildOutputSchemaConversionPrompt({
+            schema: outputSchemaForValidation,
+            failedOutput: firstSchemaInvalidOutput,
+            validationError: firstSchemaValidationError,
+          })
+        );
+        throwIfConnectionExited();
+
+        failedMsg = formatter.getFailedAgentMessage();
+        final = failedMsg || formatter.getFinalAgentMessage();
+        if (!final) {
+          error('Codex returned no final agent message after schema conversion.');
+          throw new Error('No final agent message found in Codex output.');
+        }
+        validation = validateJsonOutputAgainstSchema(final, outputSchemaForValidation);
+        if (!validation.valid) {
+          throw new Error(
+            `Codex returned output that does not match the schema.${validation.error ? ` ${validation.error}` : ''}`
+          );
+        }
       }
     }
 

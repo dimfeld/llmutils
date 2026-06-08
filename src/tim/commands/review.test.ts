@@ -961,8 +961,7 @@ index 1234567..abcdefg 100644
       true,
       false,
       undefined,
-      false,
-      true
+      false
     );
   });
 
@@ -1069,6 +1068,50 @@ index 1234567..abcdefg 100644
     expect(prompt).not.toContain('1. **Task Two**');
     expect(prompt).not.toContain('2. **Task Five**');
   });
+
+  test('adds no-checks guidance when invoked from autoreview', () => {
+    const originalAutoreview = process.env.TIM_AUTOREVIEW;
+    process.env.TIM_AUTOREVIEW = '1';
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          name: 'reviewer',
+          description: 'Reviews code',
+          prompt: contextContent,
+        }) as any
+    );
+
+    try {
+      const prompt = buildReviewPrompt(
+        {
+          id: 42,
+          title: 'Autoreview Prompt',
+          goal: 'Review without rerunning checks',
+          tasks: [],
+        },
+        {
+          hasChanges: true,
+          changedFiles: ['src/example.ts'],
+          baseBranch: 'main',
+          diffContent: 'diff --git a/src/example.ts b/src/example.ts',
+        },
+        false,
+        false,
+        [],
+        []
+      );
+
+      expect(prompt).toContain('Check Assumptions');
+      expect(prompt).toContain('Do not run tests, type checking, linting, formatting');
+      expect(prompt).toContain('Assume automated checks pass');
+    } finally {
+      if (originalAutoreview === undefined) {
+        delete process.env.TIM_AUTOREVIEW;
+      } else {
+        process.env.TIM_AUTOREVIEW = originalAutoreview;
+      }
+    }
+  });
 });
 
 describe('buildPlanlessReviewPrompt', () => {
@@ -1128,6 +1171,40 @@ describe('buildPlanlessReviewPrompt', () => {
     expect(prompt).not.toContain('Plan Tasks');
     expect(prompt).not.toContain('Plan Progress');
     expect(prompt).not.toContain('saved issue');
+    expect(prompt).not.toContain('Check Assumptions');
+  });
+
+  test('adds no-checks guidance for planless reviews invoked from autoreview', () => {
+    const originalAutoreview = process.env.TIM_AUTOREVIEW;
+    process.env.TIM_AUTOREVIEW = '1';
+
+    try {
+      const prompt = buildPlanlessReviewPrompt(
+        {
+          kind: 'current',
+          repoRoot: '/repo',
+          currentBranch: 'feature/current-review',
+          baseBranch: 'main',
+          worktreePath: '/repo',
+        },
+        createPlanlessDiff(),
+        '/repo',
+        false,
+        false,
+        undefined,
+        undefined
+      );
+
+      expect(prompt).toContain('Check Assumptions');
+      expect(prompt).toContain('Do not run tests, type checking, linting, formatting');
+      expect(prompt).toContain('Assume automated checks pass');
+    } finally {
+      if (originalAutoreview === undefined) {
+        delete process.env.TIM_AUTOREVIEW;
+      } else {
+        process.env.TIM_AUTOREVIEW = originalAutoreview;
+      }
+    }
   });
 
   test('includes branch target requested branch and base', () => {

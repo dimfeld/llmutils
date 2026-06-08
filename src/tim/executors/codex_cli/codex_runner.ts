@@ -18,6 +18,7 @@ import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
 import { executeCodexStepViaAppServer } from './app_server_runner';
 import { isCodexAppServerEnabled } from './app_server_mode';
 import {
+  buildOutputSchemaConversionPrompt,
   buildOutputSchemaCorrectionPrompt,
   validateJsonOutputAgainstSchema,
 } from './schema_output';
@@ -140,7 +141,11 @@ export async function executeCodexStep(
   let lastSignal: NodeJS.Signals | undefined;
   let threadId: string | undefined;
   let schemaCorrectionRequested = false;
+  let schemaConversionRequested = false;
+  let firstSchemaInvalidOutput: string | undefined;
+  let firstSchemaValidationError: string | undefined;
   let resumePrompt = 'continue';
+  let freshPrompt = prompt;
 
   try {
     for (
@@ -151,9 +156,9 @@ export async function executeCodexStep(
       const formatter = createCodexStdoutFormatter();
       const attemptArgs = [...args];
       if (attempt === 1 || !threadId) {
-        attemptArgs.push('--json', prompt);
+        attemptArgs.push('--json', freshPrompt);
         if (attempt > 1 && !threadId) {
-          warn('Codex retry requested but no thread id was captured; issuing a fresh run.');
+          warn('Codex retry requested as a fresh run.');
         }
       } else {
         attemptArgs.push('--json', 'resume', threadId, resumePrompt);
@@ -239,6 +244,8 @@ export async function executeCodexStep(
         if (validation.valid) {
           return final;
         }
+        firstSchemaInvalidOutput ??= final;
+        firstSchemaValidationError ??= validation.error;
         if (!schemaCorrectionRequested && threadId) {
           schemaCorrectionRequested = true;
           resumePrompt = buildOutputSchemaCorrectionPrompt(
@@ -247,6 +254,19 @@ export async function executeCodexStep(
           );
           warn(
             'Codex returned output that does not match the schema; requesting corrected JSON output.'
+          );
+          continue;
+        }
+        if (!schemaConversionRequested && firstSchemaInvalidOutput) {
+          schemaConversionRequested = true;
+          freshPrompt = buildOutputSchemaConversionPrompt({
+            schema: outputSchemaForValidation,
+            failedOutput: firstSchemaInvalidOutput,
+            validationError: firstSchemaValidationError,
+          });
+          threadId = undefined;
+          warn(
+            'Codex schema correction still did not match the schema; starting a fresh JSON conversion run.'
           );
           continue;
         }

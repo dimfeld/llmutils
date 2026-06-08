@@ -728,6 +728,19 @@ describe('handleAutoreviewCommand', () => {
     });
   });
 
+  test('executor environment marks child tim review commands as running under autoreview', async () => {
+    const options: AutoreviewCommandOptions = { current: true, nonInteractive: true };
+    await handleAutoreviewCommand(undefined, options, {});
+
+    const sharedOptions = vi.mocked(buildExecutorAndLog).mock.calls[0]?.[1];
+    expect(sharedOptions?.timEnvironment?.environment).toMatchObject({
+      TIM_AUTOREVIEW: {
+        value: '1',
+        precedence: 'override-dotenv',
+      },
+    });
+  });
+
   // ── dry-run ────────────────────────────────────────────────────────────────
 
   test('--dry-run prints the prompt and does not invoke the executor', async () => {

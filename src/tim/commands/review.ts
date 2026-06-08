@@ -571,6 +571,19 @@ function buildPlanlessDiffGuidance(baseBranch: string): string[] {
   ];
 }
 
+function buildAutoreviewReviewPromptGuidance(): string[] {
+  if (process.env.TIM_AUTOREVIEW !== '1') {
+    return [];
+  }
+
+  return [
+    `# Check Assumptions`,
+    ``,
+    `Do not run tests, type checking, linting, formatting, or similar verification commands. Assume automated checks pass unless the provided context already shows otherwise.`,
+    ``,
+  ];
+}
+
 export function buildPlanlessReviewPrompt(
   target: PlanlessReviewTarget,
   diffResult: DiffResult,
@@ -603,6 +616,7 @@ export function buildPlanlessReviewPrompt(
     ``,
     ...changedFilesSection,
     ``,
+    ...buildAutoreviewReviewPromptGuidance(),
     ...(previousReviewResponse?.trim()
       ? [
           `# Previous Fixer Response`,
@@ -634,8 +648,7 @@ export function buildPlanlessReviewPrompt(
     useSubagents,
     false,
     undefined,
-    false,
-    true
+    false
   );
 
   return reviewerPromptWithContext.prompt;
@@ -3227,6 +3240,7 @@ export function buildReviewPrompt(
     ``,
     ...changedFilesSection,
     ``,
+    ...buildAutoreviewReviewPromptGuidance(),
     ...(additionalContext?.trim() ? [additionalContext.trim(), ``] : []),
     ...(previousReviewResponse?.trim()
       ? [
@@ -3260,8 +3274,7 @@ export function buildReviewPrompt(
     useSubagents,
     false,
     undefined,
-    false,
-    true
+    false
   );
 
   return reviewerPromptWithContext.prompt;

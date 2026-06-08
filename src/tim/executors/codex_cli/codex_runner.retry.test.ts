@@ -399,6 +399,64 @@ describe('executeCodexStep subprocess monitor wiring', () => {
     expect(correctionPrompt).not.toContain('{"ok":"yes"}');
   });
 
+  test('starts a fresh conversion run when same-thread schema correction is still invalid', async () => {
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (_args: string[], opts: any) => {
+      if (opts?.formatStdout) {
+        opts.formatStdout('chunk');
+      }
+      return { exitCode: 0, stdout: '', stderr: '', signal: null, killedByInactivity: false };
+    });
+
+    vi.mocked(createCodexStdoutFormatter)
+      .mockReturnValueOnce({
+        formatChunk: () => '',
+        getFinalAgentMessage: () => 'Status: ok',
+        getFailedAgentMessage: () => undefined,
+        getThreadId: () => 'thread-123',
+        getSessionId: () => undefined,
+      } as any)
+      .mockReturnValueOnce({
+        formatChunk: () => '',
+        getFinalAgentMessage: () => 'Still not JSON',
+        getFailedAgentMessage: () => undefined,
+        getThreadId: () => 'thread-123',
+        getSessionId: () => undefined,
+      } as any)
+      .mockReturnValueOnce({
+        formatChunk: () => '',
+        getFinalAgentMessage: () => '{"ok":true}',
+        getFailedAgentMessage: () => undefined,
+        getThreadId: () => 'thread-456',
+        getSessionId: () => undefined,
+      } as any);
+
+    const output = await executeCodexStep('prompt', '/tmp', {} as any, {
+      outputSchema: {
+        type: 'object',
+        required: ['ok'],
+        properties: { ok: { type: 'boolean' } },
+        additionalProperties: false,
+      },
+    });
+
+    expect(output).toBe('{"ok":true}');
+    expect(vi.mocked(spawnAndLogOutput)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(spawnAndLogOutput).mock.calls[1][0].slice(-3)).toEqual([
+      'resume',
+      'thread-123',
+      expect.stringContaining('Validation failure:'),
+    ]);
+
+    const freshArgs = vi.mocked(spawnAndLogOutput).mock.calls[2][0];
+    expect(freshArgs).not.toContain('resume');
+    expect(freshArgs.at(-2)).toBe('--json');
+    const conversionPrompt = freshArgs.at(-1);
+    expect(conversionPrompt).toContain('Status: ok');
+    expect(conversionPrompt).not.toContain('Still not JSON');
+    expect(conversionPrompt).toContain('"ok"');
+    expect(conversionPrompt).toContain('Do not perform the original task again');
+  });
+
   test('passes project environment options to app-server mode', async () => {
     process.env.CODEX_USE_APP_SERVER = 'true';
     const timEnvironment = {

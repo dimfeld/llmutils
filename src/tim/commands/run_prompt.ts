@@ -19,6 +19,7 @@ import {
 } from '../executors/claude_code/format.js';
 import { createCodexStdoutFormatter } from '../executors/codex_cli/format.js';
 import {
+  buildOutputSchemaConversionPrompt,
   buildOutputSchemaCorrectionPrompt,
   validateJsonOutputAgainstSchema,
 } from '../executors/codex_cli/schema_output.js';
@@ -564,12 +565,73 @@ async function executeCodexPrompt(
 
       validation = validateJsonOutputAgainstSchema(correctionFinalMessage, outputSchema);
       if (!validation.valid) {
-        throw new Error(
-          `Codex returned output that does not match the schema.${validation.error ? ` ${validation.error}` : ''}`
+        warn(
+          'Codex schema correction still did not match the schema; starting a fresh JSON conversion run.'
         );
-      }
+        const conversionFormatter = createCodexStdoutFormatter();
+        const conversionArgs = args.slice(0, -1);
+        conversionArgs.push(
+          buildOutputSchemaConversionPrompt({
+            schema: outputSchema,
+            failedOutput: finalMessage,
+            validationError: validation.error,
+          })
+        );
+        let conversionKilledByTimeout = false;
+        const conversionResult = await spawnAndLogOutput(conversionArgs, {
+          cwd: options.cwd,
+          env: {
+            TIM_EXECUTOR: 'codex',
+            AGENT: process.env.AGENT || '1',
+            TIM_NOTIFY_SUPPRESS: '1',
+            ...(tunnelServer && tunnelSocketPath ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {}),
+          },
+          timEnvironment: options.timEnvironment,
+          formatStdout: conversionFormatter.formatChunk,
+          inactivityTimeoutMs: RUN_PROMPT_INACTIVITY_TIMEOUT_MS,
+          initialInactivityTimeoutMs: RUN_PROMPT_INITIAL_INACTIVITY_TIMEOUT_MS,
+          onInactivityKill: () => {
+            conversionKilledByTimeout = true;
+            debugLog(
+              `Codex run-prompt schema conversion timed out after ${Math.round(RUN_PROMPT_INACTIVITY_TIMEOUT_MS / 60000)} minutes; terminating.`
+            );
+          },
+        });
 
-      finalMessage = correctionFinalMessage;
+        const conversionFinalMessage =
+          conversionFormatter.getFailedAgentMessage() ??
+          conversionFormatter.getFinalAgentResponseMessage() ??
+          conversionFormatter.getFinalAgentMessage();
+        const conversionTimedOut = conversionKilledByTimeout || conversionResult.killedByInactivity;
+        const hasConversionFinalMessage = !!conversionFinalMessage;
+
+        if (conversionTimedOut && !hasConversionFinalMessage) {
+          throw new Error(
+            `Codex run-prompt schema conversion timed out after ${Math.round(RUN_PROMPT_INACTIVITY_TIMEOUT_MS / 60000)} minutes`
+          );
+        }
+
+        if (conversionResult.exitCode !== 0 && !(conversionTimedOut && hasConversionFinalMessage)) {
+          throw new Error(
+            `Codex schema conversion exited with non-zero exit code: ${conversionResult.exitCode}`
+          );
+        }
+
+        if (!conversionFinalMessage) {
+          throw new Error('No final agent message found in Codex output.');
+        }
+
+        validation = validateJsonOutputAgainstSchema(conversionFinalMessage, outputSchema);
+        if (!validation.valid) {
+          throw new Error(
+            `Codex returned output that does not match the schema.${validation.error ? ` ${validation.error}` : ''}`
+          );
+        }
+
+        finalMessage = conversionFinalMessage;
+      } else {
+        finalMessage = correctionFinalMessage;
+      }
     }
 
     if (options.jsonSchema) {

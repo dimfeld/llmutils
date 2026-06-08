@@ -632,6 +632,58 @@ describe('executeCodexStepViaAppServer', () => {
     expect(correctionInput).not.toContain('{"status":404}');
   });
 
+  test('starts a fresh conversion thread when schema correction is still invalid', async () => {
+    const harness = await createHarness();
+    const outputSchema = {
+      type: 'object',
+      required: ['status'],
+      properties: {
+        status: { type: 'string' },
+      },
+      additionalProperties: false,
+    };
+
+    harness.formatter.getFinalAgentMessage
+      .mockReturnValueOnce('Status: ok')
+      .mockReturnValueOnce('Still not JSON')
+      .mockReturnValueOnce('{"status":"ok"}');
+
+    harness.connection.threadStart
+      .mockResolvedValueOnce({ threadId: 'thread-1' })
+      .mockResolvedValueOnce({ threadId: 'thread-2' });
+    harness.connection.turnStart.mockImplementation(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    const output = await harness.executeCodexStepViaAppServer(
+      'prompt',
+      '/repo',
+      {},
+      { outputSchema }
+    );
+
+    expect(output).toBe('{"status":"ok"}');
+    expect(harness.connection.threadStart).toHaveBeenCalledTimes(2);
+    expect(harness.connection.turnStart).toHaveBeenCalledTimes(3);
+    expect(harness.connection.turnStart.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ threadId: 'thread-1' })
+    );
+    expect(harness.connection.turnStart.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({ threadId: 'thread-1' })
+    );
+    expect(harness.connection.turnStart.mock.calls[2]?.[0]).toEqual(
+      expect.objectContaining({ threadId: 'thread-2' })
+    );
+    const conversionInput = harness.connection.turnStart.mock.calls[2]?.[0]?.input?.[0]?.text;
+    expect(conversionInput).toContain('Status: ok');
+    expect(conversionInput).not.toContain('Still not JSON');
+    expect(conversionInput).toContain('"status"');
+    expect(conversionInput).toContain('Do not perform the original task again');
+  });
+
   test('passes model through to threadStart and turnStart', async () => {
     const harness = await createHarness();
 
