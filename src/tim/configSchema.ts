@@ -598,6 +598,22 @@ export const timConfigSchema = z
       .strict()
       .optional()
       .describe('Configuration for the pr fix command'),
+    /** Default settings for the autoreview command */
+    autoreview: z
+      .object({
+        executor: z
+          .enum([ClaudeCodeExecutorName, CodexCliExecutorName])
+          .optional()
+          .describe('Executor to use for autoreview sessions'),
+        model: z.string().optional().describe('Model to use for autoreview sessions'),
+        effort: z
+          .union([claudeCodeReasoningEffortSchema, codexReasoningLevelSchema])
+          .optional()
+          .describe('Reasoning effort to use for autoreview sessions'),
+      })
+      .strict()
+      .optional()
+      .describe('Configuration for the autoreview command'),
     developmentWorkflow: z
       .enum(['pr-based', 'trunk-based'])
       .optional()

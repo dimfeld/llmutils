@@ -1771,11 +1771,57 @@ describe('configSchema', () => {
       expect(result.prFix?.effort).toBe('xhigh');
     });
 
+    test('accepts autoreview executor, model, and effort configuration', () => {
+      const result = timConfigSchema.parse({
+        autoreview: {
+          executor: 'claude-code',
+          model: 'opus-4.1',
+          effort: 'max',
+        },
+      });
+
+      expect(result.autoreview?.executor).toBe('claude-code');
+      expect(result.autoreview?.model).toBe('opus-4.1');
+      expect(result.autoreview?.effort).toBe('max');
+    });
+
+    test('autoreview config is undefined when not specified', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.autoreview).toBeUndefined();
+    });
+
     test('rejects invalid prFix executor values', () => {
       expect(() =>
         timConfigSchema.parse({
           prFix: {
             executor: 'copy-paste',
+          },
+        })
+      ).toThrow();
+    });
+
+    test('rejects invalid autoreview executor, effort, and unknown fields', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          autoreview: {
+            executor: 'copy-paste',
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          autoreview: {
+            effort: 'extreme',
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          autoreview: {
+            model: 'gpt-5-codex',
+            unsupported: true,
           },
         })
       ).toThrow();

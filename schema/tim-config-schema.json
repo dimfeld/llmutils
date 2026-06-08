@@ -695,6 +695,49 @@
       },
       "additionalProperties": false
     },
+    "autoreview": {
+      "description": "Configuration for the autoreview command",
+      "type": "object",
+      "properties": {
+        "executor": {
+          "description": "Executor to use for autoreview sessions",
+          "type": "string",
+          "enum": [
+            "claude-code",
+            "codex-cli"
+          ]
+        },
+        "model": {
+          "description": "Model to use for autoreview sessions",
+          "type": "string"
+        },
+        "effort": {
+          "description": "Reasoning effort to use for autoreview sessions",
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh"
+              ]
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "developmentWorkflow": {
       "description": "Development workflow type, affects UI button visibility",
       "type": "string",
