@@ -231,7 +231,7 @@ The notifier posts one Slack channel message per PR once the debounce window has
 - a linked PR title pointing at `linear.review/{owner}/{repo}/pull/{number}`
 - the PR author
 - cached PR size when available (`files changed` and `+/-` counts)
-- requested reviewers, with mapped reviewers as Slack mentions and unmapped reviewers as GitHub logins, annotated as `new` or `re-request`
+- requested reviewers, with mapped reviewers as Slack mentions and unmapped reviewers as GitHub logins; mixed or repeated batches are annotated as `new` or `re-request`
 
 The fallback text also includes the PR title, author, cached PR size when available, and reviewer GitHub logins. Slack API failures are logged and returned to the caller as `{ ok: false, error }`; token misconfiguration throws so the caller can fail loudly.
 
@@ -243,7 +243,7 @@ On each tick, the notifier reads pending review requests from `pr_review_request
 
 Debounce is fixed at 30 seconds per PR. A PR is eligible only after `now - max(requested_at)` across its pending reviewers is at least 30 seconds. Because the notifier re-queries pending rows each tick, reviewers added within the window join the same message.
 
-Mapped reviewers are sent as Slack user mentions like `<@U123456789>`. Unmapped reviewers are still included by GitHub login without a ping. Reviewer rows are marked `new` when their current pending request is the first stored request for that reviewer on the PR, and `re-request` when the reviewer had already been requested before. If every reviewer in a notification is a re-request, the message title is `Review Re-Requested`; mixed batches keep `Review Requested` and distinguish each reviewer on the reviewers line. Team review requests are out of scope for v1; the webhook ingest path only inserts individual `requested_reviewer` logins into `pr_review_request`.
+Mapped reviewers are sent as Slack user mentions like `<@U123456789>`. Unmapped reviewers are still included by GitHub login without a ping. Reviewer rows are marked `new` when their current pending request is the first stored request for that reviewer on the PR, and `re-request` when the reviewer had already been requested before. If every reviewer in a notification is a re-request, the message title is `Review Re-Requested`; mixed batches keep `Review Requested` and distinguish each reviewer on the reviewers line. All-new batches omit the `new` annotation. Team review requests are out of scope for v1; the webhook ingest path only inserts individual `requested_reviewer` logins into `pr_review_request`.
 
 Notification state is durable in the database. After Slack confirms a successful post, the notifier sets `notified_at` for exactly the rows included in the message. If posting fails, `notified_at` stays null and the rows are retried on a later tick. This is at-least-once delivery: a crash between Slack success and the DB update can duplicate a message, but the normal retry path avoids silently dropping notifications.
 

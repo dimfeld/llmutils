@@ -176,9 +176,9 @@ function escapeSlackCodeSpan(value: string): string {
   return escapeSlackMrkdwnText(value).replaceAll('`', "'");
 }
 
-function formatReviewer(reviewer: ReviewRequestReviewer): string {
+function formatReviewer(reviewer: ReviewRequestReviewer, includeRequestKind: boolean): string {
   const slackUserId = reviewer.slackUserId?.trim();
-  const kindSuffix = reviewer.requestKind ? ` (${reviewer.requestKind})` : '';
+  const kindSuffix = includeRequestKind && reviewer.requestKind ? ` (${reviewer.requestKind})` : '';
   if (slackUserId) {
     return `<@${escapeSlackMrkdwnText(slackUserId)}>${kindSuffix}`;
   }
@@ -191,7 +191,10 @@ function formatReviewerList(reviewers: ReviewRequestReviewer[]): string {
     return '_No reviewers listed_';
   }
 
-  return reviewers.map(formatReviewer).join(', ');
+  const includeRequestKind =
+    reviewers.some((reviewer) => reviewer.requestKind === 're-request') &&
+    !reviewers.every((reviewer) => reviewer.requestKind === 'new');
+  return reviewers.map((reviewer) => formatReviewer(reviewer, includeRequestKind)).join(', ');
 }
 
 function getReviewRequestTitle(reviewers: ReviewRequestReviewer[]): string {
@@ -349,6 +352,9 @@ export function buildReviewRequestSlackPayload(
   const escapedUrl = escapeSlackMrkdwnText(prUrl);
   const reviewerText = formatReviewerList(reviewers);
   const title = getReviewRequestTitle(reviewers);
+  const includeRequestKind =
+    reviewers.some((reviewer) => reviewer.requestKind === 're-request') &&
+    !reviewers.every((reviewer) => reviewer.requestKind === 'new');
   const changeStats = formatPrChangeStats(pr);
   const escapedChangeStats = changeStats ? escapeSlackMrkdwnText(changeStats) : null;
   const fallbackReviewers =
@@ -356,7 +362,7 @@ export function buildReviewRequestSlackPayload(
       ? reviewers
           .map((reviewer) => {
             const escapedLogin = escapeSlackMrkdwnText(reviewer.githubLogin);
-            return reviewer.requestKind
+            return includeRequestKind && reviewer.requestKind
               ? `${escapedLogin} (${reviewer.requestKind})`
               : escapedLogin;
           })

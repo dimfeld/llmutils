@@ -583,6 +583,21 @@ describe('lib/server/slack_notifier', () => {
       expect(blockText).toContain('`bob` (new)');
     });
 
+    test('all-new reviewers are not annotated in the message', async () => {
+      const { prStatusId } = setupEnabledProject();
+      insertReviewRequest(db, prStatusId, 'alice', minsAgo(2));
+      insertReviewRequest(db, prStatusId, 'bob', minsAgo(2));
+
+      const { sender, sent } = makeFakeSender();
+      await runSlackNotifierOnce(db, buildConfig(), { sender, debounceMs: 0 });
+
+      expect(sent).toHaveLength(1);
+      const blockText = sent[0].payload.blocks[0].text.text;
+      expect(blockText).toContain('*Review Requested:*');
+      expect(blockText).toContain('`alice`, `bob`');
+      expect(blockText).not.toContain('(new)');
+    });
+
     test('all re-requested reviewers use the re-request title', async () => {
       const { prStatusId } = setupEnabledProject();
       for (const reviewer of ['alice', 'bob']) {

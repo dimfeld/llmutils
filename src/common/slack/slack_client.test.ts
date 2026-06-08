@@ -116,6 +116,19 @@ describe('common/slack/slack_client', () => {
       expect(payload.text).toContain('bob (new), carol (re-request)');
     });
 
+    test('does not annotate reviewers when all are new', () => {
+      const payload = buildReviewRequestSlackPayload('#reviews', testPr, [
+        { ...mappedReviewer, requestKind: 'new' },
+        { ...unmappedReviewer, requestKind: 'new' },
+      ]);
+      const blockText = payload.blocks[0].text.text;
+
+      expect(blockText).toContain('*Review Requested:*');
+      expect(blockText).toContain('<@U123BOB>, `carol`');
+      expect(blockText).not.toContain('(new)');
+      expect(payload.text).not.toContain('(new)');
+    });
+
     test('uses re-request title when all reviewers were previously requested', () => {
       const payload = buildReviewRequestSlackPayload('#reviews', testPr, [
         { ...mappedReviewer, requestKind: 're-request' },
