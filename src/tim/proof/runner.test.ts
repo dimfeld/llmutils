@@ -240,6 +240,22 @@ describe('runProofGeneration', () => {
     expect(prompt).toContain('Dashboard widget renders');
   });
 
+  test('prompt says automated checks do not count as proof', async () => {
+    const { executor, getPrompt } = makeFakeExecutor();
+    vi.mocked(buildExecutorAndLog).mockReturnValue(executor);
+
+    await runProofGeneration(makeOptions());
+
+    const prompt = getPrompt();
+    expect(prompt).toContain(
+      'Tests, type checking, linting, formatting, and other automated quality gates do not count as proof artifacts'
+    );
+    expect(prompt).toContain('automation already covers that');
+    expect(prompt).toContain(
+      'Proof should demonstrate the feature doing what the plan says it should do'
+    );
+  });
+
   test('prompt marks tasks with done/not-done state', async () => {
     const { executor, getPrompt } = makeFakeExecutor();
     vi.mocked(buildExecutorAndLog).mockReturnValue(executor);
