@@ -9,12 +9,15 @@ import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { getDatabase } from '../db/database.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
+import { loadPlansFromDb } from '../plans_db.js';
 import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import {
   resolveEffectivePlanBase,
@@ -42,6 +45,14 @@ export interface PrCreationPromptOptions {
     draft?: boolean;
     titlePrefix?: string;
   };
+  siblingPlans?: PlanScopeSummary[];
+}
+
+export interface PlanScopeSummary {
+  id: number;
+  title: string;
+  status?: string;
+  goal?: string;
 }
 
 export interface AutoCreatePrOptions {
@@ -101,6 +112,18 @@ function appendPlanContext(prompt: string[], options: PrCreationPromptOptions): 
   }
   if (planDetails) {
     planContext.push(`Plan details:\n${planDetails}`);
+  }
+  if (options.siblingPlans && options.siblingPlans.length > 0) {
+    planContext.push(
+      [
+        'Sibling plans that may own adjacent or follow-up scope:',
+        ...options.siblingPlans.map((sibling) => {
+          const status = sibling.status?.trim() ? ` [${sibling.status.trim()}]` : '';
+          const goal = sibling.goal?.trim() ? ` - ${sibling.goal.trim()}` : '';
+          return `- Plan ${sibling.id}: ${sibling.title}${status}${goal}`;
+        }),
+      ].join('\n')
+    );
   }
 
   if (planContext.length > 0) {
@@ -194,6 +217,7 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
     '',
     `5c. If no PR exists, create one directly with \`gh pr create ${draftFlag}--head <branch-name> --base ${options.baseBranch}\` and include:`,
     '- Summary section with bullet points',
+    '- In the Summary section, include an "Out of scope" subsection. It must describe anything explicitly out of scope in the plan and any adjacent work assigned to sibling plans from the Plan Context. If nothing is out of scope and no sibling-plan scope is listed, write "None identified."',
     '- Changes section listing important files/modules',
     '- Test plan section with checkboxes',
     '- Manual Testing Runbooks section copied from the Plan Context when the plan details contain "Manual Testing Runbooks"; preserve the runbook titles, steps, and expected outcomes so reviewers can manually walk through the delivered feature',
@@ -302,6 +326,40 @@ export async function resolveEffectivePrBase(
   return resolveEffectivePlanBase({ plan, baseDir, config });
 }
 
+async function collectSiblingPlanScope(
+  plan: PlanSchema,
+  baseDir: string,
+  repoPath?: string
+): Promise<PlanScopeSummary[]> {
+  if (!plan.id || !plan.parent) {
+    return [];
+  }
+
+  try {
+    const { gitRoot, repositoryId } = await getRepositoryIdentity({ cwd: baseDir });
+    const searchDir = getLegacyAwareSearchDir(gitRoot, repoPath ?? baseDir);
+    const { plans } = loadPlansFromDb(searchDir, repositoryId);
+
+    return Array.from(plans.values())
+      .filter(
+        (candidate): candidate is PlanSchema & { id: number } =>
+          typeof candidate.id === 'number' &&
+          candidate.id !== plan.id &&
+          candidate.parent === plan.parent
+      )
+      .toSorted((a, b) => (a.id ?? 0) - (b.id ?? 0))
+      .map((candidate) => ({
+        id: candidate.id,
+        title: candidate.title || `Plan ${candidate.id}`,
+        status: candidate.status,
+        goal: candidate.goal,
+      }));
+  } catch (err) {
+    warn(`Could not load sibling plan scope for PR prompt: ${err as Error}`);
+    return [];
+  }
+}
+
 async function runPrCreationExecutor(
   plan: PlanSchema,
   planPath: string | null,
@@ -335,6 +393,7 @@ async function runPrCreationExecutor(
     mergeBase = resolved;
   }
   const issueRef = plan.issue?.[0];
+  const siblingPlans = await collectSiblingPlanScope(plan, options.baseDir, options.repoPath);
   const prPrompt = buildPrCreationPrompt({
     vcsType: usingJj ? 'jj' : 'git',
     baseBranch,
@@ -344,6 +403,7 @@ async function runPrCreationExecutor(
     planDetails: plan.details,
     issueRef,
     prCreationConfig: options.config.prCreation,
+    siblingPlans,
   });
 
   const sharedExecutorOptions: ExecutorCommonOptions = {

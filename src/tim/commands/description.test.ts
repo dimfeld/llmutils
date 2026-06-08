@@ -166,6 +166,7 @@ const createMockContext = (overrides: Partial<PlanContext> = {}): PlanContext =>
   gitRoot: testDir,
   parentChain: [],
   completedChildren: [],
+  siblingPlans: [],
   diffResult: {
     hasChanges: true,
     changedFiles: ['test.ts', 'another.ts'],

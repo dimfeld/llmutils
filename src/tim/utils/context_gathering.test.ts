@@ -94,9 +94,47 @@ describe('gatherPlanContext', () => {
     expect(result.gitRoot).toBe(gitRoot);
     expect(result.parentChain).toEqual([]);
     expect(result.completedChildren).toEqual([]);
+    expect(result.siblingPlans).toEqual([]);
     expect(result.diffResult).toBeDefined();
     expect(result.diffResult.hasChanges).toBe(true);
     expect(result.diffResult.changedFiles).toEqual(['src/test.ts', 'src/another.ts']);
+  });
+
+  test('loads sibling plans sharing the same parent', async () => {
+    basePlan = {
+      ...basePlan,
+      parent: 100,
+    };
+    const siblingPlan: PlanSchema = {
+      id: 124,
+      uuid: '12345678-1234-4234-8234-123456789abd',
+      title: 'Sibling Plan',
+      goal: 'Implement adjacent scope',
+      details: 'Sibling details',
+      status: 'pending',
+      parent: 100,
+      tasks: [],
+    };
+    const unrelatedPlan: PlanSchema = {
+      id: 125,
+      uuid: '12345678-1234-4234-8234-123456789abe',
+      title: 'Unrelated Plan',
+      goal: 'Other work',
+      status: 'pending',
+      tasks: [],
+    };
+
+    mockDeps.loadPlansFromDb = () => ({
+      plans: new Map([
+        [basePlan.id, basePlan],
+        [siblingPlan.id, siblingPlan],
+        [unrelatedPlan.id, unrelatedPlan],
+      ]),
+    });
+
+    const result = await gatherPlanContext(123, {}, {}, mockDeps);
+
+    expect(result.siblingPlans).toEqual([siblingPlan]);
   });
 
   test('should resolve repo root using cwd and config path', async () => {

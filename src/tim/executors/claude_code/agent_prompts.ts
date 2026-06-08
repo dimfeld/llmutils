@@ -798,6 +798,7 @@ Your pull request description must include the following sections:
 - Provide a clear, concise overview of what was implemented
 - Explain the main functionality that was added or modified
 - Reference the plan goal and how it was achieved
+- Include an "Out of scope" subsection that summarizes anything explicitly outside the plan and any adjacent work assigned to sibling plans. If the context does not identify out-of-scope or sibling-plan work, write "None identified."
 
 ### 2. Changes Made to Existing Functionality
 - List any modifications to existing code, files, or systems

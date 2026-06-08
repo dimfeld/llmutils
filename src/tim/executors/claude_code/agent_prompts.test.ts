@@ -213,4 +213,15 @@ describe('agent_prompts failure protocol integration', () => {
     expect(def.prompt).toContain('Preserve the runbook titles, steps, preconditions');
     expect(def.prompt).toContain('Dashboard widget');
   });
+
+  it('directs PR descriptions to summarize out-of-scope and sibling-plan work', () => {
+    const def = getPrDescriptionPrompt(`# Sibling Plan Scope
+
+**Sibling Plan ID:** 42
+**Sibling Title:** Follow-up permissions`);
+
+    expect(def.prompt).toContain('Include an "Out of scope" subsection');
+    expect(def.prompt).toContain('any adjacent work assigned to sibling plans');
+    expect(def.prompt).toContain('None identified.');
+  });
 });

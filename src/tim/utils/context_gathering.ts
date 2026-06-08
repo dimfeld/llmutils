@@ -35,6 +35,8 @@ export interface PlanContext {
   parentChain: PlanSchema[];
   /** All completed child plans */
   completedChildren: PlanSchema[];
+  /** Plans with the same direct parent, excluding the current plan */
+  siblingPlans: PlanSchema[];
   /** Diff result containing changed files and content */
   diffResult: DiffResult;
   /** Incremental review summary if applicable */
@@ -123,6 +125,7 @@ export async function gatherPlanContext(
 
   let parentChain: PlanSchema[] = [];
   let completedChildren: PlanSchema[] = [];
+  let siblingPlans: PlanSchema[] = [];
 
   try {
     const { repositoryId } = await deps.getRepositoryIdentity({ cwd: repoRoot });
@@ -161,6 +164,17 @@ export async function gatherPlanContext(
         const errorMessage = error instanceof Error ? error.message : String(error);
         log(chalk.yellow(`Warning: Could not load completed children: ${errorMessage}`));
         completedChildren = [];
+      }
+
+      if (planData.parent) {
+        siblingPlans = Array.from(allPlans.values())
+          .filter(
+            (candidate) => candidate.id !== planData.id && candidate.parent === planData.parent
+          )
+          .toSorted((a, b) => (a.id ?? 0) - (b.id ?? 0));
+        if (siblingPlans.length > 0) {
+          log(chalk.cyan(`Found ${siblingPlans.length} sibling plans`));
+        }
       }
     }
   } catch (error) {
@@ -236,6 +250,7 @@ export async function gatherPlanContext(
     gitRoot,
     parentChain,
     completedChildren,
+    siblingPlans,
     diffResult,
     incrementalSummary,
     noChangesDetected,

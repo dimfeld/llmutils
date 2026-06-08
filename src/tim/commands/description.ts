@@ -57,7 +57,7 @@ export function buildPrDescriptionPrompt(
   context: PlanContext,
   customInstructions?: string
 ): string {
-  const { planData, parentChain, completedChildren, diffResult } = context;
+  const { planData, parentChain, completedChildren, siblingPlans = [], diffResult } = context;
 
   // Build parent plan context section if available
   const parentContext: string[] = [];
@@ -116,6 +116,33 @@ export function buildPrDescriptionPrompt(
     childrenContext.push(`*Note: This PR builds upon the completed child plans above.*`, ``, ``);
   }
 
+  // Build sibling plan context section if available
+  const siblingContext: string[] = [];
+  if (siblingPlans.length > 0) {
+    siblingContext.push(
+      `# Sibling Plan Scope`,
+      ``,
+      `The following sibling plans share the same parent and may own adjacent or follow-up scope:`,
+      ``
+    );
+
+    siblingPlans.forEach((sibling) => {
+      siblingContext.push(
+        `**Sibling Plan ID:** ${sibling.id}`,
+        `**Sibling Title:** ${sibling.title}`,
+        `**Sibling Status:** ${sibling.status}`,
+        `**Sibling Goal:** ${sibling.goal}`,
+        ``
+      );
+    });
+
+    siblingContext.push(
+      `*Use this section to distinguish current PR scope from sibling-plan scope.*`,
+      ``,
+      ``
+    );
+  }
+
   // Build plan context section
   const planContext = [
     `# Plan Context`,
@@ -158,6 +185,7 @@ export function buildPrDescriptionPrompt(
   const contextContent = [
     ...parentContext,
     ...childrenContext,
+    ...siblingContext,
     ...planContext,
     ``,
     ...changedFilesSection,

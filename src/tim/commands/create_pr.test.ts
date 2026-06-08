@@ -171,6 +171,7 @@ describe('create_pr command helpers', () => {
       expect(prompt).toContain('Issue reference: DF-123');
       expect(prompt).toContain('latest(ancestors(trunk()) & ancestors(@))');
       expect(prompt).toContain('Manual Testing Runbooks section copied from the Plan Context');
+      expect(prompt).toContain('include an "Out of scope" subsection');
     });
 
     test('instructs PR creation to preserve runbooks from plan details', () => {
@@ -188,6 +189,27 @@ describe('create_pr command helpers', () => {
       expect(prompt).toContain('Manual Testing Runbooks section copied from the Plan Context');
       expect(prompt).toContain('preserve the runbook titles, steps, and expected outcomes');
       expect(prompt).toContain('### Happy path');
+    });
+
+    test('includes sibling plan scope in plan context', () => {
+      const prompt = buildPrCreationPrompt({
+        vcsType: 'git',
+        baseBranch: 'main',
+        planTitle: 'Create PR flow',
+        siblingPlans: [
+          {
+            id: 318,
+            title: 'Follow-up permissions',
+            status: 'pending',
+            goal: 'Add permission checks after the base flow lands',
+          },
+        ],
+      });
+
+      expect(prompt).toContain('Sibling plans that may own adjacent or follow-up scope');
+      expect(prompt).toContain(
+        'Plan 318: Follow-up permissions [pending] - Add permission checks after the base flow lands'
+      );
     });
 
     test('includes git-specific commands and merge-base reference', () => {
