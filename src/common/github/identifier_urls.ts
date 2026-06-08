@@ -1,0 +1,127 @@
+function parseShortPrIdentifier(
+  identifier: string
+): { owner: string; repo: string; number: number } | null {
+  const shortMatch = identifier.match(/^([^/]+)\/([^/#]+)#(\d+)$/);
+  if (shortMatch) {
+    return {
+      owner: shortMatch[1],
+      repo: shortMatch[2],
+      number: parseInt(shortMatch[3], 10),
+    };
+  }
+
+  const altShortMatch = identifier.match(/^([^/]+)\/([^/]+)\/(\d+)$/);
+  if (altShortMatch) {
+    return {
+      owner: altShortMatch[1],
+      repo: altShortMatch[2],
+      number: parseInt(altShortMatch[3], 10),
+    };
+  }
+
+  const pullShortMatch = identifier.match(/^([^/]+)\/([^/]+)\/pulls?\/(\d+)$/);
+  if (pullShortMatch) {
+    return {
+      owner: pullShortMatch[1],
+      repo: pullShortMatch[2],
+      number: parseInt(pullShortMatch[3], 10),
+    };
+  }
+
+  return null;
+}
+
+/** Validates that a PR identifier is not an issue URL, a non-GitHub URL, or other non-PR URL.
+ * For explicit URLs, requires a GitHub host and `/pull/` or `/pulls/` in the path.
+ * Non-URL identifiers (owner/repo#123, plain numbers) are always accepted since they're ambiguous. */
+export function validatePrIdentifier(identifier: string): void {
+  let url: URL;
+  try {
+    url = new URL(identifier);
+  } catch {
+    // Not a URL — accept short-form identifiers
+    return;
+  }
+
+  const isGitHub = url.hostname === 'github.com' || url.hostname.endsWith('.github.com');
+  if (!isGitHub) {
+    throw new Error(
+      `Not a GitHub URL: ${identifier}. Expected a GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)`
+    );
+  }
+
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length < 4 || (segments[2] !== 'pull' && segments[2] !== 'pulls')) {
+    throw new Error(
+      `Not a pull request URL: ${identifier}. Expected a GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)`
+    );
+  }
+
+  if (!/^\d+$/.test(segments[3])) {
+    throw new Error(
+      `Invalid pull request number in URL: ${identifier}. Expected a GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)`
+    );
+  }
+}
+
+export function tryCanonicalizePrUrl(identifier: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(identifier);
+  } catch {
+    const shortIdentifier = parseShortPrIdentifier(identifier);
+    if (shortIdentifier) {
+      return `https://github.com/${shortIdentifier.owner}/${shortIdentifier.repo}/pull/${shortIdentifier.number}`;
+    }
+
+    return identifier;
+  }
+
+  try {
+    validatePrIdentifier(identifier);
+  } catch {
+    return null;
+  }
+
+  const segments = url.pathname.split('/').filter(Boolean);
+  const owner = segments[0];
+  const repo = segments[1];
+  const number = segments[3];
+
+  if (!/^\d+$/.test(number)) {
+    return null;
+  }
+
+  return `https://github.com/${owner}/${repo}/pull/${number}`;
+}
+
+export function canonicalizePrUrl(identifier: string): string {
+  const canonicalized = tryCanonicalizePrUrl(identifier);
+  if (canonicalized === null) {
+    // validatePrIdentifier will throw with a descriptive error for non-PR URLs
+    validatePrIdentifier(identifier);
+    // Unreachable: if tryCanonicalizePrUrl returned null, validatePrIdentifier always throws
+    throw new Error(`Invalid GitHub pull request identifier: ${identifier}`);
+  }
+
+  return canonicalized;
+}
+
+/** Canonicalize and deduplicate PR URLs, returning invalid entries separately. */
+export function deduplicatePrUrls(urls: string[]): { valid: string[]; invalid: string[] } {
+  const seen = new Set<string>();
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  for (const url of urls) {
+    const canonical = tryCanonicalizePrUrl(url);
+    if (canonical) {
+      if (!seen.has(canonical)) {
+        seen.add(canonical);
+        valid.push(canonical);
+      }
+    } else {
+      invalid.push(url);
+    }
+  }
+  return { valid, invalid };
+}

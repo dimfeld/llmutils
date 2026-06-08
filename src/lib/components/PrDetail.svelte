@@ -29,7 +29,7 @@
     getFixStartResultState,
   } from '$lib/components/pr_fix_launch_state.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
-  import { tryCanonicalizePrUrl } from '$common/github/identifiers.js';
+  import { tryCanonicalizePrUrl } from '$common/github/identifier_urls.js';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
   import CopyButton from './CopyButton.svelte';
 
