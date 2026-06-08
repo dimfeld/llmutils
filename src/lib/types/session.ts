@@ -129,6 +129,7 @@ export interface HeadlessSessionInfo {
   pty?: boolean;
   cols?: number;
   rows?: number;
+  hidePlanDetails?: boolean;
   sessionId?: string;
   planId?: number;
   planUuid?: string;

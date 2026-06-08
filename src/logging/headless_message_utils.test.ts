@@ -49,6 +49,15 @@ describe('headless_message_utils', () => {
       cols: 120,
       rows: 40,
     });
+    expect(
+      parseHeadlessMessage(
+        JSON.stringify({ type: 'session_info', command: 'shell', hidePlanDetails: true })
+      )
+    ).toEqual({
+      type: 'session_info',
+      command: 'shell',
+      hidePlanDetails: true,
+    });
 
     expect(
       parseHeadlessMessage(JSON.stringify({ type: 'plan_content', content: '# body' }))
@@ -94,6 +103,11 @@ describe('headless_message_utils', () => {
     expect(
       parseHeadlessMessage(
         JSON.stringify({ type: 'session_info', command: 'shell', rows: Number.POSITIVE_INFINITY })
+      )
+    ).toBeNull();
+    expect(
+      parseHeadlessMessage(
+        JSON.stringify({ type: 'session_info', command: 'shell', hidePlanDetails: 'yes' })
       )
     ).toBeNull();
     expect(parseHeadlessMessage(JSON.stringify({ type: 'plan_content', content: 123 }))).toBeNull();

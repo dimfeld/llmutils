@@ -479,6 +479,7 @@ export class SessionManager {
           pty: message.pty,
           cols: message.cols,
           rows: message.rows,
+          hidePlanDetails: message.hidePlanDetails,
           sessionId: message.sessionId,
           planId: message.planId,
           planUuid: message.planUuid,

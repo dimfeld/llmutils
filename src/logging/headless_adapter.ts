@@ -447,6 +447,7 @@ export class HeadlessAdapter implements LoggerAdapter {
       hostname: this.serverHostname,
       command: this.sessionInfo.command,
       workspacePath: this.sessionInfo.workspacePath,
+      hidePlanDetails: this.sessionInfo.hidePlanDetails,
       planId: this.sessionInfo.planId,
       planUuid: this.sessionInfo.planUuid,
       planTitle: this.sessionInfo.planTitle,

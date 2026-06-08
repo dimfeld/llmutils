@@ -92,6 +92,9 @@ export function parseHeadlessMessage(payload: string): HeadlessMessage | null {
     if ('rows' in parsed && !isPositiveInteger(parsed.rows)) {
       return null;
     }
+    if ('hidePlanDetails' in parsed && typeof parsed.hidePlanDetails !== 'boolean') {
+      return null;
+    }
   }
 
   if (parsed.type === 'pty_output' && !isStrictBase64(parsed.data)) {

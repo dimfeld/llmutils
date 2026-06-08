@@ -295,7 +295,9 @@
     }
   }
 
-  let showPlanPane = $derived(session.sessionInfo.planId != null);
+  let showPlanPane = $derived(
+    session.sessionInfo.planId != null && session.sessionInfo.hidePlanDetails !== true
+  );
   let planPaneCollapsed = $derived(isPlanPaneCollapsed(uiState, session.connectionId));
 
   function handleTogglePlanPane() {

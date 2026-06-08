@@ -10,6 +10,7 @@ export interface SessionInfoFile {
   hostname?: string;
   command: string;
   workspacePath?: string;
+  hidePlanDetails?: boolean;
   planId?: number;
   planUuid?: string;
   planTitle?: string;
@@ -63,6 +64,9 @@ function parseSessionInfoFile(value: unknown): SessionInfoFile {
   if (data.workspacePath != null && typeof data.workspacePath !== 'string') {
     throw new Error('Session info file has invalid workspacePath');
   }
+  if (data.hidePlanDetails != null && typeof data.hidePlanDetails !== 'boolean') {
+    throw new Error('Session info file has invalid hidePlanDetails');
+  }
   if (data.planId != null && (typeof data.planId !== 'number' || !Number.isInteger(data.planId))) {
     throw new Error('Session info file has invalid planId');
   }
@@ -110,6 +114,7 @@ function parseSessionInfoFile(value: unknown): SessionInfoFile {
     hostname: data.hostname as string | undefined,
     command: data.command,
     workspacePath: data.workspacePath as string | undefined,
+    hidePlanDetails: data.hidePlanDetails as boolean | undefined,
     planId: data.planId as number | undefined,
     planUuid: data.planUuid as string | undefined,
     planTitle: data.planTitle as string | undefined,

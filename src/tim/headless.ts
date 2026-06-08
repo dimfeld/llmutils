@@ -119,6 +119,7 @@ export async function buildHeadlessSessionInfo(
   return {
     command,
     interactive,
+    hidePlanDetails: process.env.TIM_HIDE_PLAN_DETAILS === '1' || undefined,
     planId: plan?.id,
     planUuid: plan?.uuid,
     planTitle: plan?.title,

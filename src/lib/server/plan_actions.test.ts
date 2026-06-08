@@ -25,12 +25,15 @@ import {
   formatLogFileName,
   spawnAgentMultiProcess,
   spawnAgentProcess,
+  spawnAutoreviewProcess,
   spawnChatProcess,
   spawnGenerateProcess,
   spawnPrFixForPrProcess,
   spawnRebaseProcess,
+  spawnShellProcess,
   spawnUpdateDocsProcess,
 } from './plan_actions.js';
+import { buildWorkspaceCommandEnv } from '$common/env.js';
 
 interface FakeSubprocess {
   exitCode: number | null;
@@ -430,6 +433,32 @@ describe('lib/server/plan_actions', () => {
     expect(options.env).toBeDefined();
     expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 204 });
+  });
+
+  test('web-launched shell and autoreview request hidden plan details', async () => {
+    vi.mocked(buildWorkspaceCommandEnv).mockResolvedValue({ PATH: '/usr/bin' });
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const shellPromise = spawnShellProcess(205, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(shellPromise).resolves.toEqual({ success: true, planId: 205 });
+
+    const autoreviewPromise = spawnAutoreviewProcess(206, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(autoreviewPromise).resolves.toEqual({ success: true, planId: 206 });
+
+    expect(spawnSpy.mock.calls[0][0]).toEqual([
+      'tim',
+      'shell',
+      '205',
+      '--auto-workspace',
+      '--non-interactive',
+    ]);
+    expect(spawnSpy.mock.calls[1][0]).toEqual(['tim', 'autoreview', '206', '--no-terminal-input']);
+    expect(vi.mocked(buildWorkspaceCommandEnv)).toHaveBeenCalledWith('/tmp/primary-workspace', {
+      TIM_HIDE_PLAN_DETAILS: '1',
+    });
   });
 
   test('spawnAgentMultiProcess passes the epic plan id to the CLI', async () => {

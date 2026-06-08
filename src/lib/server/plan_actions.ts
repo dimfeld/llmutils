@@ -232,7 +232,8 @@ export async function spawnAutoreviewProcess(
     describeTarget('plan', planId),
     planId,
     ['autoreview', String(planId), '--no-terminal-input'],
-    cwd
+    cwd,
+    { TIM_HIDE_PLAN_DETAILS: '1' }
   );
 }
 
@@ -244,7 +245,8 @@ export async function spawnAutoreviewForPrProcess(
     describeTarget('pr', prUrlOrNumber),
     null,
     ['autoreview', '--pr', prUrlOrNumber, '--no-terminal-input'],
-    cwd
+    cwd,
+    { TIM_HIDE_PLAN_DETAILS: '1' }
   );
 }
 
@@ -253,7 +255,8 @@ export async function spawnShellProcess(planId: number, cwd: string): Promise<Sp
     describeTarget('plan', planId),
     planId,
     ['shell', String(planId), '--auto-workspace', '--non-interactive'],
-    cwd
+    cwd,
+    { TIM_HIDE_PLAN_DETAILS: '1' }
   );
 }
 
@@ -265,7 +268,8 @@ export async function spawnShellForPrProcess(
     describeTarget('pr', prUrlOrNumber),
     null,
     ['shell', '--pr', prUrlOrNumber, '--auto-workspace', '--non-interactive'],
-    cwd
+    cwd,
+    { TIM_HIDE_PLAN_DETAILS: '1' }
   );
 }
 
