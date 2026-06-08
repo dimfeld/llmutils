@@ -2518,7 +2518,7 @@ describe('Security fixes', () => {
       };
 
       await expect(handleReviewCommand(1, {}, mockCommand)).rejects.toThrow(
-        'Review execution failed: Network timeout'
+        /Review execution failed: Review failed\. .*codex-cli primary code review.*Network timeout.*codex-cli structural simplification review.*Network timeout/s
       );
     });
   });

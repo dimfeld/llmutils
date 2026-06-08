@@ -1,10 +1,15 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Executor } from './executors/types.js';
 import { buildExecutorAndLog } from './executors/index.js';
+import { log } from '../logging.js';
 
 vi.mock('./executors/index.js', () => ({
   buildExecutorAndLog: vi.fn(),
   DEFAULT_EXECUTOR: 'codex-cli',
+}));
+
+vi.mock('../logging.js', () => ({
+  log: vi.fn(),
 }));
 
 describe('review_runner', () => {
@@ -181,6 +186,15 @@ describe('review_runner', () => {
 
     expect(codexExecute).toHaveBeenCalledTimes(2);
     expect(buildStructuralPrompt).toHaveBeenCalledWith({ executorName: 'codex-cli' });
+    expect(vi.mocked(log).mock.calls.map((call) => String(call[0]))).toEqual(
+      expect.arrayContaining([
+        'Queued codex-cli structural simplification review.',
+        'Starting codex-cli primary code review...',
+        'Finished codex-cli primary code review.',
+        'Starting codex-cli structural simplification review...',
+        'Finished codex-cli structural simplification review.',
+      ])
+    );
     expect(result.usedExecutors).toEqual(['codex-cli']);
     expect(result.reviewResult.issues.map((issue) => issue.content)).toEqual([
       'Normal issue',
@@ -190,6 +204,59 @@ describe('review_runner', () => {
       'codex-cli',
       'codex-cli',
     ]);
+  });
+
+  test('runReview keeps structural simplification findings when primary codex fails with partial failures allowed', async () => {
+    const primaryExecutor: Executor = {
+      execute: vi.fn(async () => {
+        throw new Error('primary codex failed');
+      }),
+    };
+    const structuralExecutor: Executor = {
+      execute: vi.fn(async () =>
+        JSON.stringify({
+          issues: [
+            {
+              severity: 'major',
+              category: 'style',
+              content: 'Structural issue',
+              file: 'src/structure.ts',
+              line: '5',
+              suggestion: 'Simplify the structure',
+            },
+          ],
+          recommendations: ['Structural rec'],
+          actionItems: ['Structural action'],
+        })
+      ),
+    };
+
+    vi.mocked(buildExecutorAndLog)
+      .mockReturnValueOnce(primaryExecutor)
+      .mockReturnValueOnce(structuralExecutor);
+
+    const { runReview } = await import('./review_runner.js');
+    const result = await runReview({
+      executorSelection: 'codex-cli',
+      config: { defaultExecutor: 'codex-cli' } as any,
+      sharedExecutorOptions: { baseDir: '/tmp' },
+      buildPrompt: vi.fn(() => 'normal prompt'),
+      buildStructuralPrompt: vi.fn(() => 'structural prompt'),
+      allowPartialFailures: true,
+      planInfo: {
+        planId: '12',
+        planTitle: 'Structural Partial Plan',
+        planFilePath: '/tmp/plan.yml',
+        baseBranch: 'main',
+        changedFiles: ['src/structure.ts'],
+      },
+    });
+
+    expect(primaryExecutor.execute).toHaveBeenCalledTimes(1);
+    expect(structuralExecutor.execute).toHaveBeenCalledTimes(1);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toContain('codex-cli primary code review');
+    expect(result.reviewResult.issues.map((issue) => issue.content)).toEqual(['Structural issue']);
   });
 
   test('runReview serializes both executors and skips codex on blocking Claude issues', async () => {
@@ -372,7 +439,9 @@ describe('review_runner', () => {
 
     expect(result.usedExecutors).toEqual(['codex-cli']);
     expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toContain("Review executor 'claude-code' failed");
+    expect(result.warnings[0]).toContain("Review executor 'claude-code'");
+    expect(result.warnings[0]).toContain('claude-code primary code review');
+    expect(result.warnings[0]).toContain('failed: boom');
   });
 
   test('runReview throws when partial failures are disallowed', async () => {

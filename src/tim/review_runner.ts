@@ -29,6 +29,11 @@ export type StructuralReviewPromptBuilder = (options: {
   executorName: Extract<ReviewExecutorName, 'codex-cli'>;
 }) => string;
 
+type ReviewExecutionPhase = 'primary-code-review' | 'structural-simplification-review';
+type ReviewExecutionResult =
+  | { name: ReviewExecutorName; phase: ReviewExecutionPhase; rawOutput: string }
+  | { name: ReviewExecutorName; phase: ReviewExecutionPhase; error: unknown };
+
 export interface ReviewPlanInfo {
   planId: string;
   planTitle: string;
@@ -43,6 +48,7 @@ export interface PreparedReviewExecutor {
   name: ReviewExecutorName;
   executor: Executor;
   prompt: string;
+  phase: ReviewExecutionPhase;
 }
 
 export interface PrepareReviewExecutorsOptions {
@@ -130,6 +136,7 @@ export async function prepareReviewExecutors(
       name: executorName,
       executor,
       prompt,
+      phase: 'primary-code-review',
     };
   });
 }
@@ -150,13 +157,13 @@ function isTimeoutError(error: unknown): boolean {
 async function executeWithRetry(
   prepared: PreparedReviewExecutor,
   planInfo: ReviewPlanInfo
-): Promise<
-  { name: ReviewExecutorName; rawOutput: string } | { name: ReviewExecutorName; error: unknown }
-> {
+): Promise<ReviewExecutionResult> {
   const maxAttempts = MAX_TIMEOUT_RETRIES + 1;
+  const phaseLabel = formatReviewExecutionLabel(prepared);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      log(`Starting ${phaseLabel}...`);
       const executorOutput = await prepared.executor.execute(prepared.prompt, {
         planId: planInfo.planId,
         planTitle: planInfo.planTitle,
@@ -166,28 +173,42 @@ async function executeWithRetry(
         isTaskScoped: planInfo.isTaskScoped,
       });
 
-      log(`${prepared.name} review finished`);
+      log(`Finished ${phaseLabel}.`);
       const rawOutput = normalizeReviewOutput(executorOutput);
-      return { name: prepared.name, rawOutput };
+      return { name: prepared.name, phase: prepared.phase, rawOutput };
     } catch (error) {
       if (isTimeoutError(error) && attempt < maxAttempts) {
-        log(
-          `${prepared.name} review timed out, retrying (attempt ${attempt + 1}/${maxAttempts})...`
-        );
+        log(`${phaseLabel} timed out, retrying (attempt ${attempt + 1}/${maxAttempts})...`);
         continue;
       }
-      return { name: prepared.name, error };
+      return { name: prepared.name, phase: prepared.phase, error };
     }
   }
 
   // Should not reach here, but satisfy TypeScript
-  return { name: prepared.name, error: new Error('Max retry attempts exceeded') };
+  return {
+    name: prepared.name,
+    phase: prepared.phase,
+    error: new Error('Max retry attempts exceeded'),
+  };
+}
+
+function formatReviewExecutionLabel(
+  prepared: Pick<PreparedReviewExecutor, 'name' | 'phase'>
+): string {
+  switch (prepared.phase) {
+    case 'primary-code-review':
+      return `${prepared.name} primary code review`;
+    case 'structural-simplification-review':
+      return `${prepared.name} structural simplification review`;
+  }
 }
 
 export async function runReview(options: ReviewRunOptions): Promise<ReviewRunResult> {
   const preparedExecutors = await prepareReviewExecutors(options);
   const warnings: string[] = [];
   const executorOutputs: Partial<Record<ReviewExecutorName, string>> = {};
+  const shouldRunSerial = options.serialBoth === true && preparedExecutors.length > 1;
 
   const codexPreparedExecutor = preparedExecutors.find((executor) => executor.name === 'codex-cli');
   const structuralPreparedExecutor =
@@ -196,23 +217,22 @@ export async function runReview(options: ReviewRunOptions): Promise<ReviewRunRes
           name: 'codex-cli' as const,
           executor: buildExecutorAndLog('codex-cli', options.sharedExecutorOptions, options.config),
           prompt: options.buildStructuralPrompt({ executorName: 'codex-cli' }),
-          structural: true,
+          phase: 'structural-simplification-review' as const,
         }
       : null;
+  if (structuralPreparedExecutor) {
+    log('Queued codex-cli structural simplification review.');
+  }
 
-  const shouldRunSerial = options.serialBoth === true && preparedExecutors.length > 1;
+  const allPreparedExecutors = structuralPreparedExecutor
+    ? [...preparedExecutors, structuralPreparedExecutor]
+    : preparedExecutors;
 
   const executionResults = shouldRunSerial
-    ? await runExecutorsSerially(preparedExecutors, options.planInfo)
+    ? await runExecutorsSerially(allPreparedExecutors, options.planInfo)
     : await Promise.all(
-        preparedExecutors.map((prepared) => executeWithRetry(prepared, options.planInfo))
+        allPreparedExecutors.map((prepared) => executeWithRetry(prepared, options.planInfo))
       );
-  const codexReviewSucceeded = executionResults.some(
-    (result) => result.name === 'codex-cli' && 'rawOutput' in result
-  );
-  if (structuralPreparedExecutor && codexReviewSucceeded) {
-    executionResults.push(await executeWithRetry(structuralPreparedExecutor, options.planInfo));
-  }
 
   // Process results and parse outputs
   const results = executionResults.map((result) => {
@@ -241,7 +261,7 @@ export async function runReview(options: ReviewRunOptions): Promise<ReviewRunRes
 
   for (const result of results) {
     if ('error' in result) {
-      warnings.push(formatReviewExecutorError(result.name, result.error));
+      warnings.push(formatReviewExecutorError(result.name, result.phase, result.error));
     }
   }
 
@@ -287,29 +307,25 @@ export async function runReview(options: ReviewRunOptions): Promise<ReviewRunRes
 async function runExecutorsSerially(
   preparedExecutors: PreparedReviewExecutor[],
   planInfo: ReviewPlanInfo
-): Promise<
-  Array<
-    { name: ReviewExecutorName; rawOutput: string } | { name: ReviewExecutorName; error: unknown }
-  >
-> {
-  const results: Array<
-    { name: ReviewExecutorName; rawOutput: string } | { name: ReviewExecutorName; error: unknown }
-  > = [];
+): Promise<ReviewExecutionResult[]> {
+  const results: ReviewExecutionResult[] = [];
 
   const primary = preparedExecutors.find((executor) => executor.name === 'claude-code');
   const fallbackPrimary = primary ?? preparedExecutors[0];
-  const secondary = preparedExecutors.find(
-    (executor) => executor !== fallbackPrimary && executor.name === 'codex-cli'
-  );
+  const remainingExecutors = preparedExecutors.filter((executor) => executor !== fallbackPrimary);
 
   const firstResult = await executeWithRetry(fallbackPrimary, planInfo);
   results.push(firstResult);
 
-  if ('rawOutput' in firstResult && secondary) {
+  if ('rawOutput' in firstResult && remainingExecutors.length > 0) {
     const parsed = parseJsonReviewOutput(firstResult.rawOutput);
     const hasBlockingIssues = parsed.issues.some((issue) => issue.severity !== 'info');
     if (!hasBlockingIssues) {
-      results.push(await executeWithRetry(secondary, planInfo));
+      results.push(
+        ...(await Promise.all(
+          remainingExecutors.map((executor) => executeWithRetry(executor, planInfo))
+        ))
+      );
     }
   }
 
@@ -343,9 +359,13 @@ function normalizeReviewOutput(executorOutput: unknown): string {
   throw new Error('Review executor returned no output.');
 }
 
-function formatReviewExecutorError(name: ReviewExecutorName, error: unknown): string {
+function formatReviewExecutorError(
+  name: ReviewExecutorName,
+  phase: ReviewExecutionPhase,
+  error: unknown
+): string {
   const message = error instanceof Error ? error.message : String(error);
-  return `Review executor '${name}' failed: ${message}`;
+  return `Review executor '${name}' (${formatReviewExecutionLabel({ name, phase })}) failed: ${message}`;
 }
 
 function mergeReviewOutputs(

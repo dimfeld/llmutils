@@ -419,7 +419,7 @@ describe('Review command tunnel integration', () => {
 
       // log() still receives incidental review-runner text.
       const logOutput = logCalls.join('\n');
-      expect(logOutput).toContain('review finished');
+      expect(logOutput).toContain('Finished codex-cli primary code review.');
     });
 
     it('should write review output to stdout in print mode even when tunnel is not active', async () => {
@@ -570,7 +570,7 @@ describe('Review command tunnel integration', () => {
 
       const stdoutOutput = stdoutWrites.join('');
       expect(stdoutOutput).toContain('"planId"');
-      expect(logCalls.join('\n')).toContain('review finished');
+      expect(logCalls.join('\n')).toContain('Finished codex-cli primary code review.');
     });
   });
 
@@ -581,7 +581,7 @@ describe('Review command tunnel integration', () => {
       // output, but with tunnel active the adapter from tim.ts should handle it.
       //
       // We test this by checking that the log() calls from the review runner
-      // (e.g., "codex-cli review finished") make it through to our mock.
+      // (e.g., "codex-cli primary code review") make it through to our mock.
       const planFile = join(testDir, 'tunnel-bypass-test.yml');
       await setupReviewCommandMocks(planFile);
 
@@ -631,15 +631,15 @@ describe('Review command tunnel integration', () => {
         Bun.write = originalBunWrite;
       }
 
-      // The review runner emits "codex-cli review finished" via log().
+      // The review runner emits phase-specific executor logs.
       // When the quiet logger is installed (no tunnel), this would be suppressed.
       // With tunnel active, withReviewLogger is bypassed, so this log call reaches
       // our mock.
       const allOutput = logCalls.join('\n');
-      expect(allOutput).toContain('review finished');
+      expect(allOutput).toContain('Finished codex-cli primary code review.');
     });
 
-    it('should not have "review finished" messages in non-tunnel print mode when using quiet logger path', async () => {
+    it('should not have phase completion messages in non-tunnel print mode when using quiet logger path', async () => {
       // In this counterpart test, we verify the behavior difference:
       // Without tunnel, the quiet logger path IS taken. When we mock
       // runWithLogger to intercept the adapter, we can check that the
