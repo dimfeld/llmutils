@@ -111,9 +111,9 @@
 
     lastCols = cols;
     lastRows = rows;
-    const core = await GhosttyCore.load();
+    // const core = await GhosttyCore.load();
     const terminal = new WTerm(container, {
-      core,
+      // core,
       cols,
       rows,
       autoResize: true,
@@ -197,5 +197,10 @@
 
   .terminal-viewport:global(.wterm.has-scrollback) {
     overflow: auto;
+  }
+
+  /* Work around some weirdness with background color handling */
+  .terminal-viewport:global(.wterm) :global(.term-grid) {
+    background: var(--term-bg) !important;
   }
 </style>
