@@ -45,7 +45,7 @@ function makeItem(overrides: Partial<PlanAttentionItem> = {}): PlanAttentionItem
 }
 
 describe('NeedsAttentionCard', () => {
-  test('shows Update Docs when finish work still needs an executor', () => {
+  test('shows Actions when finish work still needs an executor', () => {
     const { body } = render(NeedsAttentionCard, {
       props: {
         item: makeItem({ canUpdateDocs: true }),
@@ -53,11 +53,12 @@ describe('NeedsAttentionCard', () => {
       },
     });
 
-    expect(body).toContain('Update Docs');
+    expect(body).toContain('Actions');
+    expect(body).not.toContain('Update Docs');
     expect(body).not.toContain('Finish');
   });
 
-  test('shows Finish when no finish executor is needed and plan has PR', () => {
+  test('shows Actions when no finish executor is needed and plan has PR', () => {
     const { body } = render(NeedsAttentionCard, {
       props: {
         item: makeItem({ canUpdateDocs: false, hasPr: true }),
@@ -65,12 +66,13 @@ describe('NeedsAttentionCard', () => {
       },
     });
 
-    expect(body).toContain('Finish');
+    expect(body).toContain('Actions');
+    expect(body).not.toContain('Finish');
     expect(body).not.toContain('Update Docs');
     expect(body).not.toContain('Create PR');
   });
 
-  test('shows Create PR as primary when no PR and pr-based workflow', () => {
+  test('shows Actions when no PR and pr-based workflow', () => {
     const { body } = render(NeedsAttentionCard, {
       props: {
         item: makeItem({ canUpdateDocs: false, hasPr: false }),
@@ -79,12 +81,13 @@ describe('NeedsAttentionCard', () => {
       },
     });
 
-    expect(body).toContain('Create PR');
-    // "Finish" is in a dropdown menu which is not rendered during SSR
+    expect(body).toContain('Actions');
+    expect(body).not.toContain('Create PR');
+    expect(body).not.toContain('Finish');
     expect(body).not.toContain('Update Docs');
   });
 
-  test('shows Finish without Create PR when trunk-based workflow', () => {
+  test('shows Actions without Create PR when trunk-based workflow', () => {
     const { body } = render(NeedsAttentionCard, {
       props: {
         item: makeItem({ canUpdateDocs: false, hasPr: false }),
@@ -94,7 +97,8 @@ describe('NeedsAttentionCard', () => {
     });
 
     expect(body).not.toContain('Create PR');
-    expect(body).toContain('Finish');
+    expect(body).toContain('Actions');
+    expect(body).not.toContain('Finish');
   });
 
   test('does not show Create PR for epic plans', () => {
@@ -107,10 +111,11 @@ describe('NeedsAttentionCard', () => {
     });
 
     expect(body).not.toContain('Create PR');
-    expect(body).toContain('Finish');
+    expect(body).toContain('Actions');
+    expect(body).not.toContain('Finish');
   });
 
-  test('shows Update Docs when finish executor is needed regardless of PR status', () => {
+  test('shows Actions when finish executor is needed regardless of PR status', () => {
     const { body } = render(NeedsAttentionCard, {
       props: {
         item: makeItem({ canUpdateDocs: true, hasPr: false }),
@@ -119,7 +124,8 @@ describe('NeedsAttentionCard', () => {
       },
     });
 
-    expect(body).toContain('Update Docs');
+    expect(body).toContain('Actions');
+    expect(body).not.toContain('Update Docs');
     expect(body).not.toContain('Create PR');
   });
 });

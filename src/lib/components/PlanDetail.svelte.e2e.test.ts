@@ -223,7 +223,7 @@ describe('PlanDetail action selection', () => {
       .not.toBeInTheDocument();
   });
 
-  test('keeps Generate primary and Run Agent in the dropdown for a taskless non-simple plan', async () => {
+  test('groups Generate and Run Agent under Actions for a taskless non-simple plan', async () => {
     const screen = renderPlan(
       makePlanDetail({
         simple: false,
@@ -234,9 +234,10 @@ describe('PlanDetail action selection', () => {
     );
 
     await expect
-      .element(page.getByRole('button', { name: 'Generate', exact: true }))
+      .element(page.getByRole('button', { name: 'Actions', exact: true }))
       .toBeInTheDocument();
-    await screen.getByRole('button', { name: 'More actions' }).click();
+    await screen.getByRole('button', { name: 'Actions', exact: true }).click();
+    await expect.element(page.getByRole('menuitem', { name: 'Generate' })).toBeInTheDocument();
     await expect.element(page.getByRole('menuitem', { name: 'Run Agent' })).toBeInTheDocument();
   });
 });

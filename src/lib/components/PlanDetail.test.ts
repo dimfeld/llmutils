@@ -71,9 +71,14 @@ vi.mock('./ActionButtonWithDropdown.svelte', () => ({
       menuItems?: Array<{ label: string }>;
     }
   ) => {
-    payload.push(`<div data-testid="action-config"><button>${props.primary.label}</button>`);
-    for (const item of props.menuItems ?? []) {
-      payload.push(`<button>${item.label}</button>`);
+    if (props.menuItems?.length) {
+      payload.push('<div data-testid="action-config"><button>Actions</button>');
+      payload.push(`<button>${props.primary.label}</button>`);
+      for (const item of props.menuItems) {
+        payload.push(`<button>${item.label}</button>`);
+      }
+    } else {
+      payload.push(`<div data-testid="action-config"><button>${props.primary.label}</button>`);
     }
     payload.push('</div>');
   },
@@ -430,7 +435,7 @@ describe('PlanDetail', () => {
     expect(body).not.toContain('<div data-testid="action-config"><button>Generate</button>');
   });
 
-  test('keeps Generate primary and Run Agent in the dropdown for a taskless non-simple plan', () => {
+  test('groups Generate and Run Agent under Actions for a taskless non-simple plan', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
         plan: makePlanDetail({
@@ -445,7 +450,7 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('<div data-testid="action-config"><button>Generate</button>');
+    expect(body).toContain('<div data-testid="action-config"><button>Actions</button>');
     expect(body).toContain('Run Agent');
     expect(body.indexOf('Generate')).toBeLessThan(body.indexOf('Run Agent'));
   });
