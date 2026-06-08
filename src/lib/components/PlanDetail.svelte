@@ -280,15 +280,14 @@
         if (isEligibleForProof) menuItems.push(proofItem);
       }
     } else {
-      // showChatOnly: keep chat as the primary action and omit a duplicate dropdown entry.
-      primary = chatItem;
+      primary = shellItem;
       secondaryAction = null;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (showUpdateDocsInDropdown) {
         menuItems.push(finishNoMarkDoneItem);
       }
-      menuItems.push(autoreviewItem, shellItem);
+      menuItems.push(autoreviewItem, chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
     }
 
