@@ -22,7 +22,6 @@ export interface AutoreviewCommandOptions extends Pick<
 
 export interface BuildAutoreviewPromptOptions {
   target: ReviewTarget;
-  executorName?: string;
   useJj?: boolean;
   base?: string;
 }
@@ -84,13 +83,10 @@ function buildCommitGuidance(useJj: boolean): string {
 export function buildAutoreviewPrompt(options: BuildAutoreviewPromptOptions): string {
   const reviewCommand = buildReviewCommandForTarget(options.target, options.base);
   const targetDescription = buildTargetDescription(options.target);
-  const executorDescription = options.executorName
-    ? ` You are running inside the ${options.executorName} executor.`
-    : '';
 
   return `# Autoreview Orchestrator
 
-You are the orchestrator for a tim review-and-fix loop targeting ${targetDescription}.${executorDescription}
+You are the orchestrator for a tim review-and-fix loop targeting ${targetDescription}.
 
 ## Available Commands
 
@@ -191,7 +187,6 @@ export async function handleAutoreviewCommand(
   const useJj = await getUsingJj(reviewTarget.repoRoot);
   const prompt = buildAutoreviewPrompt({
     target: reviewTarget,
-    executorName,
     useJj,
     base: options.base,
   });

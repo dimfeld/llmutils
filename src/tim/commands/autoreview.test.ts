@@ -206,9 +206,9 @@ describe('buildAutoreviewPrompt', () => {
     expect(prompt).toContain('git status');
   });
 
-  test('prompt includes executor name when provided', () => {
-    const prompt = buildAutoreviewPrompt({ target: currentTarget, executorName: 'claude-code' });
-    expect(prompt).toContain('claude-code');
+  test('prompt does not include executor details', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget });
+    expect(prompt).not.toContain('executor');
   });
 
   test('includes end-of-session summary instruction', () => {
