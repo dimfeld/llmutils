@@ -36,8 +36,9 @@ import { debugLog } from '../../logging.js';
 import { listProjects } from '$tim/db/project.js';
 import { getProjectSetting } from '$tim/db/project_settings.js';
 import {
+  getLatestSlackDailyDigestMessage,
   getLatestSlackDailyDigestMessageBeforeDate,
-  getSlackDailyDigestMessage,
+  getSameDaySlackDailyDigestMessage,
   type SlackDailyDigestMessageRow,
   upsertSlackDailyDigestMessage,
 } from '$tim/db/slack_daily_digest_message.js';
@@ -550,13 +551,21 @@ export async function runDailyDigestForWorkspace(
         continue;
       }
 
-      const existingMessage = getSlackDailyDigestMessage(
-        db,
-        workspaceName,
-        projectDigest.channel,
-        projectDigest.repoFullName,
-        digestDate
-      );
+      const existingMessage =
+        options.updateExistingOnly === true
+          ? getLatestSlackDailyDigestMessage(
+              db,
+              workspaceName,
+              projectDigest.channel,
+              projectDigest.repoFullName
+            )
+          : getSameDaySlackDailyDigestMessage(
+              db,
+              workspaceName,
+              projectDigest.channel,
+              projectDigest.repoFullName,
+              digestDate
+            );
       if (!existingMessage && options.updateExistingOnly === true) {
         continue;
       }
@@ -568,7 +577,7 @@ export async function runDailyDigestForWorkspace(
               workspaceName,
               projectDigest.channel,
               projectDigest.repoFullName,
-              digestDate
+              existingMessage?.digest_date ?? digestDate
             );
 
       const includeMilestones =

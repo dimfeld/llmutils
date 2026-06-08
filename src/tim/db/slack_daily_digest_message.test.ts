@@ -6,8 +6,9 @@ import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
+  getLatestSlackDailyDigestMessage,
   getLatestSlackDailyDigestMessageBeforeDate,
-  getSlackDailyDigestMessage,
+  getSameDaySlackDailyDigestMessage,
   upsertSlackDailyDigestMessage,
 } from './slack_daily_digest_message.js';
 
@@ -59,7 +60,7 @@ describe('tim db/slack_daily_digest_message', () => {
       slackTs: '1710000000.000100',
     });
 
-    const first = getSlackDailyDigestMessage(
+    const first = getSameDaySlackDailyDigestMessage(
       db,
       'work',
       '#reviews',
@@ -78,7 +79,7 @@ describe('tim db/slack_daily_digest_message', () => {
       slackTs: '1710000001.000200',
     });
 
-    const second = getSlackDailyDigestMessage(
+    const second = getSameDaySlackDailyDigestMessage(
       db,
       'work',
       '#reviews',
@@ -126,5 +127,37 @@ describe('tim db/slack_daily_digest_message', () => {
 
     expect(row?.digest_date).toBe('2026-01-02');
     expect(row?.slack_ts).toBe('1710000001.000200');
+  });
+
+  test('retrieves the latest stored Slack message without a date filter', () => {
+    upsertSlackDailyDigestMessage(db, {
+      workspace: 'work',
+      channel: '#reviews',
+      repoFullName: 'octocat/hello-world',
+      digestDate: '2026-01-01',
+      slackChannel: 'C123',
+      slackTs: '1710000000.000100',
+    });
+    upsertSlackDailyDigestMessage(db, {
+      workspace: 'work',
+      channel: '#reviews',
+      repoFullName: 'octocat/hello-world',
+      digestDate: '2026-01-03',
+      slackChannel: 'C123',
+      slackTs: '1710000002.000300',
+    });
+    upsertSlackDailyDigestMessage(db, {
+      workspace: 'work',
+      channel: '#other',
+      repoFullName: 'octocat/hello-world',
+      digestDate: '2026-01-04',
+      slackChannel: 'C999',
+      slackTs: '1710000003.000400',
+    });
+
+    const row = getLatestSlackDailyDigestMessage(db, 'work', '#reviews', 'octocat/hello-world');
+
+    expect(row?.digest_date).toBe('2026-01-03');
+    expect(row?.slack_ts).toBe('1710000002.000300');
   });
 });

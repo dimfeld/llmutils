@@ -21,7 +21,7 @@ export interface UpsertSlackDailyDigestMessageInput {
   slackTs: string;
 }
 
-export function getSlackDailyDigestMessage(
+export function getSameDaySlackDailyDigestMessage(
   db: Database,
   workspace: string,
   channel: string,
@@ -81,6 +81,37 @@ export function getLatestSlackDailyDigestMessageBeforeDate(
       `
     )
     .get(workspace, channel, repoFullName, beforeDigestDate) as SlackDailyDigestMessageRow | null;
+
+  return row ?? undefined;
+}
+
+export function getLatestSlackDailyDigestMessage(
+  db: Database,
+  workspace: string,
+  channel: string,
+  repoFullName: string
+): SlackDailyDigestMessageRow | undefined {
+  const row = db
+    .prepare(
+      `
+        SELECT
+          workspace,
+          channel,
+          repo_full_name,
+          digest_date,
+          slack_channel,
+          slack_ts,
+          created_at,
+          updated_at
+        FROM slack_daily_digest_message
+        WHERE workspace = ?
+          AND channel = ?
+          AND repo_full_name = ?
+        ORDER BY digest_date DESC, updated_at DESC
+        LIMIT 1
+      `
+    )
+    .get(workspace, channel, repoFullName) as SlackDailyDigestMessageRow | null;
 
   return row ?? undefined;
 }

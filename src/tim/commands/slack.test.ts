@@ -584,7 +584,7 @@ describe('tim slack CLI handlers', () => {
   });
 
   describe('handleSlackDigestUpdateCommand', () => {
-    test('dry run reports the stored same-day message for the current repo', async () => {
+    test('dry run reports the latest stored message for the current repo', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-01-02T12:00:00.000Z'));
       const db = getDatabase();
@@ -599,7 +599,7 @@ describe('tim slack CLI handlers', () => {
         workspace: WORKSPACE_NAME,
         channel: '#reviews',
         repoFullName: `${OWNER}/${REPO}`,
-        digestDate: '2026-01-02',
+        digestDate: '2026-01-01',
         slackChannel: 'C123',
         slackTs: '1710000000.000100',
       });
@@ -629,15 +629,17 @@ describe('tim slack CLI handlers', () => {
         .join('\n');
       expect(output).toContain('Slack daily PR digest update dry run');
       expect(output).toContain(`Repository: ${OWNER}/${REPO}`);
-      expect(output).toContain('Stored message: channel=C123, ts=1710000000.000100');
-      expect(output).toContain('Would update the stored same-day digest message.');
+      expect(output).toContain(
+        'Stored message: digestDate=2026-01-01, channel=C123, ts=1710000000.000100'
+      );
+      expect(output).toContain('Would update the latest stored digest message.');
       expect(output).toContain('Dry run digest PR');
       expect(output).toContain('Slack update payload:');
       expect(output).toContain(`Daily PR digest for ${OWNER}/${REPO}: 1 approved`);
       expect(output).toContain('"type": "section"');
     });
 
-    test('dry run reports when no stored same-day message exists', async () => {
+    test('dry run reports when no stored message exists', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-01-02T12:00:00.000Z'));
       const db = getDatabase();
@@ -660,7 +662,7 @@ describe('tim slack CLI handlers', () => {
         .mocked(log)
         .mock.calls.map((call) => String(call[0]))
         .join('\n');
-      expect(output).toContain('No stored same-day digest message found');
+      expect(output).toContain('No stored digest message found');
     });
 
     test('treats dryRun on the command object as a dry run', async () => {
@@ -706,10 +708,12 @@ describe('tim slack CLI handlers', () => {
         .mock.calls.map((call) => String(call[0]))
         .join('\n');
       expect(output).toContain('Slack daily PR digest update dry run');
-      expect(output).toContain('Stored message: channel=C123, ts=1710000000.000100');
+      expect(output).toContain(
+        'Stored message: digestDate=2026-01-02, channel=C123, ts=1710000000.000100'
+      );
     });
 
-    test('non-dry run updates the stored same-day message', async () => {
+    test('non-dry run updates the latest stored message', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-01-02T12:00:00.000Z'));
       const db = getDatabase();
@@ -724,7 +728,7 @@ describe('tim slack CLI handlers', () => {
         workspace: WORKSPACE_NAME,
         channel: '#reviews',
         repoFullName: `${OWNER}/${REPO}`,
-        digestDate: '2026-01-02',
+        digestDate: '2026-01-01',
         slackChannel: 'C123',
         slackTs: '1710000000.000100',
       });
@@ -759,7 +763,7 @@ describe('tim slack CLI handlers', () => {
       expect(JSON.stringify(updates[0].payload.blocks)).toContain('Updated digest PR');
     });
 
-    test('non-dry run with pin pins the stored same-day message and unpins the previous digest', async () => {
+    test('non-dry run with pin pins the latest stored message and unpins the previous digest', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-01-02T12:00:00.000Z'));
       const db = getDatabase();

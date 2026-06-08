@@ -216,13 +216,13 @@ tim slack digest [--dry-run]
 
 Runs the daily digest immediately for every workspace with `dailyDigest.enabled: true` and digest-enabled repos. `--dry-run` computes and prints the digest sections for each repo without posting to Slack (and without requiring a usable Slack token), so you can preview what the scheduled run would send. If Linear milestones are enabled for a workspace, dry-run also fetches and prints the due-or-overdue milestone section. Without `--dry-run`, it posts to Slack just like the scheduled run. Manual runs ignore the configured `weekdays`; weekdays only constrain the web server's scheduled timer.
 
-### Update Today's Daily Digest
+### Update the Latest Daily Digest
 
 ```bash
 tim slack digest update [--dry-run] [--pin]
 ```
 
-Updates the current repo's same-day daily digest message in place, using the Slack message timestamp stored by a previous scheduled or manual digest post. `--pin` also pins the updated message and unpins the latest previous digest message for the same repo/channel. `--dry-run` prints the lookup key (`workspace`, configured channel, repo, and digest date), reports whether a stored Slack message was found, and prints the current computed digest without calling Slack. If no stored same-day message exists, the command does not post a new one.
+Updates the current repo's latest stored daily digest message in place, using the Slack message timestamp stored by a previous scheduled or manual digest post. `--pin` also pins the updated message and unpins the latest previous digest message for the same repo/channel. `--dry-run` prints the lookup key (`workspace`, configured channel, and repo), reports whether a stored Slack message was found, and prints the current computed digest without calling Slack. If no stored message exists, the command does not post a new one.
 
 ## Posted Message Shape
 
@@ -255,7 +255,7 @@ If those historical rows include closed or merged PRs, run `tim slack mark-close
 
 ## Daily PR Digest
 
-Separate from the event-driven review-request notifier, tim can post a once-per-day digest of PRs that are stuck. It requires both workspace opt-in (`dailyDigest.enabled: true`) and per-repo opt-in (`tim slack digest enable`), then posts one message per digest-enabled repo to that repo's configured channel. The Slack `channel` and `ts` returned by `chat.postMessage` are stored per workspace, channel, repo, and local digest date so same-day refreshes can update the message in place. When a new daily digest post is created, tim pins the new post and unpins the latest previous digest post for that repo/channel; same-day updates keep the existing pin.
+Separate from the event-driven review-request notifier, tim can post a once-per-day digest of PRs that are stuck. It requires both workspace opt-in (`dailyDigest.enabled: true`) and per-repo opt-in (`tim slack digest enable`), then posts one message per digest-enabled repo to that repo's configured channel. The Slack `channel` and `ts` returned by `chat.postMessage` are stored per workspace, channel, repo, and local digest date so refreshes can update the latest stored message in place. When a new daily digest post is created, tim pins the new post and unpins the latest previous digest post for that repo/channel; updates keep the existing pin unless `--pin` is requested.
 
 The digest has three PR sections:
 
@@ -265,7 +265,7 @@ The digest has three PR sections:
 
 If `dailyDigest.linearMilestones.enabled` is true for a Slack workspace, the digest also includes **Linear milestones due or overdue** once per Slack channel in each workspace run. The section uses the workspace digest timezone to compute the current Monday-through-Sunday week, lists outstanding Linear project milestones that are overdue or due in that range, and includes a milestone owner. The owner is the shared assignee when all linked milestone issues have the same assignee, otherwise the project lead. Set `dailyDigest.linearMilestones.apiKeyEnv` to read a token from a different environment variable; otherwise it reads `LINEAR_API_KEY`.
 
-If all sections are empty for a repo or channel, no new message is sent. If a same-day message already exists, update runs can still replace it with an empty digest so merged or otherwise-cleared PRs disappear from the Slack post.
+If all sections are empty for a repo or channel, no new message is sent. If a stored digest message already exists, update runs can still replace it with an empty digest so merged or otherwise-cleared PRs disappear from the Slack post.
 
 What counts as "stale":
 

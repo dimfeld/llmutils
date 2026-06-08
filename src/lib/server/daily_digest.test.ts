@@ -321,7 +321,7 @@ describe('lib/server/daily_digest', () => {
     );
   });
 
-  test('updates the same-day per-repo digest message instead of posting again', async () => {
+  test('updates the latest per-repo digest message instead of posting again', async () => {
     setupProject('octocat', 'repo-a', { channel: '#reviews' });
     insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
 
@@ -394,7 +394,7 @@ describe('lib/server/daily_digest', () => {
     ]);
   });
 
-  test('does not pin or unpin when updating the same-day digest message', async () => {
+  test('does not pin or unpin when updating the latest digest message', async () => {
     setupProject('octocat', 'repo-a', { channel: '#reviews' });
     insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
 
@@ -422,7 +422,7 @@ describe('lib/server/daily_digest', () => {
     expect(unpinSender.calls).toHaveLength(0);
   });
 
-  test('pins updated same-day digest and unpins previous digest when requested', async () => {
+  test('pins updated latest digest and unpins previous digest when requested', async () => {
     setupProject('octocat', 'repo-a', { channel: '#reviews' });
     insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
 
@@ -457,14 +457,14 @@ describe('lib/server/daily_digest', () => {
     ]);
   });
 
-  test('update-only digest refresh clears a same-day message when the repo digest becomes empty', async () => {
+  test('update-only digest refresh clears the latest message when the repo digest becomes empty', async () => {
     setupProject('octocat', 'repo-a', { channel: '#reviews' });
     insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
 
     const postSender = makeFakeSenderWithCoordinates();
     await runDailyDigestForWorkspace(db, buildConfig(), 'work', {
       sender: postSender.sender,
-      nowMs: NOW_MS,
+      nowMs: NOW_MS - 24 * 60 * 60 * 1000,
     });
 
     db.prepare("UPDATE pr_status SET state = 'merged' WHERE owner = ? AND repo = ?").run(
@@ -492,7 +492,7 @@ describe('lib/server/daily_digest', () => {
     );
   });
 
-  test('update-only digest refresh does not post when no same-day message exists', async () => {
+  test('update-only digest refresh does not post when no stored message exists', async () => {
     setupProject('octocat', 'repo-a', { channel: '#reviews' });
     insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
 

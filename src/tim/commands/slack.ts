@@ -24,7 +24,6 @@ import {
   collectDailyDigestsForWorkspace,
   fetchWorkspaceLinearMilestones,
   getEligibleDailyDigestWorkspaces,
-  getWorkspaceDigestDate,
   runAllDailyDigests,
   runDailyDigestForWorkspace,
   type CollectedProjectDigest,
@@ -40,7 +39,7 @@ import {
   countClosedPrReviewRequestsPendingNotification,
   markClosedPrReviewRequestsNotified,
 } from '../db/pr_review_request_notifications.js';
-import { getSlackDailyDigestMessage } from '../db/slack_daily_digest_message.js';
+import { getLatestSlackDailyDigestMessage } from '../db/slack_daily_digest_message.js';
 import {
   deleteUserMapping,
   listUserMappings,
@@ -619,30 +618,23 @@ export async function handleSlackDigestUpdateCommand(
 
   const repoFullName = `${ownerRepo.owner}/${ownerRepo.repo}`;
   const nowMs = Date.now();
-  const digestDate = getWorkspaceDigestDate(config, workspace, nowMs);
-  const existingMessage = getSlackDailyDigestMessage(
-    db,
-    workspace,
-    channel,
-    repoFullName,
-    digestDate
-  );
+  const existingMessage = getLatestSlackDailyDigestMessage(db, workspace, channel, repoFullName);
 
   const shouldPin = hasPinOption(options, command);
   if (hasDryRunOption(options, command)) {
     log(chalk.bold('Slack daily PR digest update dry run'));
     log(`Repository: ${repoFullName}`);
-    log(`Lookup: workspace=${workspace}, channel=${channel}, digestDate=${digestDate}`);
+    log(`Lookup: workspace=${workspace}, channel=${channel}, repo=${repoFullName}`);
     if (existingMessage) {
       log(
-        `Stored message: channel=${existingMessage.slack_channel}, ts=${existingMessage.slack_ts}`
+        `Stored message: digestDate=${existingMessage.digest_date}, channel=${existingMessage.slack_channel}, ts=${existingMessage.slack_ts}`
       );
-      log('Would update the stored same-day digest message.');
+      log('Would update the latest stored digest message.');
       if (shouldPin) {
-        log('Would pin the stored same-day digest message and unpin the previous digest message.');
+        log('Would pin the latest stored digest message and unpin the previous digest message.');
       }
     } else {
-      log(chalk.yellow('No stored same-day digest message found; nothing would be updated.'));
+      log(chalk.yellow('No stored digest message found; nothing would be updated.'));
     }
 
     const projectDigest = collectDailyDigestsForWorkspace(db, config, workspace, {
@@ -660,7 +652,7 @@ export async function handleSlackDigestUpdateCommand(
   }
 
   if (!existingMessage) {
-    log(chalk.yellow('No stored same-day digest message found; nothing updated.'));
+    log(chalk.yellow('No stored digest message found; nothing updated.'));
     return;
   }
 
