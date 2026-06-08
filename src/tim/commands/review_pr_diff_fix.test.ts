@@ -248,9 +248,7 @@ describe('review_pr diff repair', () => {
         return { content: 'ok' };
       }
 
-      if (
-        prompt.includes('standalone PR code review and must return structured JSON issues only')
-      ) {
+      if (prompt.includes('standalone PR code review')) {
         return {
           content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
         };

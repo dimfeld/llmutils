@@ -616,7 +616,8 @@ export function getReviewerPrompt(
   useSubagents: boolean = false,
   includeTaskCompletionInstructions: boolean = false,
   progressGuidanceOptions?: ProgressGuidanceOptions,
-  includePrReviewScopeGuidance: boolean = false
+  includePrReviewScopeGuidance: boolean = false,
+  suppressResponseFormat: boolean = false
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
@@ -654,6 +655,22 @@ Do this for each task that was successfully implemented and reviewed before prov
   const prReviewScopeGuidance = includePrReviewScopeGuidance
     ? `\n${buildPrReviewScopeGuidance()}\n`
     : '';
+  const responseFormatGuidance = suppressResponseFormat
+    ? ''
+    : `
+## Response Format:
+
+Place three dashes after each issue to make it easier to parse out which issues are listed.
+
+A sample response might look like this:
+
+${issueAndVerdictFormat}
+
+### If a clear verdict is impossible due to conflicting or irreconcilable requirements
+Stop and follow this failure protocol instead of providing a verdict:
+
+${FAILED_PROTOCOL_INSTRUCTIONS}
+`;
 
   return {
     name: 'reviewer',
@@ -691,19 +708,7 @@ The plan file tasks may not be marked as done in the plan file, because they are
 ${buildReviewerCriticalIssuesGuidance()}
 
 ${buildReviewerSimplificationGuidance()}
-
-## Response Format:
-
-Place three dashes after each issue to make it easier to parse out which issues are listed.
-
-A sample response might look like this:
-
-${issueAndVerdictFormat}
-
-### If a clear verdict is impossible due to conflicting or irreconcilable requirements
-Stop and follow this failure protocol instead of providing a verdict:
-
-${FAILED_PROTOCOL_INSTRUCTIONS}
+${responseFormatGuidance}
 
 DO NOT include praise, encouragement, or positive feedback. Focus exclusively on identifying problems that need to be resolved.
 `,

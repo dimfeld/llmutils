@@ -631,7 +631,11 @@ export function buildPlanlessReviewPrompt(
     getPlanlessTargetId(target),
     customInstructions,
     undefined,
-    useSubagents
+    useSubagents,
+    false,
+    undefined,
+    false,
+    true
   );
 
   return reviewerPromptWithContext.prompt;
@@ -3253,7 +3257,11 @@ export function buildReviewPrompt(
     planData.id,
     customInstructions,
     undefined,
-    useSubagents
+    useSubagents,
+    false,
+    undefined,
+    false,
+    true
   );
 
   return reviewerPromptWithContext.prompt;

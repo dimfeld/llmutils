@@ -516,7 +516,7 @@ async function executeCodexPrompt(
         '--json',
         'resume',
         threadId,
-        buildOutputSchemaCorrectionPrompt(finalMessage, validation.error)
+        buildOutputSchemaCorrectionPrompt(outputSchema, validation.error)
       );
       let correctionKilledByTimeout = false;
       const correctionResult = await spawnAndLogOutput(correctionArgs, {

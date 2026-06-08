@@ -139,6 +139,24 @@ describe('agent_prompts failure protocol integration', () => {
     expect(def.prompt).not.toContain('Use the available sub-agents');
   });
 
+  it('can suppress response format guidance for schema-backed review output', () => {
+    const def = getReviewerPrompt(
+      context,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      false,
+      undefined,
+      false,
+      true
+    );
+    expect(def.prompt).not.toContain('## Response Format');
+    expect(def.prompt).not.toContain('Found Issues:');
+    expect(def.prompt).not.toContain('**VERDICT:**');
+    expect(def.prompt).toContain('## Critical Issues to Flag');
+  });
+
   it('configures verifier prompt with verification commands and failure protocol', () => {
     const verifier = getVerifierAgentPrompt(context);
     expect(verifier.prompt).toContain('check');

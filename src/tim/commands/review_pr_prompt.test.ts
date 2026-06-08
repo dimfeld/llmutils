@@ -185,8 +185,10 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('For PR reviews, also check for outdated documentation');
     expect(prompt).toContain('Do not run tests, type checking, linting, formatting');
     expect(prompt).not.toContain('## Review Scope');
-    expect(prompt).toContain('"issues"');
-    expect(prompt).toContain('Markdown inside those strings is allowed and encouraged');
+    expect(prompt).toContain('## Review Requirements');
+    expect(prompt).not.toContain('## Output Requirements');
+    expect(prompt).not.toContain('## Required JSON Schema');
+    expect(prompt).not.toContain('"issues"');
   });
 
   test('buildStandaloneSimplificationReviewPrompt focuses only on simplification issues', () => {
@@ -198,7 +200,10 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('standalone PR simplification review');
     expect(prompt).toContain('## Simplification Review');
     expect(prompt).not.toContain('## Critical Issues to Flag');
-    expect(prompt).toContain('"issues"');
+    expect(prompt).toContain('## Review Requirements');
+    expect(prompt).not.toContain('## Output Requirements');
+    expect(prompt).not.toContain('## Required JSON Schema');
+    expect(prompt).not.toContain('"issues"');
   });
 
   test('buildStandaloneReviewIssuesPrompt includes jj commands when useJj is true', () => {
