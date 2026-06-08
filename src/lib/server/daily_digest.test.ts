@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { constructGitHubRepositoryId } from '$common/github/pull_requests.js';
+import type { LinearMilestoneDigestEntry } from '$common/linear_milestone_digest.js';
 import type {
   SlackPinSenderArgs,
   SlackPostSenderArgs,
@@ -19,6 +20,7 @@ import { upsertPrReviewRequestByReviewer, upsertPrStatus } from '$tim/db/pr_stat
 import { recordWorkspace } from '$tim/db/workspace.js';
 
 import {
+  clearLinearMilestoneCache,
   runAllDailyDigests,
   runDailyDigestForWorkspace,
   shouldStartDailyDigest,
@@ -118,6 +120,7 @@ describe('lib/server/daily_digest', () => {
   let tempDirs: string[];
 
   beforeEach(() => {
+    clearLinearMilestoneCache();
     db = openDatabase(':memory:');
     tempDirs = [];
     originalInfo = console.info;
@@ -131,6 +134,7 @@ describe('lib/server/daily_digest', () => {
   });
 
   afterEach(async () => {
+    clearLinearMilestoneCache();
     console.info = originalInfo;
     restoreEnv('TIM_WEBHOOK_POLL_INTERVAL', originalWebhookPollInterval);
     restoreEnv('TIM_WEBHOOK_SERVER_URL', originalWebhookServerUrl);
@@ -609,6 +613,109 @@ describe('lib/server/daily_digest', () => {
 
       expect(sent).toHaveLength(1);
       expect(payloadText(sent[0])).toContain('Workspace Env Beta');
+    } finally {
+      restoreEnv('TEST_LINEAR_API_KEY', originalLinearApiKey);
+    }
+  });
+
+  test('caches Linear milestones for 30 minutes per workspace message generation', async () => {
+    const originalLinearApiKey = process.env.TEST_LINEAR_API_KEY;
+    process.env.TEST_LINEAR_API_KEY = 'test-linear-key';
+    setupProject('octocat', 'repo-a', { channel: '#reviews' });
+    insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
+    const config = buildConfig({
+      work: {
+        token: 'xoxb-work-token',
+        dailyDigest: {
+          enabled: true,
+          timezone: 'UTC',
+          staleAfterHours: 24,
+          linearMilestones: { enabled: true, apiKeyEnv: 'TEST_LINEAR_API_KEY' },
+        },
+      },
+    });
+    let fetchCount = 0;
+    const linearMilestonesFetcher = async (): Promise<LinearMilestoneDigestEntry[]> => {
+      fetchCount += 1;
+      return [
+        {
+          milestoneName: `Cached milestone ${fetchCount}`,
+          targetDate: '2026-01-02',
+          projectName: 'Launch',
+          milestoneOwner: 'Dana',
+        },
+      ];
+    };
+
+    try {
+      const firstSender = makeFakeSender();
+      await runDailyDigestForWorkspace(db, config, 'work', {
+        sender: firstSender.sender,
+        nowMs: NOW_MS,
+        linearMilestonesFetcher,
+      });
+      const secondSender = makeFakeSender();
+      await runDailyDigestForWorkspace(db, config, 'work', {
+        sender: secondSender.sender,
+        nowMs: NOW_MS + 29 * 60 * 1000,
+        linearMilestonesFetcher,
+      });
+
+      expect(fetchCount).toBe(1);
+      expect(payloadText(firstSender.sent[0])).toContain('Cached milestone 1');
+      expect(payloadText(secondSender.sent[0])).toContain('Cached milestone 1');
+      expect(payloadText(secondSender.sent[0])).not.toContain('Cached milestone 2');
+    } finally {
+      restoreEnv('TEST_LINEAR_API_KEY', originalLinearApiKey);
+    }
+  });
+
+  test('refreshes cached Linear milestones after 30 minutes', async () => {
+    const originalLinearApiKey = process.env.TEST_LINEAR_API_KEY;
+    process.env.TEST_LINEAR_API_KEY = 'test-linear-key';
+    setupProject('octocat', 'repo-a', { channel: '#reviews' });
+    insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
+    const config = buildConfig({
+      work: {
+        token: 'xoxb-work-token',
+        dailyDigest: {
+          enabled: true,
+          timezone: 'UTC',
+          staleAfterHours: 24,
+          linearMilestones: { enabled: true, apiKeyEnv: 'TEST_LINEAR_API_KEY' },
+        },
+      },
+    });
+    let fetchCount = 0;
+    const linearMilestonesFetcher = async (): Promise<LinearMilestoneDigestEntry[]> => {
+      fetchCount += 1;
+      return [
+        {
+          milestoneName: `Fresh milestone ${fetchCount}`,
+          targetDate: '2026-01-02',
+          projectName: 'Launch',
+          milestoneOwner: 'Dana',
+        },
+      ];
+    };
+
+    try {
+      const firstSender = makeFakeSender();
+      await runDailyDigestForWorkspace(db, config, 'work', {
+        sender: firstSender.sender,
+        nowMs: NOW_MS,
+        linearMilestonesFetcher,
+      });
+      const secondSender = makeFakeSender();
+      await runDailyDigestForWorkspace(db, config, 'work', {
+        sender: secondSender.sender,
+        nowMs: NOW_MS + 30 * 60 * 1000,
+        linearMilestonesFetcher,
+      });
+
+      expect(fetchCount).toBe(2);
+      expect(payloadText(firstSender.sent[0])).toContain('Fresh milestone 1');
+      expect(payloadText(secondSender.sent[0])).toContain('Fresh milestone 2');
     } finally {
       restoreEnv('TEST_LINEAR_API_KEY', originalLinearApiKey);
     }

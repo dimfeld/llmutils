@@ -57,6 +57,14 @@ import type { DailyDigestSchedulerHandle } from './session_context.js';
 import { isWebhookPollingEnabled } from './webhook_poller.js';
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
+const LINEAR_MILESTONE_CACHE_TTL_MS = 30 * 60 * 1000;
+
+interface CachedLinearMilestones {
+  expiresAtMs: number;
+  entries: LinearMilestoneDigestEntry[];
+}
+
+const linearMilestoneCache = new Map<string, CachedLinearMilestones>();
 
 export interface RunDailyDigestOptions {
   sender?: SlackPostSender;
@@ -103,6 +111,18 @@ export type LinearMilestonesFetcher = (args: {
   timezone: string;
   apiKey?: string;
 }) => Promise<LinearMilestoneDigestEntry[]>;
+
+export function clearLinearMilestoneCache(): void {
+  linearMilestoneCache.clear();
+}
+
+function buildLinearMilestoneCacheKey(args: {
+  workspaceName: string;
+  timezone: string;
+  apiKeyEnv: string;
+}): string {
+  return JSON.stringify(args);
+}
 
 function isDailyDigestEnabledForWorkspace(config: TimConfig, workspaceName: string): boolean {
   return config.slack?.workspaces?.[workspaceName]?.dailyDigest?.enabled === true;
@@ -482,8 +502,25 @@ export async function fetchWorkspaceLinearMilestones(
   const timezone =
     config.slack?.workspaces?.[workspaceName]?.dailyDigest?.timezone ??
     getDefaultSlackDailyDigestTimezone();
+  const cacheKey = buildLinearMilestoneCacheKey({ workspaceName, timezone, apiKeyEnv });
+  const cached = linearMilestoneCache.get(cacheKey);
+  if (cached && options.nowMs < cached.expiresAtMs) {
+    debugLog(
+      '[daily_digest] Using cached Linear milestones for Slack workspace "%s"; entries=%d expiresInMs=%d',
+      workspaceName,
+      cached.entries.length,
+      cached.expiresAtMs - options.nowMs
+    );
+    return cached.entries;
+  }
+
   const fetcher = options.fetcher ?? fetchLinearMilestonesDueOrOverdue;
-  return await fetcher({ nowMs: options.nowMs, timezone, apiKey });
+  const entries = await fetcher({ nowMs: options.nowMs, timezone, apiKey });
+  linearMilestoneCache.set(cacheKey, {
+    expiresAtMs: options.nowMs + LINEAR_MILESTONE_CACHE_TTL_MS,
+    entries,
+  });
+  return entries;
 }
 
 export async function runDailyDigestForWorkspace(
