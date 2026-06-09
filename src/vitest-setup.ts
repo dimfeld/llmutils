@@ -30,6 +30,7 @@ process.env.TIM_NOTIFY_SUPPRESS_INNER = '1';
 process.env.TIM_LOAD_GLOBAL_CONFIG = '0';
 const tmpPath = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-test-'));
 process.env.XDG_CONFIG_HOME = tmpPath;
+process.env.XDG_DATA_HOME = path.join(tmpPath, 'data');
 afterEach(() => {
   closeDatabaseForTesting();
 });
