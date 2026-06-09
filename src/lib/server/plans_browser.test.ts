@@ -11,7 +11,12 @@ import { getOrCreateProject } from '$tim/db/project.js';
 import { createReview } from '$tim/db/review.js';
 import { recordWorkspace } from '$tim/db/workspace.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
-import { getDashboardData, getPlanDetailRouteData, getPlansPageData } from './plans_browser.js';
+import {
+  getDashboardData,
+  getPlanDetailRouteData,
+  getPlansPageData,
+  loadProofConfiguredForProject,
+} from './plans_browser.js';
 
 vi.mock('$tim/configLoader.js', () => ({
   loadEffectiveConfig: vi.fn(async () => ({})),
@@ -216,6 +221,28 @@ describe('lib/server/plans_browser', () => {
     expect(result.planNumberToUuid[`${projectId}:410`]).toBe('old-done-plan');
     expect(result.planNumberToUuid[`${projectId}:411`]).toBe('cancelled-plan');
     expect(result.planNumberToUuid[`${projectId}:412`]).toBe('deferred-plan');
+  });
+
+  test('loadProofConfiguredForProject reads proofGeneration from the project git root', async () => {
+    vi.mocked(loadEffectiveConfig).mockImplementation(async (_overridePath, options) => {
+      if (options?.cwd === '/tmp/repo-plans-browser-1') {
+        return {
+          proofGeneration: { instructions: 'Capture browser proof artifacts.' },
+        } as any;
+      }
+      return {};
+    });
+
+    await expect(loadProofConfiguredForProject(db, projectId)).resolves.toBe(true);
+    expect(loadEffectiveConfig).toHaveBeenCalledWith(undefined, {
+      cwd: '/tmp/repo-plans-browser-1',
+    });
+  });
+
+  test('loadProofConfiguredForProject returns false when proofGeneration instructions are absent', async () => {
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({ proofGeneration: {} } as any);
+
+    await expect(loadProofConfiguredForProject(db, projectId)).resolves.toBe(false);
   });
 
   test('getDashboardData includes reviewed plans and does not block dependents by them', async () => {

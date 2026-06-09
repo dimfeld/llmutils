@@ -25,6 +25,7 @@
     {projectId}
     {projectName}
     openInEditorEnabled={result.openInEditorEnabled}
+    proofConfigured={data.proofConfigured}
   />
 {:else}
   <div class="flex items-center justify-center p-8 text-sm text-muted-foreground">

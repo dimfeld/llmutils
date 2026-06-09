@@ -1,9 +1,9 @@
 import { error, redirect } from '@sveltejs/kit';
 import { getServerContext } from '$lib/server/init.js';
-import { getPlanDetailRouteData } from '$lib/server/plans_browser.js';
-import { loadEffectiveConfig } from '$tim/configLoader.js';
-import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
-import { isProofConfigured } from '$lib/utils/proof_eligibility.js';
+import {
+  getPlanDetailRouteData,
+  loadProofConfiguredForProject,
+} from '$lib/server/plans_browser.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, url }) => {
@@ -20,19 +20,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
     redirect(302, result.redirectTo);
   }
 
-  let proofConfigured = false;
-  const cwd = getPreferredProjectGitRoot(db, result.planDetail.projectId);
-  if (cwd) {
-    try {
-      const cfg = await loadEffectiveConfig(undefined, { cwd });
-      proofConfigured = isProofConfigured(cfg);
-    } catch (err) {
-      console.warn(
-        `Failed to load tim config for project ${result.planDetail.projectId} when checking proofGeneration: ${err as Error}`
-      );
-      proofConfigured = false;
-    }
-  }
+  const proofConfigured = await loadProofConfiguredForProject(db, result.planDetail.projectId);
 
   return {
     planDetail: result.planDetail,
