@@ -6,7 +6,7 @@ import { clearAllTimCaches } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
-import { upsertPlan } from '../db/plan.js';
+import { nonSyncedUpsertPlan } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -226,7 +226,7 @@ describe('tim tools CLI handlers', () => {
       lastGitRoot: repository.gitRoot,
     });
 
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: plan.uuid,
       planId: plan.id,
       title: plan.title ?? null,

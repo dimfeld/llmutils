@@ -7,7 +7,7 @@ import {
   getPlanByUuid,
   getPlanTasksByUuid,
   getPlansByProject,
-  upsertPlan,
+  nonSyncedUpsertPlan,
   upsertCanonicalPlanInTransaction,
 } from './plan.js';
 import { getOrCreateProject } from './project.js';
@@ -356,7 +356,7 @@ export async function syncPlanToDb(
       upsertInput.baseCommit = null;
       upsertInput.baseChangeId = null;
     }
-    const projectionRow = upsertPlan(db, context.projectId, {
+    const projectionRow = nonSyncedUpsertPlan(db, context.projectId, {
       ...upsertInput,
       forceOverwrite: options.force === true,
     });

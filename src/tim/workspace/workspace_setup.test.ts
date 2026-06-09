@@ -19,7 +19,7 @@ import { writePlanFile } from '../plans.js';
 import { setPlanBaseTracking } from '../db/plan.js';
 
 // Partially mock db/plan.js: replace only setPlanBaseTracking so we can verify tracking calls
-// while leaving all other DB functions (upsertPlan, getPlanByPlanId, etc.) as real implementations.
+// while leaving all other DB functions (nonSyncedUpsertPlan, getPlanByPlanId, etc.) as real implementations.
 vi.mock('../db/plan.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../db/plan.js')>();
   return {

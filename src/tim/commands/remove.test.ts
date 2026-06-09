@@ -8,7 +8,7 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { getDatabase } from '../db/database.js';
-import { getPlanByUuid, upsertPlan } from '../db/plan.js';
+import { getPlanByUuid, nonSyncedUpsertPlan } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 import { handleRemoveCommand } from './remove.js';
 import { getMaterializedPlanPath, resolveProjectContext } from '../plan_materialize.js';
@@ -241,7 +241,7 @@ describe('tim remove command', () => {
     const repository = await getRepositoryIdentity({ cwd: tempDir });
     const db = getDatabase();
     const project = getOrCreateProject(db, repository.repositoryId);
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '99999999-9999-4999-8999-999999999999',
       planId: 999,
       title: 'DB-only plan',

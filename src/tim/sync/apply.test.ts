@@ -13,7 +13,7 @@ import {
   getPlanTagsByUuid,
   getPlanTasksByUuid,
   upsertCanonicalPlanInTransaction,
-  upsertPlan,
+  nonSyncedUpsertPlan,
   upsertProjectionPlanInTransaction,
   type UpsertPlanInput,
 } from '../db/plan.js';
@@ -2177,7 +2177,7 @@ describe('main-node sync apply engine', () => {
       uuid: PROJECT_UUID,
       highestPlanId: 5,
     });
-    upsertPlan(persistentDb, persistentProject.id, {
+    nonSyncedUpsertPlan(persistentDb, persistentProject.id, {
       uuid: PLAN_UUID,
       planId: 5,
       title: 'Renumbered plan',

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { invokeCommand, invokeQuery } from '$lib/test-utils/invoke_command.js';
 import { openDatabase } from '$tim/db/database.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import * as reviewDbModule from '$tim/db/review.js';
@@ -1101,7 +1101,7 @@ describe('pr_review_submission remote functions', () => {
     const prUrl = 'https://github.com/example/repo/pull/20522';
     const projectId = getOrCreateProject(currentDb, `repo-${crypto.randomUUID()}`).id;
     const planUuid = `plan-${crypto.randomUUID()}`;
-    upsertPlan(currentDb, projectId, {
+    nonSyncedUpsertPlan(currentDb, projectId, {
       uuid: planUuid,
       planId: 20522,
       title: 'Linked plan review',

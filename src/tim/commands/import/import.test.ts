@@ -41,7 +41,7 @@ vi.mock('../../db/database.js', () => ({
 }));
 
 vi.mock('../../db/plan.js', () => ({
-  upsertPlan: vi.fn(),
+  nonSyncedUpsertPlan: vi.fn(),
 }));
 
 vi.mock('../../db/plan_sync.js', () => ({
@@ -99,7 +99,7 @@ import { writePlanFile, resolvePlanByNumericId } from '../../plans.js';
 import { loadPlansFromDb } from '../../plans_db.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
 import { getDatabase } from '../../db/database.js';
-import { upsertPlan } from '../../db/plan.js';
+import { nonSyncedUpsertPlan } from '../../db/plan.js';
 import { toPlanUpsertInput } from '../../db/plan_sync.js';
 import { ensureReferences } from '../../utils/references.js';
 import { loadEffectiveConfig } from '../../configLoader.js';
@@ -255,7 +255,7 @@ describe('handleImportCommand', () => {
     });
 
     transactionImmediateSpy = vi.fn((callback: () => void) => callback());
-    vi.mocked(upsertPlan).mockReturnValue({} as any);
+    vi.mocked(nonSyncedUpsertPlan).mockReturnValue({} as any);
 
     toPlanUpsertInputSpy = vi.mocked(toPlanUpsertInput);
     toPlanUpsertInputSpy.mockImplementation((plan: PlanSchemaInput, filePath: string) => ({

@@ -27,7 +27,7 @@ import { type PlanSchema } from '../planSchema.js';
 import { readPlanFile, writePlanFile } from '../plans.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { getDatabase } from '../db/database.js';
-import { getPlanByUuid, getPlanDependenciesByUuid, upsertPlan } from '../db/plan.js';
+import { getPlanByUuid, getPlanDependenciesByUuid, nonSyncedUpsertPlan } from '../db/plan.js';
 import { getOrCreateProject, getProject } from '../db/project.js';
 import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
 import { getGitRoot, getCurrentBranchName, getChangedFilesOnBranch } from '../../common/git.js';
@@ -47,7 +47,7 @@ async function writeTestPlan(planPath: string, plan: any) {
     remoteUrl: repository.remoteUrl,
     lastGitRoot: repository.gitRoot,
   });
-  return upsertPlan(db, project.id, {
+  return nonSyncedUpsertPlan(db, project.id, {
     planId: planWithUuid.id,
     uuid: planWithUuid.uuid,
     title: planWithUuid.title ?? null,
@@ -2187,7 +2187,7 @@ describe('tim renumber', () => {
       const project = getProject(db, repository.repositoryId);
       expect(project).toBeTruthy();
 
-      upsertPlan(db, project!.id, {
+      nonSyncedUpsertPlan(db, project!.id, {
         planId: childFromDisk.id,
         uuid: childFromDisk.uuid!,
         title: childFromDisk.title ?? null,

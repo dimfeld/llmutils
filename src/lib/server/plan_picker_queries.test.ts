@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 import { openDatabase } from '$tim/db/database.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { searchPlanPickerOptions } from './plan_picker_queries.js';
 
@@ -252,7 +252,7 @@ describe('searchPlanPickerOptions', () => {
     parentUuid?: string;
     dependencyUuids?: string[];
   }): void {
-    upsertPlan(db, options.projectId ?? projectId, {
+    nonSyncedUpsertPlan(db, options.projectId ?? projectId, {
       uuid: options.uuid,
       planId: options.planId,
       title: options.title,

@@ -1,5 +1,5 @@
 import { getDatabase } from '../../db/database.js';
-import { upsertPlan, type PlanRow } from '../../db/plan.js';
+import { nonSyncedUpsertPlan, type PlanRow } from '../../db/plan.js';
 import { toPlanUpsertInput } from '../../db/plan_sync.js';
 import { previewNextPlanId, reserveNextPlanId } from '../../db/project.js';
 import { ensureReferences } from '../../utils/references.js';
@@ -125,7 +125,7 @@ function writeImportedPlansViaLegacyTransaction(
       purgeUuidlessLegacyChildRows(db);
       for (const entry of nextWrites) {
         deleteUuidlessLegacyPlanRow(db, nextProjectId, entry.plan.id);
-        upsertPlan(db, nextProjectId, toPlanUpsertInput(entry.plan, nextIdToUuid));
+        nonSyncedUpsertPlan(db, nextProjectId, toPlanUpsertInput(entry.plan, nextIdToUuid));
       }
     }
   );

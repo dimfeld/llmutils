@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { DATABASE_FILENAME, openDatabase } from '../../tim/db/database.js';
 import { getBranchMergeRequirements } from '../../tim/db/branch_merge_requirements.js';
 import { getPrStatusByUrl, getPrStatusForPlan, upsertPrStatus } from '../../tim/db/pr_status.js';
-import { upsertPlan } from '../../tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '../../tim/db/plan.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
 
 // Mock the GitHub modules
@@ -71,7 +71,7 @@ describe('common/github/pr_status_service', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-pr-status-service-test-'));
     db = openDatabase(path.join(tempDir, DATABASE_FILENAME));
     projectId = getOrCreateProject(db, 'repo-pr-status-service').id;
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-service',
       planId: 1,
       title: 'Service plan',
@@ -942,7 +942,7 @@ describe('common/github/pr_status_service', () => {
   });
 
   test('syncPlanPrLinks preserves shared PR records and reuses cached details', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-service-2',
       planId: 2,
       title: 'Second service plan',

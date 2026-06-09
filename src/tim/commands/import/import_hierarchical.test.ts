@@ -48,7 +48,7 @@ vi.mock('../../db/database.js', () => ({
 }));
 
 vi.mock('../../db/plan.js', () => ({
-  upsertPlan: vi.fn(),
+  nonSyncedUpsertPlan: vi.fn(),
 }));
 
 vi.mock('../../db/plan_sync.js', () => ({
@@ -111,7 +111,7 @@ import { loadPlansFromDb } from '../../plans_db.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
 import { getDatabase } from '../../db/database.js';
-import { upsertPlan } from '../../db/plan.js';
+import { nonSyncedUpsertPlan } from '../../db/plan.js';
 import { toPlanUpsertInput } from '../../db/plan_sync.js';
 import { ensureReferences } from '../../utils/references.js';
 import { loadEffectiveConfig } from '../../configLoader.js';
@@ -240,7 +240,7 @@ describe('Hierarchical Linear Import', () => {
     });
 
     transactionImmediateSpy = vi.fn((callback: () => void) => callback());
-    upsertPlanSpy = vi.mocked(upsertPlan);
+    upsertPlanSpy = vi.mocked(nonSyncedUpsertPlan);
     upsertPlanSpy.mockReturnValue({} as any);
 
     vi.mocked(getDatabase).mockReturnValue({

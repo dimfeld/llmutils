@@ -6,7 +6,11 @@ import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from '../../tim/db/database.js';
 import { claimAssignment, getAssignment } from '../../tim/db/assignment.js';
-import { getPlanByUuid, upsertCanonicalPlanInTransaction, upsertPlan } from '../../tim/db/plan.js';
+import {
+  getPlanByUuid,
+  upsertCanonicalPlanInTransaction,
+  nonSyncedUpsertPlan,
+} from '../../tim/db/plan.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
 import {
   getWebhookCursor,
@@ -61,7 +65,7 @@ describe('common/github/webhook_ingest', () => {
     db = openDatabase(path.join(tempDir, DATABASE_FILENAME));
 
     const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: PLAN_1_UUID,
       planId: 1,
       title: 'Plan 1',
@@ -479,7 +483,7 @@ describe('common/github/webhook_ingest', () => {
       ['done', '00000000-0000-4000-8000-000000000072'],
       ['pending', '00000000-0000-4000-8000-000000000073'],
     ]);
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: readySourceUuid,
       planId: 70,
       title: 'Ready source',
@@ -488,7 +492,7 @@ describe('common/github/webhook_ingest', () => {
       status: 'needs_review',
     });
     for (const [index, status] of guardedStatuses.entries()) {
-      upsertPlan(db, projectId, {
+      nonSyncedUpsertPlan(db, projectId, {
         uuid: readyGuardUuids.get(status)!,
         planId: 71 + index,
         title: `Ready guard ${status}`,
@@ -543,7 +547,7 @@ describe('common/github/webhook_ingest', () => {
       lastFetchedAt: '2026-03-30T09:00:00.000Z',
     });
     const planUuid = '00000000-0000-4000-8000-000000000076';
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: planUuid,
       planId: 76,
       title: 'Ready source disabled',
@@ -585,7 +589,7 @@ describe('common/github/webhook_ingest', () => {
       lastFetchedAt: '2026-03-30T09:00:00.000Z',
     });
     const explicitPlanUuid = '00000000-0000-4000-8000-000000000074';
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: explicitPlanUuid,
       planId: 74,
       title: 'Ready explicit URL',
@@ -625,7 +629,7 @@ describe('common/github/webhook_ingest', () => {
       lastFetchedAt: '2026-03-30T09:00:00.000Z',
     });
     const cacheNonDraftPlanUuid = '00000000-0000-4000-8000-000000000075';
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: cacheNonDraftPlanUuid,
       planId: 75,
       title: 'Ready cache non-draft',
@@ -672,7 +676,7 @@ describe('common/github/webhook_ingest', () => {
       ['done', '00000000-0000-4000-8000-000000000083'],
       ['pending', '00000000-0000-4000-8000-000000000084'],
     ]);
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: draftSourceUuid,
       planId: 80,
       title: 'Draft source',
@@ -681,7 +685,7 @@ describe('common/github/webhook_ingest', () => {
       status: 'reviewed',
     });
     for (const [index, status] of guardedStatuses.entries()) {
-      upsertPlan(db, projectId, {
+      nonSyncedUpsertPlan(db, projectId, {
         uuid: draftGuardUuids.get(status)!,
         planId: 81 + index,
         title: `Draft guard ${status}`,
@@ -735,7 +739,7 @@ describe('common/github/webhook_ingest', () => {
       lastFetchedAt: '2026-03-30T12:00:00.000Z',
       labels: [],
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-stale-draft-source',
       planId: 90,
       title: 'Stale draft source',
@@ -785,7 +789,7 @@ describe('common/github/webhook_ingest', () => {
       lastFetchedAt: '2026-03-30T12:00:00.000Z',
       labels: [],
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-stale-ready-source',
       planId: 91,
       title: 'Stale ready source',
@@ -818,7 +822,7 @@ describe('common/github/webhook_ingest', () => {
   });
 
   test('ingestWebhookEvents marks a linked needs_review plan done when the PR is merged and the plan is fully finished', async () => {
-    upsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
+    nonSyncedUpsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
       uuid: PLAN_1_UUID,
       planId: 1,
       title: 'Plan 1',
@@ -878,7 +882,7 @@ describe('common/github/webhook_ingest', () => {
   });
 
   test('ingestWebhookEvents leaves merged linked plans unchanged when plan status updates are disabled', async () => {
-    upsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
+    nonSyncedUpsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
       uuid: 'plan-merged-disabled',
       planId: 4,
       title: 'Plan merged disabled',
@@ -915,7 +919,7 @@ describe('common/github/webhook_ingest', () => {
   });
 
   test('ingestWebhookEvents marks a linked needs_review plan done when the PR is merged even without docs/lessons timestamps', async () => {
-    upsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
+    nonSyncedUpsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
       uuid: PLAN_2_UUID,
       planId: 2,
       title: 'Plan 2',
@@ -968,7 +972,7 @@ describe('common/github/webhook_ingest', () => {
   });
 
   test('ingestWebhookEvents marks a linked reviewed plan done when the PR is merged and the plan is fully finished', async () => {
-    upsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
+    nonSyncedUpsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
       uuid: REVIEWED_PLAN_UUID,
       planId: 3,
       title: 'Plan 3',
@@ -1026,7 +1030,7 @@ describe('common/github/webhook_ingest', () => {
       forceOverwrite: true,
     };
     upsertCanonicalPlanInTransaction(db, project.id, planInput);
-    upsertPlan(db, project.id, planInput);
+    nonSyncedUpsertPlan(db, project.id, planInput);
     mocks.loadEffectiveConfig.mockResolvedValue({
       sync: {
         role: 'persistent',

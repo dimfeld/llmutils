@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
-import { getPlanByUuid, getPlanTasksByUuid, upsertPlan } from '$tim/db/plan.js';
+import { getPlanByUuid, getPlanTasksByUuid, nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { upsertPrStatus, type StoredPrReviewThreadInput } from '$tim/db/pr_status.js';
 import { recordWorkspace } from '$tim/db/workspace.js';
@@ -145,7 +145,7 @@ function seedPlanWithThread(options: {
 }) {
   const prUrl = options.pullRequest?.[0] ?? 'https://github.com/owner/repo/pull/42';
 
-  upsertPlan(currentDb, options.projectId, {
+  nonSyncedUpsertPlan(currentDb, options.projectId, {
     uuid: options.planUuid,
     planId: options.planId,
     title: `Plan ${options.planId}`,
@@ -386,7 +386,7 @@ describe('convertThreadToTask', () => {
   });
 
   test('rejects conversion when the PR is not linked to the plan', async () => {
-    upsertPlan(currentDb, projectId, {
+    nonSyncedUpsertPlan(currentDb, projectId, {
       uuid: 'plan-unlinked-pr',
       planId: 304,
       title: 'Plan 304',

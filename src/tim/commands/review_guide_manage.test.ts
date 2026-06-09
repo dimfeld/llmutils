@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { constructGitHubRepositoryId } from '../../common/github/pull_requests.js';
 import { DATABASE_FILENAME, openDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
-import { upsertPlan } from '../db/plan.js';
+import { nonSyncedUpsertPlan } from '../db/plan.js';
 import { linkPlanToPr, upsertPrStatus } from '../db/pr_status.js';
 import { createReview, getReviewIssues, insertReviewIssues } from '../db/review.js';
 import { listReviewGuideIssuesForTarget, resolveReviewGuideTarget } from './review_guide_manage.js';
@@ -32,7 +32,7 @@ describe('review guide issue management', () => {
   });
 
   function seedLinkedPlanAndPr(): { prStatusId: number } {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: PLAN_UUID,
       planId: 123,
       title: 'Review guide management',

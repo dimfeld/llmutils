@@ -6,7 +6,7 @@ import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from '../../tim/db/database.js';
 import { getBranchMergeRequirements } from '../../tim/db/branch_merge_requirements.js';
-import { upsertPlan } from '../../tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '../../tim/db/plan.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
 import {
   getLinkedPlansByPrUrl,
@@ -97,21 +97,21 @@ describe('common/github/project_pr_service', () => {
     db = openDatabase(path.join(tempDir, DATABASE_FILENAME));
     projectId = getOrCreateProject(db, 'github.com__example__repo').id;
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-1',
       planId: 1,
       title: 'Plan 1',
       branch: 'feature/one',
       filename: '1.plan.md',
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-2',
       planId: 2,
       title: 'Plan 2',
       branch: 'feature/two',
       filename: '2.plan.md',
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-3',
       planId: 3,
       title: 'Plan 3',

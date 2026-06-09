@@ -20,7 +20,7 @@ import {
   markPlanTaskDoneOperation,
   setProjectSettingOperation,
 } from '$tim/sync/operations.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { upsertTimNode } from '$tim/db/sync_tables.js';
 import { createSyncConflict } from '$tim/sync/conflicts.js';
 import type { TimConfig } from '$tim/configSchema.js';
@@ -111,7 +111,7 @@ describe('sync_status remote queries', () => {
       lastGitRoot: '/tmp/repo',
     });
     projectId = project.id;
-    upsertPlan(currentDb, projectId, {
+    nonSyncedUpsertPlan(currentDb, projectId, {
       uuid: PLAN_UUID,
       planId: 1,
       title: 'Plan',
@@ -323,7 +323,7 @@ describe('sync_status remote queries', () => {
     const result = await invokeQuery(getPlanSyncStatus, { planUuid: PLAN_UUID });
     expect(result.pending).toBe(1);
 
-    upsertPlan(currentDb, projectId, {
+    nonSyncedUpsertPlan(currentDb, projectId, {
       uuid: '00000000-0000-4000-8000-000000000000',
       planId: 2,
       title: 'Other plan',
@@ -368,7 +368,7 @@ describe('sync_status remote queries', () => {
     expect(result.pending).toBe(2);
 
     const otherPlanUuid = '00000000-0000-4000-8000-000000000abc';
-    upsertPlan(currentDb, projectId, {
+    nonSyncedUpsertPlan(currentDb, projectId, {
       uuid: otherPlanUuid,
       planId: 7,
       title: 'Other',

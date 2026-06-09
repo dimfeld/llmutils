@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import yaml from 'yaml';
 import { claimAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
-import { upsertPlan } from '../db/plan.js';
+import { nonSyncedUpsertPlan } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
 
@@ -168,7 +168,7 @@ describe('handleReadyCommand', () => {
       lastGitRoot: repoDir,
     });
 
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: plan.uuid,
       planId: plan.id,
       title: plan.title ?? null,

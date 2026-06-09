@@ -7,7 +7,7 @@ import { clearGitHubTokenCache } from '$common/github/token.js';
 
 import { upsertBranchMergeRequirements } from '$tim/db/branch_merge_requirements.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { createReview } from '$tim/db/review.js';
@@ -80,7 +80,7 @@ describe('pr_status remote functions', () => {
     const project = getOrCreateProject(currentDb, 'repo-plan-pr-status-route');
     currentProjectId = project.id;
 
-    upsertPlan(currentDb, project.id, {
+    nonSyncedUpsertPlan(currentDb, project.id, {
       uuid: 'plan-with-prs',
       planId: 1,
       title: 'Plan with PRs',
@@ -90,13 +90,13 @@ describe('pr_status remote functions', () => {
         'https://github.com/example/repo/pull/2',
       ],
     });
-    upsertPlan(currentDb, project.id, {
+    nonSyncedUpsertPlan(currentDb, project.id, {
       uuid: 'plan-without-prs',
       planId: 2,
       title: 'Plan without PRs',
       filename: '2.plan.md',
     });
-    upsertPlan(currentDb, project.id, {
+    nonSyncedUpsertPlan(currentDb, project.id, {
       uuid: 'plan-with-only-invalid-prs',
       planId: 3,
       title: 'Plan with only invalid PRs',
@@ -306,7 +306,7 @@ describe('pr_status remote functions', () => {
   });
 
   test('getPrStatus returns cached PR status matched directly from plan URLs when plan_pr is missing', async () => {
-    upsertPlan(currentDb, getOrCreateProject(currentDb, 'repo-plan-pr-status-route').id, {
+    nonSyncedUpsertPlan(currentDb, getOrCreateProject(currentDb, 'repo-plan-pr-status-route').id, {
       uuid: 'plan-with-cached-pr-no-junction',
       planId: 4,
       title: 'Plan with cached PR but no junction',
@@ -827,7 +827,7 @@ describe('pr_status remote functions', () => {
       labels: [],
     });
 
-    upsertPlan(currentDb, getOrCreateProject(currentDb, 'repo-plan-pr-status-route').id, {
+    nonSyncedUpsertPlan(currentDb, getOrCreateProject(currentDb, 'repo-plan-pr-status-route').id, {
       uuid: 'plan-with-mixed-pr-values',
       planId: 5,
       title: 'Plan with mixed PR values',

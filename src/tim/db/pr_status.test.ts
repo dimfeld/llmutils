@@ -26,7 +26,7 @@ import {
   upsertPrStatus,
   upsertPrStatusMetadata,
 } from './pr_status.js';
-import { upsertPlan } from './plan.js';
+import { nonSyncedUpsertPlan } from './plan.js';
 import { getOrCreateProject } from './project.js';
 
 describe('tim db/pr_status', () => {
@@ -41,19 +41,19 @@ describe('tim db/pr_status', () => {
     projectId = getOrCreateProject(db, 'repo-pr-status-1').id;
     otherProjectId = getOrCreateProject(db, 'repo-pr-status-2').id;
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-1',
       planId: 1,
       title: 'Plan 1',
       filename: '1.plan.md',
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-2',
       planId: 2,
       title: 'Plan 2',
       filename: '2.plan.md',
     });
-    upsertPlan(db, otherProjectId, {
+    nonSyncedUpsertPlan(db, otherProjectId, {
       uuid: 'plan-3',
       planId: 3,
       title: 'Plan 3',
@@ -1621,28 +1621,28 @@ describe('tim db/pr_status', () => {
 
   test('getPlansWithPrs returns open PR links and respects project filter', () => {
     // Set pull_request on plans so junction rows are not filtered as stale
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-1',
       planId: 1,
       title: 'Plan 1',
       filename: '1.plan.md',
       pullRequest: ['https://github.com/example/repo/pull/104'],
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-2',
       planId: 2,
       title: 'Plan 2',
       filename: '2.plan.md',
       pullRequest: ['https://github.com/example/repo/pull/105'],
     });
-    upsertPlan(db, otherProjectId, {
+    nonSyncedUpsertPlan(db, otherProjectId, {
       uuid: 'plan-3',
       planId: 3,
       title: 'Plan 3',
       filename: '3.plan.md',
       pullRequest: ['https://github.com/example/repo/pull/104'],
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-4',
       planId: 4,
       title: 'Plan 4',
@@ -1719,7 +1719,7 @@ describe('tim db/pr_status', () => {
   });
 
   test('getPlansWithPrs returns plans with pull_request URLs even without plan_pr junction rows', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-1',
       planId: 1,
       title: 'Plan 1',
@@ -1751,7 +1751,7 @@ describe('tim db/pr_status', () => {
       lastFetchedAt: '2026-03-20T00:00:00.000Z',
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-1',
       planId: 1,
       title: 'Plan 1',
@@ -1775,7 +1775,7 @@ describe('tim db/pr_status', () => {
       lastFetchedAt: '2026-03-20T00:00:00.000Z',
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-1',
       planId: 1,
       title: 'Plan 1',
@@ -1832,7 +1832,7 @@ describe('tim db/pr_status', () => {
   });
 
   test('getPlansWithPrs de-duplicates PR URLs when explicit and auto links coexist', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-1',
       planId: 1,
       title: 'Plan 1',
@@ -1977,7 +1977,7 @@ describe('tim db/pr_status', () => {
   });
 
   test('cleanOrphanedPrStatus keeps rows referenced by plan pull_request without plan_pr links', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-1',
       planId: 1,
       title: 'Plan 1',
@@ -2001,7 +2001,7 @@ describe('tim db/pr_status', () => {
   });
 
   test('cleanOrphanedPrStatus keeps canonical cache rows referenced by equivalent non-canonical plan URLs', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-1',
       planId: 1,
       title: 'Plan 1',

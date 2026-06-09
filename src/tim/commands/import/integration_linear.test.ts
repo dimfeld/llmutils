@@ -75,7 +75,7 @@ vi.mock('../../db/database.js', () => ({
 }));
 
 vi.mock('../../db/plan.js', () => ({
-  upsertPlan: vi.fn(),
+  nonSyncedUpsertPlan: vi.fn(),
 }));
 
 vi.mock('../../db/plan_sync.js', () => ({
@@ -107,7 +107,7 @@ import { loadPlansFromDb } from '../../plans_db.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
 import { getDatabase } from '../../db/database.js';
-import { upsertPlan } from '../../db/plan.js';
+import { nonSyncedUpsertPlan } from '../../db/plan.js';
 import { toPlanUpsertInput } from '../../db/plan_sync.js';
 import { ensureReferences } from '../../utils/references.js';
 
@@ -163,7 +163,7 @@ describe('Linear Integration Tests', () => {
         return wrapped;
       },
     } as any);
-    vi.mocked(upsertPlan).mockReturnValue({} as any);
+    vi.mocked(nonSyncedUpsertPlan).mockReturnValue({} as any);
     vi.mocked(toPlanUpsertInput).mockImplementation((plan: any) => ({
       planId: plan.id,
       uuid: plan.uuid ?? `uuid-${plan.id}`,
@@ -848,7 +848,7 @@ describe('Linear Integration Tests', () => {
             return wrapped;
           },
         } as any);
-        vi.mocked(upsertPlan).mockReturnValue({} as any);
+        vi.mocked(nonSyncedUpsertPlan).mockReturnValue({} as any);
         vi.mocked(toPlanUpsertInput).mockImplementation((plan: any) => ({
           planId: plan.id,
           uuid: plan.uuid ?? `uuid-${plan.id}`,

@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import { invokeQuery } from '$lib/test-utils/invoke_command.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { getOrCreateProject } from '$tim/db/project.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { createReview } from '$tim/db/review.js';
 
@@ -42,7 +42,7 @@ describe('plan_detail remote function', () => {
     const project = getOrCreateProject(currentDb, 'repo-plan-detail-remote');
     projectId = project.id;
 
-    upsertPlan(currentDb, project.id, {
+    nonSyncedUpsertPlan(currentDb, project.id, {
       uuid: planUuid,
       planId: 1,
       title: 'Plan needing finish config',

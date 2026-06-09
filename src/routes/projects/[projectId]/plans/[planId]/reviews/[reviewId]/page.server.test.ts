@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { createReview, insertReviewIssues } from '$tim/db/review.js';
@@ -36,7 +36,7 @@ describe('projects/[projectId]/plans/[planId]/reviews/[reviewId]/+page.server', 
       remoteUrl: 'https://example.com/repo-plan-review-viewer.git',
       lastGitRoot: '/tmp/repo-plan-review-viewer',
     }).id;
-    upsertPlan(currentDb, projectId, {
+    nonSyncedUpsertPlan(currentDb, projectId, {
       uuid: planUuid,
       planId: 7001,
       title: 'Plan 7001',
@@ -213,7 +213,7 @@ describe('projects/[projectId]/plans/[planId]/reviews/[reviewId]/+page.server', 
   });
 
   test('returns 404 when review belongs to a different plan', async () => {
-    upsertPlan(currentDb, projectId, {
+    nonSyncedUpsertPlan(currentDb, projectId, {
       uuid: 'other-plan-uuid',
       planId: 7002,
       title: 'Other Plan',

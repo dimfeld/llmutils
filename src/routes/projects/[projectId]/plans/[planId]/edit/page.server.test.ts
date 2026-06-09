@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { openDatabase } from '$tim/db/database.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 
 const testContext = vi.hoisted(() => ({
@@ -45,7 +45,7 @@ describe('projects/[projectId]/plans/[planId]/edit/+page.server', () => {
 
   test('loads existing plan metadata through the real detail query path', async () => {
     seedRelatedPlans(db, projectId);
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'target-plan-uuid',
       planId: 42,
       title: 'Edit target',
@@ -111,7 +111,7 @@ describe('projects/[projectId]/plans/[planId]/edit/+page.server', () => {
   });
 
   test('redirects numeric plan ids to the canonical edit route', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'target-plan-uuid',
       planId: 42,
       title: 'Edit target',
@@ -143,7 +143,7 @@ describe('projects/[projectId]/plans/[planId]/edit/+page.server', () => {
   });
 
   test('keeps all-project navigation while exposing the actual project for writes and pickers', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'target-plan-uuid',
       planId: 42,
       title: 'Edit target',
@@ -152,7 +152,7 @@ describe('projects/[projectId]/plans/[planId]/edit/+page.server', () => {
       sourceCreatedAt: timestamp(),
       sourceUpdatedAt: timestamp(),
     });
-    upsertPlan(db, otherProjectId, {
+    nonSyncedUpsertPlan(db, otherProjectId, {
       uuid: 'other-plan-uuid',
       planId: 42,
       title: 'Other project same number',
@@ -175,7 +175,7 @@ describe('projects/[projectId]/plans/[planId]/edit/+page.server', () => {
   });
 
   test('preserves dangling relationship UUIDs in initial form values', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'target-plan-uuid',
       planId: 42,
       title: 'Edit target',
@@ -226,7 +226,7 @@ describe('projects/[projectId]/plans/[planId]/edit/+page.server', () => {
 });
 
 function seedRelatedPlans(db: Database, projectId: number): void {
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'parent-uuid',
     planId: 10,
     title: 'Parent plan',
@@ -235,7 +235,7 @@ function seedRelatedPlans(db: Database, projectId: number): void {
     sourceCreatedAt: timestamp(),
     sourceUpdatedAt: timestamp(),
   });
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'base-uuid',
     planId: 11,
     title: 'Base plan',
@@ -244,7 +244,7 @@ function seedRelatedPlans(db: Database, projectId: number): void {
     sourceCreatedAt: timestamp(),
     sourceUpdatedAt: timestamp(),
   });
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'dependency-uuid',
     planId: 12,
     title: 'Dependency plan',

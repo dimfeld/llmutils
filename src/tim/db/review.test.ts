@@ -24,7 +24,7 @@ import {
   updateReviewIssue,
 } from './review.js';
 import { getOrCreateProject } from './project.js';
-import { upsertPlan } from './plan.js';
+import { nonSyncedUpsertPlan } from './plan.js';
 import { runMigrations } from './migrations.js';
 
 const PR_URL_1 = 'https://github.com/example/repo/pull/1';
@@ -51,7 +51,7 @@ describe('tim db/review', () => {
   });
 
   function createPlan(uuid: string, planId: number): void {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid,
       planId,
       title: `Plan ${planId}`,

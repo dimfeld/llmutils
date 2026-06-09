@@ -6,7 +6,7 @@ import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import { getOrCreateProject } from './project.js';
-import { upsertPlan } from './plan.js';
+import { nonSyncedUpsertPlan } from './plan.js';
 import {
   getArtifactByUuid,
   hardDeleteArtifact,
@@ -27,7 +27,7 @@ describe('tim db/artifact', () => {
     db = openDatabase(path.join(tempDir, DATABASE_FILENAME));
     const project = getOrCreateProject(db, 'repo-artifact');
     projectUuid = project.uuid;
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: 'plan-artifact',
       planId: 1,
       title: 'Artifact plan',
@@ -227,21 +227,21 @@ describe('tim db/artifact', () => {
   });
 
   test('lists purge candidates by threshold, plan status, and includeActive flag', () => {
-    upsertPlan(db, 1, {
+    nonSyncedUpsertPlan(db, 1, {
       uuid: 'plan-in-progress-old',
       planId: 2,
       title: 'In progress old',
       status: 'in_progress',
       sourceUpdatedAt: '2026-01-01T00:00:00.000Z',
     });
-    upsertPlan(db, 1, {
+    nonSyncedUpsertPlan(db, 1, {
       uuid: 'plan-done-old',
       planId: 3,
       title: 'Done old',
       status: 'done',
       sourceUpdatedAt: '2026-01-01T00:00:00.000Z',
     });
-    upsertPlan(db, 1, {
+    nonSyncedUpsertPlan(db, 1, {
       uuid: 'plan-done-recent',
       planId: 4,
       title: 'Done recent',
@@ -330,7 +330,7 @@ describe('tim db/artifact', () => {
   });
 
   test('purge eligibility follows projection plan, not canonical, when they diverge', () => {
-    upsertPlan(db, 1, {
+    nonSyncedUpsertPlan(db, 1, {
       uuid: 'plan-divergent',
       planId: 5,
       title: 'Divergent plan',

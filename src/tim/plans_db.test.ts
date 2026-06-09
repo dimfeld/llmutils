@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { closeDatabaseForTesting, getDatabase } from './db/database.js';
-import { upsertPlan, type PlanRow } from './db/plan.js';
+import { nonSyncedUpsertPlan, type PlanRow } from './db/plan.js';
 import { syncPlanToDb, clearPlanSyncContext } from './db/plan_sync.js';
 import { getOrCreateProject } from './db/project.js';
 import { getDefaultConfig, type TimConfig } from './configSchema.js';
@@ -238,7 +238,7 @@ describe('tim plans_db', () => {
     const db = getDatabase();
     const project = getOrCreateProject(db, 'plans-db-parent-resolution');
 
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '44444444-4444-4444-8444-444444444444',
       planId: 44,
       title: 'Parent',
@@ -257,7 +257,7 @@ describe('tim plans_db', () => {
     const db = getDatabase();
     const project = getOrCreateProject(db, 'plans-db-base-plan-resolution');
 
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '66666666-6666-4666-8666-666666666666',
       planId: 66,
       title: 'Base plan',
@@ -292,28 +292,28 @@ describe('tim plans_db', () => {
     expect(columnNames).toContain('base_plan_uuid');
   });
 
-  test('upsertPlan and loadPlansFromDb round-trip materialization fields', () => {
+  test('nonSyncedUpsertPlan and loadPlansFromDb round-trip materialization fields', () => {
     const db = getDatabase();
     const repositoryId = 'plans-db-roundtrip-repo';
     const project = getOrCreateProject(db, repositoryId);
     const searchDir = path.join(tempDir, 'tasks');
 
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '99999999-9999-4999-8999-999999999999',
       planId: 99,
       title: 'Dependency plan',
     });
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '88888888-8888-4888-8888-888888888888',
       planId: 88,
       title: 'Parent plan',
     });
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '66666666-6666-4666-8666-666666666666',
       planId: 66,
       title: 'Base plan',
     });
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '77777777-7777-4777-8777-777777777777',
       planId: 77,
       title: 'Round-trip plan',
@@ -513,7 +513,7 @@ describe('tim plans_db', () => {
     const repositoryId = 'plans-db-dependency-resolution';
     const project = getOrCreateProject(db, repositoryId);
 
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '12121212-1212-4212-8212-121212121212',
       planId: 121,
       title: 'Fallback dependency',

@@ -20,7 +20,7 @@ import {
   clearPlanBaseTracking,
   setPlanBranch,
   setPlanBaseTracking,
-  upsertPlan,
+  nonSyncedUpsertPlan,
   upsertCanonicalPlanInTransaction,
   upsertPlanDependencies,
   upsertPlanTasks,
@@ -45,8 +45,8 @@ describe('tim db/plan', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('upsertPlan inserts and updates plan metadata, tasks, and dependencies', () => {
-    upsertPlan(db, projectId, {
+  test('nonSyncedUpsertPlan inserts and updates plan metadata, tasks, and dependencies', () => {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-1',
       planId: 10,
       title: 'First plan',
@@ -106,7 +106,7 @@ describe('tim db/plan', () => {
       .all('plan-1') as Array<{ depends_on_uuid: string }>;
     expect(initialDeps.map((entry) => entry.depends_on_uuid)).toEqual(['dep-1', 'dep-2']);
 
-    upsertPlan(db, otherProjectId, {
+    nonSyncedUpsertPlan(db, otherProjectId, {
       uuid: 'plan-1',
       planId: 20,
       title: 'Updated plan',
@@ -163,13 +163,13 @@ describe('tim db/plan', () => {
   });
 
   test('getChildPlansForEpic returns task counts, dependencies, and base plan UUIDs', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'epic-1',
       planId: 100,
       title: 'Epic',
       epic: true,
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'child-1',
       planId: 101,
       title: 'Child one',
@@ -179,7 +179,7 @@ describe('tim db/plan', () => {
         { title: 'open task', description: 'open', done: false },
       ],
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'child-2',
       planId: 102,
       title: 'Child two',
@@ -188,7 +188,7 @@ describe('tim db/plan', () => {
       dependencyUuids: ['child-1'],
       tasks: [{ title: 'task', description: 'desc', done: false }],
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'other-child',
       planId: 103,
       title: 'Other child',
@@ -227,20 +227,20 @@ describe('tim db/plan', () => {
   });
 
   test('getChildPlansForEpic treats base plans as dependencies for display status', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'epic-with-stacked-child',
       planId: 110,
       title: 'Epic',
       epic: true,
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'external-base-plan',
       planId: 111,
       title: 'External base plan',
       status: 'pending',
       tasks: [{ title: 'open base task', description: 'open', done: false }],
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'stacked-child',
       planId: 112,
       title: 'Stacked child',
@@ -267,8 +267,8 @@ describe('tim db/plan', () => {
     ]);
   });
 
-  test('upsertPlan ignores caller-supplied revisions on insert', () => {
-    upsertPlan(db, projectId, {
+  test('nonSyncedUpsertPlan ignores caller-supplied revisions on insert', () => {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-ignore-revision',
       planId: 13,
       revision: 99,
@@ -288,7 +288,7 @@ describe('tim db/plan', () => {
   });
 
   test('upsertPlanTasks replaces existing task list', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-tasks',
       planId: 11,
       tasks: [
@@ -324,7 +324,7 @@ describe('tim db/plan', () => {
   });
 
   test('upsertPlanDependencies replaces existing dependencies', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-deps',
       planId: 12,
       dependencyUuids: ['dep-a', 'dep-b'],
@@ -341,9 +341,9 @@ describe('tim db/plan', () => {
   });
 
   test('getPlansByProject only returns plans for requested project', () => {
-    upsertPlan(db, projectId, { uuid: 'plan-a', planId: 1 });
-    upsertPlan(db, projectId, { uuid: 'plan-b', planId: 2 });
-    upsertPlan(db, otherProjectId, { uuid: 'plan-c', planId: 3 });
+    nonSyncedUpsertPlan(db, projectId, { uuid: 'plan-a', planId: 1 });
+    nonSyncedUpsertPlan(db, projectId, { uuid: 'plan-b', planId: 2 });
+    nonSyncedUpsertPlan(db, otherProjectId, { uuid: 'plan-c', planId: 3 });
 
     const plans = getPlansByProject(db, projectId);
     expect(plans.map((plan) => plan.uuid)).toEqual(['plan-a', 'plan-b']);
@@ -352,7 +352,7 @@ describe('tim db/plan', () => {
   test('getPlanByUuid returns inserted row and null for missing row', () => {
     expect(getPlanByUuid(db, 'missing')).toBeNull();
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-get',
       planId: 77,
       title: 'Lookup plan',
@@ -364,8 +364,8 @@ describe('tim db/plan', () => {
     expect(found?.title).toBe('Lookup plan');
   });
 
-  test('upsertPlan stores branch and clears it when omitted in later updates', () => {
-    upsertPlan(db, projectId, {
+  test('nonSyncedUpsertPlan stores branch and clears it when omitted in later updates', () => {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-branch',
       planId: 78,
       title: 'Branch tracking plan',
@@ -376,7 +376,7 @@ describe('tim db/plan', () => {
     expect(found).not.toBeNull();
     expect(found?.branch).toBe('feature/branch-a');
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-branch',
       planId: 79,
       title: 'Branch tracking plan updated',
@@ -387,7 +387,7 @@ describe('tim db/plan', () => {
     expect(found).not.toBeNull();
     expect(found?.branch).toBe('feature/branch-b');
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-branch',
       planId: 80,
       title: 'Branch tracking plan cleared',
@@ -398,8 +398,8 @@ describe('tim db/plan', () => {
     expect(found?.branch).toBeNull();
   });
 
-  test('upsertPlan stores and updates base tracking fields', () => {
-    upsertPlan(db, projectId, {
+  test('nonSyncedUpsertPlan stores and updates base tracking fields', () => {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-base',
       planId: 81,
       baseBranch: 'feature/base',
@@ -412,7 +412,7 @@ describe('tim db/plan', () => {
     expect(found?.base_commit).toBe('abc123');
     expect(found?.base_change_id).toBe('xyzzzz');
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-base',
       planId: 82,
       baseBranch: null,
@@ -432,7 +432,7 @@ describe('tim db/plan', () => {
       ...getDefaultConfig(),
       sync: { disabled: true, nodeId: '22222222-2222-4222-8222-222222222222' },
     };
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: planUuid,
       planId: 83,
       baseBranch: 'feature/base',
@@ -473,7 +473,7 @@ describe('tim db/plan', () => {
   });
 
   test('getPlanTasksByUuid returns tasks ordered by task_index', () => {
-    upsertPlan(db, projectId, { uuid: 'plan-order', planId: 50 });
+    nonSyncedUpsertPlan(db, projectId, { uuid: 'plan-order', planId: 50 });
 
     db.prepare(
       'INSERT INTO plan_task (plan_uuid, task_index, title, description, done) VALUES (?, ?, ?, ?, ?)'
@@ -491,23 +491,23 @@ describe('tim db/plan', () => {
   });
 
   test('getPlanTasksByProject and getPlanDependenciesByProject are project-scoped', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-proj-a',
       planId: 101,
       tasks: [{ title: 'task-a', description: 'a', done: false }],
       dependencyUuids: ['dep-a'],
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'dep-a',
       planId: 100,
     });
-    upsertPlan(db, otherProjectId, {
+    nonSyncedUpsertPlan(db, otherProjectId, {
       uuid: 'plan-proj-b',
       planId: 201,
       tasks: [{ title: 'task-b', description: 'b', done: false }],
       dependencyUuids: ['dep-b'],
     });
-    upsertPlan(db, otherProjectId, {
+    nonSyncedUpsertPlan(db, otherProjectId, {
       uuid: 'dep-b',
       planId: 200,
     });
@@ -524,12 +524,12 @@ describe('tim db/plan', () => {
   });
 
   test('getPlanTagsByProject is project-scoped', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-tag-a',
       planId: 301,
       tags: ['a', 'b'],
     });
-    upsertPlan(db, otherProjectId, {
+    nonSyncedUpsertPlan(db, otherProjectId, {
       uuid: 'plan-tag-b',
       planId: 302,
       tags: ['c'],
@@ -543,7 +543,7 @@ describe('tim db/plan', () => {
   });
 
   test('deletePlan removes tasks and dependencies via cascade', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-delete',
       planId: 99,
       tasks: [{ title: 'task', description: 'task', done: false }],
@@ -565,18 +565,18 @@ describe('tim db/plan', () => {
   });
 
   test('getPlansNotInSet finds prune candidates', () => {
-    upsertPlan(db, projectId, { uuid: 'plan-1', planId: 1 });
-    upsertPlan(db, projectId, { uuid: 'plan-2', planId: 2 });
-    upsertPlan(db, projectId, { uuid: 'plan-3', planId: 3 });
+    nonSyncedUpsertPlan(db, projectId, { uuid: 'plan-1', planId: 1 });
+    nonSyncedUpsertPlan(db, projectId, { uuid: 'plan-2', planId: 2 });
+    nonSyncedUpsertPlan(db, projectId, { uuid: 'plan-3', planId: 3 });
 
     const notInSet = getPlansNotInSet(db, projectId, new Set(['plan-2']));
     expect(notInSet.map((plan) => plan.uuid)).toEqual(['plan-1', 'plan-3']);
   });
 
   test('getPlansNotInSet with an empty set returns all project plans', () => {
-    upsertPlan(db, projectId, { uuid: 'plan-1', planId: 1 });
-    upsertPlan(db, projectId, { uuid: 'plan-2', planId: 2 });
-    upsertPlan(db, otherProjectId, { uuid: 'plan-3', planId: 3 });
+    nonSyncedUpsertPlan(db, projectId, { uuid: 'plan-1', planId: 1 });
+    nonSyncedUpsertPlan(db, projectId, { uuid: 'plan-2', planId: 2 });
+    nonSyncedUpsertPlan(db, otherProjectId, { uuid: 'plan-3', planId: 3 });
 
     const notInSet = getPlansNotInSet(db, projectId, new Set());
     expect(notInSet.map((plan) => plan.uuid)).toEqual(['plan-1', 'plan-2']);
@@ -587,12 +587,12 @@ describe('tim db/plan', () => {
     const keepUuid = 'plan-keep';
 
     for (let i = 0; i < planCount; i += 1) {
-      upsertPlan(db, projectId, {
+      nonSyncedUpsertPlan(db, projectId, {
         uuid: `plan-${i}`,
         planId: i,
       });
     }
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: keepUuid,
       planId: planCount + 1,
     });
@@ -604,8 +604,8 @@ describe('tim db/plan', () => {
     expect(notInSet[0]?.uuid).toBe(keepUuid);
   });
 
-  test('upsertPlan skips stale source updates unless forceOverwrite is set', () => {
-    upsertPlan(db, projectId, {
+  test('nonSyncedUpsertPlan skips stale source updates unless forceOverwrite is set', () => {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-stale-check',
       planId: 90,
       title: 'Current title',
@@ -619,7 +619,7 @@ describe('tim db/plan', () => {
       'plan-stale-check'
     );
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-stale-check',
       planId: 91,
       title: 'Stale title',
@@ -643,7 +643,7 @@ describe('tim db/plan', () => {
       .all('plan-stale-check') as Array<{ depends_on_uuid: string }>;
     expect(deps.map((entry) => entry.depends_on_uuid)).toEqual(['dep-current']);
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-stale-check',
       planId: 92,
       title: 'Forced title',
@@ -669,8 +669,8 @@ describe('tim db/plan', () => {
     expect(deps.map((entry) => entry.depends_on_uuid)).toEqual(['dep-forced']);
   });
 
-  test('upsertPlan stores and updates docsUpdatedAt and lessonsAppliedAt', () => {
-    upsertPlan(db, projectId, {
+  test('nonSyncedUpsertPlan stores and updates docsUpdatedAt and lessonsAppliedAt', () => {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-finish-fields',
       planId: 500,
       title: 'Finish fields plan',
@@ -684,7 +684,7 @@ describe('tim db/plan', () => {
     expect(found?.lessons_applied_at).toBe('2026-03-02T12:00:00.000Z');
 
     // Update with new values
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-finish-fields',
       planId: 500,
       title: 'Finish fields plan updated',
@@ -697,8 +697,8 @@ describe('tim db/plan', () => {
     expect(found?.lessons_applied_at).toBeNull();
   });
 
-  test('upsertPlan defaults docsUpdatedAt and lessonsAppliedAt to null', () => {
-    upsertPlan(db, projectId, {
+  test('nonSyncedUpsertPlan defaults docsUpdatedAt and lessonsAppliedAt to null', () => {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-no-finish-fields',
       planId: 501,
       title: 'No finish fields',
@@ -711,7 +711,7 @@ describe('tim db/plan', () => {
   });
 
   test('task revision does not bump when the task content is unchanged', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-noop-task',
       planId: 600,
       tasks: [
@@ -727,7 +727,7 @@ describe('tim db/plan', () => {
     const afterFirst = getPlanTasksByUuid(db, 'plan-noop-task');
     expect(afterFirst[0]?.revision).toBe(1);
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-noop-task',
       planId: 600,
       tasks: [
@@ -745,8 +745,8 @@ describe('tim db/plan', () => {
     expect(afterSecond[0]?.uuid).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
   });
 
-  test('upsertPlan does not bump plan revision when content is unchanged', () => {
-    upsertPlan(db, projectId, {
+  test('nonSyncedUpsertPlan does not bump plan revision when content is unchanged', () => {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-noop',
       planId: 603,
       title: 'Stable',
@@ -764,7 +764,7 @@ describe('tim db/plan', () => {
 
     expect(getPlanByUuid(db, 'plan-noop')?.revision).toBe(1);
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-noop',
       planId: 603,
       title: 'Stable',
@@ -785,8 +785,8 @@ describe('tim db/plan', () => {
   });
 
   test('replacing identical dependencies and tags does not bump plan revision', () => {
-    upsertPlan(db, projectId, { uuid: 'dep-plan-y', planId: 701 });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, { uuid: 'dep-plan-y', planId: 701 });
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-noop-sets',
       planId: 604,
       dependencyUuids: ['dep-plan-y'],
@@ -795,7 +795,7 @@ describe('tim db/plan', () => {
 
     expect(getPlanByUuid(db, 'plan-noop-sets')?.revision).toBe(1);
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-noop-sets',
       planId: 604,
       dependencyUuids: ['dep-plan-y'],
@@ -806,7 +806,7 @@ describe('tim db/plan', () => {
   });
 
   test('changing one task bumps that task and plan revision only', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-task-change',
       planId: 605,
       tasks: [
@@ -825,7 +825,7 @@ describe('tim db/plan', () => {
       ],
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-task-change',
       planId: 605,
       tasks: [
@@ -851,7 +851,7 @@ describe('tim db/plan', () => {
   });
 
   test('plan revision bumps when only tags change', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-tag-bump',
       planId: 601,
       title: 'Tag bump plan',
@@ -860,7 +860,7 @@ describe('tim db/plan', () => {
 
     expect(getPlanByUuid(db, 'plan-tag-bump')?.revision).toBe(1);
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-tag-bump',
       planId: 601,
       title: 'Tag bump plan',
@@ -873,9 +873,9 @@ describe('tim db/plan', () => {
   });
 
   test('plan revision bumps when only dependencies change', () => {
-    upsertPlan(db, projectId, { uuid: 'dep-plan-x', planId: 700 });
+    nonSyncedUpsertPlan(db, projectId, { uuid: 'dep-plan-x', planId: 700 });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-dep-bump',
       planId: 602,
       title: 'Dep bump plan',
@@ -884,7 +884,7 @@ describe('tim db/plan', () => {
 
     expect(getPlanByUuid(db, 'plan-dep-bump')?.revision).toBe(1);
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-dep-bump',
       planId: 602,
       title: 'Dep bump plan',
@@ -907,7 +907,7 @@ describe('tim db/plan', () => {
       ...getDefaultConfig(),
       sync: { disabled: true, nodeId: '44444444-4444-4444-8444-444444444444' },
     };
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: planUuid,
       planId: 606,
       title: 'Local tracking',
@@ -961,7 +961,7 @@ describe('tim db/plan', () => {
       },
     };
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: planUuid,
       planId: 700,
       title: 'Branch sync test',
@@ -1005,7 +1005,7 @@ describe('tim db/plan', () => {
       },
     };
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: planUuid,
       planId: 701,
       title: 'Base tracking sync test',
@@ -1053,7 +1053,7 @@ describe('tim db/plan', () => {
       },
     };
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: planUuid,
       planId: 702,
       baseBranch: 'main',

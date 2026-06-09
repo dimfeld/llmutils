@@ -10,7 +10,7 @@ import {
   getPlanTagsByUuid,
   getPlanTasksByUuid,
   upsertCanonicalPlanInTransaction,
-  upsertPlan,
+  nonSyncedUpsertPlan,
   upsertProjectionPlanInTransaction,
 } from '../db/plan.js';
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
@@ -2573,7 +2573,7 @@ describe('persistent-node sync queue', () => {
       highestPlanId: 0,
     });
     const PLAN_UUID_2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-    upsertPlan(db, project2.id, {
+    nonSyncedUpsertPlan(db, project2.id, {
       uuid: PLAN_UUID_2,
       planId: 1,
       title: 'Other plan',
@@ -2743,7 +2743,7 @@ describe('sync queue summary helpers', () => {
       uuid: OTHER_PROJECT_UUID,
       highestPlanId: 0,
     });
-    upsertPlan(db, otherProject.id, {
+    nonSyncedUpsertPlan(db, otherProject.id, {
       uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       planId: 1,
       title: 'Other project plan',

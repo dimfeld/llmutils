@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 
@@ -26,49 +26,49 @@ describe('command_bar_queries', () => {
     projectId = getOrCreateProject(db, 'github.com__example__repo').id;
     otherProjectId = getOrCreateProject(db, 'github.com__other__repo').id;
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-active',
       planId: 42,
       title: 'Command palette keyboard shortcut',
       status: 'in_progress',
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-done',
       planId: 43,
       title: 'Command palette shipped',
       status: 'done',
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-cancelled',
       planId: 44,
       title: 'Command palette abandoned',
       status: 'cancelled',
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-deferred',
       planId: 45,
       title: 'Command palette later',
       status: 'deferred',
     });
-    upsertPlan(db, otherProjectId, {
+    nonSyncedUpsertPlan(db, otherProjectId, {
       uuid: 'plan-other-project',
       planId: 46,
       title: 'Command palette for another project',
       status: 'pending',
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-limit-1',
       planId: 47,
       title: 'Searchable item one',
       status: 'pending',
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-limit-2',
       planId: 48,
       title: 'Searchable item two',
       status: 'pending',
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-limit-3',
       planId: 49,
       title: 'Searchable item three',
@@ -233,7 +233,7 @@ describe('command_bar_queries', () => {
     });
 
     test('treats LIKE wildcards as literal characters', () => {
-      upsertPlan(db, projectId, {
+      nonSyncedUpsertPlan(db, projectId, {
         uuid: 'plan-percent',
         planId: 200,
         title: 'Fix 100% coverage',

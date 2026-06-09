@@ -995,7 +995,11 @@ export function mirrorProjectionPlanToCanonicalInTransaction(
  * helper writes projection state and mirrors it to canonical for local/main
  * setup paths where canonical and projection are equivalent.
  */
-export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInput): PlanRow {
+export function nonSyncedUpsertPlan(
+  db: Database,
+  projectId: number,
+  input: UpsertPlanInput
+): PlanRow {
   const upsertInTransaction = db.transaction(
     (nextProjectId: number, nextInput: UpsertPlanInput): PlanRow => {
       const row = upsertProjectionPlanInTransaction(db, nextProjectId, nextInput);

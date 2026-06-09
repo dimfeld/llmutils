@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { claimAssignment, getAssignment } from '$tim/db/assignment.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
-import { getPlanByUuid, upsertPlan } from '$tim/db/plan.js';
+import { getPlanByUuid, nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { recordWorkspace } from '$tim/db/workspace.js';
@@ -2622,7 +2622,7 @@ describe('plan remote actions', () => {
     lessonsAppliedAt?: string | null;
     pullRequest?: string[] | null;
   }): void {
-    upsertPlan(currentDb, options.projectId ?? projectId, {
+    nonSyncedUpsertPlan(currentDb, options.projectId ?? projectId, {
       uuid: options.uuid,
       planId: options.planId,
       title: `Plan ${options.planId}`,

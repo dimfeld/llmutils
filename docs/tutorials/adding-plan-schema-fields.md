@@ -174,7 +174,7 @@ Add a new migration version in `src/tim/db/migrations.ts`:
 Update `src/tim/db/plan.ts`:
 
 1. Add the field to `PlanRow` and `UpsertPlanInput` interfaces
-2. Update the `upsertPlan` function's INSERT and ON CONFLICT clauses to include the new column
+2. Update the `nonSyncedUpsertPlan` function's INSERT and ON CONFLICT clauses to include the new column
 
 ### Update the Sync Module
 

@@ -9,7 +9,7 @@ import { readPlanFile, resolvePlanByNumericId, writePlanToDb } from '../plans.js
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
-import { upsertPlan } from '../db/plan.js';
+import { nonSyncedUpsertPlan } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 
 describe('validate command', () => {
@@ -54,7 +54,7 @@ describe('validate command', () => {
       lastGitRoot: tempDir,
     });
 
-    return upsertPlan(db, project.id, {
+    return nonSyncedUpsertPlan(db, project.id, {
       uuid: input.uuid,
       planId: input.id,
       title: input.title ?? `Plan ${input.id}`,

@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { claimAssignment } from '$tim/db/assignment.js';
 import { upsertBranchMergeRequirements } from '$tim/db/branch_merge_requirements.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { insertArtifact } from '$tim/db/artifact.js';
 import { upsertPendingTransfer, markTransferSucceeded } from '$tim/db/artifact_transfer.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
@@ -107,13 +107,13 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getChildPlansForEpic returns child task and dependency summaries', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'web-epic',
       planId: 900,
       title: 'Web epic',
       epic: true,
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'web-child-a',
       planId: 901,
       title: 'Web child A',
@@ -123,7 +123,7 @@ describe('lib/server/db_queries', () => {
         { title: 'open', description: 'open', done: false },
       ],
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'web-child-b',
       planId: 902,
       title: 'Web child B',
@@ -164,13 +164,13 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getPlanDetail includes children for epic plans', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'detail-epic',
       planId: 910,
       title: 'Detail epic',
       epic: true,
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'detail-child',
       planId: 911,
       title: 'Detail child',
@@ -197,32 +197,32 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getPlanDetail includes child external dependency statuses for epic plans', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'child-external-status-epic',
       planId: 920,
       title: 'Child external status epic',
       epic: true,
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'child-external-status-finished',
       planId: 921,
       title: 'Finished external dependency',
       status: 'done',
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'child-external-status-unfinished',
       planId: 925,
       title: 'Unfinished external dependency',
       status: 'in_progress',
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'child-external-status-internal',
       planId: 922,
       title: 'Internal dependency child',
       parentUuid: 'child-external-status-epic',
       tasks: [{ title: 'task', description: 'desc', done: false }],
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'child-external-status-child',
       planId: 923,
       title: 'Child with external dependency',
@@ -230,7 +230,7 @@ describe('lib/server/db_queries', () => {
       dependencyUuids: ['child-external-status-finished', 'child-external-status-unfinished'],
       tasks: [{ title: 'task', description: 'desc', done: false }],
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'child-external-status-dependent-child',
       planId: 924,
       title: 'Child with internal dependency',
@@ -343,7 +343,7 @@ describe('lib/server/db_queries', () => {
   test('getPlansForProject and getPlanDetail include finish-tracking timestamps', async () => {
     const docsUpdatedAt = '2026-02-03T04:05:06.000Z';
     const lessonsAppliedAt = '2026-02-04T05:06:07.000Z';
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-finish-tracking',
       planId: 115,
       title: 'Plan with finish tracking',
@@ -403,7 +403,7 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getPlansForProject treats reviewed dependencies as resolved (does not block dependent)', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-reviewed-dep',
       planId: 116,
       title: 'Reviewed plan',
@@ -415,7 +415,7 @@ describe('lib/server/db_queries', () => {
       sourceUpdatedAt: daysAgo(1),
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-depends-on-reviewed',
       planId: 117,
       title: 'Plan depending on reviewed plan',
@@ -438,7 +438,7 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getPlansForProject treats reviewed base plans as fully resolved dependencies', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-reviewed-base',
       planId: 119,
       title: 'Reviewed base plan',
@@ -450,7 +450,7 @@ describe('lib/server/db_queries', () => {
       sourceUpdatedAt: daysAgo(1),
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-based-on-reviewed',
       planId: 120,
       title: 'Plan based on reviewed plan',
@@ -472,7 +472,7 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getPlansForProject keeps needs_review base plans in the stacked state', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-based-on-review',
       planId: 121,
       title: 'Plan based on needs-review plan',
@@ -494,7 +494,7 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getPlansForProject requires every dependency to be fully resolved', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-reviewed-dep-mixed',
       planId: 122,
       title: 'Reviewed dependency in a mixed set',
@@ -506,7 +506,7 @@ describe('lib/server/db_queries', () => {
       sourceUpdatedAt: daysAgo(1),
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-in-progress-dep-mixed',
       planId: 123,
       title: 'Unresolved dependency in a mixed set',
@@ -518,7 +518,7 @@ describe('lib/server/db_queries', () => {
       sourceUpdatedAt: daysAgo(1),
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-mixed-reviewed-and-open',
       planId: 124,
       title: 'Plan with reviewed and open dependencies',
@@ -544,7 +544,7 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getProjectsWithMetadata counts reviewed plans in activePlanCount and statusCounts', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-reviewed-count',
       planId: 118,
       title: 'Reviewed plan for count test',
@@ -570,7 +570,7 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getPlansForProject parses PR metadata and computes PR summary statuses in bulk', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-pending',
       planId: 105,
       title: 'Pending plan',
@@ -581,7 +581,7 @@ describe('lib/server/db_queries', () => {
       pullRequest: ['https://github.com/example/repo/pull/105'],
       issue: ['https://github.com/example/repo/issues/12'],
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-review',
       planId: 106,
       title: 'Needs review plan',
@@ -591,7 +591,7 @@ describe('lib/server/db_queries', () => {
       filename: '106-review.plan.md',
       pullRequest: ['https://github.com/example/repo/pull/106'],
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-resolved-dependency',
       planId: 107,
       title: 'Resolved dependency plan',
@@ -655,7 +655,7 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getPlansForProject and getPlanDetail use required checks when computing PR status', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-required-checks',
       planId: 115,
       title: 'Required checks plan',
@@ -734,7 +734,7 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getPlansForProject treats neutral, cancelled, and skipped PR rollups as passing', () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-neutral-pr',
       planId: 108,
       title: 'Neutral PR plan',
@@ -764,7 +764,7 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getPlansForProject and getPlanDetail read cached PR status from plan URLs when plan_pr is missing', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-cached-pr-no-junction',
       planId: 109,
       title: 'Cached PR without junction',
@@ -802,7 +802,7 @@ describe('lib/server/db_queries', () => {
   });
 
   test('invalid pullRequest URLs are surfaced separately without crashing plan list or detail queries', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-invalid-pr-url',
       planId: 110,
       title: 'Invalid PR URL plan',
@@ -827,7 +827,7 @@ describe('lib/server/db_queries', () => {
   });
 
   test('explicit plan pullRequest URLs override stale plan_pr links in plan list and detail queries', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-stale-pr-link',
       planId: 111,
       title: 'Stale PR link plan',
@@ -984,7 +984,7 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getPlanDetail computes effective base branch and base plan through parent chain', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-grandparent-base',
       planId: 120,
       title: 'Grandparent base plan',
@@ -993,7 +993,7 @@ describe('lib/server/db_queries', () => {
       branch: 'feature/grandparent-base',
       filename: '120-grandparent-base.plan.md',
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-parent-base-reference',
       planId: 121,
       title: 'Parent with base plan',
@@ -1002,7 +1002,7 @@ describe('lib/server/db_queries', () => {
       basePlanUuid: 'plan-grandparent-base',
       filename: '121-parent-base-reference.plan.md',
     });
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-child-inherits-parent-base',
       planId: 122,
       title: 'Child inherits parent base plan',
@@ -1026,7 +1026,7 @@ describe('lib/server/db_queries', () => {
   });
 
   test('getPlanDetail includes parsed PR metadata and linked PR status details', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-blocked',
       planId: 103,
       title: 'Blocked plan',
@@ -1726,7 +1726,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
   const oldTimestamp = daysAgo(20);
   const recentTimestamp = daysAgo(2);
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-parent',
     planId: 101,
     title: 'Parent plan',
@@ -1738,7 +1738,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
     sourceUpdatedAt: oldTimestamp,
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-dependency-open',
     planId: 102,
     title: 'Open dependency',
@@ -1750,7 +1750,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
     sourceUpdatedAt: oldTimestamp,
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-blocked',
     planId: 103,
     title: 'Blocked plan',
@@ -1774,7 +1774,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
     ],
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-recently-done',
     planId: 104,
     title: 'Recently done plan',
@@ -1786,7 +1786,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
     sourceUpdatedAt: recentTimestamp,
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-pending',
     planId: 105,
     title: 'Pending plan',
@@ -1798,7 +1798,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
     sourceUpdatedAt: oldTimestamp,
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-review',
     planId: 106,
     title: 'Needs review plan',
@@ -1810,7 +1810,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
     sourceUpdatedAt: oldTimestamp,
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-resolved-dependency',
     planId: 107,
     title: 'Resolved dependency plan',
@@ -1823,7 +1823,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
     dependencyUuids: ['plan-parent'],
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-depends-on-review',
     planId: 114,
     title: 'Plan depending on review',
@@ -1836,7 +1836,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
     dependencyUuids: ['plan-review'],
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-mixed-dependencies',
     planId: 108,
     title: 'Mixed dependency plan',
@@ -1849,7 +1849,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
     dependencyUuids: ['plan-dependency-open', 'plan-parent'],
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-cross-project',
     planId: 109,
     title: 'Cross-project resolved dependency plan',
@@ -1862,7 +1862,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
     dependencyUuids: ['other-done'],
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-cross-project-blocked',
     planId: 110,
     title: 'Cross-project blocked dependency plan',
@@ -1875,7 +1875,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
     dependencyUuids: ['other-pending'],
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-depends-on-blocked',
     planId: 111,
     title: 'Plan depending on blocked plan',
@@ -1888,7 +1888,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
     dependencyUuids: ['plan-blocked'],
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-missing-dependency',
     planId: 112,
     title: 'Plan with missing dependency',
@@ -1914,7 +1914,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
 
   // Plan whose status diverges from the assignment status (plan is done,
   // but the assignment row still reads 'in_progress' from when it was claimed).
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'plan-stale-assignment',
     planId: 113,
     title: 'Plan with stale assignment status',
@@ -1943,7 +1943,7 @@ function seedPrimaryProject(db: Database, projectId: number): void {
 function seedSecondaryProject(db: Database, projectId: number): void {
   const timestamp = daysAgo(15);
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'other-done',
     planId: 201,
     title: 'Other project done plan',
@@ -1954,7 +1954,7 @@ function seedSecondaryProject(db: Database, projectId: number): void {
     sourceUpdatedAt: timestamp,
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'other-cancelled',
     planId: 202,
     title: 'Other project cancelled plan',
@@ -1965,7 +1965,7 @@ function seedSecondaryProject(db: Database, projectId: number): void {
     sourceUpdatedAt: timestamp,
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'other-pending',
     planId: 203,
     title: 'Other project pending plan',

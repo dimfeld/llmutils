@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { invokeQuery } from '$lib/test-utils/invoke_command.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 
@@ -33,13 +33,13 @@ describe('command_bar_search remote function', () => {
     projectId = getOrCreateProject(currentDb, 'github.com__example__repo').id;
     otherProjectId = getOrCreateProject(currentDb, 'github.com__other__repo').id;
 
-    upsertPlan(currentDb, projectId, {
+    nonSyncedUpsertPlan(currentDb, projectId, {
       uuid: 'plan-command-bar',
       planId: 42,
       title: 'Command palette keyboard shortcut',
       status: 'in_progress',
     });
-    upsertPlan(currentDb, otherProjectId, {
+    nonSyncedUpsertPlan(currentDb, otherProjectId, {
       uuid: 'plan-other-project',
       planId: 43,
       title: 'Other project command palette',

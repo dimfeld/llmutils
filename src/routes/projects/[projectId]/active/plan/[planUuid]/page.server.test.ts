@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { openDatabase } from '$tim/db/database.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 
 const testContext = vi.hoisted(() => ({
@@ -40,7 +40,7 @@ describe('projects/[projectId]/active/plan/[planUuid]/+page.server', () => {
       lastGitRoot: '/tmp/active-proof-route-repo',
     }).id;
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'active-proof-plan',
       planId: 8101,
       title: 'Active proof plan',

@@ -72,7 +72,7 @@ Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML
 
 **CRUD module** (`src/tim/db/plan.ts`):
 
-- `upsertPlan(db, projectId, input)`: INSERT ON CONFLICT(uuid) DO UPDATE, replaces tasks and dependencies in the same transaction
+- `nonSyncedUpsertPlan(db, projectId, input)`: explicit sync-bypass INSERT ON CONFLICT(uuid) DO UPDATE helper, replacing tasks and dependencies in the same transaction. Runtime plan mutations must use `src/tim/sync/write_router.ts`; this helper is reserved for file-to-DB sync internals, legacy cleanup paths, and tests.
 - `getPlanByUuid`, `getPlansByProject`, `getPlanTasksByUuid`, `deletePlan`, `getPlansNotInSet`
 - `getPlansNotInSet` uses a temporary table for the UUID exclusion set instead of a dynamic `NOT IN (?)` clause, avoiding SQLite's `SQLITE_MAX_VARIABLE_NUMBER` limit (default 999)
 - All functions are synchronous, write operations use `db.transaction().immediate()`
@@ -83,7 +83,7 @@ Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML
 - `removePlanFromDb(planUuid, options?)`: Deletes plan and its assignment in a single transaction. Supports `throwOnError: true` to propagate DB deletion failures to the caller (used by `cleanup-temp` to keep the DB row intact when file deletion succeeds but DB deletion fails).
 - `clearPlanSyncContext()`: Resets cached context for testing.
 - DB sync failures are logged as warnings, never blocking plan file writes.
-- Stale write protection: when a plan includes `updatedAt`, upserts are skipped if that timestamp is older than the existing row's `updated_at`. `tim sync --force` disables this guard. All file→DB sync paths (including `syncMaterializedPlan`) rely on this guard — `force: true` is reserved for explicit user-initiated sync operations, never used in generic resolution or workspace reuse paths. **Important**: any sync path that modifies data must refresh `updatedAt` to a current timestamp before calling `upsertPlan()`, otherwise the stale-write guard may cause subsequent syncs to silently skip updates.
+- Stale write protection: when a plan includes `updatedAt`, direct DB upserts are skipped if that timestamp is older than the existing row's `updated_at`. `tim sync --force` disables this guard. All file→DB sync paths (including `syncMaterializedPlan`) rely on this guard — `force: true` is reserved for explicit user-initiated sync operations, never used in generic resolution or workspace reuse paths. **Important**: any sync path that modifies data must refresh `updatedAt` to a current timestamp before calling `nonSyncedUpsertPlan()`, otherwise the stale-write guard may cause subsequent syncs to silently skip updates.
 
 **Context caching**: The sync module caches project context per git root to avoid repeated `getRepositoryIdentity()` calls. Concurrent context resolution for the same git root is deduplicated via a shared promise.
 
@@ -142,7 +142,7 @@ The plan system uses DB-first access: the SQLite database is the source of truth
 
 **Plan writing** (`src/tim/plans.ts`):
 
-- `writePlanToDb(input, options?)`: Validates, normalizes (fancy quotes, deprecated fields), and writes a plan to the DB in a single transaction (`upsertPlan` + `upsertPlanTasks` + `upsertPlanDependencies` + `upsertPlanTags`). Returns the validated `PlanSchema`. Accepts optional `ProjectContext` to avoid redundant queries.
+- `writePlanToDb(input, options?)`: Validates, normalizes (fancy quotes, deprecated fields), and writes a plan to the DB in a single transaction (`nonSyncedUpsertPlan` + `upsertPlanTasks` + `upsertPlanDependencies` + `upsertPlanTags`). Returns the validated `PlanSchema`. Accepts optional `ProjectContext` to avoid redundant queries.
 - `writePlanFile(filePath, input, options?)`: DB-first write function. `filePath` can be `string | null` — when null, only the DB is written (file write is skipped). When `filePath` is null, either `cwdForIdentity` or `context` must be provided (throws otherwise) so the correct project can be resolved for the DB write. Options: `skipFile` (skip file write), `skipDb` (skip DB write, used by materialization to avoid circular sync), `skipUpdatedAt`, `cwdForIdentity`, `context`.
 
 **Project context** (`src/tim/plan_materialize.ts`):
@@ -189,7 +189,7 @@ MCP tools that modify plans follow a consistent DB-first pattern using `withPlan
 
 **Create tool** (`create_plan`):
 
-- Writes new plan directly to DB via atomic transaction (`upsertPlan` + `upsertPlanTasks` + parent update in single `db.transaction().immediate()`)
+- Writes new plan directly to DB via atomic transaction (`nonSyncedUpsertPlan` + `upsertPlanTasks` + parent update in single `db.transaction().immediate()`)
 - Generates numeric ID from `reserveNextPlanId()` (DB-backed)
 - Syncs parent materialized file before transaction, re-materializes after (async I/O outside synchronous transaction)
 - No tasks directory required
@@ -391,7 +391,7 @@ Webhook ingestion can replay older events after the web server has been stopped 
 
 Beyond updating `pr_status`, the dispatch loop applies plan-status side effects to plans linked via `plan_pr`. These side effects are enabled by default and can be disabled in the machine-local global config with `githubWebhooks.planStatusUpdates: false`:
 
-- `autoCompleteMergedLinkedPlans(...)`: when a PR is merged, linked plans currently in `needs_review` or `reviewed` (with all tasks done) are promoted to `done` via `upsertPlan(..., forceOverwrite: true)`, the assignment is removed, and `checkAndMarkParentDone` cascades to the parent.
+- `autoCompleteMergedLinkedPlans(...)`: when a PR is merged, linked plans currently in `needs_review` or `reviewed` (with all tasks done) are promoted to `done`, the assignment is removed, and `checkAndMarkParentDone` cascades to the parent.
 - `applyDraftReadyStatusToLinkedPlans(...)`: when a PR's draft flag transitions (computed by comparing the incoming payload's `draft` to the previously cached `pr_status.draft`), linked plans move between `needs_review` and `reviewed`. `ready_for_review` (became ready) promotes plans in `needs_review → reviewed`; `converted_to_draft` (became draft) reverts plans in `reviewed → needs_review`. Each direction guards on the expected source status so the webhook never clobbers `in_progress`, `done`, or manual states.
 
 **Refresh paths**: All PR refresh entry points use a webhook-first approach when `TIM_WEBHOOK_SERVER_URL` is set:

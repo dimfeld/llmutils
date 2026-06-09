@@ -12,7 +12,7 @@ vi.mock('../../db/database.js', () => ({
 }));
 
 vi.mock('../../db/plan.js', () => ({
-  upsertPlan: vi.fn(),
+  nonSyncedUpsertPlan: vi.fn(),
 }));
 
 vi.mock('../../db/plan_sync.js', () => ({
@@ -43,7 +43,7 @@ vi.mock('../../sync/write_router.js', () => ({
 }));
 
 import { getDatabase } from '../../db/database.js';
-import { upsertPlan } from '../../db/plan.js';
+import { nonSyncedUpsertPlan } from '../../db/plan.js';
 import { toPlanUpsertInput } from '../../db/plan_sync.js';
 import { previewNextPlanId, reserveNextPlanId } from '../../db/project.js';
 import { ensureReferences } from '../../utils/references.js';
@@ -120,7 +120,7 @@ describe('import_helpers', () => {
       dependencyUuids: [],
       tags: [],
     }));
-    vi.mocked(upsertPlan).mockReturnValue({} as never);
+    vi.mocked(nonSyncedUpsertPlan).mockReturnValue({} as never);
     vi.mocked(reserveNextPlanId).mockReturnValue({ startId: 50 } as never);
   });
 
@@ -129,7 +129,7 @@ describe('import_helpers', () => {
 
     expect(result).toEqual([]);
     expect(resolveProjectContext).not.toHaveBeenCalled();
-    expect(upsertPlan).not.toHaveBeenCalled();
+    expect(nonSyncedUpsertPlan).not.toHaveBeenCalled();
   });
 
   test('writeImportedPlansToDbTransactionally resolves uuids, references, and writes transactionally', async () => {
@@ -152,7 +152,7 @@ describe('import_helpers', () => {
     expect(batchCommit).toHaveBeenCalledTimes(1);
     expect(applyPlanWritePostCommitUpdates).toHaveBeenCalledWith(mockDb, []);
     expect(writePlanFile).not.toHaveBeenCalled();
-    expect(upsertPlan).not.toHaveBeenCalled();
+    expect(nonSyncedUpsertPlan).not.toHaveBeenCalled();
     expect(transaction).not.toHaveBeenCalled();
     expect(transactionImmediate).not.toHaveBeenCalled();
 

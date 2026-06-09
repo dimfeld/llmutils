@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import { invokeQuery } from '$lib/test-utils/invoke_command.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { getOrCreateProject } from '$tim/db/project.js';
-import { upsertPlan, upsertPlanTasks } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan, upsertPlanTasks } from '$tim/db/plan.js';
 
 let currentDb: Database;
 
@@ -29,7 +29,7 @@ describe('plan_task_counts remote function', () => {
     currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
     const project = getOrCreateProject(currentDb, 'repo-plan-task-counts-remote');
 
-    upsertPlan(currentDb, project.id, {
+    nonSyncedUpsertPlan(currentDb, project.id, {
       uuid: 'plan-with-tasks',
       planId: 1,
       title: 'Plan with tasks',
@@ -41,7 +41,7 @@ describe('plan_task_counts remote function', () => {
       { title: 'second done task', done: true, description: 'also complete this' },
     ]);
 
-    upsertPlan(currentDb, project.id, {
+    nonSyncedUpsertPlan(currentDb, project.id, {
       uuid: 'plan-without-tasks',
       planId: 2,
       title: 'Plan without tasks',

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { invokeQuery } from '$lib/test-utils/invoke_command.js';
 import { openDatabase } from '$tim/db/database.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 
 let currentDb: Database;
@@ -23,14 +23,14 @@ describe('plan picker remote query', () => {
     currentDb = openDatabase(':memory:');
     projectId = getOrCreateProject(currentDb, 'repo-plan-picker-remote').id;
     otherProjectId = getOrCreateProject(currentDb, 'repo-plan-picker-remote-other').id;
-    upsertPlan(currentDb, projectId, {
+    nonSyncedUpsertPlan(currentDb, projectId, {
       uuid: 'plan-picker-remote',
       planId: 42,
       title: 'Remote picker metadata search',
       status: 'pending',
       priority: 'medium',
     });
-    upsertPlan(currentDb, otherProjectId, {
+    nonSyncedUpsertPlan(currentDb, otherProjectId, {
       uuid: 'plan-picker-remote-other-project',
       planId: 42,
       title: 'Remote picker other project',

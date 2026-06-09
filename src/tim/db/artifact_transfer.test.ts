@@ -6,7 +6,7 @@ import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import { getOrCreateProject } from './project.js';
-import { upsertPlan } from './plan.js';
+import { nonSyncedUpsertPlan } from './plan.js';
 import { insertArtifact } from './artifact.js';
 import {
   getArtifactTransfer,
@@ -31,7 +31,7 @@ describe('tim db/artifact_transfer', () => {
     db = openDatabase(path.join(tempDir, DATABASE_FILENAME));
     const project = getOrCreateProject(db, 'repo-artifact-transfer');
     projectUuid = project.uuid;
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: 'plan-artifact-transfer',
       planId: 1,
       title: 'Artifact transfer plan',

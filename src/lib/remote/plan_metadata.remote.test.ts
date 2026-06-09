@@ -13,7 +13,7 @@ import {
   getPlanDependenciesByUuid,
   getPlanTagsByUuid,
   upsertPlanDependencies,
-  upsertPlan,
+  nonSyncedUpsertPlan,
 } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 
@@ -247,7 +247,7 @@ describe('plan metadata remote commands', () => {
 
     const cascadeParentUuid = '44444444-4444-4444-8444-444444444444';
     const cascadeChildUuid = '55555555-5555-4555-8555-555555555555';
-    upsertPlan(currentDb, projectId, {
+    nonSyncedUpsertPlan(currentDb, projectId, {
       uuid: cascadeParentUuid,
       planId: 13,
       title: 'Remote cascade parent',
@@ -255,7 +255,7 @@ describe('plan metadata remote commands', () => {
       priority: 'medium',
       epic: true,
     });
-    upsertPlan(currentDb, projectId, {
+    nonSyncedUpsertPlan(currentDb, projectId, {
       uuid: cascadeChildUuid,
       planId: 14,
       title: 'Remote cascade child',
@@ -389,7 +389,7 @@ describe('plan metadata remote commands', () => {
   });
 
   function seedPlan(uuid: string, planId: number, title: string): void {
-    upsertPlan(currentDb, projectId, {
+    nonSyncedUpsertPlan(currentDb, projectId, {
       uuid,
       planId,
       title,

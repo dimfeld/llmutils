@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { claimAssignment } from '$tim/db/assignment.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { createReview } from '$tim/db/review.js';
 import { recordWorkspace } from '$tim/db/workspace.js';
@@ -86,7 +86,7 @@ describe('lib/server/plans_browser', () => {
   });
 
   test('getDashboardData returns all non-terminal plans and includes recently_done plans', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'pending-plan',
       planId: 403,
       title: 'Pending plan',
@@ -97,7 +97,7 @@ describe('lib/server/plans_browser', () => {
       sourceUpdatedAt: daysAgo(2),
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'open-dependency',
       planId: 404,
       title: 'Open dependency',
@@ -108,7 +108,7 @@ describe('lib/server/plans_browser', () => {
       sourceUpdatedAt: daysAgo(2),
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'blocked-plan',
       planId: 405,
       title: 'Blocked plan',
@@ -120,7 +120,7 @@ describe('lib/server/plans_browser', () => {
       dependencyUuids: ['open-dependency'],
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'needs-review-plan',
       planId: 406,
       title: 'Needs review plan',
@@ -131,7 +131,7 @@ describe('lib/server/plans_browser', () => {
       sourceUpdatedAt: daysAgo(2),
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'ready-prereq',
       planId: 407,
       title: 'Ready prerequisite',
@@ -142,7 +142,7 @@ describe('lib/server/plans_browser', () => {
       sourceUpdatedAt: daysAgo(20),
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'ready-plan',
       planId: 408,
       title: 'Ready plan',
@@ -154,7 +154,7 @@ describe('lib/server/plans_browser', () => {
       dependencyUuids: ['ready-prereq'],
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'recently-done-plan',
       planId: 409,
       title: 'Recently done plan',
@@ -165,7 +165,7 @@ describe('lib/server/plans_browser', () => {
       sourceUpdatedAt: daysAgo(2),
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'old-done-plan',
       planId: 410,
       title: 'Old done plan',
@@ -176,7 +176,7 @@ describe('lib/server/plans_browser', () => {
       sourceUpdatedAt: daysAgo(20),
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'cancelled-plan',
       planId: 411,
       title: 'Cancelled plan',
@@ -187,7 +187,7 @@ describe('lib/server/plans_browser', () => {
       sourceUpdatedAt: daysAgo(2),
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'deferred-plan',
       planId: 412,
       title: 'Deferred plan',
@@ -246,7 +246,7 @@ describe('lib/server/plans_browser', () => {
   });
 
   test('getDashboardData includes reviewed plans and does not block dependents by them', async () => {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'reviewed-plan',
       planId: 413,
       title: 'Reviewed plan',
@@ -257,7 +257,7 @@ describe('lib/server/plans_browser', () => {
       sourceUpdatedAt: daysAgo(2),
     });
 
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: 'depends-on-reviewed',
       planId: 414,
       title: 'Plan depending on reviewed',
@@ -284,7 +284,7 @@ describe('lib/server/plans_browser', () => {
   });
 
   test('getDashboardData supports all-project mode', async () => {
-    upsertPlan(db, otherProjectId, {
+    nonSyncedUpsertPlan(db, otherProjectId, {
       uuid: 'other-project-done-recent',
       planId: 502,
       title: 'Other project recently done',
@@ -295,7 +295,7 @@ describe('lib/server/plans_browser', () => {
       sourceUpdatedAt: daysAgo(2),
     });
 
-    upsertPlan(db, otherProjectId, {
+    nonSyncedUpsertPlan(db, otherProjectId, {
       uuid: 'other-project-deferred',
       planId: 503,
       title: 'Other project deferred',
@@ -423,7 +423,7 @@ describe('lib/server/plans_browser', () => {
 function seedProjects(db: Database, projectId: number, otherProjectId: number): void {
   const timestamp = daysAgo(3);
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'dependency-done',
     planId: 401,
     title: 'Dependency done',
@@ -434,7 +434,7 @@ function seedProjects(db: Database, projectId: number, otherProjectId: number): 
     sourceUpdatedAt: timestamp,
   });
 
-  upsertPlan(db, projectId, {
+  nonSyncedUpsertPlan(db, projectId, {
     uuid: 'feature-plan',
     planId: 402,
     title: 'Feature plan',
@@ -450,7 +450,7 @@ function seedProjects(db: Database, projectId: number, otherProjectId: number): 
     ],
   });
 
-  upsertPlan(db, otherProjectId, {
+  nonSyncedUpsertPlan(db, otherProjectId, {
     uuid: 'other-project-plan',
     planId: 501,
     title: 'Other project plan',

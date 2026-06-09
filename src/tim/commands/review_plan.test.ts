@@ -46,7 +46,7 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { getReviewIssues, getReviewsByPlanUuid } from '../db/review.js';
-import { upsertPlan } from '../db/plan.js';
+import { nonSyncedUpsertPlan } from '../db/plan.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import { clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
@@ -167,7 +167,7 @@ async function seedPlan(repoDir: string): Promise<number> {
     remoteUrl: repository.remoteUrl,
     lastGitRoot: repository.gitRoot,
   });
-  upsertPlan(db, project.id, {
+  nonSyncedUpsertPlan(db, project.id, {
     uuid: PLAN_UUID,
     planId: 348,
     title: 'Plan-only review guides',

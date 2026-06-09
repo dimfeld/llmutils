@@ -12,7 +12,7 @@ import {
   getPlanDependenciesByUuid,
   getPlanTagsByUuid,
   upsertPlanDependencies,
-  upsertPlan,
+  nonSyncedUpsertPlan,
 } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { materializePlan, resolveProjectContext } from '$tim/plan_materialize.js';
@@ -253,7 +253,7 @@ describe('plan metadata validation helpers', () => {
     title: string;
     projectId?: number;
   }): void {
-    upsertPlan(db, options.projectId ?? projectId, {
+    nonSyncedUpsertPlan(db, options.projectId ?? projectId, {
       uuid: options.uuid,
       planId: options.planId,
       title: options.title,
@@ -489,7 +489,7 @@ describe('createPlanFromWeb', () => {
     title: string;
     projectId?: number;
   }): void {
-    upsertPlan(db, options.projectId ?? projectId, {
+    nonSyncedUpsertPlan(db, options.projectId ?? projectId, {
       uuid: options.uuid,
       planId: options.planId,
       title: options.title,
@@ -813,7 +813,7 @@ describe('updatePlanMetadataFromWeb', () => {
     dependencyUuids?: string[];
     tags?: string[];
   }): void {
-    upsertPlan(db, options.projectId ?? projectId, {
+    nonSyncedUpsertPlan(db, options.projectId ?? projectId, {
       uuid: options.uuid,
       planId: options.planId,
       title: options.title,
@@ -1037,7 +1037,7 @@ describe('plan metadata materialized file consistency', () => {
     parentUuid?: string | null;
     epic?: boolean;
   }): void {
-    upsertPlan(db, projectId, {
+    nonSyncedUpsertPlan(db, projectId, {
       uuid: options.uuid,
       planId: options.planId,
       title: options.title,

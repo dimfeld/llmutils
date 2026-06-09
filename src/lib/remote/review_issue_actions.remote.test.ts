@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
-import { getPlanByUuid, getPlanTasksByUuid, upsertPlan } from '$tim/db/plan.js';
+import { getPlanByUuid, getPlanTasksByUuid, nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { getReviewIssues, createReview, insertReviewIssues } from '$tim/db/review.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
@@ -696,7 +696,7 @@ describe('review issue remote actions', () => {
     tasks?: Array<{ title: string; description: string; done?: boolean }>;
     reviewIssues?: NonNullable<PlanSchema['reviewIssues']> | null;
   }) {
-    upsertPlan(currentDb, projectId, {
+    nonSyncedUpsertPlan(currentDb, projectId, {
       uuid,
       planId,
       title: `Plan ${planId}`,

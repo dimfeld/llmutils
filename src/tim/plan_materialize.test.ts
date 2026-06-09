@@ -11,7 +11,7 @@ import {
   getPlanDependenciesByUuid,
   getPlanTagsByUuid,
   getPlanTasksByUuid,
-  upsertPlan,
+  nonSyncedUpsertPlan,
 } from './db/plan.js';
 import { clearPlanSyncContext } from './db/plan_sync.js';
 import { getOrCreateProject } from './db/project.js';
@@ -98,7 +98,7 @@ describe('tim plan_materialize', () => {
       lastGitRoot: repository.gitRoot,
     });
 
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '11111111-1111-4111-8111-111111111111',
       planId: 1,
       title: 'Parent plan',
@@ -107,7 +107,7 @@ describe('tim plan_materialize', () => {
       tasks: [{ title: 'parent task', description: 'parent task', done: false }],
       tags: ['parent'],
     });
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '22222222-2222-4222-8222-222222222222',
       planId: 2,
       title: 'Dependency plan',
@@ -116,7 +116,7 @@ describe('tim plan_materialize', () => {
       tasks: [{ title: 'dep task', description: 'dep task', done: true }],
       tags: ['dependency'],
     });
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '33333333-3333-4333-8333-333333333333',
       planId: 3,
       title: 'Primary plan',
@@ -156,7 +156,7 @@ describe('tim plan_materialize', () => {
       dependencyUuids: ['22222222-2222-4222-8222-222222222222'],
       tags: ['materialize', 'sync'],
     });
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '44444444-4444-4444-8444-444444444444',
       planId: 4,
       title: 'Child plan',
@@ -164,7 +164,7 @@ describe('tim plan_materialize', () => {
       details: 'Child details',
       parentUuid: '33333333-3333-4333-8333-333333333333',
     });
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '55555555-5555-4555-8555-555555555555',
       planId: 5,
       title: 'Sibling plan',
@@ -444,7 +444,7 @@ Details
 
   test('materializeRelatedPlans overwrites an existing reference materialized plan with fresh DB content', async () => {
     const { db, project } = await seedProject();
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '66666666-6666-4666-8666-666666666666',
       planId: 6,
       title: 'Second dependent plan',
@@ -1893,7 +1893,7 @@ Details
 
   test('materialize, sync, and rematerialize preserve all schema-backed fields through a round trip', async () => {
     const { db, project } = await seedProject();
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       planId: 101,
       title: 'Discovered source',
@@ -2076,7 +2076,7 @@ Details
 
   test('sync-routed plan writes preserve nullable boolean clears from false to null', async () => {
     const { db, project } = await seedProject();
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '33333333-3333-4333-8333-333333333333',
       planId: 3,
       title: 'Primary plan',
@@ -2237,7 +2237,7 @@ Details
   test('getPlanByPlanId rejects duplicate plan IDs within a project', async () => {
     const { db, project } = await seedProject();
 
-    upsertPlan(db, project.id, {
+    nonSyncedUpsertPlan(db, project.id, {
       uuid: '66666666-6666-4666-8666-666666666666',
       planId: 3,
       title: 'Duplicate plan',
