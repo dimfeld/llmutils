@@ -6,16 +6,19 @@ vi.mock('../../logging.js', () => ({
 
 import { getDefaultConfig, type TimConfig } from '../../tim/configSchema.js';
 import {
+  addSlackReaction,
   buildDailyDigestSlackPayload,
   buildSlackTestMessagePayload,
   buildReviewRequestSlackPayload,
   clearSlackClientCache,
   createFetchSlackPinSender,
+  createFetchSlackReactionSender,
   createFetchSlackSender,
   createFetchSlackUnpinSender,
   createFetchSlackUpdateSender,
   getSlackPinSender,
   getSlackPostSender,
+  getSlackReactionSender,
   getSlackUnpinSender,
   getSlackUpdateSender,
   postDailyDigestMessage,
@@ -28,6 +31,7 @@ import {
   type SlackBlock,
   type SlackPostResult,
   type SlackPostSenderArgs,
+  type SlackReactionSenderArgs,
   type SlackUpdateSenderArgs,
 } from './slack_client.js';
 
@@ -1243,6 +1247,155 @@ describe('common/slack/slack_client', () => {
         timestamp: string;
       };
       expect(request).toEqual({ channel: 'C123', timestamp: '1710000000.000100' });
+    });
+  });
+
+  describe('createFetchSlackReactionSender', () => {
+    test('calls reactions.add with channel, timestamp, and emoji name', async () => {
+      const fetchImpl = vi.fn(async () =>
+        buildFetchResponse({
+          ok: true,
+          status: 200,
+          jsonBody: { ok: true },
+        })
+      ) as unknown as typeof fetch;
+      const sender = createFetchSlackReactionSender('xoxb-token', fetchImpl);
+
+      const result = await sender({
+        token: 'xoxb-token',
+        channel: 'C123',
+        ts: '1710000000.000100',
+        name: 'white_check_mark',
+      });
+
+      expect(result).toEqual({ ok: true, channel: 'C123', ts: '1710000000.000100' });
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect(String(fetchImpl.mock.calls[0][0])).toBe('https://slack.com/api/reactions.add');
+      const request = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body)) as {
+        channel: string;
+        timestamp: string;
+        name: string;
+      };
+      expect(request).toEqual({
+        channel: 'C123',
+        timestamp: '1710000000.000100',
+        name: 'white_check_mark',
+      });
+    });
+
+    test('treats already_reacted as success', async () => {
+      const fetchImpl = vi.fn(async () =>
+        buildFetchResponse({
+          ok: true,
+          status: 200,
+          jsonBody: { ok: false, error: 'already_reacted' },
+        })
+      ) as unknown as typeof fetch;
+      const sender = createFetchSlackReactionSender('xoxb-token', fetchImpl);
+
+      const result = await sender({
+        token: 'xoxb-token',
+        channel: 'C123',
+        ts: '1710000000.000100',
+        name: 'speech_balloon',
+      });
+
+      expect(result).toEqual({ ok: true, channel: 'C123', ts: '1710000000.000100' });
+    });
+
+    test('returns failure result on Slack ok:false body without throwing', async () => {
+      const fetchImpl = vi.fn(async () =>
+        buildFetchResponse({
+          ok: true,
+          status: 200,
+          jsonBody: { ok: false, error: 'message_not_found' },
+        })
+      ) as unknown as typeof fetch;
+      const sender = createFetchSlackReactionSender('xoxb-token', fetchImpl);
+
+      const result = await sender({
+        token: 'xoxb-token',
+        channel: 'C123',
+        ts: '1710000000.000100',
+        name: 'speech_balloon',
+      });
+
+      expect(result).toEqual({ ok: false, error: 'message_not_found' });
+    });
+
+    test('returns failure result on network exceptions without throwing', async () => {
+      const fetchImpl = vi.fn(async () => {
+        throw new Error('network down');
+      }) as unknown as typeof fetch;
+      const sender = createFetchSlackReactionSender('xoxb-token', fetchImpl);
+
+      const result = await sender({
+        token: 'xoxb-token',
+        channel: 'C123',
+        ts: '1710000000.000100',
+        name: 'speech_balloon',
+      });
+
+      expect(result).toEqual({ ok: false, error: 'network down' });
+    });
+  });
+
+  describe('getSlackReactionSender caching', () => {
+    test('returns the same sender for the same token', () => {
+      const first = getSlackReactionSender('xoxb-token');
+      const second = getSlackReactionSender('xoxb-token');
+      const other = getSlackReactionSender('xoxb-other');
+
+      expect(second).toBe(first);
+      expect(other).not.toBe(first);
+    });
+  });
+
+  describe('addSlackReaction with injected sender', () => {
+    const config = buildConfig({
+      workspaces: {
+        work: { token: 'xoxb-work-token' },
+      },
+    });
+
+    test('resolves the workspace token and forwards reaction coordinates', async () => {
+      const calls: SlackReactionSenderArgs[] = [];
+      const sender = async (args: SlackReactionSenderArgs): Promise<SlackPostResult> => {
+        calls.push(args);
+        return { ok: true, channel: args.channel, ts: args.ts };
+      };
+
+      const result = await addSlackReaction({
+        config,
+        workspace: 'work',
+        channel: 'C123',
+        ts: '1710000000.000100',
+        name: 'white_check_mark',
+        sender,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(calls).toEqual([
+        {
+          token: 'xoxb-work-token',
+          channel: 'C123',
+          ts: '1710000000.000100',
+          name: 'white_check_mark',
+        },
+      ]);
+    });
+
+    test('throws on an unknown workspace', async () => {
+      await expect(
+        addSlackReaction({
+          config,
+          workspace: 'missing',
+          channel: 'C123',
+          ts: '1710000000.000100',
+          name: 'white_check_mark',
+          sender: async () => ({ ok: true }),
+        })
+      ).rejects.toThrow(/missing/);
     });
   });
 

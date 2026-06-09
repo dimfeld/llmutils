@@ -9,6 +9,7 @@ const SLACK_POST_MESSAGE_URL = 'https://slack.com/api/chat.postMessage';
 const SLACK_UPDATE_MESSAGE_URL = 'https://slack.com/api/chat.update';
 const SLACK_PIN_MESSAGE_URL = 'https://slack.com/api/pins.add';
 const SLACK_UNPIN_MESSAGE_URL = 'https://slack.com/api/pins.remove';
+const SLACK_ADD_REACTION_URL = 'https://slack.com/api/reactions.add';
 
 export interface ReviewRequestReviewer {
   githubLogin: string;
@@ -80,6 +81,26 @@ export interface SlackPinSenderArgs {
 }
 
 export type SlackPinSender = (args: SlackPinSenderArgs) => Promise<SlackPostResult>;
+
+export interface SlackReactionSenderArgs {
+  token: string;
+  channel: string;
+  ts: string;
+  /** Emoji name without colons, e.g. `white_check_mark`. */
+  name: string;
+}
+
+export type SlackReactionSender = (args: SlackReactionSenderArgs) => Promise<SlackPostResult>;
+
+export interface AddSlackReactionArgs {
+  config: TimConfig;
+  workspace: string;
+  channel: string;
+  ts: string;
+  /** Emoji name without colons, e.g. `white_check_mark`. */
+  name: string;
+  sender?: SlackReactionSender;
+}
 
 export interface PostReviewRequestMessageArgs {
   config: TimConfig;
@@ -167,6 +188,7 @@ const cachedSlackSenders = new Map<string, SlackPostSender>();
 const cachedSlackUpdateSenders = new Map<string, SlackUpdateSender>();
 const cachedSlackPinSenders = new Map<string, SlackPinSender>();
 const cachedSlackUnpinSenders = new Map<string, SlackPinSender>();
+const cachedSlackReactionSenders = new Map<string, SlackReactionSender>();
 
 function escapeSlackMrkdwnText(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -734,6 +756,53 @@ export function createFetchSlackUnpinSender(
   );
 }
 
+export function createFetchSlackReactionSender(
+  token: string,
+  fetchImpl: typeof fetch = fetch
+): SlackReactionSender {
+  return async ({ channel, ts, name }: SlackReactionSenderArgs): Promise<SlackPostResult> => {
+    try {
+      const response = await fetchImpl(SLACK_ADD_REACTION_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+        body: JSON.stringify({ channel, timestamp: ts, name }),
+      });
+
+      if (!response.ok) {
+        const responseText = await response.text().catch(() => '');
+        const message = `Slack reactions.add failed with HTTP ${response.status}${responseText ? `: ${responseText}` : ''}`;
+        error(message);
+        return { ok: false, error: message };
+      }
+
+      const responseBody = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
+      if (!responseBody?.ok) {
+        // The same reaction already being present means the message is already in the
+        // desired state, e.g. after a duplicate webhook delivery.
+        if (responseBody?.error === 'already_reacted') {
+          return { ok: true, channel, ts };
+        }
+
+        const message = responseBody?.error ?? 'Slack reactions.add returned ok=false';
+        error(`Slack reactions.add failed: ${message}`);
+        return { ok: false, error: message };
+      }
+
+      return { ok: true, channel, ts };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      error(`Slack reactions.add failed: ${message}`);
+      return { ok: false, error: message };
+    }
+  };
+}
+
 export function getSlackPostSender(token: string): SlackPostSender {
   const cachedSender = cachedSlackSenders.get(token);
   if (cachedSender) {
@@ -778,11 +847,31 @@ export function getSlackUnpinSender(token: string): SlackPinSender {
   return sender;
 }
 
+export function getSlackReactionSender(token: string): SlackReactionSender {
+  const cachedSender = cachedSlackReactionSenders.get(token);
+  if (cachedSender) {
+    return cachedSender;
+  }
+
+  const sender = createFetchSlackReactionSender(token);
+  cachedSlackReactionSenders.set(token, sender);
+  return sender;
+}
+
 export function clearSlackClientCache(): void {
   cachedSlackSenders.clear();
   cachedSlackUpdateSenders.clear();
   cachedSlackPinSenders.clear();
   cachedSlackUnpinSenders.clear();
+  cachedSlackReactionSenders.clear();
+}
+
+export async function addSlackReaction(args: AddSlackReactionArgs): Promise<SlackPostResult> {
+  // Token resolution intentionally throws on misconfiguration; callers decide whether to retry.
+  const token = resolveSlackWorkspaceToken(args.config, args.workspace);
+  const sender = args.sender ?? getSlackReactionSender(token);
+
+  return await sender({ token, channel: args.channel, ts: args.ts, name: args.name });
 }
 
 export async function postReviewRequestMessage(

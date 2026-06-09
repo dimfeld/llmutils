@@ -30,6 +30,20 @@ export interface PrRefreshTarget {
 
 export type PrDraftTransition = 'became_ready' | 'became_draft';
 
+/** A review submitted on a known PR, surfaced so callers can run side effects. */
+export interface ReviewSubmission {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  prUrl: string;
+  author: string;
+  /** GitHub account type of the review author (e.g. 'User' or 'Bot'), when the payload has it. */
+  authorType: string | null;
+  /** Uppercased review state: APPROVED, CHANGES_REQUESTED, or COMMENTED. */
+  state: string;
+  submittedAt: string | null;
+}
+
 export interface WebhookHandlerResult {
   updated: boolean;
   prUrl?: string;
@@ -42,6 +56,8 @@ export interface WebhookHandlerResult {
    * either opened directly as a non-draft PR or transitioned from draft to ready.
    */
   prReadyForReview?: boolean;
+  /** Present when a pull_request_review "submitted" event landed on a known PR. */
+  reviewSubmission?: ReviewSubmission;
 }
 
 interface ParsedRepoInfo {
@@ -74,10 +90,12 @@ interface ParsedPullRequestPayload {
 }
 
 interface ParsedReviewPayload {
+  action: string | null;
   repository: ParsedRepoInfo;
   pullRequestNumber: number;
   review: {
     author: string;
+    authorType: string | null;
     state: string;
     body: string | null;
     submittedAt: string | null;
@@ -286,20 +304,24 @@ function parseReviewPayload(payload: unknown): ParsedReviewPayload | null {
   }
 
   const author = (review as { user?: { login?: unknown } }).user?.login;
+  const authorType = (review as { user?: { type?: unknown } }).user?.type;
   const state = (review as { state?: unknown }).state;
   const body = (review as { body?: unknown }).body;
   const submittedAt = (review as { submitted_at?: unknown }).submitted_at;
   const number = (pullRequest as { number?: unknown }).number;
+  const action = (payload as { action?: unknown }).action;
 
   if (typeof author !== 'string' || typeof state !== 'string' || typeof number !== 'number') {
     return null;
   }
 
   return {
+    action: typeof action === 'string' ? action : null,
     repository,
     pullRequestNumber: number,
     review: {
       author,
+      authorType: typeof authorType === 'string' ? authorType : null,
       state,
       body: typeof body === 'string' ? body.replaceAll(/\r\n|\r/g, '\n') : null,
       submittedAt: typeof submittedAt === 'string' ? submittedAt : null,
@@ -679,9 +701,31 @@ export function handlePullRequestReviewEvent(
     `[webhook-handler] pull_request_review updated=${updated} affectsReviewDecision=${affectsReviewDecision}`
   );
 
+  // Surface genuinely submitted reviews (not edited/dismissed events) so callers can run
+  // side effects such as Slack reactions. Reported even when the upsert was a no-op,
+  // since duplicate deliveries are already filtered upstream by delivery ID.
+  const isSubmittedReviewState =
+    reviewState === 'APPROVED' ||
+    reviewState === 'CHANGES_REQUESTED' ||
+    reviewState === 'COMMENTED';
+  const reviewSubmission =
+    parsed.action === 'submitted' && isSubmittedReviewState
+      ? {
+          owner,
+          repo,
+          prNumber: parsed.pullRequestNumber,
+          prUrl: row.pr_url,
+          author: parsed.review.author,
+          authorType: parsed.review.authorType,
+          state: reviewState,
+          submittedAt: parsed.review.submittedAt,
+        }
+      : undefined;
+
   return {
     updated,
     prUrl: row.pr_url,
+    ...(reviewSubmission ? { reviewSubmission } : {}),
     apiRefreshTargets:
       updated && affectsReviewDecision
         ? [

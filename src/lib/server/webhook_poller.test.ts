@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   formatWebhookIngestErrors: vi.fn<(errors: string[]) => string | undefined>(),
   getWebhookServerUrl: vi.fn<() => string | null>(),
   getWebhookInternalApiToken: vi.fn<() => string | null>(),
+  processSlackReviewReactions: vi.fn<(...args: unknown[]) => Promise<void>>(),
 }));
 
 vi.mock('$common/github/webhook_ingest.js', () => ({
@@ -17,6 +18,10 @@ vi.mock('$common/github/webhook_ingest.js', () => ({
 vi.mock('$common/github/webhook_client.js', () => ({
   getWebhookServerUrl: mocks.getWebhookServerUrl,
   getWebhookInternalApiToken: mocks.getWebhookInternalApiToken,
+}));
+
+vi.mock('./slack_review_reactions.js', () => ({
+  processSlackReviewReactions: mocks.processSlackReviewReactions,
 }));
 
 import {
@@ -307,6 +312,51 @@ describe('lib/server/webhook_poller', () => {
       prsUpdated: ['https://github.com/example/repo/pull/17'],
       errors: [],
     });
+
+    handle?.stop();
+  });
+
+  test('poller forwards submitted reviews to the Slack reaction processor', async () => {
+    process.env.TIM_WEBHOOK_POLL_INTERVAL = '5';
+    process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
+
+    const submittedReview = {
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 17,
+      prUrl: 'https://github.com/example/repo/pull/17',
+      author: 'reviewer-1',
+      authorType: 'User',
+      state: 'APPROVED',
+      submittedAt: '2026-06-01T10:00:00.000Z',
+    };
+    mocks.ingestWebhookEvents.mockResolvedValue({
+      prsUpdated: ['https://github.com/example/repo/pull/17'],
+      reviewsSubmitted: [submittedReview],
+      errors: [],
+    } as unknown as { prsUpdated: string[]; errors: string[] });
+    mocks.processSlackReviewReactions.mockResolvedValue(undefined);
+
+    const handle = startWebhookPoller(null as Database);
+
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(mocks.processSlackReviewReactions).toHaveBeenCalledWith(null, [submittedReview]);
+
+    handle?.stop();
+  });
+
+  test('poller skips the Slack reaction processor when no reviews were submitted', async () => {
+    process.env.TIM_WEBHOOK_POLL_INTERVAL = '5';
+    process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
+
+    const handle = startWebhookPoller(null as Database);
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(mocks.ingestWebhookEvents).toHaveBeenCalledTimes(1);
+    expect(mocks.processSlackReviewReactions).not.toHaveBeenCalled();
 
     handle?.stop();
   });

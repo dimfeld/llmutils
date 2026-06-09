@@ -1085,6 +1085,7 @@ describe('common/github/webhook_ingest', () => {
       eventsIngested: 0,
       prsUpdated: [],
       prsReadyForReview: [],
+      reviewsSubmitted: [],
       errors: [],
     });
     expect(mocks.fetchWebhookEvents).not.toHaveBeenCalled();
@@ -1277,6 +1278,7 @@ describe('common/github/webhook_ingest', () => {
           readyForReviewAt: '2026-03-30T10:05:00.000Z',
         },
       ],
+      reviewsSubmitted: [],
       errors: [],
     });
 
@@ -1286,11 +1288,175 @@ describe('common/github/webhook_ingest', () => {
       eventsIngested: 0,
       prsUpdated: [],
       prsReadyForReview: [],
+      reviewsSubmitted: [],
       errors: [],
     });
     // pruneOldWebhookLogs was called once (first run had events), not on second run
     expect(pruneOldWebhookLogsSpy).toHaveBeenCalledTimes(1);
     expect(mocks.fetchAndUpdatePrMergeableStatus).toHaveBeenCalledTimes(1);
+  });
+
+  function buildReviewEvent(params: {
+    id: number;
+    deliveryId: string;
+    action?: string;
+    prNumber: number;
+    author: string;
+    authorType?: string;
+    state: string;
+    receivedAt?: string;
+    submittedAt?: string;
+  }): Record<string, unknown> {
+    return {
+      id: params.id,
+      deliveryId: params.deliveryId,
+      eventType: 'pull_request_review',
+      action: params.action ?? 'submitted',
+      repositoryFullName: 'example/repo',
+      receivedAt: params.receivedAt ?? '2026-03-30T10:00:00.000Z',
+      payloadJson: JSON.stringify({
+        action: params.action ?? 'submitted',
+        repository: { full_name: 'example/repo' },
+        pull_request: { number: params.prNumber },
+        review: {
+          state: params.state,
+          body: null,
+          submitted_at: params.submittedAt ?? '2026-03-30T09:59:00.000Z',
+          user: {
+            login: params.author,
+            ...(params.authorType ? { type: params.authorType } : {}),
+          },
+        },
+      }),
+    };
+  }
+
+  describe('reviewsSubmitted collection', () => {
+    beforeEach(() => {
+      upsertPrStatus(db, {
+        prUrl: 'https://github.com/example/repo/pull/60',
+        owner: 'example',
+        repo: 'repo',
+        prNumber: 60,
+        title: 'Reviewed PR',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-03-30T00:00:00.000Z',
+      });
+      mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+    });
+
+    test('collects submitted reviews and dedups repeats of the same author/state', async () => {
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        buildReviewEvent({
+          id: 61,
+          deliveryId: 'review-approved',
+          prNumber: 60,
+          author: 'reviewer-1',
+          authorType: 'User',
+          state: 'approved',
+        }),
+        buildReviewEvent({
+          id: 62,
+          deliveryId: 'review-approved-again',
+          prNumber: 60,
+          author: 'reviewer-1',
+          authorType: 'User',
+          state: 'approved',
+          submittedAt: '2026-03-30T10:01:00.000Z',
+        }),
+        buildReviewEvent({
+          id: 63,
+          deliveryId: 'review-commented',
+          prNumber: 60,
+          author: 'bot-reviewer',
+          authorType: 'Bot',
+          state: 'commented',
+        }),
+      ]);
+
+      const result = await ingestWebhookEvents(db);
+
+      expect(result.reviewsSubmitted).toEqual([
+        {
+          owner: 'example',
+          repo: 'repo',
+          prNumber: 60,
+          prUrl: 'https://github.com/example/repo/pull/60',
+          author: 'reviewer-1',
+          authorType: 'User',
+          state: 'APPROVED',
+          // The dedup map keeps the latest delivery for a given author/state.
+          submittedAt: '2026-03-30T10:01:00.000Z',
+        },
+        {
+          owner: 'example',
+          repo: 'repo',
+          prNumber: 60,
+          prUrl: 'https://github.com/example/repo/pull/60',
+          author: 'bot-reviewer',
+          authorType: 'Bot',
+          state: 'COMMENTED',
+          submittedAt: '2026-03-30T09:59:00.000Z',
+        },
+      ]);
+    });
+
+    test('ignores non-submitted review events', async () => {
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        buildReviewEvent({
+          id: 64,
+          deliveryId: 'review-edited',
+          action: 'edited',
+          prNumber: 60,
+          author: 'reviewer-1',
+          state: 'approved',
+        }),
+        buildReviewEvent({
+          id: 65,
+          deliveryId: 'review-dismissed',
+          action: 'dismissed',
+          prNumber: 60,
+          author: 'reviewer-1',
+          state: 'dismissed',
+        }),
+      ]);
+
+      const result = await ingestWebhookEvents(db);
+
+      expect(result.reviewsSubmitted).toEqual([]);
+    });
+
+    test('skips reviews received before the side-effect cutoff', async () => {
+      mocks.loadEffectiveConfig.mockResolvedValue({
+        githubWebhooks: { ignoreSideEffectsBefore: '2026-03-30T10:00:00.000Z' },
+      });
+
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        buildReviewEvent({
+          id: 66,
+          deliveryId: 'review-before-cutoff',
+          prNumber: 60,
+          author: 'reviewer-1',
+          state: 'approved',
+          receivedAt: '2026-03-30T09:00:00.000Z',
+        }),
+        buildReviewEvent({
+          id: 67,
+          deliveryId: 'review-after-cutoff',
+          prNumber: 60,
+          author: 'reviewer-2',
+          state: 'changes_requested',
+          receivedAt: '2026-03-30T11:00:00.000Z',
+        }),
+      ]);
+
+      const result = await ingestWebhookEvents(db);
+
+      expect(result.reviewsSubmitted).toEqual([
+        expect.objectContaining({ author: 'reviewer-2', state: 'CHANGES_REQUESTED' }),
+      ]);
+    });
   });
 
   test('ingestWebhookEvents loops until all events are consumed', async () => {

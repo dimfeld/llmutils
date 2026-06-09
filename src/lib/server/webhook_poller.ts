@@ -8,6 +8,7 @@ import {
 import { getWebhookInternalApiToken, getWebhookServerUrl } from '$common/github/webhook_client.js';
 
 import { triggerReviewGuideComments } from './review_guide_comment_trigger.js';
+import { processSlackReviewReactions } from './slack_review_reactions.js';
 import type { WebhookPollerHandle } from './session_context.js';
 
 const MIN_POLL_INTERVAL_SECONDS = 5;
@@ -78,6 +79,9 @@ export function startWebhookPoller(
       }
       if ((result.prsReadyForReview?.length ?? 0) > 0) {
         await triggerReviewGuideComments(db, result.prsReadyForReview);
+      }
+      if ((result.reviewsSubmitted?.length ?? 0) > 0) {
+        await processSlackReviewReactions(db, result.reviewsSubmitted);
       }
     } catch (error) {
       console.error('[webhook_poller] Polling failed', error);

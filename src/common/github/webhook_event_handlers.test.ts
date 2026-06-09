@@ -300,6 +300,107 @@ describe('common/github/webhook_event_handlers', () => {
     ]);
   });
 
+  test('handlePullRequestReviewEvent surfaces submitted reviews with the author account type', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/42',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 42,
+      title: 'Existing PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const result = handlePullRequestReviewEvent(db, {
+      action: 'submitted',
+      repository: { full_name: 'example/repo' },
+      pull_request: { number: 42 },
+      review: {
+        state: 'approved',
+        body: 'Looks good',
+        submitted_at: '2026-03-30T10:00:00.000Z',
+        user: { login: 'reviewer-1', type: 'User' },
+      },
+    });
+
+    expect(result.reviewSubmission).toEqual({
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 42,
+      prUrl: 'https://github.com/example/repo/pull/42',
+      author: 'reviewer-1',
+      authorType: 'User',
+      state: 'APPROVED',
+      submittedAt: '2026-03-30T10:00:00.000Z',
+    });
+  });
+
+  test('handlePullRequestReviewEvent reports a null author type when the payload omits it', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/42',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 42,
+      title: 'Existing PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const result = handlePullRequestReviewEvent(db, {
+      action: 'submitted',
+      repository: { full_name: 'example/repo' },
+      pull_request: { number: 42 },
+      review: {
+        state: 'commented',
+        submitted_at: '2026-03-30T10:00:00.000Z',
+        user: { login: 'reviewer-1' },
+      },
+    });
+
+    expect(result.reviewSubmission).toEqual(
+      expect.objectContaining({ author: 'reviewer-1', authorType: null, state: 'COMMENTED' })
+    );
+  });
+
+  test('handlePullRequestReviewEvent does not surface non-submitted or dismissed review events', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/42',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 42,
+      title: 'Existing PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const editedResult = handlePullRequestReviewEvent(db, {
+      action: 'edited',
+      repository: { full_name: 'example/repo' },
+      pull_request: { number: 42 },
+      review: {
+        state: 'approved',
+        submitted_at: '2026-03-30T10:00:00.000Z',
+        user: { login: 'reviewer-1', type: 'User' },
+      },
+    });
+    expect(editedResult.reviewSubmission).toBeUndefined();
+
+    const dismissedResult = handlePullRequestReviewEvent(db, {
+      action: 'dismissed',
+      repository: { full_name: 'example/repo' },
+      pull_request: { number: 42 },
+      review: {
+        state: 'dismissed',
+        submitted_at: '2026-03-30T11:00:00.000Z',
+        user: { login: 'reviewer-1', type: 'User' },
+      },
+    });
+    expect(dismissedResult.reviewSubmission).toBeUndefined();
+  });
+
   test('handlePullRequestReviewThreadEvent parses thread node_id and numeric comment id for targeted refresh', () => {
     upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/44',

@@ -274,11 +274,27 @@ export interface ReadyForReviewPr {
   readyForReviewAt: string;
 }
 
+/** A review submitted on a known PR during this ingestion run. */
+export interface SubmittedPrReview {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  prUrl: string;
+  author: string;
+  /** GitHub account type of the review author (e.g. 'User' or 'Bot'), when the payload has it. */
+  authorType: string | null;
+  /** Uppercased review state: APPROVED, CHANGES_REQUESTED, or COMMENTED. */
+  state: string;
+  submittedAt: string | null;
+}
+
 export interface IngestResult {
   eventsIngested: number;
   prsUpdated: string[];
   /** PRs that became ready for review (opened ready or draft -> ready) during this run. */
   prsReadyForReview: ReadyForReviewPr[];
+  /** Reviews submitted on known PRs during this run (side-effect cutoff already applied). */
+  reviewsSubmitted: SubmittedPrReview[];
   errors: string[];
 }
 
@@ -304,7 +320,13 @@ export async function ingestWebhookEvents(
 ): Promise<IngestResult> {
   const serverUrl = getWebhookServerUrl();
   if (!serverUrl) {
-    return { eventsIngested: 0, prsUpdated: [], prsReadyForReview: [], errors: [] };
+    return {
+      eventsIngested: 0,
+      prsUpdated: [],
+      prsReadyForReview: [],
+      reviewsSubmitted: [],
+      errors: [],
+    };
   }
 
   const token = getWebhookInternalApiToken();
@@ -314,6 +336,7 @@ export async function ingestWebhookEvents(
       eventsIngested: 0,
       prsUpdated: [],
       prsReadyForReview: [],
+      reviewsSubmitted: [],
       errors: ['WEBHOOK_INTERNAL_API_TOKEN is not configured but TIM_WEBHOOK_SERVER_URL is set'],
     };
   }
@@ -326,6 +349,8 @@ export async function ingestWebhookEvents(
   const prsUpdated = new Set<string>();
   /** Deduplicated set of PRs that became ready for review, keyed by "owner/repo#number". */
   const prsReadyForReview = new Map<string, ReadyForReviewPr>();
+  /** Deduplicated submitted reviews, keyed by "prUrl:author:state". */
+  const reviewsSubmitted = new Map<string, SubmittedPrReview>();
   const errors: string[] = [];
   /** Deduplicated set of PRs needing API refresh, keyed by "owner/repo#number:type[:threadId]". */
   const apiRefreshTargets = new Map<string, PrRefreshTarget>();
@@ -427,6 +452,18 @@ export async function ingestWebhookEvents(
               readyForReviewAt: event.receivedAt,
             });
           }
+        }
+
+        if (
+          event.eventType === 'pull_request_review' &&
+          result.reviewSubmission &&
+          isWebhookSideEffectAllowed(config, event.receivedAt)
+        ) {
+          const submission = result.reviewSubmission;
+          reviewsSubmitted.set(
+            `${submission.prUrl}:${submission.author}:${submission.state}`,
+            submission
+          );
         }
 
         if (
@@ -565,6 +602,7 @@ export async function ingestWebhookEvents(
     eventsIngested: eventsProcessed,
     prsUpdated: [...prsUpdated],
     prsReadyForReview: [...prsReadyForReview.values()],
+    reviewsSubmitted: [...reviewsSubmitted.values()],
     errors,
   };
 }

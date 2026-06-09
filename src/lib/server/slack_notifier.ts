@@ -21,6 +21,11 @@ import {
   type PendingReviewRequestNotification,
 } from '$tim/db/pr_review_request_notifications.js';
 import { getWebhookSideEffectCutoff } from '$common/github/webhook_side_effects.js';
+import {
+  pruneSlackReviewRequestMessagesBefore,
+  REVIEW_REQUEST_MESSAGE_RETENTION_MS,
+  upsertSlackReviewRequestMessage,
+} from '$tim/db/slack_review_request_message.js';
 import { getUserMapping } from '$tim/db/slack_user_map.js';
 
 import type { SlackNotifierHandle } from './session_context.js';
@@ -215,6 +220,22 @@ async function processPendingPrGroup(
     db,
     group.rows.map((row) => ({ id: row.id, request_version: row.request_version }))
   );
+
+  // Track the latest message per PR so later review events can react to it. reactions.add
+  // needs the channel ID from the post response; the configured channel name won't work.
+  if (result.channel && result.ts) {
+    upsertSlackReviewRequestMessage(db, {
+      prStatusId: group.prStatusId,
+      workspace,
+      slackChannel: result.channel,
+      slackTs: result.ts,
+    });
+  } else {
+    console.warn(
+      `[slack_notifier] Slack post for ${group.prUrl} returned no channel/ts; review reactions will be unavailable for this message`
+    );
+  }
+
   console.info(
     `[slack_notifier] Posted review-request notification for ${group.prUrl} to ${workspace}/${channel}`
   );
@@ -235,6 +256,17 @@ export async function runSlackNotifierOnce(
     }
   }
 
+  const nowMs = options.nowMs ?? Date.now();
+  const pruned = pruneSlackReviewRequestMessagesBefore(
+    db,
+    new Date(nowMs - REVIEW_REQUEST_MESSAGE_RETENTION_MS).toISOString()
+  );
+  if (pruned > 0) {
+    console.info(
+      `[slack_notifier] Pruned ${pruned} tracked review-request message${pruned === 1 ? '' : 's'} older than two weeks`
+    );
+  }
+
   const pending = getPendingReviewRequestNotifications(db);
   if (pending.length === 0) {
     return;
@@ -242,7 +274,7 @@ export async function runSlackNotifierOnce(
 
   const runOptions = {
     debounceMs: options.debounceMs ?? DEFAULT_DEBOUNCE_MS,
-    nowMs: options.nowMs ?? Date.now(),
+    nowMs,
     sender: options.sender,
     loggedMisconfiguredWorkspaces: options.loggedMisconfiguredWorkspaces,
   };

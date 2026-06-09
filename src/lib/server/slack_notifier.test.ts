@@ -16,6 +16,11 @@ import {
   getPendingReviewRequestNotifications,
   markReviewRequestsNotified,
 } from '$tim/db/pr_review_request_notifications.js';
+import {
+  getSlackReviewRequestMessage,
+  REVIEW_REQUEST_MESSAGE_RETENTION_MS,
+  upsertSlackReviewRequestMessage,
+} from '$tim/db/slack_review_request_message.js';
 import { upsertUserMapping } from '$tim/db/slack_user_map.js';
 import {
   runSlackNotifierOnce,
@@ -25,14 +30,19 @@ import {
 } from './slack_notifier.js';
 
 /** Fake Slack sender that records calls and returns ok:true by default. */
-function makeFakeSender(overrideOk?: boolean): {
-  sender: (args: SlackPostSenderArgs) => Promise<{ ok: boolean; error?: string }>;
+function makeFakeSender(
+  overrideOk?: boolean,
+  coordinates?: { channel?: string; ts?: string }
+): {
+  sender: (
+    args: SlackPostSenderArgs
+  ) => Promise<{ ok: boolean; error?: string; channel?: string; ts?: string }>;
   sent: SlackPostSenderArgs[];
 } {
   const sent: SlackPostSenderArgs[] = [];
   const sender = async (args: SlackPostSenderArgs) => {
     sent.push(args);
-    return { ok: overrideOk ?? true };
+    return { ok: overrideOk ?? true, ...coordinates };
   };
   return { sender, sent };
 }
@@ -685,6 +695,108 @@ describe('lib/server/slack_notifier', () => {
       expect(workspaceErrors).toHaveLength(1);
       expect(loggedSet.has('work')).toBe(true);
     });
+    describe('review-request message tracking', () => {
+      test('successful post stores the latest message coordinates for the PR', async () => {
+        const { prStatusId } = setupEnabledProject();
+        insertReviewRequest(db, prStatusId, 'alice', minsAgo(2));
+
+        const { sender } = makeFakeSender(true, { channel: 'C123', ts: '1710000000.000100' });
+        await runSlackNotifierOnce(db, buildConfig(), { sender, debounceMs: 0 });
+
+        const tracked = getSlackReviewRequestMessage(db, prStatusId);
+        expect(tracked?.workspace).toBe('work');
+        expect(tracked?.slack_channel).toBe('C123');
+        expect(tracked?.slack_ts).toBe('1710000000.000100');
+      });
+
+      test('a later post for the same PR replaces the tracked message', async () => {
+        const { prStatusId } = setupEnabledProject();
+        insertReviewRequest(db, prStatusId, 'alice', minsAgo(5));
+
+        const { sender: firstSender } = makeFakeSender(true, {
+          channel: 'C123',
+          ts: '1710000000.000100',
+        });
+        await runSlackNotifierOnce(db, buildConfig(), { sender: firstSender, debounceMs: 0 });
+
+        upsertPrReviewRequestByReviewer(db, prStatusId, {
+          reviewer: 'alice',
+          action: 'requested',
+          eventAt: minsAgo(1),
+        });
+
+        const { sender: secondSender } = makeFakeSender(true, {
+          channel: 'C123',
+          ts: '1710000099.000900',
+        });
+        await runSlackNotifierOnce(db, buildConfig(), { sender: secondSender, debounceMs: 0 });
+
+        const tracked = getSlackReviewRequestMessage(db, prStatusId);
+        expect(tracked?.slack_ts).toBe('1710000099.000900');
+        const count = db
+          .prepare('SELECT COUNT(*) AS count FROM slack_review_request_message')
+          .get() as { count: number };
+        expect(count.count).toBe(1);
+      });
+
+      test('post without channel/ts coordinates does not store a tracking row', async () => {
+        const { prStatusId } = setupEnabledProject();
+        insertReviewRequest(db, prStatusId, 'alice', minsAgo(2));
+
+        const { sender, sent } = makeFakeSender();
+        await runSlackNotifierOnce(db, buildConfig(), { sender, debounceMs: 0 });
+
+        expect(sent).toHaveLength(1);
+        expect(getSlackReviewRequestMessage(db, prStatusId)).toBeUndefined();
+      });
+
+      test('failed post does not store a tracking row', async () => {
+        const { prStatusId } = setupEnabledProject();
+        insertReviewRequest(db, prStatusId, 'alice', minsAgo(2));
+
+        const { sender } = makeFakeSender(false, { channel: 'C123', ts: '1710000000.000100' });
+        await runSlackNotifierOnce(db, buildConfig(), { sender, debounceMs: 0 });
+
+        expect(getSlackReviewRequestMessage(db, prStatusId)).toBeUndefined();
+      });
+
+      test('messages older than two weeks are pruned on each run', async () => {
+        const { prStatusId } = setupEnabledProject();
+        upsertSlackReviewRequestMessage(db, {
+          prStatusId,
+          workspace: 'work',
+          slackChannel: 'C123',
+          slackTs: '1710000000.000100',
+        });
+
+        const nowMs = Date.now();
+        const oldPostedAt = new Date(
+          nowMs - REVIEW_REQUEST_MESSAGE_RETENTION_MS - 60_000
+        ).toISOString();
+        db.prepare('UPDATE slack_review_request_message SET posted_at = ?').run(oldPostedAt);
+
+        const { sender } = makeFakeSender();
+        await runSlackNotifierOnce(db, buildConfig(), { sender, debounceMs: 0, nowMs });
+
+        expect(getSlackReviewRequestMessage(db, prStatusId)).toBeUndefined();
+      });
+
+      test('messages newer than two weeks survive the prune', async () => {
+        const { prStatusId } = setupEnabledProject();
+        upsertSlackReviewRequestMessage(db, {
+          prStatusId,
+          workspace: 'work',
+          slackChannel: 'C123',
+          slackTs: '1710000000.000100',
+        });
+
+        const { sender } = makeFakeSender();
+        await runSlackNotifierOnce(db, buildConfig(), { sender, debounceMs: 0 });
+
+        expect(getSlackReviewRequestMessage(db, prStatusId)).toBeDefined();
+      });
+    });
+
     describe('send-in-flight race: remove + re-request during Slack await', () => {
       test('markReviewRequestsNotified with stale request_version is a no-op', () => {
         const { prStatusId } = setupEnabledProject();

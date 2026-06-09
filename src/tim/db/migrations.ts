@@ -1295,6 +1295,22 @@ const migrations: Migration[] = [
         ON slack_daily_digest_message(workspace, digest_date);
     `,
   },
+  {
+    version: 46,
+    up: `
+      CREATE TABLE IF NOT EXISTS slack_review_request_message (
+        pr_status_id INTEGER PRIMARY KEY REFERENCES pr_status(id) ON DELETE CASCADE,
+        workspace TEXT NOT NULL,
+        slack_channel TEXT NOT NULL,
+        slack_ts TEXT NOT NULL,
+        posted_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+      CREATE INDEX IF NOT EXISTS idx_slack_review_request_message_posted_at
+        ON slack_review_request_message(posted_at);
+    `,
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

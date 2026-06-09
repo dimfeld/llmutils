@@ -1,6 +1,6 @@
 # Slack Integration
 
-This document describes tim's Slack integration: workspace configuration, per-repo opt-in settings, GitHub-to-Slack user mappings, the `tim slack` CLI, the web-server notifier that sends debounced review-request channel messages, and the [daily PR digest](#daily-pr-digest) of stuck PRs.
+This document describes tim's Slack integration: workspace configuration, per-repo opt-in settings, GitHub-to-Slack user mappings, the `tim slack` CLI, the web-server notifier that sends debounced review-request channel messages, [review reactions](#review-reactions) on those messages, and the [daily PR digest](#daily-pr-digest) of stuck PRs.
 
 ## Status and Scope
 
@@ -11,6 +11,7 @@ Slack review-request notifications provide:
 - per-repo Slack settings managed by CLI
 - an outbound Slack `chat.postMessage` client for review-request messages
 - a web-server notifier that batches pending individual review requests and posts one Slack channel message per PR
+- emoji [review reactions](#review-reactions) added to the latest review-request message when a review is submitted
 - a once-per-day [daily PR digest](#daily-pr-digest) of approved-but-unmerged and awaiting-review PRs, per digest-enabled repo
 
 ## Workspace Configuration
@@ -66,7 +67,7 @@ Token placeholders are expanded from `process.env` at read time. tim fails loudl
 
 Create or configure a Slack app for each workspace that should receive review-request messages.
 
-1. Give the bot token `chat:write`. Daily digest pin/unpin behavior also needs `pins:write`; digest posts still send if pinning fails, but tim logs a warning.
+1. Give the bot token `chat:write`. Daily digest pin/unpin behavior also needs `pins:write`; digest posts still send if pinning fails, but tim logs a warning. [Review reactions](#review-reactions) need `reactions:write`; reactions are best-effort and missing scope only produces warnings.
 2. Store the token in an environment variable, such as `SLACK_WORK_TOKEN`.
 3. Add the workspace entry to `~/.config/tim/config.yml`.
 4. Invite the bot to each channel that a repo will use.
@@ -252,6 +253,20 @@ Marking is guarded by a per-row `request_version`. The notifier records each pen
 When Slack is first enabled for a repo that already has outstanding unremoved review requests, those historical pending rows still have `notified_at` set to null. The notifier will post them once after the debounce window passes unless the machine-local global config sets `githubWebhooks.ignoreSideEffectsBefore` to a later ISO timestamp. With that cutoff set, pending review-request rows whose `requested_at` is before the cutoff are marked notified without posting to Slack.
 
 If those historical rows include closed or merged PRs, run `tim slack mark-closed-notified` to suppress them.
+
+## Review Reactions
+
+After the notifier posts a review-request message, tim records the message's Slack channel ID and timestamp in `slack_review_request_message`, keyed by PR. Only the latest message per PR is tracked: a later post for the same PR (such as a re-request) replaces the stored coordinates, so reactions always land on the newest message. Tracked rows older than two weeks are pruned on each notifier tick (and ignored by the reaction path even if the notifier is not running).
+
+When webhook ingestion sees a `pull_request_review` "submitted" event for a PR with a tracked message, tim adds an emoji reaction to that message:
+
+- `:white_check_mark:` (✅) for an approved review
+- `:speech_balloon:` (💬) for a commented review
+- `:arrows_counterclockwise:` (🔄) for a changes-requested review
+
+Reviews from bot accounts do not trigger reactions: authors whose webhook payload account type is `Bot` (or whose login ends in `[bot]`) are skipped. If the payload does not include the author's account type, tim falls back to reacting only for reviewers that have a Slack user mapping in the message's workspace.
+
+Reactions are best-effort and event-driven: a failed `reactions.add` call is logged and not retried, a duplicate delivery is harmless (`already_reacted` is treated as success), and reviews submitted on PRs with no tracked message (for example, posted before this feature was enabled or pruned after two weeks) are ignored. The `githubWebhooks.ignoreSideEffectsBefore` cutoff also applies, so enabling webhooks against a backlog does not replay reactions for historical reviews.
 
 ## Daily PR Digest
 
