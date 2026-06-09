@@ -176,7 +176,7 @@ You are the orchestrator for a tim review-and-fix loop targeting ${targetDescrip
 
 ## Available Commands
 
-- Run \`${reviewCommand}\` to review the current target. The command prints JSON; parse that JSON and use it as the source of truth for issues.
+- Run \`${reviewCommand}\` to review the current target. The command prints JSON; parse that JSON and use it as the source of truth for issues. This command will likely take a long time to run, so do not expect any output for a while after starting it.
 ${buildSubagentGuidance(options.target)}
 ${buildCommitGuidance(options.useJj === true)}
 

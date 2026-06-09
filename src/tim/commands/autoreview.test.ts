@@ -267,6 +267,12 @@ describe('buildAutoreviewPrompt', () => {
     expect(prompt).toContain('summary');
   });
 
+  test('warns that tim review may take a long time without output', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget });
+    expect(prompt).toContain('will likely take a long time to run');
+    expect(prompt).toContain('do not expect any output for a while');
+  });
+
   test('plan target prompt includes plan title in description when available', () => {
     const prompt = buildAutoreviewPrompt({ target: planTarget });
     expect(prompt).toContain('autoreview command');
