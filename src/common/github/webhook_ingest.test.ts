@@ -6,7 +6,7 @@ import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from '../../tim/db/database.js';
 import { claimAssignment, getAssignment } from '../../tim/db/assignment.js';
-import { getPlanByUuid, upsertPlan } from '../../tim/db/plan.js';
+import { getPlanByUuid, upsertCanonicalPlanInTransaction, upsertPlan } from '../../tim/db/plan.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
 import {
   getWebhookCursor,
@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   fetchWebhookEvents: vi.fn<(...args: unknown[]) => Promise<unknown[]>>(),
   fetchAndUpdatePrMergeableStatus: vi.fn<(...args: unknown[]) => Promise<void>>(),
   fetchAndUpdatePrReviewThreads: vi.fn<(...args: unknown[]) => Promise<void>>(),
+  loadEffectiveConfig: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
 }));
 
 vi.mock('./webhook_client.ts', () => ({
@@ -37,7 +38,17 @@ vi.mock('./pr_status_service.ts', () => ({
   fetchAndUpdatePrReviewThreads: mocks.fetchAndUpdatePrReviewThreads,
 }));
 
+vi.mock('../../tim/configLoader.ts', () => ({
+  loadEffectiveConfig: mocks.loadEffectiveConfig,
+}));
+
 import { ingestWebhookEvents } from './webhook_ingest.js';
+
+const PLAN_1_UUID = '11111111-1111-4111-8111-111111111111';
+const PLAN_2_UUID = '22222222-2222-4222-8222-222222222222';
+const REVIEWED_PLAN_UUID = '33333333-3333-4333-8333-333333333333';
+const PERSISTENT_REVIEWED_PLAN_UUID = '44444444-4444-4444-8444-444444444444';
+const PERSISTENT_REVIEWED_TASK_UUID = '55555555-5555-4555-8555-555555555555';
 
 describe('common/github/webhook_ingest', () => {
   let tempDir: string;
@@ -51,7 +62,7 @@ describe('common/github/webhook_ingest', () => {
 
     const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
     upsertPlan(db, projectId, {
-      uuid: 'plan-1',
+      uuid: PLAN_1_UUID,
       planId: 1,
       title: 'Plan 1',
       branch: 'feature/webhook',
@@ -62,12 +73,14 @@ describe('common/github/webhook_ingest', () => {
     originalWebhookToken = process.env.WEBHOOK_INTERNAL_API_TOKEN;
     process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
     process.env.WEBHOOK_INTERNAL_API_TOKEN = 'shared-token';
+    mocks.loadEffectiveConfig.mockResolvedValue({});
   });
 
   afterEach(async () => {
     mocks.fetchWebhookEvents.mockReset();
     mocks.fetchAndUpdatePrMergeableStatus.mockReset();
     mocks.fetchAndUpdatePrReviewThreads.mockReset();
+    mocks.loadEffectiveConfig.mockReset();
     if (originalWebhookUrl === undefined) {
       delete process.env.TIM_WEBHOOK_SERVER_URL;
     } else {
@@ -806,7 +819,7 @@ describe('common/github/webhook_ingest', () => {
 
   test('ingestWebhookEvents marks a linked needs_review plan done when the PR is merged and the plan is fully finished', async () => {
     upsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
-      uuid: 'plan-1',
+      uuid: PLAN_1_UUID,
       planId: 1,
       title: 'Plan 1',
       branch: 'feature/webhook',
@@ -851,7 +864,7 @@ describe('common/github/webhook_ingest', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
     const result = await ingestWebhookEvents(db);
-    const plan = getPlanByUuid(db, 'plan-1');
+    const plan = getPlanByUuid(db, PLAN_1_UUID);
 
     expect(result.errors).toEqual([]);
     expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/51']);
@@ -903,7 +916,7 @@ describe('common/github/webhook_ingest', () => {
 
   test('ingestWebhookEvents marks a linked needs_review plan done when the PR is merged even without docs/lessons timestamps', async () => {
     upsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
-      uuid: 'plan-2',
+      uuid: PLAN_2_UUID,
       planId: 2,
       title: 'Plan 2',
       branch: 'feature/webhook-no-timestamps',
@@ -945,7 +958,7 @@ describe('common/github/webhook_ingest', () => {
     mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
 
     const result = await ingestWebhookEvents(db);
-    const plan = getPlanByUuid(db, 'plan-2');
+    const plan = getPlanByUuid(db, PLAN_2_UUID);
 
     expect(result.errors).toEqual([]);
     expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/52']);
@@ -956,7 +969,7 @@ describe('common/github/webhook_ingest', () => {
 
   test('ingestWebhookEvents marks a linked reviewed plan done when the PR is merged and the plan is fully finished', async () => {
     upsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
-      uuid: 'plan-reviewed-merged',
+      uuid: REVIEWED_PLAN_UUID,
       planId: 3,
       title: 'Plan 3',
       branch: 'feature/webhook-reviewed',
@@ -984,11 +997,79 @@ describe('common/github/webhook_ingest', () => {
     mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
 
     const result = await ingestWebhookEvents(db);
-    const plan = getPlanByUuid(db, 'plan-reviewed-merged');
+    const plan = getPlanByUuid(db, REVIEWED_PLAN_UUID);
 
     expect(result.errors).toEqual([]);
     expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/53']);
     expect(plan?.status).toBe('done');
+  });
+
+  test('ingestWebhookEvents queues the merged-plan completion when running on a persistent node', async () => {
+    const project = getOrCreateProject(db, 'github.com__example__repo');
+    const planInput = {
+      uuid: PERSISTENT_REVIEWED_PLAN_UUID,
+      planId: 4,
+      title: 'Plan 4',
+      branch: 'feature/webhook-reviewed-persistent',
+      filename: '4.plan.md',
+      status: 'reviewed' as const,
+      revision: 1,
+      tasks: [
+        {
+          uuid: PERSISTENT_REVIEWED_TASK_UUID,
+          title: 'Task 1',
+          description: 'Done',
+          done: true,
+          revision: 1,
+        },
+      ],
+      forceOverwrite: true,
+    };
+    upsertCanonicalPlanInTransaction(db, project.id, planInput);
+    upsertPlan(db, project.id, planInput);
+    mocks.loadEffectiveConfig.mockResolvedValue({
+      sync: {
+        role: 'persistent',
+        nodeId: 'persistent-webhook-node',
+        mainUrl: 'http://main.example.test',
+        nodeToken: 'test-token',
+      },
+    });
+
+    enqueuePullRequestEvent({
+      id: 18,
+      deliveryId: 'delivery-reviewed-persistent-merged',
+      action: 'closed',
+      prNumber: 54,
+      title: 'Webhook PR Reviewed Persistent',
+      state: 'closed',
+      draft: false,
+      mergedAt: '2026-03-30T13:00:00.000Z',
+      headSha: 'sha-54',
+      headRef: 'feature/webhook-reviewed-persistent',
+      receivedAt: '2026-03-30T13:00:00.000Z',
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+    const plan = getPlanByUuid(db, PERSISTENT_REVIEWED_PLAN_UUID);
+    const queuedOps = db
+      .prepare(
+        "SELECT operation_type, payload FROM sync_operation WHERE status = 'queued' ORDER BY local_sequence"
+      )
+      .all() as Array<{ operation_type: string; payload: string }>;
+
+    expect(result.errors).toEqual([]);
+    expect(plan?.status).toBe('done');
+    expect(queuedOps).toHaveLength(1);
+    expect(queuedOps[0]?.operation_type).toBe('plan.set_scalar');
+    expect(JSON.parse(queuedOps[0]!.payload)).toMatchObject({
+      type: 'plan.set_scalar',
+      planUuid: PERSISTENT_REVIEWED_PLAN_UUID,
+      field: 'status',
+      value: 'done',
+      baseRevision: 1,
+    });
   });
 
   test('ingestWebhookEvents returns early when webhook config is missing', async () => {

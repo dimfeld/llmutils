@@ -27,7 +27,6 @@ import {
   getPlanTasksByUuid,
   getPlanTagsByUuid,
   getPlansByProject,
-  upsertPlan,
 } from '../../tim/db/plan.js';
 import { getProject } from '../../tim/db/project.js';
 import {
@@ -38,12 +37,9 @@ import {
 } from '../../tim/db/webhook_log.js';
 import { checkAndMarkParentDone } from '../../tim/plans/parent_cascade.js';
 import { invertPlanIdToUuidMap, planRowToSchemaInput } from '../../tim/plans_db.js';
-import { toPlanUpsertInput } from '../../tim/db/plan_sync.js';
-import { type PlanSchema } from '../../tim/planSchema.js';
-import { getDefaultConfig } from '../../tim/configSchema.js';
 import { loadEffectiveConfig } from '../../tim/configLoader.js';
 import { getPrStatusByRepoAndNumber } from '../../tim/db/pr_status.js';
-import { routeSyncOperation } from '../../tim/sync/write_router.js';
+import { getProjectUuidForId, routeSyncOperation } from '../../tim/sync/write_router.js';
 import { setPlanScalarOperation } from '../../tim/sync/operations.js';
 import type { TimConfig } from '../../tim/configSchema.js';
 import { isWebhookSideEffectAllowed } from './webhook_side_effects.js';
@@ -156,8 +152,12 @@ async function autoCompleteMergedLinkedPlans(
   const planRows = getPlansByProject(db, project.id);
   const planIdToUuid = new Map(planRows.map((row) => [row.plan_id, row.uuid]));
   const uuidToPlanId = invertPlanIdToUuidMap(planIdToUuid);
+  const projectUuid = getProjectUuidForId(db, project.id);
   const completedParents = new Set<number>();
-  const nowIso = new Date().toISOString();
+  const config = await loadEffectiveConfig(undefined, {
+    cwd: project.last_git_root ?? undefined,
+    quiet: true,
+  });
 
   for (const planUuid of linkedPlanUuids) {
     const planRow = getPlanByUuid(db, planUuid);
@@ -180,28 +180,30 @@ async function autoCompleteMergedLinkedPlans(
       continue;
     }
 
-    const completedPlan: PlanSchema = {
-      ...plan,
-      status: 'done',
-      updatedAt: nowIso,
-    };
-
-    upsertPlan(db, project.id, {
-      ...toPlanUpsertInput(completedPlan, planIdToUuid),
-      forceOverwrite: true,
-    });
+    await routeSyncOperation(db, config, (options) =>
+      setPlanScalarOperation(
+        projectUuid,
+        {
+          planUuid,
+          field: 'status',
+          value: 'done',
+          baseRevision: planRow.revision,
+        },
+        options
+      )
+    );
     console.log(
       `[webhook-ingest] auto-updated plan ${plan.id ?? planUuid} status ${planRow.status} -> done after PR ${owner}/${repo}#${prNumber} merged`
     );
     removeAssignment(db, project.id, planUuid);
 
-    if (completedPlan.parent != null) {
-      completedParents.add(completedPlan.parent);
+    if (plan.parent != null) {
+      completedParents.add(plan.parent);
     }
   }
 
   for (const parentId of completedParents) {
-    await checkAndMarkParentDone(parentId, getDefaultConfig(), { db, projectId: project.id });
+    await checkAndMarkParentDone(parentId, config, { db, projectId: project.id });
   }
 }
 
