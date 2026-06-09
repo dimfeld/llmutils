@@ -1,5 +1,6 @@
 <script lang="ts">
   import AppWindow from '@lucide/svelte/icons/app-window';
+  import Download from '@lucide/svelte/icons/download';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Upload from '@lucide/svelte/icons/upload';
   import { toast } from 'svelte-sonner';
@@ -335,6 +336,9 @@
   let reviewGuideRunning = $state(false);
   let artifactDialogOpen = $state(false);
   let startingProof = $state(false);
+  let activeArtifactCount = $derived(
+    (plan.artifacts ?? []).filter((a) => a.deletedAt === null).length
+  );
 
   let hasInProgressReview = $derived(
     reviews.some((r) => r.status === 'pending' || r.status === 'in_progress')
@@ -1645,7 +1649,19 @@
 
     <!-- Artifacts -->
     <div class="space-y-2">
-      <div class="flex justify-end">
+      <div class="flex justify-end gap-2">
+        {#if activeArtifactCount > 0}
+          <Button
+            href={`/api/plans/${plan.uuid}/artifacts/archive`}
+            variant="outline"
+            size="xs"
+            aria-label="Download all artifacts"
+            title="Download all artifacts"
+          >
+            <Download class="size-3" />
+            Download ZIP
+          </Button>
+        {/if}
         <Button
           variant="outline"
           size="xs"

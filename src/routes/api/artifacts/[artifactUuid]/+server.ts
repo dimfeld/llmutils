@@ -6,13 +6,10 @@ import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 import { getServerContext } from '$lib/server/init.js';
+import { quoteHeaderValue } from '$lib/server/http_headers.js';
 import { getArtifactByUuid } from '$tim/db/artifact.js';
 import { artifactFileExists } from '$tim/artifacts/storage.js';
 import { enqueueMissingArtifactDownloads } from '$tim/sync/artifact_scheduling.js';
-
-function quoteHeaderValue(value: string): string {
-  return `"${value.replace(/["\\]/g, '\\$&')}"`;
-}
 
 const INLINE_MIME_TYPES = new Set([
   'image/png',

@@ -245,6 +245,70 @@ describe('PlanDetail', () => {
     expect(body).toContain('aria-label="Edit plan metadata"');
   });
 
+  test('shows artifact archive download button when active artifacts exist', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          uuid: 'plan-archive-uuid',
+          artifacts: [
+            {
+              uuid: 'artifact-1',
+              planUuid: 'plan-archive-uuid',
+              projectUuid: 'project-uuid',
+              filename: 'report.txt',
+              mimeType: 'text/plain',
+              size: 12,
+              sha256: 'abc',
+              message: null,
+              storagePath: '/tmp/report.txt',
+              deletedAt: null,
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+              revision: 1,
+              transferState: null,
+            },
+          ],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('href="/api/plans/plan-archive-uuid/artifacts/archive"');
+    expect(body).toContain('Download ZIP');
+  });
+
+  test('hides artifact archive download button when only deleted artifacts exist', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          uuid: 'plan-deleted-artifacts',
+          artifacts: [
+            {
+              uuid: 'artifact-1',
+              planUuid: 'plan-deleted-artifacts',
+              projectUuid: 'project-uuid',
+              filename: 'old.txt',
+              mimeType: 'text/plain',
+              size: 12,
+              sha256: 'abc',
+              message: null,
+              storagePath: '/tmp/old.txt',
+              deletedAt: '2026-01-01T00:00:00.000Z',
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+              revision: 1,
+              transferState: null,
+            },
+          ],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).not.toContain('/api/plans/plan-deleted-artifacts/artifacts/archive');
+    expect(body).not.toContain('Download ZIP');
+  });
+
   test('does not repeat the parent in the depended-on-by section', () => {
     const parent = {
       uuid: 'parent-plan',
