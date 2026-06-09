@@ -578,6 +578,73 @@ describe('handleAutoreviewCommand', () => {
     expect(buildOpts).toMatchObject({ model: 'sonnet' });
   });
 
+  test('uses configured autoreview executor, model, and effort when CLI options are omitted', async () => {
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+      terminalInput: true,
+      executors: {
+        'codex-cli': {
+          reasoning: {
+            applyPatch: 'medium',
+          },
+        },
+      },
+      autoreview: {
+        executor: 'codex-cli',
+        model: 'gpt-5-codex',
+        effort: 'xhigh',
+      },
+    } as any);
+
+    const options: AutoreviewCommandOptions = { current: true, nonInteractive: true };
+    await handleAutoreviewCommand(undefined, options, {});
+
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledWith(
+      'codex-cli',
+      expect.objectContaining({
+        model: 'gpt-5-codex',
+      }),
+      expect.any(Object),
+      expect.objectContaining({
+        reasoning: expect.objectContaining({
+          applyPatch: 'medium',
+          default: 'xhigh',
+        }),
+      })
+    );
+  });
+
+  test('CLI executor, model, and effort override configured autoreview values', async () => {
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      terminalInput: true,
+      autoreview: {
+        executor: 'claude-code',
+        model: 'opus',
+        effort: 'high',
+      },
+    } as any);
+
+    const options: AutoreviewCommandOptions = {
+      current: true,
+      nonInteractive: true,
+      executor: 'codex-cli',
+      model: 'gpt-5-codex',
+      effort: 'xhigh',
+    };
+    await handleAutoreviewCommand(undefined, options, {});
+
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledWith(
+      'codex-cli',
+      expect.objectContaining({
+        model: 'gpt-5-codex',
+      }),
+      expect.any(Object),
+      expect.objectContaining({
+        reasoning: expect.objectContaining({ default: 'xhigh' }),
+      })
+    );
+  });
+
   test('plan-backed execute call includes planId and planTitle', async () => {
     const options: AutoreviewCommandOptions = { nonInteractive: true };
     await handleAutoreviewCommand(376, options, {});

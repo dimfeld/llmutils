@@ -1056,6 +1056,7 @@ program
     'Executor to use: claude/claude-code (default) or codex/codex-cli'
   )
   .option('-m, --model <model>', 'Model to use')
+  .option('--effort <effort>', 'Reasoning effort to use')
   .option('--current', 'Review the current worktree without requiring a plan')
   .option('--branch <branch>', 'Review an explicit branch without requiring a plan')
   .option('--pr <pr-url-or-number>', 'Review an explicit pull request without requiring a plan')

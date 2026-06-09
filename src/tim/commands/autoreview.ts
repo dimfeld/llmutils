@@ -7,6 +7,12 @@ import { warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { isCodexAppServerEnabled } from '../executors/codex_cli/app_server_mode.js';
+import {
+  ClaudeCodeExecutorName,
+  CodexCliExecutorName,
+  type ClaudeCodeReasoningEffort,
+  type CodexReasoningLevel,
+} from '../executors/schemas.js';
 import { buildInteractiveExecutorOptions } from '../executors/shared/interactive_options.js';
 import {
   buildTimWorkspaceCommandEnvironmentOptionsForPath,
@@ -42,6 +48,7 @@ export interface AutoreviewCommandOptions extends Pick<
   newWorkspace?: boolean;
   workspaceSync?: boolean;
   dryRun?: boolean;
+  effort?: string;
 }
 
 export interface BuildAutoreviewPromptOptions {
@@ -73,6 +80,44 @@ function appendBase(command: string, base: string | undefined): string {
     return command;
   }
   return `${command} --base ${trimmedBase}`;
+}
+
+function resolveStringOption(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function buildAutoreviewExecutorOptions(
+  executorName: string,
+  effort: string | undefined,
+  config: Awaited<ReturnType<typeof loadEffectiveConfig>>
+): Record<string, unknown> | undefined {
+  if (!effort) {
+    return undefined;
+  }
+
+  if (executorName === ClaudeCodeExecutorName) {
+    return { reasoningEffort: effort as ClaudeCodeReasoningEffort };
+  }
+
+  if (executorName === CodexCliExecutorName) {
+    const codexExecutorOptions = config.executors?.[CodexCliExecutorName];
+    const existingReasoning =
+      codexExecutorOptions && 'reasoning' in codexExecutorOptions
+        ? codexExecutorOptions.reasoning
+        : undefined;
+    return {
+      reasoning: {
+        ...(existingReasoning &&
+        typeof existingReasoning === 'object' &&
+        !Array.isArray(existingReasoning)
+          ? existingReasoning
+          : {}),
+        default: effort as CodexReasoningLevel,
+      },
+    };
+  }
+
+  return undefined;
 }
 
 function buildReviewCommandForTarget(target: ReviewTarget, base: string | undefined): string {
@@ -218,13 +263,18 @@ export async function handleAutoreviewCommand(
     path.resolve(reviewTarget.repoRoot) === path.resolve(process.cwd())
       ? initialConfig
       : await loadEffectiveConfig(globalOpts.config, { cwd: reviewTarget.repoRoot });
-  const resolvedModel = resolveChatModel(options.model);
+  const configuredAutoreview = config.autoreview;
+  const resolvedModel = resolveChatModel(
+    resolveStringOption(options.model) ?? configuredAutoreview?.model
+  );
+  const configuredExecutor = configuredAutoreview?.executor ?? config.defaultExecutor;
   const executorName = resolveInteractiveExecutor({
-    explicitExecutor: options.executor,
-    configDefaultExecutor: config.defaultExecutor,
+    explicitExecutor: resolveStringOption(options.executor),
+    configDefaultExecutor: configuredExecutor,
     resolvedModel,
     commandName: 'tim autoreview',
   });
+  const effort = resolveStringOption(options.effort) ?? configuredAutoreview?.effort;
   const useJj = await getUsingJj(reviewTarget.repoRoot);
   const prompt = buildAutoreviewPrompt({
     target: reviewTarget,
@@ -368,7 +418,8 @@ export async function handleAutoreviewCommand(
             baseDir: currentBaseDir,
             timEnvironment: withAutoreviewEnvironment(timEnvironment),
           },
-          config
+          config,
+          buildAutoreviewExecutorOptions(executorName, effort, config)
         );
 
         const loggerAdapter = getLoggerAdapter();
