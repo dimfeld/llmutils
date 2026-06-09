@@ -41,6 +41,10 @@
     );
   }
 
+  function isProofArtifact(message: string | null): boolean {
+    return message?.startsWith('tim-proof:') === true;
+  }
+
   function iconFor(mime: string) {
     if (mime.startsWith('image/')) return FileImage;
     if (mime.startsWith('video/')) return FileVideo;
@@ -134,6 +138,9 @@
           {#each visibleArtifacts as artifact (artifact.uuid)}
             {@const Icon = iconFor(artifact.mimeType)}
             {@const downloadUrl = `/api/artifacts/${artifact.uuid}`}
+            {@const openUrl = isProofArtifact(artifact.message)
+              ? `${downloadUrl}?view=1`
+              : downloadUrl}
             {@const isDeleted = artifact.deletedAt !== null}
             {@const fileMissing = artifact.transferState === 'file-missing'}
             {@const downloadable = !isDeleted && !fileMissing}
@@ -148,7 +155,7 @@
               <div class="flex items-start gap-3">
                 {#if canPreviewInline(artifact.mimeType) && downloadable}
                   <a
-                    href={downloadUrl}
+                    href={openUrl}
                     target="_blank"
                     rel="noopener"
                     class="block shrink-0"
@@ -169,7 +176,7 @@
                   <div class="flex flex-wrap items-center gap-2">
                     {#if downloadable}
                       <a
-                        href={downloadUrl}
+                        href={openUrl}
                         target="_blank"
                         rel="noopener"
                         class="font-medium text-foreground hover:underline"

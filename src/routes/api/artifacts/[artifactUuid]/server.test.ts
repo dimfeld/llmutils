@@ -166,6 +166,87 @@ describe('/api/artifacts/[artifactUuid] GET', () => {
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 
+  test('serves text artifacts inline when view mode is requested', async () => {
+    const uuid = '30100000-0000-4000-8000-000000000001';
+    const filePath = path.join(tempDir, 'report.md');
+    await fsp.writeFile(filePath, '# Proof report\n');
+
+    insertArtifact(currentDb, {
+      uuid,
+      planUuid: PLAN_UUID,
+      projectUuid: PROJECT_UUID,
+      filename: 'report.md',
+      mimeType: 'text/markdown',
+      size: 15,
+      sha256: 'mdsha',
+      storagePath: filePath,
+    });
+
+    const response = await GET({
+      params: { artifactUuid: uuid },
+      request: makeRequest(uuid),
+      url: makeUrl(uuid, '?view=1'),
+    } as never);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    expect(response.headers.get('Content-Disposition')).toMatch(/^inline/);
+  });
+
+  test('serves code-like octet-stream artifacts as text inline in view mode', async () => {
+    const uuid = '30200000-0000-4000-8000-000000000001';
+    const filePath = path.join(tempDir, 'proof.ts');
+    await fsp.writeFile(filePath, 'export const proof = true;\n');
+
+    insertArtifact(currentDb, {
+      uuid,
+      planUuid: PLAN_UUID,
+      projectUuid: PROJECT_UUID,
+      filename: 'proof.ts',
+      mimeType: 'application/octet-stream',
+      size: 27,
+      sha256: 'tssha',
+      storagePath: filePath,
+    });
+
+    const response = await GET({
+      params: { artifactUuid: uuid },
+      request: makeRequest(uuid),
+      url: makeUrl(uuid, '?view=1'),
+    } as never);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    expect(response.headers.get('Content-Disposition')).toMatch(/^inline/);
+  });
+
+  test('serves video artifacts inline in view mode', async () => {
+    const uuid = '30300000-0000-4000-8000-000000000001';
+    const filePath = path.join(tempDir, 'demo.webm');
+    await fsp.writeFile(filePath, 'fake-webm');
+
+    insertArtifact(currentDb, {
+      uuid,
+      planUuid: PLAN_UUID,
+      projectUuid: PROJECT_UUID,
+      filename: 'demo.webm',
+      mimeType: 'video/webm',
+      size: 9,
+      sha256: 'webmsha',
+      storagePath: filePath,
+    });
+
+    const response = await GET({
+      params: { artifactUuid: uuid },
+      request: makeRequest(uuid),
+      url: makeUrl(uuid, '?view=1'),
+    } as never);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('video/webm');
+    expect(response.headers.get('Content-Disposition')).toMatch(/^inline/);
+  });
+
   test('serves SVG artifacts as attachments with nosniff', async () => {
     const uuid = '31000000-0000-4000-8000-000000000001';
     const filePath = path.join(tempDir, 'unsafe.svg');

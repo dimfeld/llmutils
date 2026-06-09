@@ -246,4 +246,39 @@ describe('PlanArtifactsList', () => {
     });
     expect(body).toContain('href="/api/artifacts/66666666-6666-6666-6666-666666666666"');
   });
+
+  test('renders proof artifact links in browser-view mode', () => {
+    const { body } = render(PlanArtifactsList, {
+      props: {
+        artifacts: [
+          makeArtifact({
+            uuid: '88888888-8888-8888-8888-888888888888',
+            mimeType: 'text/markdown',
+            filename: 'report.md',
+            message: 'tim-proof:run-1',
+          }),
+        ],
+      },
+    });
+
+    expect(body).toContain('href="/api/artifacts/88888888-8888-8888-8888-888888888888?view=1"');
+  });
+
+  test('keeps non-proof artifact links on the regular artifact endpoint', () => {
+    const { body } = render(PlanArtifactsList, {
+      props: {
+        artifacts: [
+          makeArtifact({
+            uuid: '99999999-9999-9999-9999-999999999999',
+            mimeType: 'text/plain',
+            filename: 'notes.txt',
+            message: 'manual note',
+          }),
+        ],
+      },
+    });
+
+    expect(body).toContain('href="/api/artifacts/99999999-9999-9999-9999-999999999999"');
+    expect(body).not.toContain('99999999-9999-9999-9999-999999999999?view=1');
+  });
 });
