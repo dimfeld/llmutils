@@ -236,7 +236,9 @@ describe('runProofGeneration', () => {
     const prompt = getPrompt();
     expect(prompt).toContain('First look for "Manual Testing Runbooks" sections');
     expect(prompt).toContain('create proof for each runbook');
-    expect(prompt).toContain('mapping each runbook to the proof you produced');
+    expect(prompt).toContain('The top of report.md must state whether the proof matched');
+    expect(prompt).toContain('that success/failure verdict is the most important thing');
+    expect(prompt).toContain('map each runbook to the proof you produced');
     expect(prompt).toContain('Dashboard widget renders');
   });
 
