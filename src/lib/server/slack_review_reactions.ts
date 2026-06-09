@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
+import { normalizeGitHubUsername } from '$common/github/username.js';
 import type { SubmittedPrReview } from '$common/github/webhook_ingest.js';
 import { addSlackReaction, type SlackReactionSender } from '$common/slack/slack_client.js';
 import type { TimConfig } from '$tim/configSchema.js';
@@ -59,6 +60,13 @@ export async function processSlackReviewReactions(
 
       const prStatus = getPrStatusByRepoAndNumber(db, review.owner, review.repo, review.prNumber);
       if (!prStatus) {
+        continue;
+      }
+
+      if (
+        prStatus.author != null &&
+        normalizeGitHubUsername(prStatus.author) === normalizeGitHubUsername(review.author)
+      ) {
         continue;
       }
 

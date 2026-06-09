@@ -137,6 +137,18 @@ describe('lib/server/slack_review_reactions', () => {
     expect(sent).toHaveLength(0);
   });
 
+  test('skips reviews from the PR author', async () => {
+    trackMessage();
+
+    const { sender, sent } = makeFakeReactionSender();
+    await processSlackReviewReactions(db, [buildReview({ author: 'Author-Login' })], {
+      config: buildConfig(),
+      sender,
+    });
+
+    expect(sent).toHaveLength(0);
+  });
+
   test('falls back to the user mapping when the author account type is unknown', async () => {
     trackMessage();
     upsertUserMapping(db, {
