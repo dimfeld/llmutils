@@ -1652,6 +1652,16 @@
       <div class="flex justify-end gap-2">
         {#if activeArtifactCount > 0}
           <Button
+            href={`/projects/${projectId}/plans/${plan.uuid}/artifacts`}
+            variant="outline"
+            size="xs"
+            aria-label="View artifacts"
+            title="View artifacts"
+          >
+            <AppWindow class="size-3" />
+            View artifacts
+          </Button>
+          <Button
             href={`/api/plans/${plan.uuid}/artifacts/archive`}
             variant="outline"
             size="xs"
