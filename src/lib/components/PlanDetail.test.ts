@@ -476,7 +476,7 @@ describe('PlanDetail', () => {
     expect(body).not.toContain('<div data-testid="action-config"><button>Generate</button>');
   });
 
-  test('keeps Run Agent as primary for a simple plan with incomplete tasks', () => {
+  test('shows Run Agent as its own button for a simple plan with incomplete tasks', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
         plan: makePlanDetail({
@@ -503,7 +503,33 @@ describe('PlanDetail', () => {
     expect(body).not.toContain('<div data-testid="action-config"><button>Generate</button>');
   });
 
-  test('shows Generate as a separate action button with Run Agent primary for a taskless non-simple plan', () => {
+  test('shows Run Agent and Generate as separate action buttons for a taskless non-simple plan', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          status: 'in_progress',
+          displayStatus: 'in_progress',
+          simple: false,
+          tasks: [],
+          taskCounts: { done: 0, total: 0 },
+          prStatuses: [],
+        }),
+        projectId: '123',
+      },
+    });
+
+    // Both Run Agent and Generate are surfaced as their own standalone buttons,
+    // not as the primary dropdown action.
+    expect(body).toContain('Run Agent');
+    expect(body).toContain('Generate');
+    expect(body).toContain('Autoreview');
+    expect(body).toContain('Shell');
+    expect(body.indexOf('Run Agent')).toBeLessThan(body.indexOf('Generate'));
+    // Run Agent is no longer the dropdown's primary action.
+    expect(body).not.toContain('<button>Run Agent</button>');
+  });
+
+  test('hides Autoreview for a pending plan and surfaces Run Agent and Generate as buttons', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
         plan: makePlanDetail({
@@ -518,14 +544,11 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('<div data-testid="action-config"><button>Actions</button>');
     expect(body).toContain('Run Agent');
     expect(body).toContain('Generate');
-    expect(body).toContain('Autoreview');
     expect(body).toContain('Shell');
-    // Run Agent is the primary dropdown action; Generate is now a separate
-    // standalone button rendered after the dropdown.
-    expect(body.indexOf('Run Agent')).toBeLessThan(body.indexOf('Generate'));
+    // Pending plans have no work to review yet, so Autoreview is hidden.
+    expect(body).not.toContain('Autoreview');
   });
 
   test('shows note content when plan has a note', () => {

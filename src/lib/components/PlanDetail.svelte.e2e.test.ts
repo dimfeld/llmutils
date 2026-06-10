@@ -197,7 +197,7 @@ describe('PlanDetail action selection', () => {
       .not.toBeInTheDocument();
   });
 
-  test('keeps Run Agent as primary for a simple plan with incomplete tasks', async () => {
+  test('shows Run Agent as its own button for a simple plan with incomplete tasks', async () => {
     renderPlan(
       makePlanDetail({
         status: 'in_progress',
@@ -223,9 +223,11 @@ describe('PlanDetail action selection', () => {
       .not.toBeInTheDocument();
   });
 
-  test('shows Generate as a separate action button with Run Agent primary for a taskless non-simple plan', async () => {
+  test('shows Run Agent and Generate as standalone buttons for a taskless non-simple plan', async () => {
     const screen = renderPlan(
       makePlanDetail({
+        status: 'in_progress',
+        displayStatus: 'in_progress',
         simple: false,
         tasks: [],
         taskCounts: { done: 0, total: 0 },
@@ -236,7 +238,10 @@ describe('PlanDetail action selection', () => {
     await expect
       .element(page.getByRole('button', { name: 'Actions', exact: true }))
       .toBeInTheDocument();
-    // Generate is a standalone button, not buried in the dropdown.
+    // Run Agent and Generate are standalone buttons, not buried in the dropdown.
+    await expect
+      .element(page.getByRole('button', { name: 'Run Agent', exact: true }))
+      .toBeInTheDocument();
     await expect
       .element(page.getByRole('button', { name: 'Generate', exact: true }))
       .toBeInTheDocument();
@@ -247,8 +252,33 @@ describe('PlanDetail action selection', () => {
       .element(page.getByRole('button', { name: 'Shell', exact: true }))
       .toBeInTheDocument();
     await screen.getByRole('button', { name: 'Actions', exact: true }).click();
-    await expect.element(page.getByRole('menuitem', { name: 'Run Agent' })).toBeInTheDocument();
+    // Run Agent and Generate are not also in the dropdown.
+    await expect.element(page.getByRole('menuitem', { name: 'Run Agent' })).not.toBeInTheDocument();
     await expect.element(page.getByRole('menuitem', { name: 'Generate' })).not.toBeInTheDocument();
+  });
+
+  test('hides Autoreview for a pending plan', async () => {
+    renderPlan(
+      makePlanDetail({
+        status: 'pending',
+        displayStatus: 'pending',
+        simple: false,
+        tasks: [],
+        taskCounts: { done: 0, total: 0 },
+        prStatuses: [],
+      })
+    );
+
+    await expect
+      .element(page.getByRole('button', { name: 'Run Agent', exact: true }))
+      .toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: 'Generate', exact: true }))
+      .toBeInTheDocument();
+    // Pending plans have no work to review yet, so Autoreview is hidden.
+    await expect
+      .element(page.getByRole('button', { name: 'Autoreview', exact: true }))
+      .not.toBeInTheDocument();
   });
 });
 

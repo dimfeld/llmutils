@@ -119,6 +119,7 @@
   let tasksOpen = $derived(plan.taskCounts.done < plan.taskCounts.total);
   let isBlocked = $derived(plan.displayStatus === 'blocked');
   let isSimplePlan = $derived(plan.simple === true);
+  let isPending = $derived(plan.displayStatus === 'pending');
 
   function isVisiblePrStatus(status: PrStatusRow): boolean {
     return status.state !== 'closed' || status.merged_at !== null;
@@ -260,27 +261,31 @@
       menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
     } else if (showAgentOnly) {
-      primary = agentItem;
+      // Surface "Run Agent" as its own standalone button (not buried in the dropdown).
+      fixedActions = [agentItem, autoreviewItem, shellItem];
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
+      primary = menuItems.shift()!;
     } else if (showGenerateWithAgent) {
       if (isSimplePlan) {
-        primary = agentItem;
+        // Surface "Run Agent" as its own standalone button (not buried in the dropdown).
+        fixedActions = [agentItem, autoreviewItem, shellItem];
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
         menuItems.push(chatItem);
         if (isEligibleForProof) menuItems.push(proofItem);
+        primary = menuItems.shift()!;
       } else {
-        // Eligible for Generate: surface "Generate" as its own standalone button
-        // (not buried in the dropdown), with "Run Agent" as the primary action.
-        primary = agentItem;
-        fixedActions = [generateItem, autoreviewItem, shellItem];
+        // Eligible for Generate: surface both "Run Agent" and "Generate" as their
+        // own standalone buttons (not buried in the dropdown).
+        fixedActions = [agentItem, generateItem, autoreviewItem, shellItem];
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
         menuItems.push(chatItem);
         if (isEligibleForProof) menuItems.push(proofItem);
+        primary = menuItems.shift()!;
       }
     } else {
       primary = shellItem;
@@ -292,6 +297,11 @@
       }
       menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
+    }
+
+    // Pending plans haven't produced work to review yet, so hide Autoreview.
+    if (isPending) {
+      fixedActions = fixedActions.filter((action) => action !== autoreviewItem);
     }
 
     return { primary, menuItems, fixedActions };
