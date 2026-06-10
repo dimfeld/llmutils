@@ -217,6 +217,13 @@ describe('buildAutoreviewPrompt', () => {
     expect(prompt).toContain('Do not re-raise skipped issues in later iterations');
   });
 
+  test('instructs display output to include complete issue contents and suggestions', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget });
+    expect(prompt).toContain('include the complete issue content from the review JSON');
+    expect(prompt).toContain('Do not summarize, truncate, or omit suggestions');
+    expect(prompt).toContain('decide whether and how each issue should be fixed');
+  });
+
   test('includes guidance to suppress re-reported issues that match skipped ones', () => {
     const prompt = buildAutoreviewPrompt({ target: currentTarget });
     expect(prompt).toContain('Never nag the user about issues they explicitly skipped');

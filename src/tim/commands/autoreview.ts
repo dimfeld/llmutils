@@ -187,6 +187,8 @@ ${buildCommitGuidance(options.useJj === true)}
    - Parse the JSON output into issues. Treat missing, empty, or non-actionable issue lists as no remaining review work.
 2. **Display and Ask**
    - Present the current un-skipped issues clearly in conversation.
+   - For each issue you show, include the complete issue content from the review JSON, its file/line or range, severity, category, and source when present, plus the full suggestion text when present. Do not summarize, truncate, or omit suggestions.
+   - The user should be able to decide whether and how each issue should be fixed based solely on what you display here, without needing to inspect the raw review output.
    - Ask the user which issues they want fixed, and wait for their answer before changing files.
 3. **Remember Skips**
    - For the rest of this session, remember every issue the user declines or asks to skip.
