@@ -11,6 +11,7 @@
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import FilterChips from './FilterChips.svelte';
   import PlanRow from './PlanRow.svelte';
+  import { planMatchesSearch } from './plans_list_filter.js';
 
   let {
     plans,
@@ -74,12 +75,7 @@
     let result = plans;
 
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(
-        (p) =>
-          (p.title?.toLowerCase().includes(query) ?? false) ||
-          (p.goal?.toLowerCase().includes(query) ?? false)
-      );
+      result = result.filter((p) => planMatchesSearch(p, searchQuery));
     }
 
     if (activeFilters.length > 0) {
