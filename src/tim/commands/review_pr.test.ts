@@ -1675,6 +1675,103 @@ describe('review_pr command', () => {
     expect(codexInput?.match(/"id": "issue-1"/g)).toHaveLength(1);
   });
 
+  test('uses codex mini for issue combination when defaultExecutor is codex-cli', async () => {
+    mockLoadEffectiveConfig.mockResolvedValueOnce({
+      terminalInput: true,
+      defaultExecutor: 'codex-cli',
+      review: { defaultExecutor: 'both' },
+      executors: {},
+    } as any);
+
+    const claudeExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('must produce a complete review guide')) {
+        await fs.mkdir(path.dirname(guidePath), { recursive: true });
+        await fs.writeFile(guidePath, '# Guide\n\nBody', 'utf8');
+        return { content: 'ok' };
+      }
+
+      if (prompt.includes('standalone PR code review')) {
+        return {
+          content: JSON.stringify({
+            issues: [
+              {
+                severity: 'major',
+                category: 'bug',
+                content: 'Claude issue',
+                file: 'src/a.ts',
+                line: '10',
+                suggestion: 'Fix A',
+              },
+            ],
+            recommendations: [],
+            actionItems: [],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected Claude prompt: ${prompt}`);
+    });
+
+    const codexIssueExecute = vi.fn().mockResolvedValue({
+      content: JSON.stringify({
+        issues: [
+          {
+            severity: 'minor',
+            category: 'style',
+            content: 'Codex issue',
+            file: 'src/b.ts',
+            line: '20',
+            suggestion: 'Fix B',
+          },
+        ],
+        recommendations: [],
+        actionItems: [],
+      }),
+    });
+    const codexCombinationExecute = vi.fn().mockResolvedValue({
+      content: JSON.stringify({
+        issues: [
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'Merged by codex',
+            file: 'src/a.ts',
+            line: '10',
+            suggestion: 'Fix merged',
+            source: 'combined',
+          },
+        ],
+        recommendations: [],
+        actionItems: [],
+      }),
+    });
+
+    mockBuildExecutorAndLog.mockImplementation((name, sharedOptions) => {
+      if (name === 'claude-code') {
+        return { execute: claudeExecute } as any;
+      }
+      if (name === 'codex-cli' && (sharedOptions as any)?.model === 'gpt-5.4-mini') {
+        return { execute: codexCombinationExecute } as any;
+      }
+      if (name === 'codex-cli') {
+        return { execute: codexIssueExecute } as any;
+      }
+      throw new Error(`Unexpected executor ${name}`);
+    });
+
+    await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
+
+    expect(codexCombinationExecute).toHaveBeenCalledTimes(1);
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+      'codex-cli',
+      expect.objectContaining({ model: 'gpt-5.4-mini', terminalInput: false }),
+      expect.objectContaining({ defaultExecutor: 'codex-cli' })
+    );
+    const inserted = mockInsertReviewIssues.mock.calls[0]?.[1];
+    expect(inserted?.issues?.[0]?.content).toBe('Merged by codex');
+    expect(inserted?.issues?.[0]?.source).toBe('combined');
+  });
+
   test('uses codex results when claude fails and skips combination', async () => {
     const claudeExecute = vi.fn().mockRejectedValue(new Error('claude failed'));
     const codexExecute = vi.fn().mockResolvedValue({

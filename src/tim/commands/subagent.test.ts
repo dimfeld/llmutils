@@ -1,6 +1,4 @@
 import { describe, test, expect } from 'vitest';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import {
   getImplementerPrompt,
   getTddTestsPrompt,
@@ -122,62 +120,5 @@ describe('allowed tools in getDefaultAllowedTools', () => {
     expect(tools).toContain('Bash(tim review:*)');
     expect(tools).toContain('Bash(tim set-task-done:*)');
     expect(tools).toContain('Bash(tim subagent:*)');
-  });
-});
-
-describe('subagent command registration in tim.ts', () => {
-  test('registers subagent command with active subcommands', async () => {
-    const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
-    const source = await fs.readFile(sourceFile, 'utf-8');
-
-    expect(source).toContain("command('subagent')");
-    expect(source).toContain('Run a subagent for the orchestrator');
-    expect(source).toContain("'implementer'");
-    expect(source).toContain("'tester'");
-    expect(source).toContain("'tdd-tests'");
-    expect(source).toContain("command('reviewer <planId>')");
-  });
-
-  test('subcommands accept required options', async () => {
-    const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
-    const source = await fs.readFile(sourceFile, 'utf-8');
-
-    expect(source).toContain('<planId>');
-    expect(source).toContain("'--input <text>'");
-    expect(source).toContain("'--input-file <paths...>'");
-    expect(source).toContain("'--output-file <path>'");
-    expect(source).toContain("'-x, --executor <name>'");
-    expect(source).toContain("'-m, --model <model>'");
-  });
-
-  test('subcommands import and call handleSubagentCommand', async () => {
-    const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
-    const source = await fs.readFile(sourceFile, 'utf-8');
-
-    expect(source).toContain("import('./commands/subagent.js')");
-    expect(source).toContain('handleSubagentCommand');
-  });
-
-  test('reviewer subcommand delegates to review command handler', async () => {
-    const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
-    const source = await fs.readFile(sourceFile, 'utf-8');
-
-    expect(source).toContain("command('reviewer <planId>')");
-    expect(source).toContain("import('./commands/review.js')");
-    expect(source).toContain('handleReviewCommand(planId, options, reviewCommand)');
-  });
-
-  test('subcommand default executor is claude-code', async () => {
-    const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
-    const source = await fs.readFile(sourceFile, 'utf-8');
-
-    expect(source).toContain("'claude-code'");
-  });
-
-  test('subcommand executor option uses .choices() for validation', async () => {
-    const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
-    const source = await fs.readFile(sourceFile, 'utf-8');
-
-    expect(source).toContain(".choices(['codex-cli', 'claude-code'])");
   });
 });

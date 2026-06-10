@@ -2203,9 +2203,10 @@ for (const agentType of ['implementer', 'tester', 'tdd-tests'] as const) {
     .command(`${agentType} <planId>`)
     .description(`Run the ${agentType} subagent`)
     .addOption(
-      new Option('-x, --executor <name>', 'Executor to use: codex-cli or claude-code')
-        .choices(['codex-cli', 'claude-code'])
-        .default('claude-code')
+      new Option('-x, --executor <name>', 'Executor to use: codex-cli or claude-code').choices([
+        'codex-cli',
+        'claude-code',
+      ])
     )
     .option('-m, --model <model>', 'Model to use')
     .option('--input <text>', 'Additional instructions from orchestrator')

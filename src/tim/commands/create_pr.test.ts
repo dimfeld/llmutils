@@ -947,5 +947,38 @@ describe('create_pr command helpers', () => {
         expect.arrayContaining(['https://github.com/acme/repo/pull/99'])
       );
     });
+
+    test('uses codex mini when config defaultExecutor is codex-cli', async () => {
+      const executeMock = vi.fn(async (..._args: unknown[]) => {});
+      mockBuildExecutorAndLog.mockReturnValueOnce({ execute: executeMock } as any);
+      vi.spyOn(Bun, 'spawn').mockReturnValueOnce(
+        createSpawnResult(0, JSON.stringify([{ url: 'https://github.com/acme/repo/pull/410' }]))
+      );
+
+      await createOrUpdatePrForPlan(
+        {
+          id: 410,
+          uuid: 'plan-410',
+          status: 'needs_review',
+          tasks: [],
+          title: 'Codex PR',
+          branch: 'feature-410',
+          pullRequest: [],
+        } as unknown as PlanSchema,
+        '/tmp/410.plan.md',
+        {
+          baseDir: '/tmp',
+          config: { defaultExecutor: 'codex-cli' } as any,
+        }
+      );
+
+      expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+        'codex-cli',
+        expect.objectContaining({ baseDir: '/tmp', model: 'gpt-5.4-mini' }),
+        expect.objectContaining({ defaultExecutor: 'codex-cli' }),
+        {}
+      );
+      expect(executeMock).toHaveBeenCalledTimes(1);
+    });
   });
 });

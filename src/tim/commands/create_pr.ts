@@ -7,6 +7,7 @@ import {
 } from '../../common/git.js';
 import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
+import { LATEST_GPT5_MINI_MODEL } from '../constants.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
@@ -87,6 +88,10 @@ const CREATE_PR_ALLOWED_BASH_TOOLS = [
   'Bash(jj git push --branch:*)',
 ];
 const CLAUDE_CODE_EXECUTOR_NAME = 'claude-code';
+
+function defaultSmallModelForExecutor(executorName: string): string {
+  return executorName === 'codex-cli' ? LATEST_GPT5_MINI_MODEL : 'haiku';
+}
 
 function getRootOptions(command: RootCommandLike | undefined): { config?: string } {
   let current = command;
@@ -410,9 +415,11 @@ async function runPrCreationExecutor(
     siblingPlans,
   });
 
+  const executorName =
+    options.executor ?? options.config.defaultExecutor ?? CLAUDE_CODE_EXECUTOR_NAME;
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir: options.baseDir,
-    model: options.model ?? 'haiku',
+    model: options.model ?? defaultSmallModelForExecutor(executorName),
     terminalInput: options.terminalInput ?? false,
     disableInactivityTimeout: true,
     timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(
@@ -428,7 +435,7 @@ async function runPrCreationExecutor(
     ),
   };
   const executorOptions =
-    (options.executor ?? CLAUDE_CODE_EXECUTOR_NAME) === CLAUDE_CODE_EXECUTOR_NAME
+    executorName === CLAUDE_CODE_EXECUTOR_NAME
       ? {
           allowedTools: [
             ...new Set([
@@ -440,7 +447,7 @@ async function runPrCreationExecutor(
         }
       : {};
   const executor = buildExecutorAndLog(
-    options.executor ?? CLAUDE_CODE_EXECUTOR_NAME,
+    executorName,
     sharedExecutorOptions,
     options.config,
     executorOptions

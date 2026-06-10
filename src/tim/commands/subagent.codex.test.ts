@@ -161,6 +161,21 @@ describe('subagent command - prompt construction and executor delegation', () =>
     expect(capturedCodexPrompt!).toContain('Do NOT update the plan file directly');
   });
 
+  test('uses codex-cli when config defaultExecutor is codex-cli and no executor is provided', async () => {
+    effectiveConfigOverride = {
+      paths: { tasks: tasksDir },
+      defaultExecutor: 'codex-cli',
+      models: {},
+      executors: {},
+      agents: {},
+    };
+
+    await handleSubagentCommand('implementer', 42, {}, {});
+
+    expect(capturedCodexPrompt).toBeDefined();
+    expect(capturedCodexPrompt!).toContain('implementer agent');
+  });
+
   test('builds tester prompt with correct context and mode: report', async () => {
     await handleSubagentCommand('tester', 42, { executor: 'codex-cli' }, {});
 

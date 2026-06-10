@@ -81,7 +81,7 @@ export async function handleSubagentCommand(
   const planFilePath = planPath ?? (await materializePlan(planData.id, repoRoot));
   const gitRoot = await getGitRoot(path.dirname(planFilePath));
   const useJj = await getUsingJj(gitRoot);
-  const executorType = options.executor || 'claude-code';
+  const executorType = options.executor || resolveDefaultSubagentExecutor(config);
   const selectedModel = resolveSubagentModel(agentType, executorType, options.model, config);
 
   // Build the context prompt using the same pattern as batch_mode.ts
@@ -327,6 +327,12 @@ function resolveSubagentModel(
 
 function normalizeSubagentExecutor(executorType: string): SubagentExecutorModelKey {
   return executorType === 'codex-cli' ? 'codex' : 'claude';
+}
+
+function resolveDefaultSubagentExecutor(config: TimConfig): 'codex-cli' | 'claude-code' {
+  return config.defaultExecutor === 'codex-cli' || config.defaultExecutor === 'claude-code'
+    ? config.defaultExecutor
+    : 'claude-code';
 }
 
 function toSubagentConfigKey(agentType: SubagentType): SubagentConfigKey {

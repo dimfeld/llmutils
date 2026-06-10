@@ -8,6 +8,7 @@ import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js'
 import { getGitRoot, getUsingJj } from '../../common/git.js';
 import { parseLineRange } from '../../common/review_line_range.js';
 import { log, warn, error } from '../../logging.js';
+import { LATEST_GPT5_MINI_MODEL } from '../constants.js';
 import type { TimConfig } from '../configSchema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { getOrCreateProject } from '../db/project.js';
@@ -51,6 +52,17 @@ import {
 const REVIEW_GUIDE_FILENAME = 'review-guide.md';
 const REVIEW_ISSUES_FILENAME = 'review-issues.json';
 const UNIFIED_DIFF_FENCE_REGEX = /```unified-diff[^\n]*\n([\s\S]*?)```/gi;
+
+function resolveSmallHelperExecutor(config: TimConfig): {
+  executorName: 'claude-code' | 'codex-cli';
+  model: string;
+} {
+  if (config.defaultExecutor === 'codex-cli') {
+    return { executorName: 'codex-cli', model: LATEST_GPT5_MINI_MODEL };
+  }
+
+  return { executorName: 'claude-code', model: 'haiku' };
+}
 
 interface ExecutorIssueResult {
   issues: StoredReviewIssue[];
@@ -1379,11 +1391,12 @@ async function runCombinationStep(options: {
   log(
     `Combining ${options.claudeIssues.length} claude issues and ${options.codexIssues.length} codex issues...`
   );
+  const helperExecutor = resolveSmallHelperExecutor(options.config);
   const combinationExecutor = buildExecutorAndLog(
-    'claude-code',
+    helperExecutor.executorName,
     {
       baseDir: options.baseDir,
-      model: 'haiku',
+      model: helperExecutor.model,
       terminalInput: false,
       noninteractive: true,
       timEnvironment: options.timEnvironment,
