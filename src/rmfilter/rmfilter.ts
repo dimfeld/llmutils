@@ -65,7 +65,6 @@ import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
 } from './instructions.ts';
-import { runPlanContextWithExecutor } from '../tim/agent_runner.js';
 import { DEFAULT_EXECUTOR } from '../tim/constants.ts';
 import type { TimConfig } from '../tim/configSchema.ts';
 import type { ExecutorCommonOptions } from '../tim/executors/types';
@@ -967,32 +966,6 @@ export async function fullRmfilterRun(options?: {
     await clipboard.write(finalOutput);
     if (!globalValues.quiet) {
       log('Output copied to clipboard');
-    }
-  }
-
-  if (globalValues.executor) {
-    const executorCommonOptions: ExecutorCommonOptions = {
-      baseDir: baseDir,
-      model: globalValues.model,
-    };
-
-    // Create a minimal TimConfig
-    const timConfig: TimConfig = {
-      issueTracker: 'github',
-      models: globalValues.model ? { execution: globalValues.model } : undefined,
-      defaultExecutor: DEFAULT_EXECUTOR,
-    };
-
-    try {
-      await runPlanContextWithExecutor(
-        globalValues.executor,
-        finalOutput,
-        executorCommonOptions,
-        timConfig
-      );
-    } catch (err) {
-      error(`Failed to execute with executor ${globalValues.executor}: ${(err as Error).message}`);
-      process.exit(1);
     }
   }
 
