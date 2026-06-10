@@ -1581,6 +1581,9 @@ describe('tim/commands/pr', () => {
     );
     expect(prompt).toContain('otherwise wait for direction before implementing fixes');
     expect(prompt).toContain('## GraphQL Review Reply Workflow');
+    expect(prompt).toContain('Commit the code changes.');
+    expect(prompt).toContain('jj bookmark set <current-bookmark> -r @-');
+    expect(prompt).toContain('Push the branch/bookmark changes to the PR before replying');
     expect(prompt).toContain('Group addressed threads by PR URL.');
     expect(prompt).toContain('addPullRequestReview(input:{pullRequestId:$pr})');
     expect(prompt).toContain(
@@ -2839,6 +2842,9 @@ describe('tim/commands/pr', () => {
       const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
 
       expect(prompt).toContain('## GraphQL Review Reply Workflow');
+      expect(prompt).toContain('Commit the code changes.');
+      expect(prompt).toContain('jj bookmark set <current-bookmark> -r @-');
+      expect(prompt).toContain('Push the branch/bookmark changes to the PR before replying');
       expect(prompt).toContain('addPullRequestReview(input:{pullRequestId:$pr})');
       expect(prompt).toContain(
         'addPullRequestReviewThreadReply(input:{pullRequestReviewId:$review,pullRequestReviewThreadId:$thread,body:$body})'
@@ -2883,6 +2889,8 @@ describe('tim/commands/pr', () => {
       expect(joined).toContain('## GraphQL Review Reply Workflow');
       expect(joined).toContain('## Additional PR Feedback');
       expect(joined).toContain('## User Feedback');
+      expect(joined).toContain('jj bookmark set <current-bookmark> -r @-');
+      expect(joined).toContain('Push the branch/bookmark changes to the PR before replying');
       expect(joined).toContain('AI Response: ');
     });
 
