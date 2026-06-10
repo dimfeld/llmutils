@@ -106,8 +106,8 @@ vi.mock('../../plans.js', () => {
     }),
     generatePlanFileContent: vi.fn(() => ''),
     resolvePlanByNumericId: vi.fn(async () => ({
-      plan: { id: 1, title: 'Test Plan', status: 'pending', tasks: [] },
-      planPath: '',
+      plan: yaml.parse((await fs.readFile(planFile, 'utf-8')).replace(/^#.*\n/, '')),
+      planPath: planFile,
     })),
     parsePlanIdFromCliArg: vi.fn((arg: string) => {
       const n = parseInt(arg, 10);

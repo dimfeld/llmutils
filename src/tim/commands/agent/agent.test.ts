@@ -17,6 +17,7 @@ import type { StructuredMessage } from '../../../logging/structured_messages.js'
 import { markParentInProgress } from './parent_plans.js';
 import type { PlanSchema } from '../../planSchema.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../../plans_db.js';
+import { setupWorkspace } from '../../workspace/workspace_setup.js';
 
 // Module-level control variables
 let tempDir = '';
@@ -807,6 +808,45 @@ describe('timAgent - simple mode flag plumbing', () => {
       currentPlanFile: simplePlanFile,
       executionMode: 'normal',
     });
+  });
+
+  test('creates the derived task before workspace setup materializes the plan', async () => {
+    await writePlanFile(
+      simplePlanFile,
+      {
+        id: 123,
+        title: 'Taskless Workspace Plan',
+        goal: 'Prepare before materialization',
+        details: 'The workspace should see a taskful DB plan.',
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: tempDir }
+    );
+
+    const materializedPlanFile = path.join(tempDir, '.tim', 'plans', '123.plan.md');
+    vi.mocked(setupWorkspace).mockImplementationOnce(async () => {
+      const preparedPlan = await readPlanFile(simplePlanFile);
+      expect(preparedPlan.tasks).toHaveLength(1);
+      await fs.mkdir(path.dirname(materializedPlanFile), { recursive: true });
+      await writePlanFile(materializedPlanFile, preparedPlan, {
+        cwdForIdentity: tempDir,
+        skipDb: true,
+      });
+      return {
+        baseDir: tempDir,
+        planFile: materializedPlanFile,
+      };
+    });
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(123, { log: false } as any, {});
+
+    expect(setupWorkspace).toHaveBeenCalledTimes(1);
+    expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
+    const [batchOptions] = executeBatchModeSpy.mock.calls[0];
+    expect(batchOptions.currentPlanFile).toBe(materializedPlanFile);
+    expect((await readPlanFile(materializedPlanFile)).tasks).toHaveLength(1);
   });
 
   test('runs taskless simple plans through simple batch execution after creating a task', async () => {

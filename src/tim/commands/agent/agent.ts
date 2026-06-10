@@ -141,7 +141,7 @@ function buildTaskForTasklessPlan(planData: PlanSchema): PlanSchema['tasks'][num
 
 async function ensureTasklessPlanHasExecutableTask(
   planData: PlanSchema,
-  planFilePath: string,
+  planFilePath: string | null,
   baseDir: string,
   config: TimConfig
 ): Promise<boolean> {
@@ -463,8 +463,27 @@ export async function timAgent(
     setDeferSignalExit(true);
     config = await loadEffectiveConfig(globalCliOptions.config);
     currentBaseDir = await getGitRoot();
-    const initialResolvedPlan = await resolvePlanByNumericId(planId, currentBaseDir);
-    const initialPlanData = initialResolvedPlan.plan;
+    let initialResolvedPlan = await resolvePlanByNumericId(planId, currentBaseDir);
+    let initialPlanData = initialResolvedPlan.plan;
+
+    if (!isShuttingDown()) {
+      const taskCreated = await ensureTasklessPlanHasExecutableTask(
+        initialPlanData,
+        initialResolvedPlan.planPath,
+        currentBaseDir,
+        config
+      );
+      if (taskCreated) {
+        sendStructured({
+          type: 'workflow_progress',
+          timestamp: timestamp(),
+          phase: 'plan-preparation',
+          message: 'Created an execution task for taskless plan',
+        });
+        initialResolvedPlan = await resolvePlanByNumericId(planId, currentBaseDir);
+        initialPlanData = initialResolvedPlan.plan;
+      }
+    }
 
     if (options.log !== false) {
       const logDir = getLogDir();
@@ -757,23 +776,6 @@ export async function timAgent(
 
       return null;
     };
-
-    if (!isShuttingDown()) {
-      const taskCreated = await ensureTasklessPlanHasExecutableTask(
-        planData,
-        currentPlanFile,
-        currentBaseDir,
-        config
-      );
-      if (taskCreated) {
-        sendStructured({
-          type: 'workflow_progress',
-          timestamp: timestamp(),
-          phase: 'plan-preparation',
-          message: 'Created an execution task for taskless plan',
-        });
-      }
-    }
 
     const maxSteps = options.steps ? parseInt(options.steps, 10) : Infinity;
 

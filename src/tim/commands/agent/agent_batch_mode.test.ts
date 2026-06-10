@@ -205,10 +205,15 @@ vi.mock('../../plans.js', () => {
       }
     ),
     generatePlanFileContent: vi.fn(() => ''),
-    resolvePlanByNumericId: vi.fn(async () => ({
-      plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
-      planPath: planFile,
-    })),
+    resolvePlanByNumericId: vi.fn(async () => {
+      const { readFile } = await import('node:fs/promises');
+      const yaml = await import('yaml');
+      const content = await readFile(planFile, 'utf-8');
+      return {
+        plan: yaml.default.parse(content.replace(/^#.*\n/, '')),
+        planPath: planFile,
+      };
+    }),
     parsePlanIdFromCliArg: vi.fn((arg: string) => {
       const n = Number(arg.trim());
       if (!Number.isInteger(n) || n <= 0) {
