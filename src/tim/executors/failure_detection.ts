@@ -16,10 +16,10 @@ export interface FailureDetails {
   solutions?: string;
 }
 
-export type FailedSubAgent = 'implementer' | 'tester' | 'reviewer' | 'verifier' | 'fixer';
+export type FailedSubAgent = 'implementer' | 'tester' | 'reviewer' | 'fixer';
 export type FailureSourceAgent = FailedSubAgent | 'orchestrator';
 
-const FAILED_AGENT_NAME_PATTERN = /(implementer|tester|reviewer|verifier|fixer)/i;
+const FAILED_AGENT_NAME_PATTERN = /(implementer|tester|reviewer|fixer)/i;
 
 /**
  * Attempts to infer which sub-agent emitted a FAILED report by inspecting the one-line summary
@@ -28,15 +28,13 @@ const FAILED_AGENT_NAME_PATTERN = /(implementer|tester|reviewer|verifier|fixer)/
 export function inferFailedAgent(summary?: string, fullContent?: string): FailureSourceAgent {
   const normalizedSummary = summary?.trim();
   if (normalizedSummary) {
-    const directMatch = normalizedSummary.match(
-      /^\s*(implementer|tester|reviewer|verifier|fixer)\b/i
-    );
+    const directMatch = normalizedSummary.match(/^\s*(implementer|tester|reviewer|fixer)\b/i);
     if (directMatch) {
       return directMatch[1].toLowerCase() as FailedSubAgent;
     }
 
     const reportedMatch = normalizedSummary.match(
-      /^\s*(implementer|tester|reviewer|verifier|fixer)\s+reported\s+a\s+failure\b/i
+      /^\s*(implementer|tester|reviewer|fixer)\s+reported\s+a\s+failure\b/i
     );
     if (reportedMatch) {
       return reportedMatch[1].toLowerCase() as FailedSubAgent;

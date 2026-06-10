@@ -2193,12 +2193,12 @@ storageCommand
     await handleStorageCleanCommand(names, options).catch(handleCommandError);
   });
 
-// Register the subagent command with implementer, tester, tdd-tests, verifier, and reviewer subcommands
+// Register the subagent command with implementer, tester, tdd-tests, and reviewer subcommands
 const subagentCommand = program
   .command('subagent')
   .description('Run a subagent for the orchestrator');
 
-for (const agentType of ['implementer', 'tester', 'tdd-tests', 'verifier'] as const) {
+for (const agentType of ['implementer', 'tester', 'tdd-tests'] as const) {
   subagentCommand
     .command(`${agentType} <planId>`)
     .description(`Run the ${agentType} subagent`)

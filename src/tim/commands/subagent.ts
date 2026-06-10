@@ -1,7 +1,7 @@
 /**
  * @fileoverview Implementation of the `tim subagent` command.
  *
- * This command runs a subagent (implementer, tester, tdd-tests, or verifier) for the orchestrator.
+ * This command runs a subagent (implementer, tester, or tdd-tests) for the orchestrator.
  * It loads plan context, builds the appropriate agent prompt, and executes using either
  * claude-code or codex-cli. Intermediate output goes through the tunnel to the terminal,
  * while the final agent message is printed to stdout for the orchestrator to capture.
@@ -17,7 +17,6 @@ import {
   getImplementerPrompt,
   getTddTestsPrompt,
   getTesterPrompt,
-  getVerifierAgentPrompt,
 } from '../executors/claude_code/agent_prompts.js';
 import { loadAgentInstructionsFor } from '../executors/codex_cli/agent_helpers.js';
 import { executeCodexStep } from '../executors/codex_cli/codex_runner.js';
@@ -33,7 +32,7 @@ import { materializePlan } from '../plan_materialize.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
 
-export type SubagentType = 'implementer' | 'tester' | 'tdd-tests' | 'verifier';
+export type SubagentType = 'implementer' | 'tester' | 'tdd-tests';
 
 interface SubagentOptions {
   executor: string;
@@ -44,7 +43,7 @@ interface SubagentOptions {
 }
 
 type SubagentExecutorModelKey = 'claude' | 'codex';
-type SubagentConfigKey = 'implementer' | 'tester' | 'tddTests' | 'verifier' | 'reviewer';
+type SubagentConfigKey = 'implementer' | 'tester' | 'tddTests' | 'reviewer';
 
 /**
  * A minimal executor-like object that satisfies the Executor interface
@@ -116,18 +115,8 @@ export async function handleSubagentCommand(
 
   // Load custom agent instructions
   const agentInstructionsType: Parameters<typeof loadAgentInstructionsFor>[0] =
-    agentType === 'verifier' ? 'tester' : agentType === 'tdd-tests' ? 'tddTests' : agentType;
+    agentType === 'tdd-tests' ? 'tddTests' : agentType;
   const customInstructions = await loadAgentInstructionsFor(agentInstructionsType, gitRoot, config);
-
-  // For verifier, also load reviewer instructions and combine them
-  let combinedInstructions = customInstructions;
-  if (agentType === 'verifier') {
-    const reviewerInstructions = await loadAgentInstructionsFor('reviewer', gitRoot, config);
-    const parts = [customInstructions, reviewerInstructions].filter((s): s is string =>
-      Boolean(s?.trim())
-    );
-    combinedInstructions = parts.length > 0 ? parts.join('\n\n') : undefined;
-  }
 
   const orchestratorInput = await resolveOrchestratorInput({
     ...options,
@@ -135,7 +124,7 @@ export async function handleSubagentCommand(
   });
 
   // Combine custom instructions with orchestrator-provided input.
-  const allInstructions = [combinedInstructions, orchestratorInput]
+  const allInstructions = [customInstructions, orchestratorInput]
     .filter((s): s is string => Boolean(s?.trim()))
     .join('\n\n');
 
@@ -221,19 +210,6 @@ function buildAgentDefinition(
         mode: 'report',
         useJj,
       });
-    case 'verifier':
-      return getVerifierAgentPrompt(
-        contextContent,
-        planId,
-        customInstructions,
-        model,
-        false,
-        false,
-        {
-          mode: 'report',
-          useJj,
-        }
-      );
   }
 }
 
@@ -364,8 +340,6 @@ function toLegacyClaudeAgentKeys(agentType: SubagentType): SubagentConfigKey[] {
   switch (agentType) {
     case 'tdd-tests':
       return ['tddTests'];
-    case 'verifier':
-      return ['verifier', 'reviewer', 'tester'];
     default:
       return [agentType];
   }

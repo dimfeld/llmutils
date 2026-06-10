@@ -172,17 +172,6 @@ describe('subagent command - prompt construction and executor delegation', () =>
     );
   });
 
-  test('builds verifier prompt with correct context and mode: report', async () => {
-    await handleSubagentCommand('verifier', 42, { executor: 'codex-cli' }, {});
-
-    expect(capturedCodexPrompt).toBeDefined();
-    expect(capturedCodexPrompt!).toContain('verification agent');
-    expect(capturedCodexPrompt!).toContain('Build a widget');
-    expect(capturedCodexPrompt!).toContain(
-      'Report progress, decisions, and blockers to the orchestrator'
-    );
-  });
-
   test('builds tdd-tests prompt with correct context and mode: report', async () => {
     await handleSubagentCommand('tdd-tests', 42, { executor: 'codex-cli' }, {});
 
@@ -319,21 +308,6 @@ describe('subagent command - prompt construction and executor delegation', () =>
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedCodexPrompt!).toContain(customInstructions);
     expect(capturedCodexPrompt!).toContain(orchestratorInput);
-  });
-
-  test('verifier loads both tester and reviewer instructions', async () => {
-    const testerInstructions = 'Tester: Always run integration tests.';
-    const reviewerInstructions = 'Reviewer: Check for security vulnerabilities.';
-    customInstructionsMap.tester = testerInstructions;
-    customInstructionsMap.reviewer = reviewerInstructions;
-
-    await handleSubagentCommand('verifier', 42, { executor: 'codex-cli' }, {});
-
-    expect(capturedCodexPrompt).toBeDefined();
-    expect(capturedCodexPrompt!).toContain(testerInstructions);
-    expect(capturedCodexPrompt!).toContain(reviewerInstructions);
-    expect(agentInstructionRequests).toContain('tester');
-    expect(agentInstructionRequests).toContain('reviewer');
   });
 
   test('implementer only loads implementer instructions', async () => {

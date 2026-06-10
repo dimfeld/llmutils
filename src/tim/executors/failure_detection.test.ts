@@ -103,9 +103,9 @@ describe('inferFailedAgent', () => {
     expect(source).toBe('reviewer');
   });
 
-  test('supports verifier agent detection', () => {
-    const source = inferFailedAgent('Verifier cannot approve due to failing tests', undefined);
-    expect(source).toBe('verifier');
+  test('does not classify unknown roles as active agents', () => {
+    const source = inferFailedAgent('Auditor cannot approve due to failing tests', undefined);
+    expect(source).toBe('orchestrator');
   });
 
   test('falls back to orchestrator when no agent detected', () => {

@@ -733,18 +733,6 @@ export const timConfigSchema = z
           })
           .strict()
           .optional(),
-        verifier: z
-          .object({
-            model: z
-              .object({
-                claude: z.string().optional().describe('Model override for claude-code execution'),
-                codex: z.string().optional().describe('Model override for codex-cli execution'),
-              })
-              .strict()
-              .optional(),
-          })
-          .strict()
-          .optional(),
         reviewer: z
           .object({
             model: z

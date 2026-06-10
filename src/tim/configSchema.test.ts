@@ -1958,7 +1958,7 @@ describe('configSchema', () => {
               codex: 'gpt-5',
             },
           },
-          verifier: {
+          reviewer: {
             model: {
               claude: 'opus-4.1',
             },
@@ -1969,7 +1969,7 @@ describe('configSchema', () => {
       expect(result.subagents?.implementer?.model?.claude).toBe('sonnet-4.6');
       expect(result.subagents?.implementer?.model?.codex).toBe('gpt-5-codex');
       expect(result.subagents?.tester?.model?.codex).toBe('gpt-5');
-      expect(result.subagents?.verifier?.model?.claude).toBe('opus-4.1');
+      expect(result.subagents?.reviewer?.model?.claude).toBe('opus-4.1');
     });
 
     test('rejects unknown subagent model executors', () => {

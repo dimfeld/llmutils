@@ -4,7 +4,6 @@ import {
   getTddTestsPrompt,
   getTesterPrompt,
   getReviewerPrompt,
-  getVerifierAgentPrompt,
   getPrDescriptionPrompt,
   buildReviewerSimplificationGuidance,
   FAILED_PROTOCOL_INSTRUCTIONS,
@@ -36,18 +35,17 @@ describe('agent_prompts failure protocol integration', () => {
     expect(def.prompt).toContain('Progress Reporting');
   });
 
-  it('includes commit scope guidance in all subagent prompts', () => {
+  it('includes commit scope guidance in committing subagent prompts', () => {
     const expectedText = 'always include any unexpected modified files in the commit';
     expect(getImplementerPrompt(context).prompt).toContain(expectedText);
     expect(getTesterPrompt(context).prompt).toContain(expectedText);
     expect(getTddTestsPrompt(context).prompt).toContain(expectedText);
-    expect(getVerifierAgentPrompt(context).prompt).toContain(expectedText);
   });
 
   it('omits jj version-control guidance when useJj is not set', () => {
     expect(getImplementerPrompt(context).prompt).not.toContain('Use Jujutsu (jj), not git');
-    expect(getVerifierAgentPrompt(context).prompt).toContain('`git status`');
-    expect(getVerifierAgentPrompt(context).prompt).not.toContain('`jj status`');
+    expect(getTesterPrompt(context).prompt).not.toContain('Use Jujutsu (jj), not git');
+    expect(getTesterPrompt(context).prompt).not.toContain('`jj status`');
   });
 
   it('adds jj version-control guidance to committing subagents when useJj is true', () => {
@@ -62,22 +60,11 @@ describe('agent_prompts failure protocol integration', () => {
       getTddTestsPrompt(context, undefined, undefined, undefined, { useJj: true }).prompt
     ).toContain(jjMarker);
 
-    const verifier = getVerifierAgentPrompt(
-      context,
-      undefined,
-      undefined,
-      undefined,
-      false,
-      false,
-      {
-        useJj: true,
-      }
-    ).prompt;
-    expect(verifier).toContain(jjMarker);
-    expect(verifier).toContain('Do NOT run `git` commands');
-    // The verification workflow should inspect `jj status` rather than `git status`.
-    expect(verifier).toContain('`jj status`');
-    expect(verifier).not.toContain('Inspect `git status`');
+    const tester = getTesterPrompt(context, undefined, undefined, undefined, {
+      useJj: true,
+    }).prompt;
+    expect(tester).toContain(jjMarker);
+    expect(tester).toContain('Do NOT run `git` commands');
   });
 
   it('includes FAILED protocol in reviewer prompt', () => {
@@ -207,32 +194,6 @@ describe('agent_prompts failure protocol integration', () => {
     expect(def.prompt).not.toContain('Found Issues:');
     expect(def.prompt).not.toContain('**VERDICT:**');
     expect(def.prompt).toContain('## Critical Issues to Flag');
-  });
-
-  it('configures verifier prompt with verification commands and failure protocol', () => {
-    const verifier = getVerifierAgentPrompt(context);
-    expect(verifier.prompt).toContain('check');
-    expect(verifier.prompt).toContain('lint');
-    expect(verifier.prompt).toContain('test');
-    expect(verifier.prompt).toContain('FAILED:');
-  });
-
-  it('directs verifier to report progress to orchestrator', () => {
-    const verifier = getVerifierAgentPrompt(context, '77');
-    expect(verifier.prompt).toContain('Progress Reporting');
-    expect(verifier.prompt).toContain('Do NOT update the plan file directly');
-    expect(verifier.prompt).not.toContain('Progress Updates (Plan File)');
-  });
-
-  it('appends custom instructions section to verifier prompt when provided', () => {
-    const verifier = getVerifierAgentPrompt(
-      context,
-      '55',
-      '  Follow project-specific QA checklist.  '
-    );
-    expect(verifier.prompt).toContain('## Custom Instructions');
-    expect(verifier.prompt).toContain('Follow project-specific QA checklist.');
-    expect(verifier.prompt).toContain('Progress Reporting');
   });
 
   it('directs PR descriptions to copy manual testing runbooks from plan context', () => {

@@ -5,7 +5,6 @@ import {
   getImplementerPrompt,
   getTddTestsPrompt,
   getTesterPrompt,
-  getVerifierAgentPrompt,
 } from '../executors/claude_code/agent_prompts.js';
 
 describe('subagent prompt function correctness', () => {
@@ -44,25 +43,6 @@ describe('subagent prompt function correctness', () => {
     expect(result.prompt).toContain('Report progress, decisions, and blockers to the orchestrator');
   });
 
-  test('getVerifierAgentPrompt with mode: report includes progress reporting', () => {
-    const result = getVerifierAgentPrompt(
-      'test context',
-      '42',
-      'custom instructions',
-      undefined,
-      false,
-      false,
-      {
-        mode: 'report',
-      }
-    );
-
-    expect(result.name).toBe('verifier');
-    expect(result.prompt).toContain('test context');
-    expect(result.prompt).toContain('custom instructions');
-    expect(result.prompt).toContain('Report progress, decisions, and blockers to the orchestrator');
-  });
-
   test('getImplementerPrompt custom instructions appear in dedicated section', () => {
     const result = getImplementerPrompt('', 42, 'My custom instruction', undefined, {
       mode: 'report',
@@ -88,14 +68,6 @@ describe('subagent prompt function correctness', () => {
     expect(result.model).toBe('sonnet');
   });
 
-  test('getVerifierAgentPrompt model is passed through', () => {
-    const result = getVerifierAgentPrompt('', 42, undefined, 'haiku', false, false, {
-      mode: 'report',
-    });
-
-    expect(result.model).toBe('haiku');
-  });
-
   test('getImplementerPrompt includes FAILED_PROTOCOL_INSTRUCTIONS', () => {
     const result = getImplementerPrompt('', 42, undefined, undefined, {
       mode: 'report',
@@ -107,15 +79,6 @@ describe('subagent prompt function correctness', () => {
 
   test('getTesterPrompt includes FAILED_PROTOCOL_INSTRUCTIONS', () => {
     const result = getTesterPrompt('', 42, undefined, undefined, {
-      mode: 'report',
-    });
-
-    expect(result.prompt).toContain('Failure Protocol');
-    expect(result.prompt).toContain('FAILED:');
-  });
-
-  test('getVerifierAgentPrompt includes FAILED_PROTOCOL_INSTRUCTIONS', () => {
-    const result = getVerifierAgentPrompt('', 42, undefined, undefined, false, false, {
       mode: 'report',
     });
 
@@ -135,14 +98,10 @@ describe('subagent prompt function correctness', () => {
     const impl = getImplementerPrompt('ctx', 1, undefined, undefined, { mode: 'report' });
     const tdd = getTddTestsPrompt('ctx', 1, undefined, undefined, { mode: 'report' });
     const tester = getTesterPrompt('ctx', 1, undefined, undefined, { mode: 'report' });
-    const verifier = getVerifierAgentPrompt('ctx', 1, undefined, undefined, false, false, {
-      mode: 'report',
-    });
 
     expect(impl.skills).toContain('using-tim');
     expect(tdd.skills).toContain('using-tim');
     expect(tester.skills).toContain('using-tim');
-    expect(verifier.skills).toContain('using-tim');
   });
 });
 
@@ -167,7 +126,7 @@ describe('allowed tools in getDefaultAllowedTools', () => {
 });
 
 describe('subagent command registration in tim.ts', () => {
-  test('registers subagent command with all five subcommands', async () => {
+  test('registers subagent command with active subcommands', async () => {
     const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
     const source = await fs.readFile(sourceFile, 'utf-8');
 
@@ -176,7 +135,6 @@ describe('subagent command registration in tim.ts', () => {
     expect(source).toContain("'implementer'");
     expect(source).toContain("'tester'");
     expect(source).toContain("'tdd-tests'");
-    expect(source).toContain("'verifier'");
     expect(source).toContain("command('reviewer <planId>')");
   });
 
