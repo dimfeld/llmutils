@@ -162,15 +162,14 @@
       startingLabel: 'Starting…',
       onclick: () => (chatDialogOpen = true),
       colorClass:
-        'bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600',
+        'bg-slate-200 text-slate-800 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600',
       starting: !!startingChat,
     };
     const agentItem: ActionItem = {
       label: 'Run Agent',
       startingLabel: 'Starting…',
       onclick: handleRunAgent,
-      colorClass:
-        'bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600',
+      colorClass: '',
       starting: startingAgent,
     };
     const generateItem: ActionItem = {
@@ -1015,7 +1014,7 @@
               {activeSession.command === 'agent'
                 ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'
                 : activeSession.command === 'chat'
-                  ? 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:hover:bg-violet-900/60'
+                  ? 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
                   : activeSession.command === 'agent-multi'
                     ? 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/40 dark:text-cyan-300 dark:hover:bg-cyan-900/60'
                     : activeSession.command === 'update-docs'
@@ -1027,7 +1026,7 @@
                 'agent'
                   ? 'bg-emerald-500'
                   : activeSession.command === 'chat'
-                    ? 'bg-violet-500'
+                    ? 'bg-slate-400'
                     : activeSession.command === 'agent-multi'
                       ? 'bg-cyan-500'
                       : activeSession.command === 'update-docs'
