@@ -1,6 +1,7 @@
 import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { getArtifactByUuid } from '$tim/db/artifact.js';
@@ -222,9 +223,8 @@ describe('/api/artifacts POST', () => {
   });
 
   test('cleans up temp file when plan is not found', async () => {
-    const tmpBefore = (await fsp.readdir(os.tmpdir())).filter((e) => e.startsWith('tim-artifact-'));
-
-    const file = new File(['data'], 'f.txt', { type: 'text/plain' });
+    const filename = `cleanup-${randomUUID()}.txt`;
+    const file = new File(['data'], filename, { type: 'text/plain' });
     await POST({
       request: makeFormDataRequest({
         planUuid: '99999999-9999-4999-8999-999999999999',
@@ -232,8 +232,14 @@ describe('/api/artifacts POST', () => {
       }),
     } as never).catch(() => {});
 
-    const tmpAfter = (await fsp.readdir(os.tmpdir())).filter((e) => e.startsWith('tim-artifact-'));
-    expect(tmpAfter.length).toBeLessThanOrEqual(tmpBefore.length);
+    const tempEntries = (await fsp.readdir(os.tmpdir())).filter((entry) =>
+      entry.startsWith('tim-artifact-')
+    );
+    for (const entry of tempEntries) {
+      await expect(fsp.access(path.join(os.tmpdir(), entry, filename))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    }
   });
 
   test('file is stored under XDG_DATA_HOME artifacts directory', async () => {
