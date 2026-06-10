@@ -79,6 +79,10 @@ const mode = process.env.MOCK_MODE || '';
 const requestLogPath = process.env.MOCK_REQUEST_LOG;
 const clientResponseLogPath = process.env.MOCK_CLIENT_RESPONSE_LOG;
 
+if (mode === 'ignore-sigterm') {
+  process.on('SIGTERM', () => {});
+}
+
 function append(path, payload) {
   if (!path) return;
   fs.appendFileSync(path, JSON.stringify(payload) + '\\n');
@@ -222,6 +226,9 @@ function handleMessage(send, line) {
       }
 
       if (message.method === 'turn/steer') {
+        if (mode === 'no-turn-steer-response') {
+          return;
+        }
         if (mode === 'error-turn-steer') {
           send({
             jsonrpc: '2.0',
@@ -338,12 +345,26 @@ async function setupExternalSocketServer(socketPath: string): Promise<Bun.Server
 
 describe('CodexAppServerConnection', () => {
   let mockServer: MockServerPaths;
+  const originalCloseTimeout = process.env.TIM_CODEX_APP_SERVER_CLOSE_TIMEOUT_MS;
+  const originalForceCloseTimeout = process.env.TIM_CODEX_APP_SERVER_FORCE_CLOSE_TIMEOUT_MS;
 
   beforeEach(async () => {
     mockServer = await setupMockCodexServer();
+    process.env.TIM_CODEX_APP_SERVER_CLOSE_TIMEOUT_MS = '50';
+    process.env.TIM_CODEX_APP_SERVER_FORCE_CLOSE_TIMEOUT_MS = '50';
   });
 
   afterEach(async () => {
+    if (originalCloseTimeout === undefined) {
+      delete process.env.TIM_CODEX_APP_SERVER_CLOSE_TIMEOUT_MS;
+    } else {
+      process.env.TIM_CODEX_APP_SERVER_CLOSE_TIMEOUT_MS = originalCloseTimeout;
+    }
+    if (originalForceCloseTimeout === undefined) {
+      delete process.env.TIM_CODEX_APP_SERVER_FORCE_CLOSE_TIMEOUT_MS;
+    } else {
+      process.env.TIM_CODEX_APP_SERVER_FORCE_CLOSE_TIMEOUT_MS = originalForceCloseTimeout;
+    }
     await fs.rm(mockServer.rootDir, { recursive: true, force: true });
   });
 
@@ -746,6 +767,50 @@ describe('CodexAppServerConnection', () => {
     expect(connection.isAlive).toBe(false);
 
     await connection.close();
+  });
+
+  test('close rejects pending requests without waiting for socket shutdown', async () => {
+    const connection = await CodexAppServerConnection.create({
+      cwd: mockServer.rootDir,
+      env: buildSpawnEnv({
+        PATH: `${mockServer.rootDir}:${process.env.PATH ?? ''}`,
+        MOCK_MODE: 'no-turn-steer-response',
+        MOCK_REQUEST_LOG: mockServer.requestLogPath,
+        MOCK_CLIENT_RESPONSE_LOG: mockServer.clientResponseLogPath,
+      }),
+    });
+
+    const pending = connection.turnSteer({
+      threadId: 'thread-1',
+      input: [{ type: 'text', text: 'continue' }],
+    });
+    const pendingRejection = expect(pending).rejects.toThrow(/connection closed/i);
+    await waitForCondition(
+      async () => {
+        const lines = await readJsonLines(mockServer.requestLogPath);
+        return lines.some((line) => line.method === 'turn/steer');
+      },
+      1_000,
+      'turn/steer request'
+    );
+
+    await expect(connection.close()).resolves.toBeUndefined();
+    await pendingRejection;
+  });
+
+  test('close force-kills spawned app-server when graceful shutdown stalls', async () => {
+    const connection = await CodexAppServerConnection.create({
+      cwd: mockServer.rootDir,
+      env: buildSpawnEnv({
+        PATH: `${mockServer.rootDir}:${process.env.PATH ?? ''}`,
+        MOCK_MODE: 'ignore-sigterm',
+        MOCK_REQUEST_LOG: mockServer.requestLogPath,
+        MOCK_CLIENT_RESPONSE_LOG: mockServer.clientResponseLogPath,
+      }),
+    });
+
+    await expect(connection.close()).resolves.toBeUndefined();
+    expect(connection.isAlive).toBe(false);
   });
 
   test('turns account/rateLimits/read responses into updated notifications', async () => {

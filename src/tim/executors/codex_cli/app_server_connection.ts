@@ -12,6 +12,8 @@ import {
 import { debugLog, writeStderr } from '../../../logging';
 
 export const TIM_CODEX_APP_SERVER_SOCKET = 'TIM_CODEX_APP_SERVER_SOCKET';
+const DEFAULT_CLOSE_TIMEOUT_MS = 2_000;
+const DEFAULT_FORCE_CLOSE_TIMEOUT_MS = 1_000;
 
 type JsonRpcId = number | string;
 
@@ -266,6 +268,31 @@ function toErrorMessage(err: unknown): string {
     return err.message;
   }
   return String(err);
+}
+
+function getPositiveIntegerEnv(name: string, fallback: number): number {
+  const parsed = Number.parseInt(process.env[name] || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function waitForTasks(tasks: Array<Promise<unknown>>, timeoutMs: number): Promise<boolean> {
+  if (tasks.length === 0) {
+    return true;
+  }
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.allSettled(tasks).then(() => true),
+      new Promise<boolean>((resolve) => {
+        timeout = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
 }
 
 function summarizeRequestForError(method: string, params: unknown): string {
@@ -672,11 +699,7 @@ export class CodexAppServerConnection {
     } finally {
       this.pendingThreadStarts -= 1;
       if (this.pendingThreadStarts === 0) {
-        const waiters = this.threadStartWaiters;
-        this.threadStartWaiters = [];
-        for (const resolve of waiters) {
-          resolve();
-        }
+        this.resolveThreadStartWaiters();
       }
     }
   }
@@ -710,6 +733,10 @@ export class CodexAppServerConnection {
       return;
     }
     this.closing = true;
+    this.alive = false;
+    this.rejectAllPending(new Error('Codex app-server connection closed.'));
+    this.resolveThreadStartWaiters();
+
     if (this.owner.kind === 'spawned') {
       this.owner.closing = true;
     }
@@ -721,16 +748,33 @@ export class CodexAppServerConnection {
     }
 
     if (this.owner.kind === 'spawned') {
-      this.owner.proc.kill();
+      this.owner.proc.kill('SIGTERM');
     }
 
     const ownerTasks =
       this.owner.kind === 'spawned' ? [this.owner.stderrTask, this.owner.exitTask] : [];
-    await Promise.allSettled([this.incomingTask, ...ownerTasks]);
+    const shutdownTasks = [this.incomingTask, ...ownerTasks];
+    const closedGracefully = await waitForTasks(
+      shutdownTasks,
+      getPositiveIntegerEnv('TIM_CODEX_APP_SERVER_CLOSE_TIMEOUT_MS', DEFAULT_CLOSE_TIMEOUT_MS)
+    );
+    if (!closedGracefully) {
+      debugLog('Codex app-server did not close gracefully; forcing shutdown.');
+      this.transport.kill();
+      if (this.owner.kind === 'spawned') {
+        this.owner.proc.kill('SIGKILL');
+      }
+      await waitForTasks(
+        shutdownTasks,
+        getPositiveIntegerEnv(
+          'TIM_CODEX_APP_SERVER_FORCE_CLOSE_TIMEOUT_MS',
+          DEFAULT_FORCE_CLOSE_TIMEOUT_MS
+        )
+      );
+    }
     if (this.owner.kind === 'spawned') {
       await fs.rm(this.owner.socketTempDir, { recursive: true, force: true }).catch(() => {});
     }
-    this.rejectAllPending(new Error('Codex app-server connection closed.'));
   }
 
   private async initialize(): Promise<void> {
@@ -866,6 +910,14 @@ export class CodexAppServerConnection {
       pending.reject(err);
     }
     this.pendingRequests.clear();
+  }
+
+  private resolveThreadStartWaiters(): void {
+    const waiters = this.threadStartWaiters;
+    this.threadStartWaiters = [];
+    for (const resolve of waiters) {
+      resolve();
+    }
   }
 
   private handleStdoutLine(line: string): void {
