@@ -439,7 +439,7 @@ export async function executeCodexStepViaAppServer(
       onServerRequest: approvalHandler,
     });
 
-    if (subprocessMonitorRules?.length) {
+    if (subprocessMonitorRules?.length && connection.pid !== undefined) {
       monitorHandle = startSubprocessMonitor({
         rootPid: connection.pid,
         rules: subprocessMonitorRules,

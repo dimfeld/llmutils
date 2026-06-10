@@ -2,10 +2,15 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { AppServerRequestError, CodexAppServerConnection } from './app_server_connection';
+import {
+  AppServerRequestError,
+  CodexAppServerConnection,
+  TIM_CODEX_APP_SERVER_SOCKET,
+} from './app_server_connection';
 
 interface MockServerPaths {
   rootDir: string;
+  spawnLogPath: string;
   requestLogPath: string;
   clientResponseLogPath: string;
 }
@@ -57,9 +62,11 @@ async function setupMockCodexServer(): Promise<MockServerPaths> {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'app-server-conn-test-'));
   const serverPath = path.join(rootDir, 'mock_app_server.js');
   const codexPath = path.join(rootDir, 'codex');
+  const spawnLogPath = path.join(rootDir, 'spawn-log.txt');
   const requestLogPath = path.join(rootDir, 'request-log.jsonl');
   const clientResponseLogPath = path.join(rootDir, 'client-response-log.jsonl');
 
+  await fs.writeFile(spawnLogPath, '');
   await fs.writeFile(requestLogPath, '');
   await fs.writeFile(clientResponseLogPath, '');
 
@@ -67,7 +74,6 @@ async function setupMockCodexServer(): Promise<MockServerPaths> {
     serverPath,
     `#!/usr/bin/env bun
 import * as fs from 'node:fs';
-import * as readline from 'node:readline';
 
 const mode = process.env.MOCK_MODE || '';
 const requestLogPath = process.env.MOCK_REQUEST_LOG;
@@ -78,151 +84,210 @@ function append(path, payload) {
   fs.appendFileSync(path, JSON.stringify(payload) + '\\n');
 }
 
-function send(payload) {
-  process.stdout.write(JSON.stringify(payload) + '\\n');
+const listenArgIndex = process.argv.indexOf('--listen');
+const listenValue = listenArgIndex >= 0 ? process.argv[listenArgIndex + 1] : undefined;
+const socketPath = listenValue?.startsWith('unix://') ? listenValue.slice('unix://'.length) : undefined;
+
+if (!socketPath) {
+  throw new Error('Expected --listen unix://SOCKET_PATH');
 }
 
-const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
-
-rl.on('line', (line) => {
+function handleMessage(send, line) {
   if (!line.trim()) return;
-  let message;
-  try {
-    message = JSON.parse(line);
-  } catch {
-    return;
-  }
-
-  if (typeof message.method === 'string') {
-    append(requestLogPath, message);
-
-    if (message.id === undefined) {
+    let message;
+    try {
+      message = JSON.parse(line);
+    } catch {
       return;
     }
 
-    if (message.method === 'initialize') {
-      send({ jsonrpc: '2.0', id: message.id, result: { capabilities: {} } });
-      return;
-    }
+    if (typeof message.method === 'string') {
+      append(requestLogPath, message);
 
-    if (message.method === 'thread/start') {
-      if (mode === 'notification-and-server-request') {
-        send({ jsonrpc: '2.0', method: 'thread/started', params: { threadId: 'thread-notify' } });
-        send({
-          jsonrpc: '2.0',
-          id: 900,
-          method: 'item/commandExecution/requestApproval',
-          params: { command: 'git status' },
-        });
+      if (message.id === undefined) {
+        return;
       }
-      if (mode === 'permissions-server-request') {
-        send({
-          jsonrpc: '2.0',
-          id: 902,
-          method: 'item/permissions/requestApproval',
-          params: {
-            threadId: 'thread-1',
-            turnId: 'turn-1',
-            itemId: 'call-1',
-            reason: 'Select a workspace root',
-            permissions: {
-              fileSystem: {
-                write: ['/repo', '/shared'],
+
+      if (message.method === 'initialize') {
+        send({ jsonrpc: '2.0', id: message.id, result: { capabilities: {} } });
+        return;
+      }
+
+      if (message.method === 'thread/start') {
+        if (mode === 'notification-and-server-request') {
+          send({ jsonrpc: '2.0', method: 'thread/started', params: { threadId: 'thread-notify' } });
+          send({
+            jsonrpc: '2.0',
+            id: 900,
+            method: 'item/commandExecution/requestApproval',
+            params: { command: 'git status' },
+          });
+        }
+        if (mode === 'permissions-server-request') {
+          send({
+            jsonrpc: '2.0',
+            id: 902,
+            method: 'item/permissions/requestApproval',
+            params: {
+              threadId: 'thread-1',
+              turnId: 'turn-1',
+              itemId: 'call-1',
+              reason: 'Select a workspace root',
+              permissions: {
+                fileSystem: {
+                  write: ['/repo', '/shared'],
+                },
               },
             },
-          },
-        });
-      }
-      if (mode === 'delayed-server-request') {
-        send({
-          jsonrpc: '2.0',
-          id: 901,
-          method: 'item/commandExecution/requestApproval',
-          params: { command: 'npm test' },
-        });
+          });
+        }
+        if (mode === 'delayed-server-request') {
+          send({
+            jsonrpc: '2.0',
+            id: 901,
+            method: 'item/commandExecution/requestApproval',
+            params: { command: 'npm test' },
+          });
+        }
+
+        const response =
+          mode === 'v2-result-shapes'
+            ? { jsonrpc: '2.0', id: message.id, result: { thread: { id: 'thread-1' } } }
+            : { jsonrpc: '2.0', id: message.id, result: { threadId: 'thread-1' } };
+        if (mode === 'out-of-order') {
+          setTimeout(() => send(response), 30);
+        } else {
+          send(response);
+        }
+        return;
       }
 
-      const response =
-        mode === 'v2-result-shapes'
-          ? { jsonrpc: '2.0', id: message.id, result: { thread: { id: 'thread-1' } } }
-          : { jsonrpc: '2.0', id: message.id, result: { threadId: 'thread-1' } };
-      if (mode === 'out-of-order') {
-        setTimeout(() => send(response), 30);
-      } else {
-        send(response);
+      if (message.method === 'turn/start') {
+        const response =
+          mode === 'v2-result-shapes'
+            ? { jsonrpc: '2.0', id: message.id, result: { turn: { id: 'turn-1' } } }
+            : { jsonrpc: '2.0', id: message.id, result: { turnId: 'turn-1' } };
+        if (mode === 'out-of-order') {
+          setTimeout(() => send(response), 5);
+        } else {
+          send(response);
+        }
+        return;
       }
-      return;
-    }
 
-    if (message.method === 'turn/start') {
-      const response =
-        mode === 'v2-result-shapes'
-          ? { jsonrpc: '2.0', id: message.id, result: { turn: { id: 'turn-1' } } }
-          : { jsonrpc: '2.0', id: message.id, result: { turnId: 'turn-1' } };
-      if (mode === 'out-of-order') {
-        setTimeout(() => send(response), 5);
-      } else {
-        send(response);
+      if (message.method === 'turn/steer') {
+        if (mode === 'error-turn-steer') {
+          send({
+            jsonrpc: '2.0',
+            id: message.id,
+            error: { code: -32001, message: 'turn steer denied' },
+          });
+          return;
+        }
+        if (mode === 'exit-before-response') {
+          setTimeout(() => process.exit(77), 20);
+          return;
+        }
+        send({ jsonrpc: '2.0', id: message.id, result: { turnId: 'turn-steer-1' } });
+        return;
       }
-      return;
-    }
 
-    if (message.method === 'turn/steer') {
-      if (mode === 'error-turn-steer') {
+      if (message.method === 'turn/interrupt') {
+        send({ jsonrpc: '2.0', id: message.id, result: {} });
+        return;
+      }
+
+      if (message.method === 'account/rateLimits/read') {
         send({
           jsonrpc: '2.0',
           id: message.id,
-          error: { code: -32001, message: 'turn steer denied' },
+          result: {
+            rateLimits: {
+              primary: {
+                usedPercent: 25,
+                windowDurationMins: 15,
+                resetsAt: 1730947200,
+              },
+              secondary: null,
+            },
+          },
         });
         return;
       }
-      if (mode === 'exit-before-response') {
-        setTimeout(() => process.exit(77), 20);
-        return;
-      }
-      send({ jsonrpc: '2.0', id: message.id, result: { turnId: 'turn-steer-1' } });
-      return;
-    }
 
-    if (message.method === 'turn/interrupt') {
       send({ jsonrpc: '2.0', id: message.id, result: {} });
       return;
     }
 
-    if (message.method === 'account/rateLimits/read') {
-      send({
-        jsonrpc: '2.0',
-        id: message.id,
-        result: {
-          rateLimits: {
-            primary: {
-              usedPercent: 25,
-              windowDurationMins: 15,
-              resetsAt: 1730947200,
-            },
-            secondary: null,
-          },
-        },
-      });
-      return;
+    if (message.id !== undefined) {
+      append(clientResponseLogPath, message);
     }
+}
 
-    send({ jsonrpc: '2.0', id: message.id, result: {} });
-    return;
-  }
-
-  if (message.id !== undefined) {
-    append(clientResponseLogPath, message);
-  }
+const server = Bun.serve({
+  unix: socketPath,
+  fetch(req, server) {
+    if (server.upgrade(req)) return;
+    return new Response('Expected websocket upgrade', { status: 426 });
+  },
+  websocket: {
+    message(ws, message) {
+      handleMessage((payload) => ws.send(JSON.stringify(payload)), String(message));
+    },
+  },
 });
 `
   );
   await fs.chmod(serverPath, 0o755);
 
-  await fs.writeFile(codexPath, `#!/bin/sh\nexec bun "${serverPath}" "$@"\n`);
+  await fs.writeFile(
+    codexPath,
+    `#!/bin/sh
+{
+  printf 'args:'
+  for arg do
+    printf '\\t%s' "$arg"
+  done
+  printf '\\nTIM_CODEX_APP_SERVER_SOCKET=%s\\n' "$TIM_CODEX_APP_SERVER_SOCKET"
+} >> "${spawnLogPath}"
+exec bun "${serverPath}" "$@"
+`
+  );
   await fs.chmod(codexPath, 0o755);
 
-  return { rootDir, requestLogPath, clientResponseLogPath };
+  return { rootDir, spawnLogPath, requestLogPath, clientResponseLogPath };
+}
+
+async function setupExternalSocketServer(socketPath: string): Promise<Bun.Server> {
+  const server = Bun.serve({
+    unix: socketPath,
+    fetch(req, server) {
+      if (server.upgrade(req)) return;
+      return new Response('Expected websocket upgrade', { status: 426 });
+    },
+    websocket: {
+      message(ws, rawMessage) {
+        const message = JSON.parse(String(rawMessage));
+        if (message.id === undefined) {
+          return;
+        }
+        if (message.method === 'initialize') {
+          ws.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { capabilities: {} } }));
+        } else if (message.method === 'thread/start') {
+          ws.send(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              result: { threadId: 'external-thread' },
+            })
+          );
+        } else {
+          ws.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: {} }));
+        }
+      },
+    },
+  });
+  return server;
 }
 
 describe('CodexAppServerConnection', () => {
@@ -249,6 +314,10 @@ describe('CodexAppServerConnection', () => {
     expect(connection.isAlive).toBe(true);
     const threadResult = await connection.threadStart({ cwd: '/repo/path', model: 'gpt-5' });
     expect(threadResult).toEqual(expect.objectContaining({ threadId: 'thread-1' }));
+
+    const spawnLog = await fs.readFile(mockServer.spawnLogPath, 'utf8');
+    expect(spawnLog).toContain('args:\tapp-server\t--listen\tunix://');
+    expect(spawnLog).toMatch(/TIM_CODEX_APP_SERVER_SOCKET=.+codex\.sock/);
 
     const messages = await readJsonLines(mockServer.requestLogPath);
     expect(messages[0]).toEqual(
@@ -281,6 +350,34 @@ describe('CodexAppServerConnection', () => {
     );
 
     await connection.close();
+  });
+
+  test('connects to inherited app-server socket without spawning codex', async () => {
+    const socketDir = await fs.mkdtemp(path.join(os.tmpdir(), 'app-server-inherited-'));
+    const socketPath = path.join(socketDir, 'codex.sock');
+    const server = await setupExternalSocketServer(socketPath);
+    const spawnSpy = vi.spyOn(Bun, 'spawn');
+
+    try {
+      const connection = await CodexAppServerConnection.create({
+        cwd: mockServer.rootDir,
+        env: buildSpawnEnv({
+          PATH: `${mockServer.rootDir}:${process.env.PATH ?? ''}`,
+          [TIM_CODEX_APP_SERVER_SOCKET]: socketPath,
+        }),
+      });
+
+      const threadResult = await connection.threadStart({});
+      expect(threadResult.threadId).toBe('external-thread');
+      expect(connection.pid).toBeUndefined();
+      expect(spawnSpy).not.toHaveBeenCalled();
+
+      await connection.close();
+    } finally {
+      spawnSpy.mockRestore();
+      server.stop(true);
+      await fs.rm(socketDir, { recursive: true, force: true });
+    }
   });
 
   test('correlates out-of-order responses by id', async () => {
@@ -533,7 +630,8 @@ describe('CodexAppServerConnection', () => {
       input: [{ type: 'text', text: 'continue' }],
     });
 
-    await expect(pending).rejects.toThrow(/exited unexpectedly/i);
+    await expect(pending).rejects.toThrow(/connection closed/i);
+    await waitForCondition(async () => exits.length > 0, 1_000, 'app-server process exit callback');
     expect(exits).toEqual([{ exitCode: 77, signal: undefined }]);
     expect(connection.isAlive).toBe(false);
 
