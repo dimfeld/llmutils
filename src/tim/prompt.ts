@@ -212,7 +212,7 @@ Please analyze this project description and the codebase. Your task is to:
 
 1. Use your tools to explore the codebase and understand the existing code structure
 2. Identify which files would need to be created or modified to implement this feature
-3. Think about how to break this down into logical phases, tasks, and whether it should be split into multiple smaller plans
+3. Think about how to break this down into logical phases, tasks, and whether it should be split into multiple smaller plans. Lean toward smaller, focused plans that each land as a PR of a few hundred lines where feasible — smaller PRs are far easier to review and merge.
 4. Consider dependencies between different parts of the implementation
 5. Identify any potential challenges or considerations
 

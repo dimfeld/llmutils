@@ -304,7 +304,9 @@ Consider splitting when:
 2. Different aspects of the work could be worked on in parallel by different agents
 3. The plan has distinct areas of functionality that have minimal interdependencies
 4. Breaking it down would reduce cognitive load and make each plan more focused
-5. You estimate the changes will span more than a few thousand lines of code. Reviewability is important.
+5. The changes would otherwise add up to a large PR. Reviewability is important.
+
+Aim small. Each child plan should ideally land as a PR of a few hundred lines of code where that is feasible — smaller, tightly-scoped PRs are far easier to review and merge than large ones. Prefer splitting work into more, smaller plans rather than fewer, larger ones, as long as each plan still delivers a complete, independently testable slice. If a proposed child plan looks like it would grow well past a few hundred lines, look for a further split before settling on it.
 
 The user may prefer to split vertically by functional areas, or horizontally (e.g. backend foundation followed by UI), or both. Surface the tradeoffs in your proposal.
 
@@ -494,6 +496,9 @@ Consider splitting when:
 2. Different aspects of the work could be worked on in parallel by different agents
 3. The plan has distinct areas of functionality that have minimal interdependencies
 4. Breaking it down would reduce cognitive load and make each plan more focused
+5. The changes would otherwise add up to a large PR. Reviewability is important.
+
+Aim small. Each child plan should ideally land as a PR of a few hundred lines of code where that is feasible — smaller, tightly-scoped PRs are far easier to review and merge than large ones. Prefer splitting work into more, smaller plans rather than fewer, larger ones, as long as each plan still delivers a complete, independently testable slice. If a proposed child plan looks like it would grow well past a few hundred lines, look for a further split before settling on it.
 
 If the user approves the split, the main agent should create each child plan using 'tim add' (see the using-tim skill) with appropriate title, goal, initial details, and priority. Then:
 - Each new child plan will get its own plan number, returned by \`tim add\`
