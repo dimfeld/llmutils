@@ -88,6 +88,11 @@ interface PendingRequest {
   reject: (reason?: unknown) => void;
 }
 
+interface ThreadOwnershipCheck {
+  threadId?: string;
+  owned: boolean;
+}
+
 type AppServerOwner =
   | {
       kind: 'spawned';
@@ -306,6 +311,47 @@ function extractNestedId(
   return undefined;
 }
 
+function extractStringProperty(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function extractThreadIdFromParams(params: unknown): string | undefined {
+  if (!params || typeof params !== 'object') {
+    return undefined;
+  }
+
+  const record = params as Record<string, unknown>;
+  const directThreadId = extractStringProperty(record, 'threadId');
+  if (directThreadId) {
+    return directThreadId;
+  }
+
+  const thread = record.thread;
+  if (thread && typeof thread === 'object' && !Array.isArray(thread)) {
+    const threadRecord = thread as Record<string, unknown>;
+    const nestedThreadId =
+      extractStringProperty(threadRecord, 'threadId') ?? extractStringProperty(threadRecord, 'id');
+    if (nestedThreadId) {
+      return nestedThreadId;
+    }
+  }
+
+  for (const nestedKey of ['turn', 'item']) {
+    const nested = record[nestedKey];
+    if (!nested || typeof nested !== 'object' || Array.isArray(nested)) {
+      continue;
+    }
+
+    const nestedThreadId = extractStringProperty(nested as Record<string, unknown>, 'threadId');
+    if (nestedThreadId) {
+      return nestedThreadId;
+    }
+  }
+
+  return undefined;
+}
+
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -507,6 +553,9 @@ export class CodexAppServerConnection {
   private closing = false;
   private alive = true;
   private incomingTask: Promise<void>;
+  private pendingThreadStarts = 0;
+  private threadStartWaiters: Array<() => void> = [];
+  private readonly ownedThreadIds = new Set<string>();
 
   private constructor(
     options: ConnectionOptions,
@@ -608,15 +657,28 @@ export class CodexAppServerConnection {
   }
 
   async threadStart(params: ThreadStartParams): Promise<ThreadResult> {
-    const raw = await this.sendRequest('thread/start', params);
-    const threadId = extractNestedId(raw, 'thread', 'threadId');
-    if (!threadId) {
-      throw new Error(
-        `thread/start response did not include a thread id: ${JSON.stringify(raw ?? null)}`
-      );
-    }
+    this.pendingThreadStarts += 1;
+    try {
+      const raw = await this.sendRequest('thread/start', params);
+      const threadId = extractNestedId(raw, 'thread', 'threadId');
+      if (!threadId) {
+        throw new Error(
+          `thread/start response did not include a thread id: ${JSON.stringify(raw ?? null)}`
+        );
+      }
 
-    return { ...(raw as Record<string, unknown>), threadId };
+      this.ownedThreadIds.add(threadId);
+      return { ...(raw as Record<string, unknown>), threadId };
+    } finally {
+      this.pendingThreadStarts -= 1;
+      if (this.pendingThreadStarts === 0) {
+        const waiters = this.threadStartWaiters;
+        this.threadStartWaiters = [];
+        for (const resolve of waiters) {
+          resolve();
+        }
+      }
+    }
   }
 
   async turnStart(params: TurnStartParams): Promise<TurnResult> {
@@ -830,6 +892,11 @@ export class CodexAppServerConnection {
     }
 
     if (hasMethod) {
+      if (!this.isNotificationForOwnedThread(message.method, message.params).owned) {
+        debugLog(`Ignoring Codex app-server notification for unowned thread: ${message.method}`);
+        return;
+      }
+
       try {
         this.options.onNotification?.(message.method, message.params);
       } catch (err) {
@@ -877,6 +944,38 @@ export class CodexAppServerConnection {
     pending.resolve(message.result);
   }
 
+  private checkThreadOwnership(params: unknown): ThreadOwnershipCheck {
+    const threadId = extractThreadIdFromParams(params);
+    if (!threadId) {
+      return { owned: true };
+    }
+
+    return { threadId, owned: this.ownedThreadIds.has(threadId) };
+  }
+
+  private isNotificationForOwnedThread(method: string, params: unknown): ThreadOwnershipCheck {
+    const check = this.checkThreadOwnership(params);
+    if (check.owned) {
+      return check;
+    }
+
+    if (method === 'thread/started' && this.pendingThreadStarts > 0) {
+      return { ...check, owned: true };
+    }
+
+    return check;
+  }
+
+  private async waitForPendingThreadStart(): Promise<void> {
+    if (this.pendingThreadStarts === 0) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      this.threadStartWaiters.push(resolve);
+    });
+  }
+
   private async handleServerRequest(method: string, id: JsonRpcId, params: unknown): Promise<void> {
     if (this.closing) {
       return;
@@ -892,6 +991,28 @@ export class CodexAppServerConnection {
         },
       };
       this.writeMessage(invalidIdResponse);
+      return;
+    }
+
+    let ownership = this.checkThreadOwnership(params);
+    if (!ownership.owned && this.pendingThreadStarts > 0) {
+      await this.waitForPendingThreadStart();
+      if (this.closing) {
+        return;
+      }
+      ownership = this.checkThreadOwnership(params);
+    }
+
+    if (!ownership.owned) {
+      const unownedThreadResponse: JsonRpcResponse = {
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32000,
+          message: `Ignoring request for unowned thread: ${ownership.threadId}`,
+        },
+      };
+      this.writeMessage(unownedThreadResponse);
       return;
     }
 

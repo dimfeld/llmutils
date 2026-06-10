@@ -141,6 +141,28 @@ function handleMessage(send, line) {
             },
           });
         }
+        if (mode === 'mixed-owned-thread-events') {
+          send({
+            jsonrpc: '2.0',
+            method: 'item/completed',
+            params: { threadId: 'external-thread', item: { type: 'agentMessage', text: 'wrong' } },
+          });
+          send({
+            jsonrpc: '2.0',
+            id: 903,
+            method: 'item/permissions/requestApproval',
+            params: {
+              threadId: 'external-thread',
+              turnId: 'turn-external',
+              itemId: 'call-external',
+              permissions: {
+                fileSystem: {
+                  write: ['/external'],
+                },
+              },
+            },
+          });
+        }
         if (mode === 'delayed-server-request') {
           send({
             jsonrpc: '2.0',
@@ -158,6 +180,30 @@ function handleMessage(send, line) {
           setTimeout(() => send(response), 30);
         } else {
           send(response);
+        }
+        if (mode === 'mixed-owned-thread-events') {
+          setTimeout(() => {
+            send({
+              jsonrpc: '2.0',
+              method: 'item/completed',
+              params: { threadId: 'thread-1', item: { type: 'agentMessage', text: 'right' } },
+            });
+            send({
+              jsonrpc: '2.0',
+              id: 904,
+              method: 'item/permissions/requestApproval',
+              params: {
+                threadId: 'thread-1',
+                turnId: 'turn-1',
+                itemId: 'call-1',
+                permissions: {
+                  fileSystem: {
+                    write: ['/repo'],
+                  },
+                },
+              },
+            });
+          }, 10);
         }
         return;
       }
@@ -604,6 +650,70 @@ describe('CodexAppServerConnection', () => {
             },
           },
         },
+      })
+    );
+
+    await connection.close();
+  });
+
+  test('ignores notifications and server requests for threads it did not create', async () => {
+    const notifications: Array<{ method: string; params: unknown }> = [];
+    const serverRequests: Array<{ method: string; id: number; params: unknown }> = [];
+
+    const connection = await CodexAppServerConnection.create({
+      cwd: mockServer.rootDir,
+      env: buildSpawnEnv({
+        PATH: `${mockServer.rootDir}:${process.env.PATH ?? ''}`,
+        MOCK_MODE: 'mixed-owned-thread-events',
+        MOCK_REQUEST_LOG: mockServer.requestLogPath,
+        MOCK_CLIENT_RESPONSE_LOG: mockServer.clientResponseLogPath,
+      }),
+      onNotification: (method, params) => {
+        notifications.push({ method, params });
+      },
+      onServerRequest: async (method, id, params) => {
+        serverRequests.push({ method, id, params });
+        return { decision: 'accept' };
+      },
+    });
+
+    await connection.threadStart({});
+    await waitForCondition(
+      async () => {
+        const lines = await readJsonLines(mockServer.clientResponseLogPath);
+        return (
+          lines.some((line) => line.id === 903 && line.error?.message?.includes('unowned')) &&
+          lines.some((line) => line.id === 904 && line.result?.decision === 'accept')
+        );
+      },
+      1_000,
+      'owned and unowned server-request responses'
+    );
+
+    expect(notifications).toEqual([
+      {
+        method: 'item/completed',
+        params: {
+          threadId: 'thread-1',
+          item: { type: 'agentMessage', text: 'right' },
+        },
+      },
+    ]);
+    expect(serverRequests).toEqual([
+      expect.objectContaining({
+        method: 'item/permissions/requestApproval',
+        id: 904,
+        params: expect.objectContaining({ threadId: 'thread-1' }),
+      }),
+    ]);
+
+    const clientResponses = await readJsonLines(mockServer.clientResponseLogPath);
+    expect(clientResponses).toContainEqual(
+      expect.objectContaining({
+        id: 903,
+        error: expect.objectContaining({
+          message: expect.stringContaining('unowned thread: external-thread'),
+        }),
       })
     );
 
