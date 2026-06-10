@@ -414,7 +414,7 @@ ${footer}`;
 }
 
 /**
- * Wraps context content with simplified orchestration instructions for implement → verify flow.
+ * Wraps context content with simplified orchestration instructions for implement → review flow.
  */
 export function wrapWithOrchestrationSimple(
   contextContent: string,
@@ -427,16 +427,20 @@ export function wrapWithOrchestrationSimple(
   });
   const executorFlag = buildSubagentExecutorFlag(options);
   const dynamicGuidance = buildDynamicExecutorGuidance(options);
+  const reviewCommand = buildReviewCommand(planId, options);
+  const reviewExecutorGuidance = options.reviewExecutor
+    ? `   - Use the review executor override provided: \`--executor ${options.reviewExecutor}\`.`
+    : '';
 
   const header = `# Two-Phase Orchestration Instructions
 
-You are coordinating a tim streamlined two-phase workflow (implement → verify) for the tasks below. tim is a tool for managing step-by-step project plans.`;
+You are coordinating a tim streamlined two-phase workflow (implement → review) for the tasks below. tim is a tool for managing step-by-step project plans.`;
 
   const availableAgents = `## Available Agents
 
 You have two specialized subagents that you MUST invoke via the shell command tool:
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-- **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Reviewer**: Run \`${reviewCommand}\` via the shell command tool
 
 Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
 `;
@@ -465,24 +469,24 @@ ${taskSelectionPhase}
    - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
    - Wait for the subagent to complete and review its output
 
-${options.batchMode ? '3' : '2'}. **Verification Phase**
-   - Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
-   - When choosing an executor dynamically, prefer using the same executor that was used for the implementer to maintain consistency and leverage the same strengths.
-   - In the input (\`--input\` or \`--input-file\`), direct the verifier to:
-     - Ensure tests exist for new or changed behavior (adding tests if gaps remain)
-     - Run type checking
-     - Run linting
-     - Run the project test suite
-     - Confirm all commands pass and summarize any failures
-   - Include relevant context from the implementer's output in the input
-   - If verification fails, return to the implementer with the issues found
+${options.batchMode ? '3' : '2'}. **Review Phase**
+   - Run \`${reviewCommand}\` using the shell command tool.
+   - Pass relevant implementation notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
+   - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
+${buildFinalBatchReviewGuidance(reviewCommand, options)}
+${reviewExecutorGuidance}
+   - The review command may take up to 15 minutes; use a long timeout.
+   - The review output focuses on problems; don't expect positive feedback even if the code is perfect.
+   - If review fails or identifies issues, return to the implementer with the issues found
 
 ${options.batchMode ? '4' : '3'}. **Notes Phase**
 ${progressSection}
 
 ${options.batchMode ? '5' : '4'}. **Iteration**
-- If verification still flags an issue that was supposedly just fixed, trust the verification — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
-- Repeat the implement → verify loop until verification succeeds without failures.`;
+- For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, focused refactors, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
+- After straightforward review follow-ups, run focused verification yourself. If the scope remains straightforward and verification is clear, you may skip re-running \`${reviewCommand}\`.
+- If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
+- Repeat the implement → review loop until review succeeds without blocking issues.`;
 
   const failureProtocol = `
 ## Failure Protocol (Conflicting/Impossible Requirements)
@@ -491,20 +495,20 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
 - If any subagent emits a FAILED line, stop immediately.
 - Output a concise failure message and propagate details:
   - First line: FAILED: <agent> reported a failure — <1-sentence summary>
-    - <agent> must be one of: implementer | verifier | orchestrator
+    - <agent> must be one of: implementer | reviewer | orchestrator
   - Then include the subagent's detailed report verbatim.
 - Do NOT continue to other phases or mark tasks done when a failure occurs.
 - You may add brief context (e.g. which tasks were active) if helpful.`;
 
   const guidance = `## Important Guidelines
 
-- Do NOT implement, verify, or edit files yourself--delegate all work to the subagents via \`tim subagent\`.
+- Do NOT implement or review code directly. Delegate implementation to \`tim subagent implementer\` and review to \`${reviewCommand}\`.
 - When invoking subagents, give clear instructions in \`--input\` (or \`--input-file\`) referencing the specific task titles.
 - ${INPUT_COMBINATION_GUIDANCE}
 - Provide prior subagent outputs to the next subagent so they have full context.
 - ${buildInputFileRandomizationGuidance(planId)}
 - ${BRANCH_SETUP_GUIDANCE}${buildJjGuidance(options)}
-- Keep the scope focused; if verification fails, loop back to implementation before moving forward.${
+- Keep the scope focused; if review fails, loop back to implementation before moving forward.${
     options.batchMode
       ? `
 - Subagents can read all pending tasks; explicitly tell them which ones are in scope for this batch.`
@@ -548,7 +552,7 @@ ${footer}`;
 /**
  * Wraps context content with TDD orchestration instructions.
  * - TDD normal: tdd-tests -> implementer -> tester -> review
- * - TDD simple: tdd-tests -> implementer -> verifier
+ * - TDD simple: tdd-tests -> implementer -> reviewer
  */
 export function wrapWithOrchestrationTdd(
   contextContent: string,
@@ -578,7 +582,7 @@ You MUST enforce TDD order:
 You have three specialized subagents that you MUST invoke via the shell command tool:
 - **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-- **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Reviewer**: Run \`${buildReviewCommand(planId, options)}\` via the shell command tool
 
 Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
 `
@@ -630,14 +634,13 @@ Each subagent command may take a long time to complete. Always use a timeout of 
     : '';
 
   const verificationPhase = isSimpleTdd
-    ? `${verificationPhaseNumber}. **Verification Phase**
-   - Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
-   - When choosing an executor dynamically, prefer using the same executor that was used for the implementer to maintain consistency and leverage the same strengths.
-   - In the input (\`--input\` or \`--input-file\`), include:
-     - TDD tests output and implementation summary
-     - Which tasks are in scope
-     - Required quality gates (check, lint, test, etc.)
-    - Instruct verifier to confirm the implementation satisfies the previously written tests and report gaps`
+    ? `${verificationPhaseNumber}. **Review Phase**
+   - Run \`${reviewCommand}\` using the shell command tool.
+   - Pass relevant TDD test output and implementation notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
+   - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
+${buildFinalBatchReviewGuidance(reviewCommand, options)}
+${reviewExecutorGuidance}
+   - The review command may take up to 15 minutes; use a long timeout.`
     : `${verificationPhaseNumber}. **Testing Phase**
    - Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), include:
@@ -655,9 +658,7 @@ ${buildFinalBatchReviewGuidance(reviewCommand, options)}
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.`;
 
-  const reviewIterationGuidance = isSimpleTdd
-    ? ''
-    : `
+  const reviewIterationGuidance = `
 - For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, focused refactors, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
 - After these straightforward follow-up changes, run relevant targeted checks yourself. If the full set of changes is straightforward to verify, you may skip re-running \`${reviewCommand}\`.`;
 
@@ -701,20 +702,16 @@ ${iterationPhaseNumber}. **Iteration**
 - If any subagent emits a FAILED line, stop immediately.
 - Output a concise failure message and propagate details:
   - First line: FAILED: <agent> reported a failure — <1-sentence summary>
-    - <agent> must be one of: tdd-tests | implementer | tester | verifier | reviewer | orchestrator
+    - <agent> must be one of: tdd-tests | implementer | tester | reviewer | orchestrator
   - Then include the subagent's detailed report verbatim.
 - Do NOT continue to other phases or mark tasks done when a failure occurs.
 - You may add brief context (e.g. which tasks were active) if helpful.`;
 
-  const reviewCommandGuidance = isSimpleTdd
-    ? ''
-    : `- Do NOT review code directly. Always run \`${reviewCommand}\` for code quality assessment.`;
+  const reviewCommandGuidance = `- Do NOT review code directly. Always run \`${reviewCommand}\` for code quality assessment.`;
   const testingGuidance = isSimpleTdd
-    ? '- Do NOT verify code directly. Always delegate verification to `tim subagent verifier`.'
-    : '- Do NOT write or run tests directly. Always delegate testing to `tim subagent tester`.';
-  const reviewFollowupGuidance = isSimpleTdd
     ? ''
-    : `
+    : '- Do NOT write or run tests directly. Always delegate testing to `tim subagent tester`.';
+  const reviewFollowupGuidance = `
 - Exception: if review feedback requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
 - After straightforward review follow-ups, run focused verification yourself. If the scope remains straightforward and verification is clear, you may skip re-running \`${reviewCommand}\`.`;
 

@@ -51,7 +51,6 @@ import { executeBatchMode } from './batch_mode.js';
 import { sendFailureReport, timestamp } from './agent_helpers.js';
 import { moveLinearIssuesToInProgressForAgentRun } from './linear_issue_state.js';
 import { markParentInProgress } from './parent_plans.js';
-import { executeStubPlan } from './stub_plan.js';
 import { SummaryCollector } from '../../summary/collector.js';
 import { writeOrDisplaySummary } from '../../summary/display.js';
 import { autoClaimPlan, isAutoClaimEnabled } from '../../assignments/auto_claim.js';
@@ -117,6 +116,43 @@ interface AgentCommandOptions {
   finalReview?: boolean;
   steps?: string;
   reviewThreadContext?: string;
+}
+
+function buildTaskForTasklessPlan(planData: PlanSchema): PlanSchema['tasks'][number] {
+  const fallbackTitle =
+    typeof planData.id === 'number' ? `Plan ${planData.id}` : (planData.uuid ?? 'Untitled Plan');
+  const title = planData.title?.trim() || planData.goal?.trim() || fallbackTitle;
+  const descriptionParts: string[] = [];
+
+  if (planData.goal?.trim() && planData.goal.trim() !== title) {
+    descriptionParts.push(planData.goal.trim());
+  }
+
+  if (planData.details?.trim()) {
+    descriptionParts.push(planData.details.trim());
+  }
+
+  return {
+    title,
+    done: false,
+    description: descriptionParts.join('\n\n') || title,
+  };
+}
+
+async function ensureTasklessPlanHasExecutableTask(
+  planData: PlanSchema,
+  planFilePath: string,
+  baseDir: string,
+  config: TimConfig
+): Promise<boolean> {
+  if (planData.tasks.length > 0) {
+    return false;
+  }
+
+  planData.tasks = [buildTaskForTasklessPlan(planData)];
+  planData.updatedAt = new Date().toISOString();
+  await writePlanFile(planFilePath, planData, { cwdForIdentity: baseDir, config });
+  return true;
 }
 
 export function scheduleOpportunisticArtifactPurge(config: TimConfig): void {
@@ -722,50 +758,20 @@ export async function timAgent(
       return null;
     };
 
-    // Check if this is a true stub plan (no tasks at all)
-    const needsPreparation = !planData.tasks.length;
-
-    if (needsPreparation && !isShuttingDown()) {
-      let continueAfterStubPlan = false;
-
-      // This is a true stub plan with no tasks - handle it specially
-      // Direct execution branch for true stub plans (no tasks)
-      try {
-        const stubResult = await executeStubPlan({
-          config,
-          baseDir: currentBaseDir,
-          planFilePath: currentPlanFile,
-          planData,
-          executor,
-          commit: true,
-          dryRun: options.dryRun,
-          executionMode,
-          finalReview: options.finalReview,
-          configPath: globalCliOptions.config,
-          terminalInput: terminalInputEnabled,
-          timEnvironment,
+    if (!isShuttingDown()) {
+      const taskCreated = await ensureTasklessPlanHasExecutableTask(
+        planData,
+        currentPlanFile,
+        currentBaseDir,
+        config
+      );
+      if (taskCreated) {
+        sendStructured({
+          type: 'workflow_progress',
+          timestamp: timestamp(),
+          phase: 'plan-preparation',
+          message: 'Created an execution task for taskless plan',
         });
-
-        if (stubResult.tasksAppended && stubResult.tasksAppended > 0) {
-          const updatedPlanData = await readPlanFile(currentPlanFile);
-          const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
-          if (!isShuttingDown()) {
-            continueAfterStubPlan = await promptConfirm({
-              message: `${stubResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
-              default: true,
-            });
-          }
-        } else if (isNonInteractiveReview && (stubResult.issuesSaved ?? 0) > 0) {
-          continueAfterStubPlan = false;
-        }
-      } catch (err) {
-        error('Direct execution failed:', err);
-        if (summaryEnabled) summaryCollector.addError(err);
-        throw err;
-      }
-
-      if (!continueAfterStubPlan) {
-        return;
       }
     }
 

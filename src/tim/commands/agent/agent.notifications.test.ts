@@ -13,7 +13,6 @@ const {
   openLogFileSpy,
   closeLogFileSpy,
   spawnAndLogOutputSpy,
-  executeStubPlanSpy,
   executeBatchModeSpy,
   buildExecutorAndLogSpy,
   findNextPlanFromDbSpy,
@@ -34,7 +33,6 @@ const {
     signal: null,
     killedByInactivity: false,
   })),
-  executeStubPlanSpy: vi.fn(async () => ({})),
   executeBatchModeSpy: vi.fn(async () => undefined),
   buildExecutorAndLogSpy: vi.fn(() => ({ execute: vi.fn(async () => {}), filePathPrefix: '' })),
   findNextPlanFromDbSpy: vi.fn(async () => undefined),
@@ -115,10 +113,6 @@ vi.mock('../plan_discovery.js', () => ({
   toHeadlessPlanSummary: vi.fn((plan: any) => plan),
 }));
 
-vi.mock('./stub_plan.js', () => ({
-  executeStubPlan: executeStubPlanSpy,
-}));
-
 vi.mock('./batch_mode.js', () => ({
   executeBatchMode: executeBatchModeSpy,
 }));
@@ -165,7 +159,6 @@ describe('timAgent notifications', () => {
     openLogFileSpy.mockClear();
     closeLogFileSpy.mockClear();
     spawnAndLogOutputSpy.mockClear();
-    executeStubPlanSpy.mockClear();
     executeBatchModeSpy.mockClear();
     buildExecutorAndLogSpy.mockClear();
     findNextPlanFromDbSpy.mockClear();
@@ -225,7 +218,7 @@ describe('timAgent notifications', () => {
   });
 
   test('sends notification on error', async () => {
-    executeStubPlanSpy.mockImplementationOnce(async () => {
+    executeBatchModeSpy.mockImplementationOnce(async () => {
       throw new Error('boom');
     });
 
@@ -290,8 +283,11 @@ describe('timAgent notifications', () => {
   test('sends notification in dry-run mode', async () => {
     await timAgent(1, { log: false, summary: false, dryRun: true }, {} as any);
 
-    expect(executeStubPlanSpy).toHaveBeenCalledTimes(1);
-    expect(executeStubPlanSpy).toHaveBeenCalledWith(expect.objectContaining({ dryRun: true }));
+    expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
+    expect(executeBatchModeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ dryRun: true }),
+      undefined
+    );
     expect(spawnAndLogOutputSpy).toHaveBeenCalledTimes(1);
     const [, options] = spawnAndLogOutputSpy.mock.calls[0];
     const payload = JSON.parse(options.stdin.trim());

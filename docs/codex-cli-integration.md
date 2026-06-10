@@ -31,9 +31,9 @@ src/tim/executors/shared/orchestrator_prompt.ts
 It exports three wrappers, all consumed by both executors:
 
 - `wrapWithOrchestration()` — normal mode: implementer → tester → reviewer.
-- `wrapWithOrchestrationSimple()` — simple mode: implementer → verifier.
+- `wrapWithOrchestrationSimple()` — simple mode: implementer → reviewer.
 - `wrapWithOrchestrationTdd()` — TDD mode: `tim subagent tdd-tests` before
-  implementation, then the tester/reviewer path, or the verifier path when simple
+  implementation, then the tester/reviewer path, or the reviewer path when simple
   TDD is enabled.
 
 The prompt wording is provider-neutral (e.g. "shell command tool" rather than
@@ -77,9 +77,9 @@ Claude's `retryFastNoopOrchestratorTurn` continuation workaround.
 ### Prompt contents by mode
 
 - **Normal** — `tim subagent implementer`, `tim subagent tester`, and `tim subagent reviewer`.
-- **Simple** — `tim subagent implementer` and `tim subagent verifier`.
+- **Simple** — `tim subagent implementer` and `tim subagent reviewer`.
 - **TDD** — `tim subagent tdd-tests` before implementation, then tester/reviewer or
-  verifier depending on simple mode.
+  reviewer depending on simple mode.
 
 ### Option pass-through
 

@@ -69,21 +69,20 @@ describe('orchestrator_prompt failure protocol', () => {
     const out = wrapWithOrchestrationSimple('Context', 'abc', { batchMode: false });
     expect(out).toContain('Two-Phase Orchestration Instructions');
     expect(out).toContain('tim subagent implementer abc');
-    expect(out).toContain('tim subagent verifier abc');
-    expect(out).toContain('implement → verify');
+    expect(out).toContain('tim subagent reviewer abc --print');
+    expect(out).toContain('implement → review');
     expect(out).toContain('FAILED:');
   });
 
-  it('includes batch instructions and verification commands in simple mode', () => {
+  it('includes batch instructions and reviewer command in simple mode', () => {
     const out = wrapWithOrchestrationSimple('Context', 'abc', {
       batchMode: true,
       planFilePath: '/plans/test.plan.md',
     });
     expect(out).toContain('# Batch Task Processing Mode');
-    expect(out).toContain('tim subagent verifier abc');
-    expect(out).toContain('type checking');
-    expect(out).toContain('linting');
-    expect(out).toContain('project test suite');
+    expect(out).toContain('tim subagent reviewer abc --print');
+    expect(out).toContain('Scope the review to the tasks you worked on');
+    expect(out).toContain('final full-plan review');
     expect(out).toContain('@/plans/test.plan.md');
   });
 
@@ -187,10 +186,10 @@ describe('orchestrator_prompt subagent commands', () => {
   });
 
   describe('simple mode (wrapWithOrchestrationSimple)', () => {
-    it('references tim subagent implementer and verifier via Bash', () => {
+    it('references tim subagent implementer and reviewer via Bash', () => {
       const out = wrapWithOrchestrationSimple('Context', '55', { batchMode: false });
       expect(out).toContain('tim subagent implementer 55');
-      expect(out).toContain('tim subagent verifier 55');
+      expect(out).toContain('tim subagent reviewer 55 --print');
       expect(out).toContain('shell command tool');
       expect(out).toContain('1800000');
     });
@@ -207,7 +206,7 @@ describe('orchestrator_prompt subagent commands', () => {
         subagentExecutor: 'codex-cli',
       });
       expect(out).toContain('tim subagent implementer 55 -x codex-cli');
-      expect(out).toContain('tim subagent verifier 55 -x codex-cli');
+      expect(out).toContain('tim subagent reviewer 55 --print');
       expect(out).not.toContain('Subagent Executor Selection');
     });
 
@@ -247,7 +246,7 @@ describe('orchestrator_prompt subagent commands', () => {
         subagentExecutor: 'claude-code',
       });
       expect(out).toContain('tim subagent implementer 55 -x claude-code');
-      expect(out).toContain('tim subagent verifier 55 -x claude-code');
+      expect(out).toContain('tim subagent reviewer 55 --print');
       expect(out).not.toContain('Subagent Executor Selection');
     });
 
@@ -302,14 +301,13 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('final full-plan batch review before stopping');
     });
 
-    it('uses verifier in TDD simple mode', () => {
+    it('uses reviewer in TDD simple mode', () => {
       const out = wrapWithOrchestrationTdd('Context', '72', { batchMode: false, simpleMode: true });
       expect(out).toContain('tim subagent tdd-tests 72');
       expect(out).toContain('tim subagent implementer 72');
-      expect(out).toContain('tim subagent verifier 72');
+      expect(out).toContain('tim subagent reviewer 72 --print');
       expect(out).not.toContain('tim subagent tester 72');
-      expect(out).toContain('3. **Verification Phase**');
-      expect(out).not.toContain('Review Phase');
+      expect(out).toContain('3. **Review Phase**');
     });
 
     it('includes dynamic executor guidance for TDD mode when subagent executor is dynamic', () => {
@@ -413,7 +411,7 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('# Batch Task Processing Mode');
       expect(out).toContain('Subagent Executor Selection');
       expect(out).toContain('tim subagent implementer 55');
-      expect(out).toContain('tim subagent verifier 55');
+      expect(out).toContain('tim subagent reviewer 55 --print');
     });
 
     it('numbers workflow phases correctly in batch mode with normal orchestration', () => {

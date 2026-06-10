@@ -177,7 +177,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     expect(out.failureDetails?.sourceAgent).toBe('reviewer');
   });
 
-  test('reports verifier as failure source when simple mode verifier reports FAILED', async () => {
+  test('reports reviewer as failure source when simple mode reviewer reports FAILED', async () => {
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
       getUsingJj: vi.fn(async () => false),
@@ -196,14 +196,14 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     }));
 
     const failureRaw =
-      'FAILED: Verifier detected failing checks\n\nRequirements:\n- Ensure tests pass\nProblems:\n- bun run test failed\nPossible solutions:\n- Investigate test logs';
+      'FAILED: Reviewer detected blocking issues\n\nRequirements:\n- Ensure tests pass\nProblems:\n- bun run test failed\nPossible solutions:\n- Investigate test logs';
     vi.doMock('./claude_code/format.ts', () => ({
       formatJsonMessage: vi.fn((_line: string) => ({
         type: 'assistant',
         message: 'Model output...',
         rawMessage: failureRaw,
         failed: true,
-        failedSummary: 'Verifier detected failing checks',
+        failedSummary: 'Reviewer detected blocking issues',
       })),
       extractStructuredMessages: vi.fn((_messages: any[]) => []),
 
@@ -227,7 +227,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     expect(result).toBeDefined();
     expect(result.success).toBe(false);
-    expect(result.failureDetails?.sourceAgent).toBe('verifier');
+    expect(result.failureDetails?.sourceAgent).toBe('reviewer');
   });
 
   test('detects FAILED when not first line and returns orchestrator source by default', async () => {
@@ -343,7 +343,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     expect(out.content).not.toContain('\u001b[');
   });
 
-  test('simple mode generates implementer and verifier agents', async () => {
+  test('simple mode uses orchestration wrapper for implementer and reviewer flow', async () => {
     const planRoot = await fs.mkdtemp(path.join(tmpdir(), 'claude-simple-mode-'));
 
     const recordedArgs: string[][] = [];

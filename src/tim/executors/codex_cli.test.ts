@@ -154,9 +154,10 @@ describe('CodexCliExecutor - failure detection across agents', () => {
 
     expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
     const prompt = executeCodexStepMock.mock.calls[0][0] as string;
-    // Simple wrapper uses implementer -> verifier, not the normal tester/review loop.
+    // Simple wrapper uses implementer -> reviewer, not the normal tester flow.
     expect(prompt).toContain('tim subagent implementer 7');
-    expect(prompt).toContain('tim subagent verifier 7');
+    expect(prompt).toContain('tim subagent reviewer 7');
+    expect(prompt).not.toContain('tim subagent verifier 7');
     expect(prompt).not.toContain('tim subagent tester 7');
   });
 
@@ -483,7 +484,8 @@ describe('CodexCliExecutor - tdd execution mode routing', () => {
     const prompt = executeCodexStepMock.mock.calls[0][0] as string;
     expect(prompt).toContain('tim subagent tdd-tests 175');
     expect(prompt).toContain('tim subagent implementer 175');
-    expect(prompt).toContain('tim subagent verifier 175');
+    expect(prompt).toContain('tim subagent reviewer 175');
+    expect(prompt).not.toContain('tim subagent verifier 175');
     expect(prompt).not.toContain('tim subagent tester');
   });
 });
@@ -624,7 +626,7 @@ describe('CodexCliExecutor - orchestrator routing contract', () => {
     expect(prompt).toContain('CTX');
   });
 
-  test('simple mode: implementer + verifier, no tester subagent', async () => {
+  test('simple mode: implementer + reviewer, no tester or verifier subagent', async () => {
     const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
     const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
 
@@ -638,7 +640,8 @@ describe('CodexCliExecutor - orchestrator routing contract', () => {
     expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
     const prompt = executeCodexStepMock.mock.calls[0][0] as string;
     expect(prompt).toContain('tim subagent implementer 43');
-    expect(prompt).toContain('tim subagent verifier 43');
+    expect(prompt).toContain('tim subagent reviewer 43');
+    expect(prompt).not.toContain('tim subagent verifier 43');
     expect(prompt).not.toContain('tim subagent tester');
   });
 
@@ -662,7 +665,7 @@ describe('CodexCliExecutor - orchestrator routing contract', () => {
     expect(prompt).not.toContain('tim subagent verifier');
   });
 
-  test('tdd mode simpleMode=true: tdd-tests + verifier, no tester', async () => {
+  test('tdd mode simpleMode=true: tdd-tests + reviewer, no tester or verifier', async () => {
     const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
     const exec = new CodexCliExecutor({}, { baseDir: tempDir, simpleMode: true }, {} as any);
 
@@ -677,7 +680,8 @@ describe('CodexCliExecutor - orchestrator routing contract', () => {
     const prompt = executeCodexStepMock.mock.calls[0][0] as string;
     expect(prompt).toContain('tim subagent tdd-tests 44');
     expect(prompt).toContain('tim subagent implementer 44');
-    expect(prompt).toContain('tim subagent verifier 44');
+    expect(prompt).toContain('tim subagent reviewer 44');
+    expect(prompt).not.toContain('tim subagent verifier 44');
     expect(prompt).not.toContain('tim subagent tester');
   });
 

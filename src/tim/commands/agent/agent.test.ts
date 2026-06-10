@@ -778,6 +778,58 @@ describe('timAgent - simple mode flag plumbing', () => {
     expect(batchOptions).toMatchObject({ executor: testExecutor, executionMode: 'simple' });
   });
 
+  test('creates a derived task for taskless plans before running batch mode', async () => {
+    await writePlanFile(
+      simplePlanFile,
+      {
+        id: 123,
+        title: 'Taskless Plan',
+        goal: 'Ship the imported issue',
+        details: 'Use the issue details as the implementation brief.',
+        status: 'pending',
+        tasks: [],
+      },
+      { cwdForIdentity: tempDir }
+    );
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(123, { log: false } as any, {});
+
+    const updatedPlan = await readPlanFile(simplePlanFile);
+    expect(updatedPlan.tasks).toHaveLength(1);
+    expect(updatedPlan.tasks[0]).toMatchObject({
+      title: 'Taskless Plan',
+      description: 'Ship the imported issue\n\nUse the issue details as the implementation brief.',
+    });
+    expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
+    const [batchOptions] = executeBatchModeSpy.mock.calls[0];
+    expect(batchOptions).toMatchObject({
+      currentPlanFile: simplePlanFile,
+      executionMode: 'normal',
+    });
+  });
+
+  test('runs taskless simple plans through simple batch execution after creating a task', async () => {
+    const plan = await readPlanFile(simplePlanFile);
+    plan.simple = true;
+    plan.tasks = [];
+    await writePlanFile(simplePlanFile, plan, { cwdForIdentity: tempDir });
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(123, { log: false } as any, {});
+
+    const updatedPlan = await readPlanFile(simplePlanFile);
+    expect(updatedPlan.tasks).toHaveLength(1);
+    expect(updatedPlan.tasks[0]).toMatchObject({
+      title: 'Simple Flag Plan',
+      description:
+        'Exercise executor plumbing\n\nEnsure simple flag flows through to executor builder',
+    });
+    expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
+    const [batchOptions] = executeBatchModeSpy.mock.calls[0];
+    expect(batchOptions).toMatchObject({ executor: testExecutor, executionMode: 'simple' });
+  });
+
   test('starts and closes the plan watcher when a headless adapter is active', async () => {
     const closeAndFlushSpy = vi.fn();
     watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: closeAndFlushSpy });
