@@ -105,16 +105,16 @@
       </div>
       <h2 class="truncate text-base font-semibold text-foreground">{data.plan.title}</h2>
     </div>
-    {#if selectedArtifact}
+    {#if data.artifacts.length > 0}
       <Button
-        href={selectedArtifact.url}
+        href={`/api/plans/${data.plan.uuid}/artifacts/archive`}
         variant="outline"
         size="xs"
-        target="_blank"
-        rel="noopener"
+        aria-label="Download all artifacts"
+        title="Download all artifacts"
       >
         <Download class="size-3" />
-        Open
+        Download ZIP
       </Button>
     {/if}
   </header>
@@ -191,18 +191,34 @@
 </div>
 
 {#snippet artifactPane(artifact: ArtifactViewFile, renderedHtml: string, label?: string)}
-  <div class="border-b border-border px-5 py-3">
-    {#if label}
-      <p class="mb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        {label}
+  <div class="flex items-start justify-between gap-3 border-b border-border px-5 py-3">
+    <div class="min-w-0">
+      {#if label}
+        <p class="mb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          {label}
+        </p>
+      {/if}
+      <h3 class="text-sm font-semibold break-words text-foreground">
+        {artifact.filename}
+      </h3>
+      <p class="mt-1 text-xs text-muted-foreground">
+        {artifact.mimeType} · {formatSize(artifact.size)}
       </p>
+    </div>
+    {#if artifact.viewKind !== 'missing'}
+      <Button
+        href={artifact.downloadUrl}
+        variant="outline"
+        size="xs"
+        target="_blank"
+        rel="noopener"
+        aria-label="Open {artifact.filename}"
+        title="Open {artifact.filename}"
+      >
+        <Download class="size-3" />
+        Open
+      </Button>
     {/if}
-    <h3 class="text-sm font-semibold break-words text-foreground">
-      {artifact.filename}
-    </h3>
-    <p class="mt-1 text-xs text-muted-foreground">
-      {artifact.mimeType} · {formatSize(artifact.size)}
-    </p>
   </div>
 
   <div class="p-5">

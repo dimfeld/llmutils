@@ -63,6 +63,7 @@ interface ArtifactViewFile {
   viewKind: ArtifactViewKind;
   content: string | null;
   url: string;
+  downloadUrl: string;
 }
 
 function basename(filename: string): string {
@@ -131,6 +132,7 @@ async function toViewFile(artifact: PlanArtifactWithTransferState): Promise<Arti
     viewKind,
     content: shouldReadContent ? await fs.readFile(artifact.storagePath, 'utf8') : null,
     url: `/api/artifacts/${artifact.uuid}?view=1`,
+    downloadUrl: `/api/artifacts/${artifact.uuid}`,
   };
 }
 
