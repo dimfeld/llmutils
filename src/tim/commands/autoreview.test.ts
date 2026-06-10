@@ -224,6 +224,13 @@ describe('buildAutoreviewPrompt', () => {
     expect(prompt).toContain('decide whether and how each issue should be fixed');
   });
 
+  test('instructs display output to combine duplicate issues from multiple sources', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget });
+    expect(prompt).toContain('duplicate reports of the same underlying issue');
+    expect(prompt).toContain('issues can come from multiple sources');
+    expect(prompt).toContain('Combine duplicates into one displayed issue');
+  });
+
   test('includes guidance to suppress re-reported issues that match skipped ones', () => {
     const prompt = buildAutoreviewPrompt({ target: currentTarget });
     expect(prompt).toContain('Never nag the user about issues they explicitly skipped');
