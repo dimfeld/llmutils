@@ -193,10 +193,19 @@ function safeOriginalFilename(sourcePath: string, originalFilename?: string): st
   if (!candidate) {
     return path.basename(sourcePath);
   }
-  const basename = path.basename(candidate);
-  return basename.length > 0 && basename !== '.' && basename !== '..'
-    ? basename
-    : path.basename(sourcePath);
+  // Preserve a relative subpath (e.g. `runbook-1/screenshot.png`) so grouped
+  // artifacts stay together, while rejecting any traversal or absolute
+  // components that could escape an intended directory when later written to
+  // disk (zip export, download, etc.).
+  const segments = candidate
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0 && segment !== '.' && segment !== '..');
+  if (segments.length === 0) {
+    return path.basename(sourcePath);
+  }
+  return segments.join('/');
 }
 
 function transferStateMap(

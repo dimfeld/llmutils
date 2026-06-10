@@ -282,6 +282,9 @@ export async function runProofGeneration(options: RunProofGenerationOptions): Pr
     const artifact = await addArtifactByPlanUuid({
       planUuid: options.planUuid,
       sourcePath: filePath,
+      // Retain the subpath relative to the proofs directory so grouped proof
+      // files (e.g. per-runbook subdirectories) stay together.
+      originalFilename: path.relative(absoluteArtifactsDir, filePath),
       message: `tim-proof:${options.runId}`,
       config: options.config,
     });

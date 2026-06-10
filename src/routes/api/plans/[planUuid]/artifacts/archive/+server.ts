@@ -16,13 +16,24 @@ function archiveFilename(planId: number | null | undefined): string {
 }
 
 function zipSafeFilename(filename: string, used: Set<string>): string {
-  const parsed = path.parse(path.basename(filename.trim() || 'artifact'));
+  // Preserve any relative subdirectory so grouped artifacts stay together in
+  // the archive, while stripping traversal/absolute components that could
+  // escape the extraction directory (zip slip).
+  const segments = (filename.trim() || 'artifact')
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0 && segment !== '.' && segment !== '..');
+  const dir = segments.slice(0, -1).join('/');
+  const last = segments[segments.length - 1] ?? 'artifact';
+  const parsed = path.parse(last);
   const base = parsed.name || 'artifact';
   const ext = parsed.ext;
-  let candidate = `${base}${ext}`;
+  const prefix = dir ? `${dir}/` : '';
+  let candidate = `${prefix}${base}${ext}`;
   let index = 2;
   while (used.has(candidate)) {
-    candidate = `${base} (${index})${ext}`;
+    candidate = `${prefix}${base} (${index})${ext}`;
     index += 1;
   }
   used.add(candidate);

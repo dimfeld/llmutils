@@ -28,6 +28,7 @@ import { MAX_ARTIFACT_BYTES } from './constants.js';
 import { getArtifactsRoot, resolveArtifactPath } from './storage.js';
 import {
   addArtifact,
+  addArtifactByPlanUuid,
   ArtifactNotFoundError,
   getArtifact,
   hardDeleteArtifact,
@@ -112,6 +113,36 @@ describe('artifact service', () => {
     expect(
       await listArtifacts({ planId: 1, config: getDefaultConfig(), repoRoot: tempDir })
     ).toHaveLength(1);
+  });
+
+  test('retains a relative subpath as the filename and strips traversal components', async () => {
+    const planUuid = '11111111-1111-4111-8111-111111111111';
+    const sourcePath = path.join(sourceDir, 'runbook-screenshot.png');
+    await fs.writeFile(sourcePath, 'image bytes');
+
+    const grouped = await addArtifactByPlanUuid({
+      planUuid,
+      sourcePath,
+      originalFilename: 'runbook-1/screenshot.png',
+      config: getDefaultConfig(),
+    });
+    expect(grouped.filename).toBe('runbook-1/screenshot.png');
+
+    const traversal = await addArtifactByPlanUuid({
+      planUuid,
+      sourcePath,
+      originalFilename: '../../etc/passwd',
+      config: getDefaultConfig(),
+    });
+    expect(traversal.filename).toBe('etc/passwd');
+
+    const empty = await addArtifactByPlanUuid({
+      planUuid,
+      sourcePath,
+      originalFilename: '../..',
+      config: getDefaultConfig(),
+    });
+    expect(empty.filename).toBe('runbook-screenshot.png');
   });
 
   test('rejects missing and oversized source files', async () => {

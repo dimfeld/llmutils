@@ -188,6 +188,38 @@ describe('/api/plans/[planUuid]/artifacts/archive GET', () => {
     );
   });
 
+  test('preserves grouped subpaths and strips traversal components', async () => {
+    const groupedPath = path.join(tempDir, `${crypto.randomUUID()}-grouped.txt`);
+    const traversalPath = path.join(tempDir, `${crypto.randomUUID()}-traversal.txt`);
+    await fsp.writeFile(groupedPath, 'grouped body');
+    await fsp.writeFile(traversalPath, 'traversal body');
+    insertTestArtifact({
+      uuid: '40000000-0000-4000-8000-000000000001',
+      filename: 'runbook-1/screenshot.txt',
+      storagePath: groupedPath,
+      content: 'grouped body',
+    });
+    insertTestArtifact({
+      uuid: '40000000-0000-4000-8000-000000000002',
+      filename: '../../escape.txt',
+      storagePath: traversalPath,
+      content: 'traversal body',
+    });
+
+    const response = await GET({
+      params: { planUuid: PLAN_UUID },
+      request: makeRequest(),
+    } as never);
+
+    const entries = readZipEntries(Buffer.from(await response.arrayBuffer()));
+    expect(entries).toEqual(
+      new Map([
+        ['runbook-1/screenshot.txt', 'grouped body'],
+        ['escape.txt', 'traversal body'],
+      ])
+    );
+  });
+
   test('returns 409 when an active artifact file is missing', async () => {
     insertTestArtifact({
       uuid: '30000000-0000-4000-8000-000000000001',
