@@ -9,7 +9,7 @@ import { boldMarkdownHeaders, error, log, sendStructured, warn } from '../../../
 import { executePostApplyCommand } from '../../actions.js';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../../common/env.js';
 import { type TimConfig } from '../../configSchema.js';
-import type { Executor } from '../../executors/types.js';
+import type { Executor, ExecutorOutput } from '../../executors/types.js';
 import { readPlanFile, setPlanStatusById, writePlanFile } from '../../plans.js';
 import { getAllIncompleteTasks } from '../../plans/find_next.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
@@ -26,6 +26,7 @@ import { getCompletionStatus } from '../../plans/plan_state_utils.js';
 import { removePlanAssignment } from '../../assignments/remove_plan_assignment.js';
 
 const FAST_NOOP_BATCH_RETRY_MS = 5 * 60 * 1000;
+const SESSION_LIMIT_MESSAGE = "You've hit your session limit";
 
 async function updatePlanTimestampWithAutoSync(
   currentPlanFile: string,
@@ -69,6 +70,10 @@ function workingCopyStatusesMatch(
   }
 
   return beforeStatus.output === afterStatus.output;
+}
+
+function executorOutputContainsSessionLimit(output: ExecutorOutput | void): boolean {
+  return typeof output?.content === 'string' && output.content.includes(SESSION_LIMIT_MESSAGE);
 }
 
 export async function executeBatchMode(
@@ -272,16 +277,20 @@ Available tasks:\n\n${taskDescriptions}`,
           planFilePath: currentPlanFile,
           batchMode: true,
           executionMode,
-          captureOutput: summaryCollector ? 'result' : 'none',
+          captureOutput: 'result',
           retryFastNoopOrchestratorTurn: true,
         });
         iteration += 1;
-        const ok = output ? (output as any).success !== false : true;
+        const sessionLimitReached = executorOutputContainsSessionLimit(output);
+        const ok = sessionLimitReached ? false : output ? (output as any).success !== false : true;
         if (!ok) {
           const fd = output?.failureDetails;
-          sendFailureReport(fd?.problems || 'Executor reported failure.', {
+          const problems = sessionLimitReached
+            ? `Batch execution stopped: ${SESSION_LIMIT_MESSAGE}.`
+            : fd?.problems || 'Executor reported failure.';
+          sendFailureReport(problems, {
             requirements: fd?.requirements,
-            problems: fd?.problems,
+            problems,
             solutions: fd?.solutions,
             sourceAgent: fd?.sourceAgent,
           });

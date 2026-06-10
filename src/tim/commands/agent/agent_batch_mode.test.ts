@@ -553,6 +553,50 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       );
     });
 
+    test('batch mode stops with an error instead of retrying after session limit output', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      executorExecuteSpy.mockResolvedValue({
+        content: "You've hit your session limit. Please try again later.",
+        metadata: { phase: 'orchestrator' },
+      });
+
+      const options = { log: false, nonInteractive: true, steps: '2' } as any;
+      const globalCliOptions = {};
+
+      await expect(timAgent(1, options, globalCliOptions)).rejects.toThrow(
+        'Batch mode stopped due to error.'
+      );
+
+      expect(executorExecuteSpy).toHaveBeenCalledTimes(1);
+      expect(executorExecuteSpy.mock.calls[0][1]).toMatchObject({
+        captureOutput: 'result',
+      });
+      expect(sendStructuredSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'agent_step_end',
+          phase: 'execution',
+          success: false,
+          summary: 'Batch executor step failed.',
+        })
+      );
+      expect(sendStructuredSpy).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'workflow_progress',
+          phase: 'batch',
+          message: expect.stringContaining('retrying'),
+        })
+      );
+    });
+
     test('batch mode terminates when all tasks are complete', async () => {
       await createPlanFile({
         tasks: [
