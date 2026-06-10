@@ -201,7 +201,7 @@ You have access to three specialized agents that you MUST invoke via the shell c
 
 - **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 
-Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
+Each subagent command may take a long time to complete and is expected to print no output until it finishes. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
 `;
 }
 
