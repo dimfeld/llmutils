@@ -247,6 +247,38 @@ describe('PlanArtifactsList', () => {
     expect(body).toContain('href="/api/artifacts/66666666-6666-6666-6666-666666666666"');
   });
 
+  test('sorts report.md first, then alphabetically by filename', () => {
+    const { body } = render(PlanArtifactsList, {
+      props: {
+        artifacts: [
+          makeArtifact({
+            uuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            mimeType: 'text/plain',
+            filename: 'zebra.txt',
+          }),
+          makeArtifact({
+            uuid: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+            mimeType: 'text/plain',
+            filename: 'alpha.txt',
+          }),
+          makeArtifact({
+            uuid: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+            mimeType: 'text/markdown',
+            filename: 'report.md',
+          }),
+        ],
+      },
+    });
+
+    const reportPos = body.indexOf('report.md');
+    const alphaPos = body.indexOf('alpha.txt');
+    const zebraPos = body.indexOf('zebra.txt');
+
+    expect(reportPos).toBeGreaterThanOrEqual(0);
+    expect(reportPos).toBeLessThan(alphaPos);
+    expect(alphaPos).toBeLessThan(zebraPos);
+  });
+
   test('renders proof artifact links in browser-view mode', () => {
     const { body } = render(PlanArtifactsList, {
       props: {

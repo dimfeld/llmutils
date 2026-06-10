@@ -14,13 +14,38 @@
 
   let { data }: { data: PageData } = $props();
 
-  let selectedIndex = $state(0);
-  let selectedArtifact = $derived(data.artifacts[selectedIndex] ?? null);
-  let renderedMarkdown = $derived(
-    selectedArtifact?.viewKind === 'markdown' && selectedArtifact.content !== null
-      ? renderMarkdown(selectedArtifact.content)
-      : ''
+  type ArtifactViewFile = PageData['artifacts'][number];
+
+  function isReport(filename: string): boolean {
+    return filename.slice(filename.lastIndexOf('/') + 1).toLowerCase() === 'report.md';
+  }
+
+  let reportIndex = $derived(data.artifacts.findIndex((artifact) => isReport(artifact.filename)));
+  let reportArtifact = $derived(reportIndex >= 0 ? data.artifacts[reportIndex] : null);
+  // Pin report.md to the right pane only when there's something else to show on the left.
+  let showSplit = $derived(reportArtifact !== null && data.artifacts.length > 1);
+
+  // Default the selection to the first non-report artifact when a report is pinned,
+  // so the split view doesn't show report.md in both panes on load.
+  let selectedIndex = $state(
+    (() => {
+      const ri = data.artifacts.findIndex((artifact) => isReport(artifact.filename));
+      if (ri === -1) return 0;
+      const firstOther = data.artifacts.findIndex((_, index) => index !== ri);
+      return firstOther === -1 ? ri : firstOther;
+    })()
   );
+  let selectedArtifact = $derived(data.artifacts[selectedIndex] ?? null);
+  let selectedIsReport = $derived(selectedArtifact !== null && isReport(selectedArtifact.filename));
+
+  function renderedFor(artifact: ArtifactViewFile | null): string {
+    return artifact?.viewKind === 'markdown' && artifact.content !== null
+      ? renderMarkdown(artifact.content)
+      : '';
+  }
+
+  let renderedMarkdown = $derived(renderedFor(selectedArtifact));
+  let reportRenderedMarkdown = $derived(renderedFor(reportArtifact));
   let planHref = $derived(`/projects/${data.projectId}/plans/${data.plan.uuid}`);
 
   function iconFor(viewKind: string) {
@@ -74,9 +99,9 @@
         <Button href={planHref} variant="ghost" size="icon-xs" aria-label="Back to plan">
           <ArrowLeft class="size-3.5" />
         </Button>
-        <p class="truncate text-xs text-muted-foreground">
+        <a href={planHref} class="truncate text-xs text-muted-foreground hover:text-foreground">
           Plan #{data.plan.planId}
-        </p>
+        </a>
       </div>
       <h2 class="truncate text-base font-semibold text-foreground">{data.plan.title}</h2>
     </div>
@@ -134,77 +159,102 @@
         </ul>
       </aside>
 
-      <main class="min-h-0 overflow-y-auto bg-background">
-        {#if selectedArtifact}
-          <div class="border-b border-border px-5 py-3">
-            <h3 class="text-sm font-semibold break-words text-foreground">
-              {selectedArtifact.filename}
-            </h3>
-            <p class="mt-1 text-xs text-muted-foreground">
-              {selectedArtifact.mimeType} · {formatSize(selectedArtifact.size)}
-            </p>
-          </div>
-
-          <div class="p-5">
-            {#if selectedArtifact.viewKind === 'markdown'}
-              <div class="plan-rendered-content max-w-5xl text-sm">
-                {@html renderedMarkdown}
-              </div>
-            {:else if selectedArtifact.viewKind === 'html'}
-              <iframe
-                class="h-[calc(100vh-11rem)] w-full rounded border border-border bg-white"
-                title={selectedArtifact.filename}
-                sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
-                srcdoc={selectedArtifact.content ?? ''}
-              ></iframe>
-            {:else if selectedArtifact.viewKind === 'source'}
-              <pre
-                class="overflow-x-auto rounded border border-border bg-muted/30 p-4 text-sm leading-6 text-foreground"><code
-                  >{selectedArtifact.content}</code
-                ></pre>
-            {:else if selectedArtifact.viewKind === 'image'}
-              <img
-                src={selectedArtifact.url}
-                alt={selectedArtifact.filename}
-                class="max-h-[calc(100vh-12rem)] max-w-full rounded border border-border object-contain"
-              />
-            {:else if selectedArtifact.viewKind === 'video'}
-              <!-- svelte-ignore a11y_media_has_caption - arbitrary trusted artifacts rarely include caption tracks -->
-              <video
-                src={selectedArtifact.url}
-                controls
-                class="max-h-[calc(100vh-12rem)] max-w-full rounded border border-border"
-              ></video>
-            {:else if selectedArtifact.viewKind === 'audio'}
-              <audio src={selectedArtifact.url} controls class="w-full max-w-3xl"></audio>
-            {:else if selectedArtifact.viewKind === 'pdf'}
-              <iframe
-                class="h-[calc(100vh-11rem)] w-full rounded border border-border"
-                title={selectedArtifact.filename}
-                src={selectedArtifact.url}
-              ></iframe>
-            {:else if selectedArtifact.viewKind === 'missing'}
+      {#if showSplit}
+        <div class="grid min-h-0 grid-cols-2 divide-x divide-border">
+          <main class="min-h-0 overflow-y-auto bg-background">
+            {#if selectedIsReport}
               <div
-                class="rounded border border-border bg-muted/30 p-4 text-sm text-muted-foreground"
+                class="flex h-full items-center justify-center p-8 text-sm text-muted-foreground"
               >
-                This artifact file is not available on this node yet.
+                report.md is pinned in the panel on the right.
               </div>
-            {:else if selectedArtifact.viewKind === 'too_large'}
-              <div
-                class="rounded border border-border bg-muted/30 p-4 text-sm text-muted-foreground"
-              >
-                This text artifact is too large to preview inline.
-              </div>
-            {:else}
-              <div
-                class="rounded border border-border bg-muted/30 p-4 text-sm text-muted-foreground"
-              >
-                This artifact type cannot be previewed inline.
-              </div>
+            {:else if selectedArtifact}
+              {@render artifactPane(selectedArtifact, renderedMarkdown)}
             {/if}
-          </div>
-        {/if}
-      </main>
+          </main>
+
+          <section class="min-h-0 overflow-y-auto bg-muted/10">
+            {#if reportArtifact}
+              {@render artifactPane(reportArtifact, reportRenderedMarkdown, 'Report')}
+            {/if}
+          </section>
+        </div>
+      {:else}
+        <main class="min-h-0 overflow-y-auto bg-background">
+          {#if selectedArtifact}
+            {@render artifactPane(selectedArtifact, renderedMarkdown)}
+          {/if}
+        </main>
+      {/if}
     </div>
   {/if}
 </div>
+
+{#snippet artifactPane(artifact: ArtifactViewFile, renderedHtml: string, label?: string)}
+  <div class="border-b border-border px-5 py-3">
+    {#if label}
+      <p class="mb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+        {label}
+      </p>
+    {/if}
+    <h3 class="text-sm font-semibold break-words text-foreground">
+      {artifact.filename}
+    </h3>
+    <p class="mt-1 text-xs text-muted-foreground">
+      {artifact.mimeType} · {formatSize(artifact.size)}
+    </p>
+  </div>
+
+  <div class="p-5">
+    {#if artifact.viewKind === 'markdown'}
+      <div class="plan-rendered-content max-w-5xl text-sm">
+        {@html renderedHtml}
+      </div>
+    {:else if artifact.viewKind === 'html'}
+      <iframe
+        class="h-[calc(100vh-11rem)] w-full rounded border border-border bg-white"
+        title={artifact.filename}
+        sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+        srcdoc={artifact.content ?? ''}
+      ></iframe>
+    {:else if artifact.viewKind === 'source'}
+      <pre
+        class="overflow-x-auto rounded border border-border bg-muted/30 p-4 text-sm leading-6 text-foreground"><code
+          >{artifact.content}</code
+        ></pre>
+    {:else if artifact.viewKind === 'image'}
+      <img
+        src={artifact.url}
+        alt={artifact.filename}
+        class="max-h-[calc(100vh-12rem)] max-w-full rounded border border-border object-contain"
+      />
+    {:else if artifact.viewKind === 'video'}
+      <!-- svelte-ignore a11y_media_has_caption - arbitrary trusted artifacts rarely include caption tracks -->
+      <video
+        src={artifact.url}
+        controls
+        class="max-h-[calc(100vh-12rem)] max-w-full rounded border border-border"
+      ></video>
+    {:else if artifact.viewKind === 'audio'}
+      <audio src={artifact.url} controls class="w-full max-w-3xl"></audio>
+    {:else if artifact.viewKind === 'pdf'}
+      <iframe
+        class="h-[calc(100vh-11rem)] w-full rounded border border-border"
+        title={artifact.filename}
+        src={artifact.url}
+      ></iframe>
+    {:else if artifact.viewKind === 'missing'}
+      <div class="rounded border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+        This artifact file is not available on this node yet.
+      </div>
+    {:else if artifact.viewKind === 'too_large'}
+      <div class="rounded border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+        This text artifact is too large to preview inline.
+      </div>
+    {:else}
+      <div class="rounded border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+        This artifact type cannot be previewed inline.
+      </div>
+    {/if}
+  </div>
+{/snippet}
