@@ -40,7 +40,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../configLoader.js', () => ({ loadEffectiveConfig: mocks.loadEffectiveConfig }));
-vi.mock('../../common/git.js', () => ({ getGitRoot: mocks.getGitRoot }));
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: mocks.getGitRoot,
+  getUsingJj: vi.fn(() => false),
+}));
 vi.mock('../plans.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../plans.js')>();
   return {

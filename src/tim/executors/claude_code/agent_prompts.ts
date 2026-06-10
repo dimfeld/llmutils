@@ -9,6 +9,12 @@ interface ProgressGuidanceOptions {
   mode?: ProgressGuidanceMode;
   planFilePath?: string;
   useAtPrefix?: boolean;
+  /**
+   * When true, the workspace uses Jujutsu (jj) for version control. Subagent prompts
+   * are instructed to use `jj` for all VCS operations instead of `git` so that commits
+   * land on the active bookmark instead of being stranded above the base branch.
+   */
+  useJj?: boolean;
 }
 
 const progressReportingGuidance = `
@@ -22,6 +28,22 @@ const commitScopeGuidance = `
 
 When commiting changes to version control, always include any unexpected modified files in the commit. Do not ask the user for confirmation.
 `;
+
+const JJ_VCS_GUIDANCE = `
+## Version Control: Use Jujutsu (jj), not git
+
+This workspace uses Jujutsu (jj) for version control. Use \`jj\` for ALL version control operations instead of \`git\`.
+
+Do NOT run \`git\` commands that create or move commits, branches, or bookmarks. They do not reflect Jujutsu's working-copy model correctly and can leave your commits stranded above the base branch instead of on the active bookmark, so the orchestrator will not see your work.
+`;
+
+/**
+ * Returns a Version Control guidance section instructing subagents to use jj instead of
+ * git. Returns an empty string when the workspace is not using jj.
+ */
+function buildVcsGuidance(useJj?: boolean): string {
+  return useJj ? `\n${JJ_VCS_GUIDANCE}` : '';
+}
 
 export function buildReviewerPromptIntro(useSubagents: boolean = false): string {
   const subagentDirective = useSubagents
@@ -304,7 +326,7 @@ You may receive a single task or multiple related tasks to implement together. W
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}
 ${progressGuidance}
-${commitScopeGuidance}
+${commitScopeGuidance}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
 
 ### Implementation Approach
 1. First understand the existing code structure and patterns. If you have a plan file to reference and existing work has been done on the plan, you can find it described in the "# Implementation Notes" section of the plan file's details field.
@@ -354,7 +376,7 @@ ${contextContent}${customInstructionsSection}
 6. Take your time to ensure test coverage is complete and passing. Run testing commands even if they may take a while or use system resources.
 
 ${progressGuidance}
-${commitScopeGuidance}
+${commitScopeGuidance}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
 
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to test. When testing multiple tasks:
@@ -456,7 +478,7 @@ ${contextContent}${customInstructionsSection}
 7. Report a summary of tests added and the behavior they define so the implementer can make them pass
 
 ${progressGuidance}
-${commitScopeGuidance}
+${commitScopeGuidance}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
 
 ## TDD-Specific Rules
 - The tests should initially FAIL because the implementation is not complete yet.
@@ -579,7 +601,7 @@ ${contextContent}${customInstructionsSection}
 ${primaryResponsibilities.join('\n')}
 
 ${progressGuidance}${taskCompletionInstructions}
-${commitScopeGuidance}
+${commitScopeGuidance}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
 
 ## Handling Multiple Tasks:
 - ${contextTaskFocus}
@@ -587,7 +609,7 @@ ${commitScopeGuidance}
 - Document which tasks and commands you verified so the orchestrator can track progress
 
 ## Verification Workflow
-1. Inspect git status and recent changes to identify files that require verification
+1. Inspect ${progressGuidanceOptions?.useJj ? '`jj status`' : '`git status`'} and recent changes to identify files that require verification
 2. Ensure tests exist for new functionality; create or update tests when necessary before running suites
 3. Run the project's required commands (at minimum: check, lint, test)
 4. Capture command output. When a command fails, stop and analyze the failure. Provide a clear summary, the failing command, and suggested next steps for the implementer.

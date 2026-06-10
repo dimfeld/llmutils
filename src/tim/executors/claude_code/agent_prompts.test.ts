@@ -44,6 +44,42 @@ describe('agent_prompts failure protocol integration', () => {
     expect(getVerifierAgentPrompt(context).prompt).toContain(expectedText);
   });
 
+  it('omits jj version-control guidance when useJj is not set', () => {
+    expect(getImplementerPrompt(context).prompt).not.toContain('Use Jujutsu (jj), not git');
+    expect(getVerifierAgentPrompt(context).prompt).toContain('`git status`');
+    expect(getVerifierAgentPrompt(context).prompt).not.toContain('`jj status`');
+  });
+
+  it('adds jj version-control guidance to committing subagents when useJj is true', () => {
+    const jjMarker = 'Use Jujutsu (jj), not git';
+    expect(
+      getImplementerPrompt(context, undefined, undefined, undefined, { useJj: true }).prompt
+    ).toContain(jjMarker);
+    expect(
+      getTesterPrompt(context, undefined, undefined, undefined, { useJj: true }).prompt
+    ).toContain(jjMarker);
+    expect(
+      getTddTestsPrompt(context, undefined, undefined, undefined, { useJj: true }).prompt
+    ).toContain(jjMarker);
+
+    const verifier = getVerifierAgentPrompt(
+      context,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      false,
+      {
+        useJj: true,
+      }
+    ).prompt;
+    expect(verifier).toContain(jjMarker);
+    expect(verifier).toContain('Do NOT run `git` commands');
+    // The verification workflow should inspect `jj status` rather than `git status`.
+    expect(verifier).toContain('`jj status`');
+    expect(verifier).not.toContain('Inspect `git status`');
+  });
+
   it('includes FAILED protocol in reviewer prompt', () => {
     const def = getReviewerPrompt(context);
     expect(def.prompt).toContain('FAILED:');

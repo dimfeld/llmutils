@@ -33,12 +33,8 @@ const INPUT_COMBINATION_GUIDANCE =
 const BRANCH_SETUP_GUIDANCE =
   '- **The git branch for this task has already been set up.** Do not create, switch, or check out any branches. Do not use git worktrees. Work in the current directory as-is.';
 
-const JJ_VCS_GUIDANCE = `- **This workspace uses Jujutsu (jj) for version control.** Use \`jj\` commands for all VCS operations instead of \`git\`. For example:
-  - \`jj status\` instead of \`git status\`
-  - \`jj commit -m "..."\` instead of \`git commit\`
-  - \`jj diff\` instead of \`git diff\`
-  - \`jj log\` instead of \`git log\`
-  - Do NOT run \`git\` commands directly; they will not reflect Jujutsu's working-copy model correctly.`;
+const JJ_VCS_GUIDANCE = `- **This workspace uses Jujutsu (jj) for version control.** Use \`jj\` for all VCS operations instead of \`git\`. Do NOT run \`git\` commands that create or move commits, branches, or bookmarks; they do not reflect Jujutsu's working-copy model and can leave commits stranded above the base branch instead of on the active bookmark.
+- When delegating to subagents, ensure they also use \`jj\` (never \`git\`) for all version control operations.`;
 
 function buildJjGuidance(options: OrchestrationOptions): string {
   return options.useJj ? `\n${JJ_VCS_GUIDANCE}` : '';

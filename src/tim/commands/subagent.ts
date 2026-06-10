@@ -21,7 +21,7 @@ import {
 } from '../executors/claude_code/agent_prompts.js';
 import { loadAgentInstructionsFor } from '../executors/codex_cli/agent_helpers.js';
 import { executeCodexStep } from '../executors/codex_cli/codex_runner.js';
-import { getGitRoot } from '../../common/git.js';
+import { getGitRoot, getUsingJj } from '../../common/git.js';
 import { runClaudeSubprocess } from '../executors/claude_code/run_claude_subprocess.js';
 import type { TimConfig } from '../configSchema.js';
 import type { Executor } from '../executors/types.js';
@@ -81,6 +81,7 @@ export async function handleSubagentCommand(
   const { plan: planData, planPath } = await resolvePlanByNumericId(planId, repoRoot);
   const planFilePath = planPath ?? (await materializePlan(planData.id, repoRoot));
   const gitRoot = await getGitRoot(path.dirname(planFilePath));
+  const useJj = await getUsingJj(gitRoot);
   const executorType = options.executor || 'claude-code';
   const selectedModel = resolveSubagentModel(agentType, executorType, options.model, config);
 
@@ -152,7 +153,8 @@ export async function handleSubagentCommand(
     contextContent,
     planIdLabel,
     allInstructions || undefined,
-    selectedModel
+    selectedModel,
+    useJj
   );
 
   // Execute using the selected executor
@@ -200,20 +202,24 @@ function buildAgentDefinition(
   contextContent: string,
   planId: string,
   customInstructions: string | undefined,
-  model: string | undefined
+  model: string | undefined,
+  useJj: boolean
 ) {
   switch (agentType) {
     case 'implementer':
       return getImplementerPrompt(contextContent, planId, customInstructions, model, {
         mode: 'report',
+        useJj,
       });
     case 'tester':
       return getTesterPrompt(contextContent, planId, customInstructions, model, {
         mode: 'report',
+        useJj,
       });
     case 'tdd-tests':
       return getTddTestsPrompt(contextContent, planId, customInstructions, model, {
         mode: 'report',
+        useJj,
       });
     case 'verifier':
       return getVerifierAgentPrompt(
@@ -225,6 +231,7 @@ function buildAgentDefinition(
         false,
         {
           mode: 'report',
+          useJj,
         }
       );
   }
