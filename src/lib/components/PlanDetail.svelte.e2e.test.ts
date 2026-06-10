@@ -223,7 +223,7 @@ describe('PlanDetail action selection', () => {
       .not.toBeInTheDocument();
   });
 
-  test('groups Generate and Run Agent under Actions for a taskless non-simple plan', async () => {
+  test('shows Generate as a separate action button with Run Agent primary for a taskless non-simple plan', async () => {
     const screen = renderPlan(
       makePlanDetail({
         simple: false,
@@ -236,6 +236,10 @@ describe('PlanDetail action selection', () => {
     await expect
       .element(page.getByRole('button', { name: 'Actions', exact: true }))
       .toBeInTheDocument();
+    // Generate is a standalone button, not buried in the dropdown.
+    await expect
+      .element(page.getByRole('button', { name: 'Generate', exact: true }))
+      .toBeInTheDocument();
     await expect
       .element(page.getByRole('button', { name: 'Autoreview', exact: true }))
       .toBeInTheDocument();
@@ -243,8 +247,8 @@ describe('PlanDetail action selection', () => {
       .element(page.getByRole('button', { name: 'Shell', exact: true }))
       .toBeInTheDocument();
     await screen.getByRole('button', { name: 'Actions', exact: true }).click();
-    await expect.element(page.getByRole('menuitem', { name: 'Generate' })).toBeInTheDocument();
     await expect.element(page.getByRole('menuitem', { name: 'Run Agent' })).toBeInTheDocument();
+    await expect.element(page.getByRole('menuitem', { name: 'Generate' })).not.toBeInTheDocument();
   });
 });
 

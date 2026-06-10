@@ -503,7 +503,7 @@ describe('PlanDetail', () => {
     expect(body).not.toContain('<div data-testid="action-config"><button>Generate</button>');
   });
 
-  test('groups Generate and Run Agent under Actions for a taskless non-simple plan', () => {
+  test('shows Generate as a separate action button with Run Agent primary for a taskless non-simple plan', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
         plan: makePlanDetail({
@@ -520,10 +520,12 @@ describe('PlanDetail', () => {
 
     expect(body).toContain('<div data-testid="action-config"><button>Actions</button>');
     expect(body).toContain('Run Agent');
+    expect(body).toContain('Generate');
     expect(body).toContain('Autoreview');
     expect(body).toContain('Shell');
-    expect(body).not.toContain('<button>Autoreview</button>');
-    expect(body.indexOf('Generate')).toBeLessThan(body.indexOf('Run Agent'));
+    // Run Agent is the primary dropdown action; Generate is now a separate
+    // standalone button rendered after the dropdown.
+    expect(body.indexOf('Run Agent')).toBeLessThan(body.indexOf('Generate'));
   });
 
   test('shows note content when plan has a note', () => {

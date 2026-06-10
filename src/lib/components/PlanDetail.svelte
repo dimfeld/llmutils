@@ -149,7 +149,7 @@
 
     // Plans with incomplete tasks: show single "Run Agent" button
     let showAgentOnly = hasTasks && hasIncompleteTasks && !isIneligible && !showFinish;
-    // Plans without tasks: show "Generate" as primary + "Run Agent" in dropdown
+    // Plans without tasks: show "Run Agent" as primary + "Generate" as a separate action button
     let showGenerateWithAgent = !hasTasks && !isIneligible && !showFinish;
 
     // done plans with pending doc updates: show "Update Docs" in dropdown
@@ -273,8 +273,10 @@
         menuItems.push(chatItem);
         if (isEligibleForProof) menuItems.push(proofItem);
       } else {
-        primary = generateItem;
-        menuItems.push(agentItem);
+        // Eligible for Generate: surface "Generate" as its own standalone button
+        // (not buried in the dropdown), with "Run Agent" as the primary action.
+        primary = agentItem;
+        fixedActions = [generateItem, autoreviewItem, shellItem];
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
         menuItems.push(chatItem);
