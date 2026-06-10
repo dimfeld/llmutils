@@ -33,6 +33,12 @@ interface HeadlessAdapterOptions {
   serverPort?: number;
   serverHostname?: string;
   bearerToken?: string;
+  /**
+   * Invoked exactly once when the adapter is torn down (via `destroy()` or
+   * `destroySync()`). Used to record the end of a tracked session/job. Errors
+   * thrown by the hook are swallowed so teardown is never blocked.
+   */
+  onDestroy?: () => void;
 }
 
 /** Pending prompt request entry tracked by the HeadlessAdapter. */
@@ -53,6 +59,8 @@ export class HeadlessAdapter implements LoggerAdapter {
   private readonly serverHostname?: string;
   private readonly serverSessionId?: string;
   private readonly serverStartedAt?: string;
+  private readonly onDestroy?: () => void;
+  private destroyHookFired = false;
 
   private sessionServer: EmbeddedServerHandle | undefined;
   private history: HistoryEntry[] = [];
@@ -82,6 +90,7 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.maxPtyBufferBytes = options?.maxPtyBufferBytes ?? DEFAULT_MAX_PTY_BUFFER_BYTES;
     this.bearerToken = options?.bearerToken;
     this.serverHostname = options?.serverHostname;
+    this.onDestroy = options?.onDestroy;
 
     if (options && 'serverPort' in options && options.serverPort != null) {
       this.serverSessionId = crypto.randomUUID();
@@ -172,6 +181,19 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.destroyed = true;
     this.rejectAllPending();
     this.stopSessionServer();
+    this.fireDestroyHook();
+  }
+
+  private fireDestroyHook(): void {
+    if (this.destroyHookFired || !this.onDestroy) {
+      return;
+    }
+    this.destroyHookFired = true;
+    try {
+      this.onDestroy();
+    } catch (err) {
+      this.wrappedAdapter.warn(`Headless destroy hook error: ${err as Error}`);
+    }
   }
 
   updateSessionInfo(patch: Partial<HeadlessSessionInfo>): void {
@@ -199,6 +221,7 @@ export class HeadlessAdapter implements LoggerAdapter {
     }
 
     this.stopSessionServer();
+    this.fireDestroyHook();
   }
 
   /**

@@ -71,7 +71,7 @@
     }
   });
 
-  const baseTabSlugs = ['sessions', 'active', 'prs', 'reviews', 'plans'] as const;
+  const baseTabSlugs = ['sessions', 'active', 'prs', 'activity', 'plans'] as const;
   const projectTabSlugs = [...baseTabSlugs, 'settings'] as const;
 
   function handleShortcuts(event: KeyboardEvent) {

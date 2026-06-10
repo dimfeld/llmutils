@@ -27,6 +27,7 @@ let runWithHeadlessAdapterIfEnabled: typeof import('./headless.js').runWithHeadl
 let createHeadlessAdapterForCommand: typeof import('./headless.js').createHeadlessAdapterForCommand;
 let updateHeadlessSessionInfo: typeof import('./headless.js').updateHeadlessSessionInfo;
 let resetHeadlessWarningStateForTests: typeof import('./headless.js').resetHeadlessWarningStateForTests;
+let shouldRecordHeadlessJobForTests: typeof import('./headless.js').shouldRecordHeadlessJobForTests;
 const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
 let tempCacheDir: string | undefined;
 
@@ -41,6 +42,7 @@ beforeAll(async () => {
     createHeadlessAdapterForCommand,
     updateHeadlessSessionInfo,
     resetHeadlessWarningStateForTests,
+    shouldRecordHeadlessJobForTests,
   } = await import('./headless.js'));
 });
 
@@ -348,6 +350,33 @@ describe('runWithHeadlessAdapterIfEnabled', () => {
     } finally {
       destroySpy.mockRestore();
     }
+  });
+
+  test('does not record jobs for commands excluded from the activity feed', () => {
+    for (const command of ['agent-multi', 'review', 'chat', 'run-prompt', 'shell'] as const) {
+      expect(shouldRecordHeadlessJobForTests(command)).toBe(false);
+    }
+  });
+
+  test('records jobs for standalone activity commands when an embedded server is available', () => {
+    for (const command of [
+      'agent',
+      'review-guide',
+      'generate',
+      'autoreview',
+      'rebase',
+      'update-docs',
+      'proof',
+      'pr-create',
+      'pr-fix',
+    ] as const) {
+      expect(shouldRecordHeadlessJobForTests(command)).toBe(true);
+    }
+  });
+
+  test('does not record jobs without an embedded server', () => {
+    process.env.TIM_NO_SERVER = '1';
+    expect(shouldRecordHeadlessJobForTests('agent')).toBe(false);
   });
 });
 

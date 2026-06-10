@@ -467,6 +467,14 @@ Daily digest Slack message coordinates are stored in SQLite (migration v45) so s
 
 The enrichment pipeline (`enrichPlansWithContext`) builds internal lookup maps (`planByUuid`, `dependenciesByPlanUuid`) and exposes them so callers like `getPlanDetail` can reuse them for dependency resolution without duplicate work. It also backfills missing cross-project dependency plans from the DB so that project-scoped queries can still resolve dependencies on plans in other projects.
 
+### Job / Activity Log
+
+The `job` table records every non-tunneled session that starts an embedded server — the "Activity" tab in the web UI reads from it. CRUD lives in `src/tim/db/job.ts`:
+
+- **`recordJobStart(db, input)`**: Inserts a `running` row and returns its id. Called from `src/tim/headless.ts` for standalone activity commands that create a session (`runWithHeadlessAdapterIfEnabled` and `createHeadlessAdapterForCommand`). It intentionally skips `agent-multi`, `review`, `chat`, `run-prompt`, `shell`, `review-guide-comment`, and any command run with `TIM_NO_SERVER=1` (no discoverable session). Job recording is best-effort and never throws into the command path.
+- **`markJobFinished(db, jobId, status)`**: Stamps `finished_at` and sets the terminal status. `runWithHeadlessAdapterIfEnabled` records `completed`/`failed` based on the callback outcome; the manual `createHeadlessAdapterForCommand` path marks `completed` via the adapter's `onDestroy` hook (no success/failure signal available there).
+- **`listRecentJobs(db, { projectId, limit })`**: Returns recent jobs most-recent-first, left-joining `plan` and `pr_status` to backfill `plan_id`/`plan_title`/`pr_number`. The activity route (`src/routes/projects/[projectId]/activity/+page.server.ts`) resolves each job's primary output link (latest review guide, plan artifacts page, PR, or plan) at display time.
+
 ### Testing
 
 - Use `openDatabase(':memory:')` for isolated test databases

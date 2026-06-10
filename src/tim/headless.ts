@@ -1,10 +1,13 @@
 import { getLoggerAdapter, runWithLogger } from '../logging/adapter.js';
 import { HeadlessAdapter } from '../logging/headless_adapter.js';
 import type { HeadlessSessionInfo } from '../logging/headless_protocol.js';
-import { warn } from '../logging.js';
+import { debugLog, warn } from '../logging.js';
 import type { TimConfig } from './configSchema.js';
 import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
 import { describeRemoteForLogging } from './external_storage_utils.js';
+import { getDatabase } from './db/database.js';
+import { getProject } from './db/project.js';
+import { markJobFinished, recordJobStart } from './db/job.js';
 
 export const DEFAULT_HEADLESS_URL = 'ws://localhost:8123/tim-agent';
 const warnedInvalidHeadlessUrls = new Set<string>();
@@ -130,6 +133,76 @@ export async function buildHeadlessSessionInfo(
   };
 }
 
+/**
+ * Whether starting this command's session should be written to the job log.
+ *
+ * A job is recorded for commands that create a (non-tunneled) session, start
+ * an embedded server, and represent standalone plan/project work worth
+ * surfacing in the activity feed.
+ */
+function shouldRecordJob(command: HeadlessCommand): boolean {
+  if (
+    command === 'agent-multi' ||
+    command === 'review' ||
+    command === 'chat' ||
+    command === 'run-prompt' ||
+    command === 'shell' ||
+    command === 'review-guide-comment'
+  ) {
+    return false;
+  }
+  // No server means no discoverable session, so there is nothing to log.
+  return process.env.TIM_NO_SERVER !== '1';
+}
+
+export function shouldRecordHeadlessJobForTests(command: HeadlessCommand): boolean {
+  return shouldRecordJob(command);
+}
+
+/**
+ * Records the start of a job for a session, resolving the project from the
+ * current repository. Best-effort: never throws, so job logging cannot break a
+ * command. Returns the new job id, or undefined if nothing was recorded.
+ */
+async function recordJobStartFromSession(
+  command: HeadlessCommand,
+  sessionInfo: HeadlessSessionInfo
+): Promise<number | undefined> {
+  try {
+    const db = getDatabase();
+    let projectId: number | null = null;
+    try {
+      const identity = await getRepositoryIdentity();
+      projectId = getProject(db, identity.repositoryId)?.id ?? null;
+    } catch {
+      // Best-effort project resolution; record the job without a project id.
+    }
+
+    return recordJobStart(db, {
+      projectId,
+      jobType: command,
+      planId: sessionInfo.planId ?? null,
+      planUuid: sessionInfo.planUuid ?? null,
+      planTitle: sessionInfo.planTitle ?? null,
+      prUrl: sessionInfo.linkedPrUrl ?? null,
+      prNumber: sessionInfo.linkedPrNumber ?? null,
+      workspacePath: sessionInfo.workspacePath ?? null,
+      gitRemote: sessionInfo.gitRemote ?? null,
+    });
+  } catch (err) {
+    debugLog(`Failed to record job start for ${command}: ${err as Error}`);
+    return undefined;
+  }
+}
+
+function markJobFinishedSafely(jobId: number, status: 'completed' | 'failed'): void {
+  try {
+    markJobFinished(getDatabase(), jobId, status);
+  } catch (err) {
+    debugLog(`Failed to mark job ${jobId} as ${status}: ${err as Error}`);
+  }
+}
+
 export async function runWithHeadlessAdapterIfEnabled<T>({
   enabled,
   command,
@@ -142,10 +215,22 @@ export async function runWithHeadlessAdapterIfEnabled<T>({
   }
 
   const sessionInfo = await buildHeadlessSessionInfo(command, interactive, plan);
+  const jobId = shouldRecordJob(command)
+    ? await recordJobStartFromSession(command, sessionInfo)
+    : undefined;
   const headlessAdapter = createHeadlessAdapter(sessionInfo);
 
   try {
-    return await runWithLogger(headlessAdapter, callback);
+    const result = await runWithLogger(headlessAdapter, callback);
+    if (jobId != null) {
+      markJobFinishedSafely(jobId, 'completed');
+    }
+    return result;
+  } catch (err) {
+    if (jobId != null) {
+      markJobFinishedSafely(jobId, 'failed');
+    }
+    throw err;
   } finally {
     await headlessAdapter.destroy();
   }
@@ -160,7 +245,19 @@ export async function createHeadlessAdapterForCommand({
 }: CreateHeadlessAdapterOptions): Promise<HeadlessAdapter> {
   const sessionInfo = await buildHeadlessSessionInfo(command, interactive, plan);
   Object.assign(sessionInfo, sessionInfoPatch);
-  return createHeadlessAdapter(sessionInfo, { disableBearerToken });
+
+  // Commands that manage the adapter lifecycle themselves (review, shell) don't
+  // give us a success/failure signal, so mark the job completed when the
+  // session is torn down.
+  let onDestroy: (() => void) | undefined;
+  if (shouldRecordJob(command)) {
+    const jobId = await recordJobStartFromSession(command, sessionInfo);
+    if (jobId != null) {
+      onDestroy = () => markJobFinishedSafely(jobId, 'completed');
+    }
+  }
+
+  return createHeadlessAdapter(sessionInfo, { disableBearerToken, onDestroy });
 }
 
 export function updateHeadlessSessionInfo(patch: Partial<HeadlessSessionInfo>): void {
@@ -174,7 +271,10 @@ export function updateHeadlessSessionInfo(patch: Partial<HeadlessSessionInfo>): 
 
 function createHeadlessAdapter(
   sessionInfo: HeadlessSessionInfo,
-  { disableBearerToken = false }: { disableBearerToken?: boolean } = {}
+  {
+    disableBearerToken = false,
+    onDestroy,
+  }: { disableBearerToken?: boolean; onDestroy?: () => void } = {}
 ): HeadlessAdapter {
   const wrappedAdapter = getLoggerAdapter();
   const noServer = process.env.TIM_NO_SERVER === '1';
@@ -201,6 +301,7 @@ function createHeadlessAdapter(
     serverPort,
     serverHostname,
     bearerToken,
+    onDestroy,
   };
 
   return wrappedAdapter

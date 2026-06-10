@@ -225,6 +225,8 @@ Open the Vite URL printed by the command. The app groups data by project and pro
 
 - **Active** - dashboard for plans needing attention, running sessions, and ready work
 - **Sessions** - live transcripts for `generate`, `agent`, `chat`, `update-docs`, and review sessions
+- **Pull Requests** - PR status and review threads
+- **Activity** - log of recently run jobs (agents, review guides, proofs, plan generation, PR creation, and more), each linking to its primary output (review guide, plan artifacts, PR, or plan)
 - **Plans** - searchable plan browser and plan detail pages
 - **Settings** - per-project settings such as branch prefix, project color, and sidebar visibility
 

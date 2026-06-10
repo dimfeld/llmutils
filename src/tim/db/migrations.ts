@@ -1311,6 +1311,31 @@ const migrations: Migration[] = [
         ON slack_review_request_message(posted_at);
     `,
   },
+  {
+    version: 47,
+    up: `
+      CREATE TABLE IF NOT EXISTS job (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER REFERENCES project(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL,
+        plan_id INTEGER,
+        plan_uuid TEXT,
+        plan_title TEXT,
+        pr_url TEXT,
+        pr_number INTEGER,
+        workspace_path TEXT,
+        git_remote TEXT,
+        status TEXT NOT NULL DEFAULT 'running'
+          CHECK(status IN ('running', 'completed', 'failed')),
+        started_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        finished_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+      CREATE INDEX IF NOT EXISTS idx_job_project_id ON job(project_id);
+      CREATE INDEX IF NOT EXISTS idx_job_created_at ON job(created_at);
+    `,
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {
