@@ -347,12 +347,49 @@ describe('handleUploadArtifactsCommand', () => {
       42,
       expect.stringContaining(marker)
     );
-    // comment body includes artifact links/embeds
+    // comment body includes artifact links
     const body = mockPostPullRequestComment.mock.calls[0][3] as string;
     expect(body).toContain('screenshot.png');
     expect(body).toContain('log.txt');
     // update NOT called
     expect(mockUpdatePullRequestComment).not.toHaveBeenCalled();
+  });
+
+  test('orders trailing artifacts the same way as the artifacts view', async () => {
+    await createArtifact({
+      filename: 'zeta.png',
+      mimeType: 'image/png',
+      content: 'zeta',
+    });
+    await createArtifact({
+      filename: 'report.md',
+      mimeType: 'text/markdown',
+      content: '# Sorted Report',
+    });
+    await createArtifact({
+      filename: 'nested/B.txt',
+      mimeType: 'text/plain',
+      content: 'b',
+    });
+    await createArtifact({
+      filename: 'alpha.txt',
+      mimeType: 'text/plain',
+      content: 'alpha',
+    });
+
+    await handleUploadArtifactsCommand(PLAN_ID, {}, makeRootCommand());
+
+    const body = mockPostPullRequestComment.mock.calls[0][3] as string;
+    const alphaIndex = body.indexOf('[alpha.txt]');
+    const nestedIndex = body.indexOf('[nested/B.txt]');
+    const zetaIndex = body.indexOf('[zeta.png]');
+
+    expect(body).toContain('# Sorted Report');
+    expect(alphaIndex).toBeGreaterThan(-1);
+    expect(nestedIndex).toBeGreaterThan(-1);
+    expect(zetaIndex).toBeGreaterThan(-1);
+    expect(alphaIndex).toBeLessThan(nestedIndex);
+    expect(nestedIndex).toBeLessThan(zetaIndex);
   });
 
   test('artifacts are actually uploaded to the loopback media host and signed URLs resolve', async () => {
@@ -365,14 +402,23 @@ describe('handleUploadArtifactsCommand', () => {
     await handleUploadArtifactsCommand(PLAN_ID, {}, makeRootCommand());
 
     const body = mockPostPullRequestComment.mock.calls[0][3] as string;
-    // Extract the first URL from the body (it's a signed URL starting with baseUrl)
+    // Extract the first URL from the body (the signed full report URL).
     const urlMatch = body.match(new RegExp(`(${baseUrl}/[^)\\s]+)`));
     expect(urlMatch).toBeTruthy();
 
-    const signedUrl = urlMatch![1]!;
-    const response = await fetch(signedUrl);
+    const fullReportUrl = urlMatch![1]!;
+    const response = await fetch(fullReportUrl);
     expect(response.status).toBe(200);
-    expect(await response.text()).toBe('fake-png-bytes');
+    const html = await response.text();
+    expect(html).toContain('<!doctype html>');
+    expect(html).toContain('screenshot.png');
+    const artifactUrlMatch = html.match(
+      new RegExp(`href="(${baseUrl}/[^"]+screenshot\\.png[^"]+)"`)
+    );
+    expect(artifactUrlMatch).toBeTruthy();
+    const artifactResponse = await fetch(artifactUrlMatch![1]!);
+    expect(artifactResponse.status).toBe(200);
+    expect(await artifactResponse.text()).toBe('fake-png-bytes');
   });
 
   // ── Happy path: update existing ────────────────────────────────────────────
@@ -443,7 +489,7 @@ describe('handleUploadArtifactsCommand', () => {
     expect(body).toContain('Some findings.');
 
     // report.md filename should not appear as a downloadable link (it is not uploaded)
-    // The body should contain the screenshot image embed but not report.md link
+    // The body should contain the screenshot link but not report.md link
     expect(body).toContain('screenshot.png');
     expect(body).not.toContain('[report.md]');
 

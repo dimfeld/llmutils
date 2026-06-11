@@ -71,7 +71,7 @@ There are three ways to trigger the phase:
   - `--auto-workspace` — use the plan's assigned workspace (mirrors `tim chat` / `tim review`).
   - `--executor <name>` and `--model <model>` — override the configured executor/model.
   - `--no-terminal-input` — non-interactive mode used by detached web-UI launches.
-- **PR artifact upload.** `tim pr upload-artifacts <planId>` uploads the plan's current non-deleted artifacts to the configured media host and posts or updates a PR comment with links and embeds. It does not run proof generation; run `tim proof` first when you want fresh generated proof artifacts.
+- **PR artifact upload.** `tim pr upload-artifacts <planId>` uploads the plan's current non-deleted artifacts to the configured media host, uploads a rendered `index.html` full report, and posts or updates a PR comment with the report markdown and full-report links. It does not run proof generation; run `tim proof` first when you want fresh generated proof artifacts.
 - **Web UI.** Plans whose project has `proofGeneration.instructions` configured show a **Generate Proof** action on the plan detail page when the plan has at least one completed task or status in `needs_review`/`reviewed`/`done`. Clicking it detaches a `tim proof` process whose output streams back through the normal session-discovery infrastructure. A separate **Upload artifacts to PR** action on the same page detaches a `tim pr upload-artifacts` process; it is shown only when the project has a configured media host, the plan has at least one non-deleted artifact, and the plan has a linked PR. See [Web Interface](web-interface.md#upload-artifacts-to-pr-action) for the gating details.
 
 If you run `tim proof` against a project that does not have `proofGeneration` configured, the command exits non-zero with a message pointing at this README. Agent batch mode treats the missing config as a clean skip rather than an error.
@@ -84,7 +84,7 @@ Proof generation can be more expensive than the implementation phase itself when
 
 ## Uploading artifacts to a PR comment
 
-`tim pr upload-artifacts <planId>` is a mechanical publishing command for evidence that is already attached to a plan. It reads artifact metadata and files from tim storage, uploads every non-deleted artifact whose file still exists on disk, and posts or updates a single GitHub PR comment that embeds or links those signed media-host URLs. It does not start an LLM executor, regenerate proofs, or check out the PR branch.
+`tim pr upload-artifacts <planId>` is a mechanical publishing command for evidence that is already attached to a plan. It reads artifact metadata and files from tim storage, uploads every non-deleted artifact whose file still exists on disk, uploads a rendered `index.html` full report, and posts or updates a single GitHub PR comment that links to that report. It does not start an LLM executor, regenerate proofs, or check out the PR branch.
 
 By default, the command targets every open PR linked to the plan. Use `--pr <urlOrNumber>` to publish to one PR instead. It requires a GitHub token through the normal personal-token resolver (`gh auth token` or `GITHUB_TOKEN`). Unlike `tim pr review-guide-comment`, it does not use the GitHub App installation token.
 
@@ -96,13 +96,9 @@ tim pr upload-artifacts 123 --pr https://github.com/owner/repo/pull/456
 
 The PR comment carries a hidden per-plan marker (`<!-- tim:plan-artifacts:<planUuid> -->`). Rerunning the command finds that marker and updates the same comment instead of creating another one. Media-host paths are deterministic by plan UUID, artifact UUID, and filename, so reuploads overwrite the same hosted object and the signed URLs stay stable.
 
-If a proof artifact named `report.md` exists, its markdown becomes the main comment body. `report.md` itself is not uploaded and is not listed as a downloadable artifact. Relative markdown image and link references in the report, such as `![screenshot](screenshot.png)` or `[log](run.log)`, are rewritten to the signed URLs for matching uploaded artifacts. Plain backtick mentions are left as text, so an artifact mentioned only as `` `screenshot.png` `` is still listed after the report.
+If a proof artifact named `report.md` exists, its markdown becomes the main comment body and the rendered `index.html` content. `report.md` itself is not uploaded and is not listed as a downloadable artifact. Relative markdown image and link references in the report, such as `![screenshot](screenshot.png)` or `[log](run.log)`, are rewritten to the signed URLs for matching uploaded artifacts. In the rendered full report, image tags are wrapped in links that open the full object in a new tab. Plain backtick mentions are left as text, so an artifact mentioned only as `` `screenshot.png` `` is still listed after the report as a link with its file size. The PR comment includes **View full report** links above and below the markdown body.
 
-Artifacts not already shown by rewritten report links are rendered after the report body:
-
-- Images are embedded with markdown image syntax.
-- Videos use an HTML `<video>` embed where GitHub supports it, with the signed URL available as the source.
-- Other files, including PDFs, zips, logs, and text files, are listed as download links with sizes.
+Artifacts not already shown by rewritten report links are rendered after the report body as download links with sizes.
 
 Guard rails:
 

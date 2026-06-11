@@ -1,8 +1,10 @@
 import * as path from 'node:path';
 
 import type { Image, Link, Root, RootContent } from 'mdast';
+import rehypeStringify from 'rehype-stringify';
 import remarkGfm from 'remark-gfm';
 import remarkParse from 'remark-parse';
+import remarkRehype from 'remark-rehype';
 import { unified } from 'unified';
 
 import { formatByteSize } from '../../common/formatting.js';
@@ -11,6 +13,11 @@ const GITHUB_COMMENT_BODY_LIMIT = 65_536;
 const TRUNCATION_NOTICE =
   '> Some artifact comment content was omitted because the generated comment exceeded GitHub limits.';
 const markdownParser = unified().use(remarkParse).use(remarkGfm);
+const markdownToHtmlProcessor = unified()
+  .use(remarkParse)
+  .use(remarkGfm)
+  .use(remarkRehype)
+  .use(rehypeStringify);
 
 export interface UploadedArtifactForComment {
   filename: string;
@@ -26,10 +33,16 @@ export interface BuildArtifactCommentBodyInput {
   planTitle: string;
   reportMarkdown?: string;
   artifacts: UploadedArtifactForComment[];
+  fullReportUrl?: string;
   updatedAt: string;
 }
 
 interface RewriteResult {
+  markdown: string;
+  referencedArtifactIndexes: Set<number>;
+}
+
+interface PreparedReportMarkdown {
   markdown: string;
   referencedArtifactIndexes: Set<number>;
 }
@@ -44,16 +57,18 @@ export function isReportArtifactFilename(filename: string): boolean {
 
 export function buildArtifactCommentBody(input: BuildArtifactCommentBodyInput): string {
   const artifacts = input.artifacts.filter((artifact) => !isReportMarkdownArtifact(artifact));
-  const reportRewrite =
-    input.reportMarkdown !== undefined
-      ? rewriteReportMarkdownReferences(input.reportMarkdown, artifacts)
-      : { markdown: undefined, referencedArtifactIndexes: new Set<number>() };
+  const preparedReport = prepareReportMarkdown({
+    planId: input.planId,
+    planTitle: input.planTitle,
+    reportMarkdown: input.reportMarkdown,
+    artifacts,
+  });
 
   const body = assembleArtifactCommentBody({
     ...input,
-    reportMarkdown: reportRewrite.markdown,
+    reportMarkdown: preparedReport.markdown,
     artifacts,
-    referencedArtifactIndexes: reportRewrite.referencedArtifactIndexes,
+    referencedArtifactIndexes: preparedReport.referencedArtifactIndexes,
     linksOnly: false,
     includeTruncationNotice: false,
   });
@@ -65,10 +80,70 @@ export function buildArtifactCommentBody(input: BuildArtifactCommentBodyInput): 
   const truncated = buildTruncatedArtifactCommentBody({
     ...input,
     artifacts,
-    referencedArtifactIndexes: reportRewrite.referencedArtifactIndexes,
+    referencedArtifactIndexes: preparedReport.referencedArtifactIndexes,
   });
 
   return clampToCommentLimit(truncated);
+}
+
+export function buildFullReportHtml(input: {
+  planId: number | string;
+  planTitle: string;
+  reportMarkdown?: string;
+  artifacts: UploadedArtifactForComment[];
+  updatedAt: string;
+}): string {
+  const artifacts = input.artifacts.filter((artifact) => !isReportMarkdownArtifact(artifact));
+  const preparedReport = prepareReportMarkdown({
+    planId: input.planId,
+    planTitle: input.planTitle,
+    reportMarkdown: input.reportMarkdown,
+    artifacts,
+    includeTrailingArtifacts: false,
+  });
+  const trailingArtifacts = artifacts.filter(
+    (_, index) => !preparedReport.referencedArtifactIndexes.has(index)
+  );
+  const renderedReport = wrapStandaloneImagesWithLinks(
+    String(markdownToHtmlProcessor.processSync(preparedReport.markdown))
+  );
+  const renderedArtifacts = renderFullReportArtifactsHtml(trailingArtifacts);
+  const title = `Artifacts for plan ${input.planId}: ${input.planTitle}`;
+
+  return [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head>',
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    `<title>${escapeHtmlText(title)}</title>`,
+    '<style>',
+    'body{margin:0;background:#f6f8fa;color:#24292f;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}',
+    '.container{box-sizing:border-box;width:min(1600px,100%);margin:0 auto;padding:32px 20px 48px;}',
+    '.report-shell{display:grid;gap:20px;}',
+    '.report{background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:24px;overflow-wrap:anywhere;}',
+    '.report img,.report video{max-width:100%;height:auto;}',
+    '.report pre{overflow:auto;background:#f6f8fa;padding:16px;border-radius:6px;}',
+    '.artifact-panel{display:grid;align-content:start;gap:20px;}',
+    '.artifact-grid{display:grid;gap:24px;}',
+    '.artifact-name{font-weight:600;margin-bottom:8px;}',
+    '.artifact-meta{color:#57606a;font-weight:400;}',
+    '.artifact-image a{display:inline-block;}',
+    '@media (min-width: 900px){.container{height:100vh;padding-block:24px;}.report-shell{grid-template-columns:minmax(420px,1fr) minmax(420px,min(58%,720px));height:100%;}.report{overflow:auto;}.report-body{min-height:0;}.artifact-panel{min-height:0;}}',
+    '.footer{margin-top:20px;color:#57606a;font-size:12px;}',
+    '</style>',
+    '</head>',
+    '<body>',
+    '<main class="container">',
+    '<div class="report-shell">',
+    `<article class="report report-body">${renderedReport}</article>`,
+    renderedArtifacts,
+    '</div>',
+    `<div class="footer">Updated at ${escapeHtmlText(input.updatedAt)}</div>`,
+    '</main>',
+    '</body>',
+    '</html>',
+  ].join('\n');
 }
 
 /**
@@ -90,6 +165,7 @@ function buildTruncatedArtifactCommentBody(input: {
   planTitle: string;
   artifacts: UploadedArtifactForComment[];
   referencedArtifactIndexes: Set<number>;
+  fullReportUrl?: string;
   updatedAt: string;
 }): string {
   const linksOnlyBody = assembleArtifactCommentBody({
@@ -104,16 +180,19 @@ function buildTruncatedArtifactCommentBody(input: {
   }
 
   const footer = buildUpdatedAtFooter(input.updatedAt);
-  const header = [
-    input.marker,
-    '',
+  const headerSections = [input.marker, ''];
+  if (input.fullReportUrl) {
+    headerSections.push(renderFullReportLink(input.fullReportUrl), '');
+  }
+  headerSections.push(
     buildPlanHeading(input.planId, input.planTitle),
     '',
     TRUNCATION_NOTICE,
     '',
     '## Artifacts',
-    '',
-  ].join('\n');
+    ''
+  );
+  const header = headerSections.join('\n');
 
   const omissionNotice = '- Additional artifacts omitted.';
   const lines: string[] = [];
@@ -151,11 +230,16 @@ function assembleArtifactCommentBody(input: {
   reportMarkdown?: string;
   artifacts: UploadedArtifactForComment[];
   referencedArtifactIndexes: Set<number>;
+  fullReportUrl?: string;
   updatedAt: string;
   linksOnly: boolean;
   includeTruncationNotice: boolean;
 }): string {
   const sections: string[] = [input.marker];
+
+  if (input.fullReportUrl) {
+    sections.push(renderFullReportLink(input.fullReportUrl));
+  }
 
   if (input.includeTruncationNotice) {
     sections.push(TRUNCATION_NOTICE);
@@ -172,9 +256,11 @@ function assembleArtifactCommentBody(input: {
     : input.artifacts.filter((_, index) => !input.referencedArtifactIndexes.has(index));
 
   if (trailingArtifacts.length > 0) {
-    sections.push(
-      ['## Artifacts', '', renderArtifactList(trailingArtifacts, input.linksOnly)].join('\n')
-    );
+    sections.push(['## Artifacts', '', renderArtifactList(trailingArtifacts)].join('\n'));
+  }
+
+  if (input.fullReportUrl) {
+    sections.push(renderFullReportLink(input.fullReportUrl));
   }
 
   sections.push(buildUpdatedAtFooter(input.updatedAt));
@@ -190,22 +276,80 @@ function buildUpdatedAtFooter(updatedAt: string): string {
   return `---\n<sub>Updated at ${updatedAt}</sub>`;
 }
 
-function renderArtifactList(artifacts: UploadedArtifactForComment[], linksOnly: boolean): string {
-  return artifacts
-    .map((artifact) => (linksOnly ? renderDownloadLink(artifact) : renderArtifact(artifact)))
-    .join('\n\n');
+function renderFullReportLink(url: string): string {
+  return `[View full report](${escapeMarkdownUrl(url)})`;
 }
 
-function renderArtifact(artifact: UploadedArtifactForComment): string {
+function prepareReportMarkdown(input: {
+  planId: number | string;
+  planTitle: string;
+  reportMarkdown?: string;
+  artifacts: UploadedArtifactForComment[];
+  includeTrailingArtifacts?: boolean;
+}): PreparedReportMarkdown {
+  const reportRewrite =
+    input.reportMarkdown !== undefined
+      ? rewriteReportMarkdownReferences(input.reportMarkdown, input.artifacts)
+      : {
+          markdown: buildPlanHeading(input.planId, input.planTitle),
+          referencedArtifactIndexes: new Set<number>(),
+        };
+  const trailingArtifacts = input.artifacts.filter(
+    (_, index) => !reportRewrite.referencedArtifactIndexes.has(index)
+  );
+
+  if (trailingArtifacts.length === 0 || input.includeTrailingArtifacts === false) {
+    return reportRewrite;
+  }
+
+  return {
+    markdown: [
+      reportRewrite.markdown.trim(),
+      '## Artifacts',
+      renderArtifactList(trailingArtifacts),
+    ].join('\n\n'),
+    referencedArtifactIndexes: new Set(input.artifacts.map((_, index) => index)),
+  };
+}
+
+function renderArtifactList(artifacts: UploadedArtifactForComment[]): string {
+  return artifacts.map((artifact) => renderDownloadLink(artifact)).join('\n\n');
+}
+
+function renderFullReportArtifactsHtml(artifacts: UploadedArtifactForComment[]): string {
+  if (artifacts.length === 0) {
+    return '';
+  }
+
+  return [
+    '<aside class="report artifact-panel">',
+    '<h2>Artifacts</h2>',
+    '<div class="artifact-grid">',
+    ...artifacts.map((artifact) => renderFullReportArtifactHtml(artifact)),
+    '</div>',
+    '</aside>',
+  ].join('\n');
+}
+
+function renderFullReportArtifactHtml(artifact: UploadedArtifactForComment): string {
+  const escapedFilename = escapeHtmlText(artifact.filename);
+  const escapedUrl = escapeHtmlAttribute(artifact.url);
+  const size = formatByteSize(artifact.size);
+
   if (artifact.mimeType.startsWith('image/')) {
-    return `![${escapeMarkdownText(artifact.filename)}](${escapeMarkdownUrl(artifact.url)})`;
+    return [
+      '<div class="artifact artifact-image">',
+      `<div class="artifact-name">${escapedFilename} <span class="artifact-meta">(${size})</span></div>`,
+      `<a href="${escapedUrl}" target="_blank" rel="noopener noreferrer"><img src="${escapedUrl}" alt="${escapedFilename}"></a>`,
+      '</div>',
+    ].join('\n');
   }
 
-  if (artifact.mimeType.startsWith('video/') && isEmbeddableVideo(artifact)) {
-    return `<video src="${escapeHtmlAttribute(artifact.url)}" controls></video>\n\n${renderDownloadLink(artifact)}`;
-  }
-
-  return renderDownloadLink(artifact);
+  return [
+    '<div class="artifact">',
+    `<div class="artifact-name"><a href="${escapedUrl}">${escapedFilename}</a> <span class="artifact-meta">(${size})</span></div>`,
+    '</div>',
+  ].join('\n');
 }
 
 function renderDownloadLink(artifact: UploadedArtifactForComment): string {
@@ -221,8 +365,24 @@ function escapeMarkdownUrl(url: string): string {
   return url.replaceAll('(', '%28').replaceAll(')', '%29').replaceAll(' ', '%20');
 }
 
-function isEmbeddableVideo(artifact: UploadedArtifactForComment): boolean {
-  return artifact.mimeType === 'video/mp4' || artifact.mimeType === 'video/webm';
+function wrapStandaloneImagesWithLinks(html: string): string {
+  return html.replace(/<img\b([^>]*\bsrc="([^"]+)"[^>]*)>/g, (match, attributes, src, offset) => {
+    if (isInsideOpenAnchor(html, offset)) {
+      return match;
+    }
+    return `<a href="${src}" target="_blank" rel="noopener noreferrer">${match}</a>`;
+  });
+}
+
+function isInsideOpenAnchor(html: string, offset: number): boolean {
+  const before = html.slice(0, offset);
+  const lastOpenAnchor = before.lastIndexOf('<a ');
+  if (lastOpenAnchor < 0) {
+    return false;
+  }
+
+  const lastCloseAnchor = before.lastIndexOf('</a>');
+  return lastOpenAnchor > lastCloseAnchor;
 }
 
 function rewriteReportMarkdownReferences(
@@ -413,10 +573,10 @@ function escapeMarkdownText(text: string): string {
   return text.replaceAll('\\', '\\\\').replaceAll(']', '\\]');
 }
 
+function escapeHtmlText(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
 function escapeHtmlAttribute(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
+  return escapeHtmlText(value).replaceAll('"', '&quot;');
 }

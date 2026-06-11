@@ -1,5 +1,6 @@
 import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
+import { compareArtifactsByFilename } from '../../common/artifact_sort.js';
 import { artifactMediaPath, uploadFile } from '../../common/media_host/client.js';
 import {
   findPullRequestCommentByMarker,
@@ -22,6 +23,7 @@ import { getPrStatusForPlan } from '../db/pr_status.js';
 import { gatherPrContext, type PrReviewContext } from '../utils/pr_context_gathering.js';
 import {
   buildArtifactCommentBody,
+  buildFullReportHtml,
   buildPlanArtifactsCommentMarker,
   isReportArtifactFilename,
   type UploadedArtifactForComment,
@@ -164,6 +166,25 @@ async function uploadArtifact(options: {
   };
 }
 
+async function uploadFullReportHtml(options: {
+  baseUrl: string;
+  apiKey: string;
+  planUuid: string;
+  html: string;
+}): Promise<string> {
+  const mediaPath = `tim/plans/${options.planUuid}/report/index.html`;
+  const result = await uploadFile({
+    baseUrl: options.baseUrl,
+    apiKey: options.apiKey,
+    relativePath: mediaPath,
+    body: options.html,
+    contentType: 'text/html; charset=utf-8',
+  });
+
+  log(`Uploaded full report: ${result.url}`);
+  return result.url;
+}
+
 async function upsertArtifactsComment(
   prContext: PrReviewContext,
   marker: string,
@@ -226,7 +247,9 @@ export async function handleUploadArtifactsCommand(
 
   const { plan } = await resolvePlanByUuid(planUuid, repoRoot, { context });
   const planTitle = plan.title ?? 'Untitled plan';
-  const artifacts = (await listArtifactsForPlanUuid({ planUuid })).filter(isUploadableArtifact);
+  const artifacts = (await listArtifactsForPlanUuid({ planUuid }))
+    .filter(isUploadableArtifact)
+    .sort(compareArtifactsByFilename);
   if (artifacts.length === 0) {
     log(`Nothing to upload for plan ${planId}.`);
     return;
@@ -272,6 +295,20 @@ export async function handleUploadArtifactsCommand(
           })
         )
       );
+      const updatedAt = new Date().toISOString();
+      const fullReportHtml = buildFullReportHtml({
+        planId: plan.id,
+        planTitle,
+        reportMarkdown,
+        artifacts: uploadedArtifacts,
+        updatedAt,
+      });
+      const fullReportUrl = await uploadFullReportHtml({
+        baseUrl: mediaHost.baseUrl,
+        apiKey: mediaHost.apiKey,
+        planUuid,
+        html: fullReportHtml,
+      });
 
       const body = buildArtifactCommentBody({
         marker,
@@ -279,7 +316,8 @@ export async function handleUploadArtifactsCommand(
         planTitle,
         reportMarkdown,
         artifacts: uploadedArtifacts,
-        updatedAt: new Date().toISOString(),
+        fullReportUrl,
+        updatedAt,
       });
 
       // Attempt every target PR even if one fails, so a single failing PR does not abort the

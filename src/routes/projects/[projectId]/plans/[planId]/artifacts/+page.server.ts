@@ -3,6 +3,7 @@ import * as path from 'node:path';
 
 import { error, redirect } from '@sveltejs/kit';
 
+import { compareArtifactsByFilename } from '$common/artifact_sort.js';
 import { getServerContext } from '$lib/server/init.js';
 import { getPlanDetailRouteData } from '$lib/server/plans_browser.js';
 import type { PlanArtifactWithTransferState } from '$tim/artifacts/service.js';
@@ -64,23 +65,6 @@ interface ArtifactViewFile {
   content: string | null;
   url: string;
   downloadUrl: string;
-}
-
-function basename(filename: string): string {
-  return path.basename(filename).toLowerCase();
-}
-
-function artifactSortKey(artifact: PlanArtifactWithTransferState): [number, string] {
-  return [basename(artifact.filename) === 'report.md' ? 0 : 1, artifact.filename.toLowerCase()];
-}
-
-function compareArtifacts(
-  left: PlanArtifactWithTransferState,
-  right: PlanArtifactWithTransferState
-): number {
-  const [leftPriority, leftName] = artifactSortKey(left);
-  const [rightPriority, rightName] = artifactSortKey(right);
-  return leftPriority - rightPriority || leftName.localeCompare(rightName);
 }
 
 function classifyArtifact(artifact: PlanArtifactWithTransferState): ArtifactViewKind {
@@ -150,7 +134,7 @@ export const load: PageServerLoad = async ({ params }) => {
 
   const artifacts = [...(result.planDetail.artifacts ?? [])]
     .filter((artifact) => artifact.deletedAt === null)
-    .sort(compareArtifacts);
+    .sort(compareArtifactsByFilename);
 
   return {
     plan: {

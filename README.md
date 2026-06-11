@@ -396,7 +396,7 @@ The upload bearer token is intentionally not stored in config:
 export MEDIA_HOST_API_KEY=...
 ```
 
-The uploaded comment uses a hidden per-plan marker, so multiple plans can publish artifacts to the same PR without overwriting each other. Media paths are deterministic by plan and artifact UUID, so reruns overwrite the same hosted files and reuse the same signed URLs. If a proof `report.md` artifact exists, its markdown becomes the main comment body; relative markdown image/link references are rewritten to signed URLs, `report.md` itself is not uploaded or listed, and remaining artifacts are embedded as images, embedded as videos where supported, or linked with file sizes. Posting uses the normal GitHub token resolution path (`gh auth token` / `GITHUB_TOKEN`), not the GitHub App token used by `tim pr review-guide-comment`.
+The uploaded comment uses a hidden per-plan marker, so multiple plans can publish artifacts to the same PR without overwriting each other. Media paths are deterministic by plan and artifact UUID, so reruns overwrite the same hosted files and reuse the same signed URLs. If a proof `report.md` artifact exists, its markdown becomes the main comment body; relative markdown image/link references are rewritten to signed URLs, `report.md` itself is not uploaded or listed, and remaining artifacts are referenced as links with file sizes. The command also uploads a rendered `index.html` report and adds **View full report** links above and below the PR comment body. Posting uses the normal GitHub token resolution path (`gh auth token` / `GITHUB_TOKEN`), not the GitHub App token used by `tim pr review-guide-comment`.
 
 Guard rails: when the media host is not configured, or when the plan has no uploadable artifacts, the command logs a clear message and exits without posting. If no open linked PR can be resolved, it exits non-zero.
 
@@ -750,7 +750,7 @@ Reruns are idempotent: prior proof artifacts (marked with a `tim-proof:` prefix)
 
 Before the proof executor runs, `tim proof` starts configured `lifecycle.commands` in the `proof` context after workspace setup, so proof-specific setup can use `runIn: [proof]`.
 
-Proof artifacts can be published to a PR with `tim pr upload-artifacts <planId>` after configuring `mediaHost.baseUrl` and exporting `MEDIA_HOST_API_KEY`. The command is mechanical: it does not run an executor or check out the PR branch. It uploads all current non-deleted plan artifacts except `report.md`, turns `report.md` into the comment body when present, rewrites markdown references to signed media-host URLs, and updates the same per-plan marked PR comment on reruns. Use `--pr <urlOrNumber>` to target one PR; otherwise all open linked PRs are updated.
+Proof artifacts can be published to a PR with `tim pr upload-artifacts <planId>` after configuring `mediaHost.baseUrl` and exporting `MEDIA_HOST_API_KEY`. The command is mechanical: it does not run an executor or check out the PR branch. It uploads all current non-deleted plan artifacts except `report.md`, turns `report.md` into the comment body when present, rewrites markdown references to signed media-host URLs, uploads a rendered `index.html` full report, and updates the same per-plan marked PR comment on reruns. Use `--pr <urlOrNumber>` to target one PR; otherwise all open linked PRs are updated.
 
 See [`docs/proof-generation.md`](docs/proof-generation.md) for more detail.
 

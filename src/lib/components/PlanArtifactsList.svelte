@@ -12,6 +12,7 @@
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import Undo2 from '@lucide/svelte/icons/undo-2';
 
+  import { compareArtifactsByFilename } from '$common/artifact_sort.js';
   import type { PlanArtifactWithTransferState } from '$tim/artifacts/service.js';
   import { softDeleteArtifact, restoreArtifact } from '$lib/remote/artifact_actions.remote.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
@@ -33,20 +34,7 @@
     showDeleted ? artifacts : artifacts.filter((a) => a.deletedAt === null)
   );
 
-  // Match the ordering used on the dedicated artifacts page: report.md first,
-  // then alphabetical by filename.
-  function artifactSortKey(artifact: PlanArtifactWithTransferState): [number, string] {
-    const base = artifact.filename.slice(artifact.filename.lastIndexOf('/') + 1).toLowerCase();
-    return [base === 'report.md' ? 0 : 1, artifact.filename.toLowerCase()];
-  }
-
-  let sortedArtifacts = $derived(
-    [...visibleArtifacts].sort((left, right) => {
-      const [leftPriority, leftName] = artifactSortKey(left);
-      const [rightPriority, rightName] = artifactSortKey(right);
-      return leftPriority - rightPriority || leftName.localeCompare(rightName);
-    })
-  );
+  let sortedArtifacts = $derived([...visibleArtifacts].sort(compareArtifactsByFilename));
 
   let activeCount = $derived(artifacts.filter((a) => a.deletedAt === null).length);
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   buildArtifactCommentBody,
+  buildFullReportHtml,
   buildPlanArtifactsCommentMarker,
   type UploadedArtifactForComment,
 } from './upload_artifacts_comment.js';
@@ -183,7 +184,7 @@ describe('buildArtifactCommentBody', () => {
     expect(body).toContain('![Screenshot](Screenshot (1).png)');
     expect(body).toContain('## Artifacts');
     expect(body).toContain(
-      '![Screenshot (1).png](https://media.example.test/Screenshot%20%281%29.png?sig=abc)'
+      '- [Screenshot (1).png](https://media.example.test/Screenshot%20%281%29.png?sig=abc) (1.5 KB)'
     );
   });
 
@@ -217,10 +218,12 @@ describe('buildArtifactCommentBody', () => {
     expect(body).toContain('![remote](https://example.com/remote.png)');
     expect(body).toContain('`screenshot.png`');
     expect(body).toContain('## Artifacts');
-    expect(body).toContain('![screenshot.png](https://media.example.test/screenshot.png?sig=abc)');
+    expect(body).toContain(
+      '- [screenshot.png](https://media.example.test/screenshot.png?sig=abc) (1.5 KB)'
+    );
   });
 
-  test('renders images, embeddable videos, non-embeddable videos, and documents', () => {
+  test('renders trailing images, videos, and documents as artifact links', () => {
     const body = buildBody({
       artifacts: [
         artifact({
@@ -250,9 +253,8 @@ describe('buildArtifactCommentBody', () => {
       ],
     });
 
-    expect(body).toContain('![screenshot.png](https://media.example.test/screenshot.png?sig=abc)');
     expect(body).toContain(
-      '<video src="https://media.example.test/demo.mp4?sig=abc" controls></video>'
+      '- [screenshot.png](https://media.example.test/screenshot.png?sig=abc) (1.5 KB)'
     );
     expect(body).toContain('- [demo.mp4](https://media.example.test/demo.mp4?sig=abc) (2.0 MB)');
     expect(body).not.toContain('<video src="https://media.example.test/capture.mov?sig=abc"');
@@ -341,7 +343,7 @@ describe('buildArtifactCommentBody', () => {
 
     expect(body).not.toContain('[report.md]');
     expect(body).toContain('## Artifacts');
-    expect(body).toContain('![extra.png](https://media.example.test/extra.png?sig=abc)');
+    expect(body).toContain('- [extra.png](https://media.example.test/extra.png?sig=abc) (256 B)');
   });
 
   test('leaves protocol-relative, root-relative, anchor, and mailto links untouched', () => {
@@ -361,7 +363,7 @@ describe('buildArtifactCommentBody', () => {
     expect(body).toContain('[section](#heading)');
   });
 
-  test('renders video/webm as an inline embed with a download link', () => {
+  test('renders video/webm as a trailing artifact link', () => {
     const body = buildBody({
       artifacts: [
         artifact({
@@ -373,16 +375,13 @@ describe('buildArtifactCommentBody', () => {
       ],
     });
 
-    expect(body).toContain(
-      '<video src="https://media.example.test/demo.webm?sig=abc" controls></video>'
-    );
     expect(body).toContain('- [demo.webm](https://media.example.test/demo.webm?sig=abc) (1.0 MB)');
   });
 
   // ── Markdown URL escaping regression tests ────────────────────────────────
 
-  test('escapes literal parentheses in image embed URLs', () => {
-    // URL contains literal `(` and `)` which would break Markdown `![..](..)` syntax
+  test('escapes literal parentheses in trailing artifact link URLs', () => {
+    // URL contains literal `(` and `)` which would break Markdown `[..](..)` syntax
     const url = 'https://media.example.test/Screenshot(1).png?sig=abc';
     const body = buildBody({
       artifacts: [
@@ -395,11 +394,72 @@ describe('buildArtifactCommentBody', () => {
     });
 
     // The destination must not contain literal parens
-    const imageMatch = body.match(/!\[Screenshot\(1\)\.png\]\(([^)]*%2[89][^)]*)\)/);
-    expect(imageMatch).toBeTruthy();
-    expect(body).not.toMatch(/!\[Screenshot\(1\)\.png\]\([^)]*\([^)]*\)/);
+    const linkMatch = body.match(/\[Screenshot\(1\)\.png\]\(([^)]*%2[89][^)]*)\)/);
+    expect(linkMatch).toBeTruthy();
+    expect(body).not.toMatch(/\[Screenshot\(1\)\.png\]\([^)]*\([^)]*\)/);
     expect(body).toContain('%28');
     expect(body).toContain('%29');
+  });
+
+  test('adds full report links above and below the report body', () => {
+    const body = buildBody({
+      reportMarkdown: '# Proof Report\n\nEverything passed.',
+      fullReportUrl: 'https://media.example.test/report/index.html/sig=abc',
+    });
+
+    expect(body).toContain(`${MARKER}\n\n[View full report]`);
+    expect(body.match(/\[View full report\]/g)).toHaveLength(2);
+    expect(body.indexOf('[View full report]')).toBeLessThan(body.indexOf('# Proof Report'));
+    expect(body.lastIndexOf('[View full report]')).toBeGreaterThan(body.indexOf('# Proof Report'));
+  });
+
+  test('builds a standalone rendered full report html document', () => {
+    const html = buildFullReportHtml({
+      planId: 384,
+      planTitle: 'Upload artifacts to PR comment',
+      reportMarkdown: '# Proof\n\n![Screenshot](screenshot.png)',
+      artifacts: [
+        artifact({
+          filename: 'screenshot.png',
+          url: 'https://media.example.test/screenshot.png/sig=abc',
+        }),
+        artifact({
+          filename: 'extra.png',
+          url: 'https://media.example.test/extra.png/sig=abc',
+          size: 256,
+        }),
+        artifact({
+          filename: 'run.log',
+          mimeType: 'text/plain',
+          url: 'https://media.example.test/run.log/sig=abc',
+          size: 2048,
+        }),
+      ],
+      updatedAt: UPDATED_AT,
+    });
+
+    expect(html).toContain('<!doctype html>');
+    expect(html).toContain('<h1>Proof</h1>');
+    expect(html).toContain(
+      '<a href="https://media.example.test/screenshot.png/sig=abc" target="_blank" rel="noopener noreferrer"><img src="https://media.example.test/screenshot.png/sig=abc" alt="Screenshot"></a>'
+    );
+    expect(html).toContain('<h2>Artifacts</h2>');
+    expect(html).toContain(
+      '<div class="artifact-name">extra.png <span class="artifact-meta">(256 B)</span></div>'
+    );
+    expect(html).toContain(
+      '<a href="https://media.example.test/extra.png/sig=abc" target="_blank" rel="noopener noreferrer"><img src="https://media.example.test/extra.png/sig=abc" alt="extra.png"></a>'
+    );
+    expect(html).not.toContain('<li><a href="https://media.example.test/extra.png/sig=abc"');
+    expect(html).toContain(
+      '<div class="artifact-name"><a href="https://media.example.test/run.log/sig=abc">run.log</a> <span class="artifact-meta">(2.0 KB)</span></div>'
+    );
+    expect(html).not.toContain('<a href="https://media.example.test/run.log/sig=abc" target=');
+    expect(html.match(/target="_blank" rel="noopener noreferrer"><img/g)).toHaveLength(2);
+    expect(html).not.toContain('![screenshot.png]');
+    expect(html).not.toContain('[screenshot.png]');
+    expect(html).toContain('href="https://media.example.test/run.log/sig=abc"');
+    expect(html).toContain(`Updated at ${UPDATED_AT}`);
   });
 
   test('escapes literal parentheses in download link URLs', () => {
