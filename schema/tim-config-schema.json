@@ -913,26 +913,6 @@
           },
           "additionalProperties": false
         },
-        "verifier": {
-          "type": "object",
-          "properties": {
-            "model": {
-              "type": "object",
-              "properties": {
-                "claude": {
-                  "description": "Model override for claude-code execution",
-                  "type": "string"
-                },
-                "codex": {
-                  "description": "Model override for codex-cli execution",
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
         "reviewer": {
           "type": "object",
           "properties": {
@@ -1231,6 +1211,17 @@
             }
           },
           "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "reviewGuideComments": {
+      "description": "Configuration options for PR review-guide comments",
+      "type": "object",
+      "properties": {
+        "instructions": {
+          "description": "Extra directions to include in PR review-guide comment prompts",
+          "type": "string"
         }
       },
       "additionalProperties": false

@@ -135,7 +135,7 @@ describe('review_pr_prompt', () => {
       commentInstructions: 'Lead with database migration review notes.',
     });
 
-    expect(prompt).toContain('## Review Guide Comment Instructions');
+    expect(prompt).toContain('## Special Instructions');
     expect(prompt).toContain('Lead with database migration review notes.');
   });
 
