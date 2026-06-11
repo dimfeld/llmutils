@@ -6,6 +6,9 @@ import { getExternalStorageBaseDir } from '../external_storage_utils.js';
 import type { RepositoryStorageMetadata } from '../external_storage_utils.js';
 import { getDatabase } from '../db/database.js';
 import { listProjects } from '../db/project.js';
+import { formatByteSize } from '../../common/formatting.js';
+
+export { formatByteSize };
 
 export interface ExternalStorageDirectoryInfo {
   repositoryName: string;
@@ -184,27 +187,6 @@ export function matchStorageDirectory(entry: ExternalStorageDirectoryInfo, query
   }
 
   return false;
-}
-
-export function formatByteSize(bytes: number): string {
-  if (bytes <= 0) {
-    return '0 B';
-  }
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let size = bytes;
-  let unitIndex = 0;
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-
-  if (unitIndex === 0) {
-    return `${bytes} ${units[unitIndex]}`;
-  }
-
-  return `${size.toFixed(1)} ${units[unitIndex]}`;
 }
 
 export async function removeStorageDirectory(directoryPath: string): Promise<void> {

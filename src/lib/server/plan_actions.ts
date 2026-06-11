@@ -322,6 +322,18 @@ export async function spawnProofProcess(planId: number, cwd: string): Promise<Sp
   );
 }
 
+export async function spawnUploadArtifactsProcess(
+  planId: number,
+  cwd: string
+): Promise<SpawnProcessResult> {
+  return spawnPlanTimProcess(
+    describeTarget('plan', planId),
+    planId,
+    ['pr', 'upload-artifacts', String(planId), '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
+}
+
 export async function spawnUpdateDocsProcess(
   planId: number,
   cwd: string

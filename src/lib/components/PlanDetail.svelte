@@ -27,10 +27,12 @@
     startCreatePr,
     startPlanReviewGuide,
     startProof,
+    startUploadArtifacts,
     finishPlanQuick,
     openInEditor,
   } from '$lib/remote/plan_actions.remote.js';
   import { isPlanEligibleForProofWithConfigured } from '$lib/utils/proof_eligibility.js';
+  import { hasUploadableArtifacts } from '$lib/utils/artifact_upload_eligibility.js';
   import {
     removeReviewIssue,
     convertReviewIssueToTask,
@@ -61,6 +63,7 @@
     tab = 'plans',
     openInEditorEnabled = false,
     proofConfigured = false,
+    mediaHostConfigured = false,
   }: {
     plan: PlanDetail;
     reviews?: ReviewWithIssueCounts[];
@@ -69,6 +72,7 @@
     tab?: string;
     openInEditorEnabled?: boolean;
     proofConfigured?: boolean;
+    mediaHostConfigured?: boolean;
   } = $props();
 
   const sessionManager = useSessionManager();
@@ -238,6 +242,13 @@
       colorClass: '',
       starting: startingProof,
     };
+    const uploadArtifactsItem: ActionItem = {
+      label: 'Upload artifacts to PR',
+      startingLabel: 'Starting upload…',
+      onclick: handleUploadArtifacts,
+      colorClass: '',
+      starting: startingUploadArtifacts,
+    };
 
     let primary: ActionItem;
     let menuItems: ActionItem[] = [];
@@ -252,6 +263,7 @@
       menuItems.push(chatItem);
       menuItems.push(finishItem);
       if (isEligibleForProof) menuItems.push(proofItem);
+      if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
     } else if (showFinish) {
       // Show "Finish" as primary (marks plan as done)
       primary = finishItem;
@@ -260,6 +272,7 @@
       if (isEligibleForReview) menuItems.push(reviewItem);
       menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
+      if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
     } else if (showAgentOnly) {
       // Surface "Run Agent" as its own standalone button (not buried in the dropdown).
       fixedActions = [agentItem, autoreviewItem, shellItem];
@@ -267,6 +280,7 @@
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
+      if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
       primary = menuItems.shift()!;
     } else if (showGenerateWithAgent) {
       if (isSimplePlan) {
@@ -276,6 +290,7 @@
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
         menuItems.push(chatItem);
         if (isEligibleForProof) menuItems.push(proofItem);
+        if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
         primary = menuItems.shift()!;
       } else {
         // Eligible for Generate: surface both "Run Agent" and "Generate" as their
@@ -285,6 +300,7 @@
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
         menuItems.push(chatItem);
         if (isEligibleForProof) menuItems.push(proofItem);
+        if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
         primary = menuItems.shift()!;
       }
     } else {
@@ -297,6 +313,7 @@
       }
       menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
+      if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
     }
 
     // Pending plans haven't produced work to review yet, so hide Autoreview.
@@ -349,8 +366,13 @@
   let startingReviewIssuesFix = $state(false);
   let artifactDialogOpen = $state(false);
   let startingProof = $state(false);
+  let startingUploadArtifacts = $state(false);
   let activeArtifactCount = $derived(
     (plan.artifacts ?? []).filter((a) => a.deletedAt === null).length
+  );
+  let hasLinkedPr = $derived((plan.pullRequests ?? []).length > 0);
+  let isEligibleForUploadArtifacts = $derived(
+    mediaHostConfigured && hasUploadableArtifacts(plan) && hasLinkedPr
   );
 
   let hasInProgressReview = $derived(
@@ -856,6 +878,29 @@
       errorMessage = `${err as Error}`;
     } finally {
       startingProof = false;
+    }
+  }
+
+  async function handleUploadArtifacts() {
+    startingUploadArtifacts = true;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      const result = await startUploadArtifacts({ planUuid: plan.uuid });
+      if (result.status === 'already_running') {
+        successMessage = {
+          text: 'A session is already running for this plan',
+          connectionId: result.connectionId,
+        };
+      } else {
+        successMessage = { text: 'Artifact upload started' };
+      }
+      setStartedSuccessfully();
+      await invalidateAll();
+    } catch (err) {
+      errorMessage = `${err as Error}`;
+    } finally {
+      startingUploadArtifacts = false;
     }
   }
 

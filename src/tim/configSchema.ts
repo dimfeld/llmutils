@@ -385,6 +385,62 @@ export const proofGenerationSchema = z
   })
   .strict();
 
+/**
+ * The media host routes from root and returns root-absolute signed URLs, so the configured
+ * `baseUrl` must be origin-only: an http(s) URL with no credentials, no path prefix, no query,
+ * and no fragment. A path-prefixed base would PUT to the prefix while the returned signed URL
+ * resolves from root, producing comment URLs that do not match the upload endpoint.
+ */
+export function isOriginOnlyHttpUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  return (
+    (url.protocol === 'http:' || url.protocol === 'https:') &&
+    url.username === '' &&
+    url.password === '' &&
+    (url.pathname === '/' || url.pathname === '') &&
+    url.search === '' &&
+    url.hash === ''
+  );
+}
+
+export const mediaHostSchema = z
+  .object({
+    baseUrl: z.url().refine(isOriginOnlyHttpUrl, {
+      message:
+        'mediaHost.baseUrl must be an origin-only http(s) URL (no path, query, fragment, or credentials)',
+    }),
+  })
+  .strict();
+
+export interface MediaHostConfiguredConfig {
+  mediaHost?: {
+    baseUrl?: string;
+  };
+}
+
+export function getMediaHostUploadConfig(
+  config: MediaHostConfiguredConfig | null | undefined
+): { baseUrl: string; apiKey: string } | null {
+  const baseUrl = config?.mediaHost?.baseUrl;
+  const apiKey = process.env.MEDIA_HOST_API_KEY;
+  if (typeof baseUrl !== 'string' || baseUrl.trim().length === 0) return null;
+  if (typeof apiKey !== 'string' || apiKey.trim().length === 0) return null;
+  if (!isOriginOnlyHttpUrl(baseUrl)) return null;
+
+  return { baseUrl, apiKey };
+}
+
+export function isMediaHostConfigured(
+  config: MediaHostConfiguredConfig | null | undefined
+): boolean {
+  return getMediaHostUploadConfig(config) !== null;
+}
+
 export const timEnvironmentVariableNameSchema = z
   .string()
   .regex(
@@ -1006,6 +1062,9 @@ export const timConfigSchema = z
     proofGeneration: proofGenerationSchema
       .optional()
       .describe('Configuration for proof artifact generation'),
+    mediaHost: mediaHostSchema
+      .optional()
+      .describe('Media host server used to upload and serve signed artifact URLs'),
   })
   .describe('Repository-level configuration for tim');
 
@@ -1020,6 +1079,7 @@ export interface TimRuntimeConfigMetadata {
 export type TimConfig = z.output<typeof timConfigSchema> & TimRuntimeConfigMetadata;
 export type TimConfigInput = z.input<typeof timConfigSchema>;
 export type ProofGenerationConfig = z.output<typeof proofGenerationSchema>;
+export type MediaHostConfig = z.output<typeof mediaHostSchema>;
 export type TimEnvironmentConfig = z.output<typeof timEnvironmentConfigSchema>;
 export type PostApplyCommand = z.output<typeof postApplyCommandSchema>;
 export type LifecycleCommand = z.infer<typeof lifecycleCommandSchema>;

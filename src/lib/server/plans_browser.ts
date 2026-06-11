@@ -13,6 +13,7 @@ import {
   type EnrichedPlan,
 } from './db_queries.js';
 import { isProofConfigured } from '$lib/utils/proof_eligibility.js';
+import { isMediaHostConfigured } from '$tim/configSchema.js';
 
 export async function loadFinishConfigForProject(
   db: Database,
@@ -55,6 +56,26 @@ export async function loadProofConfiguredForProject(
   } catch (err) {
     console.warn(
       `Failed to load tim config for project ${projectId} when checking proofGeneration: ${err as Error}`
+    );
+    return false;
+  }
+}
+
+export async function loadMediaHostConfiguredForProject(
+  db: Database,
+  projectId: number
+): Promise<boolean> {
+  const cwd = getPreferredProjectGitRoot(db, projectId);
+  if (!cwd) {
+    return false;
+  }
+
+  try {
+    const config = await loadEffectiveConfig(undefined, { cwd });
+    return isMediaHostConfigured(config);
+  } catch (err) {
+    console.warn(
+      `Failed to load tim config for project ${projectId} when checking mediaHost: ${err as Error}`
     );
     return false;
   }

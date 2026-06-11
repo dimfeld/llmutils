@@ -23,4 +23,5 @@
   {projectName}
   openInEditorEnabled={data.openInEditorEnabled}
   proofConfigured={data.proofConfigured}
+  mediaHostConfigured={data.mediaHostConfigured}
 />

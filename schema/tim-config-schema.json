@@ -1509,6 +1509,20 @@
         }
       },
       "additionalProperties": false
+    },
+    "mediaHost": {
+      "description": "Media host server used to upload and serve signed artifact URLs",
+      "type": "object",
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "required": [
+        "baseUrl"
+      ],
+      "additionalProperties": false
     }
   },
   "description": "Repository-level configuration for tim"

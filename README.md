@@ -297,6 +297,8 @@ tim pr link 123 https://github.com/owner/repo/pull/456
 tim pr review-guide https://github.com/owner/repo/pull/456
 tim pr review-guide-comment https://github.com/owner/repo/pull/456   # Concise guide posted as a PR comment
 tim pr review-guide-comment 456 --dry-run                            # Print the guide without posting it
+tim pr upload-artifacts 123                                           # Post/update a PR comment with plan artifacts
+tim pr upload-artifacts 123 --pr 456                                  # Target one PR instead of all open linked PRs
 tim subagent reviewer 123 --print --output-file review.json          # Orchestrator-compatible review entry point
 tim review 123                                      # Review a plan's work
 tim review --current                                # Review the current worktree, no plan required
@@ -376,6 +378,27 @@ tim pr review-guide-comment disable
 Like Slack digest settings, the per-project opt-in is stored as a per-project database setting, not in committed config. The automatic path additionally requires the global `githubWebhooks.reviewGuideComments` config above to be set. With both enabled, a `tim pr review-guide-comment --auto` process is spawned in the project's primary workspace for each newly-ready PR. The comment is posted at most once per PR — before posting, tim looks for its hidden marker (`<!-- tim:pr-review-guide -->`) in the PR's existing comments and skips if one is already present. Run the command manually with `--force` to refresh the existing marked comment instead; refreshed comments include an `Updated at <timestamp>` footer, and a new comment is created if none exists. Posting uses the configured GitHub App installation token for the PR owner; it does not use `GITHUB_TOKEN` or `gh auth token`.
 
 See the PR status and web interface notes in [`docs/web-interface.md`](docs/web-interface.md) for implementation details and edge cases.
+
+### Uploading plan artifacts to PR comments
+
+`tim pr upload-artifacts <planId>` uploads all non-deleted artifacts for a plan whose files still exist on disk, then posts or updates a single marked comment on each target PR. By default it targets every open PR linked to the plan; pass `--pr <urlOrNumber>` to target exactly one PR. Reruns find the comment by its hidden marker and update it in place rather than creating duplicates.
+
+The command requires `mediaHost.baseUrl` in the effective tim config and `MEDIA_HOST_API_KEY` in the environment running `tim`. The media host URL must be an origin-only `http` or `https` URL, with no path prefix, query string, fragment, or credentials:
+
+```yaml
+mediaHost:
+  baseUrl: https://media.example.com
+```
+
+The upload bearer token is intentionally not stored in config:
+
+```bash
+export MEDIA_HOST_API_KEY=...
+```
+
+The uploaded comment uses a hidden per-plan marker, so multiple plans can publish artifacts to the same PR without overwriting each other. Media paths are deterministic by plan and artifact UUID, so reruns overwrite the same hosted files and reuse the same signed URLs. If a proof `report.md` artifact exists, its markdown becomes the main comment body; relative markdown image/link references are rewritten to signed URLs, `report.md` itself is not uploaded or listed, and remaining artifacts are embedded as images, embedded as videos where supported, or linked with file sizes. Posting uses the normal GitHub token resolution path (`gh auth token` / `GITHUB_TOKEN`), not the GitHub App token used by `tim pr review-guide-comment`.
+
+Guard rails: when the media host is not configured, or when the plan has no uploadable artifacts, the command logs a clear message and exits without posting. If no open linked PR can be resolved, it exits non-zero.
 
 ## Slack Review Notifications
 
@@ -581,6 +604,7 @@ Important config areas:
 - `subprocessMonitor` - opt-in timeouts for stuck Claude/Codex tool subprocesses
 - `updateDocs` - controls automatic agent documentation updates; `applyLessons` is retained for manual finalization compatibility
 - `artifactRetentionDays` - days before soft-deleted artifacts and artifacts on completed plans are eligible for purge (default 30)
+- `mediaHost.baseUrl` - origin-only media host URL used by `tim pr upload-artifacts`
 - `environment` - project-level variables rendered at process launch time with plan/workspace context
 
 The `simplify` block controls the optional code-simplification pass that runs after an agent finishes implementation and before final review. `simplify.mode` accepts `after-completion` (default) or `never`; `simplify.model` and `simplify.executor` (`claude-code` or `codex-cli`) override the executor used for the pass; `simplify.include` and `simplify.exclude` add free-form scoping guidance. The standalone `tim simplify <planId>` command always runs regardless of `simplify.mode`.
@@ -726,6 +750,8 @@ Reruns are idempotent: prior proof artifacts (marked with a `tim-proof:` prefix)
 
 Before the proof executor runs, `tim proof` starts configured `lifecycle.commands` in the `proof` context after workspace setup, so proof-specific setup can use `runIn: [proof]`.
 
+Proof artifacts can be published to a PR with `tim pr upload-artifacts <planId>` after configuring `mediaHost.baseUrl` and exporting `MEDIA_HOST_API_KEY`. The command is mechanical: it does not run an executor or check out the PR branch. It uploads all current non-deleted plan artifacts except `report.md`, turns `report.md` into the comment body when present, rewrites markdown references to signed media-host URLs, and updates the same per-plan marked PR comment on reruns. Use `--pr <urlOrNumber>` to target one PR; otherwise all open linked PRs are updated.
+
 See [`docs/proof-generation.md`](docs/proof-generation.md) for more detail.
 
 ## Subprocess Monitor
@@ -760,6 +786,8 @@ Target leaf commands, such as `vitest run` or `pnpm test`, rather than broad pro
 ## Media Host
 
 `bun run media-host` starts a small standalone Bun server (`src/media-host/server.ts`) for hosting uploaded text, images, and small videos. Uploads are gated by a bearer API key; reads are gated by a salted hash of the file path, so a URL can only be read by someone holding a signature minted from the signing secret.
+
+To let `tim pr upload-artifacts` publish plan artifacts to this server, set the tim config `mediaHost.baseUrl` to the server's origin-only URL and export the same `MEDIA_HOST_API_KEY` in the shell that runs `tim`.
 
 Configuration is read from the environment:
 

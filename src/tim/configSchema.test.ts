@@ -1,11 +1,127 @@
-import { test, describe, expect, vi } from 'vitest';
-import { timConfigSchema, getDefaultConfig } from './configSchema.js';
+import { afterEach, test, describe, expect, vi } from 'vitest';
+import {
+  timConfigSchema,
+  getDefaultConfig,
+  isMediaHostConfigured,
+  getMediaHostUploadConfig,
+} from './configSchema.js';
 import {
   RESERVED_TIM_ENVIRONMENT_VARIABLES,
   TIM_ENVIRONMENT_CONTEXT_DEFINITIONS,
 } from './environment.js';
 
 describe('configSchema', () => {
+  describe('mediaHost', () => {
+    const originalApiKey = process.env.MEDIA_HOST_API_KEY;
+
+    afterEach(() => {
+      if (originalApiKey === undefined) {
+        delete process.env.MEDIA_HOST_API_KEY;
+      } else {
+        process.env.MEDIA_HOST_API_KEY = originalApiKey;
+      }
+    });
+
+    test('accepts media host base URL without applying a default', () => {
+      const result = timConfigSchema.parse({
+        mediaHost: {
+          baseUrl: 'http://127.0.0.1:8125',
+        },
+      });
+
+      expect(result.mediaHost).toEqual({ baseUrl: 'http://127.0.0.1:8125' });
+      expect(timConfigSchema.parse({}).mediaHost).toBeUndefined();
+    });
+
+    test('rejects malformed media host base URL', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          mediaHost: {
+            baseUrl: 'not a url',
+          },
+        })
+      ).toThrow();
+    });
+
+    test('rejects non-origin-only base URLs: path-prefixed, query, fragment, credentials, non-http(s) scheme', () => {
+      const rejectedUrls = [
+        'http://host/prefix',
+        'http://host/?x=1',
+        'http://host/#a',
+        'http://user:pass@host',
+        'ftp://host',
+      ];
+      for (const baseUrl of rejectedUrls) {
+        expect(
+          () => timConfigSchema.parse({ mediaHost: { baseUrl } }),
+          `should reject ${baseUrl}`
+        ).toThrow();
+      }
+    });
+
+    test('accepts origin-only base URLs (bare hostname, IP+port, trailing slash)', () => {
+      const acceptedUrls = [
+        'http://127.0.0.1:8125',
+        'https://media.example.com',
+        'https://media.example.com/',
+      ];
+      for (const baseUrl of acceptedUrls) {
+        expect(
+          () => timConfigSchema.parse({ mediaHost: { baseUrl } }),
+          `should accept ${baseUrl}`
+        ).not.toThrow();
+      }
+    });
+
+    test('requires both base URL and MEDIA_HOST_API_KEY to be configured', () => {
+      delete process.env.MEDIA_HOST_API_KEY;
+      expect(isMediaHostConfigured(null)).toBe(false);
+      expect(isMediaHostConfigured(undefined)).toBe(false);
+      expect(isMediaHostConfigured({})).toBe(false);
+      expect(isMediaHostConfigured({ mediaHost: { baseUrl: 'http://127.0.0.1:8125' } })).toBe(
+        false
+      );
+
+      process.env.MEDIA_HOST_API_KEY = 'secret';
+      expect(isMediaHostConfigured({})).toBe(false);
+      expect(isMediaHostConfigured({ mediaHost: { baseUrl: '' } })).toBe(false);
+      expect(isMediaHostConfigured({ mediaHost: { baseUrl: 'not a url' } })).toBe(false);
+      expect(isMediaHostConfigured({ mediaHost: { baseUrl: 'http://127.0.0.1:8125' } })).toBe(true);
+      expect(getMediaHostUploadConfig({ mediaHost: { baseUrl: 'http://127.0.0.1:8125' } })).toEqual(
+        {
+          baseUrl: 'http://127.0.0.1:8125',
+          apiKey: 'secret',
+        }
+      );
+
+      process.env.MEDIA_HOST_API_KEY = '   ';
+      expect(isMediaHostConfigured({ mediaHost: { baseUrl: 'http://127.0.0.1:8125' } })).toBe(
+        false
+      );
+      expect(getMediaHostUploadConfig({ mediaHost: { baseUrl: 'http://127.0.0.1:8125' } })).toBe(
+        null
+      );
+    });
+
+    test('isMediaHostConfigured returns false for non-origin-only base URLs even with API key set', () => {
+      process.env.MEDIA_HOST_API_KEY = 'secret';
+      const invalidUrls = [
+        'http://host/prefix',
+        'http://host/?x=1',
+        'http://host/#a',
+        'ftp://host',
+      ];
+      for (const baseUrl of invalidUrls) {
+        expect(
+          isMediaHostConfigured({ mediaHost: { baseUrl } }),
+          `should be false for ${baseUrl}`
+        ).toBe(false);
+      }
+
+      expect(isMediaHostConfigured({ mediaHost: { baseUrl: 'http://127.0.0.1:8125' } })).toBe(true);
+    });
+  });
+
   describe('environment configuration', () => {
     test('accepts string shorthand and object entries without applying defaults', () => {
       const result = timConfigSchema.parse({

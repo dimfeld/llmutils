@@ -45,6 +45,23 @@ Field notes:
 - `artifactsDir` defaults to `.tim/proofs`. If overridden it must be a workspace-relative path that is a strict descendant of `.tim/`, and must not be one of the reserved tim-managed children (`config`, `plans`, `logs`, `tmp`, `reviews`, `workspaces`, `workspace`, `cache`, `sessions`, `artifacts`). The runner refuses absolute paths, paths that escape the workspace, and symlinked path components when clearing the directory.
 - `.tim/proofs` is added to the tim-managed `.tim/.gitignore` so generated media do not sneak into commits. Custom `artifactsDir` values must still live under `.tim/`, so they inherit the same gitignore.
 
+To publish artifacts to GitHub PR comments, also configure a media host:
+
+```yaml
+mediaHost:
+  baseUrl: https://media.example.com
+```
+
+`mediaHost.baseUrl` must be an origin-only `http` or `https` URL: no path prefix, query string, fragment, or credentials. Config loading rejects other forms, so `https://media.example.com/assets`, `https://user@example.com`, and `https://media.example.com?bucket=x` are invalid.
+
+The upload bearer token is read from `MEDIA_HOST_API_KEY` in the environment that runs `tim`; it is not stored in YAML config:
+
+```bash
+export MEDIA_HOST_API_KEY=...
+```
+
+Artifact upload commands require both `mediaHost.baseUrl` and `MEDIA_HOST_API_KEY`. The media host returns signed download URLs after upload, so `tim` does not need the media-host signing secret.
+
 ## Entry points
 
 There are three ways to trigger the phase:
@@ -54,7 +71,8 @@ There are three ways to trigger the phase:
   - `--auto-workspace` — use the plan's assigned workspace (mirrors `tim chat` / `tim review`).
   - `--executor <name>` and `--model <model>` — override the configured executor/model.
   - `--no-terminal-input` — non-interactive mode used by detached web-UI launches.
-- **Web UI.** Plans whose project has `proofGeneration.instructions` configured show a **Generate Proof** action on the plan detail page when the plan has at least one completed task or status in `needs_review`/`reviewed`/`done`. Clicking it detaches a `tim proof` process whose output streams back through the normal session-discovery infrastructure.
+- **PR artifact upload.** `tim pr upload-artifacts <planId>` uploads the plan's current non-deleted artifacts to the configured media host and posts or updates a PR comment with links and embeds. It does not run proof generation; run `tim proof` first when you want fresh generated proof artifacts.
+- **Web UI.** Plans whose project has `proofGeneration.instructions` configured show a **Generate Proof** action on the plan detail page when the plan has at least one completed task or status in `needs_review`/`reviewed`/`done`. Clicking it detaches a `tim proof` process whose output streams back through the normal session-discovery infrastructure. A separate **Upload artifacts to PR** action on the same page detaches a `tim pr upload-artifacts` process; it is shown only when the project has a configured media host, the plan has at least one non-deleted artifact, and the plan has a linked PR. See [Web Interface](web-interface.md#upload-artifacts-to-pr-action) for the gating details.
 
 If you run `tim proof` against a project that does not have `proofGeneration` configured, the command exits non-zero with a message pointing at this README. Agent batch mode treats the missing config as a clean skip rather than an error.
 
@@ -63,6 +81,34 @@ If you run `tim proof` against a project that does not have `proofGeneration` co
 The proof executor has the same tool access as other post-completion phases (`simplify`, `update-docs`). The provided prompt explicitly scopes it to "only generate proofs; do not modify source files outside the artifacts directory," but you should not configure proof generation for projects whose executor session you would not otherwise trust with Bash.
 
 Proof generation can be more expensive than the implementation phase itself when Playwright iteration takes many tool calls. Setting `executor` / `model` to a cheaper combination is the usual escape hatch.
+
+## Uploading artifacts to a PR comment
+
+`tim pr upload-artifacts <planId>` is a mechanical publishing command for evidence that is already attached to a plan. It reads artifact metadata and files from tim storage, uploads every non-deleted artifact whose file still exists on disk, and posts or updates a single GitHub PR comment that embeds or links those signed media-host URLs. It does not start an LLM executor, regenerate proofs, or check out the PR branch.
+
+By default, the command targets every open PR linked to the plan. Use `--pr <urlOrNumber>` to publish to one PR instead. It requires a GitHub token through the normal personal-token resolver (`gh auth token` or `GITHUB_TOKEN`). Unlike `tim pr review-guide-comment`, it does not use the GitHub App installation token.
+
+```bash
+tim pr upload-artifacts 123
+tim pr upload-artifacts 123 --pr 456
+tim pr upload-artifacts 123 --pr https://github.com/owner/repo/pull/456
+```
+
+The PR comment carries a hidden per-plan marker (`<!-- tim:plan-artifacts:<planUuid> -->`). Rerunning the command finds that marker and updates the same comment instead of creating another one. Media-host paths are deterministic by plan UUID, artifact UUID, and filename, so reuploads overwrite the same hosted object and the signed URLs stay stable.
+
+If a proof artifact named `report.md` exists, its markdown becomes the main comment body. `report.md` itself is not uploaded and is not listed as a downloadable artifact. Relative markdown image and link references in the report, such as `![screenshot](screenshot.png)` or `[log](run.log)`, are rewritten to the signed URLs for matching uploaded artifacts. Plain backtick mentions are left as text, so an artifact mentioned only as `` `screenshot.png` `` is still listed after the report.
+
+Artifacts not already shown by rewritten report links are rendered after the report body:
+
+- Images are embedded with markdown image syntax.
+- Videos use an HTML `<video>` embed where GitHub supports it, with the signed URL available as the source.
+- Other files, including PDFs, zips, logs, and text files, are listed as download links with sizes.
+
+Guard rails:
+
+- Missing `mediaHost.baseUrl` or `MEDIA_HOST_API_KEY` logs a clear "media host not configured" message and does not post.
+- Plans with no uploadable artifacts log "nothing to upload" and do not post.
+- Plans with no resolvable open PR fail non-zero.
 
 ## Lifecycle services
 

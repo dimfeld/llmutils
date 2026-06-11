@@ -24,10 +24,13 @@ import {
   spawnReviewIssuesFixProcess,
   spawnReviewProcess,
   spawnProofProcess,
+  spawnUploadArtifactsProcess,
   spawnAutoreviewProcess,
   spawnShellProcess,
 } from '$lib/server/plan_actions.js';
 import { isPlanEligibleForProof, isProofConfigured } from '$lib/utils/proof_eligibility.js';
+import { hasUploadableArtifacts } from '$lib/utils/artifact_upload_eligibility.js';
+import { isMediaHostConfigured } from '$tim/configSchema.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
@@ -620,6 +623,33 @@ export const startProof = command(startProofSchema, async ({ planUuid }) => {
     (plan): plan is PlanDetailResult => isPlanEligibleForProof(plan, projectConfig),
     'Plan is not eligible for proof generation',
     spawnProofProcess
+  );
+});
+
+const startUploadArtifactsSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startUploadArtifacts = command(startUploadArtifactsSchema, async ({ planUuid }) => {
+  const { db } = await getServerContext();
+  const planRow = getPlanByUuid(db, planUuid);
+  if (!planRow) {
+    error(404, 'Plan not found');
+  }
+
+  const cwd = getPreferredProjectGitRoot(db, planRow.project_id);
+  const projectConfig = cwd ? await loadEffectiveConfig(undefined, { cwd }) : undefined;
+  if (!isMediaHostConfigured(projectConfig)) {
+    error(400, 'Media host is not configured for this project');
+  }
+
+  return launchTimCommand(
+    'pr upload-artifacts',
+    planUuid,
+    (plan): plan is PlanDetailResult =>
+      hasUploadableArtifacts(plan) && (plan?.pullRequests?.length ?? 0) > 0,
+    'Plan must have at least one artifact and a linked PR to upload artifacts',
+    spawnUploadArtifactsProcess
   );
 });
 

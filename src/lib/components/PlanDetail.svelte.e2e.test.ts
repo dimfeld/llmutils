@@ -30,6 +30,7 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startAgentMulti: vi.fn(),
   startPlanReviewGuide: vi.fn(),
   startProof: vi.fn(),
+  startUploadArtifacts: vi.fn(),
   finishPlanQuick: vi.fn(),
   openInEditor: vi.fn(),
 }));
@@ -173,11 +174,31 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
   };
 }
 
-function renderPlan(plan: PlanDetail) {
+function makeArtifact(deletedAt: string | null): PlanDetail['artifacts'][number] {
+  return {
+    uuid: `artifact-${deletedAt ?? 'active'}`,
+    planUuid: 'plan-1',
+    projectUuid: 'project-1',
+    filename: 'screenshot.png',
+    mimeType: 'image/png',
+    size: 1024,
+    sha256: 'abc123',
+    message: null,
+    storagePath: '/tmp/screenshot.png',
+    deletedAt,
+    createdAt: '2026-03-18T10:00:00.000Z',
+    updatedAt: '2026-03-18T10:00:00.000Z',
+    revision: 1,
+    transferState: null,
+  };
+}
+
+function renderPlan(plan: PlanDetail, props: { mediaHostConfigured?: boolean } = {}) {
   return render(PlanDetailComponent, {
     props: {
       plan,
       projectId: '123',
+      ...props,
     },
   });
 }
@@ -303,6 +324,77 @@ describe('PlanDetail action selection', () => {
     // Pending plans have no work to review yet, so Autoreview is hidden.
     await expect
       .element(page.getByRole('button', { name: 'Autoreview', exact: true }))
+      .not.toBeInTheDocument();
+  });
+
+  test('shows upload artifacts action when media host, artifacts, and linked PR are present', async () => {
+    const screen = renderPlan(
+      makePlanDetail({
+        artifacts: [makeArtifact(null)],
+        pullRequests: ['https://github.com/example/repo/pull/42'],
+        prStatuses: [makePrStatusDetail()],
+      }),
+      { mediaHostConfigured: true }
+    );
+
+    await screen.getByRole('button', { name: 'Actions', exact: true }).click();
+
+    await expect
+      .element(page.getByRole('menuitem', { name: 'Upload artifacts to PR' }))
+      .toBeInTheDocument();
+  });
+
+  test('hides upload artifacts action when media host is not configured', async () => {
+    renderPlan(
+      makePlanDetail({
+        artifacts: [makeArtifact(null)],
+        pullRequests: ['https://github.com/example/repo/pull/42'],
+        prStatuses: [makePrStatusDetail()],
+      }),
+      { mediaHostConfigured: false }
+    );
+
+    await expect
+      .element(page.getByRole('menuitem', { name: 'Upload artifacts to PR' }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: 'Upload artifacts to PR' }))
+      .not.toBeInTheDocument();
+  });
+
+  test('hides upload artifacts action when no non-deleted artifacts are present', async () => {
+    renderPlan(
+      makePlanDetail({
+        artifacts: [makeArtifact('2026-06-01T12:00:00.000Z')],
+        pullRequests: ['https://github.com/example/repo/pull/42'],
+        prStatuses: [makePrStatusDetail()],
+      }),
+      { mediaHostConfigured: true }
+    );
+
+    await expect
+      .element(page.getByRole('menuitem', { name: 'Upload artifacts to PR' }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: 'Upload artifacts to PR' }))
+      .not.toBeInTheDocument();
+  });
+
+  test('hides upload artifacts action when no PR is linked', async () => {
+    renderPlan(
+      makePlanDetail({
+        artifacts: [makeArtifact(null)],
+        pullRequests: [],
+        prStatuses: [],
+      }),
+      { mediaHostConfigured: true }
+    );
+
+    await expect
+      .element(page.getByRole('menuitem', { name: 'Upload artifacts to PR' }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: 'Upload artifacts to PR' }))
       .not.toBeInTheDocument();
   });
 });

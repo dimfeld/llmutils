@@ -50,6 +50,7 @@ Read the relevant doc before working in these areas:
 - **Implementer / reviewer instructions** → `docs/implementer-instructions.md`, `docs/reviewer-instructions.md`
 - **Sync between nodes** → `docs/sync-between-nodes.md`
 - **Import command** → `docs/import_command.md`
+- **Proof generation and PR artifact uploads** → `docs/proof-generation.md`
 - **Safe path handling** (containment checks, symlink safety, denylists) → `docs/path-safety.md`
 
 ## Always-On Rules

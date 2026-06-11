@@ -1850,6 +1850,17 @@ prCommand
   });
 
 prCommand
+  .command('upload-artifacts <planId>')
+  .description('Upload plan artifacts to the linked GitHub PR comment')
+  .option('--aw, --auto-workspace', 'Accepted for UI compatibility; no workspace checkout is used')
+  .option('--no-terminal-input', 'Disable terminal input')
+  .option('--pr <urlOrNumber>', 'Upload artifacts to a specific PR URL or number')
+  .action(async (planIdArg, options, command) => {
+    const { handleUploadArtifactsCommand } = await import('./commands/upload_artifacts.js');
+    await handleUploadArtifactsCommand(planIdArg, options, command).catch(handleCommandError);
+  });
+
+prCommand
   .command('fix [planIdOrPr]')
   .description('Fix unresolved PR review threads using an AI agent')
   .option('--pr <pr-url-or-number>', 'Fix unresolved review threads for a PR without a plan')

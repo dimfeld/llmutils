@@ -29,6 +29,7 @@ export type HeadlessCommand =
   | 'review-issues'
   | 'review-guide'
   | 'review-guide-comment'
+  | 'upload-artifacts'
   | 'run-prompt'
   | 'generate'
   | 'chat'

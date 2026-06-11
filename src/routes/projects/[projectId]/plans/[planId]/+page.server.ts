@@ -2,6 +2,7 @@ import { error, redirect } from '@sveltejs/kit';
 import { getServerContext } from '$lib/server/init.js';
 import {
   getPlanDetailRouteData,
+  loadMediaHostConfiguredForProject,
   loadProofConfiguredForProject,
 } from '$lib/server/plans_browser.js';
 import type { PageServerLoad } from './$types';
@@ -21,11 +22,16 @@ export const load: PageServerLoad = async ({ params, url }) => {
   }
 
   const proofConfigured = await loadProofConfiguredForProject(db, result.planDetail.projectId);
+  const mediaHostConfigured = await loadMediaHostConfiguredForProject(
+    db,
+    result.planDetail.projectId
+  );
 
   return {
     planDetail: result.planDetail,
     reviews: result.reviews,
     openInEditorEnabled: Boolean(process.env.TIM_ENABLE_OPEN_IN_EDITOR),
     proofConfigured,
+    mediaHostConfigured,
   };
 };

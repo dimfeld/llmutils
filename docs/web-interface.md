@@ -109,6 +109,18 @@ Review history is rendered below the button: `#{review.id} - relative time`, sta
 
 Optimistic UI lifecycle: after the remote command succeeds, the page calls `invalidateAll()` and a 15s safety-net timer unconditionally clears `reviewGuideRunning` — do not gate that reset on `hasInProgressReview`, since the row may have already transitioned to `complete`/`error` and would leave the button stuck.
 
+### Upload Artifacts to PR Action
+
+`PlanDetail.svelte` exposes an **Upload artifacts to PR** action that detaches a `tim pr upload-artifacts <planId> --auto-workspace --no-terminal-input` process. The process is spawned by `spawnUploadArtifactsProcess` (`src/lib/server/plan_actions.ts`) via the shared `launchTimCommand` helper, mirroring **Generate Proof**. The CLI command itself (config, upload client, comment builder) is described in [Proof Generation](proof-generation.md#uploading-artifacts-to-a-pr-comment).
+
+Gating follows the affordance-equals-eligibility rule: the action is shown **only** when `mediaHostConfigured && hasUploadableArtifacts(plan) && hasLinkedPr`, and the `startUploadArtifacts` remote command (`src/lib/remote/plan_actions.remote.ts`) re-checks the same conditions server-side so the button and the action gate on identical real success conditions.
+
+- `mediaHostConfigured` is a server-computed boolean passed into `PlanDetail` (computed from `isMediaHostConfigured` in the plan page `+page.server.ts` / `db_queries.ts`, the same way `proofConfigured` is surfaced).
+- `hasUploadableArtifacts(plan)` lives in `src/lib/utils/artifact_upload_eligibility.ts` — a pure helper returning true when the plan has any non-deleted artifact (`deletedAt === null`). It is the single source of truth shared by client button visibility and the remote eligibility check.
+- `hasLinkedPr` is derived from the plan's linked PRs (`plan.pullRequests.length > 0`).
+
+After a successful launch the handler shows a success toast and calls `invalidateAll()`; structured remote errors surface as an error toast.
+
 ## Active Work Tab
 
 The Active Work tab (`/projects/[projectId]/active`) is a single-page scrollable dashboard with three sections: Needs Attention, Running Now, and Ready to Start. Each section is collapsible with a count badge and hidden when empty. An "All clear" message appears when all sections are empty.
