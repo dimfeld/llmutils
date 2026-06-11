@@ -21,7 +21,7 @@ export interface MediaHostConfig {
 }
 
 function getDefaultStorageDir(): string {
-  return join(homedir(), '.cache', 'tim', 'media-host');
+  return join(homedir(), '.local', 'share', 'tim', 'media-host');
 }
 
 export function loadConfigFromEnv(): MediaHostConfig {

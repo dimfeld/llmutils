@@ -746,14 +746,14 @@ Target leaf commands, such as `vitest run` or `pnpm test`, rather than broad pro
 
 Configuration is read from the environment:
 
-| Variable                      | Required | Default                   | Purpose                                           |
-| ----------------------------- | -------- | ------------------------- | ------------------------------------------------- |
-| `MEDIA_HOST_API_KEY`          | yes      | —                         | Bearer token required to upload files             |
-| `MEDIA_HOST_SIGNING_SECRET`   | yes      | —                         | Secret (salt) used to sign and verify read access |
-| `MEDIA_HOST_DIR`              | no       | `~/.cache/tim/media-host` | Directory that stores uploaded files              |
-| `MEDIA_HOST_PORT`             | no       | `8125`                    | Listen port                                       |
-| `MEDIA_HOST_HOST`             | no       | `0.0.0.0`                 | Listen host                                       |
-| `MEDIA_HOST_MAX_UPLOAD_BYTES` | no       | `104857600` (100 MiB)     | Maximum upload size; larger uploads return `413`  |
+| Variable                      | Required | Default                         | Purpose                                           |
+| ----------------------------- | -------- | ------------------------------- | ------------------------------------------------- |
+| `MEDIA_HOST_API_KEY`          | yes      | —                               | Bearer token required to upload files             |
+| `MEDIA_HOST_SIGNING_SECRET`   | yes      | —                               | Secret (salt) used to sign and verify read access |
+| `MEDIA_HOST_DIR`              | no       | `~/.local/share/tim/media-host` | Directory that stores uploaded files              |
+| `MEDIA_HOST_PORT`             | no       | `8125`                          | Listen port                                       |
+| `MEDIA_HOST_HOST`             | no       | `0.0.0.0`                       | Listen host                                       |
+| `MEDIA_HOST_MAX_UPLOAD_BYTES` | no       | `104857600` (100 MiB)           | Maximum upload size; larger uploads return `413`  |
 
 **Upload** with `PUT` (or `POST`) to any path and a bearer token. The response includes the path-bound read URL:
 
