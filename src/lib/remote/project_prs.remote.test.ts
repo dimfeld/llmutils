@@ -420,6 +420,50 @@ describe('project_prs remote functions', () => {
     expect(result.authored.map((pr) => pr.status.pr_number)).toEqual([23, 17]);
   });
 
+  test('getProjectPrs sorts PRs by status priority: approved > open > draft', async () => {
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/10',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 10,
+      title: 'Draft PR',
+      state: 'open',
+      draft: true,
+      author: 'dimfeld',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/20',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 20,
+      title: 'Approved PR',
+      state: 'open',
+      draft: false,
+      reviewDecision: 'APPROVED',
+      author: 'dimfeld',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/15',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 15,
+      title: 'Open PR',
+      state: 'open',
+      draft: false,
+      author: 'dimfeld',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+
+    const { getProjectPrs } = await import('./project_prs.remote.js');
+    const result = await invokeQuery(getProjectPrs, { projectId: String(projectId) });
+
+    expect(result.hasData).toBe(true);
+    // Should be sorted: approved (20) > open (15) > draft (10)
+    expect(result.authored.map((pr) => pr.status.pr_number)).toEqual([20, 15, 10]);
+  });
+
   test('getProjectPrs sorts reviewing PRs with review requests first', async () => {
     upsertPrStatus(currentDb, {
       prUrl: 'https://github.com/example/repo/pull/17',
@@ -460,6 +504,7 @@ describe('project_prs remote functions', () => {
     const { getProjectPrs } = await import('./project_prs.remote.js');
     const result = await invokeQuery(getProjectPrs, { projectId: String(projectId) });
 
+    // Both are open PRs, so review requested should come first
     expect(result.reviewing.map((pr) => pr.status.pr_number)).toEqual([18, 17]);
   });
 

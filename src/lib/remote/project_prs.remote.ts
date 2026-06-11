@@ -85,6 +85,14 @@ function enrichProjectPrs(
 
 function sortProjectPrsByPrNumberDesc(prs: EnrichedProjectPr[]): EnrichedProjectPr[] {
   return [...prs].toSorted((left, right) => {
+    // Sort by status priority: approved > open > draft
+    const leftPriority = getPrSortPriority(left);
+    const rightPriority = getPrSortPriority(right);
+    const priorityComparison = rightPriority - leftPriority;
+    if (priorityComparison !== 0) {
+      return priorityComparison;
+    }
+
     const prNumberComparison = right.status.pr_number - left.status.pr_number;
     if (prNumberComparison !== 0) {
       return prNumberComparison;
@@ -94,8 +102,29 @@ function sortProjectPrsByPrNumberDesc(prs: EnrichedProjectPr[]): EnrichedProject
   });
 }
 
+function getPrSortPriority(pr: EnrichedProjectPr): number {
+  // Approved PRs get highest priority (2)
+  if (pr.status.review_decision === 'APPROVED') {
+    return 2;
+  }
+  // Draft PRs get lowest priority (0)
+  if (pr.status.draft === 1) {
+    return 0;
+  }
+  // Open PRs get medium priority (1)
+  return 1;
+}
+
 function sortReviewingProjectPrs(prs: EnrichedProjectPr[]): EnrichedProjectPr[] {
   return [...prs].toSorted((left, right) => {
+    // Sort by status priority: approved > open > draft
+    const leftPriority = getPrSortPriority(left);
+    const rightPriority = getPrSortPriority(right);
+    const priorityComparison = rightPriority - leftPriority;
+    if (priorityComparison !== 0) {
+      return priorityComparison;
+    }
+
     const leftReviewRequested = left.currentUserReviewRequestLabel === 'Review Requested' ? 1 : 0;
     const rightReviewRequested = right.currentUserReviewRequestLabel === 'Review Requested' ? 1 : 0;
 
