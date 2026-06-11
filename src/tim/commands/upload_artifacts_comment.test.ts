@@ -439,6 +439,9 @@ describe('buildArtifactCommentBody', () => {
     });
 
     expect(html).toContain('<!doctype html>');
+    expect(html).toContain('color-scheme:light dark');
+    expect(html).toContain('@media (prefers-color-scheme: dark)');
+    expect(html).toContain('--page-bg:#0d1117');
     expect(html).toContain('<h1>Proof</h1>');
     expect(html).toContain(
       '<a href="https://media.example.test/screenshot.png/sig=abc" target="_blank" rel="noopener noreferrer"><img src="https://media.example.test/screenshot.png/sig=abc" alt="Screenshot"></a>'
