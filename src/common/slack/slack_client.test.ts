@@ -142,13 +142,13 @@ describe('common/slack/slack_client', () => {
 
       expect(blockText).toContain('*Review Re-Requested:*');
       expect(blockText).toContain('<@U123BOB> (re-request), `carol` (re-request)');
-      expect(payload.text).toContain('Review Re-Requested on Add feature X');
+      expect(payload.text).toContain('Review Re-Requested on #42 - Add feature X');
     });
 
-    test('PR title is rendered as a Slack mrkdwn link', () => {
+    test('PR title is rendered as a Slack mrkdwn link prefixed with the PR number', () => {
       const payload = buildReviewRequestSlackPayload('#reviews', testPr, [mappedReviewer]);
       const blockText = payload.blocks[0].text.text;
-      expect(blockText).toContain('<https://linear.review/owner/repo/pull/42|Add feature X>');
+      expect(blockText).toContain('<https://linear.review/owner/repo/pull/42|#42 - Add feature X>');
     });
 
     test('author is present in the block text', () => {
@@ -427,10 +427,14 @@ describe('common/slack/slack_client', () => {
       );
       const blocks = serializedBlocks(payload.blocks);
 
-      expect(blocks).toContain('<https://linear.review/octocat/hello-world/pull/1|Approved PR>');
+      expect(blocks).toContain(
+        '<https://linear.review/octocat/hello-world/pull/1|#1 - Approved PR>'
+      );
       expect(blocks).toContain('`alice`');
       expect(blocks).toContain('approved 24 hours ago');
-      expect(blocks).toContain('<https://linear.review/octocat/hello-world/pull/2|Needs review>');
+      expect(blocks).toContain(
+        '<https://linear.review/octocat/hello-world/pull/2|#2 - Needs review>'
+      );
       expect(blocks).toContain('`bob`');
       expect(blocks).not.toContain('<@');
     });
@@ -482,10 +486,10 @@ describe('common/slack/slack_client', () => {
         'section',
       ]);
       expect(approvedText).toContain(
-        '<https://linear.review/octocat/hello-world/pull/9|Approved but waiting>'
+        '<https://linear.review/octocat/hello-world/pull/9|#9 - Approved but waiting>'
       );
       expect(staleText).toContain(
-        '<https://linear.review/octocat/hello-world/pull/10|Needs review>'
+        '<https://linear.review/octocat/hello-world/pull/10|#10 - Needs review>'
       );
       expect(staleText).toContain('`bob` (25 hours)');
       expect(staleText).toContain('— waiting on `bob` (25 hours)');
@@ -523,7 +527,7 @@ describe('common/slack/slack_client', () => {
       expect(payload.blocks.map((block) => block.type)).toEqual(['section', 'section', 'section']);
       expect(otherReadyText).toContain('*Other PRs ready for review for > 3 days*');
       expect(otherReadyText).toContain(
-        '<https://linear.review/octocat/hello-world/pull/11|Quiet ready PR>'
+        '<https://linear.review/octocat/hello-world/pull/11|#11 - Quiet ready PR>'
       );
       expect(otherReadyText).toContain('ready for 4 days; previous review 25 hours ago');
       expect(otherReadyText).toContain('ready for 5 days; no previous review');

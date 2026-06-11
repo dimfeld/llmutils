@@ -259,11 +259,23 @@ function formatPlainLogin(login: string): string {
   return `\`${escapeSlackCodeSpan(login)}\``;
 }
 
+function formatPrDisplayTitle(title: string, prNumber: number | undefined): string {
+  const trimmedTitle = title.trim();
+  if (typeof prNumber !== 'number') {
+    return trimmedTitle;
+  }
+
+  return `#${prNumber} - ${trimmedTitle}`;
+}
+
 function formatPrLink(entry: DailyDigestEntry): string {
   const url =
     buildLinearPrReviewUrl({ prUrl: entry.prUrl, prNumber: entry.prNumber }) ?? entry.prUrl;
   const escapedUrl = escapeSlackMrkdwnText(url);
-  const escapedTitle = escapeSlackMrkdwnText(entry.title || `PR #${entry.prNumber}`);
+  const displayTitle = entry.title
+    ? formatPrDisplayTitle(entry.title, entry.prNumber)
+    : `PR #${entry.prNumber}`;
+  const escapedTitle = escapeSlackMrkdwnText(displayTitle);
   return `<${escapedUrl}|${escapedTitle}>`;
 }
 
@@ -379,7 +391,8 @@ export function buildReviewRequestSlackPayload(
   pr: ReviewRequestPr,
   reviewers: ReviewRequestReviewer[]
 ): SlackPostPayload {
-  const escapedTitle = escapeSlackMrkdwnText(pr.title);
+  const displayTitle = formatPrDisplayTitle(pr.title, pr.number);
+  const escapedTitle = escapeSlackMrkdwnText(displayTitle);
   const escapedAuthor = escapeSlackMrkdwnText(pr.author);
   const prUrl = buildLinearPrReviewUrl({ prUrl: pr.url, prNumber: pr.number }) ?? pr.url;
   const escapedUrl = escapeSlackMrkdwnText(prUrl);
