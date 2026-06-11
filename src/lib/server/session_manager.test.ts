@@ -264,7 +264,7 @@ describe('lib/server/session_manager', () => {
   });
 
   test('formatTunnelMessage marks non-tunnel agent_session_end messages as notification-worthy only for interactive sessions', () => {
-    const chatSession = formatTunnelMessage(
+    const interactiveSession = formatTunnelMessage(
       'conn-1',
       1,
       {
@@ -276,10 +276,10 @@ describe('lib/server/session_manager', () => {
           turns: 1,
         },
       },
-      'chat'
+      { interactive: true }
     );
 
-    const generateSession = formatTunnelMessage(
+    const nonInteractiveSession = formatTunnelMessage(
       'conn-1',
       2,
       {
@@ -291,42 +291,12 @@ describe('lib/server/session_manager', () => {
           turns: 1,
         },
       },
-      'generate'
-    );
-
-    const agentSession = formatTunnelMessage(
-      'conn-1',
-      3,
-      {
-        type: 'structured',
-        message: {
-          type: 'agent_session_end',
-          timestamp: '2026-03-17T10:00:59.000Z',
-          success: true,
-          turns: 1,
-        },
-      },
-      'agent'
-    );
-
-    const autoreviewSession = formatTunnelMessage(
-      'conn-1',
-      4,
-      {
-        type: 'structured',
-        message: {
-          type: 'agent_session_end',
-          timestamp: '2026-03-17T10:00:59.000Z',
-          success: true,
-          turns: 1,
-        },
-      },
-      'autoreview'
+      { interactive: false }
     );
 
     const tunneled = formatTunnelMessage(
       'conn-1',
-      5,
+      3,
       {
         type: 'structured',
         message: {
@@ -337,24 +307,16 @@ describe('lib/server/session_manager', () => {
           transportSource: 'tunnel',
         },
       },
-      'chat'
+      { interactive: true }
     );
 
-    expect(chatSession).toMatchObject({
+    expect(interactiveSession).toMatchObject({
       rawType: 'agent_session_end',
       triggersNotification: true,
     });
-    expect(generateSession).toMatchObject({
-      rawType: 'agent_session_end',
-      triggersNotification: true,
-    });
-    expect(agentSession).toMatchObject({
+    expect(nonInteractiveSession).toMatchObject({
       rawType: 'agent_session_end',
       triggersNotification: false,
-    });
-    expect(autoreviewSession).toMatchObject({
-      rawType: 'agent_session_end',
-      triggersNotification: true,
     });
     expect(tunneled).toMatchObject({
       rawType: 'agent_session_end',
