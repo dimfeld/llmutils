@@ -347,6 +347,17 @@ export async function executeCodexStepViaAppServer(
     }
   };
 
+  const emitChatTurnReady = () => {
+    sendStructured({
+      type: 'agent_session_end',
+      timestamp: new Date().toISOString(),
+      success: true,
+      threadId,
+      turns: successfulTurns + 1,
+      summary: 'Codex turn completed',
+    });
+  };
+
   const interruptActiveTurn = () => {
     const interruptThreadId = threadId;
     const interruptTurnId = currentTurnId ?? chatTurnId;
@@ -423,6 +434,7 @@ export async function executeCodexStepViaAppServer(
           stopRateLimitPolling();
         } else if (keepSessionOpen && method === 'thread/status/changed') {
           if (extractThreadStatusType(params) === 'idle') {
+            emitChatTurnReady();
             chatTurnCompleted = true;
             resolveCurrentTurnStatus('completed');
             currentAttemptActive = false;

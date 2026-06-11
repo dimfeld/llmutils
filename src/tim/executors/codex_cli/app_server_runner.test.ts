@@ -352,6 +352,15 @@ describe('executeCodexStepViaAppServer', () => {
 
     expect(output).toBe('final agent message');
     expect(harness.connection.turnStart).toHaveBeenCalledTimes(1);
+    expect(harness.sendStructuredMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'agent_session_end',
+        success: true,
+        threadId: 'thread-1',
+        turns: 1,
+        summary: 'Codex turn completed',
+      })
+    );
     expect(harness.connection.close).toHaveBeenCalledTimes(1);
   });
 
