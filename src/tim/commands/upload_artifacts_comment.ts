@@ -256,7 +256,15 @@ function assembleArtifactCommentBody(input: {
     : input.artifacts.filter((_, index) => !input.referencedArtifactIndexes.has(index));
 
   if (trailingArtifacts.length > 0) {
-    sections.push(['## Artifacts', '', renderArtifactList(trailingArtifacts)].join('\n'));
+    sections.push(
+      [
+        '## Artifacts',
+        '',
+        input.linksOnly
+          ? renderDownloadLinkList(trailingArtifacts)
+          : renderArtifactList(trailingArtifacts),
+      ].join('\n')
+    );
   }
 
   if (input.fullReportUrl) {
@@ -313,7 +321,19 @@ function prepareReportMarkdown(input: {
 }
 
 function renderArtifactList(artifacts: UploadedArtifactForComment[]): string {
+  return artifacts.map((artifact) => renderArtifact(artifact)).join('\n\n');
+}
+
+function renderDownloadLinkList(artifacts: UploadedArtifactForComment[]): string {
   return artifacts.map((artifact) => renderDownloadLink(artifact)).join('\n\n');
+}
+
+function renderArtifact(artifact: UploadedArtifactForComment): string {
+  if (artifact.mimeType.startsWith('image/')) {
+    return `**${escapeMarkdownText(artifact.filename)}**\n\n![${escapeMarkdownText(artifact.filename)}](${escapeMarkdownUrl(artifact.url)})`;
+  }
+
+  return renderDownloadLink(artifact);
 }
 
 function renderFullReportArtifactsHtml(artifacts: UploadedArtifactForComment[]): string {

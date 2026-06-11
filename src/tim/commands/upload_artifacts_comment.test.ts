@@ -183,8 +183,9 @@ describe('buildArtifactCommentBody', () => {
 
     expect(body).toContain('![Screenshot](Screenshot (1).png)');
     expect(body).toContain('## Artifacts');
+    expect(body).toContain('**Screenshot (1).png**');
     expect(body).toContain(
-      '- [Screenshot (1).png](https://media.example.test/Screenshot%20%281%29.png?sig=abc) (1.5 KB)'
+      '![Screenshot (1).png](https://media.example.test/Screenshot%20%281%29.png?sig=abc)'
     );
   });
 
@@ -218,12 +219,11 @@ describe('buildArtifactCommentBody', () => {
     expect(body).toContain('![remote](https://example.com/remote.png)');
     expect(body).toContain('`screenshot.png`');
     expect(body).toContain('## Artifacts');
-    expect(body).toContain(
-      '- [screenshot.png](https://media.example.test/screenshot.png?sig=abc) (1.5 KB)'
-    );
+    expect(body).toContain('**screenshot.png**');
+    expect(body).toContain('![screenshot.png](https://media.example.test/screenshot.png?sig=abc)');
   });
 
-  test('renders trailing images, videos, and documents as artifact links', () => {
+  test('renders trailing images as embeds and other artifacts as links', () => {
     const body = buildBody({
       artifacts: [
         artifact({
@@ -253,9 +253,8 @@ describe('buildArtifactCommentBody', () => {
       ],
     });
 
-    expect(body).toContain(
-      '- [screenshot.png](https://media.example.test/screenshot.png?sig=abc) (1.5 KB)'
-    );
+    expect(body).toContain('**screenshot.png**');
+    expect(body).toContain('![screenshot.png](https://media.example.test/screenshot.png?sig=abc)');
     expect(body).toContain('- [demo.mp4](https://media.example.test/demo.mp4?sig=abc) (2.0 MB)');
     expect(body).not.toContain('<video src="https://media.example.test/capture.mov?sig=abc"');
     expect(body).toContain(
@@ -343,7 +342,8 @@ describe('buildArtifactCommentBody', () => {
 
     expect(body).not.toContain('[report.md]');
     expect(body).toContain('## Artifacts');
-    expect(body).toContain('- [extra.png](https://media.example.test/extra.png?sig=abc) (256 B)');
+    expect(body).toContain('**extra.png**');
+    expect(body).toContain('![extra.png](https://media.example.test/extra.png?sig=abc)');
   });
 
   test('leaves protocol-relative, root-relative, anchor, and mailto links untouched', () => {

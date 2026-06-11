@@ -98,7 +98,7 @@ The PR comment carries a hidden per-plan marker (`<!-- tim:plan-artifacts:<planU
 
 If a proof artifact named `report.md` exists, its markdown becomes the main comment body and the rendered `index.html` content. `report.md` itself is not uploaded and is not listed as a downloadable artifact. Relative markdown image and link references in the report, such as `![screenshot](screenshot.png)` or `[log](run.log)`, are rewritten to the signed URLs for matching uploaded artifacts. In the rendered full report, image tags are wrapped in links that open the full object in a new tab. Plain backtick mentions are left as text, so an artifact mentioned only as `` `screenshot.png` `` is still listed after the report as a link with its file size. The PR comment includes **View full report** links above and below the markdown body.
 
-Artifacts not already shown by rewritten report links are rendered after the report body as download links with sizes.
+Artifacts not already shown by rewritten report links are rendered after the report body: images use markdown image embeds, and other files use download links with sizes.
 
 Guard rails:
 
