@@ -1,10 +1,18 @@
 import * as path from 'node:path';
+import type { Database } from 'bun:sqlite';
 import { getUsingJj } from '../../common/git.js';
+import { parseOwnerRepoFromRepositoryId } from '../../common/github/pull_requests.js';
 import { getLoggerAdapter } from '../../logging/adapter.js';
 import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { getDatabase } from '../db/database.js';
+import {
+  findPrStatusesByRepositoryBranch,
+  getPrStatusForPlan,
+  type PrStatusRow,
+} from '../db/pr_status.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { isCodexAppServerEnabled } from '../executors/codex_cli/app_server_mode.js';
 import {
@@ -27,6 +35,7 @@ import type { PlanSchema } from '../planSchema.js';
 import { resolveReviewTarget, type ReviewTarget } from './review_target.js';
 import { resolveChatModel, resolveInteractiveExecutor, type ChatGlobalOptions } from './chat.js';
 import { type ReviewCommandOptions } from './review.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { touchWorkspaceInfo } from '../workspace/workspace_info.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import {
@@ -55,6 +64,16 @@ export interface BuildAutoreviewPromptOptions {
   target: ReviewTarget;
   useJj?: boolean;
   base?: string;
+  linkedPr?: AutoreviewLinkedPr;
+}
+
+export interface AutoreviewLinkedPr {
+  prNumber: number;
+  owner: string;
+  repo: string;
+  url: string;
+  title?: string;
+  headSha?: string;
 }
 
 const TIM_AUTOREVIEW_ENV = 'TIM_AUTOREVIEW';
@@ -166,11 +185,89 @@ function buildCommitGuidance(useJj: boolean): string {
   return '- After each round of selected fixes, commit the changes with the repository VCS. This repository appears to use git, so use `git status`, `git add ...`, and `git commit -m "..."`; if you find it uses Jujutsu (jj), use `jj status` and `jj commit -m "..."` instead.';
 }
 
+function buildPrReviewTrailGuidance(linkedPr?: AutoreviewLinkedPr): string {
+  if (!linkedPr) {
+    return '';
+  }
+
+  const prRef = `PR #${linkedPr.prNumber} (${linkedPr.owner}/${linkedPr.repo})`;
+  const headShaValue =
+    linkedPr.headSha ??
+    `<headSha from: gh pr view ${linkedPr.prNumber} --repo ${linkedPr.owner}/${linkedPr.repo} --json headRefOid -q .headRefOid>`;
+  const titleText = linkedPr.title ? `, "${linkedPr.title}"` : '';
+
+  return `## PR Review Trail
+
+This target has a resolvable GitHub PR: ${prRef}${titleText} at ${linkedPr.url}. Mirror the autoreview conversation onto that PR so reviewers have a durable, auditable trail of what was found, what was fixed, and what was intentionally ignored. The "comment, then reply to yourself" pattern can look redundant, but it is intentional: the goal is a durable PR trail, not just the terminal transcript.
+
+### Per-Round Protocol
+
+- When the user selects which issues to act on, create PR review threads only for issues the user acts on in this round, either fixes or explicit ignores. Do not create threads for every issue merely presented.
+- For each acted-on issue that has a referenced location in the PR diff, create an inline review thread anchored at that diff location. Use the issue content and suggestion as the comment body.
+- If an issue has no file/line, or the referenced line is not part of the PR diff, put it in the review body instead of an inline thread. These are the body-only (un-anchorable) issues referenced below.
+- When the PR trail is active and the user asks to ignore an issue without giving a reason, ask them for a brief reason first so it can be recorded on the PR.
+- For ignored issues that have an inline thread, immediately reply with the user's stated reason for ignoring the issue and resolve the thread.
+- For ignored issues that are body-only (un-anchorable, so there is no thread), immediately add a PR comment stating the issue is being ignored along with the user's stated reason, and record it in the scratch file. There is no thread to resolve in this case.
+- After fixes are committed, reply to each addressed inline thread confirming the fix and resolve it. For addressed body-only issues, add a new follow-up PR comment confirming the issue was addressed.
+
+### Threading Discipline
+
+- If an issue that already has a thread resurfaces in a later round, reply on the existing thread instead of opening a duplicate.
+- Maintain a temporary scratch file under the workspace temp directory mapping each issue to its created review/thread node ID and top-comment \`databaseId\`. Consult and update it each round. Resolving a thread through GraphQL needs the thread node ID, and replying through REST needs the top comment database ID.
+- For the GitHub mechanics, you may delegate to your own subagent capability so the main review -> ask -> fix -> commit loop stays focused.
+- If \`gh\`, \`GITHUB_TOKEN\`, or GitHub auth is unavailable, or if a GitHub call fails, continue the local review -> fix -> commit loop and report that the PR trail step could not be performed. Do not abort the review solely because the PR trail failed.
+
+### GitHub Recipes
+
+Use these \`gh api\` shapes for ${prRef}. The current head SHA for the review payload is \`${headShaValue}\`. If that placeholder is not already a concrete SHA, read it with:
+
+    gh pr view ${linkedPr.prNumber} --repo ${linkedPr.owner}/${linkedPr.repo} --json headRefOid -q .headRefOid
+
+Create one review with inline comments and body-only fallbacks. Inline comment fields mirror the review-comment API semantics: \`path\`, \`body\`, \`line\`, \`side\`, and optional \`start_line\`/\`start_side\` for ranges. Write the payload to a temp file and pass it with \`--input\` (this avoids fragile shell quoting/heredocs). For example, write this JSON to \`"$TMPDIR/autoreview-review.json"\`:
+
+    {
+      "commit_id": "${headShaValue}",
+      "event": "COMMENT",
+      "body": "Body-only issues that cannot be anchored in the diff go here.",
+      "comments": [
+        {
+          "path": "src/example.ts",
+          "line": 42,
+          "side": "RIGHT",
+          "body": "Issue content and suggestion go here."
+        }
+      ]
+    }
+
+then submit it:
+
+    gh api --method POST repos/${linkedPr.owner}/${linkedPr.repo}/pulls/${linkedPr.prNumber}/reviews --input "$TMPDIR/autoreview-review.json"
+
+Query review thread node IDs and top-comment database IDs after creating comments, then write the IDs into the scratch file:
+
+    gh api graphql -f query='{ repository(owner:"${linkedPr.owner}", name:"${linkedPr.repo}"){ pullRequest(number:${linkedPr.prNumber}){ reviewThreads(first:100){ nodes { id isResolved path line comments(first:1){ nodes { databaseId body } } } } } } }'
+
+Reply to a thread's top comment:
+
+    gh api --method POST repos/${linkedPr.owner}/${linkedPr.repo}/pulls/${linkedPr.prNumber}/comments/{commentDatabaseId}/replies -f body='Fixed in <commit>.'
+
+Resolve a review thread. Resolution is GraphQL-only:
+
+    gh api graphql -f query='mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread { isResolved } } }' -f id='<threadNodeId>'
+
+Add a body-only follow-up PR comment when an un-anchorable issue is fixed:
+
+    gh api --method POST repos/${linkedPr.owner}/${linkedPr.repo}/issues/${linkedPr.prNumber}/comments -f body='Addressed the body-only autoreview issue in <commit>.'
+
+You can also create a single inline review comment with \`POST repos/${linkedPr.owner}/${linkedPr.repo}/pulls/${linkedPr.prNumber}/comments\`; that endpoint returns the created comment ID directly, which can make ID tracking easier for one-off comments.`;
+}
+
 export function buildAutoreviewPrompt(options: BuildAutoreviewPromptOptions): string {
   const reviewCommand = buildReviewCommandForTarget(options.target, options.base);
   const targetDescription = buildTargetDescription(options.target);
+  const prReviewTrailGuidance = buildPrReviewTrailGuidance(options.linkedPr);
 
-  return `# Autoreview Orchestrator
+  const prompt = `# Autoreview Orchestrator
 
 You are the orchestrator for a tim review-and-fix loop targeting ${targetDescription}.
 
@@ -212,6 +309,8 @@ ${buildCommitGuidance(options.useJj === true)}
 - If issues conflict or touch overlapping code, handle them yourself rather than delegating.
 - If a review command fails or returns invalid JSON, explain the failure and ask the user how to proceed.
 `;
+
+  return prReviewTrailGuidance ? `${prompt}\n${prReviewTrailGuidance}` : prompt;
 }
 
 async function resolvePlanExecutionContext(target: ReviewTarget): Promise<{
@@ -244,6 +343,99 @@ async function resolvePlanExecutionContext(target: ReviewTarget): Promise<{
     planFilePath: resolvedPlan.planPath ?? '',
     planData: resolvedPlan.plan,
   };
+}
+
+function pickBestPrStatus(rows: PrStatusRow[]): PrStatusRow | undefined {
+  return [...rows].sort((left: PrStatusRow, right: PrStatusRow) => {
+    const leftOpen = left.state === 'open' ? 0 : 1;
+    const rightOpen = right.state === 'open' ? 0 : 1;
+    if (leftOpen !== rightOpen) {
+      return leftOpen - rightOpen;
+    }
+
+    return left.pr_number - right.pr_number;
+  })[0];
+}
+
+function mapPrStatusToAutoreviewLinkedPr(status: PrStatusRow): AutoreviewLinkedPr {
+  return {
+    prNumber: status.pr_number,
+    owner: status.owner,
+    repo: status.repo,
+    url: status.pr_url,
+    title: status.title ?? undefined,
+    headSha: status.head_sha ?? undefined,
+  };
+}
+
+export async function resolveAutoreviewLinkedPr(
+  target: ReviewTarget,
+  planData: PlanSchema | undefined,
+  openDb: () => Database = getDatabase
+): Promise<AutoreviewLinkedPr | undefined> {
+  // `--pr` targets carry their own PR identity and need no database lookup, so resolve them
+  // before opening the db. This keeps the PR trail working even if the database is unavailable.
+  if (target.kind === 'pr') {
+    return {
+      prNumber: target.prNumber,
+      owner: target.owner,
+      repo: target.repo,
+      url: target.canonicalPrUrl,
+      title: target.title,
+      headSha: target.headSha,
+    };
+  }
+
+  try {
+    switch (target.kind) {
+      case 'plan': {
+        if (!planData?.uuid) {
+          return undefined;
+        }
+
+        const db = openDb();
+        const planPullRequestUrls = planData.pullRequest;
+        // Plan targets intentionally use prefer-open rather than open-only: a plan may link
+        // an already-merged or closed PR and still deserves an audit trail on that PR.
+        const statuses = getPrStatusForPlan(db, planData.uuid, planPullRequestUrls).map(
+          (detail) => detail.status
+        );
+        const bestStatus = pickBestPrStatus(statuses);
+        return bestStatus ? mapPrStatusToAutoreviewLinkedPr(bestStatus) : undefined;
+      }
+      case 'current':
+      case 'branch': {
+        const headBranch =
+          target.kind === 'current' ? target.currentBranch : target.requestedBranch;
+        if (!headBranch) {
+          return undefined;
+        }
+
+        const db = openDb();
+        const repoIdentity = await getRepositoryIdentity({ cwd: target.repoRoot });
+        const ownerRepo = parseOwnerRepoFromRepositoryId(repoIdentity.repositoryId);
+        if (!ownerRepo) {
+          return undefined;
+        }
+
+        // For current/branch targets, only an open PR for the head branch represents
+        // active work to mirror; if none is open, treat the target as having no linked PR.
+        const statuses = findPrStatusesByRepositoryBranch(db, {
+          owner: ownerRepo.owner,
+          repo: ownerRepo.repo,
+          branch: headBranch,
+          openOnly: true,
+        });
+        const bestStatus = pickBestPrStatus(statuses);
+        return bestStatus ? mapPrStatusToAutoreviewLinkedPr(bestStatus) : undefined;
+      }
+    }
+  } catch (err) {
+    warn(
+      `Failed to resolve linked PR for autoreview: ${err instanceof Error ? err.message : String(err)}`
+    );
+    return undefined;
+  }
 }
 
 export async function handleAutoreviewCommand(
@@ -279,10 +471,13 @@ export async function handleAutoreviewCommand(
   });
   const effort = resolveStringOption(options.effort) ?? configuredAutoreview?.effort;
   const useJj = await getUsingJj(reviewTarget.repoRoot);
+  const planContext = await resolvePlanExecutionContext(reviewTarget);
+  const linkedPr = await resolveAutoreviewLinkedPr(reviewTarget, planContext.planData);
   const prompt = buildAutoreviewPrompt({
     target: reviewTarget,
     useJj,
     base: options.base,
+    linkedPr,
   });
 
   if (options.dryRun === true) {
@@ -302,7 +497,6 @@ export async function handleAutoreviewCommand(
     stdinIsTTY: process.stdin.isTTY,
     codexAppServerEnabled: isCodexAppServerEnabled(),
   });
-  const planContext = await resolvePlanExecutionContext(reviewTarget);
 
   await runWithHeadlessAdapterIfEnabled({
     enabled: options.headlessAdapter === true || !tunnelActive,

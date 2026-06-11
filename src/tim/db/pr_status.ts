@@ -1269,6 +1269,30 @@ export function getKnownRepoFullNames(db: Database): Set<string> {
   return repositories;
 }
 
+export function findPrStatusesByRepositoryBranch(
+  db: Database,
+  params: { owner: string; repo: string; branch: string; openOnly?: boolean }
+): PrStatusRow[] {
+  const openClause = params.openOnly === true ? "AND state = 'open'" : '';
+
+  return db
+    .prepare(
+      `
+        SELECT *
+        FROM pr_status
+        WHERE owner = ? COLLATE NOCASE
+          AND repo = ? COLLATE NOCASE
+          AND head_branch = ?
+          ${openClause}
+        ORDER BY
+          CASE WHEN state = 'open' THEN 0 ELSE 1 END,
+          pr_number ASC,
+          id ASC
+      `
+    )
+    .all(params.owner, params.repo, params.branch) as PrStatusRow[];
+}
+
 /** Returns PR status details for a plan with tri-modal semantics on `prUrls`:
  * - `undefined`: returns all junction-linked PRs (both explicit and auto)
  * - `[]` (empty array): returns only auto-linked PRs

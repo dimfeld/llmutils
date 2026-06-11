@@ -53,9 +53,13 @@ vi.mock('../../logging/tunnel_client.js', () => ({
   isTunnelActive: vi.fn(),
 }));
 
-vi.mock('../db/database.js', () => ({
-  getDatabase: vi.fn(),
-}));
+vi.mock('../db/database.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../db/database.js')>();
+  return {
+    ...actual,
+    getDatabase: vi.fn(),
+  };
+});
 
 vi.mock('../workspace/workspace_setup.js', () => ({
   setupWorkspace: vi.fn(),
@@ -100,6 +104,7 @@ import {
   buildAutoreviewPrompt,
   handleAutoreviewCommand,
   type AutoreviewCommandOptions,
+  type AutoreviewLinkedPr,
 } from './autoreview.js';
 import type {
   PlanReviewTarget,
@@ -130,6 +135,12 @@ import {
   runPreExecutionWorkspaceSync,
 } from '../workspace/workspace_roundtrip.js';
 import { touchWorkspaceInfo } from '../workspace/workspace_info.js';
+import { gatherPrContext } from '../utils/pr_context_gathering.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { DATABASE_FILENAME, getDatabase, openDatabase } from '../db/database.js';
+import { getOrCreateProject } from '../db/project.js';
+import { nonSyncedUpsertPlan } from '../db/plan.js';
+import { linkPlanToPr, upsertPrStatus } from '../db/pr_status.js';
 
 // ─── buildAutoreviewPrompt unit tests ───────────────────────────────────────
 
@@ -331,6 +342,145 @@ describe('buildAutoreviewPrompt', () => {
     expect(prompt).toContain('tim review --current --print');
     expect(prompt).not.toContain('--base');
   });
+
+  // ── PR Review Trail section ────────────────────────────────────────────────
+
+  const linkedPr: AutoreviewLinkedPr = {
+    prNumber: 123,
+    owner: 'acme',
+    repo: 'widgets',
+    url: 'https://github.com/acme/widgets/pull/123',
+    title: 'My PR',
+  };
+
+  test('with linkedPr: PR Review Trail heading appears', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
+    expect(prompt).toContain('## PR Review Trail');
+  });
+
+  test('with linkedPr: PR number and owner/repo are interpolated', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
+    expect(prompt).toContain('#123');
+    expect(prompt).toContain('acme/widgets');
+  });
+
+  test('with linkedPr: ignored-issue-resolve-immediately instruction is present', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
+    // Bind ignored issues, immediate reply, user reasoning, and resolution together so the
+    // assertion fails if any part of the protocol is dropped.
+    expect(prompt).toContain(
+      "For ignored issues that have an inline thread, immediately reply with the user's stated reason for ignoring the issue and resolve the thread"
+    );
+    // Body-only ignored issues have no thread, so they must get an immediate ignore comment.
+    expect(prompt).toContain(
+      "For ignored issues that are body-only (un-anchorable, so there is no thread), immediately add a PR comment stating the issue is being ignored along with the user's stated reason"
+    );
+  });
+
+  test('with linkedPr: reply-and-resolve-after-commit instruction is present', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
+    expect(prompt).toContain('After fixes are committed');
+    expect(prompt).toContain(
+      'reply to each addressed inline thread confirming the fix and resolve it'
+    );
+  });
+
+  test('with linkedPr: un-anchorable body-fallback instruction is present', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
+    expect(prompt).toContain('put it in the review body instead of an inline thread');
+  });
+
+  test('with linkedPr: act-on-only instruction is present', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
+    expect(prompt).toContain('create PR review threads only for issues the user acts on');
+  });
+
+  test('with linkedPr: reply-on-existing-thread instruction is present', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
+    expect(prompt).toContain('reply on the existing thread instead of opening a duplicate');
+  });
+
+  test('with linkedPr: temporary scratch/tracking-file instruction is present', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
+    expect(prompt).toContain('temporary scratch file');
+  });
+
+  test('with linkedPr: subagent encouragement is present', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
+    // Should encourage delegating GitHub mechanics to a subagent
+    expect(prompt).toContain('delegate to your own subagent capability');
+  });
+
+  test('with linkedPr: gh api graphql recipe is present', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
+    expect(prompt).toContain('gh api graphql');
+  });
+
+  test('with linkedPr: resolveReviewThread mutation is present', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
+    expect(prompt).toContain('resolveReviewThread');
+  });
+
+  test('with linkedPr: all required gh api recipe endpoints and review payload fields are present', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
+    // Create-review endpoint plus the inline-comment payload fields.
+    expect(prompt).toContain('repos/acme/widgets/pulls/123/reviews');
+    expect(prompt).toContain('commit_id');
+    expect(prompt).toContain('"event"');
+    expect(prompt).toContain('"comments"');
+    expect(prompt).toContain('"path"');
+    expect(prompt).toContain('"line"');
+    expect(prompt).toContain('"side"');
+    expect(prompt).toContain('"body"');
+    expect(prompt).toContain('start_line');
+    expect(prompt).toContain('start_side');
+    // Reply-to-thread-comment endpoint.
+    expect(prompt).toContain('comments/{commentDatabaseId}/replies');
+    // Body-only follow-up (issue comment) endpoint.
+    expect(prompt).toContain('repos/acme/widgets/issues/123/comments');
+  });
+
+  test('without linkedPr: PR Review Trail heading is absent', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget });
+    expect(prompt).not.toContain('## PR Review Trail');
+  });
+
+  test('without linkedPr: existing prompt content is unchanged', () => {
+    const prompt = buildAutoreviewPrompt({ target: currentTarget });
+    // Assert the critical existing surface so a regression that removes or alters the no-PR
+    // instructions is caught, not just the section headings.
+    expect(prompt).toContain('# Autoreview Orchestrator');
+    expect(prompt).toContain('## Available Commands');
+    expect(prompt).toContain('## Workflow');
+    expect(prompt).toContain('## Guardrails');
+    expect(prompt).toContain('1. **Review**');
+    expect(prompt).toContain('2. **Display and Ask**');
+    expect(prompt).toContain('3. **Remember Skips**');
+    expect(prompt).toContain('4. **Fix**');
+    expect(prompt).toContain('5. **Commit**');
+    expect(prompt).toContain('6. **Loop**');
+    expect(prompt).toContain(
+      'Never nag the user about issues they explicitly skipped during this session.'
+    );
+    expect(prompt).toContain(
+      'If a review command fails or returns invalid JSON, explain the failure and ask the user how to proceed.'
+    );
+    // The trailing Guardrails content must be the end of the prompt — no stray empty section leaks in.
+    expect(prompt.trimEnd()).toMatch(/ask the user how to proceed\.$/);
+  });
+
+  test('with linkedPr on plan target: PR Review Trail section is also present', () => {
+    const prompt = buildAutoreviewPrompt({ target: planTarget, linkedPr });
+    expect(prompt).toContain('## PR Review Trail');
+    expect(prompt).toContain('#123');
+    expect(prompt).toContain('acme/widgets');
+  });
+
+  test('with linkedPr including headSha: headSha is interpolated into the recipes', () => {
+    const prWithSha: AutoreviewLinkedPr = { ...linkedPr, headSha: 'abc1234def5678' };
+    const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr: prWithSha });
+    expect(prompt).toContain('abc1234def5678');
+  });
 });
 
 // ─── handleAutoreviewCommand tests ──────────────────────────────────────────
@@ -340,6 +490,12 @@ describe('handleAutoreviewCommand', () => {
   const mockExecutor = {
     execute: mockExecutorExecute,
     filePathPrefix: '',
+  };
+  const emptyPrStatusDb = {
+    prepare: () => ({
+      all: () => [],
+      get: () => null,
+    }),
   };
 
   const originalStdinIsTTY = process.stdin.isTTY;
@@ -358,6 +514,7 @@ describe('handleAutoreviewCommand', () => {
     vi.mocked(buildExecutorAndLog).mockReturnValue(mockExecutor as any);
     vi.mocked(isCodexAppServerEnabled).mockReturnValue(false);
     vi.mocked(getUsingJj).mockResolvedValue(false);
+    vi.mocked(getDatabase).mockReturnValue(emptyPrStatusDb as any);
     vi.mocked(getCurrentBranchName).mockResolvedValue('main');
     vi.mocked(getTrunkBranch).mockResolvedValue('main');
     vi.mocked(resolveRepoRoot).mockResolvedValue('/repo-root');
@@ -374,6 +531,11 @@ describe('handleAutoreviewCommand', () => {
     });
     vi.mocked(prepareWorkspaceRoundTrip).mockResolvedValue(null as any);
     vi.mocked(materializePlansForExecution).mockResolvedValue(null);
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'github.com__myorg__myrepo',
+      remoteUrl: 'https://github.com/myorg/myrepo',
+      gitRoot: '/repo-root',
+    });
     vi.mocked(resolvePlanByNumericId).mockResolvedValue({
       plan: {
         id: 376,
@@ -865,6 +1027,214 @@ describe('handleAutoreviewCommand', () => {
     const printed = consoleSpy.mock.calls[0][0] as string;
     expect(printed).toContain('tim review 376 --print');
     expect(vi.mocked(buildExecutorAndLog)).not.toHaveBeenCalled();
+  });
+
+  test('--dry-run with a --pr target includes PR Review Trail section in printed prompt', async () => {
+    // This test verifies that the resolved linkedPr is passed through to buildAutoreviewPrompt.
+    // A --pr target is the simplest resolvable path: resolveAutoreviewLinkedPr for kind='pr'
+    // reads directly from the target fields without touching the DB.
+    // resolvePrTarget still opens the DB to build the target, so return a non-null value.
+    vi.mocked(getDatabase).mockReturnValue({} as any);
+    vi.mocked(gatherPrContext).mockResolvedValue({
+      prStatus: { id: 1, title: 'My PR', state: 'open' } as any,
+      baseBranch: 'main',
+      headBranch: 'feature/my-pr',
+      headSha: 'deadbeef1234',
+      owner: 'myorg',
+      repo: 'myrepo',
+      prNumber: 42,
+      prUrl: 'https://github.com/myorg/myrepo/pull/42',
+    });
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'github.com__myorg__myrepo',
+      remoteUrl: 'https://github.com/myorg/myrepo',
+      gitRoot: '/repo-root',
+    });
+
+    const originalLog = console.log;
+    const consoleSpy = vi.fn();
+    console.log = consoleSpy;
+
+    try {
+      const options: AutoreviewCommandOptions = { pr: '42', dryRun: true };
+      await handleAutoreviewCommand(undefined, options, {});
+    } finally {
+      console.log = originalLog;
+      vi.mocked(getDatabase).mockReturnValue(emptyPrStatusDb as any);
+    }
+
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const printed = consoleSpy.mock.calls[0][0] as string;
+    expect(printed).toContain('## PR Review Trail');
+    expect(printed).toContain('#42');
+    expect(printed).toContain('myorg/myrepo');
+    expect(vi.mocked(buildExecutorAndLog)).not.toHaveBeenCalled();
+  });
+
+  test('--dry-run for plan-backed target with linked PR includes PR Review Trail section', async () => {
+    // This test verifies that handleAutoreviewCommand resolves the linked PR from planData and
+    // wires it into buildAutoreviewPrompt. It must fail if planContext.planData is not passed
+    // into resolveAutoreviewLinkedPr.
+    const planPrUrl = 'https://github.com/planorg/planrepo/pull/55';
+
+    // Make resolvePlanByNumericId return a plan with a pullRequest URL.
+    vi.mocked(resolvePlanByNumericId).mockResolvedValue({
+      plan: {
+        id: 376,
+        uuid: 'plan-uuid-376',
+        title: 'autoreview command',
+        status: 'in_progress',
+        priority: 'medium',
+        tasks: [],
+        pullRequest: [planPrUrl],
+      } as any,
+      planPath: '/repo-root/.tim/plans/376.plan.md',
+    });
+
+    // Seed a real SQLite DB with the plan linked to PR #55.
+    const tempDir = await mkdtemp(join(tmpdir(), 'autoreview-plan-pr-handler-'));
+    let realDb: ReturnType<typeof openDatabase> | undefined;
+    try {
+      realDb = openDatabase(join(tempDir, DATABASE_FILENAME));
+      const projectId = getOrCreateProject(realDb, 'github.com__planorg__planrepo').id;
+      nonSyncedUpsertPlan(realDb, projectId, {
+        uuid: 'plan-uuid-376',
+        planId: 376,
+        title: 'autoreview command',
+        filename: '376.plan.md',
+      });
+      const prResult = upsertPrStatus(realDb, {
+        prUrl: planPrUrl,
+        owner: 'planorg',
+        repo: 'planrepo',
+        prNumber: 55,
+        title: 'PR #55',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+        headBranch: 'feature-55',
+        baseBranch: 'main',
+        headSha: 'sha-55',
+      });
+      linkPlanToPr(realDb, 'plan-uuid-376', prResult.status.id, 'explicit');
+
+      vi.mocked(getDatabase).mockReturnValue(realDb as any);
+
+      const originalLog = console.log;
+      const consoleSpy = vi.fn();
+      console.log = consoleSpy;
+
+      try {
+        const options: AutoreviewCommandOptions = { dryRun: true };
+        await handleAutoreviewCommand(376, options, {});
+      } finally {
+        console.log = originalLog;
+      }
+
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      const printed = consoleSpy.mock.calls[0][0] as string;
+      expect(printed).toContain('## PR Review Trail');
+      expect(printed).toContain('#55');
+      expect(printed).toContain('planorg/planrepo');
+    } finally {
+      realDb?.close(false);
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      vi.mocked(getDatabase).mockReturnValue(emptyPrStatusDb as any);
+    }
+  });
+
+  test('--dry-run for --current target with matching open PR includes PR Review Trail section', async () => {
+    // Verifies that the current/branch resolver path is wired through to the prompt.
+    vi.mocked(getCurrentBranchName).mockResolvedValue('feature-current-pr');
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'github.com__currorg__currrepo',
+      remoteUrl: 'https://github.com/currorg/currrepo',
+      gitRoot: '/repo-root',
+    });
+
+    const tempDir = await mkdtemp(join(tmpdir(), 'autoreview-current-pr-handler-'));
+    let realDb: ReturnType<typeof openDatabase> | undefined;
+    try {
+      realDb = openDatabase(join(tempDir, DATABASE_FILENAME));
+      upsertPrStatus(realDb, {
+        prUrl: 'https://github.com/currorg/currrepo/pull/77',
+        owner: 'currorg',
+        repo: 'currrepo',
+        prNumber: 77,
+        title: 'PR #77',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+        headBranch: 'feature-current-pr',
+        baseBranch: 'main',
+        headSha: 'sha-77',
+      });
+
+      vi.mocked(getDatabase).mockReturnValue(realDb as any);
+
+      const originalLog = console.log;
+      const consoleSpy = vi.fn();
+      console.log = consoleSpy;
+
+      try {
+        const options: AutoreviewCommandOptions = { current: true, dryRun: true };
+        await handleAutoreviewCommand(undefined, options, {});
+      } finally {
+        console.log = originalLog;
+      }
+
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      const printed = consoleSpy.mock.calls[0][0] as string;
+      expect(printed).toContain('## PR Review Trail');
+      expect(printed).toContain('#77');
+      expect(printed).toContain('currorg/currrepo');
+    } finally {
+      realDb?.close(false);
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      vi.mocked(getDatabase).mockReturnValue(emptyPrStatusDb as any);
+    }
+  });
+
+  test('--dry-run --pr emits PR Review Trail without a second resolver DB open', async () => {
+    // The only DB access for this path should be resolvePrTarget building the target. The
+    // linked-PR resolver must return from the --pr target fields before opening the DB.
+    let getDatabaseCallCount = 0;
+    vi.mocked(getDatabase).mockImplementation((() => {
+      getDatabaseCallCount += 1;
+      if (getDatabaseCallCount === 1) {
+        return {} as any;
+      }
+      throw new Error('database open failed');
+    }) as any);
+    vi.mocked(gatherPrContext).mockResolvedValue({
+      prStatus: { id: 1, title: 'My PR', state: 'open' } as any,
+      baseBranch: 'main',
+      headBranch: 'feature/my-pr',
+      headSha: 'deadbeef1234',
+      owner: 'myorg',
+      repo: 'myrepo',
+      prNumber: 42,
+      prUrl: 'https://github.com/myorg/myrepo/pull/42',
+    });
+
+    const originalLog = console.log;
+    const consoleSpy = vi.fn();
+    console.log = consoleSpy;
+
+    try {
+      const options: AutoreviewCommandOptions = { pr: '42', dryRun: true };
+      await handleAutoreviewCommand(undefined, options, {});
+    } finally {
+      console.log = originalLog;
+      vi.mocked(getDatabase).mockReturnValue(emptyPrStatusDb as any);
+    }
+
+    expect(getDatabaseCallCount).toBe(1);
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const printed = consoleSpy.mock.calls[0][0] as string;
+    expect(printed).toContain('## PR Review Trail');
+    expect(printed).toContain('#42');
+    expect(printed).toContain('myorg/myrepo');
   });
 
   // ── codex executor selection ───────────────────────────────────────────────

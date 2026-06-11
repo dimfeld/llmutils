@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
   cleanOrphanedPrStatus,
+  findPrStatusesByRepositoryBranch,
   getKnownRepoFullNames,
   getLinkedPlansByPrUrl,
   getPrStatusByRepoAndNumber,
@@ -1534,6 +1535,90 @@ describe('tim db/pr_status', () => {
     const results = getPrStatusesForRepo(db, 'example', 'repo');
     expect(results.map((detail) => detail.status.pr_number)).toEqual([301]);
     expect(results[0]?.status.requested_reviewers).toBe('["dimfeld"]');
+  });
+
+  test('findPrStatusesByRepositoryBranch matches repo case-insensitively and branch exactly', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/310',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 310,
+      title: 'Matching PR',
+      state: 'open',
+      draft: false,
+      headBranch: 'Feature/CaseSensitive',
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/311',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 311,
+      title: 'Wrong branch case',
+      state: 'open',
+      draft: false,
+      headBranch: 'feature/casesensitive',
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const results = findPrStatusesByRepositoryBranch(db, {
+      owner: 'EXAMPLE',
+      repo: 'REPO',
+      branch: 'Feature/CaseSensitive',
+    });
+
+    expect(results.map((status) => status.pr_number)).toEqual([310]);
+  });
+
+  test('findPrStatusesByRepositoryBranch optionally filters open PRs and orders deterministically', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/330',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 330,
+      title: 'Closed lower PR',
+      state: 'closed',
+      draft: false,
+      headBranch: 'shared-branch',
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/320',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 320,
+      title: 'Open lower PR',
+      state: 'open',
+      draft: false,
+      headBranch: 'shared-branch',
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/340',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 340,
+      title: 'Open higher PR',
+      state: 'open',
+      draft: false,
+      headBranch: 'shared-branch',
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const allResults = findPrStatusesByRepositoryBranch(db, {
+      owner: 'example',
+      repo: 'repo',
+      branch: 'shared-branch',
+    });
+    const openResults = findPrStatusesByRepositoryBranch(db, {
+      owner: 'example',
+      repo: 'repo',
+      branch: 'shared-branch',
+      openOnly: true,
+    });
+
+    expect(allResults.map((status) => status.pr_number)).toEqual([320, 340, 330]);
+    expect(openResults.map((status) => status.pr_number)).toEqual([320, 340]);
   });
 
   test('getLinkedPlansByPrUrl returns linked plans keyed by canonical PR url', () => {
