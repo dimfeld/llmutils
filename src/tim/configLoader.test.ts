@@ -1570,6 +1570,43 @@ defaultExecutor: direct-call
       expect(config.proofGeneration?.model).toBe('local-model');
     });
 
+    test('loadEffectiveConfig deep merges review guide comment instructions from local config', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          reviewGuide: {
+            model: {
+              codex: 'gpt-5.5',
+            },
+          },
+          reviewGuideComments: {
+            instructions: 'Global review-guide comment direction.',
+          },
+        }),
+        'utf-8'
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          reviewGuideComments: {
+            instructions: 'Project-specific review-guide comment direction.',
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.reviewGuide?.model?.codex).toBe('gpt-5.5');
+      expect(config.reviewGuideComments?.instructions).toBe(
+        'Project-specific review-guide comment direction.'
+      );
+    });
+
     test('slack.workspaces in repo config is stripped (machine-local only)', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       await fs.writeFile(

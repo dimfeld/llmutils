@@ -902,6 +902,18 @@ export const timConfigSchema = z
       .strict()
       .optional()
       .describe('Configuration options for the review guide command'),
+    /** PR review-guide comment configuration options */
+    reviewGuideComments: z
+      .object({
+        /** Extra project-specific directions for concise PR review-guide comments */
+        instructions: z
+          .string()
+          .optional()
+          .describe('Extra directions to include in PR review-guide comment prompts'),
+      })
+      .strict()
+      .optional()
+      .describe('Configuration options for PR review-guide comments'),
     /**
      * Executor-specific options mapped by executor name.
      * Each executor has its own schema:

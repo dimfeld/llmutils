@@ -1693,6 +1693,20 @@ describe('configSchema', () => {
       expect(resultCodex.reviewGuide?.model?.claude).toBeUndefined();
     });
 
+    test('should accept review guide comments instructions', () => {
+      const config = {
+        reviewGuideComments: {
+          instructions: 'Mention migration risk before UI changes when both are present in the PR.',
+        },
+      };
+
+      const result = timConfigSchema.parse(config);
+
+      expect(result.reviewGuideComments?.instructions).toBe(
+        'Mention migration risk before UI changes when both are present in the PR.'
+      );
+    });
+
     test('should reject unknown fields in review guide model configuration', () => {
       const config = {
         reviewGuide: {

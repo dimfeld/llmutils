@@ -127,6 +127,18 @@ describe('review_pr_prompt', () => {
     expect(prompt).not.toContain('jj diff');
   });
 
+  test('buildReviewGuideCommentPrompt includes configured comment instructions', () => {
+    const prompt = buildReviewGuideCommentPrompt({
+      metadata: METADATA,
+      outputPath: '/work/.tim/tmp/pr-review-guide-comment-42.md',
+      useJj: false,
+      commentInstructions: 'Lead with database migration review notes.',
+    });
+
+    expect(prompt).toContain('## Review Guide Comment Instructions');
+    expect(prompt).toContain('Lead with database migration review notes.');
+  });
+
   test('buildReviewGuideCommentPrompt uses jj diff instructions when requested', () => {
     const prompt = buildReviewGuideCommentPrompt({
       metadata: METADATA,

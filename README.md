@@ -354,6 +354,15 @@ githubWebhooks:
   reviewGuideComments: true
 ```
 
+Project-specific directions for the generated PR comment can live in the project config:
+
+```yaml
+reviewGuideComments:
+  instructions: |
+    Call out database migrations before UI-only changes.
+    Mention generated files only when reviewers need to inspect them.
+```
+
 When webhook polling is enabled, the web server can post this comment automatically as soon as a PR becomes ready for review — either opened directly as a non-draft PR or moved from draft to ready. This is opt-in per project:
 
 ```bash

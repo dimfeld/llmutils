@@ -393,6 +393,7 @@ export async function handlePrReviewGuideCommentCommand(
             useJj: useJjDiffInstructions,
             nonTestChangeStats,
             customInstructions,
+            commentInstructions: config.reviewGuideComments?.instructions,
           }),
           {
             planId: `pr-${prContext.prNumber}`,

@@ -190,6 +190,15 @@ function maybeCustomInstructions(customInstructions?: string): string {
   return `\n## Custom Instructions\n${trimmed}\n`;
 }
 
+function maybeReviewGuideCommentInstructions(commentInstructions?: string): string {
+  const trimmed = commentInstructions?.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  return `\n## Review Guide Comment Instructions\n${trimmed}\n`;
+}
+
 function toJson(value: unknown): string {
   if (typeof value === 'string') {
     return value;
@@ -274,6 +283,7 @@ interface ReviewGuideCommentPromptOptions {
   useJj: boolean;
   nonTestChangeStats?: string | null;
   customInstructions?: string;
+  commentInstructions?: string;
 }
 
 /**
@@ -283,7 +293,14 @@ interface ReviewGuideCommentPromptOptions {
  * and focused on where a human reviewer should look closely.
  */
 export function buildReviewGuideCommentPrompt(options: ReviewGuideCommentPromptOptions): string {
-  const { metadata, outputPath, useJj, nonTestChangeStats, customInstructions } = options;
+  const {
+    metadata,
+    outputPath,
+    useJj,
+    nonTestChangeStats,
+    customInstructions,
+    commentInstructions,
+  } = options;
   const trimmedNonTestChangeStats = nonTestChangeStats?.trim();
   const hasPrecomputedNonTestStats = Boolean(trimmedNonTestChangeStats);
   const shouldIncludeNonTestStats = useJj || hasPrecomputedNonTestStats;
@@ -360,7 +377,9 @@ ${nonTestStatsFormat}
 
 ## Output File
 Write the finished markdown comment (and nothing else) to:
-\`${outputPath}\`${maybeCustomInstructions(customInstructions)}`;
+\`${outputPath}\`${maybeCustomInstructions(customInstructions)}${maybeReviewGuideCommentInstructions(
+    commentInstructions
+  )}`;
 }
 
 export function buildStandaloneReviewIssuesPrompt(
