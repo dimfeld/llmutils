@@ -59,6 +59,7 @@ describe('common/github/webhook_ingest', () => {
   let db: Database;
   let originalWebhookUrl: string | undefined;
   let originalWebhookToken: string | undefined;
+  let originalMergeableRefreshDelay: string | undefined;
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-webhook-ingest-test-'));
@@ -75,8 +76,10 @@ describe('common/github/webhook_ingest', () => {
 
     originalWebhookUrl = process.env.TIM_WEBHOOK_SERVER_URL;
     originalWebhookToken = process.env.WEBHOOK_INTERNAL_API_TOKEN;
+    originalMergeableRefreshDelay = process.env.TIM_WEBHOOK_MERGEABLE_REFRESH_DELAY_MS;
     process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
     process.env.WEBHOOK_INTERNAL_API_TOKEN = 'shared-token';
+    process.env.TIM_WEBHOOK_MERGEABLE_REFRESH_DELAY_MS = '0';
     mocks.loadEffectiveConfig.mockResolvedValue({});
   });
 
@@ -94,6 +97,11 @@ describe('common/github/webhook_ingest', () => {
       delete process.env.WEBHOOK_INTERNAL_API_TOKEN;
     } else {
       process.env.WEBHOOK_INTERNAL_API_TOKEN = originalWebhookToken;
+    }
+    if (originalMergeableRefreshDelay === undefined) {
+      delete process.env.TIM_WEBHOOK_MERGEABLE_REFRESH_DELAY_MS;
+    } else {
+      process.env.TIM_WEBHOOK_MERGEABLE_REFRESH_DELAY_MS = originalMergeableRefreshDelay;
     }
     db.close(false);
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -263,6 +271,65 @@ describe('common/github/webhook_ingest', () => {
     expect(detail?.checks.map((check) => check.name)).toEqual(['unit tests']);
     expect(detail?.status.check_rollup_state).toBe('success');
     expect(getPrStatusByUrl(db, 'https://github.com/other/repo/pull/99')).toBeNull();
+  });
+
+  test('ingestWebhookEvents waits before mergeable refresh and resolves after it completes', async () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/61',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 61,
+      title: 'Reviewed PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-30T00:00:00.000Z',
+    });
+    mocks.fetchWebhookEvents.mockResolvedValueOnce([
+      {
+        id: 61,
+        deliveryId: 'delivery-review-approved',
+        eventType: 'pull_request_review',
+        action: 'submitted',
+        repositoryFullName: 'example/repo',
+        receivedAt: '2026-03-30T10:00:00.000Z',
+        payloadJson: JSON.stringify({
+          action: 'submitted',
+          repository: { full_name: 'example/repo' },
+          pull_request: { number: 61 },
+          review: {
+            state: 'approved',
+            submitted_at: '2026-03-30T10:00:00.000Z',
+            user: { login: 'reviewer-1' },
+          },
+        }),
+      },
+    ]);
+
+    const delayCalls: number[] = [];
+    let resolveDelay: (() => void) | undefined;
+    const delayPromise = new Promise<void>((resolve: () => void): void => {
+      resolveDelay = resolve;
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const ingestPromise = ingestWebhookEvents(db, {
+      mergeableRefreshDelayMs: 15_000,
+      delay: async (ms: number): Promise<void> => {
+        delayCalls.push(ms);
+        await delayPromise;
+      },
+    });
+
+    await vi.waitFor((): void => {
+      expect(delayCalls).toEqual([15_000]);
+    });
+    expect(mocks.fetchAndUpdatePrMergeableStatus).not.toHaveBeenCalled();
+
+    resolveDelay?.();
+    const result = await ingestPromise;
+
+    expect(result.errors).toEqual([]);
+    expect(mocks.fetchAndUpdatePrMergeableStatus).toHaveBeenCalledWith(db, 'example', 'repo', 61);
   });
 
   test('ingestWebhookEvents refreshes review threads for pull_request_review_comment events', async () => {
@@ -1133,7 +1200,7 @@ describe('common/github/webhook_ingest', () => {
     expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/52']);
     expect(result.errors).toEqual([
       expect.stringContaining('webhook event 21:'),
-      'webhook follow-up refresh failed: example/repo#52: mergeable/review_decision refresh failed',
+      'webhook follow-up refresh failed: example/repo#52: mergeable/review_decision refresh',
     ]);
     expect(getWebhookCursor(db)).toBe(22);
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/52')?.status.title).toBe(

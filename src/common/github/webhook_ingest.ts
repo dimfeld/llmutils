@@ -44,6 +44,30 @@ import { setPlanScalarOperation } from '../../tim/sync/operations.js';
 import type { TimConfig } from '../../tim/configSchema.js';
 import { isWebhookSideEffectAllowed } from './webhook_side_effects.js';
 
+const MERGEABLE_REFRESH_DELAY_MS = 15_000;
+
+type DelayFn = (ms: number) => Promise<void>;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve: () => void): void => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function getMergeableRefreshDelayMs(): number {
+  const rawDelay = process.env.TIM_WEBHOOK_MERGEABLE_REFRESH_DELAY_MS;
+  if (rawDelay === undefined) {
+    return MERGEABLE_REFRESH_DELAY_MS;
+  }
+
+  const parsedDelay = Number.parseInt(rawDelay, 10);
+  if (!Number.isFinite(parsedDelay) || parsedDelay < 0) {
+    return MERGEABLE_REFRESH_DELAY_MS;
+  }
+
+  return parsedDelay;
+}
+
 function isMergedPrPayload(payload: unknown): payload is {
   pull_request: { number: number; merged_at?: string | null; state?: string };
 } {
@@ -300,6 +324,8 @@ export interface IngestResult {
 
 export interface IngestWebhookEventsOptions {
   planStatusUpdates?: boolean;
+  mergeableRefreshDelayMs?: number;
+  delay?: DelayFn;
 }
 
 export function formatWebhookIngestErrors(errors: string[]): string | undefined {
@@ -344,6 +370,8 @@ export async function ingestWebhookEvents(
   const config = await loadEffectiveConfig(undefined, { quiet: true });
   const planStatusUpdatesEnabled =
     options.planStatusUpdates ?? areWebhookPlanStatusUpdatesEnabled(config);
+  const mergeableRefreshDelayMs = options.mergeableRefreshDelayMs ?? getMergeableRefreshDelayMs();
+  const delay = options.delay ?? sleep;
 
   const BATCH_SIZE = 500;
   const prsUpdated = new Set<string>();
@@ -562,8 +590,19 @@ export async function ingestWebhookEvents(
       console.log(
         `[webhook-ingest] starting mergeable refresh ${target.owner}/${target.repo}#${target.prNumber}`
       );
-      return fetchAndUpdatePrMergeableStatus(db, target.owner, target.repo, target.prNumber).catch(
-        (err: unknown) => {
+      return (async (): Promise<void> => {
+        try {
+          if (mergeableRefreshDelayMs > 0) {
+            console.log(
+              `[webhook-ingest] waiting ${mergeableRefreshDelayMs}ms before mergeable refresh ${target.owner}/${target.repo}#${target.prNumber}`
+            );
+            await delay(mergeableRefreshDelayMs);
+          }
+          await fetchAndUpdatePrMergeableStatus(db, target.owner, target.repo, target.prNumber);
+          console.log(
+            `[webhook-ingest] completed mergeable refresh ${target.owner}/${target.repo}#${target.prNumber}`
+          );
+        } catch (err: unknown) {
           console.error(
             `[webhook-ingest] mergeable refresh failed ${target.owner}/${target.repo}#${target.prNumber}: ${err instanceof Error ? err.message : String(err)}`
           );
@@ -574,7 +613,7 @@ export async function ingestWebhookEvents(
             }
           );
         }
-      );
+      })();
     }
   });
 

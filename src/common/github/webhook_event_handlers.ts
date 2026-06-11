@@ -655,7 +655,7 @@ export function handlePullRequestEvent(
             owner,
             repo,
             prNumber: pullRequest.number,
-            operation: 'mergeable/review_decision refresh failed',
+            operation: 'mergeable/review_decision refresh',
             type: 'mergeable',
           },
         ]
@@ -733,7 +733,7 @@ export function handlePullRequestReviewEvent(
               owner,
               repo,
               prNumber: parsed.pullRequestNumber,
-              operation: 'review_decision refresh failed',
+              operation: 'review_decision refresh',
               type: 'mergeable',
             },
           ]

@@ -72,7 +72,7 @@ describe('common/github/webhook_event_handlers', () => {
         owner: 'example',
         repo: 'repo',
         prNumber: 41,
-        operation: 'mergeable/review_decision refresh failed',
+        operation: 'mergeable/review_decision refresh',
         type: 'mergeable',
       },
     ]);
@@ -192,7 +192,7 @@ describe('common/github/webhook_event_handlers', () => {
         owner: 'example',
         repo: 'repo',
         prNumber: 411,
-        operation: 'mergeable/review_decision refresh failed',
+        operation: 'mergeable/review_decision refresh',
         type: 'mergeable',
       },
     ]);
@@ -294,7 +294,7 @@ describe('common/github/webhook_event_handlers', () => {
         owner: 'example',
         repo: 'repo',
         prNumber: 42,
-        operation: 'review_decision refresh failed',
+        operation: 'review_decision refresh',
         type: 'mergeable',
       },
     ]);
@@ -528,7 +528,7 @@ describe('common/github/webhook_event_handlers', () => {
         owner: 'example',
         repo: 'repo',
         prNumber: 422,
-        operation: 'review_decision refresh failed',
+        operation: 'review_decision refresh',
         type: 'mergeable',
       },
     ]);
@@ -606,7 +606,7 @@ describe('common/github/webhook_event_handlers', () => {
         owner: 'example',
         repo: 'repo',
         prNumber: 143,
-        operation: 'review_decision refresh failed',
+        operation: 'review_decision refresh',
         type: 'mergeable',
       },
     ]);
@@ -806,7 +806,7 @@ describe('common/github/webhook_event_handlers', () => {
         owner: 'example',
         repo: 'repo',
         prNumber: 45,
-        operation: 'mergeable/review_decision refresh failed',
+        operation: 'mergeable/review_decision refresh',
         type: 'mergeable',
       },
     ]);
@@ -859,7 +859,7 @@ describe('common/github/webhook_event_handlers', () => {
         owner: 'example',
         repo: 'repo',
         prNumber: 48,
-        operation: 'mergeable/review_decision refresh failed',
+        operation: 'mergeable/review_decision refresh',
         type: 'mergeable',
       },
     ]);
