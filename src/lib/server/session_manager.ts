@@ -186,6 +186,7 @@ const MAX_NOTIFICATION_MESSAGES = 200;
 const MAX_SESSION_MESSAGES = 5000;
 const MAX_SNAPSHOT_MESSAGES = 500;
 const MAX_PTY_OUTPUT_CACHE_BYTES = 256 * 1024;
+const NOTIFICATION_WORTHY_SESSION_END_COMMANDS = new Set(['chat', 'generate', 'autoreview']);
 // Also bound the cache by frame count so a flood of empty/tiny pty_output frames
 // (which add ~0 decoded bytes) cannot grow `frames` without bound under the byte cap.
 const MAX_PTY_OUTPUT_CACHE_FRAMES = 4096;
@@ -320,7 +321,7 @@ export function formatTunnelMessage(
         const triggersNotification =
           structured.type === 'agent_session_end' &&
           structured.transportSource !== 'tunnel' &&
-          (sessionCommand === 'chat' || sessionCommand === 'generate');
+          NOTIFICATION_WORTHY_SESSION_END_COMMANDS.has(sessionCommand ?? '');
         const stripped = stripStructuredMessage(structured);
         return {
           id: `${connectionId}:${seq}`,

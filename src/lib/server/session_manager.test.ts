@@ -309,9 +309,24 @@ describe('lib/server/session_manager', () => {
       'agent'
     );
 
-    const tunneled = formatTunnelMessage(
+    const autoreviewSession = formatTunnelMessage(
       'conn-1',
       4,
+      {
+        type: 'structured',
+        message: {
+          type: 'agent_session_end',
+          timestamp: '2026-03-17T10:00:59.000Z',
+          success: true,
+          turns: 1,
+        },
+      },
+      'autoreview'
+    );
+
+    const tunneled = formatTunnelMessage(
+      'conn-1',
+      5,
       {
         type: 'structured',
         message: {
@@ -336,6 +351,10 @@ describe('lib/server/session_manager', () => {
     expect(agentSession).toMatchObject({
       rawType: 'agent_session_end',
       triggersNotification: false,
+    });
+    expect(autoreviewSession).toMatchObject({
+      rawType: 'agent_session_end',
+      triggersNotification: true,
     });
     expect(tunneled).toMatchObject({
       rawType: 'agent_session_end',
