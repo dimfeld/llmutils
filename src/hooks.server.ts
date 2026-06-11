@@ -1,6 +1,6 @@
 import process from 'node:process';
 
-import type { Handle, ServerInit } from '@sveltejs/kit';
+import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit';
 
 import {
   shouldStartDailyDigest,
@@ -314,3 +314,7 @@ export const init: ServerInit = async () => {
 };
 
 export const handle: Handle = async ({ event, resolve }) => resolve(event);
+
+export const handleError: HandleServerError = ({ error }) => {
+  console.error(error);
+};
