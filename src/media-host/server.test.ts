@@ -78,7 +78,7 @@ describe('media-host server', () => {
     expect(payload.size).toBe('hello world'.length);
 
     const expectedSig = computePathSignature('docs/readme.txt', SIGNING_SECRET);
-    expect(payload.url).toBe(`/docs/readme.txt?sig=${expectedSig}`);
+    expect(payload.url).toBe(`/docs/readme.txt/sig=${expectedSig}`);
 
     // The file actually landed on disk inside the storage dir.
     const onDisk = await fs.readFile(path.join(storageDir, 'docs/readme.txt'), 'utf8');
@@ -96,7 +96,7 @@ describe('media-host server', () => {
     expect(payload.path).toBe('docs/a?b#c.txt');
 
     const expectedSig = computePathSignature('docs/a?b#c.txt', SIGNING_SECRET);
-    expect(payload.url).toBe(`/docs/a%3Fb%23c.txt?sig=${expectedSig}`);
+    expect(payload.url).toBe(`/docs/a%3Fb%23c.txt/sig=${expectedSig}`);
 
     const download = await fetch(`${baseUrl}${payload.url}`);
     expect(download.status).toBe(200);
@@ -144,7 +144,7 @@ describe('media-host server', () => {
     await upload('images/pixel.png', 'PNGDATA');
     const sig = computePathSignature('images/pixel.png', SIGNING_SECRET);
 
-    const res = await fetch(`${baseUrl}/images/pixel.png?sig=${sig}`);
+    const res = await fetch(`${baseUrl}/images/pixel.png/sig=${sig}`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('image/png');
     expect(await res.text()).toBe('PNGDATA');
@@ -153,18 +153,27 @@ describe('media-host server', () => {
     );
   });
 
+  test('continues to serve files signed with the query parameter form', async () => {
+    await upload('images/pixel.png', 'PNGDATA');
+    const sig = computePathSignature('images/pixel.png', SIGNING_SECRET);
+
+    const res = await fetch(`${baseUrl}/images/pixel.png?sig=${sig}`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('PNGDATA');
+  });
+
   test('refuses access without or with an invalid signature', async () => {
     await upload('images/pixel.png', 'PNGDATA');
 
     const missing = await fetch(`${baseUrl}/images/pixel.png`);
     expect(missing.status).toBe(403);
 
-    const wrong = await fetch(`${baseUrl}/images/pixel.png?sig=deadbeef`);
+    const wrong = await fetch(`${baseUrl}/images/pixel.png/sig=deadbeef`);
     expect(wrong.status).toBe(403);
 
     // A signature minted for a different path must not unlock this one.
     const otherSig = computePathSignature('images/other.png', SIGNING_SECRET);
-    const crossPath = await fetch(`${baseUrl}/images/pixel.png?sig=${otherSig}`);
+    const crossPath = await fetch(`${baseUrl}/images/pixel.png/sig=${otherSig}`);
     expect(crossPath.status).toBe(403);
     expect(console.info).toHaveBeenCalledWith(
       '[media_host] view status=403 path="images/pixel.png"'
@@ -173,7 +182,7 @@ describe('media-host server', () => {
 
   test('returns 404 for a correctly signed but missing file', async () => {
     const sig = computePathSignature('missing.txt', SIGNING_SECRET);
-    const res = await fetch(`${baseUrl}/missing.txt?sig=${sig}`);
+    const res = await fetch(`${baseUrl}/missing.txt/sig=${sig}`);
     expect(res.status).toBe(404);
   });
 
@@ -182,7 +191,7 @@ describe('media-host server', () => {
     await upload('videos/clip.mp4', bytes);
     const sig = computePathSignature('videos/clip.mp4', SIGNING_SECRET);
 
-    const res = await fetch(`${baseUrl}/videos/clip.mp4?sig=${sig}`);
+    const res = await fetch(`${baseUrl}/videos/clip.mp4/sig=${sig}`);
     expect(res.status).toBe(200);
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(bytes);
   });

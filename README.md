@@ -807,13 +807,13 @@ curl -X PUT \
   -H "Authorization: Bearer $MEDIA_HOST_API_KEY" \
   --data-binary @cat.png \
   http://localhost:8125/images/cat.png
-# => {"path":"images/cat.png","size":12345,"url":"/images/cat.png?sig=<hash>"}
+# => {"path":"images/cat.png","size":12345,"url":"/images/cat.png/sig=<hash>"}
 ```
 
-**Read** by appending the `sig` query parameter from the upload response. The content type is inferred from the file extension. Requests without a valid signature get `403`:
+**Read** with the signed path returned from the upload response. The server also accepts the older `?sig=<hash>` query form for existing links. The content type is inferred from the file extension. Requests without a valid signature get `403`:
 
 ```bash
-curl "http://localhost:8125/images/cat.png?sig=<hash>"
+curl "http://localhost:8125/images/cat.png/sig=<hash>"
 ```
 
 Upload paths are confined to the storage directory — path-traversal attempts (including percent-encoded separators) are rejected with `400`.

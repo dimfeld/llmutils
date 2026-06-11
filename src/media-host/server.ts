@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { validatePath } from '../common/fs.js';
 import { computePathSignature, hasValidBearerToken, isValidPathSignature } from './security.js';
 
-/** Query parameter that carries the salted-hash signature for read access. */
+/** Query parameter or trailing path segment prefix that carries the read-access signature. */
 export const SIGNATURE_PARAM = 'sig';
 
 export interface MediaHostConfig {
@@ -103,6 +103,42 @@ function encodeMediaPath(relativePath: string): string {
   return relativePath.split('/').map(encodeURIComponent).join('/');
 }
 
+function buildSignedMediaUrl(relativePath: string, signature: string): string {
+  return `/${encodeMediaPath(relativePath)}/${SIGNATURE_PARAM}=${encodeURIComponent(signature)}`;
+}
+
+interface SignedMediaPath {
+  relativePath: string;
+  signature: string | null;
+}
+
+function parseSignedMediaPath(pathname: string, url: URL): SignedMediaPath | null {
+  const relativePath = normalizeMediaPath(pathname);
+  if (relativePath === null) {
+    return null;
+  }
+
+  const pathSegments = relativePath.split('/');
+  const lastSegment = pathSegments.at(-1);
+  if (lastSegment?.startsWith(`${SIGNATURE_PARAM}=`)) {
+    const signature = lastSegment.slice(SIGNATURE_PARAM.length + 1);
+    const unsignedPath = pathSegments.slice(0, -1).join('/');
+    if (unsignedPath.length === 0) {
+      return null;
+    }
+
+    return {
+      relativePath: unsignedPath,
+      signature,
+    };
+  }
+
+  return {
+    relativePath,
+    signature: url.searchParams.get(SIGNATURE_PARAM),
+  };
+}
+
 function logMediaRequest(
   action: 'upload' | 'view',
   status: number,
@@ -167,18 +203,17 @@ async function handleUpload(
     {
       path: relativePath,
       size: body.byteLength,
-      url: `/${encodeMediaPath(relativePath)}?${SIGNATURE_PARAM}=${signature}`,
+      url: buildSignedMediaUrl(relativePath, signature),
     },
     201
   );
 }
 
 async function handleDownload(
-  url: URL,
+  signature: string | null,
   relativePath: string,
   config: MediaHostConfig
 ): Promise<Response> {
-  const signature = url.searchParams.get(SIGNATURE_PARAM);
   if (!isValidPathSignature(relativePath, config.signingSecret, signature)) {
     logMediaRequest('view', 403, relativePath);
     return jsonResponse({ error: 'Forbidden' }, 403);
@@ -237,7 +272,13 @@ export function createFetchHandler(
     }
 
     if (request.method === 'GET') {
-      return handleDownload(url, relativePath, config);
+      const signedMediaPath = parseSignedMediaPath(url.pathname, url);
+      if (signedMediaPath === null) {
+        logMediaRequest('view', 400, null);
+        return jsonResponse({ error: 'Invalid path' }, 400);
+      }
+
+      return handleDownload(signedMediaPath.signature, signedMediaPath.relativePath, config);
     }
 
     return jsonResponse({ error: 'Method Not Allowed' }, 405);

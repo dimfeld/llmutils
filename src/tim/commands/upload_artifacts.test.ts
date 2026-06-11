@@ -416,8 +416,7 @@ describe('handleUploadArtifactsCommand', () => {
     const url2Match = body2.match(new RegExp(`(${baseUrl}/[^)\\s]+)`));
     const url2 = url2Match![1]!;
 
-    // The path part (before ?sig=) must be identical
-    expect(url1.split('?')[0]).toBe(url2.split('?')[0]);
+    expect(url1).toBe(url2);
   });
 
   // ── report.md handling ─────────────────────────────────────────────────────
@@ -476,7 +475,7 @@ describe('handleUploadArtifactsCommand', () => {
     const body = mockPostPullRequestComment.mock.calls[0][3] as string;
     // The relative reference should be replaced by an absolute signed URL
     expect(body).not.toContain('![Screenshot](screenshot.png)');
-    expect(body).toMatch(/!\[Screenshot\]\(http:\/\/127\.0\.0\.1:\d+\/.*\?sig=/);
+    expect(body).toMatch(/!\[Screenshot\]\(http:\/\/127\.0\.0\.1:\d+\/.*\/sig=/);
     // screenshot.png should not appear in trailing artifacts section (already shown)
     // count occurrences: should appear only once in the rewritten link, not as a separate list item
     const screenshotMatches = body.match(/screenshot\.png/g) ?? [];
@@ -505,7 +504,7 @@ describe('handleUploadArtifactsCommand', () => {
     const body = mockPostPullRequestComment.mock.calls[0][3] as string;
     // Nested relative reference must be rewritten to an absolute signed URL
     expect(body).not.toContain('![Screenshot](runbook-1/screenshot.png)');
-    expect(body).toMatch(/!\[Screenshot\]\(http:\/\/127\.0\.0\.1:\d+\/.*\?sig=/);
+    expect(body).toMatch(/!\[Screenshot\]\(http:\/\/127\.0\.0\.1:\d+\/.*\/sig=/);
     // The artifact was referenced via a real markdown link, so it must NOT appear in the trailing
     // ## Artifacts list (avoid duplication)
     expect(body).not.toContain('[runbook-1/screenshot.png]');

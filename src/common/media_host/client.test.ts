@@ -46,7 +46,7 @@ describe('media_host client', () => {
 
     expect(result.size).toBe('hello media host'.length);
     expect(result.url).toMatch(
-      new RegExp(`^${baseUrl}/tim/plans/plan-1/artifact-1/screen%20shot\\.png\\?sig=`)
+      new RegExp(`^${baseUrl}/tim/plans/plan-1/artifact-1/screen%20shot\\.png/sig=`)
     );
 
     const download = await fetch(result.url);
