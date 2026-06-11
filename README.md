@@ -740,6 +740,39 @@ When a timeout is exceeded, tim sends `SIGTERM`, waits 5 seconds, then sends `SI
 
 Target leaf commands, such as `vitest run` or `pnpm test`, rather than broad process names like `node` or `bash`. The root executor PID is excluded automatically, but descendant shells are not. The monitor only runs during agent sessions that spawn Claude Code or Codex executors.
 
+## Media Host
+
+`bun run media-host` starts a small standalone Bun server (`src/media-host/server.ts`) for hosting uploaded text, images, and small videos. Uploads are gated by a bearer API key; reads are gated by a salted hash of the file path, so a URL can only be read by someone holding a signature minted from the signing secret.
+
+Configuration is read from the environment:
+
+| Variable                      | Required | Default                   | Purpose                                           |
+| ----------------------------- | -------- | ------------------------- | ------------------------------------------------- |
+| `MEDIA_HOST_API_KEY`          | yes      | —                         | Bearer token required to upload files             |
+| `MEDIA_HOST_SIGNING_SECRET`   | yes      | —                         | Secret (salt) used to sign and verify read access |
+| `MEDIA_HOST_DIR`              | no       | `~/.cache/tim/media-host` | Directory that stores uploaded files              |
+| `MEDIA_HOST_PORT`             | no       | `8125`                    | Listen port                                       |
+| `MEDIA_HOST_HOST`             | no       | `0.0.0.0`                 | Listen host                                       |
+| `MEDIA_HOST_MAX_UPLOAD_BYTES` | no       | `104857600` (100 MiB)     | Maximum upload size; larger uploads return `413`  |
+
+**Upload** with `PUT` (or `POST`) to any path and a bearer token. The response includes the path-bound read URL:
+
+```bash
+curl -X PUT \
+  -H "Authorization: Bearer $MEDIA_HOST_API_KEY" \
+  --data-binary @cat.png \
+  http://localhost:8125/images/cat.png
+# => {"path":"images/cat.png","size":12345,"url":"/images/cat.png?sig=<hash>"}
+```
+
+**Read** by appending the `sig` query parameter from the upload response. The content type is inferred from the file extension. Requests without a valid signature get `403`:
+
+```bash
+curl "http://localhost:8125/images/cat.png?sig=<hash>"
+```
+
+Upload paths are confined to the storage directory — path-traversal attempts (including percent-encoded separators) are rejected with `400`.
+
 ## Known Issues and Workarounds
 
 **Missing branch prefix**
