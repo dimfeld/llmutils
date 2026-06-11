@@ -24,7 +24,8 @@
     "test": "bun --bun vitest run --project server",
     "test:client": "bun --bun vitest run --project client",
     "tim": "src/tim/tim.ts",
-    "webhook-receiver": "bun run src/webhooks/server.ts"
+    "webhook-receiver": "bun run src/webhooks/server.ts",
+    "media-host": "bun run src/media-host/server.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
