@@ -552,6 +552,7 @@ export interface ReviewCommandOptions {
   incremental?: boolean;
   sinceLastReview?: boolean;
   issues?: boolean;
+  reviewIssuesFixSession?: boolean;
   saveIssues?: boolean;
   since?: string;
   autofix?: boolean;
@@ -1733,6 +1734,9 @@ export async function handleReviewCommand(
       }
 
       const currentAdapter = getLoggerAdapter();
+      const headlessCommand = options.reviewIssuesFixSession ? 'review-issues' : 'review';
+      const headlessInteractive = options.reviewIssuesFixSession === true;
+
       if (!(currentAdapter instanceof HeadlessAdapter)) {
         if (isPrintMode) {
           // In print mode, install the print-specific logger first so the headless
@@ -1741,15 +1745,15 @@ export async function handleReviewCommand(
           const printLogger = options.verbose ? reviewPrintVerboseLogger : reviewPrintQuietLogger;
           headlessAdapter = await runWithLogger(printLogger, () =>
             createHeadlessAdapterForCommand({
-              command: 'review',
-              interactive: false,
+              command: headlessCommand,
+              interactive: headlessInteractive,
               plan: planSummary,
             })
           );
         } else {
           headlessAdapter = await createHeadlessAdapterForCommand({
-            command: 'review',
-            interactive: false,
+            command: headlessCommand,
+            interactive: headlessInteractive,
             plan: planSummary,
           });
         }

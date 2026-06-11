@@ -18,6 +18,7 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startChat: vi.fn(),
   startRebase: vi.fn(),
   startReview: vi.fn(),
+  startReviewIssuesFix: vi.fn(),
   startAutoreview: vi.fn(),
   startShell: vi.fn(),
   startUpdateDocs: vi.fn(),
@@ -670,6 +671,26 @@ describe('PlanDetail', () => {
     });
 
     expect(body).not.toContain('PrStatusSection');
+  });
+
+  test('shows fix issues action when plan has saved review issues', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          reviewIssues: [
+            {
+              severity: 'major',
+              category: 'bug',
+              content: 'Fix persisted review feedback',
+            },
+          ],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('Review Issues (1)');
+    expect(body).toContain('Fix Issues');
   });
 
   test('shows Run children panel when the only eligible child is externally blocked', () => {

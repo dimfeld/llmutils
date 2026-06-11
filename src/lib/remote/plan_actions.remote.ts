@@ -21,6 +21,7 @@ import {
   spawnRebaseProcess,
   spawnPrCreateProcess,
   spawnPlanReviewGuideProcess,
+  spawnReviewIssuesFixProcess,
   spawnReviewProcess,
   spawnProofProcess,
   spawnAutoreviewProcess,
@@ -437,6 +438,24 @@ export const startReview = command(startReviewSchema, async ({ planUuid }) => {
     isPlanEligibleForReview,
     'Plan is not eligible for review',
     spawnReviewProcess
+  );
+});
+
+function hasSavedReviewIssues(plan: PlanDetail): plan is PlanDetailResult {
+  return plan != null && (plan.reviewIssues?.length ?? 0) > 0;
+}
+
+const startReviewIssuesFixSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startReviewIssuesFix = command(startReviewIssuesFixSchema, async ({ planUuid }) => {
+  return launchTimCommand(
+    'review-issues',
+    planUuid,
+    hasSavedReviewIssues,
+    'Plan has no saved review issues',
+    spawnReviewIssuesFixProcess
   );
 });
 

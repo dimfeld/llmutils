@@ -1723,7 +1723,11 @@ addReviewCommandOptions(
   const { handleReviewCommand } = await import('./commands/review.js');
   const planId = parsePlanIdFromCliArg(planIdArg);
   await runWithCommandTunnelAdapter(async () => {
-    await handleReviewCommand(planId, { ...options, issues: true }, command.parent);
+    await handleReviewCommand(
+      planId,
+      { ...options, issues: true, reviewIssuesFixSession: true },
+      command.parent
+    );
   }).catch(handleCommandError);
 });
 

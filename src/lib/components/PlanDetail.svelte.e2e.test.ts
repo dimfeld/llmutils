@@ -7,6 +7,7 @@ import type { PrStatusRow } from '$tim/db/pr_status.js';
 import type { PrStatusDetailWithRequiredChecks } from '$lib/server/required_check_rollup.js';
 import { invalidateAll } from '$app/navigation';
 import { updatePlanMetadata } from '$lib/remote/plan_metadata.remote.js';
+import { startReviewIssuesFix } from '$lib/remote/plan_actions.remote.js';
 import PlanDetailComponent from './PlanDetail.svelte';
 
 vi.mock('$app/navigation', () => ({
@@ -21,6 +22,7 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startChat: vi.fn(),
   startRebase: vi.fn(),
   startReview: vi.fn(),
+  startReviewIssuesFix: vi.fn(),
   startAutoreview: vi.fn(),
   startShell: vi.fn(),
   startUpdateDocs: vi.fn(),
@@ -181,6 +183,29 @@ function renderPlan(plan: PlanDetail) {
 }
 
 describe('PlanDetail action selection', () => {
+  test('starts a review issue fixer session from saved review issues', async () => {
+    (startReviewIssuesFix as Mock).mockResolvedValueOnce({ status: 'started', planId: 1 });
+
+    renderPlan(
+      makePlanDetail({
+        reviewIssues: [
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'Fix persisted review feedback',
+          },
+        ],
+        prStatuses: [],
+      })
+    );
+
+    await page.getByRole('button', { name: 'Fix saved review issues' }).click();
+
+    await vi.waitFor(() => {
+      expect(startReviewIssuesFix).toHaveBeenCalledWith({ planUuid: 'plan-1' });
+    });
+  });
+
   test('shows Run Agent without Generate for a taskless simple plan', async () => {
     renderPlan(
       makePlanDetail({

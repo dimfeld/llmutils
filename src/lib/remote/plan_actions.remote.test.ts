@@ -23,6 +23,7 @@ const spawnRebaseProcessMock = vi.fn();
 const spawnPrCreateProcessMock = vi.fn();
 const spawnUpdateDocsProcessMock = vi.fn();
 const spawnPlanReviewGuideProcessMock = vi.fn();
+const spawnReviewIssuesFixProcessMock = vi.fn();
 const spawnProofProcessMock = vi.fn();
 const spawnAutoreviewProcessMock = vi.fn();
 const spawnShellProcessMock = vi.fn();
@@ -58,6 +59,8 @@ vi.mock('$lib/server/plan_actions.js', () => ({
     spawnUpdateDocsProcessMock(...args),
   spawnPlanReviewGuideProcess: (...args: Parameters<typeof spawnPlanReviewGuideProcessMock>) =>
     spawnPlanReviewGuideProcessMock(...args),
+  spawnReviewIssuesFixProcess: (...args: Parameters<typeof spawnReviewIssuesFixProcessMock>) =>
+    spawnReviewIssuesFixProcessMock(...args),
   spawnProofProcess: (...args: Parameters<typeof spawnProofProcessMock>) =>
     spawnProofProcessMock(...args),
   spawnAutoreviewProcess: (...args: Parameters<typeof spawnAutoreviewProcessMock>) =>
@@ -82,6 +85,7 @@ import {
   startGenerate,
   startRebase,
   startPlanReviewGuide,
+  startReviewIssuesFix,
   startProof,
   startAutoreview,
   startShell,
@@ -107,6 +111,7 @@ describe('plan remote actions', () => {
     spawnPrCreateProcessMock.mockReset();
     spawnUpdateDocsProcessMock.mockReset();
     spawnPlanReviewGuideProcessMock.mockReset();
+    spawnReviewIssuesFixProcessMock.mockReset();
     spawnProofProcessMock.mockReset();
     spawnAutoreviewProcessMock.mockReset();
     spawnShellProcessMock.mockReset();
@@ -2539,6 +2544,79 @@ describe('plan remote actions', () => {
         status: 500,
         body: { message: 'tim binary not found' },
       });
+    });
+  });
+
+  describe('startReviewIssuesFix', () => {
+    function seedReviewIssuePlan(uuid: string, planId: number): void {
+      seedPlan({ uuid, planId, status: 'needs_review' });
+      currentDb.query(`UPDATE plan SET review_issues = ? WHERE uuid = ?`).run(
+        JSON.stringify([
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'Fix saved review issue',
+          },
+        ]),
+        uuid
+      );
+    }
+
+    test('rejects plans without saved review issues', async () => {
+      seedPlan({ uuid: 'review-issues-empty', planId: 5200, status: 'needs_review' });
+
+      await expect(
+        invokeCommand(startReviewIssuesFix, { planUuid: 'review-issues-empty' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan has no saved review issues' },
+      });
+      expect(spawnReviewIssuesFixProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('spawns the review issue fixer in the primary workspace', async () => {
+      seedReviewIssuePlan('review-issues-start', 5201);
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnReviewIssuesFixProcessMock.mockResolvedValue({ success: true, planId: 5201 });
+
+      await expect(
+        invokeCommand(startReviewIssuesFix, { planUuid: 'review-issues-start' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 5201,
+      });
+
+      expect(spawnReviewIssuesFixProcessMock).toHaveBeenCalledWith(5201, '/tmp/primary-workspace');
+    });
+
+    test('returns the active session when another session is already running for the plan', async () => {
+      seedReviewIssuePlan('review-issues-running', 5202);
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      currentManager.handleWebSocketConnect('conn-review-issues', () => {});
+      currentManager.handleWebSocketMessage('conn-review-issues', {
+        type: 'session_info',
+        command: 'review-issues',
+        interactive: true,
+        planId: 5202,
+        planUuid: 'review-issues-running',
+        workspacePath: '/tmp/primary-workspace',
+      });
+
+      await expect(
+        invokeCommand(startReviewIssuesFix, { planUuid: 'review-issues-running' })
+      ).resolves.toEqual({
+        status: 'already_running',
+        connectionId: 'conn-review-issues',
+      });
+      expect(spawnReviewIssuesFixProcessMock).not.toHaveBeenCalled();
     });
   });
 

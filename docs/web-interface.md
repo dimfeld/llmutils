@@ -796,6 +796,7 @@ When the agent runs its final review in non-interactive mode (e.g. launched from
 
 The `PlanDetail` component displays review issues with per-issue action buttons and a bulk action:
 
+- **Fix Issues**: Starts `tim review-issues fix <planId> --auto-workspace` through the normal session manager, so the prompt-driven fixer appears in the Sessions view as an interactive `review-issues` session for the plan. The command asks which saved issues to act on and marks only completed selected issues resolved.
 - **Dismiss** (X button): Removes a single review issue by index via `removeReviewIssue`
 - **Convert to Task** (arrow button): Converts the issue into a plan task (using `createTaskFromIssue` from review.ts) and removes it from `reviewIssues`, setting plan status to `in_progress` via `convertReviewIssueToTask`
 - **Clear All** (header button): Removes all review issues via `clearReviewIssues`, with a confirmation dialog

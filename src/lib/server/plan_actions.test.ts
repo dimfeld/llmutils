@@ -30,6 +30,7 @@ import {
   spawnGenerateProcess,
   spawnPrFixForPrProcess,
   spawnRebaseProcess,
+  spawnReviewIssuesFixProcess,
   spawnShellProcess,
   spawnUpdateDocsProcess,
 } from './plan_actions.js';
@@ -518,6 +519,25 @@ describe('lib/server/plan_actions', () => {
     expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true });
     expect((result as { planId?: number }).planId).toBeUndefined();
+  });
+
+  test('spawnReviewIssuesFixProcess spawns prompt-driven saved review issue fixer', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnReviewIssuesFixProcess(207, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual(['tim', 'review-issues', 'fix', '207', '--auto-workspace']);
+    expect(options).toMatchObject({
+      cwd: '/tmp/primary-workspace',
+      stdin: 'ignore',
+      detached: true,
+    });
+    expect(result).toEqual({ success: true, planId: 207 });
   });
 
   test('spawnPrFixForPrProcess returns earlyExit true when process exits with code 0', async () => {
