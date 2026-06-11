@@ -23,7 +23,23 @@ vi.mock('$lib/stores/ui_state.svelte.js', () => ({
 }));
 
 import MessageInput from './MessageInput.svelte';
-import { getMessageDraft, persistMessageDraft, sendMessageDraft } from './message_input.js';
+import {
+  getMessageDraft,
+  isMessageSubmitKey,
+  persistMessageDraft,
+  sendMessageDraft,
+} from './message_input.js';
+
+function makeKeyEvent(
+  key: string,
+  options: Partial<Pick<KeyboardEvent, 'shiftKey' | 'metaKey'>> = {}
+): Pick<KeyboardEvent, 'key' | 'shiftKey' | 'metaKey'> {
+  return {
+    key,
+    shiftKey: options.shiftKey ?? false,
+    metaKey: options.metaKey ?? false,
+  };
+}
 
 describe('message_input helpers', () => {
   beforeEach(() => {
@@ -85,6 +101,20 @@ describe('message_input helpers', () => {
 
     expect(sendUserInput).not.toHaveBeenCalled();
     expect(uiState.setSessionState).not.toHaveBeenCalled();
+  });
+
+  test('leaves plain Enter available for textarea newlines', () => {
+    expect(isMessageSubmitKey(makeKeyEvent('Enter'))).toBe(false);
+  });
+
+  test('submits on Shift+Enter or Cmd+Enter', () => {
+    expect(isMessageSubmitKey(makeKeyEvent('Enter', { shiftKey: true }))).toBe(true);
+    expect(isMessageSubmitKey(makeKeyEvent('Enter', { metaKey: true }))).toBe(true);
+  });
+
+  test('ignores modified non-Enter keys', () => {
+    expect(isMessageSubmitKey(makeKeyEvent('a', { shiftKey: true }))).toBe(false);
+    expect(isMessageSubmitKey(makeKeyEvent('a', { metaKey: true }))).toBe(false);
   });
 });
 

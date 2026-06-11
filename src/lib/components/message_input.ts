@@ -4,6 +4,12 @@ interface SessionInputSender {
   sendUserInput(connectionId: string, content: string): Promise<boolean>;
 }
 
+type MessageInputKeyEvent = Pick<KeyboardEvent, 'key' | 'shiftKey' | 'metaKey'>;
+
+export function isMessageSubmitKey(event: MessageInputKeyEvent): boolean {
+  return event.key === 'Enter' && (event.shiftKey || event.metaKey);
+}
+
 export function getMessageDraft(uiState: UIStateStore, connectionId: string): string {
   return uiState.getSessionState(connectionId).messageDraft;
 }

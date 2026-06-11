@@ -2,7 +2,12 @@
   import { tick } from 'svelte';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { useUIState } from '$lib/stores/ui_state.svelte.js';
-  import { getMessageDraft, persistMessageDraft, sendMessageDraft } from './message_input.js';
+  import {
+    getMessageDraft,
+    isMessageSubmitKey,
+    persistMessageDraft,
+    sendMessageDraft,
+  } from './message_input.js';
 
   let { connectionId }: { connectionId: string } = $props();
   const sessionManager = useSessionManager();
@@ -34,7 +39,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (isMessageSubmitKey(e)) {
       e.preventDefault();
       void send();
     }
