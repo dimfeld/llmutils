@@ -186,6 +186,7 @@ const MAX_NOTIFICATION_MESSAGES = 200;
 const MAX_SESSION_MESSAGES = 5000;
 const MAX_SNAPSHOT_MESSAGES = 500;
 const MAX_PTY_OUTPUT_CACHE_BYTES = 256 * 1024;
+const INTERACTIVE_NOTIFICATION_EXCLUDED_COMMANDS = new Set(['agent', 'review-guide']);
 // Also bound the cache by frame count so a flood of empty/tiny pty_output frames
 // (which add ~0 decoded bytes) cannot grow `frames` without bound under the byte cap.
 const MAX_PTY_OUTPUT_CACHE_FRAMES = 4096;
@@ -289,7 +290,7 @@ export function formatTunnelMessage(
   connectionId: string,
   seq: number,
   message: TunnelMessage,
-  sessionInfo?: Pick<HeadlessSessionInfo, 'interactive'>
+  sessionInfo?: Pick<HeadlessSessionInfo, 'command' | 'interactive'>
 ): DisplayMessage | null {
   switch (message.type) {
     case 'debug':
@@ -320,7 +321,8 @@ export function formatTunnelMessage(
         const triggersNotification =
           structured.type === 'agent_session_end' &&
           structured.transportSource !== 'tunnel' &&
-          sessionInfo?.interactive === true;
+          sessionInfo?.interactive === true &&
+          !INTERACTIVE_NOTIFICATION_EXCLUDED_COMMANDS.has(sessionInfo.command);
         const stripped = stripStructuredMessage(structured);
         return {
           id: `${connectionId}:${seq}`,

@@ -263,8 +263,8 @@ describe('lib/server/session_manager', () => {
     expect(debug).toBeNull();
   });
 
-  test('formatTunnelMessage marks non-tunnel agent_session_end messages as notification-worthy only for interactive sessions', () => {
-    const interactiveSession = formatTunnelMessage(
+  test('formatTunnelMessage marks non-tunnel agent_session_end messages as notification-worthy for interactive sessions except opted-out commands', () => {
+    const newInteractiveCommandSession = formatTunnelMessage(
       'conn-1',
       1,
       {
@@ -276,7 +276,7 @@ describe('lib/server/session_manager', () => {
           turns: 1,
         },
       },
-      { interactive: true }
+      { command: 'new-interactive-command', interactive: true }
     );
 
     const nonInteractiveSession = formatTunnelMessage(
@@ -291,7 +291,7 @@ describe('lib/server/session_manager', () => {
           turns: 1,
         },
       },
-      { interactive: false }
+      { command: 'chat', interactive: false }
     );
 
     const tunneled = formatTunnelMessage(
@@ -307,10 +307,40 @@ describe('lib/server/session_manager', () => {
           transportSource: 'tunnel',
         },
       },
-      { interactive: true }
+      { command: 'chat', interactive: true }
     );
 
-    expect(interactiveSession).toMatchObject({
+    const agentSession = formatTunnelMessage(
+      'conn-1',
+      4,
+      {
+        type: 'structured',
+        message: {
+          type: 'agent_session_end',
+          timestamp: '2026-03-17T10:01:01.000Z',
+          success: true,
+          turns: 1,
+        },
+      },
+      { command: 'agent', interactive: true }
+    );
+
+    const reviewGuideSession = formatTunnelMessage(
+      'conn-1',
+      5,
+      {
+        type: 'structured',
+        message: {
+          type: 'agent_session_end',
+          timestamp: '2026-03-17T10:01:02.000Z',
+          success: true,
+          turns: 1,
+        },
+      },
+      { command: 'review-guide', interactive: true }
+    );
+
+    expect(newInteractiveCommandSession).toMatchObject({
       rawType: 'agent_session_end',
       triggersNotification: true,
     });
@@ -319,6 +349,14 @@ describe('lib/server/session_manager', () => {
       triggersNotification: false,
     });
     expect(tunneled).toMatchObject({
+      rawType: 'agent_session_end',
+      triggersNotification: false,
+    });
+    expect(agentSession).toMatchObject({
+      rawType: 'agent_session_end',
+      triggersNotification: false,
+    });
+    expect(reviewGuideSession).toMatchObject({
       rawType: 'agent_session_end',
       triggersNotification: false,
     });
