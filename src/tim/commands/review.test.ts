@@ -15,6 +15,8 @@ import {
   resolveReviewTaskScope,
   saveReviewIssuesToPlan,
   clearSavedReviewIssues,
+  listSavedReviewIssues,
+  resolveSavedReviewIssues,
 } from './review.js';
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
 import { generateDiffForReview } from '../incremental_review.js';
@@ -291,6 +293,81 @@ describe('review issue persistence helpers', () => {
 
     const updatedPlan = (await resolvePlanByNumericId(2, testDir)).plan;
     expect(updatedPlan.reviewIssues).toBeUndefined();
+  });
+
+  test('resolveSavedReviewIssues removes selected saved issues by one-based index', async () => {
+    await writePlanToDb(
+      {
+        id: 3,
+        title: 'Resolve selected review issues',
+        goal: 'Keep unselected saved issues',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [
+          {
+            id: 'issue-1',
+            severity: 'major',
+            category: 'bug',
+            content: 'Fix the first issue',
+          },
+          {
+            id: 'issue-2',
+            severity: 'minor',
+            category: 'testing',
+            content: 'Keep this issue',
+          },
+          {
+            id: 'issue-3',
+            severity: 'critical',
+            category: 'security',
+            content: 'Fix the third issue',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    await expect(resolveSavedReviewIssues(3, [1, 3], testDir)).resolves.toBe(2);
+
+    const updatedPlan = (await resolvePlanByNumericId(3, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([
+      {
+        id: 'issue-2',
+        severity: 'minor',
+        category: 'testing',
+        content: 'Keep this issue',
+      },
+    ]);
+  });
+
+  test('listSavedReviewIssues returns saved review issues', async () => {
+    await writePlanToDb(
+      {
+        id: 4,
+        title: 'List review issues',
+        goal: 'Show persisted review issues',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [
+          {
+            id: 'issue-1',
+            severity: 'major',
+            category: 'bug',
+            content: 'Persisted issue',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    await expect(listSavedReviewIssues(4, testDir)).resolves.toEqual([
+      {
+        id: 'issue-1',
+        severity: 'major',
+        category: 'bug',
+        content: 'Persisted issue',
+      },
+    ]);
   });
 });
 

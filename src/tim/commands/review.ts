@@ -348,6 +348,134 @@ export async function clearSavedReviewIssues(planId: number, repoRoot: string): 
   await writePlanFile(planPath, latestPlan, { cwdForIdentity: repoRoot });
 }
 
+export async function listSavedReviewIssues(
+  planId: number,
+  repoRoot: string
+): Promise<NonNullable<PlanSchema['reviewIssues']>> {
+  const { plan } = await resolveReviewPlanForWriteById(planId, repoRoot);
+  return filterActionableReviewIssues(plan.reviewIssues ?? []).map((issue) => ({ ...issue }));
+}
+
+function reviewIssueKey(issue: ReviewIssue): string {
+  return JSON.stringify(issue);
+}
+
+export async function resolveSavedReviewIssues(
+  planId: number,
+  issueIndexes: readonly number[] | 'all',
+  repoRoot: string
+): Promise<number> {
+  const { plan: latestPlan, planPath } = await resolveReviewPlanForWriteById(planId, repoRoot);
+  const savedIssues = latestPlan.reviewIssues ?? [];
+  const actionableIssues = filterActionableReviewIssues(savedIssues);
+  if (actionableIssues.length === 0) {
+    return 0;
+  }
+
+  const issuesToResolve =
+    issueIndexes === 'all'
+      ? actionableIssues
+      : issueIndexes.map((index) => {
+          if (!Number.isInteger(index) || index < 1 || index > actionableIssues.length) {
+            throw new Error(
+              `Review issue index ${index} is out of range. Expected 1-${actionableIssues.length}.`
+            );
+          }
+          return actionableIssues[index - 1]!;
+        });
+
+  const remainingIssues = [...savedIssues];
+  let resolvedCount = 0;
+
+  for (const issue of issuesToResolve) {
+    const key = reviewIssueKey(issue);
+    const index = remainingIssues.findIndex((candidate) => reviewIssueKey(candidate) === key);
+    if (index >= 0) {
+      remainingIssues.splice(index, 1);
+      resolvedCount++;
+    }
+  }
+
+  if (resolvedCount === 0) {
+    return 0;
+  }
+
+  if (remainingIssues.length > 0) {
+    latestPlan.reviewIssues = remainingIssues;
+  } else {
+    delete latestPlan.reviewIssues;
+  }
+  await writePlanFile(planPath, latestPlan, { cwdForIdentity: repoRoot });
+  return resolvedCount;
+}
+
+function formatSavedReviewIssue(index: number, issue: ReviewIssue): string {
+  const location = issue.file
+    ? ` ${chalk.gray(issue.line ? `${issue.file}:${issue.line}` : issue.file)}`
+    : '';
+  const suggestion = issue.suggestion
+    ? `\n    ${chalk.gray(`Suggestion: ${issue.suggestion}`)}`
+    : '';
+  return `${index}. ${chalk.bold(issue.severity)} ${chalk.gray(issue.category)}${location}\n   ${issue.content}${suggestion}`;
+}
+
+function parseReviewIssueIndexes(values: readonly string[] | undefined): number[] | 'all' {
+  if (!values || values.length === 0) {
+    throw new Error('Provide one or more review issue indexes, or --all.');
+  }
+
+  return values
+    .flatMap((value) => value.split(','))
+    .map((value) => {
+      const trimmed = value.trim();
+      const parsed = Number(trimmed);
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        throw new Error(`Review issue indexes must be positive integers, got: "${value}"`);
+      }
+      return parsed;
+    });
+}
+
+export async function handleReviewIssuesListCommand(
+  planId: number,
+  options: { json?: boolean },
+  command: any
+): Promise<void> {
+  const globalOpts = command.parent?.opts?.() ?? command.opts?.() ?? {};
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
+  const issues = await listSavedReviewIssues(planId, repoRoot);
+
+  if (options.json) {
+    console.log(JSON.stringify(issues, null, 2));
+    return;
+  }
+
+  if (issues.length === 0) {
+    log(chalk.yellow(`No saved review issues found for plan ${planId}.`));
+    return;
+  }
+
+  log(chalk.cyan(`Saved review issues for plan ${planId}:`));
+  issues.forEach((issue, index) => log(formatSavedReviewIssue(index + 1, issue)));
+}
+
+export async function handleReviewIssuesResolveCommand(
+  planId: number,
+  issueIndexArgs: readonly string[] | undefined,
+  options: { all?: boolean },
+  command: any
+): Promise<void> {
+  const globalOpts = command.parent?.opts?.() ?? command.opts?.() ?? {};
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
+  const indexes = options.all ? 'all' : parseReviewIssueIndexes(issueIndexArgs);
+  const resolvedCount = await resolveSavedReviewIssues(planId, indexes, repoRoot);
+  log(
+    chalk.green(
+      `Marked ${resolvedCount} saved review issue${resolvedCount === 1 ? '' : 's'} resolved.`
+    )
+  );
+}
+
 function summarizeReviewIssues(issues: readonly ReviewIssue[]): string {
   const actionableIssues = filterActionableReviewIssues(issues);
   const counts = {
@@ -1422,7 +1550,20 @@ async function handleReviewIssueActions(params: {
   }
 
   if (actionCompleted && issuesToSaveForLater == null) {
-    await clearSavedReviewIssues(planRefForWrite, sharedExecutorOptions.baseDir);
+    if (selectedIssues && selectedIssues.length > 0) {
+      const resolvedCount = await resolveSavedReviewIssues(
+        planRefForWrite,
+        selectedIssues.map((issue) => actionableIssues.indexOf(issue) + 1),
+        sharedExecutorOptions.baseDir
+      );
+      log(
+        chalk.green(
+          `Marked ${resolvedCount} saved review issue${resolvedCount === 1 ? '' : 's'} resolved.`
+        )
+      );
+    } else {
+      await clearSavedReviewIssues(planRefForWrite, sharedExecutorOptions.baseDir);
+    }
   }
 
   return {
