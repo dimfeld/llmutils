@@ -99,6 +99,10 @@ export function normalizeMediaPath(pathname: string): string | null {
   return relativePath;
 }
 
+function encodeMediaPath(relativePath: string): string {
+  return relativePath.split('/').map(encodeURIComponent).join('/');
+}
+
 async function handleUpload(
   request: Request,
   relativePath: string,
@@ -135,7 +139,7 @@ async function handleUpload(
     {
       path: relativePath,
       size: body.byteLength,
-      url: `/${relativePath}?${SIGNATURE_PARAM}=${signature}`,
+      url: `/${encodeMediaPath(relativePath)}?${SIGNATURE_PARAM}=${signature}`,
     },
     201
   );

@@ -83,6 +83,21 @@ describe('media-host server', () => {
     expect(onDisk).toBe('hello world');
   });
 
+  test('returns a signed url with reserved path characters encoded', async () => {
+    const res = await upload('docs/a%3Fb%23c.txt', 'reserved');
+    expect(res.status).toBe(201);
+
+    const payload = (await res.json()) as { path: string; size: number; url: string };
+    expect(payload.path).toBe('docs/a?b#c.txt');
+
+    const expectedSig = computePathSignature('docs/a?b#c.txt', SIGNING_SECRET);
+    expect(payload.url).toBe(`/docs/a%3Fb%23c.txt?sig=${expectedSig}`);
+
+    const download = await fetch(`${baseUrl}${payload.url}`);
+    expect(download.status).toBe(200);
+    expect(await download.text()).toBe('reserved');
+  });
+
   test('rejects uploads without a valid token', async () => {
     const noToken = await fetch(`${baseUrl}/docs/readme.txt`, { method: 'PUT', body: 'x' });
     expect(noToken.status).toBe(401);
