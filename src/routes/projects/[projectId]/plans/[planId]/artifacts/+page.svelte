@@ -9,6 +9,7 @@
   import FileVideo from '@lucide/svelte/icons/file-video';
 
   import { Button } from '$lib/components/ui/button/index.js';
+  import { createArtifactImageUrlResolver } from '$lib/utils/artifact_markdown_images.js';
   import { renderMarkdown } from '$lib/utils/markdown_parser.js';
   import type { PageData } from './$types';
 
@@ -37,10 +38,11 @@
   );
   let selectedArtifact = $derived(data.artifacts[selectedIndex] ?? null);
   let selectedIsReport = $derived(selectedArtifact !== null && isReport(selectedArtifact.filename));
+  let resolveArtifactImageUrl = $derived(createArtifactImageUrlResolver(data.artifacts));
 
   function renderedFor(artifact: ArtifactViewFile | null): string {
     return artifact?.viewKind === 'markdown' && artifact.content !== null
-      ? renderMarkdown(artifact.content)
+      ? renderMarkdown(artifact.content, { resolveImageUrl: resolveArtifactImageUrl })
       : '';
   }
 

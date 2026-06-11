@@ -14,6 +14,10 @@ export interface TocEntry {
   slug: string;
 }
 
+export interface RenderMarkdownOptions {
+  resolveImageUrl?: (url: string) => string;
+}
+
 export function slugify(text: string): string {
   const base = text
     .toLowerCase()
@@ -74,14 +78,33 @@ function renderMarkdownTree(tree: Root, toc: TocEntry[], cursor: { i: number }):
   return applyHeadingIds(String(htmlProcessor.stringify(hast)), toc, cursor);
 }
 
+function applyImageUrlResolver(tree: Root, resolveImageUrl: (url: string) => string): void {
+  function visit(node: Root | RootContent): void {
+    if (node.type === 'image') {
+      node.url = resolveImageUrl(node.url);
+    }
+
+    if ('children' in node && Array.isArray(node.children)) {
+      for (const child of node.children) {
+        visit(child as RootContent);
+      }
+    }
+  }
+
+  visit(tree);
+}
+
 /**
  * Render markdown content as HTML using the unified/remark/rehype pipeline.
  * Output is suitable for use with {@html ...} inside a .plan-rendered-content container.
  * Heading tags receive slug ids matching extractHeadings().
  */
-export function renderMarkdown(content: string): string {
+export function renderMarkdown(content: string, options: RenderMarkdownOptions = {}): string {
   if (!content.trim()) return '';
   const tree = parser.parse(content);
+  if (options.resolveImageUrl) {
+    applyImageUrlResolver(tree, options.resolveImageUrl);
+  }
   const toc = collectHeadings(tree);
   return renderMarkdownTree(tree, toc, { i: 0 });
 }

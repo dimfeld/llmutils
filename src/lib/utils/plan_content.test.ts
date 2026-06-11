@@ -21,6 +21,15 @@ describe('renderMarkdown', () => {
     expect(html).toContain('<h2 id="child">');
     expect(html).toContain('<h1 id="same-1">');
   });
+
+  test('resolves image URLs without changing link URLs', () => {
+    const html = renderMarkdown('![Chart](chart.png)\n\n[Chart](chart.png)', {
+      resolveImageUrl: (url: string): string => `/api/artifacts/image-for-${url}`,
+    });
+
+    expect(html).toContain('<img src="/api/artifacts/image-for-chart.png" alt="Chart">');
+    expect(html).toContain('<a href="chart.png">Chart</a>');
+  });
 });
 
 describe('extractHeadings', () => {
