@@ -10,6 +10,7 @@ const SLACK_UPDATE_MESSAGE_URL = 'https://slack.com/api/chat.update';
 const SLACK_PIN_MESSAGE_URL = 'https://slack.com/api/pins.add';
 const SLACK_UNPIN_MESSAGE_URL = 'https://slack.com/api/pins.remove';
 const SLACK_ADD_REACTION_URL = 'https://slack.com/api/reactions.add';
+const SLACK_UPDATE_MAX_ATTEMPTS = 2;
 
 export interface ReviewRequestReviewer {
   githubLogin: string;
@@ -91,6 +92,16 @@ export interface SlackReactionSenderArgs {
 }
 
 export type SlackReactionSender = (args: SlackReactionSenderArgs) => Promise<SlackPostResult>;
+
+function isRetryableSlackHttpStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+async function formatSlackHttpErrorMessage(operation: string, response: Response): Promise<string> {
+  const responseText = await response.text().catch(() => '');
+  const body = responseText.length > 0 ? responseText : '<empty response body>';
+  return `Slack ${operation} failed with HTTP ${response.status}: ${body}`;
+}
 
 export interface AddSlackReactionArgs {
   config: TimConfig;
@@ -612,8 +623,7 @@ export function createFetchSlackSender(
       });
 
       if (!response.ok) {
-        const responseText = await response.text().catch(() => '');
-        const message = `Slack chat.postMessage failed with HTTP ${response.status}${responseText ? `: ${responseText}` : ''}`;
+        const message = await formatSlackHttpErrorMessage('chat.postMessage', response);
         error(message);
         return { ok: false, error: message };
       }
@@ -648,49 +658,59 @@ export function createFetchSlackUpdateSender(
   fetchImpl: typeof fetch = fetch
 ): SlackUpdateSender {
   return async ({ channel, ts, payload }: SlackUpdateSenderArgs): Promise<SlackPostResult> => {
-    try {
-      const response = await fetchImpl(SLACK_UPDATE_MESSAGE_URL, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json; charset=utf-8',
-        },
-        body: JSON.stringify({
-          ...payload,
-          channel,
-          ts,
-        }),
-      });
+    let lastError: string | undefined;
+    for (let attempt = 1; attempt <= SLACK_UPDATE_MAX_ATTEMPTS; attempt++) {
+      try {
+        const response = await fetchImpl(SLACK_UPDATE_MESSAGE_URL, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json; charset=utf-8',
+          },
+          body: JSON.stringify({
+            ...payload,
+            channel,
+            ts,
+          }),
+        });
 
-      if (!response.ok) {
-        const responseText = await response.text().catch(() => '');
-        const message = `Slack chat.update failed with HTTP ${response.status}${responseText ? `: ${responseText}` : ''}`;
-        error(message);
-        return { ok: false, error: message };
-      }
+        if (!response.ok) {
+          const message = await formatSlackHttpErrorMessage('chat.update', response);
+          lastError = message;
+          if (attempt < SLACK_UPDATE_MAX_ATTEMPTS && isRetryableSlackHttpStatus(response.status)) {
+            error(`${message}; retrying once`);
+            continue;
+          }
+          error(message);
+          return { ok: false, error: message };
+        }
 
-      const responseBody = (await response.json().catch(() => null)) as {
-        ok?: boolean;
-        error?: string;
-        channel?: string;
-        ts?: string;
-      } | null;
-      if (!responseBody?.ok) {
-        const message = responseBody?.error ?? 'Slack chat.update returned ok=false';
+        const responseBody = (await response.json().catch(() => null)) as {
+          ok?: boolean;
+          error?: string;
+          channel?: string;
+          ts?: string;
+        } | null;
+        if (!responseBody?.ok) {
+          const message = responseBody?.error ?? 'Slack chat.update returned ok=false';
+          error(`Slack chat.update failed: ${message}`);
+          return { ok: false, error: message };
+        }
+
+        return {
+          ok: true,
+          channel: typeof responseBody.channel === 'string' ? responseBody.channel : channel,
+          ts: typeof responseBody.ts === 'string' ? responseBody.ts : ts,
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        lastError = message;
         error(`Slack chat.update failed: ${message}`);
         return { ok: false, error: message };
       }
-
-      return {
-        ok: true,
-        channel: typeof responseBody.channel === 'string' ? responseBody.channel : channel,
-        ts: typeof responseBody.ts === 'string' ? responseBody.ts : ts,
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      error(`Slack chat.update failed: ${message}`);
-      return { ok: false, error: message };
     }
+
+    return { ok: false, error: lastError ?? 'Slack chat.update failed' };
   };
 }
 

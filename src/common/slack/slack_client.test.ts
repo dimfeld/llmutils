@@ -1173,6 +1173,115 @@ describe('common/slack/slack_client', () => {
 
       expect(result).toEqual({ ok: false, error: 'message_not_found' });
     });
+
+    test('includes response body on non-2xx HTTP response', async () => {
+      const fetchImpl = vi.fn(async () =>
+        buildFetchResponse({
+          ok: false,
+          status: 400,
+          textBody: 'invalid timestamp',
+        })
+      ) as unknown as typeof fetch;
+      const sender = createFetchSlackUpdateSender('xoxb-token', fetchImpl);
+
+      const result = await sender({
+        token: 'xoxb-token',
+        channel: 'C123',
+        ts: '1710000000.000100',
+        payload,
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        error: 'Slack chat.update failed with HTTP 400: invalid timestamp',
+      });
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    });
+
+    test('marks empty non-2xx HTTP response body explicitly', async () => {
+      const fetchImpl = vi.fn(async () =>
+        buildFetchResponse({
+          ok: false,
+          status: 400,
+        })
+      ) as unknown as typeof fetch;
+      const sender = createFetchSlackUpdateSender('xoxb-token', fetchImpl);
+
+      const result = await sender({
+        token: 'xoxb-token',
+        channel: 'C123',
+        ts: '1710000000.000100',
+        payload,
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        error: 'Slack chat.update failed with HTTP 400: <empty response body>',
+      });
+    });
+
+    test('retries once for retryable HTTP response codes', async () => {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(
+          buildFetchResponse({
+            ok: false,
+            status: 500,
+            textBody: 'temporary Slack failure',
+          })
+        )
+        .mockResolvedValueOnce(
+          buildFetchResponse({
+            ok: true,
+            status: 200,
+            jsonBody: { ok: true, channel: 'C123', ts: '1710000000.000100' },
+          })
+        ) as unknown as typeof fetch;
+      const sender = createFetchSlackUpdateSender('xoxb-token', fetchImpl);
+
+      const result = await sender({
+        token: 'xoxb-token',
+        channel: 'C123',
+        ts: '1710000000.000100',
+        payload,
+      });
+
+      expect(result).toEqual({ ok: true, channel: 'C123', ts: '1710000000.000100' });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
+
+    test('returns the second failure when retryable HTTP response fails twice', async () => {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(
+          buildFetchResponse({
+            ok: false,
+            status: 500,
+            textBody: 'first failure',
+          })
+        )
+        .mockResolvedValueOnce(
+          buildFetchResponse({
+            ok: false,
+            status: 503,
+            textBody: 'second failure',
+          })
+        ) as unknown as typeof fetch;
+      const sender = createFetchSlackUpdateSender('xoxb-token', fetchImpl);
+
+      const result = await sender({
+        token: 'xoxb-token',
+        channel: 'C123',
+        ts: '1710000000.000100',
+        payload,
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        error: 'Slack chat.update failed with HTTP 503: second failure',
+      });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('createFetchSlackPinSender', () => {
