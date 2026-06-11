@@ -239,6 +239,8 @@ describe('runProofGeneration', () => {
     expect(prompt).toContain('The top of report.md must state whether the proof matched');
     expect(prompt).toContain('that success/failure verdict is the most important thing');
     expect(prompt).toContain('map each runbook to the proof you produced');
+    expect(prompt).toContain('copy those scripts into');
+    expect(prompt).toContain('as proof artifacts too');
     expect(prompt).toContain('Dashboard widget renders');
   });
 

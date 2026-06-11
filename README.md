@@ -688,7 +688,7 @@ Use `runIn: [agent]`, `runIn: [review]`, `runIn: [proof]`, `runIn: [pr-fix]`, `r
 
 The optional `proofGeneration` block opts a project into a phase that captures demo evidence (screenshots, videos, written walkthroughs, …) of a completed plan and attaches it to the plan as artifacts. It is most useful for plans with user-facing changes; for purely backend plans the phase is omitted by not configuring it.
 
-The `instructions` field is **prompt material, not a command**. The configured LLM executor reads the plan goal, details, task list, the changed-file list for the current branch, and your `instructions`, then drives whatever tooling makes sense (Playwright, curl, scripts, dev server, …) on its own to produce evidence files under `.tim/proofs`. When plan details include `Manual Testing Runbooks`, proof generation follows those runbooks first, including per-subplan runbooks, and maps each runbook to evidence in `report.md`. The runner only sets up the directory, runs the executor, and attaches every file it finds underneath when the executor is done. The executor finishes by writing a `report.md` that summarizes what was demonstrated.
+The `instructions` field is **prompt material, not a command**. The configured LLM executor reads the plan goal, details, task list, the changed-file list for the current branch, and your `instructions`, then drives whatever tooling makes sense (Playwright, curl, scripts, dev server, …) on its own to produce evidence files under `.tim/proofs`. When plan details include `Manual Testing Runbooks`, proof generation follows those runbooks first, including per-subplan runbooks, and maps each runbook to evidence in `report.md`. If the executor creates or uses scripts to generate seed data for the proof run, it must copy those scripts into the proof artifacts directory too. The runner only sets up the directory, runs the executor, and attaches every file it finds underneath when the executor is done. The executor finishes by writing a `report.md` that summarizes what was demonstrated.
 
 ```yaml
 proofGeneration:
@@ -701,7 +701,8 @@ proofGeneration:
     2. Use Playwright (already installed) to drive the browser. A helper lives at tests/proof_helpers.ts.
     3. For each user-facing feature added in the plan, capture at least one screenshot and one short video.
     4. Save screenshots as PNG and videos as WebM. Keep file sizes small.
-    5. Do not modify source files outside the artifacts directory.
+    5. Copy any seed-data scripts used for the proof run into the artifacts directory.
+    6. Do not modify source files outside the artifacts directory.
 ```
 
 Three entry points trigger proof generation:

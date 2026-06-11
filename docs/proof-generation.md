@@ -11,7 +11,7 @@ A single LLM executor session is the orchestrator. The runner does **not** drive
 3. Splices your project-specific `instructions` verbatim into a prompt that also includes the plan context and changed-file list. If the plan details include `Manual Testing Runbooks`, the executor is directed to use those runbooks as the primary demo checklist and produce proof for each runbook.
 4. Prepares `.tim/proofs` inside the workspace. If the directory already exists, its contents are cleared so stale files from a previous run are not re-attached.
 5. Soft-deletes any prior proof artifacts on the plan (matched by a `tim-proof:` message marker) so reruns do not leave duplicates behind.
-6. Runs the configured executor end-to-end. The executor has full Bash, Write, and Read access — it decides which features to demonstrate, drives whatever tooling makes sense, writes media files into the artifacts directory, and finishes by writing a `report.md` summarizing what it did.
+6. Runs the configured executor end-to-end. The executor has full Bash, Write, and Read access — it decides which features to demonstrate, drives whatever tooling makes sense, writes media files into the artifacts directory, copies in any scripts used to generate seed data for the proof run, and finishes by writing a `report.md` summarizing what it did.
 7. Walks the artifacts directory and attaches every file as a plan artifact, marking each with a `tim-proof:{runId}` message. Files exceeding the 100 MB artifact size cap are skipped with a warning logged to stderr.
 
 If the executor errors mid-session, whatever files it has already written are still attached on a best-effort basis and the failure is surfaced to the caller.
@@ -32,7 +32,8 @@ proofGeneration:
     2. Use Playwright (already installed) to drive the browser. A helper lives at tests/proof_helpers.ts.
     3. For each user-facing feature added in the plan, capture at least one screenshot and one short video.
     4. Save screenshots as PNG and videos as WebM. Keep file sizes small.
-    5. Do not modify source files outside the artifacts directory.
+    5. Copy any seed-data scripts used for the proof run into the artifacts directory.
+    6. Do not modify source files outside the artifacts directory.
 ```
 
 Field notes:
@@ -40,6 +41,7 @@ Field notes:
 - `mode` controls the automatic agent batch-mode trigger only. `after-completion` runs the phase after final review and documentation updates, and before parent cascade. `never` (or omitting `mode`) disables the automatic trigger; the manual CLI and web UI entry points still work as long as `instructions` is present.
 - `instructions` is **prompt material, not a command**. Write it as if you were briefing a new contributor on how proofs work in this repo: what to start, what tooling is available, what conventions to follow, what to demonstrate.
 - Generated plans should include small `Manual Testing Runbooks` in their details. Proof generation will follow those runbooks first, including per-subplan runbook sections, then add any extra proof it finds valuable from the tasks or changed files.
+- If proof setup uses generated seed data, copy any scripts used to create that data into the proof artifacts directory so reviewers can reproduce the setup.
 - `artifactsDir` defaults to `.tim/proofs`. If overridden it must be a workspace-relative path that is a strict descendant of `.tim/`, and must not be one of the reserved tim-managed children (`config`, `plans`, `logs`, `tmp`, `reviews`, `workspaces`, `workspace`, `cache`, `sessions`, `artifacts`). The runner refuses absolute paths, paths that escape the workspace, and symlinked path components when clearing the directory.
 - `.tim/proofs` is added to the tim-managed `.tim/.gitignore` so generated media do not sneak into commits. Custom `artifactsDir` values must still live under `.tim/`, so they inherit the same gitignore.
 
