@@ -28,6 +28,7 @@ import {
   spawnAutoreviewProcess,
   spawnChatProcess,
   spawnGenerateProcess,
+  spawnPlanReviewGuideProcess,
   spawnPrFixForPrProcess,
   spawnRebaseProcess,
   spawnReviewIssuesFixProcess,
@@ -139,6 +140,35 @@ describe('lib/server/plan_actions', () => {
       '--no-terminal-input',
     ]);
     expect(result).toEqual({ success: true, planId: 189 });
+  });
+
+  test('spawnPlanReviewGuideProcess includes guide-only flag when requested', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnPlanReviewGuideProcess(212, '/tmp/primary-workspace', {
+      guideOnly: true,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual([
+      'tim',
+      'review-guide',
+      'generate',
+      '212',
+      '--auto-workspace',
+      '--guide-only',
+    ]);
+    expect(options).toMatchObject({
+      cwd: '/tmp/primary-workspace',
+      stdin: 'ignore',
+      detached: true,
+    });
+    expect(proc.unref).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ success: true, planId: 212 });
   });
 
   test('spawnGenerateProcess falls back to tim when TIM_PATH is blank', async () => {

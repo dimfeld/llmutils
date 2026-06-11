@@ -2397,7 +2397,27 @@ describe('plan remote actions', () => {
         invokeCommand(startPlanReviewGuide, { projectId, planId: 5002 })
       ).resolves.toEqual({ status: 'started', planId: 5002 });
 
-      expect(spawnPlanReviewGuideProcessMock).toHaveBeenCalledWith(5002, '/tmp/primary-workspace');
+      expect(spawnPlanReviewGuideProcessMock).toHaveBeenCalledWith(5002, '/tmp/primary-workspace', {
+        guideOnly: undefined,
+      });
+    });
+
+    test('passes guide-only mode to the review guide process', async () => {
+      seedPlan({ uuid: 'plan-rg-guide-only', planId: 5012 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnPlanReviewGuideProcessMock.mockResolvedValue({ success: true, planId: 5012 });
+
+      await expect(
+        invokeCommand(startPlanReviewGuide, { projectId, planId: 5012, guideOnly: true })
+      ).resolves.toEqual({ status: 'started', planId: 5012 });
+
+      expect(spawnPlanReviewGuideProcessMock).toHaveBeenCalledWith(5012, '/tmp/primary-workspace', {
+        guideOnly: true,
+      });
     });
 
     test('returns the active session when another session is already running for the plan', async () => {

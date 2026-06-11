@@ -130,6 +130,7 @@ export interface RunReviewGuideWorkflowOptions {
   filesReviewed?: number;
   completionLabel?: string;
   planTag?: string;
+  guideOnly?: boolean;
 }
 
 export function buildReviewGuideWorkflowTimEnvironment(
@@ -1481,8 +1482,11 @@ export async function runReviewGuideWorkflow(
         : hasCodex
           ? 'codex-cli'
           : null;
+      const runIssuePrompts = options.guideOnly !== true;
       const concurrentJobCount =
-        (guideExecutorName ? 1 : 0) + (hasClaude ? 1 : 0) + (hasCodex ? 1 : 0);
+        (guideExecutorName ? 1 : 0) +
+        (runIssuePrompts && hasClaude ? 1 : 0) +
+        (runIssuePrompts && hasCodex ? 1 : 0);
       const isConcurrent = concurrentJobCount > 1;
       const executorTerminalInput = isConcurrent ? false : options.executorTerminalInput;
       const executorNoninteractive = isConcurrent || options.executorNoninteractive;
@@ -1520,7 +1524,7 @@ export async function runReviewGuideWorkflow(
         );
       }
 
-      if (hasClaude) {
+      if (runIssuePrompts && hasClaude) {
         executorOrder.push('claude-code');
         const claudeIssuesExecutor = buildExecutorAndLog(
           'claude-code',
@@ -1548,7 +1552,7 @@ export async function runReviewGuideWorkflow(
         );
       }
 
-      if (hasCodex) {
+      if (runIssuePrompts && hasCodex) {
         executorOrder.push('codex-cli');
         const codexExecutor = buildExecutorAndLog(
           'codex-cli',
@@ -1646,7 +1650,15 @@ export async function runReviewGuideWorkflow(
         (entry): entry is ExecutorIssueResult => entry != null
       );
 
-      if (issueResults.length === 0) {
+      if (!runIssuePrompts && !guideResult) {
+        const allErrors = settled
+          .filter((entry): entry is PromiseRejectedResult => entry.status === 'rejected')
+          .map((entry) => asErrorMessage(entry.reason));
+        const errorMessage = `Review guide generation failed. ${allErrors.join(' | ')}`;
+        throw new Error(errorMessage);
+      }
+
+      if (runIssuePrompts && issueResults.length === 0) {
         const allErrors = settled
           .filter((entry): entry is PromiseRejectedResult => entry.status === 'rejected')
           .map((entry) => asErrorMessage(entry.reason));
@@ -1704,6 +1716,25 @@ export async function runReviewGuideWorkflow(
         });
         reviewGuide = annotationResult.guideText;
         extractedAnnotations = annotationResult.annotations;
+      }
+
+      if (!runIssuePrompts) {
+        const noteIssues = extractedAnnotations.map(annotationToInsertIssue);
+        insertReviewIssues(options.db, {
+          reviewId: options.review.id,
+          issues: noteIssues,
+        });
+
+        updateReview(options.db, options.review.id, {
+          status: 'complete',
+          reviewGuide,
+          reviewedSha: options.reviewedSha,
+          errorMessage: null,
+        });
+
+        log(chalk.green(`Review guide complete for ${options.completionLabel ?? subjectTag}`));
+        log('Issue generation skipped.');
+        return;
       }
 
       if (claudeIssuesResult && codexResult) {

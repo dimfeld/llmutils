@@ -493,11 +493,12 @@ export const startShell = command(startShellSchema, async ({ planUuid }) => {
 const startPlanReviewGuideSchema = z.object({
   projectId: z.number().int(),
   planId: z.number().int(),
+  guideOnly: z.boolean().optional(),
 });
 
 export const startPlanReviewGuide = command(
   startPlanReviewGuideSchema,
-  async ({ projectId, planId }) => {
+  async ({ projectId, planId, guideOnly }) => {
     const { db } = await getServerContext();
 
     const planRow = getPlanByPlanId(db, projectId, planId);
@@ -510,7 +511,7 @@ export const startPlanReviewGuide = command(
       planRow.uuid,
       isPlanEligibleForChat,
       'Plan is not eligible for review guide',
-      (planId, cwd) => spawnPlanReviewGuideProcess(planId, cwd),
+      (planId, cwd) => spawnPlanReviewGuideProcess(planId, cwd, { guideOnly }),
       undefined,
       (plan) => {
         const existingReviews = getReviewsByPlanUuid(db, plan.uuid);

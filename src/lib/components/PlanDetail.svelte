@@ -362,7 +362,7 @@
   let startingChat: 'claude' | 'codex' | false = $state(false);
   let startingFinish = $state(false);
   let startingCreatePr = $state(false);
-  let reviewGuideRunning = $state(false);
+  let reviewGuideRunning: 'full' | 'guide-only' | false = $state(false);
   let startingReviewIssuesFix = $state(false);
   let artifactDialogOpen = $state(false);
   let startingProof = $state(false);
@@ -389,13 +389,13 @@
     }
   }
 
-  async function handleStartReviewGuide() {
+  async function handleStartReviewGuide(guideOnly: boolean = false) {
     if (reviewGuideRunning || hasInProgressReview) return;
-    reviewGuideRunning = true;
+    reviewGuideRunning = guideOnly ? 'guide-only' : 'full';
     errorMessage = null;
     successMessage = null;
     try {
-      await startPlanReviewGuide({ projectId: plan.projectId, planId: plan.planId });
+      await startPlanReviewGuide({ projectId: plan.projectId, planId: plan.planId, guideOnly });
       successMessage = { text: 'Review guide started' };
       setStartedSuccessfully();
       await invalidateAll();
@@ -1538,15 +1538,26 @@
         <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Review Guides
         </h3>
-        <button
-          type="button"
-          onclick={handleStartReviewGuide}
-          disabled={reviewGuideRunning || hasInProgressReview}
-          class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
-          title="Generate a new review guide"
-        >
-          {reviewGuideRunning ? 'Starting...' : 'Generate review guide'}
-        </button>
+        <div class="flex items-center gap-1">
+          <button
+            type="button"
+            onclick={() => handleStartReviewGuide(false)}
+            disabled={Boolean(reviewGuideRunning) || hasInProgressReview}
+            class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+            title="Generate a full review guide with issue extraction"
+          >
+            {reviewGuideRunning === 'full' ? 'Starting...' : 'Generate Full Guide'}
+          </button>
+          <button
+            type="button"
+            onclick={() => handleStartReviewGuide(true)}
+            disabled={Boolean(reviewGuideRunning) || hasInProgressReview}
+            class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+            title="Generate only the review guide prompt output"
+          >
+            {reviewGuideRunning === 'guide-only' ? 'Starting...' : 'Generate Guide Only'}
+          </button>
+        </div>
       </div>
 
       {#if reviews.length > 0}

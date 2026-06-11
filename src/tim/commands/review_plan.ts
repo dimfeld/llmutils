@@ -36,6 +36,7 @@ export interface PlanReviewGuideCommandOptions {
   terminalInput?: boolean;
   nonInteractive?: boolean;
   verbose?: boolean;
+  guideOnly?: boolean;
 }
 
 function getRootOptions(command: RootCommandLike | undefined): { config?: string } {
@@ -217,6 +218,7 @@ export async function handlePlanReviewGuideCommand(
           filesReviewed: context.diffResult.changedFiles.length,
           completionLabel: `plan ${planId}`,
           planTag,
+          guideOnly: options.guideOnly,
         });
       },
     });

@@ -360,14 +360,15 @@ export async function spawnPrReviewGuideProcess(
 
 export async function spawnPlanReviewGuideProcess(
   planId: number,
-  cwd: string
+  cwd: string,
+  options: { guideOnly?: boolean } = {}
 ): Promise<SpawnProcessResult> {
-  return spawnPlanTimProcess(
-    describeTarget('plan', planId),
-    planId,
-    ['review-guide', 'generate', String(planId), '--auto-workspace'],
-    cwd
-  );
+  const args = ['review-guide', 'generate', String(planId), '--auto-workspace'];
+  if (options.guideOnly === true) {
+    args.push('--guide-only');
+  }
+
+  return spawnPlanTimProcess(describeTarget('plan', planId), planId, args, cwd);
 }
 
 export async function spawnPrReviewGuideCommentProcess(

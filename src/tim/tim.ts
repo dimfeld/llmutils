@@ -1745,6 +1745,7 @@ reviewGuideCommand
   .option('--terminal-input', 'Enable terminal input')
   .option('--no-terminal-input', 'Disable terminal input')
   .option('--non-interactive', 'No user prompts')
+  .option('--guide-only', 'Only generate the review guide; skip issue generation prompts')
   .option('--verbose', 'Verbose output')
   .action(async (planIdArg, options, command) => {
     const planId = parsePlanIdFromCliArg(planIdArg);

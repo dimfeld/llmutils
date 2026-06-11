@@ -731,7 +731,7 @@ describe('PlanDetail', () => {
     expect(checkboxMatch?.[0]).toContain('disabled');
   });
 
-  test('disables Generate review guide while a review is in progress', () => {
+  test('disables review guide generation buttons while a review is in progress', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
         plan: makePlanDetail(),
@@ -740,7 +740,8 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toMatch(/<button[^>]*disabled[^>]*>\s*Generate review guide\s*<\/button>/);
+    expect(body).toMatch(/<button[^>]*disabled[^>]*>\s*Generate Full Guide\s*<\/button>/);
+    expect(body).toMatch(/<button[^>]*disabled[^>]*>\s*Generate Guide Only\s*<\/button>/);
   });
 
   test('shows an empty state when the plan has no review guides', () => {

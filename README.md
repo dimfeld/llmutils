@@ -285,7 +285,7 @@ Useful web actions:
 - Expand unresolved PR review threads and reply, resolve, or convert them to plan tasks.
 - Use **Fix Unresolved** to spawn `tim pr fix` for review thread cleanup.
 - Open stored PR review guides from project PR pages when standalone review has been run.
-- **Generate review guide** from the plan detail page to run a plan-only review (no PR required); past review guides for the plan are listed with status badges and link to a viewer route.
+- **Generate Full Guide** from the plan detail page to run a plan-only review (no PR required), or **Generate Guide Only** to skip issue extraction and only generate the guide; past review guides for the plan are listed with status badges and link to a viewer route.
 
 Useful CLI commands:
 
@@ -310,6 +310,7 @@ tim autoreview --branch feature/my-branch --base main # Interactive review/fix l
 tim autoreview --pr 456 --executor claude-code --model sonnet --effort high --dry-run # Print the generated prompt
 tim review-guide generate 123                       # Plan-only review guide (no PR required)
 tim review-guide generate 123 --auto-workspace
+tim review-guide generate 123 --guide-only          # Generate the guide without issue extraction
 tim review-guide list-issues 123                    # Latest guide for plan, plus linked PR guides
 tim review-guide list-issues feature/my-branch      # Resolve by plan or PR branch
 tim review-guide resolve-issue 42 123
