@@ -103,12 +103,29 @@ function encodeMediaPath(relativePath: string): string {
   return relativePath.split('/').map(encodeURIComponent).join('/');
 }
 
+function logMediaRequest(
+  action: 'upload' | 'view',
+  status: number,
+  relativePath: string | null,
+  details?: Record<string, string | number>
+): void {
+  const detailText = details
+    ? Object.entries(details)
+        .map(([key, value]) => `${key}=${value}`)
+        .join(' ')
+    : '';
+  console.info(
+    `[media_host] ${action} status=${status} path=${JSON.stringify(relativePath)}${detailText ? ` ${detailText}` : ''}`
+  );
+}
+
 async function handleUpload(
   request: Request,
   relativePath: string,
   config: MediaHostConfig
 ): Promise<Response> {
   if (!hasValidBearerToken(request, config.apiKey)) {
+    logMediaRequest('upload', 401, relativePath);
     return jsonResponse({ error: 'Unauthorized' }, 401);
   }
 
@@ -116,6 +133,7 @@ async function handleUpload(
   try {
     absoluteTargetPath = validatePath(config.storageDir, relativePath);
   } catch {
+    logMediaRequest('upload', 400, relativePath);
     return jsonResponse({ error: 'Invalid path' }, 400);
   }
 
@@ -123,18 +141,28 @@ async function handleUpload(
   if (declaredLength) {
     const declared = Number.parseInt(declaredLength, 10);
     if (Number.isInteger(declared) && declared > config.maxUploadBytes) {
+      logMediaRequest('upload', 413, relativePath, { declaredBytes: declared });
       return jsonResponse({ error: 'Payload too large' }, 413);
     }
   }
 
   const body = await request.arrayBuffer();
   if (body.byteLength > config.maxUploadBytes) {
+    logMediaRequest('upload', 413, relativePath, { bytes: body.byteLength });
     return jsonResponse({ error: 'Payload too large' }, 413);
   }
 
-  await Bun.write(absoluteTargetPath, body);
+  try {
+    await Bun.write(absoluteTargetPath, body);
+  } catch (error) {
+    logMediaRequest('upload', 500, relativePath, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 
   const signature = computePathSignature(relativePath, config.signingSecret);
+  logMediaRequest('upload', 201, relativePath, { bytes: body.byteLength });
   return jsonResponse(
     {
       path: relativePath,
@@ -152,6 +180,7 @@ async function handleDownload(
 ): Promise<Response> {
   const signature = url.searchParams.get(SIGNATURE_PARAM);
   if (!isValidPathSignature(relativePath, config.signingSecret, signature)) {
+    logMediaRequest('view', 403, relativePath);
     return jsonResponse({ error: 'Forbidden' }, 403);
   }
 
@@ -159,16 +188,19 @@ async function handleDownload(
   try {
     absoluteTargetPath = validatePath(config.storageDir, relativePath);
   } catch {
+    logMediaRequest('view', 400, relativePath);
     return jsonResponse({ error: 'Invalid path' }, 400);
   }
 
   const file = Bun.file(absoluteTargetPath);
   if (!(await file.exists())) {
+    logMediaRequest('view', 404, relativePath);
     return jsonResponse({ error: 'Not Found' }, 404);
   }
 
   // Response infers content-type and content-length from the BunFile. Files are
   // gated behind a path-bound signature, so caches must keep responses private.
+  logMediaRequest('view', 200, relativePath, { bytes: file.size });
   return new Response(file, {
     headers: {
       'cache-control': 'private, max-age=3600',
@@ -192,6 +224,11 @@ export function createFetchHandler(
 
     const relativePath = normalizeMediaPath(url.pathname);
     if (relativePath === null) {
+      if (request.method === 'PUT' || request.method === 'POST') {
+        logMediaRequest('upload', 400, null);
+      } else if (request.method === 'GET') {
+        logMediaRequest('view', 400, null);
+      }
       return jsonResponse({ error: 'Invalid path' }, 400);
     }
 

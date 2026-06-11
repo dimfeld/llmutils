@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { computePathSignature } from './security.js';
 import { buildServer, createFetchHandler, normalizeMediaPath } from './server.js';
@@ -35,6 +35,7 @@ describe('media-host server', () => {
   let config: MediaHostConfig;
 
   beforeEach(async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => {});
     storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'media-host-test-'));
     config = {
       port: 0,
@@ -51,6 +52,7 @@ describe('media-host server', () => {
   afterEach(async () => {
     await server.stop(true);
     await fs.rm(storageDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
   });
 
   async function upload(relativePath: string, body: BodyInit, token = API_KEY): Promise<Response> {
@@ -81,6 +83,9 @@ describe('media-host server', () => {
     // The file actually landed on disk inside the storage dir.
     const onDisk = await fs.readFile(path.join(storageDir, 'docs/readme.txt'), 'utf8');
     expect(onDisk).toBe('hello world');
+    expect(console.info).toHaveBeenCalledWith(
+      '[media_host] upload status=201 path="docs/readme.txt" bytes=11'
+    );
   });
 
   test('returns a signed url with reserved path characters encoded', async () => {
@@ -107,6 +112,9 @@ describe('media-host server', () => {
 
     // Nothing should have been written.
     await expect(fs.access(path.join(storageDir, 'docs/readme.txt'))).rejects.toThrow();
+    expect(console.info).toHaveBeenCalledWith(
+      '[media_host] upload status=401 path="docs/readme.txt"'
+    );
   });
 
   test('rejects uploads exceeding the max size', async () => {
@@ -140,6 +148,9 @@ describe('media-host server', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('image/png');
     expect(await res.text()).toBe('PNGDATA');
+    expect(console.info).toHaveBeenCalledWith(
+      '[media_host] view status=200 path="images/pixel.png" bytes=7'
+    );
   });
 
   test('refuses access without or with an invalid signature', async () => {
@@ -155,6 +166,9 @@ describe('media-host server', () => {
     const otherSig = computePathSignature('images/other.png', SIGNING_SECRET);
     const crossPath = await fetch(`${baseUrl}/images/pixel.png?sig=${otherSig}`);
     expect(crossPath.status).toBe(403);
+    expect(console.info).toHaveBeenCalledWith(
+      '[media_host] view status=403 path="images/pixel.png"'
+    );
   });
 
   test('returns 404 for a correctly signed but missing file', async () => {

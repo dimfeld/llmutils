@@ -37,6 +37,15 @@ const output = await Promise.all([
     // bytecode: true,
   }),
   buildOne({
+    outdir: 'dist/media-host',
+    entrypoints: ['./src/media-host/server.ts'],
+    target: 'bun',
+    minify: true,
+    format: 'esm',
+    compile: true,
+    // bytecode: true,
+  }),
+  buildOne({
     outdir: 'dist/claude_code',
     entrypoints: ['./src/tim/executors/claude_code/permissions_mcp.ts'],
     target: 'bun',
