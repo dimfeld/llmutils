@@ -144,12 +144,12 @@ Actionable PR data is loaded client-side via `getActionablePrs` query in `src/li
 `src/lib/utils/dashboard_attention.ts` provides pure functions to derive dashboard items from plans, sessions, and PR data:
 
 - `deriveAttentionItems(plans, sessions, actionablePrs)` — assembles plan + PR attention items
-- `deriveRunningNowSessions(sessions, projectId)` — filters active agent/generate/chat sessions, sorted by `connectedAt` most recent first
+- `deriveRunningNowSessions(sessions, projectId)` — filters active sessions for Running Now: interactive commands are included by default except explicit utility exclusions, and selected non-interactive work commands are included by allowlist. Results are sorted by `connectedAt` most recent first
 - `deriveReadyToStartPlans(plans, sessions)` — filters ready non-epic plans with no active session, sorted by priority (urgent > high > medium > low > maybe)
 
 Key types:
 
-- `PlanAttentionItem` — groups multiple reasons per plan: `waiting_for_input`, `needs_review`, `reviewed`, `agent_finished`. Agent finished = offline session linked to `in_progress` plan still in session manager memory (restricted to agent/generate/chat commands). Includes `docsUpdatedAt`, `lessonsAppliedAt`, and `needsFinishExecutor` fields for determining Finish button behavior.
+- `PlanAttentionItem` — groups multiple reasons per plan: `waiting_for_input`, `needs_review`, `reviewed`, `agent_finished`. Agent finished = offline session linked to `in_progress` plan still in session manager memory (restricted to known agent-like work commands). Includes `docsUpdatedAt`, `lessonsAppliedAt`, and `needsFinishExecutor` fields for determining Finish button behavior.
 - `PrAttentionItem` — per-PR: `ready_to_merge`, `checks_failing`, `changes_requested`, `review_requested`.
 - `ActionablePr` — type for PR actionability data (defined here for the remote query to import).
 

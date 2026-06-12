@@ -442,7 +442,7 @@ describe('deriveRunningNowSessions', () => {
     expect(deriveRunningNowSessions([], 'all')).toEqual([]);
   });
 
-  test('returns active agent/generate/chat sessions', () => {
+  test('returns active non-interactive work sessions from the explicit allowlist', () => {
     const sessions = [
       makeSession({
         connectionId: 'agent-1',
@@ -456,10 +456,38 @@ describe('deriveRunningNowSessions', () => {
         connectionId: 'chat-1',
         sessionInfo: { command: 'chat' },
       }),
+      makeSession({
+        connectionId: 'pr-fix-1',
+        sessionInfo: { command: 'pr-fix' },
+      }),
     ];
 
     const result = deriveRunningNowSessions(sessions, 'all');
-    expect(result).toHaveLength(3);
+    expect(result.map((session) => session.connectionId)).toEqual([
+      'agent-1',
+      'gen-1',
+      'chat-1',
+      'pr-fix-1',
+    ]);
+  });
+
+  test('returns active interactive sessions by default', () => {
+    const sessions = [
+      makeSession({
+        connectionId: 'autoreview-1',
+        sessionInfo: { command: 'autoreview', interactive: true, planUuid: 'plan-1' },
+      }),
+      makeSession({
+        connectionId: 'future-1',
+        sessionInfo: { command: 'future-interactive-command', interactive: true },
+      }),
+    ];
+
+    const result = deriveRunningNowSessions(sessions, 'all');
+    expect(result.map((session) => session.command)).toEqual([
+      'autoreview',
+      'future-interactive-command',
+    ]);
   });
 
   test('excludes offline sessions', () => {
@@ -472,10 +500,19 @@ describe('deriveRunningNowSessions', () => {
     expect(deriveRunningNowSessions([session], 'all')).toEqual([]);
   });
 
-  test('excludes non-agent commands', () => {
+  test('excludes non-interactive commands outside the explicit allowlist', () => {
     const session = makeSession({
       connectionId: 'sess-1',
       sessionInfo: { command: 'show' },
+    });
+
+    expect(deriveRunningNowSessions([session], 'all')).toEqual([]);
+  });
+
+  test('excludes interactive utility commands from running now', () => {
+    const session = makeSession({
+      connectionId: 'sess-1',
+      sessionInfo: { command: 'review-guide', interactive: true },
     });
 
     expect(deriveRunningNowSessions([session], 'all')).toEqual([]);

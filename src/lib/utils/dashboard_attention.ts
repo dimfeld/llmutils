@@ -83,7 +83,37 @@ export interface RunningSession {
 
 // --- Derivation functions ---
 
-const AGENT_COMMANDS = new Set(['agent', 'agent-multi', 'generate', 'chat', 'pr-create', 'pr-fix']);
+const AGENT_FINISHED_COMMANDS = new Set([
+  'agent',
+  'agent-multi',
+  'generate',
+  'chat',
+  'pr-create',
+  'pr-fix',
+]);
+
+const RUNNING_NOW_INCLUDED_NONINTERACTIVE_COMMANDS = new Set([
+  'agent',
+  'agent-multi',
+  'generate',
+  'chat',
+  'pr-create',
+  'pr-fix',
+]);
+
+const RUNNING_NOW_EXCLUDED_INTERACTIVE_COMMANDS = new Set(['review-guide', 'show']);
+
+function isRunningNowSession(session: SessionData): boolean {
+  if (session.status !== 'active') {
+    return false;
+  }
+
+  if (session.sessionInfo.interactive === true) {
+    return !RUNNING_NOW_EXCLUDED_INTERACTIVE_COMMANDS.has(session.sessionInfo.command);
+  }
+
+  return RUNNING_NOW_INCLUDED_NONINTERACTIVE_COMMANDS.has(session.sessionInfo.command);
+}
 
 export function indexSessionsByPlanUuid(
   sessions: Iterable<SessionData>
@@ -148,7 +178,10 @@ export function deriveAttentionItems(
     // Check for agent finished (offline agent/generate/chat session + plan still in_progress)
     if (plan.displayStatus === 'in_progress') {
       for (const session of planSessions) {
-        if (session.status === 'offline' && AGENT_COMMANDS.has(session.sessionInfo.command)) {
+        if (
+          session.status === 'offline' &&
+          AGENT_FINISHED_COMMANDS.has(session.sessionInfo.command)
+        ) {
           reasons.push({ type: 'agent_finished' });
           break; // Only add once regardless of how many offline sessions
         }
@@ -221,8 +254,7 @@ export function deriveRunningNowSessions(
   const results: RunningSession[] = [];
 
   for (const session of sessions) {
-    if (session.status !== 'active') continue;
-    if (!AGENT_COMMANDS.has(session.sessionInfo.command)) continue;
+    if (!isRunningNowSession(session)) continue;
     if (numericProjectId !== null && session.projectId !== numericProjectId) continue;
 
     results.push({
