@@ -32,6 +32,8 @@ const {
   runUpdateDocsSpy,
   runUpdateLessonsSpy,
   handleReviewCommandSpy,
+  hasExistingProofArtifactsSpy,
+  runProofGenerationSpy,
   promptConfirmSpy,
   autoCreatePrForPlanSpy,
 } = vi.hoisted(() => {
@@ -64,6 +66,12 @@ const {
     runUpdateDocsSpy: vi.fn(async () => {}),
     runUpdateLessonsSpy: vi.fn(async () => true),
     handleReviewCommandSpy: vi.fn(async () => ({ tasksAppended: 0 })),
+    hasExistingProofArtifactsSpy: vi.fn(async () => false),
+    runProofGenerationSpy: vi.fn(async () => ({
+      runId: 'proof-run',
+      attachedArtifactUuids: [],
+      skippedFiles: [],
+    })),
     promptConfirmSpy: vi.fn(async () => false),
     autoCreatePrForPlanSpy: vi.fn(async () => null),
   };
@@ -158,6 +166,21 @@ vi.mock('../update-lessons.js', () => ({
 vi.mock('../review.js', () => ({
   handleReviewCommand: handleReviewCommandSpy,
 }));
+
+vi.mock('../../proof/runner.js', () => {
+  class ProofNotConfiguredError extends Error {
+    constructor() {
+      super('Proof generation is not configured for this project.');
+      this.name = 'ProofNotConfiguredError';
+    }
+  }
+
+  return {
+    ProofNotConfiguredError,
+    hasExistingProofArtifacts: hasExistingProofArtifactsSpy,
+    runProofGeneration: runProofGenerationSpy,
+  };
+});
 
 vi.mock('../create_pr.js', () => ({
   autoCreatePrForPlan: autoCreatePrForPlanSpy,
@@ -302,6 +325,14 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     runUpdateDocsSpy.mockClear();
     runUpdateLessonsSpy.mockClear();
     handleReviewCommandSpy.mockClear();
+    hasExistingProofArtifactsSpy.mockClear();
+    hasExistingProofArtifactsSpy.mockResolvedValue(false);
+    runProofGenerationSpy.mockClear();
+    runProofGenerationSpy.mockResolvedValue({
+      runId: 'proof-run',
+      attachedArtifactUuids: [],
+      skippedFiles: [],
+    });
     promptConfirmSpy.mockClear();
     promptConfirmSpy.mockResolvedValue(false);
     autoCreatePrForPlanSpy.mockClear();
@@ -1952,6 +1983,103 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const finalContent = await fs.readFile(planFile, 'utf-8');
       const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
       expect(finalPlan.lessonsAppliedAt).toBeUndefined();
+    });
+
+    test('runs after-completion proof generation when no proof artifacts exist', async () => {
+      await createPlanFile({
+        uuid: 'proof-plan-without-artifacts',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        proofGeneration: {
+          mode: 'after-completion',
+          instructions: 'Capture proof artifacts.',
+        },
+      });
+
+      hasExistingProofArtifactsSpy.mockResolvedValue(false);
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          uuid: 'proof-plan-without-artifacts',
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      await timAgent(1, { log: false, nonInteractive: true, finalReview: false } as any, {});
+
+      expect(hasExistingProofArtifactsSpy).toHaveBeenCalledWith(
+        'proof-plan-without-artifacts',
+        expect.objectContaining({
+          proofGeneration: expect.objectContaining({ mode: 'after-completion' }),
+        })
+      );
+      expect(runProofGenerationSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('skips after-completion proof generation when proof artifacts already exist', async () => {
+      await createPlanFile({
+        uuid: 'proof-plan-with-artifacts',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        proofGeneration: {
+          mode: 'after-completion',
+          instructions: 'Capture proof artifacts.',
+        },
+      });
+
+      hasExistingProofArtifactsSpy.mockResolvedValue(true);
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          uuid: 'proof-plan-with-artifacts',
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      await timAgent(1, { log: false, nonInteractive: true, finalReview: false } as any, {});
+
+      expect(hasExistingProofArtifactsSpy).toHaveBeenCalledWith(
+        'proof-plan-with-artifacts',
+        expect.objectContaining({
+          proofGeneration: expect.objectContaining({ mode: 'after-completion' }),
+        })
+      );
+      expect(runProofGenerationSpy).not.toHaveBeenCalled();
+      expect(logSpy).toHaveBeenCalledWith(
+        'Skipping proof generation: plan already has proof artifacts.'
+      );
     });
 
     test('manual mode skips docs', async () => {

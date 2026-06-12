@@ -38,7 +38,7 @@ proofGeneration:
 
 Field notes:
 
-- `mode` controls the automatic agent batch-mode trigger only. `after-completion` runs the phase after final review and documentation updates, and before parent cascade. `never` (or omitting `mode`) disables the automatic trigger; the manual CLI and web UI entry points still work as long as `instructions` is present.
+- `mode` controls the automatic agent batch-mode trigger only. `after-completion` runs the phase after final review and documentation updates, and before parent cascade, but only when the plan does not already have active proof artifacts. `never` (or omitting `mode`) disables the automatic trigger; the manual CLI and web UI entry points still work as long as `instructions` is present.
 - `instructions` is **prompt material, not a command**. Write it as if you were briefing a new contributor on how proofs work in this repo: what to start, what tooling is available, what conventions to follow, what to demonstrate.
 - Generated plans should include small `Manual Testing Runbooks` in their details. Proof generation will follow those runbooks first, including per-subplan runbook sections, then add any extra proof it finds valuable from the tasks or changed files.
 - If proof setup uses generated seed data, copy any scripts used to create that data into the proof artifacts directory so reviewers can reproduce the setup.
@@ -66,7 +66,7 @@ Artifact upload commands require both `mediaHost.baseUrl` and `MEDIA_HOST_API_KE
 
 There are three ways to trigger the phase:
 
-- **Agent batch mode.** When `proofGeneration.mode` is `after-completion`, `tim agent` runs the proof phase as a post-completion step. Failures never block parent cascade or the final commit; they are logged as warnings.
+- **Agent batch mode.** When `proofGeneration.mode` is `after-completion`, `tim agent` runs the proof phase as a post-completion step only if the plan does not already have active proof artifacts. Failures never block parent cascade or the final commit; they are logged as warnings.
 - **CLI.** `tim proof <planId>` runs the phase manually. Useful flags:
   - `--auto-workspace` — use the plan's assigned workspace (mirrors `tim chat` / `tim review`).
   - `--executor <name>` and `--model <model>` — override the configured executor/model.

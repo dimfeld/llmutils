@@ -19,7 +19,11 @@ import type { SummaryCollector } from '../../summary/collector.js';
 import { runSimplify } from '../simplify.js';
 import { runUpdateDocs } from '../update-docs.js';
 import { handleReviewCommand } from '../review.js';
-import { ProofNotConfiguredError, runProofGeneration } from '../../proof/runner.js';
+import {
+  hasExistingProofArtifacts,
+  ProofNotConfiguredError,
+  runProofGeneration,
+} from '../../proof/runner.js';
 import { isShuttingDown } from '../../shutdown_state.js';
 import { materializePlan, syncMaterializedPlan, withPlanAutoSync } from '../../plan_materialize.js';
 import { getCompletionStatus } from '../../plans/plan_state_utils.js';
@@ -652,16 +656,20 @@ Available tasks:\n\n${taskDescriptions}`,
             if (!updatedPlanData.uuid) {
               throw new Error(`Batch mode plan is missing a UUID: ${currentPlanFile}`);
             }
-            const logger = getLoggerAdapter() ?? new ConsoleAdapter();
-            await runProofGeneration({
-              planUuid: updatedPlanData.uuid,
-              gitRoot: baseDir,
-              workspacePath: baseDir,
-              config,
-              runId: randomUUID(),
-              logger,
-              terminalInput,
-            });
+            if (await hasExistingProofArtifacts(updatedPlanData.uuid, config)) {
+              log('Skipping proof generation: plan already has proof artifacts.');
+            } else {
+              const logger = getLoggerAdapter() ?? new ConsoleAdapter();
+              await runProofGeneration({
+                planUuid: updatedPlanData.uuid,
+                gitRoot: baseDir,
+                workspacePath: baseDir,
+                config,
+                runId: randomUUID(),
+                logger,
+                terminalInput,
+              });
+            }
           } catch (err) {
             if (err instanceof ProofNotConfiguredError) {
               log('Skipping proof generation: proofGeneration.instructions is not set.');

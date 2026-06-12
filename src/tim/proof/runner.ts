@@ -154,6 +154,14 @@ async function softDeletePriorProofArtifacts(planUuid: string, config: TimConfig
   }
 }
 
+export async function hasExistingProofArtifacts(
+  planUuid: string,
+  config: TimConfig
+): Promise<boolean> {
+  const artifacts = await listArtifactsForPlanUuid({ planUuid, config });
+  return artifacts.some((artifact) => artifact.message?.startsWith('tim-proof:'));
+}
+
 export async function runProofGeneration(options: RunProofGenerationOptions): Promise<ProofResult> {
   const proofConfig = options.config.proofGeneration;
   const rawInstructions = proofConfig?.instructions;
