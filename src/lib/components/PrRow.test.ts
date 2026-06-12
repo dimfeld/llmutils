@@ -76,6 +76,8 @@ describe('PrRow', () => {
 
     expect(body).toContain('Review Requested');
     expect(body).toContain('5h');
+    expect(body).toContain('bg-yellow-200');
+    expect(body).toContain('dark:bg-yellow-950/60');
   });
 
   test('renders compact diff stats when additions and deletions are available', () => {

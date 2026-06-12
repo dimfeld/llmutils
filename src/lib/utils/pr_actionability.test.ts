@@ -427,6 +427,7 @@ describe('buildActionablePrsForRepo', () => {
         additions: null,
         deletions: null,
         changedFiles: null,
+        reviewRequestedAt: null,
       },
     ]);
   });
@@ -472,6 +473,7 @@ describe('buildActionablePrsForRepo', () => {
         additions: null,
         deletions: null,
         changedFiles: null,
+        reviewRequestedAt: '2026-01-01T00:00:00Z',
       },
     ]);
   });

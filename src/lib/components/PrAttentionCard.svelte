@@ -2,6 +2,7 @@
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import type { PrAttentionItem } from '$lib/utils/dashboard_attention.js';
   import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
+  import { formatCompactRelativeTime } from '$lib/utils/time.js';
 
   let {
     item,
@@ -30,7 +31,7 @@
     },
     review_requested: {
       label: 'Review requested',
-      classes: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
+      classes: 'bg-yellow-200 text-yellow-900 dark:bg-yellow-950/60 dark:text-yellow-200',
     },
     open: {
       label: 'Open',
@@ -51,6 +52,9 @@
   let prHref = $derived(`/projects/${pr.projectId}/active/pr/${pr.prNumber}`);
   let externalPrUrl = $derived(
     buildLinearReviewDeepLink({ prUrl: pr.prUrl, prNumber: pr.prNumber }) ?? pr.prUrl
+  );
+  let reviewRequestedAge = $derived(
+    pr.reviewRequestedAt ? formatCompactRelativeTime(pr.reviewRequestedAt) : ''
   );
 </script>
 
@@ -88,6 +92,13 @@
           class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {reasonStyle.classes}"
         >
           {reasonStyle.label}
+          {#if pr.actionReason === 'review_requested' && reviewRequestedAge}
+            <span
+              class="ml-1 border-l border-yellow-300 pl-1 text-yellow-700 dark:border-yellow-700 dark:text-yellow-200"
+            >
+              {reviewRequestedAge}
+            </span>
+          {/if}
         </span>
       {/if}
       {#if pr.additions != null && pr.deletions != null}

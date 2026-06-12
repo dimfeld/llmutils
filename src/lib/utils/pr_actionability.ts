@@ -88,20 +88,8 @@ function getLatestSubmittedReviewAt(pr: PrStatusDetail, normalizedUsername: stri
  * Checks both detailed review request rows and the snapshot requested_reviewers field.
  */
 export function hasReviewRequestForUser(pr: PrStatusDetail, normalizedUsername: string): boolean {
-  // Check detailed review request rows
-  const request = pr.reviewRequests.find(
-    (row: PrReviewRequestRow) => normalizeGitHubUsername(row.reviewer) === normalizedUsername
-  );
-
-  if (request && request.requested_at !== null) {
-    const isCurrentlyRequested =
-      request.removed_at === null || request.requested_at > request.removed_at;
-    if (isCurrentlyRequested) {
-      const latestReviewAt = getLatestSubmittedReviewAt(pr, normalizedUsername);
-      if (latestReviewAt === null || request.requested_at > latestReviewAt) {
-        return true;
-      }
-    }
+  if (getReviewRequestedAtForUser(pr, normalizedUsername) !== null) {
+    return true;
   }
 
   // Fallback to snapshot requested_reviewers.
@@ -120,6 +108,29 @@ export function hasReviewRequestForUser(pr: PrStatusDetail, normalizedUsername: 
   }
 
   return false;
+}
+
+export function getReviewRequestedAtForUser(
+  pr: PrStatusDetail,
+  normalizedUsername: string
+): string | null {
+  // Check detailed review request rows
+  const request = pr.reviewRequests.find(
+    (row: PrReviewRequestRow) => normalizeGitHubUsername(row.reviewer) === normalizedUsername
+  );
+
+  if (request && request.requested_at !== null) {
+    const isCurrentlyRequested =
+      request.removed_at === null || request.requested_at > request.removed_at;
+    if (isCurrentlyRequested) {
+      const latestReviewAt = getLatestSubmittedReviewAt(pr, normalizedUsername);
+      if (latestReviewAt === null || request.requested_at > latestReviewAt) {
+        return request.requested_at;
+      }
+    }
+  }
+
+  return null;
 }
 
 /** Build actionable PRs for a single repo. Pure function for testability. */
@@ -163,6 +174,7 @@ export function buildActionablePrsForRepo(
           additions,
           deletions,
           changedFiles: changed_files,
+          reviewRequestedAt: null,
         });
       }
     } else if (normalizedUsername !== null && hasReviewRequestForUser(pr, normalizedUsername)) {
@@ -182,6 +194,7 @@ export function buildActionablePrsForRepo(
         additions,
         deletions,
         changedFiles: changed_files,
+        reviewRequestedAt: getReviewRequestedAtForUser(pr, normalizedUsername),
       });
     }
   }

@@ -77,6 +77,7 @@ function makeActionablePr(overrides: Partial<ActionablePr> & { prUrl: string }):
     additions: null,
     deletions: null,
     changedFiles: null,
+    reviewRequestedAt: null,
     ...overrides,
   };
 }

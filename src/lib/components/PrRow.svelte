@@ -72,7 +72,7 @@
         </span>
       {:else if pr.currentUserReviewRequestLabel}
         <span
-          class="inline-flex items-center rounded-full bg-yellow-100 px-1.5 py-0.5 text-xs leading-none font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+          class="inline-flex items-center rounded-full bg-yellow-200 px-1.5 py-0.5 text-xs leading-none font-medium text-yellow-900 dark:bg-yellow-950/60 dark:text-yellow-200"
         >
           {pr.currentUserReviewRequestLabel}
           {#if reviewRequestedAge}

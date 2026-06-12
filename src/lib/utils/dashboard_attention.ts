@@ -24,6 +24,7 @@ export interface ActionablePr {
   additions: number | null;
   deletions: number | null;
   changedFiles: number | null;
+  reviewRequestedAt: string | null;
 }
 
 // --- Attention item types ---

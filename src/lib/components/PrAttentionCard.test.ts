@@ -21,6 +21,7 @@ function createActionablePr(overrides: Partial<ActionablePr> = {}): ActionablePr
     additions: null,
     deletions: null,
     changedFiles: null,
+    reviewRequestedAt: null,
     ...overrides,
   };
 }
@@ -97,5 +98,22 @@ describe('PrAttentionCard', () => {
 
     expect(body).not.toContain('text-green-600');
     expect(body).not.toContain('text-red-600');
+  });
+
+  test('renders review request age with yellow badge styling', () => {
+    const { body } = render(PrAttentionCard, {
+      props: {
+        item: createItem({
+          actionReason: 'review_requested',
+          reviewRequestedAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+        }),
+      },
+    });
+
+    expect(body).toContain('Review requested');
+    expect(body).toContain('5h');
+    expect(body).toContain('bg-yellow-200');
+    expect(body).toContain('dark:bg-yellow-950/60');
+    expect(body).not.toContain('bg-purple-100');
   });
 });
