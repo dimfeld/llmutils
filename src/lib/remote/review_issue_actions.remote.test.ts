@@ -28,6 +28,7 @@ vi.mock('$lib/server/init.js', () => ({
 import {
   addReviewIssueToPlanTask,
   clearReviewIssues,
+  convertAllReviewIssuesToTasks,
   deleteReviewIssue,
   convertReviewIssueToTask,
   removeReviewIssue,
@@ -236,6 +237,105 @@ describe('review issue remote actions', () => {
     const batchIds = new Set(queuedOperationRows().map((row) => row.batch_id));
     expect(batchIds.size).toBe(1);
     expect(batchIds.has(null)).toBe(false);
+  });
+
+  test('convertAllReviewIssuesToTasks appends tasks for every issue and clears review issues', async () => {
+    const firstIssue = makeIssue('major', 'bug', 'First bulk issue', 'src/first.ts', 12);
+    const secondIssue = makeIssue('minor', 'style', 'Second bulk issue', 'src/second.ts', 24);
+    seedPlan({
+      uuid: '00000000-0000-4000-8000-000000000153',
+      planId: 267,
+      status: 'needs_review',
+      tasks: [{ title: 'Existing task', description: 'Already there', done: false }],
+      reviewIssues: [firstIssue, secondIssue],
+    });
+
+    await invokeCommand(convertAllReviewIssuesToTasks, {
+      planUuid: '00000000-0000-4000-8000-000000000153',
+    });
+
+    const plan = getPlanByUuid(currentDb, '00000000-0000-4000-8000-000000000153');
+    const tasks = getPlanTasksByUuid(currentDb, '00000000-0000-4000-8000-000000000153');
+
+    expect(plan?.status).toBe('in_progress');
+    expect(plan?.review_issues).toBeNull();
+    expect(tasks).toHaveLength(3);
+    expect(tasks[1]).toMatchObject({
+      task_index: 1,
+      title: createTaskFromIssue(firstIssue).title,
+      description: createTaskFromIssue(firstIssue).description ?? '',
+      done: 0,
+    });
+    expect(tasks[2]).toMatchObject({
+      task_index: 2,
+      title: createTaskFromIssue(secondIssue).title,
+      description: createTaskFromIssue(secondIssue).description ?? '',
+      done: 0,
+    });
+  });
+
+  test('convertAllReviewIssuesToTasks queues one persistent batch with all task additions and removals', async () => {
+    currentConfig = persistentConfig();
+    const issues = [
+      makeIssue('major', 'bug', 'First queued bulk issue', 'src/queued-first.ts', 3),
+      makeIssue('minor', 'style', 'Second queued bulk issue', 'src/queued-second.ts', 4),
+    ];
+    seedPlan({
+      uuid: '00000000-0000-4000-8000-000000000150',
+      planId: 264,
+      status: 'needs_review',
+      reviewIssues: issues,
+    });
+
+    await invokeCommand(convertAllReviewIssuesToTasks, {
+      planUuid: '00000000-0000-4000-8000-000000000150',
+    });
+
+    expect(queuedOperationRows()).toEqual([
+      {
+        operation_type: 'plan.set_scalar',
+        status: 'queued',
+        batch_id: expect.any(String),
+      },
+      {
+        operation_type: 'plan.add_task',
+        status: 'queued',
+        batch_id: expect.any(String),
+      },
+      {
+        operation_type: 'plan.add_task',
+        status: 'queued',
+        batch_id: expect.any(String),
+      },
+      {
+        operation_type: 'plan.remove_list_item',
+        status: 'queued',
+        batch_id: expect.any(String),
+      },
+      {
+        operation_type: 'plan.remove_list_item',
+        status: 'queued',
+        batch_id: expect.any(String),
+      },
+    ]);
+    const batchIds = new Set(queuedOperationRows().map((row) => row.batch_id));
+    expect(batchIds.size).toBe(1);
+    expect(batchIds.has(null)).toBe(false);
+  });
+
+  test('convertAllReviewIssuesToTasks rejects plans without review issues', async () => {
+    seedPlan({
+      uuid: 'plan-no-bulk-issues',
+      planId: 270,
+      reviewIssues: [],
+    });
+
+    await expect(
+      invokeCommand(convertAllReviewIssuesToTasks, { planUuid: 'plan-no-bulk-issues' })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'Plan has no review issues' },
+    });
   });
 
   test('convertReviewIssueToTask rejects plans without review issues', async () => {

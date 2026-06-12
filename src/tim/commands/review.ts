@@ -552,7 +552,6 @@ export interface ReviewCommandOptions {
   incremental?: boolean;
   sinceLastReview?: boolean;
   issues?: boolean;
-  reviewIssuesFixSession?: boolean;
   saveIssues?: boolean;
   since?: string;
   autofix?: boolean;
@@ -1734,8 +1733,6 @@ export async function handleReviewCommand(
       }
 
       const currentAdapter = getLoggerAdapter();
-      const headlessCommand = options.reviewIssuesFixSession ? 'review-issues' : 'review';
-      const headlessInteractive = options.reviewIssuesFixSession === true;
 
       if (!(currentAdapter instanceof HeadlessAdapter)) {
         if (isPrintMode) {
@@ -1745,15 +1742,15 @@ export async function handleReviewCommand(
           const printLogger = options.verbose ? reviewPrintVerboseLogger : reviewPrintQuietLogger;
           headlessAdapter = await runWithLogger(printLogger, () =>
             createHeadlessAdapterForCommand({
-              command: headlessCommand,
-              interactive: headlessInteractive,
+              command: 'review',
+              interactive: false,
               plan: planSummary,
             })
           );
         } else {
           headlessAdapter = await createHeadlessAdapterForCommand({
-            command: headlessCommand,
-            interactive: headlessInteractive,
+            command: 'review',
+            interactive: false,
             plan: planSummary,
           });
         }

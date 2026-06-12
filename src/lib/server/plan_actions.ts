@@ -212,18 +212,6 @@ export async function spawnPrFixProcess(planId: number, cwd: string): Promise<Sp
   );
 }
 
-export async function spawnReviewIssuesFixProcess(
-  planId: number,
-  cwd: string
-): Promise<SpawnProcessResult> {
-  return spawnPlanTimProcess(
-    describeTarget('plan', planId),
-    planId,
-    ['review-issues', 'fix', String(planId), '--auto-workspace'],
-    cwd
-  );
-}
-
 export async function spawnPrFixForPrProcess(
   prUrlOrNumber: string,
   cwd: string

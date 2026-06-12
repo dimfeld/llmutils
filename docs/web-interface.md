@@ -809,14 +809,14 @@ When the agent runs its final review in non-interactive mode (e.g. launched from
 
 The `PlanDetail` component displays review issues with per-issue action buttons and a bulk action:
 
-- **Fix Issues**: Starts `tim review-issues fix <planId> --auto-workspace` through the normal session manager, so the prompt-driven fixer appears in the Sessions view as an interactive `review-issues` session for the plan. The command asks which saved issues to act on and marks only completed selected issues resolved.
+- **Add all as tasks**: Converts every saved review issue into a plan task via `convertAllReviewIssuesToTasks`, removes all converted issues from `reviewIssues`, and sets plan status to `in_progress`.
 - **Dismiss** (X button): Removes a single review issue by index via `removeReviewIssue`
 - **Convert to Task** (arrow button): Converts the issue into a plan task (using `createTaskFromIssue` from review.ts) and removes it from `reviewIssues`, setting plan status to `in_progress` via `convertReviewIssueToTask`
 - **Clear All** (header button): Removes all review issues via `clearReviewIssues`, with a confirmation dialog
 
 All mutations use `invalidateAll()` to refresh the page after completion.
 
-- **Remote commands** (`src/lib/remote/review_issue_actions.remote.ts`): `removeReviewIssue`, `convertReviewIssueToTask`, and `clearReviewIssues` are `command()` exports. Each reads the plan by UUID, parses `reviewIssues` JSON, applies the mutation within `db.transaction().immediate()`, and writes back. `convertReviewIssueToTask` also appends a new task and sets `status = 'in_progress'`.
+- **Remote commands** (`src/lib/remote/review_issue_actions.remote.ts`): `removeReviewIssue`, `convertReviewIssueToTask`, `convertAllReviewIssuesToTasks`, and `clearReviewIssues` are `command()` exports. Each reads the plan by UUID, parses `reviewIssues` JSON, and writes synced plan mutations through the batch write path. Task conversion actions append new tasks and set `status = 'in_progress'`.
 
 ## Rate Limit Indicator
 

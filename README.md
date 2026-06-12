@@ -315,7 +315,7 @@ tim review-guide list-issues 123                    # Latest guide for plan, plu
 tim review-guide list-issues feature/my-branch      # Resolve by plan or PR branch
 tim review-guide resolve-issue 42 123
 tim review-issues list 123                          # Saved plan review issues from prior reviews
-tim review-issues fix 123                           # Prompt to fix selected saved review issues
+tim review 123 --issues                             # Prompt to act on saved review issues
 tim review-issues resolve 123 1 3                   # Mark saved plan review issues resolved
 tim pr fix 123 --auto-workspace --executor codex-cli --model gpt-5-codex --effort high
 tim pr fix --pr 456 --auto-workspace                 # Fix review threads on a PR with no linked plan
@@ -335,7 +335,7 @@ When the target has a resolvable GitHub PR — a plan-backed target whose plan l
 
 Review guides can include non-actionable `<annotation file="..." line="...">...</annotation>` callouts. These render as Notes in the guide viewer sidebar and inline diff overlay, but are not submitted to GitHub or converted into cleanup work.
 
-`tim review-issues fix <planId>` acts on saved plan review issues from previous `tim review --save-issues` or non-interactive final review runs. It uses the same prompt-driven workflow as `tim review <planId> --issues`: choose whether to append, fix, create cleanup work, or exit, then select the specific issues. Completed actions remove only the selected saved issues. `tim review-issues list <planId>` shows the current saved issue queue, and `tim review-issues resolve <planId> <indexes...>` or `--all` marks issues resolved without running an agent.
+`tim review <planId> --issues` acts on saved plan review issues from previous `tim review --save-issues` or non-interactive final review runs: choose whether to append, fix, create cleanup work, or exit, then select the specific issues. Completed actions remove only the selected saved issues. `tim review-issues list <planId>` shows the current saved issue queue, and `tim review-issues resolve <planId> <indexes...>` or `--all` marks issues resolved without running an agent.
 
 `tim pr fix <planId>` starts an agent to address PR review feedback. Before launching the agent, tim refreshes the linked PR status from GitHub and injects unresolved review threads into the prompt with each PRRT thread ID and its related comments grouped together. The agent batches addressed review-thread replies through GitHub GraphQL pending reviews, submits those reviews, and uses `tim pr comment` only for feedback that is not represented as a review thread. It does not resolve threads or request reviews. Configure defaults with `prFix.executor`, `prFix.model`, and `prFix.effort`; CLI flags override config values.
 

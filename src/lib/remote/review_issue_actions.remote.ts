@@ -142,6 +142,50 @@ export const convertReviewIssueToTask = command(
   }
 );
 
+export const convertAllReviewIssuesToTasks = command(planUuidSchema, async ({ planUuid }) => {
+  const { db, config } = await getServerContext();
+  const plan = getPlanByUuid(db, planUuid);
+  if (!plan) {
+    error(404, 'Plan not found');
+  }
+
+  const issues = parseReviewIssuesJson(plan.review_issues);
+  if (issues.length === 0) {
+    error(400, 'Plan has no review issues');
+  }
+
+  const expectedIssuesJson = JSON.stringify(issues);
+  const newTasks = issues.map((issue) => createTaskFromIssue(issue));
+  const currentPlan = loadPlanSchemaFromRow(db, plan);
+  const nextPlan = {
+    ...currentPlan,
+    status: plan.status === 'in_progress' ? currentPlan.status : 'in_progress',
+    reviewIssues: undefined,
+    tasks: [
+      ...(currentPlan.tasks ?? []),
+      ...newTasks.map((task) => ({
+        title: task.title,
+        description: task.description ?? '',
+        done: false,
+      })),
+    ],
+  };
+
+  await writeSinglePlanMutationViaBatch(db, config, plan, nextPlan, {
+    precondition: () => {
+      const latestPlan = getPlanByUuid(db, planUuid);
+      if (!latestPlan) {
+        error(404, 'Plan not found');
+      }
+      const latestIssues = parseReviewIssuesJson(latestPlan.review_issues);
+      if (JSON.stringify(latestIssues) !== expectedIssuesJson) {
+        error(409, 'Review issues changed; refresh and try again');
+      }
+    },
+    legacyErrorMessage: 'Cannot convert review issues to tasks with sync-routed writes',
+  });
+});
+
 export const clearReviewIssues = command(planUuidSchema, async ({ planUuid }) => {
   const { db, config } = await getServerContext();
   const plan = getPlanByUuid(db, planUuid);

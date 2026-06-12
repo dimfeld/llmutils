@@ -26,7 +26,6 @@ export type HeadlessCommand =
   | 'agent'
   | 'agent-multi'
   | 'review'
-  | 'review-issues'
   | 'review-guide'
   | 'review-guide-comment'
   | 'upload-artifacts'

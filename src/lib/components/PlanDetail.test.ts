@@ -18,7 +18,6 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startChat: vi.fn(),
   startRebase: vi.fn(),
   startReview: vi.fn(),
-  startReviewIssuesFix: vi.fn(),
   startAutoreview: vi.fn(),
   startShell: vi.fn(),
   startUpdateDocs: vi.fn(),
@@ -41,6 +40,7 @@ vi.mock('$lib/remote/plan_metadata.remote.js', () => ({
 vi.mock('$lib/remote/review_issue_actions.remote.js', () => ({
   removeReviewIssue: vi.fn(),
   convertReviewIssueToTask: vi.fn(),
+  convertAllReviewIssuesToTasks: vi.fn(),
   clearReviewIssues: vi.fn(),
 }));
 
@@ -673,7 +673,7 @@ describe('PlanDetail', () => {
     expect(body).not.toContain('PrStatusSection');
   });
 
-  test('shows fix issues action when plan has saved review issues', () => {
+  test('shows bulk add tasks action when plan has saved review issues', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
         plan: makePlanDetail({
@@ -690,7 +690,7 @@ describe('PlanDetail', () => {
     });
 
     expect(body).toContain('Review Issues (1)');
-    expect(body).toContain('Fix Issues');
+    expect(body).toContain('Add all as tasks');
   });
 
   test('shows Run children panel when the only eligible child is externally blocked', () => {

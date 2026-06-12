@@ -1713,24 +1713,6 @@ reviewIssuesCommand
     }).catch(handleCommandError);
   });
 
-addReviewCommandOptions(
-  reviewIssuesCommand
-    .command('fix <planId>')
-    .description(
-      "Prompt for a plan's saved review issues, fix selected ones, and mark them resolved"
-    )
-).action(async (planIdArg, options, command) => {
-  const { handleReviewCommand } = await import('./commands/review.js');
-  const planId = parsePlanIdFromCliArg(planIdArg);
-  await runWithCommandTunnelAdapter(async () => {
-    await handleReviewCommand(
-      planId,
-      { ...options, issues: true, reviewIssuesFixSession: true },
-      command.parent
-    );
-  }).catch(handleCommandError);
-});
-
 const reviewGuideCommand = program
   .command('review-guide')
   .description('Generate, list, and manage stored review guides');

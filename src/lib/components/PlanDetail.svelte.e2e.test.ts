@@ -7,7 +7,7 @@ import type { PrStatusRow } from '$tim/db/pr_status.js';
 import type { PrStatusDetailWithRequiredChecks } from '$lib/server/required_check_rollup.js';
 import { invalidateAll } from '$app/navigation';
 import { updatePlanMetadata } from '$lib/remote/plan_metadata.remote.js';
-import { startReviewIssuesFix } from '$lib/remote/plan_actions.remote.js';
+import { convertAllReviewIssuesToTasks } from '$lib/remote/review_issue_actions.remote.js';
 import PlanDetailComponent from './PlanDetail.svelte';
 
 vi.mock('$app/navigation', () => ({
@@ -22,7 +22,6 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startChat: vi.fn(),
   startRebase: vi.fn(),
   startReview: vi.fn(),
-  startReviewIssuesFix: vi.fn(),
   startAutoreview: vi.fn(),
   startShell: vi.fn(),
   startUpdateDocs: vi.fn(),
@@ -38,6 +37,7 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
 vi.mock('$lib/remote/review_issue_actions.remote.js', () => ({
   removeReviewIssue: vi.fn(),
   convertReviewIssueToTask: vi.fn(),
+  convertAllReviewIssuesToTasks: vi.fn(),
   clearReviewIssues: vi.fn(),
 }));
 
@@ -204,8 +204,8 @@ function renderPlan(plan: PlanDetail, props: { mediaHostConfigured?: boolean } =
 }
 
 describe('PlanDetail action selection', () => {
-  test('starts a review issue fixer session from saved review issues', async () => {
-    (startReviewIssuesFix as Mock).mockResolvedValueOnce({ status: 'started', planId: 1 });
+  test('adds all saved review issues as tasks', async () => {
+    (convertAllReviewIssuesToTasks as Mock).mockResolvedValueOnce(undefined);
 
     renderPlan(
       makePlanDetail({
@@ -220,10 +220,11 @@ describe('PlanDetail action selection', () => {
       })
     );
 
-    await page.getByRole('button', { name: 'Fix saved review issues' }).click();
+    await page.getByRole('button', { name: 'Add all review issues as tasks' }).click();
 
     await vi.waitFor(() => {
-      expect(startReviewIssuesFix).toHaveBeenCalledWith({ planUuid: 'plan-1' });
+      expect(convertAllReviewIssuesToTasks).toHaveBeenCalledWith({ planUuid: 'plan-1' });
+      expect(invalidateAll).toHaveBeenCalled();
     });
   });
 

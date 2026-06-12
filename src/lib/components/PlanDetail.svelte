@@ -20,7 +20,6 @@
     startChat,
     startRebase,
     startReview,
-    startReviewIssuesFix,
     startAutoreview,
     startShell,
     startUpdateDocs,
@@ -36,6 +35,7 @@
   import {
     removeReviewIssue,
     convertReviewIssueToTask,
+    convertAllReviewIssuesToTasks,
     clearReviewIssues,
   } from '$lib/remote/review_issue_actions.remote.js';
   import { getPlanSyncStatus } from '$lib/remote/sync_status.remote.js';
@@ -363,7 +363,6 @@
   let startingFinish = $state(false);
   let startingCreatePr = $state(false);
   let reviewGuideRunning: 'full' | 'guide-only' | false = $state(false);
-  let startingReviewIssuesFix = $state(false);
   let artifactDialogOpen = $state(false);
   let startingProof = $state(false);
   let startingUploadArtifacts = $state(false);
@@ -463,7 +462,7 @@
   let startedSuccessfully = $state(false);
   let errorMessage: string | null = $state(null);
   let successMessage: { text: string; connectionId?: string } | null = $state(null);
-  let reviewIssueSubmitting: number | 'clear' | null = $state(null);
+  let reviewIssueSubmitting: number | 'all' | 'clear' | null = $state(null);
   let editingNote = $state(false);
   let noteDraft = $state(untrack(() => plan.note ?? ''));
   let savingNote = $state(false);
@@ -536,6 +535,19 @@
     }
   }
 
+  async function handleConvertAllToTasks() {
+    if (reviewIssueSubmitting !== null) return;
+    reviewIssueSubmitting = 'all';
+    try {
+      await convertAllReviewIssuesToTasks({ planUuid: plan.uuid });
+      await invalidateAll();
+    } catch (err) {
+      toast.error(`Failed to convert issues to tasks: ${(err as Error).message}`);
+    } finally {
+      reviewIssueSubmitting = null;
+    }
+  }
+
   async function handleClearReviewIssues() {
     if (reviewIssueSubmitting !== null) return;
     if (!confirm('Clear all review issues? This cannot be undone.')) return;
@@ -547,29 +559,6 @@
       toast.error(`Failed to clear issues: ${(err as Error).message}`);
     } finally {
       reviewIssueSubmitting = null;
-    }
-  }
-
-  async function handleStartReviewIssuesFix() {
-    if (startingReviewIssuesFix || activeSession) return;
-    startingReviewIssuesFix = true;
-    errorMessage = null;
-    successMessage = null;
-    try {
-      const result = await startReviewIssuesFix({ planUuid: plan.uuid });
-      if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this plan',
-          connectionId: result.connectionId,
-        };
-      } else {
-        successMessage = { text: 'Review issue fixer started' };
-      }
-      setStartedSuccessfully();
-    } catch (err) {
-      errorMessage = `${err as Error}`;
-    } finally {
-      startingReviewIssuesFix = false;
     }
   }
 
@@ -589,7 +578,6 @@
       startingFinish = false;
       startingCreatePr = false;
       reviewGuideRunning = false;
-      startingReviewIssuesFix = false;
       clearReviewGuideResetTimeout();
       startingProof = false;
       chatDialogOpen = false;
@@ -665,7 +653,6 @@
       startingChat ||
       startingFinish ||
       startingCreatePr ||
-      startingReviewIssuesFix ||
       startingProof
   );
   let controlsDisabled = $derived(starting || startedSuccessfully);
@@ -1091,9 +1078,7 @@
                     ? 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/40 dark:text-cyan-300 dark:hover:bg-cyan-900/60'
                     : activeSession.command === 'update-docs'
                       ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60'
-                      : activeSession.command === 'review-issues'
-                        ? 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:hover:bg-orange-900/60'
-                        : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
+                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
             >
               <span
                 class="inline-block h-2 w-2 animate-pulse rounded-full {activeSession.command ===
@@ -1105,9 +1090,7 @@
                       ? 'bg-cyan-500'
                       : activeSession.command === 'update-docs'
                         ? 'bg-amber-500'
-                        : activeSession.command === 'review-issues'
-                          ? 'bg-orange-500'
-                          : 'bg-blue-500'}"
+                        : 'bg-blue-500'}"
               ></span>
               {activeSession.command === 'agent'
                 ? 'Agent Running...'
@@ -1117,9 +1100,7 @@
                     ? 'Agent Multi Running...'
                     : activeSession.command === 'update-docs'
                       ? 'Updating Docs...'
-                      : activeSession.command === 'review-issues'
-                        ? 'Fixing Review Issues...'
-                        : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
+                      : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
             </a>
           {:else}
             {@const { primary, menuItems, fixedActions } = actionConfig}
@@ -1684,20 +1665,18 @@
               type="button"
               variant="outline"
               size="xs"
-              onclick={handleStartReviewIssuesFix}
-              disabled={reviewIssueSubmitting !== null ||
-                startingReviewIssuesFix ||
-                !!activeSession}
-              aria-label="Fix saved review issues"
-              title="Fix saved review issues"
+              onclick={handleConvertAllToTasks}
+              disabled={reviewIssueSubmitting !== null}
+              aria-label="Add all review issues as tasks"
+              title="Add all review issues as tasks"
             >
               <Pencil class="size-3" />
-              {startingReviewIssuesFix ? 'Starting...' : 'Fix Issues'}
+              {reviewIssueSubmitting === 'all' ? 'Adding...' : 'Add all as tasks'}
             </Button>
             <button
               type="button"
               onclick={handleClearReviewIssues}
-              disabled={reviewIssueSubmitting !== null || startingReviewIssuesFix}
+              disabled={reviewIssueSubmitting !== null}
               class="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-red-100 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/50 dark:hover:text-red-400"
             >
               {reviewIssueSubmitting === 'clear' ? 'Clearing...' : 'Clear All'}
