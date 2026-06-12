@@ -371,9 +371,13 @@ describe('buildAutoreviewPrompt', () => {
     expect(prompt).toContain(
       "For ignored issues that have an inline thread, immediately reply with the user's stated reason for ignoring the issue and resolve the thread"
     );
-    // Body-only ignored issues have no thread, so they must get an immediate ignore comment.
+    // Body-only ignored issues have no thread, so the initial body-only description carries
+    // the ignore reason and no separate follow-up is needed.
     expect(prompt).toContain(
-      "For ignored issues that are body-only (un-anchorable, so there is no thread), immediately add a PR comment stating the issue is being ignored along with the user's stated reason"
+      "For ignored issues that are body-only (un-anchorable, so there is no thread), include the user's stated ignore reason in the initial body-only description"
+    );
+    expect(prompt).toContain(
+      'Do not add a separate follow-up comment for ignored body-only issues'
     );
   });
 
@@ -388,6 +392,16 @@ describe('buildAutoreviewPrompt', () => {
   test('with linkedPr: un-anchorable body-fallback instruction is present', () => {
     const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
     expect(prompt).toContain('put it in the review body instead of an inline thread');
+    expect(prompt).toContain('If there are no body-only issues, there is no need to explain that');
+    expect(prompt).toContain(
+      'include that file/line in the follow-up comment so someone viewing the PR can link the response back to the original finding'
+    );
+    expect(prompt).toContain(
+      "for ignored body-only issues include the user's ignore reason in this initial description"
+    );
+    expect(prompt).toContain(
+      'Addressed the body-only autoreview issue at src/example.ts:42 in <commit>.'
+    );
   });
 
   test('with linkedPr: act-on-only instruction is present', () => {

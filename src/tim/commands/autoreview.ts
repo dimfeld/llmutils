@@ -207,8 +207,8 @@ This target has a resolvable GitHub PR: ${prRef}${titleText} at ${linkedPr.url}.
 - If an issue has no file/line, or the referenced line is not part of the PR diff, put it in the review body instead of an inline thread. These are the body-only (un-anchorable) issues referenced below.
 - When the PR trail is active and the user asks to ignore an issue without giving a reason, ask them for a brief reason first so it can be recorded on the PR.
 - For ignored issues that have an inline thread, immediately reply with the user's stated reason for ignoring the issue and resolve the thread.
-- For ignored issues that are body-only (un-anchorable, so there is no thread), immediately add a PR comment stating the issue is being ignored along with the user's stated reason, and record it in the scratch file. There is no thread to resolve in this case.
-- After fixes are committed, reply to each addressed inline thread confirming the fix and resolve it. For addressed body-only issues, add a new follow-up PR comment confirming the issue was addressed.
+- For ignored issues that are body-only (un-anchorable, so there is no thread), include the user's stated ignore reason in the initial body-only description and record it in the scratch file. Do not add a separate follow-up comment for ignored body-only issues. If the body-only issue has a file/line reference even though it could not be anchored in the PR diff, include that file/line in the initial description so someone viewing the PR can link the response back to the original finding. There is no thread to resolve in this case.
+- After fixes are committed, reply to each addressed inline thread confirming the fix and resolve it. For addressed body-only issues, add a new follow-up PR comment confirming the issue was addressed. If the body-only issue has a file/line reference, include that file/line in the follow-up comment so someone viewing the PR can link the response back to the original finding.
 
 ### Threading Discipline
 
@@ -223,12 +223,12 @@ Use these \`gh api\` shapes for ${prRef}. The current head SHA for the review pa
 
     gh pr view ${linkedPr.prNumber} --repo ${linkedPr.owner}/${linkedPr.repo} --json headRefOid -q .headRefOid
 
-Create one review with inline comments and body-only fallbacks. Inline comment fields mirror the review-comment API semantics: \`path\`, \`body\`, \`line\`, \`side\`, and optional \`start_line\`/\`start_side\` for ranges. Write the payload to a temp file and pass it with \`--input\` (this avoids fragile shell quoting/heredocs). For example, write this JSON to \`"$TMPDIR/autoreview-review.json"\`:
+Create one review with inline comments and body-only fallbacks. Inline comment fields mirror the review-comment API semantics: \`path\`, \`body\`, \`line\`, \`side\`, and optional \`start_line\`/\`start_side\` for ranges. If there are no body-only issues, there is no need to explain that. Write the payload to a temp file and pass it with \`--input\` (this avoids fragile shell quoting/heredocs). For example, write this JSON to \`"$TMPDIR/autoreview-review.json"\`:
 
     {
       "commit_id": "${headShaValue}",
       "event": "COMMENT",
-      "body": "Body-only issues that cannot be anchored in the diff go here.",
+      "body": "Body-only issues that cannot be anchored in the diff go here. Include any referenced file/line, such as src/example.ts:42, and for ignored body-only issues include the user's ignore reason in this initial description.",
       "comments": [
         {
           "path": "src/example.ts",
@@ -255,9 +255,9 @@ Resolve a review thread. Resolution is GraphQL-only:
 
     gh api graphql -f query='mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread { isResolved } } }' -f id='<threadNodeId>'
 
-Add a body-only follow-up PR comment when an un-anchorable issue is fixed:
+Add a body-only follow-up PR comment when an un-anchorable issue is fixed. Include the issue's referenced file/line when available so PR readers can link the response back to the finding:
 
-    gh api --method POST repos/${linkedPr.owner}/${linkedPr.repo}/issues/${linkedPr.prNumber}/comments -f body='Addressed the body-only autoreview issue in <commit>.'
+    gh api --method POST repos/${linkedPr.owner}/${linkedPr.repo}/issues/${linkedPr.prNumber}/comments -f body='Addressed the body-only autoreview issue at src/example.ts:42 in <commit>.'
 
 You can also create a single inline review comment with \`POST repos/${linkedPr.owner}/${linkedPr.repo}/pulls/${linkedPr.prNumber}/comments\`; that endpoint returns the created comment ID directly, which can make ID tracking easier for one-off comments.`;
 }
