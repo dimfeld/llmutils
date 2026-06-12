@@ -42,6 +42,7 @@ export interface EnrichedProjectPr extends PrStatusDetailWithRequiredChecks {
   linkedPlans: LinkedPlanSummary[];
   projectId: number;
   currentUserReviewRequestLabel: string | null;
+  currentUserReviewRequestedAt: string | null;
   currentUserPushedAfterReview: boolean;
 }
 
@@ -79,6 +80,7 @@ function enrichProjectPrs(
     projectId,
     linkedPlans: linkedPlansByPrUrl.get(pr.status.pr_url) ?? [],
     currentUserReviewRequestLabel: getCurrentUserReviewRequestLabel(pr, username),
+    currentUserReviewRequestedAt: getCurrentUserReviewRequestedAt(pr, username),
     currentUserPushedAfterReview: getCurrentUserPushedAfterReview(pr, username),
   }));
 }
@@ -202,6 +204,36 @@ function getCurrentUserReviewRequestLabel(
   }
 
   return request.requested_at > lastReviewAt ? 'Review Requested' : null;
+}
+
+function getCurrentUserReviewRequestedAt(
+  pr: PrStatusDetail,
+  username: string | null
+): string | null {
+  if (!username) {
+    return null;
+  }
+
+  const normalizedUsername = normalizeGitHubUsername(username);
+  const request = pr.reviewRequests.find(
+    (row) => normalizeGitHubUsername(row.reviewer) === normalizedUsername
+  );
+  if (!request || request.requested_at === null) {
+    return null;
+  }
+
+  const isCurrentlyRequested =
+    request.removed_at === null || request.requested_at > request.removed_at;
+  if (!isCurrentlyRequested) {
+    return null;
+  }
+
+  const lastReviewAt = getLatestSubmittedReviewAt(pr, username);
+  if (lastReviewAt !== null && request.requested_at <= lastReviewAt) {
+    return null;
+  }
+
+  return request.requested_at;
 }
 
 function partitionProjectPrs(

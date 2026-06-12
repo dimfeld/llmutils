@@ -36,6 +36,7 @@ function createPr(): EnrichedProjectPr {
     },
     linkedPlans: [],
     currentUserReviewRequestLabel: null,
+    currentUserReviewRequestedAt: null,
     checks: [],
     reviews: [],
     reviewRequests: [],
@@ -63,6 +64,7 @@ describe('PrRow', () => {
   test('renders a review requested badge when the current user was requested again', () => {
     const pr = createPr();
     pr.currentUserReviewRequestLabel = 'Review Requested';
+    pr.currentUserReviewRequestedAt = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
 
     const { body } = render(PrRow, {
       props: {
@@ -73,6 +75,7 @@ describe('PrRow', () => {
     });
 
     expect(body).toContain('Review Requested');
+    expect(body).toContain('5h');
   });
 
   test('renders compact diff stats when additions and deletions are available', () => {

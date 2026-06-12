@@ -1,7 +1,7 @@
 import type { MockInstance } from 'vitest';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { formatRelativeTime } from './time.js';
+import { formatCompactRelativeTime, formatRelativeTime } from './time.js';
 
 describe('lib/utils/time', () => {
   const now = new Date('2026-03-17T12:00:00.000Z');
@@ -65,5 +65,15 @@ describe('lib/utils/time', () => {
 
   test('returns an empty string for empty string input', () => {
     expect(formatRelativeTime('')).toBe('');
+  });
+
+  test('returns compact relative ages', () => {
+    const nowMs = now.getTime();
+
+    expect(formatCompactRelativeTime('2026-03-17T11:59:01.000Z', nowMs)).toBe('now');
+    expect(formatCompactRelativeTime('2026-03-17T11:55:00.000Z', nowMs)).toBe('5m');
+    expect(formatCompactRelativeTime('2026-03-17T07:00:00.000Z', nowMs)).toBe('5h');
+    expect(formatCompactRelativeTime('2026-03-12T12:00:00.000Z', nowMs)).toBe('5d');
+    expect(formatCompactRelativeTime('2026-03-03T12:00:00.000Z', nowMs)).toBe('2w');
   });
 });

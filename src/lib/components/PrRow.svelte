@@ -2,6 +2,7 @@
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
   import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
+  import { formatCompactRelativeTime } from '$lib/utils/time.js';
   import PrStatusIndicator from './PrStatusIndicator.svelte';
   import {
     checkRollupToSummaryStatus,
@@ -32,6 +33,11 @@
       prUrl: pr.status.pr_url,
       prNumber: pr.status.pr_number,
     }) ?? pr.status.pr_url
+  );
+  let reviewRequestedAge = $derived(
+    pr.currentUserReviewRequestedAt
+      ? formatCompactRelativeTime(pr.currentUserReviewRequestedAt)
+      : ''
   );
 </script>
 
@@ -69,6 +75,13 @@
           class="inline-flex items-center rounded-full bg-yellow-100 px-1.5 py-0.5 text-xs leading-none font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
         >
           {pr.currentUserReviewRequestLabel}
+          {#if reviewRequestedAge}
+            <span
+              class="ml-1 border-l border-yellow-300 pl-1 text-yellow-700 dark:border-yellow-700 dark:text-yellow-200"
+            >
+              {reviewRequestedAge}
+            </span>
+          {/if}
         </span>
       {:else if pr.status.review_decision}
         <span

@@ -350,6 +350,7 @@ describe('project_prs remote functions', () => {
     expect(result.reviewing).toHaveLength(1);
     expect(result.reviewing[0]?.status.pr_number).toBe(18);
     expect(result.reviewing[0]?.currentUserReviewRequestLabel).toBe('Review Requested');
+    expect(result.reviewing[0]?.currentUserReviewRequestedAt).toBe('2026-03-30T11:00:00.000Z');
   });
 
   test('getProjectPrs aggregates all project PRs when projectId is all', async () => {

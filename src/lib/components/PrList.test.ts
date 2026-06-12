@@ -13,6 +13,7 @@ function createPr(prNumber: number, title: string) {
     },
     linkedPlans: [],
     currentUserReviewRequestLabel: null,
+    currentUserReviewRequestedAt: null,
     checks: [],
     reviews: [],
     reviewRequests: [],
