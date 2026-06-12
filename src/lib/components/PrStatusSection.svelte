@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
-  import { buildLinearPrReviewUrl } from '$common/linear_pr_review.js';
+  import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import {
     fullRefreshPrStatus,
     getPrStatus,
@@ -44,7 +44,7 @@
 
   function getExternalPrUrl(pr: { status: PrStatusRow }): string {
     return (
-      buildLinearPrReviewUrl({
+      buildLinearReviewDeepLink({
         prUrl: pr.status.pr_url,
         prNumber: pr.status.pr_number,
       }) ?? pr.status.pr_url

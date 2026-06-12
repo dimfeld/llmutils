@@ -32,6 +32,7 @@
   import { tryCanonicalizePrUrl } from '$common/github/identifier_urls.js';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
   import CopyButton from './CopyButton.svelte';
+  import { toLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
 
   const sessionManager = useSessionManager();
 
@@ -65,7 +66,7 @@
       prUrl: pr.status.pr_url,
     })
   );
-  let linearPrReviewUrl = $derived(linearPrReviewUrlQuery.current ?? null);
+  let linearPrReviewUrl = $derived(toLinearReviewDeepLink(linearPrReviewUrlQuery.current));
   let linkedPlanUuids = $derived(pr.linkedPlans.map((plan) => plan.planUuid));
   let reviews = $derived(await getPrReviews({ prUrl: pr.status.pr_url, linkedPlanUuids }));
   let latestCompletedReview = $derived(reviews?.find((r) => r.status === 'complete') ?? null);

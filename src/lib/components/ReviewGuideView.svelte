@@ -20,7 +20,7 @@
   import { computeReviewGuideDiffOverrideFlags } from '$lib/components/review_guide_view_utils.js';
   import { parseMarkdownWithDiffsAndToc, type TocEntry } from '$lib/utils/markdown_parser.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
-  import { buildLinearPrReviewUrl } from '$common/linear_pr_review.js';
+  import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import { Splitpanes, Pane } from 'svelte-splitpanes';
   import type {
     ReviewRow,
@@ -169,7 +169,7 @@
   });
   let displayBranch = $derived(currentBranch ?? review.branch ?? linkedPlanBranch);
   let effectivePrUrl = $derived(review.pr_url ?? submissionPrUrl);
-  let linearPrReviewUrl = $derived(buildLinearPrReviewUrl({ prUrl: effectivePrUrl }));
+  let linearPrReviewUrl = $derived(buildLinearReviewDeepLink({ prUrl: effectivePrUrl }));
 
   let reviewGuideText = $derived(review.review_guide ?? '');
   let parsedGuide = $derived(parseMarkdownWithDiffsAndToc(reviewGuideText));

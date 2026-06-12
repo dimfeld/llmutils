@@ -1,7 +1,7 @@
 <script lang="ts">
   import ExternalLink from '@lucide/svelte/icons/external-link';
-  import { buildLinearPrReviewUrl } from '$common/linear_pr_review.js';
   import type { PrAttentionItem } from '$lib/utils/dashboard_attention.js';
+  import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
 
   let {
     item,
@@ -50,7 +50,7 @@
   let checkDotColor = $derived(checkStatusColors[pr.checkStatus] ?? 'bg-gray-400');
   let prHref = $derived(`/projects/${pr.projectId}/active/pr/${pr.prNumber}`);
   let externalPrUrl = $derived(
-    buildLinearPrReviewUrl({ prUrl: pr.prUrl, prNumber: pr.prNumber }) ?? pr.prUrl
+    buildLinearReviewDeepLink({ prUrl: pr.prUrl, prNumber: pr.prNumber }) ?? pr.prUrl
   );
 </script>
 
