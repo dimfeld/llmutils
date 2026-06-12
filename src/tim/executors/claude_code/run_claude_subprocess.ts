@@ -380,7 +380,8 @@ export async function runClaudeSubprocess(
     if (
       modelToUse?.includes('haiku') ||
       modelToUse?.includes('sonnet') ||
-      modelToUse?.includes('opus')
+      modelToUse?.includes('opus') ||
+      modelToUse?.includes('fable')
     ) {
       if (logModelSelection) {
         log(`Using model: ${modelToUse}\n`);

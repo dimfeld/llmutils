@@ -237,7 +237,7 @@ describe('ClaudeCodeExecutor model selection', () => {
         allowAllTools: false,
         permissionsMcp: { enabled: false },
       },
-      { ...mockSharedOptions, model: 'haiku' },
+      { ...mockSharedOptions, model: 'claude-fable-latest' },
       mockConfig
     );
 
@@ -253,7 +253,7 @@ describe('ClaudeCodeExecutor model selection', () => {
     // Verify that the explicitly specified model was used
     expect(capturedArgs).toContain('--model');
     const modelIndex = capturedArgs.indexOf('--model');
-    expect(capturedArgs[modelIndex + 1]).toBe('haiku');
+    expect(capturedArgs[modelIndex + 1]).toBe('claude-fable-latest');
   });
 
   test('invokes simple-mode orchestration without agent definitions (uses tim subagent instead)', async () => {

@@ -742,7 +742,8 @@ export class ClaudeCodeExecutor implements Executor {
       if (
         modelToUse?.includes('haiku') ||
         modelToUse?.includes('sonnet') ||
-        modelToUse?.includes('opus')
+        modelToUse?.includes('opus') ||
+        modelToUse?.includes('fable')
       ) {
         log(`Using model: ${modelToUse}\n`);
         args.push('--model', modelToUse);
