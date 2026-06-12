@@ -148,12 +148,20 @@ export interface PlanDetail extends EnrichedPlan {
   effectiveBaseBranch: string | null;
   effectiveBaseBranchSource: EffectivePlanBaseDisplaySource | null;
   effectiveBasePlan: EnrichedPlanDependency | null;
+  basePlanResolutionWarning: BasePlanResolutionWarning | null;
   prStatuses: PrStatusDetailWithRequiredChecks[];
   reviewIssues: PlanSchema['reviewIssues'];
   artifacts: PlanArtifactWithTransferState[];
 }
 
 export type ChildPlanSummary = ChildPlanSummaryRow;
+
+export interface BasePlanResolutionWarning {
+  kind: 'epic_base_ambiguous' | 'epic_base_unresolved' | 'epic_base_terminal_child';
+  epic: EnrichedPlanDependency;
+  terminalChildren: EnrichedPlanDependency[];
+  recommendedBaseBranch: string | null;
+}
 
 export interface EnrichedWorkspace {
   id: number;
@@ -246,6 +254,72 @@ function groupTagsByPlanUuid(tags: PlanTagRow[]): Map<string, string[]> {
   }
 
   return grouped;
+}
+
+function getTerminalChildrenForEpicBase(children: ChildPlanSummary[]): ChildPlanSummary[] {
+  const childUuids = new Set(children.map((child) => child.uuid));
+  const dependedOnChildUuids = new Set<string>();
+
+  for (const child of children) {
+    for (const dependencyUuid of child.dependencies) {
+      if (childUuids.has(dependencyUuid)) {
+        dependedOnChildUuids.add(dependencyUuid);
+      }
+    }
+
+    if (child.basePlanUuid && childUuids.has(child.basePlanUuid)) {
+      dependedOnChildUuids.add(child.basePlanUuid);
+    }
+  }
+
+  return children.filter((child) => !dependedOnChildUuids.has(child.uuid));
+}
+
+function buildEpicBasePlanWarning(options: {
+  db: Database;
+  effectiveBasePlan: EnrichedPlanDependency | null;
+  planByUuid: ReadonlyMap<string, PlanRow>;
+  dependenciesByPlanUuid: ReadonlyMap<string, PlanDependencyRow[]>;
+}): BasePlanResolutionWarning | null {
+  const basePlanUuid = options.effectiveBasePlan?.uuid;
+  const epic = options.effectiveBasePlan;
+  if (!basePlanUuid || !epic) {
+    return null;
+  }
+
+  const basePlan = options.planByUuid.get(basePlanUuid);
+  if (!basePlan?.epic || basePlan.status === 'done') {
+    return null;
+  }
+
+  const terminalChildren = getTerminalChildrenForEpicBase(
+    getChildPlansForEpic(options.db, basePlanUuid)
+  );
+  const terminalChildSummaries = terminalChildren.flatMap((child) => {
+    const summary = toDependencySummary(
+      child.uuid,
+      options.planByUuid,
+      options.dependenciesByPlanUuid
+    );
+    return summary ? [summary] : [];
+  });
+
+  if (terminalChildren.length !== 1) {
+    return {
+      kind: terminalChildren.length === 0 ? 'epic_base_unresolved' : 'epic_base_ambiguous',
+      epic,
+      terminalChildren: terminalChildSummaries,
+      recommendedBaseBranch: null,
+    };
+  }
+
+  const terminalChild = options.planByUuid.get(terminalChildren[0].uuid);
+  return {
+    kind: 'epic_base_terminal_child',
+    epic,
+    terminalChildren: terminalChildSummaries,
+    recommendedBaseBranch: terminalChild?.branch ?? null,
+  };
 }
 
 function isRecentlyDone(updatedAt: string, now = Date.now()): boolean {
@@ -997,6 +1071,15 @@ export async function getPlanDetail(
 
   if (effectiveBaseResolution.basePlan?.uuid) {
     referencedPlanUuids.add(effectiveBaseResolution.basePlan.uuid);
+    const effectiveBasePlanRow = projectPlanRows.find(
+      (projectPlan) => projectPlan.uuid === effectiveBaseResolution.basePlan?.uuid
+    );
+    if (effectiveBasePlanRow?.epic && effectiveBasePlanRow.status !== 'done') {
+      const baseEpicChildren = getChildPlansForEpic(db, effectiveBasePlanRow.uuid);
+      for (const child of baseEpicChildren) {
+        referencedPlanUuids.add(child.uuid);
+      }
+    }
   }
 
   const dependentRows = db
@@ -1062,6 +1145,12 @@ export async function getPlanDetail(
   const effectiveBasePlan = effectiveBaseResolution.basePlan?.uuid
     ? toDependencySummary(effectiveBaseResolution.basePlan.uuid, planByUuid, dependenciesByPlanUuid)
     : null;
+  const basePlanResolutionWarning = buildEpicBasePlanWarning({
+    db,
+    effectiveBasePlan,
+    planByUuid,
+    dependenciesByPlanUuid,
+  });
   const prStatuses = getPrStatusForPlan(db, planUuid, enrichedPlan.pullRequests, {
     includeReviewThreads: true,
   });
@@ -1101,6 +1190,7 @@ export async function getPlanDetail(
     effectiveBaseBranch: effectiveBaseResolution.baseBranch ?? null,
     effectiveBaseBranchSource: effectiveBaseResolution.source ?? null,
     effectiveBasePlan,
+    basePlanResolutionWarning,
     prStatuses: withRequiredCheckRollupStates(db, prStatuses),
     reviewIssues,
     artifacts,

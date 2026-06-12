@@ -1025,6 +1025,158 @@ describe('lib/server/db_queries', () => {
     });
   });
 
+  test('getPlanDetail warns when base plan is an unfinished epic with one final child', async () => {
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'base-epic-linear',
+      planId: 123,
+      title: 'Linear base epic',
+      status: 'in_progress',
+      priority: 'medium',
+      epic: true,
+      branch: 'feature/base-epic-linear',
+      filename: '123-base-epic-linear.plan.md',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'base-epic-linear-child-a',
+      planId: 124,
+      title: 'Linear child A',
+      status: 'done',
+      priority: 'medium',
+      parentUuid: 'base-epic-linear',
+      branch: 'feature/linear-child-a',
+      filename: '124-linear-child-a.plan.md',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'base-epic-linear-child-b',
+      planId: 125,
+      title: 'Linear child B',
+      status: 'in_progress',
+      priority: 'medium',
+      parentUuid: 'base-epic-linear',
+      basePlanUuid: 'base-epic-linear-child-a',
+      dependencyUuids: ['base-epic-linear-child-a'],
+      branch: 'feature/linear-child-b',
+      filename: '125-linear-child-b.plan.md',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'plan-uses-linear-epic-base',
+      planId: 126,
+      title: 'Uses linear epic base',
+      status: 'pending',
+      priority: 'medium',
+      basePlanUuid: 'base-epic-linear',
+      filename: '126-uses-linear-epic-base.plan.md',
+    });
+
+    const detail = await getPlanDetail(db, 'plan-uses-linear-epic-base');
+
+    expect(detail?.basePlanResolutionWarning).toMatchObject({
+      kind: 'epic_base_terminal_child',
+      epic: {
+        uuid: 'base-epic-linear',
+        planId: 123,
+        title: 'Linear base epic',
+      },
+      terminalChildren: [
+        {
+          uuid: 'base-epic-linear-child-b',
+          planId: 125,
+          title: 'Linear child B',
+        },
+      ],
+      recommendedBaseBranch: 'feature/linear-child-b',
+    });
+  });
+
+  test('getPlanDetail warns when unfinished epic base has multiple final children', async () => {
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'base-epic-ambiguous',
+      planId: 127,
+      title: 'Ambiguous base epic',
+      status: 'in_progress',
+      priority: 'medium',
+      epic: true,
+      branch: 'feature/base-epic-ambiguous',
+      filename: '127-base-epic-ambiguous.plan.md',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'base-epic-ambiguous-child-a',
+      planId: 128,
+      title: 'Ambiguous child A',
+      status: 'done',
+      priority: 'medium',
+      parentUuid: 'base-epic-ambiguous',
+      branch: 'feature/ambiguous-child-a',
+      filename: '128-ambiguous-child-a.plan.md',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'base-epic-ambiguous-child-b',
+      planId: 129,
+      title: 'Ambiguous child B',
+      status: 'done',
+      priority: 'medium',
+      parentUuid: 'base-epic-ambiguous',
+      branch: 'feature/ambiguous-child-b',
+      filename: '129-ambiguous-child-b.plan.md',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'plan-uses-ambiguous-epic-base',
+      planId: 130,
+      title: 'Uses ambiguous epic base',
+      status: 'pending',
+      priority: 'medium',
+      basePlanUuid: 'base-epic-ambiguous',
+      filename: '130-uses-ambiguous-epic-base.plan.md',
+    });
+
+    const detail = await getPlanDetail(db, 'plan-uses-ambiguous-epic-base');
+
+    expect(detail?.basePlanResolutionWarning).toMatchObject({
+      kind: 'epic_base_ambiguous',
+      terminalChildren: [
+        {
+          uuid: 'base-epic-ambiguous-child-a',
+          planId: 128,
+        },
+        {
+          uuid: 'base-epic-ambiguous-child-b',
+          planId: 129,
+        },
+      ],
+      recommendedBaseBranch: null,
+    });
+  });
+
+  test('getPlanDetail warns when unfinished epic base has no final child', async () => {
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'base-epic-empty',
+      planId: 131,
+      title: 'Empty base epic',
+      status: 'in_progress',
+      priority: 'medium',
+      epic: true,
+      branch: 'feature/base-epic-empty',
+      filename: '131-base-epic-empty.plan.md',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'plan-uses-empty-epic-base',
+      planId: 132,
+      title: 'Uses empty epic base',
+      status: 'pending',
+      priority: 'medium',
+      basePlanUuid: 'base-epic-empty',
+      filename: '132-uses-empty-epic-base.plan.md',
+    });
+
+    const detail = await getPlanDetail(db, 'plan-uses-empty-epic-base');
+
+    expect(detail?.basePlanResolutionWarning).toMatchObject({
+      kind: 'epic_base_unresolved',
+      terminalChildren: [],
+      recommendedBaseBranch: null,
+    });
+  });
+
   test('getPlanDetail includes parsed PR metadata and linked PR status details', async () => {
     nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-blocked',

@@ -1487,7 +1487,7 @@
     {/if}
 
     <!-- Branch -->
-    {#if plan.branch || plan.effectiveBaseBranch}
+    {#if plan.branch || plan.effectiveBaseBranch || plan.basePlanResolutionWarning}
       <div>
         <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Branches
@@ -1521,6 +1521,52 @@
                 ariaLabel="Copy base branch name"
                 onCopied={() => toast.success('Base branch name copied')}
               />
+            </div>
+          {/if}
+          {#if plan.basePlanResolutionWarning}
+            <div
+              class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100"
+            >
+              <div class="font-medium">
+                Base plan #{plan.basePlanResolutionWarning.epic.planId} is an unfinished epic.
+              </div>
+              {#if plan.basePlanResolutionWarning.kind === 'epic_base_terminal_child'}
+                <div class="mt-1">
+                  The effective base branch shown above comes from the epic, but the correct base is
+                  likely the final child:
+                  {#each plan.basePlanResolutionWarning.terminalChildren as child, index (child.uuid)}
+                    {#if index > 0},
+                    {/if}<a
+                      class="font-medium underline underline-offset-2 hover:text-amber-700 dark:hover:text-amber-200"
+                      href={planUrl(child.uuid, child.projectId)}
+                      >#{child.planId} {child.title ?? 'Untitled'}</a
+                    >
+                  {/each}
+                  {#if plan.basePlanResolutionWarning.recommendedBaseBranch}
+                    (<code>{plan.basePlanResolutionWarning.recommendedBaseBranch}</code>)
+                  {:else}
+                    (no branch recorded yet)
+                  {/if}.
+                </div>
+              {:else if plan.basePlanResolutionWarning.kind === 'epic_base_ambiguous'}
+                <div class="mt-1">
+                  The final child is ambiguous because multiple child plans have no later sibling
+                  depending on them:
+                  {#each plan.basePlanResolutionWarning.terminalChildren as child, index (child.uuid)}
+                    {#if index > 0},
+                    {/if}<a
+                      class="font-medium underline underline-offset-2 hover:text-amber-700 dark:hover:text-amber-200"
+                      href={planUrl(child.uuid, child.projectId)}
+                      >#{child.planId} {child.title ?? 'Untitled'}</a
+                    >
+                  {/each}.
+                </div>
+              {:else}
+                <div class="mt-1">
+                  The epic has no child plan that can serve as the final base, so commands that need
+                  a base branch may not be able to resolve one correctly.
+                </div>
+              {/if}
             </div>
           {/if}
         </div>
