@@ -49,6 +49,9 @@ export default defineConfig({
   },
   test: {
     silent: 'passed-only',
+    experimental: {
+      fsModuleCache: true,
+    },
     projects: [
       {
         extends: './vite.config.ts',

@@ -100,31 +100,34 @@ describe('watchPlanFile', () => {
     expect(contents).toEqual([{ content: 'first', tasks: [] }]);
   });
 
-  test('keeps emitting after atomic-save replacement via rename', async () => {
-    const planPath = path.join(tempDir, '302.plan.md');
-    await writeFile(planPath, ['---', 'id: 302', '---', '', 'first'].join('\n'));
+  test.skipIf(!process.env.SLOW_TESTS)(
+    'keeps emitting after atomic-save replacement via rename',
+    async () => {
+      const planPath = path.join(tempDir, '302.plan.md');
+      await writeFile(planPath, ['---', 'id: 302', '---', '', 'first'].join('\n'));
 
-    const contents: WatchedPlanContent[] = [];
-    const watcher = watchPlanFile(planPath, (content) => {
-      contents.push(content);
-    });
+      const contents: WatchedPlanContent[] = [];
+      const watcher = watchPlanFile(planPath, (content) => {
+        contents.push(content);
+      });
 
-    await waitFor(() => contents.length === 1);
+      await waitFor(() => contents.length === 1);
 
-    const replacementPath = path.join(tempDir, '302.plan.md.tmp');
-    await writeFile(replacementPath, ['---', 'id: 302', '---', '', 'second'].join('\n'));
-    await rename(replacementPath, planPath);
+      const replacementPath = path.join(tempDir, '302.plan.md.tmp');
+      await writeFile(replacementPath, ['---', 'id: 302', '---', '', 'second'].join('\n'));
+      await rename(replacementPath, planPath);
 
-    await waitFor(() => contents.length === 2);
-    expect(contents[1]).toEqual({ content: 'second', tasks: [] });
+      await waitFor(() => contents.length === 2);
+      expect(contents[1]).toEqual({ content: 'second', tasks: [] });
 
-    await writeFile(planPath, ['---', 'id: 302', '---', '', 'third'].join('\n'));
+      await writeFile(planPath, ['---', 'id: 302', '---', '', 'third'].join('\n'));
 
-    await waitFor(() => contents.length === 3);
-    expect(contents[2]).toEqual({ content: 'third', tasks: [] });
+      await waitFor(() => contents.length === 3);
+      expect(contents[2]).toEqual({ content: 'third', tasks: [] });
 
-    watcher.close();
-  });
+      watcher.close();
+    }
+  );
 
   test('returns trimmed content when frontmatter is absent', () => {
     expect(stripPlanFrontmatter('\n# Body\n\nText\n')).toBe('# Body\n\nText');

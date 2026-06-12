@@ -72,6 +72,8 @@ This "no defaults" rule does **not** forbid _validation_ in the schema. Format-c
 - Cover happy path, edge cases, and error handling.
 - When modifying task management commands or MCP tools, reuse the cross-interface scenarios in `src/tim/commands/task-management.integration.test.ts`.
 - Enable test console logging with `TEST_ALLOW_CONSOLE=true`. Do **not** set `TEST_ALLOW_CONSOLE=false` — the default is off and the var's presence confuses the Bash tool.
+- Many of our slower tests are skipped by default. You can set SLOW_TESTS=true to run them if you are touching relevant
+  code and see a lot of tests skipped.
 
 ### Prompts
 

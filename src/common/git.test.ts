@@ -489,7 +489,7 @@ describe('Git Utilities', () => {
     });
   });
 
-  describe('merge-base and remote branch helpers', () => {
+  describe.skipIf(!process.env.SLOW_TESTS)('merge-base and remote branch helpers', () => {
     it('computes merge-base for git repositories against origin/<baseBranch>', async () => {
       const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-remote-'));
       const sourceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-source-'));
@@ -657,7 +657,7 @@ describe('Git Utilities', () => {
     });
   });
 
-  describe('JJ integration tests for base tracking', () => {
+  describe.skipIf(!process.env.SLOW_TESTS)('JJ integration tests for base tracking', () => {
     beforeEach(() => {
       clearAllGitCaches();
     });

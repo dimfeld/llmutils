@@ -231,7 +231,7 @@ function processExists(pid: number): boolean {
   }
 }
 
-describe('LifecycleManager', () => {
+describe.skipIf(!process.env.SLOW_TESTS)('LifecycleManager', () => {
   let tempDir: string;
   let logFile: string;
 
@@ -1030,17 +1030,89 @@ describe('LifecycleManager', () => {
     10000
   );
 
-  test('warns when a running daemon exits unexpectedly later', async () => {
-    const warnSpy = vi.spyOn(logging, 'warn').mockImplementation(() => {});
+  test.skipIf(!process.env.SLOW_TESTS)(
+    'warns when a running daemon exits unexpectedly later',
+    async () => {
+      const warnSpy = vi.spyOn(logging, 'warn').mockImplementation(() => {});
 
-    try {
+      try {
+        const manager = new LifecycleManager(
+          [
+            {
+              title: 'flaky daemon',
+              command: await createDelayedExitDaemonCommand(logFile, 12, 300, 'flaky-start'),
+              mode: 'daemon',
+              shutdown: appendLineCommand(logFile, 'flaky-stop'),
+            },
+          ],
+          tempDir,
+          undefined
+        );
+
+        await manager.startup();
+        await waitForLine(logFile, 'flaky-start');
+        await Bun.sleep(450);
+        await manager.shutdown();
+
+        expect(warnSpy).toHaveBeenCalledWith(
+          'Lifecycle daemon "flaky daemon" exited unexpectedly with code 12.'
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    }
+  );
+
+  test.skipIf(!process.env.SLOW_TESTS)(
+    'warns when a running daemon exits unexpectedly later with code 0',
+    async () => {
+      const warnSpy = vi.spyOn(logging, 'warn').mockImplementation(() => {});
+
+      try {
+        const manager = new LifecycleManager(
+          [
+            {
+              title: 'clean-exit daemon',
+              command: await createDelayedExitDaemonCommand(logFile, 0, 300, 'clean-start'),
+              mode: 'daemon',
+              shutdown: appendLineCommand(logFile, 'clean-stop'),
+            },
+          ],
+          tempDir,
+          undefined
+        );
+
+        await manager.startup();
+        await waitForLine(logFile, 'clean-start');
+        await Bun.sleep(450);
+        await manager.shutdown();
+
+        expect(warnSpy).toHaveBeenCalledWith(
+          'Lifecycle daemon "clean-exit daemon" exited unexpectedly with code 0.'
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    }
+  );
+
+  test.skipIf(!process.env.SLOW_TESTS)(
+    'daemon shutdown kills non-exec child processes via the daemon process group',
+    async () => {
+      const launcherPidFile = path.join(tempDir, 'launcher.pid');
+      const childPidFile = path.join(tempDir, 'child.pid');
       const manager = new LifecycleManager(
         [
           {
-            title: 'flaky daemon',
-            command: await createDelayedExitDaemonCommand(logFile, 12, 300, 'flaky-start'),
+            title: 'daemon with child',
+            command: await createNonExecDaemonWithChildCommand(
+              logFile,
+              launcherPidFile,
+              childPidFile,
+              'launcher-start',
+              'child-start'
+            ),
             mode: 'daemon',
-            shutdown: appendLineCommand(logFile, 'flaky-stop'),
           },
         ],
         tempDir,
@@ -1048,82 +1120,20 @@ describe('LifecycleManager', () => {
       );
 
       await manager.startup();
-      await waitForLine(logFile, 'flaky-start');
-      await Bun.sleep(450);
+      await waitForLine(logFile, 'launcher-start');
+      await waitForLine(logFile, 'child-start');
+
+      const launcherPid = Number.parseInt(await fs.readFile(launcherPidFile, 'utf8'), 10);
+      const childPid = Number.parseInt(await fs.readFile(childPidFile, 'utf8'), 10);
+
       await manager.shutdown();
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
-      expect(warnSpy).toHaveBeenCalledWith(
-        'Lifecycle daemon "flaky daemon" exited unexpectedly with code 12.'
-      );
-    } finally {
-      warnSpy.mockRestore();
-    }
-  });
-
-  test('warns when a running daemon exits unexpectedly later with code 0', async () => {
-    const warnSpy = vi.spyOn(logging, 'warn').mockImplementation(() => {});
-
-    try {
-      const manager = new LifecycleManager(
-        [
-          {
-            title: 'clean-exit daemon',
-            command: await createDelayedExitDaemonCommand(logFile, 0, 300, 'clean-start'),
-            mode: 'daemon',
-            shutdown: appendLineCommand(logFile, 'clean-stop'),
-          },
-        ],
-        tempDir,
-        undefined
-      );
-
-      await manager.startup();
-      await waitForLine(logFile, 'clean-start');
-      await Bun.sleep(450);
-      await manager.shutdown();
-
-      expect(warnSpy).toHaveBeenCalledWith(
-        'Lifecycle daemon "clean-exit daemon" exited unexpectedly with code 0.'
-      );
-    } finally {
-      warnSpy.mockRestore();
-    }
-  });
-
-  test('daemon shutdown kills non-exec child processes via the daemon process group', async () => {
-    const launcherPidFile = path.join(tempDir, 'launcher.pid');
-    const childPidFile = path.join(tempDir, 'child.pid');
-    const manager = new LifecycleManager(
-      [
-        {
-          title: 'daemon with child',
-          command: await createNonExecDaemonWithChildCommand(
-            logFile,
-            launcherPidFile,
-            childPidFile,
-            'launcher-start',
-            'child-start'
-          ),
-          mode: 'daemon',
-        },
-      ],
-      tempDir,
-      undefined
-    );
-
-    await manager.startup();
-    await waitForLine(logFile, 'launcher-start');
-    await waitForLine(logFile, 'child-start');
-
-    const launcherPid = Number.parseInt(await fs.readFile(launcherPidFile, 'utf8'), 10);
-    const childPid = Number.parseInt(await fs.readFile(childPidFile, 'utf8'), 10);
-
-    await manager.shutdown();
-    await new Promise((resolve) => setTimeout(resolve, 200));
-
-    expect(processExists(launcherPid)).toBeFalsy();
-    expect(processExists(childPid)).toBeFalsy();
-  }, 30000);
+      expect(processExists(launcherPid)).toBeFalsy();
+      expect(processExists(childPid)).toBeFalsy();
+    },
+    30000
+  );
 
   test('shutdown continues after shutdown command failures and reports errors', async () => {
     const manager = new LifecycleManager(

@@ -172,126 +172,132 @@ describe('tim agent integration (execution summaries)', () => {
     return fp;
   }
 
-  test('serial mode: captures final message from Claude executor and writes summary file', async () => {
-    const plan = {
-      id: 123,
-      title: 'Test Plan (Serial Claude)',
-      goal: 'Verify serial execution summary',
-      details: 'Ensure collector records step + output',
-      status: 'pending',
-      tasks: [
+  test.skipIf(!process.env.SLOW_TESTS)(
+    'serial mode: captures final message from Claude executor and writes summary file',
+    async () => {
+      const plan = {
+        id: 123,
+        title: 'Test Plan (Serial Claude)',
+        goal: 'Verify serial execution summary',
+        details: 'Ensure collector records step + output',
+        status: 'pending',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Basic task description',
+            done: false,
+            steps: [{ prompt: 'Do a thing', done: false }],
+          },
+        ],
+      };
+      const planPath = await writePlan('123-test-plan.yml', plan);
+
+      executorExecuteImpl = async () => ({ content: 'This is the final orchestrator message.' });
+
+      const { timAgent } = await import('./agent.js');
+
+      const summaryFile = path.join(tempDir, 'out', 'summary.txt');
+
+      await timAgent(
+        123,
         {
-          title: 'Task 1',
-          description: 'Basic task description',
-          done: false,
-          steps: [{ prompt: 'Do a thing', done: false }],
+          serialTasks: true,
+          nonInteractive: true,
+          log: false,
+          orchestrator: 'claude_code',
+          summaryFile,
+          steps: '1',
         },
-      ],
-    };
-    const planPath = await writePlan('123-test-plan.yml', plan);
+        { config: configPath }
+      );
 
-    executorExecuteImpl = async () => ({ content: 'This is the final orchestrator message.' });
+      const content = await fs.readFile(summaryFile, 'utf8');
+      expect(content).toContain('Execution Summary: Test Plan (Serial Claude)');
+      expect(content).toContain('Steps Executed');
+      expect(content).toContain('Step Results');
+      expect(content).toContain('This is the final orchestrator message.');
+      expect(content).toContain('File Changes');
+      expect(content).toContain('tasks/123-test-plan.yml');
+      expect(content).toContain('✓ Completed plan 123');
+    }
+  );
 
-    const { timAgent } = await import('./agent.js');
+  test.skipIf(!process.env.SLOW_TESTS)(
+    'serial mode: captures Codex orchestrator output and records failure on error',
+    async () => {
+      const plan = {
+        id: 321,
+        title: 'Test Plan (Serial Codex)',
+        goal: 'Verify codex orchestrator output + failure',
+        details: 'Ensure the single top-level orchestrator result is captured',
+        status: 'pending',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Implement and test task',
+            done: false,
+            steps: [{ prompt: 'Implement and test', done: false }],
+          },
+        ],
+      };
+      const planPath = await writePlan('321-test-plan.yml', plan);
 
-    const summaryFile = path.join(tempDir, 'out', 'summary.txt');
+      // First, have executor throw to simulate failure and ensure summary records it
+      executorExecuteImpl = async () => {
+        throw new Error('executor boom');
+      };
 
-    await timAgent(
-      123,
-      {
-        serialTasks: true,
-        nonInteractive: true,
-        log: false,
-        orchestrator: 'claude_code',
-        summaryFile,
-        steps: '1',
-      },
-      { config: configPath }
-    );
+      const { timAgent } = await import('./agent.js');
+      const summaryFile = path.join(tempDir, 'out', 'summary2.txt');
 
-    const content = await fs.readFile(summaryFile, 'utf8');
-    expect(content).toContain('Execution Summary: Test Plan (Serial Claude)');
-    expect(content).toContain('Steps Executed');
-    expect(content).toContain('Step Results');
-    expect(content).toContain('This is the final orchestrator message.');
-    expect(content).toContain('File Changes');
-    expect(content).toContain('tasks/123-test-plan.yml');
-    expect(content).toContain('✓ Completed plan 123');
-  });
+      await expect(
+        timAgent(
+          321,
+          {
+            serialTasks: true,
+            nonInteractive: true,
+            log: false,
+            orchestrator: 'codex_cli',
+            summaryFile,
+            steps: '1',
+          },
+          { config: configPath }
+        )
+      ).rejects.toThrow('Agent stopped due to error.');
 
-  test('serial mode: captures Codex orchestrator output and records failure on error', async () => {
-    const plan = {
-      id: 321,
-      title: 'Test Plan (Serial Codex)',
-      goal: 'Verify codex orchestrator output + failure',
-      details: 'Ensure the single top-level orchestrator result is captured',
-      status: 'pending',
-      tasks: [
-        {
-          title: 'Task 1',
-          description: 'Implement and test task',
-          done: false,
-          steps: [{ prompt: 'Implement and test', done: false }],
-        },
-      ],
-    };
-    const planPath = await writePlan('321-test-plan.yml', plan);
+      const content = await fs.readFile(summaryFile, 'utf8');
+      expect(content).toContain('Execution Summary: Test Plan (Serial Codex)');
+      expect(content).toContain('Failed Steps');
+      // Error line appears under Step Results; overall Errors section may be empty
+      expect(content).toContain('Error: executor boom');
+      expect(content).toContain('executor boom');
 
-    // First, have executor throw to simulate failure and ensure summary records it
-    executorExecuteImpl = async () => {
-      throw new Error('executor boom');
-    };
+      // Now, run again with a single orchestrator result (new contract: one top-level result, not labeled phases)
+      executorExecuteImpl = async () => ({
+        content: 'Orchestrator completed successfully. All tasks done.',
+        metadata: { phase: 'orchestrator' },
+      });
 
-    const { timAgent } = await import('./agent.js');
-    const summaryFile = path.join(tempDir, 'out', 'summary2.txt');
+      const summaryFile2 = path.join(tempDir, 'out', 'summary3.txt');
 
-    await expect(
-      timAgent(
+      await timAgent(
         321,
         {
           serialTasks: true,
           nonInteractive: true,
           log: false,
           orchestrator: 'codex_cli',
-          summaryFile,
+          summaryFile: summaryFile2,
           steps: '1',
         },
         { config: configPath }
-      )
-    ).rejects.toThrow('Agent stopped due to error.');
+      );
 
-    const content = await fs.readFile(summaryFile, 'utf8');
-    expect(content).toContain('Execution Summary: Test Plan (Serial Codex)');
-    expect(content).toContain('Failed Steps');
-    // Error line appears under Step Results; overall Errors section may be empty
-    expect(content).toContain('Error: executor boom');
-    expect(content).toContain('executor boom');
-
-    // Now, run again with a single orchestrator result (new contract: one top-level result, not labeled phases)
-    executorExecuteImpl = async () => ({
-      content: 'Orchestrator completed successfully. All tasks done.',
-      metadata: { phase: 'orchestrator' },
-    });
-
-    const summaryFile2 = path.join(tempDir, 'out', 'summary3.txt');
-
-    await timAgent(
-      321,
-      {
-        serialTasks: true,
-        nonInteractive: true,
-        log: false,
-        orchestrator: 'codex_cli',
-        summaryFile: summaryFile2,
-        steps: '1',
-      },
-      { config: configPath }
-    );
-
-    const content2 = await fs.readFile(summaryFile2, 'utf8');
-    expect(content2).toContain('Execution Summary: Test Plan (Serial Codex)');
-    expect(content2).toContain('Orchestrator completed successfully. All tasks done.');
-  });
+      const content2 = await fs.readFile(summaryFile2, 'utf8');
+      expect(content2).toContain('Execution Summary: Test Plan (Serial Codex)');
+      expect(content2).toContain('Orchestrator completed successfully. All tasks done.');
+    }
+  );
 
   test('batch mode: aggregates iterations and writes a summary', async () => {
     const plan = {

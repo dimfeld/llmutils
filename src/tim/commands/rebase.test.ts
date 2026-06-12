@@ -755,7 +755,7 @@ describe('handleRebaseCommand', () => {
     expect(typeof callArgs.callback).toBe('function');
   });
 
-  describe('base branch tracking', () => {
+  describe.skipIf(!process.env.SLOW_TESTS)('base branch tracking', () => {
     test('rebases onto baseBranch when it exists on remote', async () => {
       const repo = await createStackedTestRepo();
       tempDirs.push(repo.tempRoot);
@@ -1127,7 +1127,7 @@ describe('handleRebaseCommand', () => {
     });
   });
 
-  describe('JJ base branch tracking', () => {
+  describe.skipIf(!process.env.SLOW_TESTS)('JJ base branch tracking', () => {
     test('JJ: rebases onto baseBranch bookmark when it exists on remote', async () => {
       if (!(await isJjAvailable())) {
         return;

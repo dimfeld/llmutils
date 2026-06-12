@@ -1,4 +1,7 @@
 - Tests use `bun run test` and run under Vitest.
+- Slow real-integration coverage is opt-in with `SLOW_TESTS=1 bun run test`.
+- OS process integration coverage that shells out to process-listing tools is opt-in with
+  `TEST_OS_PROCESS=1 bun run test`.
 - **Prefer real filesystem operations**: Use `fs.mkdtemp()` for temporary directories instead of mocking filesystem calls
 - **Hybrid mocking approach**:
   - Consider mocking complicated external dependencies (logging, process spawning) for interaction verification, but

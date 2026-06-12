@@ -235,7 +235,7 @@ async function createPlanFile(
   return planPath;
 }
 
-describe('workspace add --reuse and --try-reuse', () => {
+describe.skipIf(!process.env.SLOW_TESTS)('workspace add --reuse and --try-reuse', () => {
   let bareRemoteDir: string;
 
   beforeEach(async () => {

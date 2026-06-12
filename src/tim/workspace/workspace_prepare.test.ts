@@ -115,7 +115,7 @@ async function branchExistsInRepo(dir: string, branchName: string): Promise<bool
   return result.exitCode === 0;
 }
 
-describe('findUniqueBranchName', () => {
+describe.skipIf(!process.env.SLOW_TESTS)('findUniqueBranchName', () => {
   let tempDir: string;
 
   beforeEach(async () => {
@@ -168,7 +168,7 @@ describe('findUniqueBranchName', () => {
   });
 });
 
-describe('findUniqueBranchName with Jujutsu', () => {
+describe.skipIf(!process.env.SLOW_TESTS)('findUniqueBranchName with Jujutsu', () => {
   let tempDir: string;
   let hasJj = false;
 
@@ -225,7 +225,7 @@ describe('findUniqueBranchName with Jujutsu', () => {
   });
 });
 
-describe('prepareExistingWorkspace', () => {
+describe.skipIf(!process.env.SLOW_TESTS)('prepareExistingWorkspace', () => {
   let tempDir: string;
   let remoteDir: string;
 
@@ -865,7 +865,7 @@ describe('prepareExistingWorkspace', () => {
   });
 });
 
-describe('prepareExistingWorkspace with Jujutsu', () => {
+describe.skipIf(!process.env.SLOW_TESTS)('prepareExistingWorkspace with Jujutsu', () => {
   let tempDir: string;
   let hasJj = false;
 
@@ -1091,7 +1091,7 @@ describe('prepareExistingWorkspace with Jujutsu', () => {
   });
 });
 
-describe('branch preparation behavior', () => {
+describe.skipIf(!process.env.SLOW_TESTS)('branch preparation behavior', () => {
   let tempDir: string;
   let remoteDir: string;
 
@@ -1263,7 +1263,7 @@ describe('branch preparation behavior', () => {
   });
 });
 
-describe('findUniqueBranchName with checkRemote', () => {
+describe.skipIf(!process.env.SLOW_TESTS)('findUniqueBranchName with checkRemote', () => {
   let tempDir: string;
   let remoteDir: string;
 
@@ -1329,7 +1329,7 @@ describe('findUniqueBranchName with checkRemote', () => {
   });
 });
 
-describe('findUniqueRemoteBranchName', () => {
+describe.skipIf(!process.env.SLOW_TESTS)('findUniqueRemoteBranchName', () => {
   let tempDir: string;
   let remoteDir: string;
 
