@@ -5,7 +5,7 @@ import { buildLinearReviewDeepLink, toLinearReviewDeepLink } from './linear_revi
 describe('linear_review_deep_link', () => {
   test('converts linear.review URLs to Linear deep links', () => {
     expect(toLinearReviewDeepLink('https://linear.review/acme/widgets/pull/42')).toBe(
-      'linear://acme/widgets/pull/42'
+      'linear://review/acme/widgets/pull/42'
     );
   });
 
@@ -19,6 +19,6 @@ describe('linear_review_deep_link', () => {
       buildLinearReviewDeepLink({
         prUrl: 'https://github.com/acme/widgets/pull/42',
       })
-    ).toBe('linear://acme/widgets/pull/42');
+    ).toBe('linear://review/acme/widgets/pull/42');
   });
 });

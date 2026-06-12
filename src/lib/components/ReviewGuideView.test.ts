@@ -209,7 +209,7 @@ describe('ReviewGuideView', () => {
     expect(body).toContain('View in GitHub');
     expect(body).toContain('href="https://github.com/example/repo/pull/1"');
     expect(body).toContain('View in Linear');
-    expect(body).toContain('href="linear://example/repo/pull/1"');
+    expect(body).toContain('href="linear://review/example/repo/pull/1"');
     expect(body).toContain('Submitted in review #12345');
     expect(body).toContain('Add to plan as a task');
     expect(body).toContain('Mark resolved');
@@ -241,7 +241,7 @@ describe('ReviewGuideView', () => {
     expect(body).toContain('View in GitHub');
     expect(body).toContain('href="https://github.com/example/repo/pull/42"');
     expect(body).toContain('View in Linear');
-    expect(body).toContain('href="linear://example/repo/pull/42"');
+    expect(body).toContain('href="linear://review/example/repo/pull/42"');
   });
 
   test('prefers the current PR branch over the stored review branch in the header', () => {

@@ -51,7 +51,7 @@ describe('PrAttentionCard', () => {
       },
     });
 
-    expect(body).toContain('href="linear://example/repo/pull/42"');
+    expect(body).toContain('href="linear://review/example/repo/pull/42"');
   });
 
   test('renders compact diff stats when additions and deletions are available', () => {

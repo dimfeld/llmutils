@@ -53,7 +53,7 @@ describe('PrRow', () => {
       },
     });
 
-    expect(body).toContain('href="linear://example/repo/pull/42"');
+    expect(body).toContain('href="linear://review/example/repo/pull/42"');
     expect(body).toContain('target="_blank"');
     expect(body).toContain('rel="noopener noreferrer"');
     expect(body).toContain('aria-label="Open pull request #42 in Linear Review in new window"');

@@ -286,7 +286,7 @@ describe('PrStatusSection', () => {
 
     expect(body).toContain('#42');
     expect(body).toContain('Add feature X');
-    expect(body).toContain('href="linear://owner/repo/pull/42"');
+    expect(body).toContain('href="linear://review/owner/repo/pull/42"');
   });
 
   test('renders state badge for open PR', async () => {

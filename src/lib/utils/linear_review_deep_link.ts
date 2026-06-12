@@ -4,7 +4,7 @@ import {
 } from '$common/linear_pr_review.js';
 
 const LINEAR_REVIEW_ORIGIN = 'https://linear.review/';
-const LINEAR_DEEP_LINK_PREFIX = 'linear://';
+const LINEAR_DEEP_LINK_PREFIX = 'linear://review/';
 
 export function toLinearReviewDeepLink(reviewUrl: string | null | undefined): string | null {
   if (!reviewUrl?.startsWith(LINEAR_REVIEW_ORIGIN)) {
