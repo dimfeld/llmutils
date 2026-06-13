@@ -392,7 +392,12 @@ describe('buildAutoreviewPrompt', () => {
   test('with linkedPr: un-anchorable body-fallback instruction is present', () => {
     const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
     expect(prompt).toContain('put it in the review body instead of an inline thread');
-    expect(prompt).toContain('If there are no body-only issues, there is no need to explain that');
+    expect(prompt).toContain(
+      'The review `body` should contain a short summary of the comments addressed or ignored in this review'
+    );
+    expect(prompt).toContain('Short summary of comments addressed or ignored in this review');
+    expect(prompt).toContain('If there are no body-only issues, omit that topic entirely');
+    expect(prompt).toContain('do not write boilerplate like "No body-only issues."');
     expect(prompt).toContain(
       'include that file/line in the follow-up comment so someone viewing the PR can link the response back to the original finding'
     );

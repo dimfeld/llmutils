@@ -223,12 +223,12 @@ Use these \`gh api\` shapes for ${prRef}. The current head SHA for the review pa
 
     gh pr view ${linkedPr.prNumber} --repo ${linkedPr.owner}/${linkedPr.repo} --json headRefOid -q .headRefOid
 
-Create one review with inline comments and body-only fallbacks. Inline comment fields mirror the review-comment API semantics: \`path\`, \`body\`, \`line\`, \`side\`, and optional \`start_line\`/\`start_side\` for ranges. If there are no body-only issues, there is no need to explain that. Write the payload to a temp file and pass it with \`--input\` (this avoids fragile shell quoting/heredocs). For example, write this JSON to \`"$TMPDIR/autoreview-review.json"\`:
+Create one review with inline comments and body-only fallbacks. Inline comment fields mirror the review-comment API semantics: \`path\`, \`body\`, \`line\`, \`side\`, and optional \`start_line\`/\`start_side\` for ranges. The review \`body\` should contain a short summary of the comments addressed or ignored in this review, plus any body-only issues that cannot be represented as inline comments. If there are no body-only issues, omit that topic entirely; do not write boilerplate like "No body-only issues." Write the payload to a temp file and pass it with \`--input\` (this avoids fragile shell quoting/heredocs). For example, write this JSON to \`"$TMPDIR/autoreview-review.json"\`:
 
     {
       "commit_id": "${headShaValue}",
       "event": "COMMENT",
-      "body": "Body-only issues that cannot be anchored in the diff go here. Include any referenced file/line, such as src/example.ts:42, and for ignored body-only issues include the user's ignore reason in this initial description.",
+      "body": "Short summary of comments addressed or ignored in this review. Body-only issues that cannot be anchored in the diff also go here. Include any referenced file/line, such as src/example.ts:42, and for ignored body-only issues include the user's ignore reason in this initial description.",
       "comments": [
         {
           "path": "src/example.ts",
