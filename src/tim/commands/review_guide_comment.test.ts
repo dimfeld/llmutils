@@ -325,7 +325,7 @@ describe('review_guide_comment', () => {
     expect(mockLog).toHaveBeenCalledWith('Dry run: not posting review guide comment.');
   });
 
-  test('skips generation when githubWebhooks.reviewGuideComments is not set', async () => {
+  test('manual generation does not require githubWebhooks.reviewGuideComments', async () => {
     mockLoadEffectiveConfig.mockResolvedValue({
       terminalInput: true,
       review: {},
@@ -338,12 +338,15 @@ describe('review_guide_comment', () => {
       makeCommand()
     );
 
-    expect(mockGatherPrContext).not.toHaveBeenCalled();
-    expect(mockFindPullRequestCommentByMarker).not.toHaveBeenCalled();
-    expect(mockPostPullRequestComment).not.toHaveBeenCalled();
-    expect(mockLog).toHaveBeenCalledWith(
-      'Review guide comment generation is disabled. Set `githubWebhooks.reviewGuideComments: true` in your tim config to enable it.'
+    expect(mockGatherPrContext).toHaveBeenCalled();
+    expect(mockPostPullRequestComment).toHaveBeenCalledWith(
+      'acme',
+      'repo',
+      42,
+      expect.stringContaining('Generated guide.'),
+      { authToken: 'app-installation-token' }
     );
+    expect(mockLog).toHaveBeenCalledWith('## Review Guide\n\nGenerated guide.');
   });
 
   test('force updates the existing guide comment with a timestamp footer', async () => {

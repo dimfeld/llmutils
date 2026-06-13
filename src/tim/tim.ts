@@ -1911,7 +1911,6 @@ const prReviewGuideCommentCommand = prCommand
   .option('-x, --executor <name>', 'Executor to use (claude-code or codex-cli; default codex-cli)')
   .option('-m, --model <model>', 'Model override for the executor')
   .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
-  .option('--auto', 'Only run if automatic review-guide comments are enabled for this project')
   .option('--force', 'Update an existing review-guide comment, or post one if none exists')
   .option('--dry-run', 'Generate and print the guide comment without posting it')
   .option('--no-terminal-input', 'Disable terminal input')

@@ -370,7 +370,6 @@ export async function spawnPrReviewGuideCommentProcess(
       'pr',
       'review-guide-comment',
       String(prNumber),
-      '--auto',
       '--auto-workspace',
       '--no-terminal-input',
       '--non-interactive',

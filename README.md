@@ -352,7 +352,7 @@ prFix:
 
 `tim pr review-guide-comment <prUrlOrNumber>` generates a short, comment-sized review guide and posts it directly to the PR as a comment (distinct from the in-app review guide above, which embeds full diffs for the web viewer). The comment groups the changes into a few logical sections and flags the specific places a human reviewer should look closely. It checks out the PR branch in a managed workspace (`--auto-workspace`), runs an executor (codex-cli by default; override with `-x claude-code`), logs the generated guide, and posts via the configured GitHub App installation token. Use `--dry-run` to generate and log the guide without posting it.
 
-Review guide comment generation is gated behind a global config switch that defaults to off, so the command is a no-op until you enable it:
+Automatic review guide comment generation is gated behind a global config switch that defaults to off. Manual `tim pr review-guide-comment <prUrlOrNumber>` runs do not require this switch.
 
 ```yaml
 githubWebhooks:
@@ -368,7 +368,7 @@ reviewGuideComments:
     Mention generated files only when reviewers need to inspect them.
 ```
 
-When webhook polling is enabled, the web server can post this comment automatically as soon as a PR becomes ready for review — either opened directly as a non-draft PR or moved from draft to ready. This is opt-in per project:
+When webhook polling is enabled and the global switch above is set, the web server can post this comment automatically as soon as a PR becomes ready for review — either opened directly as a non-draft PR or moved from draft to ready. This is also opt-in per project:
 
 ```bash
 tim pr review-guide-comment enable
@@ -376,7 +376,7 @@ tim pr review-guide-comment status
 tim pr review-guide-comment disable
 ```
 
-Like Slack digest settings, the per-project opt-in is stored as a per-project database setting, not in committed config. The automatic path additionally requires the global `githubWebhooks.reviewGuideComments` config above to be set. With both enabled, a `tim pr review-guide-comment --auto` process is spawned in the project's primary workspace for each newly-ready PR. The comment is posted at most once per PR — before posting, tim looks for its hidden marker (`<!-- tim:pr-review-guide -->`) in the PR's existing comments and skips if one is already present. Run the command manually with `--force` to refresh the existing marked comment instead; refreshed comments include an `Updated at <timestamp>` footer, and a new comment is created if none exists. Posting uses the configured GitHub App installation token for the PR owner; it does not use `GITHUB_TOKEN` or `gh auth token`.
+Like Slack digest settings, the per-project opt-in is stored as a per-project database setting, not in committed config. The automatic path additionally requires the global `githubWebhooks.reviewGuideComments` config above to be set. With both enabled, the webhook trigger spawns a `tim pr review-guide-comment` process in the project's primary workspace for each newly-ready PR. The comment is posted at most once per PR — before posting, tim looks for its hidden marker (`<!-- tim:pr-review-guide -->`) in the PR's existing comments and skips if one is already present. Run the command manually with `--force` to refresh the existing marked comment instead; refreshed comments include an `Updated at <timestamp>` footer, and a new comment is created if none exists. Posting uses the configured GitHub App installation token for the PR owner; it does not use `GITHUB_TOKEN` or `gh auth token`.
 
 See the PR status and web interface notes in [`docs/web-interface.md`](docs/web-interface.md) for implementation details and edge cases.
 

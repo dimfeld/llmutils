@@ -17,9 +17,9 @@ import { spawnPrReviewGuideCommentProcess } from './plan_actions.js';
 /**
  * For each PR that just became ready for review, spawn a detached `tim pr
  * review-guide-comment` process in the project's primary workspace. The spawned
- * command is gated on the global githubWebhooks.reviewGuideComments config
- * (default false) and the project-level reviewGuideComment setting (both checked
- * here to avoid spawning when disabled, and again inside the command).
+ * command is gated here on the global githubWebhooks.reviewGuideComments config
+ * (default false) and the project-level reviewGuideComment setting, so disabled
+ * automatic generation does not spawn worker processes.
  */
 export async function triggerReviewGuideComments(
   db: Database,

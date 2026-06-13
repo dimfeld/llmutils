@@ -5,7 +5,6 @@ import { getGitRoot, getUsingJj } from '../../common/git.js';
 import { parsePrOrIssueNumber } from '../../common/github/identifiers.js';
 import { getGitHubAppInstallationTokenForOwner } from '../../common/github/app_auth.js';
 import {
-  isReviewGuideCommentEnabled,
   parseReviewGuideCommentProjectSetting,
   REVIEW_GUIDE_COMMENT_PROJECT_SETTING_KEY,
   type ReviewGuideCommentProjectSetting,
@@ -58,8 +57,6 @@ export interface PrReviewGuideCommentOptions {
   autoWorkspace?: boolean;
   nonInteractive?: boolean;
   terminalInput?: boolean;
-  /** Set when invoked by the webhook trigger; only run if the project setting is enabled. */
-  auto?: boolean;
   /** Re-post even if a review-guide comment already exists. */
   force?: boolean;
   /** Generate and print the guide, but do not post it to GitHub. */
@@ -166,12 +163,6 @@ async function resolveCurrentProject(cwd: string = process.cwd()): Promise<Proje
   return project;
 }
 
-function isProjectAutoReviewGuideCommentEnabled(db: Database, projectId: number): boolean {
-  return isReviewGuideCommentEnabled(
-    getProjectSetting(db, projectId, REVIEW_GUIDE_COMMENT_PROJECT_SETTING_KEY)
-  );
-}
-
 async function writeReviewGuideCommentSetting(
   enabled: boolean,
   command: RootCommandLike | undefined
@@ -230,23 +221,6 @@ export async function handlePrReviewGuideCommentCommand(
   const initialRepoRoot = await getGitRoot(process.cwd());
   const config = await loadEffectiveConfig(globalOpts.config, { cwd: initialRepoRoot });
   const tunnelActive = isTunnelActive();
-
-  // Review guide comment generation is opt-in via the global config (default false).
-  if (config.githubWebhooks?.reviewGuideComments !== true) {
-    log(
-      'Review guide comment generation is disabled. Set `githubWebhooks.reviewGuideComments: true` in your tim config to enable it.'
-    );
-    return;
-  }
-
-  // When invoked by the webhook trigger, respect the project opt-in before doing any work.
-  if (options.auto) {
-    const project = await resolveCurrentProject(initialRepoRoot);
-    if (!isProjectAutoReviewGuideCommentEnabled(db, project.id)) {
-      log('Automatic PR review guide comments are disabled for this project; skipping.');
-      return;
-    }
-  }
 
   await runWithHeadlessAdapterIfEnabled({
     enabled: !tunnelActive,
