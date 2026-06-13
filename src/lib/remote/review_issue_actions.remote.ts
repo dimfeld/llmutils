@@ -50,6 +50,10 @@ const reviewIssueTaskSchema = z.object({
   planUuid: z.string().min(1),
 });
 
+function isBulkTaskReviewIssue(issue: NonNullable<PlanSchema['reviewIssues']>[number]): boolean {
+  return issue.severity !== 'info' && issue.severity !== 'note';
+}
+
 /**
  * Verify that a review is associated with the given plan, either directly (the
  * review was spawned from the plan and carries its `plan_uuid`) or indirectly
@@ -155,12 +159,18 @@ export const convertAllReviewIssuesToTasks = command(planUuidSchema, async ({ pl
   }
 
   const expectedIssuesJson = JSON.stringify(issues);
-  const newTasks = issues.map((issue) => createTaskFromIssue(issue));
+  const taskIssues = issues.filter(isBulkTaskReviewIssue);
+  if (taskIssues.length === 0) {
+    error(400, 'Plan has no actionable review issues');
+  }
+
+  const remainingIssues = issues.filter((issue) => !isBulkTaskReviewIssue(issue));
+  const newTasks = taskIssues.map((issue) => createTaskFromIssue(issue));
   const currentPlan = loadPlanSchemaFromRow(db, plan);
   const nextPlan = {
     ...currentPlan,
     status: plan.status === 'in_progress' ? currentPlan.status : 'in_progress',
-    reviewIssues: undefined,
+    reviewIssues: remainingIssues.length > 0 ? remainingIssues : undefined,
     tasks: [
       ...(currentPlan.tasks ?? []),
       ...newTasks.map((task) => ({

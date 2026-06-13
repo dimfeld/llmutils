@@ -274,6 +274,60 @@ describe('review issue remote actions', () => {
     });
   });
 
+  test('convertAllReviewIssuesToTasks skips info issues and keeps them as review issues', async () => {
+    const majorIssue = makeIssue('major', 'bug', 'Task-worthy issue', 'src/major.ts', 12);
+    const infoIssue = makeIssue('info', 'other', 'Informational context', 'src/info.ts', 24);
+    const minorIssue = makeIssue('minor', 'style', 'Another task-worthy issue', 'src/minor.ts', 36);
+    seedPlan({
+      uuid: '00000000-0000-4000-8000-000000000154',
+      planId: 268,
+      status: 'needs_review',
+      tasks: [{ title: 'Existing task', description: 'Already there', done: false }],
+      reviewIssues: [majorIssue, infoIssue, minorIssue],
+    });
+
+    await invokeCommand(convertAllReviewIssuesToTasks, {
+      planUuid: '00000000-0000-4000-8000-000000000154',
+    });
+
+    const plan = getPlanByUuid(currentDb, '00000000-0000-4000-8000-000000000154');
+    const tasks = getPlanTasksByUuid(currentDb, '00000000-0000-4000-8000-000000000154');
+
+    expect(plan?.status).toBe('in_progress');
+    expect(JSON.parse(plan?.review_issues ?? '[]')).toEqual([infoIssue]);
+    expect(tasks).toHaveLength(3);
+    expect(tasks[1]).toMatchObject({
+      task_index: 1,
+      title: createTaskFromIssue(majorIssue).title,
+      description: createTaskFromIssue(majorIssue).description ?? '',
+      done: 0,
+    });
+    expect(tasks[2]).toMatchObject({
+      task_index: 2,
+      title: createTaskFromIssue(minorIssue).title,
+      description: createTaskFromIssue(minorIssue).description ?? '',
+      done: 0,
+    });
+    expect(tasks.map((task) => task.title)).not.toContain(createTaskFromIssue(infoIssue).title);
+  });
+
+  test('convertAllReviewIssuesToTasks rejects plans with only info issues', async () => {
+    seedPlan({
+      uuid: '00000000-0000-4000-8000-000000000155',
+      planId: 269,
+      reviewIssues: [makeIssue('info', 'other', 'Informational context')],
+    });
+
+    await expect(
+      invokeCommand(convertAllReviewIssuesToTasks, {
+        planUuid: '00000000-0000-4000-8000-000000000155',
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'Plan has no actionable review issues' },
+    });
+  });
+
   test('convertAllReviewIssuesToTasks queues one persistent batch with all task additions and removals', async () => {
     currentConfig = persistentConfig();
     const issues = [
