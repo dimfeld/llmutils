@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   BackgroundActivityTracker,
   BACKGROUND_DRAIN_GRACE_MS,
+  DEFAULT_BACKGROUND_TASK_TIMEOUT_MS,
+  DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS,
 } from './background_activity_tracker.ts';
 
 function makeFakeTimer(): {
@@ -85,6 +87,13 @@ describe('BACKGROUND_DRAIN_GRACE_MS', () => {
   });
 });
 
+describe('background task timeout constants', () => {
+  it('uses 2 hours by default and 20 minutes for dev server tasks', () => {
+    expect(DEFAULT_BACKGROUND_TASK_TIMEOUT_MS).toBe(2 * 60 * 60 * 1000);
+    expect(DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS).toBe(20 * 60 * 1000);
+  });
+});
+
 describe('BackgroundActivityTracker', () => {
   it('closes immediately on a normal result without a grace timer', () => {
     const { tracker, timer, onClose } = makeTracker();
@@ -136,7 +145,8 @@ describe('BackgroundActivityTracker', () => {
 
     expect(onClose).toHaveBeenCalledTimes(0);
     expect(tracker.acceptedSuccessfulFinalResult()).toBe(false);
-    expect(timer.hasPending()).toBe(false);
+    expect(timer.hasPending()).toBe(true);
+    expect(timer.getLastScheduledMs()).toBe(DEFAULT_BACKGROUND_TASK_TIMEOUT_MS);
 
     tracker.taskEnded('task-1');
     expect(timer.hasPending()).toBe(true);
@@ -235,7 +245,7 @@ describe('BackgroundActivityTracker', () => {
     expect(timer.hasPending()).toBe(true);
 
     tracker.taskStarted('task-2');
-    expect(timer.hasPending()).toBe(false);
+    expect(timer.hasPending()).toBe(true);
     tracker.taskEnded('task-2');
     expect(timer.hasPending()).toBe(true);
 
@@ -253,7 +263,6 @@ describe('BackgroundActivityTracker', () => {
 
     tracker.taskEnded('task-a');
     tracker.taskEnded('task-b');
-    expect(timer.hasPending()).toBe(false);
     expect(onClose).toHaveBeenCalledTimes(0);
 
     tracker.taskEnded('task-c');
@@ -401,7 +410,7 @@ describe('BackgroundActivityTracker', () => {
     expect(staleHandle).toBeDefined();
 
     tracker.taskStarted('task-2');
-    expect(timer.hasPending()).toBe(false);
+    expect(timer.hasPending()).toBe(true);
     timer.fireHandle(staleHandle!);
 
     expect(onClose).toHaveBeenCalledTimes(0);
@@ -441,5 +450,56 @@ describe('BackgroundActivityTracker', () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(timer.hasPending()).toBe(false);
+  });
+
+  it('treats a task as internally finished when the default timeout elapses', () => {
+    const { tracker, timer, onClose } = makeTracker();
+
+    tracker.taskStarted('task-1');
+    const timeoutHandle = timer.getLastHandle();
+    expect(timeoutHandle).toBeDefined();
+    expect(timer.getLastScheduledMs()).toBe(DEFAULT_BACKGROUND_TASK_TIMEOUT_MS);
+
+    tracker.onResultMessage(true);
+    timer.fireHandle(timeoutHandle!);
+
+    expect(onClose).toHaveBeenCalledTimes(0);
+    expect(timer.hasPending()).toBe(true);
+
+    timer.fire();
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(tracker.acceptedSuccessfulFinalResult()).toBe(true);
+  });
+
+  it('uses the shorter timeout for local bash dev server tasks', () => {
+    const { tracker, timer, onClose } = makeTracker();
+
+    tracker.taskStarted('task-dev-server', {
+      taskType: 'local_bash',
+      description: 'Start the DEV server for visual checks',
+    });
+
+    expect(timer.getLastScheduledMs()).toBe(DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS);
+
+    tracker.onResultMessage(true);
+    timer.fire();
+
+    expect(onClose).toHaveBeenCalledTimes(0);
+
+    timer.fire();
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not use the dev server timeout for non-local-bash tasks', () => {
+    const { tracker, timer } = makeTracker();
+
+    tracker.taskStarted('task-remote', {
+      taskType: 'remote_agent',
+      description: 'Start the dev server',
+    });
+
+    expect(timer.getLastScheduledMs()).toBe(DEFAULT_BACKGROUND_TASK_TIMEOUT_MS);
   });
 });

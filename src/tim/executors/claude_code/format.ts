@@ -169,7 +169,7 @@ export type Message =
 // an assistant/user message as activity) are NOT encoded here — that classification
 // lives at the lifecycle boundary in terminal_input_lifecycle.ts.
 export type BackgroundActivitySignal =
-  | { kind: 'task_started'; taskId: string }
+  | { kind: 'task_started'; taskId: string; taskType?: string; description?: string }
   | { kind: 'task_stopped'; taskId: string }
   | { kind: 'wakeup_scheduled' };
 
@@ -423,7 +423,12 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
   } else if (message.type === 'system' && message.subtype === 'task_started') {
     return withMessage({
       type: message.type,
-      backgroundActivity: { kind: 'task_started', taskId: message.task_id },
+      backgroundActivity: {
+        kind: 'task_started',
+        taskId: message.task_id,
+        taskType: message.task_type,
+        description: message.description,
+      },
       structured: {
         type: 'workflow_progress',
         timestamp: timestamp(),

@@ -219,6 +219,38 @@ describe('terminal_input_lifecycle - background activity', () => {
     controller.cleanup();
   });
 
+  it('non-interactive dev server tasks stop keeping stdin open after their shorter timeout', () => {
+    vi.useFakeTimers();
+    const { controller, stdinEndSpy } = makeController({
+      terminalInputEnabled: false,
+      pendingResult: new Promise<SpawnAndLogOutputResult>(() => {}),
+    });
+
+    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+
+    controller.observeFormattedMessage({
+      type: 'system',
+      backgroundActivity: {
+        kind: 'task_started',
+        taskId: 'task-dev-server',
+        taskType: 'local_bash',
+        description: 'Run the dev server',
+      },
+    });
+    controller.onResultMessage(true);
+
+    vi.advanceTimersByTime(20 * 60 * 1000 - 1);
+    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+    vi.advanceTimersByTime(1);
+    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+    vi.advanceTimersByTime(10_000);
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+    controller.cleanup();
+  });
+
   it('display-only task backgrounding does not remove task from active set or trigger close', () => {
     vi.useFakeTimers();
 

@@ -596,7 +596,12 @@ describe('formatJsonMessage', () => {
         });
 
         const result = formatJsonMessage(msg);
-        expect(result.backgroundActivity).toEqual({ kind: 'task_started', taskId: 'abc123' });
+        expect(result.backgroundActivity).toEqual({
+          kind: 'task_started',
+          taskId: 'abc123',
+          taskType: 'local_bash',
+          description: 'Run tests',
+        });
       });
 
       test('task_notification emits task_stopped backgroundActivity signal', () => {

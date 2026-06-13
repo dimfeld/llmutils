@@ -306,7 +306,10 @@ export function executeWithTerminalInput(
   const dispatchBackgroundActivity = (signal: BackgroundActivitySignal): void => {
     switch (signal.kind) {
       case 'task_started':
-        backgroundActivityTracker.taskStarted(signal.taskId);
+        backgroundActivityTracker.taskStarted(signal.taskId, {
+          taskType: signal.taskType,
+          description: signal.description,
+        });
         return;
       case 'task_stopped':
         backgroundActivityTracker.taskEnded(signal.taskId);
