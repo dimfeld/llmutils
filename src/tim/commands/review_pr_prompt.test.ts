@@ -83,6 +83,8 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain("git merge-base 'origin/main' HEAD");
     expect(prompt).toContain('Pay special attention to');
     expect(prompt).toContain('Group the changes into a small number of logical sections');
+    expect(prompt).toContain('examine it critically to find special-attention items');
+    expect(prompt).toContain('Remove or trim down any items that fall into this trap');
     expect(prompt).toContain('Do not paste diffs or large code blocks');
     expect(prompt).not.toContain('Non-test change stats');
     expect(prompt).not.toContain('Not available');

@@ -350,7 +350,8 @@ ${nonTestStatsInstructions}
 ${shouldIncludeNonTestStats ? '3' : '2'}. Group the changes into a small number of logical sections (e.g. core logic, data model, API, UI, tests, docs). Aim for the fewest sections that capture the shape of the change.
 ${shouldIncludeNonTestStats ? '4' : '3'}. For each section, write 1-3 sentences summarizing what changed and why, so a reviewer understands the change without opening every file. Use parallel subagents if it makes sense.
 ${shouldIncludeNonTestStats ? '5' : '4'}. Identify the specific places a human reviewer should pay special attention to: risky logic, security/permission/auth changes, complex data migrations, public API or schema changes, or anything subtle-but-important. Reference concrete files (and line numbers where helpful) using \`path/to/file.ts:42\` style.
-${shouldIncludeNonTestStats ? '6' : '5'}. If nothing in the PR qualifies for this special scrutiny, say so plainly instead of inventing concerns.
+${shouldIncludeNonTestStats ? '6' : '5'}. After generating the comment, examine it critically to find special-attention items that are not really worthy of attention. This often happens when comment generation is not finding much but is looking to say something rather than nothing. Remove or trim down any items that fall into this trap.
+${shouldIncludeNonTestStats ? '7' : '6'}. If nothing in the PR qualifies for this special scrutiny, say so plainly instead of inventing concerns.
 
 ## Output Format
 Write GitHub-flavored markdown using this structure:
