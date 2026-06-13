@@ -98,6 +98,32 @@ describe('HeadlessAdapter', () => {
     await adapter.destroy();
   });
 
+  it('tags raw output with its origin in the tunnel message', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);
+
+    adapter.writeStdout('lifecycle stdout\n', { origin: 'lifecycle' });
+    adapter.writeStderr('lifecycle stderr\n', { origin: 'lifecycle' });
+    adapter.writeStdout('plain stdout\n');
+
+    const history = (adapter as any).history as Array<{ payload: string }>;
+    const envelopes = history.map((entry) => JSON.parse(entry.payload));
+
+    expect(envelopes[0].message).toMatchObject({
+      type: 'stdout',
+      data: 'lifecycle stdout\n',
+      origin: 'lifecycle',
+    });
+    expect(envelopes[1].message).toMatchObject({
+      type: 'stderr',
+      data: 'lifecycle stderr\n',
+      origin: 'lifecycle',
+    });
+    expect(envelopes[2].message.origin).toBeUndefined();
+
+    await adapter.destroy();
+  });
+
   it('drops non-serializable structured messages without throwing', async () => {
     const { adapter: wrapped, calls } = createRecordingAdapter();
     const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);

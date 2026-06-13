@@ -100,6 +100,7 @@ describe('SessionDetail', () => {
     uiState.getSessionState.mockReturnValue({
       planPaneCollapsed: false,
       messageDraft: '',
+      showLifecycleOutput: false,
     });
     uiState.setSessionState.mockReset();
     getPlanAttentionState.mockReset();
@@ -164,6 +165,71 @@ describe('SessionDetail', () => {
 
     // Input area should still be present for interactive active sessions
     expect(body).toContain('aria-label="Send input to session"');
+  });
+
+  function lifecycleMessage(seq: number, text: string): SessionData['messages'][number] {
+    return {
+      id: `conn-1:${seq}`,
+      seq,
+      timestamp: '2026-03-25T10:00:00.000Z',
+      category: 'log',
+      bodyType: 'monospaced',
+      body: { type: 'monospaced', text },
+      rawType: 'stdout',
+      origin: 'lifecycle',
+    };
+  }
+
+  function plainMessage(seq: number, text: string): SessionData['messages'][number] {
+    return {
+      id: `conn-1:${seq}`,
+      seq,
+      timestamp: '2026-03-25T10:00:00.000Z',
+      category: 'log',
+      bodyType: 'monospaced',
+      body: { type: 'monospaced', text },
+      rawType: 'stdout',
+    };
+  }
+
+  test('hides lifecycle command output by default and shows a toggle', async () => {
+    const session = createSession({
+      messages: [
+        plainMessage(1, 'agent-visible-output'),
+        lifecycleMessage(2, 'lifecycle-hidden-output'),
+      ],
+    });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('agent-visible-output');
+    expect(body).not.toContain('lifecycle-hidden-output');
+    expect(body).toContain('Show lifecycle command output');
+  });
+
+  test('renders lifecycle command output when the toggle is enabled', async () => {
+    uiState.getSessionState.mockReturnValue({
+      planPaneCollapsed: false,
+      messageDraft: '',
+      showLifecycleOutput: true,
+    });
+    const session = createSession({
+      messages: [
+        plainMessage(1, 'agent-visible-output'),
+        lifecycleMessage(2, 'lifecycle-shown-output'),
+      ],
+    });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('agent-visible-output');
+    expect(body).toContain('lifecycle-shown-output');
+    expect(body).toContain('Hide lifecycle command output');
+  });
+
+  test('does not show the lifecycle toggle when there is no lifecycle output', async () => {
+    const session = createSession({ messages: [plainMessage(1, 'agent-visible-output')] });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).not.toContain('lifecycle command output');
   });
 
   test('renders a Run Agent button for offline ready plans with incomplete tasks', async () => {

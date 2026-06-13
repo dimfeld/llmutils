@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { StructuredMessage } from './structured_messages.js';
+import type { WriteOptions } from './tunnel_protocol.js';
 
 /**
  * Interface that all logger adapters must implement.
@@ -16,10 +17,10 @@ export interface LoggerAdapter {
   warn(...args: any[]): void;
 
   /** Writes directly to stdout */
-  writeStdout(data: string): void;
+  writeStdout(data: string, options?: WriteOptions): void;
 
   /** Writes directly to stderr */
-  writeStderr(data: string): void;
+  writeStderr(data: string, options?: WriteOptions): void;
 
   /** Logs a debug message (only shown in debug mode) */
   debugLog(...args: any[]): void;

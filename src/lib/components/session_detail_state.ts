@@ -28,6 +28,18 @@ export function togglePlanPane(
   uiState.setSessionState(connectionId, { planPaneCollapsed: !planPaneCollapsed });
 }
 
+export function isLifecycleOutputShown(uiState: UIStateStore, connectionId: string): boolean {
+  return uiState.getSessionState(connectionId).showLifecycleOutput;
+}
+
+export function toggleLifecycleOutput(
+  uiState: UIStateStore,
+  connectionId: string,
+  showLifecycleOutput: boolean
+): void {
+  uiState.setSessionState(connectionId, { showLifecycleOutput: !showLifecycleOutput });
+}
+
 export async function endSessionAndRefreshPlan({
   connectionId,
   invalidateAll,

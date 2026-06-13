@@ -414,7 +414,9 @@ function isValidTunnelMessage(message: unknown): message is TunnelMessage {
       return Array.isArray(msg.args) && msg.args.every((a: unknown) => typeof a === 'string');
     case 'stdout':
     case 'stderr':
-      return typeof msg.data === 'string';
+      return (
+        typeof msg.data === 'string' && (msg.origin === undefined || msg.origin === 'lifecycle')
+      );
     case 'structured':
       return isValidStructuredMessagePayload(msg.message);
     default:
@@ -455,10 +457,10 @@ function dispatchMessage(message: TunnelMessage): void {
       debugLog(...indentArgs(message.args, shouldIndent));
       break;
     case 'stdout':
-      writeStdout(indentText(message.data, shouldIndent));
+      writeStdout(indentText(message.data, shouldIndent), { origin: message.origin });
       break;
     case 'stderr':
-      writeStderr(indentText(message.data, shouldIndent));
+      writeStderr(indentText(message.data, shouldIndent), { origin: message.origin });
       break;
     default: {
       const _exhaustive: never = message;

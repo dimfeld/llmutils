@@ -15,7 +15,7 @@ import type {
   StructuredMessage,
   TodoUpdateItem,
 } from '../../logging/structured_messages.js';
-import type { TunnelMessage } from '../../logging/tunnel_protocol.js';
+import type { OutputOrigin, TunnelMessage } from '../../logging/tunnel_protocol.js';
 import { debugLog } from '../../logging.js';
 import { listProjects } from '$tim/db/project.js';
 import { parseGitRemoteUrl } from '$common/git_url_parser.js';
@@ -95,6 +95,8 @@ export interface DisplayMessage {
   bodyType: MessageBodyType;
   body: DisplayMessageBody;
   rawType: StructuredMessage['type'] | TunnelMessage['type'] | string;
+  /** Where raw stdout/stderr output originated (e.g. a workspace lifecycle command). */
+  origin?: OutputOrigin;
   triggersNotification?: boolean;
 }
 
@@ -367,6 +369,7 @@ export function formatTunnelMessage(
           text: message.data,
         },
         rawType: message.type,
+        origin: message.origin,
       };
     case 'log':
     case 'error':

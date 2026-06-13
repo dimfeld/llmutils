@@ -3,6 +3,7 @@ import { getLoggerAdapter, runWithLogger } from './logging/adapter.js';
 import { ConsoleAdapter } from './logging/console.js';
 import { SilentAdapter } from './logging/silent.js';
 import type { StructuredMessage } from './logging/structured_messages.js';
+import type { WriteOptions } from './logging/tunnel_protocol.js';
 
 // Default console adapter that will be used when no other adapter is set
 const suppressConsole = process.env.NODE_ENV === 'test' && !process.env.TEST_ALLOW_CONSOLE;
@@ -42,19 +43,23 @@ export function warn(...args: any[]): void {
 /**
  * Writes data to stdout and the current logger adapter.
  * @param data The data to write
+ * @param options Optional metadata (e.g. output origin) for consumers that
+ *   render or filter output by source.
  */
-export function writeStdout(data: string): void {
+export function writeStdout(data: string, options?: WriteOptions): void {
   const adapter = getLoggerAdapter() ?? defaultConsoleAdapter;
-  adapter.writeStdout(data);
+  adapter.writeStdout(data, options);
 }
 
 /**
  * Writes data to stderr and the current logger adapter.
  * @param data The data to write
+ * @param options Optional metadata (e.g. output origin) for consumers that
+ *   render or filter output by source.
  */
-export function writeStderr(data: string): void {
+export function writeStderr(data: string, options?: WriteOptions): void {
   const adapter = getLoggerAdapter() ?? defaultConsoleAdapter;
-  adapter.writeStderr(data);
+  adapter.writeStderr(data, options);
 }
 
 /**

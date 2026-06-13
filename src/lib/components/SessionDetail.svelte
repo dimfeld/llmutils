@@ -4,6 +4,7 @@
   import Download from '@lucide/svelte/icons/download';
   import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
   import PanelRightOpen from '@lucide/svelte/icons/panel-right-open';
+  import Wrench from '@lucide/svelte/icons/wrench';
   import { toast } from 'svelte-sonner';
   import { mergeProps } from 'bits-ui';
   import { exportSessionAsMarkdown, generateExportFilename } from '$lib/utils/session_export.js';
@@ -21,6 +22,8 @@
     forceEndSessionAndRefreshPlan,
     isPlanPaneCollapsed,
     togglePlanPane,
+    isLifecycleOutputShown,
+    toggleLifecycleOutput,
   } from './session_detail_state.js';
   import CopyButton from './CopyButton.svelte';
   import { afterNavigate, invalidateAll } from '$app/navigation';
@@ -83,8 +86,8 @@
   // Auto-scroll to bottom when new messages arrive and autoScroll is enabled
   $effect(() => {
     if (autoScroll && scrollContainer) {
-      // Access messages.length to create a dependency
-      session.messages.length;
+      // Access the visible message count to create a dependency
+      visibleMessages.length;
       isProgrammaticallyScrolled = true;
       scrollContainer.scrollTo({
         top: scrollContainer.scrollHeight,
@@ -201,10 +204,23 @@
     return reasons;
   });
 
+  let showLifecycleOutput = $derived(isLifecycleOutputShown(uiState, session.connectionId));
+  let lifecycleMessageCount = $derived(
+    session.messages.reduce((count, message) => count + (message.origin === 'lifecycle' ? 1 : 0), 0)
+  );
+  let hasLifecycleOutput = $derived(lifecycleMessageCount > 0);
+  // Lifecycle command output is noisy, so hide it by default. The toolbar toggle
+  // re-includes it in the rendered message list.
+  let visibleMessages = $derived(
+    showLifecycleOutput
+      ? session.messages
+      : session.messages.filter((message) => message.origin !== 'lifecycle')
+  );
+
   // This ensures that we do layout on the final messages, which helps autoscroll to continue to work when adding new
   // messages.
   let fullRenderStartIndex = $derived(
-    Math.max(0, session.messages.length - FULLY_RENDERED_MESSAGE_COUNT)
+    Math.max(0, visibleMessages.length - FULLY_RENDERED_MESSAGE_COUNT)
   );
 
   function handleActivateTerminal() {
@@ -303,6 +319,11 @@
   function handleTogglePlanPane() {
     togglePlanPane(uiState, session.connectionId, planPaneCollapsed);
   }
+
+  function handleToggleLifecycleOutput() {
+    toggleLifecycleOutput(uiState, session.connectionId, showLifecycleOutput);
+  }
+
   let hasMessages = $derived(session.messages.length > 0);
   let activePrompt = $derived(session.activePrompts[0] ?? null);
   let queuedPromptCount = $derived(Math.max(0, session.activePrompts.length - 1));
@@ -513,6 +534,39 @@
             <Tooltip.Content sideOffset={8}>Activate terminal pane</Tooltip.Content>
           </Tooltip.Root>
         {/if}
+        {#if hasLifecycleOutput}
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props })}
+                {@const lifecycleLabel = showLifecycleOutput
+                  ? 'Hide lifecycle command output'
+                  : `Show lifecycle command output (${lifecycleMessageCount})`}
+                {@const buttonProps = mergeProps(
+                  {
+                    type: 'button',
+                    class: `rounded p-1 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                      showLifecycleOutput
+                        ? 'text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`,
+                    onclick: handleToggleLifecycleOutput,
+                    'aria-label': lifecycleLabel,
+                    'aria-pressed': showLifecycleOutput,
+                  },
+                  props
+                )}
+                <button {...buttonProps}>
+                  <Wrench class="size-4" />
+                </button>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content sideOffset={8}>
+              {showLifecycleOutput
+                ? 'Hide lifecycle command output'
+                : `Show lifecycle command output (${lifecycleMessageCount})`}
+            </Tooltip.Content>
+          </Tooltip.Root>
+        {/if}
         {#if showPlanPane}
           <Tooltip.Root>
             <Tooltip.Trigger>
@@ -632,8 +686,17 @@
       >
         {#if session.messages.length === 0}
           <p class="text-gray-500">No messages yet</p>
+        {:else if visibleMessages.length === 0}
+          <p class="text-gray-500">
+            No messages to show.
+            {#if hasLifecycleOutput}
+              {lifecycleMessageCount} lifecycle output {lifecycleMessageCount === 1
+                ? 'message is'
+                : 'messages are'} hidden.
+            {/if}
+          </p>
         {:else}
-          {#each session.messages as message, index (message.id)}
+          {#each visibleMessages as message, index (message.id)}
             <SessionMessage {message} disableContentVisibility={index >= fullRenderStartIndex} />
           {/each}
         {/if}

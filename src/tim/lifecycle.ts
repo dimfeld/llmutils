@@ -54,6 +54,17 @@ async function readOutput(
   }
 }
 
+// Tag lifecycle command output so consumers (e.g. the web session view) can
+// hide this typically-noisy output by default while still writing it to the
+// terminal and log file as usual.
+function writeLifecycleStdout(text: string): void {
+  writeStdout(text, { origin: 'lifecycle' });
+}
+
+function writeLifecycleStderr(text: string): void {
+  writeStderr(text, { origin: 'lifecycle' });
+}
+
 export class LifecycleManager {
   private readonly states: LifecycleCommandState[];
   private shutdownStarted = false;
@@ -414,10 +425,10 @@ export class LifecycleManager {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    void readOutput(proc.stdout, writeStdout).catch((err) => {
+    void readOutput(proc.stdout, writeLifecycleStdout).catch((err) => {
       warn(`Failed to read stdout for lifecycle daemon "${command.title}": ${err as Error}`);
     });
-    void readOutput(proc.stderr, writeStderr).catch((err) => {
+    void readOutput(proc.stderr, writeLifecycleStderr).catch((err) => {
       warn(`Failed to read stderr for lifecycle daemon "${command.title}": ${err as Error}`);
     });
 
@@ -464,8 +475,8 @@ export class LifecycleManager {
     }
 
     const outputPromise = Promise.all([
-      readOutput(proc.stdout, writeStdout),
-      readOutput(proc.stderr, writeStderr),
+      readOutput(proc.stdout, writeLifecycleStdout),
+      readOutput(proc.stderr, writeLifecycleStderr),
     ]);
 
     try {

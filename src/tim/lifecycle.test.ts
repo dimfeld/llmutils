@@ -273,6 +273,36 @@ describe.skipIf(!process.env.SLOW_TESTS)('LifecycleManager', () => {
     expect(events).toEqual(['start-1', 'start-2', 'stop-2', 'stop-1']);
   });
 
+  test('command stdout and stderr are tagged with the lifecycle origin', async () => {
+    const stdoutSpy = vi.spyOn(logging, 'writeStdout').mockImplementation(() => {});
+    const stderrSpy = vi.spyOn(logging, 'writeStderr').mockImplementation(() => {});
+
+    try {
+      const manager = new LifecycleManager(
+        [
+          {
+            title: 'noisy',
+            command: `printf 'to-stdout\\n'; printf 'to-stderr\\n' 1>&2`,
+          },
+        ],
+        tempDir,
+        undefined,
+        'agent'
+      );
+      await manager.startup();
+      await manager.shutdown();
+
+      const stdoutCall = stdoutSpy.mock.calls.find(([text]) => text.includes('to-stdout'));
+      const stderrCall = stderrSpy.mock.calls.find(([text]) => text.includes('to-stderr'));
+
+      expect(stdoutCall?.[1]).toEqual({ origin: 'lifecycle' });
+      expect(stderrCall?.[1]).toEqual({ origin: 'lifecycle' });
+    } finally {
+      stdoutSpy.mockRestore();
+      stderrSpy.mockRestore();
+    }
+  });
+
   test('shutdown-only command runs nothing at startup but runs on shutdown', async () => {
     const events = await startupAndShutdown([
       {

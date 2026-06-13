@@ -1,4 +1,5 @@
 import type { LoggerAdapter } from './adapter.js';
+import type { WriteOptions } from './tunnel_protocol.js';
 import { writeToLogFile } from './common.js';
 import { debug } from '../common/process_state.js';
 import { inspect } from 'node:util';
@@ -44,8 +45,9 @@ export class ConsoleAdapter implements LoggerAdapter {
   /**
    * Writes data to stdout and the log file.
    * @param data The data to write
+   * @param _options Output metadata (ignored by the console adapter)
    */
-  writeStdout(data: string): void {
+  writeStdout(data: string, _options?: WriteOptions): void {
     process.stdout.write(data);
     writeToLogFile(data);
   }
@@ -53,8 +55,9 @@ export class ConsoleAdapter implements LoggerAdapter {
   /**
    * Writes data to stderr and the log file.
    * @param data The data to write
+   * @param _options Output metadata (ignored by the console adapter)
    */
-  writeStderr(data: string): void {
+  writeStderr(data: string, _options?: WriteOptions): void {
     process.stderr.write(data);
     writeToLogFile(data);
   }

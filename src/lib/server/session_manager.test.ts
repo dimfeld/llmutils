@@ -263,6 +263,27 @@ describe('lib/server/session_manager', () => {
     expect(debug).toBeNull();
   });
 
+  test('formatTunnelMessage carries the lifecycle origin on raw output messages', () => {
+    const lifecycleStdout = formatTunnelMessage('conn-1', 6, {
+      type: 'stdout',
+      data: 'installing deps\n',
+      origin: 'lifecycle',
+    });
+    const lifecycleStderr = formatTunnelMessage('conn-1', 7, {
+      type: 'stderr',
+      data: 'warning\n',
+      origin: 'lifecycle',
+    });
+    const plainStdout = formatTunnelMessage('conn-1', 8, {
+      type: 'stdout',
+      data: 'agent output\n',
+    });
+
+    expect(lifecycleStdout).toMatchObject({ rawType: 'stdout', origin: 'lifecycle' });
+    expect(lifecycleStderr).toMatchObject({ rawType: 'stderr', origin: 'lifecycle' });
+    expect(plainStdout?.origin).toBeUndefined();
+  });
+
   test('formatTunnelMessage marks non-tunnel agent_session_end messages as notification-worthy for interactive sessions except opted-out commands', () => {
     const newInteractiveCommandSession = formatTunnelMessage(
       'conn-1',

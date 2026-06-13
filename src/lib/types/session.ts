@@ -4,6 +4,7 @@
  */
 
 import type { StructuredMessage } from '../../logging/structured_messages.js';
+import type { OutputOrigin } from '../../logging/tunnel_protocol.js';
 
 export type SessionStatus = 'active' | 'offline' | 'notification';
 
@@ -93,6 +94,8 @@ export interface DisplayMessage {
   bodyType: MessageBodyType;
   body: DisplayMessageBody;
   rawType: string;
+  /** Where raw stdout/stderr output originated (e.g. a workspace lifecycle command). */
+  origin?: OutputOrigin;
   triggersNotification?: boolean;
 }
 

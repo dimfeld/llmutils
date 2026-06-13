@@ -3,7 +3,7 @@ import type { LoggerAdapter } from './adapter.js';
 import { writeToLogFile } from './common.js';
 import { debug } from '../common/process.js';
 import { TIM_OUTPUT_SOCKET, serializeArgs } from './tunnel_protocol.js';
-import type { TunnelMessage, ServerTunnelMessage } from './tunnel_protocol.js';
+import type { TunnelMessage, ServerTunnelMessage, WriteOptions } from './tunnel_protocol.js';
 import type { StructuredMessage, PromptRequestMessage } from './structured_messages.js';
 import { formatStructuredMessage } from './console_formatter.js';
 
@@ -252,13 +252,13 @@ export class TunnelAdapter implements LoggerAdapter {
     writeToLogFile(serialized.join(' ') + '\n');
   }
 
-  writeStdout(data: string): void {
-    this.send({ type: 'stdout', data });
+  writeStdout(data: string, options?: WriteOptions): void {
+    this.send({ type: 'stdout', data, origin: options?.origin });
     writeToLogFile(data);
   }
 
-  writeStderr(data: string): void {
-    this.send({ type: 'stderr', data });
+  writeStderr(data: string, options?: WriteOptions): void {
+    this.send({ type: 'stderr', data, origin: options?.origin });
     writeToLogFile(data);
   }
 

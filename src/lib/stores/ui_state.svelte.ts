@@ -9,10 +9,12 @@ const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 export interface SessionUIState {
   planPaneCollapsed: boolean;
   messageDraft: string;
+  /** When true, render stdout/stderr from workspace lifecycle commands (hidden by default). */
+  showLifecycleOutput: boolean;
 }
 
 function defaultSessionUIState(): SessionUIState {
-  return { planPaneCollapsed: false, messageDraft: '' };
+  return { planPaneCollapsed: false, messageDraft: '', showLifecycleOutput: false };
 }
 
 export function getSidebarCollapsed(cookies: Cookies): boolean {

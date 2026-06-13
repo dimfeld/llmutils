@@ -9,7 +9,7 @@ import type {
   HeadlessSessionInfo,
 } from './headless_protocol.js';
 import { serializeArgs } from './tunnel_protocol.js';
-import type { TunnelMessage } from './tunnel_protocol.js';
+import type { TunnelMessage, WriteOptions } from './tunnel_protocol.js';
 import { debug } from '../common/process_state.js';
 import type { StructuredMessage } from './structured_messages.js';
 import {
@@ -126,14 +126,14 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.enqueueTunnelMessage({ type: 'warn', args: serializeArgs(args) });
   }
 
-  writeStdout(data: string): void {
-    this.wrappedAdapter.writeStdout(data);
-    this.enqueueTunnelMessage({ type: 'stdout', data });
+  writeStdout(data: string, options?: WriteOptions): void {
+    this.wrappedAdapter.writeStdout(data, options);
+    this.enqueueTunnelMessage({ type: 'stdout', data, origin: options?.origin });
   }
 
-  writeStderr(data: string): void {
-    this.wrappedAdapter.writeStderr(data);
-    this.enqueueTunnelMessage({ type: 'stderr', data });
+  writeStderr(data: string, options?: WriteOptions): void {
+    this.wrappedAdapter.writeStderr(data, options);
+    this.enqueueTunnelMessage({ type: 'stderr', data, origin: options?.origin });
   }
 
   debugLog(...args: any[]): void {

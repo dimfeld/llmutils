@@ -16,11 +16,28 @@ export interface TunnelArgsMessage {
 }
 
 /**
+ * Marks where a piece of raw output originated, so consumers (e.g. the web
+ * session view) can render or filter it differently. When omitted, the output
+ * is treated as ordinary agent/process output.
+ */
+export type OutputOrigin = 'lifecycle';
+
+/**
+ * Options for raw stdout/stderr writes carried through the logging adapters.
+ */
+export interface WriteOptions {
+  /** Where this output originated (e.g. a workspace lifecycle command). */
+  origin?: OutputOrigin;
+}
+
+/**
  * A tunnel message carrying raw stdout or stderr data.
  */
 export interface TunnelDataMessage {
   type: 'stdout' | 'stderr';
   data: string;
+  /** Where this output originated. Omitted for ordinary process output. */
+  origin?: OutputOrigin;
 }
 
 export interface StructuredTunnelMessage {

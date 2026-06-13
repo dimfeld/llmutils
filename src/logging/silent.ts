@@ -1,4 +1,5 @@
 import type { LoggerAdapter } from './adapter.js';
+import type { WriteOptions } from './tunnel_protocol.js';
 import { writeToLogFile } from './common.js';
 import { debug } from '../common/process.js';
 import { inspect } from 'node:util';
@@ -37,16 +38,18 @@ export class SilentAdapter implements LoggerAdapter {
   /**
    * Writes data to the log file only (no stdout output).
    * @param data The data to write
+   * @param _options Output metadata (ignored by the silent adapter)
    */
-  writeStdout(data: string): void {
+  writeStdout(data: string, _options?: WriteOptions): void {
     writeToLogFile(data);
   }
 
   /**
    * Writes data to the log file only (no stderr output).
    * @param data The data to write
+   * @param _options Output metadata (ignored by the silent adapter)
    */
-  writeStderr(data: string): void {
+  writeStderr(data: string, _options?: WriteOptions): void {
     writeToLogFile(data);
   }
 

@@ -5,6 +5,8 @@ import {
   forceEndSessionAndRefreshPlan,
   isPlanPaneCollapsed,
   togglePlanPane,
+  isLifecycleOutputShown,
+  toggleLifecycleOutput,
 } from './session_detail_state.js';
 
 describe('session_detail_state', () => {
@@ -43,6 +45,33 @@ describe('session_detail_state', () => {
     togglePlanPane(uiState as never, 'conn-1', true);
     expect(uiState.setSessionState).toHaveBeenLastCalledWith('conn-1', {
       planPaneCollapsed: false,
+    });
+  });
+
+  test('reads lifecycle output visibility for a session', () => {
+    const uiState = {
+      getSessionState: vi.fn(() => ({
+        planPaneCollapsed: false,
+        messageDraft: '',
+        showLifecycleOutput: true,
+      })),
+    };
+
+    expect(isLifecycleOutputShown(uiState as never, 'conn-1')).toBe(true);
+    expect(uiState.getSessionState).toHaveBeenCalledWith('conn-1');
+  });
+
+  test('toggles lifecycle output visibility through the UI state store', () => {
+    const uiState = {
+      setSessionState: vi.fn(),
+    };
+
+    toggleLifecycleOutput(uiState as never, 'conn-1', false);
+    expect(uiState.setSessionState).toHaveBeenCalledWith('conn-1', { showLifecycleOutput: true });
+
+    toggleLifecycleOutput(uiState as never, 'conn-1', true);
+    expect(uiState.setSessionState).toHaveBeenLastCalledWith('conn-1', {
+      showLifecycleOutput: false,
     });
   });
 
