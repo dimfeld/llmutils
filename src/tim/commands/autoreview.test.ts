@@ -878,6 +878,32 @@ describe('handleAutoreviewCommand', () => {
     });
   });
 
+  test('passes linked PR metadata to headless autoreview session', async () => {
+    vi.mocked(getDatabase).mockReturnValue({} as any);
+    vi.mocked(gatherPrContext).mockResolvedValue({
+      prStatus: { id: 1, title: 'My PR', state: 'open' } as any,
+      baseBranch: 'main',
+      headBranch: 'feature/my-pr',
+      headSha: 'deadbeef1234',
+      owner: 'myorg',
+      repo: 'myrepo',
+      prNumber: 42,
+      prUrl: 'https://github.com/myorg/myrepo/pull/42',
+    });
+
+    const options: AutoreviewCommandOptions = { pr: '42', nonInteractive: true };
+    await handleAutoreviewCommand(undefined, options, {});
+
+    expect(vi.mocked(runWithHeadlessAdapterIfEnabled).mock.calls[0][0]).toMatchObject({
+      command: 'autoreview',
+      sessionInfo: {
+        linkedPrUrl: 'https://github.com/myorg/myrepo/pull/42',
+        linkedPrNumber: 42,
+        linkedPrTitle: 'My PR',
+      },
+    });
+  });
+
   test('plan-backed autoreview uses an auto workspace by default', async () => {
     const options: AutoreviewCommandOptions = { nonInteractive: true };
     await handleAutoreviewCommand(376, options, {});

@@ -509,6 +509,13 @@ export async function handleAutoreviewCommand(
           title: planContext.planData.title,
         }
       : undefined,
+    sessionInfo: linkedPr
+      ? {
+          linkedPrUrl: linkedPr.url,
+          linkedPrNumber: linkedPr.prNumber,
+          linkedPrTitle: linkedPr.title ?? undefined,
+        }
+      : undefined,
     callback: async () => {
       let currentBaseDir = reviewTarget.repoRoot;
       let currentPlanFile = planContext.planFilePath;

@@ -1313,6 +1313,14 @@ export async function handlePrFixCommand(
             title: target.plan.title,
           }
         : undefined,
+    sessionInfo:
+      target.kind === 'pr'
+        ? {
+            linkedPrUrl: target.canonicalPrUrl,
+            linkedPrNumber: target.prNumber,
+            linkedPrTitle: target.title,
+          }
+        : undefined,
     callback: async () => {
       await executePrFixCommand({
         target,

@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import type { HeadlessSessionInfo } from '../../logging/headless_protocol.js';
 import { canonicalizePrUrl } from '../../common/github/identifiers.js';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
@@ -105,6 +106,62 @@ export function markJobFinished(
       WHERE id = ?
     `
   ).run(status, jobId);
+}
+
+/**
+ * Applies target metadata discovered after a headless job starts. Review and PR
+ * commands often resolve their exact plan/PR only after the session is already
+ * live, but the Activity page reads from the persisted job row.
+ */
+export function updateJobFromSessionInfo(
+  db: Database,
+  jobId: number,
+  patch: Partial<HeadlessSessionInfo>
+): void {
+  const fields: string[] = [];
+  const values: Array<number | string | null> = [];
+  const hasLinkedPrUrl = patch.linkedPrUrl != null && patch.linkedPrUrl.trim() !== '';
+
+  if (patch.planId !== undefined || (!hasLinkedPrUrl && patch.linkedPlanId !== undefined)) {
+    fields.push('plan_id = COALESCE(?, plan_id)');
+    values.push(patch.planId ?? patch.linkedPlanId ?? null);
+  }
+  if (patch.planUuid !== undefined || (!hasLinkedPrUrl && patch.linkedPlanUuid !== undefined)) {
+    fields.push('plan_uuid = COALESCE(?, plan_uuid)');
+    values.push(patch.planUuid ?? patch.linkedPlanUuid ?? null);
+  }
+  if (patch.planTitle !== undefined || (!hasLinkedPrUrl && patch.linkedPlanTitle !== undefined)) {
+    fields.push('plan_title = COALESCE(?, plan_title)');
+    values.push(patch.planTitle ?? patch.linkedPlanTitle ?? null);
+  }
+  if (patch.linkedPrUrl !== undefined) {
+    fields.push('pr_url = COALESCE(?, pr_url)');
+    values.push(hasLinkedPrUrl ? canonicalizePrUrl(patch.linkedPrUrl!) : null);
+  }
+  if (patch.linkedPrNumber !== undefined) {
+    fields.push('pr_number = COALESCE(?, pr_number)');
+    values.push(patch.linkedPrNumber ?? null);
+  }
+  if (patch.workspacePath !== undefined) {
+    fields.push('workspace_path = COALESCE(?, workspace_path)');
+    values.push(patch.workspacePath ?? null);
+  }
+  if (patch.gitRemote !== undefined) {
+    fields.push('git_remote = COALESCE(?, git_remote)');
+    values.push(patch.gitRemote ?? null);
+  }
+
+  if (fields.length === 0) {
+    return;
+  }
+
+  db.prepare(
+    `
+      UPDATE job
+      SET ${fields.join(', ')}, updated_at = ${SQL_NOW_ISO_UTC}
+      WHERE id = ?
+    `
+  ).run(...values, jobId);
 }
 
 /**

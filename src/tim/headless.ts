@@ -7,10 +7,11 @@ import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
 import { describeRemoteForLogging } from './external_storage_utils.js';
 import { getDatabase } from './db/database.js';
 import { getProject } from './db/project.js';
-import { markJobFinished, recordJobStart } from './db/job.js';
+import { markJobFinished, recordJobStart, updateJobFromSessionInfo } from './db/job.js';
 
 export const DEFAULT_HEADLESS_URL = 'ws://localhost:8123/tim-agent';
 const warnedInvalidHeadlessUrls = new Set<string>();
+const jobIdsByAdapter = new WeakMap<HeadlessAdapter, number>();
 
 export function resetHeadlessWarningStateForTests(): void {
   warnedInvalidHeadlessUrls.clear();
@@ -45,6 +46,7 @@ interface RunWithHeadlessOptions<T> {
   command: HeadlessCommand;
   interactive: boolean;
   plan?: HeadlessPlanSummary;
+  sessionInfo?: Partial<HeadlessSessionInfo>;
   callback: () => Promise<T>;
 }
 
@@ -204,11 +206,20 @@ function markJobFinishedSafely(jobId: number, status: 'completed' | 'failed'): v
   }
 }
 
+function updateJobFromSessionInfoSafely(jobId: number, patch: Partial<HeadlessSessionInfo>): void {
+  try {
+    updateJobFromSessionInfo(getDatabase(), jobId, patch);
+  } catch (err) {
+    debugLog(`Failed to update job ${jobId} session metadata: ${err as Error}`);
+  }
+}
+
 export async function runWithHeadlessAdapterIfEnabled<T>({
   enabled,
   command,
   interactive,
   plan,
+  sessionInfo: sessionInfoPatch,
   callback,
 }: RunWithHeadlessOptions<T>): Promise<T> {
   if (!enabled) {
@@ -216,10 +227,14 @@ export async function runWithHeadlessAdapterIfEnabled<T>({
   }
 
   const sessionInfo = await buildHeadlessSessionInfo(command, interactive, plan);
+  Object.assign(sessionInfo, sessionInfoPatch);
   const jobId = shouldRecordJob(command)
     ? await recordJobStartFromSession(command, sessionInfo)
     : undefined;
   const headlessAdapter = createHeadlessAdapter(sessionInfo);
+  if (jobId != null) {
+    jobIdsByAdapter.set(headlessAdapter, jobId);
+  }
 
   try {
     const result = await runWithLogger(headlessAdapter, callback);
@@ -251,14 +266,19 @@ export async function createHeadlessAdapterForCommand({
   // give us a success/failure signal, so mark the job completed when the
   // session is torn down.
   let onDestroy: (() => void) | undefined;
-  if (shouldRecordJob(command)) {
-    const jobId = await recordJobStartFromSession(command, sessionInfo);
-    if (jobId != null) {
-      onDestroy = () => markJobFinishedSafely(jobId, 'completed');
-    }
+  const jobId = shouldRecordJob(command)
+    ? await recordJobStartFromSession(command, sessionInfo)
+    : undefined;
+  if (jobId != null) {
+    onDestroy = () => markJobFinishedSafely(jobId, 'completed');
   }
 
-  return createHeadlessAdapter(sessionInfo, { disableBearerToken, onDestroy });
+  const headlessAdapter = createHeadlessAdapter(sessionInfo, { disableBearerToken, onDestroy });
+  if (jobId != null) {
+    jobIdsByAdapter.set(headlessAdapter, jobId);
+  }
+
+  return headlessAdapter;
 }
 
 export function updateHeadlessSessionInfo(patch: Partial<HeadlessSessionInfo>): void {
@@ -268,6 +288,10 @@ export function updateHeadlessSessionInfo(patch: Partial<HeadlessSessionInfo>): 
   }
 
   adapter.updateSessionInfo(patch);
+  const jobId = jobIdsByAdapter.get(adapter);
+  if (jobId != null) {
+    updateJobFromSessionInfoSafely(jobId, patch);
+  }
 }
 
 function createHeadlessAdapter(

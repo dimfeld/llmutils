@@ -5,7 +5,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from './database.js';
-import { listRecentJobs, markJobFinished, recordJobStart } from './job.js';
+import {
+  listRecentJobs,
+  markJobFinished,
+  recordJobStart,
+  updateJobFromSessionInfo,
+} from './job.js';
 import { getOrCreateProject } from './project.js';
 import { nonSyncedUpsertPlan } from './plan.js';
 
@@ -109,5 +114,45 @@ describe('tim db/job', () => {
     });
     const jobs = listRecentJobs(db, { projectId });
     expect(jobs[0].pr_url).toBe(PR_URL);
+  });
+
+  test('updates a running job with late-discovered PR target metadata', () => {
+    const jobId = recordJobStart(db, { projectId, jobType: 'pr-fix' });
+
+    updateJobFromSessionInfo(db, jobId, {
+      linkedPrUrl: `${PR_URL}/files#discussion_r123`,
+      linkedPrNumber: 7,
+      linkedPlanId: 99,
+      linkedPlanUuid: PLAN_UUID,
+      linkedPlanTitle: 'Linked plan',
+      workspacePath: '/tmp/pr-fix-workspace',
+    });
+
+    const jobs = listRecentJobs(db, { projectId });
+    expect(jobs[0]).toMatchObject({
+      pr_url: PR_URL,
+      pr_number: 7,
+      plan_id: null,
+      plan_uuid: null,
+      plan_title: null,
+      workspace_path: '/tmp/pr-fix-workspace',
+    });
+  });
+
+  test('updates a running job with late-discovered plan target metadata', () => {
+    const jobId = recordJobStart(db, { projectId, jobType: 'review-guide' });
+
+    updateJobFromSessionInfo(db, jobId, {
+      linkedPlanId: 99,
+      linkedPlanUuid: PLAN_UUID,
+      linkedPlanTitle: 'Linked plan',
+    });
+
+    const jobs = listRecentJobs(db, { projectId });
+    expect(jobs[0]).toMatchObject({
+      plan_id: 99,
+      plan_uuid: PLAN_UUID,
+      plan_title: 'Linked plan',
+    });
   });
 });

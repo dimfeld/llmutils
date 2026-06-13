@@ -2590,6 +2590,16 @@ describe('tim/commands/pr', () => {
 
       await handlePrFixCommand(undefined, { pr: '42' }, createNestedCommand());
 
+      expect(mockRunWithHeadlessAdapterIfEnabled).toHaveBeenCalledWith(
+        expect.objectContaining({
+          command: 'pr-fix',
+          sessionInfo: {
+            linkedPrUrl: 'https://github.com/example/repo/pull/42',
+            linkedPrNumber: 42,
+            linkedPrTitle: 'My PR',
+          },
+        })
+      );
       expect(mockRemoteBranchExists).toHaveBeenCalledWith(expect.any(String), 'feature/my-pr');
       expect(mockSetupWorkspace).toHaveBeenCalledWith(
         expect.objectContaining({

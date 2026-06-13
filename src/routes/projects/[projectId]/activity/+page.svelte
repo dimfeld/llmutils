@@ -35,21 +35,42 @@
     return JOB_TYPE_LABELS[jobType] ?? jobType;
   }
 
+  function prefersPrTarget(job: ActivityJob): boolean {
+    return (
+      job.pr_url != null &&
+      ['review-guide', 'autoreview', 'pr-create', 'pr-fix'].includes(job.job_type)
+    );
+  }
+
+  function planTargetLabel(job: ActivityJob): string {
+    const prefix = job.plan_id != null ? `Plan #${job.plan_id}` : 'Plan';
+    return job.plan_title ? `${prefix}: ${job.plan_title}` : prefix;
+  }
+
+  function prTargetLabel(job: ActivityJob): string {
+    return job.pr_number != null ? `PR #${job.pr_number}` : 'Pull request';
+  }
+
   function targetLabel(job: ActivityJob): string {
+    if (prefersPrTarget(job)) {
+      return prTargetLabel(job);
+    }
+
     if (job.plan_uuid) {
-      const prefix = job.plan_id != null ? `Plan #${job.plan_id}` : 'Plan';
-      return job.plan_title ? `${prefix}: ${job.plan_title}` : prefix;
+      return planTargetLabel(job);
     }
 
     if (job.pr_url) {
-      const prefix = job.pr_number != null ? `PR #${job.pr_number}` : 'Pull request';
-      return prefix;
+      return prTargetLabel(job);
     }
 
     return '—';
   }
 
   function secondaryTarget(job: ActivityJob): string | null {
+    if (prefersPrTarget(job) && job.plan_uuid) {
+      return planTargetLabel(job);
+    }
     if (job.plan_uuid && job.pr_number != null) {
       return `Linked PR #${job.pr_number}`;
     }
@@ -135,7 +156,7 @@
                       target={job.outputExternal ? '_blank' : undefined}
                       rel={job.outputExternal ? 'noopener noreferrer' : undefined}
                     >
-                      View{job.outputExternal ? ' ↗' : ''}
+                      View output{job.outputExternal ? ' ↗' : ''}
                     </a>
                   {:else}
                     <span class="text-xs text-muted-foreground">—</span>
