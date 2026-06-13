@@ -7,6 +7,8 @@
   import FileImage from '@lucide/svelte/icons/file-image';
   import FileText from '@lucide/svelte/icons/file-text';
   import FileVideo from '@lucide/svelte/icons/file-video';
+  import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
+  import PanelRightOpen from '@lucide/svelte/icons/panel-right-open';
 
   import { Button } from '$lib/components/ui/button/index.js';
   import { createArtifactImageUrlResolver } from '$lib/utils/artifact_markdown_images.js';
@@ -28,6 +30,8 @@
 
   // Default the selection to the first non-report artifact when a report is pinned,
   // so the split view doesn't show report.md in both panes on load.
+  let reportCollapsed = $state(false);
+
   let selectedIndex = $state(
     (() => {
       const ri = data.artifacts.findIndex((artifact) => isReport(artifact.filename));
@@ -37,7 +41,6 @@
     })()
   );
   let selectedArtifact = $derived(data.artifacts[selectedIndex] ?? null);
-  let selectedIsReport = $derived(selectedArtifact !== null && isReport(selectedArtifact.filename));
   let resolveArtifactImageUrl = $derived(createArtifactImageUrlResolver(data.artifacts));
 
   function renderedFor(artifact: ArtifactViewFile | null): string {
@@ -162,24 +165,36 @@
       </aside>
 
       {#if showSplit}
-        <div class="grid min-h-0 grid-cols-2 divide-x divide-border">
+        <div
+          class={[
+            'grid min-h-0 divide-x divide-border',
+            reportCollapsed ? 'grid-cols-1' : 'grid-cols-2',
+          ]}
+        >
           <main class="min-h-0 overflow-y-auto bg-background">
-            {#if selectedIsReport}
-              <div
-                class="flex h-full items-center justify-center p-8 text-sm text-muted-foreground"
-              >
-                report.md is pinned in the panel on the right.
-              </div>
-            {:else if selectedArtifact}
-              {@render artifactPane(selectedArtifact, renderedMarkdown)}
+            {#if selectedArtifact}
+              {@render artifactPane(
+                selectedArtifact,
+                renderedMarkdown,
+                undefined,
+                undefined,
+                reportCollapsed ? () => (reportCollapsed = false) : undefined
+              )}
             {/if}
           </main>
 
-          <section class="min-h-0 overflow-y-auto bg-muted/10">
-            {#if reportArtifact}
-              {@render artifactPane(reportArtifact, reportRenderedMarkdown, 'Report')}
-            {/if}
-          </section>
+          {#if !reportCollapsed}
+            <section class="min-h-0 overflow-y-auto bg-muted/10">
+              {#if reportArtifact}
+                {@render artifactPane(
+                  reportArtifact,
+                  reportRenderedMarkdown,
+                  'Report',
+                  () => (reportCollapsed = true)
+                )}
+              {/if}
+            </section>
+          {/if}
         </div>
       {:else}
         <main class="min-h-0 overflow-y-auto bg-background">
@@ -192,7 +207,13 @@
   {/if}
 </div>
 
-{#snippet artifactPane(artifact: ArtifactViewFile, renderedHtml: string, label?: string)}
+{#snippet artifactPane(
+  artifact: ArtifactViewFile,
+  renderedHtml: string,
+  label?: string,
+  onCollapse?: () => void,
+  onExpand?: () => void
+)}
   <div class="flex items-start justify-between gap-3 border-b border-border px-5 py-3">
     <div class="min-w-0">
       {#if label}
@@ -207,20 +228,44 @@
         {artifact.mimeType} · {formatSize(artifact.size)}
       </p>
     </div>
-    {#if artifact.viewKind !== 'missing'}
-      <Button
-        href={artifact.downloadUrl}
-        variant="outline"
-        size="xs"
-        target="_blank"
-        rel="noopener"
-        aria-label="Open {artifact.filename}"
-        title="Open {artifact.filename}"
-      >
-        <Download class="size-3" />
-        Open
-      </Button>
-    {/if}
+    <div class="flex shrink-0 items-center gap-2">
+      {#if onExpand}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onclick={onExpand}
+          aria-label="Show report panel"
+          title="Show report.md panel"
+        >
+          <PanelRightOpen class="size-3.5" />
+        </Button>
+      {/if}
+      {#if onCollapse}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onclick={onCollapse}
+          aria-label="Collapse report panel"
+          title="Collapse report panel"
+        >
+          <PanelRightClose class="size-3.5" />
+        </Button>
+      {/if}
+      {#if artifact.viewKind !== 'missing'}
+        <Button
+          href={artifact.downloadUrl}
+          variant="outline"
+          size="xs"
+          target="_blank"
+          rel="noopener"
+          aria-label="Open {artifact.filename}"
+          title="Open {artifact.filename}"
+        >
+          <Download class="size-3" />
+          Open
+        </Button>
+      {/if}
+    </div>
   </div>
 
   <div class="p-5">
