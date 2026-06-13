@@ -264,22 +264,22 @@ describe('buildAutoreviewPrompt', () => {
     expect(prompt).toContain('no un-skipped issues remain');
   });
 
-  test('useJj: true includes jj commit guidance', () => {
+  test('useJj: true includes jj commit and push guidance', () => {
     const prompt = buildAutoreviewPrompt({ target: currentTarget, useJj: true });
-    expect(prompt).toContain('jj commit');
-    expect(prompt).toContain('jj status');
+    expect(prompt).toContain('commit and push the changes');
+    expect(prompt).toContain('appears to use Jujutsu (jj)');
   });
 
-  test('useJj: false includes git commit guidance', () => {
+  test('useJj: false includes git commit and push guidance', () => {
     const prompt = buildAutoreviewPrompt({ target: currentTarget, useJj: false });
-    expect(prompt).toContain('git commit');
-    expect(prompt).toContain('git status');
+    expect(prompt).toContain('commit and push the changes');
+    expect(prompt).toContain('appears to use git');
   });
 
-  test('useJj: undefined (default) includes git commit guidance', () => {
+  test('useJj: undefined (default) includes git commit and push guidance', () => {
     const prompt = buildAutoreviewPrompt({ target: currentTarget });
-    expect(prompt).toContain('git commit');
-    expect(prompt).toContain('git status');
+    expect(prompt).toContain('commit and push the changes');
+    expect(prompt).toContain('appears to use git');
   });
 
   test('prompt does not include executor details', () => {
@@ -384,6 +384,8 @@ describe('buildAutoreviewPrompt', () => {
   test('with linkedPr: reply-and-resolve-after-commit instruction is present', () => {
     const prompt = buildAutoreviewPrompt({ target: currentTarget, linkedPr });
     expect(prompt).toContain('After fixes are committed');
+    expect(prompt).toContain('push the commits to the PR branch before resolving');
+    expect(prompt).toContain('Do not mark addressed threads resolved until the push succeeds');
     expect(prompt).toContain(
       'reply to each addressed inline thread confirming the fix and resolve it'
     );
@@ -669,7 +671,8 @@ describe('handleAutoreviewCommand', () => {
     await handleAutoreviewCommand(undefined, options, {});
 
     const prompt = mockExecutorExecute.mock.calls[0][0] as string;
-    expect(prompt).toContain('git commit');
+    expect(prompt).toContain('commit and push the changes');
+    expect(prompt).toContain('appears to use git');
   });
 
   test('prompt for jj repo contains jj commit guidance', async () => {
@@ -678,7 +681,8 @@ describe('handleAutoreviewCommand', () => {
     await handleAutoreviewCommand(undefined, options, {});
 
     const prompt = mockExecutorExecute.mock.calls[0][0] as string;
-    expect(prompt).toContain('jj commit');
+    expect(prompt).toContain('commit and push the changes');
+    expect(prompt).toContain('appears to use Jujutsu (jj)');
   });
 
   test('plan-backed prompt additionally mentions tim subagent implementer', async () => {

@@ -179,10 +179,10 @@ function buildSubagentGuidance(target: ReviewTarget): string {
 
 function buildCommitGuidance(useJj: boolean): string {
   if (useJj) {
-    return '- After each round of selected fixes, commit the changes with the repository VCS. This repository appears to use Jujutsu (jj), so prefer `jj status` and `jj commit -m "..."`; if you find it is not using jj, use git normally.';
+    return '- After each round of selected fixes, commit and push the changes with the repository VCS. This repository appears to use Jujutsu (jj); if you find it is not using jj, use git normally.';
   }
 
-  return '- After each round of selected fixes, commit the changes with the repository VCS. This repository appears to use git, so use `git status`, `git add ...`, and `git commit -m "..."`; if you find it uses Jujutsu (jj), use `jj status` and `jj commit -m "..."` instead.';
+  return '- After each round of selected fixes, commit and push the changes with the repository VCS. This repository appears to use git; if you find it uses Jujutsu (jj), use jj instead.';
 }
 
 function buildPrReviewTrailGuidance(linkedPr?: AutoreviewLinkedPr): string {
@@ -208,7 +208,7 @@ This target has a resolvable GitHub PR: ${prRef}${titleText} at ${linkedPr.url}.
 - When the PR trail is active and the user asks to ignore an issue without giving a reason, ask them for a brief reason first so it can be recorded on the PR.
 - For ignored issues that have an inline thread, immediately reply with the user's stated reason for ignoring the issue and resolve the thread.
 - For ignored issues that are body-only (un-anchorable, so there is no thread), include the user's stated ignore reason in the initial body-only description and record it in the scratch file. Do not add a separate follow-up comment for ignored body-only issues. If the body-only issue has a file/line reference even though it could not be anchored in the PR diff, include that file/line in the initial description so someone viewing the PR can link the response back to the original finding. There is no thread to resolve in this case.
-- After fixes are committed, reply to each addressed inline thread confirming the fix and resolve it. For addressed body-only issues, add a new follow-up PR comment confirming the issue was addressed. If the body-only issue has a file/line reference, include that file/line in the follow-up comment so someone viewing the PR can link the response back to the original finding.
+- After fixes are committed, push the commits to the PR branch before resolving any addressed review threads. Do not mark addressed threads resolved until the push succeeds. After the push, reply to each addressed inline thread confirming the fix and resolve it. For addressed body-only issues, add a new follow-up PR comment confirming the issue was addressed. If the body-only issue has a file/line reference, include that file/line in the follow-up comment so someone viewing the PR can link the response back to the original finding.
 
 ### Threading Discipline
 
