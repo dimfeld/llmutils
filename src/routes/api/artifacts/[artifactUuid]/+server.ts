@@ -1,66 +1,32 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { Readable } from 'node:stream';
 
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
+import {
+  artifactFileExtension,
+  inlineArtifactMimeTypes,
+  isArtifactTextLike,
+  sourceArtifactExtensions,
+  viewInlineArtifactMimeTypes,
+} from '$lib/utils/artifact_preview.js';
 import { getServerContext } from '$lib/server/init.js';
 import { quoteHeaderValue } from '$lib/server/http_headers.js';
 import { getArtifactByUuid } from '$tim/db/artifact.js';
 import { artifactFileExists } from '$tim/artifacts/storage.js';
 import { enqueueMissingArtifactDownloads } from '$tim/sync/artifact_scheduling.js';
 
-const INLINE_MIME_TYPES = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/gif',
-  'image/webp',
-  'application/pdf',
-]);
-
-const VIEW_INLINE_MIME_TYPES = new Set([
-  ...INLINE_MIME_TYPES,
-  'application/json',
-  'text/markdown',
-  'text/plain',
-]);
-
-const VIEW_TEXT_EXTENSIONS = new Set([
-  '.c',
-  '.css',
-  '.go',
-  '.h',
-  '.html',
-  '.js',
-  '.jsonl',
-  '.jsx',
-  '.log',
-  '.md',
-  '.mjs',
-  '.py',
-  '.rs',
-  '.sh',
-  '.svelte',
-  '.toml',
-  '.ts',
-  '.tsx',
-  '.txt',
-  '.yaml',
-  '.yml',
-]);
-
 function isViewableInline(filename: string, mimeType: string, viewMode: boolean): boolean {
-  if (INLINE_MIME_TYPES.has(mimeType)) return true;
+  if (inlineArtifactMimeTypes.has(mimeType)) return true;
   if (!viewMode) return false;
-  if (VIEW_INLINE_MIME_TYPES.has(mimeType)) return true;
+  if (viewInlineArtifactMimeTypes.has(mimeType)) return true;
   if (mimeType.startsWith('video/') || mimeType.startsWith('audio/')) return true;
-  if (mimeType.startsWith('text/')) return true;
-  return VIEW_TEXT_EXTENSIONS.has(path.extname(filename).toLowerCase());
+  return isArtifactTextLike(filename, mimeType);
 }
 
 function responseContentType(filename: string, mimeType: string, viewMode: boolean): string {
-  if (viewMode && VIEW_TEXT_EXTENSIONS.has(path.extname(filename).toLowerCase())) {
+  if (viewMode && sourceArtifactExtensions.has(artifactFileExtension(filename))) {
     return 'text/plain; charset=utf-8';
   }
   if (viewMode && mimeType.startsWith('text/')) {

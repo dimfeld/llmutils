@@ -232,7 +232,7 @@ describe('PlanArtifactsList', () => {
     expect(body).not.toContain('<img');
   });
 
-  test('renders download link for active artifacts with present bytes', () => {
+  test('renders browser-view link for active text artifacts with present bytes', () => {
     const { body } = render(PlanArtifactsList, {
       props: {
         artifacts: [
@@ -244,7 +244,7 @@ describe('PlanArtifactsList', () => {
         ],
       },
     });
-    expect(body).toContain('href="/api/artifacts/66666666-6666-6666-6666-666666666666"');
+    expect(body).toContain('href="/api/artifacts/66666666-6666-6666-6666-666666666666?view=1"');
   });
 
   test('sorts report.md first, then alphabetically by filename', () => {
@@ -296,7 +296,7 @@ describe('PlanArtifactsList', () => {
     expect(body).toContain('href="/api/artifacts/88888888-8888-8888-8888-888888888888?view=1"');
   });
 
-  test('keeps non-proof artifact links on the regular artifact endpoint', () => {
+  test('renders non-proof text artifact links in browser-view mode', () => {
     const { body } = render(PlanArtifactsList, {
       props: {
         artifacts: [
@@ -310,7 +310,24 @@ describe('PlanArtifactsList', () => {
       },
     });
 
-    expect(body).toContain('href="/api/artifacts/99999999-9999-9999-9999-999999999999"');
-    expect(body).not.toContain('99999999-9999-9999-9999-999999999999?view=1');
+    expect(body).toContain('href="/api/artifacts/99999999-9999-9999-9999-999999999999?view=1"');
+  });
+
+  test('renders sql artifacts with generic MIME type in browser-view mode', () => {
+    const { body } = render(PlanArtifactsList, {
+      props: {
+        artifacts: [
+          makeArtifact({
+            uuid: 'aaaaaaaa-9999-9999-9999-999999999999',
+            mimeType: 'application/octet-stream',
+            filename: 'schema.sql',
+            message: 'database schema',
+          }),
+        ],
+      },
+    });
+
+    expect(body).toContain('schema.sql');
+    expect(body).toContain('href="/api/artifacts/aaaaaaaa-9999-9999-9999-999999999999?view=1"');
   });
 });

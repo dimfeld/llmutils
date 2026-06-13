@@ -1,59 +1,13 @@
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 
 import { error, redirect } from '@sveltejs/kit';
 
 import { compareArtifactsByFilename } from '$common/artifact_sort.js';
 import { getServerContext } from '$lib/server/init.js';
 import { getPlanDetailRouteData } from '$lib/server/plans_browser.js';
+import { classifyArtifactPreview, type ArtifactViewKind } from '$lib/utils/artifact_preview.js';
 import type { PlanArtifactWithTransferState } from '$tim/artifacts/service.js';
 import type { PageServerLoad } from './$types';
-
-const TEXT_PREVIEW_MAX_BYTES = 5 * 1024 * 1024;
-
-const MARKDOWN_EXTENSIONS = new Set(['.md', '.markdown', '.mdown']);
-const HTML_EXTENSIONS = new Set(['.html', '.htm']);
-const SOURCE_EXTENSIONS = new Set([
-  '.c',
-  '.cc',
-  '.cpp',
-  '.cs',
-  '.css',
-  '.go',
-  '.h',
-  '.hpp',
-  '.java',
-  '.js',
-  '.json',
-  '.jsonl',
-  '.jsx',
-  '.log',
-  '.mjs',
-  '.py',
-  '.rb',
-  '.rs',
-  '.sh',
-  '.svelte',
-  '.toml',
-  '.ts',
-  '.tsx',
-  '.txt',
-  '.xml',
-  '.yaml',
-  '.yml',
-]);
-
-type ArtifactViewKind =
-  | 'markdown'
-  | 'html'
-  | 'source'
-  | 'image'
-  | 'video'
-  | 'audio'
-  | 'pdf'
-  | 'unsupported'
-  | 'missing'
-  | 'too_large';
 
 interface ArtifactViewFile {
   uuid: string;
@@ -67,44 +21,8 @@ interface ArtifactViewFile {
   downloadUrl: string;
 }
 
-function classifyArtifact(artifact: PlanArtifactWithTransferState): ArtifactViewKind {
-  if (artifact.transferState === 'file-missing') return 'missing';
-  if (artifact.size > TEXT_PREVIEW_MAX_BYTES && isTextLikeArtifact(artifact)) return 'too_large';
-  if (artifact.mimeType.startsWith('image/')) return 'image';
-  if (artifact.mimeType.startsWith('video/')) return 'video';
-  if (artifact.mimeType.startsWith('audio/')) return 'audio';
-  if (artifact.mimeType === 'application/pdf') return 'pdf';
-
-  const extension = path.extname(artifact.filename).toLowerCase();
-  if (MARKDOWN_EXTENSIONS.has(extension) || artifact.mimeType === 'text/markdown') {
-    return 'markdown';
-  }
-  if (HTML_EXTENSIONS.has(extension) || artifact.mimeType === 'text/html') {
-    return 'html';
-  }
-  if (
-    SOURCE_EXTENSIONS.has(extension) ||
-    artifact.mimeType.startsWith('text/') ||
-    artifact.mimeType === 'application/json'
-  ) {
-    return 'source';
-  }
-  return 'unsupported';
-}
-
-function isTextLikeArtifact(artifact: PlanArtifactWithTransferState): boolean {
-  const extension = path.extname(artifact.filename).toLowerCase();
-  return (
-    MARKDOWN_EXTENSIONS.has(extension) ||
-    HTML_EXTENSIONS.has(extension) ||
-    SOURCE_EXTENSIONS.has(extension) ||
-    artifact.mimeType.startsWith('text/') ||
-    artifact.mimeType === 'application/json'
-  );
-}
-
 async function toViewFile(artifact: PlanArtifactWithTransferState): Promise<ArtifactViewFile> {
-  const viewKind = classifyArtifact(artifact);
+  const viewKind = classifyArtifactPreview(artifact);
   const shouldReadContent = viewKind === 'markdown' || viewKind === 'html' || viewKind === 'source';
 
   return {

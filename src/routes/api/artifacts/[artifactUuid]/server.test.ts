@@ -220,6 +220,33 @@ describe('/api/artifacts/[artifactUuid] GET', () => {
     expect(response.headers.get('Content-Disposition')).toMatch(/^inline/);
   });
 
+  test('serves sql octet-stream artifacts as text inline in view mode', async () => {
+    const uuid = '30200000-0000-4000-8000-000000000002';
+    const filePath = path.join(tempDir, 'schema.sql');
+    await fsp.writeFile(filePath, 'CREATE TABLE proof (id integer);\n');
+
+    insertArtifact(currentDb, {
+      uuid,
+      planUuid: PLAN_UUID,
+      projectUuid: PROJECT_UUID,
+      filename: 'schema.sql',
+      mimeType: 'application/octet-stream',
+      size: 33,
+      sha256: 'sqlsha',
+      storagePath: filePath,
+    });
+
+    const response = await GET({
+      params: { artifactUuid: uuid },
+      request: makeRequest(uuid),
+      url: makeUrl(uuid, '?view=1'),
+    } as never);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    expect(response.headers.get('Content-Disposition')).toMatch(/^inline/);
+  });
+
   test('serves video artifacts inline in view mode', async () => {
     const uuid = '30300000-0000-4000-8000-000000000001';
     const filePath = path.join(tempDir, 'demo.webm');

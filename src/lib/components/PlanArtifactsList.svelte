@@ -15,6 +15,7 @@
   import { compareArtifactsByFilename } from '$common/artifact_sort.js';
   import type { PlanArtifactWithTransferState } from '$tim/artifacts/service.js';
   import { softDeleteArtifact, restoreArtifact } from '$lib/remote/artifact_actions.remote.js';
+  import { canPreviewArtifactAsText } from '$lib/utils/artifact_preview.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import * as Collapsible from '$lib/components/ui/collapsible/index.js';
   import { buildShowDeletedUrl } from './plan_artifact_upload.js';
@@ -44,15 +45,22 @@
     );
   }
 
+  function shouldOpenInViewMode(artifact: PlanArtifactWithTransferState): boolean {
+    return (
+      isProofArtifact(artifact.message) ||
+      canPreviewArtifactAsText(artifact.filename, artifact.mimeType)
+    );
+  }
+
   function isProofArtifact(message: string | null): boolean {
     return message?.startsWith('tim-proof:') === true;
   }
 
-  function iconFor(mime: string) {
+  function iconFor(filename: string, mime: string) {
     if (mime.startsWith('image/')) return FileImage;
     if (mime.startsWith('video/')) return FileVideo;
     if (mime.startsWith('audio/')) return FileAudio;
-    if (mime.startsWith('text/') || mime === 'application/json') return FileText;
+    if (canPreviewArtifactAsText(filename, mime)) return FileText;
     if (mime === 'application/zip' || mime === 'application/x-tar' || mime === 'application/gzip')
       return FileArchive;
     return FileIcon;
@@ -142,9 +150,9 @@
           data-testid="artifact-list"
         >
           {#each sortedArtifacts as artifact (artifact.uuid)}
-            {@const Icon = iconFor(artifact.mimeType)}
+            {@const Icon = iconFor(artifact.filename, artifact.mimeType)}
             {@const downloadUrl = `/api/artifacts/${artifact.uuid}`}
-            {@const openUrl = isProofArtifact(artifact.message)
+            {@const openUrl = shouldOpenInViewMode(artifact)
               ? `${downloadUrl}?view=1`
               : downloadUrl}
             {@const isDeleted = artifact.deletedAt !== null}
