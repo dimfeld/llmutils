@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest';
+import type { SpawnAndLogOutputResult } from '../common/process.ts';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -29,19 +30,6 @@ function createStreamingProcessMock(overrides?: {
     }),
     kill: vi.fn(() => {}),
   };
-}
-
-async function sendSinglePromptAndWaitForTest(streamingProcess: any, content: string) {
-  const inputMessage = JSON.stringify({
-    type: 'user',
-    message: {
-      role: 'user',
-      content,
-    },
-  });
-  streamingProcess.stdin.write(`${inputMessage}\n`);
-  await streamingProcess.stdin.end();
-  return streamingProcess.result;
 }
 
 beforeEach(() => {
@@ -76,7 +64,6 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -138,7 +125,6 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -191,7 +177,6 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -244,7 +229,6 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -296,7 +280,6 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -364,7 +347,6 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
           return createStreamingProcessMock();
         }),
         createLineSplitter: vi.fn(() => (input: string) => (input ? input.split('\n') : [])),
-        sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
         debug: false,
       }));
 
@@ -436,7 +418,6 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (_s: string) => [],
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -488,7 +469,6 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (_s: string) => [],
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -556,13 +536,20 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
       mcpConfigFile: `${tempDir}/mcp/config.json`,
       cleanup: vi.fn(async () => {}),
     }));
-    const executeWithTerminalInputMock = vi.fn(({ streaming: spawnedStreaming }: any) => ({
-      resultPromise: spawnedStreaming.result,
-      cleanup: vi.fn(),
-      sendFollowUpMessage: vi.fn(),
-      closeStdin: vi.fn(),
-      onResultMessage: vi.fn(),
-    }));
+    const executeWithTerminalInputMock = vi.fn(({ streaming: spawnedStreaming }: any) => {
+      let acceptedFinalResult = false;
+      const onResultMessage = vi.fn((resultWasSuccessful: boolean) => {
+        acceptedFinalResult = resultWasSuccessful;
+      });
+      return {
+        resultPromise: spawnedStreaming.result,
+        cleanup: vi.fn(),
+        sendFollowUpForInterceptedResult: vi.fn(),
+        acceptedSuccessfulFinalResult: vi.fn(() => acceptedFinalResult),
+        onResultMessage,
+        observeFormattedMessage: vi.fn(() => {}),
+      };
+    });
 
     if (options?.normalizeThrows) {
       normalizeSubprocessMonitorRulesMock.mockImplementationOnce(() => {
@@ -765,7 +752,6 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -848,7 +834,6 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -883,7 +868,6 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     vi.doMock('../../common/process.ts', () => ({
       spawnWithStreamingIO: vi.fn(async () => createStreamingProcessMock({ exitCode: 1 })),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -919,7 +903,6 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -959,7 +942,6 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -999,7 +981,6 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1049,7 +1030,6 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1098,7 +1078,6 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
         stdin: { write: stdinWrite, end: stdinEnd },
       })),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1160,7 +1139,6 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
         stdin: { write: stdinWrite, end: stdinEnd },
       })),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1228,7 +1206,6 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1292,7 +1269,6 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1357,7 +1333,6 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1424,7 +1399,6 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1489,7 +1463,6 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1560,7 +1533,6 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
           return createStreamingProcessMock();
         }),
         createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
-        sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
         debug: false,
       }));
 
@@ -1629,7 +1601,6 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
         return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1685,7 +1656,6 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
     vi.doMock('../../common/process.ts', () => ({
       spawnWithStreamingIO: vi.fn(async () => createStreamingProcessMock()),
       createLineSplitter: () => (s: string) => s.split('\n'),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1738,18 +1708,11 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
         killedByInactivity: false,
       }),
       onResultMessage: vi.fn(() => {}),
-      sendFollowUpMessage: vi.fn(() => {}),
-      closeStdin: vi.fn(() => {}),
+      observeFormattedMessage: vi.fn(() => {}),
+      sendFollowUpForInterceptedResult: vi.fn(() => {}),
+      acceptedSuccessfulFinalResult: vi.fn(() => true),
       cleanup: vi.fn(() => {}),
     }));
-    const sendSinglePromptAndWaitSpy = vi.fn(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-      signal: null,
-      killedByInactivity: false,
-    }));
-
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
       getUsingJj: vi.fn(async () => false),
@@ -1761,9 +1724,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/streaming_input.ts', () => ({
-      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
-    }));
+    vi.doMock('./claude_code/streaming_input.ts', () => ({}));
 
     vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
       executeWithTerminalInput: executeWithTerminalInputSpy,
@@ -1791,7 +1752,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     }
 
     expect(executeWithTerminalInputSpy).toHaveBeenCalledTimes(1);
-    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
   });
 
   test('logs terminal input hint when lifecycle controller reports started', async () => {
@@ -1804,18 +1764,11 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
         killedByInactivity: false,
       }),
       onResultMessage: vi.fn(() => {}),
-      sendFollowUpMessage: vi.fn(() => {}),
-      closeStdin: vi.fn(() => {}),
+      observeFormattedMessage: vi.fn(() => {}),
+      sendFollowUpForInterceptedResult: vi.fn(() => {}),
+      acceptedSuccessfulFinalResult: vi.fn(() => true),
       cleanup: vi.fn(() => {}),
     }));
-    const sendSinglePromptAndWaitSpy = vi.fn(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-      signal: null,
-      killedByInactivity: false,
-    }));
-
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
       getUsingJj: vi.fn(async () => false),
@@ -1827,9 +1780,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/streaming_input.ts', () => ({
-      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
-    }));
+    vi.doMock('./claude_code/streaming_input.ts', () => ({}));
 
     vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
       executeWithTerminalInput: executeWithTerminalInputSpy,
@@ -1858,7 +1809,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     // The terminal input hint logging is handled inside executeWithTerminalInput
     expect(executeWithTerminalInputSpy).toHaveBeenCalledTimes(1);
-    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
   });
 
   test('emits user_terminal_input structured message even when follow-up send throws', async () => {
@@ -1866,13 +1816,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     const sendFollowUpMessageSpy = vi.fn(() => {
       throw new Error('write failed');
     });
-    const sendSinglePromptAndWaitSpy = vi.fn(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-      signal: null,
-      killedByInactivity: false,
-    }));
     const debugLogSpy = vi.fn(() => {});
 
     vi.doMock('../../common/git.ts', () => ({
@@ -1894,7 +1837,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     }));
 
     vi.doMock('./claude_code/streaming_input.ts', () => ({
-      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
       sendInitialPrompt: vi.fn(() => {}),
       sendFollowUpMessage: sendFollowUpMessageSpy,
       safeEndStdin: vi.fn(async () => {}),
@@ -1945,7 +1887,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     }
 
     expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(1);
-    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
     expect(
       sendStructuredSpy.mock.calls.some(
         (call) => call[0] && typeof call[0] === 'object' && call[0].type === 'user_terminal_input'
@@ -1956,13 +1897,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
   test('closes stdin on result message so streaming result can resolve in terminal input mode', async () => {
     const onResultMessageSpy = vi.fn(() => {});
-    const sendSinglePromptAndWaitSpy = vi.fn(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-      signal: null,
-      killedByInactivity: false,
-    }));
     const resultLine =
       '{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":1,"duration_api_ms":1,"is_error":false,"num_turns":1,"result":"done","session_id":"session"}';
     let formatStdout: ((output: string) => unknown) | undefined;
@@ -1994,8 +1928,9 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
           resolveStreamingResult = resolve;
         }),
         onResultMessage: onResultMessageSpy,
-        sendFollowUpMessage: vi.fn(() => {}),
-        closeStdin: vi.fn(() => {}),
+        observeFormattedMessage: vi.fn(() => {}),
+        sendFollowUpForInterceptedResult: vi.fn(() => {}),
+        acceptedSuccessfulFinalResult: vi.fn(() => true),
         cleanup: vi.fn(() => {}),
       };
     });
@@ -2017,9 +1952,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/streaming_input.ts', () => ({
-      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
-    }));
+    vi.doMock('./claude_code/streaming_input.ts', () => ({}));
 
     vi.doMock('./claude_code/format.ts', () => ({
       formatJsonMessage: vi.fn((line: string) => {
@@ -2082,12 +2015,10 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     // onResultMessage should be called from the formatStdout callback when result line is processed
     expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
-    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
   });
 
   test('does not force-close stdin when closeTerminalInputOnResult is false', async () => {
     const onResultMessageSpy = vi.fn(() => {});
-    const closeStdinSpy = vi.fn(() => {});
     const cleanupSpy = vi.fn(() => {});
     let resolveStreamingResult:
       | ((value: {
@@ -2103,8 +2034,9 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
         resolveStreamingResult = resolve;
       }),
       onResultMessage: onResultMessageSpy,
-      sendFollowUpMessage: vi.fn(() => {}),
-      closeStdin: closeStdinSpy,
+      observeFormattedMessage: vi.fn(() => {}),
+      sendFollowUpForInterceptedResult: vi.fn(() => {}),
+      acceptedSuccessfulFinalResult: vi.fn(() => true),
       cleanup: cleanupSpy,
     }));
     const resultLine =
@@ -2122,7 +2054,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
         setTimeout(() => {
           formatStdout?.(`${resultLine}\n`);
           resolveStreamingResult?.({
-            exitCode: 0,
+            exitCode: 1,
             stdout: '',
             stderr: '',
             signal: null,
@@ -2169,19 +2101,105 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       planFilePath: `${tempDir}/plan.yml`,
       executionMode: 'planning',
     });
-    await executionPromise;
+    await expect(executionPromise).resolves.toBeUndefined();
 
     expect(executeWithTerminalInputSpy).toHaveBeenCalledTimes(1);
     expect(formatStdout).toBeDefined();
     expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
-    expect(closeStdinSpy).toHaveBeenCalledTimes(0);
     expect(cleanupSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not suppress nonzero exit after a failed result message', async () => {
+    let acceptedFinalResult = false;
+    const onResultMessageSpy = vi.fn((resultWasSuccessful: boolean) => {
+      acceptedFinalResult = resultWasSuccessful;
+    });
+    let resolveStreamingResult:
+      | ((value: {
+          exitCode: number;
+          stdout: string;
+          stderr: string;
+          signal: NodeJS.Signals | null;
+          killedByInactivity: boolean;
+        }) => void)
+      | undefined;
+    const executeWithTerminalInputSpy = vi.fn(() => ({
+      resultPromise: new Promise((resolve) => {
+        resolveStreamingResult = resolve;
+      }),
+      onResultMessage: onResultMessageSpy,
+      observeFormattedMessage: vi.fn(() => {}),
+      sendFollowUpForInterceptedResult: vi.fn(() => {}),
+      acceptedSuccessfulFinalResult: vi.fn(() => acceptedFinalResult),
+      cleanup: vi.fn(() => {}),
+    }));
+    let formatStdout: ((output: string) => unknown) | undefined;
+
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
+    }));
+
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
+        formatStdout = opts.formatStdout;
+        setTimeout(() => {
+          formatStdout?.('{"type":"result"}\n');
+          resolveStreamingResult?.({
+            exitCode: 1,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: false,
+          });
+        }, 0);
+        return {
+          ...createStreamingProcessMock(),
+          kill: vi.fn(() => {}),
+        };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
+      debug: false,
+    }));
+
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn((_line: string) => ({
+        type: 'result',
+        message: 'maximum turns reached',
+        resultInfo: {
+          success: false,
+          turns: 1,
+          durationMs: 1,
+        },
+      })),
+      extractStructuredMessages: vi.fn(() => []),
+      resetToolUseCache: vi.fn(() => {}),
+    }));
+
+    vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
+      executeWithTerminalInput: executeWithTerminalInputSpy,
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir } as any,
+      {} as any
+    );
+
+    await expect(
+      exec.execute('CTX', {
+        planId: 'p1',
+        planTitle: 'T',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'planning',
+      })
+    ).rejects.toThrow('Claude exited with non-zero exit code: 1');
   });
 
   test('sends follow-up prompts in the same Claude session before closing stdin', async () => {
     const onResultMessageSpy = vi.fn(() => {});
-    const closeStdinSpy = vi.fn(() => {});
-    const sendFollowUpMessageSpy = vi.fn(() => {});
+    const sendFollowUpForInterceptedResultSpy = vi.fn(() => {});
     const cleanupSpy = vi.fn(() => {});
     let resolveStreamingResult:
       | ((value: {
@@ -2197,8 +2215,9 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
         resolveStreamingResult = resolve;
       }),
       onResultMessage: onResultMessageSpy,
-      sendFollowUpMessage: sendFollowUpMessageSpy,
-      closeStdin: closeStdinSpy,
+      observeFormattedMessage: vi.fn(() => {}),
+      sendFollowUpForInterceptedResult: sendFollowUpForInterceptedResultSpy,
+      acceptedSuccessfulFinalResult: vi.fn(() => true),
       cleanup: cleanupSpy,
     }));
     let formatStdout: ((output: string) => unknown) | undefined;
@@ -2267,20 +2286,17 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     expect(executeWithTerminalInputSpy).toHaveBeenCalledTimes(1);
     expect(executeWithTerminalInputSpy.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
-        closeOnResultMessage: false,
-        keepStdinOpenWithoutInteractiveInput: true,
+        keepInteractiveInputOpenOnResult: false,
       })
     );
-    expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(1);
-    expect(sendFollowUpMessageSpy).toHaveBeenCalledWith('follow up prompt');
+    expect(sendFollowUpForInterceptedResultSpy).toHaveBeenCalledTimes(1);
+    expect(sendFollowUpForInterceptedResultSpy).toHaveBeenCalledWith('follow up prompt');
     expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
-    expect(closeStdinSpy).toHaveBeenCalledTimes(1);
     expect(cleanupSpy).toHaveBeenCalledTimes(1);
   });
 
   test('fast no-op retry flow closes stdin when it decides not to continue', async () => {
     const onResultMessageSpy = vi.fn(() => {});
-    const closeStdinSpy = vi.fn(() => {});
     const sendFollowUpMessageSpy = vi.fn(() => {});
     const cleanupSpy = vi.fn(() => {});
     let resolveStreamingResult:
@@ -2298,8 +2314,9 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
         resolveStreamingResult = resolve;
       }),
       onResultMessage: onResultMessageSpy,
-      sendFollowUpMessage: sendFollowUpMessageSpy,
-      closeStdin: closeStdinSpy,
+      observeFormattedMessage: vi.fn(() => {}),
+      sendFollowUpForInterceptedResult: vi.fn(() => {}),
+      acceptedSuccessfulFinalResult: vi.fn(() => true),
       cleanup: cleanupSpy,
     }));
     let formatStdout: ((output: string) => unknown) | undefined;
@@ -2373,7 +2390,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     expect(executeWithTerminalInputSpy).toHaveBeenCalledTimes(1);
     expect(formatStdout).toBeDefined();
     expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
-    expect(closeStdinSpy).toHaveBeenCalledTimes(1);
     expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(0);
     expect(cleanupSpy).toHaveBeenCalledTimes(1);
   });
@@ -2381,13 +2397,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
   test('uses multi-message path for tunnel-forwarded input when terminal input is disabled', async () => {
     const sendInitialPromptSpy = vi.fn(() => {});
     const sendFollowUpMessageSpy = vi.fn(() => {});
-    const sendSinglePromptAndWaitSpy = vi.fn(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-      signal: null,
-      killedByInactivity: false,
-    }));
     const resultLine =
       '{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":1,"duration_api_ms":1,"is_error":false,"num_turns":1,"result":"done","session_id":"session"}';
     let formatStdout: ((output: string) => unknown) | undefined;
@@ -2465,7 +2474,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     vi.doMock('./claude_code/streaming_input.ts', () => ({
       sendInitialPrompt: sendInitialPromptSpy,
       sendFollowUpMessage: sendFollowUpMessageSpy,
-      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
       safeEndStdin: vi.fn(async () => {}),
     }));
 
@@ -2512,7 +2520,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     }
 
     expect(sendInitialPromptSpy).toHaveBeenCalledTimes(1);
-    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
     expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(1);
     expect(sendFollowUpMessageSpy).toHaveBeenCalledWith(stdin, 'forward this');
 
@@ -2520,14 +2527,35 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(1);
   });
 
-  test('falls back to single-message path when terminal input option is disabled', async () => {
-    const sendSinglePromptAndWaitSpy = vi.fn(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-      signal: null,
-      killedByInactivity: false,
-    }));
+  test('uses result-gated non-interactive path when terminal input option is disabled', async () => {
+    const stdinEndSpy = vi.fn(async () => {});
+    let resolveStreamingResult:
+      | ((value: {
+          exitCode: number;
+          stdout: string;
+          stderr: string;
+          signal: NodeJS.Signals | null;
+          killedByInactivity: boolean;
+        }) => void)
+      | undefined;
+    let formatStdout: ((output: string) => unknown) | undefined;
+    const streamingProcess = {
+      pid: 123,
+      stdin: {
+        write: vi.fn((_value: string) => {}),
+        end: stdinEndSpy,
+      },
+      result: new Promise<{
+        exitCode: number;
+        stdout: string;
+        stderr: string;
+        signal: NodeJS.Signals | null;
+        killedByInactivity: boolean;
+      }>((resolve) => {
+        resolveStreamingResult = resolve;
+      }),
+      kill: vi.fn(() => {}),
+    };
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
@@ -2535,14 +2563,18 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     }));
 
     vi.doMock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: vi.fn(async () => createStreamingProcessMock()),
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
+        formatStdout = opts.formatStdout;
+        return streamingProcess;
+      }),
       createLineSplitter: () => (s: string) => s.split('\n'),
       debug: false,
     }));
 
-    vi.doMock('./claude_code/streaming_input.ts', () => ({
-      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
-    }));
+    vi.doMock('./claude_code/streaming_input.ts', async (importOriginal) =>
+      importOriginal<typeof import('./claude_code/streaming_input.js')>()
+    );
+
     vi.doMock('../../logging/tunnel_client.js', () => ({
       isTunnelActive: () => false,
       TunnelAdapter: class {},
@@ -2560,20 +2592,439 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       const { ClaudeCodeExecutor } = await import('./claude_code.js');
       const exec = new ClaudeCodeExecutor(
         { permissionsMcp: { enabled: false } } as any,
-        { baseDir: tempDir, terminalInput: false } as any,
+        {
+          baseDir: tempDir,
+          terminalInput: false,
+          closeTerminalInputOnResult: false,
+        } as any,
         {} as any
       );
 
-      await exec.execute('CTX', {
+      const executePromise = exec.execute('CTX', {
         planId: 'p1',
         planTitle: 'T',
         planFilePath: `${tempDir}/plan.yml`,
         executionMode: 'normal',
       });
+
+      const setupStart = Date.now();
+      while (
+        (!formatStdout || streamingProcess.stdin.write.mock.calls.length === 0) &&
+        Date.now() - setupStart < 1000
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      expect(formatStdout).toBeDefined();
+      expect(streamingProcess.stdin.write).toHaveBeenCalledTimes(1);
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      formatStdout?.(
+        `${JSON.stringify({
+          type: 'result',
+          subtype: 'success',
+          duration_ms: 1,
+          duration_api_ms: 1,
+          is_error: false,
+          num_turns: 1,
+          result: '',
+          session_id: 'session-1',
+          total_cost_usd: 0,
+        })}\n`
+      );
+
+      expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+      resolveStreamingResult?.({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      });
+      await executePromise;
     } finally {
       Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
     }
 
-    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(1);
+    expect(streamingProcess.stdin.write).toHaveBeenCalledTimes(1);
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ClaudeCodeExecutor - background activity integration (real formatJsonMessage + real executeWithTerminalInput)', () => {
+  const tempDir = '/tmp/claude-bg-integration-test';
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.doUnmock('./claude_code/format.ts');
+    vi.doUnmock('./claude_code/terminal_input_lifecycle.ts');
+    vi.doUnmock('./claude_code/streaming_input.ts');
+    await (await import('node:fs/promises')).mkdir(tempDir, { recursive: true }).catch(() => {});
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('task_started → result → task_notification (stopped): stdin stays open past result, closes after grace', async () => {
+    vi.useFakeTimers();
+    try {
+      const stdinEndSpy = vi.fn(async () => {});
+      let formatStdout: ((output: string) => unknown) | undefined;
+      let resolveStreamingResult: ((value: SpawnAndLogOutputResult) => void) | undefined;
+
+      const streamingProcess = {
+        pid: 123,
+        stdin: {
+          write: vi.fn((_value: string) => {}),
+          end: stdinEndSpy,
+        },
+        result: new Promise<SpawnAndLogOutputResult>((resolve) => {
+          resolveStreamingResult = resolve;
+        }),
+        kill: vi.fn(() => {}),
+      };
+
+      let terminalInputReadyResolve: (() => void) | undefined;
+      const terminalInputReadyPromise = new Promise<void>((resolve) => {
+        terminalInputReadyResolve = resolve;
+      });
+
+      vi.doMock('../../common/git.ts', () => ({
+        getGitRoot: vi.fn(async () => tempDir),
+        getUsingJj: vi.fn(async () => false),
+      }));
+
+      vi.doMock('../../common/process.ts', () => ({
+        spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
+          formatStdout = opts.formatStdout;
+          return streamingProcess;
+        }),
+        createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
+        debug: false,
+      }));
+
+      vi.doMock('./claude_code/streaming_input.ts', async (importOriginal) =>
+        importOriginal<typeof import('./claude_code/streaming_input.js')>()
+      );
+
+      vi.doMock('./claude_code/terminal_input_lifecycle.ts', async (importOriginal) => {
+        const actual =
+          await importOriginal<typeof import('./claude_code/terminal_input_lifecycle.js')>();
+        return {
+          ...actual,
+          executeWithTerminalInput: (
+            ...args: Parameters<typeof actual.executeWithTerminalInput>
+          ) => {
+            const result = actual.executeWithTerminalInput(...args);
+            terminalInputReadyResolve?.();
+            return result;
+          },
+        };
+      });
+
+      vi.doMock('../../logging/tunnel_client.js', () => ({
+        isTunnelActive: () => false,
+        TunnelAdapter: class {},
+      }));
+
+      const { ClaudeCodeExecutor } = await import('./claude_code.js');
+      const exec = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        { baseDir: tempDir } as any,
+        {} as any
+      );
+
+      const executePromise = exec.execute('CTX', {
+        planId: 'p1',
+        planTitle: 'T',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+      });
+
+      // Wait for executeWithTerminalInput to be called
+      await vi.runAllTimersAsync();
+      await terminalInputReadyPromise;
+
+      // Feed task_started
+      formatStdout?.(
+        `{"type":"system","subtype":"task_started","task_id":"bg-task-1","description":"running tests","task_type":"local_bash","uuid":"u1","session_id":"s1"}\n`
+      );
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      // Feed result — task still active, so stdin stays open
+      formatStdout?.(
+        `{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":100,"duration_api_ms":90,"is_error":false,"num_turns":1,"result":"done","session_id":"s1"}\n`
+      );
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      // Feed task_notification (stopped) — grace timer starts
+      formatStdout?.(
+        `{"type":"system","subtype":"task_notification","task_id":"bg-task-1","status":"stopped","output_file":"","summary":"completed","session_id":"s1"}\n`
+      );
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      // Just before grace period expires
+      vi.advanceTimersByTime(9_999);
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      // Grace period expires
+      vi.advanceTimersByTime(1);
+      expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+      resolveStreamingResult?.({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      });
+      await vi.runAllTimersAsync();
+      await executePromise;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('ScheduleWakeup → result → fresh turn assistant → final result: closes after grace', async () => {
+    vi.useFakeTimers();
+    try {
+      const stdinEndSpy = vi.fn(async () => {});
+      let formatStdout: ((output: string) => unknown) | undefined;
+      let resolveStreamingResult: ((value: SpawnAndLogOutputResult) => void) | undefined;
+
+      const streamingProcess = {
+        pid: 123,
+        stdin: {
+          write: vi.fn((_value: string) => {}),
+          end: stdinEndSpy,
+        },
+        result: new Promise<SpawnAndLogOutputResult>((resolve) => {
+          resolveStreamingResult = resolve;
+        }),
+        kill: vi.fn(() => {}),
+      };
+
+      let terminalInputReadyResolve: (() => void) | undefined;
+      const terminalInputReadyPromise = new Promise<void>((resolve) => {
+        terminalInputReadyResolve = resolve;
+      });
+
+      vi.doMock('../../common/git.ts', () => ({
+        getGitRoot: vi.fn(async () => tempDir),
+        getUsingJj: vi.fn(async () => false),
+      }));
+
+      vi.doMock('../../common/process.ts', () => ({
+        spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
+          formatStdout = opts.formatStdout;
+          return streamingProcess;
+        }),
+        createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
+        debug: false,
+      }));
+
+      vi.doMock('./claude_code/streaming_input.ts', async (importOriginal) =>
+        importOriginal<typeof import('./claude_code/streaming_input.js')>()
+      );
+
+      vi.doMock('./claude_code/terminal_input_lifecycle.ts', async (importOriginal) => {
+        const actual =
+          await importOriginal<typeof import('./claude_code/terminal_input_lifecycle.js')>();
+        return {
+          ...actual,
+          executeWithTerminalInput: (
+            ...args: Parameters<typeof actual.executeWithTerminalInput>
+          ) => {
+            const result = actual.executeWithTerminalInput(...args);
+            terminalInputReadyResolve?.();
+            return result;
+          },
+        };
+      });
+
+      vi.doMock('../../logging/tunnel_client.js', () => ({
+        isTunnelActive: () => false,
+        TunnelAdapter: class {},
+      }));
+
+      const { ClaudeCodeExecutor } = await import('./claude_code.js');
+      const exec = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        { baseDir: tempDir } as any,
+        {} as any
+      );
+
+      const executePromise = exec.execute('CTX', {
+        planId: 'p1',
+        planTitle: 'T',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+      });
+
+      await vi.runAllTimersAsync();
+      await terminalInputReadyPromise;
+
+      // Feed wakeup (assistant with ScheduleWakeup tool_use)
+      formatStdout?.(
+        `{"type":"assistant","message":{"id":"m1","type":"message","role":"assistant","model":"claude-opus","content":[{"type":"tool_use","id":"t1","name":"ScheduleWakeup","input":{"delaySeconds":270,"reason":"waiting","prompt":"<<loop>>"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":10}},"session_id":"s1"}\n`
+      );
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      // Feed first result — wakeup pending, so stdin stays open
+      formatStdout?.(
+        `{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":100,"duration_api_ms":90,"is_error":false,"num_turns":1,"result":"done","session_id":"s1"}\n`
+      );
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      // Advance 10s — wakeup pending prevents close
+      vi.advanceTimersByTime(10_000);
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      // Fresh turn resets wakeup
+      formatStdout?.(
+        `{"type":"assistant","message":{"id":"m2","type":"message","role":"assistant","model":"claude-opus","content":[{"type":"text","text":"Continuing work"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":5}},"session_id":"s1"}\n`
+      );
+
+      // Second result — no pending activity but everDeferred → grace timer starts
+      formatStdout?.(
+        `{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":100,"duration_api_ms":90,"is_error":false,"num_turns":2,"result":"done","session_id":"s1"}\n`
+      );
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      // Advance past grace period
+      vi.advanceTimersByTime(10_000);
+      expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+      resolveStreamingResult?.({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      });
+      await vi.runAllTimersAsync();
+      await executePromise;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('regression: ScheduleWakeup intercepted by follow-up prompt clears stale wakeup so final result closes after grace', async () => {
+    vi.useFakeTimers();
+    try {
+      const stdinEndSpy = vi.fn(async () => {});
+      let formatStdout: ((output: string) => unknown) | undefined;
+      let resolveStreamingResult: ((value: SpawnAndLogOutputResult) => void) | undefined;
+
+      const streamingProcess = {
+        pid: 123,
+        stdin: {
+          write: vi.fn((_value: string) => {}),
+          end: stdinEndSpy,
+        },
+        result: new Promise<SpawnAndLogOutputResult>((resolve) => {
+          resolveStreamingResult = resolve;
+        }),
+        kill: vi.fn(() => {}),
+      };
+
+      let terminalInputReadyResolve: (() => void) | undefined;
+      const terminalInputReadyPromise = new Promise<void>((resolve) => {
+        terminalInputReadyResolve = resolve;
+      });
+
+      vi.doMock('../../common/git.ts', () => ({
+        getGitRoot: vi.fn(async () => tempDir),
+        getUsingJj: vi.fn(async () => false),
+      }));
+
+      vi.doMock('../../common/process.ts', () => ({
+        spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
+          formatStdout = opts.formatStdout;
+          return streamingProcess;
+        }),
+        createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
+        debug: false,
+      }));
+
+      vi.doMock('./claude_code/streaming_input.ts', async (importOriginal) =>
+        importOriginal<typeof import('./claude_code/streaming_input.js')>()
+      );
+
+      vi.doMock('./claude_code/terminal_input_lifecycle.ts', async (importOriginal) => {
+        const actual =
+          await importOriginal<typeof import('./claude_code/terminal_input_lifecycle.js')>();
+        return {
+          ...actual,
+          executeWithTerminalInput: (
+            ...args: Parameters<typeof actual.executeWithTerminalInput>
+          ) => {
+            const result = actual.executeWithTerminalInput(...args);
+            terminalInputReadyResolve?.();
+            return result;
+          },
+        };
+      });
+
+      vi.doMock('../../logging/tunnel_client.js', () => ({
+        isTunnelActive: () => false,
+        TunnelAdapter: class {},
+      }));
+
+      const { ClaudeCodeExecutor } = await import('./claude_code.js');
+      const exec = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        { baseDir: tempDir } as any,
+        {} as any
+      );
+
+      const executePromise = exec.execute('CTX', {
+        planId: 'p1',
+        planTitle: 'T',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+        followUpPrompts: ['continue working'],
+      });
+
+      await vi.runAllTimersAsync();
+      await terminalInputReadyPromise;
+
+      // Feed wakeup — wakeupPending = true
+      formatStdout?.(
+        `{"type":"assistant","message":{"id":"m1","type":"message","role":"assistant","model":"claude-opus","content":[{"type":"tool_use","id":"t1","name":"ScheduleWakeup","input":{"delaySeconds":270,"reason":"waiting","prompt":"<<loop>>"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":10}},"session_id":"s1"}\n`
+      );
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      // Feed first result — intercepted by follow-up prompt, which clears stale wakeup state
+      // This clears wakeupPending
+      formatStdout?.(
+        `{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":100,"duration_api_ms":90,"is_error":false,"num_turns":1,"result":"done","session_id":"s1"}\n`
+      );
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      // Feed second result — final result, no pending activity but everDeferred → grace timer
+      formatStdout?.(
+        `{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":100,"duration_api_ms":90,"is_error":false,"num_turns":2,"result":"done","session_id":"s1"}\n`
+      );
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      // Advance past grace period
+      vi.advanceTimersByTime(10_000);
+      expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+      resolveStreamingResult?.({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      });
+      await vi.runAllTimersAsync();
+      await executePromise;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

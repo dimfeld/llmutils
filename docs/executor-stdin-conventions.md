@@ -8,7 +8,46 @@ Claude Code reads stdin until EOF when using `--input-format stream-json`. This 
 
 - **Close stdin on result message, not after awaiting the result.** If you `await streaming.result` before closing stdin, Claude Code may hang waiting for EOF — creating a deadlock. The `onResultMessage` callback should trigger stdin close immediately.
 - **Use `safeEndStdin()`** for all stdin close operations in cleanup paths. It wraps `stdin.end()` to handle both synchronous throws and async rejections (e.g., when the subprocess has already exited).
-- **Tunnel children need multi-message lifecycle.** When a child process receives input via tunnel (not TTY), stdin must be kept open using `sendInitialPrompt` + `closeStdinAndWait`, not the single-shot `sendSinglePromptAndWait` path.
+- **Tunnel children need multi-message lifecycle.** When a child process receives input via tunnel (not TTY), stdin must be kept open using `sendInitialPrompt()` and closed only through the shared result-time or forced-shutdown paths.
+- **Background keep-alive depends on stdin staying open until the result-time decision.** Claude Code can end a turn while a background task or scheduled wakeup is pending, then resume later through the same stream-json session. `executeWithTerminalInput()` therefore sends non-interactive prompts with `sendInitialPrompt()` and keeps stdin open until `onResultMessage()` consults the background-activity tracker. Normal turns still close stdin immediately on the first result; deferred turns close only after pending activity drains and the grace window elapses. The `streaming.result.finally(...)` close is only a cleanup backstop, not the primary close decision.
+
+## Background-Activity Keep-Alive
+
+Claude Code can end a turn (emit a `result` message) while work is still pending in the background, then **re-invoke itself** through the same stream-json session — when a scheduled wakeup fires or a background task posts an update. Closing stdin on the first `result` would kill Claude Code before it resumes, truncating single-turn commands like `tim agent`. `BackgroundActivityTracker` (`background_activity_tracker.ts`) gates the stdin-close decision so deferred turns stay alive.
+
+### Two unrelated "task" concepts — do not conflate
+
+- **Background tasks** (this tracker's subject): Claude Code's own subprocess/subagent jobs, surfaced as `type:"system"` stream messages (`task_started`, `task_notification`, `task_progress`, `task_updated`).
+- **Agent todo tasks**: the `TaskCreate`/`TaskUpdate` tool calls Claude makes to manage its display todo list (`pendingTaskCreates`, `sessionTaskLists` in `format.ts`). These are display-only and out of scope for lifecycle decisions — never reuse their state maps for background-task tracking.
+
+### Lifecycle signals from `format.ts`
+
+`formatJsonMessage()` populates `FormattedClaudeMessage.backgroundActivity?: { kind; taskId? }`, so the executor drives the tracker without re-parsing:
+
+- `task_started` → `task_started` (a background task is now active).
+- `task_notification` → `task_stopped` (always terminal for that task id).
+- `task_updated` with `patch.end_time` present → `task_stopped`. **Terminal detection keys off `task_notification` OR `patch.end_time` presence — it does not enumerate status strings**, so new terminal statuses stay covered.
+- `task_updated` with `is_backgrounded` and no `end_time` → formatted for the console ("moved to background") but **does not** change active/inactive state.
+- A `ScheduleWakeup` tool call → `wakeup_scheduled`, with a concise `wakeup_scheduled` `workflow_progress` summary instead of the generic tool dump.
+
+All four background-task system messages are formatted to the console as `workflow_progress` phases (rendered by `console_formatter.ts`); `task_updated` previously logged as "Unknown message".
+
+### Tracker state and the close decision
+
+The tracker is instantiated **once inside `executeWithTerminalInput()`** (alongside `stdinGuard`), so both the main executor (`claude_code.ts`) and `run_claude_subprocess.ts` inherit the behavior. Both callers translate `formatted.backgroundActivity` into `terminalInputResult.notifyBackgroundActivity(signal)`, which dispatches to the tracker.
+
+- **Active tasks**: set of ids with a `task_started` and no terminal event yet.
+- **Wakeup pending**: a `ScheduleWakeup` was seen and not yet superseded by fresh turn activity. "Wakeup fired" is not directly observable, so `onTurnActivity()` / continuation resets it when a new turn begins.
+- `onResultMessage()` consults the tracker instead of closing unconditionally: if there is pending activity it keeps stdin open; if the run ever deferred it starts a grace timer; otherwise (a normal turn with no background work) it closes immediately — **no added latency**.
+- When keep-alive reasons drain to zero, a `BACKGROUND_DRAIN_GRACE_MS = 10_000` (10s) grace timer runs. New activity in that window cancels the close; silence lets it close. The grace duration and `setTimeout`/`clearTimeout` are injectable via constructor options so tests run fast and deterministically.
+
+### Forced shutdown always wins
+
+SIGTERM (`stopActiveSessionForShutdown`) and the headless `setEndSessionHandler` / `setForceEndSessionHandler` route through `forceCloseInputNow()` → `tracker.forceClose()`, which cancels any pending grace timer and closes immediately, ignoring active tasks and wakeups. `cleanup()` calls `tracker.cancel()` so a dangling grace timer never keeps the event loop alive.
+
+### Completion semantics
+
+When an interactive input source keeps stdin open past the result (`keepInteractiveInputOpenOnResult`), `onResultMessage()` calls `acceptResultWithoutClosing()` instead of closing. The tracker records whether the accepted final result was successful (`acceptedSuccessfulFinalResult()`), which callers use to decide turn-completion status without prematurely closing stdin. Continuations (follow-up prompts, fast-no-op retry) call `onContinuationStarted()` to supersede a wakeup from the intercepted turn while preserving active tasks. The `streaming.result.finally(...)` close remains only a backstop — never the primary close decision (preserving the close-on-result-not-after-await invariant).
 
 ## Terminal Input Reader
 
@@ -74,8 +113,8 @@ The normal and force web UI end-session actions both use this app-server path fo
 The shared helper in `terminal_input_lifecycle.ts` handles three distinct modes:
 
 1. **Terminal input enabled**: Full readline lifecycle with `setupTerminalInput()` / `awaitAndCleanup()`
-2. **Tunnel or headless forwarding active, no terminal**: Multi-message lifecycle (`sendInitialPrompt` + `closeStdinAndWait`) to keep stdin open for forwarded input. A `headlessForwardingEnabled` boolean is computed from `loggerAdapter instanceof HeadlessAdapter` — this ensures the headless adapter keeps stdin open for follow-up messages, just like tunnel forwarding does.
-3. **Neither**: Single-shot `sendSinglePromptAndWait()`
+2. **Tunnel or headless forwarding active, no terminal**: Multi-message lifecycle (`sendInitialPrompt` + result-time stdin close decision) to keep stdin open for forwarded input. A `headlessForwardingEnabled` boolean is computed from `loggerAdapter instanceof HeadlessAdapter` — this ensures the headless adapter keeps stdin open for follow-up messages, just like tunnel forwarding does.
+3. **Neither**: Non-interactive prompt lifecycle (`sendInitialPrompt` + result-time stdin close decision). The initial prompt does not end stdin; the result callback closes immediately for normal turns or keeps stdin open while background tasks/wakeups are pending.
 
 Both `claude_code.ts` and `run_claude_subprocess.ts` delegate to this helper to avoid duplicating the branching logic.
 

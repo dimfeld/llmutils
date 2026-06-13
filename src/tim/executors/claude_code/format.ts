@@ -107,6 +107,20 @@ export type Message =
       session_id: string;
     }
 
+  // State update for a background task
+  | {
+      type: 'system';
+      subtype: 'task_updated';
+      task_id: string;
+      patch: {
+        is_backgrounded?: boolean;
+        status?: string;
+        end_time?: number;
+      };
+      uuid: string;
+      session_id: string;
+    }
+
   // Status update (e.g., compacting)
   | {
       type: 'system';
@@ -151,6 +165,14 @@ export type Message =
       session_id: string;
     };
 
+// Concrete parsed facts extracted from the stream. Turn-reset semantics (treating
+// an assistant/user message as activity) are NOT encoded here — that classification
+// lives at the lifecycle boundary in terminal_input_lifecycle.ts.
+export type BackgroundActivitySignal =
+  | { kind: 'task_started'; taskId: string }
+  | { kind: 'task_stopped'; taskId: string }
+  | { kind: 'wakeup_scheduled' };
+
 export interface FormattedClaudeMessage {
   structured?: StructuredMessage | StructuredMessage[];
   message?: string;
@@ -167,6 +189,7 @@ export interface FormattedClaudeMessage {
   // Failure detection for assistant messages
   failed?: boolean;
   failedSummary?: string;
+  backgroundActivity?: BackgroundActivitySignal;
 }
 
 // Cache for tool use IDs mapped to their names.
@@ -389,6 +412,7 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
   } else if (message.type === 'system' && message.subtype === 'task_notification') {
     return withMessage({
       type: message.type,
+      backgroundActivity: { kind: 'task_stopped', taskId: message.task_id },
       structured: {
         type: 'workflow_progress',
         timestamp: timestamp(),
@@ -399,11 +423,31 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
   } else if (message.type === 'system' && message.subtype === 'task_started') {
     return withMessage({
       type: message.type,
+      backgroundActivity: { kind: 'task_started', taskId: message.task_id },
       structured: {
         type: 'workflow_progress',
         timestamp: timestamp(),
         phase: 'task_started',
         message: `Task ${message.task_id} (${message.task_type}): ${message.description}`,
+      },
+    });
+  } else if (message.type === 'system' && message.subtype === 'task_updated') {
+    const isTerminalUpdate = message.patch?.end_time != null;
+    const updateMessage =
+      message.patch?.is_backgrounded === true && !isTerminalUpdate
+        ? `Task ${message.task_id}: moved to background`
+        : `Task ${message.task_id}: ${message.patch?.status ?? 'updated'}`;
+
+    return withMessage({
+      type: message.type,
+      backgroundActivity: isTerminalUpdate
+        ? { kind: 'task_stopped', taskId: message.task_id }
+        : undefined,
+      structured: {
+        type: 'workflow_progress',
+        timestamp: timestamp(),
+        phase: 'task_updated',
+        message: updateMessage,
       },
     });
   } else if (message.type === 'system' && message.subtype === 'task_progress') {
@@ -493,6 +537,7 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
 
     const structuredMessages: StructuredMessage[] = [];
     const rawMessage: string[] = [];
+    let backgroundActivity: BackgroundActivitySignal | undefined;
 
     for (const content of m.content) {
       const ts = timestamp();
@@ -633,6 +678,29 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
               }))
             )
           );
+          continue;
+        }
+
+        if (content.name === 'ScheduleWakeup') {
+          backgroundActivity = { kind: 'wakeup_scheduled' };
+          const wakeupInput = content.input;
+          const delaySeconds =
+            wakeupInput && typeof wakeupInput === 'object' && 'delaySeconds' in wakeupInput
+              ? (wakeupInput.delaySeconds as unknown)
+              : undefined;
+          const reason =
+            wakeupInput && typeof wakeupInput === 'object' && 'reason' in wakeupInput
+              ? (wakeupInput.reason as unknown)
+              : undefined;
+          const delaySummary = typeof delaySeconds === 'number' ? ` in ${delaySeconds}s` : '';
+          const reasonSummary = typeof reason === 'string' && reason.trim() ? `: ${reason}` : '';
+
+          structuredMessages.push({
+            type: 'workflow_progress',
+            timestamp: ts,
+            phase: 'wakeup_scheduled',
+            message: `Scheduled wakeup${delaySummary}${reasonSummary}`,
+          });
           continue;
         }
 
@@ -845,6 +913,7 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
       filePaths: filePaths.length > 0 ? filePaths : undefined,
       failed: failure.failed || undefined,
       failedSummary: failure.failed ? failure.summary : undefined,
+      backgroundActivity,
     });
   }
 

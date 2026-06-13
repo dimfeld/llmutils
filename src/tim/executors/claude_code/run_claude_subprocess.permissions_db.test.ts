@@ -13,8 +13,6 @@ const mockSpawnWithStreamingIO = vi.fn();
 const mockCreateLineSplitter = vi.fn(() => (value: string) => value.split('\n').filter(Boolean));
 const mockSendInitialPrompt = vi.fn();
 const mockSendFollowUpMessage = vi.fn();
-const mockCloseStdinAndWait = vi.fn();
-const mockSendSinglePromptAndWait = vi.fn();
 const mockExecuteWithTerminalInput = vi.fn();
 const mockDebugLog = vi.fn();
 const mockError = vi.fn();
@@ -35,8 +33,6 @@ vi.mock('../../../common/process.js', () => ({
 vi.mock('./streaming_input.js', () => ({
   sendInitialPrompt: mockSendInitialPrompt,
   sendFollowUpMessage: mockSendFollowUpMessage,
-  closeStdinAndWait: mockCloseStdinAndWait,
-  sendSinglePromptAndWait: mockSendSinglePromptAndWait,
 }));
 
 vi.mock('./terminal_input_lifecycle.js', () => ({
@@ -80,8 +76,9 @@ function makeDefaultTerminalInputResult() {
       killedByInactivity: false,
     }),
     onResultMessage: vi.fn(() => {}),
-    sendFollowUpMessage: vi.fn(() => {}),
-    closeStdin: vi.fn(() => {}),
+    observeFormattedMessage: vi.fn(() => {}),
+    sendFollowUpForInterceptedResult: vi.fn(() => {}),
+    acceptedSuccessfulFinalResult: vi.fn(() => true),
     cleanup: vi.fn(() => {}),
   };
 }
@@ -237,7 +234,6 @@ describe('runClaudeSubprocess shared permissions DB integration', () => {
     }
 
     expect(mockExecuteWithTerminalInput).toHaveBeenCalledTimes(1);
-    expect(mockSendSinglePromptAndWait).toHaveBeenCalledTimes(0);
   });
 
   test('closes stdin on result message so subprocess result can resolve in terminal input mode', async () => {
@@ -305,7 +301,6 @@ describe('runClaudeSubprocess shared permissions DB integration', () => {
 
     formatStdout?.(`${resultLine}\n`);
     expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
-    expect(mockSendSinglePromptAndWait).toHaveBeenCalledTimes(0);
   });
 
   test('invokes executeWithTerminalInput when terminal input is enabled', async () => {
@@ -339,7 +334,6 @@ describe('runClaudeSubprocess shared permissions DB integration', () => {
     }
 
     expect(mockExecuteWithTerminalInput).toHaveBeenCalledTimes(1);
-    expect(mockSendSinglePromptAndWait).toHaveBeenCalledTimes(0);
   });
 
   test('emits user_terminal_input structured message even when follow-up send throws', async () => {
@@ -384,7 +378,6 @@ describe('runClaudeSubprocess shared permissions DB integration', () => {
     }
 
     expect(mockExecuteWithTerminalInput).toHaveBeenCalledTimes(1);
-    expect(mockSendSinglePromptAndWait).toHaveBeenCalledTimes(0);
   });
 
   test('falls back to single prompt path when terminal input is disabled by noninteractive mode', async () => {
@@ -418,7 +411,6 @@ describe('runClaudeSubprocess shared permissions DB integration', () => {
     expect(mockSendInitialPrompt).toHaveBeenCalledTimes(0);
     expect(mockExecuteWithTerminalInput).toHaveBeenCalledTimes(1);
     // executeWithTerminalInput is always called now; it handles the routing internally
-    // The old test checked sendSinglePromptAndWait - but that's now inside executeWithTerminalInput
   });
 
   test('invokes executeWithTerminalInput with tunnel forwarding enabled when tunnel is active', async () => {
@@ -448,6 +440,5 @@ describe('runClaudeSubprocess shared permissions DB integration', () => {
     expect(mockExecuteWithTerminalInput).toHaveBeenCalledTimes(1);
     const callArgs = mockExecuteWithTerminalInput.mock.calls[0][0];
     expect(callArgs.tunnelForwardingEnabled).toBe(true);
-    expect(mockSendSinglePromptAndWait).toHaveBeenCalledTimes(0);
   });
 });

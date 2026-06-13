@@ -53,6 +53,10 @@ vi.mock('./terminal_input_lifecycle.js', () => ({
       signal: null,
       killedByInactivity: false,
     }),
+    onResultMessage: vi.fn(),
+    observeFormattedMessage: vi.fn(() => {}),
+    sendFollowUpForInterceptedResult: vi.fn(),
+    acceptedSuccessfulFinalResult: vi.fn(() => true),
     cleanup: vi.fn(),
   })),
 }));

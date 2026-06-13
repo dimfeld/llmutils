@@ -274,11 +274,11 @@ async function executeWithClaude(
     },
   });
 
-  if ((result.killedByTimeout || result.killedByInactivity) && !result.seenResultMessage) {
+  if ((result.killedByTimeout || result.killedByInactivity) && !result.acceptedFinalResult) {
     throw new Error(`Claude subagent timed out after ${Math.round(timeoutMs / 60000)} minutes`);
   }
 
-  if (result.exitCode !== 0 && !result.seenResultMessage) {
+  if (result.exitCode !== 0 && !result.acceptedFinalResult) {
     throw new Error(`Claude subagent exited with non-zero exit code: ${result.exitCode}`);
   }
 

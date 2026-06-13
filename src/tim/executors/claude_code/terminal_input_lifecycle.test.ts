@@ -14,8 +14,6 @@ vi.mock('./streaming_input.ts', async (importOriginal) => {
     ...actual,
     sendInitialPrompt: mockSendInitialPrompt,
     sendFollowUpMessage: mockSendFollowUpMessage,
-    sendSinglePromptAndWait: vi.fn(),
-    closeStdinAndWait: vi.fn(),
     buildSingleUserInputMessageLine: vi.fn((content: string) => content),
   };
 });
@@ -63,20 +61,25 @@ const { executeWithTerminalInput, setupTerminalInput } =
   await import('./terminal_input_lifecycle.ts');
 
 function makeStreaming(
-  overrides: Partial<{ stdinEnd: () => Promise<void> }> = {}
+  overrides: Partial<{
+    stdinEnd: () => Promise<void>;
+    result: Promise<SpawnAndLogOutputResult>;
+  }> = {}
 ): StreamingProcess {
   return {
     stdin: {
       write: vi.fn(() => 0),
       end: overrides.stdinEnd ?? vi.fn(async () => {}),
     },
-    result: Promise.resolve({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-      signal: null,
-      killedByInactivity: false,
-    } as SpawnAndLogOutputResult),
+    result:
+      overrides.result ??
+      Promise.resolve({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      } as SpawnAndLogOutputResult),
     kill: vi.fn(() => {}),
   } as unknown as StreamingProcess;
 }
@@ -87,6 +90,7 @@ describe('terminal_input_lifecycle', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -162,7 +166,7 @@ describe('terminal_input_lifecycle', () => {
       onReaderError: vi.fn(() => {}),
     });
 
-    controller.onResultMessage();
+    controller.onResultMessage(true);
     await controller.awaitAndCleanup();
 
     expect(stopSpy).toHaveBeenCalledTimes(2);
@@ -240,7 +244,7 @@ describe('terminal_input_lifecycle', () => {
       onReaderError: vi.fn(() => {}),
     });
 
-    controller.onResultMessage();
+    controller.onResultMessage(true);
     await Promise.resolve();
 
     expect(debugLogSpy).toHaveBeenCalled();
@@ -358,7 +362,7 @@ describe('terminal_input_lifecycle', () => {
       onReaderError: vi.fn(() => {}),
     });
 
-    controller.onResultMessage();
+    controller.onResultMessage(true);
     onLine?.('late message');
     await controller.awaitAndCleanup();
 
@@ -457,5 +461,198 @@ describe('terminal_input_lifecycle', () => {
 
     expect(offSpy).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
     expect(onSpy).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
+
+    onSpy.mockRestore();
+    offSpy.mockRestore();
+  });
+
+  it('closes stdin immediately on result when no background signals were ever sent (no grace timer)', () => {
+    vi.useFakeTimers();
+    const stdinEndSpy = vi.fn(async () => {});
+
+    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+    mockSendFollowUpMessage.mockImplementation(vi.fn(() => {}));
+    mockTerminalInputReaderFactory = (_options: TerminalInputReaderOptions) => ({
+      start: () => true,
+      stop: () => {},
+    });
+
+    const controller = executeWithTerminalInput({
+      streaming: makeStreaming({ stdinEnd: stdinEndSpy }),
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: true,
+      tunnelForwardingEnabled: false,
+    });
+
+    controller.onResultMessage(true);
+
+    // Normal turn: closes immediately without waiting for a grace timer
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+    // No grace timer should have been started
+    vi.advanceTimersByTime(10_000);
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+    controller.cleanup();
+  });
+
+  it('non-interactive runs send the prompt without ending stdin until the result decision', () => {
+    vi.useFakeTimers();
+    const stdinEndSpy = vi.fn(async () => {});
+    const pendingResult = new Promise<SpawnAndLogOutputResult>(() => {});
+
+    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+
+    const controller = executeWithTerminalInput({
+      streaming: makeStreaming({ stdinEnd: stdinEndSpy, result: pendingResult }),
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: false,
+    });
+
+    expect(mockSendInitialPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({ stdin: expect.any(Object) }),
+      'initial prompt'
+    );
+    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+    controller.onResultMessage(true);
+
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(10_000);
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+    controller.cleanup();
+  });
+
+  it('non-interactive runs close on first result even when keepInteractiveInputOpenOnResult is true', () => {
+    vi.useFakeTimers();
+    const stdinEndSpy = vi.fn(async () => {});
+    const pendingResult = new Promise<SpawnAndLogOutputResult>(() => {});
+
+    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+
+    const controller = executeWithTerminalInput({
+      streaming: makeStreaming({ stdinEnd: stdinEndSpy, result: pendingResult }),
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: false,
+      keepInteractiveInputOpenOnResult: true,
+    });
+
+    controller.onResultMessage(true);
+
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+    controller.cleanup();
+  });
+
+  it('closes on first result when terminal input was requested but did not start', () => {
+    const stdinEndSpy = vi.fn(async () => {});
+
+    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+    mockTerminalInputReaderFactory = (_options: TerminalInputReaderOptions) => ({
+      start: () => false,
+      stop: () => {},
+    });
+
+    const controller = executeWithTerminalInput({
+      streaming: makeStreaming({ stdinEnd: stdinEndSpy }),
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: true,
+      tunnelForwardingEnabled: false,
+      keepInteractiveInputOpenOnResult: true,
+    });
+
+    controller.onResultMessage(true);
+
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+    controller.cleanup();
+  });
+
+  it('interactive runs still keep stdin open on result when keepInteractiveInputOpenOnResult is true', () => {
+    const stdinEndSpy = vi.fn(async () => {});
+
+    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+    mockSendFollowUpMessage.mockImplementation(vi.fn(() => {}));
+    mockTerminalInputReaderFactory = (_options: TerminalInputReaderOptions) => ({
+      start: () => true,
+      stop: () => {},
+    });
+
+    const controller = executeWithTerminalInput({
+      streaming: makeStreaming({ stdinEnd: stdinEndSpy }),
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: true,
+      tunnelForwardingEnabled: false,
+      keepInteractiveInputOpenOnResult: true,
+    });
+
+    controller.onResultMessage(true);
+
+    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+    expect(controller.acceptedSuccessfulFinalResult()).toBe(true);
+
+    controller.observeFormattedMessage({ type: 'assistant' });
+    expect(controller.acceptedSuccessfulFinalResult()).toBe(false);
+
+    controller.cleanup();
+  });
+
+  it('interactive keep-open does not accept failed result as successful completion', () => {
+    const stdinEndSpy = vi.fn(async () => {});
+
+    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+    mockSendFollowUpMessage.mockImplementation(vi.fn(() => {}));
+    mockTerminalInputReaderFactory = (_options: TerminalInputReaderOptions) => ({
+      start: () => true,
+      stop: () => {},
+    });
+
+    const controller = executeWithTerminalInput({
+      streaming: makeStreaming({ stdinEnd: stdinEndSpy }),
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: true,
+      tunnelForwardingEnabled: false,
+      keepInteractiveInputOpenOnResult: true,
+    });
+
+    controller.onResultMessage(false);
+
+    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+    expect(controller.acceptedSuccessfulFinalResult()).toBe(false);
+
+    controller.cleanup();
   });
 });

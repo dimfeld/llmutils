@@ -21,7 +21,6 @@ const mocks = vi.hoisted(() => ({
   setupPermissionsMcp: vi.fn(),
   spawnWithStreamingIO: vi.fn(),
   createLineSplitter: vi.fn(),
-  sendSinglePromptAndWait: vi.fn(),
   extractStructuredMessages: vi.fn(),
   formatJsonMessage: vi.fn(),
   resetToolUseCache: vi.fn(),
@@ -47,7 +46,6 @@ vi.mock('../../logging/tunnel_prompt_handler.js', () => ({
 vi.mock('../../common/process.js', () => ({
   spawnWithStreamingIO: mocks.spawnWithStreamingIO,
   createLineSplitter: mocks.createLineSplitter,
-  sendSinglePromptAndWait: mocks.sendSinglePromptAndWait,
 }));
 vi.mock('../executors/claude_code/format.js', () => ({
   extractStructuredMessages: mocks.extractStructuredMessages,
@@ -82,6 +80,7 @@ describe('subagent claude permissions MCP integration', () => {
   let envSnapshot: Record<string, string | undefined> = {};
   let capturedClaudeSpawnArgs: string[] | undefined;
   let capturedPermissionsMcpSetupOptions: any;
+  let sawResultMessage = false;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -89,6 +88,7 @@ describe('subagent claude permissions MCP integration', () => {
     stdoutWriteCalls = [];
     capturedClaudeSpawnArgs = undefined;
     capturedPermissionsMcpSetupOptions = undefined;
+    sawResultMessage = false;
     restoreIsTTY = null;
     envSnapshot = {
       TIM_NONINTERACTIVE: process.env.TIM_NONINTERACTIVE,
@@ -150,11 +150,13 @@ describe('subagent claude permissions MCP integration', () => {
         return { type: 'assistant', filePaths: ['generated.txt'] };
       }
       if (line === 'RESULT_EVENT') {
+        sawResultMessage = true;
         return { type: 'result', resultText: 'done' };
       }
       try {
         const parsed = JSON.parse(line);
         if (parsed.type === 'result') {
+          sawResultMessage = true;
           return { type: 'result', resultText: parsed.result || '' };
         }
         if (parsed.type === 'assistant') {
@@ -179,20 +181,6 @@ describe('subagent claude permissions MCP integration', () => {
       return createStreamingProcessMock();
     });
     mocks.createLineSplitter.mockReturnValue((input: string) => input.split('\n').filter(Boolean));
-    mocks.sendSinglePromptAndWait.mockImplementation(
-      async (streamingProcess: any, content: string) => {
-        const inputMessage = JSON.stringify({
-          type: 'user',
-          message: {
-            role: 'user',
-            content,
-          },
-        });
-        streamingProcess.stdin.write(`${inputMessage}\n`);
-        await streamingProcess.stdin.end();
-        return streamingProcess.result;
-      }
-    );
     mocks.executeWithTerminalInput.mockImplementation(({ streaming, prompt }: any) => {
       const inputMessage = JSON.stringify({
         type: 'user',
@@ -206,8 +194,9 @@ describe('subagent claude permissions MCP integration', () => {
       return {
         resultPromise: streaming.result,
         onResultMessage: vi.fn(),
-        sendFollowUpMessage: vi.fn(),
-        closeStdin: vi.fn(),
+        notifyBackgroundActivity: vi.fn(() => {}),
+        sendFollowUpForInterceptedResult: vi.fn(),
+        acceptedSuccessfulFinalResult: vi.fn(() => true),
         cleanup: vi.fn(() => {}),
       };
     });

@@ -530,25 +530,25 @@ export class ClaudeCodeExecutor implements Executor {
       },
     });
 
-    if ((result.killedByTimeout || result.killedByInactivity) && !result.seenResultMessage) {
+    if ((result.killedByTimeout || result.killedByInactivity) && !result.acceptedFinalResult) {
       throw new Error(
         `Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes`
       );
     }
 
-    if ((result.killedByTimeout || result.killedByInactivity) && result.seenResultMessage) {
+    if ((result.killedByTimeout || result.killedByInactivity) && result.acceptedFinalResult) {
       log(
-        `Claude review was killed by inactivity timeout, but completed successfully (result message seen)`
+        `Claude review was killed by inactivity timeout, but completed successfully (final result accepted)`
       );
     }
 
-    if (result.exitCode !== 0 && !result.seenResultMessage) {
+    if (result.exitCode !== 0 && !result.acceptedFinalResult) {
       throw new Error(`Claude review exited with non-zero exit code: ${result.exitCode}`);
     }
 
-    if (result.exitCode !== 0 && result.seenResultMessage) {
+    if (result.exitCode !== 0 && result.acceptedFinalResult) {
       log(
-        `Claude review exited with code ${result.exitCode}, but completed successfully (result message seen)`
+        `Claude review exited with code ${result.exitCode}, but completed successfully (final result accepted)`
       );
     } else {
       log('Claude review output captured.');
@@ -762,11 +762,10 @@ export class ClaudeCodeExecutor implements Executor {
       let lastAssistantRaw: string | undefined;
       let failureSummary: string | undefined;
       let failureRaw: string | undefined;
-      let seenResultMessage = false;
+      let acceptedFinalResult = false;
       let retryFollowUpSent = false;
       let resultHandlingPromise: Promise<void> | undefined;
       const followUpPrompts = planInfo.followUpPrompts ?? [];
-      const hasFollowUps = followUpPrompts.length > 0;
       let followUpIndex = 0;
       let resultMessageCount = 0;
       const fastNoopOrchestratorRetryEnabled =
@@ -813,13 +812,15 @@ export class ClaudeCodeExecutor implements Executor {
 
           // Extract file paths and add them to trackedFiles set
           for (const result of formattedResults) {
+            terminalInputResult?.observeFormattedMessage(result);
+
             if (result.type === 'result') {
               resultMessageCount++;
-              seenResultMessage = true;
+              const resultWasSuccessful = result.resultInfo?.success !== false;
               if (followUpIndex < followUpPrompts.length && terminalInputResult) {
                 const nextPrompt = followUpPrompts[followUpIndex];
                 followUpIndex++;
-                terminalInputResult.sendFollowUpMessage(nextPrompt);
+                terminalInputResult.sendFollowUpForInterceptedResult(nextPrompt);
               } else if (
                 fastNoopOrchestratorRetryEnabled &&
                 resultMessageCount === 1 &&
@@ -850,7 +851,7 @@ export class ClaudeCodeExecutor implements Executor {
                         message:
                           'Claude orchestrator finished a single short turn without working copy changes; sending "continue".',
                       });
-                      terminalInputResult.sendFollowUpMessage('continue');
+                      terminalInputResult.sendFollowUpForInterceptedResult('continue');
                       return;
                     }
                   } catch (err) {
@@ -860,14 +861,10 @@ export class ClaudeCodeExecutor implements Executor {
                     );
                   }
 
-                  terminalInputResult.onResultMessage();
-                  terminalInputResult.closeStdin();
+                  terminalInputResult.onResultMessage(resultWasSuccessful);
                 })();
               } else {
-                terminalInputResult?.onResultMessage();
-                if (this.sharedOptions.closeTerminalInputOnResult ?? true) {
-                  terminalInputResult?.closeStdin();
-                }
+                terminalInputResult?.onResultMessage(resultWasSuccessful);
               }
             }
             if (result.filePaths) {
@@ -925,35 +922,33 @@ export class ClaudeCodeExecutor implements Executor {
         tunnelServer,
         terminalInputEnabled: this.sharedOptions.terminalInput === true,
         tunnelForwardingEnabled: isTunnelActive(),
-        closeOnResultMessage:
-          fastNoopOrchestratorRetryEnabled || hasFollowUps
-            ? false
-            : (this.sharedOptions.closeTerminalInputOnResult ?? true),
-        keepStdinOpenWithoutInteractiveInput: fastNoopOrchestratorRetryEnabled || hasFollowUps,
+        keepInteractiveInputOpenOnResult:
+          (this.sharedOptions.closeTerminalInputOnResult ?? true) === false,
       });
 
       const result = await terminalInputResult.resultPromise;
       await resultHandlingPromise;
+      acceptedFinalResult = terminalInputResult.acceptedSuccessfulFinalResult();
 
-      if ((killedByTimeout || result.killedByInactivity) && !seenResultMessage) {
+      if ((killedByTimeout || result.killedByInactivity) && !acceptedFinalResult) {
         throw new Error(
           `Claude execution timed out after ${Math.round(executionTimeoutMs / 60000)} minutes of inactivity`
         );
       }
 
-      if ((killedByTimeout || result.killedByInactivity) && seenResultMessage) {
+      if ((killedByTimeout || result.killedByInactivity) && acceptedFinalResult) {
         log(
-          `Claude execution was killed by inactivity timeout, but completed successfully (result message seen)`
+          `Claude execution was killed by inactivity timeout, but completed successfully (final result accepted)`
         );
       }
 
-      if (result.exitCode !== 0 && !seenResultMessage) {
+      if (result.exitCode !== 0 && !acceptedFinalResult) {
         throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
       }
 
-      if (result.exitCode !== 0 && seenResultMessage) {
+      if (result.exitCode !== 0 && acceptedFinalResult) {
         log(
-          `Claude exited with code ${result.exitCode}, but completed successfully (result message seen)`
+          `Claude exited with code ${result.exitCode}, but completed successfully (final result accepted)`
         );
       }
 

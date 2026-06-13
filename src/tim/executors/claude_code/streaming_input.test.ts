@@ -3,7 +3,6 @@ import type { FileSink } from 'bun';
 import type { SpawnAndLogOutputResult, StreamingProcess } from '../../../common/process.ts';
 import {
   buildSingleUserInputMessageLine,
-  closeStdinAndWait,
   safeEndStdin,
   sendFollowUpMessage,
   sendInitialPrompt,
@@ -66,24 +65,7 @@ describe('streaming_input multi-message helpers', () => {
     expect(stdin.writes).toEqual([buildSingleUserInputMessageLine('Add tests too')]);
   });
 
-  it('closeStdinAndWait closes stdin and returns the subprocess result', async () => {
-    const stdin = createMockFileSink();
-    const result: SpawnAndLogOutputResult = {
-      exitCode: 17,
-      stdout: 'output',
-      stderr: 'error output',
-      signal: null,
-      killedByInactivity: false,
-    };
-    const process = createStreamingProcessMock(stdin, result);
-
-    const resolved = await closeStdinAndWait(process);
-
-    expect(stdin.endCalls).toBe(1);
-    expect(resolved).toEqual(result);
-  });
-
-  it('supports multiple messages before close', async () => {
+  it('supports multiple messages before close', () => {
     const stdin = createMockFileSink();
     const result: SpawnAndLogOutputResult = {
       exitCode: 0,
@@ -97,15 +79,13 @@ describe('streaming_input multi-message helpers', () => {
     sendInitialPrompt(process, 'Initial prompt');
     sendFollowUpMessage(process.stdin, 'Follow-up 1');
     sendFollowUpMessage(process.stdin, 'Follow-up 2');
-    const resolved = await closeStdinAndWait(process);
 
     expect(stdin.writes).toEqual([
       buildSingleUserInputMessageLine('Initial prompt'),
       buildSingleUserInputMessageLine('Follow-up 1'),
       buildSingleUserInputMessageLine('Follow-up 2'),
     ]);
-    expect(stdin.endCalls).toBe(1);
-    expect(resolved).toEqual(result);
+    expect(stdin.endCalls).toBe(0);
   });
 
   it('safeEndStdin catches synchronous end errors', async () => {

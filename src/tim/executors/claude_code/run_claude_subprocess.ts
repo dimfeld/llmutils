@@ -212,8 +212,8 @@ export interface RunClaudeSubprocessOptions {
 }
 
 export interface RunClaudeSubprocessResult {
-  /** Whether a result message was seen in the output stream */
-  seenResultMessage: boolean;
+  /** Whether a successful result message was accepted as final completion. */
+  acceptedFinalResult: boolean;
   /** Whether the process was killed by timeout */
   killedByTimeout: boolean;
   /** The exit code of the subprocess */
@@ -339,7 +339,7 @@ export async function runClaudeSubprocess(
     }
   }
 
-  let seenResultMessage = false;
+  let acceptedFinalResult = false;
   let killedByTimeout = false;
   let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
   let monitorHandle: SubprocessMonitorHandle | undefined;
@@ -440,9 +440,10 @@ export async function runClaudeSubprocess(
 
         // Track result messages and file paths
         for (const formatted of formattedResults) {
+          terminalInputResult?.observeFormattedMessage(formatted);
+
           if (formatted.type === 'result') {
-            seenResultMessage = true;
-            terminalInputResult?.onResultMessage();
+            terminalInputResult?.onResultMessage(formatted.resultInfo?.success !== false);
           }
           if (formatted.filePaths) {
             for (const filePath of formatted.filePaths) {
@@ -484,9 +485,10 @@ export async function runClaudeSubprocess(
     });
 
     const result = await terminalInputResult.resultPromise;
+    acceptedFinalResult = terminalInputResult.acceptedSuccessfulFinalResult();
 
     return {
-      seenResultMessage,
+      acceptedFinalResult,
       killedByTimeout,
       exitCode: result.exitCode,
       killedByInactivity: result.killedByInactivity ?? false,

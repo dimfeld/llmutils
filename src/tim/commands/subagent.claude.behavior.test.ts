@@ -31,7 +31,6 @@ const mocks = vi.hoisted(() => ({
   setupPermissionsMcp: vi.fn(),
   spawnWithStreamingIO: vi.fn(),
   createLineSplitter: vi.fn(),
-  sendSinglePromptAndWait: vi.fn(),
   extractStructuredMessages: vi.fn(),
   formatJsonMessage: vi.fn(),
   resetToolUseCache: vi.fn(),
@@ -79,7 +78,6 @@ vi.mock('../../logging.js', () => ({
 vi.mock('../../common/process.js', () => ({
   spawnWithStreamingIO: mocks.spawnWithStreamingIO,
   createLineSplitter: mocks.createLineSplitter,
-  sendSinglePromptAndWait: mocks.sendSinglePromptAndWait,
 }));
 vi.mock('../executors/claude_code/format.js', () => ({
   extractStructuredMessages: mocks.extractStructuredMessages,
@@ -117,6 +115,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
   let envSnapshot: Record<string, string | undefined> = {};
   let capturedClaudeSpawnArgs: string[] | undefined;
   let capturedSpawnEnv: Record<string, string> | undefined;
+  let sawResultMessage = false;
   let createTunnelServerCalls: string[] = [];
   let createTunnelServerOptions: any[] = [];
   let tunnelCloseCallCount = 0;
@@ -138,6 +137,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
     stdoutWriteCalls = [];
     capturedClaudeSpawnArgs = undefined;
     capturedSpawnEnv = undefined;
+    sawResultMessage = false;
     createTunnelServerCalls = [];
     createTunnelServerOptions = [];
     tunnelCloseCallCount = 0;
@@ -220,6 +220,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
       try {
         const parsed = JSON.parse(line);
         if (parsed.type === 'result') {
+          sawResultMessage = true;
           return { type: 'result', resultText: parsed.result || '' };
         }
         if (parsed.type === 'assistant') {
@@ -245,20 +246,6 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
       return createStreamingProcessMock();
     });
     mocks.createLineSplitter.mockReturnValue((input: string) => input.split('\n').filter(Boolean));
-    mocks.sendSinglePromptAndWait.mockImplementation(
-      async (streamingProcess: any, content: string) => {
-        const inputMessage = JSON.stringify({
-          type: 'user',
-          message: {
-            role: 'user',
-            content,
-          },
-        });
-        streamingProcess.stdin.write(`${inputMessage}\n`);
-        await streamingProcess.stdin.end();
-        return streamingProcess.result;
-      }
-    );
     mocks.executeWithTerminalInput.mockImplementation(({ streaming, prompt }: any) => {
       const inputMessage = JSON.stringify({
         type: 'user',
@@ -269,11 +256,15 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
       });
       streaming.stdin.write(`${inputMessage}\n`);
       void streaming.stdin.end();
+      let acceptedFinalResult = false;
       return {
         resultPromise: streaming.result,
-        onResultMessage: vi.fn(),
-        sendFollowUpMessage: vi.fn(),
-        closeStdin: vi.fn(),
+        onResultMessage: vi.fn((resultWasSuccessful: boolean) => {
+          acceptedFinalResult = resultWasSuccessful;
+        }),
+        observeFormattedMessage: vi.fn(() => {}),
+        sendFollowUpForInterceptedResult: vi.fn(),
+        acceptedSuccessfulFinalResult: vi.fn(() => acceptedFinalResult),
         cleanup: vi.fn(() => {}),
       };
     });
@@ -497,15 +488,25 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
 
   test('non-zero exit code is tolerated when a result message was received', async () => {
     mocks.spawnWithStreamingIO.mockImplementationOnce(async (_args: string[], opts: any) => {
-      if (opts?.formatStdout) {
+      const process = createStreamingProcessMock({ exitCode: 1 });
+      process.result = new Promise((resolve) => {
         const resultJson = JSON.stringify({
           type: 'result',
           subtype: 'success',
           result: 'Completed despite exit code.',
         });
-        opts.formatStdout(resultJson + '\n');
-      }
-      return createStreamingProcessMock({ exitCode: 1 });
+        setTimeout(() => {
+          opts?.formatStdout?.(resultJson + '\n');
+          resolve({
+            exitCode: 1,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: false,
+          });
+        }, 0);
+      });
+      return process;
     });
 
     await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
@@ -526,15 +527,25 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
 
   test('timeout is tolerated when a result message was received', async () => {
     mocks.spawnWithStreamingIO.mockImplementationOnce(async (_args: string[], opts: any) => {
-      if (opts?.formatStdout) {
+      const process = createStreamingProcessMock({ killedByInactivity: true });
+      process.result = new Promise((resolve) => {
         const resultJson = JSON.stringify({
           type: 'result',
           subtype: 'success',
           result: 'Completed before timeout.',
         });
-        opts.formatStdout(resultJson + '\n');
-      }
-      return createStreamingProcessMock({ killedByInactivity: true });
+        setTimeout(() => {
+          opts?.formatStdout?.(resultJson + '\n');
+          resolve({
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: true,
+          });
+        }, 0);
+      });
+      return process;
     });
 
     await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});

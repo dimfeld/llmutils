@@ -160,8 +160,9 @@ describe('Batch Mode Integration Tests', () => {
     mocks.executeWithTerminalInput.mockImplementation((options: any) => ({
       resultPromise: options.streaming.result,
       onResultMessage: vi.fn(),
-      sendFollowUpMessage: vi.fn(),
-      closeStdin: vi.fn(),
+      notifyBackgroundActivity: vi.fn(() => {}),
+      sendFollowUpForInterceptedResult: vi.fn(),
+      acceptedSuccessfulFinalResult: vi.fn(() => true),
       cleanup: vi.fn(),
     }));
     mocks.createLineSplitter.mockImplementation(() => (output: string) => output.split('\n'));
@@ -195,7 +196,7 @@ describe('Batch Mode Integration Tests', () => {
       cleanup: vi.fn(async () => {}),
     });
     mocks.runClaudeSubprocess.mockResolvedValue({
-      seenResultMessage: true,
+      acceptedFinalResult: true,
       killedByTimeout: false,
       exitCode: 0,
       killedByInactivity: false,

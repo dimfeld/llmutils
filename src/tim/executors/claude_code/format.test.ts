@@ -583,6 +583,201 @@ describe('formatJsonMessage', () => {
       );
     });
 
+    describe('background-activity lifecycle signals', () => {
+      test('task_started emits task_started backgroundActivity signal', () => {
+        const msg = JSON.stringify({
+          type: 'system',
+          subtype: 'task_started',
+          task_id: 'abc123',
+          description: 'Run tests',
+          task_type: 'local_bash',
+          uuid: 'uuid-1',
+          session_id: 'test-session',
+        });
+
+        const result = formatJsonMessage(msg);
+        expect(result.backgroundActivity).toEqual({ kind: 'task_started', taskId: 'abc123' });
+      });
+
+      test('task_notification emits task_stopped backgroundActivity signal', () => {
+        const msg = JSON.stringify({
+          type: 'system',
+          subtype: 'task_notification',
+          task_id: 'bff49b0',
+          status: 'stopped',
+          output_file: '/tmp/claude/tasks/bff49b0.output',
+          summary: 'Task finished',
+          session_id: 'test-session',
+        });
+
+        const result = formatJsonMessage(msg);
+        expect(result.backgroundActivity).toEqual({ kind: 'task_stopped', taskId: 'bff49b0' });
+      });
+
+      test('task_updated with is_backgrounded (no end_time) formats output without lifecycle signal', () => {
+        const msg = JSON.stringify({
+          type: 'system',
+          subtype: 'task_updated',
+          task_id: 'b513hp9pk',
+          patch: { is_backgrounded: true },
+          uuid: '8079d56b-37d0-4ad8-8be4-fe7be74b4662',
+          session_id: '3909d0ce-e9e7-4fde-95f6-c22859067c00',
+        });
+
+        const result = formatJsonMessage(msg);
+        expect(result.backgroundActivity).toBeUndefined();
+        expect(result.type).toBe('system');
+        expect(result.structured).toEqual(
+          expect.objectContaining({
+            type: 'workflow_progress',
+            phase: 'task_updated',
+            message: expect.stringContaining('moved to background'),
+          })
+        );
+        expect(result.message).toContain('task_updated');
+      });
+
+      test('task_updated with end_time and status completed emits task_stopped', () => {
+        const msg = JSON.stringify({
+          type: 'system',
+          subtype: 'task_updated',
+          task_id: 'task-xyz',
+          patch: { status: 'completed', end_time: 1781304251000 },
+          uuid: 'uuid-2',
+          session_id: 'test-session',
+        });
+
+        const result = formatJsonMessage(msg);
+        expect(result.backgroundActivity).toEqual({ kind: 'task_stopped', taskId: 'task-xyz' });
+        expect(result.structured).toEqual(
+          expect.objectContaining({
+            type: 'workflow_progress',
+            phase: 'task_updated',
+            message: expect.stringContaining('task-xyz'),
+          })
+        );
+        expect((result.structured as { message: string }).message).toContain('completed');
+      });
+
+      test('task_updated with end_time and status failed emits task_stopped', () => {
+        const msg = JSON.stringify({
+          type: 'system',
+          subtype: 'task_updated',
+          task_id: 'task-fail',
+          patch: { status: 'failed', end_time: 1781304251001 },
+          uuid: 'uuid-3',
+          session_id: 'test-session',
+        });
+
+        const result = formatJsonMessage(msg);
+        expect(result.backgroundActivity).toEqual({ kind: 'task_stopped', taskId: 'task-fail' });
+        expect(result.structured).toEqual(
+          expect.objectContaining({
+            type: 'workflow_progress',
+            phase: 'task_updated',
+            message: expect.stringContaining('task-fail'),
+          })
+        );
+        expect((result.structured as { message: string }).message).toContain('failed');
+      });
+
+      test('task_updated with end_time and status killed emits task_stopped', () => {
+        const msg = JSON.stringify({
+          type: 'system',
+          subtype: 'task_updated',
+          task_id: 'b513hp9pk',
+          patch: { status: 'killed', end_time: 1781304251734 },
+          uuid: 'a5f9d6a8-ac25-4a01-897c-ee3e92c04464',
+          session_id: '3909d0ce-e9e7-4fde-95f6-c22859067c00',
+        });
+
+        const result = formatJsonMessage(msg);
+        expect(result.backgroundActivity).toEqual({ kind: 'task_stopped', taskId: 'b513hp9pk' });
+        expect(result.structured).toEqual(
+          expect.objectContaining({
+            type: 'workflow_progress',
+            phase: 'task_updated',
+            message: expect.stringContaining('killed'),
+          })
+        );
+      });
+
+      test('task_updated with no end_time and no is_backgrounded has no backgroundActivity', () => {
+        const msg = JSON.stringify({
+          type: 'system',
+          subtype: 'task_updated',
+          task_id: 'task-abc',
+          patch: { status: 'running' },
+          uuid: 'uuid-4',
+          session_id: 'test-session',
+        });
+
+        const result = formatJsonMessage(msg);
+        expect(result.backgroundActivity).toBeUndefined();
+        expect(result.structured).toEqual(
+          expect.objectContaining({
+            type: 'workflow_progress',
+            phase: 'task_updated',
+          })
+        );
+      });
+
+      test('ScheduleWakeup tool use emits wakeup_scheduled backgroundActivity signal', () => {
+        const msg = toolUseMessage({
+          id: 'wakeup-1',
+          name: 'ScheduleWakeup',
+          input: {
+            delaySeconds: 270,
+            reason: 'Waiting on background tester subagent for task 3 to finish',
+            prompt: '<<autonomous-loop-dynamic>>',
+          },
+        });
+
+        const result = formatJsonMessage(msg);
+        expect(result.backgroundActivity).toEqual({ kind: 'wakeup_scheduled' });
+        expect(result.structured).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: 'workflow_progress',
+              phase: 'wakeup_scheduled',
+              message: expect.stringContaining('270s'),
+            }),
+          ])
+        );
+        expect(result.message).toContain('wakeup_scheduled');
+      });
+
+      test('ScheduleWakeup console message includes reason', () => {
+        const msg = toolUseMessage({
+          id: 'wakeup-2',
+          name: 'ScheduleWakeup',
+          input: {
+            delaySeconds: 120,
+            reason: 'Polling CI results',
+            prompt: '<<autonomous-loop-dynamic>>',
+          },
+        });
+
+        const result = formatJsonMessage(msg);
+        const structured = (result.structured as Array<{ message?: string }>).find((s) =>
+          s.message?.includes('wakeup')
+        );
+        expect(structured?.message).toContain('120s');
+        expect(structured?.message).toContain('Polling CI results');
+      });
+
+      test('ScheduleWakeup without reason still emits wakeup_scheduled', () => {
+        const msg = toolUseMessage({
+          id: 'wakeup-3',
+          name: 'ScheduleWakeup',
+          input: { delaySeconds: 60, prompt: '<<autonomous-loop-dynamic>>' },
+        });
+
+        const result = formatJsonMessage(msg);
+        expect(result.backgroundActivity).toEqual({ kind: 'wakeup_scheduled' });
+      });
+    });
+
     test('handles status messages with compacting status', () => {
       const statusMessage = JSON.stringify({
         type: 'system',
