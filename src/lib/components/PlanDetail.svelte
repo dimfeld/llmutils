@@ -293,9 +293,9 @@
         if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
         primary = menuItems.shift()!;
       } else {
-        // Eligible for Generate: surface both "Run Agent" and "Generate" as their
-        // own standalone buttons (not buried in the dropdown).
-        fixedActions = [agentItem, generateItem, autoreviewItem, shellItem];
+        // Taskless, non-simple plans should be generated before running an agent, so surface
+        // only "Generate" as a standalone button and omit "Run Agent" entirely.
+        fixedActions = [generateItem, autoreviewItem, shellItem];
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
         menuItems.push(chatItem);

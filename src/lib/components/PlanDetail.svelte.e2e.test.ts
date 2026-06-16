@@ -271,7 +271,7 @@ describe('PlanDetail action selection', () => {
       .not.toBeInTheDocument();
   });
 
-  test('shows Run Agent and Generate as standalone buttons for a taskless non-simple plan', async () => {
+  test('shows only Generate (no Run Agent) for a taskless non-simple plan', async () => {
     const screen = renderPlan(
       makePlanDetail({
         status: 'in_progress',
@@ -286,13 +286,13 @@ describe('PlanDetail action selection', () => {
     await expect
       .element(page.getByRole('button', { name: 'Actions', exact: true }))
       .toBeInTheDocument();
-    // Run Agent and Generate are standalone buttons, not buried in the dropdown.
-    await expect
-      .element(page.getByRole('button', { name: 'Run Agent', exact: true }))
-      .toBeInTheDocument();
+    // Generate is a standalone button; Run Agent is not offered for taskless non-simple plans.
     await expect
       .element(page.getByRole('button', { name: 'Generate', exact: true }))
       .toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: 'Run Agent', exact: true }))
+      .not.toBeInTheDocument();
     await expect
       .element(page.getByRole('button', { name: 'Autoreview', exact: true }))
       .toBeInTheDocument();
@@ -300,7 +300,7 @@ describe('PlanDetail action selection', () => {
       .element(page.getByRole('button', { name: 'Shell', exact: true }))
       .toBeInTheDocument();
     await screen.getByRole('button', { name: 'Actions', exact: true }).click();
-    // Run Agent and Generate are not also in the dropdown.
+    // Run Agent and Generate are not in the dropdown either.
     await expect.element(page.getByRole('menuitem', { name: 'Run Agent' })).not.toBeInTheDocument();
     await expect.element(page.getByRole('menuitem', { name: 'Generate' })).not.toBeInTheDocument();
   });
@@ -317,9 +317,10 @@ describe('PlanDetail action selection', () => {
       })
     );
 
+    // Taskless non-simple plans only offer Generate, not Run Agent.
     await expect
       .element(page.getByRole('button', { name: 'Run Agent', exact: true }))
-      .toBeInTheDocument();
+      .not.toBeInTheDocument();
     await expect
       .element(page.getByRole('button', { name: 'Generate', exact: true }))
       .toBeInTheDocument();
