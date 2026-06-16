@@ -172,6 +172,15 @@ Above all, be **ambitious** about code structure. Do not merely identify local c
 
 7. **Flag avoidable orchestration complexity.** If independent work is serialized for no good reason, ask whether the flow should run in parallel. If related updates can leave state half-applied, push for a more atomic structure. Do not over-index on micro-optimizations, but do flag avoidable orchestration that makes the implementation more brittle.
 
+## Test code is different — do not over-abstract tests
+
+Test files follow different standards than production code. Optimize tests for **readability and obviousness at the point of failure**, not for DRY-ness. The standards above (especially the 1000-line boundary and aggressive helper extraction) are much weaker for test files.
+
+- **Repetition in tests is usually fine, and often better than abstraction.** A series of similar tests that each set up their own fixtures, perform their action, and assert inline is the normal, healthy shape of a test suite. Do NOT flag near-identical tests merely because they repeat setup, fixture creation, or assertion patterns. Explicit, self-contained tests are easier to read and debug than tests routed through layers of shared helpers.
+- **A modest amount of per-test helper usage is already good structure.** If a test uses a few helper functions for setup and then makes its assertions, that is the target state — do not push for further consolidation into parameterized loops, scenario tables, or "load everything" mega-helpers. That kind of abstraction hides what each test actually does and makes failures harder to diagnose.
+- **Test file length and per-test boilerplate are not, by themselves, structural smells.** A long integration test file made of straightforward, repetitive tests is acceptable. Do not raise findings whose core complaint is "this adds bulk" or "these tests are near-identical."
+- **Only flag test structure when it genuinely hurts.** Legitimate test findings: setup so convoluted it obscures what is being tested; copy-pasted logic with subtle, error-prone differences between copies; a test that asserts nothing meaningful; shared mutable state that couples tests together. Do NOT flag tests just because a helper *could* remove some duplication.
+
 ## Primary review questions
 
 For every meaningful change, ask:

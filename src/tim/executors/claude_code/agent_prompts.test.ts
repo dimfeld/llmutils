@@ -114,6 +114,15 @@ describe('agent_prompts failure protocol integration', () => {
     expect(guidance).not.toContain('Aim for at most 8-10 findings');
   });
 
+  it('tells reviewers not to over-abstract test code', () => {
+    const guidance = buildReviewerSimplificationGuidance();
+    expect(guidance).toContain('Test code is different');
+    expect(guidance).toContain('Repetition in tests is usually fine');
+    expect(guidance).toContain(
+      'Do NOT flag near-identical tests merely because they repeat setup'
+    );
+  });
+
   it('does not encourage reviewer prompts to stop after a small sample of findings', () => {
     const def = getReviewerPrompt(context);
     expect(def.prompt).toContain('Report every high-confidence actionable issue');
