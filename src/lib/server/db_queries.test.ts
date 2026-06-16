@@ -493,6 +493,41 @@ describe('lib/server/db_queries', () => {
     expect(dependentPlan?.depsFullyResolved).toBe(false);
   });
 
+  test('getPlansForProject blocks a pending plan whose base plan has not reached review', () => {
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'plan-pending-base',
+      planId: 125,
+      title: 'Pending base plan',
+      goal: 'Base branch has not progressed to review',
+      status: 'in_progress',
+      priority: 'high',
+      filename: '125-pending-base.plan.md',
+      sourceCreatedAt: daysAgo(5),
+      sourceUpdatedAt: daysAgo(1),
+    });
+
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'plan-based-on-pending',
+      planId: 126,
+      title: 'Plan based on a pending base plan',
+      goal: 'Should be blocked until the base reaches review',
+      status: 'pending',
+      priority: 'medium',
+      filename: '126-based-on-pending.plan.md',
+      sourceCreatedAt: daysAgo(5),
+      sourceUpdatedAt: daysAgo(1),
+      basePlanUuid: 'plan-pending-base',
+    });
+
+    const plans = getPlansForProject(db, projectId);
+    const dependentPlan = plans.find((plan) => plan.uuid === 'plan-based-on-pending');
+
+    expect(dependentPlan).toBeDefined();
+    expect(dependentPlan?.status).toBe('pending');
+    expect(dependentPlan?.displayStatus).toBe('blocked');
+    expect(dependentPlan?.depsFullyResolved).toBe(false);
+  });
+
   test('getPlansForProject requires every dependency to be fully resolved', () => {
     nonSyncedUpsertPlan(db, projectId, {
       uuid: 'plan-reviewed-dep-mixed',

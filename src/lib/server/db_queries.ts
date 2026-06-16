@@ -463,8 +463,13 @@ function computeDisplayStatus(
   now = Date.now()
 ): PlanDisplayStatus {
   if (!plan.epic && (plan.status === 'pending' || plan.status === 'in_progress')) {
-    const hasUnresolvedDependency = dependencyRows.some((dependency) => {
-      const dependencyPlan = planByUuid.get(dependency.depends_on_uuid);
+    const dependencyUuids = dependencyRows.map((dependency) => dependency.depends_on_uuid);
+    if (plan.base_plan_uuid) {
+      dependencyUuids.push(plan.base_plan_uuid);
+    }
+
+    const hasUnresolvedDependency = dependencyUuids.some((dependencyUuid) => {
+      const dependencyPlan = planByUuid.get(dependencyUuid);
       return dependencyPlan == null || !isWorkCompleteStatus(dependencyPlan.status);
     });
 
