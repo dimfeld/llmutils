@@ -144,7 +144,7 @@
     <div class="flex flex-col gap-1">
       {#each prompt.promptConfig.choices ?? [] as choice}
         <label
-          class="flex cursor-pointer items-center gap-2 rounded px-2 py-1 transition-colors hover:bg-gray-700"
+          class="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 transition-colors hover:bg-gray-700"
         >
           <input
             type="radio"
@@ -152,12 +152,14 @@
             value={choice.value}
             checked={selectedValue === choice.value}
             onchange={() => (selectedValue = choice.value)}
-            class="text-blue-600"
+            class="mt-1 text-blue-600"
           />
-          <span class="text-sm text-gray-200">{choice.name}</span>
-          {#if choice.description}
-            <span class="text-xs text-gray-500">{choice.description}</span>
-          {/if}
+          <span class="flex min-w-0 flex-col gap-0.5">
+            <span class="text-sm font-medium text-gray-200">{choice.name}</span>
+            {#if choice.description}
+              <span class="text-sm leading-snug text-gray-400">{choice.description}</span>
+            {/if}
+          </span>
         </label>
       {/each}
       <button
@@ -173,18 +175,20 @@
     <div class="flex flex-col gap-1">
       {#each prompt.promptConfig.choices ?? [] as choice}
         <label
-          class="flex cursor-pointer items-center gap-2 rounded px-2 py-1 transition-colors hover:bg-gray-700"
+          class="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 transition-colors hover:bg-gray-700"
         >
           <input
             type="checkbox"
             checked={checkedValues.has(choice.value)}
             onchange={() => toggleChecked(choice.value)}
-            class="text-blue-600"
+            class="mt-1 text-blue-600"
           />
-          <span class="text-sm text-gray-200">{choice.name}</span>
-          {#if choice.description}
-            <span class="text-xs text-gray-500">{choice.description}</span>
-          {/if}
+          <span class="flex min-w-0 flex-col gap-0.5">
+            <span class="text-sm font-medium text-gray-200">{choice.name}</span>
+            {#if choice.description}
+              <span class="text-sm leading-snug text-gray-400">{choice.description}</span>
+            {/if}
+          </span>
         </label>
       {/each}
       <button

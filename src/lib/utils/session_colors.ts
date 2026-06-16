@@ -4,8 +4,10 @@ import type { DisplayCategory } from './message_formatting.js';
 export function categoryColorClass(category: MessageCategory | DisplayCategory): string {
   switch (category) {
     case 'lifecycle':
-    case 'llmOutput':
       return 'text-green-400';
+    case 'llmOutput':
+      // Agent responses render as markdown in a near-white color for readability.
+      return 'text-gray-100';
     case 'toolUse':
     case 'fileChange':
     case 'command':

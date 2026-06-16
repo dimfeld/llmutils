@@ -13,6 +13,7 @@
   } from './session_message_truncation.js';
   import ExecutionSummaryDisplay from './ExecutionSummaryDisplay.svelte';
   import ReviewResultDisplay from './ReviewResultDisplay.svelte';
+  import MarkdownContent from './MarkdownContent.svelte';
 
   let {
     message,
@@ -100,6 +101,9 @@
   });
 
   let isToolUseValues = $derived(displayCategory === 'toolUse');
+
+  // Agent responses are rendered as markdown rather than plain preformatted text.
+  let isLlmOutput = $derived(displayCategory === 'llmOutput');
 </script>
 
 <div
@@ -113,7 +117,11 @@
   {:else if message.body.type === 'structured' && message.body.message.type === 'execution_summary'}
     <ExecutionSummaryDisplay message={message.body.message} />
   {:else if renderBody?.type === 'text'}
-    <span class="whitespace-pre-wrap">{displayText}</span>
+    {#if isLlmOutput}
+      <MarkdownContent content={displayText} class="inline-block align-top" />
+    {:else}
+      <span class="whitespace-pre-wrap">{displayText}</span>
+    {/if}
     {#if isTruncatable}
       <button
         type="button"
