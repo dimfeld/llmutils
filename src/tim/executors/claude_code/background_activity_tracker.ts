@@ -21,6 +21,7 @@ export interface BackgroundActivityTrackerOptions {
 export class BackgroundActivityTracker {
   private readonly activeTasks = new Set<string>();
   private readonly taskTimeoutTimers = new Map<string, TimerHandle>();
+  private readonly taskTimeoutMs = new Map<string, number>();
   private wakeupPending = false;
   private everDeferred = false;
   private pendingResultSuccessful: boolean | undefined;
@@ -58,7 +59,9 @@ export class BackgroundActivityTracker {
     this.invalidateAcceptedFinalResult();
     this.activeTasks.add(id);
     this.everDeferred = true;
-    this.scheduleTaskTimeout(id, this.getTaskTimeoutMs(info));
+    const timeoutMs = this.getTaskTimeoutMs(info);
+    this.taskTimeoutMs.set(id, timeoutMs);
+    this.scheduleTaskTimeout(id, timeoutMs);
     this.cancelGraceTimer();
   }
 
@@ -68,8 +71,22 @@ export class BackgroundActivityTracker {
     }
 
     this.activeTasks.delete(id);
+    this.taskTimeoutMs.delete(id);
     this.cancelTaskTimeout(id);
     this.evaluateDrain();
+  }
+
+  /**
+   * A still-active backgrounded task reported progress. Treat it as a sign of
+   * life and push out its hard stall deadline so a task that is genuinely making
+   * progress (while the main agent is otherwise quiet) is not force-closed.
+   */
+  taskProgress(id: string): void {
+    if (this.closed) {
+      return;
+    }
+
+    this.resetTaskTimeout(id);
   }
 
   wakeupScheduled(): void {
@@ -84,10 +101,17 @@ export class BackgroundActivityTracker {
   }
 
   onTurnActivity(): void {
-    if (
-      this.closed ||
-      (this.pendingResultSuccessful === undefined && !this.acceptedFinalSuccessfulResult)
-    ) {
+    if (this.closed) {
+      return;
+    }
+
+    // Turn activity (an assistant/user message) is a sign of life for the whole
+    // session: as long as turns keep flowing we should not let a backgrounded
+    // task's hard stall deadline force the session closed. Reset the deadline so
+    // it only fires after a full window of genuine inactivity.
+    this.resetActiveTaskTimeouts();
+
+    if (this.pendingResultSuccessful === undefined && !this.acceptedFinalSuccessfulResult) {
       return;
     }
 
@@ -182,13 +206,55 @@ export class BackgroundActivityTracker {
     this.cancelTaskTimeout(id);
     const handle = this.setTimeoutFn((): void => {
       this.taskTimeoutTimers.delete(id);
-      if (this.closed) {
-        return;
-      }
-      this.activeTasks.delete(id);
-      this.evaluateDrain();
+      this.onTaskTimedOut(id);
     }, timeoutMs);
     this.taskTimeoutTimers.set(id, handle);
+  }
+
+  /**
+   * A backgrounded task's hard stall deadline elapsed. Unlike a normal
+   * taskEnded(), this drains toward close even when no result message is pending
+   * for the current turn (pendingResultSuccessful === undefined). Otherwise a
+   * stalled task whose post-result window was cleared by a continuation would
+   * keep the session open indefinitely.
+   */
+  private onTaskTimedOut(id: string): void {
+    this.taskTimeoutMs.delete(id);
+    if (this.closed) {
+      return;
+    }
+
+    this.activeTasks.delete(id);
+
+    if (this.hasPendingActivity()) {
+      this.cancelGraceTimer();
+      return;
+    }
+
+    if (!this.everDeferred) {
+      return;
+    }
+
+    this.startGraceTimer();
+  }
+
+  private resetTaskTimeout(id: string): void {
+    if (!this.activeTasks.has(id)) {
+      return;
+    }
+
+    const timeoutMs = this.taskTimeoutMs.get(id);
+    if (timeoutMs === undefined) {
+      return;
+    }
+
+    this.scheduleTaskTimeout(id, timeoutMs);
+  }
+
+  private resetActiveTaskTimeouts(): void {
+    for (const id of this.activeTasks) {
+      this.resetTaskTimeout(id);
+    }
   }
 
   private cancelTaskTimeout(id: string): void {
@@ -206,6 +272,7 @@ export class BackgroundActivityTracker {
       this.clearTimeoutFn(handle);
     }
     this.taskTimeoutTimers.clear();
+    this.taskTimeoutMs.clear();
   }
 
   private evaluateDrain(): void {

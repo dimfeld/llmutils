@@ -502,4 +502,79 @@ describe('BackgroundActivityTracker', () => {
 
     expect(timer.getLastScheduledMs()).toBe(DEFAULT_BACKGROUND_TASK_TIMEOUT_MS);
   });
+
+  it('closes a stalled task when its timeout fires after a continuation cleared the result window', () => {
+    const { tracker, timer, onClose } = makeTracker();
+
+    tracker.taskStarted('task-bg');
+    const timeoutHandle = timer.getLastHandle();
+    expect(timeoutHandle).toBeDefined();
+
+    // Turn produced a result, but the task is still active so we defer closing.
+    tracker.onResultMessage(true);
+    // A continuation supersedes the result window, leaving pendingResultSuccessful undefined.
+    tracker.onContinuationStarted();
+
+    // The backgrounded task is now stalled; its hard timeout eventually fires.
+    timer.fireHandle(timeoutHandle!);
+    expect(onClose).toHaveBeenCalledTimes(0);
+    expect(timer.hasPending()).toBe(true);
+
+    timer.fire();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // A timed-out stall is not a successful final result.
+    expect(tracker.acceptedSuccessfulFinalResult()).toBe(false);
+  });
+
+  it('resets an active task timeout on new turn activity', () => {
+    const { tracker, timer, onClose } = makeTracker();
+
+    tracker.taskStarted('task-1');
+    const firstHandle = timer.getLastHandle();
+    expect(firstHandle).toBeDefined();
+
+    tracker.onTurnActivity();
+    const secondHandle = timer.getLastHandle();
+
+    expect(secondHandle).not.toBe(firstHandle);
+    expect(timer.getLastScheduledMs()).toBe(DEFAULT_BACKGROUND_TASK_TIMEOUT_MS);
+
+    // The original (now superseded) timeout no longer fires anything.
+    timer.fireHandle(firstHandle!);
+    expect(onClose).toHaveBeenCalledTimes(0);
+  });
+
+  it('resets an active task timeout on task progress', () => {
+    const { tracker, timer, onClose } = makeTracker();
+
+    tracker.taskStarted('task-1');
+    const firstHandle = timer.getLastHandle();
+
+    tracker.taskProgress('task-1');
+    const secondHandle = timer.getLastHandle();
+
+    expect(secondHandle).not.toBe(firstHandle);
+    expect(timer.getLastScheduledMs()).toBe(DEFAULT_BACKGROUND_TASK_TIMEOUT_MS);
+
+    // Progress for an unknown/ended task is a no-op.
+    tracker.taskProgress('unknown');
+    timer.fireHandle(firstHandle!);
+    expect(onClose).toHaveBeenCalledTimes(0);
+  });
+
+  it('preserves the per-task timeout duration across resets', () => {
+    const { tracker, timer } = makeTracker();
+
+    tracker.taskStarted('task-dev-server', {
+      taskType: 'local_bash',
+      description: 'Start the DEV server for visual checks',
+    });
+    expect(timer.getLastScheduledMs()).toBe(DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS);
+
+    tracker.onTurnActivity();
+    expect(timer.getLastScheduledMs()).toBe(DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS);
+
+    tracker.taskProgress('task-dev-server');
+    expect(timer.getLastScheduledMs()).toBe(DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS);
+  });
 });

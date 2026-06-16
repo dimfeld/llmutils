@@ -314,6 +314,9 @@ export function executeWithTerminalInput(
       case 'task_stopped':
         backgroundActivityTracker.taskEnded(signal.taskId);
         return;
+      case 'task_progress':
+        backgroundActivityTracker.taskProgress(signal.taskId);
+        return;
       case 'wakeup_scheduled':
         backgroundActivityTracker.wakeupScheduled();
         return;

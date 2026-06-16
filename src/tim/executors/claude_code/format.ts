@@ -171,6 +171,7 @@ export type Message =
 export type BackgroundActivitySignal =
   | { kind: 'task_started'; taskId: string; taskType?: string; description?: string }
   | { kind: 'task_stopped'; taskId: string }
+  | { kind: 'task_progress'; taskId: string }
   | { kind: 'wakeup_scheduled' };
 
 export interface FormattedClaudeMessage {
@@ -461,6 +462,7 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
 
     return withMessage({
       type: message.type,
+      backgroundActivity: { kind: 'task_progress', taskId: message.task_id },
       structured: {
         type: 'workflow_progress',
         timestamp: timestamp(),
