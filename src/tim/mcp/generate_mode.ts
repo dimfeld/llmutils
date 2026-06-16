@@ -308,6 +308,8 @@ Consider splitting when:
 
 Aim small. Each child plan should ideally land as a PR of a few hundred lines of code where that is feasible — smaller, tightly-scoped PRs are far easier to review and merge than large ones. Prefer splitting work into more, smaller plans rather than fewer, larger ones, as long as each plan still delivers a complete, independently testable slice. If a proposed child plan looks like it would grow well past a few hundred lines, look for a further split before settling on it.
 
+Once you have an initial split, take a second pass over it and try to come up with an even more granular plan that makes truly small PRs, if feasible. For each proposed child plan, ask whether it could reasonably be broken into two or more even smaller plans that each still deliver a complete, independently testable slice — and if so, prefer that finer-grained split. Only stop subdividing when a further split would leave plans that are no longer independently meaningful or would add more coordination overhead than the smaller size is worth.
+
 The user may prefer to split vertically by functional areas, or horizontally (e.g. backend foundation followed by UI), or both. Surface the tradeoffs in your proposal.
 
 If the user approves the split, the main agent should create each child plan using 'tim add' (see the using-tim skill) with appropriate title, goal, initial details, and priority. Then:
@@ -499,6 +501,8 @@ Consider splitting when:
 5. The changes would otherwise add up to a large PR. Reviewability is important.
 
 Aim small. Each child plan should ideally land as a PR of a few hundred lines of code where that is feasible — smaller, tightly-scoped PRs are far easier to review and merge than large ones. Prefer splitting work into more, smaller plans rather than fewer, larger ones, as long as each plan still delivers a complete, independently testable slice. If a proposed child plan looks like it would grow well past a few hundred lines, look for a further split before settling on it.
+
+Once you have an initial split, take a second pass over it and try to come up with an even more granular plan that makes truly small PRs, if feasible. For each proposed child plan, ask whether it could reasonably be broken into two or more even smaller plans that each still deliver a complete, independently testable slice — and if so, prefer that finer-grained split. Only stop subdividing when a further split would leave plans that are no longer independently meaningful or would add more coordination overhead than the smaller size is worth.
 
 If the user approves the split, the main agent should create each child plan using 'tim add' (see the using-tim skill) with appropriate title, goal, initial details, and priority. Then:
 - Each new child plan will get its own plan number, returned by \`tim add\`
