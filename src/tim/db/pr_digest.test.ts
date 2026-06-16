@@ -46,6 +46,7 @@ describe('tim db/pr_digest', () => {
           pr_number: 1,
           title: 'PR 1',
           author: 'author-1',
+          is_stacked: 0,
           approved_at: '2026-01-01T10:00:00.000Z',
         },
       ]);
@@ -62,6 +63,34 @@ describe('tim db/pr_digest', () => {
           approved_at: null,
         }),
       ]);
+    });
+
+    test('marks PRs stacked on another open PR and exposes the base branch', () => {
+      // Base PR whose head branch is the stacked PR's base.
+      insertPr(20, { reviewDecision: 'APPROVED', headBranch: 'feature-base', baseBranch: 'main' });
+      // Stacked PR: its base is the open base PR's head branch.
+      insertPr(21, {
+        reviewDecision: 'APPROVED',
+        baseBranch: 'feature-base',
+        headBranch: 'feature-top',
+      });
+      // Targets default branch -> not stacked.
+      insertPr(22, { reviewDecision: 'APPROVED', baseBranch: 'main', headBranch: 'feature-solo' });
+      // Base branch matches a closed PR's head branch -> not stacked (only open PRs count).
+      insertPr(23, { reviewDecision: 'APPROVED', state: 'closed', headBranch: 'old-base' });
+      insertPr(24, {
+        reviewDecision: 'APPROVED',
+        baseBranch: 'old-base',
+        headBranch: 'feature-on-closed',
+      });
+
+      const rows = getApprovedUnmergedRows(db, 'octocat', 'hello-world');
+      const byNumber = new Map(rows.map((row) => [row.pr_number, row]));
+
+      expect(byNumber.get(20)).toMatchObject({ is_stacked: 0 });
+      expect(byNumber.get(21)).toMatchObject({ is_stacked: 1 });
+      expect(byNumber.get(22)).toMatchObject({ is_stacked: 0 });
+      expect(byNumber.get(24)).toMatchObject({ is_stacked: 0 });
     });
   });
 
@@ -318,6 +347,8 @@ describe('tim db/pr_digest', () => {
       reviewDecision?: string | null;
       readyAt?: string | null;
       labels?: string[];
+      baseBranch?: string | null;
+      headBranch?: string | null;
     } = {}
   ): ReturnType<typeof upsertPrStatus> {
     const owner = options.owner ?? 'octocat';
@@ -335,6 +366,8 @@ describe('tim db/pr_digest', () => {
       readyAt: options.readyAt,
       lastFetchedAt: '2026-01-01T00:00:00.000Z',
       labels: options.labels?.map((name) => ({ name })),
+      baseBranch: options.baseBranch,
+      headBranch: options.headBranch,
     });
   }
 

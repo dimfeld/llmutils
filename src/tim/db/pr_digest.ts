@@ -5,6 +5,8 @@ export interface ApprovedUnmergedRow {
   pr_number: number;
   title: string;
   author: string;
+  /** 1 when the PR is stacked on another open PR (its base is that PR's head branch). */
+  is_stacked: number;
   /** Latest approval review timestamp, if known. */
   approved_at: string | null;
 }
@@ -14,6 +16,8 @@ export interface StaleReviewRequestRow {
   pr_number: number;
   title: string;
   author: string;
+  /** 1 when the PR is stacked on another open PR (its base is that PR's head branch). */
+  is_stacked: number;
   reviewer: string;
   /** UTC ISO timestamp from pr_review_request.requested_at. */
   requested_at: string;
@@ -26,11 +30,31 @@ export interface OtherReadyForReviewRow {
   pr_number: number;
   title: string;
   author: string;
+  /** 1 when the PR is stacked on another open PR (its base is that PR's head branch). */
+  is_stacked: number;
   /** UTC ISO timestamp from pr_status.ready_at. */
   ready_at: string;
   /** Latest non-dismissed review timestamp, if any. */
   previous_review_at: string | null;
 }
+
+/**
+ * SQL fragment that resolves to 1 when the surrounding `pr_status` row is stacked on another open
+ * PR — i.e. its base branch is the head branch of a different open PR in the same repo. Correlates
+ * on `pr_status.owner`/`pr_status.repo`, so it only works where `pr_status` is in scope.
+ */
+const IS_STACKED_SQL = `
+  CASE WHEN EXISTS (
+    SELECT 1
+    FROM pr_status AS base_pr
+    WHERE base_pr.owner = pr_status.owner
+      AND base_pr.repo = pr_status.repo
+      AND base_pr.state = 'open'
+      AND base_pr.id != pr_status.id
+      AND base_pr.head_branch IS NOT NULL
+      AND base_pr.head_branch = pr_status.base_branch
+  ) THEN 1 ELSE 0 END
+`;
 
 export interface ReviewRequestDebugRow {
   pr_url: string;
@@ -72,6 +96,7 @@ export function getApprovedUnmergedRows(
           pr_status.pr_number,
           COALESCE(pr_status.title, '') AS title,
           COALESCE(pr_status.author, '') AS author,
+          ${IS_STACKED_SQL} AS is_stacked,
           (
             SELECT MAX(pr_review.submitted_at)
             FROM pr_review
@@ -118,6 +143,7 @@ export function getStaleReviewRequestRows(
           pr_status.pr_number,
           COALESCE(pr_status.title, '') AS title,
           COALESCE(pr_status.author, '') AS author,
+          ${IS_STACKED_SQL} AS is_stacked,
           pr_review_request.reviewer,
           pr_review_request.requested_at,
           (
@@ -186,6 +212,7 @@ export function getOtherReadyForReviewRows(
           pr_status.pr_number,
           COALESCE(pr_status.title, '') AS title,
           COALESCE(pr_status.author, '') AS author,
+          ${IS_STACKED_SQL} AS is_stacked,
           pr_status.ready_at,
           (
             SELECT MAX(pr_review.submitted_at)

@@ -370,6 +370,87 @@ describe('tim slack CLI handlers', () => {
       );
     });
 
+    test('dry run includes the current project even when its daily digest is not enabled', async () => {
+      // No eligible workspaces and no enabled project setting for the current repo.
+      vi.mocked(loadEffectiveConfig).mockResolvedValue({ slack: { workspaces: {} } } as any);
+
+      const db = getDatabase();
+      upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/7`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 7,
+        author: 'alice',
+        title: 'Disabled project PR',
+        state: 'open',
+        draft: false,
+        reviewDecision: 'APPROVED',
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      await handleSlackDigestRunCommand({ dryRun: true }, fakeCommand);
+
+      const { log } = await import('../../logging.js');
+      const output = vi
+        .mocked(log)
+        .mock.calls.map((call) => String(call[0]))
+        .join('\n');
+      expect(output).toContain('Slack daily PR digest dry run');
+      expect(output).toContain(`${OWNER}/${REPO}`);
+      expect(output).toContain('Disabled project PR');
+      expect(output).not.toContain(
+        'No Slack daily digest-enabled projects with a parseable GitHub repository were found.'
+      );
+    });
+
+    test('dry run flags PRs stacked on another open PR', async () => {
+      vi.mocked(loadEffectiveConfig).mockResolvedValue({ slack: { workspaces: {} } } as any);
+
+      const db = getDatabase();
+      // Open base PR whose head branch is the stacked PR's base branch.
+      upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/10`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 10,
+        author: 'alice',
+        title: 'Base PR',
+        state: 'open',
+        draft: false,
+        reviewDecision: 'APPROVED',
+        headBranch: 'feature-base',
+        baseBranch: 'main',
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+      upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/11`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 11,
+        author: 'bob',
+        title: 'Stacked PR',
+        state: 'open',
+        draft: false,
+        reviewDecision: 'APPROVED',
+        headBranch: 'feature-top',
+        baseBranch: 'feature-base',
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      await handleSlackDigestRunCommand({ dryRun: true }, fakeCommand);
+
+      const { log } = await import('../../logging.js');
+      const output = vi
+        .mocked(log)
+        .mock.calls.map((call) => String(call[0]))
+        .join('\n');
+      expect(output).toContain('[stacked] #11 Stacked PR');
+      // The base PR targets the default branch, so it carries no stacked marker (bullet sits
+      // directly before its PR number).
+      expect(output).toContain('- #10 Base PR');
+      expect(output).not.toContain('[stacked] #10');
+    });
+
     test('debug dry run logs review request state used to build awaiting-review entries', async () => {
       setDebug(true);
       vi.mocked(loadEffectiveConfig).mockResolvedValue({

@@ -139,6 +139,8 @@ export interface DailyDigestEntry {
   reviewers?: DailyDigestReviewer[];
   /** Label names on the PR, used to group awaiting-review entries into prioritized sections. */
   labels?: string[];
+  /** True when the PR is stacked on another open PR (its base is that PR's head branch). */
+  isStacked?: boolean;
   readyForReviewMs?: number;
   readyForReviewLabel?: string;
   previousReviewMs?: number;
@@ -279,18 +281,27 @@ function formatPrLink(entry: DailyDigestEntry): string {
   return `<${escapedUrl}|${escapedTitle}>`;
 }
 
+/**
+ * Renders a leading marker for PRs stacked on another open PR (base branch is not the default
+ * branch), so reviewers can scan them at the start of the line. Returns an empty string for
+ * non-stacked PRs (digest lines are unchanged for them).
+ */
+function formatStackedPrefix(entry: DailyDigestEntry): string {
+  return entry.isStacked ? `🔗 stacked · ` : '';
+}
+
 function formatApprovedDigestLine(entry: DailyDigestEntry): string {
   const approved = entry.approvedLabel
     ? ` — approved ${escapeSlackMrkdwnText(entry.approvedLabel)} ago`
     : '';
-  return `• ${formatPrLink(entry)} by ${formatPlainLogin(entry.author)}${approved}`;
+  return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${formatPlainLogin(entry.author)}${approved}`;
 }
 
 function formatStaleDigestLine(entry: DailyDigestEntry): string {
   const reviewers = entry.reviewers ?? [];
   const author = formatPlainLogin(entry.author);
   if (reviewers.length === 0) {
-    return `• ${formatPrLink(entry)} by ${author} — waiting on _reviewer unknown_`;
+    return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${author} — waiting on _reviewer unknown_`;
   }
 
   const reviewerLogins = reviewers.map((reviewer) => formatPlainLogin(reviewer.login)).join(', ');
@@ -298,7 +309,7 @@ function formatStaleDigestLine(entry: DailyDigestEntry): string {
   const shortestWait = reviewers.reduce((shortest, reviewer) =>
     reviewer.waitedMs < shortest.waitedMs ? reviewer : shortest
   );
-  return `• ${formatPrLink(entry)} by ${author} — waiting on ${reviewerLogins} (${escapeSlackMrkdwnText(shortestWait.waitedLabel)})`;
+  return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${author} — waiting on ${reviewerLogins} (${escapeSlackMrkdwnText(shortestWait.waitedLabel)})`;
 }
 
 function formatOtherReadyDigestLine(entry: DailyDigestEntry): string {
@@ -309,7 +320,7 @@ function formatOtherReadyDigestLine(entry: DailyDigestEntry): string {
   const previousReview = entry.previousReviewLabel
     ? `; previous review ${escapeSlackMrkdwnText(entry.previousReviewLabel)} ago`
     : '; no previous review';
-  return `• ${formatPrLink(entry)} by ${author} — ready for ${readyLabel}${previousReview}`;
+  return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${author} — ready for ${readyLabel}${previousReview}`;
 }
 
 function formatDateLabel(date: string): string {

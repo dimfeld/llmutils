@@ -18,6 +18,8 @@ export interface DigestEntry {
   reviewers?: DigestReviewer[];
   /** Label names on the PR, used to group awaiting-review entries in the Slack digest. */
   labels?: string[];
+  /** True when the PR is stacked on another open PR (its base is that PR's head branch). */
+  isStacked?: boolean;
   readyForReviewMs?: number;
   readyForReviewLabel?: string;
   previousReviewMs?: number;
@@ -46,6 +48,14 @@ interface MutableStaleEntry extends DigestEntry {
   reviewers: DigestReviewer[];
 }
 
+/**
+ * Builds the stacked-PR fields for a digest entry. Only set when the PR is stacked on another open
+ * PR, so non-stacked entries stay clean (and unchanged from prior digest output).
+ */
+function stackedFields(row: { is_stacked: number }): Pick<DigestEntry, 'isStacked'> {
+  return row.is_stacked === 1 ? { isStacked: true } : {};
+}
+
 export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestOptions): PrDigest {
   const otherReadyThresholdMs = 72 * 3_600_000;
   const approvedUnmerged = input.approvedUnmergedRows.map(
@@ -60,6 +70,7 @@ export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestO
         prNumber: row.pr_number,
         title: row.title,
         author: row.author,
+        ...stackedFields(row),
         ...(approvedMs === undefined
           ? {}
           : {
@@ -90,6 +101,7 @@ export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestO
         author: row.author,
         reviewers: [],
         labels: parseLabels(row.labels),
+        ...stackedFields(row),
       };
       staleByPrUrl.set(row.pr_url, entry);
     }
@@ -129,6 +141,7 @@ export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestO
       prNumber: row.pr_number,
       title: row.title,
       author: row.author,
+      ...stackedFields(row),
       readyForReviewMs,
       readyForReviewLabel: formatWaitDuration(readyForReviewMs),
       ...(previousReviewMs === undefined

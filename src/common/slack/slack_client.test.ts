@@ -452,6 +452,43 @@ describe('common/slack/slack_client', () => {
       expect(staleText).not.toContain('2 days');
     });
 
+    test('prefixes stacked PRs with a leading stacked marker and leaves others unmarked', () => {
+      const digest: DailyDigestPayloadInput = {
+        approvedUnmerged: [
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/1',
+            prNumber: 1,
+            title: 'Stacked PR',
+            author: 'alice',
+            isStacked: true,
+          },
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/2',
+            prNumber: 2,
+            title: 'Normal PR',
+            author: 'bob',
+          },
+        ],
+        staleAwaitingReview: [],
+        otherReadyForReview: [],
+      };
+
+      const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', digest);
+      const approvedText = sectionText(payload.blocks[1]);
+
+      // Marker leads the line (right after the bullet) so stacked PRs are easy to scan.
+      expect(approvedText).toContain(
+        '• 🔗 stacked · <https://linear.review/octocat/hello-world/pull/1|#1 - Stacked PR>'
+      );
+      // Non-stacked PRs are unchanged: no marker.
+      expect(approvedText).toContain(
+        '• <https://linear.review/octocat/hello-world/pull/2|#2 - Normal PR>'
+      );
+      expect(approvedText).not.toContain(
+        '🔗 stacked · <https://linear.review/octocat/hello-world/pull/2'
+      );
+    });
+
     test('renders both sections when different PRs are approved and awaiting review', () => {
       const digest: DailyDigestPayloadInput = {
         approvedUnmerged: [

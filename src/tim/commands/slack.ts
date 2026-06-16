@@ -22,6 +22,7 @@ import {
 import { log } from '../../logging.js';
 import {
   collectDailyDigestsForWorkspace,
+  collectProjectDigest,
   fetchWorkspaceLinearMilestones,
   getEligibleDailyDigestWorkspaces,
   runAllDailyDigests,
@@ -215,6 +216,19 @@ async function resolveCurrentProject(): Promise<Project> {
   return project;
 }
 
+/**
+ * Like {@link resolveCurrentProject} but returns null instead of throwing when the current
+ * directory is not a recognized GitHub repository/project. Used by the dry-run preview, which
+ * should still print eligible projects even when run outside a tracked repository.
+ */
+async function resolveCurrentProjectOrNull(): Promise<Project | null> {
+  try {
+    return await resolveCurrentProject();
+  } catch {
+    return null;
+  }
+}
+
 function formatProjectSetting(setting: SlackProjectSetting | null): string {
   if (!setting) {
     return 'not configured';
@@ -254,9 +268,17 @@ function isDigestEmpty(digest: PrDigest): boolean {
   );
 }
 
+/**
+ * Renders a leading stacked marker (mirroring the Slack digest) so the dry-run preview flags PRs
+ * stacked on another open PR. Empty for non-stacked PRs.
+ */
+function formatStackedDryRunPrefix(entry: DigestEntry): string {
+  return entry.isStacked ? `[stacked] ` : '';
+}
+
 function formatPrLine(entry: DigestEntry): string {
   const approved = entry.approvedLabel ? `; approved: ${entry.approvedLabel} ago` : '';
-  return `  - #${entry.prNumber} ${entry.title} (author: ${entry.author}${approved})`;
+  return `  - ${formatStackedDryRunPrefix(entry)}#${entry.prNumber} ${entry.title} (author: ${entry.author}${approved})`;
 }
 
 function formatAwaitingReviewLine(entry: DigestEntry): string {
@@ -544,14 +566,22 @@ export async function handleSlackDigestRunCommand(
 
   if (hasDryRunOption(options, command)) {
     const nowMs = Date.now();
-    const eligibleWorkspaces = getEligibleDailyDigestWorkspaces(db, config);
-    if (eligibleWorkspaces.length === 0) {
-      log('No Slack daily digest-enabled projects found.');
-      return;
-    }
+
+    // Always include the current project in a dry run, even when its Slack daily digest is not
+    // enabled, so it can be previewed before enabling.
+    const currentProject = await resolveCurrentProjectOrNull();
+    const currentRepoFullName = currentProject
+      ? parseOwnerRepoFromRepositoryId(currentProject.repository_id)
+      : null;
+    const currentRepoKey = currentRepoFullName
+      ? `${currentRepoFullName.owner}/${currentRepoFullName.repo}`
+      : null;
 
     log(chalk.bold('Slack daily PR digest dry run'));
     let printedProjectCount = 0;
+    const printedRepoFullNames = new Set<string>();
+
+    const eligibleWorkspaces = getEligibleDailyDigestWorkspaces(db, config);
     for (const workspaceName of eligibleWorkspaces) {
       let linearMilestones: LinearMilestoneDigestEntry[] = [];
       try {
@@ -581,6 +611,21 @@ export async function handleSlackDigestRunCommand(
         }
         printDigestDryRunProject(projectDigest, grouping);
         printedSection = true;
+        printedProjectCount += 1;
+        printedRepoFullNames.add(projectDigest.repoFullName);
+      }
+    }
+
+    // If the current project was not already printed (i.e. its daily digest is not enabled), show
+    // it anyway so the dry run always reflects the current repository.
+    if (currentProject && currentRepoKey && !printedRepoFullNames.has(currentRepoKey)) {
+      const projectDigest = collectProjectDigest(db, currentProject, { nowMs });
+      if (projectDigest) {
+        if (printedProjectCount > 0) {
+          log('');
+        }
+        const grouping = resolveDigestReviewGrouping(config, projectDigest.workspaceName);
+        printDigestDryRunProject(projectDigest, grouping);
         printedProjectCount += 1;
       }
     }

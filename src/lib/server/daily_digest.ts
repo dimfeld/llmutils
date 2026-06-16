@@ -33,7 +33,7 @@ import {
 import type { TimConfig } from '$tim/configSchema.js';
 import { debug as debugEnabled } from '../../common/process_state.js';
 import { debugLog } from '../../logging.js';
-import { listProjects } from '$tim/db/project.js';
+import { listProjects, type Project } from '$tim/db/project.js';
 import { getProjectSetting } from '$tim/db/project_settings.js';
 import {
   getLatestSlackDailyDigestMessage,
@@ -266,6 +266,51 @@ export function collectDailyDigestsForWorkspace(
   }
 
   return collected;
+}
+
+/**
+ * Computes the PR digest for a single project regardless of whether its Slack daily digest is
+ * enabled. Used by the `slack digest run --dry-run` flow so the current project always shows its
+ * digest. Returns null when the project's repository id is not a parseable GitHub repo.
+ *
+ * `workspaceName`/`channel` fall back to placeholders when the project has no Slack setting, since
+ * a not-yet-enabled project may not have either configured.
+ */
+export function collectProjectDigest(
+  db: Database,
+  project: Project,
+  options: CollectDailyDigestsOptions = {}
+): CollectedProjectDigest | null {
+  const ownerRepo = parseOwnerRepoFromRepositoryId(project.repository_id);
+  if (!ownerRepo) {
+    return null;
+  }
+
+  const nowMs = options.nowMs ?? Date.now();
+  const setting = parseSlackProjectSetting(
+    getProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY)
+  );
+
+  const approvedUnmergedRows = getApprovedUnmergedRows(db, ownerRepo.owner, ownerRepo.repo);
+  const staleReviewRequestRows = getStaleReviewRequestRows(db, ownerRepo.owner, ownerRepo.repo, {
+    nowMs,
+  });
+  const otherReadyForReviewRows = getOtherReadyForReviewRows(db, ownerRepo.owner, ownerRepo.repo, {
+    nowMs,
+  });
+  const digest = buildPrDigest(
+    { approvedUnmergedRows, staleReviewRequestRows, otherReadyForReviewRows },
+    { nowMs }
+  );
+
+  return {
+    workspaceName: setting?.workspace?.trim() || '(no workspace)',
+    owner: ownerRepo.owner,
+    repo: ownerRepo.repo,
+    repoFullName: `${ownerRepo.owner}/${ownerRepo.repo}`,
+    channel: setting?.channel?.trim() || '(no channel)',
+    digest,
+  };
 }
 
 function logReviewRequestDebugRows(
