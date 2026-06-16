@@ -390,11 +390,13 @@
 
   async function handleStartReviewGuide(guideOnly: boolean = false) {
     if (reviewGuideRunning || hasInProgressReview) return;
+    const actionPlanUuid = plan.uuid;
     reviewGuideRunning = guideOnly ? 'guide-only' : 'full';
     errorMessage = null;
     successMessage = null;
     try {
       await startPlanReviewGuide({ projectId: plan.projectId, planId: plan.planId, guideOnly });
+      if (actionPlanUuid !== plan.uuid) return;
       successMessage = { text: 'Review guide started' };
       setStartedSuccessfully();
       await invalidateAll();
@@ -416,7 +418,7 @@
         }, REVIEW_GUIDE_LAUNCH_TIMEOUT_MS);
       }
     } catch (err) {
-      errorMessage = `${err as Error}`;
+      applyStartError(actionPlanUuid, err);
       reviewGuideRunning = false;
     }
   }
@@ -621,23 +623,50 @@
     }, 30_000);
   }
 
+  type StartActionResult =
+    | { status: 'started'; planId?: number }
+    | { status: 'already_running'; connectionId?: string };
+
+  /**
+   * Applies the success banner/disabled state for a launched action, but only if the user is still
+   * viewing the plan the action was started for. Without this guard a slow action launched on one
+   * plan can resolve after the user navigates to another plan and clobber the new plan's state
+   * (showing a stale "… started" banner and disabling its buttons). afterNavigate resets the
+   * tracking state on navigation; this stops a late resolution from re-setting it.
+   */
+  function applyStartResult(
+    actionPlanUuid: string,
+    result: StartActionResult,
+    startedText: string
+  ): void {
+    if (actionPlanUuid !== plan.uuid) return;
+    if (result.status === 'already_running') {
+      successMessage = {
+        text: 'A session is already running for this plan',
+        connectionId: result.connectionId,
+      };
+    } else {
+      successMessage = { text: startedText };
+    }
+    setStartedSuccessfully();
+  }
+
+  /** Guards a late-resolving action's error message the same way applyStartResult guards success. */
+  function applyStartError(actionPlanUuid: string, err: unknown): void {
+    if (actionPlanUuid !== plan.uuid) return;
+    errorMessage = `${err as Error}`;
+  }
+
   async function handleGenerate() {
+    const actionPlanUuid = plan.uuid;
     startingGenerate = true;
     errorMessage = null;
     successMessage = null;
     try {
-      const result = await startGenerate({ planUuid: plan.uuid });
-      if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this plan',
-          connectionId: result.connectionId,
-        };
-      } else {
-        successMessage = { text: 'Generate started' };
-      }
-      setStartedSuccessfully();
+      const result = await startGenerate({ planUuid: actionPlanUuid });
+      applyStartResult(actionPlanUuid, result, 'Generate started');
     } catch (err) {
-      errorMessage = `${err as Error}`;
+      applyStartError(actionPlanUuid, err);
     } finally {
       startingGenerate = false;
     }
@@ -661,154 +690,105 @@
     if (isBlocked && !confirm('This plan has unresolved dependencies. Run agent anyway?')) {
       return;
     }
+    const actionPlanUuid = plan.uuid;
     startingAgent = true;
     errorMessage = null;
     successMessage = null;
     try {
-      const result = await startAgent({ planUuid: plan.uuid });
-      if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this plan',
-          connectionId: result.connectionId,
-        };
-      } else {
-        successMessage = { text: 'Agent started' };
-      }
-      setStartedSuccessfully();
+      const result = await startAgent({ planUuid: actionPlanUuid });
+      applyStartResult(actionPlanUuid, result, 'Agent started');
     } catch (err) {
-      errorMessage = `${err as Error}`;
+      applyStartError(actionPlanUuid, err);
     } finally {
       startingAgent = false;
     }
   }
 
   async function handleRebase() {
+    const actionPlanUuid = plan.uuid;
     startingRebase = true;
     errorMessage = null;
     successMessage = null;
     try {
-      const result = await startRebase({ planUuid: plan.uuid });
-      if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this plan',
-          connectionId: result.connectionId,
-        };
-      } else {
-        successMessage = { text: 'Rebase started' };
-      }
-      setStartedSuccessfully();
+      const result = await startRebase({ planUuid: actionPlanUuid });
+      applyStartResult(actionPlanUuid, result, 'Rebase started');
     } catch (err) {
-      errorMessage = `${err as Error}`;
+      applyStartError(actionPlanUuid, err);
     } finally {
       startingRebase = false;
     }
   }
 
   async function handleReview() {
+    const actionPlanUuid = plan.uuid;
     startingReview = true;
     errorMessage = null;
     successMessage = null;
     try {
-      const result = await startReview({ planUuid: plan.uuid });
-      if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this plan',
-          connectionId: result.connectionId,
-        };
-      } else {
-        successMessage = { text: 'Review started' };
-      }
-      setStartedSuccessfully();
+      const result = await startReview({ planUuid: actionPlanUuid });
+      applyStartResult(actionPlanUuid, result, 'Review started');
     } catch (err) {
-      errorMessage = `${err as Error}`;
+      applyStartError(actionPlanUuid, err);
     } finally {
       startingReview = false;
     }
   }
 
   async function handleAutoreview() {
+    const actionPlanUuid = plan.uuid;
     startingAutoreview = true;
     errorMessage = null;
     successMessage = null;
     try {
-      const result = await startAutoreview({ planUuid: plan.uuid });
-      if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this plan',
-          connectionId: result.connectionId,
-        };
-      } else {
-        successMessage = { text: 'Autoreview started' };
-      }
-      setStartedSuccessfully();
+      const result = await startAutoreview({ planUuid: actionPlanUuid });
+      applyStartResult(actionPlanUuid, result, 'Autoreview started');
     } catch (err) {
-      errorMessage = `${err as Error}`;
+      applyStartError(actionPlanUuid, err);
     } finally {
       startingAutoreview = false;
     }
   }
 
   async function handleShell() {
+    const actionPlanUuid = plan.uuid;
     startingShell = true;
     errorMessage = null;
     successMessage = null;
     try {
-      const result = await startShell({ planUuid: plan.uuid });
-      if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this plan',
-          connectionId: result.connectionId,
-        };
-      } else {
-        successMessage = { text: 'Shell started' };
-      }
-      setStartedSuccessfully();
+      const result = await startShell({ planUuid: actionPlanUuid });
+      applyStartResult(actionPlanUuid, result, 'Shell started');
     } catch (err) {
-      errorMessage = `${err as Error}`;
+      applyStartError(actionPlanUuid, err);
     } finally {
       startingShell = false;
     }
   }
 
   async function handleCreatePr() {
+    const actionPlanUuid = plan.uuid;
     startingCreatePr = true;
     errorMessage = null;
     successMessage = null;
     try {
-      const result = await startCreatePr({ planUuid: plan.uuid });
-      if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this plan',
-          connectionId: result.connectionId,
-        };
-      } else {
-        successMessage = { text: 'PR creation started' };
-      }
-      setStartedSuccessfully();
+      const result = await startCreatePr({ planUuid: actionPlanUuid });
+      applyStartResult(actionPlanUuid, result, 'PR creation started');
     } catch (err) {
-      errorMessage = `${err as Error}`;
+      applyStartError(actionPlanUuid, err);
     } finally {
       startingCreatePr = false;
     }
   }
 
   async function handleChat(executor: 'claude' | 'codex') {
+    const actionPlanUuid = plan.uuid;
     startingChat = executor;
     errorMessage = null;
     successMessage = null;
     try {
-      const result = await startChat({ planUuid: plan.uuid, executor });
-      if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this plan',
-          connectionId: result.connectionId,
-        };
-      } else {
-        successMessage = { text: 'Chat started' };
-      }
-      setStartedSuccessfully();
+      const result = await startChat({ planUuid: actionPlanUuid, executor });
+      applyStartResult(actionPlanUuid, result, 'Chat started');
     } catch (err) {
-      errorMessage = `${err as Error}`;
+      applyStartError(actionPlanUuid, err);
     } finally {
       startingChat = false;
       chatDialogOpen = false;
@@ -847,51 +827,38 @@
   );
 
   async function handleProof() {
+    const actionPlanUuid = plan.uuid;
     startingProof = true;
     errorMessage = null;
     successMessage = null;
     try {
-      const result = await startProof({ planUuid: plan.uuid });
-      if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this plan',
-          connectionId: result.connectionId,
-        };
-      } else {
-        successMessage = { text: 'Proof generation started' };
-      }
-      setStartedSuccessfully();
+      const result = await startProof({ planUuid: actionPlanUuid });
+      applyStartResult(actionPlanUuid, result, 'Proof generation started');
     } catch (err) {
-      errorMessage = `${err as Error}`;
+      applyStartError(actionPlanUuid, err);
     } finally {
       startingProof = false;
     }
   }
 
   async function handleUploadArtifacts() {
+    const actionPlanUuid = plan.uuid;
     startingUploadArtifacts = true;
     errorMessage = null;
     successMessage = null;
     try {
-      const result = await startUploadArtifacts({ planUuid: plan.uuid });
-      if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this plan',
-          connectionId: result.connectionId,
-        };
-      } else {
-        successMessage = { text: 'Artifact upload started' };
-      }
-      setStartedSuccessfully();
+      const result = await startUploadArtifacts({ planUuid: actionPlanUuid });
+      applyStartResult(actionPlanUuid, result, 'Artifact upload started');
       await invalidateAll();
     } catch (err) {
-      errorMessage = `${err as Error}`;
+      applyStartError(actionPlanUuid, err);
     } finally {
       startingUploadArtifacts = false;
     }
   }
 
   async function handleUpdateDocs() {
+    const actionPlanUuid = plan.uuid;
     startingFinish = true;
     errorMessage = null;
     successMessage = null;
@@ -899,34 +866,29 @@
       if (!(plan.status === 'needs_review' || plan.status === 'done') || isTasklessEpic) {
         throw new Error('Plan is not eligible for doc updates');
       }
-      const result = await startUpdateDocs({ planUuid: plan.uuid });
-      if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this plan',
-          connectionId: result.connectionId,
-        };
-      } else {
-        successMessage = { text: 'Update Docs started' };
-      }
-      setStartedSuccessfully();
+      const result = await startUpdateDocs({ planUuid: actionPlanUuid });
+      applyStartResult(actionPlanUuid, result, 'Update Docs started');
       await invalidateAll();
     } catch (err) {
-      errorMessage = `${err as Error}`;
+      applyStartError(actionPlanUuid, err);
     } finally {
       startingFinish = false;
     }
   }
 
   async function handleFinish() {
+    const actionPlanUuid = plan.uuid;
     startingFinish = true;
     errorMessage = null;
     successMessage = null;
     try {
-      await finishPlanQuick({ planUuid: plan.uuid });
-      successMessage = { text: 'Plan marked as done' };
+      await finishPlanQuick({ planUuid: actionPlanUuid });
+      if (actionPlanUuid === plan.uuid) {
+        successMessage = { text: 'Plan marked as done' };
+      }
       await invalidateAll();
     } catch (err) {
-      errorMessage = `${err as Error}`;
+      applyStartError(actionPlanUuid, err);
     } finally {
       startingFinish = false;
     }

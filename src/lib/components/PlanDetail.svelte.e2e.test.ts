@@ -8,6 +8,7 @@ import type { PrStatusDetailWithRequiredChecks } from '$lib/server/required_chec
 import { invalidateAll } from '$app/navigation';
 import { updatePlanMetadata } from '$lib/remote/plan_metadata.remote.js';
 import { convertAllReviewIssuesToTasks } from '$lib/remote/review_issue_actions.remote.js';
+import { startGenerate } from '$lib/remote/plan_actions.remote.js';
 import PlanDetailComponent from './PlanDetail.svelte';
 
 vi.mock('$app/navigation', () => ({
@@ -458,5 +459,37 @@ describe('PlanDetail note editor', () => {
         note: 'Keyboard note',
       });
     });
+  });
+});
+
+describe('PlanDetail action navigation race', () => {
+  test('does not show a started banner when a launched action resolves after switching plans', async () => {
+    let resolveGenerate: (value: { status: 'started'; planId: number }) => void = () => {};
+    (startGenerate as Mock).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveGenerate = resolve;
+        })
+    );
+
+    const { rerender } = renderPlan(makePlanDetail({ uuid: 'plan-1', planId: 1 }));
+
+    await page.getByRole('button', { name: 'Generate', exact: true }).click();
+
+    await vi.waitFor(() => {
+      expect(startGenerate).toHaveBeenCalledWith({ planUuid: 'plan-1' });
+    });
+
+    // Simulate navigating to a different plan while the generate action is still in flight.
+    await rerender({ plan: makePlanDetail({ uuid: 'plan-2', planId: 2 }), projectId: '123' });
+
+    // The previous plan's action now resolves; its banner must not appear on the new plan.
+    resolveGenerate({ status: 'started', planId: 1 });
+
+    await expect.element(page.getByText('Generate started')).not.toBeInTheDocument();
+    // The new plan's Generate button stays enabled (controls are not stuck disabled).
+    await expect
+      .element(page.getByRole('button', { name: 'Generate', exact: true }))
+      .not.toBeDisabled();
   });
 });

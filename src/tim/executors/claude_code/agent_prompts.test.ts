@@ -118,9 +118,7 @@ describe('agent_prompts failure protocol integration', () => {
     const guidance = buildReviewerSimplificationGuidance();
     expect(guidance).toContain('Test code is different');
     expect(guidance).toContain('Repetition in tests is usually fine');
-    expect(guidance).toContain(
-      'Do NOT flag near-identical tests merely because they repeat setup'
-    );
+    expect(guidance).toContain('Do NOT flag near-identical tests merely because they repeat setup');
   });
 
   it('does not encourage reviewer prompts to stop after a small sample of findings', () => {
