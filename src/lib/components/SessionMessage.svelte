@@ -4,6 +4,7 @@
   import {
     getDisplayCategory,
     formatStructuredMessage,
+    formatMessageTimestamp,
     type DisplayCategory,
   } from '$lib/utils/message_formatting.js';
   import {
@@ -18,9 +19,11 @@
   let {
     message,
     disableContentVisibility = false,
+    showTimestamp = true,
   }: {
     message: DisplayMessage;
     disableContentVisibility?: boolean;
+    showTimestamp?: boolean;
   } = $props();
 
   let displayCategory: DisplayCategory | null = $derived(
@@ -31,7 +34,7 @@
     displayCategory ? categoryColorClass(displayCategory) : categoryColorClass(message.category)
   );
 
-  let timeStr = $derived(new Date(message.timestamp).toLocaleTimeString());
+  let timeStr = $derived(formatMessageTimestamp(message.timestamp));
 
   /** The body to render — either the message body directly, or the formatted structured message. */
   let renderBody: DisplayMessageBody | null = $derived.by(() => {
@@ -111,7 +114,9 @@
   style:content-visibility={contentVisibilityValue}
   style:contain-intrinsic-block-size="auto 2rem"
 >
-  <span class="mr-2 text-xs text-gray-400">{timeStr}</span>
+  {#if showTimestamp}
+    <span class="mr-2 text-xs text-gray-400">{timeStr}</span>
+  {/if}
   {#if message.body.type === 'structured' && message.body.message.type === 'review_result'}
     <ReviewResultDisplay message={message.body.message} />
   {:else if message.body.type === 'structured' && message.body.message.type === 'execution_summary'}

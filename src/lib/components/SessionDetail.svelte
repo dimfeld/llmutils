@@ -13,6 +13,8 @@
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { useUIState } from '$lib/stores/ui_state.svelte.js';
   import SessionMessage from './SessionMessage.svelte';
+  import { formatMessageTimestamp } from '$lib/utils/message_formatting.js';
+  import { mergeConsecutiveOutputMessages } from '$lib/utils/merge_output_messages.js';
   import PromptRenderer from './PromptRenderer.svelte';
   import MessageInput from './MessageInput.svelte';
   import Terminal from './Terminal.svelte';
@@ -212,9 +214,11 @@
   // Lifecycle command output is noisy, so hide it by default. The toolbar toggle
   // re-includes it in the rendered message list.
   let visibleMessages = $derived(
-    showLifecycleOutput
-      ? session.messages
-      : session.messages.filter((message) => message.origin !== 'lifecycle')
+    mergeConsecutiveOutputMessages(
+      showLifecycleOutput
+        ? session.messages
+        : session.messages.filter((message) => message.origin !== 'lifecycle')
+    )
   );
 
   // This ensures that we do layout on the final messages, which helps autoscroll to continue to work when adding new
@@ -222,6 +226,18 @@
   let fullRenderStartIndex = $derived(
     Math.max(0, visibleMessages.length - FULLY_RENDERED_MESSAGE_COUNT)
   );
+
+  // Only show a message's timestamp when its rendered value differs from the
+  // previous visible message, to cut down on repetitive timestamps.
+  let timestampVisibility = $derived.by(() => {
+    let previous: string | null = null;
+    return visibleMessages.map((message) => {
+      const formatted = formatMessageTimestamp(message.timestamp);
+      const show = formatted !== previous;
+      previous = formatted;
+      return show;
+    });
+  });
 
   function handleActivateTerminal() {
     void sessionManager.activateTerminalPane(session);
@@ -697,7 +713,11 @@
           </p>
         {:else}
           {#each visibleMessages as message, index (message.id)}
-            <SessionMessage {message} disableContentVisibility={index >= fullRenderStartIndex} />
+            <SessionMessage
+              {message}
+              disableContentVisibility={index >= fullRenderStartIndex}
+              showTimestamp={timestampVisibility[index]}
+            />
           {/each}
         {/if}
       </div>

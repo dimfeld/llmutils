@@ -4,6 +4,11 @@ import type {
   StructuredMessagePayload,
 } from '$lib/types/session.js';
 
+/** Format a message timestamp into the string shown next to each message. */
+export function formatMessageTimestamp(timestamp: string): string {
+  return new Date(timestamp).toLocaleTimeString();
+}
+
 export type DisplayCategory =
   | 'lifecycle'
   | 'llmOutput'
