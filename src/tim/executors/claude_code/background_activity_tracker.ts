@@ -1,6 +1,6 @@
 export const BACKGROUND_DRAIN_GRACE_MS = 10_000;
 export const DEFAULT_BACKGROUND_TASK_TIMEOUT_MS = 2 * 60 * 60 * 1000;
-export const DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS = 20 * 60 * 1000;
+export const SHORT_BACKGROUND_TASK_TIMEOUT_MS = 20 * 60 * 1000;
 
 type TimerHandle = ReturnType<typeof setTimeout>;
 
@@ -13,7 +13,7 @@ export interface BackgroundActivityTrackerOptions {
   onClose: () => void;
   graceMs?: number;
   defaultTaskTimeoutMs?: number;
-  devServerTaskTimeoutMs?: number;
+  shortTaskTimeoutMs?: number;
   setTimeoutFn?: (callback: () => void, ms: number) => TimerHandle;
   clearTimeoutFn?: (handle: TimerHandle) => void;
 }
@@ -31,7 +31,7 @@ export class BackgroundActivityTracker {
   private readonly onClose: () => void;
   private readonly graceMs: number;
   private readonly defaultTaskTimeoutMs: number;
-  private readonly devServerTaskTimeoutMs: number;
+  private readonly shortTaskTimeoutMs: number;
   private readonly setTimeoutFn: (callback: () => void, ms: number) => TimerHandle;
   private readonly clearTimeoutFn: (handle: TimerHandle) => void;
 
@@ -39,8 +39,8 @@ export class BackgroundActivityTracker {
     this.onClose = options.onClose;
     this.graceMs = options.graceMs ?? BACKGROUND_DRAIN_GRACE_MS;
     this.defaultTaskTimeoutMs = options.defaultTaskTimeoutMs ?? DEFAULT_BACKGROUND_TASK_TIMEOUT_MS;
-    this.devServerTaskTimeoutMs =
-      options.devServerTaskTimeoutMs ?? DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS;
+    this.shortTaskTimeoutMs =
+      options.shortTaskTimeoutMs ?? SHORT_BACKGROUND_TASK_TIMEOUT_MS;
     this.setTimeoutFn =
       options.setTimeoutFn ??
       ((callback: () => void, ms: number): TimerHandle => setTimeout(callback, ms));
@@ -195,8 +195,18 @@ export class BackgroundActivityTracker {
     const taskType = info.taskType?.toLowerCase();
     const description = info.description?.toLowerCase() ?? '';
 
-    if (taskType === 'local_bash' && /\bdev\s+server\b/.test(description)) {
-      return this.devServerTaskTimeoutMs;
+    const devServerPatterns: Array<{ taskType?: string; pattern: RegExp }> = [
+      { taskType: 'local_bash', pattern: /\bdev\s+server\b/ },
+      { taskType: 'local_bash', pattern: /\btester\s+process\b/ },
+    ];
+
+    for (const { taskType: requiredType, pattern } of devServerPatterns) {
+      if (requiredType !== undefined && taskType !== requiredType) {
+        continue;
+      }
+      if (pattern.test(description)) {
+        return this.shortTaskTimeoutMs;
+      }
     }
 
     return this.defaultTaskTimeoutMs;

@@ -3,7 +3,7 @@ import {
   BackgroundActivityTracker,
   BACKGROUND_DRAIN_GRACE_MS,
   DEFAULT_BACKGROUND_TASK_TIMEOUT_MS,
-  DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS,
+  SHORT_BACKGROUND_TASK_TIMEOUT_MS,
 } from './background_activity_tracker.ts';
 
 function makeFakeTimer(): {
@@ -90,7 +90,7 @@ describe('BACKGROUND_DRAIN_GRACE_MS', () => {
 describe('background task timeout constants', () => {
   it('uses 2 hours by default and 20 minutes for dev server tasks', () => {
     expect(DEFAULT_BACKGROUND_TASK_TIMEOUT_MS).toBe(2 * 60 * 60 * 1000);
-    expect(DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS).toBe(20 * 60 * 1000);
+    expect(SHORT_BACKGROUND_TASK_TIMEOUT_MS).toBe(20 * 60 * 1000);
   });
 });
 
@@ -480,7 +480,7 @@ describe('BackgroundActivityTracker', () => {
       description: 'Start the DEV server for visual checks',
     });
 
-    expect(timer.getLastScheduledMs()).toBe(DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS);
+    expect(timer.getLastScheduledMs()).toBe(SHORT_BACKGROUND_TASK_TIMEOUT_MS);
 
     tracker.onResultMessage(true);
     timer.fire();
@@ -490,6 +490,17 @@ describe('BackgroundActivityTracker', () => {
     timer.fire();
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the shorter timeout for local bash tester process tasks', () => {
+    const { tracker, timer } = makeTracker();
+
+    tracker.taskStarted('task-tester', {
+      taskType: 'local_bash',
+      description: 'Run the tester process for integration checks',
+    });
+
+    expect(timer.getLastScheduledMs()).toBe(SHORT_BACKGROUND_TASK_TIMEOUT_MS);
   });
 
   it('does not use the dev server timeout for non-local-bash tasks', () => {
@@ -569,12 +580,12 @@ describe('BackgroundActivityTracker', () => {
       taskType: 'local_bash',
       description: 'Start the DEV server for visual checks',
     });
-    expect(timer.getLastScheduledMs()).toBe(DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS);
+    expect(timer.getLastScheduledMs()).toBe(SHORT_BACKGROUND_TASK_TIMEOUT_MS);
 
     tracker.onTurnActivity();
-    expect(timer.getLastScheduledMs()).toBe(DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS);
+    expect(timer.getLastScheduledMs()).toBe(SHORT_BACKGROUND_TASK_TIMEOUT_MS);
 
     tracker.taskProgress('task-dev-server');
-    expect(timer.getLastScheduledMs()).toBe(DEV_SERVER_BACKGROUND_TASK_TIMEOUT_MS);
+    expect(timer.getLastScheduledMs()).toBe(SHORT_BACKGROUND_TASK_TIMEOUT_MS);
   });
 });
