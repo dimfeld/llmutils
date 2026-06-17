@@ -59,14 +59,15 @@
   // let graphitePrUrl = $derived(
   //   `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`
   // );
-  let linearPrReviewUrlQuery = $derived(
-    getLinearPrReviewUrl({
-      projectId: String(pr.projectId),
-      prNumber: pr.status.pr_number,
-      prUrl: pr.status.pr_url,
-    })
+  let linearPrReviewUrl = $derived(
+    toLinearReviewDeepLink(
+      await getLinearPrReviewUrl({
+        projectId: String(pr.projectId),
+        prNumber: pr.status.pr_number,
+        prUrl: pr.status.pr_url,
+      })
+    )
   );
-  let linearPrReviewUrl = $derived(toLinearReviewDeepLink(linearPrReviewUrlQuery.current));
   let linkedPlanUuids = $derived(pr.linkedPlans.map((plan) => plan.planUuid));
   let reviews = $derived(await getPrReviews({ prUrl: pr.status.pr_url, linkedPlanUuids }));
   let latestCompletedReview = $derived(reviews?.find((r) => r.status === 'complete') ?? null);
