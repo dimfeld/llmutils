@@ -83,6 +83,7 @@ import {
 } from '../plan_discovery.js';
 import { clearTmpDir } from '../../batch_review_cache.js';
 import { autoCreatePrForPlan } from '../create_pr.js';
+import { autoUploadArtifactsToPr } from '../upload_artifacts.js';
 import { withPlanAutoSync } from '../../plan_materialize.js';
 
 interface AgentCommandOptions {
@@ -441,6 +442,7 @@ export async function timAgent(
   let failureReason: Error | undefined;
   let lastKnownPlan: PlanSchema | undefined;
   let recordedBranch: string | undefined;
+  let proofGenerated = false;
   let lifecycleManager: LifecycleManager | undefined;
   let unregisterLifecycleCleanup: (() => void) | undefined;
   let lifecycleShutdownError: Error | undefined;
@@ -782,7 +784,7 @@ export async function timAgent(
     // Check if batch mode is enabled (default is true, disabled by --serial-tasks)
     if (!options.serialTasks && !isShuttingDown()) {
       try {
-        const res = await executeBatchMode(
+        const batchResult = await executeBatchMode(
           {
             config,
             baseDir: currentBaseDir,
@@ -802,7 +804,8 @@ export async function timAgent(
           },
           summaryEnabled ? summaryCollector : undefined
         );
-        return res;
+        proofGenerated = batchResult?.proofGenerated ?? false;
+        return;
       } catch (err) {
         if (summaryEnabled) summaryCollector.addError(err);
         throw err;
@@ -1562,6 +1565,19 @@ export async function timAgent(
           });
         } catch (err) {
           warn(`Failed to auto-create PR: ${err as Error}`);
+        }
+      }
+
+      if (proofGenerated && lastKnownPlan.uuid) {
+        try {
+          await autoUploadArtifactsToPr({
+            planUuid: lastKnownPlan.uuid,
+            plan: lastKnownPlan,
+            config,
+            cwd: currentBaseDir,
+          });
+        } catch (err) {
+          warn(`Failed to auto-upload proof artifacts: ${err as Error}`);
         }
       }
     }

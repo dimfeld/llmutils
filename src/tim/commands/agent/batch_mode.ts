@@ -115,7 +115,7 @@ export async function executeBatchMode(
     timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
   },
   summaryCollector?: SummaryCollector
-) {
+): Promise<{ proofGenerated: boolean }> {
   const runPostApplyCommands = async (): Promise<string | null> => {
     if (!config.postApplyCommands || config.postApplyCommands.length === 0) {
       return null;
@@ -151,6 +151,7 @@ export async function executeBatchMode(
   try {
     let hasError = false;
     let iteration = 0;
+    let proofGenerated = false;
 
     // Track initial state to determine whether to skip final review
     // We skip final review if we started with no tasks completed and finished in a single iteration
@@ -669,6 +670,7 @@ Available tasks:\n\n${taskDescriptions}`,
                 logger,
                 terminalInput,
               });
+              proofGenerated = true;
             }
           } catch (err) {
             if (err instanceof ProofNotConfiguredError) {
@@ -720,6 +722,8 @@ Available tasks:\n\n${taskDescriptions}`,
     if (hasError) {
       throw new Error('Batch mode stopped due to error.');
     }
+
+    return { proofGenerated };
   } finally {
     // Logging lifecycle is managed by the caller (timAgent)
   }

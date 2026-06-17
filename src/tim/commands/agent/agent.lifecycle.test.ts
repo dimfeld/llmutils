@@ -83,7 +83,8 @@ vi.mock('../../../logging.js', () => ({
   runWithLogger: vi.fn(async (_adapter: any, fn: () => any) => fn()),
 }));
 
-vi.mock('../../../common/git.js', () => ({
+vi.mock('../../../common/git.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../common/git.js')>()),
   getGitRoot: vi.fn(async () => tempDir),
 }));
 

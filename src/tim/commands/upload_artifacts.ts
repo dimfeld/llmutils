@@ -220,6 +220,82 @@ async function upsertArtifactsComment(
   }
 }
 
+export async function autoUploadArtifactsToPr(options: {
+  planUuid: string;
+  plan: PlanSchema;
+  config: Parameters<typeof getMediaHostUploadConfig>[0];
+  cwd: string;
+}): Promise<void> {
+  const { planUuid, plan, config, cwd } = options;
+  const mediaHost = getMediaHostUploadConfig(config);
+  if (!mediaHost) {
+    return;
+  }
+
+  const db = getDatabase();
+  const artifacts = (await listArtifactsForPlanUuid({ planUuid }))
+    .filter(isUploadableArtifact)
+    .sort(compareArtifactsByFilename);
+  if (artifacts.length === 0) {
+    return;
+  }
+
+  const targetPrs = await resolveTargetPrs({ db, cwd, planUuid, plan }).catch(() => []);
+  if (targetPrs.length === 0) {
+    return;
+  }
+
+  const planTitle = plan.title ?? 'Untitled plan';
+  const marker = buildPlanArtifactsCommentMarker(planUuid);
+  const reportArtifact = artifacts.find(isReportArtifact);
+  const reportMarkdown = reportArtifact
+    ? await Bun.file(reportArtifact.storagePath).text()
+    : undefined;
+  const artifactsToUpload = artifacts.filter((artifact) => !isReportArtifact(artifact));
+  const uploadedArtifacts = await Promise.all(
+    artifactsToUpload.map((artifact) =>
+      uploadArtifact({ baseUrl: mediaHost.baseUrl, apiKey: mediaHost.apiKey, planUuid, artifact })
+    )
+  );
+  const updatedAt = new Date().toISOString();
+  const fullReportHtml = buildFullReportHtml({
+    planId: plan.id,
+    planTitle,
+    reportMarkdown,
+    artifacts: uploadedArtifacts,
+    updatedAt,
+  });
+  const fullReportUrl = await uploadFullReportHtml({
+    baseUrl: mediaHost.baseUrl,
+    apiKey: mediaHost.apiKey,
+    planUuid,
+    html: fullReportHtml,
+  });
+  const body = buildArtifactCommentBody({
+    marker,
+    planId: plan.id,
+    planTitle,
+    reportMarkdown,
+    artifacts: uploadedArtifacts,
+    fullReportUrl,
+    updatedAt,
+  });
+
+  const results = await Promise.allSettled(
+    targetPrs.map((prContext) => upsertArtifactsComment(prContext, marker, body))
+  );
+  const failures = results.flatMap((result, index) =>
+    result.status === 'rejected'
+      ? [
+          `${targetPrs[index]!.prUrl}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+        ]
+      : []
+  );
+  if (failures.length > 0) {
+    throw new Error(`Failed to post artifacts comment to some PRs. ${failures.join('; ')}`);
+  }
+}
+
 export async function handleUploadArtifactsCommand(
   planIdArg: string | number | undefined,
   options: UploadArtifactsOptions,
