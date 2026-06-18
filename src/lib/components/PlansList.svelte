@@ -175,7 +175,7 @@
 <div class="flex h-full flex-col">
   <div class="space-y-3 border-b border-border p-3">
     <input
-      type="text"
+      type="search"
       placeholder="Search plans..."
       aria-label="Search plans"
       data-search-input
