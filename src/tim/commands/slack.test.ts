@@ -320,6 +320,9 @@ describe('tim slack CLI handlers', () => {
         state: 'open',
         draft: false,
         reviewDecision: 'APPROVED',
+        additions: 42,
+        deletions: 17,
+        changedFiles: 3,
         lastFetchedAt: '2026-01-01T00:00:00.000Z',
       });
       const stale = upsertPrStatus(db, {
@@ -332,6 +335,9 @@ describe('tim slack CLI handlers', () => {
         state: 'open',
         draft: false,
         reviewDecision: null,
+        additions: 8,
+        deletions: 0,
+        changedFiles: 1,
         lastFetchedAt: '2026-01-01T00:00:00.000Z',
       });
       expect(approved.status.id).toBeGreaterThan(0);
@@ -364,9 +370,11 @@ describe('tim slack CLI handlers', () => {
       expect(output).toContain(`${OWNER}/${REPO}`);
       expect(output).toContain('Approved digest PR');
       expect(output).toContain('Waiting digest PR');
+      expect(output).toContain('author: alice; changes: +42/-17; approved:');
+      expect(output).toContain('author: bob; changes: +8/-0');
       expect(output).toContain('carol');
       expect(output).toMatch(
-        /  - #1 Approved digest PR \(author: alice; approved: \d+ days ago\)\n\n  Awaiting review:/
+        /  - #1 Approved digest PR \(author: alice; changes: \+42\/-17; approved: \d+ days ago\)\n\n  Awaiting review:/
       );
     });
 

@@ -136,6 +136,9 @@ export interface DailyDigestEntry {
   prNumber: number;
   title: string;
   author: string;
+  additions?: number | null;
+  deletions?: number | null;
+  changedFiles?: number | null;
   reviewers?: DailyDigestReviewer[];
   /** Label names on the PR, used to group awaiting-review entries into prioritized sections. */
   labels?: string[];
@@ -257,6 +260,14 @@ function formatPrChangeStats(pr: ReviewRequestPr): string | null {
   return parts.length > 0 ? parts.join(' ') : null;
 }
 
+function formatDailyDigestChangeStats(entry: DailyDigestEntry): string {
+  if (typeof entry.additions !== 'number' || typeof entry.deletions !== 'number') {
+    return '';
+  }
+
+  return ` · +${entry.additions}/-${entry.deletions}`;
+}
+
 function formatPlainLogin(login: string): string {
   return `\`${escapeSlackCodeSpan(login)}\``;
 }
@@ -294,14 +305,14 @@ function formatApprovedDigestLine(entry: DailyDigestEntry): string {
   const approved = entry.approvedLabel
     ? ` — approved ${escapeSlackMrkdwnText(entry.approvedLabel)} ago`
     : '';
-  return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${formatPlainLogin(entry.author)}${approved}`;
+  return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${formatPlainLogin(entry.author)}${formatDailyDigestChangeStats(entry)}${approved}`;
 }
 
 function formatStaleDigestLine(entry: DailyDigestEntry): string {
   const reviewers = entry.reviewers ?? [];
   const author = formatPlainLogin(entry.author);
   if (reviewers.length === 0) {
-    return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${author} — waiting on _reviewer unknown_`;
+    return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${author}${formatDailyDigestChangeStats(entry)} — waiting on _reviewer unknown_`;
   }
 
   const reviewerLogins = reviewers.map((reviewer) => formatPlainLogin(reviewer.login)).join(', ');
@@ -309,7 +320,7 @@ function formatStaleDigestLine(entry: DailyDigestEntry): string {
   const shortestWait = reviewers.reduce((shortest, reviewer) =>
     reviewer.waitedMs < shortest.waitedMs ? reviewer : shortest
   );
-  return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${author} — waiting on ${reviewerLogins} (${escapeSlackMrkdwnText(shortestWait.waitedLabel)})`;
+  return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${author}${formatDailyDigestChangeStats(entry)} — waiting on ${reviewerLogins} (${escapeSlackMrkdwnText(shortestWait.waitedLabel)})`;
 }
 
 function formatOtherReadyDigestLine(entry: DailyDigestEntry): string {
@@ -320,7 +331,7 @@ function formatOtherReadyDigestLine(entry: DailyDigestEntry): string {
   const previousReview = entry.previousReviewLabel
     ? `; previous review ${escapeSlackMrkdwnText(entry.previousReviewLabel)} ago`
     : '; no previous review';
-  return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${author} — ready for ${readyLabel}${previousReview}`;
+  return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${author}${formatDailyDigestChangeStats(entry)} — ready for ${readyLabel}${previousReview}`;
 }
 
 function formatDateLabel(date: string): string {

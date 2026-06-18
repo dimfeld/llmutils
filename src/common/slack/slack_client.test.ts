@@ -439,6 +439,54 @@ describe('common/slack/slack_client', () => {
       expect(blocks).not.toContain('<@');
     });
 
+    test('renders cached PR change stats on digest lines', () => {
+      const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
+        approvedUnmerged: [
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/1',
+            prNumber: 1,
+            title: 'Approved PR',
+            author: 'alice',
+            changedFiles: 3,
+            additions: 42,
+            deletions: 17,
+          },
+        ],
+        staleAwaitingReview: [
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/2',
+            prNumber: 2,
+            title: 'Needs review',
+            author: 'bob',
+            changedFiles: 1,
+            additions: 8,
+            deletions: 0,
+            reviewers: [{ login: 'carol', waitedMs: 90_000_000, waitedLabel: '25 hours' }],
+          },
+        ],
+        otherReadyForReview: [
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/3',
+            prNumber: 3,
+            title: 'Ready PR',
+            author: 'dana',
+            changedFiles: 5,
+            additions: 100,
+            deletions: 9,
+            readyForReviewLabel: '4 days',
+          },
+        ],
+      });
+
+      const blocks = serializedBlocks(payload.blocks);
+
+      expect(blocks).toContain('`alice` · +42/-17');
+      expect(blocks).toContain('`bob` · +8/-0 — waiting on `carol`');
+      expect(blocks).toContain('`dana` · +100/-9 — ready for 4 days');
+      expect(blocks).not.toContain('3 files');
+      expect(blocks).not.toContain('1 file');
+    });
+
     test('lists all waiting reviewers as plain logins with a single shortest waited label', () => {
       const payload = buildDailyDigestSlackPayload(
         '#reviews',

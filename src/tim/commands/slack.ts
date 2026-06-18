@@ -276,9 +276,17 @@ function formatStackedDryRunPrefix(entry: DigestEntry): string {
   return entry.isStacked ? `[stacked] ` : '';
 }
 
+function formatDryRunChangeStats(entry: DigestEntry): string {
+  if (typeof entry.additions === 'number' && typeof entry.deletions === 'number') {
+    return `; changes: +${entry.additions}/-${entry.deletions}`;
+  }
+  return '';
+}
+
 function formatPrLine(entry: DigestEntry): string {
   const approved = entry.approvedLabel ? `; approved: ${entry.approvedLabel} ago` : '';
-  return `  - ${formatStackedDryRunPrefix(entry)}#${entry.prNumber} ${entry.title} (author: ${entry.author}${approved})`;
+  const changes = formatDryRunChangeStats(entry);
+  return `  - ${formatStackedDryRunPrefix(entry)}#${entry.prNumber} ${entry.title} (author: ${entry.author}${changes}${approved})`;
 }
 
 function formatAwaitingReviewLine(entry: DigestEntry): string {

@@ -15,6 +15,9 @@ export interface DigestEntry {
   prNumber: number;
   title: string;
   author: string;
+  additions?: number | null;
+  deletions?: number | null;
+  changedFiles?: number | null;
   reviewers?: DigestReviewer[];
   /** Label names on the PR, used to group awaiting-review entries in the Slack digest. */
   labels?: string[];
@@ -48,12 +51,60 @@ interface MutableStaleEntry extends DigestEntry {
   reviewers: DigestReviewer[];
 }
 
-/**
- * Builds the stacked-PR fields for a digest entry. Only set when the PR is stacked on another open
- * PR, so non-stacked entries stay clean (and unchanged from prior digest output).
- */
-function stackedFields(row: { is_stacked: number }): Pick<DigestEntry, 'isStacked'> {
-  return row.is_stacked === 1 ? { isStacked: true } : {};
+function applyPrMetadata(
+  entry: DigestEntry,
+  row: {
+    is_stacked: number;
+    additions: number | null;
+    deletions: number | null;
+    changed_files: number | null;
+  }
+): void {
+  if (typeof row.additions === 'number') {
+    entry.additions = row.additions;
+  }
+  if (typeof row.deletions === 'number') {
+    entry.deletions = row.deletions;
+  }
+  if (typeof row.changed_files === 'number') {
+    entry.changedFiles = row.changed_files;
+  }
+  if (row.is_stacked === 1) {
+    entry.isStacked = true;
+  }
+}
+
+function buildDigestEntryBase(row: {
+  pr_url: string;
+  pr_number: number;
+  title: string;
+  author: string;
+  is_stacked: number;
+  additions: number | null;
+  deletions: number | null;
+  changed_files: number | null;
+}): DigestEntry {
+  const entry: DigestEntry = {
+    prUrl: row.pr_url,
+    prNumber: row.pr_number,
+    title: row.title,
+    author: row.author,
+  };
+  applyPrMetadata(entry, row);
+  return entry;
+}
+
+function buildMutableStaleEntry(row: StaleReviewRequestRow): MutableStaleEntry {
+  const entry: MutableStaleEntry = {
+    prUrl: row.pr_url,
+    prNumber: row.pr_number,
+    title: row.title,
+    author: row.author,
+    reviewers: [],
+    labels: parseLabels(row.labels),
+  };
+  applyPrMetadata(entry, row);
+  return entry;
 }
 
 export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestOptions): PrDigest {
@@ -65,19 +116,12 @@ export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestO
           ? undefined
           : options.nowMs - parseDigestTimestampMs(row.approved_at, 'approved_at');
 
-      return {
-        prUrl: row.pr_url,
-        prNumber: row.pr_number,
-        title: row.title,
-        author: row.author,
-        ...stackedFields(row),
-        ...(approvedMs === undefined
-          ? {}
-          : {
-              approvedMs,
-              approvedLabel: formatWaitDuration(approvedMs),
-            }),
-      };
+      const entry = buildDigestEntryBase(row);
+      if (approvedMs !== undefined) {
+        entry.approvedMs = approvedMs;
+        entry.approvedLabel = formatWaitDuration(approvedMs);
+      }
+      return entry;
     }
   );
   const approvedPrUrls = new Set(approvedUnmerged.map((entry: DigestEntry): string => entry.prUrl));
@@ -94,15 +138,7 @@ export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestO
 
     let entry = staleByPrUrl.get(row.pr_url);
     if (!entry) {
-      entry = {
-        prUrl: row.pr_url,
-        prNumber: row.pr_number,
-        title: row.title,
-        author: row.author,
-        reviewers: [],
-        labels: parseLabels(row.labels),
-        ...stackedFields(row),
-      };
+      entry = buildMutableStaleEntry(row);
       staleByPrUrl.set(row.pr_url, entry);
     }
 
@@ -136,21 +172,14 @@ export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestO
         ? undefined
         : options.nowMs - parseDigestTimestampMs(row.previous_review_at, 'previous_review_at');
 
-    otherReadyForReview.push({
-      prUrl: row.pr_url,
-      prNumber: row.pr_number,
-      title: row.title,
-      author: row.author,
-      ...stackedFields(row),
-      readyForReviewMs,
-      readyForReviewLabel: formatWaitDuration(readyForReviewMs),
-      ...(previousReviewMs === undefined
-        ? {}
-        : {
-            previousReviewMs,
-            previousReviewLabel: formatWaitDuration(previousReviewMs),
-          }),
-    });
+    const entry = buildDigestEntryBase(row);
+    entry.readyForReviewMs = readyForReviewMs;
+    entry.readyForReviewLabel = formatWaitDuration(readyForReviewMs);
+    if (previousReviewMs !== undefined) {
+      entry.previousReviewMs = previousReviewMs;
+      entry.previousReviewLabel = formatWaitDuration(previousReviewMs);
+    }
+    otherReadyForReview.push(entry);
   }
 
   return {

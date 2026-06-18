@@ -5,6 +5,9 @@ export interface ApprovedUnmergedRow {
   pr_number: number;
   title: string;
   author: string;
+  additions: number | null;
+  deletions: number | null;
+  changed_files: number | null;
   /** 1 when the PR is stacked on another open PR (its base is that PR's head branch). */
   is_stacked: number;
   /** Latest approval review timestamp, if known. */
@@ -16,6 +19,9 @@ export interface StaleReviewRequestRow {
   pr_number: number;
   title: string;
   author: string;
+  additions: number | null;
+  deletions: number | null;
+  changed_files: number | null;
   /** 1 when the PR is stacked on another open PR (its base is that PR's head branch). */
   is_stacked: number;
   reviewer: string;
@@ -30,6 +36,9 @@ export interface OtherReadyForReviewRow {
   pr_number: number;
   title: string;
   author: string;
+  additions: number | null;
+  deletions: number | null;
+  changed_files: number | null;
   /** 1 when the PR is stacked on another open PR (its base is that PR's head branch). */
   is_stacked: number;
   /** UTC ISO timestamp from pr_status.ready_at. */
@@ -96,6 +105,9 @@ export function getApprovedUnmergedRows(
           pr_status.pr_number,
           COALESCE(pr_status.title, '') AS title,
           COALESCE(pr_status.author, '') AS author,
+          pr_status.additions,
+          pr_status.deletions,
+          pr_status.changed_files,
           ${IS_STACKED_SQL} AS is_stacked,
           (
             SELECT MAX(pr_review.submitted_at)
@@ -143,6 +155,9 @@ export function getStaleReviewRequestRows(
           pr_status.pr_number,
           COALESCE(pr_status.title, '') AS title,
           COALESCE(pr_status.author, '') AS author,
+          pr_status.additions,
+          pr_status.deletions,
+          pr_status.changed_files,
           ${IS_STACKED_SQL} AS is_stacked,
           pr_review_request.reviewer,
           pr_review_request.requested_at,
@@ -212,6 +227,9 @@ export function getOtherReadyForReviewRows(
           pr_status.pr_number,
           COALESCE(pr_status.title, '') AS title,
           COALESCE(pr_status.author, '') AS author,
+          pr_status.additions,
+          pr_status.deletions,
+          pr_status.changed_files,
           ${IS_STACKED_SQL} AS is_stacked,
           pr_status.ready_at,
           (

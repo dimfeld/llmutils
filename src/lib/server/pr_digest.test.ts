@@ -67,6 +67,72 @@ describe('lib/server/pr_digest', () => {
     ]);
   });
 
+  test('passes through cached PR change stats when available', () => {
+    const digest = buildPrDigest(
+      {
+        approvedUnmergedRows: [
+          {
+            pr_url: 'https://github.com/octocat/hello-world/pull/1',
+            pr_number: 1,
+            title: 'Fix bug',
+            author: 'alice',
+            additions: 42,
+            deletions: 17,
+            changed_files: 3,
+            is_stacked: 0,
+            approved_at: null,
+          },
+        ],
+        staleReviewRequestRows: [
+          {
+            pr_url: 'https://github.com/octocat/hello-world/pull/2',
+            pr_number: 2,
+            title: 'Add feature',
+            author: 'bob',
+            additions: 5,
+            deletions: 1,
+            changed_files: 2,
+            is_stacked: 0,
+            reviewer: 'charlie',
+            requested_at: '2026-01-01T10:00:00.000Z',
+            labels: null,
+          },
+        ],
+        otherReadyForReviewRows: [
+          {
+            pr_url: 'https://github.com/octocat/hello-world/pull/3',
+            pr_number: 3,
+            title: 'Ready PR',
+            author: 'dana',
+            additions: 100,
+            deletions: 20,
+            changed_files: 7,
+            is_stacked: 0,
+            ready_at: '2025-12-29T10:00:00.000Z',
+            previous_review_at: null,
+          },
+        ],
+      },
+      { nowMs }
+    );
+
+    expect(digest.approvedUnmerged[0]).toMatchObject({
+      additions: 42,
+      deletions: 17,
+      changedFiles: 3,
+    });
+    expect(digest.staleAwaitingReview[0]).toMatchObject({
+      additions: 5,
+      deletions: 1,
+      changedFiles: 2,
+    });
+    expect(digest.otherReadyForReview[0]).toMatchObject({
+      additions: 100,
+      deletions: 20,
+      changedFiles: 7,
+    });
+  });
+
   test('groups waiting reviewers by PR without applying a minimum wait threshold', () => {
     const digest = buildPrDigest(
       {
