@@ -34,7 +34,11 @@ import { runWithHeadlessAdapterIfEnabled, updateHeadlessSessionInfo } from '../h
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { gatherPrContext, checkoutPrBranch, resolvePrUrl } from '../utils/pr_context_gathering.js';
-import { buildReviewGuideCommentPrompt, type PrReviewMetadata } from './review_pr_prompt.js';
+import {
+  buildReviewGuideCommentPrompt,
+  JJ_NON_TEST_CHANGE_STATS_FILESET,
+  type PrReviewMetadata,
+} from './review_pr_prompt.js';
 import { loadCustomReviewInstructions, resolveProjectContextForRepo } from './review_workflow.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 
@@ -42,7 +46,6 @@ import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environmen
 export const REVIEW_GUIDE_COMMENT_MARKER = '<!-- tim:pr-review-guide -->';
 const UPDATED_AT_FOOTER_PREFIX = 'Updated at';
 const BRANCH_BASE_REVSET = 'latest(heads(bookmarks() & ancestors(@--)) | fork_point(@ | main), 1)';
-const NON_TEST_CHANGE_STATS_FILESET = 'all() ~ (glob:"**/*.spec.*" | glob:"**/*.test.*")';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -105,7 +108,7 @@ async function loadJjNonTestChangeStats(baseDir: string): Promise<string | null>
   }
 
   const proc = Bun.spawn(
-    ['jj', 'diff', '--stat', '-f', BRANCH_BASE_REVSET, NON_TEST_CHANGE_STATS_FILESET],
+    ['jj', 'diff', '--stat', '-f', BRANCH_BASE_REVSET, JJ_NON_TEST_CHANGE_STATS_FILESET],
     {
       cwd: baseDir,
       stdout: 'pipe',

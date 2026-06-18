@@ -286,6 +286,9 @@ interface ReviewGuideCommentPromptOptions {
   commentInstructions?: string;
 }
 
+export const JJ_NON_TEST_CHANGE_STATS_FILESET =
+  'all() ~ (glob:"**/*.spec.*" | glob:"**/*.test.*" | prefix-glob:"**/*_test_*" | prefix-glob:"**/*_fixture*")';
+
 /**
  * Builds the prompt for a concise, comment-sized PR review guide. Unlike the full
  * review guide (which embeds verbatim diffs for in-app rendering), this output is
@@ -311,7 +314,7 @@ export function buildReviewGuideCommentPrompt(options: ReviewGuideCommentPromptO
 \`\`\`bash
 jj diff --stat \\
   -f 'latest(heads(bookmarks() & ancestors(@--)) | fork_point(@ | main), 1)' \\
-  'all() ~ (glob:"**/*.spec.*" | glob:"**/*.test.*")'
+  '${JJ_NON_TEST_CHANGE_STATS_FILESET}'
 \`\`\`
 
 If the file list is large, place the detailed file list inside a \`<details>\` block and show only the summary line with total files and lines changed outside the details block.`

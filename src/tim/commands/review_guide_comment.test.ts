@@ -240,7 +240,7 @@ describe('review_guide_comment', () => {
         '--stat',
         '-f',
         'latest(heads(bookmarks() & ancestors(@--)) | fork_point(@ | main), 1)',
-        'all() ~ (glob:"**/*.spec.*" | glob:"**/*.test.*")',
+        'all() ~ (glob:"**/*.spec.*" | glob:"**/*.test.*" | prefix-glob:"**/*_test_*" | prefix-glob:"**/*_fixture*")',
       ],
       expect.objectContaining({ cwd: tempDir })
     );

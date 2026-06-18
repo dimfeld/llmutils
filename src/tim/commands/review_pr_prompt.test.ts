@@ -109,6 +109,8 @@ describe('review_pr_prompt', () => {
     );
     expect(prompt).toContain('glob:"**/*.spec.*"');
     expect(prompt).toContain('glob:"**/*.test.*"');
+    expect(prompt).toContain('prefix-glob:"**/*_test_*"');
+    expect(prompt).toContain('prefix-glob:"**/*_fixture*"');
     expect(prompt).toContain('place the detailed file list inside a `<details>` block');
   });
 
