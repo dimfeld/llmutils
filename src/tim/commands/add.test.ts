@@ -529,61 +529,6 @@ describe('tim add command', () => {
       expect(parentPlan.dependencies).toEqual([21]);
     });
 
-    test('aggregates changedFiles from parent and done child plans into rmfilter', async () => {
-      await createExistingPlan(
-        30,
-        {
-          title: 'Parent With Files',
-          goal: 'Test parent goal',
-          details: 'Test parent details',
-          changedFiles: ['src/file1.ts', 'src/file2.ts', 'shared.ts'],
-        },
-        '30-parent-with-files.yml'
-      );
-      await createExistingPlan(
-        31,
-        {
-          title: 'Done Child Plan',
-          goal: 'Test child goal',
-          details: 'Test child details',
-          status: 'done',
-          parent: 30,
-          changedFiles: ['src/file3.ts', 'shared.ts', 'test/file.test.ts'],
-        },
-        '31-done-child.yml'
-      );
-      await createExistingPlan(
-        32,
-        {
-          title: 'Pending Child Plan',
-          goal: 'Test pending child goal',
-          details: 'Test pending child details',
-          status: 'pending',
-          parent: 30,
-          changedFiles: ['src/ignored.ts'],
-        },
-        '32-pending-child.yml'
-      );
-
-      // Run handler directly with --cleanup option
-      const command = {
-        parent: {
-          opts: () => ({ config: path.join(tempDir, '.rmfilter', 'tim.yml') }),
-        },
-      };
-      await handleAddCommand([], { cleanup: 30 }, command);
-
-      const cleanupPlan = (await resolvePlanByNumericId(33, tempDir)).plan;
-      expect(cleanupPlan.id).toBe(33);
-      expect(cleanupPlan.title).toBe('Parent With Files - Cleanup');
-      expect(cleanupPlan.parent).toBe(30);
-
-      const parentPlan = (await resolvePlanByNumericId(30, tempDir)).plan;
-      // Plans 31 and 32 were created with parent: 30, so applyPlanCreate auto-links them
-      // as dependencies of plan 30. The cleanup plan 33 is then added by handleAddCommand.
-      expect(parentPlan.dependencies).toEqual([31, 32, 33]);
-    });
-
     test('errors when referencing non-existent plan ID', async () => {
       // Run handler directly with non-existent cleanup plan ID
       const command = {

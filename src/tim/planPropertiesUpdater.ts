@@ -4,7 +4,6 @@ import type { PlanSchema } from './planSchema.js';
 import { normalizeTags, validateTags } from './utils/tags.js';
 
 export interface PlanPropertyOptions {
-  rmfilter?: string[];
   issue?: string[];
   doc?: string[];
   assign?: string;
@@ -24,13 +23,6 @@ export function updatePlanProperties(
   config?: TimConfig
 ): boolean {
   let modified = false;
-
-  // Update rmfilter
-  if (options.rmfilter && options.rmfilter.length > 0) {
-    plan.rmfilter = Array.from(new Set([...(plan.rmfilter || []), ...options.rmfilter])).toSorted();
-    modified = true;
-    log(`Updated rmfilter patterns`);
-  }
 
   // Add issue URLs
   if (options.issue && options.issue.length > 0) {

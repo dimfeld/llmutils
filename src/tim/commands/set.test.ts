@@ -391,21 +391,6 @@ describe('tim set command', () => {
     expect(updatedPlan.dependencies).toEqual([11]);
   });
 
-  test('should ignore rmfilter updates because the field is no longer persisted', async () => {
-    const planPath = await createTestPlan(15);
-
-    await handleSetCommand(
-      15,
-      {
-        rmfilter: ['src/**/*.ts', 'tests/**/*.test.ts'],
-      },
-      globalOpts
-    );
-
-    const updatedPlan = (await resolvePlanByNumericId(15, tempDir)).plan;
-    expect(updatedPlan.rmfilter).toBeUndefined();
-  });
-
   test('should update multiple fields at once', async () => {
     // Create dependency plans so validation passes
     await createTestPlan(10);
@@ -418,7 +403,6 @@ describe('tim set command', () => {
         priority: 'urgent',
         status: 'in_progress',
         dependsOn: [10, 11],
-        rmfilter: ['src/**/*.ts'],
       },
       globalOpts
     );
@@ -427,7 +411,6 @@ describe('tim set command', () => {
     expect(updatedPlan.priority).toBe('urgent');
     expect(updatedPlan.status).toBe('in_progress');
     expect(updatedPlan.dependencies).toEqual([10, 11]);
-    expect(updatedPlan.rmfilter).toBeUndefined();
   });
 
   test('should not update if no changes made', async () => {

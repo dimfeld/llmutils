@@ -44,7 +44,6 @@ type AddCommandOptions = {
   dependsOn?: number[];
   parent?: number;
   basePlan?: number;
-  rmfilter?: string[];
   issue?: string[];
   doc?: string[];
   assign?: string;
@@ -186,37 +185,9 @@ export async function handleAddCommand(
     }
   }
 
-  if (referencedPlan) {
-    const filePaths = new Set<string>();
-    referencedPlan.changedFiles?.forEach((file) => filePaths.add(file));
-
-    for (const childRow of projectContext.rows) {
-      if (
-        childRow.parent_uuid === referencedPlan.uuid &&
-        (childRow.status === 'done' ||
-          childRow.status === 'needs_review' ||
-          childRow.status === 'reviewed') &&
-        childRow.changed_files
-      ) {
-        for (const file of JSON.parse(childRow.changed_files) as string[]) {
-          filePaths.add(file);
-        }
-      }
-    }
-
-    plan.rmfilter = Array.from(filePaths).toSorted();
-    if (referencedPlan.rmfilter?.length) {
-      if (plan.rmfilter.length) {
-        plan.rmfilter.push('--');
-      }
-      plan.rmfilter.push(...referencedPlan.rmfilter);
-    }
-  }
-
   updatePlanProperties(
     plan,
     {
-      rmfilter: options.rmfilter,
       issue: options.issue,
       doc: options.doc,
       assign: options.assign,

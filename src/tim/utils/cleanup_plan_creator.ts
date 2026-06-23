@@ -23,7 +23,6 @@ export interface CleanupPlanOptions {
   status?: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
   parent?: number;
   assign?: string;
-  rmfilter?: string[];
   issue?: string[];
   doc?: string[];
   tag?: string[];
@@ -86,34 +85,6 @@ export async function createCleanupPlan(
   // Construct the full path to the new plan file
   const filePath = path.join(planDir, filename);
 
-  // Aggregate changed files from the referenced plan and its completed children
-  const filePaths = new Set<string>();
-
-  // Add files from the referenced plan
-  if (referencedPlan.changedFiles) {
-    referencedPlan.changedFiles.forEach((file) => filePaths.add(file));
-  }
-
-  // Find all child plans of the referenced plan with status "done"
-  for (const childPlan of allPlans.values()) {
-    if (
-      childPlan.parent === referencedPlan.id &&
-      (childPlan.status === 'done' ||
-        childPlan.status === 'needs_review' ||
-        childPlan.status === 'reviewed') &&
-      childPlan.changedFiles
-    ) {
-      childPlan.changedFiles.forEach((file) => filePaths.add(file));
-    }
-  }
-
-  // Add files mentioned in review issues
-  actionableIssues.forEach((issue) => {
-    if (issue.file) {
-      filePaths.add(issue.file);
-    }
-  });
-
   // Create the initial plan object adhering to PlanSchema
   const plan: PlanSchema = {
     id: planId,
@@ -132,7 +103,6 @@ export async function createCleanupPlan(
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tasks: [],
-    rmfilter: Array.from(filePaths).toSorted(), // Convert to sorted array
     tags: [],
   };
 
@@ -140,7 +110,6 @@ export async function createCleanupPlan(
   updatePlanProperties(
     plan,
     {
-      rmfilter: options.rmfilter,
       issue: options.issue,
       doc: options.doc,
       assign: options.assign,

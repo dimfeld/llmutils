@@ -92,16 +92,9 @@ describe('cleanup_plan_creator', () => {
     expect(result.planId).toBeGreaterThan(11);
     expect(result.filePath).toMatch(/\/\d+-reviewed-plan-cleanup\.plan\.md$/);
     expect(result.plan.parent).toBe(10);
-    expect(result.plan.rmfilter).toEqual([
-      'src/child.ts',
-      'src/from-review.ts',
-      'src/reviewed.ts',
-      'src/shared.ts',
-    ]);
 
     const storedPlan = await readPlanFile(result.filePath);
     expect(storedPlan.title).toBe('Reviewed Plan - Cleanup');
-    expect(storedPlan.rmfilter).toBeUndefined();
 
     const updatedParent = (await resolvePlanByNumericId(10, repoRoot)).plan;
     expect(updatedParent.status).toBe('in_progress');
@@ -205,7 +198,6 @@ describe('cleanup_plan_creator', () => {
     expect(result.plan.goal).toContain('Address 1 code review issue (1 major)');
     expect(result.plan.details).toContain('Fix the actionable issue');
     expect(result.plan.details).not.toContain('Descriptive annotation only');
-    expect(result.plan.rmfilter).toEqual(['src/actionable.ts']);
   });
 
   test('createCleanupPlan rejects all-note review issues', async () => {

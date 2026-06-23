@@ -429,10 +429,6 @@ program
     "Stack this plan's branch on another plan's branch. Explicit --base-branch takes precedence when both are set."
   )
   .option('-s, --status <status>', `Set the initial status ${statusSchemaHelpText}`)
-  .option(
-    '--rmfilter <files...>',
-    'Set rmfilter files (comma-separated list or multiple arguments)'
-  )
   .option('-i, --issue <urls...>', 'Add GitHub issue URLs to the plan')
   .option('--doc <paths...>', 'Add documentation file paths to the plan')
   .option('--tag <tags...>', 'Add tags to the plan (repeatable)')
@@ -1566,10 +1562,6 @@ program
     "Stack this plan's branch on another plan's branch. Explicit --base-branch takes precedence when both are set."
   )
   .option('--no-base-plan', 'Remove the basePlan association')
-  .option(
-    '--rmfilter <files...>',
-    'Set rmfilter files (comma-separated list or multiple arguments)'
-  )
   .option('-i, --issue <urls...>', 'Add GitHub issue URLs to the plan')
   .option('--no-i, --no-issue <urls...>', 'Remove GitHub issue URLs from the plan')
   .option('--doc <paths...>', 'Add documentation file paths to the plan')

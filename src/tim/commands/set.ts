@@ -43,7 +43,6 @@ export interface SetOptions {
   discoveredFrom?: number;
   noDiscoveredFrom?: boolean;
   note?: string;
-  rmfilter?: string[];
   issue?: string[];
   noIssue?: string[];
   doc?: string[];
@@ -232,7 +231,6 @@ export async function handleSetCommand(
     const propertiesModified = updatePlanProperties(
       plan,
       {
-        rmfilter: options.rmfilter,
         issue: options.issue,
         doc: options.doc,
         assign: options.assign,
