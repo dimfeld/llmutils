@@ -55,6 +55,11 @@ const lifecycleMocks = vi.hoisted(() => ({
 
 vi.mock('../../logging.js', () => ({
   log: vi.fn((..._args: unknown[]) => {}),
+  warn: vi.fn((..._args: unknown[]) => {}),
+}));
+
+vi.mock('../../common/github/pr_status.js', () => ({
+  fetchPrIssueComments: vi.fn(async () => []),
 }));
 
 vi.mock('../plan_display.js', () => ({
@@ -2920,6 +2925,48 @@ describe('tim/commands/pr', () => {
       const joined = lines.join('\n');
       expect(joined).toContain('- PRRT thread ID: shared-thread');
       expect(joined).toContain('Shared comment.');
+    });
+
+    test('reports when no additional feedback is provided', () => {
+      const joined = buildReviewThreadFixInstructions([]).join('\n');
+      expect(joined).toContain('## PR Review Summaries and Conversation Comments');
+      expect(joined).toContain('No PR review summaries or conversation comments were provided.');
+    });
+
+    test('renders review summaries and conversation comments when provided', () => {
+      const lines = buildReviewThreadFixInstructions(
+        [],
+        [
+          {
+            prUrl: 'https://github.com/example/repo/pull/7',
+            reviewSummaries: [
+              {
+                id: 1,
+                pr_status_id: 1,
+                author: 'reviewer',
+                state: 'CHANGES_REQUESTED',
+                body: 'Issue A and issue B still need work.',
+                submitted_at: '2026-03-20T00:00:00.000Z',
+              },
+            ],
+            issueComments: [
+              {
+                author: 'commenter',
+                body: 'Please also fix the typo.',
+                createdAt: '2026-03-20T01:00:00.000Z',
+                url: 'https://github.com/example/repo/pull/7#issuecomment-1',
+              },
+            ],
+          },
+        ]
+      );
+
+      const joined = lines.join('\n');
+      expect(joined).toContain('### https://github.com/example/repo/pull/7');
+      expect(joined).toContain('#### Review Summary 1');
+      expect(joined).toContain('Issue A and issue B still need work.');
+      expect(joined).toContain('#### Conversation Comment 1');
+      expect(joined).toContain('Please also fix the typo.');
     });
   });
 

@@ -39,8 +39,7 @@ export class BackgroundActivityTracker {
     this.onClose = options.onClose;
     this.graceMs = options.graceMs ?? BACKGROUND_DRAIN_GRACE_MS;
     this.defaultTaskTimeoutMs = options.defaultTaskTimeoutMs ?? DEFAULT_BACKGROUND_TASK_TIMEOUT_MS;
-    this.shortTaskTimeoutMs =
-      options.shortTaskTimeoutMs ?? SHORT_BACKGROUND_TASK_TIMEOUT_MS;
+    this.shortTaskTimeoutMs = options.shortTaskTimeoutMs ?? SHORT_BACKGROUND_TASK_TIMEOUT_MS;
     this.setTimeoutFn =
       options.setTimeoutFn ??
       ((callback: () => void, ms: number): TimerHandle => setTimeout(callback, ms));

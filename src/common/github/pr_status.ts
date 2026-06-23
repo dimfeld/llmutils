@@ -49,6 +49,13 @@ export interface PrStatusReview {
   submittedAt: string | null;
 }
 
+export interface PrIssueComment {
+  author: string | null;
+  body: string | null;
+  createdAt: string | null;
+  url: string | null;
+}
+
 export interface PrStatusCheckRun {
   name: string;
   status: PrCheckStatus;
@@ -253,6 +260,27 @@ interface ReviewThreadGraphQlResponse {
   node: GraphQlReviewThreadNode | null;
 }
 
+interface GraphQlIssueCommentNode {
+  author: GraphQlActor | null;
+  body: string | null;
+  createdAt: string | null;
+  url: string | null;
+}
+
+interface IssueCommentsGraphQlResponse {
+  repository: {
+    pullRequest: {
+      comments: {
+        pageInfo: {
+          hasNextPage: boolean;
+          endCursor: string | null;
+        };
+        nodes: Array<GraphQlIssueCommentNode | null> | null;
+      };
+    } | null;
+  } | null;
+}
+
 const fullStatusQuery = `
   query GetPrFullStatus($owner: String!, $repo: String!, $prNumber: Int!) {
     repository(owner: $owner, name: $repo) {
@@ -417,6 +445,34 @@ const reviewThreadsQuery = `
                 }
               }
             }
+          }
+        }
+      }
+    }
+  }
+`;
+
+const issueCommentsQuery = `
+  query GetPrIssueComments(
+    $owner: String!,
+    $repo: String!,
+    $prNumber: Int!,
+    $commentsCursor: String
+  ) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $prNumber) {
+        comments(first: 100, after: $commentsCursor) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            author {
+              login
+            }
+            body
+            createdAt
+            url
           }
         }
       }
@@ -898,6 +954,55 @@ export async function fetchPrCheckStatus(
   }
 
   return normalizeChecks(pullRequest.commits);
+}
+
+/**
+ * Fetches the PR-level conversation (issue) comments, paginating through all
+ * pages. These are distinct from review-thread comments and review summary
+ * bodies; they are the comments shown in the PR's "Conversation" tab.
+ */
+export async function fetchPrIssueComments(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  options: GitHubStatusFetchOptions = {}
+): Promise<PrIssueComment[]> {
+  const comments: PrIssueComment[] = [];
+  let commentsCursor: string | null = null;
+
+  while (true) {
+    const response: IssueCommentsGraphQlResponse = await getOctokit(options.authToken).graphql(
+      issueCommentsQuery,
+      {
+        owner,
+        repo,
+        prNumber,
+        commentsCursor,
+      }
+    );
+
+    const pullRequest = response.repository?.pullRequest;
+    if (!pullRequest) {
+      throw new Error(`Pull request ${owner}/${repo}#${prNumber} not found`);
+    }
+
+    for (const node of (pullRequest.comments.nodes ?? []).filter(
+      (node: GraphQlIssueCommentNode | null): node is GraphQlIssueCommentNode => node !== null
+    )) {
+      comments.push({
+        author: node.author?.login ?? null,
+        body: normalizeMultilineText(node.body),
+        createdAt: node.createdAt,
+        url: node.url,
+      });
+    }
+
+    if (!pullRequest.comments.pageInfo.hasNextPage) {
+      return comments;
+    }
+
+    commentsCursor = pullRequest.comments.pageInfo.endCursor;
+  }
 }
 
 export async function fetchPrReviewThreads(

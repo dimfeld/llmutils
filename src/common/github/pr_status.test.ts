@@ -891,4 +891,87 @@ describe('common/github/pr_status', () => {
       reviewDecision: 'CHANGES_REQUESTED',
     });
   });
+
+  test('fetchPrIssueComments normalizes conversation comments and paginates', async () => {
+    const graphql = vi.fn(async (_query: string, variables: { commentsCursor: string | null }) => {
+      if (!variables.commentsCursor) {
+        return {
+          repository: {
+            pullRequest: {
+              comments: {
+                pageInfo: { hasNextPage: true, endCursor: 'cursor-1' },
+                nodes: [
+                  {
+                    author: { login: 'reviewer' },
+                    body: 'First issue\r\nSecond issue',
+                    createdAt: '2026-03-20T00:00:00.000Z',
+                    url: 'https://github.com/owner/repo/pull/12#issuecomment-1',
+                  },
+                  null,
+                ],
+              },
+            },
+          },
+        };
+      }
+
+      return {
+        repository: {
+          pullRequest: {
+            comments: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: [
+                {
+                  author: null,
+                  body: null,
+                  createdAt: '2026-03-20T01:00:00.000Z',
+                  url: 'https://github.com/owner/repo/pull/12#issuecomment-2',
+                },
+              ],
+            },
+          },
+        },
+      };
+    });
+
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      graphql,
+    });
+
+    const { fetchPrIssueComments } = await import('./pr_status.ts');
+    const comments = await fetchPrIssueComments('owner', 'repo', 12);
+
+    expect(graphql).toHaveBeenCalledTimes(2);
+    expect(comments).toEqual([
+      {
+        author: 'reviewer',
+        body: 'First issue\nSecond issue',
+        createdAt: '2026-03-20T00:00:00.000Z',
+        url: 'https://github.com/owner/repo/pull/12#issuecomment-1',
+      },
+      {
+        author: null,
+        body: null,
+        createdAt: '2026-03-20T01:00:00.000Z',
+        url: 'https://github.com/owner/repo/pull/12#issuecomment-2',
+      },
+    ]);
+  });
+
+  test('fetchPrIssueComments throws when the requested PR is missing', async () => {
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      graphql: vi.fn(async () => ({
+        repository: {
+          pullRequest: null,
+        },
+      })),
+    });
+
+    const { fetchPrIssueComments } = await import('./pr_status.ts');
+    await expect(fetchPrIssueComments('owner', 'repo', 88)).rejects.toThrow(
+      'Pull request owner/repo#88 not found'
+    );
+  });
 });

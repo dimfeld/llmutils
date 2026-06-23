@@ -194,7 +194,7 @@
   }
 </script>
 
-<div class="min-w-full p-6 md:min-w-lg overflow-y-auto">
+<div class="min-w-full overflow-y-auto p-6 md:min-w-lg">
   <div class="mb-6">
     <h1 class="text-xl font-semibold text-foreground">
       Import Issue from {data.displayName}

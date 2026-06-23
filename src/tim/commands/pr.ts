@@ -22,6 +22,7 @@ import {
   resolveReviewThread,
 } from '../../common/github/pull_requests.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
+import { fetchPrIssueComments, type PrIssueComment } from '../../common/github/pr_status.js';
 import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
@@ -933,6 +934,77 @@ function indentBlock(value: string, spaces: number): string {
     .join('\n');
 }
 
+/**
+ * PR-level feedback that is not represented as a review thread: review summary
+ * bodies and conversation (issue) comments. These are fetched at fix time and
+ * embedded in the prompt so the agent can act on issues raised there too.
+ */
+export interface PrAdditionalFeedback {
+  prUrl: string;
+  reviewSummaries: PrReviewRow[];
+  issueComments: PrIssueComment[];
+}
+
+function hasAdditionalFeedback(feedback: PrAdditionalFeedback[]): boolean {
+  return feedback.some(
+    (entry) => entry.reviewSummaries.length > 0 || entry.issueComments.length > 0
+  );
+}
+
+function formatAdditionalFeedbackForPrompt(feedback: PrAdditionalFeedback[]): string[] {
+  const lines = [
+    '## PR Review Summaries and Conversation Comments',
+    '',
+    'These are PR-level review summary bodies and conversation comments that are not attached to a specific review thread. A single comment may enumerate several distinct issues. Treat each listed issue as actionable unless a later comment indicates it was already addressed, resolved, or withdrawn.',
+    '',
+  ];
+
+  if (!hasAdditionalFeedback(feedback)) {
+    lines.push('No PR review summaries or conversation comments were provided.', '');
+    return lines;
+  }
+
+  feedback.forEach((entry) => {
+    if (entry.reviewSummaries.length === 0 && entry.issueComments.length === 0) {
+      return;
+    }
+
+    lines.push(`### ${entry.prUrl}`, '');
+
+    entry.reviewSummaries.forEach((review, reviewIndex) => {
+      lines.push(
+        `#### Review Summary ${reviewIndex + 1}`,
+        '',
+        formatNullableLine('Author', review.author),
+        formatNullableLine('State', review.state),
+        formatNullableLine('Submitted at', review.submitted_at),
+        '',
+        'Body:',
+        '',
+        indentBlock(review.body ?? '(empty)', 2),
+        ''
+      );
+    });
+
+    entry.issueComments.forEach((comment, commentIndex) => {
+      lines.push(
+        `#### Conversation Comment ${commentIndex + 1}`,
+        '',
+        formatNullableLine('Author', comment.author),
+        formatNullableLine('Created at', comment.createdAt),
+        formatNullableLine('URL', comment.url),
+        '',
+        'Body:',
+        '',
+        indentBlock(comment.body ?? '(empty)', 2),
+        ''
+      );
+    });
+  });
+
+  return lines;
+}
+
 function formatReviewThreadForPrompt(
   item: { thread: PrReviewThreadDetail; prUrl: string },
   index: number
@@ -985,7 +1057,8 @@ function formatReviewThreadForPrompt(
 
 export function buildReviewThreadFixPrompt(
   planData: PlanSchema,
-  threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>
+  threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>,
+  additionalFeedback: PrAdditionalFeedback[] = []
 ): string {
   const prUrls = [...new Set(threads.map(({ prUrl }) => prUrl))];
   const branch = planData.branch?.trim() || 'Current working branch';
@@ -994,7 +1067,7 @@ export function buildReviewThreadFixPrompt(
     '',
     'You are addressing review comments on a pull request for the current branch.',
     '',
-    'The PR branch, PR URLs, unresolved review threads, and related review-thread comments are already provided below; do not spend time auto-discovering or re-fetching them before starting.',
+    'The PR branch, PR URLs, unresolved review threads, related review-thread comments, review summaries, and conversation comments are already provided below; do not spend time auto-discovering or re-fetching them before starting.',
     '',
     '## Plan Context',
     '',
@@ -1017,21 +1090,22 @@ export function buildReviewThreadFixPrompt(
     prompt.push('');
   }
 
-  prompt.push(...buildReviewThreadFixInstructions(threads));
+  prompt.push(...buildReviewThreadFixInstructions(threads, additionalFeedback));
 
   return prompt.join('\n');
 }
 
 export function buildPrReviewThreadFixPrompt(
   target: PullRequestFixTarget,
-  threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>
+  threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>,
+  additionalFeedback: PrAdditionalFeedback[] = []
 ): string {
   const prompt = [
     '# Address Pull Request Review Comments',
     '',
     'You are addressing review comments on a pull request for the current branch.',
     '',
-    'The PR branch, PR URLs, unresolved review threads, and related review-thread comments are already provided below; do not spend time auto-discovering or re-fetching them before starting.',
+    'The PR branch, PR URLs, unresolved review threads, related review-thread comments, review summaries, and conversation comments are already provided below; do not spend time auto-discovering or re-fetching them before starting.',
     '',
     '## Pull Request Context',
     '',
@@ -1054,13 +1128,14 @@ export function buildPrReviewThreadFixPrompt(
     ''
   );
 
-  prompt.push(...buildReviewThreadFixInstructions(threads));
+  prompt.push(...buildReviewThreadFixInstructions(threads, additionalFeedback));
 
   return prompt.join('\n');
 }
 
 export function buildReviewThreadFixInstructions(
-  threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>
+  threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>,
+  additionalFeedback: PrAdditionalFeedback[] = []
 ): string[] {
   const prompt = [
     '## Unresolved Review Threads',
@@ -1077,10 +1152,12 @@ export function buildReviewThreadFixInstructions(
     });
   }
 
+  prompt.push(...formatAdditionalFeedbackForPrompt(additionalFeedback));
+
   prompt.push(
     '## Additional PR Feedback',
     '',
-    'If the fetched thread data points to related PR feedback that is not represented as a review thread, address it when appropriate and leave a standalone PR comment using:',
+    'The review summaries and conversation comments above, plus the review threads, are the feedback to act on. When you address feedback that is not represented as a review thread, leave a standalone PR comment using:',
     '   `tim pr comment <PR URL or owner/repo#number> "explanation of fix"`',
     '',
     'Do not use standalone PR comments for review-thread replies. Use GraphQL review-thread replies for review threads, and `tim pr comment` only for feedback that is not represented as a review thread.',
@@ -1090,7 +1167,7 @@ export function buildReviewThreadFixInstructions(
   prompt.push(
     '## User Feedback',
     '',
-    'List the review threads above for the user before making code changes. Show the whole contents of each issue/comment, including enough context to distinguish each item, such as author, file, and line.',
+    'List the review threads, review summaries, and conversation comments above for the user before making code changes. Show the whole contents of each issue/comment, including enough context to distinguish each item, such as author, file, and line.',
     '',
     'Ask the user for feedback on which review comments to address and how. If the user has already given clear instructions, follow those instructions; otherwise wait for direction before implementing fixes.',
     '',
@@ -1195,6 +1272,38 @@ function validatePrMatchesCurrentRepository(
       `PR ${target.canonicalPrUrl} belongs to ${target.owner}/${target.repo}, but the current repository is ${parsedRepositoryId.owner}/${parsedRepositoryId.repo}. Run this command from inside the matching repository.`
     );
   }
+}
+
+/**
+ * Gathers PR-level feedback that lives outside review threads: review summary
+ * bodies (already fetched onto each status) and conversation/issue comments
+ * (fetched live here). Conversation comments are not persisted, so a fetch
+ * failure for one PR is logged and that PR contributes no comments rather than
+ * aborting the whole fix run.
+ */
+async function collectPrAdditionalFeedback(
+  prStatuses: PrStatusDetail[]
+): Promise<PrAdditionalFeedback[]> {
+  const feedback: PrAdditionalFeedback[] = [];
+  for (const prStatus of prStatuses) {
+    const reviewSummaries = prStatus.reviews.filter((review) => review.body?.trim());
+
+    let issueComments: PrIssueComment[] = [];
+    try {
+      issueComments = await fetchPrIssueComments(
+        prStatus.status.owner,
+        prStatus.status.repo,
+        prStatus.status.pr_number
+      );
+    } catch (err) {
+      warn(
+        `Warning: failed to fetch PR conversation comments for ${prStatus.status.pr_url}: ${(err as Error).message}`
+      );
+    }
+
+    feedback.push({ prUrl: prStatus.status.pr_url, reviewSummaries, issueComments });
+  }
+  return feedback;
 }
 
 function getUnresolvedReviewThreads(
@@ -1416,10 +1525,12 @@ async function executePrFixCommand({
     return;
   }
 
+  const additionalFeedback = await collectPrAdditionalFeedback(prStatuses);
+
   const fixPrompt =
     target.kind === 'plan'
-      ? buildReviewThreadFixPrompt(target.plan, unresolvedThreads)
-      : buildPrReviewThreadFixPrompt(target, unresolvedThreads);
+      ? buildReviewThreadFixPrompt(target.plan, unresolvedThreads, additionalFeedback)
+      : buildPrReviewThreadFixPrompt(target, unresolvedThreads, additionalFeedback);
 
   if (target.kind === 'pr') {
     await ensurePrFixHeadBranchPushableOnOrigin(target);
