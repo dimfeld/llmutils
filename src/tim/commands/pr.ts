@@ -1167,7 +1167,7 @@ export function buildReviewThreadFixInstructions(
   prompt.push(
     '## User Feedback',
     '',
-    'List the review threads, review summaries, and conversation comments above for the user before making code changes. Show the whole contents of each issue/comment, including enough context to distinguish each item, such as author, file, and line.',
+    'List the review threads, review summaries, and conversation comments above for the user before making code changes. Show the whole contents of each issue/comment, including enough context to distinguish each item, such as author, file, and line. You may omit purely informational items that are not actual review feedback (for example, status updates, acknowledgements, or automated notices), and focus the list on actionable feedback.',
     '',
     'Ask the user for feedback on which review comments to address and how. If the user has already given clear instructions, follow those instructions; otherwise wait for direction before implementing fixes.',
     '',
