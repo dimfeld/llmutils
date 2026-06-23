@@ -289,6 +289,17 @@ describe('PrStatusSection', () => {
     expect(body).toContain('href="linear://review/owner/repo/pull/42"');
   });
 
+  test('renders a View in GitHub link to the PR url', async () => {
+    const detail = makePrDetail({ status: { pr_number: 42 } });
+    const { body } = await renderSection({
+      prUrls: ['https://github.com/owner/repo/pull/42'],
+      prStatuses: [detail],
+    });
+
+    expect(body).toContain('View in GitHub');
+    expect(body).toContain('href="https://github.com/owner/repo/pull/42"');
+  });
+
   test('renders state badge for open PR', async () => {
     const detail = makePrDetail({ status: { state: 'open' } });
     const { body } = await renderSection({
