@@ -194,7 +194,7 @@
   }
 </script>
 
-<div class="min-w-full p-6 md:min-w-lg">
+<div class="min-w-full p-6 md:min-w-lg overflow-y-auto">
   <div class="mb-6">
     <h1 class="text-xl font-semibold text-foreground">
       Import Issue from {data.displayName}
@@ -313,7 +313,7 @@
                     <span class="text-sm">{getContentLabel(index, isBody)}</span>
                   </label>
                   <pre
-                    class="plan-rendered-content mt-1 ml-6 line-clamp-10 text-xs whitespace-pre-wrap text-muted-foreground">{@html renderPlanContentHtml(
+                    class="plan-rendered-content mt-1 ml-6 max-h-96 overflow-y-auto text-xs whitespace-pre-wrap text-muted-foreground">{@html renderPlanContentHtml(
                       content?.trim() ?? ''
                     )}</pre>
                 </div>
@@ -351,7 +351,7 @@
                             <span class="text-sm">{getContentLabel(contentIndex, isBody)}</span>
                           </label>
                           <pre
-                            class="plan-rendered-content mt-1 ml-6 line-clamp-10 text-xs whitespace-pre-wrap text-muted-foreground">{@html renderPlanContentHtml(
+                            class="plan-rendered-content mt-1 ml-6 max-h-96 overflow-y-auto text-xs whitespace-pre-wrap text-muted-foreground">{@html renderPlanContentHtml(
                               content?.trim() ?? ''
                             )}</pre>
                         </div>
