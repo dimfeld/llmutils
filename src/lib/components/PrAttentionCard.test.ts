@@ -23,6 +23,7 @@ function createActionablePr(overrides: Partial<ActionablePr> = {}): ActionablePr
     changedFiles: null,
     reviewRequestedAt: null,
     reviewRequestedStacked: false,
+    hasApprovingReview: false,
     ...overrides,
   };
 }
@@ -132,5 +133,32 @@ describe('PrAttentionCard', () => {
     expect(body).toContain('Review requested');
     expect(body).toContain('5h');
     expect(body).toContain('Stacked');
+  });
+
+  test('renders an approval check mark when a review-requested PR has an approving review', () => {
+    const { body } = render(PrAttentionCard, {
+      props: {
+        item: createItem({
+          actionReason: 'review_requested',
+          hasApprovingReview: true,
+        }),
+      },
+    });
+
+    expect(body).toContain('Approved by a reviewer');
+    expect(body).toContain('text-green-600');
+  });
+
+  test('does not render an approval check mark when there is no approving review', () => {
+    const { body } = render(PrAttentionCard, {
+      props: {
+        item: createItem({
+          actionReason: 'review_requested',
+          hasApprovingReview: false,
+        }),
+      },
+    });
+
+    expect(body).not.toContain('Approved by a reviewer');
   });
 });

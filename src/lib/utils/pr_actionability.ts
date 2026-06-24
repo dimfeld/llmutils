@@ -162,6 +162,7 @@ export function buildActionablePrsForRepo(
       pr.status;
     const linkedPlans = linkedPlansByPrUrl.get(pr_url) ?? [];
     const firstLinkedPlan = linkedPlans[0] ?? null;
+    const hasApprovingReview = pr.reviews.some((review) => review.state === 'APPROVED');
 
     const isAuthored =
       normalizedUsername !== null &&
@@ -189,6 +190,7 @@ export function buildActionablePrsForRepo(
           changedFiles: changed_files,
           reviewRequestedAt: null,
           reviewRequestedStacked: false,
+          hasApprovingReview,
         });
       }
     } else if (normalizedUsername !== null && hasReviewRequestForUser(pr, normalizedUsername)) {
@@ -211,6 +213,7 @@ export function buildActionablePrsForRepo(
         reviewRequestedAt: getReviewRequestedAtForUser(pr, normalizedUsername),
         reviewRequestedStacked:
           pr.status.base_branch !== null && reviewRequestedHeadBranches.has(pr.status.base_branch),
+        hasApprovingReview,
       });
     }
   }

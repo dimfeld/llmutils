@@ -31,6 +31,8 @@ export interface ActionablePr {
    * branch is the head branch of such a PR).
    */
   reviewRequestedStacked: boolean;
+  /** True when at least one reviewer has submitted an approving review. */
+  hasApprovingReview: boolean;
 }
 
 // --- Attention item types ---

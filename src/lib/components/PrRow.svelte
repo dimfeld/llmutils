@@ -1,5 +1,6 @@
 <script lang="ts">
   import ExternalLink from '@lucide/svelte/icons/external-link';
+  import CircleCheck from '@lucide/svelte/icons/circle-check';
   import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
   import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import { formatCompactRelativeTime } from '$lib/utils/time.js';
@@ -39,6 +40,7 @@
       ? formatCompactRelativeTime(pr.currentUserReviewRequestedAt)
       : ''
   );
+  let hasApprovingReview = $derived(pr.reviews.some((review) => review.state === 'APPROVED'));
 </script>
 
 <div
@@ -71,6 +73,12 @@
           {stateLabel(pr.status.state, pr.status.draft)}
         </span>
       {:else if pr.currentUserReviewRequestLabel}
+        {#if hasApprovingReview}
+          <CircleCheck
+            class="size-3.5 shrink-0 text-green-600 dark:text-green-400"
+            aria-label="Approved by a reviewer"
+          />
+        {/if}
         <span
           class="inline-flex items-center rounded-full bg-yellow-200 px-1.5 py-0.5 text-xs leading-none font-medium text-yellow-900 dark:bg-yellow-950/60 dark:text-yellow-200"
         >

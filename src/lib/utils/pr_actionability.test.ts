@@ -429,6 +429,7 @@ describe('buildActionablePrsForRepo', () => {
         changedFiles: null,
         reviewRequestedAt: null,
         reviewRequestedStacked: false,
+        hasApprovingReview: false,
       },
     ]);
   });
@@ -476,6 +477,7 @@ describe('buildActionablePrsForRepo', () => {
         changedFiles: null,
         reviewRequestedAt: '2026-01-01T00:00:00Z',
         reviewRequestedStacked: false,
+        hasApprovingReview: false,
       },
     ]);
   });
@@ -552,6 +554,44 @@ describe('buildActionablePrsForRepo', () => {
     const result = buildActionablePrsForRepo(7, [base, stacked], new Map(), 'testuser');
     const stackedResult = result.find((pr) => pr.prNumber === 23);
     expect(stackedResult?.reviewRequestedStacked).toBe(false);
+  });
+
+  test('sets hasApprovingReview when a reviewer has approved a review-requested PR', () => {
+    const pr = makePrDetail(
+      {
+        pr_url: 'https://github.com/owner/repo/pull/24',
+        pr_number: 24,
+        author: 'someone-else',
+      },
+      {
+        reviews: [
+          {
+            id: 1,
+            pr_status_id: 1,
+            author: 'another-reviewer',
+            state: 'APPROVED',
+            body: null,
+            submitted_at: '2026-01-02T00:00:00Z',
+          },
+        ],
+        reviewRequests: [
+          {
+            id: 1,
+            pr_status_id: 1,
+            reviewer: 'testuser',
+            requested_at: '2026-01-01T00:00:00Z',
+            removed_at: null,
+            last_event_at: '2026-01-01T00:00:00Z',
+            request_version: 0,
+          },
+        ],
+      }
+    );
+
+    const result = buildActionablePrsForRepo(7, [pr], new Map(), 'testuser');
+    expect(result).toHaveLength(1);
+    expect(result[0]?.actionReason).toBe('review_requested');
+    expect(result[0]?.hasApprovingReview).toBe(true);
   });
 
   test('skips closed PRs but includes open PRs regardless of actionable state', () => {

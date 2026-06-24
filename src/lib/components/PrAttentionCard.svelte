@@ -1,5 +1,6 @@
 <script lang="ts">
   import ExternalLink from '@lucide/svelte/icons/external-link';
+  import CircleCheck from '@lucide/svelte/icons/circle-check';
   import type { PrAttentionItem } from '$lib/utils/dashboard_attention.js';
   import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import { formatCompactRelativeTime } from '$lib/utils/time.js';
@@ -87,6 +88,12 @@
       {/if}
     </div>
     <div class="mt-1 flex items-center gap-1.5">
+      {#if pr.actionReason === 'review_requested' && pr.hasApprovingReview}
+        <CircleCheck
+          class="size-3.5 shrink-0 text-green-600 dark:text-green-400"
+          aria-label="Approved by a reviewer"
+        />
+      {/if}
       {#if reasonStyle}
         <span
           class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {reasonStyle.classes}"

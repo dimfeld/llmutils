@@ -100,6 +100,33 @@ describe('PrRow', () => {
     expect(body).toContain('Stacked');
   });
 
+  test('renders an approval check mark when a reviewer has approved the PR', () => {
+    const pr = createPr();
+    pr.currentUserReviewRequestLabel = 'Review Requested';
+    pr.reviews = [
+      {
+        id: 1,
+        pr_status_id: 1,
+        author: 'another-reviewer',
+        state: 'APPROVED',
+        body: null,
+        submitted_at: '2026-03-18T10:00:00.000Z',
+      },
+    ];
+
+    const { body } = render(PrRow, {
+      props: {
+        pr,
+        href: '/projects/123/prs/42',
+        itemId: '123:42',
+      },
+    });
+
+    expect(body).toContain('Review Requested');
+    expect(body).toContain('Approved by a reviewer');
+    expect(body).toContain('text-green-600');
+  });
+
   test('renders compact diff stats when additions and deletions are available', () => {
     const pr = createPr();
     pr.status.additions = 42;
