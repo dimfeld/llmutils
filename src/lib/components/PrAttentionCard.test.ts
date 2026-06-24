@@ -22,6 +22,7 @@ function createActionablePr(overrides: Partial<ActionablePr> = {}): ActionablePr
     deletions: null,
     changedFiles: null,
     reviewRequestedAt: null,
+    reviewRequestedStacked: false,
     ...overrides,
   };
 }
@@ -115,5 +116,21 @@ describe('PrAttentionCard', () => {
     expect(body).toContain('bg-yellow-200');
     expect(body).toContain('dark:bg-yellow-950/60');
     expect(body).not.toContain('bg-purple-100');
+  });
+
+  test('renders the stacked marker alongside the review request age', () => {
+    const { body } = render(PrAttentionCard, {
+      props: {
+        item: createItem({
+          actionReason: 'review_requested',
+          reviewRequestedAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+          reviewRequestedStacked: true,
+        }),
+      },
+    });
+
+    expect(body).toContain('Review requested');
+    expect(body).toContain('5h');
+    expect(body).toContain('Stacked');
   });
 });

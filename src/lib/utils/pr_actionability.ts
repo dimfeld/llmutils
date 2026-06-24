@@ -142,6 +142,19 @@ export function buildActionablePrsForRepo(
 ): ActionablePr[] {
   const results: ActionablePr[] = [];
 
+  // Head branches of open PRs that have an unanswered review request for the
+  // current user. A review-requested PR whose base branch appears here is
+  // "stacked" on top of another PR that also needs the user's review.
+  const reviewRequestedHeadBranches = new Set<string>();
+  if (normalizedUsername !== null) {
+    for (const pr of prs) {
+      if (pr.status.state !== 'open') continue;
+      if (pr.status.head_branch && hasReviewRequestForUser(pr, normalizedUsername)) {
+        reviewRequestedHeadBranches.add(pr.status.head_branch);
+      }
+    }
+  }
+
   for (const pr of prs) {
     if (pr.status.state !== 'open') continue;
 
@@ -175,6 +188,7 @@ export function buildActionablePrsForRepo(
           deletions,
           changedFiles: changed_files,
           reviewRequestedAt: null,
+          reviewRequestedStacked: false,
         });
       }
     } else if (normalizedUsername !== null && hasReviewRequestForUser(pr, normalizedUsername)) {
@@ -195,6 +209,8 @@ export function buildActionablePrsForRepo(
         deletions,
         changedFiles: changed_files,
         reviewRequestedAt: getReviewRequestedAtForUser(pr, normalizedUsername),
+        reviewRequestedStacked:
+          pr.status.base_branch !== null && reviewRequestedHeadBranches.has(pr.status.base_branch),
       });
     }
   }

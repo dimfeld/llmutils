@@ -44,6 +44,12 @@ export interface EnrichedProjectPr extends PrStatusDetailWithRequiredChecks {
   currentUserReviewRequestLabel: string | null;
   currentUserReviewRequestedAt: string | null;
   currentUserPushedAfterReview: boolean;
+  /**
+   * True when this PR's review request is stacked on top of another PR that also
+   * has an unanswered review request for the current user (i.e. this PR's base
+   * branch is the head branch of such a PR).
+   */
+  currentUserReviewRequestStacked: boolean;
 }
 
 interface RefreshResult {
@@ -82,7 +88,34 @@ function enrichProjectPrs(
     currentUserReviewRequestLabel: getCurrentUserReviewRequestLabel(pr, username),
     currentUserReviewRequestedAt: getCurrentUserReviewRequestedAt(pr, username),
     currentUserPushedAfterReview: getCurrentUserPushedAfterReview(pr, username),
+    currentUserReviewRequestStacked: false,
   }));
+}
+
+/**
+ * Mark PRs whose review request is stacked on top of another PR that also has an
+ * unanswered review request for the current user. A PR is stacked when its base
+ * branch (within the same repo) is the head branch of such a PR.
+ */
+function markStackedReviewRequests(prs: EnrichedProjectPr[]): EnrichedProjectPr[] {
+  const reviewRequestedHeadBranches = new Set<string>();
+  for (const pr of prs) {
+    if (pr.currentUserReviewRequestLabel === 'Review Requested' && pr.status.head_branch) {
+      reviewRequestedHeadBranches.add(
+        `${pr.status.owner}/${pr.status.repo}#${pr.status.head_branch}`
+      );
+    }
+  }
+
+  return prs.map((pr) => {
+    const stacked =
+      pr.currentUserReviewRequestLabel === 'Review Requested' &&
+      pr.status.base_branch !== null &&
+      reviewRequestedHeadBranches.has(
+        `${pr.status.owner}/${pr.status.repo}#${pr.status.base_branch}`
+      );
+    return { ...pr, currentUserReviewRequestStacked: stacked };
+  });
 }
 
 function sortProjectPrsByPrNumberDesc(prs: EnrichedProjectPr[]): EnrichedProjectPr[] {
@@ -240,7 +273,7 @@ function partitionProjectPrs(
   prs: EnrichedProjectPr[],
   username: string | null
 ): { authored: EnrichedProjectPr[]; reviewing: EnrichedProjectPr[] } {
-  const partitioned = partitionCachedProjectPrs(prs, username);
+  const partitioned = partitionCachedProjectPrs(markStackedReviewRequests(prs), username);
 
   return {
     authored: sortProjectPrsByPrNumberDesc(partitioned.authored),

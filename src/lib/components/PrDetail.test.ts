@@ -56,6 +56,7 @@ function createPr(): EnrichedProjectPr {
     projectId: 123,
     currentUserReviewRequestLabel: 'Review Requested',
     currentUserReviewRequestedAt: '2026-03-18T10:00:00.000Z',
+    currentUserReviewRequestStacked: false,
     requiredCheckNames: [],
     status: {
       id: 1,

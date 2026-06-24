@@ -92,11 +92,13 @@
           class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {reasonStyle.classes}"
         >
           {reasonStyle.label}
-          {#if pr.actionReason === 'review_requested' && reviewRequestedAge}
+          {#if pr.actionReason === 'review_requested' && (reviewRequestedAge || pr.reviewRequestedStacked)}
             <span
               class="ml-1 border-l border-yellow-300 pl-1 text-yellow-700 dark:border-yellow-700 dark:text-yellow-200"
             >
-              {reviewRequestedAge}
+              {#if reviewRequestedAge}{reviewRequestedAge}{/if}{#if pr.reviewRequestedStacked}{reviewRequestedAge
+                  ? ' '
+                  : ''}Stacked{/if}
             </span>
           {/if}
         </span>

@@ -14,6 +14,7 @@ function createPr(prNumber: number, title: string) {
     linkedPlans: [],
     currentUserReviewRequestLabel: null,
     currentUserReviewRequestedAt: null,
+    currentUserReviewRequestStacked: false,
     checks: [],
     reviews: [],
     reviewRequests: [],

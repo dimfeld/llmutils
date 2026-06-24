@@ -75,11 +75,13 @@
           class="inline-flex items-center rounded-full bg-yellow-200 px-1.5 py-0.5 text-xs leading-none font-medium text-yellow-900 dark:bg-yellow-950/60 dark:text-yellow-200"
         >
           {pr.currentUserReviewRequestLabel}
-          {#if reviewRequestedAge}
+          {#if reviewRequestedAge || pr.currentUserReviewRequestStacked}
             <span
               class="ml-1 border-l border-yellow-300 pl-1 text-yellow-700 dark:border-yellow-700 dark:text-yellow-200"
             >
-              {reviewRequestedAge}
+              {#if reviewRequestedAge}{reviewRequestedAge}{/if}{#if pr.currentUserReviewRequestStacked}{reviewRequestedAge
+                  ? ' '
+                  : ''}Stacked{/if}
             </span>
           {/if}
         </span>

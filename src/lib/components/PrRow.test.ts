@@ -37,6 +37,7 @@ function createPr(): EnrichedProjectPr {
     linkedPlans: [],
     currentUserReviewRequestLabel: null,
     currentUserReviewRequestedAt: null,
+    currentUserReviewRequestStacked: false,
     checks: [],
     reviews: [],
     reviewRequests: [],
@@ -78,6 +79,25 @@ describe('PrRow', () => {
     expect(body).toContain('5h');
     expect(body).toContain('bg-yellow-200');
     expect(body).toContain('dark:bg-yellow-950/60');
+  });
+
+  test('renders the stacked marker alongside the timestamp when the review request is stacked', () => {
+    const pr = createPr();
+    pr.currentUserReviewRequestLabel = 'Review Requested';
+    pr.currentUserReviewRequestedAt = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+    pr.currentUserReviewRequestStacked = true;
+
+    const { body } = render(PrRow, {
+      props: {
+        pr,
+        href: '/projects/123/prs/42',
+        itemId: '123:42',
+      },
+    });
+
+    expect(body).toContain('Review Requested');
+    expect(body).toContain('5h');
+    expect(body).toContain('Stacked');
   });
 
   test('renders compact diff stats when additions and deletions are available', () => {

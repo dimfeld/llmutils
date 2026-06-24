@@ -353,6 +353,55 @@ describe('project_prs remote functions', () => {
     expect(result.reviewing[0]?.currentUserReviewRequestedAt).toBe('2026-03-30T11:00:00.000Z');
   });
 
+  test('getProjectPrs marks a review-requested PR stacked on another review-requested PR', async () => {
+    const base = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/30',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 30,
+      title: 'Base PR',
+      state: 'open',
+      draft: false,
+      author: 'someone-else',
+      baseBranch: 'main',
+      headBranch: 'feature-a',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+    upsertPrReviewRequestByReviewer(currentDb, base.status.id, {
+      reviewer: 'dimfeld',
+      action: 'requested',
+      eventAt: '2026-03-30T11:00:00.000Z',
+    });
+
+    const stacked = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/31',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 31,
+      title: 'Stacked PR',
+      state: 'open',
+      draft: false,
+      author: 'someone-else',
+      baseBranch: 'feature-a',
+      headBranch: 'feature-b',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+    upsertPrReviewRequestByReviewer(currentDb, stacked.status.id, {
+      reviewer: 'dimfeld',
+      action: 'requested',
+      eventAt: '2026-03-30T11:00:00.000Z',
+    });
+
+    const { getProjectPrs } = await import('./project_prs.remote.js');
+    const result = await invokeQuery(getProjectPrs, { projectId: String(projectId) });
+
+    const byNumber = new Map(result.reviewing.map((pr) => [pr.status.pr_number, pr]));
+    expect(byNumber.get(30)?.currentUserReviewRequestLabel).toBe('Review Requested');
+    expect(byNumber.get(30)?.currentUserReviewRequestStacked).toBe(false);
+    expect(byNumber.get(31)?.currentUserReviewRequestLabel).toBe('Review Requested');
+    expect(byNumber.get(31)?.currentUserReviewRequestStacked).toBe(true);
+  });
+
   test('getProjectPrs aggregates all project PRs when projectId is all', async () => {
     const otherProjectId = getOrCreateProject(currentDb, 'github.com__example__other-repo').id;
     upsertPrStatus(currentDb, {

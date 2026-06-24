@@ -25,6 +25,12 @@ export interface ActionablePr {
   deletions: number | null;
   changedFiles: number | null;
   reviewRequestedAt: string | null;
+  /**
+   * True when this PR's review request is stacked on top of another PR that also
+   * has an unanswered review request for the current user (i.e. this PR's base
+   * branch is the head branch of such a PR).
+   */
+  reviewRequestedStacked: boolean;
 }
 
 // --- Attention item types ---

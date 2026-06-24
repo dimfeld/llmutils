@@ -428,6 +428,7 @@ describe('buildActionablePrsForRepo', () => {
         deletions: null,
         changedFiles: null,
         reviewRequestedAt: null,
+        reviewRequestedStacked: false,
       },
     ]);
   });
@@ -474,8 +475,83 @@ describe('buildActionablePrsForRepo', () => {
         deletions: null,
         changedFiles: null,
         reviewRequestedAt: '2026-01-01T00:00:00Z',
+        reviewRequestedStacked: false,
       },
     ]);
+  });
+
+  test('marks a review-requested PR as stacked when its base is another review-requested PR', () => {
+    const reviewRequest: PrReviewRequestRow = {
+      id: 1,
+      pr_status_id: 1,
+      reviewer: 'testuser',
+      requested_at: '2026-01-01T00:00:00Z',
+      removed_at: null,
+      last_event_at: '2026-01-01T00:00:00Z',
+      request_version: 0,
+    };
+    const base = makePrDetail(
+      {
+        pr_url: 'https://github.com/owner/repo/pull/20',
+        pr_number: 20,
+        author: 'someone-else',
+        head_branch: 'feature-a',
+        base_branch: 'main',
+      },
+      { reviewRequests: [reviewRequest] }
+    );
+    const stacked = makePrDetail(
+      {
+        pr_url: 'https://github.com/owner/repo/pull/21',
+        pr_number: 21,
+        author: 'someone-else',
+        head_branch: 'feature-b',
+        base_branch: 'feature-a',
+      },
+      { reviewRequests: [{ ...reviewRequest, id: 2 }] }
+    );
+
+    const result = buildActionablePrsForRepo(7, [base, stacked], new Map(), 'testuser');
+    const byNumber = new Map(result.map((pr) => [pr.prNumber, pr]));
+    expect(byNumber.get(20)?.reviewRequestedStacked).toBe(false);
+    expect(byNumber.get(21)?.reviewRequestedStacked).toBe(true);
+  });
+
+  test('does not mark as stacked when the base PR has no review request for the user', () => {
+    const stacked = makePrDetail(
+      {
+        pr_url: 'https://github.com/owner/repo/pull/23',
+        pr_number: 23,
+        author: 'someone-else',
+        head_branch: 'feature-b',
+        base_branch: 'feature-a',
+      },
+      {
+        reviewRequests: [
+          {
+            id: 3,
+            pr_status_id: 1,
+            reviewer: 'testuser',
+            requested_at: '2026-01-01T00:00:00Z',
+            removed_at: null,
+            last_event_at: '2026-01-01T00:00:00Z',
+            request_version: 0,
+          },
+        ],
+      }
+    );
+    // Base PR exists with the matching head branch but no review request for testuser.
+    const base = makePrDetail({
+      pr_url: 'https://github.com/owner/repo/pull/22',
+      pr_number: 22,
+      author: 'someone-else',
+      head_branch: 'feature-a',
+      base_branch: 'main',
+    });
+
+    const result = buildActionablePrsForRepo(7, [base, stacked], new Map(), 'testuser');
+    const stackedResult = result.find((pr) => pr.prNumber === 23);
+    expect(stackedResult?.reviewRequestedStacked).toBe(false);
   });
 
   test('skips closed PRs but includes open PRs regardless of actionable state', () => {
