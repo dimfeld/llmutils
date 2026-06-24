@@ -292,12 +292,10 @@ ${buildCommitGuidance(options.useJj === true)}
    - For the rest of this session, remember every issue the user declines or asks to skip.
    - Do not re-raise skipped issues in later iterations.
    - Use your judgment to recognize the same issue across re-reviews, even if line numbers, snippets, ordering, or wording shift.
-4. **Fix**
+4. **Fix and commit**
    - Fix only the issues the user chose for this round.
-   - Keep unrelated changes out of the round.
-5. **Commit**
-   - After applying a round of fixes, inspect the changed files and commit the round using the repository VCS.
-6. **Loop**
+   - Commit the changes for each individual fix (or group of closely related fixes) immediately after applying it, using the repository VCS.
+5. **Loop**
    - Re-run \`${reviewCommand}\` after committing fixes.
    - Continue the review -> ask -> fix -> commit -> re-review loop until the user says to stop or no un-skipped issues remain.
    - End with a short summary of fixed issues, skipped issues, and the final review state.
