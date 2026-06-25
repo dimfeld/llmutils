@@ -58,6 +58,13 @@
     return value.charAt(0).toUpperCase() + value.slice(1);
   }
 
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.metaKey && event.key === 'Enter') {
+      event.preventDefault();
+      void handleSave(event);
+    }
+  }
+
   async function handleSave(event: Event) {
     event.preventDefault();
     errorMessage = null;
@@ -85,7 +92,7 @@
   }
 </script>
 
-<form class="space-y-2" onsubmit={handleSave}>
+<form class="space-y-2" onsubmit={handleSave} onkeydown={handleKeydown}>
   <div class="grid grid-cols-2 gap-2">
     <div class="space-y-1">
       <Label for="issue-{issue.id}-severity" class="text-[10px] text-muted-foreground">
