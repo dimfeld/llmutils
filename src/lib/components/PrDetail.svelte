@@ -41,12 +41,72 @@
     projectId,
     username = null,
     tokenConfigured = false,
+    allPrs = [],
   }: {
     pr: EnrichedProjectPr;
     projectId: string;
     username?: string | null;
     tokenConfigured?: boolean;
+    allPrs?: EnrichedProjectPr[];
   } = $props();
+
+  interface ChainEntry {
+    pr: EnrichedProjectPr;
+    isCurrent: boolean;
+  }
+
+  function buildPrChain(currentPr: EnrichedProjectPr, prs: EnrichedProjectPr[]): ChainEntry[] {
+    const currentRepo = `${currentPr.status.owner}/${currentPr.status.repo}`;
+    const samePrs = prs.filter(
+      (p) =>
+        `${p.status.owner}/${p.status.repo}` === currentRepo &&
+        p.status.pr_number !== currentPr.status.pr_number
+    );
+
+    const byHeadBranch = new Map<string, EnrichedProjectPr>();
+    const byBaseBranch = new Map<string, EnrichedProjectPr[]>();
+    for (const p of samePrs) {
+      if (p.status.head_branch) byHeadBranch.set(p.status.head_branch, p);
+      if (p.status.base_branch) {
+        const list = byBaseBranch.get(p.status.base_branch) ?? [];
+        list.push(p);
+        byBaseBranch.set(p.status.base_branch, list);
+      }
+    }
+
+    const visited = new Set<number>([currentPr.status.pr_number]);
+
+    const ancestors: EnrichedProjectPr[] = [];
+    let node = currentPr;
+    while (node.status.base_branch) {
+      const parent = byHeadBranch.get(node.status.base_branch);
+      if (!parent || visited.has(parent.status.pr_number)) break;
+      visited.add(parent.status.pr_number);
+      ancestors.unshift(parent);
+      node = parent;
+    }
+
+    const descendants: EnrichedProjectPr[] = [];
+    node = currentPr;
+    while (node.status.head_branch) {
+      const children = (byBaseBranch.get(node.status.head_branch) ?? []).filter(
+        (c) => !visited.has(c.status.pr_number)
+      );
+      if (children.length === 0) break;
+      const child = children[0];
+      visited.add(child.status.pr_number);
+      descendants.push(child);
+      node = child;
+    }
+
+    return [
+      ...ancestors.map((p) => ({ pr: p, isCurrent: false })),
+      { pr: currentPr, isCurrent: true },
+      ...descendants.map((p) => ({ pr: p, isCurrent: false })),
+    ];
+  }
+
+  let prChain = $derived(buildPrChain(pr, allPrs));
 
   let refreshing = $state(false);
   let draftUpdating = $state(false);
@@ -538,6 +598,75 @@
         <span class="text-green-600 dark:text-green-400">+{pr.status.additions}</span>
         /
         <span class="text-red-600 dark:text-red-400">-{pr.status.deletions}</span>
+      </div>
+    {/if}
+
+    <!-- PR Stack -->
+    {#if prChain.length > 1}
+      {@const currentIndex = prChain.findIndex((e) => e.isCurrent)}
+      <div>
+        <h3 class="mb-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          PR Stack
+        </h3>
+        <ul class="space-y-0.5">
+          {#each prChain as entry, i (entry.pr.status.pr_number)}
+            <li
+              class="flex min-w-0 items-baseline gap-1.5 rounded px-1.5 py-1 text-xs {entry.isCurrent
+                ? 'bg-gray-100 dark:bg-gray-800'
+                : ''}"
+            >
+              <span class="shrink-0 text-muted-foreground">
+                {entry.isCurrent ? '→' : i < currentIndex ? '↑' : '↓'}
+              </span>
+              {#if entry.isCurrent}
+                <span class="min-w-0 flex-1 truncate font-medium text-foreground">
+                  #{entry.pr.status.pr_number}
+                  {entry.pr.status.title ?? 'Untitled'}
+                  {#each entry.pr.linkedPlans as plan (plan.planUuid)}
+                    <span class="mx-1 text-muted-foreground">|</span><a
+                      href="/projects/{entry.pr.projectId}/plans/{plan.planUuid}"
+                      class="text-blue-600 hover:underline dark:text-blue-400"
+                    >Plan #{plan.planId}</a
+                    >
+                  {/each}
+                </span>
+              {:else}
+                <span class="min-w-0 flex-1 truncate">
+                  <a
+                    href="/projects/{entry.pr.projectId}/prs/{entry.pr.status.pr_number}"
+                    class="text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    #{entry.pr.status.pr_number}
+                    {entry.pr.status.title ?? 'Untitled'}
+                  </a>
+                  {#each entry.pr.linkedPlans as plan (plan.planUuid)}
+                    <span class="mx-1 text-muted-foreground">|</span><a
+                      href="/projects/{entry.pr.projectId}/plans/{plan.planUuid}"
+                      class="text-blue-600 hover:underline dark:text-blue-400"
+                    >Plan #{plan.planId}</a
+                    >
+                  {/each}
+                </span>
+              {/if}
+              {#if entry.pr.currentUserReviewRequestLabel}
+                <span
+                  class="shrink-0 rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+                >
+                  {entry.pr.currentUserReviewRequestLabel}
+                </span>
+              {:else if entry.pr.status.review_decision === 'APPROVED' || entry.pr.status.review_decision === 'CHANGES_REQUESTED'}
+                <span
+                  class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium {reviewDecisionBadgeColor(entry.pr.status.review_decision)}"
+                >
+                  {reviewDecisionLabel(entry.pr.status.review_decision)}
+                </span>
+              {/if}
+              <span class="shrink-0 font-mono text-[10px] text-muted-foreground/70">
+                {entry.pr.status.head_branch ?? ''}
+              </span>
+            </li>
+          {/each}
+        </ul>
       </div>
     {/if}
 

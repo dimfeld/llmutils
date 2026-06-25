@@ -9,14 +9,12 @@
 
   let prData = $derived(await getProjectPrs({ projectId }));
 
-  let pr = $derived.by(() => {
-    const allPrs = [...prData.authored, ...prData.reviewing];
-    return allPrs.find((p) => p.status.pr_number === prNumber) ?? null;
-  });
+  let allPrs = $derived([...prData.authored, ...prData.reviewing]);
+  let pr = $derived(allPrs.find((p) => p.status.pr_number === prNumber) ?? null);
 </script>
 
 {#if pr}
-  <PrDetail {pr} {projectId} username={prData.username} tokenConfigured={prData.tokenConfigured} />
+  <PrDetail {pr} {projectId} {allPrs} username={prData.username} tokenConfigured={prData.tokenConfigured} />
 {:else}
   <div class="flex items-center justify-center p-8 text-sm text-muted-foreground">
     Pull request #{prNumber} not found
