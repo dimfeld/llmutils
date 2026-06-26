@@ -395,6 +395,72 @@ describe('common/slack/slack_client', () => {
       expect(payload.unfurl_media).toBe(false);
     });
 
+    test('renders the awaiting-review-response section with reviewer, state, and elapsed time', () => {
+      const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
+        approvedUnmerged: [],
+        staleAwaitingReview: [],
+        awaitingReviewResponse: [
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/3',
+            prNumber: 3,
+            title: 'Awaiting response',
+            author: 'erin',
+            reviewResponseReviewer: 'frank',
+            reviewResponseState: 'CHANGES_REQUESTED',
+            reviewedMs: 90_000_000,
+            reviewedLabel: '25 hours',
+          },
+        ],
+        otherReadyForReview: [],
+      });
+
+      expect(payload.blocks.map((block) => block.type)).toEqual(['section', 'section', 'section']);
+      const blocks = serializedBlocks(payload.blocks);
+      expect(blocks).toContain('*Awaiting Review Response > 24 hours*');
+      expect(blocks).toContain('`frank` requested changes 25 hours ago');
+      expect(blocks).toContain('`erin`');
+    });
+
+    test('places the awaiting-response section between awaiting-review and other-ready with dividers', () => {
+      const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
+        approvedUnmerged: [],
+        staleAwaitingReview: digestBothBuckets.staleAwaitingReview,
+        awaitingReviewResponse: [
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/3',
+            prNumber: 3,
+            title: 'Awaiting response',
+            author: 'erin',
+            reviewResponseReviewer: 'frank',
+            reviewResponseState: 'COMMENTED',
+            reviewedMs: 90_000_000,
+            reviewedLabel: '25 hours',
+          },
+        ],
+        otherReadyForReview: [
+          {
+            prUrl: 'https://github.com/octocat/hello-world/pull/4',
+            prNumber: 4,
+            title: 'Stale ready',
+            author: 'gail',
+            readyForReviewMs: 4 * 86_400_000,
+            readyForReviewLabel: '4 days',
+          },
+        ],
+      });
+
+      expect(payload.blocks.map((block) => block.type)).toEqual([
+        'section', // header
+        'section', // awaiting review
+        'divider',
+        'section', // awaiting review response
+        'divider',
+        'section', // other ready
+        'section', // footer
+      ]);
+      expect(sectionText(payload.blocks[3])).toContain('*Awaiting Review Response > 24 hours*');
+    });
+
     test('omits divider and stale section when only approved bucket is populated', () => {
       const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
         approvedUnmerged: digestBothBuckets.approvedUnmerged,

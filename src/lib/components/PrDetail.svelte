@@ -626,7 +626,7 @@
                     <span class="mx-1 text-muted-foreground">|</span><a
                       href="/projects/{entry.pr.projectId}/plans/{plan.planUuid}"
                       class="text-blue-600 hover:underline dark:text-blue-400"
-                    >Plan #{plan.planId}</a
+                      >Plan #{plan.planId}</a
                     >
                   {/each}
                 </span>
@@ -643,7 +643,7 @@
                     <span class="mx-1 text-muted-foreground">|</span><a
                       href="/projects/{entry.pr.projectId}/plans/{plan.planUuid}"
                       class="text-blue-600 hover:underline dark:text-blue-400"
-                    >Plan #{plan.planId}</a
+                      >Plan #{plan.planId}</a
                     >
                   {/each}
                 </span>
@@ -656,7 +656,9 @@
                 </span>
               {:else if entry.pr.status.review_decision === 'APPROVED' || entry.pr.status.review_decision === 'CHANGES_REQUESTED'}
                 <span
-                  class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium {reviewDecisionBadgeColor(entry.pr.status.review_decision)}"
+                  class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium {reviewDecisionBadgeColor(
+                    entry.pr.status.review_decision
+                  )}"
                 >
                   {reviewDecisionLabel(entry.pr.status.review_decision)}
                 </span>

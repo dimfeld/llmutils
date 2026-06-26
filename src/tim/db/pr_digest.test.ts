@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { openDatabase } from '$tim/db/database.js';
 import {
   getApprovedUnmergedRows,
+  getAwaitingReviewResponseRows,
   getOtherReadyForReviewRows,
   getStaleReviewRequestRows,
 } from '$tim/db/pr_digest.js';
@@ -335,6 +336,111 @@ describe('tim db/pr_digest', () => {
       });
 
       const rows = getOtherReadyForReviewRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows).toEqual([]);
+    });
+  });
+
+  describe('getAwaitingReviewResponseRows', () => {
+    test('returns PRs with a non-bot review newer than all active review requests', () => {
+      const awaiting = insertPr(70);
+      requestReview(awaiting.status.id, 'reviewer-1', '2026-01-01T09:00:00.000Z');
+      review(awaiting.status.id, 'reviewer-1', 'CHANGES_REQUESTED', '2026-01-01T11:00:00.000Z');
+
+      const rows = getAwaitingReviewResponseRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          pr_number: 70,
+          last_review_at: '2026-01-01T11:00:00.000Z',
+          last_review_author: 'reviewer-1',
+          last_review_state: 'CHANGES_REQUESTED',
+        }),
+      ]);
+    });
+
+    test('excludes PRs whose active request is newer than the latest review (waiting on reviewer)', () => {
+      const stillWaiting = insertPr(71);
+      review(stillWaiting.status.id, 'reviewer-1', 'COMMENTED', '2026-01-01T09:00:00.000Z');
+      requestReview(stillWaiting.status.id, 'reviewer-2', '2026-01-01T10:00:00.000Z');
+
+      const rows = getAwaitingReviewResponseRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows).toEqual([]);
+    });
+
+    test('excludes PRs with no active review request', () => {
+      const noRequest = insertPr(72);
+      review(noRequest.status.id, 'reviewer-1', 'CHANGES_REQUESTED', '2026-01-01T11:00:00.000Z');
+
+      const removedRequest = insertPr(73);
+      requestReview(removedRequest.status.id, 'reviewer-1', '2026-01-01T09:00:00.000Z');
+      review(
+        removedRequest.status.id,
+        'reviewer-1',
+        'CHANGES_REQUESTED',
+        '2026-01-01T11:00:00.000Z'
+      );
+      upsertPrReviewRequestByReviewer(db, removedRequest.status.id, {
+        reviewer: 'reviewer-1',
+        action: 'removed',
+        eventAt: '2026-01-01T12:00:00.000Z',
+      });
+
+      const rows = getAwaitingReviewResponseRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows).toEqual([]);
+    });
+
+    test('ignores bot reviews, the PR author own reviews, and dismissed reviews', () => {
+      const botOnly = insertPr(74);
+      requestReview(botOnly.status.id, 'reviewer-1', '2026-01-01T09:00:00.000Z');
+      review(botOnly.status.id, 'coderabbitai[bot]', 'COMMENTED', '2026-01-01T11:00:00.000Z');
+
+      const authorOnly = insertPr(75);
+      requestReview(authorOnly.status.id, 'reviewer-1', '2026-01-01T09:00:00.000Z');
+      review(authorOnly.status.id, 'author-75', 'COMMENTED', '2026-01-01T11:00:00.000Z');
+
+      const dismissedOnly = insertPr(76);
+      requestReview(dismissedOnly.status.id, 'reviewer-1', '2026-01-01T09:00:00.000Z');
+      review(dismissedOnly.status.id, 'reviewer-1', 'DISMISSED', '2026-01-01T11:00:00.000Z');
+
+      const rows = getAwaitingReviewResponseRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows).toEqual([]);
+    });
+
+    test('uses the latest non-bot review when a bot reviews after the human reviewer', () => {
+      const pr = insertPr(77);
+      requestReview(pr.status.id, 'reviewer-1', '2026-01-01T09:00:00.000Z');
+      review(pr.status.id, 'reviewer-1', 'CHANGES_REQUESTED', '2026-01-01T11:00:00.000Z');
+      review(pr.status.id, 'dependabot[bot]', 'COMMENTED', '2026-01-01T12:00:00.000Z');
+
+      const rows = getAwaitingReviewResponseRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          pr_number: 77,
+          last_review_at: '2026-01-01T11:00:00.000Z',
+          last_review_author: 'reviewer-1',
+        }),
+      ]);
+    });
+
+    test('excludes draft, closed, merged, and out-of-repo PRs', () => {
+      const draft = insertPr(80, { draft: true });
+      requestReview(draft.status.id, 'reviewer-1', '2026-01-01T09:00:00.000Z');
+      review(draft.status.id, 'reviewer-1', 'CHANGES_REQUESTED', '2026-01-01T11:00:00.000Z');
+
+      const closed = insertPr(81, { state: 'closed' });
+      requestReview(closed.status.id, 'reviewer-1', '2026-01-01T09:00:00.000Z');
+      review(closed.status.id, 'reviewer-1', 'CHANGES_REQUESTED', '2026-01-01T11:00:00.000Z');
+
+      const otherRepo = insertPr(82, { repo: 'other' });
+      requestReview(otherRepo.status.id, 'reviewer-1', '2026-01-01T09:00:00.000Z');
+      review(otherRepo.status.id, 'reviewer-1', 'CHANGES_REQUESTED', '2026-01-01T11:00:00.000Z');
+
+      const rows = getAwaitingReviewResponseRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
 
       expect(rows).toEqual([]);
     });

@@ -264,8 +264,29 @@ function isDigestEmpty(digest: PrDigest): boolean {
   return (
     digest.approvedUnmerged.length === 0 &&
     digest.staleAwaitingReview.length === 0 &&
+    digest.awaitingReviewResponse.length === 0 &&
     digest.otherReadyForReview.length === 0
   );
+}
+
+function formatReviewStateVerb(state: string | undefined): string {
+  switch (state) {
+    case 'CHANGES_REQUESTED':
+      return 'requested changes';
+    case 'COMMENTED':
+      return 'commented';
+    case 'APPROVED':
+      return 'approved';
+    default:
+      return 'reviewed';
+  }
+}
+
+function formatAwaitingResponseLine(entry: DigestEntry): string {
+  const reviewer = entry.reviewResponseReviewer ?? 'unknown';
+  const verb = formatReviewStateVerb(entry.reviewResponseState);
+  const ago = entry.reviewedLabel ? ` ${entry.reviewedLabel} ago` : '';
+  return `${formatPrLine(entry)}; ${reviewer} ${verb}${ago}`;
 }
 
 /**
@@ -392,6 +413,14 @@ function printDigestDryRunProject(
           log(formatAwaitingReviewLine(entry));
         }
       }
+    }
+  }
+
+  if (projectDigest.digest.awaitingReviewResponse.length > 0) {
+    printSectionBreak();
+    log('  Awaiting Review Response > 24 hours:');
+    for (const entry of projectDigest.digest.awaitingReviewResponse) {
+      log(formatAwaitingResponseLine(entry));
     }
   }
 

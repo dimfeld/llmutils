@@ -45,6 +45,7 @@ import {
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import {
   getApprovedUnmergedRows,
+  getAwaitingReviewResponseRows,
   getOtherReadyForReviewRows,
   getReviewRequestDebugRows,
   getStaleReviewRequestRows,
@@ -207,6 +208,14 @@ export function collectDailyDigestsForWorkspace(
           nowMs,
         }
       );
+      const awaitingReviewResponseRows = getAwaitingReviewResponseRows(
+        db,
+        ownerRepo.owner,
+        ownerRepo.repo,
+        {
+          nowMs,
+        }
+      );
       const otherReadyForReviewRows = getOtherReadyForReviewRows(
         db,
         ownerRepo.owner,
@@ -216,20 +225,27 @@ export function collectDailyDigestsForWorkspace(
         }
       );
       const digest = buildPrDigest(
-        { approvedUnmergedRows, staleReviewRequestRows, otherReadyForReviewRows },
+        {
+          approvedUnmergedRows,
+          staleReviewRequestRows,
+          awaitingReviewResponseRows,
+          otherReadyForReviewRows,
+        },
         { nowMs }
       );
       const repoFullName = `${ownerRepo.owner}/${ownerRepo.repo}`;
 
       if (debugEnabled) {
         debugLog(
-          '[daily_digest] PR digest input for %s: approvedRows=%d staleRequestRows=%d otherReadyRows=%d outputApproved=%d outputAwaiting=%d outputOtherReady=%d',
+          '[daily_digest] PR digest input for %s: approvedRows=%d staleRequestRows=%d awaitingResponseRows=%d otherReadyRows=%d outputApproved=%d outputAwaiting=%d outputAwaitingResponse=%d outputOtherReady=%d',
           repoFullName,
           approvedUnmergedRows.length,
           staleReviewRequestRows.length,
+          awaitingReviewResponseRows.length,
           otherReadyForReviewRows.length,
           digest.approvedUnmerged.length,
           digest.staleAwaitingReview.length,
+          digest.awaitingReviewResponse.length,
           digest.otherReadyForReview.length
         );
         logReviewRequestDebugRows(
@@ -242,6 +258,7 @@ export function collectDailyDigestsForWorkspace(
         options.includeEmpty !== true &&
         digest.approvedUnmerged.length === 0 &&
         digest.staleAwaitingReview.length === 0 &&
+        digest.awaitingReviewResponse.length === 0 &&
         digest.otherReadyForReview.length === 0
       ) {
         continue;
@@ -295,11 +312,24 @@ export function collectProjectDigest(
   const staleReviewRequestRows = getStaleReviewRequestRows(db, ownerRepo.owner, ownerRepo.repo, {
     nowMs,
   });
+  const awaitingReviewResponseRows = getAwaitingReviewResponseRows(
+    db,
+    ownerRepo.owner,
+    ownerRepo.repo,
+    {
+      nowMs,
+    }
+  );
   const otherReadyForReviewRows = getOtherReadyForReviewRows(db, ownerRepo.owner, ownerRepo.repo, {
     nowMs,
   });
   const digest = buildPrDigest(
-    { approvedUnmergedRows, staleReviewRequestRows, otherReadyForReviewRows },
+    {
+      approvedUnmergedRows,
+      staleReviewRequestRows,
+      awaitingReviewResponseRows,
+      otherReadyForReviewRows,
+    },
     { nowMs }
   );
 
@@ -372,6 +402,7 @@ function isPrDigestEmpty(digest: PrDigest): boolean {
   return (
     digest.approvedUnmerged.length === 0 &&
     digest.staleAwaitingReview.length === 0 &&
+    digest.awaitingReviewResponse.length === 0 &&
     digest.otherReadyForReview.length === 0
   );
 }

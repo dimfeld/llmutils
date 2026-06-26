@@ -1,5 +1,6 @@
 import type {
   ApprovedUnmergedRow,
+  AwaitingReviewResponseRow,
   OtherReadyForReviewRow,
   StaleReviewRequestRow,
 } from '../../tim/db/pr_digest.js';
@@ -29,11 +30,18 @@ export interface DigestEntry {
   previousReviewLabel?: string;
   approvedMs?: number;
   approvedLabel?: string;
+  /** GitHub login of the reviewer whose review the PR author still needs to respond to. */
+  reviewResponseReviewer?: string;
+  /** State of that review (e.g. CHANGES_REQUESTED, COMMENTED). */
+  reviewResponseState?: string;
+  reviewedMs?: number;
+  reviewedLabel?: string;
 }
 
 export interface PrDigest {
   approvedUnmerged: DigestEntry[];
   staleAwaitingReview: DigestEntry[];
+  awaitingReviewResponse: DigestEntry[];
   otherReadyForReview: DigestEntry[];
 }
 
@@ -44,6 +52,7 @@ export interface BuildPrDigestOptions {
 export interface BuildPrDigestInput {
   approvedUnmergedRows: ReadonlyArray<ApprovedUnmergedRow>;
   staleReviewRequestRows: ReadonlyArray<StaleReviewRequestRow>;
+  awaitingReviewResponseRows?: ReadonlyArray<AwaitingReviewResponseRow>;
   otherReadyForReviewRows: ReadonlyArray<OtherReadyForReviewRow>;
 }
 
@@ -109,6 +118,7 @@ function buildMutableStaleEntry(row: StaleReviewRequestRow): MutableStaleEntry {
 
 export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestOptions): PrDigest {
   const otherReadyThresholdMs = 72 * 3_600_000;
+  const awaitingResponseThresholdMs = 24 * 3_600_000;
   const approvedUnmerged = input.approvedUnmergedRows.map(
     (row: ApprovedUnmergedRow): DigestEntry => {
       const approvedMs =
@@ -154,6 +164,29 @@ export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestO
     shownPrUrls.add(entry.prUrl);
   }
 
+  // PRs whose author still needs to respond to a review: a non-bot reviewer reviewed more than
+  // 24 hours ago and every active review request predates that review. Approved PRs are already
+  // shown in the "Approved, not yet merged" section, so they are excluded here via shownPrUrls.
+  const awaitingReviewResponse: DigestEntry[] = [];
+  for (const row of input.awaitingReviewResponseRows ?? []) {
+    if (shownPrUrls.has(row.pr_url)) {
+      continue;
+    }
+
+    const reviewedMs = options.nowMs - parseDigestTimestampMs(row.last_review_at, 'last_review_at');
+    if (reviewedMs <= awaitingResponseThresholdMs) {
+      continue;
+    }
+
+    const entry = buildDigestEntryBase(row);
+    entry.reviewResponseReviewer = row.last_review_author;
+    entry.reviewResponseState = row.last_review_state;
+    entry.reviewedMs = reviewedMs;
+    entry.reviewedLabel = formatWaitDuration(reviewedMs);
+    awaitingReviewResponse.push(entry);
+    shownPrUrls.add(row.pr_url);
+  }
+
   const otherReadyForReview: DigestEntry[] = [];
   for (const row of input.otherReadyForReviewRows) {
     if (shownPrUrls.has(row.pr_url)) {
@@ -185,6 +218,7 @@ export function buildPrDigest(input: BuildPrDigestInput, options: BuildPrDigestO
   return {
     approvedUnmerged,
     staleAwaitingReview: Array.from(staleByPrUrl.values()),
+    awaitingReviewResponse,
     otherReadyForReview,
   };
 }

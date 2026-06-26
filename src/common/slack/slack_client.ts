@@ -150,6 +150,12 @@ export interface DailyDigestEntry {
   previousReviewLabel?: string;
   approvedMs?: number;
   approvedLabel?: string;
+  /** GitHub login of the reviewer whose review the PR author still needs to respond to. */
+  reviewResponseReviewer?: string;
+  /** State of that review (e.g. CHANGES_REQUESTED, COMMENTED). */
+  reviewResponseState?: string;
+  reviewedMs?: number;
+  reviewedLabel?: string;
 }
 
 /** A configured prioritized review group: PRs carrying `label` are listed under `name`. */
@@ -167,6 +173,7 @@ export interface DigestReviewGroupingOptions {
 export interface DailyDigestPayloadInput {
   approvedUnmerged: DailyDigestEntry[];
   staleAwaitingReview: DailyDigestEntry[];
+  awaitingReviewResponse?: DailyDigestEntry[];
   otherReadyForReview: DailyDigestEntry[];
   linearMilestones?: LinearMilestoneDigestEntry[];
 }
@@ -332,6 +339,29 @@ function formatOtherReadyDigestLine(entry: DailyDigestEntry): string {
     ? `; previous review ${escapeSlackMrkdwnText(entry.previousReviewLabel)} ago`
     : '; no previous review';
   return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${author}${formatDailyDigestChangeStats(entry)} — ready for ${readyLabel}${previousReview}`;
+}
+
+function formatReviewStateVerb(state: string | undefined): string {
+  switch (state) {
+    case 'CHANGES_REQUESTED':
+      return 'requested changes';
+    case 'COMMENTED':
+      return 'commented';
+    case 'APPROVED':
+      return 'approved';
+    default:
+      return 'reviewed';
+  }
+}
+
+function formatAwaitingResponseDigestLine(entry: DailyDigestEntry): string {
+  const author = formatPlainLogin(entry.author);
+  const reviewer = entry.reviewResponseReviewer
+    ? formatPlainLogin(entry.reviewResponseReviewer)
+    : '_reviewer unknown_';
+  const verb = formatReviewStateVerb(entry.reviewResponseState);
+  const agoLabel = entry.reviewedLabel ? ` ${escapeSlackMrkdwnText(entry.reviewedLabel)} ago` : '';
+  return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${author}${formatDailyDigestChangeStats(entry)} — ${reviewer} ${verb}${agoLabel}`;
 }
 
 function formatDateLabel(date: string): string {
@@ -548,8 +578,10 @@ export function buildDailyDigestSlackPayload(
   digest: DailyDigestPayloadInput,
   grouping?: DigestReviewGroupingOptions
 ): SlackPostPayload {
+  const awaitingReviewResponse = digest.awaitingReviewResponse ?? [];
   const approvedCount = digest.approvedUnmerged.length;
   const staleCount = digest.staleAwaitingReview.length;
+  const awaitingResponseCount = awaitingReviewResponse.length;
   const otherReadyCount = digest.otherReadyForReview.length;
   const linearMilestones = digest.linearMilestones ?? [];
   const linearMilestoneCount = linearMilestones.length;
@@ -580,7 +612,20 @@ export function buildDailyDigestSlackPayload(
     blocks.push(...buildStaleAwaitingReviewBlocks(digest.staleAwaitingReview, grouping));
   }
 
-  if ((approvedCount > 0 || staleCount > 0) && otherReadyCount > 0) {
+  if ((approvedCount > 0 || staleCount > 0) && awaitingResponseCount > 0) {
+    blocks.push({ type: 'divider' });
+  }
+
+  if (awaitingResponseCount > 0) {
+    blocks.push(
+      ...buildDigestSectionBlocks(
+        'Awaiting Review Response > 24 hours',
+        awaitingReviewResponse.map(formatAwaitingResponseDigestLine)
+      )
+    );
+  }
+
+  if ((approvedCount > 0 || staleCount > 0 || awaitingResponseCount > 0) && otherReadyCount > 0) {
     blocks.push({ type: 'divider' });
   }
 
@@ -593,7 +638,10 @@ export function buildDailyDigestSlackPayload(
     );
   }
 
-  if ((approvedCount > 0 || staleCount > 0 || otherReadyCount > 0) && linearMilestoneCount > 0) {
+  if (
+    (approvedCount > 0 || staleCount > 0 || awaitingResponseCount > 0 || otherReadyCount > 0) &&
+    linearMilestoneCount > 0
+  ) {
     blocks.push({ type: 'divider' });
   }
 
@@ -616,7 +664,7 @@ export function buildDailyDigestSlackPayload(
 
   return {
     channel,
-    text: `Daily PR digest for ${repoFullName}: ${approvedCount} approved, ${staleCount} awaiting review, ${otherReadyCount} other ready, ${linearMilestoneCount} Linear milestones`,
+    text: `Daily PR digest for ${repoFullName}: ${approvedCount} approved, ${staleCount} awaiting review, ${awaitingResponseCount} awaiting author response, ${otherReadyCount} other ready, ${linearMilestoneCount} Linear milestones`,
     unfurl_links: false,
     unfurl_media: false,
     blocks,
@@ -947,6 +995,7 @@ export async function postDailyDigestMessage(
     args.allowEmpty !== true &&
     args.digest.approvedUnmerged.length === 0 &&
     args.digest.staleAwaitingReview.length === 0 &&
+    (args.digest.awaitingReviewResponse?.length ?? 0) === 0 &&
     args.digest.otherReadyForReview.length === 0 &&
     (args.digest.linearMilestones?.length ?? 0) === 0
   ) {

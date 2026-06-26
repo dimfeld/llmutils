@@ -47,6 +47,24 @@ export interface OtherReadyForReviewRow {
   previous_review_at: string | null;
 }
 
+export interface AwaitingReviewResponseRow {
+  pr_url: string;
+  pr_number: number;
+  title: string;
+  author: string;
+  additions: number | null;
+  deletions: number | null;
+  changed_files: number | null;
+  /** 1 when the PR is stacked on another open PR (its base is that PR's head branch). */
+  is_stacked: number;
+  /** Latest non-dismissed, non-bot review timestamp (excludes the PR author's own reviews). */
+  last_review_at: string;
+  /** GitHub login of the reviewer who left {@link last_review_at}. */
+  last_review_author: string;
+  /** State of the review left at {@link last_review_at} (e.g. CHANGES_REQUESTED, COMMENTED). */
+  last_review_state: string;
+}
+
 /**
  * SQL fragment that resolves to 1 when the surrounding `pr_status` row is stacked on another open
  * PR — i.e. its base branch is the head branch of a different open PR in the same repo. Correlates
@@ -251,6 +269,111 @@ export function getOtherReadyForReviewRows(
       `
     )
     .all(nowIso, owner, repo, nowIso) as OtherReadyForReviewRow[];
+}
+
+/**
+ * Returns open, non-draft PRs that are awaiting a response from their author: a non-bot reviewer
+ * (other than the PR author) has submitted a non-dismissed review, and every active review request
+ * predates that latest review. The complementary case — an active request newer than the latest
+ * review — is covered by {@link getStaleReviewRequestRows} (waiting on the reviewer instead).
+ *
+ * NOTE: this applies only a coarse `last_review_at <= now` bound. The actual 24-hour threshold is
+ * applied downstream in `buildPrDigest` (see src/lib/server/pr_digest.ts), so callers must pass the
+ * same `nowMs` to both and always run these rows through `buildPrDigest`.
+ */
+export function getAwaitingReviewResponseRows(
+  db: Database,
+  owner: string,
+  repo: string,
+  options: GetStaleReviewRequestRowsOptions
+): AwaitingReviewResponseRow[] {
+  const nowIso = new Date(options.nowMs).toISOString();
+
+  // Latest non-dismissed review from a non-bot reviewer other than the PR author. Bots are
+  // identified by the conventional `name[bot]` login suffix, matching isBotLogin elsewhere.
+  const latestNonBotReviewAtSql = `
+    SELECT MAX(pr_review.submitted_at)
+    FROM pr_review
+    WHERE pr_review.pr_status_id = pr_status.id
+      AND pr_review.submitted_at IS NOT NULL
+      AND pr_review.submitted_at <= ?
+      AND pr_review.state != 'DISMISSED'
+      AND pr_review.author NOT LIKE '%[bot]'
+      AND pr_review.author != pr_status.author
+  `;
+
+  return db
+    .prepare(
+      `
+        SELECT
+          pr_status.pr_url,
+          pr_status.pr_number,
+          COALESCE(pr_status.title, '') AS title,
+          COALESCE(pr_status.author, '') AS author,
+          pr_status.additions,
+          pr_status.deletions,
+          pr_status.changed_files,
+          ${IS_STACKED_SQL} AS is_stacked,
+          (${latestNonBotReviewAtSql}) AS last_review_at,
+          (
+            SELECT pr_review.author
+            FROM pr_review
+            WHERE pr_review.pr_status_id = pr_status.id
+              AND pr_review.submitted_at = (${latestNonBotReviewAtSql})
+              AND pr_review.state != 'DISMISSED'
+              AND pr_review.author NOT LIKE '%[bot]'
+              AND pr_review.author != pr_status.author
+            ORDER BY pr_review.id DESC
+            LIMIT 1
+          ) AS last_review_author,
+          (
+            SELECT pr_review.state
+            FROM pr_review
+            WHERE pr_review.pr_status_id = pr_status.id
+              AND pr_review.submitted_at = (${latestNonBotReviewAtSql})
+              AND pr_review.state != 'DISMISSED'
+              AND pr_review.author NOT LIKE '%[bot]'
+              AND pr_review.author != pr_status.author
+            ORDER BY pr_review.id DESC
+            LIMIT 1
+          ) AS last_review_state
+        FROM pr_status
+        WHERE pr_status.owner = ?
+          AND pr_status.repo = ?
+          AND pr_status.state = 'open'
+          AND pr_status.draft = 0
+          AND (${latestNonBotReviewAtSql}) IS NOT NULL
+          -- At least one active review request exists...
+          AND EXISTS (
+            SELECT 1
+            FROM pr_review_request
+            WHERE pr_review_request.pr_status_id = pr_status.id
+              AND pr_review_request.removed_at IS NULL
+              AND pr_review_request.requested_at IS NOT NULL
+              AND pr_review_request.requested_at <= ?
+          )
+          -- ...and they are all older than the latest non-bot review.
+          AND NOT EXISTS (
+            SELECT 1
+            FROM pr_review_request
+            WHERE pr_review_request.pr_status_id = pr_status.id
+              AND pr_review_request.removed_at IS NULL
+              AND pr_review_request.requested_at IS NOT NULL
+              AND pr_review_request.requested_at >= (${latestNonBotReviewAtSql})
+          )
+        ORDER BY last_review_at ASC, pr_status.pr_number ASC, pr_status.id ASC
+      `
+    )
+    .all(
+      nowIso,
+      nowIso,
+      nowIso,
+      owner,
+      repo,
+      nowIso,
+      nowIso,
+      nowIso
+    ) as AwaitingReviewResponseRow[];
 }
 
 export function getReviewRequestDebugRows(

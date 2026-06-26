@@ -35,6 +35,7 @@ describe('lib/server/pr_digest', () => {
         },
       ],
       staleAwaitingReview: [],
+      awaitingReviewResponse: [],
       otherReadyForReview: [],
     });
   });
@@ -245,6 +246,7 @@ describe('lib/server/pr_digest', () => {
     expect(digest).toEqual({
       approvedUnmerged: [],
       staleAwaitingReview: [],
+      awaitingReviewResponse: [],
       otherReadyForReview: [],
     });
   });
@@ -285,6 +287,110 @@ describe('lib/server/pr_digest', () => {
     ]);
     expect(digest.staleAwaitingReview).toEqual([]);
     expect(digest.otherReadyForReview).toEqual([]);
+  });
+
+  test('includes awaiting-response PRs whose review is older than 24 hours', () => {
+    const digest = buildPrDigest(
+      {
+        approvedUnmergedRows: [],
+        staleReviewRequestRows: [],
+        awaitingReviewResponseRows: [
+          {
+            pr_url: 'https://github.com/octocat/hello-world/pull/8',
+            pr_number: 8,
+            title: 'Needs author response',
+            author: 'olive',
+            additions: 10,
+            deletions: 2,
+            changed_files: 3,
+            is_stacked: 0,
+            last_review_at: '2026-01-01T08:00:00.000Z',
+            last_review_author: 'pat',
+            last_review_state: 'CHANGES_REQUESTED',
+          },
+        ],
+        otherReadyForReviewRows: [],
+      },
+      { nowMs }
+    );
+
+    expect(digest.awaitingReviewResponse).toEqual([
+      expect.objectContaining({
+        prNumber: 8,
+        title: 'Needs author response',
+        author: 'olive',
+        reviewResponseReviewer: 'pat',
+        reviewResponseState: 'CHANGES_REQUESTED',
+        reviewedMs: 26 * 3_600_000,
+        reviewedLabel: '26 hours',
+      }),
+    ]);
+  });
+
+  test('excludes awaiting-response PRs whose review is within the last 24 hours', () => {
+    const digest = buildPrDigest(
+      {
+        approvedUnmergedRows: [],
+        staleReviewRequestRows: [],
+        awaitingReviewResponseRows: [
+          {
+            pr_url: 'https://github.com/octocat/hello-world/pull/9',
+            pr_number: 9,
+            title: 'Reviewed recently',
+            author: 'olive',
+            additions: null,
+            deletions: null,
+            changed_files: null,
+            is_stacked: 0,
+            last_review_at: '2026-01-02T00:00:00.000Z',
+            last_review_author: 'pat',
+            last_review_state: 'COMMENTED',
+          },
+        ],
+        otherReadyForReviewRows: [],
+      },
+      { nowMs }
+    );
+
+    expect(digest.awaitingReviewResponse).toEqual([]);
+  });
+
+  test('omits approved PRs from the awaiting-response bucket', () => {
+    const prUrl = 'https://github.com/octocat/hello-world/pull/10';
+    const digest = buildPrDigest(
+      {
+        approvedUnmergedRows: [
+          {
+            pr_url: prUrl,
+            pr_number: 10,
+            title: 'Approved and reviewed',
+            author: 'olive',
+            approved_at: null,
+          },
+        ],
+        staleReviewRequestRows: [],
+        awaitingReviewResponseRows: [
+          {
+            pr_url: prUrl,
+            pr_number: 10,
+            title: 'Approved and reviewed',
+            author: 'olive',
+            additions: null,
+            deletions: null,
+            changed_files: null,
+            is_stacked: 0,
+            last_review_at: '2026-01-01T00:00:00.000Z',
+            last_review_author: 'pat',
+            last_review_state: 'CHANGES_REQUESTED',
+          },
+        ],
+        otherReadyForReviewRows: [],
+      },
+      { nowMs }
+    );
+
+    expect(digest.approvedUnmerged).toEqual([expect.objectContaining({ prNumber: 10 })]);
+    expect(digest.awaitingReviewResponse).toEqual([]);
   });
 
   test('uses the injected nowMs for wait calculations', () => {
