@@ -55,6 +55,10 @@ export function classifyOwnPr(pr: PrStatusDetail): ClassifiedPr | null {
     return { actionReason: 'ready_to_merge', checkStatus };
   }
 
+  if (review_decision === 'APPROVED') {
+    return { actionReason: 'approved', checkStatus };
+  }
+
   return { actionReason: 'open', checkStatus };
 }
 

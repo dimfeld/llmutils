@@ -34,6 +34,10 @@
       label: 'Review requested',
       classes: 'bg-yellow-200 text-yellow-900 dark:bg-yellow-950/60 dark:text-yellow-200',
     },
+    approved: {
+      label: 'Approved',
+      classes: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+    },
     open: {
       label: 'Open',
       classes: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',

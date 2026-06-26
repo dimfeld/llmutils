@@ -15,6 +15,7 @@ export interface ActionablePr {
     | 'checks_failing'
     | 'changes_requested'
     | 'review_requested'
+    | 'approved'
     | 'open';
   checkStatus: 'passing' | 'failing' | 'pending' | 'none';
   linkedPlanId: number | null;

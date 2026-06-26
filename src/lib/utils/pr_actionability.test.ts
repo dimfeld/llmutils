@@ -156,22 +156,22 @@ describe('classifyOwnPr', () => {
     expect(classifyOwnPr(pr)).toEqual({ actionReason: 'open', checkStatus: 'passing' });
   });
 
-  test('returns open when approved but checks not passing', () => {
+  test('returns approved when approved but checks not passing', () => {
     const pr = makePrDetail({
       check_rollup_state: 'PENDING',
       review_decision: 'APPROVED',
       mergeable: 'MERGEABLE',
     });
-    expect(classifyOwnPr(pr)).toEqual({ actionReason: 'open', checkStatus: 'pending' });
+    expect(classifyOwnPr(pr)).toEqual({ actionReason: 'approved', checkStatus: 'pending' });
   });
 
-  test('returns open when approved and checks pass but not mergeable', () => {
+  test('returns approved when approved and checks pass but not mergeable', () => {
     const pr = makePrDetail({
       check_rollup_state: 'SUCCESS',
       review_decision: 'APPROVED',
       mergeable: 'CONFLICTING',
     });
-    expect(classifyOwnPr(pr)).toEqual({ actionReason: 'open', checkStatus: 'passing' });
+    expect(classifyOwnPr(pr)).toEqual({ actionReason: 'approved', checkStatus: 'passing' });
   });
 
   test('returns open when no actionable status', () => {
