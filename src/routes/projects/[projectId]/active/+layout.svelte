@@ -69,7 +69,8 @@
   let attentionCount = $derived(
     attentionItems.planItems.length + attentionItems.sessionItems.length
   );
-  let prReviewCount = $derived(attentionItems.prItems.length);
+  let prReviewCount = $derived(attentionItems.prReviewItems.length);
+  let ownedPrCount = $derived(attentionItems.ownedPrItems.length);
   let stackedCount = $derived(attentionItems.stackedPlanItems.length);
   let reviewedCount = $derived(attentionItems.reviewedPlanItems.length);
 
@@ -82,6 +83,7 @@
   let allEmpty = $derived(
     attentionCount === 0 &&
       prReviewCount === 0 &&
+      ownedPrCount === 0 &&
       stackedCount === 0 &&
       reviewedCount === 0 &&
       runningSessions.length === 0 &&
@@ -140,7 +142,21 @@
 
         {#if prReviewCount > 0}
           <DashboardSection title="PRs to Review" count={prReviewCount}>
-            {#each attentionItems.prItems as item (item.actionablePr.prUrl)}
+            {#each attentionItems.prReviewItems as item (item.actionablePr.prUrl)}
+              <PrAttentionCard
+                {item}
+                projectName={showProject
+                  ? projectNamesById[item.actionablePr.projectId]
+                  : undefined}
+                selected={selectedPrNumber === item.actionablePr.prNumber}
+              />
+            {/each}
+          </DashboardSection>
+        {/if}
+
+        {#if ownedPrCount > 0}
+          <DashboardSection title="My PRs" count={ownedPrCount}>
+            {#each attentionItems.ownedPrItems as item (item.actionablePr.prUrl)}
               <PrAttentionCard
                 {item}
                 projectName={showProject

@@ -92,7 +92,8 @@ describe('deriveAttentionItems', () => {
     expect(result.planItems).toEqual([]);
     expect(result.stackedPlanItems).toEqual([]);
     expect(result.reviewedPlanItems).toEqual([]);
-    expect(result.prItems).toEqual([]);
+    expect(result.ownedPrItems).toEqual([]);
+    expect(result.prReviewItems).toEqual([]);
   });
 
   test('does not include plans that have an active session, even if waiting for input', () => {
@@ -321,18 +322,19 @@ describe('deriveAttentionItems', () => {
     expect(result.planItems).toEqual([]);
   });
 
-  test('wraps actionable PRs as PrAttentionItems', () => {
+  test('puts owned PRs in ownedPrItems', () => {
     const pr = makeActionablePr({
       prUrl: 'https://github.com/org/repo/pull/42',
       actionReason: 'checks_failing',
     });
 
     const result = deriveAttentionItems([], planIndex([]), [pr]);
-    expect(result.prItems).toHaveLength(1);
-    expect(result.prItems[0]).toEqual({ kind: 'pr', actionablePr: pr });
+    expect(result.ownedPrItems).toHaveLength(1);
+    expect(result.ownedPrItems[0]).toEqual({ kind: 'pr', actionablePr: pr });
+    expect(result.prReviewItems).toHaveLength(0);
   });
 
-  test('sorts review-requested PRs before other PRs', () => {
+  test('puts review-requested PRs in prReviewItems', () => {
     const reviewRequestedPr = makeActionablePr({
       prUrl: 'https://github.com/org/repo/pull/99',
       prNumber: 99,
@@ -345,8 +347,10 @@ describe('deriveAttentionItems', () => {
     });
 
     const result = deriveAttentionItems([], planIndex([]), [otherPr, reviewRequestedPr]);
-    expect(result.prItems.map((item) => item.actionablePr.actionReason)).toEqual([
+    expect(result.prReviewItems.map((item) => item.actionablePr.actionReason)).toEqual([
       'review_requested',
+    ]);
+    expect(result.ownedPrItems.map((item) => item.actionablePr.actionReason)).toEqual([
       'ready_to_merge',
     ]);
   });

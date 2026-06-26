@@ -71,7 +71,10 @@ export interface AttentionItems {
   planItems: PlanAttentionItem[];
   stackedPlanItems: PlanAttentionItem[];
   reviewedPlanItems: PlanAttentionItem[];
-  prItems: PrAttentionItem[];
+  /** PRs authored by the current user that need action. */
+  ownedPrItems: PrAttentionItem[];
+  /** PRs where the current user has been requested to review. */
+  prReviewItems: PrAttentionItem[];
   sessionItems: RunningSession[];
 }
 
@@ -232,18 +235,15 @@ export function deriveAttentionItems(
     }
   }
 
-  const prItems: PrAttentionItem[] = actionablePrs.map((pr) => ({
-    kind: 'pr' as const,
-    actionablePr: pr,
-  }));
-  const reviewRequestItems: PrAttentionItem[] = [];
-  const otherPrItems: PrAttentionItem[] = [];
+  const prReviewItems: PrAttentionItem[] = [];
+  const ownedPrItems: PrAttentionItem[] = [];
 
-  for (const prItem of prItems) {
-    if (prItem.actionablePr.actionReason === 'review_requested') {
-      reviewRequestItems.push(prItem);
+  for (const pr of actionablePrs) {
+    const item: PrAttentionItem = { kind: 'pr', actionablePr: pr };
+    if (pr.actionReason === 'review_requested') {
+      prReviewItems.push(item);
     } else {
-      otherPrItems.push(prItem);
+      ownedPrItems.push(item);
     }
   }
 
@@ -251,7 +251,8 @@ export function deriveAttentionItems(
     planItems,
     stackedPlanItems,
     reviewedPlanItems,
-    prItems: [...reviewRequestItems, ...otherPrItems],
+    ownedPrItems,
+    prReviewItems,
     sessionItems: notificationSessions,
   };
 }
