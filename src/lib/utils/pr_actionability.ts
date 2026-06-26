@@ -146,14 +146,17 @@ export function buildActionablePrsForRepo(
 ): ActionablePr[] {
   const results: ActionablePr[] = [];
 
+  // Head branches of all open PRs, used to detect stacked own PRs.
+  const openHeadBranches = new Set<string>();
   // Head branches of open PRs that have an unanswered review request for the
   // current user. A review-requested PR whose base branch appears here is
   // "stacked" on top of another PR that also needs the user's review.
   const reviewRequestedHeadBranches = new Set<string>();
-  if (normalizedUsername !== null) {
-    for (const pr of prs) {
-      if (pr.status.state !== 'open') continue;
-      if (pr.status.head_branch && hasReviewRequestForUser(pr, normalizedUsername)) {
+  for (const pr of prs) {
+    if (pr.status.state !== 'open') continue;
+    if (pr.status.head_branch) {
+      openHeadBranches.add(pr.status.head_branch);
+      if (normalizedUsername !== null && hasReviewRequestForUser(pr, normalizedUsername)) {
         reviewRequestedHeadBranches.add(pr.status.head_branch);
       }
     }
@@ -193,7 +196,8 @@ export function buildActionablePrsForRepo(
           deletions,
           changedFiles: changed_files,
           reviewRequestedAt: null,
-          reviewRequestedStacked: false,
+          reviewRequestedStacked:
+            pr.status.base_branch !== null && openHeadBranches.has(pr.status.base_branch),
           hasApprovingReview,
         });
       }

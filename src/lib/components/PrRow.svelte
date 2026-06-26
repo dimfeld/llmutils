@@ -100,6 +100,13 @@
           )}"
         >
           {reviewDecisionLabel(pr.status.review_decision)}
+          {#if pr.status.review_decision === 'APPROVED' && pr.isStackedOnOpenPr}
+            <span
+              class="ml-1 border-l border-green-300 pl-1 text-green-700 dark:border-green-700 dark:text-green-300"
+            >
+              Stacked
+            </span>
+          {/if}
         </span>
       {/if}
       {#if pr.currentUserPushedAfterReview}

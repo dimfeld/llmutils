@@ -50,6 +50,8 @@ export interface EnrichedProjectPr extends PrStatusDetailWithRequiredChecks {
    * branch is the head branch of such a PR).
    */
   currentUserReviewRequestStacked: boolean;
+  /** True when this PR's base branch is the head branch of another open PR in the same repo. */
+  isStackedOnOpenPr: boolean;
 }
 
 interface RefreshResult {
@@ -89,6 +91,7 @@ function enrichProjectPrs(
     currentUserReviewRequestedAt: getCurrentUserReviewRequestedAt(pr, username),
     currentUserPushedAfterReview: getCurrentUserPushedAfterReview(pr, username),
     currentUserReviewRequestStacked: false,
+    isStackedOnOpenPr: false,
   }));
 }
 
@@ -99,22 +102,29 @@ function enrichProjectPrs(
  */
 function markStackedReviewRequests(prs: EnrichedProjectPr[]): EnrichedProjectPr[] {
   const reviewRequestedHeadBranches = new Set<string>();
+  const openHeadBranches = new Set<string>();
   for (const pr of prs) {
-    if (pr.currentUserReviewRequestLabel === 'Review Requested' && pr.status.head_branch) {
-      reviewRequestedHeadBranches.add(
-        `${pr.status.owner}/${pr.status.repo}#${pr.status.head_branch}`
-      );
+    if (pr.status.head_branch) {
+      openHeadBranches.add(`${pr.status.owner}/${pr.status.repo}#${pr.status.head_branch}`);
+      if (pr.currentUserReviewRequestLabel === 'Review Requested') {
+        reviewRequestedHeadBranches.add(
+          `${pr.status.owner}/${pr.status.repo}#${pr.status.head_branch}`
+        );
+      }
     }
   }
 
   return prs.map((pr) => {
-    const stacked =
+    const repoBase =
+      pr.status.base_branch !== null
+        ? `${pr.status.owner}/${pr.status.repo}#${pr.status.base_branch}`
+        : null;
+    const currentUserReviewRequestStacked =
       pr.currentUserReviewRequestLabel === 'Review Requested' &&
-      pr.status.base_branch !== null &&
-      reviewRequestedHeadBranches.has(
-        `${pr.status.owner}/${pr.status.repo}#${pr.status.base_branch}`
-      );
-    return { ...pr, currentUserReviewRequestStacked: stacked };
+      repoBase !== null &&
+      reviewRequestedHeadBranches.has(repoBase);
+    const isStackedOnOpenPr = repoBase !== null && openHeadBranches.has(repoBase);
+    return { ...pr, currentUserReviewRequestStacked, isStackedOnOpenPr };
   });
 }
 

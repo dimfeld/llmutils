@@ -594,6 +594,33 @@ describe('buildActionablePrsForRepo', () => {
     expect(result[0]?.hasApprovingReview).toBe(true);
   });
 
+  test('marks an owned PR as stacked when its base branch is another open PR head branch', () => {
+    const base = makePrDetail({
+      pr_url: 'https://github.com/owner/repo/pull/30',
+      pr_number: 30,
+      author: 'testuser',
+      head_branch: 'feature-a',
+      base_branch: 'main',
+      check_rollup_state: 'SUCCESS',
+      review_decision: 'APPROVED',
+      mergeable: 'MERGEABLE',
+    });
+    const stacked = makePrDetail({
+      pr_url: 'https://github.com/owner/repo/pull/31',
+      pr_number: 31,
+      author: 'testuser',
+      head_branch: 'feature-b',
+      base_branch: 'feature-a',
+      check_rollup_state: 'PENDING',
+      review_decision: 'APPROVED',
+    });
+
+    const result = buildActionablePrsForRepo(7, [base, stacked], new Map(), 'testuser');
+    const byNumber = new Map(result.map((pr) => [pr.prNumber, pr]));
+    expect(byNumber.get(30)?.reviewRequestedStacked).toBe(false);
+    expect(byNumber.get(31)?.reviewRequestedStacked).toBe(true);
+  });
+
   test('skips closed PRs but includes open PRs regardless of actionable state', () => {
     const closed = makePrDetail({
       pr_url: 'https://github.com/owner/repo/pull/12',
