@@ -43,6 +43,12 @@
   --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
   --sidebar-border: oklch(0.92 0.004 286.32);
   --sidebar-ring: oklch(0.705 0.015 286.067);
+
+  /* Diffs formatting */
+  --diffs-font-family: 'Berkeley Mono', 'Fira Code', 'Jetbrains Mono', monospace;
+  --diffs-font-features: 'calt' 0, 'tnum';
+  --diffs-font-size: 12px;
+  --diffs-line-height: 1.8;
 }
 
 .dark {
