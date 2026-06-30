@@ -8,6 +8,7 @@ import { getProject } from '../db/project.js';
 import { deleteWorkspace } from '../db/workspace.js';
 import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
 import { createWorkspace } from './workspace_manager.js';
+import { ensureMaterializeDir } from '../plan_materialize.js';
 import type { TimConfig } from '../configSchema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import type { WorkspaceType } from '../db/workspace.js';
@@ -137,7 +138,11 @@ export class WorkspaceAutoSelector {
         baseBranchSource,
       });
       if (newWorkspace) {
-        return { workspace: newWorkspace, isNew: true, clearedStaleLock: false };
+        return this.finalizeSelection({
+          workspace: newWorkspace,
+          isNew: true,
+          clearedStaleLock: false,
+        });
       }
     }
 
@@ -161,11 +166,11 @@ export class WorkspaceAutoSelector {
               `Selected assigned workspace for plan ${preferredPlanUuid}: ${preferredWorkspace.workspacePath}`
             );
             const { lockedBy: _lockedBy, ...workspaceWithoutLock } = preferredWorkspace;
-            return {
+            return this.finalizeSelection({
               workspace: workspaceWithoutLock,
               isNew: false,
               clearedStaleLock: false,
-            };
+            });
           }
 
           log(
@@ -181,11 +186,11 @@ export class WorkspaceAutoSelector {
       if (!lockInfo) {
         log(`Selected unlocked workspace: ${workspace.workspacePath}`);
         const { lockedBy: _lockedBy, ...workspaceWithoutLock } = workspace;
-        return {
+        return this.finalizeSelection({
           workspace: workspaceWithoutLock,
           isNew: false,
           clearedStaleLock: false,
-        };
+        });
       }
 
       lockedCandidates.push({ workspace, lockInfo });
@@ -207,11 +212,11 @@ export class WorkspaceAutoSelector {
 
       const { lockedBy: _lockedBy, ...workspaceWithoutLock } = candidate.workspace;
       log(`Selected workspace after clearing stale lock: ${candidate.workspace.workspacePath}`);
-      return {
+      return this.finalizeSelection({
         workspace: workspaceWithoutLock,
         isNew: false,
         clearedStaleLock: true,
-      };
+      });
     }
 
     // All workspaces are locked, create a new one
@@ -227,11 +232,26 @@ export class WorkspaceAutoSelector {
     });
 
     if (newWorkspace) {
-      return { workspace: newWorkspace, isNew: true, clearedStaleLock: false };
+      return this.finalizeSelection({
+        workspace: newWorkspace,
+        isNew: true,
+        clearedStaleLock: false,
+      });
     }
 
     log('Failed to select or create a workspace');
     return null;
+  }
+
+  /**
+   * Ensure the selected workspace's `.git/info/exclude` is set up to ignore tim's
+   * materialized/local-state directories before handing the workspace back to the caller.
+   * This runs for every selection path (new or reused) so callers don't need to remember
+   * to call `ensureMaterializeDir` themselves.
+   */
+  private async finalizeSelection(result: SelectedWorkspace): Promise<SelectedWorkspace> {
+    await ensureMaterializeDir(result.workspace.workspacePath);
+    return result;
   }
 
   /**
