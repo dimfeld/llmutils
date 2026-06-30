@@ -1263,6 +1263,9 @@ describe('common/github/pr_status_service', () => {
     mockFetchPrMergeableAndReviewDecision.mockResolvedValue({
       mergeable: 'MERGEABLE' as const,
       reviewDecision: 'APPROVED' as const,
+      reviews: [
+        { author: 'alice', state: 'APPROVED', body: '', submittedAt: '2026-03-21T00:00:00.000Z' },
+      ],
     });
 
     const { fetchAndUpdatePrMergeableStatus } = await import('./pr_status_service.ts');
@@ -1273,7 +1276,47 @@ describe('common/github/pr_status_service', () => {
     expect(detail?.status.mergeable).toBe('MERGEABLE');
     expect(detail?.status.review_decision).toBe('APPROVED');
     expect(detail?.checks.map((check) => check.name)).toEqual(['existing-check']);
+    // The lightweight refresh keeps reviews in sync with review_decision: alice's stale
+    // COMMENTED review is replaced by her fetched APPROVED review.
     expect(detail?.reviews.map((review) => review.author)).toEqual(['alice']);
+    expect(detail?.reviews.map((review) => review.state)).toEqual(['APPROVED']);
+  });
+
+  test('fetchAndUpdatePrMergeableStatus backfills a missing approval review whose webhook was dropped', async () => {
+    // Simulate the bug: a bare approval's pull_request_review event never landed (e.g. it
+    // arrived before the PR row existed), so the stored reviews are empty even though the PR
+    // is now approved. A later pull_request `synchronize` triggers this lightweight refresh.
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/305',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 305,
+      title: 'Approved without a stored review',
+      state: 'open',
+      draft: false,
+      mergeable: null,
+      reviewDecision: null,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      checks: [],
+      reviews: [],
+    });
+
+    const mockFetchPrMergeableAndReviewDecision = vi.mocked(fetchPrMergeableAndReviewDecision);
+    mockFetchPrMergeableAndReviewDecision.mockResolvedValue({
+      mergeable: 'MERGEABLE' as const,
+      reviewDecision: 'APPROVED' as const,
+      reviews: [
+        { author: 'bob', state: 'APPROVED', body: '', submittedAt: '2026-03-21T00:00:00.000Z' },
+      ],
+    });
+
+    const { fetchAndUpdatePrMergeableStatus } = await import('./pr_status_service.ts');
+    await fetchAndUpdatePrMergeableStatus(db, 'example', 'repo', 305);
+
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/305');
+    expect(detail?.status.review_decision).toBe('APPROVED');
+    expect(detail?.reviews.map((review) => review.author)).toEqual(['bob']);
+    expect(detail?.reviews.map((review) => review.state)).toEqual(['APPROVED']);
   });
 
   test('fetchAndUpdatePrReviewThreads falls back to a full refresh when the PR is uncached', async () => {

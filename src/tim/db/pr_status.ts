@@ -917,7 +917,15 @@ export function updatePrMergeableAndReviewDecision(
   prStatusId: number,
   mergeable: string | null,
   reviewDecision: string | null,
-  lastFetchedAt: string
+  lastFetchedAt: string,
+  /**
+   * When provided, the PR's reviews are replaced with this list inside the same
+   * transaction. This keeps `review_decision` and the stored reviews in sync — a
+   * lightweight refresh that updates the decision but not the reviews can leave the
+   * two drifting (e.g. an approval whose `pull_request_review` webhook was dropped).
+   * Omit to leave existing reviews untouched.
+   */
+  reviews?: StoredPrReviewInput[]
 ): PrStatusDetail {
   const updateInTransaction = db.transaction(
     (
@@ -936,6 +944,10 @@ export function updatePrMergeableAndReviewDecision(
           WHERE id = ?
         `
       ).run(nextMergeable, nextReviewDecision, nextLastFetchedAt, nextPrStatusId);
+
+      if (reviews !== undefined) {
+        replaceReviews(db, nextPrStatusId, reviews);
+      }
 
       const detail = getDetailById(db, nextPrStatusId);
       if (!detail) {

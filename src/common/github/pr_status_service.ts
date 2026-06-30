@@ -214,7 +214,13 @@ export async function fetchAndUpdatePrMergeableStatus(
     existing.id,
     mergeableStatus.mergeable,
     mergeableStatus.reviewDecision,
-    getNowIsoString()
+    getNowIsoString(),
+    mergeableStatus.reviews.map((review) => ({
+      author: review.author,
+      state: review.state,
+      body: review.body,
+      submittedAt: review.submittedAt,
+    }))
   );
 }
 

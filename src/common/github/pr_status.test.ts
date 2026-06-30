@@ -876,6 +876,16 @@ describe('common/github/pr_status', () => {
         pullRequest: {
           mergeable: 'CONFLICTING',
           reviewDecision: 'CHANGES_REQUESTED',
+          reviews: {
+            nodes: [
+              {
+                author: { login: 'reviewer' },
+                state: 'CHANGES_REQUESTED',
+                body: 'Please fix',
+                submittedAt: '2026-03-21T00:00:00Z',
+              },
+            ],
+          },
         },
       },
     }));
@@ -889,6 +899,14 @@ describe('common/github/pr_status', () => {
     await expect(fetchPrMergeableAndReviewDecision('owner', 'repo', 77)).resolves.toEqual({
       mergeable: 'CONFLICTING',
       reviewDecision: 'CHANGES_REQUESTED',
+      reviews: [
+        {
+          author: 'reviewer',
+          state: 'CHANGES_REQUESTED',
+          body: 'Please fix',
+          submittedAt: '2026-03-21T00:00:00Z',
+        },
+      ],
     });
   });
 

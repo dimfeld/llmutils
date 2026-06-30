@@ -191,6 +191,7 @@ interface CheckStatusGraphQlResponse {
 interface GraphQlPullRequestMergeableStatus {
   mergeable: string | null;
   reviewDecision: string | null;
+  reviews: { nodes: Array<GraphQlReviewNode | null> | null } | null;
 }
 
 interface MergeableStatusGraphQlResponse {
@@ -397,6 +398,16 @@ const mergeableStatusQuery = `
       pullRequest(number: $prNumber) {
         mergeable
         reviewDecision
+        reviews(last: 50) {
+          nodes {
+            author {
+              login
+            }
+            state
+            body
+            submittedAt
+          }
+        }
       }
     }
   }
@@ -1069,7 +1080,11 @@ export async function fetchPrMergeableAndReviewDecision(
   repo: string,
   prNumber: number,
   options: GitHubStatusFetchOptions = {}
-): Promise<{ mergeable: PrMergeableState; reviewDecision: PrReviewDecision }> {
+): Promise<{
+  mergeable: PrMergeableState;
+  reviewDecision: PrReviewDecision;
+  reviews: PrStatusReview[];
+}> {
   const response = await getOctokit(options.authToken).graphql<MergeableStatusGraphQlResponse>(
     mergeableStatusQuery,
     {
@@ -1084,8 +1099,22 @@ export async function fetchPrMergeableAndReviewDecision(
     throw new Error(`Pull request ${owner}/${repo}#${prNumber} not found`);
   }
 
+  const reviews = dedupeReviewsByLatestAuthorReview(
+    (pullRequest.reviews?.nodes ?? [])
+      .filter(
+        (review): review is GraphQlReviewNode => review !== null && Boolean(review.author?.login)
+      )
+      .map((review) => ({
+        author: review.author!.login,
+        state: normalizeReviewState(review.state),
+        body: normalizeMultilineText(review.body),
+        submittedAt: review.submittedAt,
+      }))
+  );
+
   return {
     mergeable: normalizeMergeableState(pullRequest.mergeable),
     reviewDecision: normalizeReviewDecision(pullRequest.reviewDecision),
+    reviews,
   };
 }
