@@ -32,6 +32,7 @@
   } from '$lib/remote/plan_actions.remote.js';
   import { isPlanEligibleForProofWithConfigured } from '$lib/utils/proof_eligibility.js';
   import { hasUploadableArtifacts } from '$lib/utils/artifact_upload_eligibility.js';
+  import { isProofArtifact } from '$tim/artifacts/proof.js';
   import {
     removeReviewIssue,
     convertReviewIssueToTask,
@@ -368,6 +369,9 @@
   let startingUploadArtifacts = $state(false);
   let activeArtifactCount = $derived(
     (plan.artifacts ?? []).filter((a) => a.deletedAt === null).length
+  );
+  let proofArtifactCount = $derived(
+    (plan.artifacts ?? []).filter((a) => a.deletedAt === null && isProofArtifact(a.message)).length
   );
   let hasLinkedPr = $derived((plan.pullRequests ?? []).length > 0);
   let isEligibleForUploadArtifacts = $derived(
@@ -1753,17 +1757,19 @@
     <!-- Artifacts -->
     <div class="space-y-2">
       <div class="flex justify-end gap-2">
-        {#if activeArtifactCount > 0}
+        {#if proofArtifactCount > 0}
           <Button
             href={`/projects/${projectId}/plans/${plan.uuid}/artifacts`}
             variant="outline"
             size="xs"
-            aria-label="View artifacts"
-            title="View artifacts"
+            aria-label="View proof"
+            title="View proof"
           >
             <AppWindow class="size-3" />
-            View artifacts
+            View proof
           </Button>
+        {/if}
+        {#if activeArtifactCount > 0}
           <Button
             href={`/api/plans/${plan.uuid}/artifacts/archive`}
             variant="outline"

@@ -310,6 +310,70 @@ describe('PlanDetail', () => {
     expect(body).not.toContain('Download ZIP');
   });
 
+  test('shows View proof button only when proof artifacts exist', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          uuid: 'plan-proof-uuid',
+          artifacts: [
+            {
+              uuid: 'artifact-proof',
+              planUuid: 'plan-proof-uuid',
+              projectUuid: 'project-uuid',
+              filename: 'screenshot.png',
+              mimeType: 'image/png',
+              size: 12,
+              sha256: 'abc',
+              message: 'tim-proof:run-1',
+              storagePath: '/tmp/screenshot.png',
+              deletedAt: null,
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+              revision: 1,
+              transferState: null,
+            },
+          ],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('href="/projects/123/plans/plan-proof-uuid/artifacts"');
+    expect(body).toContain('View proof');
+  });
+
+  test('hides View proof button when only non-proof artifacts exist', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          uuid: 'plan-noproof-uuid',
+          artifacts: [
+            {
+              uuid: 'artifact-ref',
+              planUuid: 'plan-noproof-uuid',
+              projectUuid: 'project-uuid',
+              filename: 'reference.txt',
+              mimeType: 'text/plain',
+              size: 12,
+              sha256: 'abc',
+              message: 'tim-reference:notes',
+              storagePath: '/tmp/reference.txt',
+              deletedAt: null,
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+              revision: 1,
+              transferState: null,
+            },
+          ],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).not.toContain('View proof');
+    expect(body).not.toContain('href="/projects/123/plans/plan-noproof-uuid/artifacts"');
+  });
+
   test('does not repeat the parent in the depended-on-by section', () => {
     const parent = {
       uuid: 'parent-plan',

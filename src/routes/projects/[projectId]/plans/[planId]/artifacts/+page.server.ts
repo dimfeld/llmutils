@@ -6,6 +6,7 @@ import { compareArtifactsByFilename } from '$common/artifact_sort.js';
 import { getServerContext } from '$lib/server/init.js';
 import { getPlanDetailRouteData } from '$lib/server/plans_browser.js';
 import { classifyArtifactPreview, type ArtifactViewKind } from '$lib/utils/artifact_preview.js';
+import { isProofArtifact } from '$tim/artifacts/proof.js';
 import type { PlanArtifactWithTransferState } from '$tim/artifacts/service.js';
 import type { PageServerLoad } from './$types';
 
@@ -51,7 +52,7 @@ export const load: PageServerLoad = async ({ params }) => {
   }
 
   const artifacts = [...(result.planDetail.artifacts ?? [])]
-    .filter((artifact) => artifact.deletedAt === null)
+    .filter((artifact) => artifact.deletedAt === null && isProofArtifact(artifact.message))
     .sort(compareArtifactsByFilename);
 
   return {
