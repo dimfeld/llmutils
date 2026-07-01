@@ -506,6 +506,31 @@ Details
     expect(lines.filter((line) => line === '.tim/issue-docs')).toHaveLength(1);
   });
 
+  test('ensureMaterializeDir registers .tim/reference-artifacts in .git/info/exclude', async () => {
+    const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
+
+    await ensureMaterializeDir(repoDir);
+
+    const lines = (await fs.readFile(infoExcludePath, 'utf8'))
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    expect(lines.filter((line) => line === '.tim/reference-artifacts')).toHaveLength(1);
+  });
+
+  test('ensureMaterializeDir does not duplicate .tim/reference-artifacts in .git/info/exclude', async () => {
+    const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
+    await fs.appendFile(infoExcludePath, '\n.tim/reference-artifacts\n');
+
+    await ensureMaterializeDir(repoDir);
+
+    const lines = (await fs.readFile(infoExcludePath, 'utf8'))
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    expect(lines.filter((line) => line === '.tim/reference-artifacts')).toHaveLength(1);
+  });
+
   test('ensureMaterializeDir only adds dirs not already covered by core.excludesfile', async () => {
     const globalExcludePath = path.join(tempDir, 'global-gitignore');
     await fs.writeFile(globalExcludePath, '.tim/plans\n', 'utf8');
@@ -522,6 +547,7 @@ Details
     expect(after).toContain('.tim/logs');
     expect(after).toContain('.tim/tmp');
     expect(after).toContain('.tim/issue-docs');
+    expect(after).toContain('.tim/reference-artifacts');
     expect(after).toContain('.tim/proofs');
     expect(after).toContain('.tim/workspaces');
     expect(after).toContain('.tim/config/tim.local.yml');

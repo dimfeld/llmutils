@@ -13,6 +13,7 @@ import type { Executor, ExecutorOutput } from '../../executors/types.js';
 import { readPlanFile, setPlanStatusById, writePlanFile } from '../../plans.js';
 import { getAllIncompleteTasks } from '../../plans/find_next.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
+import { tryMaterializeReferenceArtifactPathsForExecution } from '../../reference_artifacts.js';
 import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js';
 import { sendFailureReport, timestamp } from './agent_helpers.js';
 import type { SummaryCollector } from '../../summary/collector.js';
@@ -158,6 +159,10 @@ export async function executeBatchMode(
     const initialPlanData = await readPlanFile(currentPlanFile);
     const planId = initialPlanData.id;
     const initialCompletedTaskCount = initialPlanData.tasks.filter((t) => t.done).length;
+    const referenceArtifactPaths = await tryMaterializeReferenceArtifactPathsForExecution(
+      baseDir,
+      planId
+    );
 
     // Batch mode: continue until no incomplete tasks remain
     while (iteration < maxSteps) {
@@ -246,6 +251,7 @@ Available tasks:\n\n${taskDescriptions}`,
         filePathPrefix: executor.filePathPrefix,
         includeCurrentPlanContext: true,
         batchMode: true,
+        referenceArtifactPaths,
       });
 
       let finalPrompt = batchPrompt;

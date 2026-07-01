@@ -338,6 +338,61 @@ describe('tim MCP generate mode helpers', () => {
     });
   });
 
+  describe('referenceArtifactPaths — Reference Artifacts section', () => {
+    test('loadResearchPrompt includes reference artifacts section with paths and persistence language', async () => {
+      context.referenceArtifactPaths = [
+        '.tim/reference-artifacts/99999/spec.md',
+        '.tim/reference-artifacts/99999/schema.json',
+      ];
+
+      const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
+      const messageText = prompt.messages[0]?.content?.text ?? '';
+
+      expect(messageText).toContain('## Reference Artifacts');
+      expect(messageText).toContain('.tim/reference-artifacts/99999/spec.md');
+      expect(messageText).toContain('.tim/reference-artifacts/99999/schema.json');
+      // Persistence language — the opposite of the transient issue-docs section
+      expect(messageText).toContain('present at the same paths during execution');
+      expect(messageText).not.toContain('temporary');
+      expect(messageText).not.toContain('deleted before this plan is implemented');
+    });
+
+    test('loadResearchPrompt omits reference artifacts section when referenceArtifactPaths is absent', async () => {
+      // context.referenceArtifactPaths is undefined by default in beforeEach
+      const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
+      const messageText = prompt.messages[0]?.content?.text ?? '';
+
+      expect(messageText).not.toContain('## Reference Artifacts');
+    });
+
+    test('loadResearchPrompt omits reference artifacts section when referenceArtifactPaths is empty', async () => {
+      context.referenceArtifactPaths = [];
+
+      const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
+      const messageText = prompt.messages[0]?.content?.text ?? '';
+
+      expect(messageText).not.toContain('## Reference Artifacts');
+    });
+
+    test('loadGeneratePrompt includes reference artifacts section with paths and persistence language', async () => {
+      context.referenceArtifactPaths = ['.tim/reference-artifacts/99999/design.md'];
+
+      const prompt = await loadGeneratePrompt({ plan: basePlan.id }, context);
+      const messageText = prompt.messages[0]?.content?.text ?? '';
+
+      expect(messageText).toContain('## Reference Artifacts');
+      expect(messageText).toContain('.tim/reference-artifacts/99999/design.md');
+      expect(messageText).toContain('present at the same paths during execution');
+    });
+
+    test('loadGeneratePrompt omits reference artifacts section when referenceArtifactPaths is absent', async () => {
+      const prompt = await loadGeneratePrompt({ plan: basePlan.id }, context);
+      const messageText = prompt.messages[0]?.content?.text ?? '';
+
+      expect(messageText).not.toContain('## Reference Artifacts');
+    });
+  });
+
   test('loadResearchPrompt includes parent plan context when plan has a parent', async () => {
     const parentPath = getMaterializedPlanPath(tmpDir, 99998);
     const doneSiblingPath = getMaterializedPlanPath(tmpDir, 99997);

@@ -25,6 +25,7 @@ import { getOrCreateProject } from './db/project.js';
 import { SQL_NOW_ISO_UTC } from './db/sql_utils.js';
 import { generatePlanFileContent, readPlanFile } from './plans.js';
 import { ISSUE_DOCS_DIR } from './issue_docs.js';
+import { REFERENCE_ARTIFACTS_DIR } from './reference_artifacts_paths.js';
 import {
   normalizeContainerToEpic,
   phaseSchema,
@@ -1122,6 +1123,7 @@ export async function ensureMaterializeDir(repoRoot: string): Promise<string> {
     LOGS_DIR,
     TMP_DIR,
     ISSUE_DOCS_DIR,
+    REFERENCE_ARTIFACTS_DIR,
     PROOFS_DIR,
     DEFAULT_WORKSPACE_CLONE_LOCATION,
   ];

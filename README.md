@@ -537,6 +537,7 @@ CLI commands:
 
 ```bash
 tim artifact add 123 ./screenshot.png -m "before fix"
+tim artifact add 123 ./spec.md --reference -m "API spec"
 tim artifact list 123
 tim artifact list 123 --include-deleted --json
 tim artifact show <artifactUuid>
@@ -546,6 +547,41 @@ tim artifact purge --older-than 30 --dry-run
 ```
 
 `tim artifact add` prints the new artifact UUID so agents can reference it in subsequent messages.
+
+### Reference artifacts
+
+An artifact can be marked as a **reference artifact** — a document (spec, design note, API contract) meant to be surfaced during planning and execution. Classification reuses the `message` column the same way proof artifacts do: reference artifacts store a `tim-reference:` prefix, with any user-provided description following the prefix (`tim-reference:<description>`, or exactly `tim-reference:` when no description is given). No schema/migration change is involved — the prefix is the only discriminator, and it is stripped for display.
+
+- **CLI:** `tim artifact add` requires exactly one of `--reference` or `--proof` (supplying neither, or both, is a usage error). `--reference` composes with `-m/--message`, which becomes the reference description; `--proof` writes the `tim-proof:` marker instead. Pass `--zip` to bundle the given files — or the contents of a given directory — into a single ZIP artifact (multiple positional paths require `--zip`).
+- **MCP:** the `attach_plan_artifact` tool accepts `reference?: boolean`, applying the same wrapping.
+- **Web:** the artifact uploader has a "Reference artifact" checkbox (checked by default) that wraps the message before posting.
+- **Display:** `PlanArtifactsList` renders a "Reference" badge parallel to the proof badge and shows the description with the prefix stripped.
+
+The shared marker helpers (`buildReferenceArtifactMessage`, `isReferenceArtifact`, `parseReferenceArtifactDescription`, `REFERENCE_ARTIFACT_PREFIX`) live in `src/tim/artifacts/reference.ts`.
+
+#### Materialization during planning
+
+When `tim generate` runs against a plan, its reference artifacts are materialized into the execution workspace so the planning agent — and later the implementing agent — can read the actual files. Materialization walks the plan's parent chain (current plan first, then each ancestor), collects every non-deleted reference artifact whose file is present on this node, and copies them into a git-excluded per-plan cache at `.tim/reference-artifacts/<planId>/`. The cache is registered in `.git/info/exclude` alongside the issue-docs cache.
+
+- **Parent inheritance:** a subplan inherits its parents' reference artifacts, all flattened into the child's directory.
+- **Child-wins collisions:** when two plans in the chain contribute the same filename (case-insensitive), the nearest plan wins and the ancestor's copy is dropped with a warning.
+- **Clear-and-rebuild:** the per-plan directory is emptied on each run, so files from removed or soft-deleted artifacts do not linger.
+- **Skips:** soft-deleted artifacts and artifacts whose file lives on another node (`transferState === 'file-missing'`) are skipped with a warning rather than failing the run.
+- **ZIP archives:** a reference artifact whose filename ends in `.zip` is not written as a file; it is extracted into a subdirectory named after the archive (`<planId>/<archiveName>/…`), and that directory is what appears in the `## Reference Artifacts` listing. Entries that would escape the extraction directory (zip-slip) are skipped with a warning.
+
+Unlike the transient Linear issue-docs cache, reference artifacts are **persistent context**: the `tim generate` prompt includes a `## Reference Artifacts` section listing the materialized paths and telling the planning agent that these files will be present at the same paths during execution, so the generated plan and task descriptions may reference the paths directly instead of inlining their content.
+
+#### Materialization during execution and chat
+
+The same materializer runs again at execution time so the paths the planning agent was promised actually hold. Because the deterministic path is `.tim/reference-artifacts/<planId>/<safeFilename>` (parent artifacts flattened into the current plan's directory) and materialization clears and rebuilds the per-plan directory each run, execution reproduces the identical paths used at generate time while dropping files for artifacts deleted since planning.
+
+- **`tim agent` (normal, batch, and subagent paths):** each entry point materializes against its execution workspace before building the execution prompt, then threads the repo-relative paths into `ExecutionPromptOptions.referenceArtifactPaths`. `buildExecutionPromptWithoutSteps` (`src/tim/prompt_builder.ts`) emits a `## Reference Artifacts` section listing those paths (omitted when there are none) that tells the implementing agent the files are present and may be referenced directly.
+- **`tim chat`:** when a plan is attached, `chat.ts` materializes the reference artifacts alongside the plan files so they land on disk for the session and appends a short note listing the paths to the chat prompt.
+- **`tim review`:** intentionally out of scope — it does not materialize reference artifacts.
+
+All four call sites (generate + the three execution entry points, plus chat) go through the shared `tryMaterializeReferenceArtifactPathsForExecution(baseDir, planId)` helper, so there is exactly one place that decides where files land and the path-determinism promise holds. Materialization is best-effort: a failure logs a warning and returns no paths rather than aborting the run.
+
+The materializer lives in `src/tim/reference_artifacts.ts` (path constants in `src/tim/reference_artifacts_paths.ts`); the generate prompt section is assembled in `src/tim/mcp/generate_mode.ts`, and the execution prompt section in `src/tim/prompt_builder.ts`.
 
 ### JSON output
 
@@ -580,7 +616,7 @@ Deletion has two tiers:
 
 `tim cleanup` runs an artifact purge alongside other cleanup steps, and agent shutdown triggers a best-effort opportunistic purge using the configured retention.
 
-MCP tool `attach_plan_artifact` (input `{ planId, filePath, message? }`) exposes the add operation to agents running under the MCP server and returns `{ uuid, filename, mimeType, size }`.
+MCP tool `attach_plan_artifact` (input `{ planId, filePath, message?, reference? }`) exposes the add operation to agents running under the MCP server and returns `{ uuid, filename, mimeType, size }`. Setting `reference: true` marks the artifact as a reference artifact (see [Reference artifacts](#reference-artifacts)).
 
 Web UI: the plan detail page shows an **Artifacts** section beneath review issues with mime-type icons, inline thumbnails for images, filename, message, size, transfer state, and Delete/Restore actions. A drag-drop uploader and file picker post to `POST /api/artifacts`; downloads stream via `GET /api/artifacts/[artifactUuid]`, and the plan-level **Download ZIP** action streams all active artifacts via `GET /api/plans/[planUuid]/artifacts/archive`. Proof artifacts open with `?view=1` so screenshots, videos, markdown, text, and code-like files render directly in a new browser tab when possible. A toggle reveals soft-deleted artifacts.
 

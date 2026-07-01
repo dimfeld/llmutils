@@ -11,6 +11,7 @@ import { resolvePlanByNumericId, writePlanToDb } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { buildReferenceArtifactsSection } from '../prompt_builder.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import { ClaudeCodeExecutorName, CodexCliExecutorName } from '../executors/schemas.js';
 import { isCodexAppServerEnabled } from '../executors/codex_cli/app_server_mode.js';
@@ -35,6 +36,7 @@ import {
 } from '../workspace/workspace_roundtrip.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { LATEST_GPT5_MODEL, LATEST_GPT5_MINI_MODEL } from '../constants.js';
+import { tryMaterializeReferenceArtifactPathsForExecution } from '../reference_artifacts.js';
 
 const MODEL_ALIASES = new Map<string, string>([
   ['gpt5', LATEST_GPT5_MODEL],
@@ -241,6 +243,7 @@ export async function handleChatCommand(
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
   let executionError: unknown;
   let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
+  let referenceArtifactPaths: string[] = [];
 
   if (options.plan) {
     const resolvedPlan = await resolvePlanByNumericId(options.plan, configRepoRoot);
@@ -326,6 +329,13 @@ export async function handleChatCommand(
             if (materializedPlanFile) {
               currentPlanFile = materializedPlanFile;
             }
+
+            if (currentPlanData) {
+              referenceArtifactPaths = await tryMaterializeReferenceArtifactPathsForExecution(
+                currentBaseDir,
+                currentPlanData.id
+              );
+            }
           }
 
           if (currentPlanData) {
@@ -354,7 +364,20 @@ export async function handleChatCommand(
           },
           workspaceConfig
         );
-        const promptForExecution = executorName === CodexCliExecutorName ? (prompt ?? '') : prompt;
+        let promptWithReferenceArtifacts = prompt;
+        const referenceArtifactsSection = currentPlanData
+          ? buildReferenceArtifactsSection(referenceArtifactPaths)
+          : '';
+        if (referenceArtifactsSection) {
+          promptWithReferenceArtifacts = promptWithReferenceArtifacts
+            ? `${promptWithReferenceArtifacts}\n\n${referenceArtifactsSection.trimEnd()}`
+            : referenceArtifactsSection;
+        }
+
+        const promptForExecution =
+          executorName === CodexCliExecutorName
+            ? (promptWithReferenceArtifacts ?? '')
+            : promptWithReferenceArtifacts;
 
         const loggerAdapter = getLoggerAdapter();
         if (currentPlanFile && loggerAdapter instanceof HeadlessAdapter) {

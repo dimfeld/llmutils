@@ -91,4 +91,58 @@ describe('attachPlanArtifactTool', () => {
     expect(result.data!.filename).toBe('shape.png');
     expect(result.data!.mimeType).toBe('image/png');
   });
+
+  test('reference: true without a message stores the bare tim-reference: prefix', async () => {
+    const sourcePath = path.join(context.sourceDir, 'ref.txt');
+    await fs.writeFile(sourcePath, 'reference content');
+    const toolContext: ToolContext = {
+      config: getDefaultConfig(),
+      gitRoot: context.tempDir,
+    };
+
+    const result = await attachPlanArtifactTool(
+      { planId: 1, filePath: sourcePath, reference: true },
+      toolContext
+    );
+
+    expect(getArtifactByUuid(context.db, result.data!.uuid)).toMatchObject({
+      message: 'tim-reference:',
+    });
+  });
+
+  test('reference: true with a message stores it as the reference description', async () => {
+    const sourcePath = path.join(context.sourceDir, 'ref-with-desc.txt');
+    await fs.writeFile(sourcePath, 'reference content');
+    const toolContext: ToolContext = {
+      config: getDefaultConfig(),
+      gitRoot: context.tempDir,
+    };
+
+    const result = await attachPlanArtifactTool(
+      { planId: 1, filePath: sourcePath, message: 'API spec', reference: true },
+      toolContext
+    );
+
+    expect(getArtifactByUuid(context.db, result.data!.uuid)).toMatchObject({
+      message: 'tim-reference:API spec',
+    });
+  });
+
+  test('without reference flag the message is stored unwrapped', async () => {
+    const sourcePath = path.join(context.sourceDir, 'plain.txt');
+    await fs.writeFile(sourcePath, 'plain content');
+    const toolContext: ToolContext = {
+      config: getDefaultConfig(),
+      gitRoot: context.tempDir,
+    };
+
+    const result = await attachPlanArtifactTool(
+      { planId: 1, filePath: sourcePath, message: 'just a note' },
+      toolContext
+    );
+
+    expect(getArtifactByUuid(context.db, result.data!.uuid)).toMatchObject({
+      message: 'just a note',
+    });
+  });
 });

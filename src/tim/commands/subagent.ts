@@ -31,6 +31,7 @@ import { resolveRepoRoot } from '../plan_repo_root.js';
 import { materializePlan } from '../plan_materialize.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
+import { tryMaterializeReferenceArtifactPathsForExecution } from '../reference_artifacts.js';
 
 export type SubagentType = 'implementer' | 'tester' | 'tdd-tests';
 
@@ -97,6 +98,11 @@ export async function handleSubagentCommand(
     })
     .join('\n\n');
 
+  const referenceArtifactPaths = await tryMaterializeReferenceArtifactPathsForExecution(
+    gitRoot,
+    planData.id
+  );
+
   const contextContent = await buildExecutionPromptWithoutSteps({
     executor: minimalExecutor as Executor,
     planData,
@@ -111,6 +117,7 @@ export async function handleSubagentCommand(
     filePathPrefix: '@',
     includeCurrentPlanContext: true,
     batchMode: true,
+    referenceArtifactPaths,
   });
 
   // Load custom agent instructions

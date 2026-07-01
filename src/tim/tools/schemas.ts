@@ -99,6 +99,10 @@ export const attachPlanArtifactParameters = z
     planId: z.number().int().positive().describe('Numeric plan ID'),
     filePath: z.string().min(1).describe('Path to the file to attach'),
     message: z.string().optional().describe('Optional message to associate with the artifact'),
+    reference: z
+      .boolean()
+      .optional()
+      .describe('Attach as a reference artifact; message becomes the reference description'),
   })
   .describe('Attach a file artifact to a plan');
 

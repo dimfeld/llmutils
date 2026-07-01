@@ -22,6 +22,7 @@ export interface ExecutionPromptOptions {
   filePathPrefix?: string;
   includeCurrentPlanContext?: boolean;
   batchMode?: boolean;
+  referenceArtifactPaths?: string[];
 }
 
 /**
@@ -102,6 +103,46 @@ export function buildDocumentationSection(
   return section;
 }
 
+export interface ReferenceArtifactsSectionOptions {
+  /**
+   * Controls the tense of the explanatory sentence. Planning-time prompts
+   * (generate) promise the files will be present during execution; execution
+   * and chat prompts state the files are present now.
+   */
+  phase?: 'planning' | 'execution';
+}
+
+/**
+ * Build the canonical `## Reference Artifacts` prompt section shared by the
+ * generate, execution, and chat prompts. Returns '' when there are no paths so
+ * the section is omitted. Only the tense-specific explanatory sentence differs
+ * between planning and execution so the wording cannot drift across call sites.
+ */
+export function buildReferenceArtifactsSection(
+  referenceArtifactPaths: string[] | undefined,
+  options: ReferenceArtifactsSectionOptions = {}
+): string {
+  if (!referenceArtifactPaths || referenceArtifactPaths.length === 0) {
+    return '';
+  }
+
+  const phase = options.phase ?? 'execution';
+  const explanation =
+    phase === 'planning'
+      ? `These files are persistent reference artifacts in a git-excluded cache under .tim/reference-artifacts. They will be present at the same paths during execution, so the generated plan and task descriptions may reference these paths directly when the implementing agent should inspect or use the files.`
+      : `These files are persistent reference artifacts in a git-excluded cache under .tim/reference-artifacts. They are present at these exact paths, so reference these paths directly when you need to inspect or use the files.`;
+
+  let section = `## Reference Artifacts\n\n`;
+  section += `${explanation}\n\n`;
+  section += `Reference material files:\n`;
+  referenceArtifactPaths.forEach((artifactPath) => {
+    section += `- ${artifactPath}\n`;
+  });
+  section += `\n`;
+
+  return section;
+}
+
 /**
  * Build a file list section (for rmfilter paths or task files)
  */
@@ -157,6 +198,7 @@ export async function buildExecutionPromptWithoutSteps(
     filePathPrefix,
     includeCurrentPlanContext = true,
     batchMode = false,
+    referenceArtifactPaths,
   } = options;
 
   const promptParts: string[] = [];
@@ -233,6 +275,11 @@ export async function buildExecutionPromptWithoutSteps(
   const docSection = buildDocumentationSection(planData.docs, isURL);
   if (docSection) {
     promptParts.push(docSection);
+  }
+
+  const referenceArtifactsSection = buildReferenceArtifactsSection(referenceArtifactPaths);
+  if (referenceArtifactsSection) {
+    promptParts.push(referenceArtifactsSection);
   }
 
   // Add execution guidelines

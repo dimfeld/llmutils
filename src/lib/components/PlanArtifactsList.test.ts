@@ -330,4 +330,53 @@ describe('PlanArtifactsList', () => {
     expect(body).toContain('schema.sql');
     expect(body).toContain('href="/api/artifacts/aaaaaaaa-9999-9999-9999-999999999999?view=1"');
   });
+
+  test('renders the Reference badge for a reference artifact', () => {
+    const { body } = render(PlanArtifactsList, {
+      props: {
+        artifacts: [
+          makeArtifact({
+            uuid: 'bbbbbbbb-9999-9999-9999-999999999999',
+            message: 'tim-reference:API spec',
+          }),
+        ],
+      },
+    });
+
+    expect(body).toContain('data-testid="reference-badge"');
+    expect(body).toContain('Reference');
+    expect(body).toContain('API spec');
+    expect(body).not.toContain('tim-reference:');
+  });
+
+  test('does not render the Reference badge for a plain artifact', () => {
+    const { body } = render(PlanArtifactsList, {
+      props: {
+        artifacts: [
+          makeArtifact({
+            uuid: 'cccccccc-9999-9999-9999-999999999999',
+            message: 'plain message',
+          }),
+        ],
+      },
+    });
+
+    expect(body).not.toContain('data-testid="reference-badge"');
+  });
+
+  test('does not render the Reference badge for a proof artifact', () => {
+    const { body } = render(PlanArtifactsList, {
+      props: {
+        artifacts: [
+          makeArtifact({
+            uuid: 'dddddddd-9999-9999-9999-999999999999',
+            message: 'tim-proof:run-1',
+          }),
+        ],
+      },
+    });
+
+    expect(body).not.toContain('data-testid="reference-badge"');
+    expect(body).toContain('Proof');
+  });
 });

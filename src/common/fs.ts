@@ -91,6 +91,93 @@ export async function secureRm(baseDir: string, relativePath: string): Promise<v
   await fs.rm(absoluteTargetPath, { force: true, recursive: false });
 }
 
+export type ClearManagedDirectoryContentsSafelyOptions = {
+  baseDir: string;
+  relativeDir: string;
+  label: string;
+  create?: boolean;
+};
+
+export async function clearManagedDirectoryContentsSafely(
+  options: ClearManagedDirectoryContentsSafelyOptions
+): Promise<void> {
+  const create = options.create ?? true;
+  assertSafeManagedRelativeDir(options.relativeDir, options.label);
+  const realBaseDir = await fs.realpath(options.baseDir);
+  const absoluteDir = validatePath(realBaseDir, options.relativeDir);
+
+  await assertManagedDirectoryPathIsSymlinkSafe({
+    baseDir: realBaseDir,
+    absoluteDir,
+    label: options.label,
+  });
+
+  if (create) {
+    await fs.mkdir(absoluteDir, { recursive: true });
+  }
+
+  let entries: string[];
+  try {
+    entries = await fs.readdir(absoluteDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT' && !create) {
+      return;
+    }
+    throw error;
+  }
+
+  await Promise.all(
+    entries.map((entry) => fs.rm(path.join(absoluteDir, entry), { recursive: true, force: true }))
+  );
+}
+
+function assertSafeManagedRelativeDir(relativeDir: string, label: string): void {
+  const normalizedRelativeDir = path.normalize(relativeDir);
+  const segments = relativeDir.split(/[\\/]+/);
+
+  if (
+    relativeDir.length === 0 ||
+    normalizedRelativeDir === '.' ||
+    path.isAbsolute(relativeDir) ||
+    segments.includes('..')
+  ) {
+    throw new Error(
+      `${label} path must be a managed subdirectory below the base directory; refusing to clear "${relativeDir}"`
+    );
+  }
+}
+
+async function assertManagedDirectoryPathIsSymlinkSafe(options: {
+  baseDir: string;
+  absoluteDir: string;
+  label: string;
+}): Promise<void> {
+  const componentChain: string[] = [];
+  for (
+    let current = options.absoluteDir;
+    current !== options.baseDir && current !== path.dirname(current);
+    current = path.dirname(current)
+  ) {
+    componentChain.push(current);
+  }
+
+  for (const component of componentChain) {
+    try {
+      const stat = await fs.lstat(component);
+      if (stat.isSymbolicLink()) {
+        throw new Error(
+          `${options.label} path contains a symlinked component (${component}); refusing to clear to avoid deleting outside the intended directory`
+        );
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 /**
  * Expands the tilde (~) character at the start of a path to the user's home directory.
  * This function handles both "~" (home directory) and "~/path" (path within home directory).

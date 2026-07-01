@@ -689,13 +689,19 @@ syncCommand
 const artifactCommand = program.command('artifact').description('Manage plan artifacts');
 
 artifactCommand
-  .command('add <planId> <file>')
+  .command('add <planId> <files...>')
   .description('Attach a file to a plan')
   .option('-m, --message <message>', 'Message to store with the artifact')
+  .option(
+    '--reference',
+    'Attach as a reference artifact (materialized into the workspace during planning and execution)'
+  )
+  .option('--proof', 'Attach as a proof artifact')
+  .option('--zip', 'Zip the given files (or directory contents) and attach a single ZIP archive')
   .option('--json', 'Output structured JSON')
-  .action(async (planIdArg, file, options, command) => {
+  .action(async (planIdArg, files, options, command) => {
     const { handleArtifactAddCommand } = await import('./commands/artifact/add.js');
-    await handleArtifactAddCommand(planIdArg, file, options, command).catch(handleCommandError);
+    await handleArtifactAddCommand(planIdArg, files, options, command).catch(handleCommandError);
   });
 
 artifactCommand

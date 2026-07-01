@@ -3,7 +3,10 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { closeDatabaseForTesting } from '../../db/database.js';
-import { writePlanFile } from '../../plans.js';
+import { writePlanFile, readPlanFile } from '../../plans.js';
+import { addArtifactByPlanUuid } from '../../artifacts/service.js';
+import { buildReferenceArtifactMessage } from '../../artifacts/reference.js';
+import { REFERENCE_ARTIFACTS_DIR } from '../../reference_artifacts.js';
 
 let tempDir = '';
 let tasksDir = '';
@@ -410,5 +413,69 @@ describe('tim agent integration (execution summaries)', () => {
     expect(passedContext.indexOf(reviewContext)).toBeLessThan(
       passedContext.indexOf('Verify review thread context injection')
     );
+  });
+
+  test('materializes reference artifacts and includes them in the execution prompt for a simple task', async () => {
+    const plan = {
+      id: 555,
+      title: 'Test Plan (Reference Artifacts)',
+      goal: 'Verify reference artifacts are materialized and referenced in the prompt',
+      details: 'Execution should reuse the same materializer used at generate time',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'A task with no steps, so agent.ts materializes before executing it',
+          done: false,
+        },
+      ],
+    };
+    const planPath = await writePlan('555-test-plan.yml', plan);
+    const writtenPlan = await readPlanFile(planPath);
+    if (!writtenPlan.uuid) {
+      throw new Error('Test plan was written without a uuid');
+    }
+
+    const artifactSourcePath = path.join(tempDir, 'reference-source.md');
+    await fs.writeFile(artifactSourcePath, 'reference artifact content');
+    await addArtifactByPlanUuid({
+      planUuid: writtenPlan.uuid,
+      sourcePath: artifactSourcePath,
+      originalFilename: 'reference-source.md',
+      message: buildReferenceArtifactMessage('spec doc'),
+    });
+
+    executorExecuteImpl = async () => ({ content: 'done' });
+
+    const { timAgent } = await import('./agent.js');
+    const { buildExecutorAndLog } = await import('../../executors/index.js');
+    const mockedBuild = vi.mocked(buildExecutorAndLog);
+    mockedBuild.mockClear();
+
+    await timAgent(
+      555,
+      {
+        serialTasks: true,
+        nonInteractive: true,
+        log: false,
+        orchestrator: 'claude_code',
+        steps: '1',
+      },
+      { config: configPath }
+    );
+
+    expect(mockedBuild).toHaveBeenCalled();
+    const executor = mockedBuild.mock.results[0].value;
+    const executeMock = vi.mocked(executor.execute);
+    expect(executeMock).toHaveBeenCalled();
+
+    const passedPrompt = executeMock.mock.calls[0][0];
+    const expectedRelativePath = path.join(REFERENCE_ARTIFACTS_DIR, '555', 'reference-source.md');
+    expect(passedPrompt).toContain('## Reference Artifacts');
+    expect(passedPrompt).toContain(expectedRelativePath);
+
+    // The file must land at the same deterministic path used by generate-time materialization.
+    const materializedContent = await fs.readFile(path.join(tempDir, expectedRelativePath), 'utf8');
+    expect(materializedContent).toBe('reference artifact content');
   });
 });

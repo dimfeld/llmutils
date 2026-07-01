@@ -46,6 +46,7 @@ import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
 import { prepareNextStep } from '../../plans/prepare_step.js';
 import { watchPlanFile } from '../../plan_file_watcher.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
+import { tryMaterializeReferenceArtifactPathsForExecution } from '../../reference_artifacts.js';
 import { buildDescriptionFromPlan } from '../../display_utils.js';
 import { executeBatchMode } from './batch_mode.js';
 import { sendFailureReport, timestamp } from './agent_helpers.js';
@@ -815,6 +816,23 @@ export async function timAgent(
     log('Starting agent to execute plan:', currentPlanFile);
     let hasError = false;
 
+    // Reference artifacts are materialized lazily the first time a simple task
+    // (which flows through buildExecutionPromptWithoutSteps) is executed. The
+    // stepped path materializes independently inside prepareNextStep(), so we
+    // avoid doing redundant work here for stepped plans.
+    let referenceArtifactPaths: string[] = [];
+    let referenceArtifactsMaterialized = false;
+    const materializeReferenceArtifactsOnce = async (planId: number | undefined): Promise<void> => {
+      if (referenceArtifactsMaterialized || typeof planId !== 'number') {
+        return;
+      }
+      referenceArtifactsMaterialized = true;
+      referenceArtifactPaths = await tryMaterializeReferenceArtifactPathsForExecution(
+        currentBaseDir,
+        planId
+      );
+    };
+
     let stepCount = 0;
     while (stepCount < maxSteps) {
       if (isShuttingDown()) {
@@ -864,6 +882,8 @@ export async function timAgent(
           taskDescription: actionableItem.task.description,
         });
 
+        await materializeReferenceArtifactsOnce(planData.id);
+
         // Build the prompt for the simple task using the unified function
         let taskPrompt = await buildExecutionPromptWithoutSteps({
           executor,
@@ -877,6 +897,7 @@ export async function timAgent(
           },
           filePathPrefix: executor.filePathPrefix,
           includeCurrentPlanContext: false, // Don't include current plan context since it's already in project context
+          referenceArtifactPaths,
         });
 
         if (options.reviewThreadContext) {

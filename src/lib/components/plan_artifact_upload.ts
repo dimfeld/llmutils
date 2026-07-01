@@ -1,3 +1,5 @@
+import { buildReferenceArtifactMessage } from '$tim/artifacts/reference.js';
+
 export const MAX_ARTIFACT_BYTES = 25 * 1024 * 1024;
 
 export interface BuildUploadFormDataInput {
@@ -5,6 +7,7 @@ export interface BuildUploadFormDataInput {
   projectId?: string | number;
   file: File;
   message?: string;
+  reference?: boolean;
 }
 
 export function buildUploadFormData(input: BuildUploadFormDataInput): FormData {
@@ -14,7 +17,10 @@ export function buildUploadFormData(input: BuildUploadFormDataInput): FormData {
     form.set('projectId', String(input.projectId));
   }
   form.set('file', input.file);
-  const trimmed = input.message?.trim();
+  // Reference artifacts carry the `tim-reference:` marker prefix (mirroring `tim-proof:`),
+  // with the user message becoming the optional description.
+  const rawMessage = input.reference ? buildReferenceArtifactMessage(input.message) : input.message;
+  const trimmed = rawMessage?.trim();
   if (trimmed) form.set('message', trimmed);
   return form;
 }
@@ -37,6 +43,7 @@ export interface UploadArtifactInput {
   projectId?: string | number;
   file: File;
   message?: string;
+  reference?: boolean;
   fetchImpl?: typeof fetch;
 }
 

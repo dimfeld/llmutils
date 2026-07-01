@@ -32,4 +32,13 @@ describe('PlanArtifactUploader', () => {
     });
     expect(body).toContain('Optional message');
   });
+
+  test('renders the Reference artifact checkbox, checked by default', () => {
+    const { body } = render(PlanArtifactUploader, {
+      props: { planUuid: 'plan-uuid' },
+    });
+    expect(body).toContain('data-testid="artifact-reference-checkbox"');
+    expect(body).toContain('Reference artifact');
+    expect(body).toContain('checked');
+  });
 });

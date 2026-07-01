@@ -68,11 +68,15 @@ vi.mock('../configLoader.js', () => ({
   loadEffectiveConfig: vi.fn(),
 }));
 
-vi.mock('../../common/git.js', () => ({
-  getGitRoot: vi.fn(),
-  getCurrentBranchName: vi.fn(),
-  getTrunkBranch: vi.fn(),
-}));
+vi.mock('../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../common/git.js')>();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(),
+    getCurrentBranchName: vi.fn(),
+    getTrunkBranch: vi.fn(),
+  };
+});
 
 vi.mock('../../logging/tunnel_client.js', () => ({
   isTunnelActive: vi.fn(),

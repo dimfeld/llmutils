@@ -8,6 +8,7 @@ import {
   buildDocumentationSection,
   buildFileListSection,
   buildExecutionPromptWithoutSteps,
+  buildReferenceArtifactsSection,
 } from './prompt_builder.js';
 import type { PlanSchema } from './planSchema.js';
 import type { TimConfig } from './configSchema.js';
@@ -131,6 +132,29 @@ describe('prompt_builder', () => {
       const result = buildDocumentationSection(undefined, isURL);
 
       expect(result).toBe('');
+    });
+  });
+
+  describe('buildReferenceArtifactsSection', () => {
+    test('returns empty string when paths is undefined', () => {
+      expect(buildReferenceArtifactsSection(undefined)).toBe('');
+    });
+
+    test('returns empty string when paths is empty', () => {
+      expect(buildReferenceArtifactsSection([])).toBe('');
+    });
+
+    test('lists the materialized paths and states they persist at those paths', () => {
+      const result = buildReferenceArtifactsSection([
+        '.tim/reference-artifacts/42/spec.md',
+        '.tim/reference-artifacts/42/screenshot.png',
+      ]);
+
+      expect(result).toContain('## Reference Artifacts');
+      expect(result).toContain('- .tim/reference-artifacts/42/spec.md');
+      expect(result).toContain('- .tim/reference-artifacts/42/screenshot.png');
+      // Reference artifacts persist during execution, unlike the transient Linear issue-docs.
+      expect(result).toMatch(/present at these exact paths/i);
     });
   });
 
@@ -259,6 +283,51 @@ describe('prompt_builder', () => {
       expect(result).toContain('- src/file2.ts');
       expect(result).toContain('## Documentation URLs');
       expect(result).toContain('- https://example.com/docs');
+      // No referenceArtifactPaths passed, so the section is omitted.
+      expect(result).not.toContain('## Reference Artifacts');
+    });
+
+    test('includes the Reference Artifacts section when referenceArtifactPaths is provided', async () => {
+      const planData: PlanSchema = {
+        title: 'Plan With Reference Artifacts',
+        goal: 'Plan Goal',
+        details: 'Plan Details',
+        tasks: [],
+      };
+
+      const result = await buildExecutionPromptWithoutSteps({
+        executor: mockExecutor,
+        planData,
+        planFilePath: path.join(tempDir, 'test-plan.yml'),
+        baseDir: tempDir,
+        config: mockConfig,
+        includeCurrentPlanContext: true,
+        referenceArtifactPaths: ['.tim/reference-artifacts/123/spec.md'],
+      });
+
+      expect(result).toContain('## Reference Artifacts');
+      expect(result).toContain('- .tim/reference-artifacts/123/spec.md');
+    });
+
+    test('omits the Reference Artifacts section when referenceArtifactPaths is empty', async () => {
+      const planData: PlanSchema = {
+        title: 'Plan With No Reference Artifacts',
+        goal: 'Plan Goal',
+        details: 'Plan Details',
+        tasks: [],
+      };
+
+      const result = await buildExecutionPromptWithoutSteps({
+        executor: mockExecutor,
+        planData,
+        planFilePath: path.join(tempDir, 'test-plan.yml'),
+        baseDir: tempDir,
+        config: mockConfig,
+        includeCurrentPlanContext: true,
+        referenceArtifactPaths: [],
+      });
+
+      expect(result).not.toContain('## Reference Artifacts');
     });
 
     test('builds prompt for simple task', async () => {

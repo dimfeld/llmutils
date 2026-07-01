@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
+import { clearManagedDirectoryContentsSafely } from '../../common/fs.js';
 import { getChangedFilesOnBranch } from '../../common/git.js';
 import type { LoggerAdapter } from '../../logging/adapter.js';
 import { MAX_ARTIFACT_BYTES } from '../artifacts/constants.js';
@@ -59,15 +60,6 @@ export class ProofRunError extends Error {
     this.name = 'ProofRunError';
     this.cause = cause;
   }
-}
-
-async function clearDirectoryContents(directory: string): Promise<void> {
-  await fs.mkdir(directory, { recursive: true });
-  const entries = await fs.readdir(directory);
-
-  await Promise.all(
-    entries.map((entry) => fs.rm(path.join(directory, entry), { recursive: true, force: true }))
-  );
 }
 
 async function walkFiles(directory: string): Promise<string[]> {
@@ -176,36 +168,7 @@ export async function runProofGeneration(options: RunProofGenerationOptions): Pr
     context,
   });
 
-  const realWorkspacePath = await fs.realpath(options.workspacePath);
   const artifactsDir = DEFAULT_PROOF_ARTIFACTS_DIR;
-  const absoluteArtifactsDir = path.resolve(realWorkspacePath, artifactsDir);
-
-  // Symlink-safe containment: lstat each existing path component between the
-  // workspace root and the artifacts directory. Reject if any component is a
-  // symlink, since clearDirectoryContents() follows symlinks and could delete
-  // files outside the intended directory (whether or not the target escapes
-  // the workspace).
-  const componentChain: string[] = [];
-  for (
-    let current = absoluteArtifactsDir;
-    current !== realWorkspacePath && current !== path.dirname(current);
-    current = path.dirname(current)
-  ) {
-    componentChain.push(current);
-  }
-  for (const component of componentChain) {
-    try {
-      const lst = await fs.lstat(component);
-      if (lst.isSymbolicLink()) {
-        throw new Error(
-          `proof artifacts path contains a symlinked component (${component}); refusing to clear to avoid deleting outside the intended directory`
-        );
-      }
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
-      throw err;
-    }
-  }
 
   // Ensure tim-managed git excludes (which include `.tim/proofs/`) are written
   // to the execution workspace before any proof files land on disk. Otherwise a
@@ -213,7 +176,12 @@ export async function runProofGeneration(options: RunProofGenerationOptions): Pr
   // `tim agent` could leave generated media tracked by git.
   await ensureMaterializeDir(options.gitRoot);
 
-  await clearDirectoryContents(absoluteArtifactsDir);
+  await clearManagedDirectoryContentsSafely({
+    baseDir: options.workspacePath,
+    relativeDir: artifactsDir,
+    label: 'proof artifacts',
+  });
+  const absoluteArtifactsDir = path.resolve(await fs.realpath(options.workspacePath), artifactsDir);
 
   const changedFiles = await getChangedFilesOnBranch(options.gitRoot);
   await softDeletePriorProofArtifacts(options.planUuid, options.config);

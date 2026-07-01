@@ -72,6 +72,35 @@ describe('buildUploadFormData', () => {
     });
     expect(form.get('message')).toBeNull();
   });
+
+  test('wraps the message with the reference prefix when reference is true', () => {
+    const form = buildUploadFormData({
+      planUuid: 'p',
+      file: makeFile(),
+      message: 'API spec',
+      reference: true,
+    });
+    expect(form.get('message')).toBe('tim-reference:API spec');
+  });
+
+  test('posts the bare reference prefix when reference is true with no message', () => {
+    const form = buildUploadFormData({
+      planUuid: 'p',
+      file: makeFile(),
+      reference: true,
+    });
+    expect(form.get('message')).toBe('tim-reference:');
+  });
+
+  test('does not wrap the message when reference is false', () => {
+    const form = buildUploadFormData({
+      planUuid: 'p',
+      file: makeFile(),
+      message: 'API spec',
+      reference: false,
+    });
+    expect(form.get('message')).toBe('API spec');
+  });
 });
 
 describe('parseUploadError', () => {

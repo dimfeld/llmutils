@@ -14,6 +14,10 @@
 
   import { compareArtifactsByFilename } from '$common/artifact_sort.js';
   import type { PlanArtifactWithTransferState } from '$tim/artifacts/service.js';
+  import {
+    isReferenceArtifact,
+    parseReferenceArtifactDescription,
+  } from '$tim/artifacts/reference.js';
   import { softDeleteArtifact, restoreArtifact } from '$lib/remote/artifact_actions.remote.js';
   import { canPreviewArtifactAsText } from '$lib/utils/artifact_preview.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
@@ -159,12 +163,16 @@
             {@const fileMissing = artifact.transferState === 'file-missing'}
             {@const downloadable = !isDeleted && !fileMissing}
             {@const isPending = pendingUuids.has(artifact.uuid)}
+            {@const isProof = isProofArtifact(artifact.message)}
+            {@const isReference = isReferenceArtifact(artifact.message)}
             {@const hasBadge =
               fileMissing ||
               artifact.transferState === 'pending' ||
               artifact.transferState === 'in_progress' ||
               artifact.transferState === 'failed' ||
-              isDeleted}
+              isDeleted ||
+              isProof ||
+              isReference}
             <li
               class="group flex flex-col gap-2 rounded border border-border bg-card p-3 text-sm {isDeleted
                 ? 'opacity-60'
@@ -274,13 +282,33 @@
                       Deleted
                     </span>
                   {/if}
+
+                  {#if isProof}
+                    <span
+                      class="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 dark:bg-purple-950/50 dark:text-purple-400"
+                    >
+                      Proof
+                    </span>
+                  {:else if isReference}
+                    <span
+                      class="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 dark:bg-teal-950/50 dark:text-teal-400"
+                      data-testid="reference-badge"
+                    >
+                      Reference
+                    </span>
+                  {/if}
                 </div>
               {/if}
 
               {#if artifact.message}
-                <p class="line-clamp-2 text-xs text-foreground" title={artifact.message}>
-                  {artifact.message}
-                </p>
+                {@const displayMessage = isReference
+                  ? parseReferenceArtifactDescription(artifact.message) || ''
+                  : artifact.message}
+                {#if displayMessage}
+                  <p class="line-clamp-2 text-xs text-foreground" title={displayMessage}>
+                    {displayMessage}
+                  </p>
+                {/if}
               {/if}
             </li>
           {/each}

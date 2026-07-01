@@ -14,35 +14,64 @@
   } = $props();
 
   let message: string = $state('');
+  let reference = $state(true);
   let dragging = $state(false);
   let uploading = $state(false);
   let errorText: string | null = $state(null);
   let fileInput: HTMLInputElement | undefined = $state();
 
-  async function uploadFile(file: File) {
-    if (uploading) return;
-    errorText = null;
-    uploading = true;
-    try {
-      const result = await uploadArtifact({ planUuid, projectId, file, message });
-      if (!result.ok) {
-        errorText = result.error ?? 'Upload failed';
-        return;
-      }
-      message = '';
-      toast.success(`Uploaded ${file.name}`);
-      await invalidateAll();
-    } finally {
-      uploading = false;
-      if (fileInput) fileInput.value = '';
+  async function uploadFile(
+    file: File,
+    uploadMessage: string,
+    uploadReference: boolean
+  ): Promise<boolean> {
+    const result = await uploadArtifact({
+      planUuid,
+      projectId,
+      file,
+      message: uploadMessage,
+      reference: uploadReference,
+    });
+    if (!result.ok) {
+      errorText = result.error ?? 'Upload failed';
+      return false;
     }
+    toast.success(`Uploaded ${file.name}`);
+    return true;
   }
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
-    for (const file of Array.from(files)) {
-      await uploadFile(file);
-      if (errorText) break;
+    if (uploading) return;
+    // Snapshot the message/reference state once for the whole batch so every file
+    // in a multi-file selection is marked consistently.
+    const messageSnapshot = message;
+    const referenceSnapshot = reference;
+    errorText = null;
+    uploading = true;
+    let uploadedAny = false;
+    let batchSucceeded = true;
+    try {
+      for (const file of Array.from(files)) {
+        const ok = await uploadFile(file, messageSnapshot, referenceSnapshot);
+        if (!ok) {
+          batchSucceeded = false;
+          break;
+        }
+        uploadedAny = true;
+      }
+    } finally {
+      uploading = false;
+      if (fileInput) fileInput.value = '';
+    }
+    if (uploadedAny) {
+      // Refresh the list for any successful uploads, even if a later file in the
+      // batch failed. Only clear the form when the entire batch succeeded.
+      if (batchSucceeded) {
+        message = '';
+        reference = true;
+      }
+      await invalidateAll();
     }
   }
 
@@ -119,6 +148,17 @@
     class="w-full rounded border border-input bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:ring-1 focus:ring-ring focus:outline-none disabled:opacity-50"
     data-testid="artifact-message-input"
   />
+
+  <label class="flex items-center gap-1.5 text-xs text-muted-foreground">
+    <input
+      type="checkbox"
+      bind:checked={reference}
+      disabled={uploading}
+      class="h-3.5 w-3.5"
+      data-testid="artifact-reference-checkbox"
+    />
+    Reference artifact
+  </label>
 
   {#if errorText}
     <p class="text-xs text-red-600 dark:text-red-400" role="alert">{errorText}</p>

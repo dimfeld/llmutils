@@ -1,7 +1,14 @@
+import { unzipSync, zipSync } from 'fflate';
+
 export interface ZipEntryInput {
   filename: string;
   data: Uint8Array;
   modifiedAt?: string | Date | null;
+}
+
+export interface ExtractedZipEntry {
+  filename: string;
+  data: Buffer;
 }
 
 interface PreparedZipEntry {
@@ -155,4 +162,32 @@ export function createStoredZip(entries: ZipEntryInput[]): Buffer {
   assertZip32Limit(totalSize, 'total size');
 
   return Buffer.concat([...localParts, centralDirectory, footer], totalSize);
+}
+
+/**
+ * Extract the file entries from a ZIP archive. Directory entries are skipped;
+ * only files are returned. Handles both STORE and DEFLATE entries via fflate.
+ */
+export function extractZip(zip: Buffer): ExtractedZipEntry[] {
+  const unzipped = unzipSync(new Uint8Array(zip.buffer, zip.byteOffset, zip.byteLength));
+  const entries: ExtractedZipEntry[] = [];
+  for (const [filename, data] of Object.entries(unzipped)) {
+    // Directory entries carry a trailing slash and no file content.
+    if (filename.endsWith('/')) {
+      continue;
+    }
+    entries.push({ filename, data: Buffer.from(data) });
+  }
+  return entries;
+}
+
+/**
+ * Build a DEFLATE-compressed ZIP archive from the given entries.
+ */
+export function createZip(entries: ZipEntryInput[]): Buffer {
+  const files: Record<string, Uint8Array> = {};
+  for (const entry of entries) {
+    files[entry.filename] = entry.data;
+  }
+  return Buffer.from(zipSync(files));
 }

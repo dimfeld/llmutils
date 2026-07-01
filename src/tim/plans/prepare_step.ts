@@ -6,6 +6,8 @@ import { findSiblingPlans } from '../context_helpers.js';
 import { getLegacyAwareSearchDir, resolvePlanPathContext } from '../path_resolver.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { readPlanFile } from '../plans.js';
+import { buildReferenceArtifactsSection } from '../prompt_builder.js';
+import { tryMaterializeReferenceArtifactPathsForExecution } from '../reference_artifacts.js';
 import { findPendingTask } from './find_next.js';
 
 export interface PrepareNextStepOptions {
@@ -153,6 +155,16 @@ export async function prepareNextStep(
         promptParts.push(`- ${filePrefix}${relativePath}`);
       }
     }
+  }
+
+  const referenceArtifactPaths = await tryMaterializeReferenceArtifactPathsForExecution(
+    gitRoot,
+    planData.id
+  );
+
+  const referenceArtifactsSection = buildReferenceArtifactsSection(referenceArtifactPaths);
+  if (referenceArtifactsSection) {
+    promptParts.push(referenceArtifactsSection);
   }
 
   let llmPrompt = promptParts.join('\n');

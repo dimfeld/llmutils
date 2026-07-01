@@ -43,6 +43,10 @@ When a runner recursively clears a user-configured directory, restricting the al
 
 A concrete example lives in `src/tim/proof/runner.ts` (the `artifactsDir` validator) — it requires the directory to be a strict descendant of `.tim/`, rejects reserved tim-managed children case-insensitively, rejects absolute paths and `..` escapes, and `lstat`s every component before clearing.
 
+### Shared safe-clear helper
+
+The clear-and-rebuild step itself is centralized in `clearManagedDirectoryContentsSafely` (`src/common/fs.ts`). Given `{ baseDir, relativeDir, label, create? }` it rejects absolute or `..`-containing `relativeDir` values, `realpath`s the base directory, validates containment, `lstat`s every path component to reject symlinked segments, then removes the directory's contents (creating it first when `create` is true). Both the proof runner and the reference-artifacts materializer (`src/tim/reference_artifacts.ts`) use it, so per-plan caches like `.tim/reference-artifacts/<planId>/` are emptied on each run without a bespoke traversal-safety reimplementation. Prefer this helper over hand-rolled `fs.rm(dir, { recursive: true })` when clearing any `.tim`-managed directory.
+
 ## tim Config Location
 
 The canonical tim config file is `.tim/config/tim.yml`, **not** `.tim/config.yml`. Cross-check any new user-facing error message or doc reference against `loadEffectiveConfig` in `src/tim/configLoader.ts` before merging.

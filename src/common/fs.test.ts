@@ -2,7 +2,13 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
-import { validatePath, secureWrite, secureRm, expandTilde } from './fs';
+import {
+  validatePath,
+  secureWrite,
+  secureRm,
+  expandTilde,
+  clearManagedDirectoryContentsSafely,
+} from './fs';
 
 describe('validatePath', () => {
   const baseDir = '/home/user/project';
@@ -223,6 +229,48 @@ describe('secureRm', () => {
         .then(() => true)
         .catch(() => false)
     ).toBe(false);
+  });
+});
+
+describe('clearManagedDirectoryContentsSafely', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'test-clear-managed-dir-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('refuses to clear the base directory itself', async () => {
+    await fs.writeFile(path.join(tempDir, 'keep.txt'), 'must survive');
+
+    await expect(
+      clearManagedDirectoryContentsSafely({
+        baseDir: tempDir,
+        relativeDir: '.',
+        label: 'test managed dir',
+      })
+    ).rejects.toThrow(/must be a managed subdirectory/);
+
+    await expect(fs.readFile(path.join(tempDir, 'keep.txt'), 'utf8')).resolves.toBe('must survive');
+  });
+
+  it('refuses traversal relative dirs that normalize to repo subdirectories', async () => {
+    const srcDir = path.join(tempDir, 'src');
+    await fs.mkdir(srcDir);
+    await fs.writeFile(path.join(srcDir, 'keep.ts'), 'must survive');
+
+    await expect(
+      clearManagedDirectoryContentsSafely({
+        baseDir: tempDir,
+        relativeDir: '.tim/reference-artifacts/../../src',
+        label: 'test managed dir',
+      })
+    ).rejects.toThrow(/must be a managed subdirectory/);
+
+    await expect(fs.readFile(path.join(srcDir, 'keep.ts'), 'utf8')).resolves.toBe('must survive');
   });
 });
 

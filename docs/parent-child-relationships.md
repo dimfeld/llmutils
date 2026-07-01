@@ -28,6 +28,10 @@ When all child plans of a parent reach a work-complete state (`done`, `needs_rev
 
 **Implementation note**: Parent completion is handled by a single consolidated implementation in `src/tim/plans/parent_cascade.ts`. Both `checkAndMarkParentDone()` and `markParentInProgress()` use DB queries (`getPlansByParentUuid()`) to find children and check their statuses, rather than scanning plan files. The functions accept `ParentCascadeOptions` with callbacks for logging, allowing CLI and agent code to provide different output. Parent completion checks must run _after_ writing the child's updated status to the DB.
 
+### Reference Artifact Inheritance
+
+Reference artifacts attached to a plan are inherited by its descendants. When `tim generate`, `tim agent`, or `tim chat` materializes reference artifacts for a plan, it walks the parent chain (current plan first, then each ancestor) and flattens every ancestor's reference artifacts into the child's per-plan cache. On a filename collision the nearest plan wins. See [Reference artifacts](../README.md#reference-artifacts) for the full materialization and prompt-wiring details.
+
 ### Circular Dependency Prevention
 
 The system prevents circular dependencies by checking the entire dependency chain before making any changes.

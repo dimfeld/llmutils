@@ -13,6 +13,7 @@ import { mcpGetPlan } from '../commands/show.js';
 import { mcpListReadyPlans } from '../commands/ready.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { materializePlan } from '../plan_materialize.js';
+import { buildReferenceArtifactsSection } from '../prompt_builder.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { findPlanFileOnDisk } from '../plans/find_plan_file.js';
@@ -75,6 +76,7 @@ export interface GenerateModeRegistrationContext {
   gitRoot: string;
   configBaseDir?: string;
   issueDocPaths?: string[];
+  referenceArtifactPaths?: string[];
 }
 
 // Much of this interview guidance is adapted from Matt Pocock's grill-me and grill-with-docs skills.
@@ -220,12 +222,27 @@ ${siblingContext}`.trim();
   }
 
   contextBlock = appendLinkedIssueDocumentsContext(contextBlock, context.issueDocPaths);
+  contextBlock = appendReferenceArtifactsContext(contextBlock, context.referenceArtifactPaths);
 
   return {
     plan,
     planPath,
     contextBlock,
   };
+}
+
+function appendReferenceArtifactsContext(
+  contextBlock: string,
+  referenceArtifactPaths: string[] | undefined
+): string {
+  const referenceArtifactsContext = buildReferenceArtifactsSection(referenceArtifactPaths, {
+    phase: 'planning',
+  });
+  if (!referenceArtifactsContext) {
+    return contextBlock;
+  }
+
+  return `${contextBlock}\n\n${referenceArtifactsContext.trimEnd()}`;
 }
 
 function appendLinkedIssueDocumentsContext(

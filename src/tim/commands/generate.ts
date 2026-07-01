@@ -41,6 +41,7 @@ import { findLatestPlanFromDb, findNextReadyDependencyFromDb } from './plan_disc
 import { resolveProjectContext } from '../plan_materialize.js';
 import { collectIssueDocuments, hasLinearIssueReferences } from './generate_issue_docs.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
+import { tryMaterializeReferenceArtifactPathsForExecution } from '../reference_artifacts.js';
 
 interface GenerateCommandOptions {
   plan?: number;
@@ -303,6 +304,11 @@ export async function handleGenerateCommand(
           });
         }
 
+        const referenceArtifactPaths = await tryMaterializeReferenceArtifactPathsForExecution(
+          currentBaseDir,
+          parsedPlan.id
+        );
+
         // Build the prompt using the new interactive prompt system
         // Use 'generate-plan-simple' for simple mode, 'generate-plan' for full interactive mode
         // loadResearchPrompt handles the simple flag check on the plan itself,
@@ -317,6 +323,7 @@ export async function handleGenerateCommand(
           gitRoot: currentBaseDir,
           configBaseDir: pathContext.configBaseDir,
           issueDocPaths,
+          referenceArtifactPaths,
         };
 
         const singlePrompt = await buildPromptText(
