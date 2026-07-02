@@ -25,6 +25,13 @@
   const VIRTUALIZED_LINE_THRESHOLD = 20;
   const EMPTY_LINE_ANNOTATIONS: DiffLineAnnotation<unknown>[] = [];
   const HEADER_TOGGLE_CLASS = 'tim-diff-collapse-toggle';
+  /** Matches the `lineHeight` estimate passed to `VirtualizedFileDiff` below, so the
+   *  placeholder height roughly matches the real rendered height once mounted. */
+  const ESTIMATED_LINE_HEIGHT = 22;
+  const ESTIMATED_HEADER_HEIGHT = 37;
+  /** Matches the shared `Virtualizer`'s own `intersectionObserverMargin`, so a diff is
+   *  fully mounted well before line-level virtualization inside it would kick in. */
+  const LAZY_MOUNT_ROOT_MARGIN = '4000px 0px';
   const STICKY_HEADER_CSS = `
     [data-diffs-header] {
       position: sticky;
@@ -264,6 +271,49 @@
 
   let currentCollapsed = $derived(collapsed);
 
+  /** Whether this diff has scrolled near the viewport and should actually be
+   *  instantiated. Until then we render a height-estimated placeholder so later
+   *  diffs mounting/highlighting doesn't shift layout out from under a diff a user
+   *  is scrolling toward. */
+  let hasEnteredViewport = $state(false);
+
+  let estimatedRenderedLineCount = $derived.by(() => {
+    if (!resolvedDiff) {
+      return 0;
+    }
+    return diffStyle === 'split' ? resolvedDiff.splitLineCount : resolvedDiff.unifiedLineCount;
+  });
+
+  let estimatedHeightPx = $derived.by(() => {
+    if (!estimatedRenderedLineCount) {
+      return 0;
+    }
+    return (
+      estimatedRenderedLineCount * ESTIMATED_LINE_HEIGHT +
+      (disableFileHeader ? 0 : ESTIMATED_HEADER_HEIGHT)
+    );
+  });
+
+  function lazyMountAttachment(node: HTMLElement) {
+    if (hasEnteredViewport || typeof IntersectionObserver === 'undefined') {
+      hasEnteredViewport = true;
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          hasEnteredViewport = true;
+          observer.disconnect();
+        }
+      },
+      { rootMargin: LAZY_MOUNT_ROOT_MARGIN }
+    );
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }
+
   let shouldVirtualize = $derived.by(() => {
     if (!resolvedDiff || !virtualizer) {
       return false;
@@ -463,11 +513,20 @@
 </script>
 
 {#if resolvedDiff}
-  {#if shouldVirtualize}
-    <div {id} class={className} {@attach virtualizedDiffAttachment}></div>
-  {:else}
-    <div {id} class={className} {@attach diffAttachment}></div>
-  {/if}
+  <div
+    {id}
+    class={className}
+    style={hasEnteredViewport ? undefined : `min-height: ${estimatedHeightPx}px;`}
+    {@attach lazyMountAttachment}
+  >
+    {#if hasEnteredViewport}
+      {#if shouldVirtualize}
+        <div {@attach virtualizedDiffAttachment}></div>
+      {:else}
+        <div {@attach diffAttachment}></div>
+      {/if}
+    {/if}
+  </div>
 {/if}
 
 <style>
