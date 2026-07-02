@@ -170,6 +170,8 @@ export function buildActionablePrsForRepo(
     const linkedPlans = linkedPlansByPrUrl.get(pr_url) ?? [];
     const firstLinkedPlan = linkedPlans[0] ?? null;
     const hasApprovingReview = pr.reviews.some((review) => review.state === 'APPROVED');
+    const unresolvedReviewThreadCount =
+      pr.reviewThreads?.filter((t) => !t.thread.is_resolved).length ?? 0;
 
     const isAuthored =
       normalizedUsername !== null &&
@@ -199,6 +201,7 @@ export function buildActionablePrsForRepo(
           reviewRequestedStacked:
             pr.status.base_branch !== null && openHeadBranches.has(pr.status.base_branch),
           hasApprovingReview,
+          unresolvedReviewThreadCount,
         });
       }
     } else if (normalizedUsername !== null && hasReviewRequestForUser(pr, normalizedUsername)) {
@@ -222,6 +225,7 @@ export function buildActionablePrsForRepo(
         reviewRequestedStacked:
           pr.status.base_branch !== null && reviewRequestedHeadBranches.has(pr.status.base_branch),
         hasApprovingReview,
+        unresolvedReviewThreadCount,
       });
     }
   }

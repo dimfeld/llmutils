@@ -1,6 +1,7 @@
 <script lang="ts">
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import CircleCheck from '@lucide/svelte/icons/circle-check';
+  import MessageSquareWarning from '@lucide/svelte/icons/message-square-warning';
   import type { PrAttentionItem } from '$lib/utils/dashboard_attention.js';
   import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import { formatCompactRelativeTime } from '$lib/utils/time.js';
@@ -118,6 +119,18 @@
               Stacked
             </span>
           {/if}
+        </span>
+      {/if}
+      {#if pr.unresolvedReviewThreadCount > 0}
+        <span
+          class="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs leading-none font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+          title="{pr.unresolvedReviewThreadCount} unresolved review comment{pr.unresolvedReviewThreadCount ===
+          1
+            ? ''
+            : 's'}"
+        >
+          <MessageSquareWarning class="size-3" />
+          {pr.unresolvedReviewThreadCount}
         </span>
       {/if}
       {#if pr.additions != null && pr.deletions != null}

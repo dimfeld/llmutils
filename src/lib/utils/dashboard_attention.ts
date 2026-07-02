@@ -34,6 +34,8 @@ export interface ActionablePr {
   reviewRequestedStacked: boolean;
   /** True when at least one reviewer has submitted an approving review. */
   hasApprovingReview: boolean;
+  /** Count of review comment threads that have not been marked resolved. */
+  unresolvedReviewThreadCount: number;
 }
 
 // --- Attention item types ---

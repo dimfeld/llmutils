@@ -1,6 +1,7 @@
 <script lang="ts">
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import CircleCheck from '@lucide/svelte/icons/circle-check';
+  import MessageSquareWarning from '@lucide/svelte/icons/message-square-warning';
   import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
   import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import { formatCompactRelativeTime } from '$lib/utils/time.js';
@@ -41,6 +42,9 @@
       : ''
   );
   let hasApprovingReview = $derived(pr.reviews.some((review) => review.state === 'APPROVED'));
+  let unresolvedReviewThreadCount = $derived(
+    pr.reviewThreads?.filter((t) => !t.thread.is_resolved).length ?? 0
+  );
 </script>
 
 <div
@@ -107,6 +111,18 @@
               Stacked
             </span>
           {/if}
+        </span>
+      {/if}
+      {#if unresolvedReviewThreadCount > 0}
+        <span
+          class="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs leading-none font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+          title="{unresolvedReviewThreadCount} unresolved review comment{unresolvedReviewThreadCount ===
+          1
+            ? ''
+            : 's'}"
+        >
+          <MessageSquareWarning class="size-3" />
+          {unresolvedReviewThreadCount}
         </span>
       {/if}
       {#if pr.currentUserPushedAfterReview}

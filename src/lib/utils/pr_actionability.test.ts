@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import type {
   LinkedPlanSummary,
+  PrReviewThreadDetail,
   PrStatusDetail,
   PrStatusRow,
   PrReviewRow,
@@ -50,6 +51,7 @@ function makePrDetail(
   extras: {
     reviews?: PrReviewRow[];
     reviewRequests?: PrReviewRequestRow[];
+    reviewThreads?: PrReviewThreadDetail[];
   } = {}
 ): PrStatusDetail {
   return {
@@ -58,6 +60,31 @@ function makePrDetail(
     reviews: extras.reviews ?? [],
     reviewRequests: extras.reviewRequests ?? [],
     labels: [],
+    reviewThreads: extras.reviewThreads,
+  };
+}
+
+function makeReviewThread(
+  overrides: Partial<PrReviewThreadDetail['thread']> = {}
+): PrReviewThreadDetail {
+  return {
+    thread: {
+      id: 1,
+      pr_status_id: 1,
+      thread_id: 'thread-1',
+      path: 'src/index.ts',
+      line: 1,
+      original_line: 1,
+      original_start_line: null,
+      start_line: null,
+      diff_side: 'RIGHT',
+      start_diff_side: null,
+      is_resolved: 0,
+      is_outdated: 0,
+      subject_type: null,
+      ...overrides,
+    },
+    comments: [],
   };
 }
 
@@ -430,6 +457,7 @@ describe('buildActionablePrsForRepo', () => {
         reviewRequestedAt: null,
         reviewRequestedStacked: false,
         hasApprovingReview: false,
+        unresolvedReviewThreadCount: 0,
       },
     ]);
   });
@@ -478,6 +506,7 @@ describe('buildActionablePrsForRepo', () => {
         reviewRequestedAt: '2026-01-01T00:00:00Z',
         reviewRequestedStacked: false,
         hasApprovingReview: false,
+        unresolvedReviewThreadCount: 0,
       },
     ]);
   });
@@ -592,6 +621,27 @@ describe('buildActionablePrsForRepo', () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.actionReason).toBe('review_requested');
     expect(result[0]?.hasApprovingReview).toBe(true);
+  });
+
+  test('counts unresolved review threads and ignores resolved ones', () => {
+    const pr = makePrDetail(
+      {
+        pr_url: 'https://github.com/owner/repo/pull/25',
+        pr_number: 25,
+        author: 'testuser',
+      },
+      {
+        reviewThreads: [
+          makeReviewThread({ thread_id: 'thread-1', is_resolved: 0 }),
+          makeReviewThread({ thread_id: 'thread-2', is_resolved: 1 }),
+          makeReviewThread({ thread_id: 'thread-3', is_resolved: 0 }),
+        ],
+      }
+    );
+
+    const result = buildActionablePrsForRepo(7, [pr], new Map(), 'testuser');
+    expect(result).toHaveLength(1);
+    expect(result[0]?.unresolvedReviewThreadCount).toBe(2);
   });
 
   test('marks an owned PR as stacked when its base branch is another open PR head branch', () => {
