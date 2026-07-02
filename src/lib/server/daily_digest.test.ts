@@ -1,11 +1,7 @@
 import type { Database } from 'bun:sqlite';
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { constructGitHubRepositoryId } from '$common/github/pull_requests.js';
-import type { LinearMilestoneDigestEntry } from '$common/linear_milestone_digest.js';
 import type {
   SlackPinSenderArgs,
   SlackPostSenderArgs,
@@ -17,10 +13,8 @@ import { openDatabase } from '$tim/db/database.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { setProjectSetting } from '$tim/db/project_settings.js';
 import { upsertPrReviewRequestByReviewer, upsertPrStatus } from '$tim/db/pr_status.js';
-import { recordWorkspace } from '$tim/db/workspace.js';
 
 import {
-  clearLinearMilestoneCache,
   runAllDailyDigests,
   runDailyDigestForWorkspace,
   shouldStartDailyDigest,
@@ -117,12 +111,9 @@ describe('lib/server/daily_digest', () => {
   let originalWebhookPollInterval: string | undefined;
   let originalWebhookServerUrl: string | undefined;
   let originalWebhookInternalApiToken: string | undefined;
-  let tempDirs: string[];
 
   beforeEach(() => {
-    clearLinearMilestoneCache();
     db = openDatabase(':memory:');
-    tempDirs = [];
     originalInfo = console.info;
     console.info = (): void => {};
     originalWebhookPollInterval = process.env.TIM_WEBHOOK_POLL_INTERVAL;
@@ -134,13 +125,11 @@ describe('lib/server/daily_digest', () => {
   });
 
   afterEach(async () => {
-    clearLinearMilestoneCache();
     console.info = originalInfo;
     restoreEnv('TIM_WEBHOOK_POLL_INTERVAL', originalWebhookPollInterval);
     restoreEnv('TIM_WEBHOOK_SERVER_URL', originalWebhookServerUrl);
     restoreEnv('WEBHOOK_INTERNAL_API_TOKEN', originalWebhookInternalApiToken);
     db.close(false);
-    await Promise.all(tempDirs.map((tempDir) => fs.rm(tempDir, { recursive: true, force: true })));
   });
 
   function setupProject(
@@ -218,18 +207,6 @@ describe('lib/server/daily_digest', () => {
     process.env.TIM_WEBHOOK_POLL_INTERVAL = '30';
     process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
     process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
-  }
-
-  async function createWorkspaceWithDotEnv(projectId: number, contents: string): Promise<string> {
-    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'daily-digest-workspace-'));
-    tempDirs.push(workspacePath);
-    await fs.writeFile(path.join(workspacePath, '.env'), contents, 'utf8');
-    recordWorkspace(db, {
-      projectId,
-      workspacePath,
-      workspaceType: 'primary',
-    });
-    return workspacePath;
   }
 
   test('posts one digest for a qualifying project to its configured channel', async () => {
@@ -515,210 +492,6 @@ describe('lib/server/daily_digest', () => {
 
     expect(postSender.sent).toHaveLength(0);
     expect(updateSender.updated).toHaveLength(0);
-  });
-
-  test('includes Linear milestones once per Slack channel when enabled', async () => {
-    const originalLinearApiKey = process.env.TEST_LINEAR_API_KEY;
-    process.env.TEST_LINEAR_API_KEY = 'test-linear-key';
-    setupProject('octocat', 'repo-a', { channel: '#shared' });
-    setupProject('octocat', 'repo-b', { channel: '#shared' });
-    setupProject('octocat', 'repo-c', { channel: '#other' });
-    insertPr('octocat', 'repo-b', 1, { title: 'Repo B approved', reviewDecision: 'APPROVED' });
-
-    try {
-      const { sender, sent } = makeFakeSender();
-      await runDailyDigestForWorkspace(
-        db,
-        buildConfig({
-          work: {
-            token: 'xoxb-work-token',
-            dailyDigest: {
-              enabled: true,
-              timezone: 'UTC',
-              staleAfterHours: 24,
-              linearMilestones: { enabled: true, apiKeyEnv: 'TEST_LINEAR_API_KEY' },
-            },
-          },
-        }),
-        'work',
-        {
-          sender,
-          nowMs: NOW_MS,
-          linearMilestonesFetcher: async ({ timezone, apiKey }) => {
-            expect(timezone).toBe('UTC');
-            expect(apiKey).toBe('test-linear-key');
-            return [
-              {
-                milestoneName: 'Beta',
-                targetDate: '2026-01-02',
-                projectName: 'Launch',
-                milestoneOwner: 'Dana',
-              },
-            ];
-          },
-        }
-      );
-
-      expect(sent.map((call) => call.payload.channel).sort()).toEqual(['#other', '#shared']);
-      const sharedPayloads = sent.filter((call) => call.payload.channel === '#shared');
-      expect(sharedPayloads).toHaveLength(1);
-      expect(payloadText(sharedPayloads[0])).toContain('Linear milestones due or overdue');
-      expect(payloadText(sharedPayloads[0])).toContain('Beta');
-      expect(payloadText(sent.find((call) => call.payload.channel === '#other')!)).toContain(
-        'Linear milestones due or overdue'
-      );
-    } finally {
-      restoreEnv('TEST_LINEAR_API_KEY', originalLinearApiKey);
-    }
-  });
-
-  test('loads Linear milestone API key from a digest project workspace .env', async () => {
-    const originalLinearApiKey = process.env.TEST_LINEAR_API_KEY;
-    delete process.env.TEST_LINEAR_API_KEY;
-    const projectId = setupProject('octocat', 'repo-with-env', { channel: '#env' });
-    await createWorkspaceWithDotEnv(projectId, 'TEST_LINEAR_API_KEY=workspace-linear-key\n');
-
-    try {
-      const { sender, sent } = makeFakeSender();
-      await runDailyDigestForWorkspace(
-        db,
-        buildConfig({
-          work: {
-            token: 'xoxb-work-token',
-            dailyDigest: {
-              enabled: true,
-              timezone: 'UTC',
-              staleAfterHours: 24,
-              linearMilestones: { enabled: true, apiKeyEnv: 'TEST_LINEAR_API_KEY' },
-            },
-          },
-        }),
-        'work',
-        {
-          sender,
-          nowMs: NOW_MS,
-          linearMilestonesFetcher: async ({ apiKey }) => {
-            expect(apiKey).toBe('workspace-linear-key');
-            return [
-              {
-                milestoneName: 'Workspace Env Beta',
-                targetDate: '2026-01-02',
-                projectName: 'Launch',
-                milestoneOwner: 'Dana',
-              },
-            ];
-          },
-        }
-      );
-
-      expect(sent).toHaveLength(1);
-      expect(payloadText(sent[0])).toContain('Workspace Env Beta');
-    } finally {
-      restoreEnv('TEST_LINEAR_API_KEY', originalLinearApiKey);
-    }
-  });
-
-  test('caches Linear milestones for 30 minutes per workspace message generation', async () => {
-    const originalLinearApiKey = process.env.TEST_LINEAR_API_KEY;
-    process.env.TEST_LINEAR_API_KEY = 'test-linear-key';
-    setupProject('octocat', 'repo-a', { channel: '#reviews' });
-    insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
-    const config = buildConfig({
-      work: {
-        token: 'xoxb-work-token',
-        dailyDigest: {
-          enabled: true,
-          timezone: 'UTC',
-          staleAfterHours: 24,
-          linearMilestones: { enabled: true, apiKeyEnv: 'TEST_LINEAR_API_KEY' },
-        },
-      },
-    });
-    let fetchCount = 0;
-    const linearMilestonesFetcher = async (): Promise<LinearMilestoneDigestEntry[]> => {
-      fetchCount += 1;
-      return [
-        {
-          milestoneName: `Cached milestone ${fetchCount}`,
-          targetDate: '2026-01-02',
-          projectName: 'Launch',
-          milestoneOwner: 'Dana',
-        },
-      ];
-    };
-
-    try {
-      const firstSender = makeFakeSender();
-      await runDailyDigestForWorkspace(db, config, 'work', {
-        sender: firstSender.sender,
-        nowMs: NOW_MS,
-        linearMilestonesFetcher,
-      });
-      const secondSender = makeFakeSender();
-      await runDailyDigestForWorkspace(db, config, 'work', {
-        sender: secondSender.sender,
-        nowMs: NOW_MS + 29 * 60 * 1000,
-        linearMilestonesFetcher,
-      });
-
-      expect(fetchCount).toBe(1);
-      expect(payloadText(firstSender.sent[0])).toContain('Cached milestone 1');
-      expect(payloadText(secondSender.sent[0])).toContain('Cached milestone 1');
-      expect(payloadText(secondSender.sent[0])).not.toContain('Cached milestone 2');
-    } finally {
-      restoreEnv('TEST_LINEAR_API_KEY', originalLinearApiKey);
-    }
-  });
-
-  test('refreshes cached Linear milestones after 30 minutes', async () => {
-    const originalLinearApiKey = process.env.TEST_LINEAR_API_KEY;
-    process.env.TEST_LINEAR_API_KEY = 'test-linear-key';
-    setupProject('octocat', 'repo-a', { channel: '#reviews' });
-    insertPr('octocat', 'repo-a', 1, { title: 'Repo A approved', reviewDecision: 'APPROVED' });
-    const config = buildConfig({
-      work: {
-        token: 'xoxb-work-token',
-        dailyDigest: {
-          enabled: true,
-          timezone: 'UTC',
-          staleAfterHours: 24,
-          linearMilestones: { enabled: true, apiKeyEnv: 'TEST_LINEAR_API_KEY' },
-        },
-      },
-    });
-    let fetchCount = 0;
-    const linearMilestonesFetcher = async (): Promise<LinearMilestoneDigestEntry[]> => {
-      fetchCount += 1;
-      return [
-        {
-          milestoneName: `Fresh milestone ${fetchCount}`,
-          targetDate: '2026-01-02',
-          projectName: 'Launch',
-          milestoneOwner: 'Dana',
-        },
-      ];
-    };
-
-    try {
-      const firstSender = makeFakeSender();
-      await runDailyDigestForWorkspace(db, config, 'work', {
-        sender: firstSender.sender,
-        nowMs: NOW_MS,
-        linearMilestonesFetcher,
-      });
-      const secondSender = makeFakeSender();
-      await runDailyDigestForWorkspace(db, config, 'work', {
-        sender: secondSender.sender,
-        nowMs: NOW_MS + 30 * 60 * 1000,
-        linearMilestonesFetcher,
-      });
-
-      expect(fetchCount).toBe(2);
-      expect(payloadText(firstSender.sent[0])).toContain('Fresh milestone 1');
-      expect(payloadText(secondSender.sent[0])).toContain('Fresh milestone 2');
-    } finally {
-      restoreEnv('TEST_LINEAR_API_KEY', originalLinearApiKey);
-    }
   });
 
   test('logs a misconfigured workspace only once with a shared logged set and does not throw', async () => {

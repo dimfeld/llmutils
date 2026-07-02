@@ -1,6 +1,5 @@
 import type { TimConfig } from '../../tim/configSchema.js';
 import { error } from '../../logging.js';
-import type { LinearMilestoneDigestEntry } from '../linear_milestone_digest.js';
 import { buildLinearPrReviewUrl } from '../linear_pr_review.js';
 import { resolveSlackWorkspaceToken } from './slack_config.js';
 import { DEFAULT_SLACK_DAILY_DIGEST_DEFAULT_GROUP_NAME } from './slack_daily_digest_config.js';
@@ -175,7 +174,6 @@ export interface DailyDigestPayloadInput {
   staleAwaitingReview: DailyDigestEntry[];
   awaitingReviewResponse?: DailyDigestEntry[];
   otherReadyForReview: DailyDigestEntry[];
-  linearMilestones?: LinearMilestoneDigestEntry[];
 }
 
 export interface PostDailyDigestMessageArgs {
@@ -362,32 +360,6 @@ function formatAwaitingResponseDigestLine(entry: DailyDigestEntry): string {
   const verb = formatReviewStateVerb(entry.reviewResponseState);
   const agoLabel = entry.reviewedLabel ? ` ${escapeSlackMrkdwnText(entry.reviewedLabel)} ago` : '';
   return `• ${formatStackedPrefix(entry)}${formatPrLink(entry)} by ${author}${formatDailyDigestChangeStats(entry)} — ${reviewer} ${verb}${agoLabel}`;
-}
-
-function formatDateLabel(date: string): string {
-  const parsed = Date.parse(`${date}T00:00:00.000Z`);
-  if (Number.isNaN(parsed)) {
-    return date;
-  }
-
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'UTC',
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(parsed));
-}
-
-function formatSlackLink(url: string | null | undefined, label: string): string {
-  const escapedLabel = escapeSlackMrkdwnText(label);
-  if (!url) {
-    return escapedLabel;
-  }
-
-  return `<${escapeSlackMrkdwnText(url)}|${escapedLabel}>`;
-}
-
-function formatLinearMilestoneDigestLine(entry: LinearMilestoneDigestEntry): string {
-  return `• ${formatSlackLink(entry.milestoneUrl, entry.milestoneName)} — ${formatSlackLink(entry.projectUrl, entry.projectName)} · owner: ${formatPlainLogin(entry.milestoneOwner)} · due ${escapeSlackMrkdwnText(formatDateLabel(entry.targetDate))}`;
 }
 
 function buildReviewRequestedPullsUrl(repoFullName: string): string {
@@ -583,8 +555,6 @@ export function buildDailyDigestSlackPayload(
   const staleCount = digest.staleAwaitingReview.length;
   const awaitingResponseCount = awaitingReviewResponse.length;
   const otherReadyCount = digest.otherReadyForReview.length;
-  const linearMilestones = digest.linearMilestones ?? [];
-  const linearMilestoneCount = linearMilestones.length;
   const blocks: SlackBlock[] = [
     {
       type: 'section',
@@ -638,22 +608,6 @@ export function buildDailyDigestSlackPayload(
     );
   }
 
-  if (
-    (approvedCount > 0 || staleCount > 0 || awaitingResponseCount > 0 || otherReadyCount > 0) &&
-    linearMilestoneCount > 0
-  ) {
-    blocks.push({ type: 'divider' });
-  }
-
-  if (linearMilestoneCount > 0) {
-    blocks.push(
-      ...buildDigestSectionBlocks(
-        'Linear milestones due or overdue',
-        linearMilestones.map(formatLinearMilestoneDigestLine)
-      )
-    );
-  }
-
   blocks.push({
     type: 'section',
     text: {
@@ -664,7 +618,7 @@ export function buildDailyDigestSlackPayload(
 
   return {
     channel,
-    text: `Daily PR digest for ${repoFullName}: ${approvedCount} approved, ${staleCount} awaiting review, ${awaitingResponseCount} awaiting author response, ${otherReadyCount} other ready, ${linearMilestoneCount} Linear milestones`,
+    text: `Daily PR digest for ${repoFullName}: ${approvedCount} approved, ${staleCount} awaiting review, ${awaitingResponseCount} awaiting author response, ${otherReadyCount} other ready`,
     unfurl_links: false,
     unfurl_media: false,
     blocks,
@@ -996,8 +950,7 @@ export async function postDailyDigestMessage(
     args.digest.approvedUnmerged.length === 0 &&
     args.digest.staleAwaitingReview.length === 0 &&
     (args.digest.awaitingReviewResponse?.length ?? 0) === 0 &&
-    args.digest.otherReadyForReview.length === 0 &&
-    (args.digest.linearMilestones?.length ?? 0) === 0
+    args.digest.otherReadyForReview.length === 0
   ) {
     return { ok: true };
   }

@@ -23,13 +23,11 @@ import { log } from '../../logging.js';
 import {
   collectDailyDigestsForWorkspace,
   collectProjectDigest,
-  fetchWorkspaceLinearMilestones,
   getEligibleDailyDigestWorkspaces,
   runAllDailyDigests,
   runDailyDigestForWorkspace,
   type CollectedProjectDigest,
 } from '../../lib/server/daily_digest.js';
-import type { LinearMilestoneDigestEntry } from '../../common/linear_milestone_digest.js';
 import type { DigestEntry, PrDigest } from '../../lib/server/pr_digest.js';
 import type { TimConfig } from '../configSchema.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -346,24 +344,6 @@ function partitionAwaitingReviewDryRunGroups(
   return [...groups, defaultGroup].filter((group) => group.entries.length > 0);
 }
 
-function printLinearMilestonesDryRun(
-  workspaceName: string,
-  milestones: LinearMilestoneDigestEntry[]
-): boolean {
-  if (milestones.length === 0) {
-    return false;
-  }
-
-  log(`  Linear milestones due or overdue (${workspaceName}):`);
-  for (const milestone of milestones) {
-    log(
-      `  - ${milestone.milestoneName} (${milestone.projectName}; owner: ${milestone.milestoneOwner}; due: ${milestone.targetDate})`
-    );
-  }
-
-  return true;
-}
-
 function printDigestDryRunProject(
   projectDigest: CollectedProjectDigest,
   grouping: DigestReviewGroupingOptions
@@ -620,18 +600,6 @@ export async function handleSlackDigestRunCommand(
 
     const eligibleWorkspaces = getEligibleDailyDigestWorkspaces(db, config);
     for (const workspaceName of eligibleWorkspaces) {
-      let linearMilestones: LinearMilestoneDigestEntry[] = [];
-      try {
-        linearMilestones = await fetchWorkspaceLinearMilestones(db, config, workspaceName, {
-          nowMs,
-        });
-      } catch (error) {
-        log(
-          chalk.yellow(
-            `Failed to fetch Linear milestones for workspace ${workspaceName}: ${String(error)}`
-          )
-        );
-      }
       const projectDigests = collectDailyDigestsForWorkspace(db, config, workspaceName, {
         nowMs,
         includeEmpty: true,
@@ -640,7 +608,7 @@ export async function handleSlackDigestRunCommand(
         },
       });
 
-      let printedSection = printLinearMilestonesDryRun(workspaceName, linearMilestones);
+      let printedSection = false;
       const grouping = resolveDigestReviewGrouping(config, workspaceName);
       for (const projectDigest of projectDigests) {
         if (printedSection) {

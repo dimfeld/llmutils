@@ -685,63 +685,6 @@ describe('common/slack/slack_client', () => {
       expect(serializedBlocks(payload.blocks)).not.toContain('<@');
     });
 
-    test('renders Linear milestones due or overdue with owner', () => {
-      const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
-        approvedUnmerged: [],
-        staleAwaitingReview: [],
-        otherReadyForReview: [],
-        linearMilestones: [
-          {
-            milestoneName: 'Beta <launch>',
-            milestoneUrl: 'https://linear.app/acme/project/milestone/beta?x=1&y=2',
-            targetDate: '2026-06-05',
-            projectName: 'Mobile & Web',
-            projectUrl: 'https://linear.app/acme/project/mobile-web',
-            milestoneOwner: 'Dana `Lead`',
-          },
-        ],
-      });
-
-      const milestoneText = sectionText(payload.blocks[1]);
-
-      expect(payload.blocks.map((block) => block.type)).toEqual(['section', 'section', 'section']);
-      expect(milestoneText).toContain('*Linear milestones due or overdue*');
-      expect(milestoneText).toContain(
-        '<https://linear.app/acme/project/milestone/beta?x=1&amp;y=2|Beta &lt;launch&gt;>'
-      );
-      expect(milestoneText).toContain(
-        '<https://linear.app/acme/project/mobile-web|Mobile &amp; Web>'
-      );
-      expect(milestoneText).toContain("owner: `Dana 'Lead'`");
-      expect(milestoneText).toContain('due Jun 5');
-      expect(payload.text).toContain('1 Linear milestones');
-    });
-
-    test('adds a divider before Linear milestones when PR sections are present', () => {
-      const payload = buildDailyDigestSlackPayload('#reviews', 'octocat/hello-world', {
-        approvedUnmerged: digestBothBuckets.approvedUnmerged,
-        staleAwaitingReview: [],
-        otherReadyForReview: [],
-        linearMilestones: [
-          {
-            milestoneName: 'Due soon',
-            targetDate: '2026-06-05',
-            projectName: 'Project',
-            milestoneOwner: 'Lead',
-          },
-        ],
-      });
-
-      expect(payload.blocks.map((block) => block.type)).toEqual([
-        'section',
-        'section',
-        'divider',
-        'section',
-        'section',
-      ]);
-      expect(sectionText(payload.blocks[3])).toContain('Linear milestones due or overdue');
-    });
-
     test('escapes Slack mrkdwn control characters in titles, authors, reviewers, and wait labels', () => {
       const payload = buildDailyDigestSlackPayload('#reviews', 'octo&cat/repo<main>', {
         approvedUnmerged: [
@@ -1025,41 +968,6 @@ describe('common/slack/slack_client', () => {
       const text = serializedBlocks(calls[0].payload.blocks);
       expect(text).toContain('*Awaiting review — ASAP (review-p-0)*');
       expect(text).toContain('*Awaiting review — Regular Priority*');
-    });
-
-    test('posts when only Linear milestone content is present', async () => {
-      const calls: SlackPostSenderArgs[] = [];
-      const fakeSender = async (args: SlackPostSenderArgs): Promise<SlackPostResult> => {
-        calls.push(args);
-        return { ok: true };
-      };
-
-      const result = await postDailyDigestMessage({
-        config,
-        workspace: 'work',
-        channel: '#reviews',
-        repoFullName: 'octocat/hello-world',
-        digest: {
-          approvedUnmerged: [],
-          staleAwaitingReview: [],
-          otherReadyForReview: [],
-          linearMilestones: [
-            {
-              milestoneName: 'Due soon',
-              targetDate: '2026-06-05',
-              projectName: 'Project',
-              milestoneOwner: 'Lead',
-            },
-          ],
-        },
-        sender: fakeSender,
-      });
-
-      expect(result).toEqual({ ok: true });
-      expect(calls).toHaveLength(1);
-      expect(serializedBlocks(calls[0].payload.blocks)).toContain(
-        'Linear milestones due or overdue'
-      );
     });
 
     test('calls sender once with the built payload when content is present', async () => {

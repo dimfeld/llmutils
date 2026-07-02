@@ -181,19 +181,6 @@
                   "defaultGroupName": {
                     "type": "string",
                     "minLength": 1
-                  },
-                  "linearMilestones": {
-                    "type": "object",
-                    "properties": {
-                      "enabled": {
-                        "type": "boolean"
-                      },
-                      "apiKeyEnv": {
-                        "type": "string",
-                        "minLength": 1
-                      }
-                    },
-                    "additionalProperties": false
                   }
                 },
                 "additionalProperties": false

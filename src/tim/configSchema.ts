@@ -324,13 +324,6 @@ export const slackWorkspaceConfigSchema = z
           .string()
           .min(1, 'Slack dailyDigest.defaultGroupName must not be empty')
           .optional(),
-        linearMilestones: z
-          .object({
-            enabled: z.boolean().optional(),
-            apiKeyEnv: z.string().min(1).optional(),
-          })
-          .strict()
-          .optional(),
       })
       .strict()
       .optional(),
