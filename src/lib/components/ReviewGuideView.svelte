@@ -1,6 +1,6 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
-  import { Virtualizer, type DiffLineAnnotation, type FileDiffOptions } from '@pierre/diffs';
+  import type { DiffLineAnnotation, FileDiffOptions } from '@pierre/diffs';
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
   import Columns2 from '@lucide/svelte/icons/columns-2';
@@ -179,7 +179,6 @@
   let visibleSectionSlug = $state<string>('');
   let isProgrammaticUpdate = $state(false);
   let isUserNavigating = $state(false);
-  let guideVirtualizer = $state<Virtualizer | null>(null);
 
   interface NewIssueModalState {
     file: string;
@@ -709,27 +708,6 @@
     }, 500);
   }
 
-  function guideScrollAttachment(scrollRoot: HTMLElement) {
-    const scrollContent = scrollRoot.firstElementChild;
-    if (!(scrollContent instanceof HTMLElement)) {
-      return;
-    }
-
-    const virtualizer = new Virtualizer({
-      overscrollSize: 1000,
-      intersectionObserverMargin: 4000,
-    });
-    virtualizer.setup(scrollRoot, scrollContent);
-    guideVirtualizer = virtualizer;
-
-    return () => {
-      if (guideVirtualizer === virtualizer) {
-        guideVirtualizer = null;
-      }
-      virtualizer.cleanUp();
-    };
-  }
-
   function isIssueActioning(issueId: number): boolean {
     return togglingIssueIds.has(issueId);
   }
@@ -1200,7 +1178,7 @@
   <!-- Split: guide left, issues right -->
   <Splitpanes theme="tim-split" class="min-h-0 flex-1 pb-6">
     <Pane minSize={20}>
-      <div class="h-full overflow-y-auto pr-1" {@attach guideScrollAttachment}>
+      <div class="h-full overflow-y-auto pr-1">
         <div>
           {#if review.review_guide}
             <MarkdownContent
@@ -1208,7 +1186,6 @@
               parsedSegments={guideSegments}
               class="text-sm text-foreground"
               {diffOverrides}
-              virtualizer={guideVirtualizer}
             >
               {#snippet diffAnnotation(annotation)}
                 {@const metadata = annotation.metadata as ReviewIssueAnnotationMetadata | undefined}

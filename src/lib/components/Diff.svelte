@@ -1,14 +1,12 @@
 <script lang="ts">
   import {
     FileDiff,
-    VirtualizedFileDiff,
     parseDiffFromFile,
     parsePatchFiles,
     type FileContents,
     type FileDiffMetadata,
     type DiffLineAnnotation,
     type FileDiffOptions,
-    type Virtualizer,
   } from '@pierre/diffs';
   import WorkerUrl from '@pierre/diffs/worker/worker.js?worker&url';
   import { getOrCreateWorkerPoolSingleton } from '@pierre/diffs/worker';
@@ -22,15 +20,13 @@
 
   const HUNK_HEADER_RE = /^@@\s/m;
   const PATCH_HEADER_RE = /^---\s/m;
-  const VIRTUALIZED_LINE_THRESHOLD = 20;
   const EMPTY_LINE_ANNOTATIONS: DiffLineAnnotation<unknown>[] = [];
   const HEADER_TOGGLE_CLASS = 'tim-diff-collapse-toggle';
-  /** Matches the `lineHeight` estimate passed to `VirtualizedFileDiff` below, so the
-   *  placeholder height roughly matches the real rendered height once mounted. */
+  /** Estimated per-line height used to size the lazy-mount placeholder so it roughly
+   *  matches the real rendered height once mounted. */
   const ESTIMATED_LINE_HEIGHT = 22;
   const ESTIMATED_HEADER_HEIGHT = 37;
-  /** Matches the shared `Virtualizer`'s own `intersectionObserverMargin`, so a diff is
-   *  fully mounted well before line-level virtualization inside it would kick in. */
+  /** How far outside the viewport a diff mounts and starts highlighting. */
   const LAZY_MOUNT_ROOT_MARGIN = '4000px 0px';
   const STICKY_HEADER_CSS = `
     [data-diffs-header] {
@@ -190,7 +186,6 @@
     enableGutterUtility = false,
     onGutterUtilityClick,
     onLineClick,
-    virtualizer,
     class: className = '',
   }: {
     /** Old file version for two-file comparison */
@@ -236,8 +231,6 @@
     onGutterUtilityClick?: FileDiffOptions<unknown>['onGutterUtilityClick'];
     /** Callback when a line is clicked */
     onLineClick?: FileDiffOptions<unknown>['onLineClick'];
-    /** Shared top-level virtualizer from a parent scroll container */
-    virtualizer?: Virtualizer | null;
     /** Additional CSS classes for the wrapper div */
     class?: string;
   } = $props();
@@ -314,19 +307,6 @@
     return () => observer.disconnect();
   }
 
-  let shouldVirtualize = $derived.by(() => {
-    if (!resolvedDiff || !virtualizer) {
-      return false;
-    }
-
-    const totalLines = Math.max(
-      resolvedDiff.additionLines.length,
-      resolvedDiff.deletionLines.length
-    );
-
-    return totalLines >= VIRTUALIZED_LINE_THRESHOLD;
-  });
-
   function buildOptions(
     renderAnnotation?: FileDiffOptions<unknown>['renderAnnotation']
   ): FileDiffOptions<unknown> {
@@ -372,7 +352,7 @@
   function diffAttachment(node: HTMLElement) {
     const annotationRenderer = createAnnotationRenderer();
     const initialOptions = untrack(() => buildOptions(annotationRenderer.renderAnnotation));
-    const instance = new FileDiff<unknown>(initialOptions);
+    const instance = new FileDiff<unknown>(initialOptions, getWorkerPool());
 
     let renderedOnce = false;
     let renderedAnnotationSnippet = untrack(() => annotation);
@@ -380,81 +360,6 @@
     let renderedLineAnnotations: DiffLineAnnotation<unknown>[] = EMPTY_LINE_ANNOTATIONS;
     $effect(() => {
       // $inspect.trace();
-      if (!resolvedDiff) {
-        return;
-      }
-
-      const nextOptions = buildOptions(annotationRenderer.renderAnnotation);
-      const nextLineAnnotations = lineAnnotations || EMPTY_LINE_ANNOTATIONS;
-
-      if (!renderedOnce) {
-        renderedOnce = true;
-        renderedOptions = nextOptions;
-        renderedLineAnnotations = nextLineAnnotations;
-        instance.render({
-          fileDiff: resolvedDiff,
-          lineAnnotations: nextLineAnnotations,
-          containerWrapper: node,
-        });
-        annotationRenderer.disposeDisconnected();
-        return;
-      }
-
-      let shouldRerender = false;
-      if (renderedOnce && annotation !== renderedAnnotationSnippet) {
-        instance.setLineAnnotations([]);
-        annotationRenderer.disposeDisconnected();
-        renderedAnnotationSnippet = annotation;
-        renderedLineAnnotations = EMPTY_LINE_ANNOTATIONS;
-        shouldRerender = true;
-      }
-
-      if (!areOptionsEquivalent(renderedOptions, nextOptions)) {
-        instance.setOptions({
-          ...instance.options,
-          ...nextOptions,
-        });
-        renderedOptions = nextOptions;
-        shouldRerender = true;
-      }
-
-      if (renderedLineAnnotations !== nextLineAnnotations) {
-        instance.setLineAnnotations(nextLineAnnotations);
-        renderedLineAnnotations = nextLineAnnotations;
-        shouldRerender = true;
-      }
-
-      if (shouldRerender) {
-        instance.rerender();
-      }
-      annotationRenderer.disposeDisconnected();
-    });
-
-    return () => {
-      instance.cleanUp();
-      annotationRenderer.disposeAll();
-    };
-  }
-
-  function virtualizedDiffAttachment(node: HTMLElement) {
-    if (!virtualizer) {
-      return;
-    }
-
-    const annotationRenderer = createAnnotationRenderer();
-    const initialOptions = untrack(() => buildOptions(annotationRenderer.renderAnnotation));
-    const instance = new VirtualizedFileDiff(
-      initialOptions,
-      virtualizer,
-      { lineHeight: 22, fileGap: 10 },
-      getWorkerPool()
-    );
-
-    let renderedOnce = false;
-    let renderedAnnotationSnippet = untrack(() => annotation);
-    let renderedOptions = initialOptions;
-    let renderedLineAnnotations: DiffLineAnnotation<unknown>[] = EMPTY_LINE_ANNOTATIONS;
-    $effect(() => {
       if (!resolvedDiff) {
         return;
       }
@@ -520,11 +425,7 @@
     {@attach lazyMountAttachment}
   >
     {#if hasEnteredViewport}
-      {#if shouldVirtualize}
-        <div {@attach virtualizedDiffAttachment}></div>
-      {:else}
-        <div {@attach diffAttachment}></div>
-      {/if}
+      <div {@attach diffAttachment}></div>
     {/if}
   </div>
 {/if}
