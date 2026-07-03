@@ -12,6 +12,7 @@ Complete reference for tim command-line interface.
 - [Assignment Commands](#assignment-commands)
 - [PR Commands](#pr-commands)
 - [Review Guide Commands](#review-guide-commands)
+- [Artifact Commands](#artifact-commands)
 - [Branch Commands](#branch-commands)
 - [Utility Commands](#utility-commands)
 - [Common Workflows](#common-workflows)
@@ -447,6 +448,61 @@ tim review-guide resolve-issue 42 --unresolved
 ```
 
 Do not mark an issue resolved just because code was changed; verify the specific issue is handled. Notes from review-guide annotations are not actionable issues and cannot be resolved with this command.
+
+## Artifact Commands
+
+Use `tim artifact` to attach files to a plan. Artifacts are either **reference** artifacts (inputs the plan needs — specs, screenshots, sample data) or **proof** artifacts (outputs produced while working the plan — test results, screenshots of a working feature). Reference artifacts are materialized into the plan's workspace automatically before generation and execution, so code and executors can read them from disk; proof artifacts are not materialized and exist only for review/upload.
+
+### tim artifact add
+
+Attach one or more files to a plan.
+
+```bash
+tim artifact add 123 ./spec.pdf --reference -m "API spec to implement against"
+tim artifact add 123 ./screenshot.png --proof -m "Feature working in browser"
+tim artifact add 123 ./fixtures --reference --zip -m "Sample fixture data"   # zip a directory
+tim artifact add 123 ./a.png ./b.png --proof --zip                          # zip multiple files
+tim artifact add 123 ./spec.pdf --reference --json                          # structured output
+```
+
+Exactly one of `--reference` or `--proof` is required. Multiple files can only be attached together with `--zip`, which archives them (or a directory's contents) into a single ZIP artifact.
+
+### tim artifact list
+
+List artifacts attached to a plan.
+
+```bash
+tim artifact list 123
+tim artifact list 123 --include-deleted
+tim artifact list 123 --json
+```
+
+### tim artifact show
+
+Show metadata for a single artifact by UUID.
+
+```bash
+tim artifact show <artifactUuid>
+```
+
+### tim artifact delete / restore
+
+```bash
+tim artifact delete <artifactUuid>          # Soft-delete
+tim artifact delete <artifactUuid> --hard   # Remove the row and local file
+tim artifact restore <artifactUuid>         # Restore a soft-deleted artifact
+```
+
+### tim artifact purge
+
+Remove old artifact rows and orphaned artifact files (retention cleanup).
+
+```bash
+tim artifact purge
+tim artifact purge --older-than 14        # Retention threshold in days (default: 30)
+tim artifact purge --include-active       # Also consider active artifacts on non-terminal plans
+tim artifact purge --dry-run
+```
 
 ## Branch Commands
 

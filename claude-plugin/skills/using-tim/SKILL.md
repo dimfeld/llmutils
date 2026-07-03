@@ -1,7 +1,7 @@
 ---
 name: using-tim
 description: Manages project plans with tim. Use whenever the user mentions tim, asks to "generate plan 123" (or any number), "work on plan 123", or when you are working on a tim task.
-version: 1.0.3
+version: 1.0.4
 ---
 
 tim is an AI-powered project planning and execution system. It generates detailed plans from issues, executes them with automated agents, and tracks progress through complex multi-phase projects.
@@ -11,6 +11,7 @@ Plans are markdown files with metadata (title, goal, priority, status, dependenc
 ## References
 
 - If you need to create a new plan, see `references/adding-plans.md`
+- If you need to attach reference or proof artifacts to a plan, use `tim artifact add` — see `references/cli-commands.md#artifact-commands`
 - If you need to view plans and mark tasks done, see `references/viewing-and-completing.md`
 - For docs on `tim tools` commands, or when you are generating details for a plan and need to add/edit tasks: `references/generating-plans.md`
 - If you need to inspect or manage stored review-guide issues for a plan, PR, or branch, see the review-guide commands in `references/cli-commands.md`

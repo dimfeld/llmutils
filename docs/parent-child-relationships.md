@@ -216,6 +216,18 @@ Database Schema → API Endpoints → Frontend → Testing
 # Avoid: Complex webs when simpler alternatives exist
 ```
 
+**A child plan may depend on at most one other child plan.** Every plan needs a single branch it can base its work on that already contains all the changes it needs. If a plan's work would otherwise depend on two or more independent siblings, do not give it multiple dependencies — instead chain those siblings into a linear sequence first:
+
+```yaml
+# Avoid: "Testing" depends on both "API Endpoints" and "Frontend" independently
+API Endpoints ─┐
+               ├─→ Testing
+Frontend ──────┘
+
+# Good: chain the otherwise-independent siblings so each plan has one predecessor
+API Endpoints → Frontend → Testing
+```
+
 **Use appropriate priority levels:**
 
 - `high`: Critical path items that block other work

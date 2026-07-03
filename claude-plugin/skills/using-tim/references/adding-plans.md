@@ -58,6 +58,10 @@ If the referenced plan's branch no longer exists on the remote (typically after 
 tim add "Plan title" --issue https://github.com/org/repo/issues/123
 ```
 
+## Attaching Reference Artifacts
+
+If the user provides a file the plan needs (a spec, screenshot, sample data, etc.), attach it with `tim artifact add <planId> <file> --reference -m "description"`. Reference artifacts are materialized into the plan's workspace automatically during generation and execution, so they don't need to be copied into the repo manually. See `cli-commands.md#artifact-commands` for the full command set, including `--zip` for attaching directories or multiple files at once.
+
 ## Modifying Plans After Creation
 
 Use `tim set` to update plan metadata after creation. This is the primary way to modify dependencies, parent relationships, tags, and other properties on existing plans.

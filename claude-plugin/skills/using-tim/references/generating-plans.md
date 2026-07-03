@@ -33,6 +33,7 @@ echo '{"title": "Followup work title", "dependsOn": [<original-plan-id>]}' | tim
 - Do **not** mark the original plan as an epic
 - Do **not** set the original plan as the parent of the new plan
 - **Do** use `dependsOn` (or `--depends-on` with `tim add`) so the new plan is sequenced after the original
+- A child plan may depend on at most one other child plan. If a plan would otherwise need to depend on two or more siblings, chain those siblings into a single linear sequence instead, so each plan has exactly one predecessor branch that already contains everything it needs
 - If the followup is intended to ship as a stacked PR on top of the original, also pass `--base-plan <original-plan-id>` (or `basePlan` in `tim tools create-plan`) so the new plan's branch is based on the predecessor's branch instead of trunk. This is independent of `--depends-on`: one orders the work, the other stacks the branch.
 
 ## Tool Schema Discovery
