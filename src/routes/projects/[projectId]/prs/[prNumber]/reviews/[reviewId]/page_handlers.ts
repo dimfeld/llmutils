@@ -266,11 +266,11 @@ function scrollNodeInsideContainer(
     scrollContainer === scrollContainer.ownerDocument?.documentElement ||
     scrollContainer === scrollContainer.ownerDocument?.body
   ) {
-    globalThis.scrollBy?.({ top: delta, behavior: 'smooth' });
+    globalThis.scrollBy?.({ top: delta, behavior: 'instant' });
     return true;
   }
 
-  scrollContainer.scrollBy({ top: delta, behavior: 'smooth' });
+  scrollContainer.scrollBy({ top: delta, behavior: 'instant' });
   return true;
 }
 
@@ -279,11 +279,11 @@ function scrollByInsideContainer(scrollContainer: HTMLElement, top: number): voi
     scrollContainer === scrollContainer.ownerDocument?.documentElement ||
     scrollContainer === scrollContainer.ownerDocument?.body
   ) {
-    globalThis.scrollBy?.({ top, behavior: 'smooth' });
+    globalThis.scrollBy?.({ top, behavior: 'instant' });
     return;
   }
 
-  scrollContainer.scrollBy({ top, behavior: 'smooth' });
+  scrollContainer.scrollBy({ top, behavior: 'instant' });
 }
 
 function defaultWaitForScrollEnd(scrollContainer: HTMLElement): Promise<void> {

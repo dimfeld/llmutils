@@ -409,7 +409,7 @@ describe('createJumpToDiffHandler', () => {
     expect(lineNode.scrollIntoView).not.toHaveBeenCalled();
     expect(scrollBy).toHaveBeenCalledWith({
       top: 140,
-      behavior: 'smooth',
+      behavior: 'instant',
     });
     expect(setHighlightedAnnotation).toHaveBeenCalledWith(annotationNode);
   });
@@ -450,7 +450,7 @@ describe('createJumpToDiffHandler', () => {
     expect(scrollContainer.scrollBy).toHaveBeenCalledTimes(1);
     expect(scrollContainer.scrollBy).toHaveBeenCalledWith({
       top: 250,
-      behavior: 'smooth',
+      behavior: 'instant',
     });
     expect(annotationNode.scrollIntoView).not.toHaveBeenCalled();
     expect(setHighlightedAnnotation).not.toHaveBeenCalled();
@@ -485,7 +485,7 @@ describe('createJumpToDiffHandler', () => {
     expect(diffNode.scrollIntoView).not.toHaveBeenCalled();
     expect(scrollContainer.scrollBy).toHaveBeenCalledWith({
       top: 140,
-      behavior: 'smooth',
+      behavior: 'instant',
     });
     expect(setHighlightedAnnotation).toHaveBeenCalledWith(annotationWrapper);
   });
@@ -585,15 +585,15 @@ describe('createJumpToDiffHandler', () => {
     expect(setError).toHaveBeenCalledWith(null);
     expect(scrollContainer.scrollBy).toHaveBeenNthCalledWith(1, {
       top: 100,
-      behavior: 'smooth',
+      behavior: 'instant',
     });
     expect(scrollContainer.scrollBy).toHaveBeenNthCalledWith(2, {
       top: 494.9494949494949,
-      behavior: 'smooth',
+      behavior: 'instant',
     });
     expect(scrollContainer.scrollBy).toHaveBeenNthCalledWith(3, {
       top: 140,
-      behavior: 'smooth',
+      behavior: 'instant',
     });
     expect(setHighlightedAnnotation).toHaveBeenCalledWith(annotationNode);
   });
