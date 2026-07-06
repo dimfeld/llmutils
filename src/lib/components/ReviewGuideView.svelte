@@ -177,8 +177,8 @@
   let guideSegments = $derived(parsedGuide.segments);
 
   let visibleSectionSlug = $state<string>('');
-  let isProgrammaticUpdate = $state(false);
   let isUserNavigating = $state(false);
+  let sectionSidebar = $state<HTMLElement | null>(null);
 
   interface NewIssueModalState {
     file: string;
@@ -609,11 +609,7 @@
         if (bestEntry) {
           const slug = bestEntry.target.id;
           if (slug && slug !== visibleSectionSlug) {
-            isProgrammaticUpdate = true;
             visibleSectionSlug = slug;
-            requestAnimationFrame(() => {
-              isProgrammaticUpdate = false;
-            });
           }
         }
       },
@@ -633,6 +629,16 @@
     return () => {
       intersectionObserver?.disconnect();
     };
+  });
+
+  // Keep the highlighted section visible within the (independently scrollable) sidebar.
+  $effect(() => {
+    const slug = visibleSectionSlug;
+    if (!slug || !sectionSidebar) return;
+    const activeItem = sectionSidebar.querySelector<HTMLElement>(
+      `[data-section-slug="${CSS.escape(slug)}"]`
+    );
+    activeItem?.scrollIntoView({ block: 'nearest' });
   });
 
   function handleGutterUtilityClick(
@@ -691,14 +697,11 @@
     };
   });
 
-  function handleTocChange(event: Event) {
-    if (isProgrammaticUpdate) return;
-
-    const select = event.currentTarget as HTMLSelectElement;
-    const slug = select.value;
+  function handleTocSelect(slug: string) {
     if (!slug) return;
 
     isUserNavigating = true;
+    visibleSectionSlug = slug;
 
     const el = document.getElementById(slug);
     el?.scrollIntoView({ behavior: 'instant', block: 'start' });
@@ -1010,21 +1013,6 @@
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-3">
           <h2 class="text-lg font-semibold text-foreground">Review Guide</h2>
-          {#if toc.length > 0}
-            <select
-              aria-label="Jump to section"
-              class="w-auto max-w-[32rem] rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-              bind:value={visibleSectionSlug}
-              onchange={handleTocChange}
-            >
-              <option value="">Jump to section…</option>
-              {#each toc as entry (entry.slug)}
-                <option value={entry.slug}>
-                  {'  '.repeat(Math.max(0, entry.depth - 1))}{entry.text}
-                </option>
-              {/each}
-            </select>
-          {/if}
           <div
             class="inline-flex shrink-0 overflow-hidden rounded-md border border-border bg-background"
             aria-label="Diff layout"
@@ -1178,8 +1166,36 @@
   <!-- Split: guide left, issues right -->
   <Splitpanes theme="tim-split" class="min-h-0 flex-1 pb-6">
     <Pane minSize={20}>
-      <div class="h-full overflow-y-auto pr-1">
-        <div>
+      <div class="flex h-full min-h-0 gap-3">
+        {#if toc.length > 0}
+          <nav
+            bind:this={sectionSidebar}
+            aria-label="Review guide sections"
+            class="w-72 shrink-0 overflow-y-auto border-r border-border pr-2"
+          >
+            <ul class="space-y-0.5 py-0.5">
+              {#each toc as entry (entry.slug)}
+                <li>
+                  <button
+                    type="button"
+                    data-section-slug={entry.slug}
+                    onclick={() => handleTocSelect(entry.slug)}
+                    style="padding-left: {0.5 + Math.max(0, entry.depth - 1) * 0.75}rem"
+                    class="block w-full rounded py-1 pr-2 text-left text-sm transition-colors {visibleSectionSlug ===
+                    entry.slug
+                      ? 'bg-muted font-medium text-foreground'
+                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
+                    aria-current={visibleSectionSlug === entry.slug ? 'true' : undefined}
+                    title={entry.text}
+                  >
+                    {entry.text}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          </nav>
+        {/if}
+        <div class="min-w-0 flex-1 overflow-y-auto pr-1">
           {#if review.review_guide}
             <MarkdownContent
               content={review.review_guide}
