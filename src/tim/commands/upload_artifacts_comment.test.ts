@@ -414,12 +414,17 @@ describe('buildArtifactCommentBody', () => {
     expect(body).not.toContain('View full report');
   });
 
-  test('can place trailing artifacts below the lower full report link', () => {
+  test('can place all artifacts below the lower full report link', () => {
     const body = buildBody({
-      reportMarkdown: '# Proof Report\n\nEverything passed.',
+      reportMarkdown: '# Proof Report\n\n![Screenshot](screenshot.png)',
       fullReportUrl: 'https://media.example.test/report/index.html/sig=abc',
       artifactListPlacement: 'before-footer',
+      artifactListSelection: 'all',
       artifacts: [
+        artifact({
+          filename: 'screenshot.png',
+          url: 'https://media.example.test/screenshot.png?sig=abc',
+        }),
         artifact({
           filename: 'extra.png',
           url: 'https://media.example.test/extra.png?sig=abc',
@@ -429,6 +434,9 @@ describe('buildArtifactCommentBody', () => {
 
     expect(body.lastIndexOf('[View on Web]')).toBeLessThan(body.indexOf('## Artifacts'));
     expect(body.indexOf('## Artifacts')).toBeLessThan(body.indexOf('---\n<sub>Updated at'));
+    expect(body).toContain('![Screenshot](https://media.example.test/screenshot.png?sig=abc)');
+    expect(body).toContain('![screenshot.png](https://media.example.test/screenshot.png?sig=abc)');
+    expect(body).toContain('![extra.png](https://media.example.test/extra.png?sig=abc)');
   });
 
   test('builds a standalone rendered full report html document', () => {

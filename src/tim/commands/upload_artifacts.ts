@@ -107,6 +107,7 @@ function buildLinearArtifactCommentBody(input: {
     fullReportUrl: input.fullReportUrl,
     updatedAt: input.updatedAt,
     artifactListPlacement: 'before-footer',
+    artifactListSelection: 'all',
   }).replace(/\n---\n<sub>Updated at ([^<]+)<\/sub>\n?$/, '\n---\nUpdated at $1\n');
 
   return `${body.trimEnd()}\n\n\`${marker}\`\n`;
@@ -275,6 +276,7 @@ async function postLinearArtifactsComments(options: {
   planTitle: string;
   config: TimConfig;
   projectId?: number;
+  mediaHost: { baseUrl: string; apiKey: string };
   reportMarkdown?: string;
   artifacts: PlanArtifactWithTransferState[];
   fullReportUrl?: string;
@@ -285,9 +287,8 @@ async function postLinearArtifactsComments(options: {
     return;
   }
 
-  const imageArtifacts = options.artifacts.filter(isImageArtifact);
-  if (imageArtifacts.length === 0 && options.reportMarkdown === undefined) {
-    warn('Skipping Linear artifact comment: no report.md or image artifacts are available.');
+  if (options.artifacts.length === 0 && options.reportMarkdown === undefined) {
+    warn('Skipping Linear artifact comment: no report.md or artifacts are available.');
     return;
   }
 
@@ -303,13 +304,20 @@ async function postLinearArtifactsComments(options: {
       return;
     }
 
-    const uploadedImages = await Promise.all(
-      imageArtifacts.map((artifact) =>
-        uploadLinearImageArtifact({
-          client,
-          planUuid: options.planUuid,
-          artifact,
-        })
+    const uploadedArtifacts = await Promise.all(
+      options.artifacts.map((artifact) =>
+        isImageArtifact(artifact)
+          ? uploadLinearImageArtifact({
+              client,
+              planUuid: options.planUuid,
+              artifact,
+            })
+          : uploadArtifact({
+              baseUrl: options.mediaHost.baseUrl,
+              apiKey: options.mediaHost.apiKey,
+              planUuid: options.planUuid,
+              artifact,
+            })
       )
     );
     const body = buildLinearArtifactCommentBody({
@@ -317,7 +325,7 @@ async function postLinearArtifactsComments(options: {
       planId: options.plan.id,
       planTitle: options.planTitle,
       reportMarkdown: options.reportMarkdown,
-      artifacts: uploadedImages,
+      artifacts: uploadedArtifacts,
       fullReportUrl: options.fullReportUrl,
       updatedAt: options.updatedAt,
     });
@@ -469,6 +477,7 @@ export async function autoUploadArtifactsToPr(options: {
     planTitle,
     config,
     projectId: planRow?.project_id,
+    mediaHost,
     reportMarkdown,
     artifacts: artifactsToUpload,
     fullReportUrl,
@@ -598,6 +607,7 @@ export async function handleUploadArtifactsCommand(
         planTitle,
         config,
         projectId: context.projectId,
+        mediaHost,
         reportMarkdown,
         artifacts: artifactsToUpload,
         fullReportUrl,

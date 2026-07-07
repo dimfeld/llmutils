@@ -36,6 +36,7 @@ export interface BuildArtifactCommentBodyInput {
   fullReportUrl?: string;
   updatedAt: string;
   artifactListPlacement?: 'after-report' | 'before-footer';
+  artifactListSelection?: 'unreferenced' | 'all';
 }
 
 interface RewriteResult {
@@ -244,6 +245,7 @@ function assembleArtifactCommentBody(input: {
   fullReportUrl?: string;
   updatedAt: string;
   artifactListPlacement?: 'after-report' | 'before-footer';
+  artifactListSelection?: 'unreferenced' | 'all';
   linksOnly: boolean;
   includeTruncationNotice: boolean;
 }): string {
@@ -263,9 +265,10 @@ function assembleArtifactCommentBody(input: {
     sections.push(buildPlanHeading(input.planId, input.planTitle));
   }
 
-  const trailingArtifacts = input.linksOnly
-    ? input.artifacts
-    : input.artifacts.filter((_, index) => !input.referencedArtifactIndexes.has(index));
+  const trailingArtifacts =
+    input.linksOnly || input.artifactListSelection === 'all'
+      ? input.artifacts
+      : input.artifacts.filter((_, index) => !input.referencedArtifactIndexes.has(index));
 
   if (trailingArtifacts.length > 0) {
     const artifactList = [

@@ -477,13 +477,14 @@ describe('handleUploadArtifactsCommand', () => {
     expect(linearBody).toContain('# Proof Report');
     expect(linearBody).toContain('[View on Web](http://127.0.0.1:');
     expect(linearBody).toContain('## Artifacts');
+    expect(linearBody).toContain('![screenshot.png](https://uploads.linear.app/screenshot.png)');
     expect(linearBody).toContain('![extra.png](https://uploads.linear.app/extra.png)');
+    expect(linearBody).toContain('- [run.log](http://127.0.0.1:');
     expect(linearBody.lastIndexOf('[View on Web]')).toBeLessThan(
       linearBody.indexOf('## Artifacts')
     );
     expect(linearBody.indexOf('## Artifacts')).toBeLessThan(linearBody.indexOf('Updated at '));
     expect(linearBody).not.toContain('View full report');
-    expect(linearBody).not.toContain('[run.log]');
     expect(linearBody).not.toContain('<!--');
     expect(linearBody).not.toContain('<sub>');
     expect(linearBody.trimEnd().endsWith(`\`tim:plan-artifacts:${PLAN_UUID}\``)).toBe(true);
