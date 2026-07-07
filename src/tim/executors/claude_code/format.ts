@@ -689,8 +689,27 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
         }
 
         if (content.name === 'ScheduleWakeup') {
-          backgroundActivity = { kind: 'wakeup_scheduled' };
           const wakeupInput = content.input;
+          const stop =
+            wakeupInput && typeof wakeupInput === 'object' && 'stop' in wakeupInput
+              ? wakeupInput.stop === true
+              : false;
+
+          if (stop) {
+            // stop:true ends the dynamic loop instead of scheduling another
+            // wakeup — it must NOT be treated as background activity that
+            // keeps stdin open, otherwise the session waits forever for a
+            // wakeup that will never fire.
+            structuredMessages.push({
+              type: 'workflow_progress',
+              timestamp: ts,
+              phase: 'wakeup_scheduled',
+              message: 'Stopped wakeup loop',
+            });
+            continue;
+          }
+
+          backgroundActivity = { kind: 'wakeup_scheduled' };
           const delaySeconds =
             wakeupInput && typeof wakeupInput === 'object' && 'delaySeconds' in wakeupInput
               ? (wakeupInput.delaySeconds as unknown)

@@ -781,6 +781,26 @@ describe('formatJsonMessage', () => {
         const result = formatJsonMessage(msg);
         expect(result.backgroundActivity).toEqual({ kind: 'wakeup_scheduled' });
       });
+
+      test('ScheduleWakeup with stop:true does not emit a backgroundActivity signal', () => {
+        const msg = toolUseMessage({
+          id: 'wakeup-4',
+          name: 'ScheduleWakeup',
+          input: { stop: true },
+        });
+
+        const result = formatJsonMessage(msg);
+        expect(result.backgroundActivity).toBeUndefined();
+        expect(result.structured).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: 'workflow_progress',
+              phase: 'wakeup_scheduled',
+              message: 'Stopped wakeup loop',
+            }),
+          ])
+        );
+      });
     });
 
     test('handles status messages with compacting status', () => {
