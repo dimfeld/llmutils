@@ -146,7 +146,9 @@ function buildPrTarget(db: Database, prUrl: string): ResolvedPrReviewGuideTarget
   };
 }
 
-function getLatestReviewGuide(reviews: ReviewWithIssueCounts[]): ReviewWithIssueCounts | null {
+export function getLatestReviewGuide(
+  reviews: ReviewWithIssueCounts[]
+): ReviewWithIssueCounts | null {
   return (
     reviews.find((review) => review.review_guide != null && review.review_guide.trim() !== '') ??
     null

@@ -1748,6 +1748,20 @@ reviewGuideCommand
   });
 
 reviewGuideCommand
+  .command('diffview [target]')
+  .description(
+    'Write diffview-compatible review-guide.json for a plan ID, branch, or PR URL (defaults to current branch)'
+  )
+  .option('-o, --output <path>', 'Write the JSON to this path instead of ./review-guide.json')
+  .action(async (target, options) => {
+    await runWithCommandTunnelAdapter(async () => {
+      const { handleReviewGuideDiffviewCommand } =
+        await import('./commands/review_guide_diffview_command.js');
+      await handleReviewGuideDiffviewCommand(target, options);
+    }).catch(handleCommandError);
+  });
+
+reviewGuideCommand
   .command('resolve-issue <issueId> [target]')
   .description(
     'Mark a review-guide issue resolved, optionally scoped to a plan ID, branch, or PR URL'
