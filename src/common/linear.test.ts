@@ -1152,6 +1152,83 @@ describe('LinearIssueTrackerClient', () => {
     });
   });
 
+  describe('upsertCommentByMarker', () => {
+    test('updates an existing marked comment', async () => {
+      const existingComment = {
+        id: 'comment-existing',
+        body: 'Previous proof\n\n<!-- tim:plan-artifacts:plan-uuid -->',
+      };
+      const updatedComment = { id: 'comment-existing' };
+      const mockLinearClient = {
+        issue: vi.fn(async () => ({
+          comments: vi.fn(async () => ({
+            nodes: [existingComment],
+            pageInfo: { hasNextPage: false },
+            fetchNext: vi.fn(),
+          })),
+        })),
+        updateComment: vi.fn(async () => ({
+          success: true,
+          comment: Promise.resolve(updatedComment),
+        })),
+        createComment: vi.fn(),
+      };
+
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.upsertCommentByMarker(
+        'TEAM-123',
+        '<!-- tim:plan-artifacts:plan-uuid -->',
+        'Updated proof body'
+      );
+
+      expect(result).toEqual({ id: 'comment-existing', updated: true });
+      expect(mockLinearClient.updateComment).toHaveBeenCalledWith('comment-existing', {
+        body: 'Updated proof body',
+        doNotSubscribeToIssue: true,
+      });
+      expect(mockLinearClient.createComment).not.toHaveBeenCalled();
+    });
+
+    test('creates a comment when no marked comment exists', async () => {
+      const createdComment = { id: 'comment-created' };
+      const mockLinearClient = {
+        issue: vi.fn(async () => ({
+          comments: vi.fn(async () => ({
+            nodes: [{ id: 'comment-other', body: 'Different comment' }],
+            pageInfo: { hasNextPage: false },
+            fetchNext: vi.fn(),
+          })),
+        })),
+        updateComment: vi.fn(),
+        createComment: vi.fn(async () => ({
+          success: true,
+          comment: Promise.resolve(createdComment),
+        })),
+      };
+
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.upsertCommentByMarker(
+        'TEAM-123',
+        '<!-- tim:plan-artifacts:plan-uuid -->',
+        'New proof body'
+      );
+
+      expect(result).toEqual({ id: 'comment-created', updated: false });
+      expect(mockLinearClient.createComment).toHaveBeenCalledWith({
+        issueId: 'TEAM-123',
+        body: 'New proof body',
+        doNotSubscribeToIssue: true,
+      });
+      expect(mockLinearClient.updateComment).not.toHaveBeenCalled();
+    });
+  });
+
   describe('mapLinearUserToUserData', () => {
     test('maps Linear user with full data', () => {
       const client = new LinearIssueTrackerClient(mockConfig);

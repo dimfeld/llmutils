@@ -125,6 +125,26 @@ export interface IssueStateTransitionResult {
   reason?: 'not-ready-state' | 'target-state-missing';
 }
 
+export interface IssueTrackerUploadFileInput {
+  filename: string;
+  contentType: string;
+  size: number;
+  body: BodyInit;
+  metaData?: Record<string, unknown>;
+}
+
+export interface IssueTrackerUploadedFile {
+  filename: string;
+  contentType: string;
+  size: number;
+  assetUrl: string;
+}
+
+export interface IssueTrackerUpsertCommentResult {
+  id: string;
+  updated: boolean;
+}
+
 /**
  * Parsed issue identifier information
  */
@@ -186,6 +206,22 @@ export interface IssueTrackerClient {
    * Trackers that do not support workflow state transitions can omit this method.
    */
   transitionIssueToInProgressIfReady?(identifier: string): Promise<IssueStateTransitionResult>;
+
+  /**
+   * Upload a file directly to the issue tracker's native file storage.
+   * Trackers that do not support direct uploads can omit this method.
+   */
+  uploadFile?(input: IssueTrackerUploadFileInput): Promise<IssueTrackerUploadedFile>;
+
+  /**
+   * Update an existing marked issue comment or create one when no marker is found.
+   * Trackers that do not support issue comments can omit this method.
+   */
+  upsertCommentByMarker?(
+    identifier: string,
+    marker: string,
+    body: string
+  ): Promise<IssueTrackerUpsertCommentResult>;
 
   /**
    * Fetch all open issues (without comments)

@@ -382,7 +382,7 @@ See the PR status and web interface notes in [`docs/web-interface.md`](docs/web-
 
 ### Uploading plan artifacts to PR comments
 
-`tim pr upload-artifacts <planId>` uploads all non-deleted artifacts for a plan whose files still exist on disk, then posts or updates a single marked comment on each target PR. By default it targets every open PR linked to the plan; pass `--pr <urlOrNumber>` to target exactly one PR. Reruns find the comment by its hidden marker and update it in place rather than creating duplicates.
+`tim pr upload-artifacts <planId>` uploads all non-deleted artifacts for a plan whose files still exist on disk, then posts or updates a single marked comment on each target PR. By default it targets every open PR linked to the plan; pass `--pr <urlOrNumber>` to target exactly one PR. Reruns find the comment by its hidden marker and update it in place rather than creating duplicates. When the plan is linked to Linear issues and `LINEAR_API_KEY` is configured in the plan project's workspace environment or process environment, the command also posts or updates a best-effort Linear issue comment after the PR upload succeeds, uploading image artifacts directly to Linear and rewriting report image references to Linear asset URLs.
 
 The command requires `mediaHost.baseUrl` in the effective tim config and `MEDIA_HOST_API_KEY` in the environment running `tim`. The media host URL must be an origin-only `http` or `https` URL, with no path prefix, query string, fragment, or credentials:
 
@@ -787,7 +787,7 @@ Reruns are idempotent: prior proof artifacts (marked with a `tim-proof:` prefix)
 
 Before the proof executor runs, `tim proof` starts configured `lifecycle.commands` in the `proof` context after workspace setup, so proof-specific setup can use `runIn: [proof]`.
 
-Proof artifacts can be published to a PR with `tim pr upload-artifacts <planId>` after configuring `mediaHost.baseUrl` and exporting `MEDIA_HOST_API_KEY`. The command is mechanical: it does not run an executor or check out the PR branch. It uploads all current non-deleted plan artifacts except `report.md`, turns `report.md` into the comment body when present, rewrites markdown references to signed media-host URLs, uploads a rendered `index.html` full report, and updates the same per-plan marked PR comment on reruns. Use `--pr <urlOrNumber>` to target one PR; otherwise all open linked PRs are updated.
+Proof artifacts can be published to a PR with `tim pr upload-artifacts <planId>` after configuring `mediaHost.baseUrl` and exporting `MEDIA_HOST_API_KEY`. The command is mechanical: it does not run an executor or check out the PR branch. It uploads all current non-deleted plan artifacts except `report.md`, turns `report.md` into the comment body when present, rewrites markdown references to signed media-host URLs, uploads a rendered `index.html` full report, and updates the same per-plan marked PR comment on reruns. Use `--pr <urlOrNumber>` to target one PR; otherwise all open linked PRs are updated. If the plan has linked Linear issues and `LINEAR_API_KEY` is available from the plan project's workspace environment or process environment, the command also posts or updates a Linear comment using direct Linear uploads for image artifacts.
 
 See [`docs/proof-generation.md`](docs/proof-generation.md) for more detail.
 

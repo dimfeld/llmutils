@@ -84,7 +84,7 @@ Proof generation can be more expensive than the implementation phase itself when
 
 ## Uploading artifacts to a PR comment
 
-`tim pr upload-artifacts <planId>` is a mechanical publishing command for evidence that is already attached to a plan. It reads artifact metadata and files from tim storage, uploads every non-deleted artifact whose file still exists on disk, uploads a rendered `index.html` full report, and posts or updates a single GitHub PR comment that links to that report. It does not start an LLM executor, regenerate proofs, or check out the PR branch.
+`tim pr upload-artifacts <planId>` is a mechanical publishing command for evidence that is already attached to a plan. It reads artifact metadata and files from tim storage, uploads every non-deleted artifact whose file still exists on disk, uploads a rendered `index.html` full report, and posts or updates a single GitHub PR comment that links to that report. If the plan is also linked to one or more Linear issues, the command also posts or updates a best-effort Linear issue comment after the PR comment succeeds. It does not start an LLM executor, regenerate proofs, or check out the PR branch.
 
 By default, the command targets every open PR linked to the plan. Use `--pr <urlOrNumber>` to publish to one PR instead. It requires a GitHub token through the normal personal-token resolver (`gh auth token` or `GITHUB_TOKEN`). Unlike `tim pr review-guide-comment`, it does not use the GitHub App installation token.
 
@@ -100,11 +100,14 @@ If a proof artifact named `report.md` exists, its markdown becomes the main comm
 
 Artifacts not already shown by rewritten report links are rendered after the report body: images use markdown image embeds, and other files use download links with sizes.
 
+For linked Linear issues, `LINEAR_API_KEY` must be configured in the plan project's workspace environment or process environment. The Linear comment uses the same `report.md` markdown when present, but uploads image artifacts directly to Linear with Linear's file-upload API and rewrites image references to those Linear asset URLs. Non-image artifacts are not uploaded to Linear; use the PR comment's full report for those files. Linear comments carry the same hidden per-plan marker as PR comments, so reruns update the existing proof comment instead of creating duplicates. Linear posting is best-effort: failures are logged as warnings and do not roll back the PR comment.
+
 Guard rails:
 
 - Missing `mediaHost.baseUrl` or `MEDIA_HOST_API_KEY` logs a clear "media host not configured" message and does not post.
 - Plans with no uploadable artifacts log "nothing to upload" and do not post.
 - Plans with no resolvable open PR fail non-zero.
+- Linked Linear issues without a resolvable project or process `LINEAR_API_KEY` are skipped with a warning after the PR upload succeeds.
 
 ## Lifecycle services
 

@@ -23,8 +23,18 @@ import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { gatherPrContext } from '../utils/pr_context_gathering.js';
 import { getPrStatusForPlan } from '../db/pr_status.js';
 import { buildPlanArtifactsCommentMarker } from './upload_artifacts_comment.js';
+import { getIssueTracker } from '../../common/issue_tracker/factory.js';
 
 // ── Module mocks ───────────────────────────────────────────────────────────────
+
+const linearMocks = vi.hoisted(() => ({
+  uploadFile: vi.fn(),
+  upsertCommentByMarker: vi.fn(),
+  parseIssueIdentifier: vi.fn((spec: string) => {
+    const match = spec.match(/^https:\/\/linear\.app\/[^/]+\/issue\/([A-Z][A-Z0-9]*-\d+)/i);
+    return match ? { identifier: match[1]!.toUpperCase(), url: spec } : null;
+  }),
+}));
 
 vi.mock('../../logging.js', () => ({
   log: vi.fn(),
@@ -67,6 +77,14 @@ vi.mock('../db/pr_status.js', () => ({
   getLinkedPlansByPrUrl: vi.fn(),
 }));
 
+vi.mock('../../common/linear.js', () => ({
+  parseLinearIssueIdentifier: linearMocks.parseIssueIdentifier,
+}));
+
+vi.mock('../../common/issue_tracker/factory.js', () => ({
+  getIssueTracker: vi.fn(),
+}));
+
 // ── Typed mocks ────────────────────────────────────────────────────────────────
 
 const mockLog = vi.mocked(log);
@@ -79,6 +97,7 @@ const mockLoadEffectiveConfig = vi.mocked(loadEffectiveConfig);
 const mockRunWithHeadlessAdapterIfEnabled = vi.mocked(runWithHeadlessAdapterIfEnabled);
 const mockGatherPrContext = vi.mocked(gatherPrContext);
 const mockGetPrStatusForPlan = vi.mocked(getPrStatusForPlan);
+const mockGetIssueTracker = vi.mocked(getIssueTracker);
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -108,6 +127,7 @@ describe('handleUploadArtifactsCommand', () => {
   let originalCwd: string = process.cwd();
   let savedXdgDataHome: string | undefined;
   let savedMediaHostApiKey: string | undefined;
+  let savedLinearApiKey: string | undefined;
   let server: ReturnType<typeof buildServer>;
   let baseUrl: string;
 
@@ -155,8 +175,10 @@ describe('handleUploadArtifactsCommand', () => {
 
     savedXdgDataHome = process.env.XDG_DATA_HOME;
     savedMediaHostApiKey = process.env.MEDIA_HOST_API_KEY;
+    savedLinearApiKey = process.env.LINEAR_API_KEY;
     process.env.XDG_DATA_HOME = tempDir;
     process.env.MEDIA_HOST_API_KEY = API_KEY;
+    delete process.env.LINEAR_API_KEY;
 
     await Bun.$`git init`.cwd(tempDir).quiet();
     await Bun.$`git remote add origin https://example.com/test/upload-test.git`
@@ -216,6 +238,25 @@ describe('handleUploadArtifactsCommand', () => {
       id: 222,
       htmlUrl: 'https://github.com/acme/repo/pull/42#issuecomment-222',
     });
+    linearMocks.uploadFile.mockResolvedValue({
+      filename: 'screenshot.png',
+      contentType: 'image/png',
+      size: 3,
+      assetUrl: 'https://uploads.linear.app/screenshot.png',
+    });
+    linearMocks.upsertCommentByMarker.mockResolvedValue({
+      id: 'linear-comment-1',
+      updated: false,
+    });
+    linearMocks.parseIssueIdentifier.mockImplementation((spec: string) => {
+      const match = spec.match(/^https:\/\/linear\.app\/[^/]+\/issue\/([A-Z][A-Z0-9]*-\d+)/i);
+      return match ? { identifier: match[1]!.toUpperCase(), url: spec } : null;
+    });
+    mockGetIssueTracker.mockResolvedValue({
+      uploadFile: linearMocks.uploadFile,
+      upsertCommentByMarker: linearMocks.upsertCommentByMarker,
+      parseIssueIdentifier: linearMocks.parseIssueIdentifier,
+    } as any);
   });
 
   afterEach(async () => {
@@ -232,6 +273,11 @@ describe('handleUploadArtifactsCommand', () => {
       delete process.env.MEDIA_HOST_API_KEY;
     } else {
       process.env.MEDIA_HOST_API_KEY = savedMediaHostApiKey;
+    }
+    if (savedLinearApiKey === undefined) {
+      delete process.env.LINEAR_API_KEY;
+    } else {
+      process.env.LINEAR_API_KEY = savedLinearApiKey;
     }
 
     await server.stop(true);
@@ -353,6 +399,162 @@ describe('handleUploadArtifactsCommand', () => {
     expect(body).toContain('log.txt');
     // update NOT called
     expect(mockUpdatePullRequestComment).not.toHaveBeenCalled();
+  });
+
+  test('uploads image artifacts to Linear and comments on linked Linear issues', async () => {
+    process.env.LINEAR_API_KEY = 'lin_api_test';
+    await writePlanToDb(
+      {
+        id: PLAN_ID,
+        uuid: PLAN_UUID,
+        title: 'Upload CLI test plan',
+        goal: 'Test the upload command',
+        details: 'Testing upload artifacts CLI',
+        status: 'in_progress',
+        tasks: [],
+        dependencies: [],
+        issue: ['https://linear.app/acme/issue/TEAM-123/upload-proof'],
+        docs: [],
+        tags: [],
+        epic: false,
+        temp: false,
+        pullRequest: ['https://github.com/acme/repo/pull/42'],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      { cwdForIdentity: tempDir, skipUpdatedAt: true }
+    );
+    await createArtifact({
+      filename: 'report.md',
+      mimeType: 'text/markdown',
+      content: '# Proof Report\n\n![Screenshot](screenshot.png)\n',
+    });
+    await createArtifact({
+      filename: 'screenshot.png',
+      mimeType: 'image/png',
+      content: 'img',
+    });
+    await createArtifact({
+      filename: 'run.log',
+      mimeType: 'text/plain',
+      content: 'log',
+    });
+    linearMocks.uploadFile.mockResolvedValue({
+      filename: 'screenshot.png',
+      contentType: 'image/png',
+      size: 3,
+      assetUrl: 'https://uploads.linear.app/screenshot.png',
+    });
+
+    await handleUploadArtifactsCommand(PLAN_ID, {}, makeRootCommand());
+
+    expect(linearMocks.uploadFile).toHaveBeenCalledTimes(1);
+    expect(linearMocks.uploadFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filename: 'screenshot.png',
+        contentType: 'image/png',
+        size: 3,
+      })
+    );
+    expect(mockGetIssueTracker).toHaveBeenCalledWith(
+      expect.objectContaining({ issueTracker: 'linear' }),
+      { projectId: expect.any(Number) }
+    );
+    expect(linearMocks.upsertCommentByMarker).toHaveBeenCalledWith(
+      'TEAM-123',
+      `tim:plan-artifacts:${PLAN_UUID}`,
+      expect.stringContaining('https://uploads.linear.app/screenshot.png')
+    );
+    const linearBody = linearMocks.upsertCommentByMarker.mock.calls[0][2] as string;
+    expect(linearBody).toContain('# Proof Report');
+    expect(linearBody).not.toContain('[run.log]');
+    expect(linearBody).not.toContain('<!--');
+    expect(linearBody).not.toContain('<sub>');
+    expect(linearBody.trimEnd().endsWith(`\`tim:plan-artifacts:${PLAN_UUID}\``)).toBe(true);
+  });
+
+  test('warns and skips Linear comments when linked Linear issue has no API key', async () => {
+    await writePlanToDb(
+      {
+        id: PLAN_ID,
+        uuid: PLAN_UUID,
+        title: 'Upload CLI test plan',
+        goal: 'Test the upload command',
+        details: 'Testing upload artifacts CLI',
+        status: 'in_progress',
+        tasks: [],
+        dependencies: [],
+        issue: ['https://linear.app/acme/issue/TEAM-123/upload-proof'],
+        docs: [],
+        tags: [],
+        epic: false,
+        temp: false,
+        pullRequest: ['https://github.com/acme/repo/pull/42'],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      { cwdForIdentity: tempDir, skipUpdatedAt: true }
+    );
+    await createArtifact({
+      filename: 'screenshot.png',
+      mimeType: 'image/png',
+      content: 'img',
+    });
+    mockGetIssueTracker.mockRejectedValue(
+      new Error(
+        'linear issue tracker is not properly configured. Missing environment variable: LINEAR_API_KEY.'
+      )
+    );
+
+    await handleUploadArtifactsCommand(PLAN_ID, {}, makeRootCommand());
+
+    expect(mockPostPullRequestComment).toHaveBeenCalled();
+    expect(linearMocks.uploadFile).not.toHaveBeenCalled();
+    expect(linearMocks.upsertCommentByMarker).not.toHaveBeenCalled();
+    expect(mockWarn).toHaveBeenCalledWith(
+      'Failed to prepare Linear artifact comment: linear issue tracker is not properly configured. Missing environment variable: LINEAR_API_KEY.'
+    );
+  });
+
+  test('does not fail PR upload when Linear image upload fails', async () => {
+    process.env.LINEAR_API_KEY = 'lin_api_test';
+    await writePlanToDb(
+      {
+        id: PLAN_ID,
+        uuid: PLAN_UUID,
+        title: 'Upload CLI test plan',
+        goal: 'Test the upload command',
+        details: 'Testing upload artifacts CLI',
+        status: 'in_progress',
+        tasks: [],
+        dependencies: [],
+        issue: ['https://linear.app/acme/issue/TEAM-123/upload-proof'],
+        docs: [],
+        tags: [],
+        epic: false,
+        temp: false,
+        pullRequest: ['https://github.com/acme/repo/pull/42'],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      { cwdForIdentity: tempDir, skipUpdatedAt: true }
+    );
+    await createArtifact({
+      filename: 'screenshot.png',
+      mimeType: 'image/png',
+      content: 'img',
+    });
+    linearMocks.uploadFile.mockRejectedValue(new Error('linear upload failed'));
+
+    await expect(handleUploadArtifactsCommand(PLAN_ID, {}, makeRootCommand())).resolves.toBe(
+      undefined
+    );
+
+    expect(mockPostPullRequestComment).toHaveBeenCalled();
+    expect(linearMocks.upsertCommentByMarker).not.toHaveBeenCalled();
+    expect(mockWarn).toHaveBeenCalledWith(
+      'Failed to prepare Linear artifact comment: linear upload failed'
+    );
   });
 
   test('orders trailing artifacts the same way as the artifacts view', async () => {

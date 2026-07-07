@@ -17,6 +17,9 @@ import type {
   IssueWithComments,
   IssueDocument,
   IssueStateTransitionResult,
+  IssueTrackerUploadFileInput,
+  IssueTrackerUploadedFile,
+  IssueTrackerUpsertCommentResult,
   ParsedIssueIdentifier,
   UserData,
 } from './issue_tracker/types.ts';
@@ -51,6 +54,19 @@ interface LinearWorkflowStateConnectionLike {
     hasNextPage: boolean;
   };
   fetchNext?: () => Promise<LinearWorkflowStateConnectionLike>;
+}
+
+interface LinearCommentNode {
+  id: string;
+  body?: string | null;
+}
+
+interface LinearCommentConnectionLike {
+  nodes: LinearCommentNode[];
+  pageInfo?: {
+    hasNextPage: boolean;
+  };
+  fetchNext?: () => Promise<LinearCommentConnectionLike>;
 }
 
 function normalizeLinearStateName(stateName: string): string {
@@ -449,6 +465,83 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
     }
   }
 
+  async uploadFile(input: IssueTrackerUploadFileInput): Promise<IssueTrackerUploadedFile> {
+    const client = getLinearClient(this.config.apiKey);
+    const payload = await client.fileUpload(input.contentType, input.filename, input.size, {
+      makePublic: true,
+      metaData: input.metaData,
+    });
+
+    if (!payload.success || !payload.uploadFile) {
+      throw new Error(`Linear did not prepare an upload URL for ${input.filename}`);
+    }
+
+    const headers = new Headers();
+    for (const header of payload.uploadFile.headers) {
+      headers.set(header.key, header.value);
+    }
+
+    const response = await fetch(payload.uploadFile.uploadUrl, {
+      method: 'PUT',
+      headers,
+      body: input.body,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Linear file upload failed for ${input.filename} with HTTP ${response.status}: ${await response.text()}`
+      );
+    }
+
+    return {
+      filename: payload.uploadFile.filename,
+      contentType: payload.uploadFile.contentType,
+      size: payload.uploadFile.size,
+      assetUrl: payload.uploadFile.assetUrl,
+    };
+  }
+
+  async upsertCommentByMarker(
+    identifier: string,
+    marker: string,
+    body: string
+  ): Promise<IssueTrackerUpsertCommentResult> {
+    const client = getLinearClient(this.config.apiKey);
+    const parsed = this.parseIssueIdentifier(identifier);
+
+    if (!parsed) {
+      throw new Error(`Invalid Linear issue identifier: ${identifier}`);
+    }
+
+    const existingComment = await this.findIssueCommentByMarker(parsed.identifier, marker);
+    if (existingComment) {
+      const payload = await client.updateComment(existingComment.id, {
+        body,
+        doNotSubscribeToIssue: true,
+      });
+
+      if (!payload.success || !payload.comment) {
+        throw new Error(`Linear did not update a comment for issue ${parsed.identifier}`);
+      }
+
+      const comment = await payload.comment;
+      return { id: comment.id, updated: true };
+    }
+
+    const payload = await client.createComment({
+      issueId: parsed.identifier,
+      body,
+      doNotSubscribeToIssue: true,
+    });
+
+    if (!payload.success || !payload.comment) {
+      throw new Error(`Linear did not create a comment for issue ${parsed.identifier}`);
+    }
+
+    const comment = await payload.comment;
+    return { id: comment.id, updated: false };
+  }
+
   /**
    * Fetch all open issues from the user's workspace
    */
@@ -599,6 +692,41 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
     }
 
     return [...statesById.values()];
+  }
+
+  private async fetchAllCommentNodes(
+    initialConnection: LinearCommentConnectionLike
+  ): Promise<LinearCommentNode[]> {
+    const commentsById = new Map<string, LinearCommentNode>();
+    let currentConnection = initialConnection;
+
+    while (true) {
+      for (const comment of currentConnection.nodes) {
+        commentsById.set(comment.id, comment);
+      }
+
+      if (!currentConnection.pageInfo?.hasNextPage || !currentConnection.fetchNext) {
+        break;
+      }
+
+      currentConnection = await currentConnection.fetchNext();
+    }
+
+    return [...commentsById.values()];
+  }
+
+  private async findIssueCommentByMarker(
+    issueIdentifier: string,
+    marker: string
+  ): Promise<LinearCommentNode | null> {
+    const client = getLinearClient(this.config.apiKey);
+    const issue = await client.issue(issueIdentifier);
+    if (!issue) {
+      throw new Error(`Issue not found: ${issueIdentifier}`);
+    }
+
+    const comments = await this.fetchAllCommentNodes(await issue.comments());
+    return comments.find((comment) => comment.body?.includes(marker)) ?? null;
   }
 
   private addIssueDocument(

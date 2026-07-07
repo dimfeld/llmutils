@@ -1,3 +1,5 @@
+import * as fs from 'node:fs/promises';
+
 import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { compareArtifactsByFilename } from '../../common/artifact_sort.js';
@@ -7,8 +9,11 @@ import {
   postPullRequestComment,
   updatePullRequestComment,
 } from '../../common/github/pull_requests.js';
+import { parseLinearIssueIdentifier } from '../../common/linear.js';
+import { getIssueTracker } from '../../common/issue_tracker/factory.js';
+import type { IssueTrackerClient } from '../../common/issue_tracker/types.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { getMediaHostUploadConfig } from '../configSchema.js';
+import { getMediaHostUploadConfig, type TimConfig } from '../configSchema.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { resolveProjectContext } from '../plan_materialize.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
@@ -19,6 +24,7 @@ import {
   type PlanArtifactWithTransferState,
 } from '../artifacts/service.js';
 import { getDatabase } from '../db/database.js';
+import { getPlanByUuid } from '../db/plan.js';
 import { getPrStatusForPlan } from '../db/pr_status.js';
 import { gatherPrContext, type PrReviewContext } from '../utils/pr_context_gathering.js';
 import {
@@ -59,6 +65,48 @@ function isUploadableArtifact(artifact: PlanArtifactWithTransferState): boolean 
 // consumed as the comment body (never uploaded and then silently dropped from the artifact list).
 function isReportArtifact(artifact: PlanArtifactWithTransferState): boolean {
   return isReportArtifactFilename(artifact.filename);
+}
+
+function isImageArtifact(artifact: PlanArtifactWithTransferState): boolean {
+  return artifact.mimeType.startsWith('image/');
+}
+
+function getLinkedLinearIssues(plan: PlanSchema): string[] {
+  const identifiers = new Set<string>();
+
+  for (const issueUrl of plan.issue ?? []) {
+    const parsed = parseLinearIssueIdentifier(issueUrl);
+    if (parsed) {
+      identifiers.add(parsed.identifier);
+    }
+  }
+
+  return [...identifiers];
+}
+
+function buildLinearArtifactsCommentMarker(planUuid: string): string {
+  return `tim:plan-artifacts:${planUuid}`;
+}
+
+function buildLinearArtifactCommentBody(input: {
+  planUuid: string;
+  planId: number | string;
+  planTitle: string;
+  reportMarkdown?: string;
+  artifacts: UploadedArtifactForComment[];
+  updatedAt: string;
+}): string {
+  const marker = buildLinearArtifactsCommentMarker(input.planUuid);
+  const body = buildArtifactCommentBody({
+    marker: '',
+    planId: input.planId,
+    planTitle: input.planTitle,
+    reportMarkdown: input.reportMarkdown,
+    artifacts: input.artifacts,
+    updatedAt: input.updatedAt,
+  }).replace(/\n---\n<sub>Updated at ([^<]+)<\/sub>\n?$/, '\n---\nUpdated at $1\n');
+
+  return `${body.trimEnd()}\n\n\`${marker}\`\n`;
 }
 
 async function resolveTargetPrs(options: {
@@ -185,6 +233,120 @@ async function uploadFullReportHtml(options: {
   return result.url;
 }
 
+async function uploadLinearImageArtifact(options: {
+  client: IssueTrackerClient;
+  planUuid: string;
+  artifact: PlanArtifactWithTransferState;
+}): Promise<UploadedArtifactForComment> {
+  if (!options.client.uploadFile) {
+    throw new Error('Linear issue tracker does not support direct file uploads');
+  }
+
+  const stat = await fs.stat(options.artifact.storagePath);
+  const uploaded = await options.client.uploadFile({
+    filename: options.artifact.filename,
+    contentType: options.artifact.mimeType,
+    size: stat.size,
+    body: Bun.file(options.artifact.storagePath),
+    metaData: {
+      source: 'tim-proof',
+      planUuid: options.planUuid,
+      artifactUuid: options.artifact.uuid,
+    },
+  });
+
+  log(`Uploaded Linear artifact ${options.artifact.filename}: ${uploaded.assetUrl}`);
+
+  return {
+    filename: options.artifact.filename,
+    mimeType: options.artifact.mimeType,
+    url: uploaded.assetUrl,
+    size: uploaded.size,
+    relativePath: options.artifact.filename,
+  };
+}
+
+async function postLinearArtifactsComments(options: {
+  planUuid: string;
+  plan: PlanSchema;
+  planTitle: string;
+  config: TimConfig;
+  projectId?: number;
+  reportMarkdown?: string;
+  artifacts: PlanArtifactWithTransferState[];
+  updatedAt: string;
+}): Promise<void> {
+  const linkedLinearIssues = getLinkedLinearIssues(options.plan);
+  if (linkedLinearIssues.length === 0) {
+    return;
+  }
+
+  const imageArtifacts = options.artifacts.filter(isImageArtifact);
+  if (imageArtifacts.length === 0 && options.reportMarkdown === undefined) {
+    warn('Skipping Linear artifact comment: no report.md or image artifacts are available.');
+    return;
+  }
+
+  try {
+    const client = await getIssueTracker(
+      { ...options.config, issueTracker: 'linear' },
+      {
+        projectId: options.projectId,
+      }
+    );
+    if (!client.upsertCommentByMarker) {
+      warn('Skipping Linear artifact comment: Linear issue tracker does not support comments.');
+      return;
+    }
+
+    const uploadedImages = await Promise.all(
+      imageArtifacts.map((artifact) =>
+        uploadLinearImageArtifact({
+          client,
+          planUuid: options.planUuid,
+          artifact,
+        })
+      )
+    );
+    const body = buildLinearArtifactCommentBody({
+      planUuid: options.planUuid,
+      planId: options.plan.id,
+      planTitle: options.planTitle,
+      reportMarkdown: options.reportMarkdown,
+      artifacts: uploadedImages,
+      updatedAt: options.updatedAt,
+    });
+    const marker = buildLinearArtifactsCommentMarker(options.planUuid);
+
+    const results = await Promise.allSettled(
+      linkedLinearIssues.map((issueIdentifier) =>
+        client.upsertCommentByMarker!(issueIdentifier, marker, body)
+      )
+    );
+    for (let index = 0; index < results.length; index += 1) {
+      const result = results[index]!;
+      const issueIdentifier = linkedLinearIssues[index]!;
+      if (result.status === 'fulfilled') {
+        log(
+          `${result.value.updated ? 'Updated' : 'Posted'} artifacts comment to Linear issue ${issueIdentifier}: comment ${result.value.id}`
+        );
+      } else {
+        warn(
+          `Failed to post artifacts comment to Linear issue ${issueIdentifier}: ${
+            result.reason instanceof Error ? result.reason.message : String(result.reason)
+          }`
+        );
+      }
+    }
+  } catch (error) {
+    warn(
+      `Failed to prepare Linear artifact comment: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
+
 async function upsertArtifactsComment(
   prContext: PrReviewContext,
   marker: string,
@@ -223,7 +385,7 @@ async function upsertArtifactsComment(
 export async function autoUploadArtifactsToPr(options: {
   planUuid: string;
   plan: PlanSchema;
-  config: Parameters<typeof getMediaHostUploadConfig>[0];
+  config: TimConfig;
   cwd: string;
 }): Promise<void> {
   const { planUuid, plan, config, cwd } = options;
@@ -233,6 +395,7 @@ export async function autoUploadArtifactsToPr(options: {
   }
 
   const db = getDatabase();
+  const planRow = getPlanByUuid(db, planUuid);
   const artifacts = (await listArtifactsForPlanUuid({ planUuid }))
     .filter(isUploadableArtifact)
     .sort(compareArtifactsByFilename);
@@ -294,6 +457,17 @@ export async function autoUploadArtifactsToPr(options: {
   if (failures.length > 0) {
     throw new Error(`Failed to post artifacts comment to some PRs. ${failures.join('; ')}`);
   }
+
+  await postLinearArtifactsComments({
+    planUuid,
+    plan,
+    planTitle,
+    config,
+    projectId: planRow?.project_id,
+    reportMarkdown,
+    artifacts: artifactsToUpload,
+    updatedAt,
+  });
 }
 
 export async function handleUploadArtifactsCommand(
@@ -411,6 +585,17 @@ export async function handleUploadArtifactsCommand(
       if (failures.length > 0) {
         throw new Error(`Failed to post artifacts comment to some PRs. ${failures.join('; ')}`);
       }
+
+      await postLinearArtifactsComments({
+        planUuid,
+        plan,
+        planTitle,
+        config,
+        projectId: context.projectId,
+        reportMarkdown,
+        artifacts: artifactsToUpload,
+        updatedAt,
+      });
     },
   });
 }
