@@ -35,6 +35,7 @@ export interface BuildArtifactCommentBodyInput {
   artifacts: UploadedArtifactForComment[];
   fullReportUrl?: string;
   updatedAt: string;
+  artifactListPlacement?: 'after-report' | 'before-footer';
 }
 
 interface RewriteResult {
@@ -62,6 +63,7 @@ export function buildArtifactCommentBody(input: BuildArtifactCommentBodyInput): 
     planTitle: input.planTitle,
     reportMarkdown: input.reportMarkdown,
     artifacts,
+    includeTrailingArtifacts: input.artifactListPlacement !== 'before-footer',
   });
 
   const body = assembleArtifactCommentBody({
@@ -241,6 +243,7 @@ function assembleArtifactCommentBody(input: {
   referencedArtifactIndexes: Set<number>;
   fullReportUrl?: string;
   updatedAt: string;
+  artifactListPlacement?: 'after-report' | 'before-footer';
   linksOnly: boolean;
   includeTruncationNotice: boolean;
 }): string {
@@ -265,18 +268,23 @@ function assembleArtifactCommentBody(input: {
     : input.artifacts.filter((_, index) => !input.referencedArtifactIndexes.has(index));
 
   if (trailingArtifacts.length > 0) {
-    sections.push(
-      [
-        '## Artifacts',
-        '',
-        input.linksOnly
-          ? renderDownloadLinkList(trailingArtifacts)
-          : renderArtifactList(trailingArtifacts),
-      ].join('\n')
-    );
-  }
+    const artifactList = [
+      '## Artifacts',
+      '',
+      input.linksOnly
+        ? renderDownloadLinkList(trailingArtifacts)
+        : renderArtifactList(trailingArtifacts),
+    ].join('\n');
 
-  if (input.fullReportUrl) {
+    if (input.fullReportUrl && input.artifactListPlacement === 'before-footer') {
+      sections.push(renderFullReportLink(input.fullReportUrl), artifactList);
+    } else {
+      sections.push(artifactList);
+      if (input.fullReportUrl) {
+        sections.push(renderFullReportLink(input.fullReportUrl));
+      }
+    }
+  } else if (input.fullReportUrl) {
     sections.push(renderFullReportLink(input.fullReportUrl));
   }
 
@@ -294,7 +302,7 @@ function buildUpdatedAtFooter(updatedAt: string): string {
 }
 
 function renderFullReportLink(url: string): string {
-  return `[View full report](${escapeMarkdownUrl(url)})`;
+  return `[View on Web](${escapeMarkdownUrl(url)})`;
 }
 
 function prepareReportMarkdown(input: {

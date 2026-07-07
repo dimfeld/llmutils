@@ -407,10 +407,28 @@ describe('buildArtifactCommentBody', () => {
       fullReportUrl: 'https://media.example.test/report/index.html/sig=abc',
     });
 
-    expect(body).toContain(`${MARKER}\n\n[View full report]`);
-    expect(body.match(/\[View full report\]/g)).toHaveLength(2);
-    expect(body.indexOf('[View full report]')).toBeLessThan(body.indexOf('# Proof Report'));
-    expect(body.lastIndexOf('[View full report]')).toBeGreaterThan(body.indexOf('# Proof Report'));
+    expect(body).toContain(`${MARKER}\n\n[View on Web]`);
+    expect(body.match(/\[View on Web\]/g)).toHaveLength(2);
+    expect(body.indexOf('[View on Web]')).toBeLessThan(body.indexOf('# Proof Report'));
+    expect(body.lastIndexOf('[View on Web]')).toBeGreaterThan(body.indexOf('# Proof Report'));
+    expect(body).not.toContain('View full report');
+  });
+
+  test('can place trailing artifacts below the lower full report link', () => {
+    const body = buildBody({
+      reportMarkdown: '# Proof Report\n\nEverything passed.',
+      fullReportUrl: 'https://media.example.test/report/index.html/sig=abc',
+      artifactListPlacement: 'before-footer',
+      artifacts: [
+        artifact({
+          filename: 'extra.png',
+          url: 'https://media.example.test/extra.png?sig=abc',
+        }),
+      ],
+    });
+
+    expect(body.lastIndexOf('[View on Web]')).toBeLessThan(body.indexOf('## Artifacts'));
+    expect(body.indexOf('## Artifacts')).toBeLessThan(body.indexOf('---\n<sub>Updated at'));
   });
 
   test('builds a standalone rendered full report html document', () => {

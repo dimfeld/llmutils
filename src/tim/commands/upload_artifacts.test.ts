@@ -435,20 +435,28 @@ describe('handleUploadArtifactsCommand', () => {
       content: 'img',
     });
     await createArtifact({
+      filename: 'extra.png',
+      mimeType: 'image/png',
+      content: 'extra',
+    });
+    await createArtifact({
       filename: 'run.log',
       mimeType: 'text/plain',
       content: 'log',
     });
-    linearMocks.uploadFile.mockResolvedValue({
-      filename: 'screenshot.png',
-      contentType: 'image/png',
-      size: 3,
-      assetUrl: 'https://uploads.linear.app/screenshot.png',
-    });
+    linearMocks.uploadFile.mockImplementation(
+      (input: { filename: string; contentType: string; size: number }) =>
+        Promise.resolve({
+          filename: input.filename,
+          contentType: input.contentType,
+          size: input.size,
+          assetUrl: `https://uploads.linear.app/${input.filename}`,
+        })
+    );
 
     await handleUploadArtifactsCommand(PLAN_ID, {}, makeRootCommand());
 
-    expect(linearMocks.uploadFile).toHaveBeenCalledTimes(1);
+    expect(linearMocks.uploadFile).toHaveBeenCalledTimes(2);
     expect(linearMocks.uploadFile).toHaveBeenCalledWith(
       expect.objectContaining({
         filename: 'screenshot.png',
@@ -467,6 +475,14 @@ describe('handleUploadArtifactsCommand', () => {
     );
     const linearBody = linearMocks.upsertCommentByMarker.mock.calls[0][2] as string;
     expect(linearBody).toContain('# Proof Report');
+    expect(linearBody).toContain('[View on Web](http://127.0.0.1:');
+    expect(linearBody).toContain('## Artifacts');
+    expect(linearBody).toContain('![extra.png](https://uploads.linear.app/extra.png)');
+    expect(linearBody.lastIndexOf('[View on Web]')).toBeLessThan(
+      linearBody.indexOf('## Artifacts')
+    );
+    expect(linearBody.indexOf('## Artifacts')).toBeLessThan(linearBody.indexOf('Updated at '));
+    expect(linearBody).not.toContain('View full report');
     expect(linearBody).not.toContain('[run.log]');
     expect(linearBody).not.toContain('<!--');
     expect(linearBody).not.toContain('<sub>');

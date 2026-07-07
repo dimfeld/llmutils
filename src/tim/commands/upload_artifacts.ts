@@ -94,6 +94,7 @@ function buildLinearArtifactCommentBody(input: {
   planTitle: string;
   reportMarkdown?: string;
   artifacts: UploadedArtifactForComment[];
+  fullReportUrl?: string;
   updatedAt: string;
 }): string {
   const marker = buildLinearArtifactsCommentMarker(input.planUuid);
@@ -103,7 +104,9 @@ function buildLinearArtifactCommentBody(input: {
     planTitle: input.planTitle,
     reportMarkdown: input.reportMarkdown,
     artifacts: input.artifacts,
+    fullReportUrl: input.fullReportUrl,
     updatedAt: input.updatedAt,
+    artifactListPlacement: 'before-footer',
   }).replace(/\n---\n<sub>Updated at ([^<]+)<\/sub>\n?$/, '\n---\nUpdated at $1\n');
 
   return `${body.trimEnd()}\n\n\`${marker}\`\n`;
@@ -274,6 +277,7 @@ async function postLinearArtifactsComments(options: {
   projectId?: number;
   reportMarkdown?: string;
   artifacts: PlanArtifactWithTransferState[];
+  fullReportUrl?: string;
   updatedAt: string;
 }): Promise<void> {
   const linkedLinearIssues = getLinkedLinearIssues(options.plan);
@@ -314,6 +318,7 @@ async function postLinearArtifactsComments(options: {
       planTitle: options.planTitle,
       reportMarkdown: options.reportMarkdown,
       artifacts: uploadedImages,
+      fullReportUrl: options.fullReportUrl,
       updatedAt: options.updatedAt,
     });
     const marker = buildLinearArtifactsCommentMarker(options.planUuid);
@@ -466,6 +471,7 @@ export async function autoUploadArtifactsToPr(options: {
     projectId: planRow?.project_id,
     reportMarkdown,
     artifacts: artifactsToUpload,
+    fullReportUrl,
     updatedAt,
   });
 }
@@ -594,6 +600,7 @@ export async function handleUploadArtifactsCommand(
         projectId: context.projectId,
         reportMarkdown,
         artifacts: artifactsToUpload,
+        fullReportUrl,
         updatedAt,
       });
     },
