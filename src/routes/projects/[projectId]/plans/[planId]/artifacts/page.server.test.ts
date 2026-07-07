@@ -37,6 +37,28 @@ describe('projects/[projectId]/plans/[planId]/artifacts/+page.server', () => {
     ).toBe('source');
   });
 
+  test('classifies mts octet-stream artifacts as source previews', () => {
+    expect(
+      classifyArtifactPreview(
+        makeArtifact({
+          filename: 'proof-run.mts',
+          mimeType: 'application/octet-stream',
+        })
+      )
+    ).toBe('source');
+  });
+
+  test('classifies csv octet-stream artifacts as source previews', () => {
+    expect(
+      classifyArtifactPreview(
+        makeArtifact({
+          filename: 'results.csv',
+          mimeType: 'application/octet-stream',
+        })
+      )
+    ).toBe('source');
+  });
+
   test('classifies oversized sql artifacts as too large for text preview', () => {
     expect(
       classifyArtifactPreview(
