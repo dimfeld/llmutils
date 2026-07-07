@@ -449,6 +449,35 @@ tim review-guide resolve-issue 42 --unresolved
 
 Do not mark an issue resolved just because code was changed; verify the specific issue is handled. Notes from review-guide annotations are not actionable issues and cannot be resolved with this command.
 
+### tim review-guide diffview
+
+Export the latest stored review guide for a target as diffview-compatible JSON. This is a deterministic transformation of an already-generated guide (no executor or LLM call). The target can be a plan ID, a branch name, or a PR URL; when omitted, it resolves the current git/jj branch's plan and/or PR guide. By default it writes `review-guide.json` to the current working directory; use `-o, --output <path>` to write elsewhere.
+
+```bash
+tim review-guide diffview 123
+tim review-guide diffview feature/my-branch
+tim review-guide diffview https://github.com/org/repo/pull/456
+tim review-guide diffview                       # Resolve the current branch's guide
+tim review-guide diffview 123 -o out/guide.json # Write to a custom path
+```
+
+The JSON shape is:
+
+```json
+{
+  "title": "Guide title",
+  "groups": [
+    {
+      "name": "Section heading",
+      "description": "markdown prose",
+      "files": [{ "path": "src/foo.ts" }]
+    }
+  ]
+}
+```
+
+`title` is the guide's first `#` heading (falling back to the plan/PR title). The `groups` array is completely flat — every `##`/`###` (and any extra `#` beyond the title) becomes its own top-level group, in document order. Each group's `description` is the raw markdown prose at the top of that heading's section, and `files` are the files with diff hunks under it. A file whose diffs appear under more than one heading is listed only under the **first** (document-order) group that contains it. If no stored guide exists for the target, the command errors (pointing at `tim review-guide generate` / `tim pr review-guide`) and writes no file.
+
 ## Artifact Commands
 
 Use `tim artifact` to attach files to a plan. Artifacts are either **reference** artifacts (inputs the plan needs — specs, screenshots, sample data) or **proof** artifacts (outputs produced while working the plan — test results, screenshots of a working feature). Reference artifacts are materialized into the plan's workspace automatically before generation and execution, so code and executors can read them from disk; proof artifacts are not materialized and exist only for review/upload.
