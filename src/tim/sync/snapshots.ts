@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite';
 import * as z from 'zod/v4';
 import { removeAssignment } from '../db/assignment.js';
 import { upsertCanonicalPlanInTransaction, type PlanRow } from '../db/plan.js';
-import { getProjectByUuid } from '../db/project.js';
+import { getProjectByUuid, markProjectSyncAnnounced } from '../db/project.js';
 import {
   deleteCanonicalProjectSettingRow,
   writeCanonicalProjectSettingRow,
@@ -302,6 +302,9 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
 
   if (snapshot.type === 'project') {
     upsertSyncedProject(db, snapshot.project);
+    // The project came from the main node, so it never needs a bootstrap
+    // project.upsert announcement from this node.
+    markProjectSyncAnnounced(db, snapshot.project.uuid);
     return [];
   }
 

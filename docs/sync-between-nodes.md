@@ -14,7 +14,9 @@ Sync configuration is machine-local. Put it in `~/.config/tim/config.yml`; repos
 
 The main node owns the shared project list. Sync carries the non-local project fields that identify a repository across machines: project UUID, repository ID, remote URL, remote label, and highest allocated plan ID. Machine-local fields such as workspace paths, `last_git_root`, and external storage paths remain local.
 
-Register a repository workspace on a persistent node before catching up:
+Persistent nodes announce projects to the main node automatically. The first time a persistent node queues any sync operation for a project the main node has never been told about — including a project that was just created implicitly by creating a plan in a new repository — the write router queues a bootstrap `project.upsert` ahead of that operation. The main node creates the project on arrival (or matches it to an existing row by repository ID), so new projects created on a persistent node reach the main node without manual setup. Each node tracks this with a machine-local `project.sync_announced_at` marker; projects adopted from the main node during catch-up are marked announced and are never re-announced.
+
+You can also register a repository workspace on a persistent node explicitly:
 
 ```bash
 tim workspace register

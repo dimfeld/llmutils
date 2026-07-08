@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import type { TimConfig } from '../configSchema.js';
-import { getProjectById, getProjectByUuid } from '../db/project.js';
+import { getProjectById, getProjectByUuid, markProjectSyncAnnounced } from '../db/project.js';
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
 import type { PlanRow } from '../db/plan.js';
 import { getPlanByUuid, getPlanTasksByUuid } from '../db/plan.js';
@@ -126,6 +126,64 @@ function shouldQueueOperation(mode: WriteMode): boolean {
   return mode === 'sync-persistent';
 }
 
+/**
+ * Persistent nodes create projects locally (with a fresh UUID) through
+ * `getOrCreateProject()` without any sync operation, so the main node would
+ * reject every queued operation for that project with "Unknown project".
+ * Before queueing operations, announce any project the main node has never
+ * been told about by enqueueing a bootstrap `project.upsert` ahead of them.
+ * Per-origin FIFO ordering guarantees the upsert applies on main first.
+ */
+async function enqueueProjectAnnouncements(
+  db: Database,
+  originNodeId: string,
+  operations: SyncOperationEnvelope[]
+): Promise<void> {
+  const handled = new Set<string>();
+  for (const operation of operations) {
+    // Projects the caller already announces need no bootstrap upsert, and the
+    // main node applies project.delete for unknown projects as a no-op.
+    if (operation.op.type === 'project.upsert' || operation.op.type === 'project.delete') {
+      handled.add(operation.projectUuid);
+    }
+  }
+  for (const operation of operations) {
+    const projectUuid = operation.projectUuid;
+    if (handled.has(projectUuid)) {
+      continue;
+    }
+    handled.add(projectUuid);
+    const project = getProjectByUuid(db, projectUuid);
+    if (!project || project.sync_announced_at) {
+      continue;
+    }
+    const announcement = await upsertProjectOperation(
+      {
+        projectUuid: project.uuid,
+        repositoryId: project.repository_id,
+        remoteUrl: project.remote_url,
+        remoteLabel: project.remote_label,
+        highestPlanId: project.highest_plan_id,
+      },
+      { originNodeId, localSequence: 0 }
+    );
+    enqueueOperation(db, announcement as QueueableOperation);
+    markProjectSyncAnnounced(db, project.uuid);
+  }
+}
+
+/** Record explicit project.upsert operations as announced once they are queued. */
+function markQueuedProjectUpsertsAnnounced(
+  db: Database,
+  operations: SyncOperationEnvelope[]
+): void {
+  for (const operation of operations) {
+    if (operation.op.type === 'project.upsert') {
+      markProjectSyncAnnounced(db, operation.projectUuid);
+    }
+  }
+}
+
 export async function routeSyncOperation(
   db: Database,
   config: TimConfig,
@@ -137,7 +195,9 @@ export async function routeSyncOperation(
 
   if (shouldQueueOperation(mode)) {
     const operation = await buildOperation({ originNodeId, localSequence: 0 });
+    await enqueueProjectAnnouncements(db, originNodeId, [operation]);
     const result = enqueueOperation(db, operation as QueueableOperation);
+    markQueuedProjectUpsertsAnnounced(db, [operation]);
     return { mode: 'queued', operation: result.operation, result };
   }
 
@@ -260,7 +320,9 @@ async function routeSyncBatchWithMode(
       atomic: input.atomic ?? options.atomic,
       operations: input.operations,
     });
+    await enqueueProjectAnnouncements(db, originNodeId, batch.operations);
     const result = enqueueBatch(db, batch, { precondition: options.precondition });
+    markQueuedProjectUpsertsAnnounced(db, batch.operations);
     return { mode: 'queued', batch: result.batch, result };
   }
 

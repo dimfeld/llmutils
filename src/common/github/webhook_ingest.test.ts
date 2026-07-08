@@ -1132,9 +1132,10 @@ describe('common/github/webhook_ingest', () => {
 
     expect(result.errors).toEqual([]);
     expect(plan?.status).toBe('done');
-    expect(queuedOps).toHaveLength(1);
-    expect(queuedOps[0]?.operation_type).toBe('plan.set_scalar');
-    expect(JSON.parse(queuedOps[0]!.payload)).toMatchObject({
+    // The first queued write also announces the project with a bootstrap
+    // project.upsert ahead of the plan operation.
+    expect(queuedOps.map((op) => op.operation_type)).toEqual(['project.upsert', 'plan.set_scalar']);
+    expect(JSON.parse(queuedOps[1]!.payload)).toMatchObject({
       type: 'plan.set_scalar',
       planUuid: PERSISTENT_REVIEWED_PLAN_UUID,
       field: 'status',

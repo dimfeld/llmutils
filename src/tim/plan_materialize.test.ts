@@ -208,8 +208,13 @@ describe('tim plan_materialize', () => {
   }
 
   function syncOperationRows() {
+    // Exclude the one-time bootstrap project.upsert announcement that
+    // persistent-mode writes queue ahead of a project's first operation;
+    // these tests assert on the plan operations themselves.
     return getDatabase()
-      .prepare('SELECT operation_type, status, payload FROM sync_operation ORDER BY local_sequence')
+      .prepare(
+        "SELECT operation_type, status, payload FROM sync_operation WHERE operation_type != 'project.upsert' ORDER BY local_sequence"
+      )
       .all() as Array<{ operation_type: string; status: string; payload: string }>;
   }
 
@@ -2288,7 +2293,7 @@ Details
 
     const rows = getDatabase()
       .prepare(
-        'SELECT operation_type, status, batch_id FROM sync_operation ORDER BY local_sequence'
+        "SELECT operation_type, status, batch_id FROM sync_operation WHERE operation_type != 'project.upsert' ORDER BY local_sequence"
       )
       .all() as Array<{ operation_type: string; status: string; batch_id: string | null }>;
 

@@ -33,11 +33,15 @@ import {
   writePlanArtifactHardDelete,
   writePlanArtifactRestore,
   writePlanArtifactSoftDelete,
+  writePlanCreate,
   writePlanPatchText,
   writePlanRemoveTask,
   writePlanSetStatus,
+  writeProjectDelete,
   writeProjectSettingSet,
+  writeProjectUpsert,
 } from './write_router.js';
+import { mergeCanonicalRefresh } from './snapshots.js';
 
 const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
 const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
@@ -501,10 +505,14 @@ describe('sync write router', () => {
     });
 
     expect(result.mode).toBe('queued');
-    expect(listPendingOperations(db)).toHaveLength(1);
+    expect(listPendingOperations(db)).toHaveLength(2);
     expect(syncOperationRows()).toEqual([
+      { operation_type: 'project.upsert', status: 'queued', origin_node_id: NODE_ID },
       { operation_type: 'plan.add_task', status: 'queued', origin_node_id: NODE_ID },
     ]);
+    expect(
+      db.prepare('SELECT sync_announced_at FROM project WHERE uuid = ?').get(PROJECT_UUID)
+    ).toMatchObject({ sync_announced_at: expect.any(String) });
     expect(
       db.prepare('SELECT title, description FROM plan_task WHERE plan_uuid = ?').all(PLAN_UUID)
     ).toEqual([
@@ -634,7 +642,11 @@ describe('sync write router', () => {
 
     expect(result.mode).toBe('queued');
     expect(syncOperationRows().every((row) => row.status === 'queued')).toBe(true);
-    expect(listPendingOperations(db)).toHaveLength(1);
+    expect(syncOperationRows().map((row) => row.operation_type)).toEqual([
+      'project.upsert',
+      'plan.add_task',
+    ]);
+    expect(listPendingOperations(db)).toHaveLength(2);
     expect(sequenceCount()).toBe(0);
   });
 
@@ -676,14 +688,23 @@ describe('sync write router', () => {
     await batch.commit();
 
     const frames = rowsToFlushFrames(db, listPendingOperations(db, { originNodeId: NODE_ID }));
-    expect(frames).toHaveLength(1);
-    expect(frames[0].type).toBe('batch');
-    if (frames[0].type !== 'batch') {
+    expect(frames).toHaveLength(2);
+    // The first frame is the bootstrap project announcement; apply it so the
+    // batch replay keeps per-origin FIFO ordering on the main node.
+    expect(frames[0].type).toBe('op_batch');
+    if (frames[0].type !== 'op_batch') {
+      throw new Error('expected op_batch frame');
+    }
+    expect(frames[0].operations).toHaveLength(1);
+    expect(frames[0].operations[0].op.type).toBe('project.upsert');
+    expect(applyOperation(mainDb, frames[0].operations[0]).status).toBe('applied');
+    expect(frames[1].type).toBe('batch');
+    if (frames[1].type !== 'batch') {
       throw new Error('expected batch frame');
     }
-    expect(frames[0].batch.atomic).toBe(true);
+    expect(frames[1].batch.atomic).toBe(true);
 
-    const result = applyBatch(mainDb, frames[0].batch);
+    const result = applyBatch(mainDb, frames[1].batch);
 
     expect(result.status).toBe('conflict');
     expect(
@@ -709,6 +730,156 @@ describe('sync write router', () => {
 
     expect(syncOperationRows()).toEqual([]);
     expect(sequenceCount()).toBe(0);
+  });
+});
+
+describe('persistent-node project announcements', () => {
+  const persistentConfig = {
+    sync: {
+      role: 'persistent',
+      nodeId: NODE_ID,
+      mainUrl: 'http://127.0.0.1:9999',
+      nodeToken: 'secret-token',
+      offline: true,
+    },
+  } as TimConfig;
+
+  function projectAnnouncedAt(): string | null {
+    const row = db
+      .prepare('SELECT sync_announced_at FROM project WHERE uuid = ?')
+      .get(PROJECT_UUID) as { sync_announced_at: string | null } | null;
+    return row?.sync_announced_at ?? null;
+  }
+
+  test('announces an unannounced project once, ahead of the queued operation', async () => {
+    expect(projectAnnouncedAt()).toBeNull();
+
+    await writePlanAddTask(db, persistentConfig, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      title: 'First task',
+      description: 'first',
+    });
+
+    const rows = db
+      .prepare(
+        'SELECT operation_type, local_sequence, payload FROM sync_operation ORDER BY local_sequence'
+      )
+      .all() as Array<{ operation_type: string; local_sequence: number; payload: string }>;
+    expect(rows.map((row) => row.operation_type)).toEqual(['project.upsert', 'plan.add_task']);
+    expect(rows[0].local_sequence).toBeLessThan(rows[1].local_sequence);
+    expect(JSON.parse(rows[0].payload)).toMatchObject({
+      projectUuid: PROJECT_UUID,
+      repositoryId: 'github.com__example__repo',
+      highestPlanId: 10,
+    });
+    expect(projectAnnouncedAt()).not.toBeNull();
+
+    // A second write must not queue another announcement.
+    await writePlanAddTask(db, persistentConfig, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      title: 'Second task',
+      description: 'second',
+    });
+    expect(syncOperationRows().map((row) => row.operation_type)).toEqual([
+      'project.upsert',
+      'plan.add_task',
+      'plan.add_task',
+    ]);
+  });
+
+  test('announced project bootstraps on a main node that has never seen it', async () => {
+    const mainDb = new Database(':memory:');
+    runMigrations(mainDb);
+    expect(
+      mainDb.prepare('SELECT COUNT(*) AS count FROM project').get() as { count: number }
+    ).toEqual({ count: 0 });
+
+    const newPlanUuid = '44444444-4444-4444-8444-444444444444';
+    await writePlanCreate(db, persistentConfig, {
+      projectUuid: PROJECT_UUID,
+      planUuid: newPlanUuid,
+      title: 'Plan in new project',
+    });
+
+    for (const frame of rowsToFlushFrames(
+      db,
+      listPendingOperations(db, { originNodeId: NODE_ID })
+    )) {
+      if (frame.type === 'op_batch') {
+        for (const operation of frame.operations) {
+          expect(applyOperation(mainDb, operation).status).toBe('applied');
+        }
+      } else {
+        expect(applyBatch(mainDb, frame.batch).status).toBe('applied');
+      }
+    }
+
+    expect(mainDb.prepare('SELECT uuid, repository_id FROM project').get()).toMatchObject({
+      uuid: PROJECT_UUID,
+      repository_id: 'github.com__example__repo',
+    });
+    mainDb.close(false);
+  });
+
+  test('explicit project.upsert marks the project announced without a duplicate', async () => {
+    const result = await writeProjectUpsert(db, persistentConfig, {
+      projectUuid: PROJECT_UUID,
+      repositoryId: project.repository_id,
+      remoteUrl: project.remote_url,
+      remoteLabel: project.remote_label,
+      highestPlanId: project.highest_plan_id,
+    });
+
+    expect(result.mode).toBe('queued');
+    expect(syncOperationRows()).toEqual([
+      { operation_type: 'project.upsert', status: 'queued', origin_node_id: NODE_ID },
+    ]);
+    expect(projectAnnouncedAt()).not.toBeNull();
+
+    await writePlanAddTask(db, persistentConfig, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      title: 'After register',
+      description: 'no announcement needed',
+    });
+    expect(syncOperationRows().map((row) => row.operation_type)).toEqual([
+      'project.upsert',
+      'plan.add_task',
+    ]);
+  });
+
+  test('project.delete does not trigger an announcement', async () => {
+    const result = await writeProjectDelete(db, persistentConfig, {
+      projectUuid: PROJECT_UUID,
+    });
+
+    expect(result.mode).toBe('queued');
+    expect(syncOperationRows()).toEqual([
+      { operation_type: 'project.delete', status: 'queued', origin_node_id: NODE_ID },
+    ]);
+  });
+
+  test('adopting a canonical project snapshot marks it announced', async () => {
+    expect(projectAnnouncedAt()).toBeNull();
+
+    mergeCanonicalRefresh(db, {
+      type: 'project',
+      project: {
+        uuid: PROJECT_UUID,
+        repositoryId: 'github.com__example__repo',
+        remoteUrl: null,
+        remoteLabel: null,
+        highestPlanId: 12,
+      },
+    });
+
+    expect(projectAnnouncedAt()).not.toBeNull();
+
+    await writePlanAddTask(db, persistentConfig, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      title: 'After catch-up',
+      description: 'main already knows this project',
+    });
+    expect(syncOperationRows().map((row) => row.operation_type)).toEqual(['plan.add_task']);
   });
 });
 
@@ -857,8 +1028,9 @@ describe('artifact write_router helpers', () => {
     const result = await writePlanArtifactAttach(db, config, PROJECT_UUID, attachInput);
 
     expect(result.mode).toBe('queued');
-    expect(listPendingOperations(db)).toHaveLength(1);
+    expect(listPendingOperations(db)).toHaveLength(2);
     expect(syncOperationRows()).toEqual([
+      { operation_type: 'project.upsert', status: 'queued', origin_node_id: NODE_ID },
       { operation_type: 'plan_artifact.attach', status: 'queued', origin_node_id: NODE_ID },
     ]);
     // Optimistic projection: the artifact row is visible immediately

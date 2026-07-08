@@ -746,6 +746,11 @@ describe('convertThreadToTask', () => {
 
     expect(queuedOperationRows()).toEqual([
       {
+        operation_type: 'project.upsert',
+        status: 'queued',
+        batch_id: null,
+      },
+      {
         operation_type: 'plan.set_scalar',
         status: 'queued',
         batch_id: expect.any(String),
@@ -756,7 +761,11 @@ describe('convertThreadToTask', () => {
         batch_id: expect.any(String),
       },
     ]);
-    const batchIds = new Set(queuedOperationRows().map((row) => row.batch_id));
+    const batchIds = new Set(
+      queuedOperationRows()
+        .filter((row) => row.operation_type !== 'project.upsert')
+        .map((row) => row.batch_id)
+    );
     expect(batchIds.size).toBe(1);
     expect(batchIds.has(null)).toBe(false);
   });

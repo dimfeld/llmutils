@@ -583,19 +583,28 @@ describe('project settings remote actions', () => {
       })
     ).resolves.toBeUndefined();
 
-    const rows = currentDb
+    const allRows = currentDb
       .prepare(
-        `SELECT batch_id, batch_atomic, status
+        `SELECT operation_type, batch_id, batch_atomic, status
          FROM sync_operation
          ORDER BY local_sequence`
       )
-      .all() as Array<{ batch_id: string | null; batch_atomic: number; status: string }>;
+      .all() as Array<{
+      operation_type: string;
+      batch_id: string | null;
+      batch_atomic: number;
+      status: string;
+    }>;
 
+    // The first queued write for a project also queues a bootstrap
+    // project.upsert announcement ahead of the batch.
+    expect(allRows[0]).toMatchObject({ operation_type: 'project.upsert', batch_id: null });
+    const rows = allRows.filter((row) => row.operation_type !== 'project.upsert');
     expect(rows).toHaveLength(2);
     expect(new Set(rows.map((row) => row.batch_id)).size).toBe(1);
     expect(rows.every((row) => row.batch_id !== null)).toBe(true);
     expect(rows.every((row) => row.batch_atomic === 1)).toBe(true);
-    expect(rows.every((row) => row.status === 'queued')).toBe(true);
+    expect(allRows.every((row) => row.status === 'queued')).toBe(true);
   });
 
   test('rejects a batch before writing any settings when one value is invalid', async () => {

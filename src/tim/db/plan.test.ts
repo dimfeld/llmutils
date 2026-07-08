@@ -981,9 +981,18 @@ describe('tim db/plan', () => {
     // Optimistic apply: local DB reflects the change immediately
     expect(getPlanByUuid(db, planUuid)?.branch).toBe('feature/sync-branch');
 
-    // A plan.set_scalar op is enqueued (not directly applied to main)
+    // A plan.set_scalar op is enqueued (not directly applied to main), plus a
+    // one-time bootstrap project.upsert announcement ahead of it.
+    const announcements = db
+      .prepare(
+        "SELECT operation_type FROM sync_operation WHERE status = 'queued' AND operation_type = 'project.upsert'"
+      )
+      .all();
+    expect(announcements).toHaveLength(1);
     const ops = db
-      .prepare("SELECT operation_type, payload FROM sync_operation WHERE status = 'queued'")
+      .prepare(
+        "SELECT operation_type, payload FROM sync_operation WHERE status = 'queued' AND operation_type != 'project.upsert'"
+      )
       .all() as Array<{ operation_type: string; payload: string }>;
     expect(ops).toHaveLength(1);
     expect(ops[0].operation_type).toBe('plan.set_scalar');
@@ -1032,7 +1041,9 @@ describe('tim db/plan', () => {
 
     // Only baseBranch emits a sync op; baseCommit and baseChangeId are local-only
     const ops = db
-      .prepare("SELECT operation_type, payload FROM sync_operation WHERE status = 'queued'")
+      .prepare(
+        "SELECT operation_type, payload FROM sync_operation WHERE status = 'queued' AND operation_type != 'project.upsert'"
+      )
       .all() as Array<{ operation_type: string; payload: string }>;
     expect(ops).toHaveLength(1);
     expect(ops[0].operation_type).toBe('plan.set_scalar');
@@ -1078,7 +1089,9 @@ describe('tim db/plan', () => {
 
     // Only one sync op emitted (for base_branch = null); baseCommit/baseChangeId are local-only
     const ops = db
-      .prepare("SELECT operation_type, payload FROM sync_operation WHERE status = 'queued'")
+      .prepare(
+        "SELECT operation_type, payload FROM sync_operation WHERE status = 'queued' AND operation_type != 'project.upsert'"
+      )
       .all() as Array<{ operation_type: string; payload: string }>;
     expect(ops).toHaveLength(1);
     expect(ops[0].operation_type).toBe('plan.set_scalar');

@@ -379,6 +379,7 @@ describe('write_router integration: writePlanFile routing modes', () => {
     const db = getDatabase();
     expectCreatedPlanMetadata(db, plan.uuid!);
     expect(syncOpRows(db)).toEqual([
+      { operation_type: 'project.upsert', status: 'queued' },
       { operation_type: 'plan.create', status: 'queued' },
       { operation_type: 'plan.create', status: 'queued' },
     ]);
@@ -476,9 +477,12 @@ describe('write_router integration: writePlanFile routing modes', () => {
     const db = getDatabase();
     const ops = syncOpRows(db);
 
-    // Both a text patch and a scalar update are enqueued
+    // Both a text patch and a scalar update are enqueued, preceded by the
+    // one-time bootstrap project.upsert announcement
+    const announceOps = ops.filter((r) => r.operation_type === 'project.upsert');
     const textOps = ops.filter((r) => r.operation_type === 'plan.patch_text');
     const scalarOps = ops.filter((r) => r.operation_type === 'plan.set_scalar');
+    expect(announceOps).toHaveLength(1);
     expect(textOps.length).toBeGreaterThan(0);
     expect(scalarOps.length).toBeGreaterThan(0);
     expect([...textOps, ...scalarOps].every((r) => r.status === 'queued')).toBe(true);
@@ -497,7 +501,9 @@ describe('write_router integration: writePlanFile routing modes', () => {
 
     // After a crash-recovery, resetSendingOperations brings them back to queued
     resetSendingOperations(db);
-    expect(listPendingOperations(db).length).toBe(textOps.length + scalarOps.length);
+    expect(listPendingOperations(db).length).toBe(
+      announceOps.length + textOps.length + scalarOps.length
+    );
   });
 
   test('persistent-node: baseCommit/baseChangeId updates are local-only and do not enqueue sync ops', async () => {

@@ -13,6 +13,12 @@ export interface Project {
   highest_plan_id: number;
   created_at: string;
   updated_at: string;
+  /**
+   * Machine-local: when set, this node has already announced the project to
+   * the main node (or adopted it from the main node), so sync writes do not
+   * need to queue a bootstrap `project.upsert` first.
+   */
+  sync_announced_at: string | null;
 }
 
 export interface CreateProjectOptions {
@@ -107,6 +113,12 @@ export function getOrCreateProject(
   );
 
   return createOrGet.immediate(repositoryId, options);
+}
+
+export function markProjectSyncAnnounced(db: Database, projectUuid: string): void {
+  db.prepare(
+    `UPDATE project SET sync_announced_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ? AND sync_announced_at IS NULL`
+  ).run(projectUuid);
 }
 
 export function updateProject(

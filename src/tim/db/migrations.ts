@@ -1336,6 +1336,18 @@ const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_job_created_at ON job(created_at);
     `,
   },
+  {
+    version: 48,
+    up: `SELECT 1;`,
+    afterUp: (db: Database) => {
+      if (tableExists(db, 'project') && !tableColumns(db, 'project').has('sync_announced_at')) {
+        // Machine-local marker: when set, this node has already told the main
+        // node about the project (or learned it from the main node), so the
+        // sync write router does not need to queue a bootstrap project.upsert.
+        db.exec('ALTER TABLE project ADD COLUMN sync_announced_at TEXT');
+      }
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

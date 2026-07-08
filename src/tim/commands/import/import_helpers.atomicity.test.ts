@@ -269,7 +269,11 @@ describe('writeImportedPlansToDbTransactionally legacy-data path', () => {
     const operations = db
       .prepare('SELECT operation_type, status FROM sync_operation ORDER BY local_sequence')
       .all() as Array<{ operation_type: string; status: string }>;
-    expect(operations).toEqual([{ operation_type: 'plan.create', status: 'queued' }]);
+    expect(operations).toEqual([
+      // Bootstrap announcement queued ahead of the project's first operation
+      { operation_type: 'project.upsert', status: 'queued' },
+      { operation_type: 'plan.create', status: 'queued' },
+    ]);
 
     expect(
       db
