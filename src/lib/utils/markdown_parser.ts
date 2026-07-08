@@ -322,6 +322,26 @@ function findTitleHeading(tree: Root): Heading | null {
   return null;
 }
 
+function mergeAdjacentFilelessDiffviewGroups(
+  groups: ReviewGuideDiffviewGroup[]
+): ReviewGuideDiffviewGroup[] {
+  const merged: ReviewGuideDiffviewGroup[] = [];
+
+  for (const group of groups) {
+    const previous = merged[merged.length - 1];
+    if (previous && previous.files.length === 0 && group.files.length === 0) {
+      previous.description = [previous.description, `## ${group.name}`, group.description]
+        .filter((part) => part.trim())
+        .join('\n\n');
+      continue;
+    }
+
+    merged.push({ ...group });
+  }
+
+  return merged;
+}
+
 /**
  * Build diffview-compatible JSON from a stored review guide markdown document.
  * Groups match the flat heading outline: every heading except the first H1 is
@@ -397,7 +417,7 @@ export function buildReviewGuideDiffview(input: {
     };
   });
 
-  return { title, groups };
+  return { title, groups: mergeAdjacentFilelessDiffviewGroups(groups) };
 }
 
 /**

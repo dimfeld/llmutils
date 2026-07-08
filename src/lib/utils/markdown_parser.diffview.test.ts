@@ -153,7 +153,7 @@ describe('buildReviewGuideDiffview', () => {
     expect(result.groups[0].files).toEqual([{ path: 'src/deleted.ts' }]);
   });
 
-  it('emits groups with empty files arrays when the guide has no unified-diff blocks', () => {
+  it('merges adjacent groups with empty files arrays when the guide has no unified-diff blocks', () => {
     const markdown = [
       '# Guide',
       '',
@@ -169,9 +169,12 @@ describe('buildReviewGuideDiffview', () => {
 
     const result = buildReviewGuideDiffview({ markdown, fallbackTitle: 'Fallback' });
 
-    expect(result.groups).toHaveLength(2);
-    expect(result.groups[0]).toMatchObject({ name: 'Section A', files: [] });
-    expect(result.groups[1]).toMatchObject({ name: 'Section B', files: [] });
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0]).toEqual({
+      name: 'Section A',
+      description: 'Just some prose, no diffs here.\n\n## Section B\n\nMore prose, still no diffs.',
+      files: [],
+    });
   });
 
   it('returns an empty groups array with the fallback title for an empty guide', () => {
@@ -221,13 +224,17 @@ describe('buildReviewGuideDiffview', () => {
     expect(laterTop.files).toEqual([{ path: 'src/later.ts' }]);
   });
 
-  it('produces the exact groups array (including descriptions) when the guide has no unified-diff blocks', () => {
+  it('keeps fileless groups separate when a filed group appears between them', () => {
     const markdown = [
       '# Guide',
       '',
       '## Section A',
       '',
       'Just some prose, no diffs here.',
+      '',
+      '## Section With Files',
+      '',
+      unifiedDiffBlock('src/with-files.ts', 'src/with-files.ts'),
       '',
       '## Section B',
       '',
@@ -239,7 +246,49 @@ describe('buildReviewGuideDiffview', () => {
 
     expect(result.groups).toEqual([
       { name: 'Section A', description: 'Just some prose, no diffs here.', files: [] },
+      {
+        name: 'Section With Files',
+        description: '',
+        files: [{ path: 'src/with-files.ts' }],
+      },
       { name: 'Section B', description: 'More prose, still no diffs.', files: [] },
+    ]);
+  });
+
+  it('merges a group whose files were already claimed into the previous fileless group', () => {
+    const markdown = [
+      '# Guide',
+      '',
+      '## Section With Shared File',
+      '',
+      unifiedDiffBlock('src/shared.ts', 'src/shared.ts'),
+      '',
+      '## Empty Section',
+      '',
+      'Review context without a diff.',
+      '',
+      '## Duplicate Shared File',
+      '',
+      'This repeats an already-claimed file.',
+      '',
+      unifiedDiffBlock('src/shared.ts', 'src/shared.ts'),
+      '',
+    ].join('\n');
+
+    const result = buildReviewGuideDiffview({ markdown, fallbackTitle: 'Fallback' });
+
+    expect(result.groups).toEqual([
+      {
+        name: 'Section With Shared File',
+        description: '',
+        files: [{ path: 'src/shared.ts' }],
+      },
+      {
+        name: 'Empty Section',
+        description:
+          'Review context without a diff.\n\n## Duplicate Shared File\n\nThis repeats an already-claimed file.',
+        files: [],
+      },
     ]);
   });
 
