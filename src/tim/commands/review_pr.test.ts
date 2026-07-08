@@ -404,7 +404,7 @@ describe('review guide diff references', () => {
     expect(expanded.guideText).toContain('+newSecond();');
   });
 
-  test('leaves range-annotated diff refs untouched', () => {
+  test('slices a hunk into ranges and keeps prose between the pieces', () => {
     const catalog = [
       {
         ref: 'src/example.ts#hunk-1',
@@ -417,7 +417,7 @@ describe('review guide diff references', () => {
           'diff --git a/src/example.ts b/src/example.ts',
           '--- a/src/example.ts',
           '+++ b/src/example.ts',
-          '@@ -1,4 +1,5 @@',
+          '@@ -1,4 +1,4 @@',
           ' const alpha = 1;',
           '-const beta = 2;',
           '+const beta = 20;',
@@ -432,65 +432,73 @@ describe('review guide diff references', () => {
         '# Guide',
         '',
         'The header and context frame the change.',
-        '<diff ref="src/example.ts#hunk-1" start="1" end="5"/>',
+        '<diff ref="src/example.ts#hunk-1" start="1" end="2"/>',
         '',
         'The mutation adds the new behavior.',
-        '<diff ref="src/example.ts#hunk-1" start="8" end="9"/>',
+        '<diff ref="src/example.ts#hunk-1" start="3" end="4"/>',
         '',
       ].join('\n'),
       diffCatalog: catalog,
     });
 
-    expect(expanded.replacedCount).toBe(0);
+    // Both range tags are expanded and the ref counts as used, so there is no
+    // "Other changes" dump.
+    expect(expanded.replacedCount).toBe(2);
     expect(expanded.unresolvedRefs).toEqual([]);
-    expect(expanded.unusedRefs).toEqual(['src/example.ts#hunk-1']);
+    expect(expanded.unusedRefs).toEqual([]);
+    expect(expanded.guideText).not.toContain('## Other changes');
     expect(expanded.guideText).toContain('The header and context frame the change.');
     expect(expanded.guideText).toContain('The mutation adds the new behavior.');
-    expect(expanded.guideText).toContain('<diff ref="src/example.ts#hunk-1" start="1" end="5"/>');
-    expect(expanded.guideText).toContain('## Other changes');
+    expect(expanded.guideText).not.toContain('<diff ref=');
+
+    // First slice covers new lines 1-2 (context + deletion + first addition).
+    expect(expanded.guideText).toContain('@@ -1,2 +1,2 @@\n const alpha = 1;\n-const beta = 2;');
+    // Second slice covers new lines 3-4 (remaining addition + trailing context).
+    expect(expanded.guideText).toContain('@@ -3 +3,2 @@\n+const delta = 4;\n const gamma = 3;');
+    // Every original body line is present across the slices.
+    expect(expanded.guideText).toContain('+const beta = 20;');
   });
 
-  test('does not treat range-annotated diff refs as replacements', () => {
+  test('reattaches omitted lines to the nearest referenced range', () => {
     const catalog = [
       {
         ref: 'src/range.ts#hunk-1',
         filePath: 'src/range.ts',
-        oldRange: '1-2',
-        newRange: '1-3',
-        header: '@@ -1,2 +1,3 @@',
+        oldRange: '1',
+        newRange: '1-4',
+        header: '@@ -1 +1,4 @@',
         preview: '+two(); | +three();',
         diffText: [
           'diff --git a/src/range.ts b/src/range.ts',
           '--- a/src/range.ts',
           '+++ b/src/range.ts',
-          '@@ -1,2 +1,3 @@',
+          '@@ -1,1 +1,4 @@',
           ' one();',
           '+two();',
           '+three();',
+          '+four();',
         ].join('\n'),
       },
     ];
 
+    // The model only references lines 1-2 explicitly; lines 3-4 must still appear.
     const expanded = expandReviewGuideDiffReferences({
-      guideText: [
-        '# Guide',
-        '',
-        '<diff ref="src/range.ts#hunk-1" end="4"/>',
-        '',
-        '<diff ref="src/range.ts#hunk-1" start="6"/>',
-        '',
-      ].join('\n'),
+      guideText: ['# Guide', '', '<diff ref="src/range.ts#hunk-1" start="1" end="2"/>', ''].join(
+        '\n'
+      ),
       diffCatalog: catalog,
     });
 
-    expect(expanded.replacedCount).toBe(0);
-    expect(expanded.unusedRefs).toEqual(['src/range.ts#hunk-1']);
+    expect(expanded.replacedCount).toBe(1);
+    expect(expanded.unusedRefs).toEqual([]);
+    expect(expanded.guideText).not.toContain('## Other changes');
     expect(expanded.guideText).toContain(' one();');
     expect(expanded.guideText).toContain('+two();');
     expect(expanded.guideText).toContain('+three();');
+    expect(expanded.guideText).toContain('+four();');
   });
 
-  test('leaves unknown range-annotated diff refs untouched without marking them unresolved', () => {
+  test('marks unknown range-annotated diff refs as unresolved', () => {
     const catalog = [
       {
         ref: 'src/example.ts#hunk-1',
@@ -509,6 +517,8 @@ describe('review guide diff references', () => {
       },
     ];
 
+    // A bare `start` with no numeric value is ignored, so the tag expands the
+    // whole hunk; the missing ref is reported as unresolved.
     const expanded = expandReviewGuideDiffReferences({
       guideText: [
         '# Guide',
@@ -520,11 +530,12 @@ describe('review guide diff references', () => {
       diffCatalog: catalog,
     });
 
-    expect(expanded.replacedCount).toBe(0);
-    expect(expanded.unresolvedRefs).toEqual([]);
-    expect(expanded.unusedRefs).toEqual(['src/example.ts#hunk-1']);
-    expect(expanded.guideText).toContain('<diff ref="src/example.ts#hunk-1"');
-    expect(expanded.guideText).toContain('## Other changes');
+    expect(expanded.replacedCount).toBe(1);
+    expect(expanded.unresolvedRefs).toEqual(['src/missing.ts#hunk-1']);
+    expect(expanded.unusedRefs).toEqual([]);
+    expect(expanded.guideText).toContain('+value();');
+    // The unresolved tag is left untouched in place.
+    expect(expanded.guideText).toContain('<diff ref="src/missing.ts#hunk-1" start="1" end="2"/>');
   });
 });
 

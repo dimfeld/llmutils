@@ -675,7 +675,12 @@ function joinUnifiedDiffSections(sections: string[]): string {
   return sections.map((section) => normalizePatchText(section).trimEnd()).join('\n\n');
 }
 
-const DIFF_REF_TAG_REGEX = /<diff\s+ref=(?:"([^"]+)"|'([^']+)')\s*\/>/g;
+// Matches a self-closing `<diff .../>` placeholder and captures its raw
+// attribute string. Attributes (ref, and optional start/end line ranges) are
+// parsed separately by parseDiffRefTagAttributes so the tag can carry range
+// annotations, not just a bare ref.
+const DIFF_REF_TAG_REGEX = /<diff\b([^>]*?)\/>/g;
+const DIFF_REF_ATTRIBUTE_REGEX = /(?:^|\s)(ref|start|end)=(?:"([^"]*)"|'([^']*)')/g;
 const ANNOTATION_TAG_REGEX = /<annotation\b([^>]*)>([\s\S]*?)<\/annotation>/g;
 // Matches an opening fenced-code-block delimiter: 3+ backticks or tildes, with
 // an optional info string after. CommonMark allows arbitrary info-string text
@@ -960,6 +965,289 @@ export function extractReviewGuideAnnotations(options: {
   return { guideText: result, annotations };
 }
 
+interface ParsedDiffRefTagAttributes {
+  ref: string | null;
+  start: number | null;
+  end: number | null;
+}
+
+// Parse the attribute string of a `<diff .../>` tag. `ref` is required for the
+// tag to be resolvable; `start`/`end` are optional 1-based inclusive line
+// numbers on the new side of the hunk (the old side is used for pure-deletion
+// hunks). Non-numeric start/end values are ignored so a malformed bound simply
+// widens the selection rather than breaking the whole tag.
+function parseDiffRefTagAttributes(attrString: string): ParsedDiffRefTagAttributes {
+  const result: ParsedDiffRefTagAttributes = { ref: null, start: null, end: null };
+  DIFF_REF_ATTRIBUTE_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = DIFF_REF_ATTRIBUTE_REGEX.exec(attrString)) !== null) {
+    const key = match[1];
+    const value = (match[2] ?? match[3] ?? '').trim();
+    if (key === 'ref') {
+      result.ref = value || null;
+    } else if (key === 'start' || key === 'end') {
+      result[key] = /^\d+$/.test(value) ? Number(value) : null;
+    }
+  }
+  return result;
+}
+
+type DiffBodyLineKind = 'context' | 'add' | 'del' | 'noeol';
+
+interface DiffBodyLine {
+  hunkIndex: number;
+  rawLine: string;
+  kind: DiffBodyLineKind;
+  oldNo: number;
+  newNo: number;
+  selectKey: number;
+}
+
+interface ParsedDiffForSlicing {
+  fileHeaderLines: string[];
+  // Trailing text after the second `@@` of each hunk header (e.g. the enclosing
+  // function name git appends), indexed by hunk order.
+  hunkTrailers: string[];
+  body: DiffBodyLine[];
+}
+
+const HUNK_HEADER_FULL_REGEX = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/;
+
+// Parse a single-file unified diff (file header + one or more hunks) into a flat
+// list of body lines, each tagged with its old/new line numbers, so slices by
+// line range can be extracted. Returns null when the diff has no hunk header
+// (e.g. binary/rename-only entries) — callers fall back to full replacement.
+function parseDiffForSlicing(diffText: string): ParsedDiffForSlicing | null {
+  const lines = diffText.split('\n');
+  const firstHunkIndex = lines.findIndex((line) => HUNK_HEADER_FULL_REGEX.test(line));
+  if (firstHunkIndex === -1) {
+    return null;
+  }
+
+  const fileHeaderLines = lines.slice(0, firstHunkIndex);
+  const hunkTrailers: string[] = [];
+  const body: DiffBodyLine[] = [];
+  let hunkIndex = -1;
+  let oldCounter = 0;
+  let newCounter = 0;
+  let hasNewSide = false;
+
+  for (let i = firstHunkIndex; i < lines.length; i++) {
+    const line = lines[i];
+    const header = line.match(HUNK_HEADER_FULL_REGEX);
+    if (header) {
+      hunkIndex += 1;
+      oldCounter = Number(header[1]);
+      newCounter = Number(header[3]);
+      hunkTrailers.push(header[5] ?? '');
+      continue;
+    }
+    if (hunkIndex < 0 || line.length === 0) {
+      continue;
+    }
+
+    const marker = line[0];
+    if (marker === '+') {
+      body.push({
+        hunkIndex,
+        rawLine: line,
+        kind: 'add',
+        oldNo: oldCounter,
+        newNo: newCounter,
+        selectKey: 0,
+      });
+      newCounter += 1;
+      hasNewSide = true;
+    } else if (marker === '-') {
+      body.push({
+        hunkIndex,
+        rawLine: line,
+        kind: 'del',
+        oldNo: oldCounter,
+        newNo: newCounter,
+        selectKey: 0,
+      });
+      oldCounter += 1;
+    } else if (marker === '\\') {
+      // "\ No newline at end of file" — glue it to the preceding line.
+      body.push({
+        hunkIndex,
+        rawLine: line,
+        kind: 'noeol',
+        oldNo: oldCounter,
+        newNo: newCounter,
+        selectKey: 0,
+      });
+    } else {
+      // Context line (leading space, possibly empty content).
+      body.push({
+        hunkIndex,
+        rawLine: line,
+        kind: 'context',
+        oldNo: oldCounter,
+        newNo: newCounter,
+        selectKey: 0,
+      });
+      oldCounter += 1;
+      newCounter += 1;
+      hasNewSide = true;
+    }
+  }
+
+  // Select by new-side line numbers when the hunk touches the new file at all;
+  // pure-deletion hunks have no new lines, so fall back to old-side numbers.
+  for (let i = 0; i < body.length; i++) {
+    const entry = body[i];
+    if (entry.kind === 'noeol') {
+      // Travel with the preceding line so it is never split away from it.
+      entry.selectKey = body[i - 1]?.selectKey ?? (hasNewSide ? entry.newNo : entry.oldNo);
+    } else {
+      entry.selectKey = hasNewSide ? entry.newNo : entry.oldNo;
+    }
+  }
+
+  return { fileHeaderLines, hunkTrailers, body };
+}
+
+function selectBodyIndicesForRange(
+  parsed: ParsedDiffForSlicing,
+  start: number | null,
+  end: number | null
+): number[] {
+  const lo = start ?? Number.NEGATIVE_INFINITY;
+  const hi = end ?? Number.POSITIVE_INFINITY;
+  const indices: number[] = [];
+  for (let i = 0; i < parsed.body.length; i++) {
+    const key = parsed.body[i].selectKey;
+    if (key >= lo && key <= hi) {
+      indices.push(i);
+    }
+  }
+  return indices;
+}
+
+interface DiffRefTagSelection {
+  selectedIndices: number[];
+}
+
+// The prompt lets the model split a hunk into several range-annotated tags with
+// prose between them, but promises the final guide still contains every line.
+// Any body line no tag selected is attached to the nearest tag (by body-index
+// distance) so nothing is silently dropped.
+function assignOmittedLinesToNearestTag(
+  parsed: ParsedDiffForSlicing,
+  tags: DiffRefTagSelection[]
+): void {
+  const total = parsed.body.length;
+  const covered = new Array<boolean>(total).fill(false);
+  for (const tag of tags) {
+    for (const index of tag.selectedIndices) {
+      covered[index] = true;
+    }
+  }
+
+  let i = 0;
+  while (i < total) {
+    if (covered[i]) {
+      i += 1;
+      continue;
+    }
+    let runEnd = i;
+    while (runEnd + 1 < total && !covered[runEnd + 1]) {
+      runEnd += 1;
+    }
+
+    let best: DiffRefTagSelection | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const tag of tags) {
+      if (tag.selectedIndices.length === 0) {
+        continue;
+      }
+      const tagMin = tag.selectedIndices[0];
+      const tagMax = tag.selectedIndices[tag.selectedIndices.length - 1];
+      const distance = i > tagMax ? i - tagMax : runEnd < tagMin ? tagMin - runEnd : 0;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = tag;
+      }
+    }
+    // When every tag selected nothing (e.g. all ranges out of bounds), keep the
+    // whole hunk on the first tag so no lines are lost.
+    const target = best ?? tags[0];
+    if (target) {
+      for (let k = i; k <= runEnd; k++) {
+        target.selectedIndices.push(k);
+      }
+    }
+    i = runEnd + 1;
+  }
+
+  for (const tag of tags) {
+    tag.selectedIndices.sort((a, b) => a - b);
+  }
+}
+
+function formatHunkSide(start: number, count: number): string {
+  return count === 1 ? `${start}` : `${start},${count}`;
+}
+
+// Render the selected body lines as a `unified-diff` fenced block, splitting them
+// into contiguous sub-hunks (breaking at gaps and hunk boundaries) each with a
+// recomputed `@@` header so line numbers render correctly.
+function renderSlicedDiffBlock(parsed: ParsedDiffForSlicing, selectedIndices: number[]): string {
+  const runs: number[][] = [];
+  let current: number[] = [];
+  for (const index of selectedIndices) {
+    const previous = current[current.length - 1];
+    if (
+      current.length === 0 ||
+      (index === previous + 1 && parsed.body[index].hunkIndex === parsed.body[previous].hunkIndex)
+    ) {
+      current.push(index);
+    } else {
+      runs.push(current);
+      current = [index];
+    }
+  }
+  if (current.length > 0) {
+    runs.push(current);
+  }
+
+  const outputLines: string[] = [...parsed.fileHeaderLines];
+  for (const run of runs) {
+    const entries = run.map((index) => parsed.body[index]);
+    let oldCount = 0;
+    let newCount = 0;
+    for (const entry of entries) {
+      if (entry.kind === 'context' || entry.kind === 'del') {
+        oldCount += 1;
+      }
+      if (entry.kind === 'context' || entry.kind === 'add') {
+        newCount += 1;
+      }
+    }
+    const firstOld = entries.find((entry) => entry.kind === 'context' || entry.kind === 'del');
+    const firstNew = entries.find((entry) => entry.kind === 'context' || entry.kind === 'add');
+    const oldStart = firstOld ? firstOld.oldNo : entries[0].oldNo;
+    const newStart = firstNew ? firstNew.newNo : entries[0].newNo;
+    const trailer = parsed.hunkTrailers[entries[0].hunkIndex] ?? '';
+    outputLines.push(
+      `@@ -${formatHunkSide(oldStart, oldCount)} +${formatHunkSide(newStart, newCount)} @@${trailer}`,
+      ...entries.map((entry) => entry.rawLine)
+    );
+  }
+
+  return `\`\`\`unified-diff\n${normalizePatchText(outputLines.join('\n'))}\`\`\``;
+}
+
+interface CollectedDiffRefTag {
+  ref: string | null;
+  start: number | null;
+  end: number | null;
+  selectedIndices: number[];
+  replacement: string | null;
+}
+
 export function expandReviewGuideDiffReferences(options: {
   guideText: string;
   diffCatalog: ReviewGuideDiffCatalogEntry[];
@@ -973,26 +1261,80 @@ export function expandReviewGuideDiffReferences(options: {
     return { guideText: options.guideText, replacedCount: 0, unresolvedRefs: [], unusedRefs: [] };
   }
 
-  const diffMap = new Map(options.diffCatalog.map((entry) => [entry.ref, entry.diffText]));
-  let replacedCount = 0;
+  const diffMap = new Map(options.diffCatalog.map((entry) => [entry.ref, entry]));
   const unresolvedRefs = new Set<string>();
   const usedRefs = new Set<string>();
 
-  const guideText = options.guideText.replace(
-    DIFF_REF_TAG_REGEX,
-    (fullMatch, doubleQuoted, singleQuoted) => {
-      const ref = String(doubleQuoted ?? singleQuoted ?? '').trim();
-      const diffText = diffMap.get(ref);
-      if (!diffText) {
-        unresolvedRefs.add(ref || fullMatch);
-        return fullMatch;
-      }
+  const fullBlock = (diffText: string): string =>
+    `\`\`\`unified-diff\n${normalizePatchText(diffText)}\`\`\``;
 
-      replacedCount += 1;
-      usedRefs.add(ref);
-      return `\`\`\`unified-diff\n${normalizePatchText(diffText)}\`\`\``;
+  // Pass 1: collect every tag in document order and group resolvable tags by ref.
+  const tags: CollectedDiffRefTag[] = [];
+  const tagsByRef = new Map<string, CollectedDiffRefTag[]>();
+  DIFF_REF_TAG_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = DIFF_REF_TAG_REGEX.exec(options.guideText)) !== null) {
+    const attributes = parseDiffRefTagAttributes(match[1] ?? '');
+    const tag: CollectedDiffRefTag = {
+      ref: attributes.ref,
+      start: attributes.start,
+      end: attributes.end,
+      selectedIndices: [],
+      replacement: null,
+    };
+    tags.push(tag);
+    if (!attributes.ref) {
+      continue;
     }
-  );
+    if (!diffMap.has(attributes.ref)) {
+      unresolvedRefs.add(attributes.ref);
+      continue;
+    }
+    const group = tagsByRef.get(attributes.ref) ?? [];
+    group.push(tag);
+    tagsByRef.set(attributes.ref, group);
+  }
+
+  // Compute the replacement for each resolvable tag, slicing hunks by range where
+  // the model requested it.
+  for (const [ref, refTags] of tagsByRef) {
+    const entry = diffMap.get(ref)!;
+    usedRefs.add(ref);
+
+    const hasRange = refTags.some((tag) => tag.start != null || tag.end != null);
+    const parsed = hasRange ? parseDiffForSlicing(entry.diffText) : null;
+    if (!hasRange || !parsed) {
+      const block = fullBlock(entry.diffText);
+      for (const tag of refTags) {
+        tag.replacement = block;
+      }
+      continue;
+    }
+
+    for (const tag of refTags) {
+      tag.selectedIndices = selectBodyIndicesForRange(parsed, tag.start, tag.end);
+    }
+    assignOmittedLinesToNearestTag(parsed, refTags);
+    for (const tag of refTags) {
+      tag.replacement =
+        tag.selectedIndices.length === 0 ? '' : renderSlicedDiffBlock(parsed, tag.selectedIndices);
+    }
+  }
+
+  // Pass 2: substitute each tag (matches are visited in the same document order
+  // they were collected).
+  let replacedCount = 0;
+  let cursor = 0;
+  DIFF_REF_TAG_REGEX.lastIndex = 0;
+  const guideText = options.guideText.replace(DIFF_REF_TAG_REGEX, (fullMatch) => {
+    const tag = tags[cursor];
+    cursor += 1;
+    if (tag && tag.replacement != null) {
+      replacedCount += 1;
+      return tag.replacement;
+    }
+    return fullMatch;
+  });
 
   const unusedEntries = options.diffCatalog.filter((entry) => !usedRefs.has(entry.ref));
   const otherChangesSection =
