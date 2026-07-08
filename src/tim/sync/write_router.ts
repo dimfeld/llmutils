@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { warn } from '../../logging.js';
 import type { TimConfig } from '../configSchema.js';
 import { getProjectById, getProjectByUuid, markProjectSyncAnnounced } from '../db/project.js';
 import { getProjectSettingWithMetadata } from '../db/project_settings.js';
@@ -127,18 +128,18 @@ function shouldQueueOperation(mode: WriteMode): boolean {
 }
 
 /**
- * Persistent nodes create projects locally (with a fresh UUID) through
- * `getOrCreateProject()` without any sync operation, so the main node would
- * reject every queued operation for that project with "Unknown project".
- * Before queueing operations, announce any project the main node has never
- * been told about by enqueueing a bootstrap `project.upsert` ahead of them.
- * Per-origin FIFO ordering guarantees the upsert applies on main first.
+ * Projects are created locally (with a fresh UUID) through
+ * `getOrCreateProject()` without any sync operation, so nothing about them
+ * enters the operation log. Build a bootstrap `project.upsert` for every
+ * project the given operations reference that has never been announced
+ * (`sync_announced_at` unset) and is not already announced or deleted by the
+ * operations themselves.
  */
-async function enqueueProjectAnnouncements(
+async function buildProjectAnnouncements(
   db: Database,
   originNodeId: string,
   operations: SyncOperationEnvelope[]
-): Promise<void> {
+): Promise<SyncOperationEnvelope[]> {
   const handled = new Set<string>();
   for (const operation of operations) {
     // Projects the caller already announces need no bootstrap upsert, and the
@@ -147,6 +148,7 @@ async function enqueueProjectAnnouncements(
       handled.add(operation.projectUuid);
     }
   }
+  const announcements: SyncOperationEnvelope[] = [];
   for (const operation of operations) {
     const projectUuid = operation.projectUuid;
     if (handled.has(projectUuid)) {
@@ -157,26 +159,84 @@ async function enqueueProjectAnnouncements(
     if (!project || project.sync_announced_at) {
       continue;
     }
-    const announcement = await upsertProjectOperation(
-      {
-        projectUuid: project.uuid,
-        repositoryId: project.repository_id,
-        remoteUrl: project.remote_url,
-        remoteLabel: project.remote_label,
-        highestPlanId: project.highest_plan_id,
-      },
-      { originNodeId, localSequence: 0 }
+    announcements.push(
+      await upsertProjectOperation(
+        {
+          projectUuid: project.uuid,
+          repositoryId: project.repository_id,
+          remoteUrl: project.remote_url,
+          remoteLabel: project.remote_label,
+          highestPlanId: project.highest_plan_id,
+        },
+        { originNodeId, localSequence: 0 }
+      )
     );
+  }
+  return announcements;
+}
+
+/**
+ * Persistent-node side of project announcement: the main node would reject
+ * every queued operation for a project it has never been told about with
+ * "Unknown project", so enqueue the bootstrap `project.upsert` ahead of the
+ * operations. Per-origin FIFO ordering guarantees it applies on main first.
+ */
+async function enqueueProjectAnnouncements(
+  db: Database,
+  originNodeId: string,
+  operations: SyncOperationEnvelope[]
+): Promise<void> {
+  for (const announcement of await buildProjectAnnouncements(db, originNodeId, operations)) {
     enqueueOperation(db, announcement as QueueableOperation);
-    markProjectSyncAnnounced(db, project.uuid);
+    markProjectSyncAnnounced(db, announcement.projectUuid);
   }
 }
 
-/** Record explicit project.upsert operations as announced once they are queued. */
-function markQueuedProjectUpsertsAnnounced(
+/**
+ * Main-node side of project announcement: locally created projects have no
+ * sync_sequence entry, so peers never receive an invalidation for them and
+ * cannot learn about the project until the next catch-up bootstrap. Apply a
+ * bootstrap `project.upsert` before the project's first operation so the
+ * project gains a sequence entry and connected peers are notified now.
+ *
+ * Announcement failures are logged rather than thrown: the user's write can
+ * still apply locally (the project row exists), and an unannounced project is
+ * repaired by the next sync-server bootstrap.
+ */
+async function applyProjectAnnouncementsOnMain(
   db: Database,
+  originNodeId: string,
   operations: SyncOperationEnvelope[]
-): void {
+): Promise<void> {
+  for (const template of await buildProjectAnnouncements(db, originNodeId, operations)) {
+    const applyAnnouncement = db.transaction((): ApplyOperationResult => {
+      repairClearedRejectedSequenceMarkers(db, { originNodeId });
+      const localSequence = allocateLocalSequence(db, originNodeId);
+      return applyOperation(db, { ...template, localSequence }, { localMainNodeId: originNodeId });
+    });
+    try {
+      const result = applyAnnouncement.immediate();
+      if (result.status !== 'applied') {
+        warn(
+          `Failed to announce project ${template.projectUuid} to sync peers: ${result.error?.message ?? result.status}`
+        );
+        continue;
+      }
+      broadcastLocalMainSyncResult(db, result);
+      markProjectSyncAnnounced(db, template.projectUuid);
+    } catch (error) {
+      warn(
+        `Failed to announce project ${template.projectUuid} to sync peers: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+}
+
+/**
+ * Record explicit project.upsert operations as announced once they are queued
+ * (persistent nodes) or applied (main node).
+ */
+function markProjectUpsertsAnnounced(db: Database, operations: SyncOperationEnvelope[]): void {
   for (const operation of operations) {
     if (operation.op.type === 'project.upsert') {
       markProjectSyncAnnounced(db, operation.projectUuid);
@@ -197,11 +257,14 @@ export async function routeSyncOperation(
     const operation = await buildOperation({ originNodeId, localSequence: 0 });
     await enqueueProjectAnnouncements(db, originNodeId, [operation]);
     const result = enqueueOperation(db, operation as QueueableOperation);
-    markQueuedProjectUpsertsAnnounced(db, [operation]);
+    markProjectUpsertsAnnounced(db, [operation]);
     return { mode: 'queued', operation: result.operation, result };
   }
 
   const operationTemplate = await buildOperation({ originNodeId, localSequence: 0 });
+  if (mode === 'sync-main') {
+    await applyProjectAnnouncementsOnMain(db, originNodeId, [operationTemplate]);
+  }
   let operation: SyncOperationEnvelope = operationTemplate;
   let result: ApplyOperationResult;
   const applyLocalOperation = db.transaction((): ApplyOperationResult => {
@@ -235,6 +298,7 @@ export async function routeSyncOperation(
   if (result.status === 'applied') {
     if (mode === 'sync-main') {
       broadcastLocalMainSyncResult(db, result);
+      markProjectUpsertsAnnounced(db, [operation]);
     }
     return {
       mode: 'applied',
@@ -322,11 +386,14 @@ async function routeSyncBatchWithMode(
     });
     await enqueueProjectAnnouncements(db, originNodeId, batch.operations);
     const result = enqueueBatch(db, batch, { precondition: options.precondition });
-    markQueuedProjectUpsertsAnnounced(db, batch.operations);
+    markProjectUpsertsAnnounced(db, batch.operations);
     return { mode: 'queued', batch: result.batch, result };
   }
 
   options.precondition?.();
+  if (mode === 'sync-main') {
+    await applyProjectAnnouncementsOnMain(db, originNodeId, input.operations);
+  }
   repairClearedRejectedSequenceMarkers(db, { originNodeId });
   const localSequenceStart = allocateLocalSequenceRange(db, originNodeId, input.operations.length);
   const operations = input.operations.map((operation, index) => ({
@@ -368,6 +435,7 @@ async function routeSyncBatchWithMode(
   if (result.status === 'applied') {
     if (mode === 'sync-main') {
       broadcastLocalMainSyncResult(db, result);
+      markProjectUpsertsAnnounced(db, batch.operations);
     }
     return {
       mode: 'applied',

@@ -158,12 +158,15 @@ describe('sync write router', () => {
     ).rejects.toBeInstanceOf(SyncWriteRejectedError);
 
     expect(syncOperationRows()).toEqual([
+      // The unannounced project is announced before the batch, even though the
+      // batch itself fails.
+      { operation_type: 'project.upsert', status: 'applied', origin_node_id: NODE_ID },
       { operation_type: 'plan.add_tag', status: 'rejected', origin_node_id: NODE_ID },
       { operation_type: 'plan.add_dependency', status: 'rejected', origin_node_id: NODE_ID },
     ]);
     expect(
       db.prepare('SELECT next_sequence FROM tim_node_sequence WHERE node_id = ?').get(NODE_ID)
-    ).toEqual({ next_sequence: 2 });
+    ).toEqual({ next_sequence: 3 });
     expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({ revision: 1 });
     const replay = applyBatch(
       db,
@@ -171,8 +174,8 @@ describe('sync write router', () => {
         batchId: syncOperationBatchId(),
         originNodeId: NODE_ID,
         operations: [
-          { ...valid, originNodeId: NODE_ID, localSequence: 0 },
-          { ...invalid, originNodeId: NODE_ID, localSequence: 1 },
+          { ...valid, originNodeId: NODE_ID, localSequence: 1 },
+          { ...invalid, originNodeId: NODE_ID, localSequence: 2 },
         ],
       })
     );
@@ -226,11 +229,12 @@ describe('sync write router', () => {
       revision: before.revision,
     });
     expect(syncOperationRows()).toEqual([
+      { operation_type: 'project.upsert', status: 'applied', origin_node_id: NODE_ID },
       { operation_type: 'plan.set_scalar', status: 'rejected', origin_node_id: NODE_ID },
       { operation_type: 'plan.patch_text', status: 'rejected', origin_node_id: NODE_ID },
     ]);
     expect(syncConflictCount()).toBe(0);
-    expect(nodeSequenceRow()).toEqual({ next_sequence: 2 });
+    expect(nodeSequenceRow()).toEqual({ next_sequence: 3 });
     const replay = applyBatch(
       db,
       createBatchEnvelope({
@@ -238,8 +242,8 @@ describe('sync write router', () => {
         originNodeId: NODE_ID,
         atomic: true,
         operations: [
-          { ...status, originNodeId: NODE_ID, localSequence: 0 },
-          { ...conflict, originNodeId: NODE_ID, localSequence: 1 },
+          { ...status, originNodeId: NODE_ID, localSequence: 1 },
+          { ...conflict, originNodeId: NODE_ID, localSequence: 2 },
         ],
       })
     );
@@ -294,11 +298,12 @@ describe('sync write router', () => {
       revision: before.revision + 1,
     });
     expect(syncOperationRows()).toEqual([
+      { operation_type: 'project.upsert', status: 'applied', origin_node_id: NODE_ID },
       { operation_type: 'plan.set_scalar', status: 'applied', origin_node_id: NODE_ID },
       { operation_type: 'plan.patch_text', status: 'conflict', origin_node_id: NODE_ID },
     ]);
     expect(syncConflictCount()).toBe(1);
-    expect(nodeSequenceRow()).toEqual({ next_sequence: 2 });
+    expect(nodeSequenceRow()).toEqual({ next_sequence: 3 });
   });
 
   test('main-local failed operation build does not leak allocated local sequence values', async () => {
@@ -319,19 +324,23 @@ describe('sync write router', () => {
     );
 
     expect(result.mode).toBe('applied');
+    // The project announcement consumes sequence 0 ahead of the routed write.
     expect(
       db
         .prepare(
-          `SELECT local_sequence
+          `SELECT local_sequence, operation_type
            FROM sync_operation
            WHERE origin_node_id = ?
            ORDER BY local_sequence`
         )
         .all(NODE_ID)
-    ).toEqual([{ local_sequence: 0 }]);
+    ).toEqual([
+      { local_sequence: 0, operation_type: 'project.upsert' },
+      { local_sequence: 1, operation_type: 'plan.add_tag' },
+    ]);
     expect(
       db.prepare('SELECT next_sequence FROM tim_node_sequence WHERE node_id = ?').get(NODE_ID)
-    ).toEqual({ next_sequence: 1 });
+    ).toEqual({ next_sequence: 2 });
   });
 
   test('main-local failed operation apply does not leak allocated local sequence values', async () => {
@@ -351,9 +360,14 @@ describe('sync write router', () => {
       })
     ).rejects.toBeInstanceOf(SyncWriteRejectedError);
 
+    // The project announcement applied (consuming sequence 0) before the
+    // routed operation failed, but the failed operation itself leaked nothing.
     expect(
       db.prepare('SELECT next_sequence FROM tim_node_sequence WHERE node_id = ?').get(NODE_ID)
-    ).toBeNull();
+    ).toEqual({ next_sequence: 1 });
+    expect(syncOperationRows()).toEqual([
+      { operation_type: 'project.upsert', status: 'applied', origin_node_id: NODE_ID },
+    ]);
 
     const result = await routeSyncOperation(db, config, (options) =>
       addPlanTagOperation(
@@ -367,16 +381,19 @@ describe('sync write router', () => {
     expect(
       db
         .prepare(
-          `SELECT local_sequence
+          `SELECT local_sequence, operation_type
            FROM sync_operation
            WHERE origin_node_id = ?
            ORDER BY local_sequence`
         )
         .all(NODE_ID)
-    ).toEqual([{ local_sequence: 0 }]);
+    ).toEqual([
+      { local_sequence: 0, operation_type: 'project.upsert' },
+      { local_sequence: 1, operation_type: 'plan.add_tag' },
+    ]);
     expect(
       db.prepare('SELECT next_sequence FROM tim_node_sequence WHERE node_id = ?').get(NODE_ID)
-    ).toEqual({ next_sequence: 1 });
+    ).toEqual({ next_sequence: 2 });
   });
 
   test('main-local writes repair cleared sequence gaps before allocating', async () => {
@@ -423,11 +440,13 @@ describe('sync write router', () => {
     );
 
     expect(result.mode).toBe('applied');
+    // The project announcement runs first: it repairs the gap markers and
+    // takes sequence 3, so the routed operation lands at sequence 4.
     expect(
       db
         .prepare(
           `
-            SELECT local_sequence, status
+            SELECT local_sequence, status, operation_type
             FROM sync_operation
             WHERE origin_node_id = ?
             ORDER BY local_sequence
@@ -435,12 +454,13 @@ describe('sync write router', () => {
         )
         .all(NODE_ID)
     ).toEqual([
-      { local_sequence: 0, status: 'applied' },
-      { local_sequence: 1, status: 'cleared_rejected' },
-      { local_sequence: 2, status: 'cleared_rejected' },
-      { local_sequence: 3, status: 'applied' },
+      { local_sequence: 0, status: 'applied', operation_type: 'plan.add_tag' },
+      { local_sequence: 1, status: 'cleared_rejected', operation_type: 'sync.cleared_rejected' },
+      { local_sequence: 2, status: 'cleared_rejected', operation_type: 'sync.cleared_rejected' },
+      { local_sequence: 3, status: 'applied', operation_type: 'project.upsert' },
+      { local_sequence: 4, status: 'applied', operation_type: 'plan.add_tag' },
     ]);
-    expect(nodeSequenceRow()).toEqual({ next_sequence: 4 });
+    expect(nodeSequenceRow()).toEqual({ next_sequence: 5 });
   });
 
   test('main-local conflicted writes throw a typed write error by default', async () => {
@@ -482,9 +502,10 @@ describe('sync write router', () => {
       revision: before.revision + 1,
     });
     expect(syncOperationRows()).toEqual([
+      { operation_type: 'project.upsert', status: 'applied', origin_node_id: NODE_ID },
       { operation_type: 'plan.set_scalar', status: 'applied', origin_node_id: NODE_ID },
     ]);
-    expect(sequenceCount()).toBe(1);
+    expect(sequenceCount()).toBe(2);
   });
 
   test('persistent role queues operation and applies optimistic state', async () => {
@@ -883,6 +904,126 @@ describe('persistent-node project announcements', () => {
   });
 });
 
+describe('main-node project announcements', () => {
+  const mainConfig = { sync: { role: 'main', nodeId: NODE_ID } } as TimConfig;
+
+  function projectAnnouncedAt(): string | null {
+    const row = db
+      .prepare('SELECT sync_announced_at FROM project WHERE uuid = ?')
+      .get(PROJECT_UUID) as { sync_announced_at: string | null } | null;
+    return row?.sync_announced_at ?? null;
+  }
+
+  test('applies a project.upsert ahead of the first write for an unannounced project', async () => {
+    expect(projectAnnouncedAt()).toBeNull();
+
+    await writePlanAddTask(db, mainConfig, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      title: 'First task',
+      description: 'first',
+    });
+
+    expect(syncOperationRows()).toEqual([
+      { operation_type: 'project.upsert', status: 'applied', origin_node_id: NODE_ID },
+      { operation_type: 'plan.add_task', status: 'applied', origin_node_id: NODE_ID },
+    ]);
+    expect(
+      db
+        .prepare('SELECT target_key FROM sync_sequence WHERE target_key = ?')
+        .get(`project:${PROJECT_UUID}`)
+    ).toEqual({ target_key: `project:${PROJECT_UUID}` });
+    expect(projectAnnouncedAt()).not.toBeNull();
+
+    // A second write must not apply another announcement.
+    await writePlanAddTask(db, mainConfig, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      title: 'Second task',
+      description: 'second',
+    });
+    expect(syncOperationRows().map((row) => row.operation_type)).toEqual([
+      'project.upsert',
+      'plan.add_task',
+      'plan.add_task',
+    ]);
+  });
+
+  test('applies the announcement before a batch and still applies the batch', async () => {
+    expect(projectAnnouncedAt()).toBeNull();
+
+    const batch = await beginSyncBatch(db, mainConfig);
+    batch.add((options) =>
+      addPlanTaskOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, title: 'Batch task A', description: 'a' },
+        options
+      )
+    );
+    batch.add((options) =>
+      addPlanTaskOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, title: 'Batch task B', description: 'b' },
+        options
+      )
+    );
+
+    const result = await batch.commit();
+    expect(result.mode).toBe('applied');
+    expect(syncOperationRows()).toEqual([
+      { operation_type: 'project.upsert', status: 'applied', origin_node_id: NODE_ID },
+      { operation_type: 'plan.add_task', status: 'applied', origin_node_id: NODE_ID },
+      { operation_type: 'plan.add_task', status: 'applied', origin_node_id: NODE_ID },
+    ]);
+    expect(projectAnnouncedAt()).not.toBeNull();
+    expect(
+      db
+        .prepare('SELECT title FROM plan_task WHERE plan_uuid = ? ORDER BY task_index')
+        .all(PLAN_UUID)
+    ).toEqual([{ title: 'Batch task A' }, { title: 'Batch task B' }]);
+  });
+
+  test('local-operation mode does not announce the project', async () => {
+    const config = { sync: { nodeId: NODE_ID } } as TimConfig;
+
+    await writePlanAddTask(db, config, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      title: 'Local task',
+      description: 'no announcement',
+    });
+
+    expect(syncOperationRows()).toEqual([
+      { operation_type: 'plan.add_task', status: 'applied', origin_node_id: NODE_ID },
+    ]);
+    expect(projectAnnouncedAt()).toBeNull();
+  });
+
+  test('explicit project.upsert applies once and marks the project announced', async () => {
+    const result = await writeProjectUpsert(db, mainConfig, {
+      projectUuid: PROJECT_UUID,
+      repositoryId: project.repository_id,
+      remoteUrl: project.remote_url,
+      remoteLabel: project.remote_label,
+      highestPlanId: project.highest_plan_id,
+    });
+
+    expect(result.mode).toBe('applied');
+    expect(syncOperationRows()).toEqual([
+      { operation_type: 'project.upsert', status: 'applied', origin_node_id: NODE_ID },
+    ]);
+    expect(projectAnnouncedAt()).not.toBeNull();
+
+    // Subsequent writes need no bootstrap announcement.
+    await writePlanAddTask(db, mainConfig, PROJECT_UUID, {
+      planUuid: PLAN_UUID,
+      title: 'After explicit upsert',
+      description: 'no announcement needed',
+    });
+    expect(syncOperationRows().map((row) => row.operation_type)).toEqual([
+      'project.upsert',
+      'plan.add_task',
+    ]);
+  });
+});
+
 const ARTIFACT_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 describe('artifact write_router helpers', () => {
@@ -917,9 +1058,10 @@ describe('artifact write_router helpers', () => {
     });
     expect(artifact?.storagePath).toContain(`${ARTIFACT_UUID}.pdf`);
     expect(syncOperationRows()).toEqual([
+      { operation_type: 'project.upsert', status: 'applied', origin_node_id: NODE_ID },
       { operation_type: 'plan_artifact.attach', status: 'applied', origin_node_id: NODE_ID },
     ]);
-    expect(sequenceCount()).toBe(1);
+    expect(sequenceCount()).toBe(2);
   });
 
   test('writePlanArtifactSoftDelete sets deleted_at on existing artifact', async () => {
@@ -939,7 +1081,7 @@ describe('artifact write_router helpers', () => {
       operation_type: 'plan_artifact.soft_delete',
       status: 'applied',
     });
-    expect(sequenceCount()).toBe(2);
+    expect(sequenceCount()).toBe(3);
   });
 
   test('writePlanArtifactRestore clears deleted_at after soft-delete', async () => {
@@ -964,7 +1106,7 @@ describe('artifact write_router helpers', () => {
       operation_type: 'plan_artifact.restore',
       status: 'applied',
     });
-    expect(sequenceCount()).toBe(3);
+    expect(sequenceCount()).toBe(4);
   });
 
   test('writePlanArtifactHardDelete removes artifact row and writes sync_tombstone', async () => {
@@ -987,7 +1129,7 @@ describe('artifact write_router helpers', () => {
       operation_type: 'plan_artifact.hard_delete',
       status: 'applied',
     });
-    expect(sequenceCount()).toBe(2);
+    expect(sequenceCount()).toBe(3);
   });
 
   test('soft-delete then restore round-trip leaves deleted_at null', async () => {

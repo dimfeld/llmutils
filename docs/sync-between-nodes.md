@@ -16,6 +16,8 @@ The main node owns the shared project list. Sync carries the non-local project f
 
 Persistent nodes announce projects to the main node automatically. The first time a persistent node queues any sync operation for a project the main node has never been told about — including a project that was just created implicitly by creating a plan in a new repository — the write router queues a bootstrap `project.upsert` ahead of that operation. The main node creates the project on arrival (or matches it to an existing row by repository ID), so new projects created on a persistent node reach the main node without manual setup. Each node tracks this with a machine-local `project.sync_announced_at` marker; projects adopted from the main node during catch-up are marked announced and are never re-announced.
 
+The main node does the symmetric thing for projects created locally on it. The first synced write touching an unannounced project applies a bootstrap `project.upsert` through the operation engine, which creates the catch-up sequence entry for the project and notifies connected peers immediately. Previously, peers only learned of main-created projects after a sync-server restart or `tim sync bootstrap`.
+
 You can also register a repository workspace on a persistent node explicitly:
 
 ```bash

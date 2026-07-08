@@ -8,7 +8,7 @@ The normal write path is:
 
 1. CLI, web, or MCP code calls a `write*` or batch helper in `src/tim/sync/write_router.ts`.
 2. The router uses `resolveWriteMode()`:
-   - `local-operation` and `sync-main` apply immediately through `applyOperation()` or `applyBatch()`.
+   - `local-operation` and `sync-main` apply immediately through `applyOperation()` or `applyBatch()`. In `sync-main` mode only, the router first applies a bootstrap `project.upsert` for any referenced project with `project.sync_announced_at` unset, so the project gains a sequence entry and connected peers receive an invalidation; `local-operation` mode does not announce.
    - `sync-persistent` queues operations with `enqueueOperation()` or `enqueueBatch()` and rebuilds local projection state optimistically. Before queueing, the router announces any referenced project the main node has never been told about (`project.sync_announced_at` unset) by enqueueing a bootstrap `project.upsert` ahead of the operations, so the main node can accept operations for projects created locally on the persistent node.
 3. Main/local apply writes canonical state and projection state together.
 4. Persistent nodes keep canonical tables separate from user-visible projection tables. Queue/projection code folds active local operations over canonical state.

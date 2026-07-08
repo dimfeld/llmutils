@@ -343,6 +343,8 @@ describe('write_router integration: writePlanFile routing modes', () => {
     expectCreatedPlanMetadata(db, plan.uuid!);
     expect(syncOpRows(db)).toEqual([
       { operation_type: 'plan.create', status: 'applied' },
+      // Bootstrap announcement applied ahead of the project's first sync-main operation
+      { operation_type: 'project.upsert', status: 'applied' },
       { operation_type: 'plan.create', status: 'applied' },
     ]);
   });
