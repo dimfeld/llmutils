@@ -417,7 +417,14 @@ export function buildReviewGuideDiffview(input: {
     };
   });
 
-  return { title, groups: mergeAdjacentFilelessDiffviewGroups(groups) };
+  // Drop sections that ended up with neither prose nor any files (e.g. a bare
+  // heading with no body). Merge first so a fileless prose section absorbed into
+  // a neighbor isn't mistaken for empty.
+  const nonEmptyGroups = mergeAdjacentFilelessDiffviewGroups(groups).filter(
+    (group) => group.description.trim().length > 0 || group.files.length > 0
+  );
+
+  return { title, groups: nonEmptyGroups };
 }
 
 /**

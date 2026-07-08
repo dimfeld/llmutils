@@ -296,6 +296,8 @@ describe('buildReviewGuideDiffview', () => {
     const markdown = [
       '## Section A',
       '',
+      'Section prose.',
+      '',
       '```unified-diff',
       '@@ -1,2 +1,2 @@',
       '-old',
@@ -314,6 +316,8 @@ describe('buildReviewGuideDiffview', () => {
     const markdown = [
       '## Section A',
       '',
+      'Section prose.',
+      '',
       '```unified-diff',
       '@@ -1,1 +1,3 @@',
       ' context',
@@ -326,6 +330,41 @@ describe('buildReviewGuideDiffview', () => {
 
     expect(result.groups).toHaveLength(1);
     expect(result.groups[0].files).toEqual([]);
+  });
+
+  it('drops a section that has neither prose nor any files', () => {
+    const diffFor = (file: string): string =>
+      [
+        '```unified-diff',
+        `diff --git a/${file} b/${file}`,
+        `--- a/${file}`,
+        `+++ b/${file}`,
+        '@@ -1 +1 @@',
+        '-old',
+        '+new',
+        '```',
+      ].join('\n');
+
+    const markdown = [
+      '# Guide',
+      '',
+      '## First Section',
+      '',
+      diffFor('src/first.ts'),
+      '',
+      '## Empty Section',
+      '',
+      '## Last Section',
+      '',
+      diffFor('src/last.ts'),
+      '',
+    ].join('\n');
+
+    const result = buildReviewGuideDiffview({ markdown, fallbackTitle: 'Fallback' });
+
+    // The bare "Empty Section" heading is sandwiched between file-bearing
+    // sections, so it survives merging but is then dropped for being empty.
+    expect(result.groups.map((group) => group.name)).toEqual(['First Section', 'Last Section']);
   });
 
   it('does not treat hunk-body markdown heading lines as extra files', () => {
