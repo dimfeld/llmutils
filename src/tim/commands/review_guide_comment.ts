@@ -41,6 +41,7 @@ import {
 } from './review_pr_prompt.js';
 import { loadCustomReviewInstructions, resolveProjectContextForRepo } from './review_workflow.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
+import { LATEST_GPT5_MODEL } from '../constants.js';
 
 /** Hidden marker used to detect an existing review-guide comment so we post at most one per PR. */
 export const REVIEW_GUIDE_COMMENT_MARKER = '<!-- tim:pr-review-guide -->';
@@ -351,7 +352,10 @@ export async function handlePrReviewGuideCommentCommand(
         executorName,
         {
           baseDir,
-          model: options.model ?? configModel,
+          model:
+            options.model ??
+            configModel ??
+            (executorName === CodexCliExecutorName ? LATEST_GPT5_MODEL : undefined),
           terminalInput: false,
           noninteractive: true,
           timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(config, baseDir, {
