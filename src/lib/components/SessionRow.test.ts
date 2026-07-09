@@ -80,7 +80,7 @@ describe('SessionRow', () => {
     expect(body).not.toContain('5 minutes ago');
   });
 
-  test('falls back to connected time when no notification message exists', async () => {
+  test('uses the most recent message time when no notification message exists', async () => {
     const { body } = await render(SessionRow, {
       props: {
         session: createSession({
@@ -102,7 +102,7 @@ describe('SessionRow', () => {
       },
     });
 
-    expect(body).toContain('5 minutes ago');
+    expect(body).toContain('1 minute ago');
   });
 
   test('shows an attention dot for active prompts', async () => {

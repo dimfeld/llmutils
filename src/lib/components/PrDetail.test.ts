@@ -156,10 +156,8 @@ describe('PrDetail', () => {
     expect(body).not.toContain('href="https://app.graphite.com/github/pr/example/repo/42"');
   });
 
-  test('does not block server render on the Linear review URL lookup', async () => {
-    vi.mocked(getLinearPrReviewUrl).mockImplementationOnce(
-      () => new Promise<string | null>(() => {})
-    );
+  test('renders the Linear review link resolved during server render', async () => {
+    vi.mocked(getLinearPrReviewUrl).mockResolvedValueOnce('https://linear.review/acme/repo/pr/42');
 
     const { body } = await renderWithTooltipProvider(PrDetail, {
       props: {
@@ -168,9 +166,8 @@ describe('PrDetail', () => {
       },
     });
 
-    expect(body).toContain('View in GitHub');
-    expect(body).not.toContain('View in Graphite');
-    expect(body).not.toContain('View in Linear');
+    expect(body).toContain('View in Linear');
+    expect(body).toContain('href="linear://review/acme/repo/pr/42"');
     expect(getLinearPrReviewUrl).toHaveBeenCalledWith({
       projectId: '123',
       prNumber: 42,

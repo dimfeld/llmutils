@@ -948,7 +948,7 @@ describe('create_pr command helpers', () => {
       );
     });
 
-    test('uses codex mini when config defaultExecutor is codex-cli', async () => {
+    test('uses the current codex mini model when config defaultExecutor is codex-cli', async () => {
       const executeMock = vi.fn(async (..._args: unknown[]) => {});
       mockBuildExecutorAndLog.mockReturnValueOnce({ execute: executeMock } as any);
       vi.spyOn(Bun, 'spawn').mockReturnValueOnce(
@@ -974,7 +974,7 @@ describe('create_pr command helpers', () => {
 
       expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
         'codex-cli',
-        expect.objectContaining({ baseDir: '/tmp', model: 'gpt-5.4-mini' }),
+        expect.objectContaining({ baseDir: '/tmp', model: 'gpt-5.6-luna' }),
         expect.objectContaining({ defaultExecutor: 'codex-cli' }),
         {}
       );

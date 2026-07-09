@@ -29,6 +29,7 @@ describe('UIStateStore', () => {
       expect(state).toEqual({
         planPaneCollapsed: false,
         messageDraft: '',
+        showLifecycleOutput: false,
       });
     });
 
@@ -38,6 +39,7 @@ describe('UIStateStore', () => {
       expect(store.getSessionState('conn-1')).toEqual({
         planPaneCollapsed: true,
         messageDraft: '',
+        showLifecycleOutput: false,
       });
     });
 
@@ -48,6 +50,7 @@ describe('UIStateStore', () => {
       expect(store.getSessionState('conn-1')).toEqual({
         planPaneCollapsed: true,
         messageDraft: 'hello',
+        showLifecycleOutput: false,
       });
     });
 
@@ -58,6 +61,7 @@ describe('UIStateStore', () => {
       expect(store.getSessionState('conn-1')).toEqual({
         planPaneCollapsed: false,
         messageDraft: '',
+        showLifecycleOutput: false,
       });
     });
 
@@ -74,10 +78,12 @@ describe('UIStateStore', () => {
       expect(store.getSessionState('conn-1')).toEqual({
         planPaneCollapsed: true,
         messageDraft: 'first',
+        showLifecycleOutput: false,
       });
       expect(store.getSessionState('conn-2')).toEqual({
         planPaneCollapsed: false,
         messageDraft: 'second',
+        showLifecycleOutput: false,
       });
     });
   });

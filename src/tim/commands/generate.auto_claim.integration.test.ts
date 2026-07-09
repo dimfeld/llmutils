@@ -57,6 +57,7 @@ vi.mock('./prompts.js', () => ({
 vi.mock('../executors/index.js', () => ({
   buildExecutorAndLog: vi.fn(),
   DEFAULT_EXECUTOR: 'claude_code',
+  defaultModelForExecutor: vi.fn(() => 'default-generation-model'),
 }));
 
 vi.mock('../plan_materialize.js', async (importOriginal) => {

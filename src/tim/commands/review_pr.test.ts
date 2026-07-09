@@ -1829,7 +1829,7 @@ describe('review_pr command', () => {
       if (name === 'claude-code') {
         return { execute: claudeExecute } as any;
       }
-      if (name === 'codex-cli' && (sharedOptions as any)?.model === 'gpt-5.4-mini') {
+      if (name === 'codex-cli' && (sharedOptions as any)?.model === 'gpt-5.6-luna') {
         return { execute: codexCombinationExecute } as any;
       }
       if (name === 'codex-cli') {
@@ -1843,7 +1843,7 @@ describe('review_pr command', () => {
     expect(codexCombinationExecute).toHaveBeenCalledTimes(1);
     expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
       'codex-cli',
-      expect.objectContaining({ model: 'gpt-5.4-mini', terminalInput: false }),
+      expect.objectContaining({ model: 'gpt-5.6-luna', terminalInput: false }),
       expect.objectContaining({ defaultExecutor: 'codex-cli' })
     );
     const inserted = mockInsertReviewIssues.mock.calls[0]?.[1];

@@ -477,9 +477,8 @@ describe('buildAutoreviewPrompt', () => {
     expect(prompt).toContain('1. **Review**');
     expect(prompt).toContain('2. **Display and Ask**');
     expect(prompt).toContain('3. **Remember Skips**');
-    expect(prompt).toContain('4. **Fix**');
-    expect(prompt).toContain('5. **Commit**');
-    expect(prompt).toContain('6. **Loop**');
+    expect(prompt).toContain('4. **Fix and commit**');
+    expect(prompt).toContain('5. **Loop**');
     expect(prompt).toContain(
       'Never nag the user about issues they explicitly skipped during this session.'
     );

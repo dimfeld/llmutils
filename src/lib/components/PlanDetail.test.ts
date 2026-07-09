@@ -568,7 +568,7 @@ describe('PlanDetail', () => {
     expect(body).not.toContain('<div data-testid="action-config"><button>Generate</button>');
   });
 
-  test('shows Run Agent and Generate as separate action buttons for a taskless non-simple plan', () => {
+  test('shows Generate without Run Agent for a taskless non-simple plan', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
         plan: makePlanDetail({
@@ -583,18 +583,14 @@ describe('PlanDetail', () => {
       },
     });
 
-    // Both Run Agent and Generate are surfaced as their own standalone buttons,
-    // not as the primary dropdown action.
-    expect(body).toContain('Run Agent');
+    // Taskless non-simple plans must be generated before an agent can run.
+    expect(body).not.toContain('Run Agent');
     expect(body).toContain('Generate');
     expect(body).toContain('Autoreview');
     expect(body).toContain('Shell');
-    expect(body.indexOf('Run Agent')).toBeLessThan(body.indexOf('Generate'));
-    // Run Agent is no longer the dropdown's primary action.
-    expect(body).not.toContain('<button>Run Agent</button>');
   });
 
-  test('hides Autoreview for a pending plan and surfaces Run Agent and Generate as buttons', () => {
+  test('hides Autoreview for a pending taskless non-simple plan and surfaces Generate', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
         plan: makePlanDetail({
@@ -609,7 +605,7 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('Run Agent');
+    expect(body).not.toContain('Run Agent');
     expect(body).toContain('Generate');
     expect(body).toContain('Shell');
     // Pending plans have no work to review yet, so Autoreview is hidden.
