@@ -342,7 +342,7 @@ export async function handleGenerateCommand(
         // Build executor
         const executorName =
           options.executor ||
-          config.generate?.defaultExecutor ||
+          config.generate?.executor ||
           config.defaultExecutor ||
           DEFAULT_EXECUTOR;
         const sharedExecutorOptions: ExecutorCommonOptions = {

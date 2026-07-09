@@ -738,9 +738,9 @@ describe('handleGenerateCommand', () => {
     expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('custom_executor');
   });
 
-  test('uses generate.defaultExecutor before global defaultExecutor', async () => {
+  test('uses generate.executor before global defaultExecutor', async () => {
     const planPath = await createStubPlan(123);
-    loadedConfig.generate = { defaultExecutor: 'codex-cli' };
+    loadedConfig.generate = { executor: 'codex-cli' };
     loadedConfig.defaultExecutor = 'claude-code';
 
     mockExecutorExecute.mockImplementationOnce(async () => {
@@ -754,7 +754,7 @@ describe('handleGenerateCommand', () => {
     expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('codex-cli');
   });
 
-  test('uses global defaultExecutor when generate.defaultExecutor is not set', async () => {
+  test('uses global defaultExecutor when generate.executor is not set', async () => {
     const planPath = await createStubPlan(124);
     loadedConfig.defaultExecutor = 'codex-cli';
 

@@ -585,10 +585,6 @@
         "convert_yaml": {
           "description": "Model spec for tim markdown-to-yaml extraction",
           "type": "string"
-        },
-        "stepGeneration": {
-          "description": "Model spec for tim prepare phase generation",
-          "type": "string"
         }
       }
     },
@@ -737,13 +733,27 @@
       "description": "Configuration for tim generate defaults",
       "type": "object",
       "properties": {
-        "defaultExecutor": {
+        "executor": {
           "description": "Default executor to use for the generate command",
           "type": "string",
           "enum": [
             "claude-code",
             "codex-cli"
           ]
+        },
+        "model": {
+          "type": "object",
+          "properties": {
+            "claude": {
+              "description": "Model override for claude-code generation",
+              "type": "string"
+            },
+            "codex": {
+              "description": "Model override for codex-cli generation",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

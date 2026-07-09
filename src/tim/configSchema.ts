@@ -666,7 +666,7 @@ export const timConfigSchema = z
     /** Default settings for the generate command */
     generate: z
       .object({
-        defaultExecutor: z
+        executor: z
           .enum([ClaudeCodeExecutorName, CodexCliExecutorName])
           .optional()
           .describe('Default executor to use for the generate command'),
