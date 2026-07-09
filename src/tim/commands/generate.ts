@@ -348,7 +348,9 @@ export async function handleGenerateCommand(
         const sharedExecutorOptions: ExecutorCommonOptions = {
           baseDir: currentBaseDir,
           model:
-            config.models?.stepGeneration ??
+            (executorName === 'claude-code'
+              ? config.generate?.model?.claude
+              : config.generate?.model?.codex) ??
             defaultModelForExecutor(executorName, 'stepGeneration'),
           noninteractive: noninteractive ? true : undefined,
           terminalInput: terminalInputEnabled,

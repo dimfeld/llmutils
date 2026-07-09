@@ -216,7 +216,7 @@ describe('handleGenerateCommand', () => {
     await fs.mkdir(tasksDir, { recursive: true });
     loadedConfig = {
       paths: { tasks: tasksDir },
-      models: { stepGeneration: 'test-model' },
+      generate: { model: { codex: 'test-model' } },
     };
 
     vi.mocked(loadEffectiveConfig).mockResolvedValue(loadedConfig);
@@ -772,6 +772,7 @@ describe('handleGenerateCommand', () => {
   test('uses the selected executor step-generation default when not configured', async () => {
     const planPath = await createStubPlan(125);
     loadedConfig.models = {};
+    loadedConfig.generate = {};
     loadedConfig.defaultExecutor = 'codex-cli';
 
     await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
@@ -1014,7 +1015,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     vi.mocked(loadEffectiveConfig).mockResolvedValue({
       paths: { tasks: tasksDir },
-      models: { stepGeneration: 'test-model' },
+      generate: { model: { codex: 'test-model' } },
     } as any);
     vi.mocked(getGitRoot).mockResolvedValue(tempDir);
   });

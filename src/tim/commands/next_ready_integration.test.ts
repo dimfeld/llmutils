@@ -129,7 +129,7 @@ describe('--next-ready CLI flag integration tests', () => {
       },
       models: {
         planning: 'test-model',
-        stepGeneration: 'test-model',
+        generate: { model: { codex: 'test-model' } },
       },
     } as any);
 

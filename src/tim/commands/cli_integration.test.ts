@@ -62,7 +62,7 @@ describe('CLI integration tests for parent-child relationships (internal handler
         },
         models: {
           planning: 'test/test-model',
-          stepGeneration: 'test/test-model',
+          generate: { model: { codex: 'test/test-model' } },
         },
       })
     );

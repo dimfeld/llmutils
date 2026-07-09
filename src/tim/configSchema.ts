@@ -590,10 +590,6 @@ export const timConfigSchema = z
           .string()
           .optional()
           .describe('Model spec for tim markdown-to-yaml extraction'),
-        stepGeneration: z
-          .string()
-          .optional()
-          .describe('Model spec for tim prepare phase generation'),
       })
       .optional(),
     /** Default settings for answer-pr command */
@@ -674,6 +670,13 @@ export const timConfigSchema = z
           .enum([ClaudeCodeExecutorName, CodexCliExecutorName])
           .optional()
           .describe('Default executor to use for the generate command'),
+        model: z
+          .object({
+            claude: z.string().optional().describe('Model override for claude-code generation'),
+            codex: z.string().optional().describe('Model override for codex-cli generation'),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional()
