@@ -59,12 +59,14 @@ describe('structured_message_builders', () => {
     const message = buildSessionStart(timestamp, 'claude', {
       sessionId: 'session-1',
       threadId: 'thread-1',
+      model: 'claude-opus-4-6',
     });
 
     expect(message).toEqual({
       type: 'agent_session_start',
       timestamp,
       executor: 'claude',
+      model: 'claude-opus-4-6',
       sessionId: 'session-1',
       threadId: 'thread-1',
       tools: undefined,

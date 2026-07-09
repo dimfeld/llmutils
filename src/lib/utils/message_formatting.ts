@@ -81,6 +81,7 @@ export function formatStructuredMessage(
         text: [
           'Agent session started',
           message.executor ? `executor=${message.executor}` : null,
+          message.model ? `model=${message.model}` : null,
           message.mode ? `mode=${message.mode}` : null,
           message.planId != null ? `plan=${message.planId}` : null,
         ]

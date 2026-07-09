@@ -83,12 +83,13 @@ describe('message_formatting', () => {
       formatStructuredMessage({
         type: 'agent_session_start',
         executor: 'codex',
+        model: 'gpt-5.6-terra',
         mode: 'agent',
         planId: 253,
       })
     ).toEqual({
       type: 'text',
-      text: 'Agent session started | executor=codex | mode=agent | plan=253',
+      text: 'Agent session started | executor=codex | model=gpt-5.6-terra | mode=agent | plan=253',
     });
   });
 

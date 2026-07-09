@@ -427,7 +427,7 @@ function formatPlanUpdate(
   };
 }
 
-export function createAppServerFormatter() {
+export function createAppServerFormatter(model?: string) {
   const state: FormatterState = {
     latestRateLimits: new Map(),
   };
@@ -730,6 +730,7 @@ export function createAppServerFormatter() {
           structured: buildSessionStart(ts, 'codex', {
             threadId: state.threadId,
             sessionId: state.sessionId,
+            model,
           }),
         };
       }

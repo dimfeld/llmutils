@@ -9,12 +9,14 @@ describe('console_formatter', () => {
       type: 'agent_session_start',
       timestamp,
       executor: 'codex',
+      model: 'gpt-5.6-terra',
       planId: 168,
     });
     expect(start).toContain('Starting');
     expect(start).toContain('01:02:03');
     expect(start).not.toContain('2026-02-08');
     expect(start).toContain('codex');
+    expect(start).toContain('gpt-5.6-terra');
     expect(start).toContain('168');
 
     const end = format({ type: 'agent_session_end', timestamp, success: true, costUsd: 0.05 });

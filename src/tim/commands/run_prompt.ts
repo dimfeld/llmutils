@@ -354,7 +354,7 @@ async function executeClaudePrompt(
       },
       formatStdout: (chunk) => {
         const lines = split(chunk);
-        const formattedResults = lines.map(formatJsonMessage);
+        const formattedResults = lines.map((line) => formatJsonMessage(line));
         const structuredMessages = extractStructuredMessages(formattedResults);
 
         for (const formatted of formattedResults) {

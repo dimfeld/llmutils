@@ -208,6 +208,20 @@ describe('codex formatter structured mapping', () => {
 });
 
 describe('createCodexStdoutFormatter', () => {
+  test('adds the configured model to session start messages', () => {
+    const formatter = createCodexStdoutFormatter('gpt-5.6-terra');
+    const formatted = formatter.formatChunk(
+      `${JSON.stringify({ type: 'thread.started', thread_id: 'thread-123' })}\n`
+    );
+
+    expect(formatted).toEqual([
+      expect.objectContaining({
+        type: 'agent_session_start',
+        model: 'gpt-5.6-terra',
+      }),
+    ]);
+  });
+
   test('deduplicates repeated usage events and tracks failed agent message', () => {
     const formatter = createCodexStdoutFormatter();
     const chunk = [

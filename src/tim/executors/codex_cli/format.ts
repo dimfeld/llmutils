@@ -745,7 +745,7 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
  * Utility to integrate with spawnAndLogOutput.formatStdout. Handles chunk splitting,
  * line-by-line JSON parsing/formatting, and captures the final agent message.
  */
-export function createCodexStdoutFormatter() {
+export function createCodexStdoutFormatter(model?: string) {
   const split = createLineSplitter();
   let finalAgentMessage: string | undefined;
   let finalAgentResponseMessage: string | undefined;
@@ -787,6 +787,13 @@ export function createCodexStdoutFormatter() {
         sessionId = fm.sessionId;
       }
       if (fm.structured) {
+        if (
+          !Array.isArray(fm.structured) &&
+          fm.structured.type === 'agent_session_start' &&
+          model
+        ) {
+          fm.structured.model = model;
+        }
         if (Array.isArray(fm.structured)) {
           structuredMessages.push(...fm.structured);
         } else {

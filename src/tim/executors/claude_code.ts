@@ -805,7 +805,7 @@ export class ClaudeCodeExecutor implements Executor {
         },
         formatStdout: (output) => {
           let lines = splitter(output);
-          const formattedResults = lines.map(formatJsonMessage);
+          const formattedResults = lines.map((line) => formatJsonMessage(line));
           const structuredMessages = extractStructuredMessages(formattedResults);
           // Capture output based on the specified mode
           const captureMode = planInfo?.captureOutput;

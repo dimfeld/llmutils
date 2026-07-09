@@ -110,6 +110,7 @@ export function formatStructuredMessage(message: StructuredMessage): string {
       case 'agent_session_start': {
         const details = [
           message.executor ? `Executor: ${message.executor}` : undefined,
+          message.model ? `Model: ${message.model}` : undefined,
           message.mode ? `Mode: ${message.mode}` : undefined,
           message.planId ? `Plan: ${message.planId}` : undefined,
         ].filter(Boolean);

@@ -102,11 +102,13 @@ export function buildSessionStart(
   {
     sessionId,
     threadId,
+    model,
     tools,
     mcpServers,
   }: {
     sessionId?: string;
     threadId?: string;
+    model?: string;
     tools?: string[];
     mcpServers?: string[];
   } = {}
@@ -115,6 +117,7 @@ export function buildSessionStart(
     type: 'agent_session_start',
     timestamp,
     executor: source,
+    model,
     sessionId,
     threadId,
     tools,

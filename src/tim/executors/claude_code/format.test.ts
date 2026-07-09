@@ -396,9 +396,10 @@ describe('formatJsonMessage', () => {
         mcp_servers: [],
       });
 
-      const result = formatJsonMessage(systemMessage);
+      const result = formatJsonMessage(systemMessage, 'opus');
       expect(result.filePaths).toBeUndefined();
       expect(result.message).toContain('Starting');
+      expect(result.structured).toEqual(expect.objectContaining({ model: 'opus' }));
     });
 
     test('extracts relative file paths correctly', () => {

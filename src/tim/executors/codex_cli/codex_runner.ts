@@ -153,7 +153,7 @@ export async function executeCodexStep(
       attempt <= maxTotalAttempts;
       attempt++
     ) {
-      const formatter = createCodexStdoutFormatter();
+      const formatter = createCodexStdoutFormatter(options.model);
       const attemptArgs = [...args];
       if (attempt === 1 || !threadId) {
         attemptArgs.push('--json', freshPrompt);

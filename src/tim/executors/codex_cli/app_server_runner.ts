@@ -185,7 +185,7 @@ export async function executeCodexStepViaAppServer(
   const tunnelEnv: Record<string, string> =
     tunnelServer && tunnelSocketPath ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {};
 
-  const formatter = createAppServerFormatter();
+  const formatter = createAppServerFormatter(model);
   // TODO: Pass configured allowed tools from timConfig when available.
   const approvalHandler = createApprovalHandler({
     sandboxAllowsFileWrites: !allowAllTools,

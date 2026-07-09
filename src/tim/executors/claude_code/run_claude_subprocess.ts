@@ -435,7 +435,7 @@ export async function runClaudeSubprocess(
       },
       formatStdout: (output) => {
         const lines = splitter(output);
-        const formattedResults = lines.map(formatJsonMessage);
+        const formattedResults = lines.map((line) => formatJsonMessage(line, modelToUse));
         const structuredMessages = extractStructuredMessages(formattedResults);
 
         // Track result messages and file paths

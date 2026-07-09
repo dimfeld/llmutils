@@ -18,6 +18,7 @@ export interface StructuredMessageBase {
 export interface AgentSessionStartMessage extends StructuredMessageBase {
   type: 'agent_session_start';
   executor?: string;
+  model?: string;
   mode?: string;
   planId?: number;
   sessionId?: string;

@@ -338,7 +338,7 @@ export function extractStructuredMessages(
 }
 
 export function extractStructuredMessagesFromLines(lines: string[]): StructuredMessage[] {
-  return extractStructuredMessages(lines.map(formatJsonMessage));
+  return extractStructuredMessages(lines.map((line) => formatJsonMessage(line)));
 }
 
 function withMessage(result: Omit<FormattedClaudeMessage, 'message'>): FormattedClaudeMessage {
@@ -356,7 +356,7 @@ function withMessage(result: Omit<FormattedClaudeMessage, 'message'>): Formatted
   };
 }
 
-export function formatJsonMessage(input: string): FormattedClaudeMessage {
+export function formatJsonMessage(input: string, model?: string): FormattedClaudeMessage {
   debugLog(input);
 
   if (input.startsWith('[DEBUG]')) {
@@ -406,6 +406,7 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
       type: message.type,
       structured: buildSessionStart(timestamp(), 'claude', {
         sessionId: message.session_id,
+        model,
         tools: message.tools,
         mcpServers: message.mcp_servers.map((server) => `${server.name} (${server.status})`),
       }),
