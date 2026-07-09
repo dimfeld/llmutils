@@ -23,9 +23,12 @@ export interface ExecuteReviewModeOptions {
     config: TimConfig,
     isTaskScoped?: boolean,
     model?: string,
-    timEnvironment?: TimWorkspaceCommandEnvironmentOptions
+    timEnvironment?: TimWorkspaceCommandEnvironmentOptions,
+    reasoningLevel?: CodexReasoningLevel
   ) => Promise<string>;
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+  /** Reasoning effort parsed from a model suffix, which takes precedence over config. */
+  reasoningLevel?: CodexReasoningLevel;
 }
 
 export async function executeReviewMode(
@@ -42,14 +45,25 @@ export async function executeReviewMode(
 
   // Use the injected executor for testing, or the default JSON schema executor
   const executor = options?.reviewExecutor ?? executeCodexReviewWithSchema;
-  const reviewerOutput = await executor(
-    contextContent,
-    gitRoot,
-    timConfig,
-    planInfo.isTaskScoped,
-    model,
-    options?.timEnvironment
-  );
+  const reviewerOutput =
+    options?.reasoningLevel === undefined
+      ? await executor(
+          contextContent,
+          gitRoot,
+          timConfig,
+          planInfo.isTaskScoped,
+          model,
+          options?.timEnvironment
+        )
+      : await executor(
+          contextContent,
+          gitRoot,
+          timConfig,
+          planInfo.isTaskScoped,
+          model,
+          options.timEnvironment,
+          options.reasoningLevel
+        );
 
   log('Reviewer output captured.');
 
@@ -88,7 +102,8 @@ async function executeCodexReviewWithSchema(
   timConfig: TimConfig,
   isTaskScoped?: boolean,
   model?: string,
-  timEnvironment?: TimWorkspaceCommandEnvironmentOptions
+  timEnvironment?: TimWorkspaceCommandEnvironmentOptions,
+  reasoningLevel?: CodexReasoningLevel
 ): Promise<string> {
   const useAppServer = isCodexAppServerEnabled();
   let tempDir: string | undefined;
@@ -108,9 +123,11 @@ async function executeCodexReviewWithSchema(
 
     // Get reasoning level from config, with defaults: medium for scoped, high for full
     const codexOptions = timConfig.executors?.[CodexCliExecutorName];
-    const reasoningLevel: CodexReasoningLevel = isTaskScoped
-      ? (codexOptions?.reasoning?.scopedReview ?? 'medium')
-      : (codexOptions?.reasoning?.fullReview ?? 'high');
+    const resolvedReasoningLevel: CodexReasoningLevel =
+      reasoningLevel ??
+      (isTaskScoped
+        ? (codexOptions?.reasoning?.scopedReview ?? 'medium')
+        : (codexOptions?.reasoning?.fullReview ?? 'high'));
 
     // Use executeCodexStep with the schema file path and 30-minute timeout for reviews
     return await executeCodexStep(prompt, cwd, timConfig, {
@@ -118,7 +135,7 @@ async function executeCodexReviewWithSchema(
       ...(schemaFilePath ? { outputSchemaPath: schemaFilePath } : {}),
       outputSchema: jsonSchema,
       inactivityTimeoutMs: REVIEW_TIMEOUT_MS,
-      reasoningLevel,
+      reasoningLevel: resolvedReasoningLevel,
       timEnvironment,
     });
   } finally {

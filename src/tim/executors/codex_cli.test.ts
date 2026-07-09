@@ -703,6 +703,23 @@ describe('CodexCliExecutor - orchestrator routing contract', () => {
     });
   });
 
+  test('extracts an optional reasoning effort suffix from the model string', async () => {
+    const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir, model: 'gpt-5.6-sol:high' }, {
+      executors: { 'codex-cli': { reasoning: { default: 'medium' } } },
+    } as any);
+
+    await exec.execute('CTX', {
+      planId: '46',
+      planTitle: 'Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+    });
+
+    const options = executeCodexStepMock.mock.calls[0][3];
+    expect(options).toMatchObject({ model: 'gpt-5.6-sol', reasoningLevel: 'high' });
+  });
+
   test('uses reasoningLevel from timConfig executor config', async () => {
     const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
     const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {
