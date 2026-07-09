@@ -1202,7 +1202,7 @@
       },
       "additionalProperties": false
     },
-    "reviewGuideComment": {
+    "reviewGuideComments": {
       "description": "Configuration options for PR review-guide comments",
       "type": "object",
       "properties": {

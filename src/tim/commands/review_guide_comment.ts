@@ -234,7 +234,7 @@ export async function handlePrReviewGuideCommentCommand(
     callback: async () => {
       const executorName = resolveCommentExecutor(
         options.executor,
-        config.reviewGuideComment?.executor
+        config.reviewGuideComments?.executor
       );
 
       const prUrl = await resolvePrUrl({
@@ -349,8 +349,8 @@ export async function handlePrReviewGuideCommentCommand(
 
       const configModel =
         executorName === ClaudeCodeExecutorName
-          ? config.reviewGuideComment?.model?.claude
-          : config.reviewGuideComment?.model?.codex;
+          ? config.reviewGuideComments?.model?.claude
+          : config.reviewGuideComments?.model?.codex;
 
       const executor = buildExecutorAndLog(
         executorName,
@@ -378,7 +378,7 @@ export async function handlePrReviewGuideCommentCommand(
             useJj: useJjDiffInstructions,
             nonTestChangeStats,
             customInstructions,
-            commentInstructions: config.reviewGuideComment?.instructions,
+            commentInstructions: config.reviewGuideComments?.instructions,
           }),
           {
             planId: `pr-${prContext.prNumber}`,

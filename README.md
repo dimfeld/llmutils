@@ -367,7 +367,7 @@ githubWebhooks:
 Project-specific directions for the generated PR comment can live in the project config:
 
 ```yaml
-reviewGuideComment:
+reviewGuideComments:
   executor: codex-cli
   model:
     codex: gpt-5.6-terra

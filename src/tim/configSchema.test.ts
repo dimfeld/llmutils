@@ -1784,7 +1784,7 @@ describe('configSchema', () => {
 
     test('should accept review guide comments instructions', () => {
       const config = {
-        reviewGuideComment: {
+        reviewGuideComments: {
           executor: 'codex-cli',
           model: { codex: 'gpt-5.6-terra' },
           instructions: 'Mention migration risk before UI changes when both are present in the PR.',
@@ -1793,7 +1793,7 @@ describe('configSchema', () => {
 
       const result = timConfigSchema.parse(config);
 
-      expect(result.reviewGuideComment?.instructions).toBe(
+      expect(result.reviewGuideComments?.instructions).toBe(
         'Mention migration risk before UI changes when both are present in the PR.'
       );
     });

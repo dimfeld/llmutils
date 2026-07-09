@@ -952,7 +952,7 @@ export const timConfigSchema = z
       .optional()
       .describe('Configuration options for the review guide command'),
     /** PR review-guide comment configuration options */
-    reviewGuideComment: z
+    reviewGuideComments: z
       .object({
         executor: z.enum(['claude-code', 'codex-cli']).optional(),
         model: z
