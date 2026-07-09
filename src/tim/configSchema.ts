@@ -939,6 +939,8 @@ export const timConfigSchema = z
     /** Review guide-specific configuration options */
     reviewGuide: z
       .object({
+        /** Executor to use for generating the review guide */
+        executor: z.enum(['claude-code', 'codex-cli']).optional(),
         /** Model overrides for review guide executors */
         model: z
           .object({

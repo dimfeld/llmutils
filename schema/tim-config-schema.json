@@ -1185,6 +1185,13 @@
       "description": "Configuration options for the review guide command",
       "type": "object",
       "properties": {
+        "executor": {
+          "type": "string",
+          "enum": [
+            "claude-code",
+            "codex-cli"
+          ]
+        },
         "model": {
           "type": "object",
           "properties": {
@@ -1208,7 +1215,10 @@
       "properties": {
         "executor": {
           "type": "string",
-          "enum": ["claude-code", "codex-cli"]
+          "enum": [
+            "claude-code",
+            "codex-cli"
+          ]
         },
         "model": {
           "type": "object",

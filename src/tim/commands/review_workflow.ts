@@ -1819,11 +1819,9 @@ export async function runReviewGuideWorkflow(
       const executorOrder: Array<'guide' | ReviewExecutorName | 'codex-simplification'> = [];
       const hasClaude = selectedExecutorNames.includes('claude-code');
       const hasCodex = selectedExecutorNames.includes('codex-cli');
-      const guideExecutorName: ReviewExecutorName | null = hasClaude
-        ? 'claude-code'
-        : hasCodex
-          ? 'codex-cli'
-          : null;
+      const guideExecutorName: ReviewExecutorName | null =
+        options.config.reviewGuide?.executor ??
+        (hasClaude ? 'claude-code' : hasCodex ? 'codex-cli' : null);
       const runIssuePrompts = options.guideOnly !== true;
       const concurrentJobCount =
         (guideExecutorName ? 1 : 0) +
