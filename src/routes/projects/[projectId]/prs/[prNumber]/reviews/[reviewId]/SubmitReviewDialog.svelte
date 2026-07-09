@@ -183,10 +183,6 @@
     onClose();
   }
 
-  function handleBackdrop(e: MouseEvent) {
-    if (e.target === e.currentTarget) handleClose();
-  }
-
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') handleClose();
   }
@@ -200,7 +196,6 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="submit-review-title"
-    onclick={handleBackdrop}
     onkeydown={handleKeydown}
     tabindex="-1"
   >
