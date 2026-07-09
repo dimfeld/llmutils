@@ -18,7 +18,11 @@ import {
   getCombinedTitle,
   getCombinedTitleFromSummary,
 } from '../display_utils.js';
-import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
+import {
+  buildExecutorAndLog,
+  DEFAULT_EXECUTOR,
+  defaultModelForExecutor,
+} from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { autoClaimPlan, isAutoClaimEnabled } from '../assignments/auto_claim.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
@@ -343,7 +347,9 @@ export async function handleGenerateCommand(
           DEFAULT_EXECUTOR;
         const sharedExecutorOptions: ExecutorCommonOptions = {
           baseDir: currentBaseDir,
-          model: config.models?.stepGeneration,
+          model:
+            config.models?.stepGeneration ??
+            defaultModelForExecutor(executorName, 'stepGeneration'),
           noninteractive: noninteractive ? true : undefined,
           terminalInput: terminalInputEnabled,
           closeTerminalInputOnResult: false,

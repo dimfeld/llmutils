@@ -11,7 +11,10 @@ export { DEFAULT_EXECUTOR };
 export * from './build.ts';
 export { ClaudeCodeExecutor, ClaudeCodeExecutorName, CodexCliExecutor, CodexCliExecutorName };
 
-export function defaultModelForExecutor(executorId: string, modelType: 'execution' | 'answerPr') {
+export function defaultModelForExecutor(
+  executorId: string,
+  modelType: 'execution' | 'answerPr' | 'stepGeneration'
+) {
   const executor = executors.get(executorId);
   modelType = modelType ?? 'execution';
   return executor?.defaultModel?.[modelType] ?? DEFAULT_RUN_MODEL;

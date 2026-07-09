@@ -20,8 +20,9 @@ export class CodexCliExecutor implements Executor {
   static description = 'Executes the plan using OpenAI Codex CLI (codex exec)';
   static optionsSchema = codexCliOptionsSchema;
   static defaultModel = {
-    execution: 'gpt-5.5',
-    answerPr: 'gpt-5.5',
+    execution: 'gpt-5.6-terra',
+    answerPr: 'gpt-5.6-terra',
+    stepGeneration: 'gpt-5.6-sol',
   };
   static supportsSubagents = true;
   readonly supportsSubagents = true;

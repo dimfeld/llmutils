@@ -529,7 +529,7 @@ describe('tim/commands/pr', () => {
     mockBuildExecutorAndLog.mockReturnValue({ execute: mockExecutorExecute } as any);
     mockDefaultModelForExecutor.mockReset();
     mockDefaultModelForExecutor.mockImplementation((executorId: string) =>
-      executorId === 'codex-cli' ? 'gpt-5.5' : 'opus'
+      executorId === 'codex-cli' ? 'gpt-5.6-terra' : 'opus'
     );
     mockExecutorExecute.mockClear();
     lifecycleMocks.ctor.mockClear();

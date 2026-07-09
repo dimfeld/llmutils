@@ -151,6 +151,7 @@ export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = 
   defaultModel?: {
     execution?: string;
     answerPr?: string;
+    stepGeneration?: string;
   };
 }
 

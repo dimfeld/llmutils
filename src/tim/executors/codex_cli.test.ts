@@ -24,6 +24,12 @@ describe('CodexCliExecutor - failure detection across agents', () => {
     (await import('node:fs/promises')).mkdir(tempDir, { recursive: true }).catch(() => {});
   });
 
+  test('uses gpt-5.6-sol as its default model for step generation', async () => {
+    const { CodexCliExecutor } = await import('./codex_cli.js');
+
+    expect(CodexCliExecutor.defaultModel.stepGeneration).toBe('gpt-5.6-sol');
+  });
+
   test('implementer failure short-circuits execution and skips auto-mark', async () => {
     vi.doMock('../../logging.ts', () => ({
       log: vi.fn(() => {}),

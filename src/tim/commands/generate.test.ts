@@ -12,6 +12,7 @@ vi.mock('../../logging.js', () => ({
 vi.mock('../executors/index.js', () => ({
   buildExecutorAndLog: vi.fn(),
   DEFAULT_EXECUTOR: 'claude_code',
+  defaultModelForExecutor: vi.fn(),
 }));
 
 vi.mock('../workspace/workspace_setup.js', () => ({
@@ -100,7 +101,7 @@ import { generateClaudeCodePlanningPrompt } from '../prompt.js';
 import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { log, warn } from '../../logging.js';
-import { buildExecutorAndLog } from '../executors/index.js';
+import { buildExecutorAndLog, defaultModelForExecutor } from '../executors/index.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import { resolvePlanByNumericId } from '../plans.js';
 import { buildPromptText } from './prompts.js';
@@ -145,6 +146,7 @@ describe('handleGenerateCommand', () => {
     filePathPrefix: '',
   };
   const buildExecutorAndLogSpy = vi.mocked(buildExecutorAndLog);
+  const defaultModelForExecutorSpy = vi.mocked(defaultModelForExecutor);
   const setupWorkspaceSpy = vi.mocked(setupWorkspace);
   const buildPromptTextSpy = vi.mocked(buildPromptText);
   const isAutoClaimEnabledSpy = vi.mocked(isAutoClaimEnabled);
@@ -165,6 +167,7 @@ describe('handleGenerateCommand', () => {
     vi.clearAllMocks();
     mockExecutorExecute.mockImplementation(async () => {});
     buildExecutorAndLogSpy.mockImplementation(() => mockExecutor as any);
+    defaultModelForExecutorSpy.mockReturnValue('default-generation-model');
     setupWorkspaceSpy.mockImplementation(
       async (options: any, baseDir: string, planFile: string) =>
         ({
@@ -764,6 +767,26 @@ describe('handleGenerateCommand', () => {
     await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
 
     expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('codex-cli');
+  });
+
+  test('uses the selected executor step-generation default when not configured', async () => {
+    const planPath = await createStubPlan(125);
+    loadedConfig.models = {};
+    loadedConfig.defaultExecutor = 'codex-cli';
+
+    await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
+
+    expect(defaultModelForExecutorSpy).toHaveBeenCalledWith('codex-cli', 'stepGeneration');
+    expect(buildExecutorAndLogSpy.mock.calls[0][1].model).toBe('default-generation-model');
+  });
+
+  test('prefers the configured step-generation model over the executor default', async () => {
+    const planPath = await createStubPlan(126);
+
+    await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
+
+    expect(defaultModelForExecutorSpy).not.toHaveBeenCalled();
+    expect(buildExecutorAndLogSpy.mock.calls[0][1].model).toBe('test-model');
   });
 
   test('computes terminal input enabled by default', async () => {
