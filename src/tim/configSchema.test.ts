@@ -1782,6 +1782,18 @@ describe('configSchema', () => {
       expect(resultCodex.reviewGuide?.model?.claude).toBeUndefined();
     });
 
+    test('should accept separate guide and issue model configurations', () => {
+      const result = timConfigSchema.parse({
+        reviewGuide: {
+          guideModel: { codex: 'gpt-5.6-sol:high' },
+          issuesModel: { codex: 'gpt-5.6-terra:medium' },
+        },
+      });
+
+      expect(result.reviewGuide?.guideModel?.codex).toBe('gpt-5.6-sol:high');
+      expect(result.reviewGuide?.issuesModel?.codex).toBe('gpt-5.6-terra:medium');
+    });
+
     test('should accept review guide comments instructions', () => {
       const config = {
         reviewGuideComments: {

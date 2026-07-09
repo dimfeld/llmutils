@@ -948,6 +948,29 @@ export const timConfigSchema = z
             codex: z.string().optional().describe('Model override for codex-cli execution'),
           })
           .strict()
+          .optional()
+          .describe('Legacy model override used for both guide and issue generation'),
+        /** Model overrides for the final review-guide generation pass. */
+        guideModel: z
+          .object({
+            claude: z
+              .string()
+              .optional()
+              .describe('Model override for claude-code guide generation'),
+            codex: z.string().optional().describe('Model override for codex-cli guide generation'),
+          })
+          .strict()
+          .optional(),
+        /** Model overrides for issue and simplification review passes. */
+        issuesModel: z
+          .object({
+            claude: z
+              .string()
+              .optional()
+              .describe('Model override for claude-code issue generation'),
+            codex: z.string().optional().describe('Model override for codex-cli issue generation'),
+          })
+          .strict()
           .optional(),
       })
       .strict()

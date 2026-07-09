@@ -1556,6 +1556,45 @@ describe('review_pr command', () => {
     );
   });
 
+  test('uses separate configured models for the guide and issue passes', async () => {
+    mockLoadEffectiveConfig.mockResolvedValueOnce({
+      terminalInput: true,
+      review: {},
+      executors: {},
+      reviewGuide: {
+        guideModel: { codex: 'gpt-guide' },
+        issuesModel: { codex: 'gpt-issues' },
+      },
+    } as any);
+
+    const codexExecute = vi
+      .fn()
+      .mockImplementation(async (_prompt: string, planInfo: { executionMode: string }) => {
+        if (planInfo.executionMode === 'bare') {
+          await fs.mkdir(path.dirname(guidePath), { recursive: true });
+          await fs.writeFile(guidePath, '# Codex Guide', 'utf8');
+          return { content: 'wrote guide' };
+        }
+
+        return {
+          content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+        };
+      });
+    mockBuildExecutorAndLog.mockReturnValue({ execute: codexExecute } as any);
+
+    await handleReviewGuideCommand(
+      '42',
+      { executor: 'codex-cli', terminalInput: false },
+      makeCommand()
+    );
+
+    expect(mockBuildExecutorAndLog.mock.calls.map((call) => (call[1] as any).model)).toEqual([
+      'gpt-guide',
+      'gpt-issues',
+      'gpt-issues',
+    ]);
+  });
+
   test('codex simplification review issues are stored with review issues', async () => {
     const codexExecute = vi
       .fn()

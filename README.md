@@ -334,6 +334,16 @@ When the target has a resolvable GitHub PR — a plan-backed target whose plan l
 
 `tim review-guide generate <planId>` generates a review guide for a plan that does not yet have an associated PR. It reuses the same pipeline as `tim pr review-guide` and stores results in the `review` table, keyed by the plan's UUID instead of a PR URL. With `--auto-workspace`, it routes through the managed workspace and reviews the latest committed state; without it, it runs in the current working tree and includes uncommitted changes in the diff.
 
+Configure `reviewGuide.guideModel` and `reviewGuide.issuesModel` independently when the final guide and issue-extraction passes should use different models. The older `reviewGuide.model` setting remains the fallback for both passes.
+
+```yaml
+reviewGuide:
+  guideModel:
+    codex: gpt-5.6-sol:high
+  issuesModel:
+    codex: gpt-5.6-terra:medium
+```
+
 `tim review-guide list-issues <planId|branch|prUrl>` finds the latest stored review guide for the resolved plan or PR and includes linked guides from the other object when a plan is linked to a PR or a PR is linked to a plan. By default it shows unresolved actionable issues; use `--all` to include resolved issues. `tim review-guide resolve-issue <issueId> [planId|branch|prUrl]` marks an issue resolved, and the optional target validates that the issue belongs to the latest review guide.
 
 `tim review-guide diffview [planId|branch|prUrl]` exports the latest stored review guide as diffview-compatible JSON — `{ title, groups: [{ name, description, files: [{ path }] }] }` — as a deterministic transformation of an already-generated guide (no executor runs). The target defaults to the current git/jj branch's plan/PR guide. The `groups` array is flat: every heading (`##`/`###`, plus any extra `#` beyond the title) becomes its own top-level group in document order, with the section's leading markdown prose as `description` and its diff-hunk files as `files`; a file appearing under multiple headings is listed only under the first. It writes `review-guide.json` to the current directory by default, or to `-o, --output <path>`, and errors (writing no file) when the target has no stored guide.

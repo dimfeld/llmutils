@@ -1840,8 +1840,10 @@ export async function runReviewGuideWorkflow(
             model:
               options.model ??
               (guideExecutorName === 'claude-code'
-                ? options.config.reviewGuide?.model?.claude
-                : options.config.reviewGuide?.model?.codex),
+                ? (options.config.reviewGuide?.guideModel?.claude ??
+                  options.config.reviewGuide?.model?.claude)
+                : (options.config.reviewGuide?.guideModel?.codex ??
+                  options.config.reviewGuide?.model?.codex)),
             terminalInput: executorTerminalInput,
             noninteractive: executorNoninteractive,
             timEnvironment,
@@ -1870,7 +1872,10 @@ export async function runReviewGuideWorkflow(
           'claude-code',
           {
             baseDir: options.baseDir,
-            model: options.model ?? options.config.reviewGuide?.model?.claude,
+            model:
+              options.model ??
+              options.config.reviewGuide?.issuesModel?.claude ??
+              options.config.reviewGuide?.model?.claude,
             terminalInput: executorTerminalInput,
             noninteractive: executorNoninteractive,
             timEnvironment,
@@ -1898,7 +1903,10 @@ export async function runReviewGuideWorkflow(
           'codex-cli',
           {
             baseDir: options.baseDir,
-            model: options.model ?? options.config.reviewGuide?.model?.codex,
+            model:
+              options.model ??
+              options.config.reviewGuide?.issuesModel?.codex ??
+              options.config.reviewGuide?.model?.codex,
             terminalInput: executorTerminalInput,
             noninteractive: executorNoninteractive,
             timEnvironment,
@@ -1923,7 +1931,10 @@ export async function runReviewGuideWorkflow(
           'codex-cli',
           {
             baseDir: options.baseDir,
-            model: options.model ?? options.config.reviewGuide?.model?.codex,
+            model:
+              options.model ??
+              options.config.reviewGuide?.issuesModel?.codex ??
+              options.config.reviewGuide?.model?.codex,
             terminalInput: executorTerminalInput,
             noninteractive: executorNoninteractive,
             timEnvironment,

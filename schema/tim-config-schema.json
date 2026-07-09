@@ -1193,6 +1193,7 @@
           ]
         },
         "model": {
+          "description": "Legacy model override used for both guide and issue generation",
           "type": "object",
           "properties": {
             "claude": {
@@ -1201,6 +1202,34 @@
             },
             "codex": {
               "description": "Model override for codex-cli execution",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "guideModel": {
+          "type": "object",
+          "properties": {
+            "claude": {
+              "description": "Model override for claude-code guide generation",
+              "type": "string"
+            },
+            "codex": {
+              "description": "Model override for codex-cli guide generation",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "issuesModel": {
+          "type": "object",
+          "properties": {
+            "claude": {
+              "description": "Model override for claude-code issue generation",
+              "type": "string"
+            },
+            "codex": {
+              "description": "Model override for codex-cli issue generation",
               "type": "string"
             }
           },
