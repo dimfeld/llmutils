@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
+import * as z from 'zod/v4';
 import { getTimConfigRoot } from '../common/config_paths.js';
 import {
   DEFAULT_SLACK_DAILY_DIGEST_WEEKDAYS,
@@ -14,6 +15,41 @@ import {
   RepositoryConfigResolver,
   type RepositoryConfigResolution,
 } from './repository_config_resolver.ts';
+
+function removeUnknownConfigKeys(
+  config: unknown,
+  issues: z.ZodIssue[]
+): { config: unknown; paths: string[] } {
+  const paths: string[] = [];
+  const clonedConfig: unknown = structuredClone(config);
+
+  for (const issue of issues) {
+    if (issue.code !== 'unrecognized_keys') {
+      continue;
+    }
+
+    const parentPath = issue.path.map(String);
+    let parent: unknown = clonedConfig;
+    for (const segment of issue.path) {
+      if (typeof parent !== 'object' || parent === null) {
+        parent = undefined;
+        break;
+      }
+      parent = (parent as Record<string | number, unknown>)[segment];
+    }
+
+    if (typeof parent !== 'object' || parent === null || Array.isArray(parent)) {
+      continue;
+    }
+
+    for (const key of issue.keys) {
+      delete (parent as Record<string, unknown>)[key];
+      paths.push([...parentPath, key].join('.') || 'root');
+    }
+  }
+
+  return { config: clonedConfig, paths };
+}
 
 /**
  * Deeply merges two TimConfig objects, with localConfig overriding mainConfig.
@@ -341,7 +377,17 @@ export async function loadConfig(
     }
   }
 
-  const result = timConfigSchema.safeParse(parsedYaml);
+  let result = timConfigSchema.safeParse(parsedYaml);
+
+  if (!result.success) {
+    const unknownKeys = removeUnknownConfigKeys(parsedYaml, result.error.issues);
+    if (unknownKeys.paths.length > 0) {
+      warn(
+        `Unknown configuration key${unknownKeys.paths.length === 1 ? '' : 's'} in ${configPath}: ${unknownKeys.paths.join(', ')}. Ignoring.`
+      );
+      result = timConfigSchema.safeParse(unknownKeys.config);
+    }
+  }
 
   if (!result.success) {
     const errorDetails = result.error.issues

@@ -135,6 +135,27 @@ describe('configLoader', () => {
     clearConfigCache();
   });
 
+  test('warns and ignores unknown configuration keys', async () => {
+    const configPath = path.join(configDir, 'tim.yml');
+    await createTestFile(
+      configPath,
+      `artifactRetentionDays: 14
+unknownTopLevel: true
+reviewGuide:
+  unknownNested: ignored
+  enabled: true
+`
+    );
+
+    const config = await loadConfig(configPath);
+
+    expect(config.artifactRetentionDays).toBe(14);
+    expect(config.reviewGuide?.enabled).toBe(true);
+    expect(mockWarn).toHaveBeenCalledWith(
+      expect.stringContaining('unknownTopLevel, reviewGuide.unknownNested')
+    );
+  });
+
   test('findConfigPath returns default path when it exists', async () => {
     const defaultConfigPath = path.join(configDir, 'tim.yml');
     await fs.writeFile(defaultConfigPath, 'postApplyCommands: []');
