@@ -35,7 +35,7 @@ function removeUnknownConfigKeys(
         parent = undefined;
         break;
       }
-      parent = (parent as Record<string | number, unknown>)[segment];
+      parent = (parent as Record<string, unknown>)[String(segment)];
     }
 
     if (typeof parent !== 'object' || parent === null || Array.isArray(parent)) {

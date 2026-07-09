@@ -143,17 +143,15 @@ describe('configLoader', () => {
 unknownTopLevel: true
 reviewGuide:
   unknownNested: ignored
-  enabled: true
+  executor: codex-cli
 `
     );
 
     const config = await loadConfig(configPath);
 
     expect(config.artifactRetentionDays).toBe(14);
-    expect(config.reviewGuide?.enabled).toBe(true);
-    expect(mockWarn).toHaveBeenCalledWith(
-      expect.stringContaining('unknownTopLevel, reviewGuide.unknownNested')
-    );
+    expect(config.reviewGuide?.executor).toBe('codex-cli');
+    expect(mockWarn).toHaveBeenCalledWith(expect.stringContaining('reviewGuide.unknownNested'));
   });
 
   test('findConfigPath returns default path when it exists', async () => {
