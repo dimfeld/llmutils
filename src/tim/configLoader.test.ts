@@ -1582,7 +1582,7 @@ defaultExecutor: direct-call
               codex: 'gpt-5.5',
             },
           },
-          reviewGuideComments: {
+          reviewGuideComment: {
             instructions: 'Global review-guide comment direction.',
           },
         }),
@@ -1592,7 +1592,7 @@ defaultExecutor: direct-call
       await fs.writeFile(
         localConfigPath,
         yaml.stringify({
-          reviewGuideComments: {
+          reviewGuideComment: {
             instructions: 'Project-specific review-guide comment direction.',
           },
         }),
@@ -1602,7 +1602,7 @@ defaultExecutor: direct-call
       const config = await loadEffectiveConfig();
 
       expect(config.reviewGuide?.model?.codex).toBe('gpt-5.5');
-      expect(config.reviewGuideComments?.instructions).toBe(
+      expect(config.reviewGuideComment?.instructions).toBe(
         'Project-specific review-guide comment direction.'
       );
     });

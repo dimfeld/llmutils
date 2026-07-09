@@ -106,7 +106,7 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
   mergeConfigKey('proofGeneration');
   mergeConfigKey('githubWebhooks');
   mergeConfigKey('reviewGuide');
-  mergeConfigKey('reviewGuideComments');
+  mergeConfigKey('reviewGuideComment');
   mergeConfigKey('simplify');
   mergeConfigKey('subagents');
   mergeConfigKey('tags');

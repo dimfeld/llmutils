@@ -1202,10 +1202,28 @@
       },
       "additionalProperties": false
     },
-    "reviewGuideComments": {
+    "reviewGuideComment": {
       "description": "Configuration options for PR review-guide comments",
       "type": "object",
       "properties": {
+        "executor": {
+          "type": "string",
+          "enum": ["claude-code", "codex-cli"]
+        },
+        "model": {
+          "type": "object",
+          "properties": {
+            "claude": {
+              "description": "Model override for claude-code execution",
+              "type": "string"
+            },
+            "codex": {
+              "description": "Model override for codex-cli execution",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
         "instructions": {
           "description": "Extra directions to include in PR review-guide comment prompts",
           "type": "string"

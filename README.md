@@ -367,7 +367,10 @@ githubWebhooks:
 Project-specific directions for the generated PR comment can live in the project config:
 
 ```yaml
-reviewGuideComments:
+reviewGuideComment:
+  executor: codex-cli
+  model:
+    codex: gpt-5.6-terra
   instructions: |
     Call out database migrations before UI-only changes.
     Mention generated files only when reviewers need to inspect them.

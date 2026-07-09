@@ -76,13 +76,14 @@ function getRootOptions(command: RootCommandLike | undefined): { config?: string
   return current?.opts?.() ?? {};
 }
 
-function resolveCommentExecutor(executor: string | undefined): string {
-  if (executor === ClaudeCodeExecutorName || executor === CodexCliExecutorName) {
-    return executor;
+function resolveCommentExecutor(executor: string | undefined, configuredExecutor?: string): string {
+  const selectedExecutor = executor ?? configuredExecutor;
+  if (selectedExecutor === ClaudeCodeExecutorName || selectedExecutor === CodexCliExecutorName) {
+    return selectedExecutor;
   }
-  if (executor) {
+  if (selectedExecutor) {
     throw new Error(
-      `Unknown executor "${executor}". Use "${ClaudeCodeExecutorName}" or "${CodexCliExecutorName}".`
+      `Unknown executor "${selectedExecutor}". Use "${ClaudeCodeExecutorName}" or "${CodexCliExecutorName}".`
     );
   }
   // The automatic guide comment is a short, single-pass task; default to codex-cli.
@@ -231,7 +232,10 @@ export async function handlePrReviewGuideCommentCommand(
     command: 'review-guide-comment',
     interactive: options.nonInteractive !== true,
     callback: async () => {
-      const executorName = resolveCommentExecutor(options.executor);
+      const executorName = resolveCommentExecutor(
+        options.executor,
+        config.reviewGuideComment?.executor
+      );
 
       const prUrl = await resolvePrUrl({
         db,
@@ -345,8 +349,8 @@ export async function handlePrReviewGuideCommentCommand(
 
       const configModel =
         executorName === ClaudeCodeExecutorName
-          ? config.reviewGuide?.model?.claude
-          : config.reviewGuide?.model?.codex;
+          ? config.reviewGuideComment?.model?.claude
+          : config.reviewGuideComment?.model?.codex;
 
       const executor = buildExecutorAndLog(
         executorName,
@@ -374,7 +378,7 @@ export async function handlePrReviewGuideCommentCommand(
             useJj: useJjDiffInstructions,
             nonTestChangeStats,
             customInstructions,
-            commentInstructions: config.reviewGuideComments?.instructions,
+            commentInstructions: config.reviewGuideComment?.instructions,
           }),
           {
             planId: `pr-${prContext.prNumber}`,
