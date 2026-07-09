@@ -1,6 +1,0 @@
-{
-  "branch": "",
-  "commitSha": "4d2a32ac47463de117be6d5dd12c621328d01b14",
-  "startedAt": "2026-07-09T23:14:00.295Z",
-  "description": "Verify Submit review to GitHub cannot close by clicking outside"
-}
