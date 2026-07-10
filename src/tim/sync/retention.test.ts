@@ -47,13 +47,25 @@ describe('sync sequence retention', () => {
     expect(sequenceIds()).toEqual([3]);
   });
 
-  test('time-based ceiling overrides a peer cursor that is far behind', () => {
+  test('a peer cursor caps time-based pruning when the peer is far behind', () => {
     insertSequence(OLD);
     insertSequence(OLD);
     insertSequence(RECENT);
     insertSequence(RECENT);
     upsertTimNode(db, { nodeId: 'peer-a', role: 'persistent' });
     updateTimNodeCursor(db, 'peer-a', 1);
+
+    expect(pruneSyncSequence(db, { now: NOW })).toBe(0);
+    expect(sequenceIds()).toEqual([1, 2, 3, 4]);
+  });
+
+  test('a peer cursor remains the pruning boundary when old rows are further behind', () => {
+    insertSequence(OLD);
+    insertSequence(OLD);
+    insertSequence(OLD);
+    insertSequence(RECENT);
+    upsertTimNode(db, { nodeId: 'peer-a', role: 'persistent' });
+    updateTimNodeCursor(db, 'peer-a', 3);
 
     expect(pruneSyncSequence(db, { now: NOW })).toBe(2);
     expect(sequenceIds()).toEqual([3, 4]);

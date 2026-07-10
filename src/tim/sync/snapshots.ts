@@ -51,6 +51,8 @@ export interface CanonicalPlanSnapshot {
     docs: string[] | null;
     changedFiles: string[] | null;
     planGeneratedAt: string | null;
+    docsUpdatedAt?: string | null;
+    lessonsAppliedAt?: string | null;
     reviewIssues: unknown[] | null;
     parentUuid: string | null;
     epic: boolean;
@@ -135,8 +137,8 @@ export type CanonicalSnapshot =
   | CanonicalNeverExistedSnapshot
   | CanonicalProjectSettingSnapshot;
 
-// Keep in sync with isWorkCompleteStatus in src/tim/plans/plan_state_utils.ts.
-const ASSIGNMENT_CLEANUP_STATUSES = new Set(['done', 'needs_review', 'reviewed', 'cancelled']);
+// Review states retain the machine-local worker claim until final completion.
+const ASSIGNMENT_CLEANUP_STATUSES = new Set(['done', 'cancelled']);
 
 const CanonicalProjectSnapshotSchema = z.object({
   type: z.literal('project'),
@@ -174,6 +176,8 @@ const CanonicalPlanSnapshotSchema = z.object({
     docs: z.array(z.string()).nullable(),
     changedFiles: z.array(z.string()).nullable(),
     planGeneratedAt: z.string().nullable(),
+    docsUpdatedAt: z.string().nullable().optional(),
+    lessonsAppliedAt: z.string().nullable().optional(),
     reviewIssues: z.array(z.unknown()).nullable(),
     parentUuid: z.string().nullable(),
     epic: z.boolean(),
@@ -365,6 +369,12 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
   if (!project) {
     return [];
   }
+  const existingCanonicalTimestamps = db
+    .prepare('SELECT docs_updated_at, lessons_applied_at FROM plan_canonical WHERE uuid = ?')
+    .get(snapshot.plan.uuid) as {
+    docs_updated_at: string | null;
+    lessons_applied_at: string | null;
+  } | null;
   upsertCanonicalPlanInTransaction(db, project.id, {
     uuid: snapshot.plan.uuid,
     planId: snapshot.plan.planId,
@@ -392,6 +402,14 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
     docs: snapshot.plan.docs,
     changedFiles: snapshot.plan.changedFiles,
     planGeneratedAt: snapshot.plan.planGeneratedAt,
+    sourceDocsUpdatedAt:
+      snapshot.plan.docsUpdatedAt === undefined
+        ? (existingCanonicalTimestamps?.docs_updated_at ?? null)
+        : snapshot.plan.docsUpdatedAt,
+    sourceLessonsAppliedAt:
+      snapshot.plan.lessonsAppliedAt === undefined
+        ? (existingCanonicalTimestamps?.lessons_applied_at ?? null)
+        : snapshot.plan.lessonsAppliedAt,
     reviewIssues: snapshot.plan.reviewIssues as never,
     tasks: snapshot.plan.tasks.map((task) => ({
       uuid: task.uuid,

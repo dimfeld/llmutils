@@ -1,4 +1,5 @@
 export type {
+  ApplyBatchOptions,
   ApplyBatchResult,
   ApplyOperationOptions,
   ApplyOperationResult,

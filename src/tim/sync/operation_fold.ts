@@ -229,6 +229,14 @@ function applyOperationToUnchecked(
         },
         options
       );
+    case 'plan.reorder_tasks':
+      return applyOperationToReorderTasks(
+        adapter,
+        envelope as SyncOperationEnvelope & {
+          op: Extract<SyncOperationPayload, { type: 'plan.reorder_tasks' }>;
+        },
+        options
+      );
     case 'plan.add_dependency':
     case 'plan.remove_dependency':
       return applyOperationToDependency(
@@ -338,6 +346,7 @@ function getBaseRevisionTarget(
     }
     case 'plan.set_scalar':
     case 'plan.patch_text':
+    case 'plan.reorder_tasks':
     case 'plan.delete':
     case 'plan.set_parent': {
       const plan = adapter.getPlan(op.planUuid);
@@ -367,6 +376,7 @@ function getAtomicBatchBaselineRevision(
   if (
     (op.type === 'plan.set_scalar' ||
       op.type === 'plan.patch_text' ||
+      op.type === 'plan.reorder_tasks' ||
       op.type === 'plan.delete' ||
       op.type === 'plan.set_parent' ||
       op.type === 'plan.promote_task') &&
@@ -409,6 +419,8 @@ function incomingValueAlreadyApplied(
     }
     case 'plan.set_parent':
       return (adapter.getPlan(op.planUuid)?.parent_uuid ?? null) === (op.newParentUuid ?? null);
+    case 'plan.reorder_tasks':
+      return taskUuidListsMatch(adapter.getTasks(op.planUuid), op.taskUuids);
     default:
       return false;
   }
@@ -436,6 +448,8 @@ function shouldSkipProjectionBaseRevision(
       return !projectionPlanTextPrestateMatches(adapter, op);
     case 'plan.update_task_text':
       return !projectionTaskTextPrestateMatches(adapter, op);
+    case 'plan.reorder_tasks':
+      return !taskUuidSetsMatch(adapter.getTasks(op.planUuid), op.taskUuids);
     case 'plan.remove_task':
       return false;
     case 'plan.set_parent':
@@ -496,6 +510,24 @@ function projectionParentPrestateMatches(
     return false;
   }
   return (adapter.getPlan(op.planUuid)?.parent_uuid ?? null) === (op.previousParentUuid ?? null);
+}
+
+function taskUuidListsMatch(tasks: ApplyOperationToTask[], taskUuids: string[]): boolean {
+  return (
+    tasks.length === taskUuids.length &&
+    tasks.every((task, index) => task.uuid === taskUuids[index])
+  );
+}
+
+function taskUuidSetsMatch(tasks: ApplyOperationToTask[], taskUuids: string[]): boolean {
+  if (tasks.length !== taskUuids.length) {
+    return false;
+  }
+  const currentTaskUuids = new Set(tasks.map((task) => task.uuid));
+  return (
+    currentTaskUuids.size === taskUuids.length &&
+    taskUuids.every((uuid) => currentTaskUuids.has(uuid))
+  );
 }
 
 function normalizePlanScalarAdapterValue(
@@ -614,6 +646,15 @@ function validateAdapterPlanOperation(
       const existing = adapter.getTaskByUuid(op.taskUuid);
       if (existing) {
         applyOperationToPrecondition(`Duplicate task UUID ${op.taskUuid}`);
+      }
+      return;
+    }
+    case 'plan.reorder_tasks': {
+      requireAdapterPlan(adapter, op.planUuid);
+      if (!taskUuidSetsMatch(adapter.getTasks(op.planUuid), op.taskUuids)) {
+        applyOperationToPrecondition(
+          `Task order for plan ${op.planUuid} must contain every current task exactly once`
+        );
       }
       return;
     }
@@ -990,6 +1031,32 @@ function applyOperationToRemoveTask(
   adapter.setPlan(clonePlanWithBump(plan, {}, options));
   return [
     { targetType: 'task', targetKey: `task:${envelope.op.taskUuid}`, revision: task.revision + 1 },
+    { targetType: 'plan', targetKey: `plan:${envelope.op.planUuid}`, revision: plan.revision + 1 },
+  ];
+}
+
+function applyOperationToReorderTasks(
+  adapter: ApplyOperationToAdapter,
+  envelope: SyncOperationEnvelope & {
+    op: Extract<SyncOperationPayload, { type: 'plan.reorder_tasks' }>;
+  },
+  options: ApplyOperationOptions
+): Mutation[] {
+  const plan = requireAdapterPlan(adapter, envelope.op.planUuid);
+  const tasks = adapter.getTasks(envelope.op.planUuid);
+  if (taskUuidListsMatch(tasks, envelope.op.taskUuids)) {
+    return [];
+  }
+  const taskByUuid = new Map(tasks.map((task) => [task.uuid, task]));
+  adapter.setTasks(
+    envelope.op.planUuid,
+    envelope.op.taskUuids.map((taskUuid, taskIndex) => ({
+      ...taskByUuid.get(taskUuid)!,
+      task_index: taskIndex,
+    }))
+  );
+  adapter.setPlan(clonePlanWithBump(plan, {}, options));
+  return [
     { targetType: 'plan', targetKey: `plan:${envelope.op.planUuid}`, revision: plan.revision + 1 },
   ];
 }

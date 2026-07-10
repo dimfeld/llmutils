@@ -241,6 +241,28 @@ export const SyncPlanRemoveTaskPayloadSchema = z.object({
 });
 export type SyncPlanRemoveTaskPayload = z.infer<typeof SyncPlanRemoveTaskPayloadSchema>;
 
+export const SyncPlanReorderTasksPayloadSchema = z
+  .object({
+    type: z.literal('plan.reorder_tasks'),
+    planUuid: SyncUuidSchema,
+    taskUuids: z.array(SyncUuidSchema),
+    ...baseRevisionShape,
+  })
+  .superRefine((payload, ctx) => {
+    const seen = new Set<string>();
+    for (const [index, taskUuid] of payload.taskUuids.entries()) {
+      if (seen.has(taskUuid)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['taskUuids', index],
+          message: `duplicate task UUID ${taskUuid}`,
+        });
+      }
+      seen.add(taskUuid);
+    }
+  });
+export type SyncPlanReorderTasksPayload = z.infer<typeof SyncPlanReorderTasksPayloadSchema>;
+
 export const SyncPlanAddDependencyPayloadSchema = z.object({
   type: z.literal('plan.add_dependency'),
   planUuid: SyncUuidSchema,
@@ -424,6 +446,7 @@ export const SyncOperationPayloadSchema = z.discriminatedUnion('type', [
   SyncPlanUpdateTaskTextPayloadSchema,
   SyncPlanMarkTaskDonePayloadSchema,
   SyncPlanRemoveTaskPayloadSchema,
+  SyncPlanReorderTasksPayloadSchema,
   SyncPlanAddDependencyPayloadSchema,
   SyncPlanRemoveDependencyPayloadSchema,
   SyncPlanAddTagPayloadSchema,
@@ -562,6 +585,7 @@ export const SyncOperationTypeSchema = z.enum([
   'plan.update_task_text',
   'plan.mark_task_done',
   'plan.remove_task',
+  'plan.reorder_tasks',
   'plan.add_dependency',
   'plan.remove_dependency',
   'plan.add_tag',
@@ -604,6 +628,7 @@ export function deriveTargetKey(op: SyncOperationPayload): SyncOperationTarget {
     case 'plan.create':
     case 'plan.set_scalar':
     case 'plan.patch_text':
+    case 'plan.reorder_tasks':
     case 'plan.add_dependency':
     case 'plan.remove_dependency':
     case 'plan.add_tag':

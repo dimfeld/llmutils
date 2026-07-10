@@ -14,7 +14,9 @@ import {
   describeRemoteForLogging,
   readRepositoryStorageMetadata,
 } from './external_storage_utils.js';
-import { closeDatabaseForTesting } from './db/database.js';
+import { clearConfigCache, loadEffectiveConfig } from './configLoader.js';
+import { closeDatabaseForTesting, getDatabase } from './db/database.js';
+import { getProject } from './db/project.js';
 
 vi.mock('../common/git.js', () => ({
   getGitRoot: vi.fn(),
@@ -29,6 +31,7 @@ describe('RepositoryConfigResolver', () => {
 
   beforeEach(async () => {
     closeDatabaseForTesting();
+    clearConfigCache();
     gitRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'repo-config-resolver-'));
     fakeHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'resolver-home-'));
     originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -38,6 +41,7 @@ describe('RepositoryConfigResolver', () => {
 
   afterEach(async () => {
     closeDatabaseForTesting();
+    clearConfigCache();
     if (originalXdgConfigHome === undefined) {
       delete process.env.XDG_CONFIG_HOME;
     } else {
@@ -170,6 +174,35 @@ describe('RepositoryConfigResolver', () => {
     const secondMetadata = await readRepositoryStorageMetadata(repositoryConfigDir);
     expect(secondMetadata).not.toBeNull();
     expect(secondMetadata?.updatedAt).toBe(firstMetadata?.updatedAt);
+  });
+
+  test('routes changed shared remote metadata through project.upsert after loading config', async () => {
+    await $`git init`.cwd(gitRoot).quiet();
+    const originalRemote = 'https://github.example.com/Owner/Repo.git';
+    const changedRemote = 'git@github.example.com:Owner/Repo.git';
+    await $`git remote add origin ${originalRemote}`.cwd(gitRoot).quiet();
+
+    const firstConfig = await loadEffectiveConfig(undefined, { cwd: gitRoot, quiet: true });
+    const repositoryName = firstConfig.repositoryConfigName;
+    if (!repositoryName) {
+      throw new Error('Expected external repository metadata');
+    }
+    expect(getProject(getDatabase(), repositoryName)?.remote_url).toBe(originalRemote);
+
+    await $`git remote set-url origin ${changedRemote}`.cwd(gitRoot).quiet();
+    clearConfigCache();
+    await loadEffectiveConfig(undefined, { cwd: gitRoot, quiet: true });
+
+    expect(getProject(getDatabase(), repositoryName)?.remote_url).toBe(changedRemote);
+    const operation = getDatabase()
+      .prepare('SELECT operation_type, status, payload FROM sync_operation')
+      .get() as { operation_type: string; status: string; payload: string };
+    expect(operation).toMatchObject({ operation_type: 'project.upsert', status: 'applied' });
+    expect(JSON.parse(operation.payload)).toMatchObject({
+      type: 'project.upsert',
+      repositoryId: repositoryName,
+      remoteUrl: changedRemote,
+    });
   });
 
   test('sanitizes credentials and query fragments when constructing repository directories', async () => {

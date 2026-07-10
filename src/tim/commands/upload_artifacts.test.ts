@@ -37,8 +37,12 @@ const linearMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../logging.js', () => ({
+  debugLog: vi.fn(),
+  error: vi.fn(),
   log: vi.fn(),
   warn: vi.fn(),
+  writeStderr: vi.fn(),
+  writeStdout: vi.fn(),
 }));
 
 vi.mock('../../logging/tunnel_client.js', () => ({

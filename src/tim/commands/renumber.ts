@@ -8,8 +8,10 @@ import {
   getPlansByProject,
   getPlanTagsByUuid,
   getPlanTasksByUuid,
+  mirrorProjectionPlanToCanonicalInTransaction,
+  replacePlanStateInTableSetInTransaction,
   upsertProjectionPlanInTransaction,
-  type UpsertPlanInput,
+  type ReplacePlanStateInput,
 } from '../db/plan.js';
 import { getOrCreateProject, getProject } from '../db/project.js';
 import { reserveNextPlanId } from '../db/project.js';
@@ -25,6 +27,7 @@ import { ensureReferences } from '../utils/references.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
 import { toPlanUpsertInput } from '../db/plan_sync.js';
 import { findPlanFileOnDisk } from '../plans/find_plan_file.js';
+import { resolveWriteMode } from '../sync/write_mode.js';
 
 /**
  * Validates that a file path is safe and doesn't contain path traversal attacks.
@@ -245,10 +248,11 @@ function applyRenumberDbState(
       const _filename = dbFilenames.get(filePath) ?? path.basename(filePath);
       // SYNC-EXEMPT: renumber is an explicit maintenance/repair command that rewrites
       // numeric IDs and must remain a single local DB transaction.
-      upsertProjectionPlanInTransaction(db, project.id, {
+      const updatedPlan = upsertProjectionPlanInTransaction(db, project.id, {
         ...toPlanUpsertInput(plan, idToUuid),
         forceOverwrite: true,
       });
+      mirrorProjectionPlanToCanonicalInTransaction(db, project.id, updatedPlan.uuid);
     }
   });
 
@@ -258,14 +262,14 @@ function applyRenumberDbState(
 function snapshotOriginalDbState(
   repositoryId: string,
   plans: Iterable<readonly [string, Record<string, any>]>
-): UpsertPlanInput[] {
+): ReplacePlanStateInput[] {
   const db = getDatabase();
   const project = getProject(db, repositoryId);
   if (!project) {
     throw new Error(`Project ${repositoryId} was not found in the database`);
   }
 
-  const snapshots: UpsertPlanInput[] = [];
+  const snapshots: ReplacePlanStateInput[] = [];
   const seenUuids = new Set<string>();
 
   for (const [, plan] of plans) {
@@ -280,54 +284,33 @@ function snapshotOriginalDbState(
     }
 
     snapshots.push({
-      uuid: row.uuid,
-      planId: row.plan_id,
-      title: row.title,
-      goal: row.goal,
-      details: row.details,
-      sourceCreatedAt: row.created_at,
-      sourceUpdatedAt: row.updated_at,
-      status: row.status,
-      priority: row.priority,
-      branch: row.branch,
-      simple: row.simple === null ? null : row.simple === 1,
-      tdd: row.tdd === null ? null : row.tdd === 1,
-      discoveredFrom: row.discovered_from,
-      issue: row.issue ? JSON.parse(row.issue) : null,
-      pullRequest: row.pull_request ? JSON.parse(row.pull_request) : null,
-      assignedTo: row.assigned_to,
-      baseBranch: row.base_branch,
-      temp: row.temp === null ? null : row.temp === 1,
-      docs: row.docs ? JSON.parse(row.docs) : null,
-      changedFiles: row.changed_files ? JSON.parse(row.changed_files) : null,
-      planGeneratedAt: row.plan_generated_at,
-      reviewIssues: row.review_issues ? JSON.parse(row.review_issues) : null,
-      parentUuid: row.parent_uuid,
-      epic: row.epic === 1,
-      tasks: getPlanTasksByUuid(db, row.uuid).map((task) => ({
-        title: task.title,
-        description: task.description,
-        done: task.done === 1,
-      })),
-      dependencyUuids: getPlanDependenciesByUuid(db, row.uuid).map(
-        (dependency) => dependency.depends_on_uuid
-      ),
-      tags: getPlanTagsByUuid(db, row.uuid).map((tag) => tag.tag),
-      forceOverwrite: true,
+      plan: row,
+      tasks: getPlanTasksByUuid(db, row.uuid),
+      dependencies: getPlanDependenciesByUuid(db, row.uuid),
+      tags: getPlanTagsByUuid(db, row.uuid),
     });
   }
 
   return snapshots;
 }
 
-function restoreOriginalDbState(repositoryId: string, snapshots: readonly UpsertPlanInput[]): void {
+function restoreOriginalDbState(
+  repositoryId: string,
+  snapshots: readonly ReplacePlanStateInput[]
+): void {
   const db = getDatabase();
   const project = getOrCreateProject(db, repositoryId);
   const restoreTransaction = db.transaction(() => {
     for (const snapshot of snapshots) {
+      if (snapshot.plan.project_id !== project.id) {
+        throw new Error(`Cannot restore plan ${snapshot.plan.uuid} into a different project`);
+      }
+
       // SYNC-EXEMPT: rollback for the renumber maintenance transaction restores
-      // the exact local snapshot captured before file operations.
-      upsertProjectionPlanInTransaction(db, project.id, { ...snapshot, forceOverwrite: true });
+      // the exact local snapshot captured before file operations. Local maintenance
+      // writes keep the canonical mirror identical to the projection.
+      replacePlanStateInTableSetInTransaction(db, 'projection', snapshot);
+      replacePlanStateInTableSetInTransaction(db, 'canonical', snapshot);
     }
   });
   restoreTransaction.immediate();
@@ -1450,7 +1433,16 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
     if (options.from === options.to) {
       throw new Error('--from and --to cannot be the same ID');
     }
+  }
 
+  const writeMode = resolveWriteMode(config);
+  if (!options.dryRun && (writeMode === 'sync-main' || writeMode === 'sync-persistent')) {
+    throw new Error(
+      `Renumbering plans is not supported while sync writes are configured in ${writeMode} mode. Use --dry-run to inspect the proposed changes without modifying data.`
+    );
+  }
+
+  if (options.from !== undefined) {
     // Execute swap operation and exit early
     await handleSwapOrRenumber(options, gitRoot, configBaseDir, repository.repositoryId);
     return;

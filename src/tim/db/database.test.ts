@@ -351,7 +351,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(48);
+    expect(version?.version).toBe(49);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
 
@@ -672,7 +672,7 @@ describe('tim db/database', () => {
         revision: 9,
       });
       expect(db.query<{ version: number }, []>('SELECT version FROM schema_version').get()).toEqual(
-        { version: 48 }
+        { version: 49 }
       );
     } finally {
       db.close(false);
@@ -691,7 +691,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(48);
+    expect(version?.version).toBe(49);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
     const versionRowCount = db2
@@ -823,7 +823,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(48);
+      expect(schemaVersion?.version).toBe(49);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -974,7 +974,7 @@ describe('tim db/database', () => {
           'SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1'
         )
         .get();
-      expect(schemaVersion?.version).toBe(48);
+      expect(schemaVersion?.version).toBe(49);
 
       const checkRows = db
         .query<{ count: number }, []>(
@@ -1295,7 +1295,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(48);
+      ).toBe(49);
       expect(db.query<{ uuid: string }, []>('SELECT uuid FROM project').get()?.uuid).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
       );
@@ -1538,7 +1538,7 @@ describe('tim db/database', () => {
     }
   });
 
-  test('runMigrations v32 skips orphan legacy child rows while backfilling canonical tables', () => {
+  test('runMigrations v32 skips orphan owners while preserving dangling dependencies', () => {
     const dbPath = path.join(tempDir, DATABASE_FILENAME);
     const db = new Database(dbPath);
 
@@ -1617,7 +1617,28 @@ describe('tim db/database', () => {
           (
             '22222222-2222-4222-8222-222222222222',
             '66666666-6666-4666-8666-666666666666'
+          ),
+          (
+            '22222222-2222-4222-8222-222222222222',
+            '77777777-7777-4777-8777-777777777777'
           );
+
+        INSERT INTO sync_operation (
+          operation_uuid, project_uuid, origin_node_id, local_sequence, target_type,
+          target_key, operation_type, payload, status, created_at, updated_at
+        ) VALUES (
+          '88888888-8888-4888-8888-888888888888',
+          '11111111-1111-4111-8111-111111111111',
+          'persistent-node',
+          0,
+          'plan',
+          'plan:22222222-2222-4222-8222-222222222222',
+          'plan.add_dependency',
+          '{"type":"plan.add_dependency","planUuid":"22222222-2222-4222-8222-222222222222","dependsOnPlanUuid":"77777777-7777-4777-8777-777777777777"}',
+          'queued',
+          '2026-01-09T00:00:00.000Z',
+          '2026-01-09T00:00:00.000Z'
+        );
 
         INSERT INTO plan_tag (plan_uuid, tag)
           VALUES
@@ -1662,6 +1683,10 @@ describe('tim db/database', () => {
           plan_uuid: '22222222-2222-4222-8222-222222222222',
           depends_on_uuid: '33333333-3333-4333-8333-333333333333',
         },
+        {
+          plan_uuid: '22222222-2222-4222-8222-222222222222',
+          depends_on_uuid: '66666666-6666-4666-8666-666666666666',
+        },
       ]);
       expect(db.query('SELECT * FROM plan_tag_canonical').all()).toEqual([
         {
@@ -1669,6 +1694,87 @@ describe('tim db/database', () => {
           tag: 'sync',
         },
       ]);
+    } finally {
+      db.close(false);
+    }
+  });
+
+  test('runMigrations v49 repairs dangling canonical dependencies without promoting optimistic edges', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db = new Database(dbPath);
+
+    try {
+      runMigrations(db);
+      const project = getOrCreateProject(db, 'repo-v49-dependency-repair', {
+        uuid: '11111111-1111-4111-8111-111111111111',
+      });
+      const ownerUuid = '22222222-2222-4222-8222-222222222222';
+      const historicalDependencyUuid = '33333333-3333-4333-8333-333333333333';
+      const optimisticDependencyUuid = '44444444-4444-4444-8444-444444444444';
+
+      upsertCanonicalPlanInTransaction(db, project.id, {
+        uuid: ownerUuid,
+        planId: 1,
+        title: 'Dependency owner',
+        status: 'pending',
+        revision: 1,
+        dependencyUuids: [],
+        forceOverwrite: true,
+      });
+      upsertProjectionPlanInTransaction(db, project.id, {
+        uuid: ownerUuid,
+        planId: 1,
+        title: 'Dependency owner',
+        status: 'pending',
+        revision: 2,
+        dependencyUuids: [historicalDependencyUuid, optimisticDependencyUuid],
+        forceOverwrite: true,
+      });
+      db.prepare(
+        `
+          INSERT INTO sync_operation (
+            operation_uuid, project_uuid, origin_node_id, local_sequence, target_type,
+            target_key, operation_type, payload, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, 'plan', ?, 'plan.add_dependency', ?, 'queued', ?, ?)
+        `
+      ).run(
+        '55555555-5555-4555-8555-555555555555',
+        project.uuid,
+        'persistent-node',
+        0,
+        `plan:${ownerUuid}`,
+        JSON.stringify({
+          type: 'plan.add_dependency',
+          planUuid: ownerUuid,
+          dependsOnPlanUuid: optimisticDependencyUuid,
+        }),
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-01T00:00:00.000Z'
+      );
+      db.prepare('UPDATE schema_version SET version = 48').run();
+
+      runMigrations(db);
+
+      expect(
+        db
+          .query<{ plan_uuid: string; depends_on_uuid: string }, []>(
+            `
+              SELECT plan_uuid, depends_on_uuid
+              FROM plan_dependency_canonical
+              WHERE plan_uuid = ?
+              ORDER BY depends_on_uuid
+            `
+          )
+          .all(ownerUuid)
+      ).toEqual([
+        {
+          plan_uuid: ownerUuid,
+          depends_on_uuid: historicalDependencyUuid,
+        },
+      ]);
+      expect(db.query<{ version: number }, []>('SELECT version FROM schema_version').get()).toEqual(
+        { version: 49 }
+      );
     } finally {
       db.close(false);
     }
@@ -1803,7 +1909,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(48);
+      ).toBe(49);
 
       const syncOperationColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('sync_operation')")

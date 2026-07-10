@@ -33,6 +33,7 @@ export const SYNC_OPERATION_METADATA = {
   'plan.update_task_text': { entity: 'plan', baseRevisionTarget: 'task' },
   'plan.mark_task_done': { entity: 'plan', baseRevisionTarget: null },
   'plan.remove_task': { entity: 'plan', baseRevisionTarget: 'task' },
+  'plan.reorder_tasks': { entity: 'plan', baseRevisionTarget: 'plan' },
   'plan.add_dependency': { entity: 'plan', baseRevisionTarget: null },
   'plan.remove_dependency': { entity: 'plan', baseRevisionTarget: null },
   'plan.add_tag': { entity: 'plan', baseRevisionTarget: null },
@@ -138,6 +139,7 @@ export function getSyncOperationPlanRefs(
     case 'plan.update_task_text':
     case 'plan.mark_task_done':
     case 'plan.remove_task':
+    case 'plan.reorder_tasks':
     case 'plan.add_tag':
     case 'plan.remove_tag':
     case 'plan.add_list_item':

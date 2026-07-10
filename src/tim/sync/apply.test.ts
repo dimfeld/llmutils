@@ -45,7 +45,9 @@ import {
   promotePlanTaskOperation,
   removePlanDependencyOperation,
   removePlanListItemOperation,
+  removePlanTaskOperation,
   removePlanTagOperation,
+  reorderPlanTasksOperation,
   setPlanParentOperation,
   setPlanScalarOperation,
   setProjectSettingOperation,
@@ -476,6 +478,96 @@ describe('plan_artifact operations', () => {
     );
     expect(() => applyOperation(db, softDelete)).not.toThrow();
     expect(getArtifactByUuid(db, ARTIFACT_UUID)?.deletedAt).toBe(softDelete.createdAt);
+  });
+
+  test('plan snapshots preserve docs and lessons completion timestamps', () => {
+    const docsUpdatedAt = '2026-04-01T10:00:00.000Z';
+    const lessonsAppliedAt = '2026-04-02T11:00:00.000Z';
+    seedPlanRow({
+      uuid: PLAN_UUID,
+      planId: 1,
+      title: 'Timestamped plan',
+      status: 'pending',
+      sourceDocsUpdatedAt: docsUpdatedAt,
+      sourceLessonsAppliedAt: lessonsAppliedAt,
+      forceOverwrite: true,
+    });
+
+    const snapshot = loadCanonicalSnapshot(db, `plan:${PLAN_UUID}`);
+    if (!snapshot || snapshot.type !== 'plan') {
+      throw new Error('Expected plan snapshot');
+    }
+    expect(snapshot.plan).toMatchObject({ docsUpdatedAt, lessonsAppliedAt });
+
+    const persistentDb = new Database(':memory:');
+    runMigrations(persistentDb);
+    getOrCreateProject(persistentDb, 'github.com__example__repo', { uuid: PROJECT_UUID });
+    mergeCanonicalRefresh(persistentDb, snapshot);
+
+    expect(
+      persistentDb
+        .prepare('SELECT docs_updated_at, lessons_applied_at FROM plan_canonical WHERE uuid = ?')
+        .get(PLAN_UUID)
+    ).toEqual({ docs_updated_at: docsUpdatedAt, lessons_applied_at: lessonsAppliedAt });
+    expect(
+      persistentDb
+        .prepare('SELECT docs_updated_at, lessons_applied_at FROM plan WHERE uuid = ?')
+        .get(PLAN_UUID)
+    ).toEqual({ docs_updated_at: docsUpdatedAt, lessons_applied_at: lessonsAppliedAt });
+
+    const legacySnapshot = structuredClone(snapshot);
+    delete legacySnapshot.plan.docsUpdatedAt;
+    delete legacySnapshot.plan.lessonsAppliedAt;
+    mergeCanonicalRefresh(persistentDb, legacySnapshot);
+    expect(
+      persistentDb
+        .prepare('SELECT docs_updated_at, lessons_applied_at FROM plan WHERE uuid = ?')
+        .get(PLAN_UUID)
+    ).toEqual({ docs_updated_at: docsUpdatedAt, lessons_applied_at: lessonsAppliedAt });
+    persistentDb.close(false);
+  });
+
+  test('review-state snapshots preserve the persistent node assignment', () => {
+    seedPlanRow({
+      uuid: PLAN_UUID,
+      planId: 1,
+      title: 'Reviewing plan',
+      status: 'reviewed',
+      forceOverwrite: true,
+    });
+    const snapshot = loadCanonicalSnapshot(db, `plan:${PLAN_UUID}`);
+    if (!snapshot || snapshot.type !== 'plan') {
+      throw new Error('Expected plan snapshot');
+    }
+
+    const persistentDb = new Database(':memory:');
+    runMigrations(persistentDb);
+    const persistentProject = getOrCreateProject(persistentDb, 'github.com__example__repo', {
+      uuid: PROJECT_UUID,
+    });
+    nonSyncedUpsertPlan(persistentDb, persistentProject.id, {
+      uuid: PLAN_UUID,
+      planId: 1,
+      title: 'Reviewing plan',
+      status: 'needs_review',
+      forceOverwrite: true,
+    });
+    importAssignment(
+      persistentDb,
+      persistentProject.id,
+      PLAN_UUID,
+      1,
+      null,
+      'agent',
+      'in_progress',
+      '2026-01-01T00:00:00.000Z',
+      '2026-01-01T00:00:00.000Z'
+    );
+
+    mergeCanonicalRefresh(persistentDb, snapshot);
+
+    expect(getAssignment(persistentDb, persistentProject.id, PLAN_UUID)).not.toBeNull();
+    persistentDb.close(false);
   });
 
   test('missing-artifact hard-delete records tombstone and emits plan invalidation once', async () => {
@@ -1165,6 +1257,115 @@ describe('main-node sync apply engine', () => {
     expect(
       db.prepare('SELECT reason FROM sync_conflict WHERE operation_uuid = ?').get(op.operationUuid)
     ).toEqual({ reason: 'stale_revision' });
+  });
+
+  test('apply-incoming resolution rebases a stale scalar operation', async () => {
+    seedPlan();
+    const op = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'priority', value: 'urgent', baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    expect(applyOperation(db, op).status).toBe('conflict');
+    const conflict = db
+      .prepare('SELECT conflict_id FROM sync_conflict WHERE operation_uuid = ?')
+      .get(op.operationUuid) as { conflict_id: string };
+
+    const resolved = resolveSyncConflict(db, conflict.conflict_id, {
+      mode: 'apply-incoming',
+      resolvedByNode: NODE_B,
+    });
+
+    expect(resolved.status).toBe('resolved_applied');
+    expect(resolved.invalidations).toEqual([`plan:${PLAN_UUID}`]);
+    expect(getPlanByUuid(db, PLAN_UUID)?.priority).toBe('urgent');
+    expect(db.prepare('SELECT priority FROM plan_canonical WHERE uuid = ?').get(PLAN_UUID)).toEqual(
+      { priority: 'urgent' }
+    );
+  });
+
+  test('resolving a stale terminal status removes the local assignment', async () => {
+    seedPlan();
+    seedAssignment();
+    const op = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'status', value: 'done', baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    expect(applyOperation(db, op).status).toBe('conflict');
+    const conflict = db
+      .prepare('SELECT conflict_id FROM sync_conflict WHERE operation_uuid = ?')
+      .get(op.operationUuid) as { conflict_id: string };
+
+    resolveSyncConflict(db, conflict.conflict_id, {
+      mode: 'apply-incoming',
+      resolvedByNode: NODE_B,
+    });
+
+    expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('done');
+    expect(getAssignment(db, project.id, PLAN_UUID)).toBeNull();
+  });
+
+  test('resolving a stale task removal succeeds when the task is already absent', async () => {
+    seedPlan();
+    const stale = await removePlanTaskOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, taskUuid: TASK_UUID, baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    expect(applyOperation(db, stale).status).toBe('conflict');
+    const conflict = db
+      .prepare('SELECT conflict_id FROM sync_conflict WHERE operation_uuid = ?')
+      .get(stale.operationUuid) as { conflict_id: string };
+    const currentTask = getPlanTasksByUuid(db, PLAN_UUID)[0];
+    const accepted = await removePlanTaskOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, taskUuid: TASK_UUID, baseRevision: currentTask.revision },
+      { originNodeId: NODE_B, localSequence: 1 }
+    );
+    expect(applyOperation(db, accepted).status).toBe('applied');
+
+    const resolved = resolveSyncConflict(db, conflict.conflict_id, {
+      mode: 'apply-incoming',
+      resolvedByNode: NODE_B,
+    });
+
+    expect(resolved).toMatchObject({
+      status: 'resolved_applied',
+      invalidations: [],
+      sequenceIds: [],
+    });
+  });
+
+  test('resolving a stale plan deletion succeeds when the plan is already absent', async () => {
+    seedPlan();
+    const stale = await deletePlanOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, baseRevision: 0 },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    expect(applyOperation(db, stale).status).toBe('conflict');
+    const conflict = db
+      .prepare('SELECT conflict_id FROM sync_conflict WHERE operation_uuid = ?')
+      .get(stale.operationUuid) as { conflict_id: string };
+    const currentPlan = getPlanByUuid(db, PLAN_UUID)!;
+    const accepted = await deletePlanOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, baseRevision: currentPlan.revision },
+      { originNodeId: NODE_B, localSequence: 1 }
+    );
+    expect(applyOperation(db, accepted).status).toBe('applied');
+
+    const resolved = resolveSyncConflict(db, conflict.conflict_id, {
+      mode: 'apply-incoming',
+      resolvedByNode: NODE_B,
+    });
+
+    expect(resolved).toMatchObject({
+      status: 'resolved_applied',
+      invalidations: [],
+      sequenceIds: [],
+    });
   });
 
   test('canonical adapter preserves cycle validation for dependency operations', async () => {
@@ -2040,20 +2241,23 @@ describe('main-node sync apply engine', () => {
     expect(getAssignment(db, project.id, PLAN_UUID)).not.toBeNull();
   });
 
-  test('plan.set_scalar cleans local assignment when status transitions to reviewed', async () => {
-    seedPlan();
-    seedAssignment();
-    const op = await setPlanScalarOperation(
-      PROJECT_UUID,
-      { planUuid: PLAN_UUID, field: 'status', value: 'reviewed' },
-      { originNodeId: NODE_A, localSequence: 1 }
-    );
+  test.each(['needs_review', 'reviewed'] as const)(
+    'plan.set_scalar preserves local assignment when status transitions to %s',
+    async (status) => {
+      seedPlan();
+      seedAssignment();
+      const op = await setPlanScalarOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, field: 'status', value: status },
+        { originNodeId: NODE_A, localSequence: 1 }
+      );
 
-    const result = applyOperation(db, op);
+      const result = applyOperation(db, op);
 
-    expect(result.status).toBe('applied');
-    expect(getAssignment(db, project.id, PLAN_UUID)).toBeNull();
-  });
+      expect(result.status).toBe('applied');
+      expect(getAssignment(db, project.id, PLAN_UUID)).not.toBeNull();
+    }
+  );
 
   test.each(['simple', 'tdd', 'temp', 'epic'] as const)(
     'plan.set_scalar treats false %s as an unchanged boolean',
@@ -3106,6 +3310,43 @@ describe('main-node sync apply engine', () => {
     ]);
   });
 
+  test('plan.reorder_tasks updates canonical order and conflicts on a stale plan revision', async () => {
+    seedPlan();
+    db.prepare(
+      'INSERT INTO plan_task (uuid, plan_uuid, task_index, title, description, done, revision) VALUES (?, ?, ?, ?, ?, 0, 1)'
+    ).run(TASK_UUID_2, PLAN_UUID, 1, 'Second task', '');
+    mirrorProjectionPlanToCanonical();
+    const baseRevision = getPlanByUuid(db, PLAN_UUID)!.revision;
+    const reorder = await reorderPlanTasksOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, taskUuids: [TASK_UUID_2, TASK_UUID], baseRevision },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    expect(applyOperation(db, reorder).status).toBe('applied');
+    expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).toEqual([
+      TASK_UUID_2,
+      TASK_UUID,
+    ]);
+    expect(
+      db
+        .prepare('SELECT uuid FROM task_canonical WHERE plan_uuid = ? ORDER BY task_index')
+        .all(PLAN_UUID)
+    ).toEqual([{ uuid: TASK_UUID_2 }, { uuid: TASK_UUID }]);
+    expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.revision)).toEqual([1, 1]);
+
+    const stale = await reorderPlanTasksOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, taskUuids: [TASK_UUID, TASK_UUID_2], baseRevision },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    expect(applyOperation(db, stale).status).toBe('conflict');
+    expect(getPlanTasksByUuid(db, PLAN_UUID).map((task) => task.uuid)).toEqual([
+      TASK_UUID_2,
+      TASK_UUID,
+    ]);
+  });
+
   test('plan.remove_tag is idempotent', async () => {
     seedPlan();
     db.prepare('INSERT OR IGNORE INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run(
@@ -3733,6 +3974,41 @@ describe('main-node sync apply engine', () => {
     expect(row).not.toBeNull(); // not deleted
   });
 
+  test('project setting writes based on a deleted revision conflict instead of resurrecting it', async () => {
+    const setOp = await setProjectSettingOperation(
+      { projectUuid: PROJECT_UUID, setting: 'color', value: 'green' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    applyOperation(db, setOp);
+    const deleteOp = await deleteProjectSettingOperation(
+      { projectUuid: PROJECT_UUID, setting: 'color', baseRevision: 1 },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    expect(applyOperation(db, deleteOp).status).toBe('applied');
+
+    const staleSet = await setProjectSettingOperation(
+      { projectUuid: PROJECT_UUID, setting: 'color', value: 'red', baseRevision: 1 },
+      { originNodeId: NODE_B, localSequence: 1 }
+    );
+    const staleDelete = await deleteProjectSettingOperation(
+      { projectUuid: PROJECT_UUID, setting: 'color', baseRevision: 1 },
+      { originNodeId: NODE_B, localSequence: 2 }
+    );
+
+    expect(applyOperation(db, staleSet).status).toBe('conflict');
+    expect(applyOperation(db, staleDelete).status).toBe('conflict');
+    expect(
+      db.prepare('SELECT value FROM project_setting WHERE setting = ?').get('color')
+    ).toBeNull();
+    expect(
+      db
+        .prepare(
+          'SELECT reason FROM sync_conflict WHERE target_type = ? ORDER BY created_at, conflict_id'
+        )
+        .all('project_setting')
+    ).toEqual([{ reason: 'stale_revision' }, { reason: 'stale_revision' }]);
+  });
+
   test('stale project setting set is accepted as a no-op when incoming already matches current', async () => {
     const setOp = await setProjectSettingOperation(
       { projectUuid: PROJECT_UUID, setting: 'color', value: 'green' },
@@ -3836,6 +4112,52 @@ describe('main-node sync apply engine', () => {
         .get(PLAN_UUID)
     ).toEqual({ count: 0 });
     expect(sequenceTargets().toSorted()).toEqual(result.invalidations.toSorted());
+  });
+
+  test('plan.delete clears every surviving canonical plan reference with one revision bump', async () => {
+    const ownerUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    seedPlan(PLAN_UUID, 1);
+    seedPlanRow({
+      uuid: ownerUuid,
+      planId: 2,
+      title: 'Reference owner',
+      status: 'pending',
+      parentUuid: PLAN_UUID,
+      basePlanUuid: PLAN_UUID,
+      discoveredFrom: 1,
+      dependencyUuids: [PLAN_UUID],
+      revision: 7,
+      forceOverwrite: true,
+    });
+    const op = await deletePlanOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    const result = applyOperation(db, op);
+
+    expect(result.invalidations).toContain(`plan:${ownerUuid}`);
+    for (const table of ['plan', 'plan_canonical'] as const) {
+      expect(
+        db
+          .prepare(
+            `SELECT parent_uuid, base_plan_uuid, discovered_from, revision FROM ${table} WHERE uuid = ?`
+          )
+          .get(ownerUuid)
+      ).toEqual({
+        parent_uuid: null,
+        base_plan_uuid: null,
+        discovered_from: null,
+        revision: 8,
+      });
+    }
+    for (const table of ['plan_dependency', 'plan_dependency_canonical'] as const) {
+      expect(
+        db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE plan_uuid = ?`).get(ownerUuid)
+      ).toEqual({ count: 0 });
+    }
+    expect(sequenceTargets().filter((target) => target === `plan:${ownerUuid}`)).toHaveLength(1);
   });
 
   test('plan.delete emits sequence rows for the deleted plan and each deleted task tombstone', async () => {
@@ -3947,6 +4269,35 @@ describe('main-node sync apply engine', () => {
         .map((t) => t.tag)
         .toSorted()
     ).toEqual(['first', 'second'].toSorted());
+  });
+
+  test('FIFO gaps are checked before handling an operation for an unknown project', async () => {
+    db.prepare('DELETE FROM project WHERE uuid = ?').run(PROJECT_UUID);
+    const futureDelete = await deleteProjectOperation(
+      { projectUuid: PROJECT_UUID },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+
+    expect(() => applyOperation(db, futureDelete)).toThrow(SyncFifoGapError);
+    expect(
+      db
+        .prepare('SELECT status FROM sync_operation WHERE operation_uuid = ?')
+        .get(futureDelete.operationUuid)
+    ).toEqual({ status: 'received' });
+
+    const projectUpsert = await upsertProjectOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        repositoryId: 'github.com__example__repo',
+        remoteUrl: null,
+        remoteLabel: null,
+        highestPlanId: 10,
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    expect(applyOperation(db, projectUpsert).status).toBe('applied');
+    expect(applyOperation(db, futureDelete).status).toBe('applied');
+    expect(getProjectByUuid(db, PROJECT_UUID)).toBeNull();
   });
 
   test('duplicate localSequence from same node with different op UUID throws SyncValidationError', async () => {

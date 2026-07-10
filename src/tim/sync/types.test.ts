@@ -82,6 +82,25 @@ describe('sync operation schemas', () => {
     ).toBe(false);
   });
 
+  test('task reorder payloads require unique task UUIDs', () => {
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.reorder_tasks',
+        planUuid: PLAN_UUID,
+        taskUuids: [ARTIFACT_UUID, ARTIFACT_UUID],
+        baseRevision: 2,
+      }).success
+    ).toBe(false);
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.reorder_tasks',
+        planUuid: PLAN_UUID,
+        taskUuids: [ARTIFACT_UUID],
+        baseRevision: 2,
+      }).success
+    ).toBe(true);
+  });
+
   test('validates scalar field value shape', () => {
     expect(
       SyncOperationPayloadSchema.safeParse({

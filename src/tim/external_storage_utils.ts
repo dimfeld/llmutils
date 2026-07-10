@@ -1,9 +1,11 @@
 import * as path from 'node:path';
 
 import { getTimConfigRoot } from '../common/config_paths.js';
-import { parseGitRemoteUrl } from '../common/git_url_parser.js';
+import { deriveGitRemoteLabel } from '../common/git_url_parser.js';
+import type { TimConfig } from './configSchema.js';
 import { getDatabase } from './db/database.js';
-import { getOrCreateProject, getProject, updateProject } from './db/project.js';
+import { getOrCreateProject, getProject } from './db/project.js';
+import { writeProjectMetadata } from './project_metadata.js';
 
 export interface RepositoryStorageMetadata {
   repositoryName: string;
@@ -53,27 +55,7 @@ export function describeRemoteForLogging(remoteUrl?: string | null): string {
   if (!remoteUrl) {
     return 'none detected';
   }
-
-  const parsed = parseGitRemoteUrl(remoteUrl);
-  if (parsed) {
-    if (parsed.host && parsed.fullName) {
-      return trimQueryAndFragment(`${parsed.host}/${parsed.fullName}`);
-    }
-
-    if (parsed.host && parsed.path) {
-      return trimQueryAndFragment(`${parsed.host}/${parsed.path}`);
-    }
-
-    if (parsed.fullName) {
-      return trimQueryAndFragment(parsed.fullName);
-    }
-
-    if (parsed.host) {
-      return trimQueryAndFragment(parsed.host);
-    }
-  }
-
-  return trimQueryAndFragment(stripRemoteCredentials(remoteUrl));
+  return deriveGitRemoteLabel(remoteUrl);
 }
 
 export async function readRepositoryStorageMetadata(
@@ -99,7 +81,8 @@ export async function readRepositoryStorageMetadata(
 
 export async function writeRepositoryStorageMetadata(
   repositoryDir: string,
-  update: RepositoryStorageMetadataInput
+  update: RepositoryStorageMetadataInput,
+  config: TimConfig
 ): Promise<RepositoryStorageMetadata> {
   const repositoryName = update.repositoryName || path.basename(repositoryDir);
   const db = getDatabase();
@@ -133,7 +116,9 @@ export async function writeRepositoryStorageMetadata(
   }
 
   const persisted =
-    Object.keys(updates).length > 0 ? (updateProject(db, project.id, updates) ?? project) : project;
+    Object.keys(updates).length > 0
+      ? await writeProjectMetadata(db, config, project.id, updates)
+      : project;
 
   return {
     repositoryName,

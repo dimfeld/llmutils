@@ -8,6 +8,8 @@ The usual topology is:
 - One or more `persistent` nodes: queue local plan writes and exchange them with the main node.
 - Optional `ephemeral` nodes: short-lived workers that do not start their own sync transport.
 
+Ephemeral workers must delegate persistent-data mutations to the main or persistent process that spawned them. A process configured directly with `sync.role: ephemeral` rejects plan, project, and project-setting writes; it cannot safely infer whether the shared database belongs to a main or persistent host.
+
 Sync configuration is machine-local. Put it in `~/.config/tim/config.yml`; repository `.tim/config/tim.yml` and `.tim/config/tim.local.yml` files cannot enable sync.
 
 ## Project Registration And Matching

@@ -40,23 +40,31 @@ export async function updatePlanTasksTool(
 
     let relativePath = `plan ${initialPlan.id}`;
     let taskCount = 0;
-    await withPlanAutoSync(initialPlan.id, context.gitRoot, async () => {
-      const { plan, planPath } = await resolvePlan(args.plan, context);
-      const updatedPlan = await mergeTasksIntoPlan(newPlanData, plan);
+    await withPlanAutoSync(
+      initialPlan.id,
+      context.gitRoot,
+      async () => {
+        const { plan, planPath } = await resolvePlan(args.plan, context);
+        const updatedPlan = await mergeTasksIntoPlan(newPlanData, plan);
 
-      if (
-        isReopenableCompletedStatus(plan.status) &&
-        findNextActionableItem(updatedPlan) !== null
-      ) {
-        updatedPlan.status = 'in_progress';
-      }
+        if (
+          isReopenableCompletedStatus(plan.status) &&
+          findNextActionableItem(updatedPlan) !== null
+        ) {
+          updatedPlan.status = 'in_progress';
+        }
 
-      await writePlanFile(planPath, updatedPlan, { cwdForIdentity: context.gitRoot });
-      relativePath = planPath
-        ? path.relative(context.gitRoot, planPath) || planPath
-        : `plan ${plan.id}`;
-      taskCount = updatedPlan.tasks.length;
-    });
+        await writePlanFile(planPath, updatedPlan, {
+          cwdForIdentity: context.gitRoot,
+          config: context.config,
+        });
+        relativePath = planPath
+          ? path.relative(context.gitRoot, planPath) || planPath
+          : `plan ${plan.id}`;
+        taskCount = updatedPlan.tasks.length;
+      },
+      { config: context.config }
+    );
 
     const text = `Successfully updated plan at ${relativePath} with ${taskCount} task${
       taskCount === 1 ? '' : 's'

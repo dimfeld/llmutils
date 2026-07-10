@@ -53,6 +53,14 @@ describe('tim db/project', () => {
     expect(second.highest_plan_id).toBe(4);
   });
 
+  test('getOrCreateProject derives the remote label during initial creation', () => {
+    const project = getOrCreateProject(db, 'repo-derived-label', {
+      remoteUrl: 'git@github.com:example/repo.git',
+    });
+
+    expect(project.remote_label).toBe('github.com/example/repo');
+  });
+
   test('getProject returns null for non-existent repository', () => {
     expect(getProject(db, 'missing-repository')).toBeNull();
   });

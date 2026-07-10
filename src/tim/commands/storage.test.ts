@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { writeRepositoryStorageMetadata } from '../external_storage_utils.js';
+import { getDefaultConfig } from '../configSchema.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getProject } from '../db/project.js';
 import { collectExternalStorageDirectories } from '../storage/storage_manager.js';
@@ -47,13 +48,17 @@ async function createStorageRepository(
     await fs.writeFile(planPath, '---\ngoal: Example\n');
   }
 
-  await writeRepositoryStorageMetadata(baseDir, {
-    repositoryName: name,
-    remoteLabel: options.remoteLabel ?? null,
-    lastGitRoot: null,
-    externalConfigPath: path.join(configDir, 'tim.yml'),
-    externalTasksDir: tasksDir,
-  });
+  await writeRepositoryStorageMetadata(
+    baseDir,
+    {
+      repositoryName: name,
+      remoteLabel: options.remoteLabel ?? null,
+      lastGitRoot: null,
+      externalConfigPath: path.join(configDir, 'tim.yml'),
+      externalTasksDir: tasksDir,
+    },
+    getDefaultConfig()
+  );
 }
 
 describe('storage commands', () => {

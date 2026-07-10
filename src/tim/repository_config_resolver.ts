@@ -3,12 +3,12 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import { getGitRoot } from '../common/git.js';
+import { debugLog } from '../logging.js';
 import {
   deriveRepositoryName,
   fallbackRepositoryNameFromGitRoot,
   parseGitRemoteUrl,
 } from '../common/git_url_parser.js';
-import { debugLog } from '../logging.js';
 import { describeRemoteForLogging, getExternalStorageBaseDir } from './external_storage_utils.js';
 import { getDatabase } from './db/database.js';
 import { getOrCreateProject, updateProject } from './db/project.js';
@@ -21,6 +21,7 @@ export interface RepositoryConfigResolution {
   externalTasksDir?: string;
   repositoryName?: string;
   remoteUrl?: string | null;
+  remoteLabel?: string | null;
   gitRoot?: string;
 }
 
@@ -107,12 +108,10 @@ export class RepositoryConfigResolver {
     await fs.mkdir(externalTasksDir, { recursive: true });
 
     const externalConfigPath = path.join(externalConfigDir, 'tim.yml');
-
-    debugLog(`Using external tim storage at ${repositoryConfigDir}`);
+    const remoteLabel = remoteUrl ? describeRemoteForLogging(remoteUrl) : null;
 
     try {
       const db = getDatabase();
-      const remoteLabel = remoteUrl ? describeRemoteForLogging(remoteUrl) : null;
       const project = getOrCreateProject(db, repositoryName, {
         remoteUrl,
         remoteLabel,
@@ -120,26 +119,20 @@ export class RepositoryConfigResolver {
         externalConfigPath,
         externalTasksDir,
       });
-      const shouldUpdateProject =
-        project.remote_url !== (remoteUrl ?? null) ||
-        project.remote_label !== (remoteLabel ?? null) ||
+      const shouldUpdateLocalPaths =
         project.last_git_root !== gitRoot ||
         project.external_config_path !== externalConfigPath ||
         project.external_tasks_dir !== externalTasksDir;
 
-      if (shouldUpdateProject) {
+      if (shouldUpdateLocalPaths) {
         updateProject(db, project.id, {
-          remoteUrl,
-          remoteLabel,
           lastGitRoot: gitRoot,
           externalConfigPath,
           externalTasksDir,
         });
       }
-    } catch (metadataError) {
-      debugLog(
-        `Failed to update external storage metadata for ${repositoryConfigDir}: ${metadataError as Error}`
-      );
+    } catch {
+      // Config resolution remains usable if optional project metadata persistence fails.
     }
 
     return {
@@ -150,6 +143,7 @@ export class RepositoryConfigResolver {
       externalTasksDir,
       repositoryName,
       remoteUrl,
+      remoteLabel,
       gitRoot,
     };
   }

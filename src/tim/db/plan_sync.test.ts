@@ -667,4 +667,24 @@ describe('tim db/plan_sync', () => {
     expect(getPlanByUuid(getDatabase(), planUuid)).toBeNull();
     expect(getAssignment(getDatabase(), project!.id, planUuid)).toBeNull();
   });
+
+  test('legacy direct helpers reject synced write modes', async () => {
+    const config = {
+      ...buildTestConfig(tasksDir),
+      sync: { role: 'persistent', nodeId: 'persistent-node' },
+    } as TimConfig;
+
+    await expect(
+      syncPlanToDb(
+        {
+          id: 13,
+          uuid: '13131313-1313-4313-8313-131313131313',
+          title: 'Must be routed',
+          goal: 'Do not bypass the queue',
+          tasks: [],
+        },
+        { config, cwdForIdentity: repoDir, throwOnError: true }
+      )
+    ).rejects.toThrow('Legacy direct plan DB helpers cannot write in sync-persistent mode');
+  });
 });

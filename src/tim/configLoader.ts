@@ -11,10 +11,39 @@ import {
 import { quiet } from '../common/process.js';
 import { debugLog, error, log, warn } from '../logging.js';
 import { type TimConfig, timConfigSchema, getDefaultConfig } from './configSchema.js';
+import { getDatabase } from './db/database.js';
+import { getProject } from './db/project.js';
+import { writeProjectMetadata } from './project_metadata.js';
 import {
   RepositoryConfigResolver,
   type RepositoryConfigResolution,
 } from './repository_config_resolver.ts';
+
+async function routeResolvedSharedProjectMetadata(
+  config: TimConfig,
+  resolution: RepositoryConfigResolution
+): Promise<void> {
+  if (!resolution.repositoryName || resolution.remoteUrl === undefined) {
+    return;
+  }
+
+  try {
+    const db = getDatabase();
+    const project = getProject(db, resolution.repositoryName);
+    if (!project) {
+      return;
+    }
+
+    await writeProjectMetadata(db, config, project.id, {
+      remoteUrl: resolution.remoteUrl,
+      remoteLabel: resolution.remoteLabel ?? null,
+    });
+  } catch (metadataError) {
+    debugLog(
+      `Failed to route shared project metadata for ${resolution.repositoryName}: ${metadataError as Error}`
+    );
+  }
+}
 
 function removeUnknownConfigKeys(
   config: unknown,
@@ -652,6 +681,8 @@ export async function loadEffectiveConfig(
       repositoryConfigName: resolution.repositoryName,
       repositoryRemoteUrl: resolution.remoteUrl ?? null,
     };
+
+    await routeResolvedSharedProjectMetadata(configWithMetadata, resolution);
 
     if (resolution.usingExternalStorage && resolution.repositoryConfigDir && !options.quiet) {
       log(`Using external tim storage at ${resolution.repositoryConfigDir}`);

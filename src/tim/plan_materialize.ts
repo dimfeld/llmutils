@@ -44,6 +44,7 @@ import {
   removePlanListItemOperation,
   removePlanTagOperation,
   removePlanTaskOperation,
+  reorderPlanTasksOperation,
   setPlanParentOperation,
   setPlanScalarOperation,
   updatePlanTaskTextOperation,
@@ -77,13 +78,15 @@ export type ProjectContext = {
   maxNumericId: number;
 };
 
-type MaterializePlanOptions = {
+export type SyncMaterializedPlanOptions = {
   context?: ProjectContext;
   config?: TimConfig;
   force?: boolean;
   skipRematerialize?: boolean;
   preserveUpdatedAt?: string;
 };
+
+export type PlanAutoSyncOptions = Pick<SyncMaterializedPlanOptions, 'config'>;
 
 export type MaterializedPlanRole = 'primary' | 'reference';
 
@@ -440,7 +443,7 @@ export function mergePlanWithShadow(
 
 async function loadConfigForMaterializedSync(
   repoRoot: string,
-  options: MaterializePlanOptions
+  options: SyncMaterializedPlanOptions
 ): Promise<TimConfig> {
   if (options.config) {
     return options.config;
@@ -608,18 +611,21 @@ async function routeMaterializedPlanChanges(
   const projectUuid = getProjectUuidForId(db, context.projectId);
   const planUuid = projectionRow.uuid;
   const writeMode = resolveWriteMode(config);
-  if (writeMode !== 'sync-persistent') {
-    // Some deprecated write helpers still mirror projection to canonical after
-    // writing projection state. Pre-mirroring here keeps local/main materialized
-    // sync CAS checks pointed at canonical rows before the batch runs. This is
-    // intentionally outside the batch transaction: in local/main mode canonical
-    // and projection are equivalent, and any transient mismatch self-heals at
-    // the next mirror boundary.
-    mirrorProjectionPlanToCanonicalInTransaction(db, context.projectId, planUuid);
-  }
   const baseRevision =
     writeMode === 'sync-persistent' ? (shadowPlan.revision ?? projectionRow.revision) : undefined;
-  const batch = await beginSyncBatch(db, config, { reason: 'materialize_sync', atomic: true });
+  const batch = await beginSyncBatch(db, config, {
+    reason: 'materialize_sync',
+    atomic: true,
+    precondition:
+      writeMode === 'sync-persistent'
+        ? undefined
+        : () => {
+            // Some deprecated write helpers still mirror projection to canonical
+            // after writing projection state. Pre-mirroring keeps local/main CAS
+            // checks pointed at canonical rows and must roll back with the batch.
+            mirrorProjectionPlanToCanonicalInTransaction(db, context.projectId, planUuid);
+          },
+  });
   let baseTrackingUpdate: { baseCommit: string | null; baseChangeId: string | null } | null = null;
 
   for (const field of ['title', 'goal', 'note', 'details'] as const) {
@@ -950,6 +956,36 @@ async function routeMaterializedPlanChanges(
         );
       }
     }
+
+    const removedTaskUuids = new Set(
+      taskDiff.removed
+        .map((task) => task.uuid)
+        .filter((uuid): uuid is string => typeof uuid === 'string')
+    );
+    const naturallyAppliedTaskOrder = shadowPlan.tasks
+      .map((task) => task.uuid)
+      .filter((uuid): uuid is string => typeof uuid === 'string' && !removedTaskUuids.has(uuid));
+    for (const { task, index } of taskDiff.added) {
+      naturallyAppliedTaskOrder.splice(index, 0, task.uuid!);
+    }
+    const fileTaskOrder = filePlan.tasks.map((task) => {
+      if (!task.uuid) {
+        throw new Error('Materialized task UUID generation failed');
+      }
+      return task.uuid;
+    });
+    if (
+      naturallyAppliedTaskOrder.length !== fileTaskOrder.length ||
+      naturallyAppliedTaskOrder.some((taskUuid, index) => taskUuid !== fileTaskOrder[index])
+    ) {
+      batch.add((options) =>
+        reorderPlanTasksOperation(
+          projectUuid,
+          { planUuid, taskUuids: fileTaskOrder, baseRevision },
+          options
+        )
+      );
+    }
   }
 
   try {
@@ -1054,51 +1090,6 @@ async function syncMaterializedPlanFromDbBaseline(
     );
   }
   return result;
-}
-
-function alignTaskOrderWithMaterializedFileLocalOnly(
-  db: Database,
-  planUuid: string,
-  fileTasks: TaskSchema[]
-): boolean {
-  const desiredTaskUuids = fileTasks
-    .map((task) => task.uuid)
-    .filter((uuid): uuid is string => typeof uuid === 'string' && uuid.length > 0);
-  if (desiredTaskUuids.length !== fileTasks.length) {
-    return false;
-  }
-
-  const currentTasks = getPlanTasksByUuid(db, planUuid);
-  const currentTaskUuids = currentTasks.map((task) => task.uuid);
-  if (
-    currentTaskUuids.length !== desiredTaskUuids.length ||
-    currentTaskUuids.some((uuid, index) => uuid !== desiredTaskUuids[index])
-  ) {
-    const knownUuids = new Set(currentTaskUuids);
-    if (
-      desiredTaskUuids.length !== knownUuids.size ||
-      desiredTaskUuids.some((uuid) => !knownUuids.has(uuid))
-    ) {
-      return false;
-    }
-
-    // SYNC-EXEMPT: there is no operation type for task reordering yet. The
-    // shadow-missing recovery path must still honor the materialized file's
-    // task order, so only task_index is rewritten locally after op replay.
-    db.transaction(() => {
-      for (const taskUuid of desiredTaskUuids) {
-        db.prepare('UPDATE plan_task SET task_index = -task_index - 1 WHERE uuid = ?').run(
-          taskUuid
-        );
-      }
-      desiredTaskUuids.forEach((taskUuid, index) => {
-        db.prepare('UPDATE plan_task SET task_index = ? WHERE uuid = ?').run(index, taskUuid);
-      });
-    })();
-    return true;
-  }
-
-  return false;
 }
 
 export async function ensureMaterializeDir(repoRoot: string): Promise<string> {
@@ -1466,7 +1457,7 @@ async function readShadowPlanFile(filePath: string): Promise<PlanSchema> {
 export async function syncMaterializedPlan(
   planId: number,
   repoRoot: string,
-  options: MaterializePlanOptions = {}
+  options: SyncMaterializedPlanOptions = {}
 ): Promise<string> {
   const filePath = getMaterializedPlanPath(repoRoot, planId);
 
@@ -1599,18 +1590,10 @@ export async function syncMaterializedPlan(
       dbBaselineChanges.changedFields,
       { preserveUpdatedAt: options.preserveUpdatedAt }
     );
-    const reorderedTasks =
-      resolveWriteMode(config) === 'sync-persistent'
-        ? false
-        : alignTaskOrderWithMaterializedFileLocalOnly(
-            getDatabase(),
-            projectionRow.uuid,
-            mergedPlan.tasks
-          );
     if (options.skipRematerialize) {
       const shadowPlanForPath = hasNumericIdDrift ? { ...mergedPlan, id: planId } : mergedPlan;
       const content = generatePlanFileContent(shadowPlanForPath);
-      if (wroteTaskUuids || reorderedTasks) {
+      if (wroteTaskUuids) {
         await Bun.write(filePath, content);
       }
       await Bun.write(
@@ -1655,7 +1638,8 @@ export async function syncMaterializedPlan(
 export async function withPlanAutoSync<T>(
   planId: number,
   repoRoot: string,
-  fn: () => T | Promise<T>
+  fn: () => T | Promise<T>,
+  options: PlanAutoSyncOptions = {}
 ): Promise<T> {
   const filePath = getMaterializedPlanPath(repoRoot, planId);
   const materializedExists = await Bun.file(filePath)
@@ -1673,7 +1657,11 @@ export async function withPlanAutoSync<T>(
     ? await resolveProjectContext(repoRoot, repository)
     : undefined;
   if (materializedExists) {
-    await syncMaterializedPlan(planId, repoRoot, { context, skipRematerialize: true });
+    await syncMaterializedPlan(planId, repoRoot, {
+      context,
+      config: options.config,
+      skipRematerialize: true,
+    });
   }
 
   let fnError: unknown;

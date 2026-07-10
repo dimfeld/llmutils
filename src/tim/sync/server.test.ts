@@ -42,6 +42,7 @@ import { writePlanAddTag } from './write_router.js';
 import {
   getCurrentSequenceId,
   loadCanonicalSnapshot,
+  loadCatchUpWindow,
   startSyncServer,
   SYNC_MAX_PAYLOAD_BYTES,
   type SyncServerHandle,
@@ -564,6 +565,51 @@ describe('sync transport server and clients', () => {
       type: 'plan',
       plan: { uuid: PLAN_UUID, tags: ['offline'] },
     });
+  });
+
+  test('HTTP catch-up invalidations do not run past the advertised high-water mark', async () => {
+    const mainDb = createDb();
+    insertSequences(mainDb, 3);
+    // Model a row committed after a catch-up reader captured sequence 2. The
+    // response must not mix that later invalidation into the earlier window.
+    mainDb.prepare("UPDATE sqlite_sequence SET seq = 2 WHERE name = 'sync_sequence'").run();
+    const server = startTestServer(mainDb);
+
+    const catchUp = await httpCatchUp(serverUrl(server), TOKEN, NODE_A, 0);
+
+    expect(catchUp.ok).toBe(true);
+    expect(catchUp.ok && catchUp.value.currentSequenceId).toBe(2);
+    expect(catchUp.ok && catchUp.value.invalidations.map((item) => item.sequenceId)).toEqual([
+      1, 2,
+    ]);
+  });
+
+  test('WebSocket catch-up invalidations do not run past the advertised high-water mark', async () => {
+    const mainDb = createDb();
+    insertSequences(mainDb, 3);
+    mainDb.prepare("UPDATE sqlite_sequence SET seq = 2 WHERE name = 'sync_sequence'").run();
+    const server = startTestServer(mainDb);
+    const ws = await authenticatedWebSocket(server, NODE_A);
+
+    ws.send(JSON.stringify({ type: 'catch_up_request', sinceSequenceId: 0 }));
+
+    expect(await waitForMessage(ws)).toMatchObject({
+      type: 'catch_up_response',
+      currentSequenceId: 2,
+      invalidations: [{ sequenceId: 1 }, { sequenceId: 2 }],
+    });
+    ws.close();
+  });
+
+  test('loads invalidations and their high-water mark from one bounded window', () => {
+    const db = createDb();
+    insertSequences(db, 3);
+    db.prepare("UPDATE sqlite_sequence SET seq = 2 WHERE name = 'sync_sequence'").run();
+
+    const catchUp = loadCatchUpWindow(db, 0);
+
+    expect(catchUp.currentSequenceId).toBe(2);
+    expect(catchUp.invalidations.map((item) => item.sequenceId)).toEqual([1, 2]);
   });
 
   test('HTTP snapshot fetch accepts large POST body key lists', async () => {

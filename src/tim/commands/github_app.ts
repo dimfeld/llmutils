@@ -18,9 +18,11 @@ import {
 } from '../../common/github/app_auth.js';
 import { parseOwnerRepoFromRepositoryId } from '../../common/github/pull_requests.js';
 import { log, warn } from '../../logging.js';
+import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase, getDefaultDatabasePath } from '../db/database.js';
-import { getOrCreateProject, listProjects, updateProject, type Project } from '../db/project.js';
+import { getOrCreateProject, listProjects, type Project } from '../db/project.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { writeProjectMetadata } from '../project_metadata.js';
 
 export interface GitHubAppSetOptions {
   appId?: string;
@@ -69,18 +71,14 @@ function findInstallationById(
   return installations.find((installation) => installation.id === installationId) ?? null;
 }
 
-function updateProjectRepositoryMetadata(
+async function updateProjectRepositoryMetadata(
   project: Project,
   remoteUrl: string | null,
   gitRoot: string
-): void {
-  if (project.remote_url === remoteUrl && project.last_git_root === gitRoot) {
-    return;
-  }
-  updateProject(getDatabase(), project.id, {
-    remoteUrl,
-    lastGitRoot: gitRoot,
-  });
+): Promise<void> {
+  const db = getDatabase();
+  const config = await loadEffectiveConfig(undefined, { cwd: gitRoot });
+  await writeProjectMetadata(db, config, project.id, { remoteUrl, lastGitRoot: gitRoot });
 }
 
 async function resolveCurrentRepositoryInstallation(installations: AppInstallation[]): Promise<{
@@ -109,7 +107,7 @@ async function resolveCurrentRepositoryInstallation(installations: AppInstallati
     remoteUrl: repoIdentity.remoteUrl,
     lastGitRoot: repoIdentity.gitRoot,
   });
-  updateProjectRepositoryMetadata(project, repoIdentity.remoteUrl, repoIdentity.gitRoot);
+  await updateProjectRepositoryMetadata(project, repoIdentity.remoteUrl, repoIdentity.gitRoot);
 
   let installationId = findInstallationForOwner(parsed.owner, db);
   if (!installationId) {

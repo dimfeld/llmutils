@@ -186,11 +186,11 @@ describe('writeImportedPlansToDbTransactionally legacy-data path', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('local-operation mode uses legacy transaction when existing DB row has no UUID', async () => {
+  test('local-operation mode routes replacement of an existing UUID-less row through sync', async () => {
     const initContext = await resolveProjectContext(tempDir);
     const db = getDatabase();
 
-    // Insert a legacy plan row with empty UUID to simulate pre-UUID data
+    // Insert a legacy plan row with empty UUID to simulate pre-UUID data.
     db.prepare(
       `INSERT INTO plan (uuid, project_id, plan_id, title, status, created_at, updated_at)
        VALUES ('', ?, 1, 'Legacy Plan', 'pending', datetime('now'), datetime('now'))`
@@ -200,12 +200,14 @@ describe('writeImportedPlansToDbTransactionally legacy-data path', () => {
 
     const updatedRow = getPlanByPlanId(getDatabase(), initContext.projectId, 1);
     expect(updatedRow).not.toBeNull();
-    // Legacy row (uuid='') was replaced with a proper UUID row
-    expect(updatedRow!.uuid).not.toBe('');
+    expect(updatedRow!.uuid).toBeTruthy();
     expect(updatedRow!.title).toBe('Imported Plan 1');
+    expect(
+      db.prepare('SELECT operation_type, status FROM sync_operation ORDER BY local_sequence').all()
+    ).toEqual([{ operation_type: 'plan.create', status: 'applied' }]);
   });
 
-  test('local-operation legacy path is atomic: rolls back all plans if any write fails', async () => {
+  test('local-operation UUID-less replacement is atomic when any routed write fails', async () => {
     const initContext = await resolveProjectContext(tempDir);
     const db = getDatabase();
 

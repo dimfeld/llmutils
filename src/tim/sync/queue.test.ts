@@ -1994,21 +1994,14 @@ describe('persistent-node sync queue', () => {
     expect(getPlanByUuid(db, newPlanUuid)).toBeNull();
   });
 
-  test('mergeCanonicalRefresh removes local assignments for cleanup-status plan snapshots', () => {
+  test('mergeCanonicalRefresh removes local assignments for terminal plan snapshots', () => {
     const cases = [
       { planUuid: PLAN_UUID, taskUuid: TASK_UUID, planId: 1, status: 'done' },
-      { planUuid: OTHER_PLAN_UUID, taskUuid: TASK_UUID_2, planId: 2, status: 'needs_review' },
       {
         planUuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         taskUuid: TASK_UUID_3,
         planId: 3,
         status: 'cancelled',
-      },
-      {
-        planUuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-        taskUuid: TASK_UUID_4,
-        planId: 4,
-        status: 'reviewed',
       },
     ] as const;
 
@@ -2028,6 +2021,18 @@ describe('persistent-node sync queue', () => {
       expect(getAssignment(db, project.id, testCase.planUuid)).toBeNull();
     }
   });
+
+  test.each(['needs_review', 'reviewed'] as const)(
+    'mergeCanonicalRefresh preserves local assignments for %s snapshots',
+    (status) => {
+      seedPlan();
+      seedAssignment();
+
+      mergeCanonicalRefresh(db, canonicalPlanSnapshot({ uuid: PLAN_UUID, planId: 1, status }));
+
+      expect(getAssignment(db, project.id, PLAN_UUID)).not.toBeNull();
+    }
+  );
 
   test('mergeCanonicalRefresh preserves local assignments for non-cleanup plan snapshots', () => {
     seedPlan();

@@ -41,7 +41,7 @@ describe('write mode resolver', () => {
     ).toBe('sync-persistent');
   });
 
-  test('resolves persistent role without mainUrl as local-operation', () => {
+  test('resolves persistent role without mainUrl as sync-persistent', () => {
     expect(
       resolveWriteMode({
         sync: {
@@ -50,10 +50,10 @@ describe('write mode resolver', () => {
           nodeToken: 'secret',
         },
       } as TimConfig)
-    ).toBe('local-operation');
+    ).toBe('sync-persistent');
   });
 
-  test('resolves persistent role without token as local-operation', () => {
+  test('resolves persistent role without token as sync-persistent', () => {
     expect(
       resolveWriteMode({
         sync: {
@@ -62,7 +62,7 @@ describe('write mode resolver', () => {
           mainUrl: 'http://127.0.0.1:29999',
         },
       } as TimConfig)
-    ).toBe('local-operation');
+    ).toBe('sync-persistent');
   });
 
   test('resolves disabled persistent role as local-operation', () => {
@@ -91,6 +91,20 @@ describe('write mode resolver', () => {
         },
       } as TimConfig)
     ).toBe('sync-persistent');
+  });
+
+  test('rejects direct writes from an enabled ephemeral role', () => {
+    expect(() =>
+      resolveWriteMode({ sync: { role: 'ephemeral', nodeId: 'worker' } } as TimConfig)
+    ).toThrow('Ephemeral sync nodes cannot write persistent data directly');
+  });
+
+  test('allows local writes when ephemeral sync is explicitly disabled', () => {
+    expect(
+      resolveWriteMode({
+        sync: { role: 'ephemeral', nodeId: 'worker', disabled: true },
+      } as TimConfig)
+    ).toBe('local-operation');
   });
 
   test('does not return legacy-direct from the resolver', () => {

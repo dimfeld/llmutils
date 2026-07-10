@@ -124,7 +124,7 @@ export async function createPlanTool(
       .then((s) => s.isFile())
       .catch(() => false);
     if (parentMaterializedExists) {
-      await syncMaterializedPlan(parentPlan.id, context.gitRoot);
+      await syncMaterializedPlan(parentPlan.id, context.gitRoot, { config: context.config });
     }
   }
 

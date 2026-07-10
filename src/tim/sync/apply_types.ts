@@ -41,12 +41,20 @@ export interface ApplyOperationOptions {
   atomicBatchTaskBaseRevisions?: Map<string, number>;
 }
 
+export interface ApplyBatchOptions extends ApplyOperationOptions {
+  /** Runs inside the batch transaction before any operation is applied. */
+  precondition?: () => void;
+  /** Allocates a contiguous local sequence range inside the apply transaction. */
+  allocateLocalSequencesForOrigin?: string;
+}
+
 export interface ApplyBatchResult {
   batchId: string;
   status: 'applied' | 'rejected' | 'deferred' | 'conflict';
   results: ApplyOperationResult[];
   invalidations: TargetKey[];
   sequenceIds: number[];
+  localSequenceStart?: number;
   error?: Error;
 }
 

@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { removeAssignment } from '../db/assignment.js';
 import {
   deleteCanonicalProjectSettingRow,
   deleteProjectionProjectSettingRow,
@@ -28,6 +29,8 @@ import {
   type ProjectRow,
   validationError,
 } from './apply_shared.js';
+
+const ASSIGNMENT_CLEANUP_STATUSES = new Set(['done', 'cancelled']);
 
 export function resolveSyncConflict(
   db: Database,
@@ -144,6 +147,18 @@ function applyConflictResolutionPayload(
     case 'project_setting.set':
     case 'project_setting.delete':
       return applyResolvedProjectSetting(db, project, { ...envelope, op }, options);
+    case 'plan.set_scalar':
+      return applyResolvedPlanScalarWithCanonicalAdapter(db, project, { ...envelope, op }, options);
+    case 'plan.remove_task':
+    case 'plan.reorder_tasks':
+    case 'plan.delete':
+    case 'plan.set_parent':
+    case 'plan.promote_task':
+      rejectManualResolution(options, op.type);
+      return applyResolvedRevisionedPlanOperationWithCanonicalAdapter(db, project, {
+        ...envelope,
+        op,
+      });
     case 'plan.add_task':
       rejectManualResolution(options, op.type);
       return applyResolvedPlanOperationWithCanonicalAdapter(db, project, { ...envelope, op });
@@ -244,6 +259,110 @@ function applyResolvedPlanOperationWithCanonicalAdapter(
 ): Mutation[] {
   const adapter = new CanonicalPlanAdapter(db, project, envelope);
   const mutations = applyOperationTo(adapter, envelope);
+  adapter.flush();
+  return [...mutations, ...adapter.extraMutations()];
+}
+
+function applyResolvedPlanScalarWithCanonicalAdapter(
+  db: Database,
+  project: ProjectRow,
+  envelope: SyncOperationEnvelope & {
+    op: Extract<SyncOperationPayload, { type: 'plan.set_scalar' }>;
+  },
+  options: ResolveSyncConflictOptions
+): Mutation[] {
+  const adapter = new CanonicalPlanAdapter(db, project, envelope);
+  const plan = requireAdapterPlan(adapter, envelope.op.planUuid);
+  const value = options.mode === 'manual' ? options.manualValue : envelope.op.value;
+  if (value === undefined) {
+    throw new Error('--manual must be a valid scalar JSON value');
+  }
+  const op = assertValidPayload({
+    ...envelope.op,
+    value,
+    baseRevision: plan.revision,
+  });
+  if (op.type !== 'plan.set_scalar') {
+    throw new Error('Expected plan.set_scalar conflict payload');
+  }
+  const mutations = applyOperationTo(adapter, { ...envelope, op });
+  if (
+    op.field === 'status' &&
+    typeof op.value === 'string' &&
+    plan.status !== op.value &&
+    ASSIGNMENT_CLEANUP_STATUSES.has(op.value)
+  ) {
+    removeAssignment(db, project.id, op.planUuid);
+  }
+  adapter.flush();
+  return [...mutations, ...adapter.extraMutations()];
+}
+
+function applyResolvedRevisionedPlanOperationWithCanonicalAdapter(
+  db: Database,
+  project: ProjectRow,
+  envelope: SyncOperationEnvelope & {
+    op: Extract<
+      SyncOperationPayload,
+      {
+        type:
+          | 'plan.remove_task'
+          | 'plan.reorder_tasks'
+          | 'plan.delete'
+          | 'plan.set_parent'
+          | 'plan.promote_task';
+      }
+    >;
+  }
+): Mutation[] {
+  const adapter = new CanonicalPlanAdapter(db, project, envelope);
+  const op = envelope.op;
+  let rebased: typeof op;
+  switch (op.type) {
+    case 'plan.remove_task': {
+      const task = adapter.getTaskByUuid(op.taskUuid);
+      if (!task) {
+        return [];
+      }
+      if (task.plan_uuid !== op.planUuid) {
+        requireAdapterTask(adapter, op.taskUuid, op.planUuid);
+      }
+      rebased = { ...op, baseRevision: task.revision };
+      break;
+    }
+    case 'plan.promote_task': {
+      const sourcePlan = requireAdapterPlan(adapter, op.sourcePlanUuid);
+      rebased = { ...op, baseRevision: sourcePlan.revision };
+      break;
+    }
+    case 'plan.set_parent': {
+      const plan = requireAdapterPlan(adapter, op.planUuid);
+      rebased = {
+        ...op,
+        previousParentUuid: plan.parent_uuid,
+        baseRevision: plan.revision,
+      };
+      break;
+    }
+    case 'plan.reorder_tasks': {
+      const plan = requireAdapterPlan(adapter, op.planUuid);
+      rebased = { ...op, baseRevision: plan.revision };
+      break;
+    }
+    case 'plan.delete': {
+      const plan = adapter.getPlan(op.planUuid);
+      if (!plan) {
+        return [];
+      }
+      rebased = { ...op, baseRevision: plan.revision };
+      break;
+    }
+    default: {
+      const exhaustive: never = op;
+      throw new Error(`Unsupported revisioned conflict payload ${String(exhaustive)}`);
+    }
+  }
+  const mutations = applyOperationTo(adapter, { ...envelope, op: rebased });
   adapter.flush();
   return [...mutations, ...adapter.extraMutations()];
 }
@@ -364,6 +483,7 @@ export function currentBaseRevision(
       return adapter.getPlan(op.sourcePlanUuid)?.revision ?? null;
     case 'plan.set_scalar':
     case 'plan.patch_text':
+    case 'plan.reorder_tasks':
     case 'plan.delete':
     case 'plan.set_parent':
       return adapter.getPlan(op.planUuid)?.revision ?? null;

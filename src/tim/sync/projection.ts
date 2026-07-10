@@ -308,6 +308,16 @@ function readCanonicalPlanState(
             hasPlanTombstone(db, planRow.base_plan_uuid))
             ? null
             : planRow.base_plan_uuid,
+        discovered_from:
+          planRow.discovered_from !== null &&
+          discoveredFromTargetsDeletedPlan(
+            db,
+            planRow.project_id,
+            planRow.discovered_from,
+            locallyDeletedPlanUuids
+          )
+            ? null
+            : planRow.discovered_from,
       };
   return {
     projectUuid: project?.uuid ?? null,
@@ -330,6 +340,20 @@ function readCanonicalPlanState(
       .prepare('SELECT plan_uuid, tag FROM plan_tag_canonical WHERE plan_uuid = ? ORDER BY tag')
       .all(planUuid) as PlanTagRow[],
   };
+}
+
+function discoveredFromTargetsDeletedPlan(
+  db: Database,
+  projectId: number,
+  discoveredFrom: number,
+  locallyDeletedPlanUuids: ReadonlySet<string>
+): boolean {
+  const target = db
+    .prepare('SELECT uuid FROM plan_canonical WHERE project_id = ? AND plan_id = ?')
+    .get(projectId, discoveredFrom) as { uuid: string } | null;
+  return Boolean(
+    target && (locallyDeletedPlanUuids.has(target.uuid) || hasPlanTombstone(db, target.uuid))
+  );
 }
 
 function readLocallyDeletedPlanUuids(db: Database): Set<string> {

@@ -19,6 +19,7 @@ import {
   removePlanDependencyOperation,
   removePlanListItemOperation,
   removePlanTagOperation,
+  reorderPlanTasksOperation,
   setPlanParentOperation,
   setPlanScalarOperation,
   setProjectSettingOperation,
@@ -180,6 +181,11 @@ describe('sync operation constructors', () => {
       await buildArtifactHardDeleteOperation(
         { projectUuid: PROJECT_UUID, planUuid: PLAN_UUID, artifactUuid: ARTIFACT_UUID },
         { originNodeId: 'override-node', localSequence: 23 }
+      ),
+      await reorderPlanTasksOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, taskUuids: [TASK_UUID], baseRevision: 4 },
+        { originNodeId: 'override-node', localSequence: 24 }
       ),
     ];
 

@@ -48,9 +48,10 @@ import {
   validationError,
 } from './apply_shared.js';
 import { deleteProjectStateInTransaction } from './project_delete.js';
+import { rekeySyncedProjectIdentityInTransaction } from './project_identity.js';
 
-// Keep in sync with isWorkCompleteStatus in src/tim/plans/plan_state_utils.ts.
-const ASSIGNMENT_CLEANUP_STATUSES = new Set(['done', 'needs_review', 'reviewed', 'cancelled']);
+// Review states retain the machine-local worker claim until final completion.
+const ASSIGNMENT_CLEANUP_STATUSES = new Set(['done', 'cancelled']);
 
 export function applyOperation(
   db: Database,
@@ -127,17 +128,18 @@ export function applyOperationInTransaction(
     insertReceivedOperation(db, nextEnvelope, normalizedPayload, batchId, batchAtomic);
   }
 
+  const fifoError = checkFifo(db, nextEnvelope);
+  if (fifoError) {
+    return {
+      status: 'deferred',
+      sequenceIds: [],
+      invalidations: [],
+      acknowledged: false,
+      error: fifoError,
+    };
+  }
+
   if (nextEnvelope.op.type === 'project.upsert') {
-    const fifoError = checkFifo(db, nextEnvelope);
-    if (fifoError) {
-      return {
-        status: 'deferred',
-        sequenceIds: [],
-        invalidations: [],
-        acknowledged: false,
-        error: fifoError,
-      };
-    }
     const mutations = applyProjectUpsert(
       db,
       nextEnvelope as SyncOperationEnvelope & {
@@ -174,17 +176,6 @@ export function applyOperationInTransaction(
     const error = validationError(nextEnvelope, `Unknown project ${nextEnvelope.projectUuid}`);
     rejectOperation(db, nextEnvelope.operationUuid, error.message);
     return rejectedResult(error);
-  }
-
-  const fifoError = checkFifo(db, nextEnvelope);
-  if (fifoError) {
-    return {
-      status: 'deferred',
-      sequenceIds: [],
-      invalidations: [],
-      acknowledged: false,
-      error: fifoError,
-    };
   }
 
   try {
@@ -357,6 +348,7 @@ function applyPayload(
     case 'plan.update_task_text':
     case 'plan.mark_task_done':
     case 'plan.remove_task':
+    case 'plan.reorder_tasks':
     case 'plan.add_dependency':
     case 'plan.remove_dependency':
     case 'plan.add_tag':
@@ -482,6 +474,9 @@ export function upsertSyncedProject(
       input.highestPlanId,
       existing.id
     );
+    if (existing.uuid !== input.uuid) {
+      rekeySyncedProjectIdentityInTransaction(db, existing.uuid, input.uuid);
+    }
   }
   const project = db
     .prepare('SELECT * FROM project WHERE uuid = ?')
@@ -593,6 +588,9 @@ function applyProjectSetting(
     .get(project.id, envelope.op.setting) as { value: string; revision: number } | null;
   if (envelope.op.type === 'project_setting.delete') {
     if (!row) {
+      if (envelope.op.baseRevision !== undefined && envelope.op.baseRevision !== 0) {
+        return staleSettingConflict(db, envelope, originalPayload, normalizedPayload, null);
+      }
       return [];
     }
     if (envelope.op.baseRevision !== undefined && envelope.op.baseRevision !== row.revision) {
@@ -612,8 +610,14 @@ function applyProjectSetting(
   if (row?.value === nextValue) {
     return [];
   }
-  if (row && envelope.op.baseRevision !== undefined && envelope.op.baseRevision !== row.revision) {
-    return staleSettingConflict(db, envelope, originalPayload, normalizedPayload, row.value);
+  if (envelope.op.baseRevision !== undefined && envelope.op.baseRevision !== (row?.revision ?? 0)) {
+    return staleSettingConflict(
+      db,
+      envelope,
+      originalPayload,
+      normalizedPayload,
+      row?.value ?? null
+    );
   }
   const nextRevision = (row?.revision ?? 0) + 1;
   writeCanonicalProjectSettingRow(db, project.id, envelope.op.setting, envelope.op.value, {
@@ -633,7 +637,7 @@ function staleSettingConflict(
   envelope: SyncOperationEnvelope,
   originalPayload: string,
   normalizedPayload: string,
-  currentValue: string
+  currentValue: string | null
 ): never {
   const op = envelope.op as Extract<
     SyncOperationPayload,

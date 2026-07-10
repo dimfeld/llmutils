@@ -45,6 +45,7 @@ import {
   addPlanRemoveDependencyToBatch,
   addPlanRemoveTagToBatch,
   addPlanRemoveTaskToBatch,
+  addPlanReorderTasksToBatch,
   addPlanSetParentToBatch,
   addPlanSetScalarToBatch,
   addPlanUpdateTaskTextToBatch,
@@ -985,6 +986,29 @@ export function routePlanWriteIntoBatch(
           done: task.done ?? false,
         });
       }
+    }
+    const currentTaskOrder = currentTasks
+      .map((task) => task.uuid)
+      .filter((uuid): uuid is string => typeof uuid === 'string');
+    const nextTaskOrder = nextTasks.map((task) => task.uuid!);
+    const naturallyAppliedTaskOrder = currentTaskOrder.filter((taskUuid) =>
+      nextTaskUuids.has(taskUuid)
+    );
+    for (const [index, task] of nextTasks.entries()) {
+      if (!currentTasksByUuid.has(task.uuid)) {
+        naturallyAppliedTaskOrder.splice(index, 0, task.uuid!);
+      }
+    }
+    if (
+      currentTaskOrder.length === currentTasks.length &&
+      (naturallyAppliedTaskOrder.length !== nextTaskOrder.length ||
+        naturallyAppliedTaskOrder.some((taskUuid, index) => taskUuid !== nextTaskOrder[index]))
+    ) {
+      addPlanReorderTasksToBatch(batch, projectUuid, {
+        planUuid: plan.uuid!,
+        taskUuids: nextTaskOrder,
+        baseRevision: existingRow.revision,
+      });
     }
   }
 

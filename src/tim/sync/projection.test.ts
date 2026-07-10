@@ -820,11 +820,12 @@ describe('rebuildPlanProjection', () => {
     expect(dest?.plan_id).toBe(99);
   });
 
-  test('enqueuing plan.delete removes inbound dependency and parent references from other projections', async () => {
+  test('enqueuing plan.delete removes inbound dependency, hierarchy, and discovery references', async () => {
     const PLAN_A_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const PLAN_B_UUID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     const PLAN_C_UUID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
     const PLAN_D_UUID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const PLAN_E_UUID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 
     upsertCanonicalPlanInTransaction(db, project.id, {
       uuid: PLAN_B_UUID,
@@ -868,16 +869,29 @@ describe('rebuildPlanProjection', () => {
       dependencyUuids: [],
       tags: [],
     });
+    upsertCanonicalPlanInTransaction(db, project.id, {
+      uuid: PLAN_E_UUID,
+      planId: 25,
+      title: 'Discovered plan',
+      status: 'pending',
+      discoveredFrom: 21,
+      revision: 1,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    });
     rebuildPlanProjection(db, PLAN_B_UUID);
     rebuildPlanProjection(db, PLAN_A_UUID);
     rebuildPlanProjection(db, PLAN_C_UUID);
     rebuildPlanProjection(db, PLAN_D_UUID);
+    rebuildPlanProjection(db, PLAN_E_UUID);
 
     expect(getPlanDependenciesByUuid(db, PLAN_A_UUID).map((dep) => dep.depends_on_uuid)).toContain(
       PLAN_B_UUID
     );
     expect(getPlanByUuid(db, PLAN_C_UUID)?.parent_uuid).toBe(PLAN_B_UUID);
     expect(getPlanByUuid(db, PLAN_D_UUID)?.base_plan_uuid).toBe(PLAN_B_UUID);
+    expect(getPlanByUuid(db, PLAN_E_UUID)?.discovered_from).toBe(21);
 
     await enqueueOperation(
       db,
@@ -893,6 +907,7 @@ describe('rebuildPlanProjection', () => {
     ).not.toContain(PLAN_B_UUID);
     expect(getPlanByUuid(db, PLAN_C_UUID)?.parent_uuid).toBeNull();
     expect(getPlanByUuid(db, PLAN_D_UUID)?.base_plan_uuid).toBeNull();
+    expect(getPlanByUuid(db, PLAN_E_UUID)?.discovered_from).toBeNull();
     expect(getPlanByUuid(db, PLAN_B_UUID)).toBeNull();
 
     await enqueueOperation(

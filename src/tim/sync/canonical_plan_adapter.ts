@@ -77,31 +77,69 @@ export class CanonicalPlanAdapter extends BasePlanStateAdapter implements ApplyO
         originNodeId: this.envelope.originNodeId,
       });
     }
-    const dependents = this.db
-      .prepare(
-        `
-          SELECT DISTINCT plan_uuid
-          FROM plan_dependency_canonical
-          WHERE depends_on_uuid = ?
-            AND plan_uuid <> ?
-        `
-      )
-      .all(planUuid, planUuid) as Array<{ plan_uuid: string }>;
-    for (const dependent of dependents) {
-      const dependencies = this.getDependencies(dependent.plan_uuid);
-      const next = dependencies.filter((dependency) => dependency.depends_on_uuid !== planUuid);
-      if (next.length !== dependencies.length) {
-        this.setDependencies(dependent.plan_uuid, next);
-        const dependentPlan = this.getPlan(dependent.plan_uuid);
-        if (dependentPlan) {
-          this.setPlan(clonePlanWithBump(dependentPlan, {}));
-          this.additionalMutations.push({
-            targetType: 'plan',
-            targetKey: `plan:${dependent.plan_uuid}`,
-            revision: dependentPlan.revision + 1,
-          });
-        }
+    const affectedPlanUuids = new Set(
+      (
+        this.db
+          .prepare(
+            `
+              SELECT DISTINCT plan_uuid
+              FROM plan_dependency_canonical
+              WHERE depends_on_uuid = ?
+                AND plan_uuid <> ?
+            `
+          )
+          .all(planUuid, planUuid) as Array<{ plan_uuid: string }>
+      ).map((row) => row.plan_uuid)
+    );
+    if (plan) {
+      const referenceOwners = this.db
+        .prepare(
+          `
+            SELECT uuid
+            FROM plan_canonical
+            WHERE project_id = ?
+              AND uuid <> ?
+              AND (parent_uuid = ? OR base_plan_uuid = ? OR discovered_from = ?)
+          `
+        )
+        .all(this.project.id, planUuid, planUuid, planUuid, plan.plan_id) as Array<{
+        uuid: string;
+      }>;
+      for (const owner of referenceOwners) {
+        affectedPlanUuids.add(owner.uuid);
       }
+    }
+    for (const affectedPlanUuid of affectedPlanUuids) {
+      const affectedPlan = this.getPlan(affectedPlanUuid);
+      if (!affectedPlan) {
+        continue;
+      }
+      const dependencies = this.getDependencies(affectedPlanUuid);
+      const nextDependencies = dependencies.filter(
+        (dependency) => dependency.depends_on_uuid !== planUuid
+      );
+      const patch: Partial<PlanRow> = {};
+      if (affectedPlan.parent_uuid === planUuid) {
+        patch.parent_uuid = null;
+      }
+      if (affectedPlan.base_plan_uuid === planUuid) {
+        patch.base_plan_uuid = null;
+      }
+      if (plan && affectedPlan.discovered_from === plan.plan_id) {
+        patch.discovered_from = null;
+      }
+      if (nextDependencies.length === dependencies.length && Object.keys(patch).length === 0) {
+        continue;
+      }
+      if (nextDependencies.length !== dependencies.length) {
+        this.setDependencies(affectedPlanUuid, nextDependencies);
+      }
+      this.setPlan(clonePlanWithBump(affectedPlan, patch));
+      this.additionalMutations.push({
+        targetType: 'plan',
+        targetKey: `plan:${affectedPlanUuid}`,
+        revision: affectedPlan.revision + 1,
+      });
     }
     removeAssignment(this.db, this.project.id, planUuid);
   }

@@ -38,6 +38,7 @@ import { handleMaterializeCommand } from './commands/materialize.js';
 import { handleSyncCommand } from './commands/sync.js';
 import { refreshExistingPrimaryMaterializedPlans } from './materialized_projection_refresh.js';
 import { type CanonicalPlanSnapshot, mergeCanonicalRefresh } from './sync/snapshots.js';
+import { setApplyBatchOperationHookForTesting } from './sync/apply.js';
 
 async function initializeGitRepository(repoDir: string): Promise<void> {
   await Bun.$`git init`.cwd(repoDir).quiet();
@@ -70,6 +71,7 @@ describe('tim plan_materialize', () => {
   });
 
   afterEach(async () => {
+    setApplyBatchOperationHookForTesting(null);
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
@@ -651,6 +653,30 @@ Details
     });
     expect(rematerializedPlan.temp).toBeUndefined();
     await expectShadowMatchesFile(getShadowPlanPath(repoDir, 3), planPath);
+  });
+
+  test('syncMaterializedPlan rolls back projection pre-mirroring when its batch fails', async () => {
+    const { db } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    const planUuid = '33333333-3333-4333-8333-333333333333';
+
+    db.prepare('UPDATE plan SET goal = ? WHERE uuid = ?').run('Projection-only goal', planUuid);
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Title whose operation will fail';
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    setApplyBatchOperationHookForTesting(() => {
+      throw new Error('injected materialized sync failure');
+    });
+
+    await expect(syncMaterializedPlan(3, repoDir)).rejects.toThrow(
+      'injected materialized sync failure'
+    );
+
+    expect(db.prepare('SELECT goal FROM plan_canonical WHERE uuid = ?').get(planUuid)).toEqual({
+      goal: 'Primary goal',
+    });
+    expect(getPlanByUuid(db, planUuid)?.goal).toBe('Projection-only goal');
   });
 
   test('syncMaterializedPlan skips DB writes when the materialized file is unchanged from its shadow', async () => {
@@ -1279,6 +1305,16 @@ Details
     const savedTasks = getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333');
     expect(savedTasks.map((task) => task.uuid)).toEqual(editedPlan.tasks.map((task) => task.uuid));
     expect(savedTasks.map((task) => task.task_index)).toEqual([0, 1]);
+    expect(syncOperationRows().map((row) => [row.operation_type, row.status])).toContainEqual([
+      'plan.reorder_tasks',
+      'applied',
+    ]);
+    const canonicalTaskOrder = db
+      .prepare('SELECT uuid FROM task_canonical WHERE plan_uuid = ? ORDER BY task_index')
+      .all('33333333-3333-4333-8333-333333333333') as Array<{ uuid: string }>;
+    expect(canonicalTaskOrder.map((task) => task.uuid)).toEqual(
+      editedPlan.tasks.map((task) => task.uuid)
+    );
   });
 
   test('syncMaterializedPlan uses op-batch DB baseline sync when the shadow file is malformed', async () => {
@@ -2245,7 +2281,7 @@ Details
     expect((await readPlanFile(shadowPath)).title).toBe('Primary plan');
   });
 
-  test('persistent materialized sync does not directly mutate projection for task reorders', async () => {
+  test('persistent materialized sync queues and optimistically projects task reorders', async () => {
     const { db } = await seedProject();
     const planPath = await materializePlan(3, repoDir);
     await fs.rm(getShadowPlanPath(repoDir, 3), { force: true });
@@ -2258,10 +2294,14 @@ Details
 
     expect(
       getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333').map((task) => task.title)
-    ).toEqual(['implement', 'verify']);
+    ).toEqual(['verify', 'implement']);
     expect((await readPlanFile(planPath)).tasks.map((task) => task.title)).toEqual([
-      'implement',
       'verify',
+      'implement',
+    ]);
+    expect(syncOperationRows().map((row) => [row.operation_type, row.status])).toContainEqual([
+      'plan.reorder_tasks',
+      'queued',
     ]);
   });
 

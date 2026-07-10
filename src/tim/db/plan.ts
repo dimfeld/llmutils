@@ -566,9 +566,6 @@ function replaceExactPlanTasksInTable(
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   );
   for (const task of [...tasks].toSorted((a, b) => a.task_index - b.task_index)) {
-    if (!task.uuid) {
-      throw new Error('task missing uuid in exact plan state write');
-    }
     insert.run(
       task.uuid,
       planUuid,

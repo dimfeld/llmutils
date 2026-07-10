@@ -18,21 +18,29 @@ export async function updatePlanDetailsTool(
   }
 
   let relativePath = `plan ${initialPlan.id}`;
-  await withPlanAutoSync(initialPlan.id, context.gitRoot, async () => {
-    const { plan, planPath } = await resolvePlan(args.plan, context);
-    const updatedDetails = updateDetailsWithinDelimiters(args.details, plan.details, args.append);
+  await withPlanAutoSync(
+    initialPlan.id,
+    context.gitRoot,
+    async () => {
+      const { plan, planPath } = await resolvePlan(args.plan, context);
+      const updatedDetails = updateDetailsWithinDelimiters(args.details, plan.details, args.append);
 
-    const updatedPlan: PlanSchema = {
-      ...plan,
-      details: updatedDetails,
-      updatedAt: new Date().toISOString(),
-    };
+      const updatedPlan: PlanSchema = {
+        ...plan,
+        details: updatedDetails,
+        updatedAt: new Date().toISOString(),
+      };
 
-    await writePlanFile(planPath, updatedPlan, { cwdForIdentity: context.gitRoot });
-    relativePath = planPath
-      ? path.relative(context.gitRoot, planPath) || planPath
-      : `plan ${plan.id}`;
-  });
+      await writePlanFile(planPath, updatedPlan, {
+        cwdForIdentity: context.gitRoot,
+        config: context.config,
+      });
+      relativePath = planPath
+        ? path.relative(context.gitRoot, planPath) || planPath
+        : `plan ${plan.id}`;
+    },
+    { config: context.config }
+  );
 
   const action = args.append ? 'Appended to' : 'Updated';
   const text = `${action} details in ${relativePath}`;

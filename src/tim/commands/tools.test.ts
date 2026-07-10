@@ -45,6 +45,10 @@ vi.mock('../path_resolver.js', async (importOriginal) => {
 });
 
 vi.mock('../../logging.js', () => ({
+  debugLog: vi.fn(),
+  error: vi.fn(),
+  log: vi.fn(),
+  warn: vi.fn(),
   writeStdout: vi.fn(),
   writeStderr: vi.fn(),
 }));

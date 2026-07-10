@@ -7,12 +7,14 @@ import {
   type SyncOperationEnvelope,
 } from './types.js';
 import type {
+  ApplyBatchOptions,
   ApplyBatchResult,
   ApplyOperationOptions,
   ApplyOperationResult,
 } from './apply_types.js';
 import { getBaseRevisionPlanUuid, getBaseRevisionTaskUuid } from './operation_metadata.js';
 import { applyOperationInTransaction } from './apply_operation.js';
+import { allocateLocalSequenceRange } from './queue.js';
 import {
   TERMINAL_OPERATION_STATUSES,
   getOperationByOriginSequence,
@@ -34,8 +36,9 @@ import {
 export function applyBatch(
   db: Database,
   batchInput: SyncOperationBatchEnvelope,
-  options: ApplyOperationOptions = {}
+  options: ApplyBatchOptions = {}
 ): ApplyBatchResult {
+  const { precondition, allocateLocalSequencesForOrigin, ...operationOptions } = options;
   const batch = assertValidBatchEnvelope(batchInput);
   assertUniqueBatchOperationUuids(batch);
   const originalPayloads = batch.operations.map((operation) =>
@@ -49,17 +52,38 @@ export function applyBatch(
     return replay;
   }
 
+  let effectiveBatch = batch;
+  let localSequenceStart: number | undefined;
+  let preconditionPassed = false;
+
   const apply = db.transaction((): ApplyBatchResult => {
+    precondition?.();
+    preconditionPassed = true;
+    if (allocateLocalSequencesForOrigin) {
+      localSequenceStart = allocateLocalSequenceRange(
+        db,
+        allocateLocalSequencesForOrigin,
+        batch.operations.length
+      );
+      effectiveBatch = assertValidBatchEnvelope({
+        ...batch,
+        operations: batch.operations.map((operation, index) => ({
+          ...operation,
+          originNodeId: allocateLocalSequencesForOrigin,
+          localSequence: localSequenceStart! + index,
+        })),
+      });
+    }
     const results: ApplyOperationResult[] = [];
     const effectiveOptions: ApplyOperationOptions =
-      batch.atomic === true
+      effectiveBatch.atomic === true
         ? {
-            ...options,
-            atomicBatchPlanBaseRevisions: captureAtomicBatchPlanBaseRevisions(db, batch),
-            atomicBatchTaskBaseRevisions: captureAtomicBatchTaskBaseRevisions(db, batch),
+            ...operationOptions,
+            atomicBatchPlanBaseRevisions: captureAtomicBatchPlanBaseRevisions(db, effectiveBatch),
+            atomicBatchTaskBaseRevisions: captureAtomicBatchTaskBaseRevisions(db, effectiveBatch),
           }
-        : options;
-    for (const [index, operation] of batch.operations.entries()) {
+        : operationOptions;
+    for (const [index, operation] of effectiveBatch.operations.entries()) {
       const result =
         applyBatchOperationHookForTesting?.(index, operation) ??
         applyOperationInTransaction(
@@ -68,23 +92,24 @@ export function applyBatch(
           originalPayloads[index],
           normalizedPayloads[index],
           effectiveOptions,
-          batch.batchId,
-          batch.atomic === true
+          effectiveBatch.batchId,
+          effectiveBatch.atomic === true
         );
       results.push(result);
       if (
         result.status === 'rejected' ||
         result.status === 'deferred' ||
-        (batch.atomic === true && result.status === 'conflict')
+        (effectiveBatch.atomic === true && result.status === 'conflict')
       ) {
         throw new BatchAbort(result, results, results.length - 1);
       }
     }
-    return aggregateBatchResult(batch.batchId, results);
+    return aggregateBatchResult(effectiveBatch.batchId, results);
   });
 
   try {
-    return apply.immediate();
+    const result = apply.immediate();
+    return localSequenceStart === undefined ? result : { ...result, localSequenceStart };
   } catch (error) {
     if (error instanceof BatchAbort) {
       const status =
@@ -93,21 +118,40 @@ export function applyBatch(
           : error.result.status === 'conflict'
             ? 'conflict'
             : 'rejected';
-      const results = rolledBackBatchResults(batch.operations, error.result, error.causeIndex);
-      persistRolledBackBatchRejections(db, batch, results, normalizedPayloads);
+      const results = rolledBackBatchResults(
+        effectiveBatch.operations,
+        error.result,
+        error.causeIndex
+      );
+      const persisted = persistRolledBackBatchRejections(
+        db,
+        effectiveBatch,
+        results,
+        normalizedPayloads,
+        status === 'deferred' ? undefined : allocateLocalSequencesForOrigin
+      );
+      if (persisted.replay) {
+        return persisted.replay;
+      }
       return {
-        batchId: batch.batchId,
+        batchId: effectiveBatch.batchId,
         status,
         results,
         invalidations: [],
         sequenceIds: [],
+        ...(persisted.localSequenceStart === undefined
+          ? {}
+          : { localSequenceStart: persisted.localSequenceStart }),
         error: error.result.error,
       };
     }
     if (error instanceof SyncValidationError || error instanceof SyncFifoGapError) {
+      if (allocateLocalSequencesForOrigin && !preconditionPassed) {
+        throw error;
+      }
       const status = error instanceof SyncFifoGapError ? 'deferred' : 'rejected';
       const results = rolledBackBatchResults(
-        batch.operations,
+        effectiveBatch.operations,
         {
           status,
           sequenceIds: [],
@@ -115,15 +159,29 @@ export function applyBatch(
           acknowledged: status === 'rejected',
           error,
         } as ApplyOperationResult,
-        batch.operations.findIndex((operation) => operation.operationUuid === error.operationUuid)
+        effectiveBatch.operations.findIndex(
+          (operation) => operation.operationUuid === error.operationUuid
+        )
       );
-      persistRolledBackBatchRejections(db, batch, results, normalizedPayloads);
+      const persisted = persistRolledBackBatchRejections(
+        db,
+        effectiveBatch,
+        results,
+        normalizedPayloads,
+        status === 'deferred' ? undefined : allocateLocalSequencesForOrigin
+      );
+      if (persisted.replay) {
+        return persisted.replay;
+      }
       return {
-        batchId: batch.batchId,
+        batchId: effectiveBatch.batchId,
         status,
         results,
         invalidations: [],
         sequenceIds: [],
+        ...(persisted.localSequenceStart === undefined
+          ? {}
+          : { localSequenceStart: persisted.localSequenceStart }),
         error,
       };
     }
@@ -304,13 +362,19 @@ function persistRolledBackBatchRejections(
   db: Database,
   batch: SyncOperationBatchEnvelope,
   results: ApplyOperationResult[],
-  normalizedPayloads: string[]
-): void {
+  normalizedPayloads: string[],
+  allocateLocalSequencesForOrigin?: string
+): {
+  batch: SyncOperationBatchEnvelope;
+  localSequenceStart?: number;
+  replay?: ApplyBatchResult;
+} {
   if (results.every((result) => result.status === 'deferred')) {
-    return;
+    return { batch };
   }
-  persistBatchRejections(db, batch, results, normalizedPayloads, {
+  return persistBatchRejections(db, batch, results, normalizedPayloads, {
     fallbackMessage: 'Operation rejected because its atomic batch rolled back',
+    allocateLocalSequencesForOrigin,
   });
 }
 
@@ -335,50 +399,90 @@ function persistBatchRejections(
   options: {
     skipExistingRows?: Array<ReturnType<typeof getOperationRow>>;
     fallbackMessage: string;
+    allocateLocalSequencesForOrigin?: string;
   }
-): void {
-  const persist = db.transaction((): void => {
-    for (const [index, operation] of batch.operations.entries()) {
-      if (options.skipExistingRows?.[index]) {
-        continue;
-      }
-      const result = results[index];
-      if (!result || result.status === 'deferred') {
-        continue;
-      }
-      const existing = getOperationRow(db, operation.operationUuid);
-      if (!existing) {
-        const duplicateSequence = getOperationByOriginSequence(
+): {
+  batch: SyncOperationBatchEnvelope;
+  localSequenceStart?: number;
+  replay?: ApplyBatchResult;
+} {
+  const persist = db.transaction(
+    (): {
+      batch: SyncOperationBatchEnvelope;
+      localSequenceStart?: number;
+      replay?: ApplyBatchResult;
+    } => {
+      let persistedBatch = batch;
+      let persistedLocalSequenceStart: number | undefined;
+      if (options.allocateLocalSequencesForOrigin) {
+        const replay = getBatchReplayResult(db, batch, normalizedPayloads, {
+          repairMissingRows: false,
+        });
+        if (replay) {
+          return { batch, replay };
+        }
+        persistedLocalSequenceStart = allocateLocalSequenceRange(
           db,
-          operation.originNodeId,
-          operation.localSequence,
-          operation.operationUuid
+          options.allocateLocalSequencesForOrigin,
+          batch.operations.length
         );
-        if (duplicateSequence) {
-          // The per-origin sequence slot already belongs to another operation.
-          // We cannot persist this operation UUID without violating FIFO identity.
+        persistedBatch = assertValidBatchEnvelope({
+          ...batch,
+          operations: batch.operations.map((operation, index) => ({
+            ...operation,
+            originNodeId: options.allocateLocalSequencesForOrigin!,
+            localSequence: persistedLocalSequenceStart! + index,
+          })),
+        });
+      }
+      for (const [index, operation] of persistedBatch.operations.entries()) {
+        if (options.skipExistingRows?.[index]) {
           continue;
         }
-        insertReceivedOperation(
-          db,
-          operation,
-          normalizedPayloads[index],
-          batch.batchId,
-          batch.atomic === true
-        );
-      } else if (existing.batch_id !== batch.batchId) {
-        continue;
+        const result = results[index];
+        if (!result || result.status === 'deferred') {
+          continue;
+        }
+        const existing = getOperationRow(db, operation.operationUuid);
+        if (!existing) {
+          const duplicateSequence = getOperationByOriginSequence(
+            db,
+            operation.originNodeId,
+            operation.localSequence,
+            operation.operationUuid
+          );
+          if (duplicateSequence) {
+            // The per-origin sequence slot already belongs to another operation.
+            // We cannot persist this operation UUID without violating FIFO identity.
+            continue;
+          }
+          insertReceivedOperation(
+            db,
+            operation,
+            normalizedPayloads[index],
+            persistedBatch.batchId,
+            persistedBatch.atomic === true
+          );
+        } else if (existing.batch_id !== persistedBatch.batchId) {
+          continue;
+        }
+        // Atomic conflict aborts roll back the sync_conflict row, so the durable
+        // operation record is a rejection rather than status='conflict'.
+        const message =
+          result.status === 'conflict'
+            ? atomicConflictAbortMessage(result.error)
+            : (result.error?.message ?? options.fallbackMessage);
+        rejectOperation(db, operation.operationUuid, message);
       }
-      // Atomic conflict aborts roll back the sync_conflict row, so the durable
-      // operation record is a rejection rather than status='conflict'.
-      const message =
-        result.status === 'conflict'
-          ? atomicConflictAbortMessage(result.error)
-          : (result.error?.message ?? options.fallbackMessage);
-      rejectOperation(db, operation.operationUuid, message);
+      return {
+        batch: persistedBatch,
+        ...(persistedLocalSequenceStart === undefined
+          ? {}
+          : { localSequenceStart: persistedLocalSequenceStart }),
+      };
     }
-  });
-  persist.immediate();
+  );
+  return persist.immediate();
 }
 
 function atomicConflictAbortMessage(cause: Error | undefined): string {
@@ -390,7 +494,8 @@ function atomicConflictAbortMessage(cause: Error | undefined): string {
 function getBatchReplayResult(
   db: Database,
   batch: SyncOperationBatchEnvelope,
-  normalizedPayloads: string[]
+  normalizedPayloads: string[],
+  options: { repairMissingRows?: boolean } = {}
 ): ApplyBatchResult | null {
   const rows = batch.operations.map((operation) => getOperationRow(db, operation.operationUuid));
   const mismatchedBatch = rows.find((row) => row && row.batch_id !== batch.batchId);
@@ -424,7 +529,9 @@ function getBatchReplayResult(
       issues: [],
     });
     const results = rolledBackBatchResults(batch.operations, rejectedResult(error));
-    persistMissingBatchReplayRejections(db, batch, rows, results, normalizedPayloads);
+    if (options.repairMissingRows !== false) {
+      persistMissingBatchReplayRejections(db, batch, rows, results, normalizedPayloads);
+    }
     return {
       batchId: batch.batchId,
       status: 'rejected',
@@ -441,7 +548,9 @@ function getBatchReplayResult(
       issues: [],
     });
     const results = rolledBackBatchResults(batch.operations, rejectedResult(error));
-    persistMissingBatchReplayRejections(db, batch, rows, results, normalizedPayloads);
+    if (options.repairMissingRows !== false) {
+      persistMissingBatchReplayRejections(db, batch, rows, results, normalizedPayloads);
+    }
     return {
       batchId: batch.batchId,
       status: 'rejected',

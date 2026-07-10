@@ -1831,17 +1831,15 @@ describe('configSchema', () => {
       expect(result.defaultOrchestrator).toBe('claude-code');
     });
 
-    test('accepts generate.defaultExecutor with valid executor values', () => {
+    test('accepts generate.executor with valid executor values', () => {
       for (const value of ['claude-code', 'codex-cli'] as const) {
-        const result = timConfigSchema.parse({ generate: { defaultExecutor: value } });
-        expect(result.generate?.defaultExecutor).toBe(value);
+        const result = timConfigSchema.parse({ generate: { executor: value } });
+        expect(result.generate?.executor).toBe(value);
       }
     });
 
-    test('rejects invalid generate.defaultExecutor values', () => {
-      expect(() =>
-        timConfigSchema.parse({ generate: { defaultExecutor: 'invalid-executor' } })
-      ).toThrow();
+    test('rejects invalid generate.executor values', () => {
+      expect(() => timConfigSchema.parse({ generate: { executor: 'invalid-executor' } })).toThrow();
     });
 
     test('generate config is undefined when not specified', () => {

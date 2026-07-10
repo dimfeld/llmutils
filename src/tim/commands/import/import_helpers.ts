@@ -1,6 +1,5 @@
 import { getDatabase } from '../../db/database.js';
-import { nonSyncedUpsertPlan, type PlanRow } from '../../db/plan.js';
-import { toPlanUpsertInput } from '../../db/plan_sync.js';
+import type { PlanRow } from '../../db/plan.js';
 import { previewNextPlanId, reserveNextPlanId } from '../../db/project.js';
 import { ensureReferences } from '../../utils/references.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
@@ -55,14 +54,9 @@ export async function writeImportedPlansToDbTransactionally(
   });
 
   const config = await loadEffectiveConfig(undefined, { cwd: repoRoot, quiet: true });
-  const writeMode = resolveWriteMode(config);
   const returnedWrites = preparedWrites.filter((entry) => !entry.syncOnly);
   let precondition: (() => void) | undefined;
   if (hasLegacyUuidlessRow(context.rows, preparedWrites)) {
-    if (writeMode === 'local-operation') {
-      writeImportedPlansViaLegacyTransaction(db, context.projectId, preparedWrites, idToUuid);
-      return returnedWrites;
-    }
     precondition = () => {
       removeUuidlessLegacyPlanRowsInTransaction(db, context.projectId, preparedWrites);
     };
@@ -110,28 +104,6 @@ function hasLegacyUuidlessRow(
   return rows.some((row) => !row.uuid && writeIds.has(row.plan_id));
 }
 
-function writeImportedPlansViaLegacyTransaction(
-  db: ReturnType<typeof getDatabase>,
-  projectId: number,
-  writes: Array<{ plan: PlanSchema; filePath: string | null; syncOnly?: boolean }>,
-  idToUuid: Map<number, string>
-): void {
-  const writeAll = db.transaction(
-    (
-      nextProjectId: number,
-      nextWrites: Array<{ plan: PlanSchema; filePath: string | null; syncOnly?: boolean }>,
-      nextIdToUuid: Map<number, string>
-    ) => {
-      purgeUuidlessLegacyChildRows(db);
-      for (const entry of nextWrites) {
-        deleteUuidlessLegacyPlanRow(db, nextProjectId, entry.plan.id);
-        nonSyncedUpsertPlan(db, nextProjectId, toPlanUpsertInput(entry.plan, nextIdToUuid));
-      }
-    }
-  );
-  writeAll.immediate(projectId, writes, idToUuid);
-}
-
 function removeUuidlessLegacyPlanRowsInTransaction(
   db: ReturnType<typeof getDatabase>,
   projectId: number,
@@ -144,15 +116,19 @@ function removeUuidlessLegacyPlanRowsInTransaction(
 }
 
 function purgeUuidlessLegacyChildRows(db: ReturnType<typeof getDatabase>): void {
-  db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run('');
-  db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? OR depends_on_uuid = ?').run('', '');
-  db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run('');
-  db.prepare('DELETE FROM task_canonical WHERE plan_uuid = ?').run('');
+  db.prepare("DELETE FROM plan_task WHERE plan_uuid IS NULL OR plan_uuid = ''").run();
   db.prepare(
-    'DELETE FROM plan_dependency_canonical WHERE plan_uuid = ? OR depends_on_uuid = ?'
-  ).run('', '');
-  db.prepare('DELETE FROM plan_tag_canonical WHERE plan_uuid = ?').run('');
-  db.prepare('DELETE FROM plan_canonical WHERE uuid = ?').run('');
+    `DELETE FROM plan_dependency
+     WHERE plan_uuid IS NULL OR plan_uuid = '' OR depends_on_uuid IS NULL OR depends_on_uuid = ''`
+  ).run();
+  db.prepare("DELETE FROM plan_tag WHERE plan_uuid IS NULL OR plan_uuid = ''").run();
+  db.prepare("DELETE FROM task_canonical WHERE plan_uuid IS NULL OR plan_uuid = ''").run();
+  db.prepare(
+    `DELETE FROM plan_dependency_canonical
+     WHERE plan_uuid IS NULL OR plan_uuid = '' OR depends_on_uuid IS NULL OR depends_on_uuid = ''`
+  ).run();
+  db.prepare("DELETE FROM plan_tag_canonical WHERE plan_uuid IS NULL OR plan_uuid = ''").run();
+  db.prepare("DELETE FROM plan_canonical WHERE uuid IS NULL OR uuid = ''").run();
 }
 
 function deleteUuidlessLegacyPlanRow(
@@ -160,11 +136,10 @@ function deleteUuidlessLegacyPlanRow(
   projectId: number,
   planId: number
 ): void {
-  db.prepare('DELETE FROM plan WHERE uuid = ? AND project_id = ? AND plan_id = ?').run(
-    '',
-    projectId,
-    planId
-  );
+  db.prepare(
+    `DELETE FROM plan
+     WHERE (uuid IS NULL OR uuid = '') AND project_id = ? AND plan_id = ?`
+  ).run(projectId, planId);
 }
 
 function planToPendingRow(

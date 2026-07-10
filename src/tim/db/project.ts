@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { deriveGitRemoteLabel } from '../../common/git_url_parser.js';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 export interface Project {
@@ -99,7 +100,11 @@ export function getOrCreateProject(
         createOptions.lastGitRoot ?? null,
         createOptions.externalConfigPath ?? null,
         createOptions.externalTasksDir ?? null,
-        createOptions.remoteLabel ?? null,
+        createOptions.remoteLabel !== undefined
+          ? createOptions.remoteLabel
+          : createOptions.remoteUrl
+            ? deriveGitRemoteLabel(createOptions.remoteUrl)
+            : null,
         createOptions.highestPlanId ?? 0
       );
 

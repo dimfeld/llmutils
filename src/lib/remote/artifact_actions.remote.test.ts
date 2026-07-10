@@ -16,6 +16,7 @@ import { invokeCommand } from '$lib/test-utils/invoke_command.js';
 
 let currentDb: Database;
 let currentConfig: TimConfig;
+let tempDir: string;
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
@@ -42,13 +43,12 @@ function makeArtifact(uuid: string, overrides: Partial<Parameters<typeof insertA
     mimeType: 'text/plain',
     size: 4,
     sha256: 'testsha256',
-    storagePath: '/tmp/nonexistent/artifact.txt',
+    storagePath: path.join(tempDir, 'missing', uuid, 'artifact.txt'),
     ...overrides,
   });
 }
 
 describe('artifact remote actions', () => {
-  let tempDir: string;
   let savedXdgDataHome: string | undefined;
 
   beforeAll(async () => {

@@ -25,6 +25,7 @@ import * as gitModule from '../../common/git.js';
 import * as clipboardModule from '../../common/clipboard.js';
 
 vi.mock('../../logging.js', () => ({
+  debugLog: vi.fn(),
   log: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),

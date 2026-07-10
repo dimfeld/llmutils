@@ -31,6 +31,7 @@ import { getPlanByUuid, getPlanDependenciesByUuid, nonSyncedUpsertPlan } from '.
 import { getOrCreateProject, getProject } from '../db/project.js';
 import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
 import { getGitRoot, getCurrentBranchName, getChangedFilesOnBranch } from '../../common/git.js';
+import { clearConfigCache } from '../configLoader.js';
 
 let repoRootForTest = process.cwd();
 
@@ -87,9 +88,16 @@ describe('tim renumber', () => {
   let tempDir: string;
   let tasksDir: string;
   let configPath: string;
+  let originalXdgConfigHome: string | undefined;
+  let originalTimLoadGlobalConfig: string | undefined;
 
   beforeEach(async () => {
     tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'tim-renumber-test-'));
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    originalTimLoadGlobalConfig = process.env.TIM_LOAD_GLOBAL_CONFIG;
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'xdg');
+    process.env.TIM_LOAD_GLOBAL_CONFIG = '1';
+    clearConfigCache();
     repoRootForTest = tempDir;
     tasksDir = path.join(tempDir, '.tim', 'plans');
     await fs.promises.mkdir(tasksDir, { recursive: true });
@@ -106,6 +114,17 @@ describe('tim renumber', () => {
 
   afterEach(async () => {
     vi.clearAllMocks();
+    clearConfigCache();
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
+    if (originalTimLoadGlobalConfig === undefined) {
+      delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+    } else {
+      process.env.TIM_LOAD_GLOBAL_CONFIG = originalTimLoadGlobalConfig;
+    }
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -2116,6 +2135,40 @@ describe('tim renumber', () => {
       );
     });
 
+    test.each(['main', 'persistent'] as const)(
+      'rejects writes in %s sync mode while allowing dry runs',
+      async (role) => {
+        await createPlan(5, 'Task to renumber', '5-task.plan.md');
+        const globalConfigPath = path.join(process.env.XDG_CONFIG_HOME!, 'tim', 'config.yml');
+        await fs.promises.mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await Bun.write(
+          globalConfigPath,
+          yaml.stringify({
+            sync:
+              role === 'main'
+                ? { role, nodeId: 'main-node' }
+                : {
+                    role,
+                    nodeId: 'persistent-node',
+                    mainUrl: 'http://127.0.0.1:29999',
+                    nodeToken: 'secret',
+                  },
+          })
+        );
+        clearConfigCache();
+
+        await expect(handleRenumber({ from: 5, to: 7 }, createMockCommand())).rejects.toThrow(
+          `sync-${role}`
+        );
+        await expect(
+          handleRenumber({ from: 5, to: 7, dryRun: true }, createMockCommand())
+        ).resolves.toBeUndefined();
+
+        expect(fs.existsSync(path.join(tasksDir, '5-task.plan.md'))).toBe(true);
+        expect(fs.existsSync(path.join(tasksDir, '7-task.plan.md'))).toBe(false);
+      }
+    );
+
     test('simple renumber when target ID does not exist', async () => {
       await createPlan(5, 'Task to renumber', '5-task.plan.md');
       await createPlan(10, 'Another task', '10-another.plan.md');
@@ -2129,6 +2182,32 @@ describe('tim renumber', () => {
 
       // Original file should be gone
       expect(fs.existsSync(path.join(tasksDir, '5-task.plan.md'))).toBe(false);
+    });
+
+    test('keeps canonical and projection state aligned for subsequent routed writes', async () => {
+      await createPlan(5, 'Task to renumber', '5-task.plan.md');
+
+      await handleRenumber({ from: 5, to: 7 }, createMockCommand());
+
+      const renamedPath = path.join(tasksDir, '7-task.plan.md');
+      const renamedPlan = await readPlanFile(renamedPath);
+      const db = getDatabase();
+      const selectProjection = db.prepare('SELECT * FROM plan WHERE uuid = ?');
+      const selectCanonical = db.prepare('SELECT * FROM plan_canonical WHERE uuid = ?');
+
+      expect(selectCanonical.get(renamedPlan.uuid!)).toEqual(
+        selectProjection.get(renamedPlan.uuid!)
+      );
+
+      renamedPlan.title = 'Edited after renumber';
+      await expect(
+        writePlanFile(renamedPath, renamedPlan, { cwdForIdentity: repoRootForTest })
+      ).resolves.toBeUndefined();
+
+      expect(selectCanonical.get(renamedPlan.uuid!)).toEqual(
+        selectProjection.get(renamedPlan.uuid!)
+      );
+      expect(getPlanByUuid(db, renamedPlan.uuid!)?.title).toBe('Edited after renumber');
     });
 
     test('refreshes materialized plan files after simple renumber', async () => {
@@ -2150,6 +2229,7 @@ describe('tim renumber', () => {
     });
 
     test('restores exact DB snapshot when file writes fail after DB update', async () => {
+      const childTaskUuid = crypto.randomUUID();
       const parentPlan: PlanSchema = {
         id: 5,
         title: 'Parent',
@@ -2165,14 +2245,36 @@ describe('tim renumber', () => {
         id: 10,
         title: 'Child',
         goal: 'Child goal',
+        note: 'Rollback must preserve this note',
         details: 'Child details',
         status: 'pending',
         priority: 'medium',
         parent: 5,
+        basePlan: 5,
         dependencies: [5],
+        simple: true,
+        tdd: true,
+        assignedTo: 'rollback-owner',
+        baseBranch: 'main',
+        baseCommit: 'abc123',
+        baseChangeId: 'change-123',
+        temp: true,
+        docs: ['docs/rollback.md'],
+        changedFiles: ['src/rollback.ts'],
+        tags: ['rollback', 'sync'],
         createdAt: new Date('2024-01-02').toISOString(),
         updatedAt: new Date('2024-01-02').toISOString(),
-        tasks: [],
+        docsUpdatedAt: new Date('2024-01-03').toISOString(),
+        lessonsAppliedAt: new Date('2024-01-04').toISOString(),
+        tasks: [
+          {
+            uuid: childTaskUuid,
+            title: 'Preserved task',
+            description: 'Task metadata must survive rollback',
+            done: true,
+            revision: 17,
+          },
+        ],
       };
 
       await writeTestPlan(path.join(tasksDir, 'locked/5-parent.plan.md'), parentPlan);
@@ -2192,9 +2294,12 @@ describe('tim renumber', () => {
         uuid: childFromDisk.uuid!,
         title: childFromDisk.title ?? null,
         goal: childFromDisk.goal ?? null,
+        note: childFromDisk.note ?? null,
         details: childFromDisk.details ?? null,
         sourceCreatedAt: childFromDisk.createdAt ?? null,
         sourceUpdatedAt: childFromDisk.updatedAt ?? null,
+        sourceDocsUpdatedAt: childFromDisk.docsUpdatedAt ?? null,
+        sourceLessonsAppliedAt: childFromDisk.lessonsAppliedAt ?? null,
         status: childFromDisk.status,
         priority: childFromDisk.priority ?? null,
         branch: childFromDisk.branch ?? null,
@@ -2205,23 +2310,57 @@ describe('tim renumber', () => {
         pullRequest: childFromDisk.pullRequest ?? null,
         assignedTo: childFromDisk.assignedTo ?? null,
         baseBranch: childFromDisk.baseBranch ?? null,
+        baseCommit: childFromDisk.baseCommit ?? null,
+        baseChangeId: childFromDisk.baseChangeId ?? null,
         temp: typeof childFromDisk.temp === 'boolean' ? childFromDisk.temp : null,
         docs: childFromDisk.docs ?? null,
         changedFiles: childFromDisk.changedFiles ?? null,
         planGeneratedAt: childFromDisk.planGeneratedAt ?? null,
         reviewIssues: childFromDisk.reviewIssues ?? null,
         parentUuid: parentFromDisk.uuid!,
+        basePlanUuid: parentFromDisk.uuid!,
         epic: childFromDisk.epic === true,
         filename: 'locked/nested/10-child.plan.md',
         tasks: (childFromDisk.tasks ?? []).map((task) => ({
+          uuid: task.uuid,
           title: task.title,
           description: task.description ?? '',
           done: task.done,
+          revision: task.revision,
         })),
         dependencyUuids: [parentFromDisk.uuid!],
         tags: childFromDisk.tags ?? [],
         forceOverwrite: true,
       });
+
+      for (const table of ['plan', 'plan_canonical'] as const) {
+        db.prepare(`UPDATE ${table} SET revision = 41 WHERE uuid = ?`).run(childFromDisk.uuid!);
+      }
+      for (const table of ['plan_task', 'task_canonical'] as const) {
+        db.prepare(`UPDATE ${table} SET revision = 17 WHERE uuid = ?`).run(childTaskUuid);
+        db.prepare(`UPDATE ${table} SET uuid = NULL WHERE uuid = ?`).run(childTaskUuid);
+      }
+
+      const originalDbState = {
+        projectionPlan: db.prepare('SELECT * FROM plan WHERE uuid = ?').get(childFromDisk.uuid!),
+        canonicalPlan: db
+          .prepare('SELECT * FROM plan_canonical WHERE uuid = ?')
+          .get(childFromDisk.uuid!),
+        projectionTasks: db
+          .prepare(
+            `SELECT uuid, plan_uuid, task_index, title, description, done, revision
+             FROM plan_task WHERE plan_uuid = ? ORDER BY task_index`
+          )
+          .all(childFromDisk.uuid!),
+        canonicalTasks: db
+          .prepare(
+            `SELECT uuid, plan_uuid, task_index, title, description, done, revision
+             FROM task_canonical WHERE plan_uuid = ? ORDER BY task_index`
+          )
+          .all(childFromDisk.uuid!),
+      };
+      expect(originalDbState.canonicalPlan).toEqual(originalDbState.projectionPlan);
+      expect(originalDbState.canonicalTasks).toEqual(originalDbState.projectionTasks);
 
       await fs.promises.chmod(path.join(tasksDir, 'locked'), 0o555);
 
@@ -2241,6 +2380,28 @@ describe('tim renumber', () => {
       expect(
         getPlanDependenciesByUuid(db, childFromDisk.uuid!).map((row) => row.depends_on_uuid)
       ).toEqual([parentFromDisk.uuid]);
+      expect(db.prepare('SELECT * FROM plan WHERE uuid = ?').get(childFromDisk.uuid!)).toEqual(
+        originalDbState.projectionPlan
+      );
+      expect(
+        db.prepare('SELECT * FROM plan_canonical WHERE uuid = ?').get(childFromDisk.uuid!)
+      ).toEqual(originalDbState.canonicalPlan);
+      expect(
+        db
+          .prepare(
+            `SELECT uuid, plan_uuid, task_index, title, description, done, revision
+             FROM plan_task WHERE plan_uuid = ? ORDER BY task_index`
+          )
+          .all(childFromDisk.uuid!)
+      ).toEqual(originalDbState.projectionTasks);
+      expect(
+        db
+          .prepare(
+            `SELECT uuid, plan_uuid, task_index, title, description, done, revision
+             FROM task_canonical WHERE plan_uuid = ? ORDER BY task_index`
+          )
+          .all(childFromDisk.uuid!)
+      ).toEqual(originalDbState.canonicalTasks);
 
       const childFileAfterFailure = await readPlanFile(
         path.join(tasksDir, 'locked/nested/10-child.plan.md')

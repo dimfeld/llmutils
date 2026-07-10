@@ -411,10 +411,7 @@ async function handleHttpRequest(
       );
     }
     updateTimNodeCursor(options.db, nodeId, sinceSequenceId);
-    return jsonResponse({
-      invalidations: loadCatchUpInvalidations(options.db, sinceSequenceId),
-      currentSequenceId: getCurrentSequenceId(options.db),
-    });
+    return jsonResponse(loadCatchUpWindow(options.db, sinceSequenceId));
   }
 
   return new Response('Not Found\n', { status: 404 });
@@ -685,11 +682,11 @@ function handleAuthenticatedFrame(
       if (authenticatedNodeId) {
         updateTimNodeCursor(options.db, authenticatedNodeId, frame.sinceSequenceId);
       }
+      const catchUp = loadCatchUpWindow(options.db, frame.sinceSequenceId);
       ws.send(
         JSON.stringify({
           type: 'catch_up_response',
-          invalidations: loadCatchUpInvalidations(options.db, frame.sinceSequenceId),
-          currentSequenceId: getCurrentSequenceId(options.db),
+          ...catchUp,
         } satisfies SyncServerFrame)
       );
       return;
@@ -923,16 +920,46 @@ export function loadCatchUpInvalidations(
   db: Database,
   sinceSequenceId: number
 ): SyncCatchUpInvalidation[] {
+  return loadCatchUpInvalidationsThrough(db, sinceSequenceId, Number.MAX_SAFE_INTEGER);
+}
+
+export function loadCatchUpWindow(
+  db: Database,
+  sinceSequenceId: number
+): { invalidations: SyncCatchUpInvalidation[]; currentSequenceId: number } {
+  const load = db.transaction(
+    (): {
+      invalidations: SyncCatchUpInvalidation[];
+      currentSequenceId: number;
+    } => {
+      // Read the durable high-water mark first to establish the transaction's
+      // snapshot, then bound invalidations to exactly that advertised window.
+      const currentSequenceId = getCurrentSequenceId(db);
+      return {
+        invalidations: loadCatchUpInvalidationsThrough(db, sinceSequenceId, currentSequenceId),
+        currentSequenceId,
+      };
+    }
+  );
+
+  return load();
+}
+
+function loadCatchUpInvalidationsThrough(
+  db: Database,
+  sinceSequenceId: number,
+  throughSequenceId: number
+): SyncCatchUpInvalidation[] {
   const rows = db
     .prepare(
       `
         SELECT sequence, target_key
         FROM sync_sequence
-        WHERE sequence > ?
+        WHERE sequence > ? AND sequence <= ?
         ORDER BY sequence, target_key
       `
     )
-    .all(sinceSequenceId) as Array<{ sequence: number; target_key: string }>;
+    .all(sinceSequenceId, throughSequenceId) as Array<{ sequence: number; target_key: string }>;
 
   const grouped = new Map<number, Set<string>>();
   for (const row of rows) {
@@ -1037,6 +1064,8 @@ function loadPlanSnapshot(db: Database, planUuid: string): CanonicalSnapshot | n
       docs: parseStringArray(plan.docs),
       changedFiles: parseStringArray(plan.changed_files),
       planGeneratedAt: plan.plan_generated_at,
+      docsUpdatedAt: plan.docs_updated_at,
+      lessonsAppliedAt: plan.lessons_applied_at,
       // Review guide notes are local-only annotations; omit them from sync payloads.
       reviewIssues:
         parseUnknownArray(plan.review_issues)?.filter(

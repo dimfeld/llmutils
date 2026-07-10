@@ -22,6 +22,7 @@ import {
   type SyncPlanPatchTextPayload,
   type SyncPlanPromoteTaskPayload,
   type SyncPlanRemoveTaskPayload,
+  type SyncPlanReorderTasksPayload,
   type SyncPlanSetParentPayload,
   type SyncPlanSetScalarPayload,
   type SyncPlanTagPayload,
@@ -155,6 +156,14 @@ export async function removePlanTaskOperation(
   options: SyncOperationConstructorOptions
 ) {
   return buildEnvelope(projectUuid, { type: 'plan.remove_task', ...input }, options);
+}
+
+export async function reorderPlanTasksOperation(
+  projectUuid: string,
+  input: Omit<SyncPlanReorderTasksPayload, 'type'>,
+  options: SyncOperationConstructorOptions
+) {
+  return buildEnvelope(projectUuid, { type: 'plan.reorder_tasks', ...input }, options);
 }
 
 export async function addPlanDependencyOperation(

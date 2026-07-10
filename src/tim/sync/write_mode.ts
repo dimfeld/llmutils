@@ -1,5 +1,4 @@
 import type { TimConfig } from '../configSchema.js';
-import { resolveSyncConfig } from './config.js';
 
 /**
  * WriteMode separates local persistence semantics from sync networking state.
@@ -14,8 +13,6 @@ import { resolveSyncConfig } from './config.js';
  * - applyRenumberDbState in src/tim/commands/renumber.ts for bulk numeric ID rewrites.
  * - updatePlanBaseTrackingLocalOnly in src/tim/plans.ts and
  *   src/tim/plan_materialize.ts for machine-local baseCommit/baseChangeId state.
- * - alignTaskOrderWithMaterializedFileLocalOnly in src/tim/plan_materialize.ts
- *   for shadow-missing materialized recovery until task reorder ops exist.
  *
  * Role checks outside this module should be limited to sync networking/config
  * behavior. Plan ID allocation should go through usesPlanIdReserve().
@@ -23,11 +20,16 @@ import { resolveSyncConfig } from './config.js';
 export type WriteMode = 'local-operation' | 'sync-main' | 'sync-persistent' | 'legacy-direct';
 
 export function resolveWriteMode(config: TimConfig | undefined): WriteMode {
+  if (config?.sync?.role === 'ephemeral' && config.sync.disabled !== true) {
+    throw new Error(
+      'Ephemeral sync nodes cannot write persistent data directly; delegate the mutation to the spawning main or persistent process'
+    );
+  }
   if (config?.sync?.role === 'main') {
     return 'sync-main';
   }
 
-  if (config?.sync?.role === 'persistent' && resolveSyncConfig(config).enabled) {
+  if (config?.sync?.role === 'persistent' && config.sync.disabled !== true) {
     return 'sync-persistent';
   }
 

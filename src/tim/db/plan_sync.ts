@@ -15,6 +15,7 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
 import { statusSchema, type PlanSchemaInput, type PlanSchema } from '../planSchema.js';
+import { resolveWriteMode } from '../sync/write_mode.js';
 
 type PlanReferences = {
   references?: Record<string, string>;
@@ -333,6 +334,7 @@ export async function syncPlanToDb(
   }
 
   try {
+    await assertLegacyDirectPlanSyncAllowed(options);
     const context = await resolvePlanSyncContext(options);
     const idToUuid = await resolveIdToUuidMap(plan, context, options.idToUuid);
     const db = getDatabase();
@@ -389,6 +391,7 @@ export async function removePlanFromDb(
   }
 
   try {
+    await assertLegacyDirectPlanSyncAllowed(options);
     const context = await resolvePlanSyncContext(options);
     const db = getDatabase();
     const removeInTransaction = db.transaction((projectId: number, nextPlanUuid: string): void => {
@@ -404,6 +407,21 @@ export async function removePlanFromDb(
       `Failed to remove plan ${planUuid} from SQLite: ${
         error instanceof Error ? error.message : String(error)
       }`
+    );
+  }
+}
+
+async function assertLegacyDirectPlanSyncAllowed(options: PlanSyncOptions): Promise<void> {
+  const config =
+    options.config ??
+    (await loadEffectiveConfig(undefined, {
+      cwd: options.cwdForIdentity ?? options.baseDir ?? process.cwd(),
+      quiet: true,
+    }));
+  const mode = resolveWriteMode(config);
+  if (mode !== 'local-operation') {
+    throw new Error(
+      `Legacy direct plan DB helpers cannot write in ${mode} mode; use writePlanFile or sync write-router helpers`
     );
   }
 }

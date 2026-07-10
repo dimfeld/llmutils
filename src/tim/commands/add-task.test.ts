@@ -10,6 +10,7 @@ import type { PlanSchema } from '../planSchema.js';
 import { handleAddTaskCommand } from './add-task.js';
 
 vi.mock('../../logging.js', () => ({
+  debugLog: vi.fn(),
   log: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),

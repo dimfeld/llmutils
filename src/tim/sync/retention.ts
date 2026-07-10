@@ -13,8 +13,9 @@ export function pruneSyncSequence(db: Database, options: PruneSyncSequenceOption
   const olderThan = new Date(now.getTime() - retentionMaxAgeMs).toISOString();
 
   // Treat any known persistent peer without a cursor row as cursor=0, so a
-  // configured-but-offline peer cannot lose canonical history to peer-cursor
-  // pruning. Time-based pruning still applies independently.
+  // configured-but-offline peer cannot lose canonical history. When persistent
+  // peers are known, their minimum cursor is the pruning boundary; the age
+  // cutoff is only safe when there are no persistent peers to catch up.
   const peerCutoff = (
     db
       .prepare(
@@ -40,7 +41,7 @@ export function pruneSyncSequence(db: Database, options: PruneSyncSequenceOption
       .get(olderThan) as { cutoff: number | null }
   ).cutoff;
 
-  const cutoff = Math.max(peerCutoff ?? 0, timeCutoff ?? 0);
+  const cutoff = peerCutoff ?? timeCutoff ?? 0;
   if (cutoff <= 0) {
     return 0;
   }

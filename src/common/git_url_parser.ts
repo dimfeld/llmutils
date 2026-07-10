@@ -212,6 +212,47 @@ export function parseGitRemoteUrl(remoteInput: string): ParsedGitRemote | null {
   };
 }
 
+/**
+ * Derives the credential-free, human-readable label stored with a repository.
+ */
+export function deriveGitRemoteLabel(remoteInput: string): string {
+  const parsed = parseGitRemoteUrl(remoteInput);
+  if (parsed) {
+    if (parsed.host && parsed.fullName) {
+      return trimQueryAndFragment(`${parsed.host}/${parsed.fullName}`);
+    }
+    if (parsed.host && parsed.path) {
+      return trimQueryAndFragment(`${parsed.host}/${parsed.path}`);
+    }
+    if (parsed.fullName) {
+      return trimQueryAndFragment(parsed.fullName);
+    }
+    if (parsed.host) {
+      return trimQueryAndFragment(parsed.host);
+    }
+  }
+
+  return trimQueryAndFragment(stripRemoteCredentials(remoteInput));
+}
+
+function trimQueryAndFragment(value: string): string {
+  return value.replace(/[?#].*$/, '');
+}
+
+function stripRemoteCredentials(remote: string): string {
+  if (remote.includes('://')) {
+    try {
+      const parsedUrl = new URL(remote);
+      return `${parsedUrl.host}${parsedUrl.pathname}` || parsedUrl.host;
+    } catch {
+      // Fall through to best-effort sanitisation below when parsing fails.
+    }
+  }
+
+  const atIndex = remote.indexOf('@');
+  return atIndex === -1 ? remote : remote.slice(atIndex + 1);
+}
+
 export interface DeriveRepositoryNameOptions {
   /** Optional fallback when the parsed remote does not provide enough information. */
   fallbackName?: string;

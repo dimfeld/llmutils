@@ -343,6 +343,80 @@ describe('sync write router', () => {
     ).toEqual({ next_sequence: 2 });
   });
 
+  test('batch preconditions run before announcements and do not consume sequence values', async () => {
+    const config = { sync: { role: 'main', nodeId: NODE_ID } } as TimConfig;
+    const operation = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'blocked' },
+      { originNodeId: NODE_ID, localSequence: 0 }
+    );
+
+    await expect(
+      routeSyncBatch(
+        db,
+        config,
+        { originNodeId: NODE_ID, operations: [operation] },
+        {
+          precondition: () => {
+            throw new Error('source changed');
+          },
+        }
+      )
+    ).rejects.toThrow('source changed');
+
+    expect(syncOperationRows()).toEqual([]);
+    expect(nodeSequenceRow()).toBeNull();
+  });
+
+  test('a transactional precondition failure rolls back its allocated sequence range', async () => {
+    const config = { sync: { role: 'main', nodeId: NODE_ID } } as TimConfig;
+    const operation = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'raced' },
+      { originNodeId: NODE_ID, localSequence: 0 }
+    );
+    let checks = 0;
+
+    await expect(
+      routeSyncBatch(
+        db,
+        config,
+        { originNodeId: NODE_ID, operations: [operation] },
+        {
+          precondition: () => {
+            checks += 1;
+            if (checks === 2) {
+              throw new Error('source changed during routing');
+            }
+          },
+        }
+      )
+    ).rejects.toThrow('source changed during routing');
+
+    expect(nodeSequenceRow()).toEqual({ next_sequence: 1 });
+    expect(syncOperationRows()).toEqual([
+      { operation_type: 'project.upsert', status: 'applied', origin_node_id: NODE_ID },
+    ]);
+
+    const result = await routeSyncOperation(db, config, (options) =>
+      addPlanTagOperation(PROJECT_UUID, { planUuid: PLAN_UUID, tag: 'after-race' }, options)
+    );
+    expect(result.mode).toBe('applied');
+    expect(
+      db
+        .prepare(
+          `SELECT local_sequence, operation_type
+           FROM sync_operation
+           WHERE origin_node_id = ?
+           ORDER BY local_sequence`
+        )
+        .all(NODE_ID)
+    ).toEqual([
+      { local_sequence: 0, operation_type: 'project.upsert' },
+      { local_sequence: 1, operation_type: 'plan.add_tag' },
+    ]);
+  });
+
   test('main-local failed operation apply does not leak allocated local sequence values', async () => {
     const config = { sync: { role: 'main', nodeId: NODE_ID } } as TimConfig;
 
@@ -901,6 +975,61 @@ describe('persistent-node project announcements', () => {
       description: 'main already knows this project',
     });
     expect(syncOperationRows().map((row) => row.operation_type)).toEqual(['plan.add_task']);
+  });
+
+  test('adopting a main project UUID rekeys already queued operations', async () => {
+    const localProjectUuid = '99999999-9999-4999-8999-999999999999';
+    db.prepare('UPDATE project SET uuid = ?, sync_announced_at = NULL WHERE id = ?').run(
+      localProjectUuid,
+      project.id
+    );
+    const recordedSetting = await setProjectSettingOperation(
+      { projectUuid: localProjectUuid, setting: 'color', value: 'blue' },
+      { originNodeId: 'historical-main', localSequence: 1 }
+    );
+    expect(applyOperation(db, recordedSetting).status).toBe('applied');
+    await writePlanAddTask(db, persistentConfig, localProjectUuid, {
+      planUuid: PLAN_UUID,
+      title: 'Queued before UUID adoption',
+      description: 'must flush under the main UUID',
+    });
+
+    mergeCanonicalRefresh(db, {
+      type: 'project',
+      project: {
+        uuid: PROJECT_UUID,
+        repositoryId: project.repository_id,
+        remoteUrl: project.remote_url,
+        remoteLabel: project.remote_label,
+        highestPlanId: project.highest_plan_id,
+      },
+    });
+
+    const rows = db
+      .prepare(
+        'SELECT project_uuid, target_key, payload FROM sync_operation ORDER BY local_sequence'
+      )
+      .all() as Array<{ project_uuid: string; target_key: string; payload: string }>;
+    expect(rows.every((row) => row.project_uuid === PROJECT_UUID)).toBe(true);
+    expect(rows[0].target_key).toBe(`project:${PROJECT_UUID}`);
+    expect(JSON.parse(rows[0].payload)).toMatchObject({ projectUuid: PROJECT_UUID });
+    expect(db.prepare('SELECT DISTINCT project_uuid FROM sync_operation_plan_ref').all()).toEqual([
+      { project_uuid: PROJECT_UUID },
+    ]);
+    const replay = applyOperation(db, {
+      ...recordedSetting,
+      projectUuid: PROJECT_UUID,
+      targetKey: `project_setting:${PROJECT_UUID}:color`,
+      op: { ...recordedSetting.op, projectUuid: PROJECT_UUID },
+    });
+    expect(replay.invalidations).toEqual([`project_setting:${PROJECT_UUID}:color`]);
+    for (const frame of rowsToFlushFrames(
+      db,
+      listPendingOperations(db, { originNodeId: NODE_ID })
+    )) {
+      const operations = frame.type === 'op_batch' ? frame.operations : frame.batch.operations;
+      expect(operations.every((operation) => operation.projectUuid === PROJECT_UUID)).toBe(true);
+    }
   });
 });
 

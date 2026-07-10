@@ -26,6 +26,7 @@ import {
   removePlanListItemOperation,
   removePlanTaskOperation,
   removePlanTagOperation,
+  reorderPlanTasksOperation,
   setPlanParentOperation,
   setPlanScalarOperation,
   setProjectSettingOperation,
@@ -198,6 +199,11 @@ describe('sync operation exclusions', () => {
       await removePlanTaskOperation(
         PROJECT_UUID,
         { planUuid: PLAN_UUID, taskUuid: TASK_UUID },
+        options
+      ),
+      await reorderPlanTasksOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, taskUuids: [TASK_UUID] },
         options
       ),
       await addPlanDependencyOperation(

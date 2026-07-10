@@ -36,6 +36,7 @@ import {
   patchPlanTextOperation,
   promotePlanTaskOperation,
   removePlanTaskOperation,
+  reorderPlanTasksOperation,
   removePlanDependencyOperation,
   removePlanListItemOperation,
   removePlanTagOperation,
@@ -48,7 +49,6 @@ import {
 } from './operations.js';
 import {
   allocateLocalSequence,
-  allocateLocalSequenceRange,
   enqueueBatch,
   enqueueOperation,
   type EnqueueBatchResult,
@@ -120,7 +120,31 @@ export interface RouteSyncOperationOptions {
 export interface RouteSyncBatchOptions extends RouteSyncOperationOptions {
   reason?: string;
   atomic?: boolean;
+  /**
+   * Probed in a rolled-back transaction before bootstrap writes, then run for
+   * real in the transaction that queues or applies the batch. It may update
+   * this database, but must not perform external side effects.
+   */
   precondition?: () => void;
+}
+
+const PRECONDITION_PROBE_ROLLBACK = new Error('rollback batch precondition probe');
+
+function probeBatchPrecondition(db: Database, precondition?: () => void): void {
+  if (!precondition) {
+    return;
+  }
+  const probe = db.transaction((): never => {
+    precondition();
+    throw PRECONDITION_PROBE_ROLLBACK;
+  });
+  try {
+    probe.immediate();
+  } catch (error) {
+    if (error !== PRECONDITION_PROBE_ROLLBACK) {
+      throw error;
+    }
+  }
 }
 
 function shouldQueueOperation(mode: WriteMode): boolean {
@@ -377,6 +401,11 @@ async function routeSyncBatchWithMode(
   }
   const originNodeId = input.originNodeId ?? (await getLocalNodeId(config));
 
+  // Project announcements are separate bootstrap writes. Probe first without
+  // committing callback changes; the real callback still runs atomically with
+  // the routed batch below.
+  probeBatchPrecondition(db, options.precondition);
+
   if (shouldQueueOperation(mode)) {
     const batch = createBatchEnvelope({
       originNodeId,
@@ -390,36 +419,47 @@ async function routeSyncBatchWithMode(
     return { mode: 'queued', batch: result.batch, result };
   }
 
-  options.precondition?.();
   if (mode === 'sync-main') {
     await applyProjectAnnouncementsOnMain(db, originNodeId, input.operations);
   }
   repairClearedRejectedSequenceMarkers(db, { originNodeId });
-  const localSequenceStart = allocateLocalSequenceRange(db, originNodeId, input.operations.length);
-  const operations = input.operations.map((operation, index) => ({
-    ...operation,
-    originNodeId,
-    localSequence: localSequenceStart + index,
-  }));
   const batch = createBatchEnvelope({
     originNodeId,
     reason: input.reason ?? options.reason,
     atomic: input.atomic ?? options.atomic,
-    operations,
+    operations: input.operations,
   });
 
   const result = applyBatch(db, batch, {
     ...options.applyOptions,
+    precondition: options.precondition,
+    allocateLocalSequencesForOrigin: originNodeId,
     localMainNodeId: originNodeId,
     preserveRequestedPlanIds: mode === 'local-operation',
     cleanupAssignmentsOnStatusChange:
       options.applyOptions?.cleanupAssignmentsOnStatusChange ?? mode !== 'local-operation',
   });
+  const sequencedBatch =
+    result.localSequenceStart === undefined
+      ? batch
+      : createBatchEnvelope({
+          ...batch,
+          operations: batch.operations.map((operation, index) => ({
+            ...operation,
+            originNodeId,
+            localSequence: result.localSequenceStart! + index,
+          })),
+        });
   const conflict = result.results.find(
     (item): item is ApplyOperationResult & { status: 'conflict' } => item.status === 'conflict'
   );
-  if (result.status === 'applied' && conflict && !batch.atomic && !options.acceptConflict) {
-    const operation = batch.operations[result.results.indexOf(conflict)];
+  if (
+    result.status === 'applied' &&
+    conflict &&
+    !sequencedBatch.atomic &&
+    !options.acceptConflict
+  ) {
+    const operation = sequencedBatch.operations[result.results.indexOf(conflict)];
     throw new SyncWriteConflictError(
       `Sync batch write for ${operation.targetKey} was accepted as an unresolved conflict`,
       {
@@ -435,17 +475,17 @@ async function routeSyncBatchWithMode(
   if (result.status === 'applied') {
     if (mode === 'sync-main') {
       broadcastLocalMainSyncResult(db, result);
-      markProjectUpsertsAnnounced(db, batch.operations);
+      markProjectUpsertsAnnounced(db, sequencedBatch.operations);
     }
     return {
       mode: 'applied',
-      batch,
+      batch: sequencedBatch,
       result: result as ApplyBatchResult & { status: 'applied' },
     };
   }
   if (result.status === 'conflict') {
     const conflictIndex = result.results.findIndex((item) => item.status === 'conflict');
-    const conflictOperation = batch.operations[Math.max(0, conflictIndex)];
+    const conflictOperation = sequencedBatch.operations[Math.max(0, conflictIndex)];
     throw new SyncWriteConflictError(
       result.error?.message ?? `Sync batch write for ${conflictOperation.targetKey} conflicted`,
       {
@@ -461,8 +501,9 @@ async function routeSyncBatchWithMode(
   const failedIndex = result.results.findIndex(
     (item) => item.status === 'rejected' || item.status === 'deferred'
   );
-  const failedOperation = batch.operations[Math.max(0, failedIndex)];
-  const reason = result.error?.message ?? `Sync batch ${batch.batchId} was ${result.status}`;
+  const failedOperation = sequencedBatch.operations[Math.max(0, failedIndex)];
+  const reason =
+    result.error?.message ?? `Sync batch ${sequencedBatch.batchId} was ${result.status}`;
   throw new SyncWriteRejectedError(reason, {
     operationUuid: failedOperation.operationUuid,
     targetKey: failedOperation.targetKey,
@@ -665,6 +706,10 @@ export const addPlanMarkTaskDoneToBatch = planMarkTaskDoneRoutes.addToBatch;
 const planRemoveTaskRoutes = defineProjectOperationRoutes(removePlanTaskOperation);
 export const writePlanRemoveTask = planRemoveTaskRoutes.write;
 export const addPlanRemoveTaskToBatch = planRemoveTaskRoutes.addToBatch;
+
+const planReorderTasksRoutes = defineProjectOperationRoutes(reorderPlanTasksOperation);
+export const writePlanReorderTasks = planReorderTasksRoutes.write;
+export const addPlanReorderTasksToBatch = planReorderTasksRoutes.addToBatch;
 
 const planAddDependencyRoutes = defineProjectOperationRoutes(addPlanDependencyOperation);
 export const writePlanAddDependency = planAddDependencyRoutes.write;

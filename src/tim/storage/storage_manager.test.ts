@@ -5,6 +5,7 @@ import * as path from 'node:path';
 
 import { getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
+import { getDefaultConfig } from '../configSchema.js';
 import {
   collectExternalStorageDirectories,
   formatByteSize,
@@ -35,13 +36,17 @@ async function createStorageRepository(
     await fs.writeFile(planPath, '---\ngoal: Example\n');
   }
 
-  await writeRepositoryStorageMetadata(baseDir, {
-    repositoryName: name,
-    remoteLabel: options.remoteLabel ?? null,
-    lastGitRoot: options.lastGitRoot ?? null,
-    externalConfigPath: path.join(configDir, 'tim.yml'),
-    externalTasksDir: tasksDir,
-  });
+  await writeRepositoryStorageMetadata(
+    baseDir,
+    {
+      repositoryName: name,
+      remoteLabel: options.remoteLabel ?? null,
+      lastGitRoot: options.lastGitRoot ?? null,
+      externalConfigPath: path.join(configDir, 'tim.yml'),
+      externalTasksDir: tasksDir,
+    },
+    getDefaultConfig()
+  );
 
   return baseDir;
 }
@@ -102,13 +107,17 @@ describe('storage manager', () => {
     await fs.writeFile(path.join(configDir, 'tim.yml'), 'defaultExecutor: direct-call\n');
     await fs.writeFile(path.join(customTasksDir, '1-example.plan.md'), '---\ngoal: Example\n');
 
-    await writeRepositoryStorageMetadata(baseDir, {
-      repositoryName,
-      remoteLabel: null,
-      lastGitRoot: null,
-      externalConfigPath: path.join(configDir, 'tim.yml'),
-      externalTasksDir: customTasksDir,
-    });
+    await writeRepositoryStorageMetadata(
+      baseDir,
+      {
+        repositoryName,
+        remoteLabel: null,
+        lastGitRoot: null,
+        externalConfigPath: path.join(configDir, 'tim.yml'),
+        externalTasksDir: customTasksDir,
+      },
+      getDefaultConfig()
+    );
 
     const entries = await collectExternalStorageDirectories();
     const customEntry = entries.find((entry) => entry.repositoryName === repositoryName);

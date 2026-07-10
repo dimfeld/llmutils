@@ -304,6 +304,9 @@ export function isRecoverableTombstonedOperation(op: SyncOperationPayload): bool
 }
 
 export function conflictFieldPath(op: SyncOperationPayload): string | null {
+  if (op.type === 'plan.reorder_tasks') {
+    return 'tasks.order';
+  }
   if ('field' in op) {
     return op.field;
   }
@@ -318,6 +321,9 @@ export function conflictBaseValue(op: SyncOperationPayload): unknown {
 }
 
 export function conflictIncomingValue(op: SyncOperationPayload): unknown {
+  if (op.type === 'plan.reorder_tasks') {
+    return op.taskUuids;
+  }
   if ('new' in op) {
     return op.new;
   }

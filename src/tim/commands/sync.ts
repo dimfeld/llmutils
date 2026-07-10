@@ -18,7 +18,7 @@ import {
 } from '../plan_materialize.js';
 import { resolveSyncConfig, type ResolvedSyncConfig } from '../sync/config.js';
 import { resolveSyncConflict } from '../sync/apply.js';
-import { getCurrentSequenceId } from '../sync/server.js';
+import { broadcastLocalMainSyncResult, getCurrentSequenceId } from '../sync/server.js';
 import {
   drainArtifactTransfersOnce,
   enqueueMissingArtifactUploads,
@@ -393,6 +393,7 @@ export async function handleSyncResolveCommand(
     manualValue: options.manual === undefined ? undefined : parseManualJson(options.manual),
     resolvedByNode: sync.nodeId ?? 'main',
   });
+  broadcastLocalMainSyncResult(db, result);
   log(
     `Resolved conflict ${result.conflictId} as ${result.status} (${result.sequenceIds.length} ${pluralize(result.sequenceIds.length, 'sequence')}).`
   );

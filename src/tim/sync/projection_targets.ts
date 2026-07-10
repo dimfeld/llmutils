@@ -126,6 +126,11 @@ export function getInboundProjectionOwnerPlanUuids(
   const rows = db
     .prepare(
       `
+        WITH deleted_identity AS (
+          SELECT project_id, plan_id FROM plan WHERE uuid = ?
+          UNION
+          SELECT project_id, plan_id FROM plan_canonical WHERE uuid = ?
+        )
         SELECT plan_uuid
         FROM plan_dependency
         WHERE depends_on_uuid = ?
@@ -149,9 +154,23 @@ export function getInboundProjectionOwnerPlanUuids(
         SELECT uuid AS plan_uuid
         FROM plan_canonical
         WHERE base_plan_uuid = ?
+        UNION
+        SELECT owner.uuid AS plan_uuid
+        FROM plan AS owner
+        JOIN deleted_identity AS deleted
+          ON deleted.project_id = owner.project_id
+         AND deleted.plan_id = owner.discovered_from
+        UNION
+        SELECT owner.uuid AS plan_uuid
+        FROM plan_canonical AS owner
+        JOIN deleted_identity AS deleted
+          ON deleted.project_id = owner.project_id
+         AND deleted.plan_id = owner.discovered_from
       `
     )
     .all(
+      deletedPlanUuid,
+      deletedPlanUuid,
       deletedPlanUuid,
       deletedPlanUuid,
       deletedPlanUuid,

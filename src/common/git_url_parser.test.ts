@@ -1,9 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  deriveGitRemoteLabel,
   deriveRepositoryName,
   fallbackRepositoryNameFromGitRoot,
   parseGitRemoteUrl,
 } from './git_url_parser';
+
+describe('deriveGitRemoteLabel', () => {
+  it('derives a credential-free hosted repository label', () => {
+    expect(deriveGitRemoteLabel('https://user:secret@github.com/owner/repo.git?token=hidden')).toBe(
+      'github.com/owner/repo'
+    );
+  });
+
+  it('derives a label for SCP-style remotes', () => {
+    expect(deriveGitRemoteLabel('git@gitlab.example.com:group/repo.git')).toBe(
+      'gitlab.example.com/group/repo'
+    );
+  });
+});
 
 describe('parseGitRemoteUrl', () => {
   it('parses HTTPS GitHub remotes', () => {

@@ -99,27 +99,35 @@ export async function addPlanTaskTool(
 
   let index = 0;
   let planIdentifier = `plan ${initialPlan.id}`;
-  await withPlanAutoSync(initialPlan.id, context.gitRoot, async () => {
-    const { plan, planPath } = await resolvePlan(args.plan, context);
-    const tasks = Array.isArray(plan.tasks) ? plan.tasks : [];
-    const newTask: TaskSchema = {
-      title,
-      description,
-      done: false,
-    };
+  await withPlanAutoSync(
+    initialPlan.id,
+    context.gitRoot,
+    async () => {
+      const { plan, planPath } = await resolvePlan(args.plan, context);
+      const tasks = Array.isArray(plan.tasks) ? plan.tasks : [];
+      const newTask: TaskSchema = {
+        title,
+        description,
+        done: false,
+      };
 
-    tasks.push(newTask);
-    plan.tasks = tasks;
-    plan.updatedAt = new Date().toISOString();
+      tasks.push(newTask);
+      plan.tasks = tasks;
+      plan.updatedAt = new Date().toISOString();
 
-    await writePlanFile(planPath, plan, { cwdForIdentity: context.gitRoot });
-    index = tasks.length - 1;
-    planIdentifier = plan.id
-      ? `plan ${plan.id}`
-      : planPath
-        ? path.relative(context.gitRoot, planPath) || planPath
-        : 'unknown';
-  });
+      await writePlanFile(planPath, plan, {
+        cwdForIdentity: context.gitRoot,
+        config: context.config,
+      });
+      index = tasks.length - 1;
+      planIdentifier = plan.id
+        ? `plan ${plan.id}`
+        : planPath
+          ? path.relative(context.gitRoot, planPath) || planPath
+          : 'unknown';
+    },
+    { config: context.config }
+  );
 
   context.log?.info('Added task to plan', {
     planId: initialPlan.id ?? null,
@@ -149,36 +157,44 @@ export async function removePlanTaskTool(
   let shiftedCount = 0;
   let removedTaskTitle = '';
   let planIdentifier = `plan ${initialPlan.id}`;
-  await withPlanAutoSync(initialPlan.id, context.gitRoot, async () => {
-    const { plan, planPath } = await resolvePlan(args.plan, context);
-    if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) {
-      throw new Error('Plan has no tasks to remove.');
-    }
+  await withPlanAutoSync(
+    initialPlan.id,
+    context.gitRoot,
+    async () => {
+      const { plan, planPath } = await resolvePlan(args.plan, context);
+      if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) {
+        throw new Error('Plan has no tasks to remove.');
+      }
 
-    index = resolveTaskIndex(plan.tasks, args, 'remove');
-    if (index < 0 || index >= plan.tasks.length) {
-      throw new Error(
-        `Task index ${index + 1} is out of bounds for plan with ${plan.tasks.length} task(s) (valid range: 1-${plan.tasks.length}).`
-      );
-    }
+      index = resolveTaskIndex(plan.tasks, args, 'remove');
+      if (index < 0 || index >= plan.tasks.length) {
+        throw new Error(
+          `Task index ${index + 1} is out of bounds for plan with ${plan.tasks.length} task(s) (valid range: 1-${plan.tasks.length}).`
+        );
+      }
 
-    const previousLength = plan.tasks.length;
-    const [removedTask] = plan.tasks.splice(index, 1);
-    if (!removedTask) {
-      throw new Error(`Failed to remove task at index ${index + 1}.`);
-    }
+      const previousLength = plan.tasks.length;
+      const [removedTask] = plan.tasks.splice(index, 1);
+      if (!removedTask) {
+        throw new Error(`Failed to remove task at index ${index + 1}.`);
+      }
 
-    removedTaskTitle = removedTask.title;
-    shiftedCount = index < previousLength - 1 ? previousLength - index - 1 : 0;
-    plan.updatedAt = new Date().toISOString();
-    await writePlanFile(planPath, plan, { cwdForIdentity: context.gitRoot });
+      removedTaskTitle = removedTask.title;
+      shiftedCount = index < previousLength - 1 ? previousLength - index - 1 : 0;
+      plan.updatedAt = new Date().toISOString();
+      await writePlanFile(planPath, plan, {
+        cwdForIdentity: context.gitRoot,
+        config: context.config,
+      });
 
-    planIdentifier = plan.id
-      ? `plan ${plan.id}`
-      : planPath
-        ? path.relative(context.gitRoot, planPath) || planPath
-        : 'unknown';
-  });
+      planIdentifier = plan.id
+        ? `plan ${plan.id}`
+        : planPath
+          ? path.relative(context.gitRoot, planPath) || planPath
+          : 'unknown';
+    },
+    { config: context.config }
+  );
 
   context.log?.info('Removed task from plan', {
     planId: initialPlan.id ?? null,
@@ -217,64 +233,72 @@ export async function updatePlanTaskTool(
   let oldTitle = '';
   let updates: string[] = [];
   let planIdentifier = `plan ${initialPlan.id}`;
-  await withPlanAutoSync(initialPlan.id, context.gitRoot, async () => {
-    const { plan, planPath } = await resolvePlan(args.plan, context);
-    if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) {
-      throw new Error('Plan has no tasks to update.');
-    }
-
-    index = resolveTaskIndex(plan.tasks, args, 'update');
-    if (index < 0 || index >= plan.tasks.length) {
-      throw new Error(
-        `Task index ${index + 1} is out of bounds for plan with ${plan.tasks.length} task(s) (valid range: 1-${plan.tasks.length}).`
-      );
-    }
-
-    const task = plan.tasks[index];
-    if (!task) {
-      throw new Error(`Task at index ${index + 1} not found.`);
-    }
-
-    oldTitle = task.title;
-    updates = [];
-
-    if (args.newTitle !== undefined) {
-      const trimmedTitle = args.newTitle.trim();
-      if (!trimmedTitle) {
-        throw new Error('New task title cannot be empty.');
+  await withPlanAutoSync(
+    initialPlan.id,
+    context.gitRoot,
+    async () => {
+      const { plan, planPath } = await resolvePlan(args.plan, context);
+      if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) {
+        throw new Error('Plan has no tasks to update.');
       }
-      task.title = trimmedTitle;
-      updates.push(`title to "${trimmedTitle}"`);
-    }
 
-    if (args.newDescription !== undefined) {
-      const trimmedDescription = args.newDescription.trim();
-      if (!trimmedDescription) {
-        throw new Error('New task description cannot be empty.');
+      index = resolveTaskIndex(plan.tasks, args, 'update');
+      if (index < 0 || index >= plan.tasks.length) {
+        throw new Error(
+          `Task index ${index + 1} is out of bounds for plan with ${plan.tasks.length} task(s) (valid range: 1-${plan.tasks.length}).`
+        );
       }
-      task.description = trimmedDescription;
-      updates.push('description');
-    }
 
-    if (args.done !== undefined) {
-      task.done = args.done;
-      updates.push(`done status to ${args.done}`);
-    }
+      const task = plan.tasks[index];
+      if (!task) {
+        throw new Error(`Task at index ${index + 1} not found.`);
+      }
 
-    if (isReopenableCompletedStatus(plan.status) && findNextActionableItem(plan) !== null) {
-      plan.status = 'in_progress';
-      updates.push('plan status back to in_progress');
-    }
+      oldTitle = task.title;
+      updates = [];
 
-    plan.updatedAt = new Date().toISOString();
-    await writePlanFile(planPath, plan, { cwdForIdentity: context.gitRoot });
+      if (args.newTitle !== undefined) {
+        const trimmedTitle = args.newTitle.trim();
+        if (!trimmedTitle) {
+          throw new Error('New task title cannot be empty.');
+        }
+        task.title = trimmedTitle;
+        updates.push(`title to "${trimmedTitle}"`);
+      }
 
-    planIdentifier = plan.id
-      ? `plan ${plan.id}`
-      : planPath
-        ? path.relative(context.gitRoot, planPath) || planPath
-        : 'unknown';
-  });
+      if (args.newDescription !== undefined) {
+        const trimmedDescription = args.newDescription.trim();
+        if (!trimmedDescription) {
+          throw new Error('New task description cannot be empty.');
+        }
+        task.description = trimmedDescription;
+        updates.push('description');
+      }
+
+      if (args.done !== undefined) {
+        task.done = args.done;
+        updates.push(`done status to ${args.done}`);
+      }
+
+      if (isReopenableCompletedStatus(plan.status) && findNextActionableItem(plan) !== null) {
+        plan.status = 'in_progress';
+        updates.push('plan status back to in_progress');
+      }
+
+      plan.updatedAt = new Date().toISOString();
+      await writePlanFile(planPath, plan, {
+        cwdForIdentity: context.gitRoot,
+        config: context.config,
+      });
+
+      planIdentifier = plan.id
+        ? `plan ${plan.id}`
+        : planPath
+          ? path.relative(context.gitRoot, planPath) || planPath
+          : 'unknown';
+    },
+    { config: context.config }
+  );
 
   context.log?.info('Updated task in plan', {
     planId: initialPlan.id ?? null,

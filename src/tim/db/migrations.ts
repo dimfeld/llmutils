@@ -1348,6 +1348,11 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 49,
+    up: `SELECT 1;`,
+    afterUp: repairCanonicalDependencies,
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {
@@ -1769,14 +1774,14 @@ function backfillCanonicalTables(db: Database): void {
   }
 
   if (tableExists(db, 'plan_dependency')) {
+    const activeOptimisticEdgeFilter = activeOptimisticDependencyEdgeFilter(db, 'dependency');
     const skippedCount = countOrphanRows(
       db,
       `
         SELECT COUNT(*) AS count
         FROM plan_dependency
         LEFT JOIN plan plan_owner ON plan_owner.uuid = plan_dependency.plan_uuid
-        LEFT JOIN plan plan_dep ON plan_dep.uuid = plan_dependency.depends_on_uuid
-        WHERE plan_owner.uuid IS NULL OR plan_dep.uuid IS NULL
+        WHERE plan_owner.uuid IS NULL
       `
     );
     runBackfillStatement(
@@ -1784,10 +1789,11 @@ function backfillCanonicalTables(db: Database): void {
       'plan_dependency_canonical',
       `
       INSERT INTO plan_dependency_canonical (plan_uuid, depends_on_uuid)
-      SELECT plan_dependency.plan_uuid, plan_dependency.depends_on_uuid
-      FROM plan_dependency
-      JOIN plan plan_owner ON plan_owner.uuid = plan_dependency.plan_uuid
-      JOIN plan plan_dep ON plan_dep.uuid = plan_dependency.depends_on_uuid
+      SELECT dependency.plan_uuid, dependency.depends_on_uuid
+      FROM plan_dependency AS dependency
+      JOIN plan plan_owner ON plan_owner.uuid = dependency.plan_uuid
+      WHERE 1 = 1
+        ${activeOptimisticEdgeFilter}
     `
     );
     logSkippedRows('plan_dependency_canonical', skippedCount);
@@ -1850,6 +1856,73 @@ function backfillCanonicalTables(db: Database): void {
   }
 
   debugLog('[migrations] Completed canonical table backfill');
+}
+
+function repairCanonicalDependencies(db: Database): void {
+  if (
+    !tableExists(db, 'plan') ||
+    !tableExists(db, 'plan_canonical') ||
+    !tableExists(db, 'plan_dependency') ||
+    !tableExists(db, 'plan_dependency_canonical')
+  ) {
+    return;
+  }
+
+  const activeOptimisticEdgeFilter = activeOptimisticDependencyEdgeFilter(db, 'dependency');
+
+  db.run(`
+    INSERT OR IGNORE INTO plan_dependency_canonical (plan_uuid, depends_on_uuid)
+    SELECT dependency.plan_uuid, dependency.depends_on_uuid
+    FROM plan_dependency AS dependency
+    JOIN plan AS projection_owner ON projection_owner.uuid = dependency.plan_uuid
+    JOIN plan_canonical AS canonical_owner ON canonical_owner.uuid = dependency.plan_uuid
+    WHERE 1 = 1
+      ${activeOptimisticEdgeFilter}
+  `);
+}
+
+function activeOptimisticDependencyEdgeFilter(db: Database, dependencyAlias: string): string {
+  if (!tableExists(db, 'sync_operation')) {
+    return '';
+  }
+  const columns = tableColumns(db, 'sync_operation');
+  if (!['status', 'operation_type', 'payload'].every((column: string) => columns.has(column))) {
+    return '';
+  }
+
+  const safePayload = `CASE
+    WHEN JSON_VALID(operation.payload) THEN operation.payload
+    ELSE '{}'
+  END`;
+  return `
+      AND NOT EXISTS (
+        SELECT 1
+        FROM sync_operation AS operation
+        WHERE operation.status IN ('queued', 'sending', 'failed_retryable')
+          AND (
+            (
+              operation.operation_type = 'plan.add_dependency'
+              AND JSON_EXTRACT(${safePayload}, '$.planUuid') = ${dependencyAlias}.plan_uuid
+              AND JSON_EXTRACT(${safePayload}, '$.dependsOnPlanUuid') = ${dependencyAlias}.depends_on_uuid
+            )
+            OR (
+              operation.operation_type = 'plan.set_parent'
+              AND JSON_EXTRACT(${safePayload}, '$.newParentUuid') = ${dependencyAlias}.plan_uuid
+              AND JSON_EXTRACT(${safePayload}, '$.planUuid') = ${dependencyAlias}.depends_on_uuid
+            )
+            OR (
+              operation.operation_type = 'plan.create'
+              AND JSON_EXTRACT(${safePayload}, '$.parentUuid') = ${dependencyAlias}.plan_uuid
+              AND JSON_EXTRACT(${safePayload}, '$.planUuid') = ${dependencyAlias}.depends_on_uuid
+            )
+            OR (
+              operation.operation_type = 'plan.promote_task'
+              AND JSON_EXTRACT(${safePayload}, '$.parentUuid') = ${dependencyAlias}.plan_uuid
+              AND JSON_EXTRACT(${safePayload}, '$.newPlanUuid') = ${dependencyAlias}.depends_on_uuid
+            )
+          )
+      )
+    `;
 }
 
 function runBackfillStatement(db: Database, targetTable: string, sql: string): void {

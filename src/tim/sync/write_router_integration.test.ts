@@ -153,6 +153,7 @@ vi.mock('../configLoader.js', async (importOriginal) => {
 });
 
 vi.mock('../../logging.js', () => ({
+  debugLog: vi.fn(),
   log: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
