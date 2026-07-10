@@ -313,16 +313,31 @@ const LOCAL_CONFIG_FILES = [
   '.claude/settings.local.json',
 ];
 
+const PRIMARY_WORKSPACE_COPY_FILES = ['.env'];
+
 /**
  * Create symlinks for local config files from source to target directory.
  * Only creates symlinks for files that exist in the source directory.
  */
 export async function symlinkLocalConfigs(sourceDir: string, targetDir: string): Promise<void> {
-  for (const relativePath of LOCAL_CONFIG_FILES) {
+  for (const relativePath of [...LOCAL_CONFIG_FILES, ...PRIMARY_WORKSPACE_COPY_FILES]) {
     const sourcePath = path.join(sourceDir, relativePath);
     const targetPath = path.join(targetDir, relativePath);
 
     // Check if source file exists
+    if (PRIMARY_WORKSPACE_COPY_FILES.includes(relativePath)) {
+      try {
+        const existingTarget = await fs.lstat(targetPath).catch(() => undefined);
+        if (existingTarget?.isSymbolicLink()) {
+          await fs.rm(targetPath);
+        }
+        await fs.copyFile(sourcePath, targetPath);
+      } catch (error) {
+        log(`Failed to copy primary workspace file ${relativePath}: ${String(error)}`);
+      }
+      continue;
+    }
+
     try {
       await fs.lstat(sourcePath);
     } catch {

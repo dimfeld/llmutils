@@ -1740,6 +1740,23 @@ describe('createWorkspace', () => {
     expect(await fs.readFile(targetConfigPath, 'utf-8')).toBe('current: true');
   });
 
+  test('symlinkLocalConfigs copies .env from the primary workspace', async () => {
+    const sourceDirectory = path.join(testTempDir, 'env-source');
+    const targetDirectory = path.join(testTempDir, 'env-target');
+    const sourceEnvPath = path.join(sourceDirectory, '.env');
+    const targetEnvPath = path.join(targetDirectory, '.env');
+
+    await fs.mkdir(sourceDirectory, { recursive: true });
+    await fs.mkdir(targetDirectory, { recursive: true });
+    await fs.writeFile(sourceEnvPath, 'DATABASE_URL=primary\n');
+    await fs.writeFile(targetEnvPath, 'DATABASE_URL=stale\n');
+
+    await symlinkLocalConfigs(sourceDirectory, targetDirectory);
+
+    expect(await fs.readFile(targetEnvPath, 'utf-8')).toBe('DATABASE_URL=primary\n');
+    expect((await fs.lstat(targetEnvPath)).isSymbolicLink()).toBe(false);
+  });
+
   test('createWorkspace copies gitdir pointer when .git is a file', async () => {
     const taskId = 'task-cp-git-pointer';
     const sourceDirectory = path.join(testTempDir, 'source');
