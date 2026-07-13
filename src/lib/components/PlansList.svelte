@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import type { EnrichedPlan, PlanDisplayStatus } from '$lib/server/db_queries.js';
+  import type { PlanDisplayStatus, PlanListItem } from '$lib/server/db_queries.js';
   import { STATUS_ORDER } from '$lib/utils/plan_status.js';
   import {
     isListNavEvent,
@@ -20,7 +20,7 @@
     importIssueHref = null,
     newPlanHref = null,
   }: {
-    plans: EnrichedPlan[];
+    plans: PlanListItem[];
     selectedPlanUuid?: string | null;
     projectNames?: Record<number, string>;
     importIssueHref?: string | null;
@@ -104,7 +104,7 @@
   });
 
   let groupedPlans = $derived.by(() => {
-    const groups: Partial<Record<PlanDisplayStatus, EnrichedPlan[]>> = {};
+    const groups: Partial<Record<PlanDisplayStatus, PlanListItem[]>> = {};
     for (const plan of sortedPlans) {
       const existing = groups[plan.displayStatus];
       if (existing) {

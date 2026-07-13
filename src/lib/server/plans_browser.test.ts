@@ -73,6 +73,24 @@ describe('lib/server/plans_browser', () => {
       [projectId, 'dependency-done'],
       [projectId, 'feature-plan'],
     ]);
+    expect(result.plans.find((plan) => plan.uuid === 'feature-plan')).toEqual({
+      uuid: 'feature-plan',
+      projectId,
+      planId: 402,
+      title: 'Feature plan',
+      goal: 'Show the Plans detail pane',
+      status: 'in_progress',
+      displayStatus: 'in_progress',
+      priority: 'high',
+      epic: false,
+      updatedAt: expect.any(String),
+      hasPullRequests: false,
+      prSummaryStatus: 'none',
+      depsFullyResolved: true,
+      taskCounts: { done: 0, total: 1 },
+      reviewIssueCount: 0,
+    });
+    expect(loadEffectiveConfig).not.toHaveBeenCalled();
   });
 
   test('getPlansPageData returns plans across projects in all-project mode', async () => {

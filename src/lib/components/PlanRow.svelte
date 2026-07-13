@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { EnrichedPlan } from '$lib/server/db_queries.js';
+  import type { PlanListItem } from '$lib/server/db_queries.js';
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
   import PrStatusIndicator from './PrStatusIndicator.svelte';
@@ -11,7 +11,7 @@
     projectName,
     activeSessionCommand,
   }: {
-    plan: EnrichedPlan;
+    plan: PlanListItem;
     selected?: boolean;
     href: string;
     projectName?: string;
@@ -68,7 +68,7 @@
         : undefined}
     />
     <PriorityBadge priority={plan.priority} />
-    {#if plan.pullRequests.length > 0}
+    {#if plan.hasPullRequests}
       <PrStatusIndicator status={plan.prSummaryStatus} />
     {/if}
     {#if plan.taskCounts.total > 0}

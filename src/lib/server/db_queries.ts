@@ -130,6 +130,28 @@ export interface EnrichedPlan {
   reviewIssueCount: number;
 }
 
+/** Compact plan representation used by the plans sidebar. */
+export interface PlanListItem {
+  uuid: string;
+  projectId: number;
+  planId: number;
+  title: string | null;
+  goal: string | null;
+  status: PlanRow['status'];
+  displayStatus: PlanDisplayStatus;
+  priority: PlanRow['priority'];
+  epic: boolean;
+  updatedAt: string;
+  hasPullRequests: boolean;
+  prSummaryStatus: PrSummaryStatus;
+  depsFullyResolved: boolean;
+  taskCounts: {
+    done: number;
+    total: number;
+  };
+  reviewIssueCount: number;
+}
+
 export interface ChildExternalDependencyInfo {
   status: string;
   planId: number;
@@ -457,9 +479,9 @@ function getPrSummaryStatusByPlanUuid(
 }
 
 function computeDisplayStatus(
-  plan: PlanRow,
+  plan: Pick<PlanRow, 'epic' | 'status' | 'base_plan_uuid' | 'updated_at'>,
   dependencyRows: PlanDependencyRow[],
-  planByUuid: ReadonlyMap<string, PlanRow>,
+  planByUuid: ReadonlyMap<string, Pick<PlanRow, 'status'>>,
   now = Date.now()
 ): PlanDisplayStatus {
   if (!plan.epic && (plan.status === 'pending' || plan.status === 'in_progress')) {
@@ -871,6 +893,180 @@ export function getPlansForProject(
   const bundle =
     projectId === undefined ? getAllProjectBundle(db) : getProjectBundle(db, projectId);
   return enrichPlansWithContext(db, bundle, Date.now(), finishConfig).enrichedPlans;
+}
+
+type PlanListRow = Pick<
+  PlanRow,
+  | 'uuid'
+  | 'project_id'
+  | 'plan_id'
+  | 'title'
+  | 'goal'
+  | 'status'
+  | 'priority'
+  | 'simple'
+  | 'pull_request'
+  | 'review_issues'
+  | 'base_plan_uuid'
+  | 'epic'
+  | 'updated_at'
+>;
+
+interface PlanTaskCountRow {
+  plan_uuid: string;
+  done: number;
+  total: number;
+}
+
+function getPlanListRows(db: Database, projectId?: number): PlanListRow[] {
+  const columns = `
+    uuid, project_id, plan_id, title, goal, status, priority, simple,
+    pull_request, review_issues, base_plan_uuid, epic, updated_at
+  `;
+
+  return (
+    projectId === undefined
+      ? db.prepare(`SELECT ${columns} FROM plan ORDER BY project_id, plan_id, uuid`).all()
+      : db
+          .prepare(`SELECT ${columns} FROM plan WHERE project_id = ? ORDER BY plan_id, uuid`)
+          .all(projectId)
+  ) as PlanListRow[];
+}
+
+function getPlanListTaskCounts(db: Database, projectId?: number): Map<string, PlanTaskCountRow> {
+  const rows = (
+    projectId === undefined
+      ? db
+          .prepare(
+            `SELECT plan_uuid, SUM(done) AS done, COUNT(*) AS total
+           FROM plan_task GROUP BY plan_uuid`
+          )
+          .all()
+      : db
+          .prepare(
+            `SELECT task.plan_uuid, SUM(task.done) AS done, COUNT(*) AS total
+           FROM plan_task task
+           JOIN plan ON plan.uuid = task.plan_uuid
+           WHERE plan.project_id = ?
+           GROUP BY task.plan_uuid`
+          )
+          .all(projectId)
+  ) as PlanTaskCountRow[];
+
+  return new Map(rows.map((row) => [row.plan_uuid, row]));
+}
+
+function getPlanListDependencies(db: Database, projectId?: number): PlanDependencyRow[] {
+  if (projectId === undefined) {
+    return db
+      .prepare(
+        'SELECT plan_uuid, depends_on_uuid FROM plan_dependency ORDER BY plan_uuid, depends_on_uuid'
+      )
+      .all() as PlanDependencyRow[];
+  }
+
+  return getPlanDependenciesByProject(db, projectId);
+}
+
+function getReviewIssueCount(reviewIssues: string | null): number {
+  if (!reviewIssues) {
+    return 0;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(reviewIssues);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Loads only the fields and aggregates rendered by the plans sidebar. In
+ * particular, this avoids selecting plan details and task descriptions, and
+ * avoids serializing full tasks, tags, issues, and PR URLs to the browser.
+ */
+export function getPlanListItemsForProject(db: Database, projectId?: number): PlanListItem[] {
+  const plans = getPlanListRows(db, projectId);
+  const dependencies = getPlanListDependencies(db, projectId);
+  const dependenciesByPlanUuid = groupByPlanUuid(dependencies);
+  const taskCountsByPlanUuid = getPlanListTaskCounts(db, projectId);
+  const planStatusByUuid = new Map<string, Pick<PlanRow, 'status'>>(
+    plans.map((plan) => [plan.uuid, { status: plan.status }])
+  );
+
+  const referencedPlanUuids = new Set(dependencies.map((dependency) => dependency.depends_on_uuid));
+  for (const plan of plans) {
+    if (plan.base_plan_uuid) {
+      referencedPlanUuids.add(plan.base_plan_uuid);
+    }
+  }
+
+  const getReferencedPlanStatus = db.prepare('SELECT status FROM plan WHERE uuid = ?');
+  for (const referencedPlanUuid of referencedPlanUuids) {
+    if (planStatusByUuid.has(referencedPlanUuid)) {
+      continue;
+    }
+    const row = getReferencedPlanStatus.get(referencedPlanUuid) as
+      | Pick<PlanRow, 'status'>
+      | undefined;
+    if (row) {
+      planStatusByUuid.set(referencedPlanUuid, row);
+    }
+  }
+
+  const prUrlsByPlanUuid = new Map(
+    plans.map((plan) => [
+      plan.uuid,
+      categorizePrUrls(parseJsonStringArray(plan.pull_request)).valid,
+    ])
+  );
+  const prSummaryStatusByPlanUuid = getPrSummaryStatusByPlanUuid(
+    db,
+    plans.map((plan) => plan.uuid),
+    prUrlsByPlanUuid
+  );
+
+  return plans.map((plan) => {
+    const dependencyRows = dependenciesByPlanUuid.get(plan.uuid) ?? [];
+    const taskCounts = taskCountsByPlanUuid.get(plan.uuid) ?? {
+      plan_uuid: plan.uuid,
+      done: 0,
+      total: 0,
+    };
+    let displayStatus = computeDisplayStatus(plan, dependencyRows, planStatusByUuid);
+    if (displayStatus === 'pending' && (taskCounts.total > 0 || plan.simple === 1)) {
+      displayStatus = 'ready';
+    }
+
+    const isResolvedDependencyStatus = (status: string | null | undefined): boolean =>
+      status === 'done' || status === 'cancelled' || status === 'reviewed';
+    const depsFullyResolved =
+      (!plan.base_plan_uuid ||
+        isResolvedDependencyStatus(planStatusByUuid.get(plan.base_plan_uuid)?.status)) &&
+      dependencyRows.every((dependency) =>
+        isResolvedDependencyStatus(planStatusByUuid.get(dependency.depends_on_uuid)?.status)
+      );
+    const prUrls = prUrlsByPlanUuid.get(plan.uuid) ?? [];
+
+    return {
+      uuid: plan.uuid,
+      projectId: plan.project_id,
+      planId: plan.plan_id,
+      title: plan.title,
+      goal: plan.goal,
+      status: plan.status,
+      displayStatus,
+      priority: plan.priority,
+      epic: plan.epic === 1,
+      updatedAt: plan.updated_at,
+      hasPullRequests: prUrls.length > 0,
+      prSummaryStatus: prSummaryStatusByPlanUuid.get(plan.uuid) ?? 'none',
+      depsFullyResolved,
+      taskCounts: { done: taskCounts.done, total: taskCounts.total },
+      reviewIssueCount: getReviewIssueCount(plan.review_issues),
+    };
+  });
 }
 
 interface WorkspaceQueryRow extends WorkspaceRow {

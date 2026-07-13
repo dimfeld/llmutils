@@ -1,7 +1,7 @@
-import type { EnrichedPlan } from '$lib/server/db_queries.js';
+import type { PlanListItem } from '$lib/server/db_queries.js';
 
 export function planMatchesSearch(
-  plan: Pick<EnrichedPlan, 'planId' | 'title' | 'goal'>,
+  plan: Pick<PlanListItem, 'planId' | 'title' | 'goal'>,
   query: string
 ): boolean {
   const normalizedQuery = query.trim().toLowerCase();

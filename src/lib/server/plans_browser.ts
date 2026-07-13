@@ -7,10 +7,12 @@ import { getReviewsByPlanUuid, type ReviewWithIssueCounts } from '$tim/db/review
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import {
   getPlanDetail,
+  getPlanListItemsForProject,
   getPlansForProject,
   type FinishConfig,
   type PlanDetail,
   type EnrichedPlan,
+  type PlanListItem,
 } from './db_queries.js';
 import { isProofConfigured } from '$lib/utils/proof_eligibility.js';
 import { isMediaHostConfigured } from '$tim/configSchema.js';
@@ -122,7 +124,7 @@ async function loadFinishConfigForProjects(
 }
 
 export interface PlansPageData {
-  plans: EnrichedPlan[];
+  plans: PlanListItem[];
 }
 
 export interface PlanDetailRouteResult {
@@ -137,16 +139,8 @@ export interface PlanDetailRouteOptions {
 
 export async function getPlansPageData(db: Database, projectId: string): Promise<PlansPageData> {
   const numericProjectId = projectId === 'all' ? undefined : Number(projectId);
-  const projectFinishConfig =
-    numericProjectId === undefined
-      ? await loadFinishConfigForProjects(
-          db,
-          listProjects(db).map((project) => project.id)
-        )
-      : await loadFinishConfigForProject(db, numericProjectId);
-
   return {
-    plans: getPlansForProject(db, numericProjectId, projectFinishConfig),
+    plans: getPlanListItemsForProject(db, numericProjectId),
   };
 }
 
