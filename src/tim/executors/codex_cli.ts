@@ -1,47 +1,14 @@
 import * as z from 'zod/v4';
 import type { Executor, ExecutorCommonOptions, ExecutePlanInfo, ExecutorOutput } from './types';
 import type { TimConfig } from '../configSchema';
-import {
-  CodexCliExecutorName,
-  codexCliOptionsSchema,
-  codexReasoningLevelSchema,
-  type CodexReasoningLevel,
-} from './schemas.js';
+import { CodexCliExecutorName, codexCliOptionsSchema } from './schemas.js';
 import { executeReviewMode } from './codex_cli/review_mode';
 import { executeBareMode } from './codex_cli/bare_mode';
 import { executeOrchestratorMode } from './codex_cli/orchestrator_mode';
 import { parseReviewerVerdict } from './codex_cli/verdict_parser';
+import { parseCodexModel } from './codex_cli/model.js';
 
 export type CodexCliExecutorOptions = z.infer<typeof codexCliOptionsSchema>;
-
-/**
- * Separates an optional `:reasoning-effort` suffix from a Codex model name.
- * For example, `gpt-5.6-sol:high` runs `gpt-5.6-sol` with high reasoning.
- */
-export function parseCodexModel(model: string | undefined): {
-  model: string | undefined;
-  reasoningLevel: CodexReasoningLevel | undefined;
-} {
-  if (!model) {
-    return { model: undefined, reasoningLevel: undefined };
-  }
-
-  const separatorIndex = model.lastIndexOf(':');
-  if (separatorIndex === -1) {
-    return { model, reasoningLevel: undefined };
-  }
-
-  const modelName = model.slice(0, separatorIndex);
-  const effort = model.slice(separatorIndex + 1);
-  const parsedEffort = codexReasoningLevelSchema.safeParse(effort);
-  if (!modelName || !parsedEffort.success) {
-    throw new Error(
-      `Invalid Codex model reasoning effort in "${model}". Use one of: low, medium, high, xhigh.`
-    );
-  }
-
-  return { model: modelName, reasoningLevel: parsedEffort.data };
-}
 
 /**
  * Executor that runs the tim-generated context through the OpenAI Codex CLI.
@@ -149,3 +116,4 @@ export class CodexCliExecutor implements Executor {
 
 // Re-export the verdict parser for backward compatibility
 export { parseReviewerVerdict };
+export { parseCodexModel } from './codex_cli/model.js';

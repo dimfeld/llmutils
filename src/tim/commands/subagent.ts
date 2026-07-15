@@ -20,6 +20,7 @@ import {
 } from '../executors/claude_code/agent_prompts.js';
 import { loadAgentInstructionsFor } from '../executors/codex_cli/agent_helpers.js';
 import { executeCodexStep } from '../executors/codex_cli/codex_runner.js';
+import { parseCodexModel } from '../executors/codex_cli/model.js';
 import { getGitRoot, getUsingJj } from '../../common/git.js';
 import { runClaudeSubprocess } from '../executors/claude_code/run_claude_subprocess.js';
 import type { TimConfig } from '../configSchema.js';
@@ -231,9 +232,11 @@ async function executeWithCodex(
   model?: string,
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions
 ): Promise<string> {
+  const parsedModel = parseCodexModel(model);
   return executeCodexStep(prompt, cwd, timConfig, {
     appServerMode: 'single-turn-with-steering',
-    model,
+    model: parsedModel.model,
+    reasoningLevel: parsedModel.reasoningLevel,
     timEnvironment,
   });
 }

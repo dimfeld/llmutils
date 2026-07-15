@@ -464,6 +464,25 @@ describe('subagent command - prompt construction and executor delegation', () =>
     );
   });
 
+  test('separates reasoning effort from the Codex subagent model', async () => {
+    effectiveConfigOverride = {
+      paths: { tasks: tasksDir },
+      models: {},
+      executors: {},
+      subagents: { implementer: { model: { codex: 'gpt-5.6-sol:high' } } },
+      agents: {},
+    };
+
+    await handleSubagentCommand('implementer', 42, { executor: 'codex-cli' }, {});
+
+    expect(capturedCodexOptions).toEqual(
+      expect.objectContaining({
+        model: 'gpt-5.6-sol',
+        reasoningLevel: 'high',
+      })
+    );
+  });
+
   test('CLI model overrides subagents config model', async () => {
     effectiveConfigOverride = {
       paths: { tasks: tasksDir },
