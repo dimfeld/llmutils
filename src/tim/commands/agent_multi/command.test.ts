@@ -184,6 +184,30 @@ describe('agent-multi command', () => {
     expect(closeSpy).toHaveBeenCalledWith(7);
   });
 
+  test('createBunSpawnAgent uses and preserves TIM_PATH', async () => {
+    vi.stubEnv('TIM_PATH', '/opt/tim/bin/tim');
+    mocks.buildWorkspaceCommandEnv.mockResolvedValue({ PATH: '/usr/bin' });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue({
+      exited: Promise.resolve(0),
+      pid: 1234,
+    } as never);
+    vi.spyOn(fs, 'closeSync').mockImplementation(() => {});
+
+    const spawnAgent = await createBunSpawnAgent({ cwd: '/tmp/repo' });
+    await spawnAgent(101, '/tmp/repo');
+
+    expect(spawnSpy.mock.calls[0][0]).toEqual([
+      '/opt/tim/bin/tim',
+      'agent',
+      '101',
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
+    expect(buildWorkspaceCommandEnv).toHaveBeenCalledWith('/tmp/repo', undefined, {
+      inheritedEnv: expect.objectContaining({ TIM_PATH: '/opt/tim/bin/tim' }),
+    });
+  });
+
   test('createBunSpawnAgent builds env per child cwd without parent-rendered tim context', async () => {
     vi.stubEnv('TIM_PLAN_ID', 'parent-plan');
     vi.stubEnv('TIM_WORKSPACE_ID', 'parent-workspace');
@@ -194,6 +218,7 @@ describe('agent-multi command', () => {
     vi.stubEnv('TIM_LOAD_GLOBAL_CONFIG', '0');
     vi.stubEnv('TIM_OUTPUT_SOCKET', '/tmp/tim.sock');
     vi.stubEnv('TIM_SUMMARY_ENABLED', '1');
+    vi.stubEnv('TIM_PATH', '/opt/tim/bin/tim');
     vi.stubEnv('NON_TIM_VALUE', 'kept');
     mocks.buildWorkspaceCommandEnv.mockResolvedValueOnce({ PATH: '/usr/bin', CHILD: 'one' });
     mocks.buildWorkspaceCommandEnv.mockResolvedValueOnce({ PATH: '/usr/bin', CHILD: 'two' });
@@ -214,6 +239,7 @@ describe('agent-multi command', () => {
         TIM_DATABASE_FILENAME: 'shared-agent-multi.db',
         TIM_LOAD_GLOBAL_CONFIG: '0',
         TIM_OUTPUT_SOCKET: '/tmp/tim.sock',
+        TIM_PATH: '/opt/tim/bin/tim',
         NON_TIM_VALUE: 'kept',
       }),
     });
@@ -222,6 +248,7 @@ describe('agent-multi command', () => {
         TIM_DATABASE_FILENAME: 'shared-agent-multi.db',
         TIM_LOAD_GLOBAL_CONFIG: '0',
         TIM_OUTPUT_SOCKET: '/tmp/tim.sock',
+        TIM_PATH: '/opt/tim/bin/tim',
         NON_TIM_VALUE: 'kept',
       }),
     });
@@ -237,6 +264,7 @@ describe('agent-multi command', () => {
       TIM_LOAD_GLOBAL_CONFIG: '0',
       TIM_OUTPUT_SOCKET: '/tmp/tim.sock',
       TIM_SUMMARY_ENABLED: '1',
+      TIM_PATH: '/opt/tim/bin/tim',
       NON_TIM_VALUE: 'kept',
     });
     expect(spawnSpy.mock.calls[0][1]?.env).toEqual({ PATH: '/usr/bin', CHILD: 'one' });

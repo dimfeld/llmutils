@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { buildWorkspaceCommandEnv } from '../../../common/env.js';
 import { getGitRoot } from '../../../common/git.js';
 import { createLogFile } from '../../../common/log_files.js';
+import { resolveTimExecutable } from '../../../common/tim_executable.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { getDatabase } from '../../db/database.js';
 import { getPlanByPlanId, getPlanByUuid, type PlanRow } from '../../db/plan.js';
@@ -85,7 +86,7 @@ export async function createBunSpawnAgent(_options: { cwd: string }): Promise<Sp
 
     const logFile = createLogFile('agent-multi-child', planId);
     try {
-      const proc = Bun.spawn(['tim', ...args], {
+      const proc = Bun.spawn([resolveTimExecutable(), ...args], {
         cwd,
         env,
         stdin: 'ignore',
@@ -121,6 +122,11 @@ function scrubParentTimEnvironment(
 
 function shouldPassParentTimEnvironmentVariable(key: string): boolean {
   if (!key.startsWith('TIM_')) {
+    return true;
+  }
+  // The child executable and any tim processes it launches must use the same
+  // configured tim binary, even if TIM_PATH becomes a reserved variable later.
+  if (key === 'TIM_PATH') {
     return true;
   }
   if (RESERVED_TIM_ENVIRONMENT_VARIABLE_SET.has(key)) {

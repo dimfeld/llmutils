@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+
+import { resolveTimExecutable } from '../../common/tim_executable.js';
 import { buildWorkspaceCommandEnv } from '$common/env.js';
 import {
   createLogFile as createLogFileImpl,
@@ -41,10 +43,6 @@ function waitForSpawnWindow(delayMs = EARLY_EXIT_CHECK_DELAY_MS): Promise<void> 
 
 function describeCommand(args: string[]): string {
   return ['tim', ...args].join(' ');
-}
-
-function resolveTimExecutable(): string {
-  return process.env.TIM_PATH?.trim() || 'tim';
 }
 
 function describeTarget(kind: 'plan' | 'pr', id: number | string): string {

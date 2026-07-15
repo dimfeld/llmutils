@@ -32,6 +32,7 @@ import { hasUploadableArtifacts } from '$lib/utils/artifact_upload_eligibility.j
 import { isMediaHostConfigured } from '$tim/configSchema.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
+import { resolveTimExecutable } from '../../common/tim_executable.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getAgentMultiPlansForProject } from '$tim/commands/agent_multi/plan_loader.js';
 import { removeAssignment } from '$tim/db/assignment.js';
@@ -400,7 +401,7 @@ export const openInEditor = command(openInEditorSchema, async ({ planUuid }) => 
 
   await openTerminalWithCommand(
     primaryWorkspacePath,
-    ['tim', 'edit', String(plan.planId)],
+    [resolveTimExecutable(), 'edit', String(plan.planId)],
     config.terminalApp
   );
 });
