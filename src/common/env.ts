@@ -76,10 +76,11 @@ export async function buildWorkspaceCommandEnv(
 ): Promise<Record<string, string>> {
   const workspaceEnv = cwd ? await readDotEnvFromDirectory(cwd) : null;
   const inheritedEnv = options?.inheritedEnv ?? process.env;
+  const { NODE_ENV: _nodeEnv, ...inheritedEnvWithoutNodeEnv } = inheritedEnv;
 
   if (!options?.timEnvironment) {
     const env = {
-      ...inheritedEnv,
+      ...inheritedEnvWithoutNodeEnv,
       ...workspaceEnv,
       ...overrides,
     } as Record<string, string>;
@@ -89,7 +90,7 @@ export async function buildWorkspaceCommandEnv(
 
   const renderedProjectEnv = renderProjectTimEnvironment(options.timEnvironment);
   const env = {
-    ...inheritedEnv,
+    ...inheritedEnvWithoutNodeEnv,
     ...renderedProjectEnv.normal,
     ...workspaceEnv,
     ...renderedProjectEnv.overrideDotenv,

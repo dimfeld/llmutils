@@ -36,6 +36,32 @@ describe('buildWorkspaceCommandEnv', () => {
     expect(env.PATH).toBe('/bin');
   });
 
+  test('removes inherited NODE_ENV but preserves an explicit override', async () => {
+    await fs.writeFile(path.join(tempDir, '.env'), 'NODE_ENV=from-dotenv\n');
+
+    const env = await buildWorkspaceCommandEnv(
+      tempDir,
+      { NODE_ENV: 'from-explicit' },
+      {
+        inheritedEnv: {
+          NODE_ENV: 'from-inherited',
+        },
+      }
+    );
+
+    expect(env.NODE_ENV).toBe('from-explicit');
+  });
+
+  test('removes inherited NODE_ENV when no later layer provides it', async () => {
+    const env = await buildWorkspaceCommandEnv(tempDir, undefined, {
+      inheritedEnv: {
+        NODE_ENV: 'from-inherited',
+      },
+    });
+
+    expect(env.NODE_ENV).toBeUndefined();
+  });
+
   test('composes project env, dotenv, override-dotenv entries, built-ins, and explicit overrides', async () => {
     await fs.writeFile(
       path.join(tempDir, '.env'),

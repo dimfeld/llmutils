@@ -82,6 +82,9 @@ without project env.
 - **Lifecycle `workingDirectory`** changes only the shell cwd. `.env` loading
   and the template workspace context stay anchored to the selected workspace
   root / lifecycle `baseDir` — do not derive context from `workingDirectory`.
+- **`buildWorkspaceCommandEnv()`** omits inherited `NODE_ENV` so tim's own
+  runtime mode cannot change child-command behavior. A workspace `.env`,
+  project environment entry, or explicit command override can still set it.
 - **`agent_multi`** must not reuse parent-rendered plan/workspace template
   values across child `tim agent` processes. Let each child resolve its own
   context after its workspace selection (`src/tim/commands/agent_multi/command.ts`).
