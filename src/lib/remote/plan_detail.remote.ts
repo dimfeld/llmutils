@@ -3,7 +3,11 @@ import * as z from 'zod';
 
 import { getPlanDetail as getPlanDetailFromDb } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
-import { loadFinishConfigForProject } from '$lib/server/plans_browser.js';
+import {
+  loadFinishConfigForProject,
+  toPlanDetailView,
+  toPlanReviewListItems,
+} from '$lib/server/plans_browser.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import { getReviewsByPlanUuid } from '$tim/db/review.js';
 
@@ -19,8 +23,8 @@ export const getPlanDetail = query(planDetailSchema, async ({ planUuid }) => {
   if (!plan) return null;
   const linkedPrUrls = plan.prStatuses.map((pr) => pr.status.pr_url);
   return {
-    plan,
-    reviews: getReviewsByPlanUuid(db, plan.uuid, { linkedPrUrls }),
+    plan: toPlanDetailView(plan),
+    reviews: toPlanReviewListItems(getReviewsByPlanUuid(db, plan.uuid, { linkedPrUrls })),
     openInEditorEnabled: Boolean(process.env.TIM_ENABLE_OPEN_IN_EDITOR),
   };
 });

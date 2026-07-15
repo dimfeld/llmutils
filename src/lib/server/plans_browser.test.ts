@@ -11,11 +11,14 @@ import { getOrCreateProject } from '$tim/db/project.js';
 import { createReview } from '$tim/db/review.js';
 import { recordWorkspace } from '$tim/db/workspace.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
+import type { PlanDetail } from './db_queries.js';
 import {
   getDashboardData,
   getPlanDetailRouteData,
   getPlansPageData,
   loadProofConfiguredForProject,
+  toPlanDetailView,
+  toPlanReviewListItems,
 } from './plans_browser.js';
 
 vi.mock('$tim/configLoader.js', () => ({
@@ -420,6 +423,77 @@ describe('lib/server/plans_browser', () => {
 
       expect(result).not.toBeNull();
       expect(result!.reviews).toEqual([]);
+    });
+
+    test('compacts heavyweight nested records for the browser', async () => {
+      createReview(db, {
+        projectId,
+        planUuid: 'feature-plan',
+        status: 'complete',
+        reviewGuide: '# A potentially very large review guide',
+      });
+      const result = await getPlanDetailRouteData(db, 'feature-plan', String(projectId));
+      expect(result).not.toBeNull();
+
+      const planWithNestedData: PlanDetail = {
+        ...result!.planDetail,
+        prStatuses: [
+          {
+            status: {
+              pr_url: 'https://github.com/example/repo/pull/42',
+              state: 'open',
+              merged_at: null,
+              title: 'Large PR record',
+            },
+            checks: [{ name: 'large nested check record' }],
+          } as PlanDetail['prStatuses'][number],
+        ],
+        artifacts: [
+          {
+            uuid: 'artifact-uuid',
+            planUuid: 'feature-plan',
+            projectUuid: 'project-uuid',
+            filename: 'proof.png',
+            mimeType: 'image/png',
+            size: 123,
+            sha256: 'secret-server-only-hash',
+            message: 'tim-proof:image',
+            storagePath: '/server-only/path/proof.png',
+            deletedAt: null,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            revision: 1,
+            transferState: 'synced',
+          },
+        ],
+      };
+
+      expect(toPlanDetailView(planWithNestedData).prStatuses).toEqual([
+        {
+          status: {
+            pr_url: 'https://github.com/example/repo/pull/42',
+            state: 'open',
+            merged_at: null,
+          },
+        },
+      ]);
+      expect(toPlanDetailView(planWithNestedData).artifacts).toEqual([
+        {
+          uuid: 'artifact-uuid',
+          filename: 'proof.png',
+          mimeType: 'image/png',
+          size: 123,
+          message: 'tim-proof:image',
+          deletedAt: null,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          transferState: 'synced',
+        },
+      ]);
+
+      const reviewItems = toPlanReviewListItems(result!.reviews);
+      expect(reviewItems).toHaveLength(1);
+      expect(reviewItems[0]).not.toHaveProperty('review_guide');
+      expect(reviewItems[0]).not.toHaveProperty('error_message');
     });
 
     test('uses per-project effective config to compute canUpdateDocs', async () => {

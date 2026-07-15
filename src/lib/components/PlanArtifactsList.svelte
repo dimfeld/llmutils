@@ -13,7 +13,7 @@
   import Undo2 from '@lucide/svelte/icons/undo-2';
 
   import { compareArtifactsByFilename } from '$common/artifact_sort.js';
-  import type { PlanArtifactWithTransferState } from '$tim/artifacts/service.js';
+  import type { PlanDetailArtifact } from '$lib/server/db_queries.js';
   import {
     isReferenceArtifact,
     parseReferenceArtifactDescription,
@@ -27,7 +27,7 @@
   let {
     artifacts,
   }: {
-    artifacts: PlanArtifactWithTransferState[];
+    artifacts: PlanDetailArtifact[];
   } = $props();
 
   let open = $state(true);
@@ -49,7 +49,7 @@
     );
   }
 
-  function shouldOpenInViewMode(artifact: PlanArtifactWithTransferState): boolean {
+  function shouldOpenInViewMode(artifact: PlanDetailArtifact): boolean {
     return (
       isProofArtifact(artifact.message) ||
       canPreviewArtifactAsText(artifact.filename, artifact.mimeType)

@@ -11,6 +11,7 @@ import {
   getPlansForProject,
   type FinishConfig,
   type PlanDetail,
+  type PlanDetailView,
   type EnrichedPlan,
   type PlanListItem,
 } from './db_queries.js';
@@ -135,6 +136,51 @@ export interface PlanDetailRouteResult {
 
 export interface PlanDetailRouteOptions {
   includeDeletedArtifacts?: boolean;
+}
+
+export type PlanReviewListItem = Pick<
+  ReviewWithIssueCounts,
+  'id' | 'pr_url' | 'plan_uuid' | 'status' | 'created_at' | 'issue_count' | 'unresolved_count'
+>;
+
+/**
+ * Strip nested data that is either fetched independently by the page or only
+ * needed on the server. Keep this conversion at the transport boundary so
+ * server-side detail consumers can continue using the complete model.
+ */
+export function toPlanDetailView(plan: PlanDetail): PlanDetailView {
+  return {
+    ...plan,
+    prStatuses: plan.prStatuses.map((pr) => ({
+      status: {
+        pr_url: pr.status.pr_url,
+        state: pr.status.state,
+        merged_at: pr.status.merged_at,
+      },
+    })),
+    artifacts: plan.artifacts.map((artifact) => ({
+      uuid: artifact.uuid,
+      filename: artifact.filename,
+      mimeType: artifact.mimeType,
+      size: artifact.size,
+      message: artifact.message,
+      deletedAt: artifact.deletedAt,
+      createdAt: artifact.createdAt,
+      transferState: artifact.transferState,
+    })),
+  };
+}
+
+export function toPlanReviewListItems(reviews: ReviewWithIssueCounts[]): PlanReviewListItem[] {
+  return reviews.map((review) => ({
+    id: review.id,
+    pr_url: review.pr_url,
+    plan_uuid: review.plan_uuid,
+    status: review.status,
+    created_at: review.created_at,
+    issue_count: review.issue_count,
+    unresolved_count: review.unresolved_count,
+  }));
 }
 
 export async function getPlansPageData(db: Database, projectId: string): Promise<PlansPageData> {

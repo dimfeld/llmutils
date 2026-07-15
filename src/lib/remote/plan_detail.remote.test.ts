@@ -20,7 +20,8 @@ vi.mock('$lib/server/init.js', () => ({
   }),
 }));
 
-vi.mock('$lib/server/plans_browser.js', () => ({
+vi.mock('$lib/server/plans_browser.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/server/plans_browser.js')>()),
   loadFinishConfigForProject: vi.fn(async () => ({
     updateDocsMode: 'after-completion',
     applyLessons: true,
@@ -107,6 +108,16 @@ describe('plan_detail remote function', () => {
         id: review.id,
         pr_url: pr.status.pr_url,
       }),
+    ]);
+    expect(result?.reviews[0]).not.toHaveProperty('review_guide');
+    expect(result?.plan.prStatuses).toEqual([
+      {
+        status: {
+          pr_url: pr.status.pr_url,
+          state: 'open',
+          merged_at: null,
+        },
+      },
     ]);
   });
 });

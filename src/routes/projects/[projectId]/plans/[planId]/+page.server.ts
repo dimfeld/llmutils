@@ -4,6 +4,8 @@ import {
   getPlanDetailRouteData,
   loadMediaHostConfiguredForProject,
   loadProofConfiguredForProject,
+  toPlanDetailView,
+  toPlanReviewListItems,
 } from '$lib/server/plans_browser.js';
 import type { PageServerLoad } from './$types';
 
@@ -28,8 +30,8 @@ export const load: PageServerLoad = async ({ params, url }) => {
   );
 
   return {
-    planDetail: result.planDetail,
-    reviews: result.reviews,
+    planDetail: toPlanDetailView(result.planDetail),
+    reviews: toPlanReviewListItems(result.reviews),
     openInEditorEnabled: Boolean(process.env.TIM_ENABLE_OPEN_IN_EDITOR),
     proofConfigured,
     mediaHostConfigured,

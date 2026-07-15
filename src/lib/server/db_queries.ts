@@ -176,6 +176,30 @@ export interface PlanDetail extends EnrichedPlan {
   artifacts: PlanArtifactWithTransferState[];
 }
 
+/** PR fields needed by the plan-detail shell before the full remote PR query resolves. */
+export interface PlanDetailPrSummary {
+  status: Pick<PrStatusDetailWithRequiredChecks['status'], 'pr_url' | 'state' | 'merged_at'>;
+}
+
+/** Artifact fields rendered by the plan-detail artifact list. */
+export type PlanDetailArtifact = Pick<
+  PlanArtifactWithTransferState,
+  | 'uuid'
+  | 'filename'
+  | 'mimeType'
+  | 'size'
+  | 'message'
+  | 'deletedAt'
+  | 'createdAt'
+  | 'transferState'
+>;
+
+/** Browser-facing plan detail with heavyweight nested records reduced to display fields. */
+export interface PlanDetailView extends Omit<PlanDetail, 'prStatuses' | 'artifacts'> {
+  prStatuses: PlanDetailPrSummary[];
+  artifacts: PlanDetailArtifact[];
+}
+
 export type ChildPlanSummary = ChildPlanSummaryRow;
 
 export interface BasePlanResolutionWarning {

@@ -5,8 +5,8 @@
   import Upload from '@lucide/svelte/icons/upload';
   import { toast } from 'svelte-sonner';
 
-  import type { PlanDetail } from '$lib/server/db_queries.js';
-  import type { ReviewWithIssueCounts } from '$tim/db/review.js';
+  import type { PlanDetailView } from '$lib/server/db_queries.js';
+  import type { PlanReviewListItem } from '$lib/server/plans_browser.js';
   import type { PrStatusRow } from '$tim/db/pr_status.js';
   import { renderMarkdown } from '$lib/utils/markdown_parser.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
@@ -66,8 +66,8 @@
     proofConfigured = false,
     mediaHostConfigured = false,
   }: {
-    plan: PlanDetail;
-    reviews?: ReviewWithIssueCounts[];
+    plan: PlanDetailView;
+    reviews?: PlanReviewListItem[];
     projectId: string;
     projectName?: string;
     tab?: string;
@@ -127,7 +127,7 @@
   let isSimplePlan = $derived(plan.simple === true);
   let isPending = $derived(plan.displayStatus === 'pending');
 
-  function isVisiblePrStatus(status: PrStatusRow): boolean {
+  function isVisiblePrStatus(status: Pick<PrStatusRow, 'state' | 'merged_at'>): boolean {
     return status.state !== 'closed' || status.merged_at !== null;
   }
 
