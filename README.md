@@ -232,6 +232,19 @@ Open the Vite URL printed by the command. The app groups data by project and pro
 
 The web UI discovers running agent processes through session files in `~/.cache/tim/sessions/` and connects to each process over its embedded local WebSocket server. It also uses SSE to update the browser as sessions and PR status change.
 
+Completed sessions are retained in memory with command-aware limits. Short-lived automation such
+as review-guide comments expires quickly, while agent and chat sessions retain a longer, compacted
+history. Active sessions are never automatically removed, and pruning preserves important lifecycle
+messages plus the most recent output. The default global limits of 200 inactive sessions and 64 MiB
+of inactive transcript data can be overridden in the global configuration:
+
+```yaml
+headless:
+  sessionRetention:
+    maxInactiveSessions: 200
+    maxInactiveBytes: 67108864
+```
+
 For production-style local serving:
 
 ```bash

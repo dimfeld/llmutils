@@ -25,6 +25,17 @@ import {
   extractCodexRateLimit,
 } from './rate_limit_store.js';
 import type { RateLimitState } from './rate_limit_store.js';
+import {
+  ACTIVE_SESSION_MESSAGE_LIMITS,
+  compactSessionMessages,
+  estimateDisplayMessageBytes,
+  estimateSessionMessageBytes,
+  getInactiveSessionRetentionPolicy,
+  getSessionLastActivityMs,
+  resolveSessionRetentionConfig,
+  type SessionRetentionConfig,
+  type SessionRetentionConfigInput,
+} from './session_retention.js';
 
 export type SessionStatus = 'active' | 'offline' | 'notification';
 export type MessageCategory = 'log' | 'error' | 'structured';
@@ -168,6 +179,7 @@ export type PtySubscriber = (data: string) => void;
 interface SessionInternals {
   deferredPromptEvents: ActivePrompt[];
   nextNotificationId: number;
+  messageBytes: number;
 }
 
 const SESSION_EVENT_NAMES: SessionEventName[] = [
@@ -184,8 +196,6 @@ const SESSION_EVENT_NAMES: SessionEventName[] = [
 ];
 
 const NOTIFICATION_SEQ = 0;
-const MAX_NOTIFICATION_MESSAGES = 200;
-const MAX_SESSION_MESSAGES = 5000;
 const MAX_SNAPSHOT_MESSAGES = 500;
 const MAX_PTY_OUTPUT_CACHE_BYTES = 256 * 1024;
 const INTERACTIVE_NOTIFICATION_EXCLUDED_COMMANDS = new Set(['agent', 'review-guide']);
@@ -401,9 +411,35 @@ export class SessionManager {
   private readonly rateLimitStore = new RateLimitStore();
   private projectIdByRemote: Map<string, number> | null = null;
   private sseSubscriberCount = 0;
+  private readonly retentionConfig: SessionRetentionConfig;
+  private readonly now: () => number;
+  private readonly pruneTimer: ReturnType<typeof setInterval> | null;
 
-  constructor(private readonly db: Database) {
+  constructor(
+    private readonly db: Database,
+    options: {
+      retention?: SessionRetentionConfigInput;
+      now?: () => number;
+      autoPruneIntervalMs?: number;
+    } = {}
+  ) {
     this.eventEmitter.setMaxListeners(0);
+    this.retentionConfig = resolveSessionRetentionConfig(options.retention);
+    this.now = options.now ?? Date.now;
+    const autoPruneIntervalMs = options.autoPruneIntervalMs ?? 60_000;
+    this.pruneTimer =
+      autoPruneIntervalMs > 0
+        ? setInterval(() => {
+            this.pruneSessions();
+          }, autoPruneIntervalMs)
+        : null;
+    this.pruneTimer?.unref?.();
+  }
+
+  stop(): void {
+    if (this.pruneTimer) {
+      clearInterval(this.pruneTimer);
+    }
   }
 
   handleWebSocketConnect(connectionId: string, sendToAgent: AgentSender): SessionData {
@@ -426,7 +462,11 @@ export class SessionManager {
 
     this.sessions.set(connectionId, session);
     this.senders.set(connectionId, sendToAgent);
-    this.internals.set(connectionId, { deferredPromptEvents: [], nextNotificationId: 0 });
+    this.internals.set(connectionId, {
+      deferredPromptEvents: [],
+      nextNotificationId: 0,
+      messageBytes: 0,
+    });
     this.syncSessionPlanIndex(session);
     this.syncSessionPrIndex(session);
 
@@ -461,9 +501,14 @@ export class SessionManager {
       internals.deferredPromptEvents = [];
     }
 
+    const compacted = this.compactInactiveSessionMessages(session);
     this.syncSessionPlanIndex(session);
     this.syncSessionPrIndex(session);
     this.emit('session:disconnect', { session: this.cloneSessionMetadata(session) });
+    if (compacted) {
+      this.emitSessionTranscriptUpdate(session);
+    }
+    this.pruneSessions();
 
     return this.cloneSession(session);
   }
@@ -556,7 +601,10 @@ export class SessionManager {
         );
         if (displayMessage) {
           session.messages.push(displayMessage);
-          this.trimSessionMessages(session, MAX_SESSION_MESSAGES);
+          const internals = this.internals.get(connectionId);
+          if (internals) {
+            internals.messageBytes += estimateDisplayMessageBytes(displayMessage);
+          }
         }
 
         if (message.message.type === 'structured' && message.message.message != null) {
@@ -567,6 +615,9 @@ export class SessionManager {
         this.syncSessionPrIndex(session);
         if (displayMessage && !session.isReplaying) {
           this.emit('session:message', { connectionId, message: { ...displayMessage } });
+        }
+        if (displayMessage && this.compactActiveSessionMessages(session) && !session.isReplaying) {
+          this.emitSessionTranscriptUpdate(session);
         }
 
         return;
@@ -627,11 +678,16 @@ export class SessionManager {
     const previousPrUrl = existing?.sessionInfo.linkedPrUrl ?? null;
     session.sessionInfo = sessionInfo;
     session.status = 'notification';
+    session.disconnectedAt = now;
     session.projectId = this.resolveProjectId(payload.gitRemote);
     session.groupKey = groupKey;
     const existingInternals = this.internals.get(connectionId);
     if (!existingInternals) {
-      this.internals.set(connectionId, { deferredPromptEvents: [], nextNotificationId: 0 });
+      this.internals.set(connectionId, {
+        deferredPromptEvents: [],
+        nextNotificationId: 0,
+        messageBytes: 0,
+      });
     }
 
     const displayMessage: DisplayMessage = {
@@ -648,7 +704,11 @@ export class SessionManager {
       triggersNotification: true,
     };
     session.messages.push(displayMessage);
-    this.trimSessionMessages(session, MAX_NOTIFICATION_MESSAGES);
+    const internals = this.internals.get(connectionId);
+    if (internals) {
+      internals.messageBytes += estimateDisplayMessageBytes(displayMessage);
+    }
+    const compacted = this.compactInactiveSessionMessages(session);
 
     this.sessions.set(connectionId, session);
     this.syncSessionPlanIndex(session, previousPlanUuid);
@@ -658,6 +718,10 @@ export class SessionManager {
       session: this.cloneSessionMetadata(session),
     });
     this.emit('session:message', { connectionId, message: { ...displayMessage } });
+    if (compacted) {
+      this.emitSessionTranscriptUpdate(session);
+    }
+    this.pruneSessions();
     return this.cloneSession(session);
   }
 
@@ -860,28 +924,14 @@ export class SessionManager {
       return false;
     }
 
-    this.removeSessionFromPlanIndex(session);
-    this.removeSessionFromPrUrlIndex(session);
-    this.sessions.delete(connectionId);
-    this.senders.delete(connectionId);
-    this.clearPtySessionState(connectionId);
-    this.internals.delete(connectionId);
-    this.emit('session:dismissed', { connectionId });
-    return true;
+    return this.removeSession(connectionId);
   }
 
   dismissInactiveSessions(): number {
     let dismissed = 0;
     for (const [connectionId, session] of this.sessions) {
       if (session.status !== 'active') {
-        this.removeSessionFromPlanIndex(session);
-        this.removeSessionFromPrUrlIndex(session);
-        this.sessions.delete(connectionId);
-        this.senders.delete(connectionId);
-        this.clearPtySessionState(connectionId);
-        this.internals.delete(connectionId);
-        this.emit('session:dismissed', { connectionId });
-        dismissed++;
+        dismissed += this.removeSession(connectionId) ? 1 : 0;
       }
     }
     return dismissed;
@@ -929,11 +979,61 @@ export class SessionManager {
 
   // Clones sessions with messages capped at MAX_SNAPSHOT_MESSAGES per session.
   getSessionSnapshot(): SessionSnapshot {
+    this.pruneSessions();
     return {
       sessions: [...this.sessions.values()]
         .map((session) => this.cloneSession(session, MAX_SNAPSHOT_MESSAGES))
         .toSorted((a, b) => a.connectedAt.localeCompare(b.connectedAt)),
     };
+  }
+
+  pruneSessions(nowMs: number = this.now()): { removed: number; compacted: number } {
+    let removed = 0;
+    let compacted = 0;
+    const inactiveSessions: SessionData[] = [];
+
+    for (const session of this.sessions.values()) {
+      if (session.status === 'active' || session.activePrompts.length > 0) {
+        continue;
+      }
+
+      const policy = getInactiveSessionRetentionPolicy(session.sessionInfo.command, session.status);
+      if (nowMs - getSessionLastActivityMs(session) >= policy.ttlMs) {
+        removed += this.removeSession(session.connectionId) ? 1 : 0;
+        continue;
+      }
+
+      if (this.compactInactiveSessionMessages(session)) {
+        compacted += 1;
+        this.emitSessionTranscriptUpdate(session);
+      }
+      inactiveSessions.push(session);
+    }
+
+    inactiveSessions.sort((a, b) => getSessionLastActivityMs(a) - getSessionLastActivityMs(b));
+    let inactiveBytes = inactiveSessions.reduce(
+      (total, session) => total + estimateSessionMessageBytes(session),
+      0
+    );
+    let inactiveCount = inactiveSessions.length;
+
+    for (const session of inactiveSessions) {
+      if (
+        inactiveCount <= this.retentionConfig.maxInactiveSessions &&
+        inactiveBytes <= this.retentionConfig.maxInactiveBytes
+      ) {
+        break;
+      }
+
+      const sessionBytes = estimateSessionMessageBytes(session);
+      if (this.removeSession(session.connectionId)) {
+        removed += 1;
+        inactiveCount -= 1;
+        inactiveBytes = Math.max(0, inactiveBytes - sessionBytes);
+      }
+    }
+
+    return { removed, compacted };
   }
 
   getRateLimitState(): RateLimitState {
@@ -1245,10 +1345,62 @@ export class SessionManager {
     return `${connectionId}:${prefix}-${notificationId}`;
   }
 
-  private trimSessionMessages(session: SessionData, limit: number): void {
-    if (session.messages.length > limit) {
-      session.messages = session.messages.slice(-limit);
+  private compactActiveSessionMessages(session: SessionData): boolean {
+    const internals = this.internals.get(session.connectionId);
+    if (
+      session.messages.length <= ACTIVE_SESSION_MESSAGE_LIMITS.maxMessages &&
+      (internals?.messageBytes ?? 0) <= ACTIVE_SESSION_MESSAGE_LIMITS.maxBytes
+    ) {
+      return false;
     }
+
+    const result = compactSessionMessages(
+      session.connectionId,
+      session.messages,
+      ACTIVE_SESSION_MESSAGE_LIMITS,
+      0.8
+    );
+    if (result.changed) {
+      this.setSessionMessages(session, result.messages);
+    }
+    return result.changed;
+  }
+
+  private compactInactiveSessionMessages(session: SessionData): boolean {
+    const policy = getInactiveSessionRetentionPolicy(session.sessionInfo.command, session.status);
+    const result = compactSessionMessages(session.connectionId, session.messages, policy);
+    if (result.changed) {
+      this.setSessionMessages(session, result.messages);
+    }
+    return result.changed;
+  }
+
+  private emitSessionTranscriptUpdate(session: SessionData): void {
+    this.emit('session:update', { session: this.cloneSession(session) });
+  }
+
+  private setSessionMessages(session: SessionData, messages: DisplayMessage[]): void {
+    session.messages = messages;
+    const internals = this.internals.get(session.connectionId);
+    if (internals) {
+      internals.messageBytes = estimateSessionMessageBytes(session);
+    }
+  }
+
+  private removeSession(connectionId: string): boolean {
+    const session = this.sessions.get(connectionId);
+    if (!session) {
+      return false;
+    }
+
+    this.removeSessionFromPlanIndex(session);
+    this.removeSessionFromPrUrlIndex(session);
+    this.sessions.delete(connectionId);
+    this.senders.delete(connectionId);
+    this.clearPtySessionState(connectionId);
+    this.internals.delete(connectionId);
+    this.emit('session:dismissed', { connectionId });
+    return true;
   }
 
   private cloneSession(session: SessionData, messageLimit?: number): SessionData {

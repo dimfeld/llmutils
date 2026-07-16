@@ -523,6 +523,14 @@ export const timConfigSchema = z
     headless: z
       .object({
         url: z.string().optional().describe('WebSocket URL for headless output streaming'),
+        sessionRetention: z
+          .object({
+            maxInactiveSessions: z.number().int().positive().optional(),
+            maxInactiveBytes: z.number().int().positive().optional(),
+          })
+          .strict()
+          .optional()
+          .describe('Memory limits for completed web sessions'),
       })
       .strict()
       .optional()

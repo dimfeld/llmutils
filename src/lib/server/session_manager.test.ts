@@ -31,6 +31,7 @@ describe('lib/server/session_manager', () => {
   });
 
   afterEach(() => {
+    manager.stop();
     vi.useRealTimers();
     db.close(false);
   });
@@ -1053,6 +1054,11 @@ describe('lib/server/session_manager', () => {
 
   test('caps active websocket session messages and limits snapshot history', () => {
     manager.handleWebSocketConnect('conn-1', vi.fn());
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: false,
+    });
 
     for (let seq = 1; seq <= 5_100; seq += 1) {
       manager.handleWebSocketMessage('conn-1', {
@@ -1077,8 +1083,8 @@ describe('lib/server/session_manager', () => {
     expect(liveSession?.messages.at(-1)?.id).toBe('conn-1:5100');
 
     const offline = manager.handleWebSocketDisconnect('conn-1');
-    expect(offline?.messages).toHaveLength(5_000);
-    expect(offline?.messages[0]?.id).toBe('conn-1:101');
+    expect(offline?.messages).toHaveLength(500);
+    expect(offline?.messages[0]?.rawType).toBe('session_history_pruned');
     expect(offline?.messages.at(-1)?.id).toBe('conn-1:5100');
   });
 
@@ -1096,7 +1102,8 @@ describe('lib/server/session_manager', () => {
 
     expect(session?.messages).toHaveLength(200);
     expect(new Set(session?.messages.map((message) => message.id)).size).toBe(200);
-    expect(session?.messages[0]?.id).toBe('notification:example.com/notifications:notif-5');
+    expect(session?.messages[0]?.rawType).toBe('session_history_pruned');
+    expect(session?.messages[1]?.id).toBe('notification:example.com/notifications:notif-6');
     expect(session?.messages.at(-1)?.id).toBe('notification:example.com/notifications:notif-204');
   });
 
@@ -1216,6 +1223,76 @@ describe('lib/server/session_manager', () => {
   test('dismissInactiveSessions returns 0 when no sessions exist', () => {
     const dismissed = manager.dismissInactiveSessions();
     expect(dismissed).toBe(0);
+  });
+
+  test('automatically expires review comment sessions after their retention window', () => {
+    let nowMs = Date.parse('2026-03-17T10:00:00.000Z');
+    const retentionManager = new SessionManager(db, {
+      now: () => nowMs,
+      autoPruneIntervalMs: 0,
+    });
+
+    retentionManager.handleWebSocketConnect('review-comment', vi.fn());
+    retentionManager.handleWebSocketMessage('review-comment', {
+      type: 'session_info',
+      command: 'review-guide-comment',
+      interactive: false,
+    });
+    retentionManager.handleWebSocketDisconnect('review-comment');
+
+    expect(retentionManager.getSessionSnapshot().sessions).toHaveLength(1);
+
+    nowMs += 31 * 60 * 1000;
+    const result = retentionManager.pruneSessions();
+
+    expect(result.removed).toBe(1);
+    expect(retentionManager.getSessionSnapshot().sessions).toEqual([]);
+    retentionManager.stop();
+  });
+
+  test('evicts the oldest inactive session when the global count limit is exceeded', () => {
+    const retentionManager = new SessionManager(db, {
+      retention: {
+        maxInactiveSessions: 1,
+        maxInactiveBytes: 1024 * 1024,
+      },
+      autoPruneIntervalMs: 0,
+    });
+
+    retentionManager.handleWebSocketConnect('oldest', vi.fn());
+    retentionManager.handleWebSocketDisconnect('oldest');
+    vi.setSystemTime(new Date('2026-03-17T10:01:00.000Z'));
+    retentionManager.handleWebSocketConnect('newest', vi.fn());
+    retentionManager.handleWebSocketDisconnect('newest');
+
+    expect(
+      retentionManager.getSessionSnapshot().sessions.map((session) => session.connectionId)
+    ).toEqual(['newest']);
+    retentionManager.stop();
+  });
+
+  test('enforces the global inactive byte limit without removing active sessions', () => {
+    const retentionManager = new SessionManager(db, {
+      retention: {
+        maxInactiveSessions: 10,
+        maxInactiveBytes: 1,
+      },
+      autoPruneIntervalMs: 0,
+    });
+
+    retentionManager.handleWebSocketConnect('active', vi.fn());
+    retentionManager.handleWebSocketConnect('offline', vi.fn());
+    retentionManager.handleWebSocketMessage('offline', {
+      type: 'output',
+      seq: 1,
+      message: { type: 'log', args: ['retained output'] },
+    });
+    retentionManager.handleWebSocketDisconnect('offline');
+
+    expect(
+      retentionManager.getSessionSnapshot().sessions.map((session) => session.connectionId)
+    ).toEqual(['active']);
+    retentionManager.stop();
   });
 
   test('sendPromptResponse validates active prompt and delegates to the registered sender', () => {

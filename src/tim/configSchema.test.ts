@@ -585,6 +585,38 @@ describe('configSchema', () => {
       expect(result.headless).toBeUndefined();
     });
 
+    test('accepts positive session retention limits without applying schema defaults', () => {
+      const result = timConfigSchema.parse({
+        headless: {
+          sessionRetention: {
+            maxInactiveSessions: 50,
+            maxInactiveBytes: 8 * 1024 * 1024,
+          },
+        },
+      });
+
+      expect(result.headless?.sessionRetention).toEqual({
+        maxInactiveSessions: 50,
+        maxInactiveBytes: 8 * 1024 * 1024,
+      });
+      expect(timConfigSchema.parse({ headless: { sessionRetention: {} } })).toEqual({
+        headless: { sessionRetention: {} },
+      });
+    });
+
+    test('rejects invalid session retention limits', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          headless: { sessionRetention: { maxInactiveSessions: 0 } },
+        })
+      ).toThrow();
+      expect(() =>
+        timConfigSchema.parse({
+          headless: { sessionRetention: { maxInactiveBytes: 1.5 } },
+        })
+      ).toThrow();
+    });
+
     test('rejects unknown fields within headless due to strict', () => {
       const config = {
         headless: {

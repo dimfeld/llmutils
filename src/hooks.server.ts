@@ -81,6 +81,7 @@ function registerCurrentShutdownHandlers(): void {
     getWebhookPoller()?.stop();
     getSessionDiscoveryClient()?.stop();
     getWebSocketServerHandle()?.stop();
+    getSessionManager().stop();
   });
 }
 
@@ -190,7 +191,9 @@ export const init: ServerInit = async () => {
 
   const initPromise = (async () => {
     const { config, db } = await getServerContext();
-    const sessionManager = existingServer ? getSessionManager() : new SessionManager(db);
+    const sessionManager = existingServer
+      ? getSessionManager()
+      : new SessionManager(db, { retention: config.headless?.sessionRetention });
     const serverHandle = existingServer ?? startWebSocketServer(sessionManager, config);
     const discoveryClient = existingDiscoveryClient ?? new SessionDiscoveryClient(sessionManager);
     const webhookPoller =
