@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import type { EnrichedPlan } from '$lib/server/db_queries.js';
+  import type { DashboardPlan } from '$lib/utils/dashboard_attention.js';
   import { startAgent } from '$lib/remote/plan_actions.remote.js';
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
@@ -11,7 +11,7 @@
     projectName,
     selected = false,
   }: {
-    plan: EnrichedPlan;
+    plan: DashboardPlan;
     projectId: string;
     projectName?: string;
     selected?: boolean;

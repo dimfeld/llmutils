@@ -1,43 +1,28 @@
 import { describe, expect, test } from 'vitest';
 import type { SessionData } from '$lib/types/session.js';
-import type { EnrichedPlan } from '$lib/server/db_queries.js';
 import {
   deriveAttentionItems,
   deriveRunningNowSessions,
   deriveReadyToStartPlans,
   indexSessionsByPlanUuid,
   type ActionablePr,
+  type DashboardPlan,
 } from './dashboard_attention.js';
 
-function makePlan(overrides: Partial<EnrichedPlan> & { uuid: string }): EnrichedPlan {
+function makePlan(overrides: Partial<DashboardPlan> & { uuid: string }): DashboardPlan {
   return {
     projectId: 1,
     planId: 100,
     title: 'Test Plan',
-    goal: null,
-    details: null,
     status: 'in_progress',
     displayStatus: 'in_progress',
     priority: 'medium',
-    branch: null,
-    parentUuid: null,
     epic: false,
-    simple: false,
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-01T00:00:00Z',
-    docsUpdatedAt: null,
-    lessonsAppliedAt: null,
-    pullRequests: [],
     canUpdateDocs: false,
-    invalidPrUrls: [],
-    issues: [],
-    prSummaryStatus: 'none',
-    hasPlanPrLinks: false,
+    hasPr: false,
     depsFullyResolved: true,
-    tags: [],
-    dependencyUuids: [],
-    tasks: [],
     taskCounts: { done: 0, total: 0 },
+    reviewIssueCount: 0,
     ...overrides,
   };
 }
@@ -181,25 +166,6 @@ describe('deriveAttentionItems', () => {
     const result = deriveAttentionItems([plan], planIndex([]), []);
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0].epic).toBe(true);
-  });
-
-  test('includes finish-tracking timestamps on needs_review attention items', () => {
-    const plan = makePlan({
-      uuid: 'plan-1',
-      displayStatus: 'needs_review',
-      docsUpdatedAt: '2026-01-02T00:00:00Z',
-      lessonsAppliedAt: null,
-    });
-
-    const result = deriveAttentionItems([plan], planIndex([]), []);
-    expect(result.planItems).toEqual([
-      expect.objectContaining({
-        planUuid: 'plan-1',
-        docsUpdatedAt: '2026-01-02T00:00:00Z',
-        lessonsAppliedAt: null,
-        reasons: [{ type: 'needs_review' }],
-      }),
-    ]);
   });
 
   test('detects agent_finished from offline session + in_progress plan', () => {
@@ -355,13 +321,11 @@ describe('deriveAttentionItems', () => {
     ]);
   });
 
-  test('propagates canUpdateDocs with finish-tracking timestamps', () => {
+  test('propagates canUpdateDocs', () => {
     const plan = makePlan({
       uuid: 'plan-finish',
       displayStatus: 'needs_review',
       canUpdateDocs: true,
-      docsUpdatedAt: null,
-      lessonsAppliedAt: null,
     });
 
     const result = deriveAttentionItems([plan], planIndex([]), []);
@@ -370,17 +334,15 @@ describe('deriveAttentionItems', () => {
       expect.objectContaining({
         planUuid: 'plan-finish',
         canUpdateDocs: true,
-        docsUpdatedAt: null,
-        lessonsAppliedAt: null,
       })
     );
   });
 
-  test('sets hasPr to true when plan has pullRequests', () => {
+  test('propagates hasPr when the server projection found PR data', () => {
     const plan = makePlan({
       uuid: 'plan-has-pr',
       displayStatus: 'needs_review',
-      pullRequests: ['https://github.com/owner/repo/pull/1'],
+      hasPr: true,
     });
 
     const result = deriveAttentionItems([plan], planIndex([]), []);
@@ -388,43 +350,16 @@ describe('deriveAttentionItems', () => {
     expect(result.planItems[0].hasPr).toBe(true);
   });
 
-  test('sets hasPr to true when plan has non-none prSummaryStatus', () => {
-    const plan = makePlan({
-      uuid: 'plan-has-pr-status',
-      displayStatus: 'needs_review',
-      prSummaryStatus: 'passing',
-    });
-
-    const result = deriveAttentionItems([plan], planIndex([]), []);
-    expect(result.planItems).toHaveLength(1);
-    expect(result.planItems[0].hasPr).toBe(true);
-  });
-
-  test('sets hasPr to false when plan has no PR data', () => {
+  test('propagates hasPr false when the server projection found no PR data', () => {
     const plan = makePlan({
       uuid: 'plan-no-pr',
       displayStatus: 'needs_review',
-      pullRequests: [],
-      prSummaryStatus: 'none',
+      hasPr: false,
     });
 
     const result = deriveAttentionItems([plan], planIndex([]), []);
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0].hasPr).toBe(false);
-  });
-
-  test('sets hasPr to true when plan has auto-linked PRs via plan_pr table', () => {
-    const plan = makePlan({
-      uuid: 'plan-auto-linked',
-      displayStatus: 'needs_review',
-      pullRequests: [],
-      prSummaryStatus: 'none',
-      hasPlanPrLinks: true,
-    });
-
-    const result = deriveAttentionItems([plan], planIndex([]), []);
-    expect(result.planItems).toHaveLength(1);
-    expect(result.planItems[0].hasPr).toBe(true);
   });
 
   test('handles sessions without planUuid gracefully', () => {

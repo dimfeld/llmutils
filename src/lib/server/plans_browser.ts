@@ -17,6 +17,8 @@ import {
 } from './db_queries.js';
 import { isProofConfigured } from '$lib/utils/proof_eligibility.js';
 import { isMediaHostConfigured } from '$tim/configSchema.js';
+import type { DashboardPlan } from '$lib/utils/dashboard_attention.js';
+import { hasPlanPrData } from '$lib/utils/plan_pr_presence.js';
 
 export async function loadFinishConfigForProject(
   db: Database,
@@ -191,14 +193,35 @@ export async function getPlansPageData(db: Database, projectId: string): Promise
 }
 
 export interface DashboardData {
-  plans: EnrichedPlan[];
-  /** Map of "projectId:planNumber" -> planUuid for linking workspace assigned plans. */
-  planNumberToUuid: Record<string, string>;
+  plans: DashboardPlan[];
   /** Per-project development workflow setting. Keyed by numeric project ID. */
   developmentWorkflowByProjectId: Record<number, 'pr-based' | 'trunk-based'>;
 }
 
-const TERMINAL_STATUSES = new Set(['done', 'cancelled', 'deferred']);
+const DASHBOARD_DISPLAY_STATUSES = new Set<EnrichedPlan['displayStatus']>([
+  'ready',
+  'in_progress',
+  'needs_review',
+  'reviewed',
+]);
+
+function toDashboardPlan(plan: EnrichedPlan): DashboardPlan {
+  return {
+    uuid: plan.uuid,
+    projectId: plan.projectId,
+    planId: plan.planId,
+    title: plan.title,
+    status: plan.status,
+    displayStatus: plan.displayStatus,
+    priority: plan.priority,
+    epic: plan.epic,
+    canUpdateDocs: plan.canUpdateDocs,
+    hasPr: hasPlanPrData(plan),
+    reviewIssueCount: plan.reviewIssueCount,
+    depsFullyResolved: plan.depsFullyResolved,
+    taskCounts: plan.taskCounts,
+  };
+}
 
 export async function getDashboardData(db: Database, projectId: string): Promise<DashboardData> {
   const numericProjectId = projectId === 'all' ? undefined : Number(projectId);
@@ -211,15 +234,9 @@ export async function getDashboardData(db: Database, projectId: string): Promise
       : await loadFinishConfigForProject(db, numericProjectId);
   const allPlans = getPlansForProject(db, numericProjectId, projectFinishConfig);
 
-  const planNumberToUuid: Record<string, string> = {};
-  const plans: EnrichedPlan[] = [];
-
-  for (const plan of allPlans) {
-    planNumberToUuid[`${plan.projectId}:${plan.planId}`] = plan.uuid;
-    if (!TERMINAL_STATUSES.has(plan.status) || plan.displayStatus === 'recently_done') {
-      plans.push(plan);
-    }
-  }
+  const plans = allPlans
+    .filter((plan) => DASHBOARD_DISPLAY_STATUSES.has(plan.displayStatus))
+    .map(toDashboardPlan);
 
   // Build per-project developmentWorkflow map, grouping by git root to avoid
   // duplicate config loads when multiple projects share a repository.
@@ -251,7 +268,7 @@ export async function getDashboardData(db: Database, projectId: string): Promise
     }
   }
 
-  return { plans, planNumberToUuid, developmentWorkflowByProjectId };
+  return { plans, developmentWorkflowByProjectId };
 }
 
 export async function getPlanDetailRouteData(

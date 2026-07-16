@@ -21,6 +21,22 @@ import {
   toPlanReviewListItems,
 } from './plans_browser.js';
 
+const DASHBOARD_PLAN_KEYS = [
+  'canUpdateDocs',
+  'depsFullyResolved',
+  'displayStatus',
+  'epic',
+  'hasPr',
+  'planId',
+  'priority',
+  'projectId',
+  'reviewIssueCount',
+  'status',
+  'taskCounts',
+  'title',
+  'uuid',
+] as const;
+
 vi.mock('$tim/configLoader.js', () => ({
   loadEffectiveConfig: vi.fn(async () => ({})),
 }));
@@ -106,7 +122,7 @@ describe('lib/server/plans_browser', () => {
     ]);
   });
 
-  test('getDashboardData returns all non-terminal plans and includes recently_done plans', async () => {
+  test('getDashboardData returns compact plans for statuses rendered by the dashboard', async () => {
     nonSyncedUpsertPlan(db, projectId, {
       uuid: 'pending-plan',
       planId: 403,
@@ -150,6 +166,7 @@ describe('lib/server/plans_browser', () => {
       filename: '406-needs-review.plan.md',
       sourceCreatedAt: daysAgo(2),
       sourceUpdatedAt: daysAgo(2),
+      pullRequest: ['https://github.com/example/repo/pull/406'],
     });
 
     nonSyncedUpsertPlan(db, projectId, {
@@ -173,6 +190,7 @@ describe('lib/server/plans_browser', () => {
       sourceCreatedAt: daysAgo(2),
       sourceUpdatedAt: daysAgo(2),
       dependencyUuids: ['ready-prereq'],
+      tasks: [{ title: 'Ready task', description: 'Can be started', done: false }],
     });
 
     nonSyncedUpsertPlan(db, projectId, {
@@ -222,26 +240,30 @@ describe('lib/server/plans_browser', () => {
     const result = await getDashboardData(db, String(projectId));
 
     expect(result.plans.map((plan) => [plan.planId, plan.displayStatus])).toEqual([
-      [401, 'recently_done'],
       [402, 'in_progress'],
-      [403, 'pending'],
-      [404, 'pending'],
-      [405, 'blocked'],
       [406, 'needs_review'],
-      [408, 'pending'],
-      [409, 'recently_done'],
+      [408, 'ready'],
     ]);
-
-    expect(result.plans.some((plan) => plan.uuid === 'old-done-plan')).toBe(false);
-    expect(result.plans.some((plan) => plan.uuid === 'cancelled-plan')).toBe(false);
-    expect(result.plans.some((plan) => plan.uuid === 'deferred-plan')).toBe(false);
-
-    expect(result.planNumberToUuid[`${projectId}:401`]).toBe('dependency-done');
-    expect(result.planNumberToUuid[`${projectId}:408`]).toBe('ready-plan');
-    expect(result.planNumberToUuid[`${projectId}:409`]).toBe('recently-done-plan');
-    expect(result.planNumberToUuid[`${projectId}:410`]).toBe('old-done-plan');
-    expect(result.planNumberToUuid[`${projectId}:411`]).toBe('cancelled-plan');
-    expect(result.planNumberToUuid[`${projectId}:412`]).toBe('deferred-plan');
+    expect(result.plans.find((plan) => plan.uuid === 'ready-plan')).toEqual({
+      uuid: 'ready-plan',
+      projectId,
+      planId: 408,
+      title: 'Ready plan',
+      status: 'pending',
+      displayStatus: 'ready',
+      priority: 'urgent',
+      epic: false,
+      canUpdateDocs: true,
+      hasPr: false,
+      reviewIssueCount: 0,
+      depsFullyResolved: true,
+      taskCounts: { done: 0, total: 1 },
+    });
+    expect(result.plans.find((plan) => plan.uuid === 'needs-review-plan')?.hasPr).toBe(true);
+    for (const plan of result.plans) {
+      expect(Object.keys(plan).toSorted()).toEqual(DASHBOARD_PLAN_KEYS);
+    }
+    expect(JSON.stringify(result)).not.toContain('Can be started');
   });
 
   test('loadProofConfiguredForProject reads proofGeneration from the project git root', async () => {
@@ -266,7 +288,7 @@ describe('lib/server/plans_browser', () => {
     await expect(loadProofConfiguredForProject(db, projectId)).resolves.toBe(false);
   });
 
-  test('getDashboardData includes reviewed plans and does not block dependents by them', async () => {
+  test('getDashboardData includes reviewed plans and omits pending dependents', async () => {
     nonSyncedUpsertPlan(db, projectId, {
       uuid: 'reviewed-plan',
       planId: 413,
@@ -299,9 +321,42 @@ describe('lib/server/plans_browser', () => {
     expect(reviewedEntry).toBeDefined();
     expect(reviewedEntry?.displayStatus).toBe('reviewed');
 
-    // The dependent is not blocked by the reviewed plan
-    expect(dependentEntry).toBeDefined();
-    expect(dependentEntry?.displayStatus).toBe('pending');
+    // Pending plans are not rendered by the dashboard.
+    expect(dependentEntry).toBeUndefined();
+  });
+
+  test('getDashboardData includes every display status consumed by the dashboard', async () => {
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'ready-dashboard-plan',
+      planId: 415,
+      title: 'Ready dashboard plan',
+      status: 'pending',
+      priority: 'medium',
+      filename: '415-ready-dashboard.plan.md',
+      tasks: [{ title: 'Ready task', description: 'Ready details', done: false }],
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'needs-review-dashboard-plan',
+      planId: 416,
+      title: 'Needs review dashboard plan',
+      status: 'needs_review',
+      priority: 'medium',
+      filename: '416-needs-review-dashboard.plan.md',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'reviewed-dashboard-plan',
+      planId: 417,
+      title: 'Reviewed dashboard plan',
+      status: 'reviewed',
+      priority: 'medium',
+      filename: '417-reviewed-dashboard.plan.md',
+    });
+
+    const result = await getDashboardData(db, String(projectId));
+
+    expect(new Set(result.plans.map((plan) => plan.displayStatus))).toEqual(
+      new Set(['ready', 'in_progress', 'needs_review', 'reviewed'])
+    );
   });
 
   test('getDashboardData supports all-project mode', async () => {
@@ -330,17 +385,8 @@ describe('lib/server/plans_browser', () => {
     const result = await getDashboardData(db, 'all');
 
     expect(result.plans.map((plan) => [plan.projectId, plan.uuid, plan.displayStatus])).toEqual([
-      [projectId, 'dependency-done', 'recently_done'],
       [projectId, 'feature-plan', 'in_progress'],
-      [otherProjectId, 'other-project-plan', 'blocked'],
-      [otherProjectId, 'other-project-done-recent', 'recently_done'],
     ]);
-
-    expect(result.planNumberToUuid[`${projectId}:401`]).toBe('dependency-done');
-    expect(result.planNumberToUuid[`${projectId}:402`]).toBe('feature-plan');
-    expect(result.planNumberToUuid[`${otherProjectId}:501`]).toBe('other-project-plan');
-    expect(result.planNumberToUuid[`${otherProjectId}:502`]).toBe('other-project-done-recent');
-    expect(result.planNumberToUuid[`${otherProjectId}:503`]).toBe('other-project-deferred');
   });
 
   describe('getPlanDetailRouteData', () => {

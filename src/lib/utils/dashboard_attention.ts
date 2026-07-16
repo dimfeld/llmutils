@@ -1,6 +1,25 @@
 import type { SessionData } from '$lib/types/session.js';
 import type { EnrichedPlan } from '$lib/server/db_queries.js';
 
+export interface DashboardPlan {
+  uuid: string;
+  projectId: number;
+  planId: number;
+  title: string | null;
+  status: EnrichedPlan['status'];
+  displayStatus: EnrichedPlan['displayStatus'];
+  priority: EnrichedPlan['priority'];
+  epic: boolean;
+  canUpdateDocs: boolean;
+  hasPr: boolean;
+  reviewIssueCount: number;
+  depsFullyResolved: boolean;
+  taskCounts: {
+    done: number;
+    total: number;
+  };
+}
+
 // --- Actionable PR types (defined here for Task 1 to implement later) ---
 
 export interface ActionablePr {
@@ -53,8 +72,6 @@ export interface PlanAttentionItem {
   planTitle: string | null;
   projectId: number;
   epic: boolean;
-  docsUpdatedAt: string | null;
-  lessonsAppliedAt: string | null;
   canUpdateDocs: boolean;
   hasPr: boolean;
   reviewIssueCount: number;
@@ -153,7 +170,7 @@ export function indexSessionsByPlanUuid(
 }
 
 export function deriveAttentionItems(
-  plans: EnrichedPlan[],
+  plans: DashboardPlan[],
   sessionsByPlanUuid: ReadonlyMap<string, SessionData[]>,
   actionablePrs: ActionablePr[],
   notificationSessions: RunningSession[] = []
@@ -218,11 +235,8 @@ export function deriveAttentionItems(
         planTitle: plan.title,
         projectId: plan.projectId,
         epic: plan.epic,
-        docsUpdatedAt: plan.docsUpdatedAt,
-        lessonsAppliedAt: plan.lessonsAppliedAt,
         canUpdateDocs: plan.canUpdateDocs,
-        hasPr:
-          plan.pullRequests.length > 0 || plan.prSummaryStatus !== 'none' || plan.hasPlanPrLinks,
+        hasPr: plan.hasPr,
         reviewIssueCount: plan.reviewIssueCount,
         depsFullyResolved: plan.depsFullyResolved,
         reasons,
@@ -310,9 +324,9 @@ function collectActivePlanUuids(sessions: Iterable<SessionData>): Set<string> {
 }
 
 export function deriveReadyToStartPlans(
-  plans: EnrichedPlan[],
+  plans: DashboardPlan[],
   sessions: Iterable<SessionData>
-): EnrichedPlan[] {
+): DashboardPlan[] {
   const activePlanUuids = collectActivePlanUuids(sessions);
 
   return plans

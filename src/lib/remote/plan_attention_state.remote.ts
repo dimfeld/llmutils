@@ -7,6 +7,7 @@ import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import { loadFinishConfigForProject } from '$lib/server/plans_browser.js';
+import { hasPlanPrData } from '$lib/utils/plan_pr_presence.js';
 
 const planUuidSchema = z.object({ planUuid: z.string().min(1) });
 
@@ -44,7 +45,7 @@ export const getPlanAttentionState = query(planUuidSchema, async ({ planUuid }) 
     displayStatus: plan.displayStatus,
     reviewIssueCount: plan.reviewIssueCount,
     canUpdateDocs: plan.canUpdateDocs,
-    hasPr: plan.pullRequests.length > 0 || plan.prSummaryStatus !== 'none' || plan.hasPlanPrLinks,
+    hasPr: hasPlanPrData(plan),
     epic: plan.epic,
     developmentWorkflow,
   };

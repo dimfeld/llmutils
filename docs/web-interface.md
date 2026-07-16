@@ -135,7 +135,7 @@ src/routes/projects/[projectId]/active/
 
 ### Data Loading
 
-`getDashboardData(db, projectId)` in `plans_browser.ts` returns `{ plans: EnrichedPlan[], planNumberToUuid }` — all non-terminal plans for the project. Does not load workspaces since the dashboard doesn't have a workspace section.
+`getDashboardData(db, projectId)` in `plans_browser.ts` returns compact `DashboardPlan[]` rows containing only fields rendered or used for dashboard classification. It includes only `ready`, `in_progress`, `needs_review`, and `reviewed` display statuses. Full plan details are loaded separately by the nested detail route, so plan bodies, task descriptions, tags, issues, and other detail-only fields are not serialized into the dashboard layout payload.
 
 Actionable PR data is loaded client-side via `getActionablePrs` query in `src/lib/remote/dashboard.remote.ts`. Returns `ActionablePr[]` covering user's own PRs (ready to merge, checks failing, changes requested) and others' PRs where user has a pending review request. Each PR includes linked plan context when available. Classification logic is in `src/lib/utils/pr_actionability.ts` as pure functions. The query reads from cached DB data (does not require `GITHUB_TOKEN` at query time).
 
