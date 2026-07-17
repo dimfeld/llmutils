@@ -897,6 +897,8 @@ export async function createWorkspace(
     planData?: PlanSchema;
     fromBranch?: string;
     targetDir?: string;
+    /** Suffix for the default clone directory, independent of the workspace task ID. */
+    directorySuffix?: string;
     workspaceType?: WorkspaceType;
     createBranch?: boolean;
     fallbackToTrunkOnMissingBase?: boolean;
@@ -1039,7 +1041,10 @@ export async function createWorkspace(
     } else {
       repoName = 'workspace';
     }
-    targetClonePath = path.join(cloneLocationBase, `${repoName}-${taskId}`);
+    targetClonePath = path.join(
+      cloneLocationBase,
+      `${repoName}-${options?.directorySuffix ?? taskId}`
+    );
   }
 
   // Step 4: Clone/copy the repository using the selected method

@@ -291,7 +291,7 @@ describe('WorkspaceAutoSelector', () => {
       'task-new',
       '/test/plan-new.yml',
       config,
-      {}
+      expect.objectContaining({ directorySuffix: expect.stringMatching(/^auto-\d+$/) })
     );
   });
 
@@ -379,12 +379,13 @@ describe('WorkspaceAutoSelector', () => {
       'task-parent',
       '/test/plan-parent.yml',
       config,
-      {
+      expect.objectContaining({
+        directorySuffix: expect.stringMatching(/^auto-\d+$/),
         createBranch: true,
         fromBranch: 'feature/missing-parent',
         branchName: '41-child-auto-branch-holder',
         fallbackToTrunkOnMissingBase: true,
-      }
+      })
     );
     expect(result?.isNew).toBe(true);
     expect(result?.workspace.workspacePath).toBe(newWorkspacePath);
@@ -516,7 +517,7 @@ describe('WorkspaceAutoSelector', () => {
       'task-new',
       '/test/plan-new.yml',
       config,
-      {}
+      expect.objectContaining({ directorySuffix: expect.stringMatching(/^auto-\d+$/) })
     );
   });
 
@@ -593,7 +594,10 @@ describe('WorkspaceAutoSelector', () => {
       'task-new',
       '/test/plan-new.yml',
       config,
-      { workspaceType: 'auto' }
+      expect.objectContaining({
+        directorySuffix: expect.stringMatching(/^auto-\d+$/),
+        workspaceType: 'auto',
+      })
     );
   });
 
@@ -624,7 +628,8 @@ describe('WorkspaceAutoSelector', () => {
       'task-new',
       '/test/plan-new.yml',
       config,
-      {
+      expect.objectContaining({
+        directorySuffix: expect.stringMatching(/^auto-\d+$/),
         createBranch: true,
         branchName: 'feature/task-new',
         fromBranch: 'develop',
@@ -633,7 +638,7 @@ describe('WorkspaceAutoSelector', () => {
           title: 'Auto-selected plan',
           issue: ['APP-42'],
         },
-      }
+      })
     );
   });
 

@@ -273,6 +273,8 @@ export class WorkspaceAutoSelector {
     } = {}
   ): Promise<(WorkspaceInfo & Pick<Workspace, 'checkedOutRemoteBranch'>) | null> {
     const workspace = await createWorkspace(this.mainRepoRoot, taskId, planFilePath, this.config, {
+      // Auto-selected workspaces must not expose plan/task names in their directory paths.
+      directorySuffix: `auto-${Date.now()}`,
       ...(options.createBranch !== undefined && { createBranch: options.createBranch }),
       ...(options.base && { fromBranch: options.base }),
       ...(options.branchName && { branchName: options.branchName }),

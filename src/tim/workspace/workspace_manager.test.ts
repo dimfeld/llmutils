@@ -3334,6 +3334,30 @@ describe('createWorkspace', () => {
     expect(workspaceInfo!.taskId).toBe(taskId);
   });
 
+  test('createWorkspace uses directorySuffix instead of taskId in the default clone path', async () => {
+    const taskId = 'descriptive-task-name-that-must-not-be-in-the-directory';
+    const directorySuffix = 'auto-1721433600000';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, `repo-${directorySuffix}`);
+
+    const config: TimConfig = {
+      workspaceCreation: { repositoryUrl, cloneLocation, createBranch: false },
+    };
+
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      await fs.mkdir(targetClonePath, { recursive: true });
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      directorySuffix,
+    });
+
+    expect(result?.path).toBe(targetClonePath);
+    expect(result?.path).not.toContain(taskId);
+  });
+
   test('createWorkspace sets name correctly for different taskId formats', async () => {
     const { getWorkspaceInfoByPath } = await import('./workspace_info.js');
 
