@@ -232,6 +232,8 @@ Open the Vite URL printed by the command. The app groups data by project and pro
 
 The web UI discovers running agent processes through session files in `~/.cache/tim/sessions/` and connects to each process over its embedded local WebSocket server. It also uses SSE to update the browser as sessions and PR status change.
 
+Commands launched from the web UI are fully daemonized on macOS and Linux. They run in sessions and process groups separate from the web server and are reparented outside its process tree, so agent sessions continue through web server or PM2 restarts. Set `TIM_PATH` in the web server environment when the daemon stages should use a specific `tim` executable.
+
 Completed sessions are retained in memory with command-aware limits. Short-lived automation such
 as review-guide comments expires quickly, while agent and chat sessions retain a longer, compacted
 history. Active sessions are never automatically removed, and pruning preserves important lifecycle

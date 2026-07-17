@@ -1,6 +1,12 @@
 import fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
 
 import { resolveTimExecutable } from '../../common/tim_executable.js';
+import {
+  readDaemonProcessStatus,
+  TIM_DAEMON_PAYLOAD_ENV,
+  type DaemonProcessPayload,
+} from '../../common/daemon_process.js';
 import { buildWorkspaceCommandEnv } from '$common/env.js';
 import {
   createLogFile as createLogFileImpl,
@@ -41,6 +47,16 @@ function waitForSpawnWindow(delayMs = EARLY_EXIT_CHECK_DELAY_MS): Promise<void> 
   });
 }
 
+function removeStatusFile(statusPath: string): void {
+  try {
+    fs.unlinkSync(statusPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn(`[web-ui] Failed to remove daemon status file ${statusPath}`, error);
+    }
+  }
+}
+
 function describeCommand(args: string[]): string {
   return ['tim', ...args].join(' ');
 }
@@ -58,14 +74,34 @@ async function spawnTimProcess(
 ): Promise<SpawnTargetProcessResult> {
   let proc: ReturnType<typeof Bun.spawn>;
   let logFile: LogFileInfo | undefined;
+  let logFileIsOpen = false;
+  let statusPath: string | undefined;
+
+  const closeLogFile = (): void => {
+    if (logFile && logFileIsOpen) {
+      fs.closeSync(logFile.fd);
+      logFileIsOpen = false;
+    }
+  };
 
   try {
     const command = args[0];
     console.info(`[web-ui] Starting ${describeCommand(args)} for ${targetLabel} in ${cwd}`);
     logFile = createLogFile(command, planId ?? 0);
-    const env = await buildWorkspaceCommandEnv(cwd, envOverrides);
+    logFileIsOpen = true;
+    const env = { ...(await buildWorkspaceCommandEnv(cwd, envOverrides)) };
 
-    proc = Bun.spawn([resolveTimExecutable(), ...args], {
+    const executable = resolveTimExecutable();
+    statusPath = `${logFile.path}.${randomUUID()}.daemon-status`;
+    const payload: DaemonProcessPayload = {
+      launcherCommand: [executable],
+      workerCommand: [executable, ...args],
+      statusPath,
+      startupCheckDelayMs: EARLY_EXIT_CHECK_DELAY_MS,
+    };
+    env[TIM_DAEMON_PAYLOAD_ENV] = JSON.stringify(payload);
+
+    proc = Bun.spawn([executable, '__daemon-launch'], {
       cwd,
       env,
       stdin: 'ignore',
@@ -73,9 +109,50 @@ async function spawnTimProcess(
       stderr: logFile.fd,
       detached: true,
     });
+
+    // The launcher exits only after the monitor has spawned the real command.
+    // At that point the monitor/worker subtree has been reparented away from us.
+    const launcherExitCode = await proc.exited;
+    if (launcherExitCode !== 0) {
+      const logContents = fs.readFileSync(logFile.path, 'utf-8').trim();
+      removeStatusFile(statusPath);
+      closeLogFile();
+      return {
+        success: false,
+        error: logContents || `Failed to daemonize tim ${args[0]} (exit code ${launcherExitCode})`,
+      };
+    }
+
+    closeLogFile();
+    await waitForSpawnWindow();
+    const status = readDaemonProcessStatus(statusPath);
+    removeStatusFile(statusPath);
+
+    if (status?.state === 'failed') {
+      const logContents = fs.readFileSync(logFile.path, 'utf-8').trim();
+      return { success: false, error: logContents || status.error };
+    }
+    if (status?.state === 'exited') {
+      if (status.exitCode === 0) {
+        console.info(
+          `[web-ui] ${describeCommand(args)} for ${targetLabel} exited successfully during startup`
+        );
+        return { success: true, ...(planId == null ? {} : { planId }), earlyExit: true };
+      }
+      const logContents = fs.readFileSync(logFile.path, 'utf-8').trim();
+      return {
+        success: false,
+        error:
+          logContents ||
+          (status.exitCode === null
+            ? `tim ${args[0]} exited early from signal ${status.signalCode ?? 'unknown'}`
+            : `tim ${args[0]} exited early with code ${status.exitCode}`),
+      };
+    }
   } catch (err) {
-    if (logFile) {
-      fs.closeSync(logFile.fd);
+    closeLogFile();
+    if (statusPath) {
+      removeStatusFile(statusPath);
     }
     console.error(`[web-ui] Failed to start ${describeCommand(args)} for ${targetLabel}`, err);
     return {
@@ -84,33 +161,6 @@ async function spawnTimProcess(
     };
   }
 
-  // The child process owns the fd now, so we can close our copy.
-  fs.closeSync(logFile.fd);
-  console.info(
-    `[web-ui] Started ${describeCommand(args)} for ${targetLabel}; waiting ${EARLY_EXIT_CHECK_DELAY_MS}ms for early exit`
-  );
-
-  await waitForSpawnWindow();
-
-  if (proc.exitCode !== null) {
-    // exitCode 0 means the command completed successfully (e.g. a fast rebase with no conflicts).
-    if (proc.exitCode === 0) {
-      console.info(
-        `[web-ui] ${describeCommand(args)} for ${targetLabel} exited successfully during startup`
-      );
-      return { success: true, ...(planId == null ? {} : { planId }), earlyExit: true };
-    }
-    const logContents = fs.readFileSync(logFile.path, 'utf-8').trim();
-    console.warn(
-      `[web-ui] ${describeCommand(args)} for ${targetLabel} exited early with code ${proc.exitCode}; log file: ${logFile.path}`
-    );
-    return {
-      success: false,
-      error: logContents || `tim ${args[0]} exited early with code ${proc.exitCode}`,
-    };
-  }
-
-  proc.unref();
   console.info(`[web-ui] ${describeCommand(args)} for ${targetLabel} is running detached`);
   return { success: true, ...(planId == null ? {} : { planId }) };
 }

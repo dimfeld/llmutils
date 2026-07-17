@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs';
 
+const daemonMock = vi.hoisted(() => ({
+  status: { state: 'running', pid: 999 } as
+    | { state: 'running'; pid: number }
+    | { state: 'exited'; pid: number; exitCode: number },
+}));
+
+vi.mock('../../common/daemon_process.js', () => ({
+  TIM_DAEMON_PAYLOAD_ENV: 'TIM_INTERNAL_DAEMON_PAYLOAD',
+  readDaemonProcessStatus: vi.fn(() => daemonMock.status),
+}));
+
 vi.mock('node:fs', async (importOriginal) => {
   const realFs = await importOriginal<typeof import('node:fs')>();
   const mockedFs = {
@@ -38,6 +49,7 @@ import { buildWorkspaceCommandEnv } from '$common/env.js';
 
 interface FakeSubprocess {
   exitCode: number | null;
+  exited: Promise<number>;
   stderr: ReadableStream<Uint8Array> | null;
   unref: ReturnType<typeof vi.fn>;
 }
@@ -55,10 +67,27 @@ function createFakeProcess(options: {
   exitCode: number | null;
   stderrText?: string;
 }): FakeSubprocess {
+  daemonMock.status =
+    options.exitCode === null
+      ? { state: 'running', pid: 999 }
+      : { state: 'exited', pid: 999, exitCode: options.exitCode };
   return {
-    exitCode: options.exitCode,
+    exitCode: 0,
+    exited: Promise.resolve(0),
     stderr: options.stderrText ? createTextStream(options.stderrText) : createTextStream(''),
     unref: vi.fn(),
+  };
+}
+
+function daemonPayload(options: { env?: Record<string, string> }): {
+  launcherCommand: string[];
+  workerCommand: string[];
+  startupCheckDelayMs: number;
+} {
+  return JSON.parse(options.env?.TIM_INTERNAL_DAEMON_PAYLOAD ?? '{}') as {
+    launcherCommand: string[];
+    workerCommand: string[];
+    startupCheckDelayMs: number;
   };
 }
 
@@ -88,7 +117,7 @@ describe('lib/server/plan_actions', () => {
     vi.restoreAllMocks();
   });
 
-  test('spawnGenerateProcess starts tim generate in detached mode and unrefs it after the early-exit window', async () => {
+  test('spawnGenerateProcess starts tim generate through the daemon launcher', async () => {
     const proc = createFakeProcess({ exitCode: null });
     const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
@@ -98,7 +127,12 @@ describe('lib/server/plan_actions', () => {
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
     const [args, options] = spawnSpy.mock.calls[0];
-    expect(args).toEqual(['tim', 'generate', '189', '--auto-workspace', '--no-terminal-input']);
+    expect(args).toEqual(['tim', '__daemon-launch']);
+    expect(daemonPayload(options as never)).toMatchObject({
+      launcherCommand: ['tim'],
+      workerCommand: ['tim', 'generate', '189', '--auto-workspace', '--no-terminal-input'],
+      startupCheckDelayMs: 2000,
+    });
     expect(options).toMatchObject({
       cwd: '/tmp/primary-workspace',
       stdin: 'ignore',
@@ -107,13 +141,9 @@ describe('lib/server/plan_actions', () => {
     expect(options.env).toBeDefined();
     expect(options.stdout).toEqual(expect.any(Number));
     expect(options.stderr).toEqual(expect.any(Number));
-    expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 189 });
     expect(vi.mocked(console.info)).toHaveBeenCalledWith(
       '[web-ui] Starting tim generate 189 --auto-workspace --no-terminal-input for plan 189 in /tmp/primary-workspace'
-    );
-    expect(vi.mocked(console.info)).toHaveBeenCalledWith(
-      '[web-ui] Started tim generate 189 --auto-workspace --no-terminal-input for plan 189; waiting 2000ms for early exit'
     );
     expect(vi.mocked(console.info)).toHaveBeenCalledWith(
       '[web-ui] tim generate 189 --auto-workspace --no-terminal-input for plan 189 is running detached'
@@ -130,14 +160,18 @@ describe('lib/server/plan_actions', () => {
     const result = await resultPromise;
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
-    const [args] = spawnSpy.mock.calls[0];
-    expect(args).toEqual([
-      '/opt/tim/bin/tim',
-      'generate',
-      '189',
-      '--auto-workspace',
-      '--no-terminal-input',
-    ]);
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual(['/opt/tim/bin/tim', '__daemon-launch']);
+    expect(daemonPayload(options as never)).toMatchObject({
+      launcherCommand: ['/opt/tim/bin/tim'],
+      workerCommand: [
+        '/opt/tim/bin/tim',
+        'generate',
+        '189',
+        '--auto-workspace',
+        '--no-terminal-input',
+      ],
+    });
     expect(result).toEqual({ success: true, planId: 189 });
   });
 
@@ -153,7 +187,8 @@ describe('lib/server/plan_actions', () => {
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
     const [args, options] = spawnSpy.mock.calls[0];
-    expect(args).toEqual([
+    expect(args).toEqual(['tim', '__daemon-launch']);
+    expect(daemonPayload(options as never).workerCommand).toEqual([
       'tim',
       'review-guide',
       'generate',
@@ -166,7 +201,6 @@ describe('lib/server/plan_actions', () => {
       stdin: 'ignore',
       detached: true,
     });
-    expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 212 });
   });
 
@@ -180,8 +214,15 @@ describe('lib/server/plan_actions', () => {
     const result = await resultPromise;
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
-    const [args] = spawnSpy.mock.calls[0];
-    expect(args).toEqual(['tim', 'generate', '189', '--auto-workspace', '--no-terminal-input']);
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual(['tim', '__daemon-launch']);
+    expect(daemonPayload(options as never).workerCommand).toEqual([
+      'tim',
+      'generate',
+      '189',
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
     expect(result).toEqual({ success: true, planId: 189 });
   });
 
@@ -257,7 +298,6 @@ describe('lib/server/plan_actions', () => {
     expect(options.env).toBeDefined();
     expect(options.stdout).toEqual(expect.any(Number));
     expect(options.stderr).toEqual(expect.any(Number));
-    expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 189 });
   });
 
@@ -329,7 +369,6 @@ describe('lib/server/plan_actions', () => {
     expect(options.env).toBeDefined();
     expect(options.stdout).toEqual(expect.any(Number));
     expect(options.stderr).toEqual(expect.any(Number));
-    expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 189 });
   });
 
@@ -392,14 +431,20 @@ describe('lib/server/plan_actions', () => {
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
     const [args, options] = spawnSpy.mock.calls[0];
-    expect(args).toEqual(['tim', 'rebase', '200', '--auto-workspace', '--no-terminal-input']);
+    expect(args).toEqual(['tim', '__daemon-launch']);
+    expect(daemonPayload(options as never).workerCommand).toEqual([
+      'tim',
+      'rebase',
+      '200',
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
     expect(options).toMatchObject({
       cwd: '/tmp/primary-workspace',
       stdin: 'ignore',
       detached: true,
     });
     expect(options.env).toBeDefined();
-    expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 200 });
   });
 
@@ -454,14 +499,20 @@ describe('lib/server/plan_actions', () => {
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
     const [args, options] = spawnSpy.mock.calls[0];
-    expect(args).toEqual(['tim', 'update-docs', '204', '--auto-workspace', '--no-terminal-input']);
+    expect(args).toEqual(['tim', '__daemon-launch']);
+    expect(daemonPayload(options as never).workerCommand).toEqual([
+      'tim',
+      'update-docs',
+      '204',
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
     expect(options).toMatchObject({
       cwd: '/tmp/primary-workspace',
       stdin: 'ignore',
       detached: true,
     });
     expect(options.env).toBeDefined();
-    expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 204 });
   });
 
@@ -478,14 +529,19 @@ describe('lib/server/plan_actions', () => {
     await vi.advanceTimersByTimeAsync(2000);
     await expect(autoreviewPromise).resolves.toEqual({ success: true, planId: 206 });
 
-    expect(spawnSpy.mock.calls[0][0]).toEqual([
+    expect(daemonPayload(spawnSpy.mock.calls[0][1] as never).workerCommand).toEqual([
       'tim',
       'shell',
       '205',
       '--auto-workspace',
       '--non-interactive',
     ]);
-    expect(spawnSpy.mock.calls[1][0]).toEqual(['tim', 'autoreview', '206', '--no-terminal-input']);
+    expect(daemonPayload(spawnSpy.mock.calls[1][1] as never).workerCommand).toEqual([
+      'tim',
+      'autoreview',
+      '206',
+      '--no-terminal-input',
+    ]);
     expect(vi.mocked(buildWorkspaceCommandEnv)).toHaveBeenCalledWith('/tmp/primary-workspace', {
       TIM_HIDE_PLAN_DETAILS: '1',
     });
@@ -500,8 +556,9 @@ describe('lib/server/plan_actions', () => {
     const result = await resultPromise;
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
-    const [args] = spawnSpy.mock.calls[0];
-    expect(args).toEqual([
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual(['tim', '__daemon-launch']);
+    expect(daemonPayload(options as never).workerCommand).toEqual([
       'tim',
       'agent-multi',
       '301',
@@ -531,7 +588,8 @@ describe('lib/server/plan_actions', () => {
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
     const [args, options] = spawnSpy.mock.calls[0];
-    expect(args).toEqual([
+    expect(args).toEqual(['tim', '__daemon-launch']);
+    expect(daemonPayload(options as never).workerCommand).toEqual([
       'tim',
       'pr',
       'fix',
@@ -545,7 +603,6 @@ describe('lib/server/plan_actions', () => {
       stdin: 'ignore',
       detached: true,
     });
-    expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true });
     expect((result as { planId?: number }).planId).toBeUndefined();
   });

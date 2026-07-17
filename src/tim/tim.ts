@@ -125,6 +125,16 @@ async function runWithCommandTunnelAdapter<T>(callback: () => Promise<T> | T): P
 
 export const program = new Command();
 
+program.command('__daemon-launch', { hidden: true }).action(async (): Promise<void> => {
+  const { runDaemonLauncher } = await import('../common/daemon_process.js');
+  await runDaemonLauncher();
+});
+
+program.command('__daemon-monitor', { hidden: true }).action(async (): Promise<void> => {
+  const { runDaemonMonitor } = await import('../common/daemon_process.js');
+  await runDaemonMonitor();
+});
+
 type SignalHandlerProcess = Pick<NodeJS.Process, 'on'>;
 
 export function registerShutdownSignalHandlers(
