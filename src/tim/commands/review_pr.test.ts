@@ -204,7 +204,7 @@ function makeCommand(config?: string) {
 function installExecutorMock(options: {
   claudeExecute?: ReturnType<typeof vi.fn>;
   codexExecute?: ReturnType<typeof vi.fn>;
-  haikuExecute?: ReturnType<typeof vi.fn>;
+  smallTaskExecute?: ReturnType<typeof vi.fn>;
   repairExecute?: ReturnType<typeof vi.fn>;
 }) {
   mockBuildExecutorAndLog.mockImplementation((name, sharedOptions) => {
@@ -215,11 +215,11 @@ function installExecutorMock(options: {
       return { execute: options.repairExecute } as any;
     }
 
-    if (name === 'claude-code' && (sharedOptions as any)?.model === 'haiku') {
-      if (!options.haikuExecute) {
-        throw new Error('Unexpected Claude Haiku executor request');
+    if (name === 'codex-cli' && (sharedOptions as any)?.model === 'gpt-5.6-luna:medium') {
+      if (!options.smallTaskExecute) {
+        throw new Error('Unexpected small-task executor request');
       }
-      return { execute: options.haikuExecute } as any;
+      return { execute: options.smallTaskExecute } as any;
     }
 
     if (name === 'claude-code') {
@@ -671,7 +671,7 @@ describe('review_pr command', () => {
       }),
     });
 
-    const haikuExecute = vi.fn().mockResolvedValue({
+    const smallTaskExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({
         issues: [
           {
@@ -689,7 +689,7 @@ describe('review_pr command', () => {
       }),
     });
 
-    installExecutorMock({ claudeExecute, codexExecute, haikuExecute });
+    installExecutorMock({ claudeExecute, codexExecute, smallTaskExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
@@ -706,10 +706,15 @@ describe('review_pr command', () => {
     const claudeBuildCalls = mockBuildExecutorAndLog.mock.calls.filter(
       (call) => call[0] === 'claude-code'
     );
-    expect(claudeBuildCalls).toHaveLength(3);
-    for (const call of claudeBuildCalls.slice(0, 2)) {
+    expect(claudeBuildCalls).toHaveLength(2);
+    for (const call of claudeBuildCalls) {
       expect(call[3]).toEqual(expect.objectContaining({ reasoningEffort: 'high' }));
     }
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+      'codex-cli',
+      expect.objectContaining({ model: 'gpt-5.6-luna:medium', terminalInput: false }),
+      expect.anything()
+    );
 
     expect(mockCheckoutPrBranch).toHaveBeenCalled();
     expect(mockInsertReviewIssues).toHaveBeenCalledTimes(1);
@@ -1137,11 +1142,11 @@ describe('review_pr command', () => {
     const codexExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
     });
-    const haikuExecute = vi.fn().mockResolvedValue({
+    const smallTaskExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
     });
 
-    installExecutorMock({ claudeExecute, codexExecute, haikuExecute });
+    installExecutorMock({ claudeExecute, codexExecute, smallTaskExecute });
 
     try {
       await handleReviewGuideCommand(
@@ -1712,7 +1717,7 @@ describe('review_pr command', () => {
       };
     });
 
-    const haikuExecute = vi.fn().mockResolvedValue({
+    const smallTaskExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({
         issues: [
           {
@@ -1731,8 +1736,8 @@ describe('review_pr command', () => {
     });
 
     mockBuildExecutorAndLog.mockImplementation((name, sharedOptions) => {
-      if (name === 'claude-code' && (sharedOptions as any)?.model === 'haiku') {
-        return { execute: haikuExecute } as any;
+      if (name === 'codex-cli' && (sharedOptions as any)?.model === 'gpt-5.6-luna:medium') {
+        return { execute: smallTaskExecute } as any;
       }
       if (name === 'claude-code') {
         return { execute: claudeExecute } as any;
@@ -1745,7 +1750,7 @@ describe('review_pr command', () => {
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
-    const combinationPrompt = String(haikuExecute.mock.calls[0]?.[0] ?? '');
+    const combinationPrompt = String(smallTaskExecute.mock.calls[0]?.[0] ?? '');
     const codexInput = combinationPrompt.match(
       /## Codex Issues Input\n```json\n([\s\S]*?)\n```/
     )?.[1];
@@ -1754,7 +1759,7 @@ describe('review_pr command', () => {
     expect(codexInput?.match(/"id": "issue-1"/g)).toHaveLength(1);
   });
 
-  test('uses codex mini for issue combination when defaultExecutor is codex-cli', async () => {
+  test('uses the default small-task model for issue combination', async () => {
     mockLoadEffectiveConfig.mockResolvedValueOnce({
       terminalInput: true,
       defaultExecutor: 'codex-cli',
@@ -1829,7 +1834,7 @@ describe('review_pr command', () => {
       if (name === 'claude-code') {
         return { execute: claudeExecute } as any;
       }
-      if (name === 'codex-cli' && (sharedOptions as any)?.model === 'gpt-5.6-luna') {
+      if (name === 'codex-cli' && (sharedOptions as any)?.model === 'gpt-5.6-luna:medium') {
         return { execute: codexCombinationExecute } as any;
       }
       if (name === 'codex-cli') {
@@ -1843,7 +1848,7 @@ describe('review_pr command', () => {
     expect(codexCombinationExecute).toHaveBeenCalledTimes(1);
     expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
       'codex-cli',
-      expect.objectContaining({ model: 'gpt-5.6-luna', terminalInput: false }),
+      expect.objectContaining({ model: 'gpt-5.6-luna:medium', terminalInput: false }),
       expect.objectContaining({ defaultExecutor: 'codex-cli' })
     );
     const inserted = mockInsertReviewIssues.mock.calls[0]?.[1];
@@ -1981,9 +1986,9 @@ describe('review_pr command', () => {
         actionItems: [],
       }),
     });
-    const haikuExecute = vi.fn().mockRejectedValue(new Error('combine failed'));
+    const smallTaskExecute = vi.fn().mockRejectedValue(new Error('combine failed'));
 
-    installExecutorMock({ claudeExecute, codexExecute, haikuExecute });
+    installExecutorMock({ claudeExecute, codexExecute, smallTaskExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
@@ -2375,7 +2380,7 @@ describe('review_pr command', () => {
         actionItems: [],
       }),
     });
-    const haikuExecute = vi.fn().mockResolvedValue({
+    const smallTaskExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({
         issues: [
           {
@@ -2393,7 +2398,7 @@ describe('review_pr command', () => {
       }),
     });
 
-    installExecutorMock({ claudeExecute, codexExecute, haikuExecute });
+    installExecutorMock({ claudeExecute, codexExecute, smallTaskExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
@@ -2481,7 +2486,7 @@ describe('review_pr command', () => {
         actionItems: [],
       }),
     });
-    const haikuExecute = vi.fn().mockResolvedValue({
+    const smallTaskExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({
         issues: [
           {
@@ -2499,7 +2504,7 @@ describe('review_pr command', () => {
       }),
     });
 
-    installExecutorMock({ claudeExecute, codexExecute, haikuExecute });
+    installExecutorMock({ claudeExecute, codexExecute, smallTaskExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 

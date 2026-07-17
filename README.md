@@ -670,10 +670,20 @@ Important config areas:
 - `githubUsername` - avoids an API call when classifying PRs
 - `lifecycle.commands` - start/stop dev servers or services around agent runs
 - `subprocessMonitor` - opt-in timeouts for stuck Claude/Codex tool subprocesses
+- `smallTasks` - executor/model for lightweight helper passes (defaults to `codex-cli` with `gpt-5.6-luna:medium`)
 - `updateDocs` - controls automatic agent documentation updates; `applyLessons` is retained for manual finalization compatibility
 - `artifactRetentionDays` - days before soft-deleted artifacts and artifacts on completed plans are eligible for purge (default 30)
 - `mediaHost.baseUrl` - origin-only media host URL used by `tim pr upload-artifacts`
 - `environment` - project-level variables rendered at process launch time with plan/workspace context
+
+PR creation and dual-review issue merging share the `smallTasks` defaults. Override both
+in one place when you want to swap the lightweight model or executor:
+
+```yaml
+smallTasks:
+  executor: codex-cli
+  model: gpt-5.6-luna:medium
+```
 
 The `simplify` block controls the optional code-simplification pass that runs after an agent finishes implementation and before final review. `simplify.mode` accepts `after-completion` (default) or `never`; `simplify.model` and `simplify.executor` (`claude-code` or `codex-cli`) override the executor used for the pass; `simplify.include` and `simplify.exclude` add free-form scoping guidance. The standalone `tim simplify <planId>` command always runs regardless of `simplify.mode`.
 

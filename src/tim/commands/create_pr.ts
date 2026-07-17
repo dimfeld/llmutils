@@ -7,7 +7,6 @@ import {
 } from '../../common/git.js';
 import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
-import { LATEST_GPT5_MINI_MODEL } from '../constants.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
@@ -27,6 +26,7 @@ import {
 } from '../plans/base_plan_resolution.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
+import { resolveSmallTaskExecutor, type SmallTaskExecutorName } from '../small_task_executor.js';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -89,8 +89,14 @@ const CREATE_PR_ALLOWED_BASH_TOOLS = [
 ];
 const CLAUDE_CODE_EXECUTOR_NAME = 'claude-code';
 
-function defaultSmallModelForExecutor(executorName: string): string {
-  return executorName === 'codex-cli' ? LATEST_GPT5_MINI_MODEL : 'haiku';
+function parseSmallTaskExecutorOverride(
+  executor: string | undefined
+): SmallTaskExecutorName | undefined {
+  if (executor === undefined || executor === 'claude-code' || executor === 'codex-cli') {
+    return executor;
+  }
+
+  throw new Error(`Unsupported PR creation executor: ${executor}`);
 }
 
 function getRootOptions(command: RootCommandLike | undefined): { config?: string } {
@@ -415,11 +421,14 @@ async function runPrCreationExecutor(
     siblingPlans,
   });
 
-  const executorName =
-    options.executor ?? options.config.defaultExecutor ?? CLAUDE_CODE_EXECUTOR_NAME;
+  const smallTaskExecutor = resolveSmallTaskExecutor(options.config, {
+    executor: parseSmallTaskExecutorOverride(options.executor),
+    model: options.model,
+  });
+  const executorName = smallTaskExecutor.executorName;
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir: options.baseDir,
-    model: options.model ?? defaultSmallModelForExecutor(executorName),
+    model: smallTaskExecutor.model,
     terminalInput: options.terminalInput ?? false,
     disableInactivityTimeout: true,
     timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(

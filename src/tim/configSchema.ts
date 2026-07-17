@@ -600,6 +600,21 @@ export const timConfigSchema = z
           .describe('Model spec for tim markdown-to-yaml extraction'),
       })
       .optional(),
+    /** Executor and model used for small, self-contained helper tasks. */
+    smallTasks: z
+      .object({
+        executor: z
+          .enum([ClaudeCodeExecutorName, CodexCliExecutorName])
+          .optional()
+          .describe('Executor for small helper tasks (default: codex-cli)'),
+        model: z
+          .string()
+          .optional()
+          .describe('Model for small helper tasks (default: gpt-5.6-luna:medium)'),
+      })
+      .strict()
+      .optional()
+      .describe('Defaults for small helper tasks such as PR creation and review issue merging'),
     /** Default settings for answer-pr command */
     answerPr: z
       .object({

@@ -799,16 +799,14 @@ describe('create_pr command helpers', () => {
 
       expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(1);
       expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
-        'claude-code',
-        expect.objectContaining({ baseDir: '/tmp', model: 'haiku', terminalInput: false }),
-        {},
+        'codex-cli',
         expect.objectContaining({
-          allowedTools: expect.arrayContaining([
-            'Bash(gh pr create:*)',
-            'Bash(jj bookmark track:*)',
-            'Bash(jj git push --branch:*)',
-          ]),
-        })
+          baseDir: '/tmp',
+          model: 'gpt-5.6-luna:medium',
+          terminalInput: false,
+        }),
+        {},
+        {}
       );
       const builtExecutor = mockBuildExecutorAndLog.mock.results[0]?.value as
         | { execute?: ReturnType<typeof vi.fn> }
@@ -922,16 +920,14 @@ describe('create_pr command helpers', () => {
 
       expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(1);
       expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
-        'claude-code',
-        expect.objectContaining({ baseDir: '/tmp', model: 'haiku', terminalInput: false }),
-        {},
+        'codex-cli',
         expect.objectContaining({
-          allowedTools: expect.arrayContaining([
-            'Bash(gh pr create:*)',
-            'Bash(jj bookmark track:*)',
-            'Bash(jj git push --branch:*)',
-          ]),
-        })
+          baseDir: '/tmp',
+          model: 'gpt-5.6-luna:medium',
+          terminalInput: false,
+        }),
+        {},
+        {}
       );
       const builtExecutor = mockBuildExecutorAndLog.mock.results[0]?.value as
         | { execute?: ReturnType<typeof vi.fn> }
@@ -948,7 +944,7 @@ describe('create_pr command helpers', () => {
       );
     });
 
-    test('uses the current codex mini model when config defaultExecutor is codex-cli', async () => {
+    test('uses the configured small-task executor and model', async () => {
       const executeMock = vi.fn(async (..._args: unknown[]) => {});
       mockBuildExecutorAndLog.mockReturnValueOnce({ execute: executeMock } as any);
       vi.spyOn(Bun, 'spawn').mockReturnValueOnce(
@@ -968,14 +964,18 @@ describe('create_pr command helpers', () => {
         '/tmp/410.plan.md',
         {
           baseDir: '/tmp',
-          config: { defaultExecutor: 'codex-cli' } as any,
+          config: {
+            smallTasks: { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
+          } as any,
         }
       );
 
       expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
         'codex-cli',
-        expect.objectContaining({ baseDir: '/tmp', model: 'gpt-5.6-luna' }),
-        expect.objectContaining({ defaultExecutor: 'codex-cli' }),
+        expect.objectContaining({ baseDir: '/tmp', model: 'gpt-5.6-luna:high' }),
+        expect.objectContaining({
+          smallTasks: { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
+        }),
         {}
       );
       expect(executeMock).toHaveBeenCalledTimes(1);

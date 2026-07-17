@@ -1833,7 +1833,7 @@ prCommand
   .command('create <planId>')
   .description('Create or update a draft PR for a plan using an AI agent')
   .option('-x, --executor <name>', 'The executor to use')
-  .option('-m, --model <model>', 'Model override (default: haiku)')
+  .option('-m, --model <model>', 'Model override (default: smallTasks.model)')
   .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
   .option('-w, --workspace <name>', 'Use a specific workspace')
   .option('--no-terminal-input', 'Disable terminal input')

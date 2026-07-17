@@ -460,8 +460,8 @@ ${maybeCustomInstructions(customInstructions)}`;
 
 /**
  * Schema for the combination step output. Extends ReviewOutputSchema with a
- * structured `source` field per issue. This is only used by the Haiku
- * combination step (not Codex), so optional fields are safe.
+ * structured `source` field per issue. This is only used by the small-task
+ * combination step, so optional fields are safe.
  */
 export const COMBINATION_OUTPUT_SCHEMA = {
   type: 'object' as const,

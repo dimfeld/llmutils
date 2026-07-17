@@ -1886,6 +1886,20 @@ describe('configSchema', () => {
       expect(result.defaultOrchestrator).toBeUndefined();
     });
 
+    test('accepts small task executor and model overrides', () => {
+      const result = timConfigSchema.parse({
+        smallTasks: {
+          executor: 'codex-cli',
+          model: 'gpt-5.6-luna:medium',
+        },
+      });
+
+      expect(result.smallTasks).toEqual({
+        executor: 'codex-cli',
+        model: 'gpt-5.6-luna:medium',
+      });
+    });
+
     test('accepts orchestrator model and effort overrides per executor', () => {
       const result = timConfigSchema.parse({
         orchestrator: {

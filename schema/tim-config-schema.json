@@ -588,6 +588,25 @@
         }
       }
     },
+    "smallTasks": {
+      "description": "Defaults for small helper tasks such as PR creation and review issue merging",
+      "type": "object",
+      "properties": {
+        "executor": {
+          "description": "Executor for small helper tasks (default: codex-cli)",
+          "type": "string",
+          "enum": [
+            "claude-code",
+            "codex-cli"
+          ]
+        },
+        "model": {
+          "description": "Model for small helper tasks (default: gpt-5.6-luna:medium)",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "answerPr": {
       "type": "object",
       "properties": {
