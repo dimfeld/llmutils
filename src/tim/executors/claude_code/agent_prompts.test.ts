@@ -85,6 +85,14 @@ describe('agent_prompts failure protocol integration', () => {
     );
   });
 
+  it('tells reviewers not to mutate the shared workspace while testing', () => {
+    const def = getReviewerPrompt(context);
+    expect(def.prompt).toContain('Other reviewers may be examining the same workspace in parallel');
+    expect(def.prompt).toContain(
+      'Do not mutate code in the current workspace to test a hypothesis'
+    );
+  });
+
   it('includes dead code guidance in reviewer prompt', () => {
     const def = getReviewerPrompt(context);
     expect(def.prompt).toContain(
