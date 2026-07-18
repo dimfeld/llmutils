@@ -182,9 +182,17 @@ describe('buildAutoreviewPrompt', () => {
     prStatus: {} as any,
   };
 
-  test('plan-backed target includes correct review command with planId', () => {
+  test('plan-backed target loops ordinary review before one structural review', () => {
     const prompt = buildAutoreviewPrompt({ target: planTarget });
-    expect(prompt).toContain('tim review 376 --print');
+    const ordinaryCommand = 'tim review 376 --print';
+    const structuralCommand = 'tim review 376 --print --structural-only';
+    expect(prompt).toContain(ordinaryCommand);
+    expect(prompt).toContain(structuralCommand);
+    expect(prompt).toContain(
+      'Only after every ordinary issue has been fixed or explicitly skipped'
+    );
+    expect(prompt.indexOf(ordinaryCommand)).toBeLessThan(prompt.indexOf(structuralCommand));
+    expect(prompt).not.toContain('--include-structural');
   });
 
   test('plan-backed target mentions tim subagent implementer with planId', () => {

@@ -11,7 +11,7 @@ Patterns and gotchas for working with Git and JJ in `src/common/git.ts` and rela
 ## Merge Base Computation
 
 - `getMergeBase` uses HEAD by default, which is wrong in non-workspace mode where the plan branch isn't checked out. Always pass the plan branch as an explicit source ref when the working copy may not match the target branch.
-- The `useRemoteRef` option on `getMergeBase` controls whether `origin/` is prepended for Git refs. Some callers (e.g., `incremental_review.ts`) need local refs while others (e.g., `create_pr.ts`) need remote refs. Default is `true` (remote).
+- The `useRemoteRef` option on `getMergeBase` controls whether `origin/` is prepended for Git refs. Some callers (e.g., `review_diff.ts`) need local refs while others (e.g., `create_pr.ts`) need remote refs. Default is `true` (remote).
 
 ## JJ Bookmark Handling
 

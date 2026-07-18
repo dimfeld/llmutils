@@ -843,10 +843,13 @@ function addReviewCommandOptions(command: Command): Command {
       'Include changed files list in output (enabled by default except in minimal verbosity).'
     )
     .option('--no-suggestions', 'Hide suggestions in the formatted output.')
-    .option('--incremental', 'Only review changes since the last review for this plan.')
     .option(
-      '--since-last-review',
-      'Alias for --incremental. Only review changes since the last review.'
+      '--structural-only',
+      'Run only the full-plan Codex structural simplification review after code-review findings converge.'
+    )
+    .option(
+      '--include-structural',
+      'Run the Codex structural simplification review alongside the ordinary full-plan review.'
     )
     .option(
       '--issues',

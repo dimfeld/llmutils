@@ -16,7 +16,7 @@ import * as contextGatheringModule from '../utils/context_gathering.js';
 import * as reviewRunnerModule from '../review_runner.js';
 import * as executorsModule from '../executors/index.js';
 import * as reviewFormatterModule from '../formatters/review_formatter.js';
-import * as incrementalReviewModule from '../incremental_review.js';
+import * as reviewDiffModule from '../review_diff.js';
 import * as reviewPersistenceModule from '../review_persistence.js';
 import * as fileValidationModule from '../utils/file_validation.js';
 import * as cleanupPlanCreatorModule from '../utils/cleanup_plan_creator.js';
@@ -69,11 +69,13 @@ vi.mock('../formatters/review_formatter.js', () => ({
   createReviewResult: vi.fn(),
 }));
 
-vi.mock('../incremental_review.js', () => ({
-  storeLastReviewMetadata: vi.fn(),
-  getLastReviewMetadata: vi.fn(),
-  getIncrementalDiff: vi.fn(),
-}));
+vi.mock('../review_diff.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof reviewDiffModule>();
+  return {
+    ...actual,
+    generateDiffForReview: vi.fn(),
+  };
+});
 
 vi.mock('../review_persistence.js', () => ({
   saveReviewResult: vi.fn(),
@@ -243,14 +245,9 @@ beforeEach(async () => {
   } as any);
   vi.mocked(reviewFormatterModule.createReviewResult).mockImplementation((input: any) => input);
 
-  vi.mocked(incrementalReviewModule.storeLastReviewMetadata).mockResolvedValue(undefined);
-  vi.mocked(incrementalReviewModule.getLastReviewMetadata).mockResolvedValue(undefined);
-  vi.mocked(incrementalReviewModule.getIncrementalDiff).mockResolvedValue({
-    hasChanges: true,
-    changedFiles: [],
-    baseBranch: 'main',
-    diffContent: '',
-  } as any);
+  vi.mocked(reviewDiffModule.generateDiffForReview).mockResolvedValue({
+    ...baseDiff,
+  });
 
   vi.mocked(reviewPersistenceModule.saveReviewResult).mockResolvedValue('' as any);
   vi.mocked(reviewPersistenceModule.createReviewsDirectory).mockResolvedValue('' as any);
@@ -279,14 +276,54 @@ describe('review notifications', () => {
     expect(input.message).toContain('completed');
   });
 
-  test('passes structural review prompt builder for full-plan reviews', async () => {
+  test('omits structural review from ordinary full-plan reviews', async () => {
     const { handleReviewCommand } = await import('./review.js');
 
     await handleReviewCommand(123, { noSave: true, noAutofix: true }, mockCommand);
 
     const runOptions = runReviewSpy.mock.calls[0]?.[0];
+    expect(runOptions.buildStructuralPrompt).toBeUndefined();
+  });
+
+  test('includes structural review alongside ordinary review when requested', async () => {
+    const { handleReviewCommand } = await import('./review.js');
+
+    await handleReviewCommand(
+      123,
+      { noSave: true, noAutofix: true, includeStructural: true },
+      mockCommand
+    );
+
+    const runOptions = runReviewSpy.mock.calls[0]?.[0];
+    const primaryPrompt = runOptions.buildPrompt({
+      executorName: 'codex-cli',
+      includeDiff: false,
+      useSubagents: true,
+    });
+    expect(primaryPrompt).not.toContain('standalone plan implementation simplification review');
     expect(runOptions.buildStructuralPrompt).toEqual(expect.any(Function));
-    const prompt = runOptions.buildStructuralPrompt({ executorName: 'codex-cli' });
+    expect(runOptions.buildStructuralPrompt({ executorName: 'codex-cli' })).toContain(
+      'standalone plan implementation simplification review'
+    );
+  });
+
+  test('runs the standalone structural prompt when explicitly requested', async () => {
+    const { handleReviewCommand } = await import('./review.js');
+
+    await handleReviewCommand(
+      123,
+      { noSave: true, noAutofix: true, structuralOnly: true },
+      mockCommand
+    );
+
+    const runOptions = runReviewSpy.mock.calls[0]?.[0];
+    expect(runOptions.executorSelection).toBe('codex-cli');
+    expect(runOptions.buildStructuralPrompt).toBeUndefined();
+    const prompt = runOptions.buildPrompt({
+      executorName: 'codex-cli',
+      includeDiff: false,
+      useSubagents: true,
+    });
     expect(prompt).toContain('standalone plan implementation simplification review');
     expect(prompt).toContain('## Simplification Review');
     expect(prompt).toContain('Notify Plan');

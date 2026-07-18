@@ -948,11 +948,6 @@ export const timConfigSchema = z
           .string()
           .optional()
           .describe('Path to file containing custom review instructions'),
-        /** Enable incremental review behavior (only review changes since last review) */
-        incrementalReview: z
-          .boolean()
-          .optional()
-          .describe('Enable incremental reviews that only analyze changes since last review'),
         /** Glob patterns to exclude from review */
         excludePatterns: z
           .array(z.string())

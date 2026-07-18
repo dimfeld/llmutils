@@ -8,7 +8,7 @@ import {
   defaultModelForExecutor,
 } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
-import { generateDiffForReview, type DiffResult } from '../incremental_review.js';
+import { generateDiffForReview, type DiffResult } from '../review_diff.js';
 import type { PlanSchema } from '../planSchema.js';
 import { materializePlan } from '../plan_materialize.js';
 import { parsePlanIdFromCliArg, resolvePlanByNumericId } from '../plans.js';

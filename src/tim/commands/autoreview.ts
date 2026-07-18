@@ -152,6 +152,12 @@ function buildReviewCommandForTarget(target: ReviewTarget, base: string | undefi
   }
 }
 
+function buildStructuralReviewCommandForTarget(target: ReviewTarget): string | undefined {
+  return target.kind === 'plan'
+    ? `tim review ${target.planId} --print --structural-only`
+    : undefined;
+}
+
 function buildTargetDescription(target: ReviewTarget): string {
   switch (target.kind) {
     case 'plan':
@@ -264,8 +270,19 @@ You can also create a single inline review comment with \`POST repos/${linkedPr.
 
 export function buildAutoreviewPrompt(options: BuildAutoreviewPromptOptions): string {
   const reviewCommand = buildReviewCommandForTarget(options.target, options.base);
+  const structuralReviewCommand = buildStructuralReviewCommandForTarget(options.target);
   const targetDescription = buildTargetDescription(options.target);
   const prReviewTrailGuidance = buildPrReviewTrailGuidance(options.linkedPr);
+  const structuralCommandGuidance = structuralReviewCommand
+    ? `- After the ordinary review loop is clear, run \`${structuralReviewCommand}\` exactly once to find code-layout, ownership, duplication, and structural smells.`
+    : '';
+  const structuralWorkflow = structuralReviewCommand
+    ? `6. **Structural review**
+   - Only after every ordinary issue has been fixed or explicitly skipped, run \`${structuralReviewCommand}\` exactly once.
+   - Present its findings to the user using the same complete detail as ordinary findings, and ask which findings to fix or skip.
+   - Fix and commit the selected structural improvements, then run relevant targeted checks.
+   - Do not rerun the structural review automatically.`
+    : '';
 
   const prompt = `# Autoreview Orchestrator
 
@@ -274,6 +291,7 @@ You are the orchestrator for a tim review-and-fix loop targeting ${targetDescrip
 ## Available Commands
 
 - Run \`${reviewCommand}\` to review the current target. The command prints JSON; parse that JSON and use it as the source of truth for issues. This command will likely take a long time to run, so do not expect any output for a while after starting it.
+${structuralCommandGuidance}
 ${buildSubagentGuidance(options.target)}
 ${buildCommitGuidance(options.useJj === true)}
 
@@ -298,7 +316,9 @@ ${buildCommitGuidance(options.useJj === true)}
 5. **Loop**
    - Re-run \`${reviewCommand}\` after committing fixes.
    - Continue the review -> ask -> fix -> commit -> re-review loop until the user says to stop or no un-skipped issues remain.
-   - End with a short summary of fixed issues, skipped issues, and the final review state.
+   - Every rerun reviews the full target scope and may find issues that an earlier review missed.
+${structuralWorkflow}
+   - End with a short summary of fixed issues, skipped issues, structural improvements, and the final review state.
 
 ## Guardrails
 

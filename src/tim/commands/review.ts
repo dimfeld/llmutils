@@ -43,11 +43,10 @@ import {
   type ReviewMetadata,
 } from '../review_persistence.js';
 import {
-  storeLastReviewMetadata,
   generateDiffForReview,
-  type IncrementalReviewMetadata,
+  validateReviewSinceCommit,
   type DiffResult,
-} from '../incremental_review.js';
+} from '../review_diff.js';
 import { access, constants } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
@@ -531,6 +530,7 @@ export interface ReviewCommandOptions {
   pr?: string;
   plan?: number;
   base?: string;
+  since?: string;
   workspace?: string;
   autoWorkspace?: boolean;
   nonInteractive?: boolean;
@@ -549,11 +549,8 @@ export interface ReviewCommandOptions {
   noColor?: boolean;
   showFiles?: boolean;
   noSuggestions?: boolean;
-  incremental?: boolean;
-  sinceLastReview?: boolean;
   issues?: boolean;
   saveIssues?: boolean;
-  since?: string;
   autofix?: boolean;
   autofixAll?: boolean;
   noAutofix?: boolean;
@@ -568,6 +565,8 @@ export interface ReviewCommandOptions {
   inputFile?: string | string[];
   previousResponse?: string;
   focus?: string;
+  structuralOnly?: boolean;
+  includeStructural?: boolean;
 }
 
 type ReviewLog = (...args: unknown[]) => void;
@@ -612,14 +611,14 @@ const PLANLESS_REVIEW_REJECTED_OPTIONS: Array<{
     rejectWhen: (options) => options.cleanupAssign != null,
   },
   {
-    key: 'incremental',
-    flag: '--incremental',
-    rejectWhen: (options) => options.incremental === true,
+    key: 'structuralOnly',
+    flag: '--structural-only',
+    rejectWhen: (options) => options.structuralOnly === true,
   },
   {
-    key: 'sinceLastReview',
-    flag: '--since-last-review',
-    rejectWhen: (options) => options.sinceLastReview === true,
+    key: 'includeStructural',
+    flag: '--include-structural',
+    rejectWhen: (options) => options.includeStructural === true,
   },
 ];
 
@@ -629,6 +628,33 @@ function validatePlanlessReviewOptions(options: ReviewCommandOptions): void {
       throw new Error(`${rejected.flag} requires a plan-backed review target.`);
     }
   }
+}
+
+function validateStructuralReviewOptions(options: ReviewCommandOptions): void {
+  if (options.structuralOnly && options.includeStructural) {
+    throw new Error('--structural-only and --include-structural are mutually exclusive.');
+  }
+  if (options.includeStructural && (options.taskIndex != null || options.taskTitle != null)) {
+    throw new Error('--include-structural requires a full-plan review without task scope.');
+  }
+  if (!options.structuralOnly) {
+    return;
+  }
+  if (options.taskIndex != null || options.taskTitle != null) {
+    throw new Error('--structural-only requires a full-plan review without task scope.');
+  }
+  if (options.since != null) {
+    throw new Error('--structural-only cannot be combined with --since.');
+  }
+  if (options.executor != null && options.executor !== 'codex-cli' && options.executor !== 'both') {
+    throw new Error('--structural-only requires the codex-cli review executor.');
+  }
+}
+
+function formatNoReviewChangesMessage(options: ReviewCommandOptions, baseBranch: string): string {
+  return options.since
+    ? `No changes detected since commit ${options.since}. Nothing to review.`
+    : `No changes detected compared to ${baseBranch}. Nothing to review.`;
 }
 
 function normalizeReviewExecutorName(value: string | undefined): ReviewExecutorName | null {
@@ -1597,6 +1623,8 @@ export async function handleReviewCommand(
 
   const isInteractiveEnv = !isTunnelActive() && !isPrintMode && process.env.TIM_INTERACTIVE !== '0';
   const globalOpts = command.parent.opts();
+  validateReviewSinceCommit(options.since);
+  validateStructuralReviewOptions(options);
   let config = getDefaultConfig();
   let completionMessage = '';
   let completionStatus: 'success' | 'error' = 'success';
@@ -1646,7 +1674,6 @@ export async function handleReviewCommand(
       config = await loadGlobalConfigForNotifications(globalOpts.config);
       throw err;
     }
-
     const hasExplicitPlanlessSelector =
       options.current === true ||
       (typeof options.branch === 'string' && options.branch.trim().length > 0) ||
@@ -1772,9 +1799,7 @@ export async function handleReviewCommand(
 
         if (!planlessContext.diffResult.hasChanges) {
           reviewLog(
-            chalk.yellow(
-              `No changes detected compared to ${planlessContext.baseBranch}. Nothing to review.`
-            )
+            chalk.yellow(formatNoReviewChangesMessage(options, planlessContext.baseBranch))
           );
           skipNotification = true;
           return;
@@ -2003,24 +2028,14 @@ export async function handleReviewCommand(
         gitRoot,
         parentChain,
         completedChildren,
-        diffResult,
+        diffResult: gatheredDiffResult,
       } = context;
+      const diffResult = gatheredDiffResult;
       if (typeof planData.id !== 'number') {
         throw new Error('Plan must have a numeric ID.');
       }
       const contextPlanId = planData.id;
       notifyPlan = planData;
-
-      // Check if no changes were detected and early return for review
-      if (!options.issues && context.noChangesDetected) {
-        const nothingMessage =
-          options.incremental || options.sinceLastReview
-            ? 'No changes detected since last review. Nothing new to review.'
-            : 'No changes detected compared to trunk branch. Nothing to review.';
-        reviewLog(chalk.yellow(nothingMessage));
-        skipNotification = true;
-        return;
-      }
 
       reviewLog(chalk.green(`Reviewing plan: ${planData.id} - ${planData.title}`));
 
@@ -2076,6 +2091,12 @@ export async function handleReviewCommand(
         taskTitle: options.taskTitle,
       });
       const resolvedTaskIndexes = getResolvedTaskIndexesForScope(scopedPlanData, isScoped);
+      if (!options.issues && (context.noChangesDetected || !diffResult.hasChanges)) {
+        reviewLog(chalk.yellow(formatNoReviewChangesMessage(options, diffResult.baseBranch)));
+        skipNotification = true;
+        return;
+      }
+
       let previousReviewContext: string | undefined;
       try {
         previousReviewContext = await loadPreviousReviewContext(
@@ -2150,6 +2171,9 @@ export async function handleReviewCommand(
         return;
       }
 
+      const structuralReviewContext = options.structuralOnly
+        ? 'This is the standalone structural simplification pass. Ordinary correctness findings have already converged. Focus on high-confidence architectural and structural simplifications; do not reinterpret this pass as a fallback for unresolved code-review bugs.'
+        : undefined;
       const buildPrompt: ReviewPromptBuilder = ({ includeDiff, useSubagents }) =>
         buildReviewPrompt(
           scopedPlanData,
@@ -2166,28 +2190,37 @@ export async function handleReviewCommand(
         );
       const reviewUsesJj = await getUsingJj(gitRoot);
       const reviewHeadRef = planData.branch ?? (await getCurrentBranchName(gitRoot)) ?? 'HEAD';
-      const buildStructuralPrompt: StructuralReviewPromptBuilder | undefined = !isScoped
-        ? () =>
-            buildStandaloneSimplificationReviewPrompt({
-              metadata: buildPlanReviewMetadata({
-                planData,
-                parentChain,
-                completedChildren,
-                baseBranch: diffResult.baseBranch,
-                headRef: reviewHeadRef,
-              }),
-              useJj: reviewUsesJj,
-              customInstructions: customInstructions || undefined,
-            })
-        : undefined;
+      const structuralReviewInstructions = [customInstructions, structuralReviewContext]
+        .filter((value): value is string => Boolean(value))
+        .join('\n\n');
+      const buildStructuralPrompt: StructuralReviewPromptBuilder | undefined =
+        options.structuralOnly || options.includeStructural
+          ? () =>
+              buildStandaloneSimplificationReviewPrompt({
+                metadata: buildPlanReviewMetadata({
+                  planData,
+                  parentChain,
+                  completedChildren,
+                  baseBranch: diffResult.baseBranch,
+                  headRef: reviewHeadRef,
+                }),
+                useJj: reviewUsesJj,
+                customInstructions: structuralReviewInstructions,
+              })
+          : undefined;
+      const selectedBuildPrompt: ReviewPromptBuilder =
+        options.structuralOnly && buildStructuralPrompt
+          ? () => buildStructuralPrompt({ executorName: 'codex-cli' })
+          : buildPrompt;
+      const selectedExecutor = options.structuralOnly ? 'codex-cli' : options.executor;
 
       // Execute the review
       if (options.dryRun) {
         const prepared = await prepareReviewExecutors({
-          executorSelection: options.executor,
+          executorSelection: selectedExecutor,
           config,
           sharedExecutorOptions,
-          buildPrompt,
+          buildPrompt: selectedBuildPrompt,
         });
 
         log(chalk.cyan('\n## Dry Run - Generated Review Prompt\n'));
@@ -2197,7 +2230,7 @@ export async function handleReviewCommand(
           }
           log(preparedExecutor.prompt);
         }
-        if (buildStructuralPrompt && prepared.some((entry) => entry.name === 'codex-cli')) {
+        if (options.includeStructural && buildStructuralPrompt) {
           log(chalk.cyan(`\n### Executor: codex-cli structural simplification\n`));
           log(buildStructuralPrompt({ executorName: 'codex-cli' }));
         }
@@ -2228,12 +2261,12 @@ export async function handleReviewCommand(
 
         const runReviewCall = () =>
           runReview({
-            executorSelection: options.executor,
+            executorSelection: selectedExecutor,
             serialBoth: options.serialBoth,
             config,
             sharedExecutorOptions,
-            buildPrompt,
-            buildStructuralPrompt,
+            buildPrompt: selectedBuildPrompt,
+            buildStructuralPrompt: options.includeStructural ? buildStructuralPrompt : undefined,
             planInfo,
           });
 
@@ -2353,36 +2386,6 @@ export async function handleReviewCommand(
             reviewLog(
               chalk.green(
                 `Saved ${reviewResult.issues.length} review issue${reviewResult.issues.length === 1 ? '' : 's'} for later.`
-              )
-            );
-          }
-        }
-
-        // Store incremental review metadata after successful review
-        if (planData.id) {
-          try {
-            const currentCommitHash = await getCurrentCommitHash(gitRoot);
-            if (currentCommitHash) {
-              const incrementalMetadata: IncrementalReviewMetadata = {
-                lastReviewCommit: currentCommitHash,
-                lastReviewTimestamp: new Date(),
-                planId: planData.id.toString(),
-                baseBranch: diffResult.baseBranch,
-                reviewedFiles: diffResult.changedFiles,
-                changeCount: diffResult.changedFiles.length,
-              };
-
-              await storeLastReviewMetadata(gitRoot, planData.id.toString(), incrementalMetadata);
-              if (options.incremental || options.sinceLastReview) {
-                reviewLog(chalk.gray('Incremental review metadata updated for future reviews'));
-              }
-            }
-          } catch (metadataErr) {
-            const metadataErrorMessage =
-              metadataErr instanceof Error ? metadataErr.message : String(metadataErr);
-            reviewLog(
-              chalk.yellow(
-                `Warning: Could not store incremental review metadata: ${metadataErrorMessage}`
               )
             );
           }
@@ -3088,10 +3091,8 @@ export async function buildReviewPromptFromOptions(
     input?: string;
     inputFile?: string | string[];
     focus?: string;
-    incremental?: boolean;
-    sinceLastReview?: boolean;
-    since?: string;
     base?: string;
+    since?: string;
     previousResponse?: string;
   },
   globalOpts: {

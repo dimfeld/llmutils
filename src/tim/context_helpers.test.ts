@@ -185,7 +185,7 @@ describe('context_helpers', () => {
 
     expect(context).toContain('## Current Plan Context');
     expect(context).toContain('**Current Plan File:** ');
-    expect(context).toContain('.tim/plans/101.plan.md');
+    expect(context).toContain('**Current Plan File:** 101.plan.md');
     expect(context).toContain('**Parent Plan File:** 100.plan.md');
     expect(context).toContain('**Parent Plan:** Parent Plan (ID: 100)');
     expect(context).toContain('**Parent Goal:** Ship the feature set');

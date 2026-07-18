@@ -57,7 +57,7 @@ export function buildPrDescriptionPrompt(
   context: PlanContext,
   customInstructions?: string
 ): string {
-  const { planData, parentChain, completedChildren, siblingPlans = [], diffResult } = context;
+  const { planData, parentChain, completedChildren, siblingPlans, diffResult } = context;
 
   // Build parent plan context section if available
   const parentContext: string[] = [];
@@ -438,7 +438,7 @@ export async function handleDescriptionCommand(
   }
 
   // Gather plan context using the shared utility
-  // Description command doesn't use incremental features, so pass empty review options
+  // Description uses the default review diff options.
   const context = await gatherPlanContext(planId, { base: options.base }, globalOpts);
 
   // Check if no changes were detected and early return

@@ -87,6 +87,19 @@ Claude's `retryFastNoopOrchestratorTurn` continuation workaround.
 reflected in the orchestration prompt the same way as for Claude.
 `--review-executor` is reflected in normal/TDD prompts that invoke
 `tim subagent reviewer`, which delegates to the `tim review` handler.
+Ordinary reviews are stateless and always cover their complete declared task or
+plan scope. After findings are fixed or explicitly ignored, the orchestrator
+reruns that same complete scope until one ordinary pass reports no unhandled
+issues. A completed batch uses this same loop for its final full-plan review.
+
+The orchestrator itself compares successive findings and decides whether they
+represent the same underlying defect, a newly exposed issue, or a regression
+introduced by the latest fix. Recurrence is not inferred by the review command.
+After ordinary full-plan findings converge, the orchestrator runs one separate
+`--structural-only` Codex simplification review for code-layout and structural
+smells. Accepted structural findings are fixed and checked with targeted tests;
+the structural pass is not automatically repeated. Plan-backed `tim autoreview`
+uses the same ordinary-loop-then-structural sequence.
 A final Codex orchestrator message containing `FAILED:` returns structured
 failure output, matching the orchestrator-level failure contract used by the
 agent loop.

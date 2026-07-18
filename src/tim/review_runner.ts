@@ -210,16 +210,14 @@ export async function runReview(options: ReviewRunOptions): Promise<ReviewRunRes
   const executorOutputs: Partial<Record<ReviewExecutorName, string>> = {};
   const shouldRunSerial = options.serialBoth === true && preparedExecutors.length > 1;
 
-  const codexPreparedExecutor = preparedExecutors.find((executor) => executor.name === 'codex-cli');
-  const structuralPreparedExecutor =
-    codexPreparedExecutor && options.buildStructuralPrompt
-      ? {
-          name: 'codex-cli' as const,
-          executor: buildExecutorAndLog('codex-cli', options.sharedExecutorOptions, options.config),
-          prompt: options.buildStructuralPrompt({ executorName: 'codex-cli' }),
-          phase: 'structural-simplification-review' as const,
-        }
-      : null;
+  const structuralPreparedExecutor = options.buildStructuralPrompt
+    ? {
+        name: 'codex-cli' as const,
+        executor: buildExecutorAndLog('codex-cli', options.sharedExecutorOptions, options.config),
+        prompt: options.buildStructuralPrompt({ executorName: 'codex-cli' }),
+        phase: 'structural-simplification-review' as const,
+      }
+    : null;
   if (structuralPreparedExecutor) {
     log('Queued codex-cli structural simplification review.');
   }

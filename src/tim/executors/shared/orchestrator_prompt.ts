@@ -146,7 +146,7 @@ tasks:
 **CRITICAL**: Only mark tasks as \`done: true\` after they have been successfully implemented, tested, and reviewed. Do not mark tasks as done if:
 - Implementation failed or is incomplete
 - Tests are failing
-- Code review identified blocking issues
+- Review findings remain unhandled under the Review Iteration Policy
 
 You don't need to mark the entire plan file as complete. We will handle that for you. But if you do, you must use 'status: done'
 
@@ -247,7 +247,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
    - Run \`${reviewCommand}\` using the shell command tool.
    - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why. On subsequent review runs, also include a list of any issues from prior review output that you determined were not relevant or acceptable to leave as-is, so the reviewer knows not to flag them again.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
-${buildFinalBatchReviewGuidance(reviewCommand, options)}
+${buildFinalBatchReviewGuidance(planId, options)}
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.
    - The review output focuses on problems; don't expect positive feedback even if the code is perfect.`;
@@ -260,11 +260,11 @@ ${options.batchMode ? '6' : '5'}. **Iteration**
 - If the review output identifies issues or tests fail:
 - For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
 - Return to step ${options.batchMode ? '2' : '1'} when substantial code changes are required.
-- After implementing straightforward follow-up changes, run the relevant targeted checks yourself. If the entire set of changes is trivial and guaranteed to not introduce any bugs (e.g. just wording changes), you may skip re-running \`${reviewCommand}\`. If in doubt, run another review; even simple changes can sometimes have unintended downstream effects.
-- If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
-- **Review run limit**: Allow at most 3 or 4 review runs per task batch. On the final review cycle, you MUST still fix all critical and major issues — even if they appear to be pre-existing or from earlier tasks. Do not dismiss issues as "known gaps", "pre-existing", or "out of scope for this task." If an issue is truly impossible to fix (genuinely conflicting requirements, missing external dependencies), use the Failure Protocol below. Otherwise, implement the fix.
-- If you have reached the review run limit for the batch and there is still feedback worth addressing later, file a follow-up task for each remaining issue. **Be careful where you file it:** if you add the task to the current plan (\`${planId}\`), the next iteration of the harness will try to run it as part of this same run — this is correct if the feedback directly relates to the current plan, but any follow-up that should genuinely be deferred and handled as part of a different piece of work must be added to *that* existing sibling plan (\`tim add-task <sibling-plan-id> --title "<title>" --description "description including file, line etc."\`). In rare cases, if a review followup genuinely belongs at the end of the entire chain of sibling plans, you may add a new sibling plan to address that feedback.
-- Continue this loop until all tests pass, the implementation is satisfactory, and any required final full-plan batch review is clean`;
+- After implementing review follow-up changes, run the relevant targeted checks and then rerun the same ordinary review over its complete declared scope.
+- If the review repeats an issue that was supposedly fixed, re-examine the implementation and the evidence. Fix the underlying problem or reject the finding with a concrete explanation.
+- Continue this loop until all tests pass and either the ordinary review is clean or the bounded handoff procedure in the Review Iteration Policy has been completed.
+
+${buildReviewIterationGuidance(reviewCommand)}`;
 
   return `## Workflow Instructions
 
@@ -303,9 +303,10 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 
 - **DO NOT implement code directly**. Always delegate implementation tasks to the appropriate subagent via \`tim subagent\`.
 - **DO NOT write tests directly**. Always use the tester subagent via \`tim subagent tester\` for test execution and updates.
-- **DO NOT review code directly**. Always run \`${reviewCommand}\` for code quality assessment.
+- **Do not substitute your own review for the formal reviewer quality gate.** Always run \`${reviewCommand}\` for the required code quality assessment.
+- You may inspect code as needed to coordinate the work, evaluate reviewer findings, and perform the root-cause or structural analysis required by the Review Iteration Policy. This analysis does not replace a required reviewer pass.
 - Exception: if review feedback requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
-- After straightforward review follow-ups, run focused verification yourself. If the scope remains straightforward and verification is clear, you may skip re-running \`${reviewCommand}\`.
+- After review follow-ups, run focused verification and rerun \`${reviewCommand}\` over the same complete declared scope.
 - You are responsible only for coordination and ensuring the workflow is followed correctly.
 - The subagents have access to the same task instructions below that you do, so you don't need to repeat them. You should reference which specific task titles are being worked on so the subagents can focus on the right tasks.
 - When invoking subagents, provide clear, specific instructions in \`--input\` (or \`--input-file\`) about what needs to be done in addition to referencing the task titles.
@@ -361,18 +362,47 @@ function buildReviewCommand(planId: string, options: OrchestrationOptions): stri
   return baseCommand;
 }
 
-function buildFinalBatchReviewGuidance(
-  reviewCommand: string,
-  options: OrchestrationOptions
-): string {
+function buildStructuralReviewCommand(planId: string): string {
+  return `tim subagent reviewer ${planId} --print --output-file <output_path> --structural-only`;
+}
+
+function buildFinalBatchReviewGuidance(planId: string, options: OrchestrationOptions): string {
   if (!options.batchMode) {
     return '';
   }
 
+  const reviewCommand = buildReviewCommand(planId, options);
+  const structuralCommand = buildStructuralReviewCommand(planId);
   return `
-   - If the selected batch finishes all remaining tasks in the plan, run one final \`${reviewCommand}\` without any \`--task-index\` arguments so the entire completed plan state is reviewed before you stop.
-   - Treat findings from that final full-plan review exactly like normal review feedback: address them, run relevant verification, and re-run the final full-plan review until it no longer finds blocking issues.
+   - If the selected batch finishes all remaining tasks in the plan, enter the final-plan review sequence by running \`${reviewCommand}\` without any \`--task-index\` arguments so the entire completed plan state is reviewed before you stop. This ordinary review must inspect the entire completed plan scope.
+   - If that full-plan review reports issues, follow the Review Iteration Policy below. Every rerun intentionally reviews the entire plan scope, not only the latest fixes. Continue until the review is clean or the bounded handoff procedure has been completed.
+   - Only after the ordinary full-plan review loop has reached one of those two stopping conditions, run exactly one standalone structural simplification pass with \`${structuralCommand}\`, again without \`--task-index\`. Use it to find code-layout, ownership, duplication, and structural smells.
+   - Resolve the structural findings you accept and run relevant targeted checks. If you make structural changes, run exactly one complete ordinary review afterward to validate the resulting plan state, even if four ordinary reviews already ran before the structural pass. This post-structural validation review is an explicit exception to the ordinary review run limit.
+   - Do not restart the ordinary review loop after the post-structural validation review. Reject incorrect findings from that review with evidence and capture each remaining finding worth fixing in a follow-up task using the bounded handoff procedure.
+   - Do not rerun the structural pass automatically.
    - Any review findings related to previous tasks in this plan should still be considered, even if those tasks were not performed in this batch of work. The idea is a final quality pass on the entire plan.
+`;
+}
+
+function buildReviewIterationGuidance(reviewCommand: string): string {
+  return `## Review Iteration Policy
+
+- Every ordinary invocation of \`${reviewCommand}\`, including every follow-up after fixes, reviews the complete declared task or plan scope. Do not narrow a follow-up review to only the files changed by the latest fix.
+- Treat each full review as capable of finding issues earlier passes missed. After each review, fix every finding you accept and reject any incorrect finding with a concrete, evidence-based explanation. A finding that has been neither fixed nor explicitly rejected is unhandled.
+- Compare each new review result with the actual substance and cause of prior findings; do not rely only on category labels or filenames. Decide whether it is the same underlying defect, a different issue exposed by the fix, or a regression introduced by the fix. Keep this recurrence judgment in your own working notes; the review command does not classify it for you.
+- Watch for cascading findings: the same underlying defect recurring, a fix exposing another defect in the same responsibility boundary, or repeated fixes moving the problem between duplicated implementations.
+- On the second occurrence in such a cascade, pause instance-by-instance patching. As the orchestrator, inspect the implementation and prior findings yourself, identify the failed invariant, duplicated responsibility, or ownership problem, and write a concrete restructuring proposal before delegating more implementation.
+- This root-cause checkpoint is orchestrator analysis, not a separate review mode and not a request for the reviewer to solve a difficult bug. Prefer correcting the shared structure or consolidating responsibility when that addresses the cause. Pass the restructuring proposal and the relevant findings to the implementer.
+- After restructuring, rerun \`${reviewCommand}\` over the same complete declared scope.
+- After accepted fixes, run relevant targeted checks and repeat the complete ordinary review.
+- Stop the ordinary review loop when either:
+  1. targeted checks pass and a complete ordinary review reports no new unhandled findings; or
+  2. the fourth ordinary review has completed and the bounded handoff procedure below has been completed.
+- Allow at most 4 ordinary review runs per task batch during this iteration loop. The limit bounds iterative review execution; it does not mean that remaining feedback should be discarded. A single ordinary review used to validate changes from the standalone structural pass is allowed in addition to this limit.
+- After the fourth ordinary review, do not run another ordinary review as part of this iteration loop. For every remaining finding, either reject it with a concrete, evidence-based explanation or create a specific follow-up task if it is worth fixing.
+- A finding captured in a follow-up task is handled for purposes of completing this batch. Include the original finding, relevant files or locations, why it matters, and any structural analysis or proposed restructuring discovered during this review cycle.
+- **Be careful where you file follow-up work:** adding it to the current plan means the harness may select it in a later iteration of this plan. If it depends on work scheduled for a later sibling plan, add it to that existing sibling plan instead. In rare cases, feedback that genuinely belongs at the end of the entire sibling-plan chain may require a new sibling plan.
+- Once targeted checks pass and every finding from the fourth review and any post-structural validation review has been rejected or captured in a follow-up task, mark the original in-scope tasks done and complete the batch.
 `;
 }
 
@@ -473,7 +503,7 @@ ${options.batchMode ? '3' : '2'}. **Review Phase**
    - Run \`${reviewCommand}\` using the shell command tool.
    - Pass relevant implementation notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
-${buildFinalBatchReviewGuidance(reviewCommand, options)}
+${buildFinalBatchReviewGuidance(planId, options)}
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.
    - The review output focuses on problems; don't expect positive feedback even if the code is perfect.
@@ -484,9 +514,11 @@ ${progressSection}
 
 ${options.batchMode ? '5' : '4'}. **Iteration**
 - For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, focused refactors, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
-- After straightforward review follow-ups, run focused verification yourself. If the scope remains straightforward and verification is clear, you may skip re-running \`${reviewCommand}\`.
-- If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
-- Repeat the implement → review loop until review succeeds without blocking issues.`;
+- After review follow-ups, run focused verification and rerun \`${reviewCommand}\` over the same complete declared scope.
+- If the review repeats an issue that was supposedly fixed, re-examine the implementation and the evidence. Fix the underlying problem or reject the finding with a concrete explanation.
+- Repeat the implement → review loop until the ordinary review is clean or the bounded handoff procedure in the Review Iteration Policy has been completed.
+
+${buildReviewIterationGuidance(reviewCommand)}`;
 
   const failureProtocol = `
 ## Failure Protocol (Conflicting/Impossible Requirements)
@@ -502,7 +534,8 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
 
   const guidance = `## Important Guidelines
 
-- Do NOT implement or review code directly. Delegate implementation to \`tim subagent implementer\` and review to \`${reviewCommand}\`.
+- Do not substitute your own review for the formal reviewer quality gate. Delegate implementation to \`tim subagent implementer\` and always run \`${reviewCommand}\` for the required code quality assessment.
+- You may inspect code as needed to coordinate the work, evaluate reviewer findings, and perform the root-cause or structural analysis required by the Review Iteration Policy. This analysis does not replace a required reviewer pass.
 - When invoking subagents, give clear instructions in \`--input\` (or \`--input-file\`) referencing the specific task titles.
 - ${INPUT_COMBINATION_GUIDANCE}
 - Provide prior subagent outputs to the next subagent so they have full context.
@@ -638,7 +671,7 @@ Each subagent command may take a long time to complete. Always use a timeout of 
    - Run \`${reviewCommand}\` using the shell command tool.
    - Pass relevant TDD test output and implementation notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
-${buildFinalBatchReviewGuidance(reviewCommand, options)}
+${buildFinalBatchReviewGuidance(planId, options)}
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.`
     : `${verificationPhaseNumber}. **Testing Phase**
@@ -654,13 +687,13 @@ ${options.batchMode ? '5' : '4'}. **Review Phase**
    - Run \`${reviewCommand}\` using the shell command tool.
    - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why. On subsequent review runs, also include a list of any issues from prior review output that you determined were not relevant or acceptable to leave as-is, so the reviewer knows not to flag them again.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
-${buildFinalBatchReviewGuidance(reviewCommand, options)}
+${buildFinalBatchReviewGuidance(planId, options)}
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.`;
 
   const reviewIterationGuidance = `
 - For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, focused refactors, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
-- After these straightforward follow-up changes, run relevant targeted checks yourself. If the full set of changes is straightforward to verify, you may skip re-running \`${reviewCommand}\`.`;
+- After review follow-up changes, run relevant targeted checks and rerun \`${reviewCommand}\` over the same complete declared scope.`;
 
   const workflowInstructions = `## Workflow Instructions
 
@@ -690,10 +723,10 @@ ${iterationPhaseNumber}. **Iteration**
 - If verification/review identifies issues or tests fail:
 - Return to step ${options.batchMode ? '2' : '1'} when substantial code changes are required.
 - After each fix iteration, run relevant targeted checks before moving forward.${reviewIterationGuidance}
-- If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
-- **Review run limit**: Allow at most 3 or 4 review runs per task batch. On the final review cycle, you MUST still fix all critical and major issues — even if they appear to be pre-existing or from earlier tasks. Do not dismiss issues as "known gaps", "pre-existing", or "out of scope for this task." If an issue is truly impossible to fix (genuinely conflicting requirements, missing external dependencies), use the Failure Protocol below. Otherwise, implement the fix.
-- If you have reached the review run limit for the batch and there is still feedback worth addressing later, file a follow-up task for each remaining issue. **Be careful where you file it:** if you add the task to the current plan (\`${planId}\`), the next iteration of the harness will try to run it as part of this same run — this is correct if the feedback directly relates to the current plan, but any follow-up that should genuinely be deferred and handled as part of a different piece of work must be added to *that* existing sibling plan (\`tim add-task <sibling-plan-id> --title "<title>" --description "description including file, line etc."\`). In rare cases, if a review followup genuinely belongs at the end of the entire chain of sibling plans, you may add a new sibling plan to address that feedback.
-- Keep TDD order intact for each iteration, including any final full-plan batch review before stopping`;
+- If the review repeats an issue that was supposedly fixed, re-examine the implementation and the evidence. Fix the underlying problem or reject the finding with a concrete explanation.
+- Keep TDD order intact for each iteration, including the final full-plan review loop and structural pass before stopping.
+
+${buildReviewIterationGuidance(reviewCommand)}`;
 
   const failureProtocol = `
 ## Failure Protocol (Conflicting/Impossible Requirements)
@@ -707,13 +740,14 @@ ${iterationPhaseNumber}. **Iteration**
 - Do NOT continue to other phases or mark tasks done when a failure occurs.
 - You may add brief context (e.g. which tasks were active) if helpful.`;
 
-  const reviewCommandGuidance = `- Do NOT review code directly. Always run \`${reviewCommand}\` for code quality assessment.`;
+  const reviewCommandGuidance = `- Do not substitute your own review for the formal reviewer quality gate. Always run \`${reviewCommand}\` for the required code quality assessment.
+- You may inspect code as needed to coordinate the work, evaluate reviewer findings, and perform the root-cause or structural analysis required by the Review Iteration Policy. This analysis does not replace a required reviewer pass.`;
   const testingGuidance = isSimpleTdd
     ? ''
     : '- Do NOT write or run tests directly. Always delegate testing to `tim subagent tester`.';
   const reviewFollowupGuidance = `
 - Exception: if review feedback requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
-- After straightforward review follow-ups, run focused verification yourself. If the scope remains straightforward and verification is clear, you may skip re-running \`${reviewCommand}\`.`;
+- After review follow-ups, run focused verification and rerun \`${reviewCommand}\` over the same complete declared scope.`;
 
   const guidance = `## Important Guidelines
 

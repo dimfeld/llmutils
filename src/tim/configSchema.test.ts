@@ -1510,7 +1510,6 @@ describe('configSchema', () => {
           outputFormat: 'markdown' as const,
           saveLocation: './reviews',
           customInstructionsPath: './review-instructions.md',
-          incrementalReview: true,
           excludePatterns: ['*.test.ts', 'node_modules/**'],
         },
       };
@@ -1521,7 +1520,6 @@ describe('configSchema', () => {
       expect(result.review?.outputFormat).toBe('markdown');
       expect(result.review?.saveLocation).toBe('./reviews');
       expect(result.review?.customInstructionsPath).toBe('./review-instructions.md');
-      expect(result.review?.incrementalReview).toBe(true);
       expect(result.review?.excludePatterns).toEqual(['*.test.ts', 'node_modules/**']);
     });
 
@@ -1538,7 +1536,6 @@ describe('configSchema', () => {
       expect(result.review?.outputFormat).toBe('json');
       expect(result.review?.saveLocation).toBeUndefined();
       expect(result.review?.customInstructionsPath).toBeUndefined();
-      expect(result.review?.incrementalReview).toBeUndefined();
       expect(result.review?.excludePatterns).toBeUndefined();
     });
 
@@ -1661,38 +1658,6 @@ describe('configSchema', () => {
       }
     });
 
-    test('should validate incrementalReview as boolean', () => {
-      const configTrue = {
-        review: {
-          incrementalReview: true,
-        },
-      };
-
-      const configFalse = {
-        review: {
-          incrementalReview: false,
-        },
-      };
-
-      expect(() => timConfigSchema.parse(configTrue)).not.toThrow();
-      expect(() => timConfigSchema.parse(configFalse)).not.toThrow();
-
-      const resultTrue = timConfigSchema.parse(configTrue);
-      const resultFalse = timConfigSchema.parse(configFalse);
-
-      expect(resultTrue.review?.incrementalReview).toBe(true);
-      expect(resultFalse.review?.incrementalReview).toBe(false);
-
-      // Test invalid type
-      const invalidConfig = {
-        review: {
-          incrementalReview: 'true',
-        },
-      };
-
-      expect(() => timConfigSchema.parse(invalidConfig)).toThrow();
-    });
-
     test('should validate excludePatterns as array of strings', () => {
       const config = {
         review: {
@@ -1733,7 +1698,6 @@ describe('configSchema', () => {
         review: {
           focusAreas: ['security'],
           outputFormat: 'terminal' as const,
-          incrementalReview: true,
         },
         agents: {
           implementer: { instructions: './implementer.md' },
@@ -1745,7 +1709,6 @@ describe('configSchema', () => {
       expect(result.defaultExecutor).toBe('claude-code');
       expect(result.review?.focusAreas).toEqual(['security']);
       expect(result.review?.outputFormat).toBe('terminal');
-      expect(result.review?.incrementalReview).toBe(true);
       expect(result.agents?.implementer?.instructions).toBe('./implementer.md');
     });
 
@@ -1863,17 +1826,15 @@ describe('configSchema', () => {
       expect(result.defaultOrchestrator).toBe('claude-code');
     });
 
-    test('accepts generate.defaultExecutor with valid executor values', () => {
+    test('accepts generate.executor with valid executor values', () => {
       for (const value of ['claude-code', 'codex-cli'] as const) {
-        const result = timConfigSchema.parse({ generate: { defaultExecutor: value } });
-        expect(result.generate?.defaultExecutor).toBe(value);
+        const result = timConfigSchema.parse({ generate: { executor: value } });
+        expect(result.generate?.executor).toBe(value);
       }
     });
 
-    test('rejects invalid generate.defaultExecutor values', () => {
-      expect(() =>
-        timConfigSchema.parse({ generate: { defaultExecutor: 'invalid-executor' } })
-      ).toThrow();
+    test('rejects invalid generate.executor values', () => {
+      expect(() => timConfigSchema.parse({ generate: { executor: 'invalid-executor' } })).toThrow();
     });
 
     test('generate config is undefined when not specified', () => {

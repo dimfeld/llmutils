@@ -12,8 +12,7 @@ import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { getParentChain, getCompletedChildren } from './hierarchy.js';
-import { generateDiffForReview, getIncrementalSummary } from '../incremental_review.js';
-import type { DiffResult } from '../incremental_review.js';
+import { generateDiffForReview, type DiffResult } from '../review_diff.js';
 import { getGitRoot } from '../../common/git.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -39,13 +38,6 @@ export interface PlanContext {
   siblingPlans: PlanSchema[];
   /** Diff result containing changed files and content */
   diffResult: DiffResult;
-  /** Incremental review summary if applicable */
-  incrementalSummary?: {
-    lastReviewDate?: Date;
-    totalFiles: number;
-    newFiles: string[];
-    modifiedFiles: string[];
-  } | null;
   /** True if no changes were detected and review should be skipped */
   noChangesDetected?: boolean;
 }
@@ -60,7 +52,6 @@ export interface ContextGatheringDependencies {
   getGitRoot: typeof getGitRoot;
   getParentChain: typeof getParentChain;
   getCompletedChildren: typeof getCompletedChildren;
-  getIncrementalSummary: typeof getIncrementalSummary;
   resolveRepoRoot: typeof resolveRepoRoot;
   getRepositoryIdentity: typeof getRepositoryIdentity;
   loadEffectiveConfig: typeof loadEffectiveConfig;
@@ -77,7 +68,6 @@ const defaultDependencies: ContextGatheringDependencies = {
   getGitRoot,
   getParentChain,
   getCompletedChildren,
-  getIncrementalSummary,
   resolveRepoRoot,
   getRepositoryIdentity,
   loadEffectiveConfig,
@@ -89,7 +79,7 @@ const defaultDependencies: ContextGatheringDependencies = {
  * This function encapsulates the context-gathering logic previously embedded in handleReviewCommand.
  *
  * @param planId - Plan ID
- * @param options - Command options including incremental review settings
+ * @param options - Command options that control review context
  * @param globalOpts - Global CLI options including config path
  * @param deps - Injectable dependencies for testing
  * @returns Promise<PlanContext> containing all gathered context
@@ -97,8 +87,6 @@ const defaultDependencies: ContextGatheringDependencies = {
 export async function gatherPlanContext(
   planId: number,
   options: {
-    incremental?: boolean;
-    sinceLastReview?: boolean;
     since?: string;
     base?: string;
     cwd?: string;
@@ -195,51 +183,25 @@ export async function gatherPlanContext(
       baseDir: gitRoot,
     }));
 
-  // Handle incremental review options
-  const incrementalOptions = {
-    incremental: options.incremental || options.sinceLastReview,
-    sinceLastReview: options.sinceLastReview,
-    sinceCommit: options.since,
-    planId: planData.id?.toString(),
+  const diffOptions = {
     baseBranch,
+    sinceCommit: options.since,
   };
 
-  // Generate incremental summary if applicable
-  let incrementalSummary = null;
   let noChangesDetected = false;
-
-  if (incrementalOptions.incremental && planData.id) {
-    incrementalSummary = await deps.getIncrementalSummary(gitRoot, planData.id.toString(), []);
-    if (incrementalSummary) {
-      log(chalk.cyan(`Incremental review mode enabled`));
-      log(chalk.gray(`Last review: ${incrementalSummary.lastReviewDate?.toLocaleString()}`));
-      if (incrementalSummary.totalFiles === 0) {
-        log(chalk.yellow('No changes detected since last review.'));
-        noChangesDetected = true;
-      } else {
-        log(
-          chalk.cyan(
-            `Review delta: ${incrementalSummary.newFiles.length} new files, ${incrementalSummary.modifiedFiles.length} modified files`
-          )
-        );
-      }
-    }
-  }
-
-  // Generate diff against trunk branch or incremental diff
-  const diffResult = await deps.generateDiffForReview(gitRoot, incrementalOptions);
+  const diffResult = await deps.generateDiffForReview(gitRoot, diffOptions);
 
   if (!diffResult.hasChanges) {
-    const nothingMessage = incrementalOptions.incremental
-      ? 'No changes detected since last review.'
-      : 'No changes detected compared to trunk branch.';
-    log(chalk.yellow(nothingMessage));
+    log(
+      chalk.yellow(
+        options.since
+          ? `No changes detected since ${options.since}.`
+          : 'No changes detected compared to trunk branch.'
+      )
+    );
     noChangesDetected = true;
   } else {
-    const changedFilesMessage = incrementalOptions.incremental
-      ? `Found ${diffResult.changedFiles.length} changed files since last review`
-      : `Found ${diffResult.changedFiles.length} changed files`;
-    log(chalk.cyan(changedFilesMessage));
+    log(chalk.cyan(`Found ${diffResult.changedFiles.length} changed files`));
     log(chalk.gray(`Comparing against: ${diffResult.baseBranch}`));
   }
 
@@ -252,7 +214,6 @@ export async function gatherPlanContext(
     completedChildren,
     siblingPlans,
     diffResult,
-    incrementalSummary,
     noChangesDetected,
   };
 }

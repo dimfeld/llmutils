@@ -1128,7 +1128,7 @@ function assignOmittedLinesToNearestTag(
   tags: DiffRefTagSelection[]
 ): void {
   const total = parsed.body.length;
-  const covered = new Array<boolean>(total).fill(false);
+  const covered = Array.from({ length: total }, () => false);
   for (const tag of tags) {
     for (const index of tag.selectedIndices) {
       covered[index] = true;

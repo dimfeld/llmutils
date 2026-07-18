@@ -87,6 +87,6 @@ export function artifactMediaPath(
   artifactUuid: string,
   filename: string
 ): string {
-  const safeFilename = filename.replace(/\0/g, '').replace(/[\\/]+/g, '_');
+  const safeFilename = filename.replaceAll(String.fromCharCode(0), '').replace(/[\\/]+/g, '_');
   return `tim/plans/${planUuid}/${artifactUuid}/${safeFilename}`;
 }

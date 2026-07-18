@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { ReviewIssue } from '../formatters/review_formatter.js';
-import type { DiffResult } from '../incremental_review.js';
+import type { DiffResult } from '../review_diff.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   buildReviewPrompt,

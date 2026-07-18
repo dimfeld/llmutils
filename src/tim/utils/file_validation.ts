@@ -35,35 +35,6 @@ export function validateInstructionsFilePath(filePath: string, gitRoot: string):
     throw new Error(`Instructions file path is outside the allowed directory: ${filePath}`);
   }
 
-  // Additional security check: prevent common dangerous paths
-  // Only apply this check if the path is actually outside the git root or attempts to access system directories
-  const normalizedPath = resolvedPath.toLowerCase();
-  const normalizedGitRoot = resolvedGitRoot.toLowerCase();
-
-  // Skip dangerous path check if we're within a temp directory or git root is already safe
-  const isTempPath =
-    normalizedPath.includes('/tmp/') ||
-    normalizedPath.includes('/var/folders/') || // macOS temp
-    normalizedPath.includes('\\temp\\') ||
-    normalizedGitRoot.includes('/tmp/') ||
-    normalizedGitRoot.includes('/var/folders/');
-
-  if (!isTempPath) {
-    const dangerousPaths = [
-      '/etc/',
-      '/usr/',
-      '/var/log/', // More specific - /var itself might contain temp dirs
-      '/var/www/', // More specific
-      '/home/',
-      '/root/',
-      'c:\\windows\\',
-      'c:\\users\\',
-    ];
-    if (dangerousPaths.some((dangerous) => normalizedPath.startsWith(dangerous))) {
-      throw new Error(`Instructions file path contains dangerous directory: ${filePath}`);
-    }
-  }
-
   return resolvedPath;
 }
 

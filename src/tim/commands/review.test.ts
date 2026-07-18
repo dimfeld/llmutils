@@ -19,7 +19,7 @@ import {
   resolveSavedReviewIssues,
 } from './review.js';
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
-import { generateDiffForReview } from '../incremental_review.js';
+import { generateDiffForReview } from '../review_diff.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { PlanWithFilename } from '../utils/hierarchy.js';
 import { readPlanFile, resolvePlanByNumericId, writePlanFile, writePlanToDb } from '../plans.js';
@@ -39,7 +39,7 @@ import * as workspaceSetupModule from '../workspace/workspace_setup.js';
 import * as prContextGatheringModule from '../utils/pr_context_gathering.js';
 import * as workspaceIdentifierModule from '../assignments/workspace_identifier.js';
 import * as headlessModule from '../headless.js';
-import type { DiffResult } from '../incremental_review.js';
+import type { DiffResult } from '../review_diff.js';
 import type { PullRequestReviewTarget } from './review_target.js';
 
 vi.mock('../notifications.js', () => ({
@@ -792,7 +792,7 @@ test('uses review default executor from config when no executor option passed', 
 
   await handleReviewCommand(1, { noSave: true }, mockCommand);
 
-  expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
+  expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
 });
 
 describe('generateDiffForReview', () => {
@@ -832,25 +832,6 @@ describe('generateDiffForReview', () => {
       // Should throw a meaningful error if jj commands fail
       expect(error.message).toContain('Failed to generate');
     }
-  });
-
-  test('incremental mode without history avoids console stdout logging', async () => {
-    const gitRepoDir = await mkdtemp(join(tmpdir(), 'tim-git-test-'));
-
-    vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
-    vi.mocked(gitModule.getUsingJj).mockResolvedValue(false);
-
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
-    try {
-      await generateDiffForReview(gitRepoDir, { incremental: true, planId: '123' });
-    } catch (error) {
-      expect(error.message).toContain('Failed to generate');
-    } finally {
-      logSpy.mockRestore();
-    }
-
-    expect(logSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -1870,7 +1851,7 @@ describe('integration with executor system', () => {
     }
     const parsed = JSON.parse(output.slice(jsonStart, jsonEnd + 1));
     expect(parsed.planId).toBe('1');
-    expect(parsed.issues).toHaveLength(2);
+    expect(parsed.issues).toHaveLength(1);
   });
 });
 
@@ -2110,7 +2091,7 @@ describe('Parent plan context handling', () => {
     await handleReviewCommand(101, {}, mockCommand);
 
     expect(gatherPlanContextMock).toHaveBeenCalledTimes(1);
-    expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -2672,7 +2653,7 @@ describe('Security fixes', () => {
       };
 
       await expect(handleReviewCommand(1, {}, mockCommand)).rejects.toThrow(
-        /Review execution failed: Review failed\. .*codex-cli primary code review.*Network timeout.*codex-cli structural simplification review.*Network timeout/s
+        /Review execution failed: Network timeout/
       );
     });
   });
@@ -4408,20 +4389,21 @@ Updated by branch-name autofix
     }
   });
 
-  test('rejects --incremental for current target before workspace or executor allocation', async () => {
+  test('rejects an invalid --since commit before loading config or allocating resources', async () => {
     const setupWorkspaceSpy = vi.spyOn(workspaceSetupModule, 'setupWorkspace');
-    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
-    vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue('feature/no-plan');
 
     try {
       await expect(
         handleReviewCommand(
-          undefined,
-          { current: true, incremental: true },
+          123,
+          { since: 'not-a-commit', autoWorkspace: true },
           { parent: { opts: () => ({}) } }
         )
-      ).rejects.toThrow('--incremental requires a plan-backed review target.');
+      ).rejects.toThrow(
+        'Invalid value for --since: "not-a-commit". Expected a 7- to 40-character hexadecimal commit hash.'
+      );
 
+      expect(configLoaderModule.loadEffectiveConfig).not.toHaveBeenCalled();
       expect(setupWorkspaceSpy).not.toHaveBeenCalled();
       expect(executorsModule.buildExecutorAndLog).not.toHaveBeenCalled();
       expect(contextGatheringModule.gatherPlanContext).not.toHaveBeenCalled();

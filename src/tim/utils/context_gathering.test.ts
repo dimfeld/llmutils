@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import path from 'node:path';
 import { gatherPlanContext } from './context_gathering.js';
-import type { DiffResult } from '../incremental_review.js';
+import type { DiffResult } from '../review_diff.js';
 import type { PlanSchema } from '../planSchema.js';
 
 interface MockDependencies {
@@ -17,7 +17,6 @@ interface MockDependencies {
   getGitRoot: (cwd?: string) => Promise<string>;
   getParentChain: (plan: PlanSchema, allPlans: Map<number, PlanSchema>) => PlanSchema[];
   getCompletedChildren: (planId: number, allPlans: Map<number, PlanSchema>) => PlanSchema[];
-  getIncrementalSummary: (gitRoot: string, planId: string, opts: any[]) => Promise<any>;
   resolveRepoRoot: (configPath?: string, fallbackDir?: string) => Promise<string>;
   getRepositoryIdentity: (options?: { cwd?: string }) => Promise<{
     repositoryId: string;
@@ -70,7 +69,6 @@ describe('gatherPlanContext', () => {
       getGitRoot: async () => gitRoot,
       getParentChain: () => [],
       getCompletedChildren: () => [],
-      getIncrementalSummary: async () => null,
       resolveRepoRoot: async () => repoRoot,
       getRepositoryIdentity: async () => ({
         repositoryId: 'repo-id',
@@ -238,23 +236,6 @@ describe('gatherPlanContext', () => {
     );
   });
 
-  test('should handle incremental review scenarios', async () => {
-    const incrementalSummary = {
-      lastReviewDate: new Date('2023-01-01'),
-      totalFiles: 2,
-      newFiles: ['new.ts'],
-      modifiedFiles: ['modified.ts'],
-    };
-
-    mockDeps.getIncrementalSummary = async () => incrementalSummary;
-
-    const result = await gatherPlanContext(123, { incremental: true }, {}, mockDeps);
-
-    expect(result.incrementalSummary).toBeDefined();
-    expect(result.incrementalSummary?.totalFiles).toBe(2);
-    expect(result.incrementalSummary?.newFiles).toEqual(['new.ts']);
-  });
-
   test('should handle no changes detected', async () => {
     mockDeps.generateDiffForReview = async () => ({
       hasChanges: false,
@@ -282,23 +263,6 @@ describe('gatherPlanContext', () => {
     expect(result.completedChildren).toEqual([]);
   });
 
-  test('should handle incremental review with no changes since last review', async () => {
-    const incrementalSummary = {
-      lastReviewDate: new Date('2023-01-01'),
-      totalFiles: 0,
-      newFiles: [],
-      modifiedFiles: [],
-    };
-
-    mockDeps.getIncrementalSummary = async () => incrementalSummary;
-
-    const result = await gatherPlanContext(123, { incremental: true }, {}, mockDeps);
-
-    expect(result.incrementalSummary).toBeDefined();
-    expect(result.incrementalSummary?.totalFiles).toBe(0);
-    expect(result.noChangesDetected).toBe(true);
-  });
-
   test('should handle dependency injection properly', async () => {
     const customDeps = {
       ...mockDeps,
@@ -316,7 +280,7 @@ describe('gatherPlanContext', () => {
     expect(result.diffResult.baseBranch).toBe('feature-branch');
   });
 
-  test('should pass incremental options correctly to diff generation', async () => {
+  test('should pass an explicit since commit to diff generation', async () => {
     let capturedOptions: any;
 
     mockDeps.generateDiffForReview = async (_gitRoot: string, options?: any) => {
@@ -329,22 +293,10 @@ describe('gatherPlanContext', () => {
       };
     };
 
-    await gatherPlanContext(
-      123,
-      {
-        incremental: true,
-        sinceLastReview: true,
-        since: 'abc123',
-      },
-      {},
-      mockDeps
-    );
+    await gatherPlanContext(123, { since: 'abc1234' }, {}, mockDeps);
 
     expect(capturedOptions).toBeDefined();
-    expect(capturedOptions.incremental).toBe(true);
-    expect(capturedOptions.sinceLastReview).toBe(true);
-    expect(capturedOptions.sinceCommit).toBe('abc123');
-    expect(capturedOptions.planId).toBe('123');
+    expect(capturedOptions.sinceCommit).toBe('abc1234');
     expect(capturedOptions.baseBranch).toBe('main');
   });
 

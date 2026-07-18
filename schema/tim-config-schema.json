@@ -491,6 +491,23 @@
         "url": {
           "description": "WebSocket URL for headless output streaming",
           "type": "string"
+        },
+        "sessionRetention": {
+          "description": "Memory limits for completed web sessions",
+          "type": "object",
+          "properties": {
+            "maxInactiveSessions": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "maxInactiveBytes": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -1195,10 +1212,6 @@
         "customInstructionsPath": {
           "description": "Path to file containing custom review instructions",
           "type": "string"
-        },
-        "incrementalReview": {
-          "description": "Enable incremental reviews that only analyze changes since last review",
-          "type": "boolean"
         },
         "excludePatterns": {
           "description": "Glob patterns for files/directories to exclude from review",
