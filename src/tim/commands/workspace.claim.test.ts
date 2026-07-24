@@ -271,6 +271,59 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
 
     // Check that claimPlan was not called
     expect(mockClaimPlan).not.toHaveBeenCalled();
+    expect(mockCreateWorkspace).toHaveBeenCalledWith(
+      repoDir,
+      expect.any(String),
+      undefined,
+      expect.objectContaining({
+        workspaceCreation: expect.objectContaining({ createBranch: false }),
+      }),
+      expect.objectContaining({ createBranch: false })
+    );
+  });
+
+  test('creates a branch by default when creating a workspace for a plan', async () => {
+    const command = {
+      parent: {
+        parent: {
+          opts: () => ({}),
+        },
+      },
+    };
+
+    await handleWorkspaceAddCommand(1, {}, command);
+
+    expect(mockCreateWorkspace).toHaveBeenCalledWith(
+      repoDir,
+      'task-1',
+      expect.any(String),
+      expect.objectContaining({
+        workspaceCreation: expect.objectContaining({ createBranch: true }),
+      }),
+      expect.objectContaining({ createBranch: true })
+    );
+  });
+
+  test('honors --create-branch when creating a workspace without a plan', async () => {
+    const command = {
+      parent: {
+        parent: {
+          opts: () => ({}),
+        },
+      },
+    };
+
+    await handleWorkspaceAddCommand(undefined, { createBranch: true }, command);
+
+    expect(mockCreateWorkspace).toHaveBeenCalledWith(
+      repoDir,
+      expect.any(String),
+      undefined,
+      expect.objectContaining({
+        workspaceCreation: expect.objectContaining({ createBranch: true }),
+      }),
+      expect.objectContaining({ createBranch: true })
+    );
   });
 
   test('warns but continues if plan claiming fails', async () => {

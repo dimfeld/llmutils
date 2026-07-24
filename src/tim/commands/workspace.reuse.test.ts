@@ -1118,7 +1118,7 @@ describe.skipIf(!process.env.SLOW_TESTS)('workspace add --reuse and --try-reuse'
     }
   });
 
-  test('skips branch creation when createBranch is false on reuse', async () => {
+  test('skips branch creation by default on reuse without a plan', async () => {
     const existingWorkspace = path.join(clonesDir, 'reuse-no-branch-workspace');
     await fs.mkdir(existingWorkspace, { recursive: true });
     await initGitRepository(existingWorkspace, bareRemoteDir);
@@ -1134,17 +1134,13 @@ describe.skipIf(!process.env.SLOW_TESTS)('workspace add --reuse and --try-reuse'
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand(
-      undefined,
-      { reuse: true, createBranch: false, id: 'no-branch' },
-      {
+    await handleWorkspaceAddCommand(undefined, { reuse: true, id: 'no-branch' }, {
+      parent: {
         parent: {
-          parent: {
-            opts: () => ({ config: undefined }),
-          },
+          opts: () => ({ config: undefined }),
         },
-      } as any
-    );
+      },
+    } as any);
 
     const branchList = await runGit(existingWorkspace, ['branch', '--list', 'no-branch']);
     expect(branchList.stdout.trim()).toBe('');

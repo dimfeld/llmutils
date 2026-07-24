@@ -980,6 +980,7 @@ export async function handleWorkspaceAddCommand(
 ) {
   const globalOpts = command.parent!.parent!.opts();
   const workspaceType = resolveWorkspaceTypeOption(options);
+  const shouldCreateBranch = options.createBranch ?? planId !== undefined;
 
   if (options.reuse && options.tryReuse) {
     throw new Error('Cannot use both --reuse and --try-reuse');
@@ -1004,7 +1005,7 @@ export async function handleWorkspaceAddCommand(
       ...(options.cloneMethod && { cloneMethod: options.cloneMethod }),
       ...(options.sourceDir && { sourceDirectory: options.sourceDir }),
       ...(options.repoUrl && { repositoryUrl: options.repoUrl }),
-      ...(options.createBranch !== undefined && { createBranch: options.createBranch }),
+      createBranch: shouldCreateBranch,
     },
   };
 
@@ -1093,7 +1094,7 @@ export async function handleWorkspaceAddCommand(
         : undefined;
     const reuseResult = await tryReuseExistingWorkspace(effectiveConfig, trackingFilePath, {
       fromBranch: options.fromBranch,
-      createBranch: options.createBranch,
+      createBranch: shouldCreateBranch,
       branchName,
       planData,
       resolvedPlanFilePath,
@@ -1137,7 +1138,7 @@ export async function handleWorkspaceAddCommand(
       resolvedPlanFilePath,
       effectiveConfig,
       {
-        createBranch: options.createBranch ?? true,
+        createBranch: shouldCreateBranch,
         ...(customBranchName && { branchName: customBranchName }),
         ...(options.fromBranch && { fromBranch: options.fromBranch }),
         ...(planData && { planData }),

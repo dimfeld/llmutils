@@ -179,7 +179,7 @@ tim workspace list --format json              # For programmatic use
 
 ## Workspace Creation Design Notes
 
-When creating a new workspace (`tim workspace add`), branch setup uses a deferred approach — branches are created locally in the execution workspace and only pushed to origin after the command produces actual filesystem changes:
+When creating a new workspace (`tim workspace add`), a branch is created by default when a plan ID is provided. Standalone workspaces created without a plan ID stay on the cloned branch by default; pass `--create-branch` to create a branch for one. When branch creation is enabled, setup uses a deferred approach — branches are created locally in the execution workspace and only pushed to origin after the command produces actual filesystem changes:
 
 1. **Fetch and check**: The execution workspace fetches from origin to see if the branch already exists remotely.
 2. **Existing branch**: If the branch exists on the remote, it is checked out in the execution workspace.
