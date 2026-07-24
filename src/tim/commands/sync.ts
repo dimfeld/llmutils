@@ -58,8 +58,158 @@ interface SyncResolveCommandOptions {
   manual?: string;
 }
 
+interface RejectedOperationRow {
+  operation_uuid: string;
+  project_uuid: string;
+  origin_node_id: string;
+  local_sequence: number;
+  target_type: string;
+  target_key: string;
+  operation_type: string;
+  payload: string;
+  last_error: string | null;
+  updated_at: string;
+  project_id: number | null;
+  repository_id: string | null;
+  remote_label: string | null;
+}
+
+interface RejectedOperationPlanRef {
+  role: string;
+  plan_uuid: string;
+  plan_id: number | null;
+  title: string | null;
+}
+
+interface RejectedOperationConflict {
+  field_path: string | null;
+  base_value: string | null;
+  incoming_value: string | null;
+  attempted_patch: string | null;
+  current_value: string | null;
+  reason: string;
+}
+
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return count === 1 ? singular : plural;
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatRejectedProject(row: RejectedOperationRow): string {
+  const payload = parseJsonRecord(row.payload);
+  const payloadName =
+    typeof payload?.remoteLabel === 'string'
+      ? payload.remoteLabel
+      : typeof payload?.repositoryId === 'string'
+        ? payload.repositoryId
+        : null;
+  const name = row.remote_label ?? row.repository_id ?? payloadName;
+  if (!name) {
+    return row.project_uuid;
+  }
+  return `${name}${row.project_id === null ? '' : ` (project ${row.project_id})`}`;
+}
+
+function requestedNumericPlanIds(payload: string): Map<string, number> {
+  const parsed = parseJsonRecord(payload);
+  const planUuid =
+    typeof parsed?.planUuid === 'string'
+      ? parsed.planUuid
+      : typeof parsed?.newPlanUuid === 'string'
+        ? parsed.newPlanUuid
+        : null;
+  const numericPlanId = typeof parsed?.numericPlanId === 'number' ? parsed.numericPlanId : null;
+  return planUuid && numericPlanId !== null ? new Map([[planUuid, numericPlanId]]) : new Map();
+}
+
+function formatRejectedPlan(
+  ref: RejectedOperationPlanRef,
+  requestedPlanIds: ReadonlyMap<string, number>
+): string {
+  const planId = ref.plan_id ?? requestedPlanIds.get(ref.plan_uuid);
+  if (planId === undefined) {
+    return `${ref.plan_uuid} (${ref.role})`;
+  }
+  const title = ref.title ? ` — ${ref.title}` : '';
+  return `#${planId}${title} (${ref.role})`;
+}
+
+function formatConflictValue(value: string | null): string | null {
+  if (value === null) {
+    return null;
+  }
+  if (value.startsWith('{') || value.startsWith('[')) {
+    try {
+      return JSON.stringify(JSON.parse(value) as unknown);
+    } catch {
+      // The value is ordinary text that happens to begin with a JSON delimiter.
+    }
+  }
+  return JSON.stringify(value);
+}
+
+function formatRejectedPayload(payload: string): string {
+  try {
+    return JSON.stringify(JSON.parse(payload) as unknown);
+  } catch {
+    return payload;
+  }
+}
+
+function formatRejectedOperation(
+  row: RejectedOperationRow,
+  planRefs: RejectedOperationPlanRef[],
+  conflicts: RejectedOperationConflict[]
+): string {
+  const lines = [
+    `Rejected sync operation ${row.operation_uuid}`,
+    `  Operation: ${row.operation_type}`,
+    `  Project: ${formatRejectedProject(row)}`,
+  ];
+  if (planRefs.length > 0) {
+    const requestedPlanIds = requestedNumericPlanIds(row.payload);
+    lines.push(
+      `  ${planRefs.length === 1 ? 'Plan' : 'Plans'}: ${planRefs
+        .map((ref) => formatRejectedPlan(ref, requestedPlanIds))
+        .join('; ')}`
+    );
+  }
+  lines.push(
+    `  Target: ${row.target_type} ${row.target_key}`,
+    `  Origin: ${row.origin_node_id}, sequence ${row.local_sequence}`,
+    `  Rejected at: ${row.updated_at}`,
+    `  Reason: ${row.last_error ?? 'No reason recorded'}`,
+    `  Attempted values: ${formatRejectedPayload(row.payload)}`
+  );
+
+  for (const conflict of conflicts) {
+    lines.push(
+      `  Conflict${conflict.field_path ? ` (${conflict.field_path})` : ''}: ${conflict.reason}`
+    );
+    const values = [
+      ['base', formatConflictValue(conflict.base_value)],
+      ['incoming', formatConflictValue(conflict.incoming_value)],
+      ['current', formatConflictValue(conflict.current_value)],
+      ['patch', formatConflictValue(conflict.attempted_patch)],
+    ] as const;
+    for (const [label, value] of values) {
+      if (value !== null) {
+        lines.push(`    ${label}: ${value}`);
+      }
+    }
+  }
+
+  return lines.join('\n');
 }
 
 async function getMaterializedPlanIds(repoRoot: string): Promise<number[]> {
@@ -291,31 +441,26 @@ export async function handleSyncShowRejectedCommand(
     .prepare(
       `
         SELECT
-          operation_uuid,
-          origin_node_id,
-          local_sequence,
-          target_type,
-          target_key,
-          operation_type,
-          last_error,
-          created_at,
-          updated_at
-        FROM sync_operation
-        WHERE status = 'rejected'
-        ORDER BY updated_at DESC, local_sequence DESC
+          operation.operation_uuid,
+          operation.project_uuid,
+          operation.origin_node_id,
+          operation.local_sequence,
+          operation.target_type,
+          operation.target_key,
+          operation.operation_type,
+          operation.payload,
+          operation.last_error,
+          operation.updated_at,
+          project.id AS project_id,
+          project.repository_id,
+          project.remote_label
+        FROM sync_operation operation
+        LEFT JOIN project ON project.uuid = operation.project_uuid
+        WHERE operation.status = 'rejected'
+        ORDER BY operation.updated_at DESC, operation.local_sequence DESC
       `
     )
-    .all() as Array<{
-    operation_uuid: string;
-    origin_node_id: string;
-    local_sequence: number;
-    target_type: string;
-    target_key: string;
-    operation_type: string;
-    last_error: string | null;
-    created_at: string;
-    updated_at: string;
-  }>;
+    .all() as RejectedOperationRow[];
 
   if (rows.length === 0) {
     log('No rejected sync operations.');
@@ -323,18 +468,32 @@ export async function handleSyncShowRejectedCommand(
   }
 
   for (const row of rows) {
-    log(
-      [
-        row.operation_uuid,
-        row.operation_type,
-        row.target_type,
-        row.target_key,
-        row.origin_node_id,
-        row.local_sequence,
-        row.updated_at,
-        row.last_error ?? '-',
-      ].join('\t')
-    );
+    const planRefs = db
+      .prepare(
+        `
+          SELECT ref.role, ref.plan_uuid, plan.plan_id, plan.title
+          FROM sync_operation_plan_ref ref
+          LEFT JOIN plan ON plan.uuid = ref.plan_uuid
+          WHERE ref.operation_uuid = ?
+          ORDER BY
+            CASE ref.role WHEN 'target' THEN 0 WHEN 'source' THEN 1 ELSE 2 END,
+            ref.role,
+            plan.plan_id,
+            ref.plan_uuid
+        `
+      )
+      .all(row.operation_uuid) as RejectedOperationPlanRef[];
+    const conflicts = db
+      .prepare(
+        `
+          SELECT field_path, base_value, incoming_value, attempted_patch, current_value, reason
+          FROM sync_conflict
+          WHERE operation_uuid = ?
+          ORDER BY created_at, conflict_id
+        `
+      )
+      .all(row.operation_uuid) as RejectedOperationConflict[];
+    log(formatRejectedOperation(row, planRefs, conflicts));
   }
 }
 

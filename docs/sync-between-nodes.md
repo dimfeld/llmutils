@@ -258,6 +258,18 @@ If operations are stuck in `sending` after a crashed sync process and no other s
 tim sync run --recover-stranded
 ```
 
+Rejected operations do not retry automatically. Inspect their rejection reason and attempted values
+before clearing their records:
+
+```bash
+tim sync show-rejected
+tim sync clear-rejected
+```
+
+`show-rejected` resolves project names and numeric plan IDs when those entities are still available (or
+the requested plan ID was recorded in the operation). It also shows stored base, incoming, and current
+conflict values when a conflict record is available.
+
 Conflicts are resolved on the main node:
 
 ```bash

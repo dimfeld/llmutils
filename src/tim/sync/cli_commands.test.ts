@@ -29,6 +29,7 @@ import {
   addPlanListItemOperation,
   addPlanTagOperation,
   addPlanTaskOperation,
+  createPlanOperation,
   deletePlanOperation,
   deleteProjectSettingOperation,
   markPlanTaskDoneOperation,
@@ -441,6 +442,7 @@ describe('tim sync CLI node commands', () => {
   });
 
   test('sync show-rejected lists rejected operation records', async () => {
+    seedPlan();
     const queued = await addPlanTagOperation(
       PROJECT_UUID,
       { planUuid: PLAN_UUID, tag: 'queued' },
@@ -472,21 +474,82 @@ describe('tim sync CLI node commands', () => {
         ack_metadata: null,
       });
     }
+    insertSyncConflict(db, {
+      conflict_id: 'show-rejected-conflict',
+      operation_uuid: rejected.operationUuid,
+      project_uuid: PROJECT_UUID,
+      target_type: rejected.targetType,
+      target_key: rejected.targetKey,
+      field_path: 'tags',
+      base_value: '["base-tag"]',
+      base_hash: null,
+      incoming_value: '["base-tag","rejected"]',
+      attempted_patch: null,
+      current_value: '["current-tag"]',
+      original_payload: JSON.stringify(rejected.op),
+      normalized_payload: JSON.stringify(rejected.op),
+      reason: 'stale_revision',
+      origin_node_id: PERSISTENT_NODE,
+      resolved_at: null,
+      resolution: null,
+      resolved_by_node: null,
+    });
 
     await handleSyncShowRejectedCommand({}, command, { db, config: config('persistent') });
 
     expect(mockLog).toHaveBeenCalledTimes(1);
     const [line] = mockLog.mock.calls[0];
-    expect(line).toContain(rejected.operationUuid);
-    expect(line).toContain('plan.add_tag');
-    expect(line).toContain(`plan:${PLAN_UUID}`);
-    expect(line).toContain('bad operation');
+    expect(line).toContain(`Rejected sync operation ${rejected.operationUuid}`);
+    expect(line).toContain('Operation: plan.add_tag');
+    expect(line).toContain('Project: github.com__example__repo (project 1)');
+    expect(line).toContain('Plan: #1 — Plan (target)');
+    expect(line).toContain(`Target: plan plan:${PLAN_UUID}`);
+    expect(line).toContain('Reason: bad operation');
+    expect(line).toContain(`Attempted values: ${JSON.stringify(rejected.op)}`);
+    expect(line).toContain('Conflict (tags): stale_revision');
+    expect(line).toContain('base: ["base-tag"]');
+    expect(line).toContain('incoming: ["base-tag","rejected"]');
+    expect(line).toContain('current: ["current-tag"]');
   });
 
   test('sync show-rejected reports when there are no rejected operation records', async () => {
     await handleSyncShowRejectedCommand({}, command, { db, config: config('persistent') });
 
     expect(mockLog).toHaveBeenCalledWith('No rejected sync operations.');
+  });
+
+  test('sync show-rejected uses a requested numeric ID for a plan that was not created', async () => {
+    const rejected = await createPlanOperation(
+      {
+        projectUuid: PROJECT_UUID,
+        planUuid: PLAN_UUID,
+        numericPlanId: 42,
+        title: 'Rejected plan',
+      },
+      { originNodeId: PERSISTENT_NODE, localSequence: 1 }
+    );
+    insertSyncOperation(db, {
+      operation_uuid: rejected.operationUuid,
+      project_uuid: PROJECT_UUID,
+      origin_node_id: PERSISTENT_NODE,
+      local_sequence: rejected.localSequence,
+      target_type: rejected.targetType,
+      target_key: rejected.targetKey,
+      operation_type: rejected.op.type,
+      base_revision: null,
+      base_hash: null,
+      payload: JSON.stringify(rejected.op),
+      status: 'rejected',
+      last_error: 'numeric ID is already in use',
+      acked_at: null,
+      ack_metadata: null,
+    });
+
+    await handleSyncShowRejectedCommand({}, command, { db, config: config('persistent') });
+
+    const [line] = mockLog.mock.calls[0];
+    expect(line).toContain('Plan: #42 (target)');
+    expect(line).toContain('title":"Rejected plan"');
   });
 
   test('sync conflicts lists open conflicts on main and rejects on persistent', async () => {
