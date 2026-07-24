@@ -1,15 +1,11 @@
 import { render } from 'svelte/server';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import type { ProjectWithMetadata } from '$lib/server/db_queries.js';
 
-const { pageState, uiState } = vi.hoisted(() => ({
+const { pageState } = vi.hoisted(() => ({
   pageState: {
     url: new URL('http://localhost/projects/1/sessions'),
-  },
-  uiState: {
-    sidebarCollapsed: true,
-    toggleSidebar: vi.fn(),
   },
 }));
 
@@ -43,10 +39,6 @@ vi.mock('$lib/stores/project.svelte.js', () => ({
   getSidebarOrderedProjects: (projects: any[]) => projects,
 }));
 
-vi.mock('$lib/stores/ui_state.svelte.js', () => ({
-  useUIState: () => uiState,
-}));
-
 import ProjectSidebar from './ProjectSidebar.svelte';
 
 function makeProject(overrides: Partial<ProjectWithMetadata> = {}): ProjectWithMetadata {
@@ -77,12 +69,7 @@ function makeProject(overrides: Partial<ProjectWithMetadata> = {}): ProjectWithM
 }
 
 describe('ProjectSidebar', () => {
-  beforeEach(() => {
-    uiState.sidebarCollapsed = true;
-    uiState.toggleSidebar.mockReset();
-  });
-
-  test('renders the collapsed sidebar by default with avatar links and a featured divider', () => {
+  test('always renders the compact project rail with avatar links and a featured divider', () => {
     pageState.url = new URL('http://localhost/projects/1/sessions');
 
     const { body } = render(ProjectSidebar, {
@@ -103,7 +90,7 @@ describe('ProjectSidebar', () => {
     });
 
     expect(body).toContain('class="flex w-12 shrink-0 flex-col');
-    expect(body).toContain('title="Expand sidebar"');
+    expect(body).not.toContain('Expand sidebar');
     expect(body).toContain('href="/projects/all/sessions"');
     expect(body).toContain('>ALL<');
     expect(body).toContain('href="/projects/1/sessions"');
@@ -111,49 +98,9 @@ describe('ProjectSidebar', () => {
     expect(body).toContain('href="/projects/2/sessions"');
     expect(body).toContain('>HP<');
     expect(body).toContain('background-color: #e74c3c;');
-    expect(body).toContain('title="hidden-project"');
+    expect(body).toContain('aria-label="hidden-project"');
     expect(body).toContain('class="my-1 w-6 border-t border-border"');
     expect(body).not.toContain('>Other Projects<');
-  });
-
-  test('renders the expanded sidebar with an other-projects section when toggled open', () => {
-    pageState.url = new URL('http://localhost/projects/1/sessions');
-    uiState.sidebarCollapsed = false;
-
-    const { body } = render(ProjectSidebar, {
-      props: {
-        projects: [
-          makeProject({ id: 1, repository_id: 'featured-project', featured: true }),
-          makeProject({ id: 2, repository_id: 'hidden-project', featured: false }),
-        ],
-        selectedProjectId: '1',
-        currentUsername: 'alice',
-      },
-    });
-
-    expect(body).toContain('class="flex w-56 shrink-0 flex-col');
-    expect(body).toContain('>Projects<');
-    expect(body).toContain('title="Collapse sidebar"');
-    expect(body).toContain('>featured-project<');
-    expect(body).toContain('>hidden-project<');
-    expect(body).toContain('>Other Projects<');
-    expect(body).toContain('<details class="mt-2">');
-  });
-
-  test('hides the other-projects section in expanded mode when all projects are featured', () => {
-    pageState.url = new URL('http://localhost/projects/1/sessions');
-    uiState.sidebarCollapsed = false;
-
-    const { body } = render(ProjectSidebar, {
-      props: {
-        projects: [makeProject({ id: 1, repository_id: 'featured-project', featured: true })],
-        selectedProjectId: '1',
-        currentUsername: 'alice',
-      },
-    });
-
-    expect(body).not.toContain('>Other Projects<');
-    expect(body).not.toContain('<details');
   });
 
   test('uses the sessions tab for the all-projects link when the current tab is settings', () => {
@@ -173,8 +120,6 @@ describe('ProjectSidebar', () => {
 
   test('collapsed avatar uses display name (owner-stripped) for self-owned repos', () => {
     pageState.url = new URL('http://localhost/projects/1/sessions');
-    uiState.sidebarCollapsed = true;
-
     const { body } = render(ProjectSidebar, {
       props: {
         projects: [makeProject({ id: 1, repository_id: 'alice/llmutils', featured: true })],

@@ -3,6 +3,7 @@
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import PrList from '$lib/components/PrList.svelte';
+  import CollapsibleItemSidebar from '$lib/components/CollapsibleItemSidebar.svelte';
   import {
     fullRefreshProjectPrs,
     getProjectPrs,
@@ -108,7 +109,7 @@
 {#if prData}
   <div class="flex h-full w-full">
     {#key projectId}
-      <div class="w-96 shrink-0 border-r border-border">
+      <CollapsibleItemSidebar label="Pull requests">
         {#if !prData.tokenConfigured && !prData.webhookConfigured}
           <div class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
             <p class="text-sm font-medium text-foreground">GitHub Token Required</p>
@@ -196,7 +197,7 @@
             {/if}
           </div>
         {/if}
-      </div>
+      </CollapsibleItemSidebar>
     {/key}
 
     <div class="flex-1 overflow-y-auto">

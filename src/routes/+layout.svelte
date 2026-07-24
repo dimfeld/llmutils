@@ -27,7 +27,7 @@
 
   let { data, children }: { data: LayoutData; children: Snippet } = $props();
   const sessionManager = setSessionManager();
-  const uiState = setUIState(data.sidebarCollapsed);
+  const uiState = setUIState();
 
   // Clean up UI state when a session is dismissed
   const removeEventListener = registerDismissedSessionCleanup(sessionManager, uiState);

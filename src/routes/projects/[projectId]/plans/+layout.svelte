@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import PlansList from '$lib/components/PlansList.svelte';
+  import CollapsibleItemSidebar from '$lib/components/CollapsibleItemSidebar.svelte';
   import { projectDisplayName } from '$lib/stores/project.svelte.js';
   import type { Snippet } from 'svelte';
   import type { LayoutData } from './$types';
@@ -37,7 +38,7 @@
 <div class="flex h-full w-full">
   <!-- Plan list — key forces re-mount on project switch to reset filters -->
   {#key data.projectId}
-    <div class="w-96 shrink-0 border-r border-border">
+    <CollapsibleItemSidebar label="Plans">
       <PlansList
         plans={data.plans}
         {selectedPlanUuid}
@@ -45,7 +46,7 @@
         {importIssueHref}
         {newPlanHref}
       />
-    </div>
+    </CollapsibleItemSidebar>
   {/key}
 
   <!-- Plan detail (child route) -->

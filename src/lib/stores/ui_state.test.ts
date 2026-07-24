@@ -1,25 +1,6 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
-vi.mock('$app/environment', () => ({
-  browser: true,
-}));
-
-import { getSidebarCollapsed, UIStateStore } from './ui_state.svelte.js';
-
-let cookieValue = '';
-
-beforeEach(() => {
-  cookieValue = '';
-
-  vi.stubGlobal('document', {});
-  Object.defineProperty(globalThis.document, 'cookie', {
-    configurable: true,
-    get: () => cookieValue,
-    set: (value: string) => {
-      cookieValue = value;
-    },
-  });
-});
+import { UIStateStore } from './ui_state.svelte.js';
 
 describe('UIStateStore', () => {
   describe('session state', () => {
@@ -86,57 +67,5 @@ describe('UIStateStore', () => {
         showLifecycleOutput: false,
       });
     });
-  });
-
-  describe('sidebar collapsed', () => {
-    test('defaults to true when no initial value is provided', () => {
-      const store = new UIStateStore();
-      expect(store.sidebarCollapsed).toBe(true);
-    });
-
-    test('uses the provided initial value', () => {
-      const store = new UIStateStore(false);
-      expect(store.sidebarCollapsed).toBe(false);
-    });
-
-    test('direct assignment persists to document.cookie', () => {
-      const store = new UIStateStore();
-      store.sidebarCollapsed = false;
-      expect(cookieValue).toContain('tim_sidebar_collapsed=false');
-
-      store.sidebarCollapsed = true;
-      expect(cookieValue).toContain('tim_sidebar_collapsed=true');
-    });
-
-    test('toggleSidebar flips the value and persists to document.cookie', () => {
-      const store = new UIStateStore();
-      expect(store.sidebarCollapsed).toBe(true);
-
-      store.toggleSidebar();
-      expect(store.sidebarCollapsed).toBe(false);
-      expect(cookieValue).toContain('tim_sidebar_collapsed=false');
-
-      store.toggleSidebar();
-      expect(store.sidebarCollapsed).toBe(true);
-      expect(cookieValue).toContain('tim_sidebar_collapsed=true');
-    });
-  });
-});
-
-describe('sidebar cookie helpers', () => {
-  test('getSidebarCollapsed defaults to true when cookie is missing', () => {
-    const cookies = {
-      get: vi.fn(() => undefined),
-    };
-
-    expect(getSidebarCollapsed(cookies as never)).toBe(true);
-  });
-
-  test('getSidebarCollapsed reads false from cookies', () => {
-    const cookies = {
-      get: vi.fn(() => 'false'),
-    };
-
-    expect(getSidebarCollapsed(cookies as never)).toBe(false);
   });
 });

@@ -15,6 +15,7 @@
   import PrAttentionCard from '$lib/components/PrAttentionCard.svelte';
   import RunningNowRow from '$lib/components/RunningNowRow.svelte';
   import ReadyToStartRow from '$lib/components/ReadyToStartRow.svelte';
+  import CollapsibleItemSidebar from '$lib/components/CollapsibleItemSidebar.svelte';
   import type { LayoutProps } from './$types';
 
   let { data, children, params }: LayoutProps = $props();
@@ -101,7 +102,7 @@
 </script>
 
 <div class="flex h-full w-full">
-  <div class="w-96 shrink-0 overflow-y-auto border-r border-border">
+  <CollapsibleItemSidebar label="Active work" class="overflow-y-auto">
     <div class="space-y-4 p-4">
       {#if allEmpty && sessionManager.initialized}
         <div class="flex flex-col items-center justify-center py-16">
@@ -230,7 +231,7 @@
         {/if}
       {/if}
     </div>
-  </div>
+  </CollapsibleItemSidebar>
 
   <div class="min-w-0 flex-1 overflow-y-auto">
     {@render children()}

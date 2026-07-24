@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import SessionList from '$lib/components/SessionList.svelte';
+  import CollapsibleItemSidebar from '$lib/components/CollapsibleItemSidebar.svelte';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import type { Snippet } from 'svelte';
 
@@ -17,7 +18,7 @@
 
 <div class="flex h-full min-h-0 w-full">
   <!-- Left pane: session list -->
-  <div class="w-96 shrink-0 overflow-y-auto border-r border-border">
+  <CollapsibleItemSidebar label="Sessions" class="overflow-y-auto">
     <div class="flex items-center justify-between border-b border-border px-3 py-2">
       <div class="flex items-center gap-2">
         <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -44,7 +45,7 @@
       sessionHref={(connectionId) =>
         `/projects/${projectId}/sessions/${encodeURIComponent(connectionId)}`}
     />
-  </div>
+  </CollapsibleItemSidebar>
 
   <!-- Right pane: session detail or empty state -->
   <div class="min-h-0 flex-1 overflow-hidden">

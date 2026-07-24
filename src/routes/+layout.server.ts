@@ -3,14 +3,12 @@ import { getServerContext } from '$lib/server/init.js';
 import { getProjectsWithMetadata } from '$lib/server/db_queries.js';
 import { resolveHeadlessServerConfig } from '$lib/server/ws_server.js';
 import { getLastProjectId } from '$lib/stores/project.svelte.js';
-import { getSidebarCollapsed } from '$lib/stores/ui_state.svelte.js';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ cookies }) => {
   const { db, config } = await getServerContext();
   const projects = getProjectsWithMetadata(db);
   const lastProjectId = getLastProjectId(cookies);
-  const sidebarCollapsed = getSidebarCollapsed(cookies);
   const currentUsername = process.env.USER ?? os.userInfo().username;
 
   // The browser PTY terminal (plan 382) connects to the standalone Bun.serve
@@ -26,7 +24,6 @@ export const load: LayoutServerLoad = async ({ cookies }) => {
     currentUsername,
     projects,
     lastProjectId: lastProjectId ?? (projects.length > 0 ? String(projects[0].id) : 'all'),
-    sidebarCollapsed,
     ptyWebSocketPort,
   };
 };
