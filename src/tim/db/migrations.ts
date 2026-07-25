@@ -1348,6 +1348,24 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 49,
+    up: `SELECT 1;`,
+    afterUp: (db: Database) => {
+      if (tableExists(db, 'job')) {
+        const columns = tableColumns(db, 'job');
+        if (!columns.has('build_sha')) {
+          db.exec('ALTER TABLE job ADD COLUMN build_sha TEXT');
+        }
+        if (!columns.has('build_time')) {
+          db.exec('ALTER TABLE job ADD COLUMN build_time TEXT');
+        }
+        if (!columns.has('binary_path')) {
+          db.exec('ALTER TABLE job ADD COLUMN binary_path TEXT');
+        }
+      }
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

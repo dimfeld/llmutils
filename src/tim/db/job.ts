@@ -33,6 +33,9 @@ export interface JobRow {
   finished_at: string | null;
   created_at: string;
   updated_at: string;
+  build_sha: string | null;
+  build_time: string | null;
+  binary_path: string | null;
 }
 
 export interface RecordJobStartInput {
@@ -45,6 +48,9 @@ export interface RecordJobStartInput {
   prNumber?: number | null;
   workspacePath?: string | null;
   gitRemote?: string | null;
+  buildSha?: string | null;
+  buildTime?: string | null;
+  binaryPath?: string | null;
 }
 
 /**
@@ -68,11 +74,14 @@ export function recordJobStart(db: Database, input: RecordJobStartInput): number
           pr_number,
           workspace_path,
           git_remote,
+          build_sha,
+          build_time,
+          binary_path,
           status,
           started_at,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
       `
     )
     .run(
@@ -84,7 +93,10 @@ export function recordJobStart(db: Database, input: RecordJobStartInput): number
       canonicalPrUrl,
       input.prNumber ?? null,
       input.workspacePath ?? null,
-      input.gitRemote ?? null
+      input.gitRemote ?? null,
+      input.buildSha ?? null,
+      input.buildTime ?? null,
+      input.binaryPath ?? null
     );
 
   return Number(result.lastInsertRowid);
@@ -198,6 +210,9 @@ export function listRecentJobs(
           COALESCE(j.pr_number, ps.pr_number) AS pr_number,
           j.workspace_path,
           j.git_remote,
+          j.build_sha,
+          j.build_time,
+          j.binary_path,
           j.status,
           j.started_at,
           j.finished_at,

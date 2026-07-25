@@ -1,6 +1,7 @@
 <script lang="ts">
   import { projectDisplayName } from '$lib/stores/project.svelte.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
+  import { Popover, PopoverContent, PopoverTrigger } from '$lib/components/ui/popover/index.js';
   import type { PageProps } from './$types';
   import type { ActivityJob } from './+page.server';
 
@@ -80,6 +81,11 @@
   function statusLabel(status: string): string {
     return status.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
   }
+
+  function formatAbsoluteTime(isoString: string): string {
+    const date = new Date(isoString);
+    return Number.isNaN(date.getTime()) ? isoString : date.toLocaleString();
+  }
 </script>
 
 <div class="h-full overflow-y-auto">
@@ -145,8 +151,39 @@
                     {statusLabel(job.status)}
                   </span>
                 </td>
-                <td class="px-4 py-3 text-muted-foreground" title={job.started_at}>
-                  {formatRelativeTime(job.started_at)}
+                <td class="px-4 py-3 text-muted-foreground">
+                  <Popover>
+                    <PopoverTrigger
+                      openOnHover
+                      openDelay={150}
+                      closeDelay={100}
+                      class="cursor-default underline decoration-dotted underline-offset-2"
+                    >
+                      {formatRelativeTime(job.started_at)}
+                    </PopoverTrigger>
+                    <PopoverContent align="start" class="w-80 text-xs">
+                      <dl class="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
+                        <dt class="text-muted-foreground">Started</dt>
+                        <dd class="text-foreground">{formatAbsoluteTime(job.started_at)}</dd>
+                        <dt class="text-muted-foreground">Finished</dt>
+                        <dd class="text-foreground">
+                          {job.finished_at
+                            ? formatAbsoluteTime(job.finished_at)
+                            : job.status === 'running'
+                              ? 'Still running'
+                              : '—'}
+                        </dd>
+                        <dt class="text-muted-foreground">Build</dt>
+                        <dd class="text-foreground">
+                          {job.build_sha ?? 'Unknown'}{job.build_time
+                            ? ` (${formatAbsoluteTime(job.build_time)})`
+                            : ''}
+                        </dd>
+                        <dt class="text-muted-foreground">Binary</dt>
+                        <dd class="break-all text-foreground">{job.binary_path ?? 'Unknown'}</dd>
+                      </dl>
+                    </PopoverContent>
+                  </Popover>
                 </td>
                 <td class="px-4 py-3 text-right">
                   {#if job.outputHref}

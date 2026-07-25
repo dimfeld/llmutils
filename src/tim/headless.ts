@@ -8,6 +8,7 @@ import { describeRemoteForLogging } from './external_storage_utils.js';
 import { getDatabase } from './db/database.js';
 import { getProject } from './db/project.js';
 import { markJobFinished, recordJobStart, updateJobFromSessionInfo } from './db/job.js';
+import { getBinaryRealPath, getBuildSha, getBuildTime } from './build_info.js';
 
 export const DEFAULT_HEADLESS_URL = 'ws://localhost:8123/tim-agent';
 const warnedInvalidHeadlessUrls = new Set<string>();
@@ -191,6 +192,9 @@ async function recordJobStartFromSession(
       prNumber: sessionInfo.linkedPrNumber ?? null,
       workspacePath: sessionInfo.workspacePath ?? null,
       gitRemote: sessionInfo.gitRemote ?? null,
+      buildSha: getBuildSha(),
+      buildTime: getBuildTime() ?? null,
+      binaryPath: getBinaryRealPath(),
     });
   } catch (err) {
     debugLog(`Failed to record job start for ${command}: ${err as Error}`);

@@ -139,6 +139,34 @@ describe('tim db/job', () => {
     });
   });
 
+  test('records build metadata alongside a job', () => {
+    const jobId = recordJobStart(db, {
+      projectId,
+      jobType: 'agent',
+      buildSha: 'abc1234',
+      buildTime: '2026-07-25T00:00:00.000Z',
+      binaryPath: '/usr/local/bin/tim',
+    });
+
+    const jobs = listRecentJobs(db, { projectId });
+    expect(jobs[0]).toMatchObject({
+      id: jobId,
+      build_sha: 'abc1234',
+      build_time: '2026-07-25T00:00:00.000Z',
+      binary_path: '/usr/local/bin/tim',
+    });
+  });
+
+  test('defaults build metadata to null when not provided', () => {
+    recordJobStart(db, { projectId, jobType: 'agent' });
+    const jobs = listRecentJobs(db, { projectId });
+    expect(jobs[0]).toMatchObject({
+      build_sha: null,
+      build_time: null,
+      binary_path: null,
+    });
+  });
+
   test('updates a running job with late-discovered plan target metadata', () => {
     const jobId = recordJobStart(db, { projectId, jobType: 'review-guide' });
 
