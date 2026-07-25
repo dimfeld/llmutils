@@ -544,6 +544,9 @@ export class SessionManager {
           gitRemote: message.gitRemote,
           terminalPaneId: message.terminalPaneId,
           terminalType: message.terminalType,
+          buildSha: message.buildSha,
+          buildTime: message.buildTime,
+          binaryPath: message.binaryPath,
         };
         session.pty = message.pty === true;
         session.groupKey = sessionGroupKey(message.gitRemote, message.workspacePath);

@@ -21,6 +21,9 @@ export interface HeadlessSessionInfo {
   gitRemote?: string;
   terminalPaneId?: string;
   terminalType?: string;
+  buildSha?: string;
+  buildTime?: string;
+  binaryPath?: string;
 }
 
 export interface HeadlessSessionInfoMessage extends HeadlessSessionInfo {

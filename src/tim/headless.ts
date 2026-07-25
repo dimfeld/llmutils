@@ -134,6 +134,9 @@ export async function buildHeadlessSessionInfo(
     gitRemote,
     terminalPaneId: weztermPaneId || undefined,
     terminalType: weztermPaneId ? 'wezterm' : undefined,
+    buildSha: getBuildSha(),
+    buildTime: getBuildTime(),
+    binaryPath: getBinaryRealPath() ?? undefined,
   };
 }
 
@@ -192,9 +195,9 @@ async function recordJobStartFromSession(
       prNumber: sessionInfo.linkedPrNumber ?? null,
       workspacePath: sessionInfo.workspacePath ?? null,
       gitRemote: sessionInfo.gitRemote ?? null,
-      buildSha: getBuildSha(),
-      buildTime: getBuildTime() ?? null,
-      binaryPath: getBinaryRealPath(),
+      buildSha: sessionInfo.buildSha ?? null,
+      buildTime: sessionInfo.buildTime ?? null,
+      binaryPath: sessionInfo.binaryPath ?? null,
     });
   } catch (err) {
     debugLog(`Failed to record job start for ${command}: ${err as Error}`);

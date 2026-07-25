@@ -2,6 +2,7 @@
   import TerminalIcon from '@lucide/svelte/icons/terminal';
   import AppWindow from '@lucide/svelte/icons/app-window';
   import Download from '@lucide/svelte/icons/download';
+  import Info from '@lucide/svelte/icons/info';
   import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
   import PanelRightOpen from '@lucide/svelte/icons/panel-right-open';
   import Wrench from '@lucide/svelte/icons/wrench';
@@ -38,6 +39,7 @@
   import type { PlanAttentionReason } from '$lib/utils/dashboard_attention.js';
   import { resolve } from '$app/paths';
   import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+  import { Popover, PopoverContent, PopoverTrigger } from '$lib/components/ui/popover/index.js';
 
   let { session }: { session: SessionData } = $props();
   const sessionManager = useSessionManager();
@@ -344,6 +346,11 @@
   let activePrompt = $derived(session.activePrompts[0] ?? null);
   let queuedPromptCount = $derived(Math.max(0, session.activePrompts.length - 1));
 
+  function formatAbsoluteTime(isoString: string): string {
+    const date = new Date(isoString);
+    return Number.isNaN(date.getTime()) ? isoString : date.toLocaleString();
+  }
+
   function handleDownloadTranscript() {
     try {
       const markdown = exportSessionAsMarkdown(session);
@@ -504,6 +511,41 @@
           </Tooltip.Trigger>
           <Tooltip.Content sideOffset={8}>Download transcript</Tooltip.Content>
         </Tooltip.Root>
+
+        <Popover>
+          <PopoverTrigger
+            openOnHover
+            openDelay={150}
+            closeDelay={100}
+            class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+            aria-label="Session info"
+            title="Session info"
+          >
+            <Info class="size-4" />
+          </PopoverTrigger>
+          <PopoverContent align="end" class="w-80 text-xs">
+            <dl class="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
+              <dt class="text-muted-foreground">Started</dt>
+              <dd class="text-foreground">{formatAbsoluteTime(session.connectedAt)}</dd>
+              <dt class="text-muted-foreground">Ended</dt>
+              <dd class="text-foreground">
+                {session.disconnectedAt
+                  ? formatAbsoluteTime(session.disconnectedAt)
+                  : 'Still running'}
+              </dd>
+              <dt class="text-muted-foreground">Build</dt>
+              <dd class="text-foreground">
+                {session.sessionInfo.buildSha ?? 'Unknown'}{session.sessionInfo.buildTime
+                  ? ` (${formatAbsoluteTime(session.sessionInfo.buildTime)})`
+                  : ''}
+              </dd>
+              <dt class="text-muted-foreground">Binary</dt>
+              <dd class="break-all text-foreground">
+                {session.sessionInfo.binaryPath ?? 'Unknown'}
+              </dd>
+            </dl>
+          </PopoverContent>
+        </Popover>
 
         {#if session.sessionInfo.workspacePath}
           <Tooltip.Root>
