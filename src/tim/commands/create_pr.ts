@@ -173,9 +173,13 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
     ? `- Prefix the PR title with: ${titlePrefix}`
     : '- No title prefix is required unless it improves clarity.';
   const trimmedPlanTitle = options.planTitle?.trim();
-  const prTitleInstruction = trimmedPlanTitle
-    ? `Use this exact plan title as the PR title: "${trimmedPlanTitle}". If a title prefix is required, prepend it to that title.`
-    : 'If a plan title is available in the Plan Context section, use it as the PR title. If a title prefix is required, prepend it to that title.';
+  const planTitleForPrompt = trimmedPlanTitle ?? '(see Plan Context section)';
+  const prTitleInstruction = [
+    `Determine the PR title from the plan title: "${planTitleForPrompt}".`,
+    '- If the plan title already describes the change that was made (e.g. "Add rate limiting to login endpoint"), use it verbatim as the PR title.',
+    '- If the plan title instead describes a symptom or problem being fixed (e.g. "I can see other users in high-privacy mode"), rewrite it as a present-tense action that fixes that symptom (e.g. "Hide other users in high-privacy mode") and use that as the PR title.',
+    'If a title prefix is required, prepend it to the resulting title.',
+  ].join('\n');
 
   const prompt: string[] = [
     'Please do the following:',
@@ -233,9 +237,7 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
     '- Changes section listing important files/modules',
     '- Test plan section with checkboxes',
     '- Manual Testing Runbooks section copied from the Plan Context when the plan details contain "Manual Testing Runbooks"; preserve the runbook titles, steps, and expected outcomes so reviewers can manually walk through the delivered feature',
-    trimmedPlanTitle
-      ? `- PR title: "${trimmedPlanTitle}"`
-      : '- PR title: use the exact plan title from the Plan Context section',
+    `- PR title: ${prTitleInstruction.replace(/\n/g, ' ')}`,
     titlePrefixLine,
     '- Include issue references when available (for Linear keep the full key, e.g. DF-123)',
     '',
