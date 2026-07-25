@@ -58,6 +58,7 @@ import {
   listReadyPlansParameters,
 } from './tools/schemas.js';
 import { parseOptionalPlanIdFromCliArg, parsePlanIdFromCliArg } from './plans.js';
+import { getVersionString } from './build_info.js';
 
 function parsePlanIdOption(value: string | undefined): number | undefined;
 function parsePlanIdOption(value: string[] | undefined): number[] | undefined;
@@ -171,7 +172,10 @@ export function registerShutdownSignalHandlers(
   proc.on('SIGTERM', () => handleSignal(143));
   proc.on('SIGHUP', () => handleSignal(129));
 }
-program.name('tim').description('Generate and execute task plans using LLMs');
+program
+  .name('tim')
+  .description('Generate and execute task plans using LLMs')
+  .version(getVersionString(), '-V, --version', 'Output the build version and exit');
 
 const statusSchemaHelpText = `(${statusSchema.options.join(', ')})`;
 program.option(

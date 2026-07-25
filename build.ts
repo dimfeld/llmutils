@@ -1,12 +1,19 @@
 #!/usr/bin/env bun
 import type { BuildConfig } from 'bun';
 
+const gitSha = (await Bun.$`git rev-parse --short HEAD`.text()).trim();
+const buildTime = new Date().toISOString();
+
 async function buildOne(options: BuildConfig) {
   try {
     return await Bun.build({
       ...options,
       sourcemap: 'linked',
       external: ['effect', '@valibot/to-json-schema', 'sury'],
+      define: {
+        __TIM_BUILD_SHA__: JSON.stringify(gitSha),
+        __TIM_BUILD_TIME__: JSON.stringify(buildTime),
+      },
     });
   } catch (e) {
     console.error(`Building ${options.entrypoints.join(', ')} failed`);
