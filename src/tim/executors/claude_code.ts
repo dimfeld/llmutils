@@ -606,6 +606,7 @@ export class ClaudeCodeExecutor implements Executor {
           batchMode: planInfo.batchMode,
           planFilePath,
           reviewExecutor: this.sharedOptions.reviewExecutor,
+          reviewerInstructionsPath: this.timConfig.agents?.reviewer?.instructions,
           subagentExecutor: this.sharedOptions.subagentExecutor,
           dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
           useJj,
@@ -614,6 +615,7 @@ export class ClaudeCodeExecutor implements Executor {
         promptContent = wrapWithOrchestrationSimple(promptContent, planId, {
           batchMode: planInfo.batchMode,
           planFilePath,
+          reviewerInstructionsPath: this.timConfig.agents?.reviewer?.instructions,
           subagentExecutor: this.sharedOptions.subagentExecutor,
           dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
           useJj,
@@ -624,6 +626,7 @@ export class ClaudeCodeExecutor implements Executor {
           planFilePath,
           simpleMode: this.sharedOptions.simpleMode,
           reviewExecutor: this.sharedOptions.reviewExecutor,
+          reviewerInstructionsPath: this.timConfig.agents?.reviewer?.instructions,
           subagentExecutor: this.sharedOptions.subagentExecutor,
           dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
           useJj,

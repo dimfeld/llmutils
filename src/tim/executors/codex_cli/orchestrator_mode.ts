@@ -45,6 +45,7 @@ export async function executeOrchestratorMode(
         planFilePath,
         simpleMode,
         reviewExecutor: sharedOptions.reviewExecutor,
+        reviewerInstructionsPath: timConfig.agents?.reviewer?.instructions,
         subagentExecutor: sharedOptions.subagentExecutor,
         dynamicSubagentInstructions: sharedOptions.dynamicSubagentInstructions,
         useJj,
@@ -56,6 +57,7 @@ export async function executeOrchestratorMode(
       promptContent = wrapWithOrchestrationSimple(promptContent, planId, {
         batchMode: planInfo.batchMode,
         planFilePath,
+        reviewerInstructionsPath: timConfig.agents?.reviewer?.instructions,
         subagentExecutor: sharedOptions.subagentExecutor,
         dynamicSubagentInstructions: sharedOptions.dynamicSubagentInstructions,
         useJj,
@@ -66,6 +68,7 @@ export async function executeOrchestratorMode(
         batchMode: planInfo.batchMode,
         planFilePath,
         reviewExecutor: sharedOptions.reviewExecutor,
+        reviewerInstructionsPath: timConfig.agents?.reviewer?.instructions,
         subagentExecutor: sharedOptions.subagentExecutor,
         dynamicSubagentInstructions: sharedOptions.dynamicSubagentInstructions,
         useJj,

@@ -11,8 +11,11 @@ the Claude (`src/tim/executors/claude_code.ts`) and Codex
 (`src/tim/executors/codex_cli.ts`) executors use the same broad model: rather
 than driving an implement/test/review loop in TypeScript, they wrap the prompt
 in a single large **orchestration prompt** and launch one top-level process. That
-process then coordinates the actual work by invoking `tim subagent ...` and
-`tim subagent reviewer ...` as shell commands.
+process then coordinates the actual work by invoking `tim subagent ...` as shell
+commands. In batch mode, the orchestrator reviews each selected task batch
+itself and may use its native subagent mechanism for help. It invokes
+`tim subagent reviewer ...` only for the final full-plan review after every task
+is complete.
 
 Both executors set `supportsSubagents = true`. Codex has native subagent support,
 but the orchestration prompts still delegate through `tim subagent` so each role
@@ -39,10 +42,10 @@ It exports three wrappers, all consumed by both executors:
 The prompt wording is provider-neutral (e.g. "shell command tool" rather than
 "Bash tool") while preserving the literal `tim subagent ...`
 command examples. The wrappers support `batchMode`, `planFilePath`,
-`reviewExecutor`, `simpleMode`, a fixed `subagentExecutor` (`-x codex-cli` or
-`-x claude-code`), dynamic executor-selection guidance, `useJj` guidance,
-progress-section guidance, the failure protocol, and batch task selection /
-marking guidance.
+`reviewExecutor`, `reviewerInstructionsPath`, `simpleMode`, a fixed
+`subagentExecutor` (`-x codex-cli` or `-x claude-code`), dynamic
+executor-selection guidance, `useJj` guidance, progress-section guidance, the
+failure protocol, and batch task selection / marking guidance.
 
 > **Gotcha — wording ≠ runtime config.** When "generalizing wording" in this
 > prompt, only change human-readable prose (e.g. "Bash tool" → "shell command
@@ -76,21 +79,31 @@ Claude's `retryFastNoopOrchestratorTurn` continuation workaround.
 
 ### Prompt contents by mode
 
-- **Normal** — `tim subagent implementer`, `tim subagent tester`, and `tim subagent reviewer`.
-- **Simple** — `tim subagent implementer` and `tim subagent reviewer`.
+- **Normal** — `tim subagent implementer`, `tim subagent tester`, and review.
+- **Simple** — `tim subagent implementer` and review.
 - **TDD** — `tim subagent tdd-tests` before implementation, then tester/reviewer or
   reviewer depending on simple mode.
+
+For non-batch execution, review still uses `tim subagent reviewer`. For batch
+execution, selected-task reviews are performed directly by the orchestrator; it
+may start a native review subagent if useful. `tim subagent reviewer` is reserved
+for the ordinary and structural full-plan review sequence after the last tasks
+are finished. When `agents.reviewer.instructions` is configured, the batch
+review prompt references that configured path verbatim and directs the
+orchestrator to read and apply the file.
 
 ### Option pass-through
 
 `--executor` / `defaultSubagentExecutor` and dynamic subagent instructions are
 reflected in the orchestration prompt the same way as for Claude.
-`--review-executor` is reflected in normal/TDD prompts that invoke
-`tim subagent reviewer`, which delegates to the `tim review` handler.
-Ordinary reviews are stateless and always cover their complete declared task or
-plan scope. After findings are fixed or explicitly ignored, the orchestrator
-reruns that same complete scope until one ordinary pass reports no unhandled
-issues. A completed batch uses this same loop for its final full-plan review.
+`--review-executor` is reflected in prompts that invoke `tim subagent reviewer`,
+which delegates to the `tim review` handler. In batch mode the override therefore
+applies to the final full-plan review, not the orchestrator-owned selected-task
+reviews. Ordinary reviewer-subagent passes are stateless and always cover their
+complete declared task or plan scope. After findings are fixed or explicitly
+ignored, the orchestrator reruns that same complete scope until one ordinary pass
+reports no unhandled issues. A completed batch uses this loop for its final
+full-plan review.
 
 The orchestrator itself compares successive findings and decides whether they
 represent the same underlying defect, a newly exposed issue, or a regression

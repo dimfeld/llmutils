@@ -137,17 +137,69 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('FAILED:');
   });
 
-  it('includes batch instructions and reviewer command in simple mode', () => {
+  it('uses orchestrator-owned batch review and reserves reviewer command for full-plan review', () => {
     const out = wrapWithOrchestrationSimple('Context', 'abc', {
       batchMode: true,
       planFilePath: '/plans/test.plan.md',
     });
     expect(out).toContain('# Batch Task Processing Mode');
+    expect(out).toContain('Review the selected task batch yourself');
+    expect(out).toContain('start your own native subagent');
+    expect(out).toContain('Do not run `tim subagent reviewer` for this selected-task batch review');
     expect(out).toContain('tim subagent reviewer abc --print');
-    expect(out).toContain('Scope the review to the tasks you worked on');
+    expect(out).not.toContain('--task-index 1');
     expect(out).toContain('final-plan review sequence');
     expect(out).toContain('@/plans/test.plan.md');
     expect(out).toContain('Review Iteration Policy');
+  });
+
+  it('uses orchestrator-owned batch review in every orchestration mode', () => {
+    const outputs = [
+      wrapWithOrchestration('Context', '123', { batchMode: true }),
+      wrapWithOrchestrationSimple('Context', '123', { batchMode: true }),
+      wrapWithOrchestrationTdd('Context', '123', { batchMode: true, simpleMode: false }),
+      wrapWithOrchestrationTdd('Context', '123', { batchMode: true, simpleMode: true }),
+    ];
+
+    for (const out of outputs) {
+      expect(out).toContain('Review the selected task batch yourself');
+      expect(out).toContain('native subagent');
+      expect(out).toContain('final full-plan review');
+      expect(out).toContain('tim subagent reviewer 123 --print');
+      expect(out).not.toContain('--task-index 1');
+    }
+  });
+
+  it('references configured reviewer instructions for orchestrator-owned batch reviews', () => {
+    const options = {
+      batchMode: true,
+      reviewerInstructionsPath: 'instructions/reviewer.md',
+    };
+    const outputs = [
+      wrapWithOrchestration('Context', '123', options),
+      wrapWithOrchestrationSimple('Context', '123', options),
+      wrapWithOrchestrationTdd('Context', '123', { ...options, simpleMode: false }),
+      wrapWithOrchestrationTdd('Context', '123', { ...options, simpleMode: true }),
+    ];
+
+    for (const out of outputs) {
+      expect(out).toContain(
+        'read and follow the reviewer subagent instructions at `instructions/reviewer.md`'
+      );
+      expect(out).toContain('Apply this review-specific guidance to your per-batch review');
+      expect(out).not.toContain('`@instructions/reviewer.md`');
+    }
+  });
+
+  it('omits reviewer instruction guidance when it is not configured or not in batch mode', () => {
+    const unconfigured = wrapWithOrchestration('Context', '123', { batchMode: true });
+    const nonBatch = wrapWithOrchestration('Context', '123', {
+      batchMode: false,
+      reviewerInstructionsPath: 'instructions/reviewer.md',
+    });
+
+    expect(unconfigured).not.toContain('reviewer subagent instructions at');
+    expect(nonBatch).not.toContain('reviewer subagent instructions at');
   });
 
   it('includes progress section instructions in simple mode prompts', () => {

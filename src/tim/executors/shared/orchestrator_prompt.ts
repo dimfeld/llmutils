@@ -2,6 +2,8 @@ interface OrchestrationOptions {
   batchMode?: boolean;
   planFilePath?: string;
   reviewExecutor?: string;
+  /** Path to custom reviewer instructions configured in agents.reviewer.instructions. */
+  reviewerInstructionsPath?: string;
   simpleMode?: boolean;
   /**
    * Which executor to use for subagents: 'codex-cli', 'claude-code', or 'dynamic'.
@@ -48,6 +50,15 @@ function buildInputFileRandomizationGuidance(planId: string): string {
 - It is also acceptable to reuse the same filename each time if that is simpler.
 - Always explicitly pass the full path instead of using "$TMPDIR/filename".
 - You can also pipe input to stdin and use \`--input-file -\`.`;
+}
+
+function buildBatchReviewerInstructionsGuidance(options: OrchestrationOptions): string {
+  if (!options.batchMode || !options.reviewerInstructionsPath) {
+    return '';
+  }
+
+  return `   - Before reviewing, read and follow the reviewer subagent instructions at \`${options.reviewerInstructionsPath}\`. Apply this review-specific guidance to your per-batch review.
+`;
 }
 
 export function progressSectionGuidance(
@@ -193,13 +204,16 @@ Decision guidance: ${instructions}
  */
 function buildAvailableAgents(planId: string, options: OrchestrationOptions): string {
   const executorFlag = buildSubagentExecutorFlag(options);
+  const reviewer = options.batchMode
+    ? `- **Full-plan reviewer**: Only when the selected batch completes every remaining task, run \`${buildReviewCommand(planId, options)}\` via the shell command tool. Do not use \`tim subagent reviewer\` for selected-task batch reviews.`
+    : `- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)`;
   return `## Available Agents
 
-You have access to three specialized agents that you MUST invoke via the shell command tool:
+You have access to three specialized agents via the shell command tool:
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 
-- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+${reviewer}
 
 Each subagent command may take a long time to complete and is expected to print no output until it finishes. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
 `;
@@ -243,11 +257,17 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
     ? `   - Use the review executor override provided: \`--executor ${options.reviewExecutor}\`.`
     : '';
 
-  const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
+  const reviewPhase = options.batchMode
+    ? `4. **Review Phase**
+   - Review the selected task batch yourself. Inspect the implementation, diff, tests, and relevant plan requirements for correctness, regressions, missing coverage, and maintainability.
+${buildBatchReviewerInstructionsGuidance(options)}   - You may start your own native subagent to review all or part of the selected task batch if that would help, but you remain responsible for evaluating its findings and completing the review.
+   - Do not run \`tim subagent reviewer\` for this selected-task batch review. That command is reserved for the final full-plan review after every task is complete.
+${buildFinalBatchReviewGuidance(planId, options)}
+   - Your review should focus on problems; lack of findings means the batch review passed.`
+    : `3. **Review Phase**
    - Run \`${reviewCommand}\` using the shell command tool.
    - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why. On subsequent review runs, also include a list of any issues from prior review output that you determined were not relevant or acceptable to leave as-is, so the reviewer knows not to flag them again.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
-${buildFinalBatchReviewGuidance(planId, options)}
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.
    - The review output focuses on problems; don't expect positive feedback even if the code is perfect.`;
@@ -260,11 +280,11 @@ ${options.batchMode ? '6' : '5'}. **Iteration**
 - If the review output identifies issues or tests fail:
 - For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
 - Return to step ${options.batchMode ? '2' : '1'} when substantial code changes are required.
-- After implementing review follow-up changes, run the relevant targeted checks and then rerun the same ordinary review over its complete declared scope.
+- After implementing review follow-up changes, run the relevant targeted checks and then repeat the same review mechanism.
 - If the review repeats an issue that was supposedly fixed, re-examine the implementation and the evidence. Fix the underlying problem or reject the finding with a concrete explanation.
 - Continue this loop until all tests pass and either the ordinary review is clean or the bounded handoff procedure in the Review Iteration Policy has been completed.
 
-${buildReviewIterationGuidance(reviewCommand)}`;
+${buildReviewIterationGuidance(reviewCommand, options.batchMode === true)}`;
 
   return `## Workflow Instructions
 
@@ -299,14 +319,19 @@ After marking tasks done, commit your changes with a descriptive message about w
  */
 function buildImportantGuidelines(planId: string, options: OrchestrationOptions): string {
   const reviewCommand = buildReviewCommand(planId, options);
+  const reviewGuidelines = options.batchMode
+    ? `- **Review each selected task batch yourself.** Do not run \`tim subagent reviewer\` for per-batch review. You may start your own native review subagent if useful, but you must assess its findings and own the result.
+- Reserve \`${reviewCommand}\` for the final full-plan review that runs only after all plan tasks are complete.
+- After selected-batch review follow-ups, run focused verification and repeat your orchestrator-owned review.`
+    : `- **Do not substitute your own review for the formal reviewer quality gate.** Always run \`${reviewCommand}\` for the required code quality assessment.
+- You may inspect code as needed to coordinate the work, evaluate reviewer findings, and perform the root-cause or structural analysis required by the Review Iteration Policy. This analysis does not replace a required reviewer pass.
+- After review follow-ups, run focused verification and rerun \`${reviewCommand}\` over the same complete declared scope.`;
   const baseGuidelines = `## Important Guidelines
 
 - **DO NOT implement code directly**. Always delegate implementation tasks to the appropriate subagent via \`tim subagent\`.
 - **DO NOT write tests directly**. Always use the tester subagent via \`tim subagent tester\` for test execution and updates.
-- **Do not substitute your own review for the formal reviewer quality gate.** Always run \`${reviewCommand}\` for the required code quality assessment.
-- You may inspect code as needed to coordinate the work, evaluate reviewer findings, and perform the root-cause or structural analysis required by the Review Iteration Policy. This analysis does not replace a required reviewer pass.
+${reviewGuidelines}
 - Exception: if review feedback requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
-- After review follow-ups, run focused verification and rerun \`${reviewCommand}\` over the same complete declared scope.
 - You are responsible only for coordination and ensuring the workflow is followed correctly.
 - The subagents have access to the same task instructions below that you do, so you don't need to repeat them. You should reference which specific task titles are being worked on so the subagents can focus on the right tasks.
 - When invoking subagents, provide clear, specific instructions in \`--input\` (or \`--input-file\`) about what needs to be done in addition to referencing the task titles.
@@ -384,17 +409,27 @@ function buildFinalBatchReviewGuidance(planId: string, options: OrchestrationOpt
 `;
 }
 
-function buildReviewIterationGuidance(reviewCommand: string): string {
+function buildReviewIterationGuidance(
+  reviewCommand: string,
+  orchestratorReviewsBatch = false
+): string {
+  const reviewScopeGuidance = orchestratorReviewsBatch
+    ? `- For selected-task batch review passes, perform the review yourself. You may use your own native subagent mechanism as an aid, but do not invoke \`tim subagent reviewer\`.
+- When the batch completes all remaining plan tasks, the separate final full-plan sequence uses \`${reviewCommand}\` over the complete plan scope. Every rerun in that final sequence is another complete full-plan review.`
+    : `- Every ordinary invocation of \`${reviewCommand}\`, including every follow-up after fixes, reviews the complete declared task or plan scope. Do not narrow a follow-up review to only the files changed by the latest fix.`;
+  const repeatReviewGuidance = orchestratorReviewsBatch
+    ? '- After restructuring or accepted fixes, run relevant targeted checks and repeat your orchestrator-owned review. During the final full-plan sequence, rerun the full-plan reviewer command instead.'
+    : `- After restructuring, rerun \`${reviewCommand}\` over the same complete declared scope.
+- After accepted fixes, run relevant targeted checks and repeat the complete ordinary review.`;
   return `## Review Iteration Policy
 
-- Every ordinary invocation of \`${reviewCommand}\`, including every follow-up after fixes, reviews the complete declared task or plan scope. Do not narrow a follow-up review to only the files changed by the latest fix.
+${reviewScopeGuidance}
 - Treat each full review as capable of finding issues earlier passes missed. After each review, fix every finding you accept and reject any incorrect finding with a concrete, evidence-based explanation. A finding that has been neither fixed nor explicitly rejected is unhandled.
 - Compare each new review result with the actual substance and cause of prior findings; do not rely only on category labels or filenames. Decide whether it is the same underlying defect, a different issue exposed by the fix, or a regression introduced by the fix. Keep this recurrence judgment in your own working notes; the review command does not classify it for you.
 - Watch for cascading findings: the same underlying defect recurring, a fix exposing another defect in the same responsibility boundary, or repeated fixes moving the problem between duplicated implementations.
 - On the second occurrence in such a cascade, pause instance-by-instance patching. As the orchestrator, inspect the implementation and prior findings yourself, identify the failed invariant, duplicated responsibility, or ownership problem, and write a concrete restructuring proposal before delegating more implementation.
 - This root-cause checkpoint is orchestrator analysis, not a separate review mode and not a request for the reviewer to solve a difficult bug. Prefer correcting the shared structure or consolidating responsibility when that addresses the cause. Pass the restructuring proposal and the relevant findings to the implementer.
-- After restructuring, rerun \`${reviewCommand}\` over the same complete declared scope.
-- After accepted fixes, run relevant targeted checks and repeat the complete ordinary review.
+${repeatReviewGuidance}
 - Stop the ordinary review loop when either:
   1. targeted checks pass and a complete ordinary review reports no new unhandled findings; or
   2. the fourth ordinary review has completed and the bounded handoff procedure below has been completed.
@@ -466,11 +501,14 @@ export function wrapWithOrchestrationSimple(
 
 You are coordinating a tim streamlined two-phase workflow (implement → review) for the tasks below. tim is a tool for managing step-by-step project plans.`;
 
+  const reviewerAgent = options.batchMode
+    ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${reviewCommand}\`. Do not use it for the selected-task batch review.`
+    : `- **Reviewer**: Run \`${reviewCommand}\` via the shell command tool`;
   const availableAgents = `## Available Agents
 
-You have two specialized subagents that you MUST invoke via the shell command tool:
+You have two specialized subagents available via the shell command tool:
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-- **Reviewer**: Run \`${reviewCommand}\` via the shell command tool
+${reviewerAgent}
 
 Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
 `;
@@ -489,6 +527,22 @@ Each subagent command may take a long time to complete. Always use a timeout of 
       ? `\n   - Choose the appropriate executor (\`-x claude-code\` or \`-x codex-cli\`) based on the executor selection guidance above.`
       : '';
 
+  const reviewPhase = options.batchMode
+    ? `3. **Review Phase**
+   - Review the selected task batch yourself. Inspect the implementation, diff, tests, and relevant plan requirements for correctness, regressions, missing coverage, and maintainability.
+${buildBatchReviewerInstructionsGuidance(options)}   - You may start your own native subagent to review all or part of the batch if useful, but you remain responsible for evaluating its findings and completing the review.
+   - Do not run \`tim subagent reviewer\` for this selected-task batch review. Reserve it for the final full-plan review after every task is complete.
+${buildFinalBatchReviewGuidance(planId, options)}
+   - If your review identifies issues, return to the implementer with the findings.`
+    : `2. **Review Phase**
+   - Run \`${reviewCommand}\` using the shell command tool.
+   - Pass relevant implementation notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
+   - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
+${reviewExecutorGuidance}
+   - The review command may take up to 15 minutes; use a long timeout.
+   - The review output focuses on problems; don't expect positive feedback even if the code is perfect.
+   - If review fails or identifies issues, return to the implementer with the issues found`;
+
   const workflowInstructions = `## Workflow Instructions
 
 You MUST follow this simplified loop:
@@ -499,26 +553,18 @@ ${taskSelectionPhase}
    - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
    - Wait for the subagent to complete and review its output
 
-${options.batchMode ? '3' : '2'}. **Review Phase**
-   - Run \`${reviewCommand}\` using the shell command tool.
-   - Pass relevant implementation notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
-   - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
-${buildFinalBatchReviewGuidance(planId, options)}
-${reviewExecutorGuidance}
-   - The review command may take up to 15 minutes; use a long timeout.
-   - The review output focuses on problems; don't expect positive feedback even if the code is perfect.
-   - If review fails or identifies issues, return to the implementer with the issues found
+${reviewPhase}
 
 ${options.batchMode ? '4' : '3'}. **Notes Phase**
 ${progressSection}
 
 ${options.batchMode ? '5' : '4'}. **Iteration**
 - For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, focused refactors, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
-- After review follow-ups, run focused verification and rerun \`${reviewCommand}\` over the same complete declared scope.
+- After review follow-ups, run focused verification and repeat the same review mechanism.
 - If the review repeats an issue that was supposedly fixed, re-examine the implementation and the evidence. Fix the underlying problem or reject the finding with a concrete explanation.
 - Repeat the implement → review loop until the ordinary review is clean or the bounded handoff procedure in the Review Iteration Policy has been completed.
 
-${buildReviewIterationGuidance(reviewCommand)}`;
+${buildReviewIterationGuidance(reviewCommand, options.batchMode === true)}`;
 
   const failureProtocol = `
 ## Failure Protocol (Conflicting/Impossible Requirements)
@@ -532,10 +578,15 @@ ${buildReviewIterationGuidance(reviewCommand)}`;
 - Do NOT continue to other phases or mark tasks done when a failure occurs.
 - You may add brief context (e.g. which tasks were active) if helpful.`;
 
+  const reviewGuidance = options.batchMode
+    ? `- Review selected task batches yourself; do not run \`tim subagent reviewer\` for them. You may start a native review subagent if useful, but you own the review result.
+- Run \`${reviewCommand}\` only for the final full-plan review after all tasks are complete.`
+    : `- Do not substitute your own review for the formal reviewer quality gate. Always run \`${reviewCommand}\` for the required code quality assessment.
+- You may inspect code as needed to coordinate the work, evaluate reviewer findings, and perform the root-cause or structural analysis required by the Review Iteration Policy. This analysis does not replace a required reviewer pass.`;
   const guidance = `## Important Guidelines
 
-- Do not substitute your own review for the formal reviewer quality gate. Delegate implementation to \`tim subagent implementer\` and always run \`${reviewCommand}\` for the required code quality assessment.
-- You may inspect code as needed to coordinate the work, evaluate reviewer findings, and perform the root-cause or structural analysis required by the Review Iteration Policy. This analysis does not replace a required reviewer pass.
+- Delegate implementation to \`tim subagent implementer\`.
+${reviewGuidance}
 - When invoking subagents, give clear instructions in \`--input\` (or \`--input-file\`) referencing the specific task titles.
 - ${INPUT_COMBINATION_GUIDANCE}
 - Provide prior subagent outputs to the next subagent so they have full context.
@@ -612,20 +663,20 @@ You MUST enforce TDD order:
   const availableAgents = isSimpleTdd
     ? `## Available Agents
 
-You have three specialized subagents that you MUST invoke via the shell command tool:
+You have three specialized subagents available via the shell command tool:
 - **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-- **Reviewer**: Run \`${buildReviewCommand(planId, options)}\` via the shell command tool
+${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${buildReviewCommand(planId, options)}\`. Do not use it for the selected-task batch review.` : `- **Reviewer**: Run \`${buildReviewCommand(planId, options)}\` via the shell command tool`}
 
 Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
 `
     : `## Available Agents
 
-You have four specialized subagents that you MUST invoke via the shell command tool:
+You have four specialized subagents available via the shell command tool:
 - **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${buildReviewCommand(planId, options)}\`. Do not use it for the selected-task batch review.` : `- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)`}
 
 Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
 `;
@@ -666,12 +717,19 @@ Each subagent command may take a long time to complete. Always use a timeout of 
     ? `   - Use the review executor override provided: \`--executor ${options.reviewExecutor}\`.`
     : '';
 
+  const orchestratorBatchReview = `${isSimpleTdd ? verificationPhaseNumber : options.batchMode ? '5' : '4'}. **Review Phase**
+   - Review the selected task batch yourself. Inspect the implementation, diff, tests, and relevant plan requirements for correctness, regressions, missing coverage, and maintainability.
+${buildBatchReviewerInstructionsGuidance(options)}   - You may start your own native subagent to review all or part of the batch if useful, but you remain responsible for evaluating its findings and completing the review.
+   - Do not run \`tim subagent reviewer\` for this selected-task batch review. Reserve it for the final full-plan review after every task is complete.
+${buildFinalBatchReviewGuidance(planId, options)}`;
+
   const verificationPhase = isSimpleTdd
-    ? `${verificationPhaseNumber}. **Review Phase**
+    ? options.batchMode
+      ? orchestratorBatchReview
+      : `${verificationPhaseNumber}. **Review Phase**
    - Run \`${reviewCommand}\` using the shell command tool.
    - Pass relevant TDD test output and implementation notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
-${buildFinalBatchReviewGuidance(planId, options)}
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.`
     : `${verificationPhaseNumber}. **Testing Phase**
@@ -683,17 +741,20 @@ ${reviewExecutorGuidance}
    - When choosing an executor dynamically, prefer using the same executor that was used for the implementer to maintain consistency and leverage the same strengths.
    - Instruct tester to run tests and fix failures, then report remaining gaps
 
-${options.batchMode ? '5' : '4'}. **Review Phase**
+${
+  options.batchMode
+    ? orchestratorBatchReview
+    : `${options.batchMode ? '5' : '4'}. **Review Phase**
    - Run \`${reviewCommand}\` using the shell command tool.
    - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why. On subsequent review runs, also include a list of any issues from prior review output that you determined were not relevant or acceptable to leave as-is, so the reviewer knows not to flag them again.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
-${buildFinalBatchReviewGuidance(planId, options)}
 ${reviewExecutorGuidance}
-   - The review command may take up to 15 minutes; use a long timeout.`;
+   - The review command may take up to 15 minutes; use a long timeout.`
+}`;
 
   const reviewIterationGuidance = `
 - For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, focused refactors, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
-- After review follow-up changes, run relevant targeted checks and rerun \`${reviewCommand}\` over the same complete declared scope.`;
+- After review follow-up changes, run relevant targeted checks and repeat the same review mechanism.`;
 
   const workflowInstructions = `## Workflow Instructions
 
@@ -726,7 +787,7 @@ ${iterationPhaseNumber}. **Iteration**
 - If the review repeats an issue that was supposedly fixed, re-examine the implementation and the evidence. Fix the underlying problem or reject the finding with a concrete explanation.
 - Keep TDD order intact for each iteration, including the final full-plan review loop and structural pass before stopping.
 
-${buildReviewIterationGuidance(reviewCommand)}`;
+${buildReviewIterationGuidance(reviewCommand, options.batchMode === true)}`;
 
   const failureProtocol = `
 ## Failure Protocol (Conflicting/Impossible Requirements)
@@ -740,14 +801,17 @@ ${buildReviewIterationGuidance(reviewCommand)}`;
 - Do NOT continue to other phases or mark tasks done when a failure occurs.
 - You may add brief context (e.g. which tasks were active) if helpful.`;
 
-  const reviewCommandGuidance = `- Do not substitute your own review for the formal reviewer quality gate. Always run \`${reviewCommand}\` for the required code quality assessment.
+  const reviewCommandGuidance = options.batchMode
+    ? `- Review selected task batches yourself; do not run \`tim subagent reviewer\` for them. You may start a native review subagent if useful, but you own the review result.
+- Run \`${reviewCommand}\` only for the final full-plan review after all tasks are complete.`
+    : `- Do not substitute your own review for the formal reviewer quality gate. Always run \`${reviewCommand}\` for the required code quality assessment.
 - You may inspect code as needed to coordinate the work, evaluate reviewer findings, and perform the root-cause or structural analysis required by the Review Iteration Policy. This analysis does not replace a required reviewer pass.`;
   const testingGuidance = isSimpleTdd
     ? ''
     : '- Do NOT write or run tests directly. Always delegate testing to `tim subagent tester`.';
   const reviewFollowupGuidance = `
 - Exception: if review feedback requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
-- After review follow-ups, run focused verification and rerun \`${reviewCommand}\` over the same complete declared scope.`;
+- After review follow-ups, run focused verification and repeat the same review mechanism.`;
 
   const guidance = `## Important Guidelines
 

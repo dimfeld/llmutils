@@ -376,7 +376,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
       const executor = new ClaudeCodeExecutor(
         { permissionsMcp: { enabled: false } } as any,
         { baseDir: planRoot },
-        {} as any
+        { agents: { reviewer: { instructions: 'instructions/reviewer.md' } } } as any
       );
 
       await executor.execute('context', {
@@ -384,9 +384,17 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         planTitle: 'Simple Mode Integration',
         planFilePath: path.join(planRoot, 'plan.md'),
         executionMode: 'simple',
+        batchMode: true,
       });
 
       expect(wrapSimple).toHaveBeenCalledTimes(1);
+      expect(wrapSimple).toHaveBeenCalledWith(
+        expect.stringContaining('context'),
+        'simple-plan',
+        expect.objectContaining({
+          reviewerInstructionsPath: 'instructions/reviewer.md',
+        })
+      );
       expect(recordedArgs.length).toBeGreaterThan(0);
       const args = recordedArgs[0];
       expect(args).toContain('--permission-mode');
