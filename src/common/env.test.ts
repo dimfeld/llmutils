@@ -149,4 +149,36 @@ describe('buildWorkspaceCommandEnv', () => {
 
     expect(env.TIM_PLAN_ID).toBe('373');
   });
+
+  test('prepends the TIM_PATH directory to PATH when TIM_PATH is set', async () => {
+    const env = await buildWorkspaceCommandEnv(tempDir, undefined, {
+      inheritedEnv: {
+        PATH: '/usr/bin',
+        TIM_PATH: '/opt/tim/bin/tim',
+      },
+    });
+
+    expect(env.PATH).toBe('/opt/tim/bin:/usr/bin');
+  });
+
+  test('moves an already-present TIM_PATH directory to the front of PATH', async () => {
+    const env = await buildWorkspaceCommandEnv(tempDir, undefined, {
+      inheritedEnv: {
+        PATH: '/usr/bin:/opt/tim/bin',
+        TIM_PATH: '/opt/tim/bin/tim',
+      },
+    });
+
+    expect(env.PATH).toBe('/opt/tim/bin:/usr/bin');
+  });
+
+  test('does not modify PATH when TIM_PATH is unset and running from source', async () => {
+    const env = await buildWorkspaceCommandEnv(tempDir, undefined, {
+      inheritedEnv: {
+        PATH: '/usr/bin',
+      },
+    });
+
+    expect(env.PATH).toBe('/usr/bin');
+  });
 });

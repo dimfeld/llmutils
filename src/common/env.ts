@@ -9,6 +9,7 @@ import {
   type TimEnvironmentConfigEntry,
   type TimEnvironmentTemplateContext,
 } from '../tim/environment_templates.js';
+import { resolveTimBinaryDirectory } from './tim_executable.js';
 
 export interface TimWorkspaceCommandEnvironmentOptions {
   environment?: Record<string, TimEnvironmentConfigEntry>;
@@ -61,6 +62,16 @@ export function filterBunNodeFromPath(pathEnv: string | undefined): string | und
 }
 
 /**
+ * Prepend a directory to a PATH string, moving it to the front if it is
+ * already present so it takes precedence.
+ */
+export function prependToPath(pathEnv: string | undefined, dir: string | null): string {
+  if (!dir) return pathEnv ?? '';
+  const parts = (pathEnv ?? '').split(':').filter((p) => p && p !== dir);
+  return [dir, ...parts].join(':');
+}
+
+/**
  * Build a child-process environment using:
  * process.env -> workspace .env -> explicit overrides.
  *
@@ -85,6 +96,7 @@ export async function buildWorkspaceCommandEnv(
       ...overrides,
     } as Record<string, string>;
     env.PATH = filterBunNodeFromPath(env.PATH) ?? env.PATH;
+    env.PATH = prependToPath(env.PATH, resolveTimBinaryDirectory(env));
     return env;
   }
 
@@ -98,6 +110,7 @@ export async function buildWorkspaceCommandEnv(
     ...overrides,
   } as Record<string, string>;
   env.PATH = filterBunNodeFromPath(env.PATH) ?? env.PATH;
+  env.PATH = prependToPath(env.PATH, resolveTimBinaryDirectory(env));
   return env;
 }
 
