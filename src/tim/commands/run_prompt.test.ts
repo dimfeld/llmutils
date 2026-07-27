@@ -206,6 +206,7 @@ describe('resolveClaudeModel', () => {
     expect(resolveClaudeModel('claude-3-5-sonnet-latest')).toBe('claude-3-5-sonnet-latest');
     expect(resolveClaudeModel('claude-3-haiku')).toBe('claude-3-haiku');
     expect(resolveClaudeModel('claude-opus-4')).toBe('claude-opus-4');
+    expect(resolveClaudeModel('claude-fable-latest')).toBe('claude-fable-latest');
   });
 
   test('omits unrecognized model names', () => {

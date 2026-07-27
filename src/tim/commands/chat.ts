@@ -112,7 +112,7 @@ export function inferExecutorFromModel(model: string | undefined): string | unde
     return undefined;
   }
   const m = model.trim().toLowerCase();
-  if (m.includes('haiku') || m.includes('sonnet') || m.includes('opus')) {
+  if (m.includes('haiku') || m.includes('sonnet') || m.includes('opus') || m.includes('fable')) {
     return ClaudeCodeExecutorName;
   }
   if (m.startsWith('gpt')) {

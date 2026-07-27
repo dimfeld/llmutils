@@ -203,7 +203,12 @@ export function resolveClaudeModel(model: string | undefined): string | undefine
     return undefined;
   }
 
-  if (model.includes('haiku') || model.includes('sonnet') || model.includes('opus')) {
+  if (
+    model.includes('haiku') ||
+    model.includes('sonnet') ||
+    model.includes('opus') ||
+    model.includes('fable')
+  ) {
     return model;
   }
 
