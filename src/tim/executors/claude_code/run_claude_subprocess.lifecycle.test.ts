@@ -162,19 +162,16 @@ describe('runClaudeSubprocess lifecycle', () => {
     await executePromise;
   });
 
-  test('background task keeps stdin open past result; closes after grace once task ends', async () => {
+  test('background task status keeps stdin open past result and closes after empty status', async () => {
     const stdinWriteSpy = vi.fn((_value: string) => {});
     const { stdinEndSpy, formatStdout, resolveStreamingResult, executePromise } =
       await setupRunClaudeSubprocess(stdinWriteSpy);
 
-    // Emit task_started: background task begins
     formatStdout(
       `${JSON.stringify({
         type: 'system',
-        subtype: 'task_started',
-        task_id: 'task-bg1',
-        description: 'running tests',
-        task_type: 'local_bash',
+        subtype: 'background_tasks_changed',
+        tasks: [{ id: 'task-bg1' }],
         uuid: 'uuid-1',
         session_id: SESSION_ID,
       })}\n`
@@ -188,83 +185,15 @@ describe('runClaudeSubprocess lifecycle', () => {
     // Switch to fake timers before the grace timer is created
     vi.useFakeTimers();
 
-    // Emit task_notification (task stopped) → tracker starts grace timer
     formatStdout(
       `${JSON.stringify({
         type: 'system',
-        subtype: 'task_notification',
-        task_id: 'task-bg1',
-        status: 'stopped',
-        output_file: '',
-        summary: 'tests passed',
+        subtype: 'background_tasks_changed',
+        tasks: [],
+        uuid: 'uuid-2',
         session_id: SESSION_ID,
       })}\n`
     );
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    vi.advanceTimersByTime(9_999);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    vi.advanceTimersByTime(1); // grace expires
-    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
-
-    resolveStreamingResult?.({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-      signal: null,
-      killedByInactivity: false,
-    });
-
-    await executePromise;
-  });
-
-  test('ScheduleWakeup keeps stdin open past result; new-turn activity + final result closes after grace', async () => {
-    const stdinWriteSpy = vi.fn((_value: string) => {});
-    const { stdinEndSpy, formatStdout, resolveStreamingResult, executePromise } =
-      await setupRunClaudeSubprocess(stdinWriteSpy);
-
-    // Emit ScheduleWakeup tool use in an assistant message
-    formatStdout(
-      `${JSON.stringify({
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              id: 'tu-wakeup',
-              name: 'ScheduleWakeup',
-              input: { delaySeconds: 270, reason: 'waiting for task', prompt: 'continue' },
-            },
-          ],
-        },
-        session_id: SESSION_ID,
-      })}\n`
-    );
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    // Emit result: turn ends with wakeup pending → stdin must NOT close
-    formatStdout(`${RESULT_LINE}\n`);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    // Switch to fake timers before the grace timer could be created
-    vi.useFakeTimers();
-
-    // Grace must not fire while wakeup is pending
-    vi.advanceTimersByTime(15_000);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    // Emit a fresh assistant turn (wakeup "fires" — turn activity resets wakeupPending)
-    formatStdout(
-      `${JSON.stringify({
-        type: 'assistant',
-        message: { content: [{ type: 'text', text: 'Resuming work...' }] },
-        session_id: SESSION_ID,
-      })}\n`
-    );
-
-    // Emit final result: no pending activity, everDeferred=true → grace timer starts
-    formatStdout(`${RESULT_LINE}\n`);
     expect(stdinEndSpy).toHaveBeenCalledTimes(0);
 
     vi.advanceTimersByTime(9_999);
@@ -292,10 +221,8 @@ describe('runClaudeSubprocess lifecycle', () => {
     formatStdout(
       `${JSON.stringify({
         type: 'system',
-        subtype: 'task_started',
-        task_id: 'task-bg1',
-        description: 'running tests',
-        task_type: 'local_bash',
+        subtype: 'background_tasks_changed',
+        tasks: [{ id: 'task-bg1' }],
         uuid: 'uuid-1',
         session_id: SESSION_ID,
       })}\n`
@@ -315,45 +242,6 @@ describe('runClaudeSubprocess lifecycle', () => {
     await expect(executePromise).resolves.toMatchObject({
       acceptedFinalResult: false,
       killedByInactivity: true,
-    });
-  });
-
-  test('pending wakeup result is not treated as completed when subprocess exits nonzero before close', async () => {
-    const stdinWriteSpy = vi.fn((_value: string) => {});
-    const { stdinEndSpy, formatStdout, resolveStreamingResult, executePromise } =
-      await setupRunClaudeSubprocess(stdinWriteSpy);
-
-    formatStdout(
-      `${JSON.stringify({
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              id: 'tu-wakeup',
-              name: 'ScheduleWakeup',
-              input: { delaySeconds: 270, reason: 'waiting for task', prompt: 'continue' },
-            },
-          ],
-        },
-        session_id: SESSION_ID,
-      })}\n`
-    );
-    formatStdout(`${RESULT_LINE}\n`);
-
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    resolveStreamingResult?.({
-      exitCode: 1,
-      stdout: '',
-      stderr: '',
-      signal: null,
-      killedByInactivity: false,
-    });
-
-    await expect(executePromise).resolves.toMatchObject({
-      acceptedFinalResult: false,
-      exitCode: 1,
     });
   });
 
@@ -409,10 +297,8 @@ describe('runClaudeSubprocess lifecycle', () => {
     formatStdout(
       `${JSON.stringify({
         type: 'system',
-        subtype: 'task_started',
-        task_id: 'task-bg1',
-        description: 'running tests',
-        task_type: 'local_bash',
+        subtype: 'background_tasks_changed',
+        tasks: [{ id: 'task-bg1' }],
         uuid: 'uuid-1',
         session_id: SESSION_ID,
       })}\n`
@@ -423,11 +309,9 @@ describe('runClaudeSubprocess lifecycle', () => {
     formatStdout(
       `${JSON.stringify({
         type: 'system',
-        subtype: 'task_notification',
-        task_id: 'task-bg1',
-        status: 'stopped',
-        output_file: '',
-        summary: 'tests passed',
+        subtype: 'background_tasks_changed',
+        tasks: [],
+        uuid: 'uuid-2',
         session_id: SESSION_ID,
       })}\n`
     );

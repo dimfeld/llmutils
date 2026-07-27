@@ -121,6 +121,15 @@ export type Message =
       session_id: string;
     }
 
+  // Authoritative list of currently running background tasks
+  | {
+      type: 'system';
+      subtype: 'background_tasks_changed';
+      tasks: unknown[];
+      uuid: string;
+      session_id: string;
+    }
+
   // Status update (e.g., compacting)
   | {
       type: 'system';
@@ -168,11 +177,10 @@ export type Message =
 // Concrete parsed facts extracted from the stream. Turn-reset semantics (treating
 // an assistant/user message as activity) are NOT encoded here — that classification
 // lives at the lifecycle boundary in terminal_input_lifecycle.ts.
-export type BackgroundActivitySignal =
-  | { kind: 'task_started'; taskId: string; taskType?: string; description?: string }
-  | { kind: 'task_stopped'; taskId: string }
-  | { kind: 'task_progress'; taskId: string }
-  | { kind: 'wakeup_scheduled' };
+export type BackgroundActivitySignal = {
+  kind: 'background_tasks_changed';
+  hasRunningTasks: boolean;
+};
 
 export interface FormattedClaudeMessage {
   structured?: StructuredMessage | StructuredMessage[];
@@ -414,7 +422,6 @@ export function formatJsonMessage(input: string, model?: string): FormattedClaud
   } else if (message.type === 'system' && message.subtype === 'task_notification') {
     return withMessage({
       type: message.type,
-      backgroundActivity: { kind: 'task_stopped', taskId: message.task_id },
       structured: {
         type: 'workflow_progress',
         timestamp: timestamp(),
@@ -425,12 +432,6 @@ export function formatJsonMessage(input: string, model?: string): FormattedClaud
   } else if (message.type === 'system' && message.subtype === 'task_started') {
     return withMessage({
       type: message.type,
-      backgroundActivity: {
-        kind: 'task_started',
-        taskId: message.task_id,
-        taskType: message.task_type,
-        description: message.description,
-      },
       structured: {
         type: 'workflow_progress',
         timestamp: timestamp(),
@@ -447,9 +448,6 @@ export function formatJsonMessage(input: string, model?: string): FormattedClaud
 
     return withMessage({
       type: message.type,
-      backgroundActivity: isTerminalUpdate
-        ? { kind: 'task_stopped', taskId: message.task_id }
-        : undefined,
       structured: {
         type: 'workflow_progress',
         timestamp: timestamp(),
@@ -463,7 +461,6 @@ export function formatJsonMessage(input: string, model?: string): FormattedClaud
 
     return withMessage({
       type: message.type,
-      backgroundActivity: { kind: 'task_progress', taskId: message.task_id },
       structured: {
         type: 'workflow_progress',
         timestamp: timestamp(),
@@ -471,6 +468,14 @@ export function formatJsonMessage(input: string, model?: string): FormattedClaud
         message: `Task In Progress: ${message.description}${durationSuffix}`,
       },
     });
+  } else if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
+    return {
+      type: message.type,
+      backgroundActivity: {
+        kind: 'background_tasks_changed',
+        hasRunningTasks: message.tasks.length > 0,
+      },
+    };
   } else if (message.type === 'system' && message.subtype === 'status') {
     // Ignore status messages with null status
     if (message.status === null) {
@@ -545,7 +550,6 @@ export function formatJsonMessage(input: string, model?: string): FormattedClaud
 
     const structuredMessages: StructuredMessage[] = [];
     const rawMessage: string[] = [];
-    let backgroundActivity: BackgroundActivitySignal | undefined;
 
     for (const content of m.content) {
       const ts = timestamp();
@@ -686,48 +690,6 @@ export function formatJsonMessage(input: string, model?: string): FormattedClaud
               }))
             )
           );
-          continue;
-        }
-
-        if (content.name === 'ScheduleWakeup') {
-          const wakeupInput = content.input;
-          const stop =
-            wakeupInput && typeof wakeupInput === 'object' && 'stop' in wakeupInput
-              ? wakeupInput.stop === true
-              : false;
-
-          if (stop) {
-            // stop:true ends the dynamic loop instead of scheduling another
-            // wakeup — it must NOT be treated as background activity that
-            // keeps stdin open, otherwise the session waits forever for a
-            // wakeup that will never fire.
-            structuredMessages.push({
-              type: 'workflow_progress',
-              timestamp: ts,
-              phase: 'wakeup_scheduled',
-              message: 'Stopped wakeup loop',
-            });
-            continue;
-          }
-
-          backgroundActivity = { kind: 'wakeup_scheduled' };
-          const delaySeconds =
-            wakeupInput && typeof wakeupInput === 'object' && 'delaySeconds' in wakeupInput
-              ? (wakeupInput.delaySeconds as unknown)
-              : undefined;
-          const reason =
-            wakeupInput && typeof wakeupInput === 'object' && 'reason' in wakeupInput
-              ? (wakeupInput.reason as unknown)
-              : undefined;
-          const delaySummary = typeof delaySeconds === 'number' ? ` in ${delaySeconds}s` : '';
-          const reasonSummary = typeof reason === 'string' && reason.trim() ? `: ${reason}` : '';
-
-          structuredMessages.push({
-            type: 'workflow_progress',
-            timestamp: ts,
-            phase: 'wakeup_scheduled',
-            message: `Scheduled wakeup${delaySummary}${reasonSummary}`,
-          });
           continue;
         }
 
@@ -940,7 +902,6 @@ export function formatJsonMessage(input: string, model?: string): FormattedClaud
       filePaths: filePaths.length > 0 ? filePaths : undefined,
       failed: failure.failed || undefined,
       failedSummary: failure.failed ? failure.summary : undefined,
-      backgroundActivity,
     });
   }
 

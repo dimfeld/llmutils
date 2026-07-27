@@ -304,27 +304,7 @@ export function executeWithTerminalInput(
   };
 
   const dispatchBackgroundActivity = (signal: BackgroundActivitySignal): void => {
-    switch (signal.kind) {
-      case 'task_started':
-        backgroundActivityTracker.taskStarted(signal.taskId, {
-          taskType: signal.taskType,
-          description: signal.description,
-        });
-        return;
-      case 'task_stopped':
-        backgroundActivityTracker.taskEnded(signal.taskId);
-        return;
-      case 'task_progress':
-        backgroundActivityTracker.taskProgress(signal.taskId);
-        return;
-      case 'wakeup_scheduled':
-        backgroundActivityTracker.wakeupScheduled();
-        return;
-      default: {
-        const exhaustive: never = signal;
-        return exhaustive;
-      }
-    }
+    backgroundActivityTracker.backgroundTasksChanged(signal.hasRunningTasks);
   };
 
   // Lifecycle classification of a formatted stream message: concrete facts are

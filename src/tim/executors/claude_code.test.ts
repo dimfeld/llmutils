@@ -2667,7 +2667,7 @@ describe('ClaudeCodeExecutor - background activity integration (real formatJsonM
     vi.clearAllMocks();
   });
 
-  test('task_started → result → task_notification (stopped): stdin stays open past result, closes after grace', async () => {
+  test('background_tasks_changed keeps stdin open until the tasks array is empty', async () => {
     vi.useFakeTimers();
     try {
       const stdinEndSpy = vi.fn(async () => {});
@@ -2747,9 +2747,8 @@ describe('ClaudeCodeExecutor - background activity integration (real formatJsonM
       await vi.runAllTimersAsync();
       await terminalInputReadyPromise;
 
-      // Feed task_started
       formatStdout?.(
-        `{"type":"system","subtype":"task_started","task_id":"bg-task-1","description":"running tests","task_type":"local_bash","uuid":"u1","session_id":"s1"}\n`
+        `{"type":"system","subtype":"background_tasks_changed","tasks":[{"id":"bg-task-1"}],"uuid":"u1","session_id":"s1"}\n`
       );
       expect(stdinEndSpy).toHaveBeenCalledTimes(0);
 
@@ -2759,9 +2758,8 @@ describe('ClaudeCodeExecutor - background activity integration (real formatJsonM
       );
       expect(stdinEndSpy).toHaveBeenCalledTimes(0);
 
-      // Feed task_notification (stopped) — grace timer starts
       formatStdout?.(
-        `{"type":"system","subtype":"task_notification","task_id":"bg-task-1","status":"stopped","output_file":"","summary":"completed","session_id":"s1"}\n`
+        `{"type":"system","subtype":"background_tasks_changed","tasks":[],"uuid":"u2","session_id":"s1"}\n`
       );
       expect(stdinEndSpy).toHaveBeenCalledTimes(0);
 
@@ -2771,247 +2769,6 @@ describe('ClaudeCodeExecutor - background activity integration (real formatJsonM
 
       // Grace period expires
       vi.advanceTimersByTime(1);
-      expect(stdinEndSpy).toHaveBeenCalledTimes(1);
-
-      resolveStreamingResult?.({
-        exitCode: 0,
-        stdout: '',
-        stderr: '',
-        signal: null,
-        killedByInactivity: false,
-      });
-      await vi.runAllTimersAsync();
-      await executePromise;
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  test('ScheduleWakeup → result → fresh turn assistant → final result: closes after grace', async () => {
-    vi.useFakeTimers();
-    try {
-      const stdinEndSpy = vi.fn(async () => {});
-      let formatStdout: ((output: string) => unknown) | undefined;
-      let resolveStreamingResult: ((value: SpawnAndLogOutputResult) => void) | undefined;
-
-      const streamingProcess = {
-        pid: 123,
-        stdin: {
-          write: vi.fn((_value: string) => {}),
-          end: stdinEndSpy,
-        },
-        result: new Promise<SpawnAndLogOutputResult>((resolve) => {
-          resolveStreamingResult = resolve;
-        }),
-        kill: vi.fn(() => {}),
-      };
-
-      let terminalInputReadyResolve: (() => void) | undefined;
-      const terminalInputReadyPromise = new Promise<void>((resolve) => {
-        terminalInputReadyResolve = resolve;
-      });
-
-      vi.doMock('../../common/git.ts', () => ({
-        getGitRoot: vi.fn(async () => tempDir),
-        getUsingJj: vi.fn(async () => false),
-      }));
-
-      vi.doMock('../../common/process.ts', () => ({
-        spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
-          formatStdout = opts.formatStdout;
-          return streamingProcess;
-        }),
-        createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
-        debug: false,
-      }));
-
-      vi.doMock('./claude_code/streaming_input.ts', async (importOriginal) =>
-        importOriginal<typeof import('./claude_code/streaming_input.js')>()
-      );
-
-      vi.doMock('./claude_code/terminal_input_lifecycle.ts', async (importOriginal) => {
-        const actual =
-          await importOriginal<typeof import('./claude_code/terminal_input_lifecycle.js')>();
-        return {
-          ...actual,
-          executeWithTerminalInput: (
-            ...args: Parameters<typeof actual.executeWithTerminalInput>
-          ) => {
-            const result = actual.executeWithTerminalInput(...args);
-            terminalInputReadyResolve?.();
-            return result;
-          },
-        };
-      });
-
-      vi.doMock('../../logging/tunnel_client.js', () => ({
-        isTunnelActive: () => false,
-        TunnelAdapter: class {},
-      }));
-
-      const { ClaudeCodeExecutor } = await import('./claude_code.js');
-      const exec = new ClaudeCodeExecutor(
-        { permissionsMcp: { enabled: false } } as any,
-        { baseDir: tempDir } as any,
-        {} as any
-      );
-
-      const executePromise = exec.execute('CTX', {
-        planId: 'p1',
-        planTitle: 'T',
-        planFilePath: `${tempDir}/plan.yml`,
-        executionMode: 'normal',
-      });
-
-      await vi.runAllTimersAsync();
-      await terminalInputReadyPromise;
-
-      // Feed wakeup (assistant with ScheduleWakeup tool_use)
-      formatStdout?.(
-        `{"type":"assistant","message":{"id":"m1","type":"message","role":"assistant","model":"claude-opus","content":[{"type":"tool_use","id":"t1","name":"ScheduleWakeup","input":{"delaySeconds":270,"reason":"waiting","prompt":"<<loop>>"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":10}},"session_id":"s1"}\n`
-      );
-      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-      // Feed first result — wakeup pending, so stdin stays open
-      formatStdout?.(
-        `{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":100,"duration_api_ms":90,"is_error":false,"num_turns":1,"result":"done","session_id":"s1"}\n`
-      );
-      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-      // Advance 10s — wakeup pending prevents close
-      vi.advanceTimersByTime(10_000);
-      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-      // Fresh turn resets wakeup
-      formatStdout?.(
-        `{"type":"assistant","message":{"id":"m2","type":"message","role":"assistant","model":"claude-opus","content":[{"type":"text","text":"Continuing work"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":5}},"session_id":"s1"}\n`
-      );
-
-      // Second result — no pending activity but everDeferred → grace timer starts
-      formatStdout?.(
-        `{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":100,"duration_api_ms":90,"is_error":false,"num_turns":2,"result":"done","session_id":"s1"}\n`
-      );
-      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-      // Advance past grace period
-      vi.advanceTimersByTime(10_000);
-      expect(stdinEndSpy).toHaveBeenCalledTimes(1);
-
-      resolveStreamingResult?.({
-        exitCode: 0,
-        stdout: '',
-        stderr: '',
-        signal: null,
-        killedByInactivity: false,
-      });
-      await vi.runAllTimersAsync();
-      await executePromise;
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  test('regression: ScheduleWakeup intercepted by follow-up prompt clears stale wakeup so final result closes after grace', async () => {
-    vi.useFakeTimers();
-    try {
-      const stdinEndSpy = vi.fn(async () => {});
-      let formatStdout: ((output: string) => unknown) | undefined;
-      let resolveStreamingResult: ((value: SpawnAndLogOutputResult) => void) | undefined;
-
-      const streamingProcess = {
-        pid: 123,
-        stdin: {
-          write: vi.fn((_value: string) => {}),
-          end: stdinEndSpy,
-        },
-        result: new Promise<SpawnAndLogOutputResult>((resolve) => {
-          resolveStreamingResult = resolve;
-        }),
-        kill: vi.fn(() => {}),
-      };
-
-      let terminalInputReadyResolve: (() => void) | undefined;
-      const terminalInputReadyPromise = new Promise<void>((resolve) => {
-        terminalInputReadyResolve = resolve;
-      });
-
-      vi.doMock('../../common/git.ts', () => ({
-        getGitRoot: vi.fn(async () => tempDir),
-        getUsingJj: vi.fn(async () => false),
-      }));
-
-      vi.doMock('../../common/process.ts', () => ({
-        spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
-          formatStdout = opts.formatStdout;
-          return streamingProcess;
-        }),
-        createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
-        debug: false,
-      }));
-
-      vi.doMock('./claude_code/streaming_input.ts', async (importOriginal) =>
-        importOriginal<typeof import('./claude_code/streaming_input.js')>()
-      );
-
-      vi.doMock('./claude_code/terminal_input_lifecycle.ts', async (importOriginal) => {
-        const actual =
-          await importOriginal<typeof import('./claude_code/terminal_input_lifecycle.js')>();
-        return {
-          ...actual,
-          executeWithTerminalInput: (
-            ...args: Parameters<typeof actual.executeWithTerminalInput>
-          ) => {
-            const result = actual.executeWithTerminalInput(...args);
-            terminalInputReadyResolve?.();
-            return result;
-          },
-        };
-      });
-
-      vi.doMock('../../logging/tunnel_client.js', () => ({
-        isTunnelActive: () => false,
-        TunnelAdapter: class {},
-      }));
-
-      const { ClaudeCodeExecutor } = await import('./claude_code.js');
-      const exec = new ClaudeCodeExecutor(
-        { permissionsMcp: { enabled: false } } as any,
-        { baseDir: tempDir } as any,
-        {} as any
-      );
-
-      const executePromise = exec.execute('CTX', {
-        planId: 'p1',
-        planTitle: 'T',
-        planFilePath: `${tempDir}/plan.yml`,
-        executionMode: 'normal',
-        followUpPrompts: ['continue working'],
-      });
-
-      await vi.runAllTimersAsync();
-      await terminalInputReadyPromise;
-
-      // Feed wakeup — wakeupPending = true
-      formatStdout?.(
-        `{"type":"assistant","message":{"id":"m1","type":"message","role":"assistant","model":"claude-opus","content":[{"type":"tool_use","id":"t1","name":"ScheduleWakeup","input":{"delaySeconds":270,"reason":"waiting","prompt":"<<loop>>"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":10}},"session_id":"s1"}\n`
-      );
-      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-      // Feed first result — intercepted by follow-up prompt, which clears stale wakeup state
-      // This clears wakeupPending
-      formatStdout?.(
-        `{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":100,"duration_api_ms":90,"is_error":false,"num_turns":1,"result":"done","session_id":"s1"}\n`
-      );
-      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-      // Feed second result — final result, no pending activity but everDeferred → grace timer
-      formatStdout?.(
-        `{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":100,"duration_api_ms":90,"is_error":false,"num_turns":2,"result":"done","session_id":"s1"}\n`
-      );
-      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-      // Advance past grace period
-      vi.advanceTimersByTime(10_000);
       expect(stdinEndSpy).toHaveBeenCalledTimes(1);
 
       resolveStreamingResult?.({

@@ -200,7 +200,7 @@ describe('terminal_input_lifecycle - background activity', () => {
 
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_started', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: true },
     });
     controller.onResultMessage(true);
 
@@ -208,7 +208,7 @@ describe('terminal_input_lifecycle - background activity', () => {
 
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_stopped', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: false },
     });
     vi.advanceTimersByTime(9_999);
     expect(stdinEndSpy).toHaveBeenCalledTimes(0);
@@ -219,39 +219,7 @@ describe('terminal_input_lifecycle - background activity', () => {
     controller.cleanup();
   });
 
-  it('non-interactive dev server tasks stop keeping stdin open after their shorter timeout', () => {
-    vi.useFakeTimers();
-    const { controller, stdinEndSpy } = makeController({
-      terminalInputEnabled: false,
-      pendingResult: new Promise<SpawnAndLogOutputResult>(() => {}),
-    });
-
-    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
-
-    controller.observeFormattedMessage({
-      type: 'system',
-      backgroundActivity: {
-        kind: 'task_started',
-        taskId: 'task-dev-server',
-        taskType: 'local_bash',
-        description: 'Run the dev server',
-      },
-    });
-    controller.onResultMessage(true);
-
-    vi.advanceTimersByTime(20 * 60 * 1000 - 1);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    vi.advanceTimersByTime(1);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    vi.advanceTimersByTime(10_000);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
-
-    controller.cleanup();
-  });
-
-  it('display-only task backgrounding does not remove task from active set or trigger close', () => {
+  it('unrelated system messages do not change the authoritative background-task status', () => {
     vi.useFakeTimers();
 
     mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
@@ -261,39 +229,17 @@ describe('terminal_input_lifecycle - background activity', () => {
 
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_started', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: true },
     });
-    // Backgrounding is display-only and does not emit an actionable lifecycle signal.
+    // Legacy task events are display-only and do not emit an actionable lifecycle signal.
     controller.observeFormattedMessage({ type: 'system' });
     controller.onResultMessage(true);
 
-    // The active task remains active, so stdin stays open.
+    // The authoritative status still says work is active, so stdin stays open.
     expect(stdinEndSpy).toHaveBeenCalledTimes(0);
 
     vi.advanceTimersByTime(10_000);
-    // Still no close — task is still considered active
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    controller.cleanup();
-  });
-
-  it('display-only task backgrounding does not clear a pending wakeup', () => {
-    vi.useFakeTimers();
-
-    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
-    mockSendFollowUpMessage.mockImplementation(vi.fn(() => {}));
-
-    const { controller, stdinEndSpy } = makeController();
-
-    controller.observeFormattedMessage({
-      type: 'assistant',
-      backgroundActivity: { kind: 'wakeup_scheduled' },
-    });
-    controller.onResultMessage(true);
-    controller.observeFormattedMessage({ type: 'system' });
-
-    vi.advanceTimersByTime(10_000);
-
+    // Still no close — the latest status still contains tasks.
     expect(stdinEndSpy).toHaveBeenCalledTimes(0);
 
     controller.cleanup();
@@ -339,12 +285,12 @@ describe('terminal_input_lifecycle - background activity', () => {
     // Start a background task, see the result, then let the task end → starts grace timer
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_started', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: true },
     });
     controller.onResultMessage(true);
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_stopped', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: false },
     });
 
     // Grace timer is now running; stdin not yet closed
@@ -385,7 +331,7 @@ describe('terminal_input_lifecycle - background activity', () => {
 
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_started', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: true },
     });
     controller.onResultMessage(true);
 
@@ -394,74 +340,13 @@ describe('terminal_input_lifecycle - background activity', () => {
 
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_stopped', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: false },
     });
     vi.advanceTimersByTime(9_999);
     expect(stdinEndSpy).toHaveBeenCalledTimes(0);
 
     vi.advanceTimersByTime(1);
     expect(stopSpy).toHaveBeenCalledTimes(1);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
-
-    controller.cleanup();
-  });
-
-  it('resets a pending wakeup on new turn activity and closes after the final grace window', () => {
-    vi.useFakeTimers();
-
-    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
-    mockSendFollowUpMessage.mockImplementation(vi.fn(() => {}));
-
-    const { controller, stdinEndSpy } = makeController();
-
-    controller.observeFormattedMessage({
-      type: 'assistant',
-      backgroundActivity: { kind: 'wakeup_scheduled' },
-    });
-    controller.onResultMessage(true);
-    vi.advanceTimersByTime(10_000);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    controller.observeFormattedMessage({ type: 'assistant' });
-    controller.onResultMessage(true);
-    vi.advanceTimersByTime(10_000);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
-
-    controller.cleanup();
-  });
-
-  it('keeps a pending wakeup after a background task ends until real turn activity arrives', () => {
-    vi.useFakeTimers();
-
-    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
-
-    const { controller, stdinEndSpy } = makeController({
-      terminalInputEnabled: false,
-      pendingResult: new Promise<SpawnAndLogOutputResult>(() => {}),
-    });
-
-    controller.observeFormattedMessage({
-      type: 'assistant',
-      backgroundActivity: { kind: 'wakeup_scheduled' },
-    });
-    controller.observeFormattedMessage({
-      type: 'system',
-      backgroundActivity: { kind: 'task_started', taskId: 'task-1' },
-    });
-    controller.onResultMessage(true);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    controller.observeFormattedMessage({
-      type: 'system',
-      backgroundActivity: { kind: 'task_stopped', taskId: 'task-1' },
-    });
-
-    vi.advanceTimersByTime(10_000);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    controller.observeFormattedMessage({ type: 'assistant' });
-    controller.onResultMessage(true);
-    vi.advanceTimersByTime(10_000);
     expect(stdinEndSpy).toHaveBeenCalledTimes(1);
 
     controller.cleanup();
@@ -479,12 +364,12 @@ describe('terminal_input_lifecycle - background activity', () => {
 
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_started', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: true },
     });
     controller.onResultMessage(true);
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_stopped', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: false },
     });
 
     vi.advanceTimersByTime(5_000);
@@ -494,37 +379,6 @@ describe('terminal_input_lifecycle - background activity', () => {
     vi.advanceTimersByTime(4_999);
     expect(stdinEndSpy).toHaveBeenCalledTimes(0);
     vi.advanceTimersByTime(1);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
-
-    controller.cleanup();
-  });
-
-  it('parse_error and debug messages do not clear a pending wakeup', () => {
-    vi.useFakeTimers();
-
-    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
-
-    const { controller, stdinEndSpy } = makeController({
-      terminalInputEnabled: false,
-      pendingResult: new Promise<SpawnAndLogOutputResult>(() => {}),
-    });
-
-    controller.observeFormattedMessage({
-      type: 'assistant',
-      backgroundActivity: { kind: 'wakeup_scheduled' },
-    });
-    controller.onResultMessage(true);
-
-    controller.observeFormattedMessage({ type: 'system' });
-    controller.observeFormattedMessage({ type: 'system' });
-    controller.onResultMessage(true);
-
-    vi.advanceTimersByTime(10_000);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    controller.observeFormattedMessage({ type: 'assistant' });
-    controller.onResultMessage(true);
-    vi.advanceTimersByTime(10_000);
     expect(stdinEndSpy).toHaveBeenCalledTimes(1);
 
     controller.cleanup();
@@ -540,53 +394,18 @@ describe('terminal_input_lifecycle - background activity', () => {
 
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_started', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: true },
     });
     controller.onResultMessage(true);
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_stopped', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: false },
     });
 
     controller.cleanup();
     vi.advanceTimersByTime(10_000);
 
     expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-  });
-
-  it('non-interactive: wakeup_scheduled keeps stdin open, turn_activity + final result closes after grace', () => {
-    vi.useFakeTimers();
-
-    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
-
-    const { controller, stdinEndSpy } = makeController({
-      terminalInputEnabled: false,
-      pendingResult: new Promise<SpawnAndLogOutputResult>(() => {}),
-    });
-
-    // Wakeup scheduled: result must not close
-    controller.observeFormattedMessage({
-      type: 'assistant',
-      backgroundActivity: { kind: 'wakeup_scheduled' },
-    });
-    controller.onResultMessage(true);
-    vi.advanceTimersByTime(10_000);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    // Wakeup "fires" — new turn activity resets wakeupPending
-    controller.observeFormattedMessage({ type: 'assistant' });
-
-    // Final result: no pending activity, but everDeferred → grace timer
-    controller.onResultMessage(true);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    vi.advanceTimersByTime(9_999);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    vi.advanceTimersByTime(1);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
-
-    controller.cleanup();
   });
 
   it('follow-up interception clears accepted final result before a continuation finishes', () => {
@@ -653,7 +472,7 @@ describe('terminal_input_lifecycle - background activity', () => {
 
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_started', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: true },
     });
     controller.onResultMessage(true);
 
@@ -662,7 +481,7 @@ describe('terminal_input_lifecycle - background activity', () => {
 
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_stopped', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: false },
     });
     vi.advanceTimersByTime(9_999);
 
@@ -672,33 +491,6 @@ describe('terminal_input_lifecycle - background activity', () => {
     vi.advanceTimersByTime(1);
 
     expect(stdinEndSpy).toHaveBeenCalledTimes(1);
-    expect(controller.acceptedSuccessfulFinalResult()).toBe(true);
-
-    controller.cleanup();
-  });
-
-  it('interactive keep-open does not accept a successful result while a wakeup is pending', () => {
-    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
-    mockSendFollowUpMessage.mockImplementation(vi.fn(() => {}));
-
-    const { controller, stdinEndSpy } = makeController({
-      keepInteractiveInputOpenOnResult: true,
-      pendingResult: new Promise<SpawnAndLogOutputResult>(() => {}),
-    });
-
-    controller.observeFormattedMessage({
-      type: 'assistant',
-      backgroundActivity: { kind: 'wakeup_scheduled' },
-    });
-    controller.onResultMessage(true);
-
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-    expect(controller.acceptedSuccessfulFinalResult()).toBe(false);
-
-    controller.observeFormattedMessage({ type: 'assistant' });
-    controller.onResultMessage(true);
-
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
     expect(controller.acceptedSuccessfulFinalResult()).toBe(true);
 
     controller.cleanup();
@@ -786,7 +578,7 @@ describe('terminal_input_lifecycle - background activity', () => {
     controller.cleanup();
   });
 
-  it('task_started after an accepted interactive result clears accepted final result', () => {
+  it('a non-empty background-task status clears an accepted interactive result', () => {
     mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
     mockSendFollowUpMessage.mockImplementation(vi.fn(() => {}));
 
@@ -799,7 +591,7 @@ describe('terminal_input_lifecycle - background activity', () => {
 
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_started', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: true },
     });
 
     expect(stdinEndSpy).toHaveBeenCalledTimes(0);
@@ -827,29 +619,6 @@ describe('terminal_input_lifecycle - background activity', () => {
     controller.cleanup();
   });
 
-  it('wakeup resume clears stale successful result until the resumed turn has a final result', () => {
-    vi.useFakeTimers();
-
-    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
-
-    const { controller, stdinEndSpy } = makeController({
-      terminalInputEnabled: false,
-      pendingResult: new Promise<SpawnAndLogOutputResult>(() => {}),
-    });
-
-    controller.observeFormattedMessage({
-      type: 'assistant',
-      backgroundActivity: { kind: 'wakeup_scheduled' },
-    });
-    controller.onResultMessage(true);
-    controller.observeFormattedMessage({ type: 'assistant' });
-
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-    expect(controller.acceptedSuccessfulFinalResult()).toBe(false);
-
-    controller.cleanup();
-  });
-
   it('deferred task drain accepts a successful result only when grace closes stdin', () => {
     vi.useFakeTimers();
 
@@ -862,14 +631,14 @@ describe('terminal_input_lifecycle - background activity', () => {
 
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_started', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: true },
     });
     controller.onResultMessage(true);
     expect(controller.acceptedSuccessfulFinalResult()).toBe(false);
 
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_stopped', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: false },
     });
     vi.advanceTimersByTime(10_000);
 
@@ -915,12 +684,12 @@ describe('terminal_input_lifecycle - background activity', () => {
     // Background task starts, result arrives, task ends → grace timer running
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_started', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: true },
     });
     controller.onResultMessage(true);
     controller.observeFormattedMessage({
       type: 'system',
-      backgroundActivity: { kind: 'task_stopped', taskId: 'task-1' },
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: false },
     });
     expect(stdinEndSpy).toHaveBeenCalledTimes(0);
 
@@ -939,32 +708,5 @@ describe('terminal_input_lifecycle - background activity', () => {
     controller.cleanup();
     onSpy.mockRestore();
     offSpy.mockRestore();
-  });
-
-  it('task_progress system message does not reset a pending wakeup (not a turn_activity signal)', () => {
-    vi.useFakeTimers();
-
-    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
-    mockSendFollowUpMessage.mockImplementation(vi.fn(() => {}));
-
-    const { controller, stdinEndSpy } = makeController();
-
-    // Schedule a wakeup — wakeupPending = true
-    controller.observeFormattedMessage({
-      type: 'assistant',
-      backgroundActivity: { kind: 'wakeup_scheduled' },
-    });
-    controller.onResultMessage(true);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    // Emit a task_progress system message — must NOT reset wakeupPending
-    // (type is 'system', no backgroundActivity field)
-    controller.observeFormattedMessage({ type: 'system' });
-
-    // Wakeup is still pending: advancing past the grace window must not close
-    vi.advanceTimersByTime(10_000);
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
-
-    controller.cleanup();
   });
 });
