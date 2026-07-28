@@ -1321,6 +1321,12 @@ export async function getPlanDetail(
   const siblingUuids = siblingRows.map((r) => r.uuid);
   for (const uuid of siblingUuids) referencedPlanUuids.add(uuid);
 
+  // An unfinished effective-base epic contributes all of its children above,
+  // including the plan currently being loaded. The current plan is already
+  // present in the query bundle, so reloading it as a referenced plan would
+  // concatenate its dependency rows with themselves.
+  referencedPlanUuids.delete(planUuid);
+
   const referencedPlans = getPlansByUuid(db, referencedPlanUuids);
   // Load dependency rows for referenced plans so toDependencySummary can compute
   // their display statuses. enrichPlansWithContext also backfills any remaining

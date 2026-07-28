@@ -110,6 +110,53 @@ describe('projects/[projectId]/plans/[planId]/edit/+page.server', () => {
     });
   });
 
+  test('does not duplicate dependencies for a child of an unfinished effective-base epic', async () => {
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'epic-parent-uuid',
+      planId: 40,
+      title: 'Epic parent',
+      status: 'in_progress',
+      priority: 'high',
+      epic: true,
+      sourceCreatedAt: timestamp(),
+      sourceUpdatedAt: timestamp(),
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'dependency-uuid',
+      planId: 41,
+      title: 'Dependency plan',
+      status: 'done',
+      priority: 'medium',
+      sourceCreatedAt: timestamp(),
+      sourceUpdatedAt: timestamp(),
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'target-plan-uuid',
+      planId: 42,
+      title: 'Epic child',
+      status: 'pending',
+      priority: 'medium',
+      parentUuid: 'epic-parent-uuid',
+      dependencyUuids: ['dependency-uuid'],
+      sourceCreatedAt: timestamp(),
+      sourceUpdatedAt: timestamp(),
+    });
+
+    const result = await load({
+      params: { projectId: String(projectId), planId: 'target-plan-uuid' },
+    } as never);
+
+    expect(result.initialValue.dependencies).toEqual([
+      expect.objectContaining({
+        uuid: 'dependency-uuid',
+        projectId,
+        planId: 41,
+        title: 'Dependency plan',
+        status: 'done',
+      }),
+    ]);
+  });
+
   test('redirects numeric plan ids to the canonical edit route', async () => {
     nonSyncedUpsertPlan(db, projectId, {
       uuid: 'target-plan-uuid',
