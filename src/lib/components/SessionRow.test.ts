@@ -76,8 +76,33 @@ describe('SessionRow', () => {
       },
     });
 
-    expect(body).toContain('1 minute ago');
+    expect(body).toContain('5m | 1 minute ago');
     expect(body).not.toContain('5 minutes ago');
+  });
+
+  test('shows elapsed time since the session started alongside the latest update time', async () => {
+    const { body } = await render(SessionRow, {
+      props: {
+        session: createSession({
+          connectedAt: '2026-03-18T04:05:00.000Z',
+          messages: [
+            {
+              id: 'msg-1',
+              seq: 1,
+              timestamp: '2026-03-18T10:04:30.000Z',
+              category: 'log',
+              bodyType: 'text',
+              body: { type: 'text', text: 'Recent update' },
+              rawType: 'log',
+              triggersNotification: false,
+            },
+          ],
+        }),
+        href: '/projects/1/sessions/conn-1',
+      },
+    });
+
+    expect(body).toContain('6h | just now');
   });
 
   test('uses the most recent message time when no notification message exists', async () => {

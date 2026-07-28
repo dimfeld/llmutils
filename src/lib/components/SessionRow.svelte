@@ -6,7 +6,7 @@
   import type { SessionData } from '$lib/types/session.js';
   import { getPlanTaskCounts } from '$lib/remote/plan_task_counts.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
-  import { formatRelativeTime } from '$lib/utils/time.js';
+  import { formatCompactRelativeTime, formatRelativeTime } from '$lib/utils/time.js';
 
   let {
     session,
@@ -31,6 +31,7 @@
       session.connectedAt
     );
   });
+  let elapsedTime = $derived(formatCompactRelativeTime(session.connectedAt));
   let relativeTime = $derived(formatRelativeTime(lastUpdatedAt));
   let canDismiss = $derived(session.status !== 'active');
   let hasTerminalPane = $derived(
@@ -140,7 +141,7 @@
         <TerminalIcon class="size-3.5" />
       </button>
     {/if}
-    <span class="shrink-0 text-xs text-muted-foreground">{relativeTime}</span>
+    <span class="shrink-0 text-xs text-muted-foreground">{elapsedTime} | {relativeTime}</span>
   </div>
   {#if session.sessionInfo.planTitle || session.sessionInfo.planId != null}
     <div class="mt-0.5 flex min-w-0 items-center gap-1 pl-4 text-xs text-muted-foreground">
