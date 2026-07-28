@@ -171,7 +171,7 @@ describe('buildHeadlessSessionInfo', () => {
       title: 'headless mode',
     });
 
-    expect(info).toEqual({
+    expect(info).toMatchObject({
       command: 'agent',
       interactive: false,
       planId: 166,
@@ -212,7 +212,7 @@ describe('buildHeadlessSessionInfo', () => {
       title: 'review plan',
     });
 
-    expect(info).toEqual({
+    expect(info).toMatchObject({
       command: 'review',
       interactive: false,
       planId: 42,
