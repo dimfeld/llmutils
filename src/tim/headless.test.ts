@@ -29,7 +29,14 @@ let updateHeadlessSessionInfo: typeof import('./headless.js').updateHeadlessSess
 let resetHeadlessWarningStateForTests: typeof import('./headless.js').resetHeadlessWarningStateForTests;
 let shouldRecordHeadlessJobForTests: typeof import('./headless.js').shouldRecordHeadlessJobForTests;
 const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
-let tempCacheDir: string | undefined;
+const tempCacheDirs = new Set<string>();
+
+async function createTempCacheDir(): Promise<string> {
+  const tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-test-'));
+  tempCacheDirs.add(tempCacheDir);
+  process.env.XDG_CACHE_HOME = tempCacheDir;
+  return tempCacheDir;
+}
 
 beforeAll(async () => {
   // Set up the mock
@@ -59,9 +66,9 @@ afterEach(async () => {
   } else {
     process.env.XDG_CACHE_HOME = originalXdgCacheHome;
   }
-  if (tempCacheDir) {
+  for (const tempCacheDir of tempCacheDirs) {
     await rm(tempCacheDir, { recursive: true, force: true });
-    tempCacheDir = undefined;
+    tempCacheDirs.delete(tempCacheDir);
   }
   resetHeadlessWarningStateForTests();
 });
@@ -406,8 +413,7 @@ describe('createHeadlessAdapterForCommand', () => {
   });
 
   test('starts an embedded server by default and writes session metadata', async () => {
-    tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-test-'));
-    process.env.XDG_CACHE_HOME = tempCacheDir;
+    await createTempCacheDir();
 
     const headlessAdapter = await createHeadlessAdapterForCommand({
       command: 'review',
@@ -431,8 +437,7 @@ describe('createHeadlessAdapterForCommand', () => {
   });
 
   test('honors TIM_SERVER_PORT, TIM_SERVER_HOSTNAME, TIM_WS_BEARER_TOKEN, and TIM_NO_SERVER', async () => {
-    tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-test-'));
-    process.env.XDG_CACHE_HOME = tempCacheDir;
+    await createTempCacheDir();
 
     process.env.TIM_SERVER_PORT = '0';
     process.env.TIM_SERVER_HOSTNAME = '127.0.0.1';
@@ -470,8 +475,7 @@ describe('createHeadlessAdapterForCommand', () => {
   });
 
   test('can disable bearer tokens for discoverable shell embedded servers', async () => {
-    tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-test-'));
-    process.env.XDG_CACHE_HOME = tempCacheDir;
+    await createTempCacheDir();
     process.env.TIM_SERVER_PORT = '0';
     process.env.TIM_SERVER_HOSTNAME = '127.0.0.1';
     process.env.TIM_WS_BEARER_TOKEN = 'secret-token';
@@ -523,8 +527,7 @@ describe('createHeadlessAdapterForCommand', () => {
   });
 
   test('uses a requested TIM_SERVER_PORT and enforces bearer auth on the embedded server', async () => {
-    tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-test-'));
-    process.env.XDG_CACHE_HOME = tempCacheDir;
+    await createTempCacheDir();
     process.env.TIM_SERVER_HOSTNAME = '127.0.0.1';
     process.env.TIM_WS_BEARER_TOKEN = 'secret-token';
 
@@ -590,8 +593,7 @@ describe('createHeadlessAdapterForCommand', () => {
   });
 
   test('respects TIM_SERVER_HOSTNAME and stops the embedded server on destroy', async () => {
-    tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-test-'));
-    process.env.XDG_CACHE_HOME = tempCacheDir;
+    await createTempCacheDir();
     process.env.TIM_SERVER_PORT = '0';
     process.env.TIM_SERVER_HOSTNAME = '127.0.0.1';
 
