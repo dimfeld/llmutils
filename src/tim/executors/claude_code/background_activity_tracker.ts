@@ -1,10 +1,12 @@
 export const BACKGROUND_DRAIN_GRACE_MS = 10_000;
+export const BACKGROUND_TASK_STALL_TIMEOUT_MS = 15 * 60 * 1000;
 
 type TimerHandle = ReturnType<typeof setTimeout>;
 
 export interface BackgroundActivityTrackerOptions {
   onClose: () => void;
   graceMs?: number;
+  stallTimeoutMs?: number;
   setTimeoutFn?: (callback: () => void, ms: number) => TimerHandle;
   clearTimeoutFn?: (handle: TimerHandle) => void;
 }
@@ -16,14 +18,17 @@ export class BackgroundActivityTracker {
   private closed = false;
   private acceptedFinalSuccessfulResult = false;
   private graceTimer: TimerHandle | undefined;
+  private stallTimer: TimerHandle | undefined;
   private readonly onClose: () => void;
   private readonly graceMs: number;
+  private readonly stallTimeoutMs: number;
   private readonly setTimeoutFn: (callback: () => void, ms: number) => TimerHandle;
   private readonly clearTimeoutFn: (handle: TimerHandle) => void;
 
   constructor(options: BackgroundActivityTrackerOptions) {
     this.onClose = options.onClose;
     this.graceMs = options.graceMs ?? BACKGROUND_DRAIN_GRACE_MS;
+    this.stallTimeoutMs = options.stallTimeoutMs ?? BACKGROUND_TASK_STALL_TIMEOUT_MS;
     this.setTimeoutFn =
       options.setTimeoutFn ??
       ((callback: () => void, ms: number): TimerHandle => setTimeout(callback, ms));
@@ -44,9 +49,11 @@ export class BackgroundActivityTracker {
       this.invalidateAcceptedFinalResult();
       this.everDeferred = true;
       this.cancelGraceTimer();
+      this.startStallTimer();
       return;
     }
 
+    this.cancelStallTimer();
     this.evaluateDrain();
   }
 
@@ -117,10 +124,12 @@ export class BackgroundActivityTracker {
 
   cancel(): void {
     this.cancelGraceTimer();
+    this.cancelStallTimer();
   }
 
   forceClose(): void {
     this.cancelGraceTimer();
+    this.cancelStallTimer();
     this.closeWithoutAcceptingResult();
   }
 
@@ -154,6 +163,28 @@ export class BackgroundActivityTracker {
     this.graceTimer = undefined;
   }
 
+  private startStallTimer(): void {
+    this.cancelStallTimer();
+    this.stallTimer = this.setTimeoutFn((): void => {
+      this.stallTimer = undefined;
+      if (this.closed || !this.hasRunningBackgroundTasks) {
+        return;
+      }
+
+      this.hasRunningBackgroundTasks = false;
+      this.startGraceTimer();
+    }, this.stallTimeoutMs);
+  }
+
+  private cancelStallTimer(): void {
+    if (!this.stallTimer) {
+      return;
+    }
+
+    this.clearTimeoutFn(this.stallTimer);
+    this.stallTimer = undefined;
+  }
+
   private clearPostResultWindow(): void {
     this.pendingResultSuccessful = undefined;
     this.acceptedFinalSuccessfulResult = false;
@@ -183,6 +214,7 @@ export class BackgroundActivityTracker {
 
     this.closed = true;
     this.pendingResultSuccessful = undefined;
+    this.cancelStallTimer();
     this.cancelGraceTimer();
     this.onClose();
   }

@@ -2,25 +2,30 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   BackgroundActivityTracker,
   BACKGROUND_DRAIN_GRACE_MS,
+  BACKGROUND_TASK_STALL_TIMEOUT_MS,
 } from './background_activity_tracker.ts';
 
 function makeFakeTimer(): {
   setTimeoutFn: (cb: () => void, ms: number) => ReturnType<typeof setTimeout>;
   clearTimeoutFn: (handle: ReturnType<typeof setTimeout>) => void;
   fire: () => void;
+  fireHandle: (handle: ReturnType<typeof setTimeout>) => void;
   hasPending: () => boolean;
+  getLastHandle: () => ReturnType<typeof setTimeout> | undefined;
   getLastScheduledMs: () => number | undefined;
 } {
   let nextHandle = 1;
   const pending = new Map<number, { cb: () => void; ms: number }>();
+  let lastHandle: ReturnType<typeof setTimeout> | undefined;
   let lastScheduledMs: number | undefined;
 
   return {
     setTimeoutFn: (cb: () => void, ms: number): ReturnType<typeof setTimeout> => {
       const handle = nextHandle++;
       pending.set(handle, { cb, ms });
+      lastHandle = handle as unknown as ReturnType<typeof setTimeout>;
       lastScheduledMs = ms;
-      return handle as unknown as ReturnType<typeof setTimeout>;
+      return lastHandle;
     },
     clearTimeoutFn: (handle: ReturnType<typeof setTimeout>): void => {
       pending.delete(handle as unknown as number);
@@ -32,12 +37,24 @@ function makeFakeTimer(): {
         callback();
       }
     },
+    fireHandle: (handle: ReturnType<typeof setTimeout>): void => {
+      const entry = pending.get(handle as unknown as number);
+      if (!entry) {
+        return;
+      }
+      pending.delete(handle as unknown as number);
+      entry.cb();
+    },
     hasPending: (): boolean => pending.size > 0,
+    getLastHandle: (): ReturnType<typeof setTimeout> | undefined => lastHandle,
     getLastScheduledMs: (): number | undefined => lastScheduledMs,
   };
 }
 
-function makeTracker(graceMs = 10): {
+function makeTracker(
+  graceMs = 10,
+  stallTimeoutMs = 100
+): {
   tracker: BackgroundActivityTracker;
   timer: ReturnType<typeof makeFakeTimer>;
   onClose: ReturnType<typeof vi.fn>;
@@ -47,6 +64,7 @@ function makeTracker(graceMs = 10): {
   const tracker = new BackgroundActivityTracker({
     onClose,
     graceMs,
+    stallTimeoutMs,
     setTimeoutFn: timer.setTimeoutFn,
     clearTimeoutFn: timer.clearTimeoutFn,
   });
@@ -57,6 +75,12 @@ function makeTracker(graceMs = 10): {
 describe('BACKGROUND_DRAIN_GRACE_MS', () => {
   it('is 10 seconds', () => {
     expect(BACKGROUND_DRAIN_GRACE_MS).toBe(10_000);
+  });
+});
+
+describe('BACKGROUND_TASK_STALL_TIMEOUT_MS', () => {
+  it('is 15 minutes', () => {
+    expect(BACKGROUND_TASK_STALL_TIMEOUT_MS).toBe(15 * 60 * 1000);
   });
 });
 
@@ -77,7 +101,8 @@ describe('BackgroundActivityTracker', () => {
     tracker.backgroundTasksChanged(true);
     tracker.onResultMessage(true);
     expect(onClose).not.toHaveBeenCalled();
-    expect(timer.hasPending()).toBe(false);
+    expect(timer.hasPending()).toBe(true);
+    expect(timer.getLastScheduledMs()).toBe(100);
 
     tracker.backgroundTasksChanged(false);
     expect(timer.hasPending()).toBe(true);
@@ -94,7 +119,8 @@ describe('BackgroundActivityTracker', () => {
     tracker.backgroundTasksChanged(true);
     tracker.onResultMessage(true);
     tracker.backgroundTasksChanged(true);
-    expect(timer.hasPending()).toBe(false);
+    expect(timer.hasPending()).toBe(true);
+    expect(timer.getLastScheduledMs()).toBe(100);
 
     tracker.backgroundTasksChanged(false);
     expect(timer.hasPending()).toBe(true);
@@ -112,7 +138,8 @@ describe('BackgroundActivityTracker', () => {
     expect(timer.hasPending()).toBe(true);
 
     tracker.backgroundTasksChanged(true);
-    expect(timer.hasPending()).toBe(false);
+    expect(timer.hasPending()).toBe(true);
+    expect(timer.getLastScheduledMs()).toBe(100);
     timer.fire();
     expect(onClose).not.toHaveBeenCalled();
   });
@@ -176,13 +203,71 @@ describe('BackgroundActivityTracker', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('closes after a non-empty status stalls and the drain grace elapses', () => {
+    const { tracker, timer, onClose } = makeTracker();
+
+    tracker.backgroundTasksChanged(true);
+    tracker.onResultMessage(true);
+
+    timer.fire();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(tracker.hasPendingActivity()).toBe(false);
+    expect(timer.getLastScheduledMs()).toBe(10);
+
+    timer.fire();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(tracker.acceptedSuccessfulFinalResult()).toBe(true);
+  });
+
+  it('closes a stalled status even when a continuation cleared the result window', () => {
+    const { tracker, timer, onClose } = makeTracker();
+
+    tracker.backgroundTasksChanged(true);
+    tracker.onResultMessage(true);
+    tracker.onContinuationStarted();
+
+    timer.fire();
+    timer.fire();
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(tracker.acceptedSuccessfulFinalResult()).toBe(false);
+  });
+
+  it('refreshes the stall deadline on each non-empty status', () => {
+    const { tracker, timer, onClose } = makeTracker();
+
+    tracker.backgroundTasksChanged(true);
+    const firstStallTimer = timer.getLastHandle();
+    tracker.backgroundTasksChanged(true);
+
+    timer.fireHandle(firstStallTimer!);
+    expect(tracker.hasPendingActivity()).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+
+    timer.fire();
+    timer.fire();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels the stall deadline when an empty status arrives', () => {
+    const { tracker, timer, onClose } = makeTracker();
+
+    tracker.backgroundTasksChanged(true);
+    const stallTimer = timer.getLastHandle();
+    tracker.backgroundTasksChanged(false);
+
+    timer.fireHandle(stallTimer!);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(timer.hasPending()).toBe(false);
+  });
+
   it('uses the production grace default when none is injected', () => {
-    let recordedMs: number | undefined;
+    const recordedTimeouts: number[] = [];
     const tracker = new BackgroundActivityTracker({
       onClose: vi.fn(),
       setTimeoutFn: (_cb: () => void, ms: number): ReturnType<typeof setTimeout> => {
-        recordedMs = ms;
-        return 1 as unknown as ReturnType<typeof setTimeout>;
+        recordedTimeouts.push(ms);
+        return recordedTimeouts.length as unknown as ReturnType<typeof setTimeout>;
       },
       clearTimeoutFn: (_handle: ReturnType<typeof setTimeout>): void => {},
     });
@@ -191,6 +276,6 @@ describe('BackgroundActivityTracker', () => {
     tracker.onResultMessage(true);
     tracker.backgroundTasksChanged(false);
 
-    expect(recordedMs).toBe(BACKGROUND_DRAIN_GRACE_MS);
+    expect(recordedTimeouts).toEqual([BACKGROUND_TASK_STALL_TIMEOUT_MS, BACKGROUND_DRAIN_GRACE_MS]);
   });
 });

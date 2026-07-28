@@ -35,11 +35,12 @@ The tracker is instantiated **once inside `executeWithTerminalInput()`** (alongs
 
 - **Running background tasks**: a boolean taken from the most recent `background_tasks_changed` message. Each message replaces the previous state; individual task events are not reconciled.
 - `onResultMessage()` consults the tracker instead of closing unconditionally: if there is pending activity it keeps stdin open; if the run ever deferred it starts a grace timer; otherwise (a normal turn with no background work) it closes immediately — **no added latency**.
+- A non-empty status starts or refreshes a global `BACKGROUND_TASK_STALL_TIMEOUT_MS = 15 minutes` deadline. An empty status cancels it. If the deadline expires, the tracker treats the background work as stalled and drains toward closure without trying to identify individual tasks.
 - When keep-alive reasons drain to zero, a `BACKGROUND_DRAIN_GRACE_MS = 10_000` (10s) grace timer runs. New activity in that window cancels the close; silence lets it close. The grace duration and `setTimeout`/`clearTimeout` are injectable via constructor options so tests run fast and deterministically.
 
 ### Forced shutdown always wins
 
-SIGTERM (`stopActiveSessionForShutdown`) and the headless `setEndSessionHandler` / `setForceEndSessionHandler` route through `forceCloseInputNow()` → `tracker.forceClose()`, which cancels any pending grace timer and closes immediately, ignoring active tasks. `cleanup()` calls `tracker.cancel()` so a dangling grace timer never keeps the event loop alive.
+SIGTERM (`stopActiveSessionForShutdown`) and the headless `setEndSessionHandler` / `setForceEndSessionHandler` route through `forceCloseInputNow()` → `tracker.forceClose()`, which cancels pending grace and stall timers and closes immediately, ignoring active tasks. `cleanup()` calls `tracker.cancel()` so dangling timers never keep the event loop alive.
 
 ### Completion semantics
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SpawnAndLogOutputResult, StreamingProcess } from '../../../common/process.ts';
+import { BACKGROUND_TASK_STALL_TIMEOUT_MS } from './background_activity_tracker.ts';
 
 // Top-level mock functions for ./streaming_input.ts - defined with vi.hoisted so they are
 // available when vi.mock() factory runs (which is hoisted to the top of the file)
@@ -212,6 +213,31 @@ describe('terminal_input_lifecycle - background activity', () => {
     });
     vi.advanceTimersByTime(9_999);
     expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+    vi.advanceTimersByTime(1);
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+    controller.cleanup();
+  });
+
+  it('closes stdin when a non-empty background-task status stalls', () => {
+    vi.useFakeTimers();
+    const { controller, stdinEndSpy } = makeController({
+      terminalInputEnabled: false,
+      pendingResult: new Promise<SpawnAndLogOutputResult>(() => {}),
+    });
+
+    controller.observeFormattedMessage({
+      type: 'system',
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: true },
+    });
+    controller.onResultMessage(true);
+
+    vi.advanceTimersByTime(BACKGROUND_TASK_STALL_TIMEOUT_MS);
+    expect(stdinEndSpy).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(9_999);
+    expect(stdinEndSpy).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(1);
     expect(stdinEndSpy).toHaveBeenCalledTimes(1);
