@@ -1922,6 +1922,7 @@ export async function runReviewGuideWorkflow(
             baseDir: options.baseDir,
             model:
               options.model ??
+              options.config.reviewGuide?.structuralModel?.codex ??
               options.config.reviewGuide?.issuesModel?.codex ??
               options.config.reviewGuide?.model?.codex,
             terminalInput: executorTerminalInput,

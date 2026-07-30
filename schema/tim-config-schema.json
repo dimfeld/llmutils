@@ -1295,6 +1295,16 @@
             }
           },
           "additionalProperties": false
+        },
+        "structuralModel": {
+          "type": "object",
+          "properties": {
+            "codex": {
+              "description": "Model override for codex-cli structural simplification review",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

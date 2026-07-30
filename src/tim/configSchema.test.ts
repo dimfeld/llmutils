@@ -1810,6 +1810,17 @@ describe('configSchema', () => {
       expect(result.reviewGuide?.issuesModel?.codex).toBe('gpt-5.6-terra:medium');
     });
 
+    test('should accept a separate structural review model configuration', () => {
+      const result = timConfigSchema.parse({
+        reviewGuide: {
+          issuesModel: { codex: 'gpt-5.6-terra:medium' },
+          structuralModel: { codex: 'gpt-5.6-codex:high' },
+        },
+      });
+
+      expect(result.reviewGuide?.structuralModel?.codex).toBe('gpt-5.6-codex:high');
+    });
+
     test('should accept review guide comments instructions', () => {
       const config = {
         reviewGuideComments: {

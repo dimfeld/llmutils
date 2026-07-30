@@ -1004,6 +1004,16 @@ export const timConfigSchema = z
           })
           .strict()
           .optional(),
+        /** Model overrides for the Codex structural simplification review pass. */
+        structuralModel: z
+          .object({
+            codex: z
+              .string()
+              .optional()
+              .describe('Model override for codex-cli structural simplification review'),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional()
