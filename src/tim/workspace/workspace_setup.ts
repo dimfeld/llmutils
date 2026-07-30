@@ -34,6 +34,7 @@ import { findWorkspaceInfosByTaskId } from './workspace_info.js';
 import { WorkspaceAlreadyLocked, WorkspaceLock } from './workspace_lock.js';
 import {
   createWorkspace,
+  mergeWorkspaceDotEnv,
   prepareExistingWorkspace,
   runWorkspaceUpdateCommands,
   type Workspace,
@@ -575,6 +576,8 @@ export async function setupWorkspace(
           error('Continuing without workspace plan file for update commands.');
           planFileForUpdateCommands = undefined;
         }
+
+        await mergeWorkspaceDotEnv(workspace.path, config.lifecycle?.env);
 
         const updateSuccess = await runWorkspaceUpdateCommands(
           workspace.path,

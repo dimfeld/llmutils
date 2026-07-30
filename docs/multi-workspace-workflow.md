@@ -115,6 +115,11 @@ This lets you carve out a dedicated set of workspaces for automated use while ke
 
 When working with multiple workspaces, quickly switching between them can be tedious. tim provides an interactive workspace switcher using `fzf`.
 
+When tim selects or creates a managed workspace for a command, it applies configured
+`lifecycle.env` entries to that workspace's `.env` file. It updates matching keys, adds missing
+keys, and removes keys whose configured value is `null`. It preserves all other `.env` values, so
+each workspace can keep its own settings. Tim does not copy `.env` from the primary workspace.
+
 ### Setup
 
 Generate a shell function for your shell:

@@ -313,30 +313,14 @@ const LOCAL_CONFIG_FILES = [
   '.claude/settings.local.json',
 ];
 
-const PRIMARY_WORKSPACE_COPY_FILES = ['.env'];
-
 /**
  * Create symlinks for local config files from source to target directory.
  * Only creates symlinks for files that exist in the source directory.
  */
 export async function symlinkLocalConfigs(sourceDir: string, targetDir: string): Promise<void> {
-  for (const relativePath of [...LOCAL_CONFIG_FILES, ...PRIMARY_WORKSPACE_COPY_FILES]) {
+  for (const relativePath of LOCAL_CONFIG_FILES) {
     const sourcePath = path.join(sourceDir, relativePath);
     const targetPath = path.join(targetDir, relativePath);
-
-    // Check if source file exists
-    if (PRIMARY_WORKSPACE_COPY_FILES.includes(relativePath)) {
-      try {
-        const existingTarget = await fs.lstat(targetPath).catch(() => undefined);
-        if (existingTarget?.isSymbolicLink()) {
-          await fs.rm(targetPath);
-        }
-        await fs.copyFile(sourcePath, targetPath);
-      } catch (error) {
-        log(`Failed to copy primary workspace file ${relativePath}: ${String(error)}`);
-      }
-      continue;
-    }
 
     try {
       await fs.lstat(sourcePath);
@@ -379,6 +363,97 @@ export async function symlinkLocalConfigs(sourceDir: string, targetDir: string):
     } catch (error) {
       log(`Failed to create symlink for ${relativePath}: ${String(error)}`);
     }
+  }
+}
+
+const DOTENV_ASSIGNMENT_PATTERN = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/;
+
+function serializeDotEnvValue(value: string): string {
+  if (!value.includes('\n') && !value.includes('\r')) {
+    return `'${value}'`;
+  }
+  if (/\\[nr]/.test(value)) {
+    throw new Error(
+      'A multiline lifecycle.env value cannot also contain a literal \\n or \\r sequence'
+    );
+  }
+
+  return `"${value.replaceAll('\r', '\\r').replaceAll('\n', '\\n')}"`;
+}
+
+/**
+ * Merge configured lifecycle values into a workspace-local .env file.
+ * Existing unrelated lines, comments, and line endings are preserved.
+ */
+export async function mergeWorkspaceDotEnv(
+  workspacePath: string,
+  configuredEnv: Record<string, string | null> | undefined
+): Promise<void> {
+  if (!configuredEnv || Object.keys(configuredEnv).length === 0) {
+    return;
+  }
+
+  const envPath = path.join(workspacePath, '.env');
+  let originalContent: string | undefined;
+  let isSymlink = false;
+
+  try {
+    const stats = await fs.lstat(envPath);
+    isSymlink = stats.isSymbolicLink();
+    originalContent = await fs.readFile(envPath, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+  }
+
+  const lineEnding = originalContent?.includes('\r\n') ? '\r\n' : '\n';
+  const hadTrailingLineEnding = originalContent?.endsWith('\n') ?? false;
+  const lines =
+    originalContent === undefined || originalContent === '' ? [] : originalContent.split(/\r?\n/);
+  if (hadTrailingLineEnding) {
+    lines.pop();
+  }
+
+  const mergedLines: string[] = [];
+  const writtenKeys = new Set<string>();
+
+  for (const line of lines) {
+    const match = DOTENV_ASSIGNMENT_PATTERN.exec(line);
+    const key = match?.[1];
+    if (key === undefined || !Object.hasOwn(configuredEnv, key)) {
+      mergedLines.push(line);
+      continue;
+    }
+
+    const value = configuredEnv[key];
+    if (value !== null && !writtenKeys.has(key)) {
+      mergedLines.push(`${key}=${serializeDotEnvValue(value)}`);
+      writtenKeys.add(key);
+    }
+  }
+
+  for (const [key, value] of Object.entries(configuredEnv)) {
+    if (value !== null && !writtenKeys.has(key)) {
+      mergedLines.push(`${key}=${serializeDotEnvValue(value)}`);
+    }
+  }
+
+  if (originalContent === undefined && mergedLines.length === 0) {
+    return;
+  }
+
+  const trailingLineEnding =
+    mergedLines.length > 0 && (originalContent === undefined || hadTrailingLineEnding)
+      ? lineEnding
+      : '';
+  const mergedContent = mergedLines.join(lineEnding) + trailingLineEnding;
+
+  if (isSymlink) {
+    await fs.rm(envPath);
+  }
+  if (isSymlink || mergedContent !== originalContent) {
+    await fs.writeFile(envPath, mergedContent, 'utf8');
   }
 }
 
@@ -1240,6 +1315,14 @@ export async function createWorkspace(
     }
   } catch (error) {
     log(`Error checking out workspace branch: ${String(error)}`);
+    await fs.rm(targetClonePath, { recursive: true, force: true }).catch(() => {});
+    return null;
+  }
+
+  try {
+    await mergeWorkspaceDotEnv(targetClonePath, config.lifecycle?.env);
+  } catch (error) {
+    log(`Failed to update workspace .env file: ${String(error)}`);
     await fs.rm(targetClonePath, { recursive: true, force: true }).catch(() => {});
     return null;
   }

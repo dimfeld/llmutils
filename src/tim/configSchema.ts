@@ -434,15 +434,19 @@ export function isMediaHostConfigured(
   return getMediaHostUploadConfig(config) !== null;
 }
 
-export const timEnvironmentVariableNameSchema = z
+const environmentVariableNameSchema = z
   .string()
   .regex(
     /^[A-Z_][A-Z0-9_]*$/,
     'Environment variable names must use uppercase letters, digits, and underscores, and must not start with a digit'
-  )
-  .refine((name) => !RESERVED_TIM_ENVIRONMENT_VARIABLE_SET.has(name), {
+  );
+
+export const timEnvironmentVariableNameSchema = environmentVariableNameSchema.refine(
+  (name) => !RESERVED_TIM_ENVIRONMENT_VARIABLE_SET.has(name),
+  {
     message: 'Reserved TIM built-in environment variables cannot be configured',
-  });
+  }
+);
 
 export const timEnvironmentEntrySchema = z.union([
   z.string(),
@@ -509,7 +513,14 @@ export const timConfigSchema = z
     lifecycle: z
       .object({
         commands: z.array(lifecycleCommandSchema).optional(),
+        env: z
+          .record(environmentVariableNameSchema, z.string().nullable())
+          .optional()
+          .describe(
+            'Environment variable values to merge into a workspace .env file when the workspace is selected'
+          ),
       })
+      .strict()
       .optional()
       .describe('Lifecycle commands to run before and after tim command execution'),
     subprocessMonitor: z

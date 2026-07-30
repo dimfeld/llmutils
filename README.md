@@ -679,6 +679,7 @@ Important config areas:
 - `requireBranchPrefix` - fail branch-creating flows if no prefix is configured
 - `githubUsername` - avoids an API call when classifying PRs
 - `lifecycle.commands` - start/stop dev servers or services around agent runs
+- `lifecycle.env` - merge selected values into each managed workspace `.env`
 - `subprocessMonitor` - opt-in timeouts for stuck Claude/Codex tool subprocesses
 - `smallTasks` - executor/model for lightweight helper passes (defaults to `codex-cli` with `gpt-5.6-luna:medium`)
 - `updateDocs` - controls automatic agent documentation updates; `applyLessons` is retained for manual finalization compatibility
@@ -804,6 +805,18 @@ lifecycle:
 ```
 
 Use `runIn: [agent]`, `runIn: [review]`, `runIn: [proof]`, `runIn: [pr-fix]`, `runIn: [shell]`, or `runIn: [autoreview]` to scope setup to a specific command context. Omit `runIn` for shared setup.
+
+**Workspace `.env` updates:** Use `lifecycle.env` for values that tim must write into each
+managed workspace `.env` when it selects or creates that workspace. String values add or update
+keys. A `null` value removes the key. Tim preserves unrelated workspace-specific values and does
+not copy `.env` from the primary workspace.
+
+```yaml
+lifecycle:
+  env:
+    SHARED_API_URL: 'https://api.example.test'
+    OLD_SHARED_VALUE: null
+```
 
 **Secrets:** The `environment` block is for deterministic, non-secret configuration values. Store secrets in your shell environment, global `~/.config/tim/config.yml` (which is not checked into source control), or workspace `.env` files.
 

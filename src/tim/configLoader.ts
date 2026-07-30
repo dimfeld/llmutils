@@ -250,6 +250,12 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
           ...(localConfig.lifecycle.commands ?? []),
         ]);
       }
+      if (mainConfig.lifecycle.env || localConfig.lifecycle.env) {
+        mergedLifecycle.env = {
+          ...mainConfig.lifecycle.env,
+          ...localConfig.lifecycle.env,
+        };
+      }
       merged.lifecycle = mergedLifecycle;
     } else {
       merged.lifecycle = localConfig.lifecycle;

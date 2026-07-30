@@ -506,6 +506,44 @@ defaultExecutor: ${DEFAULT_EXECUTOR}
       expect(config.environment).toBeUndefined();
     });
 
+    test('loadEffectiveConfig merges lifecycle env maps with local overrides', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          lifecycle: {
+            env: {
+              SHARED_VALUE: 'repo',
+              REPO_ONLY: 'keep',
+            },
+          },
+        }),
+        'utf-8'
+      );
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          lifecycle: {
+            env: {
+              SHARED_VALUE: 'local',
+              REMOVE_VALUE: null,
+            },
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.lifecycle?.env).toEqual({
+        SHARED_VALUE: 'local',
+        REPO_ONLY: 'keep',
+        REMOVE_VALUE: null,
+      });
+    });
+
     test('loadEffectiveConfig merges global config before repository config', async () => {
       // Re-enable global config loading for this test
       const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;

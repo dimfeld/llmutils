@@ -392,8 +392,27 @@
               "title"
             ]
           }
+        },
+        "env": {
+          "description": "Environment variable values to merge into a workspace .env file when the workspace is selected",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Z_][A-Z0-9_]*$"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
         }
-      }
+      },
+      "additionalProperties": false
     },
     "subprocessMonitor": {
       "description": "Opt-in timeout rules for subprocesses spawned by agent executors",

@@ -764,6 +764,27 @@ describe('configSchema', () => {
   });
 
   describe('lifecycle configuration', () => {
+    test('accepts string and null lifecycle env values', () => {
+      const result = timConfigSchema.parse({
+        lifecycle: {
+          env: {
+            DATABASE_URL: 'postgres://localhost/app',
+            REMOVE_ME: null,
+          },
+        },
+      });
+
+      expect(result.lifecycle?.env).toEqual({
+        DATABASE_URL: 'postgres://localhost/app',
+        REMOVE_ME: null,
+      });
+    });
+
+    test('rejects invalid lifecycle env names and values', () => {
+      expect(() => timConfigSchema.parse({ lifecycle: { env: { lowercase: 'value' } } })).toThrow();
+      expect(() => timConfigSchema.parse({ lifecycle: { env: { VALID_NAME: 42 } } })).toThrow();
+    });
+
     test('accepts lifecycle commands with onlyWorkspaceType', () => {
       const config = {
         lifecycle: {

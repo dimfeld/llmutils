@@ -235,6 +235,46 @@ describe('setupWorkspace', () => {
     );
   });
 
+  test('merges lifecycle env when selecting an existing workspace', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-env-merge');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await fs.writeFile(
+      path.join(existingWorkspacePath, '.env'),
+      'SHARED_VALUE=old\nWORKSPACE_PORT=4100\nREMOVE_ME=old\n'
+    );
+
+    await seedWorkspace(existingWorkspacePath, 'task-env-merge');
+    vi.spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    vi.spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
+    vi.spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      {
+        workspace: 'task-env-merge',
+      },
+      baseDir,
+      planFile,
+      {
+        ...config,
+        lifecycle: {
+          env: {
+            SHARED_VALUE: 'new',
+            ADDED_VALUE: 'added',
+            REMOVE_ME: null,
+          },
+        },
+      },
+      'tim generate'
+    );
+
+    expect(await fs.readFile(path.join(existingWorkspacePath, '.env'), 'utf-8')).toBe(
+      "SHARED_VALUE='new'\nWORKSPACE_PORT=4100\nADDED_VALUE='added'\n"
+    );
+  });
+
   test('passes plan UUID to auto-workspace selector when provided', async () => {
     const autoWorkspacePath = path.join(tempDir, 'workspace-auto-plan-uuid');
     await fs.mkdir(autoWorkspacePath, { recursive: true });

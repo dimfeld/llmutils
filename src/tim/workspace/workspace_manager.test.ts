@@ -2,6 +2,7 @@ import { describe, expect, test, beforeEach, afterEach, vi } from 'vitest';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
+import * as dotenv from 'dotenv';
 
 vi.mock('../../logging.js', () => ({
   log: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock('../actions.js', () => ({
 import {
   createWorkspace,
   findUniqueBranchName,
+  mergeWorkspaceDotEnv,
   prepareExistingWorkspace,
   runWorkspaceUpdateCommands,
   symlinkLocalConfigs,
@@ -87,6 +89,11 @@ describe('createWorkspace', () => {
         cloneLocation,
         createBranch: true,
       },
+      lifecycle: {
+        env: {
+          CREATED_WORKSPACE: 'yes',
+        },
+      },
     };
 
     mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
@@ -135,6 +142,9 @@ describe('createWorkspace', () => {
     // Verify the workspace directory was actually created
     const stats = await fs.stat(result!.path);
     expect(stats.isDirectory()).toBe(true);
+    expect(await fs.readFile(path.join(result!.path, '.env'), 'utf-8')).toBe(
+      "CREATED_WORKSPACE='yes'\n"
+    );
   });
 
   test('createWorkspace with tim method - infers repository URL if not provided', async () => {
@@ -1740,7 +1750,7 @@ describe('createWorkspace', () => {
     expect(await fs.readFile(targetConfigPath, 'utf-8')).toBe('current: true');
   });
 
-  test('symlinkLocalConfigs copies .env from the primary workspace', async () => {
+  test('symlinkLocalConfigs leaves the workspace .env unchanged', async () => {
     const sourceDirectory = path.join(testTempDir, 'env-source');
     const targetDirectory = path.join(testTempDir, 'env-target');
     const sourceEnvPath = path.join(sourceDirectory, '.env');
@@ -1753,8 +1763,75 @@ describe('createWorkspace', () => {
 
     await symlinkLocalConfigs(sourceDirectory, targetDirectory);
 
-    expect(await fs.readFile(targetEnvPath, 'utf-8')).toBe('DATABASE_URL=primary\n');
+    expect(await fs.readFile(targetEnvPath, 'utf-8')).toBe('DATABASE_URL=stale\n');
     expect((await fs.lstat(targetEnvPath)).isSymbolicLink()).toBe(false);
+  });
+
+  test('mergeWorkspaceDotEnv adds, updates, and removes configured values', async () => {
+    const workspaceDirectory = path.join(testTempDir, 'env-merge');
+    const envPath = path.join(workspaceDirectory, '.env');
+    await fs.mkdir(workspaceDirectory, { recursive: true });
+    await fs.writeFile(
+      envPath,
+      [
+        '# Workspace settings',
+        'DATABASE_URL=workspace',
+        'REMOVE_ME=old',
+        'WORKSPACE_PORT=4100',
+        'DATABASE_URL=duplicate',
+        '',
+      ].join('\n')
+    );
+
+    await mergeWorkspaceDotEnv(workspaceDirectory, {
+      DATABASE_URL: 'configured value',
+      ADDED_VALUE: 'contains "quotes" and\nnewlines',
+      REMOVE_ME: null,
+    });
+
+    const mergedContent = await fs.readFile(envPath, 'utf-8');
+    expect(mergedContent).toBe(
+      [
+        '# Workspace settings',
+        "DATABASE_URL='configured value'",
+        'WORKSPACE_PORT=4100',
+        'ADDED_VALUE="contains "quotes" and\\nnewlines"',
+        '',
+      ].join('\n')
+    );
+    expect(dotenv.parse(mergedContent)).toEqual({
+      DATABASE_URL: 'configured value',
+      WORKSPACE_PORT: '4100',
+      ADDED_VALUE: 'contains "quotes" and\nnewlines',
+    });
+  });
+
+  test('mergeWorkspaceDotEnv does not create a file for removal-only values', async () => {
+    const workspaceDirectory = path.join(testTempDir, 'env-removal-only');
+    await fs.mkdir(workspaceDirectory, { recursive: true });
+
+    await mergeWorkspaceDotEnv(workspaceDirectory, { REMOVE_ME: null });
+
+    await expect(fs.access(path.join(workspaceDirectory, '.env'))).rejects.toThrow();
+  });
+
+  test('mergeWorkspaceDotEnv replaces a symlink with a workspace-local file', async () => {
+    const sourceDirectory = path.join(testTempDir, 'env-symlink-source');
+    const workspaceDirectory = path.join(testTempDir, 'env-symlink-workspace');
+    const sourceEnvPath = path.join(sourceDirectory, '.env');
+    const workspaceEnvPath = path.join(workspaceDirectory, '.env');
+    await fs.mkdir(sourceDirectory, { recursive: true });
+    await fs.mkdir(workspaceDirectory, { recursive: true });
+    await fs.writeFile(sourceEnvPath, 'SHARED=old\nWORKSPACE_ONLY=keep\n');
+    await fs.symlink(sourceEnvPath, workspaceEnvPath);
+
+    await mergeWorkspaceDotEnv(workspaceDirectory, { SHARED: 'new' });
+
+    expect((await fs.lstat(workspaceEnvPath)).isSymbolicLink()).toBe(false);
+    expect(await fs.readFile(workspaceEnvPath, 'utf-8')).toBe(
+      "SHARED='new'\nWORKSPACE_ONLY=keep\n"
+    );
+    expect(await fs.readFile(sourceEnvPath, 'utf-8')).toBe('SHARED=old\nWORKSPACE_ONLY=keep\n');
   });
 
   test('createWorkspace copies gitdir pointer when .git is a file', async () => {
