@@ -1821,6 +1821,14 @@ describe('configSchema', () => {
       expect(result.reviewGuide?.structuralModel?.codex).toBe('gpt-5.6-codex:high');
     });
 
+    test('should accept a regular review structural model configuration', () => {
+      const result = timConfigSchema.parse({
+        review: { structuralModel: { codex: 'gpt-5.6-codex:high' } },
+      });
+
+      expect(result.review?.structuralModel?.codex).toBe('gpt-5.6-codex:high');
+    });
+
     test('should accept review guide comments instructions', () => {
       const config = {
         reviewGuideComments: {

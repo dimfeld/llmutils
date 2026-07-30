@@ -358,6 +358,7 @@ When the target has a resolvable GitHub PR — a plan-backed target whose plan l
 `tim review-guide generate <planId>` generates a review guide for a plan that does not yet have an associated PR. It reuses the same pipeline as `tim pr review-guide` and stores results in the `review` table, keyed by the plan's UUID instead of a PR URL. With `--auto-workspace`, it routes through the managed workspace and reviews the latest committed state; without it, it runs in the current working tree and includes uncommitted changes in the diff.
 
 Configure `reviewGuide.guideModel` and `reviewGuide.issuesModel` independently when the final guide and issue-extraction passes should use different models. Configure `reviewGuide.structuralModel.codex` separately when the Codex structural simplification pass should use a different model; it falls back to `issuesModel.codex`, then the older `reviewGuide.model.codex` setting. The older `reviewGuide.model` setting remains the fallback for the other passes.
+For the regular `tim review` command, configure its structural pass with `review.structuralModel.codex`; it falls back to the normal review model.
 
 ```yaml
 reviewGuide:

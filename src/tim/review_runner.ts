@@ -65,6 +65,8 @@ export interface ReviewRunOptions extends PrepareReviewExecutorsOptions {
   serialBoth?: boolean;
   /** Optional Codex-only structural simplification review for full-plan runs. */
   buildStructuralPrompt?: StructuralReviewPromptBuilder;
+  /** Optional model override for the Codex structural simplification review. */
+  structuralModel?: string;
 }
 
 export interface ReviewRunResult {
@@ -213,7 +215,14 @@ export async function runReview(options: ReviewRunOptions): Promise<ReviewRunRes
   const structuralPreparedExecutor = options.buildStructuralPrompt
     ? {
         name: 'codex-cli' as const,
-        executor: buildExecutorAndLog('codex-cli', options.sharedExecutorOptions, options.config),
+        executor: buildExecutorAndLog(
+          'codex-cli',
+          {
+            ...options.sharedExecutorOptions,
+            model: options.structuralModel ?? options.sharedExecutorOptions.model,
+          },
+          options.config
+        ),
         prompt: options.buildStructuralPrompt({ executorName: 'codex-cli' }),
         phase: 'structural-simplification-review' as const,
       }

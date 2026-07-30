@@ -932,6 +932,16 @@ export const timConfigSchema = z
           .enum(['claude-code', 'codex-cli', 'both'])
           .optional()
           .describe('Default executor to use for review execution'),
+        /** Model override for the Codex structural simplification review pass. */
+        structuralModel: z
+          .object({
+            codex: z
+              .string()
+              .optional()
+              .describe('Model override for codex-cli structural simplification review'),
+          })
+          .strict()
+          .optional(),
         /** Default focus areas for reviews (security, performance, testing, etc.) */
         focusAreas: z
           .array(z.string())

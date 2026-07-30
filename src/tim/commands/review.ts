@@ -2267,6 +2267,7 @@ export async function handleReviewCommand(
             sharedExecutorOptions,
             buildPrompt: selectedBuildPrompt,
             buildStructuralPrompt: options.includeStructural ? buildStructuralPrompt : undefined,
+            structuralModel: options.model ?? config.review?.structuralModel?.codex,
             planInfo,
           });
 

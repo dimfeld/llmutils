@@ -1204,6 +1204,16 @@
             "both"
           ]
         },
+        "structuralModel": {
+          "type": "object",
+          "properties": {
+            "codex": {
+              "description": "Model override for codex-cli structural simplification review",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
         "focusAreas": {
           "description": "Default focus areas for reviews such as security, performance, testing",
           "type": "array",
