@@ -725,7 +725,8 @@
                 "low",
                 "medium",
                 "high",
-                "xhigh"
+                "xhigh",
+                "max"
               ]
             }
           ]
@@ -768,7 +769,8 @@
                 "low",
                 "medium",
                 "high",
-                "xhigh"
+                "xhigh",
+                "max"
               ]
             }
           ]
@@ -871,7 +873,8 @@
                 "low",
                 "medium",
                 "high",
-                "xhigh"
+                "xhigh",
+                "max"
               ]
             }
           },
@@ -1480,7 +1483,8 @@
                     "low",
                     "medium",
                     "high",
-                    "xhigh"
+                    "xhigh",
+                    "max"
                   ]
                 },
                 "generate": {
@@ -1490,7 +1494,8 @@
                     "low",
                     "medium",
                     "high",
-                    "xhigh"
+                    "xhigh",
+                    "max"
                   ]
                 },
                 "scopedReview": {
@@ -1500,7 +1505,8 @@
                     "low",
                     "medium",
                     "high",
-                    "xhigh"
+                    "xhigh",
+                    "max"
                   ]
                 },
                 "fullReview": {
@@ -1510,7 +1516,8 @@
                     "low",
                     "medium",
                     "high",
-                    "xhigh"
+                    "xhigh",
+                    "max"
                   ]
                 }
               }

@@ -64,7 +64,7 @@ export const claudeCodeOptionsSchema = z.object({
 });
 
 /** Valid reasoning effort levels for Codex */
-export const codexReasoningLevelSchema = z.enum(['low', 'medium', 'high', 'xhigh']);
+export const codexReasoningLevelSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 export type CodexReasoningLevel = z.infer<typeof codexReasoningLevelSchema>;
 
 /**
