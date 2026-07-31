@@ -189,7 +189,7 @@ Not all plan schema fields need to be in SQLite — only add fields that benefit
 
 ### Update the Shadow Diff Field List
 
-If the new field is user-editable (not internal metadata like `id`, `uuid`, `createdAt`, `updatedAt`, or `materializedAs`), add it to the `EDITABLE_PLAN_FIELDS` array in `src/tim/plan_materialize.ts`. This array controls which fields are compared during shadow-based sync — without the new field in the list, edits to it in the materialized file will be silently ignored during sync.
+If the new field is user-editable (not internal metadata like `id`, `uuid`, `createdAt`, or `updatedAt`), add it to the `EDITABLE_PLAN_FIELDS` array in `src/tim/plan_materialize.ts`. This array controls which fields are compared during shadow-based sync — without the new field in the list, edits to it in the materialized file will be silently ignored during sync.
 
 ## Step 6: Test Your Changes
 

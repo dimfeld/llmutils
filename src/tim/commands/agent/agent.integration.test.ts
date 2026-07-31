@@ -118,7 +118,6 @@ vi.mock('../../plan_materialize.js', async (importOriginal) => {
     resolveProjectContext: vi.fn(async (repoRoot: string) =>
       actual.resolveProjectContext(repoRoot)
     ),
-    readMaterializedPlanRole: vi.fn(async () => null),
     diffPlanFields: vi.fn(() => ({})),
     mergePlanWithShadow: vi.fn((base: any) => base),
     cleanupMaterializedPlans: vi.fn(async () => {}),

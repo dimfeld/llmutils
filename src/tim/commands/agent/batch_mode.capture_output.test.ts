@@ -94,7 +94,6 @@ vi.mock('../../plan_materialize.js', async (importOriginal) => ({
     planRowsByUuid: new Map(),
     maxNumericId: 0,
   })),
-  readMaterializedPlanRole: vi.fn(async () => null),
   MATERIALIZED_DIR: '.tim/plans',
 }));
 

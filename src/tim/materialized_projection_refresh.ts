@@ -11,7 +11,6 @@ import {
   getShadowPlanPathForFile,
   MATERIALIZED_DIR,
   parseMaterializedFrontmatterFromContent,
-  parseMaterializedPlanRoleFromContent,
 } from './plan_materialize.js';
 
 export function refreshExistingPrimaryMaterializedPlans(
@@ -43,10 +42,6 @@ export function refreshExistingPrimaryMaterializedPlans(
       }
       const { filePath, planId } = materialization;
 
-      if (readMaterializedPlanRoleSync(filePath) !== 'primary') {
-        continue;
-      }
-
       if (isPrimaryMaterializedPlanDirty(filePath)) {
         continue;
       }
@@ -58,7 +53,7 @@ export function refreshExistingPrimaryMaterializedPlans(
       }
 
       const uuidToPlanId = buildUuidToPlanIdMap(getPlansByProject(db, projectId));
-      const plan = getPlanSchemaFromRow(row, uuidToPlanId, 'primary', db);
+      const plan = getPlanSchemaFromRow(row, uuidToPlanId, db);
       plan.id = planId;
       const content = generatePlanFileContent(plan);
       writeFileSync(filePath, content, 'utf8');
@@ -74,18 +69,6 @@ export function refreshExistingPrimaryMaterializedPlans(
   }
 
   return refreshedPaths;
-}
-
-function readMaterializedPlanRoleSync(filePath: string): 'primary' | 'reference' | null {
-  if (!existsSync(filePath)) {
-    return null;
-  }
-
-  try {
-    return parseMaterializedPlanRoleFromContent(readFileSync(filePath, 'utf8'));
-  } catch {
-    return 'primary';
-  }
 }
 
 function unlinkMaterializedPrimary(filePath: string): void {
@@ -185,9 +168,6 @@ function findPlanIdForExistingMaterialization(repoRoot: string, planUuid: string
       continue;
     }
     const filePath = path.join(dir, entry);
-    if (readMaterializedPlanRoleSync(filePath) !== 'primary') {
-      continue;
-    }
     const frontmatter = readMaterializedFrontmatterSync(filePath);
     if (frontmatter?.uuid === planUuid) {
       return Number(match[1]);

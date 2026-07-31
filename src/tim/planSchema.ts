@@ -93,7 +93,6 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     updatedAt: z.string().datetime().optional(),
     docsUpdatedAt: z.string().datetime().optional(),
     lessonsAppliedAt: z.string().datetime().optional(),
-    materializedAs: z.enum(['primary', 'reference']).optional(),
     tasks: z.array(taskSchema),
     baseBranch: z.string().optional(),
     baseCommit: z.string().optional(),

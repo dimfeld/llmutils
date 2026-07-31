@@ -85,8 +85,6 @@ type MaterializePlanOptions = {
   preserveUpdatedAt?: string;
 };
 
-export type MaterializedPlanRole = 'primary' | 'reference';
-
 type CleanupMaterializedPlansResult = {
   deletedPrimaryFiles: string[];
   deletedReferenceFiles: string[];
@@ -231,22 +229,19 @@ async function materializePlanRow(
   row: PlanRow,
   targetPath: string,
   uuidToPlanId: Map<string, number>,
-  materializedAs: MaterializedPlanRole,
   options: { planIdOverride?: number } = {}
 ): Promise<string> {
-  const plan = getPlanSchemaFromRow(row, uuidToPlanId, materializedAs);
+  const plan = getPlanSchemaFromRow(row, uuidToPlanId);
   if (options.planIdOverride !== undefined) {
     plan.id = options.planIdOverride;
   }
   const content = generatePlanFileContent(plan);
 
   await Bun.write(targetPath, content);
-  if (materializedAs === 'primary') {
-    await Bun.write(
-      getShadowPlanPathForFile(targetPath),
-      generatePlanFileContent(plan, { preserveRevisionMetadata: true })
-    );
-  }
+  await Bun.write(
+    getShadowPlanPathForFile(targetPath),
+    generatePlanFileContent(plan, { preserveRevisionMetadata: true })
+  );
   return targetPath;
 }
 
@@ -256,7 +251,7 @@ async function refreshPrimaryMaterializedPlanAtPath(
   uuidToPlanId: Map<string, number>,
   planIdForPath: number
 ): Promise<string> {
-  return materializePlanRow(row, targetPath, uuidToPlanId, 'primary', {
+  return materializePlanRow(row, targetPath, uuidToPlanId, {
     planIdOverride: planIdForPath,
   });
 }
@@ -351,7 +346,6 @@ function parseShadowMaterializedFilename(filename: string): { planId: number } |
 export function getPlanSchemaFromRow(
   row: PlanRow,
   uuidToPlanId: Map<string, number>,
-  materializedAs?: MaterializedPlanRole,
   db: Database = getDatabase()
 ): PlanSchema {
   const tasks = getPlanTasksByUuid(db, row.uuid).map((task) => ({
@@ -368,7 +362,6 @@ export function getPlanSchemaFromRow(
 
   return {
     ...planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId),
-    ...(materializedAs ? { materializedAs } : {}),
   };
 }
 
@@ -428,7 +421,6 @@ export function mergePlanWithShadow(
 
   const mergedPlan: PlanSchema = {
     ...dbPlan,
-    materializedAs: filePlan.materializedAs ?? dbPlan.materializedAs,
   };
 
   for (const field of changedFields) {
@@ -1168,19 +1160,17 @@ export async function materializePlan(
   }
 
   const targetPath = getMaterializedPlanPath(repoRoot, planId);
-  return materializePlanRow(row, targetPath, resolvedContext.uuidToPlanId, 'primary');
+  return materializePlanRow(row, targetPath, resolvedContext.uuidToPlanId);
 }
 
-/** Materialize related plans and prune stale reference files no longer needed by any primary plan. */
+/** Materialize related plans without replacing existing local working copies. */
 export async function materializeAndPruneRelatedPlans(
   planId: number,
   repoRoot: string,
   existingContext?: ProjectContext
 ): Promise<string[]> {
   const context = existingContext ?? (await resolveProjectContext(repoRoot));
-  const paths = await materializeRelatedPlans(planId, repoRoot, context);
-  await pruneUnusedReferenceFiles(repoRoot, context);
-  return paths;
+  return materializeRelatedPlans(planId, repoRoot, context);
 }
 
 export async function materializeRelatedPlans(
@@ -1205,168 +1195,14 @@ export async function materializeRelatedPlans(
 
   for (const relatedRow of relatedRows) {
     const targetPath = getMaterializedPlanPath(repoRoot, relatedRow.plan_id);
-    const existingRole = await readMaterializedPlanRole(targetPath);
-    if (existingRole === 'primary') {
+    if (await Bun.file(targetPath).exists()) {
       continue;
     }
 
-    writtenPaths.push(
-      await materializePlanRow(relatedRow, targetPath, context.uuidToPlanId, 'reference')
-    );
+    writtenPaths.push(await materializePlanRow(relatedRow, targetPath, context.uuidToPlanId));
   }
 
   return writtenPaths;
-}
-
-async function collectMaterializedPlanRoles(
-  repoRoot: string,
-  entries: string[]
-): Promise<Map<string, MaterializedPlanRole>> {
-  const roles = new Map<string, MaterializedPlanRole>();
-
-  for (const entry of entries) {
-    const parsed = parseMaterializedFilename(entry);
-    if (!parsed) {
-      continue;
-    }
-
-    const entryPath = path.join(repoRoot, MATERIALIZED_DIR, entry);
-    const role = await readMaterializedPlanRole(entryPath);
-    if (role) {
-      roles.set(entry, role);
-    }
-  }
-
-  return roles;
-}
-
-async function collectNeededReferencePlanIds(
-  repoRoot: string,
-  context: ProjectContext,
-  entries?: string[],
-  rolesByEntry?: Map<string, MaterializedPlanRole>
-): Promise<Set<number>> {
-  const materializedDir = path.join(repoRoot, MATERIALIZED_DIR);
-  const scannedEntries =
-    entries ??
-    (await readdir(materializedDir).catch((error) => {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return [];
-      }
-      throw error;
-    }));
-  const resolvedRolesByEntry =
-    rolesByEntry ?? (await collectMaterializedPlanRoles(repoRoot, scannedEntries));
-
-  const rowsByPlanId = new Map<number, PlanRow>();
-  for (const row of context.rows) {
-    if (!context.duplicatePlanIds.has(row.plan_id)) {
-      rowsByPlanId.set(row.plan_id, row);
-    }
-  }
-
-  const neededRefPlanIds = new Set<number>();
-  const db = getDatabase();
-  for (const entry of scannedEntries) {
-    const parsed = parseMaterializedFilename(entry);
-    if (!parsed || resolvedRolesByEntry.get(entry) !== 'primary') {
-      continue;
-    }
-
-    const row = rowsByPlanId.get(parsed.planId);
-    if (!row) {
-      continue;
-    }
-
-    const dependencyUuids = getPlanDependenciesByUuid(db, row.uuid).map(
-      (dependency) => dependency.depends_on_uuid
-    );
-    for (const relatedPlanId of getRelatedPlanIds(context.rows, row, dependencyUuids)) {
-      neededRefPlanIds.add(relatedPlanId);
-    }
-  }
-
-  return neededRefPlanIds;
-}
-
-async function pruneUnusedReferenceFiles(
-  repoRoot: string,
-  context: ProjectContext,
-  entries?: string[],
-  rolesByEntry?: Map<string, MaterializedPlanRole>
-): Promise<string[]> {
-  const materializedDir = path.join(repoRoot, MATERIALIZED_DIR);
-  const scannedEntries =
-    entries ??
-    (await readdir(materializedDir).catch((error) => {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return [];
-      }
-      throw error;
-    }));
-  const resolvedRolesByEntry =
-    rolesByEntry ?? (await collectMaterializedPlanRoles(repoRoot, scannedEntries));
-  const neededReferencePlanIds = await collectNeededReferencePlanIds(
-    repoRoot,
-    context,
-    scannedEntries,
-    resolvedRolesByEntry
-  );
-  const deletedReferenceFiles: string[] = [];
-
-  for (const entry of scannedEntries) {
-    const parsed = parseMaterializedFilename(entry);
-    if (!parsed || resolvedRolesByEntry.get(entry) !== 'reference') {
-      continue;
-    }
-
-    if (neededReferencePlanIds.has(parsed.planId)) {
-      continue;
-    }
-
-    const entryPath = path.join(materializedDir, entry);
-    await unlink(entryPath).catch((error) => {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
-    });
-    deletedReferenceFiles.push(entryPath);
-  }
-
-  return deletedReferenceFiles;
-}
-
-async function refreshRelatedRefs(
-  planId: number,
-  repoRoot: string,
-  context: ProjectContext
-): Promise<string[]> {
-  await materializeRelatedPlans(planId, repoRoot, context);
-  return pruneUnusedReferenceFiles(repoRoot, context);
-}
-
-/** Read materializedAs from a plan file's YAML frontmatter without side effects.
- *  Unlike readPlanFile(), this never writes to the file or DB.
- *  Returns null if the file does not exist. */
-export async function readMaterializedPlanRole(
-  filePath: string
-): Promise<MaterializedPlanRole | null> {
-  let content: string;
-  try {
-    content = await readFile(filePath, 'utf-8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return null;
-    }
-    throw error;
-  }
-
-  return parseMaterializedPlanRoleFromContent(content);
-}
-
-export function parseMaterializedPlanRoleFromContent(content: string): MaterializedPlanRole {
-  const frontmatter = parseMaterializedFrontmatterFromContent(content);
-  return frontmatter?.materializedAs === 'reference' ? 'reference' : 'primary';
 }
 
 export function parseMaterializedFrontmatterFromContent(
@@ -1470,13 +1306,8 @@ export async function syncMaterializedPlan(
 ): Promise<string> {
   const filePath = getMaterializedPlanPath(repoRoot, planId);
 
-  // Only sync primary materializations — reference files are read-only DB snapshots
-  const role = await readMaterializedPlanRole(filePath);
-  if (role === null) {
+  if (!(await Bun.file(filePath).exists())) {
     throw new Error(`Materialized plan file not found: ${filePath}`);
-  }
-  if (role === 'reference') {
-    return filePath;
   }
 
   // Validate against DB before readPlanFile() to avoid its UUID auto-generation side effect
@@ -1548,7 +1379,6 @@ export async function syncMaterializedPlan(
     if (!options.skipRematerialize && !hasNumericIdDrift) {
       const freshContext = await resolveProjectContext(repoRoot, resolvedContext.repository);
       await materializePlan(planId, repoRoot, { context: freshContext });
-      await refreshRelatedRefs(planId, repoRoot, freshContext);
     }
     return filePath;
   }
@@ -1645,7 +1475,6 @@ export async function syncMaterializedPlan(
     } else {
       const freshContext = await resolveProjectContext(repoRoot, resolvedContext.repository);
       await materializePlan(planId, repoRoot, { context: freshContext });
-      await refreshRelatedRefs(planId, repoRoot, freshContext);
     }
   }
 
@@ -1687,7 +1516,6 @@ export async function withPlanAutoSync<T>(
       try {
         const freshContext = await resolveProjectContext(repoRoot, repository);
         await materializePlan(planId, repoRoot, { context: freshContext });
-        await refreshRelatedRefs(planId, repoRoot, freshContext);
       } catch (materializeError) {
         // If fn() already threw, don't mask the original error
         if (!fnError) {
@@ -1731,7 +1559,6 @@ export async function cleanupMaterializedPlans(
   }
 
   const context = await resolveProjectContext(repoRoot);
-  const rolesByEntry = await collectMaterializedPlanRoles(repoRoot, entries);
   const rowsByPlanId = new Map<number, PlanRow>();
   for (const row of context.rows) {
     if (!context.duplicatePlanIds.has(row.plan_id)) {
@@ -1741,12 +1568,11 @@ export async function cleanupMaterializedPlans(
 
   const deletedPrimaryFiles: string[] = [];
   const deletedReferenceFiles: string[] = [];
-  const deletedPrimaryPlanIds: number[] = [];
 
-  // First pass: delete stale primary .plan.md files for done/cancelled plans
+  // Delete stale materialized plan files for done or cancelled plans.
   for (const entry of entries) {
     const parsed = parseMaterializedFilename(entry);
-    if (!parsed || rolesByEntry.get(entry) !== 'primary') {
+    if (!parsed) {
       continue;
     }
 
@@ -1772,61 +1598,14 @@ export async function cleanupMaterializedPlans(
       }
     });
     deletedPrimaryFiles.push(entryPath);
-    deletedPrimaryPlanIds.push(parsed.planId);
   }
 
-  // Derive remaining roles from the initial scan minus deleted entries
-  const deletedEntries = new Set(deletedPrimaryPlanIds.map((id) => `${id}.plan.md`));
-  const remainingRolesByEntry = new Map<string, MaterializedPlanRole>();
-  const remainingEntries: string[] = [];
-  for (const [entry, role] of rolesByEntry) {
-    if (!deletedEntries.has(entry)) {
-      remainingRolesByEntry.set(entry, role);
-      remainingEntries.push(entry);
-    }
-  }
-
-  const neededRefPlanIds = await collectNeededReferencePlanIds(
-    repoRoot,
-    context,
-    remainingEntries,
-    remainingRolesByEntry
-  );
-
-  // Re-materialize deleted primary plans that are still needed as references
-  for (const planId of deletedPrimaryPlanIds) {
-    if (neededRefPlanIds.has(planId)) {
-      const row = rowsByPlanId.get(planId);
-      if (row) {
-        const entry = `${planId}.plan.md`;
-        const targetPath = getMaterializedPlanPath(repoRoot, planId);
-        await materializePlanRow(row, targetPath, context.uuidToPlanId, 'reference');
-        remainingRolesByEntry.set(entry, 'reference');
-        remainingEntries.push(entry);
-      }
-    }
-  }
-
-  // Second pass: prune unused reference files
-  deletedReferenceFiles.push(
-    ...(await pruneUnusedReferenceFiles(repoRoot, context, remainingEntries, remainingRolesByEntry))
-  );
-
-  // Clean up legacy .ref.md files from before the format unification.
-  // Materialize replacements for any that are still needed before deleting.
-  // Re-read directory to catch legacy files not in the roles map.
-  const allRemainingEntries = await readdir(materializedDir).catch((error) => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return [];
-    }
-    throw error;
-  });
-  for (const entry of allRemainingEntries) {
+  // Clean up legacy reference files and orphaned shadows.
+  for (const entry of entries) {
     const orphanedShadow = parseShadowMaterializedFilename(entry);
     if (orphanedShadow) {
       const primaryPath = getMaterializedPlanPath(repoRoot, orphanedShadow.planId);
-      const primaryRole = await readMaterializedPlanRole(primaryPath);
-      if (!primaryRole || primaryRole === 'reference') {
+      if (!(await Bun.file(primaryPath).exists())) {
         await unlink(path.join(materializedDir, entry)).catch((error) => {
           if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
             throw error;
@@ -1844,17 +1623,9 @@ export async function cleanupMaterializedPlans(
     const legacyPlanId = Number(legacyMatch[1]);
     const legacyEntryPath = path.join(materializedDir, entry);
     const replacementPlanPath = getMaterializedPlanPath(repoRoot, legacyPlanId);
-
-    if (neededRefPlanIds.has(legacyPlanId) && !(await Bun.file(replacementPlanPath).exists())) {
-      const replacementRow = rowsByPlanId.get(legacyPlanId);
-      if (replacementRow) {
-        await materializePlanRow(
-          replacementRow,
-          replacementPlanPath,
-          context.uuidToPlanId,
-          'reference'
-        );
-      }
+    const replacementRow = rowsByPlanId.get(legacyPlanId);
+    if (replacementRow && !(await Bun.file(replacementPlanPath).exists())) {
+      await materializePlanRow(replacementRow, replacementPlanPath, context.uuidToPlanId);
     }
 
     await unlink(legacyEntryPath).catch((error) => {

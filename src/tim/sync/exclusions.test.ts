@@ -157,7 +157,7 @@ describe('sync operation exclusions', () => {
     }
   });
 
-  test('operation payloads do not carry materialized shadow metadata', async () => {
+  test('operation payloads do not carry materialized shadow paths', async () => {
     const options = { originNodeId: NODE_ID, localSequence: 1 };
     const operations = [
       await createPlanOperation(
@@ -295,7 +295,6 @@ describe('sync operation exclusions', () => {
     );
     for (const operation of operations) {
       const payload = JSON.stringify(operation.op);
-      expect(payload).not.toContain('materializedAs');
       expect(payload).not.toContain('.shadow');
     }
   });

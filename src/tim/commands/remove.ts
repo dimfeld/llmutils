@@ -8,7 +8,6 @@ import { getPlanByPlanId, type PlanRow } from '../db/plan.js';
 import {
   getMaterializedPlanPath,
   getShadowPlanPath,
-  readMaterializedPlanRole,
   resolveProjectContext,
   syncMaterializedPlan,
 } from '../plan_materialize.js';
@@ -195,10 +194,7 @@ export async function handleRemoveCommand(
       skipUpdatedAt: true,
     });
     if (outputPath === getMaterializedPlanPath(repoRoot, planId)) {
-      const role = await readMaterializedPlanRole(outputPath);
-      if (role === 'primary') {
-        await Bun.write(getShadowPlanPath(repoRoot, planId), Bun.file(outputPath));
-      }
+      await Bun.write(getShadowPlanPath(repoRoot, planId), Bun.file(outputPath));
     }
     log(
       chalk.gray(

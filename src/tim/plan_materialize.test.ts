@@ -298,7 +298,7 @@ describe('tim plan_materialize', () => {
     };
   }
 
-  test('materializePlan writes the primary plan and materializeRelatedPlans writes references', async () => {
+  test('materializePlan and materializeRelatedPlans write editable copies with shadows', async () => {
     await seedProject();
 
     const materializeDir = await ensureMaterializeDir(repoDir);
@@ -342,7 +342,6 @@ describe('tim plan_materialize', () => {
       parent: 1,
       dependencies: [2],
       tags: ['materialize', 'sync'],
-      materializedAs: 'primary',
     });
     expect(materializedPlan.tasks).toHaveLength(2);
     expect(materializedPlan.tasks[0]?.uuid).toMatch(
@@ -367,16 +366,12 @@ describe('tim plan_materialize', () => {
     const siblingRef = await readPlanFile(getMaterializedPlanPath(repoDir, 5));
 
     expect(parentRef.title).toBe('Parent plan');
-    expect(parentRef.materializedAs).toBe('reference');
     expect(dependencyRef.title).toBe('Dependency plan');
-    expect(dependencyRef.materializedAs).toBe('reference');
     expect(childRef.parent).toBe(3);
-    expect(childRef.materializedAs).toBe('reference');
     expect(siblingRef.parent).toBe(1);
-    expect(siblingRef.materializedAs).toBe('reference');
     for (const refPath of refPaths) {
       const refPlan = await readPlanFile(refPath);
-      expect(await Bun.file(getShadowPlanPath(repoDir, refPlan.id)).exists()).toBe(false);
+      expect(await Bun.file(getShadowPlanPath(repoDir, refPlan.id)).exists()).toBe(true);
     }
   });
 
@@ -426,7 +421,7 @@ Details
     );
   });
 
-  test('materializeRelatedPlans does not overwrite an existing primary materialized plan', async () => {
+  test('materializeRelatedPlans does not overwrite an existing materialized plan', async () => {
     await seedProject();
 
     const dependencyPlanPath = await materializePlan(2, repoDir);
@@ -444,16 +439,15 @@ Details
     expect(preservedDependencyPlan.details).toBe(
       'Primary edits should survive related materialization'
     );
-    expect(preservedDependencyPlan.materializedAs).toBe('primary');
   });
 
-  test('materializeRelatedPlans overwrites an existing reference materialized plan with fresh DB content', async () => {
+  test('syncMaterializedPlan syncs edits to a related materialized plan', async () => {
     const { db, project } = await seedProject();
     nonSyncedUpsertPlan(db, project.id, {
       uuid: '66666666-6666-4666-8666-666666666666',
       planId: 6,
       title: 'Second dependent plan',
-      goal: 'Exercise reference overwrite',
+      goal: 'Exercise related plan sync',
       details: 'Initial dependent details',
       status: 'pending',
       filename: '6-second-dependent.plan.md',
@@ -465,23 +459,15 @@ Details
     const dependencyPlanPath = getMaterializedPlanPath(repoDir, 2);
     expect(firstWrittenPaths).toContain(dependencyPlanPath);
 
-    db.prepare(
-      'UPDATE plan SET title = ?, details = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
-    ).run(
-      'Dependency plan refreshed from DB',
-      'Updated dependency details from DB',
-      '2026-03-26T00:00:00.000Z',
-      project.id,
-      2
+    const relatedPlan = await readPlanFile(dependencyPlanPath);
+    relatedPlan.title = 'Dependency plan edited as a related copy';
+    await writePlanFile(dependencyPlanPath, relatedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(2, repoDir);
+
+    expect(getPlanByPlanId(db, project.id, 2)?.title).toBe(
+      'Dependency plan edited as a related copy'
     );
-
-    const secondWrittenPaths = await materializeRelatedPlans(6, repoDir);
-    expect(secondWrittenPaths).toContain(dependencyPlanPath);
-
-    const refreshedDependencyPlan = await readPlanFile(dependencyPlanPath);
-    expect(refreshedDependencyPlan.title).toBe('Dependency plan refreshed from DB');
-    expect(refreshedDependencyPlan.details).toBe('Updated dependency details from DB');
-    expect(refreshedDependencyPlan.materializedAs).toBe('reference');
   });
 
   test('ensureMaterializeDir does not duplicate .tim/plans or .tim/logs in .git/info/exclude', async () => {
@@ -647,7 +633,6 @@ Details
       ],
       tags: ['materialize', 'verified'],
       dependencies: [1, 2],
-      materializedAs: 'primary',
     });
     expect(rematerializedPlan.temp).toBeUndefined();
     await expectShadowMatchesFile(getShadowPlanPath(repoDir, 3), planPath);
@@ -1692,7 +1677,7 @@ Details
     expect(rematerializedPlan.status).toBe('done');
   });
 
-  test('cleanupMaterializedPlans removes stale primary files and orphaned reference files', async () => {
+  test('cleanupMaterializedPlans removes stale and orphaned materialized files', async () => {
     const { db, project } = await seedProject();
 
     const activePlanPath = await materializePlan(3, repoDir);
@@ -1706,7 +1691,6 @@ Details
         title: 'Orphan reference',
         filename: '999.plan.md',
         tasks: [],
-        materializedAs: 'reference',
       },
       { skipDb: true }
     );
@@ -1717,22 +1701,16 @@ Details
 
     const result = await cleanupMaterializedPlans(repoDir);
 
-    // Plan 2 is still needed as a reference by active plan 3 (dependency),
-    // so cleanup deletes the stale primary file and re-materializes a fresh reference.
-    expect(result.deletedPrimaryFiles).toEqual([donePlanPath]);
-    expect(result.deletedReferenceFiles).toEqual([orphanRefPath]);
+    expect(result.deletedPrimaryFiles.toSorted()).toEqual([donePlanPath, orphanRefPath].toSorted());
+    expect(result.deletedReferenceFiles).toEqual([]);
     expect(await Bun.file(activePlanPath).exists()).toBe(true);
-    expect(await Bun.file(donePlanPath).exists()).toBe(true);
-    const donePlan = await readPlanFile(donePlanPath);
-    expect(donePlan.materializedAs).toBe('reference');
-    expect(donePlan.title).toBe('Dependency plan');
-    expect(donePlan.details).toBe('Dependency details');
+    expect(await Bun.file(donePlanPath).exists()).toBe(false);
     expect(await Bun.file(orphanRefPath).exists()).toBe(false);
     expect(await Bun.file(getShadowPlanPath(repoDir, 2)).exists()).toBe(false);
     expect(getPlanByPlanId(db, project.id, 2)?.status).toBe('done');
   });
 
-  test('syncMaterializedPlan refreshes related references and removes stale dependency references', async () => {
+  test('syncMaterializedPlan keeps other materialized plans available after dependency changes', async () => {
     await seedProject();
     const planPath = await materializePlan(3, repoDir);
     await materializeRelatedPlans(3, repoDir);
@@ -1747,7 +1725,7 @@ Details
 
     await syncMaterializedPlan(3, repoDir);
 
-    expect(await Bun.file(removedDependencyRef).exists()).toBe(false);
+    expect(await Bun.file(removedDependencyRef).exists()).toBe(true);
     expect(await Bun.file(addedParentRef).exists()).toBe(true);
     expect(await Bun.file(getMaterializedPlanPath(repoDir, 4)).exists()).toBe(true);
     expect(await Bun.file(getMaterializedPlanPath(repoDir, 5)).exists()).toBe(true);
@@ -1791,24 +1769,18 @@ Details
 
     const result = await cleanupMaterializedPlans(repoDir);
 
-    // Plan 4 is cancelled but still needed as a reference by plan 3 (child),
-    // so cleanup deletes the stale primary file and re-materializes a fresh reference.
     expect(result.deletedPrimaryFiles.toSorted()).toEqual(
       [cancelledPlanPath, orphanPlanPath].toSorted()
     );
     expect(result.deletedReferenceFiles).toEqual([]);
     expect(await Bun.file(activePlanPath).exists()).toBe(true);
-    expect(await Bun.file(cancelledPlanPath).exists()).toBe(true);
-    const cancelledPlan = await readPlanFile(cancelledPlanPath);
-    expect(cancelledPlan.materializedAs).toBe('reference');
-    expect(cancelledPlan.title).toBe('Child plan');
-    expect(cancelledPlan.details).toBe('Child details');
+    expect(await Bun.file(cancelledPlanPath).exists()).toBe(false);
     expect(await Bun.file(orphanPlanPath).exists()).toBe(false);
     expect(await Bun.file(validRefPath).exists()).toBe(true);
     expect(getPlanByPlanId(db, project.id, 4)?.status).toBe('cancelled');
   });
 
-  test('cleanupMaterializedPlans removes orphaned reference files after deleting a materialized plan', async () => {
+  test('cleanupMaterializedPlans keeps active related materializations after deleting a plan', async () => {
     const { db, project } = await seedProject();
 
     const planPath = await materializePlan(3, repoDir);
@@ -1823,11 +1795,11 @@ Details
     const result = await cleanupMaterializedPlans(repoDir);
 
     expect(result.deletedPrimaryFiles).toEqual([planPath]);
-    expect(result.deletedReferenceFiles.toSorted()).toEqual(refPaths.toSorted());
+    expect(result.deletedReferenceFiles).toEqual([]);
     expect(await Bun.file(planPath).exists()).toBe(false);
     expect(await Bun.file(shadowPath).exists()).toBe(false);
     for (const refPath of refPaths) {
-      expect(await Bun.file(refPath).exists()).toBe(false);
+      expect(await Bun.file(refPath).exists()).toBe(true);
     }
   });
 
@@ -1853,13 +1825,9 @@ Details
 
     const result = await cleanupMaterializedPlans(repoDir);
 
-    // Plan 2 should still exist as a reference since it's needed by plan 3
     expect(result.deletedPrimaryFiles).toEqual([donePlanPath]);
     expect(await Bun.file(activePlanPath).exists()).toBe(true);
-    expect(await Bun.file(donePlanPath).exists()).toBe(true);
-
-    const donePlan = await readPlanFile(donePlanPath);
-    expect(donePlan.materializedAs).toBe('reference');
+    expect(await Bun.file(donePlanPath).exists()).toBe(false);
     expect(getPlanByPlanId(db, project.id, 2)?.status).toBe('done');
   });
 
@@ -1900,8 +1868,6 @@ Details
       const dependencyRefPath = getMaterializedPlanPath(repoDir, 2);
       expect(await Bun.file(planPath).exists()).toBe(true);
       expect(await Bun.file(dependencyRefPath).exists()).toBe(true);
-      expect((await readPlanFile(planPath)).materializedAs).toBe('primary');
-      expect((await readPlanFile(dependencyRefPath)).materializedAs).toBe('reference');
 
       const editedPlan = await readPlanFile(planPath);
       editedPlan.title = 'Edited via command flow';
@@ -2088,7 +2054,6 @@ Details
       parent: 1,
       dependencies: [1, 2],
       tags: ['materialize', 'round-trip', 'verified'],
-      materializedAs: 'primary',
     });
     expect(rematerializedPlan.simple).toBeUndefined();
     expect(rematerializedPlan.tdd).toBeUndefined();

@@ -75,6 +75,8 @@ export function progressSectionGuidance(
 
 ${planLocation}
 
+If you edit the plan file instead of using \`tim plan add-task\`, run \`tim sync\` to save the changes to the plan database.
+
 After each successful iteration (and again at the end of the run), update the plan file's \`## Current Progress\` section:
 - Create the section at the end of the file if it does not exist (keep it outside any generated delimiters).
 - Update in place: edit or replace outdated text so the section reflects current reality while preserving meaningful history.
