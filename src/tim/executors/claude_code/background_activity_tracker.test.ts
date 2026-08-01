@@ -78,12 +78,6 @@ describe('BACKGROUND_DRAIN_GRACE_MS', () => {
   });
 });
 
-describe('BACKGROUND_TASK_STALL_TIMEOUT_MS', () => {
-  it('is 15 minutes', () => {
-    expect(BACKGROUND_TASK_STALL_TIMEOUT_MS).toBe(15 * 60 * 1000);
-  });
-});
-
 describe('BackgroundActivityTracker', () => {
   it('closes immediately on a normal result', () => {
     const { tracker, timer, onClose } = makeTracker();

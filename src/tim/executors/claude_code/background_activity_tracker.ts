@@ -1,5 +1,5 @@
 export const BACKGROUND_DRAIN_GRACE_MS = 10_000;
-export const BACKGROUND_TASK_STALL_TIMEOUT_MS = 15 * 60 * 1000;
+export const BACKGROUND_TASK_STALL_TIMEOUT_MS = 45 * 60 * 1000;
 
 type TimerHandle = ReturnType<typeof setTimeout>;
 
