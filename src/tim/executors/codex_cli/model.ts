@@ -22,7 +22,7 @@ export function parseCodexModel(model: string | undefined): {
   const parsedEffort = codexReasoningLevelSchema.safeParse(effort);
   if (!modelName || !parsedEffort.success) {
     throw new Error(
-      `Invalid Codex model reasoning effort in "${model}". Use one of: low, medium, high, xhigh.`
+      `Invalid Codex model reasoning effort in "${model}". Use one of: low, medium, high, xhigh, max.`
     );
   }
 

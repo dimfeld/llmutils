@@ -1145,7 +1145,7 @@ program
   .option('-m, --model <model>', 'Model to use for Claude')
   .option(
     '--reasoning-level <level>',
-    'Reasoning effort level for Codex (low, medium, high, xhigh)'
+    'Reasoning effort level for Codex (low, medium, high, xhigh, max)'
   )
   .option(
     '--json-schema <schema>',

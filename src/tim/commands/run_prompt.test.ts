@@ -136,11 +136,12 @@ describe('resolveReasoningLevel', () => {
   test('accepts valid reasoning levels', () => {
     expect(resolveReasoningLevel('low')).toBe('low');
     expect(resolveReasoningLevel('xhigh')).toBe('xhigh');
+    expect(resolveReasoningLevel('max')).toBe('max');
     expect(resolveReasoningLevel(undefined)).toBeUndefined();
   });
 
   test('throws on invalid reasoning level', () => {
-    expect(() => resolveReasoningLevel('max')).toThrow();
+    expect(() => resolveReasoningLevel('invalid')).toThrow();
   });
 });
 

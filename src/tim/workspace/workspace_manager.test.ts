@@ -2484,6 +2484,54 @@ describe('createWorkspace', () => {
     ]);
   });
 
+  test('prepareExistingWorkspace removes files added by a jj branch switch', async () => {
+    const workspacePath = path.join(testTempDir, 'jj-workspace-with-carried-files');
+    const addedFile = path.join(workspacePath, 'generated.txt');
+    const addedFileWithSpaces = path.join(workspacePath, 'generated files', 'output.txt');
+    const existingFile = path.join(workspacePath, 'keep.txt');
+
+    await fs.mkdir(path.join(workspacePath, '.jj'), { recursive: true });
+    await fs.mkdir(path.dirname(addedFileWithSpaces), { recursive: true });
+    await fs.writeFile(addedFile, 'remove me');
+    await fs.writeFile(addedFileWithSpaces, 'remove me too');
+    await fs.writeFile(existingFile, 'keep me');
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[]) => {
+      if (cmd[0] === 'jj' && cmd[1] === 'git' && cmd[2] === 'remote' && cmd[3] === 'list') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      if (cmd[0] === 'jj' && cmd[1] === 'status') {
+        return {
+          exitCode: 0,
+          stdout: [
+            'Working copy changes:',
+            'A generated.txt',
+            'A generated files/output.txt',
+            'M keep.txt',
+            'Working copy  (@) : abcdef01',
+          ].join('\n'),
+          stderr: '',
+        };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await prepareExistingWorkspace(workspacePath, {
+      baseBranch: 'main',
+      branchName: 'unused',
+      createBranch: false,
+    });
+
+    expect(result).toEqual({ success: true, actualBranchName: 'main' });
+    await expect(fs.access(addedFile)).rejects.toThrow();
+    await expect(fs.access(addedFileWithSpaces)).rejects.toThrow();
+    await expect(fs.readFile(existingFile, 'utf8')).resolves.toBe('keep me');
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['jj', 'status', '--color', 'never'],
+      { cwd: workspacePath, quiet: true },
+    ]);
+  });
+
   test('createWorkspace creates a local branch from fromBranch in the clone', async () => {
     const taskId = 'task-remote-base';
     const repositoryUrl = 'https://github.com/example/repo.git';

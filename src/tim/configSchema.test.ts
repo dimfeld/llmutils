@@ -1910,7 +1910,7 @@ describe('configSchema', () => {
           },
           effort: {
             claude: 'max',
-            codex: 'xhigh',
+            codex: 'max',
           },
         },
       });
@@ -1918,7 +1918,7 @@ describe('configSchema', () => {
       expect(result.orchestrator?.model?.claude).toBe('opus-4.1');
       expect(result.orchestrator?.model?.codex).toBe('gpt-5-codex');
       expect(result.orchestrator?.effort?.claude).toBe('max');
-      expect(result.orchestrator?.effort?.codex).toBe('xhigh');
+      expect(result.orchestrator?.effort?.codex).toBe('max');
     });
 
     test('accepts prFix executor, model, and effort configuration', () => {
@@ -2021,7 +2021,7 @@ describe('configSchema', () => {
       expect(() =>
         timConfigSchema.parse({
           orchestrator: {
-            effort: { codex: 'max' },
+            effort: { codex: 'invalid' },
           },
         })
       ).toThrow();

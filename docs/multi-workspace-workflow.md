@@ -191,6 +191,10 @@ When creating a new workspace (`tim workspace add`), a branch is created by defa
 3. **New branch**: If the branch does not exist, a new local branch is created off the base branch directly in the execution workspace. No branch is created or pushed in the primary workspace during setup.
 4. **Post-execution sync**: After the command finishes, the workspace round-trip sync compares repository state before and after execution. If there are actual changes, the branch is pushed to origin and pulled into the primary workspace. If no changes were made (e.g. `tim generate` which only updates the DB), the push is skipped entirely. If the branch was newly created during setup and no changes were made, the local branch is deleted to avoid accumulating unused branches.
 
+In a Jujutsu workspace, setup checks `jj status` after each `jj new`. It removes files that
+Jujutsu reports as added. These files can remain from the previous branch when that branch ignored
+them but the new branch does not.
+
 All workspace sync uses origin as the intermediary — branches are always pushed to and pulled from origin rather than directly between workspaces.
 
 ### Stale Local-Only Branch Handling

@@ -35,6 +35,95 @@ interface WorkspaceCommandEnvironmentContextInput {
   planData?: PlanSchema;
 }
 
+interface JjSwitchResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+function getAddedPathsFromJjStatus(statusOutput: string): string[] {
+  return statusOutput
+    .split('\n')
+    .map((line: string) => /^A\s+(.*)$/.exec(line)?.[1])
+    .filter((filePath: string | undefined): filePath is string => filePath !== undefined);
+}
+
+async function removeFilesAddedByJjSwitch(
+  workspacePath: string,
+  statusOutput: string
+): Promise<void> {
+  const addedPaths = getAddedPathsFromJjStatus(statusOutput);
+  if (addedPaths.length === 0) {
+    return;
+  }
+
+  log(`Removing ${addedPaths.length} file(s) carried over from the previous jj branch...`);
+
+  for (const addedPath of addedPaths) {
+    if (path.isAbsolute(addedPath)) {
+      throw new Error(`Refusing to remove absolute path reported by jj status: ${addedPath}`);
+    }
+
+    const absolutePath = path.resolve(workspacePath, addedPath);
+    const relativePath = path.relative(workspacePath, absolutePath);
+    if (relativePath === '' || relativePath === '..' || relativePath.startsWith(`..${path.sep}`)) {
+      throw new Error(`Refusing to remove path outside the workspace: ${addedPath}`);
+    }
+
+    const parentPath = path.dirname(relativePath);
+    if (parentPath !== '.') {
+      let currentPath = workspacePath;
+      for (const segment of parentPath.split(path.sep)) {
+        currentPath = path.join(currentPath, segment);
+        const stats = await fs.lstat(currentPath);
+        if (stats.isSymbolicLink()) {
+          throw new Error(`Refusing to remove path through a symlink: ${addedPath}`);
+        }
+      }
+    }
+
+    await fs.rm(absolutePath, { force: true });
+  }
+}
+
+async function switchJjRevision(
+  workspacePath: string,
+  revision: string,
+  quiet = false
+): Promise<JjSwitchResult> {
+  const newResult = await spawnAndLogOutput(['jj', 'new', revision], {
+    cwd: workspacePath,
+    ...(quiet ? { quiet: true } : {}),
+  });
+  if (newResult.exitCode !== 0) {
+    return newResult;
+  }
+
+  const statusResult = await spawnAndLogOutput(['jj', 'status', '--color', 'never'], {
+    cwd: workspacePath,
+    quiet: true,
+  });
+  if (statusResult.exitCode !== 0) {
+    return {
+      exitCode: statusResult.exitCode,
+      stdout: statusResult.stdout,
+      stderr: `jj new succeeded, but jj status failed: ${statusResult.stderr}`,
+    };
+  }
+
+  try {
+    await removeFilesAddedByJjSwitch(workspacePath, statusResult.stdout);
+  } catch (error) {
+    return {
+      exitCode: 1,
+      stdout: statusResult.stdout,
+      stderr: `jj new succeeded, but cleanup failed: ${String(error)}`,
+    };
+  }
+
+  return newResult;
+}
+
 /**
  * Interface representing a created workspace
  */
@@ -761,9 +850,7 @@ async function checkoutWorkspaceBranch(
       log(`Remote bookmark "${branchName}" not found; reusing local bookmark in workspace.`);
     }
 
-    const newResult = await spawnAndLogOutput(['jj', 'new', branchName], {
-      cwd: workspacePath,
-    });
+    const newResult = await switchJjRevision(workspacePath, branchName);
     if (newResult.exitCode !== 0) {
       return {
         success: false,
@@ -1239,9 +1326,7 @@ export async function createWorkspace(
                 error: `Failed to set bookmark "${branchName}" to remote version: ${setResult.stderr}`,
               };
             } else {
-              const newResult = await spawnAndLogOutput(['jj', 'new', branchName], {
-                cwd: targetClonePath,
-              });
+              const newResult = await switchJjRevision(targetClonePath, branchName);
               branchResult =
                 newResult.exitCode === 0
                   ? { success: true }
@@ -1296,9 +1381,7 @@ export async function createWorkspace(
     } else if (options?.fromBranch) {
       log(`Checking out base branch "${options.fromBranch}"`);
       const checkoutResult = isJj
-        ? await spawnAndLogOutput(['jj', 'new', options.fromBranch], {
-            cwd: targetClonePath,
-          })
+        ? await switchJjRevision(targetClonePath, options.fromBranch)
         : await spawnAndLogOutput(['git', 'checkout', options.fromBranch], {
             cwd: targetClonePath,
           });
@@ -1618,10 +1701,7 @@ export async function deleteLocalBranch(
   }
 
   if (isJj) {
-    const restoreResult = await spawnAndLogOutput(['jj', 'new', trunkBranch], {
-      cwd: workspacePath,
-      quiet: true,
-    });
+    const restoreResult = await switchJjRevision(workspacePath, trunkBranch, true);
     if (restoreResult.exitCode !== 0) {
       return {
         success: false,
@@ -1803,9 +1883,7 @@ async function checkoutAndUpdateBaseBranch(
       }
     }
 
-    const checkoutResult = await spawnAndLogOutput(['jj', 'new', baseBranch], {
-      cwd: workspacePath,
-    });
+    const checkoutResult = await switchJjRevision(workspacePath, baseBranch);
     if (checkoutResult.exitCode !== 0) {
       return {
         success: false,
@@ -2006,9 +2084,7 @@ export async function prepareExistingWorkspace(
           error: `Failed to set bookmark "${actualBranchName}" to remote version: ${setResult.stderr}`,
         };
       }
-      const newResult = await spawnAndLogOutput(['jj', 'new', actualBranchName], {
-        cwd: workspacePath,
-      });
+      const newResult = await switchJjRevision(workspacePath, actualBranchName);
       if (newResult.exitCode !== 0) {
         return {
           success: false,

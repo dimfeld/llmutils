@@ -1030,6 +1030,51 @@ describe.skipIf(!process.env.SLOW_TESTS)('prepareExistingWorkspace with Jujutsu'
     }
   });
 
+  test('removes files ignored on the previous branch after switching branches (Jujutsu)', async () => {
+    if (!hasJj) {
+      console.log('Skipping Jujutsu test - jj not installed');
+      return;
+    }
+
+    const originalAllowOffline = process.env.ALLOW_OFFLINE;
+
+    try {
+      process.env.ALLOW_OFFLINE = 'true';
+
+      expect((await runJj(tempDir, ['new', 'main'])).exitCode).toBe(0);
+      await fs.writeFile(path.join(tempDir, '.gitignore'), 'generated files/\n');
+      expect((await runJj(tempDir, ['commit', '-m', 'Ignore generated files'])).exitCode).toBe(0);
+      expect(
+        (await runJj(tempDir, ['bookmark', 'set', '-r', '@-', 'ignores-generated-files'])).exitCode
+      ).toBe(0);
+
+      const generatedFile = path.join(tempDir, 'generated files', 'output.txt');
+      await fs.mkdir(path.dirname(generatedFile), { recursive: true });
+      await fs.writeFile(generatedFile, 'branch-specific output');
+      expect((await runJj(tempDir, ['status', '--color', 'never'])).stdout).toContain(
+        'The working copy has no changes.'
+      );
+
+      const result = await prepareExistingWorkspace(tempDir, {
+        baseBranch: 'main',
+        branchName: 'unused',
+        createBranch: false,
+      });
+
+      expect(result).toEqual({ success: true, actualBranchName: 'main' });
+      await expect(fs.access(generatedFile)).rejects.toThrow();
+      expect((await runJj(tempDir, ['status', '--color', 'never'])).stdout).toContain(
+        'The working copy has no changes.'
+      );
+    } finally {
+      if (originalAllowOffline === undefined) {
+        delete process.env.ALLOW_OFFLINE;
+      } else {
+        process.env.ALLOW_OFFLINE = originalAllowOffline;
+      }
+    }
+  });
+
   test('recreates a stale local-only bookmark from base (Jujutsu)', async () => {
     if (!hasJj) {
       console.log('Skipping Jujutsu test - jj not installed');

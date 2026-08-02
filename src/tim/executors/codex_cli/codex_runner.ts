@@ -2,6 +2,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import type { TimConfig } from '../../configSchema';
+import type { CodexReasoningLevel } from '../schemas.js';
 import { spawnAndLogOutput } from '../../../common/process';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../../common/env.js';
 import {
@@ -35,7 +36,7 @@ export interface CodexStepOptions {
   /** Inactivity timeout in milliseconds. Defaults to 10 minutes (or CODEX_OUTPUT_TIMEOUT_MS env var). */
   inactivityTimeoutMs?: number;
   /** Reasoning effort level for the model. Defaults to 'high'. */
-  reasoningLevel?: 'low' | 'medium' | 'high' | 'xhigh';
+  reasoningLevel?: CodexReasoningLevel;
   /** App-server interaction mode. Defaults to single-turn. */
   appServerMode?: CodexAppServerMode;
   /** Enable local terminal input forwarding for app-server interactive modes. */
