@@ -32,6 +32,9 @@ interface OrchestrationOptions {
 const INPUT_COMBINATION_GUIDANCE =
   '- You can use both `--input-file` and `--input` together. `--input-file` is read first and `--input` is appended afterward.';
 
+const SUBAGENT_SPECIFICITY_GUIDANCE =
+  'Subagents may use a less capable model than you. Be specific when asking them to make changes: name the files, required behavior, constraints, and verification steps.';
+
 const BRANCH_SETUP_GUIDANCE =
   '- **The git branch for this task has already been set up.** Do not create, switch, or check out any branches. Do not use git worktrees. Work in the current directory as-is.';
 
@@ -336,6 +339,7 @@ ${reviewGuidelines}
 - Exception: if review feedback requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
 - You are responsible only for coordination and ensuring the workflow is followed correctly.
 - The subagents have access to the same task instructions below that you do, so you don't need to repeat them. You should reference which specific task titles are being worked on so the subagents can focus on the right tasks.
+- ${SUBAGENT_SPECIFICITY_GUIDANCE}
 - When invoking subagents, provide clear, specific instructions in \`--input\` (or \`--input-file\`) about what needs to be done in addition to referencing the task titles.
 - ${INPUT_COMBINATION_GUIDANCE}
 - Include relevant context from previous subagent responses when invoking the next subagent.
@@ -589,6 +593,7 @@ ${buildReviewIterationGuidance(reviewCommand, options.batchMode === true)}`;
 
 - Delegate implementation to \`tim subagent implementer\`.
 ${reviewGuidance}
+- ${SUBAGENT_SPECIFICITY_GUIDANCE}
 - When invoking subagents, give clear instructions in \`--input\` (or \`--input-file\`) referencing the specific task titles.
 - ${INPUT_COMBINATION_GUIDANCE}
 - Provide prior subagent outputs to the next subagent so they have full context.
@@ -821,6 +826,7 @@ ${buildReviewIterationGuidance(reviewCommand, options.batchMode === true)}`;
 ${testingGuidance}
 ${reviewCommandGuidance}
 ${reviewFollowupGuidance}
+- ${SUBAGENT_SPECIFICITY_GUIDANCE}
 - ${INPUT_COMBINATION_GUIDANCE}
 - We are using Test-Driven Development. The \`tdd-tests\` subagent must run before implementation.
 - Always pass the TDD tests output into the implementer invocation.

@@ -86,6 +86,21 @@ describe('orchestrator_prompt failure protocol', () => {
     }
   });
 
+  it('reminds the orchestrator to give specific instructions to subagents', () => {
+    const outputs = [
+      wrapWithOrchestration('Context', '123'),
+      wrapWithOrchestrationSimple('Context', '123'),
+      wrapWithOrchestrationTdd('Context', '123'),
+    ];
+
+    for (const out of outputs) {
+      expect(out).toContain('Subagents may use a less capable model than you.');
+      expect(out).toContain(
+        'name the files, required behavior, constraints, and verification steps'
+      );
+    }
+  });
+
   it('runs structural review only after an ordinary review stopping condition', () => {
     const out = wrapWithOrchestration('Context', '123', { batchMode: true });
     expect(out).toContain(
