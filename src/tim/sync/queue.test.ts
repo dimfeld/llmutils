@@ -2354,6 +2354,29 @@ describe('persistent-node sync queue', () => {
     expect(getAssignment(db, project.id, PLAN_UUID)).not.toBeNull();
   });
 
+  test('plan.set_scalar optimistic apply projects structural_review_at before flush', async () => {
+    seedPlan();
+    enqueue(
+      await setPlanScalarOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, field: 'structural_review_at', value: '2026-04-27T12:00:00.000Z' },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+
+    expect(getPlanByUuid(db, PLAN_UUID)?.structural_review_at).toBe('2026-04-27T12:00:00.000Z');
+
+    enqueue(
+      await setPlanScalarOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, field: 'structural_review_at', value: null },
+        { originNodeId: NODE_A, localSequence: 999 }
+      )
+    );
+
+    expect(getPlanByUuid(db, PLAN_UUID)?.structural_review_at).toBeNull();
+  });
+
   test('plan.update_task_text optimistic apply patches task fields', async () => {
     seedPlan();
     enqueue(

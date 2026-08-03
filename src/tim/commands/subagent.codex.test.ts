@@ -377,6 +377,113 @@ describe('subagent command - prompt construction and executor delegation', () =>
     expect(capturedCodexPrompt!).toContain('Test the widget');
   });
 
+  test('with --task-index, only the scoped tasks appear in the context description', async () => {
+    currentPlanData = {
+      ...currentPlanData,
+      tasks: [
+        { title: 'Implement the widget', description: 'Write the widget code', done: false },
+        { title: 'Deploy the widget', description: 'Ship it to prod', done: true },
+        { title: 'Test the widget', description: 'Write tests for the widget code', done: false },
+      ],
+    };
+
+    await handleSubagentCommand('implementer', 42, { executor: 'codex-cli', taskIndex: '3' }, {});
+
+    expect(capturedCodexPrompt).toBeDefined();
+    expect(capturedCodexPrompt!).toContain('Test the widget');
+    expect(capturedCodexPrompt!).toContain('scoped to exactly these plan tasks: 3');
+    expect(capturedCodexPrompt!).toContain('Other plan work is out of scope');
+    expect(capturedCodexPrompt!).not.toContain('Implement the widget');
+    expect(capturedCodexPrompt!).not.toContain('Deploy the widget');
+  });
+
+  test('with comma-separated --task-index, multiple scoped tasks appear together', async () => {
+    currentPlanData = {
+      ...currentPlanData,
+      tasks: [
+        { title: 'Implement the widget', description: 'Write the widget code', done: false },
+        { title: 'Deploy the widget', description: 'Ship it to prod', done: true },
+        { title: 'Test the widget', description: 'Write tests for the widget code', done: false },
+      ],
+    };
+
+    await handleSubagentCommand('implementer', 42, { executor: 'codex-cli', taskIndex: '1,3' }, {});
+
+    expect(capturedCodexPrompt).toBeDefined();
+    expect(capturedCodexPrompt!).toContain('Implement the widget');
+    expect(capturedCodexPrompt!).toContain('Test the widget');
+    expect(capturedCodexPrompt!).toContain('scoped to exactly these plan tasks: 1, 3');
+    expect(capturedCodexPrompt!).not.toContain('Deploy the widget');
+  });
+
+  test('with repeated --task-index flags, multiple scoped tasks appear together', async () => {
+    currentPlanData = {
+      ...currentPlanData,
+      tasks: [
+        { title: 'Implement the widget', description: 'Write the widget code', done: false },
+        { title: 'Deploy the widget', description: 'Ship it to prod', done: true },
+        { title: 'Test the widget', description: 'Write tests for the widget code', done: false },
+      ],
+    };
+
+    await handleSubagentCommand(
+      'implementer',
+      42,
+      { executor: 'codex-cli', taskIndex: ['1', '3'] },
+      {}
+    );
+
+    expect(capturedCodexPrompt).toBeDefined();
+    expect(capturedCodexPrompt!).toContain('Implement the widget');
+    expect(capturedCodexPrompt!).toContain('Test the widget');
+    expect(capturedCodexPrompt!).not.toContain('Deploy the widget');
+  });
+
+  test('without --task-index, output is unchanged: "Available tasks:" intro and all incomplete tasks', async () => {
+    await handleSubagentCommand('implementer', 42, { executor: 'codex-cli' }, {});
+
+    expect(capturedCodexPrompt).toBeDefined();
+    expect(capturedCodexPrompt!).toContain('Implement the widget');
+    expect(capturedCodexPrompt!).toContain('Test the widget');
+    expect(capturedCodexPrompt!).not.toContain('scoped to exactly these plan tasks');
+    expect(capturedCodexPrompt!).not.toContain('Other plan work is out of scope');
+  });
+
+  test('an unknown --task-index fails fast before any executor call or output write', async () => {
+    const outputFilePath = path.join(tempDir, 'subagent-output', 'implementer.txt');
+
+    await expect(
+      handleSubagentCommand(
+        'implementer',
+        42,
+        { executor: 'codex-cli', taskIndex: '99', outputFile: outputFilePath },
+        {}
+      )
+    ).rejects.toThrow('Unknown task indexes: 99');
+
+    expect(capturedCodexPrompt).toBeUndefined();
+    expect(mocks.executeCodexStep).not.toHaveBeenCalled();
+    await expect(fs.access(outputFilePath)).rejects.toThrow();
+  });
+
+  test('a --task-index pointing at an already-done task fails fast with no execution', async () => {
+    currentPlanData = {
+      ...currentPlanData,
+      tasks: [
+        { title: 'Implement the widget', description: 'Write the widget code', done: false },
+        { title: 'Deploy the widget', description: 'Ship it to prod', done: true },
+        { title: 'Test the widget', description: 'Write tests for the widget code', done: false },
+      ],
+    };
+
+    await expect(
+      handleSubagentCommand('implementer', 42, { executor: 'codex-cli', taskIndex: '2' }, {})
+    ).rejects.toThrow('Already completed task indexes: 2');
+
+    expect(capturedCodexPrompt).toBeUndefined();
+    expect(mocks.executeCodexStep).not.toHaveBeenCalled();
+  });
+
   test('handles plan with only completed tasks gracefully', async () => {
     currentPlanData = {
       ...currentPlanData,
@@ -393,6 +500,11 @@ describe('subagent command - prompt construction and executor delegation', () =>
 
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedCodexPrompt!).toContain('implementer agent');
+    expect(capturedCodexPrompt!).toContain('All plan tasks are complete.');
+    expect(capturedCodexPrompt!).toContain(
+      'Work only on the findings supplied in the instructions below.'
+    );
+    expect(capturedCodexPrompt!).not.toContain('Available tasks:');
   });
 
   test('delegates to codex when executor is codex-cli', async () => {

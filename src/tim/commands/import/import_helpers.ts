@@ -205,6 +205,7 @@ function planToPendingRow(
     review_issues: plan.reviewIssues ? JSON.stringify(plan.reviewIssues) : null,
     docs_updated_at: plan.docsUpdatedAt ?? null,
     lessons_applied_at: plan.lessonsAppliedAt ?? null,
+    structural_review_at: plan.structuralReviewAt ?? null,
     parent_uuid: plan.parent ? null : (existingRow?.parent_uuid ?? null),
     base_plan_uuid: basePlanUuid,
     epic: plan.epic ? 1 : 0,

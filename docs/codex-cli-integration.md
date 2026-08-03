@@ -31,13 +31,23 @@ The reusable prompt builders live in a provider-neutral module:
 src/tim/executors/shared/orchestrator_prompt.ts
 ```
 
-It exports three wrappers, all consumed by both executors:
+It exports three wrappers:
 
 - `wrapWithOrchestration()` — normal mode: implementer → tester → reviewer.
 - `wrapWithOrchestrationSimple()` — simple mode: implementer → reviewer.
 - `wrapWithOrchestrationTdd()` — TDD mode: `tim subagent tdd-tests` before
   implementation, then the tester/reviewer path, or the reviewer path when simple
   TDD is enabled.
+
+Neither executor calls those wrappers directly. Both build one
+`OrchestrationOptions` object — the interface lives in
+`src/tim/executors/shared/orchestration_options.ts` — and pass it with the
+execution mode to `wrapForExecutionMode()` in
+`src/tim/executors/shared/orchestration_wrapper.ts`, which selects the wrapper
+and drops the options a given wrapper must not receive (simple mode gets no
+`reviewExecutor`; only TDD mode gets `simpleMode`). Adding an orchestration
+option therefore means one field in `orchestration_options.ts` plus its value at
+each executor's single construction site, not an edit to six wrapper calls.
 
 The prompt wording is provider-neutral (e.g. "shell command tool" rather than
 "Bash tool") while preserving the literal `tim subagent ...`
@@ -46,6 +56,11 @@ command examples. The wrappers support `batchMode`, `planFilePath`,
 `subagentExecutor` (`-x codex-cli` or `-x claude-code`), dynamic
 executor-selection guidance, `useJj` guidance, progress-section guidance, the
 failure protocol, and batch task selection / marking guidance.
+
+All three wrappers also teach the review-fix scope rule: a fix-round
+implementer / tester / `tdd-tests` run passes `--task-index` for the tasks that
+own the findings, while the first run of a batch passes no `--task-index`. See
+`docs/review-iteration-policy.md`.
 
 > **Gotcha — wording ≠ runtime config.** When "generalizing wording" in this
 > prompt, only change human-readable prose (e.g. "Bash tool" → "shell command
@@ -99,20 +114,31 @@ reflected in the orchestration prompt the same way as for Claude.
 `--review-executor` is reflected in prompts that invoke `tim subagent reviewer`,
 which delegates to the `tim review` handler. In batch mode the override therefore
 applies to the final full-plan review, not the orchestrator-owned selected-task
-reviews. Ordinary reviewer-subagent passes are stateless and always cover their
-complete declared task or plan scope. After findings are fixed or explicitly
-ignored, the orchestrator reruns that same complete scope until one ordinary pass
-reports no unhandled issues. A completed batch uses this loop for its final
-full-plan review.
+reviews. Ordinary reviewer-subagent passes are stateless, so the orchestration
+prompt picks the scope of each pass: the first review of a batch and the review
+that ends the loop cover the complete declared task or plan scope, while
+intermediate fix-verification reviews use `--since <commit>` over the same task
+scope. The loop stops when a complete review produces no new blocking
+(`critical`/`major`) findings, or when the four-review bound is reached.
+Non-blocking findings are rejected with a reason or filed as follow-up tasks and
+never trigger another round. A completed batch uses this same loop, under its own
+separate budget, for its final full-plan review. See
+`docs/review-iteration-policy.md` for the full policy.
 
 The orchestrator itself compares successive findings and decides whether they
 represent the same underlying defect, a newly exposed issue, or a regression
 introduced by the latest fix. Recurrence is not inferred by the review command.
+When one review reports the same defect class at several locations, the
+orchestrator writes a single consolidation proposal instead of patching each
+instance across rounds; this is unrelated to the structural pass below.
 After ordinary full-plan findings converge, the orchestrator runs one separate
 `--structural-only` Codex simplification review for code-layout and structural
 smells. Accepted structural findings are fixed and checked with targeted tests;
-the structural pass is not automatically repeated. Plan-backed `tim autoreview`
-uses the same ordinary-loop-then-structural sequence.
+the structural pass is not automatically repeated. A successful plan-backed
+structural pass records `structuralReviewAt` on the plan, so that "run it once"
+rule is durable state rather than prompt text alone; see
+`docs/review-iteration-policy.md` ("Structural-review marker"). Plan-backed
+`tim autoreview` uses the same ordinary-loop-then-structural sequence.
 A final Codex orchestrator message containing `FAILED:` returns structured
 failure output, matching the orchestrator-level failure contract used by the
 agent loop.
@@ -123,3 +149,5 @@ agent loop.
   subprocesses.
 - `docs/implementer-instructions.md`, `docs/reviewer-instructions.md` — the
   role-specific instructions assembled for subagents.
+- `docs/review-iteration-policy.md` — severity rubric, severity gate, review
+  scope tiers, and the loop termination rule.

@@ -50,6 +50,10 @@ export const addPlanTaskParameters = z
       .string()
       .min(1, 'Task description cannot be empty.')
       .describe('Detailed description for the new task'),
+    reviewFollowUp: z
+      .boolean()
+      .optional()
+      .describe('Preserve the structural-review marker because this task is review follow-up work'),
   })
   .describe('Add a task to a plan');
 
@@ -147,6 +151,10 @@ export const managePlanTaskParameters = z
       .string()
       .optional()
       .describe('Task description (required for add, optional for update)'),
+    reviewFollowUp: z
+      .boolean()
+      .optional()
+      .describe('For add: preserve the structural-review marker for review follow-up work'),
     done: z.boolean().optional().describe('Mark task as done or not done (update only)'),
   })
   .describe('Manage tasks in a plan: add, update, or remove');

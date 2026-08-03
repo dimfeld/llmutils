@@ -781,6 +781,7 @@ export function routePlanWriteIntoBatch(
       planGeneratedAt: upsertInput.planGeneratedAt ?? null,
       docsUpdatedAt: upsertInput.sourceDocsUpdatedAt ?? null,
       lessonsAppliedAt: upsertInput.sourceLessonsAppliedAt ?? null,
+      structuralReviewAt: upsertInput.sourceStructuralReviewAt ?? null,
       epic: upsertInput.epic,
       parentUuid: upsertInput.parentUuid,
       issue: upsertInput.issue ?? [],
@@ -856,6 +857,11 @@ export function routePlanWriteIntoBatch(
         'lessons_applied_at',
         current.lessonsAppliedAt ?? null,
         upsertInput.sourceLessonsAppliedAt ?? null,
+      ],
+      [
+        'structural_review_at',
+        current.structuralReviewAt ?? null,
+        upsertInput.sourceStructuralReviewAt ?? null,
       ],
     ] as const;
     for (const [field, currentValue, nextValue] of scalarPairs) {

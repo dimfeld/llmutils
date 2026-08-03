@@ -51,7 +51,7 @@ describe('planSchema tags', () => {
 });
 
 describe('planSchema finalization timestamps', () => {
-  test('accepts valid docsUpdatedAt and lessonsAppliedAt datetime strings', () => {
+  test('accepts valid finalization datetime strings', () => {
     const plan = {
       id: 10,
       title: 'Finalization Plan',
@@ -60,11 +60,13 @@ describe('planSchema finalization timestamps', () => {
       tasks: [],
       docsUpdatedAt: '2026-03-01T10:00:00.000Z',
       lessonsAppliedAt: '2026-03-02T12:00:00.000Z',
+      structuralReviewAt: '2026-03-03T14:00:00.000Z',
     };
 
     const parsed = planSchema.parse(plan);
     expect(parsed.docsUpdatedAt).toBe('2026-03-01T10:00:00.000Z');
     expect(parsed.lessonsAppliedAt).toBe('2026-03-02T12:00:00.000Z');
+    expect(parsed.structuralReviewAt).toBe('2026-03-03T14:00:00.000Z');
   });
 
   test('allows docsUpdatedAt and lessonsAppliedAt to be omitted', () => {
@@ -79,6 +81,7 @@ describe('planSchema finalization timestamps', () => {
     const parsed = planSchema.parse(plan);
     expect(parsed.docsUpdatedAt).toBeUndefined();
     expect(parsed.lessonsAppliedAt).toBeUndefined();
+    expect(parsed.structuralReviewAt).toBeUndefined();
   });
 
   test('rejects invalid datetime format for docsUpdatedAt', () => {
@@ -102,6 +105,19 @@ describe('planSchema finalization timestamps', () => {
       note: 'Internal note',
       tasks: [],
       lessonsAppliedAt: '2026-13-01',
+    };
+
+    expect(() => planSchema.parse(plan)).toThrow();
+  });
+
+  test('rejects invalid datetime format for structuralReviewAt', () => {
+    const plan = {
+      id: 14,
+      title: 'Bad Timestamp',
+      goal: 'Test goal',
+      note: 'Internal note',
+      tasks: [],
+      structuralReviewAt: '2026-13-01',
     };
 
     expect(() => planSchema.parse(plan)).toThrow();

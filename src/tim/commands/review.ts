@@ -3,7 +3,7 @@
 
 import chalk from 'chalk';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { join, dirname, isAbsolute } from 'node:path';
+import { join, dirname, isAbsolute, resolve as resolvePath } from 'node:path';
 import {
   fetchRemoteBranch,
   getCurrentBranchName,
@@ -25,7 +25,17 @@ import { buildExecutorAndLog } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { getReviewerPrompt } from '../executors/claude_code/agent_prompts.js';
 import { sendNotification } from '../notifications.js';
-import type { PlanSchema } from '../planSchema.js';
+import { planSchema, type PlanSchema } from '../planSchema.js';
+import { isBlockingSeverity, REVIEW_SEVERITY_LEVELS } from '../review_severity.js';
+import {
+  normalizeTaskFilterInput,
+  resolveTaskIndexes,
+  type IndexedPlanTask,
+} from '../plans/task_scope.js';
+import {
+  PR_REVIEW_THREAD_TITLE_PREFIX,
+  REVIEW_FEEDBACK_TITLE_PREFIX,
+} from '../plans/review_follow_up_title.js';
 import { gatherPlanContext } from '../utils/context_gathering.js';
 import {
   createReviewResult,
@@ -99,7 +109,14 @@ const FIX_ACTION_LABELS: Record<FixAction, string> = {
   'fix-codex': 'Fix now with Codex (apply fixes immediately)',
 };
 import { createCleanupPlan, type CleanupPlanOptions } from '../utils/cleanup_plan_creator.js';
-import { filterActionableReviewIssues } from '../utils/review_issue_filters.js';
+import {
+  filterActionableReviewIssues,
+  partitionReviewIssues,
+} from '../utils/review_issue_filters.js';
+
+export { isReviewFollowUpTaskTitle } from '../plans/review_follow_up_title.js';
+
+const reviewIssueSchema = planSchema.shape.reviewIssues.unwrap().element;
 
 /**
  * Result returned from handleReviewCommand indicating what actions were taken
@@ -322,29 +339,338 @@ type ReviewIssueAction = FixAction | 'cleanup' | 'append' | 'exit' | 'exit-manua
 
 type ReviewIssueWorkflowResult = {
   appendedTaskCount: number;
+  issuesSavedCount: number;
   actionCompleted: boolean;
-  savedIssuesForLater: boolean;
   skipNotification: boolean;
 };
 
-export async function saveReviewIssuesToPlan(
-  planId: number,
-  issues: readonly ReviewIssue[],
-  repoRoot: string
-): Promise<void> {
-  const { plan: latestPlan, planPath } = await resolveReviewPlanForWriteById(planId, repoRoot);
-  latestPlan.reviewIssues = filterActionableReviewIssues(issues).map((issue) => ({ ...issue }));
-  await writePlanFile(planPath, latestPlan, { cwdForIdentity: repoRoot });
+type ReviewIssueSaveMode = 'replace' | 'merge';
+
+/**
+ * The save mode is a property of the variant, not a free field: a `save` carries a review's
+ * complete issue set and so replaces the open queue, while an `append` carries only the
+ * non-blocking remainder and so merges into it. Letting a `save` request a merge would be a
+ * state nothing constructs.
+ */
+export type ReviewIssueDisposition =
+  | { kind: 'none' }
+  | {
+      kind: 'append';
+      tasksToAppend: ReviewIssue[];
+      issuesToSave: ReviewIssue[];
+      issuesToResolve: ReviewIssue[];
+    }
+  | { kind: 'save'; issuesToSave: ReviewIssue[] }
+  | { kind: 'resolve'; issuesToResolve: ReviewIssue[] }
+  | { kind: 'clear' };
+
+export interface ReviewIssuePersistenceResult {
+  appendedTaskCount: number;
+  issuesSavedCount: number;
+  issuesResolvedCount: number;
 }
 
-export async function clearSavedReviewIssues(planId: number, repoRoot: string): Promise<void> {
-  const { plan: latestPlan, planPath } = await resolveReviewPlanForWriteById(planId, repoRoot);
-  if (!latestPlan.reviewIssues) {
-    return;
+export interface ReviewIssuesRejectOptions {
+  reason?: string;
+  fromReview?: string;
+  issue?: string;
+  file?: string;
+  line?: string;
+  content?: string;
+  severity?: string;
+  category?: string;
+  suggestion?: string;
+}
+
+function validateReviewIssueForWrite(issue: unknown, source: string): ReviewIssue {
+  const validation = reviewIssueSchema.safeParse(issue);
+  if (!validation.success) {
+    const details = validation.error.issues
+      .map((validationIssue) => {
+        const path = validationIssue.path.length > 0 ? validationIssue.path.join('.') : 'issue';
+        return `${path}: ${validationIssue.message}`;
+      })
+      .join('; ');
+    throw new Error(`Invalid review issue from ${source}: ${details}`);
   }
 
-  delete latestPlan.reviewIssues;
+  return validation.data as ReviewIssue;
+}
+
+function parseReviewIssueIndex(value: string | undefined, issueCount: number): number {
+  const parsed = value === undefined ? Number.NaN : Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(
+      `Review issue index "${value ?? ''}" must be a positive integer. Expected 1-${issueCount}.`
+    );
+  }
+
+  if (parsed > issueCount) {
+    throw new Error(`Review issue index ${parsed} is out of range. Expected 1-${issueCount}.`);
+  }
+
+  return parsed;
+}
+
+async function readReviewIssueFromFile(
+  filePath: string,
+  issueIndex: string | undefined
+): Promise<ReviewIssue> {
+  const resolvedPath = resolvePath(filePath);
+  let fileContents: string;
+  try {
+    fileContents = await readFile(resolvedPath, 'utf8');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not read review output file ${resolvedPath}: ${message}`, {
+      cause: error,
+    });
+  }
+
+  let parsedOutput: unknown;
+  try {
+    parsedOutput = JSON.parse(fileContents) as unknown;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not parse review output file ${resolvedPath} as JSON: ${message}`, {
+      cause: error,
+    });
+  }
+
+  let issues: unknown[];
+  if (Array.isArray(parsedOutput)) {
+    issues = parsedOutput;
+  } else if (
+    parsedOutput !== null &&
+    typeof parsedOutput === 'object' &&
+    'issues' in parsedOutput &&
+    Array.isArray((parsedOutput as { issues?: unknown }).issues)
+  ) {
+    issues = (parsedOutput as { issues: unknown[] }).issues;
+  } else {
+    throw new Error(
+      `Review output file ${resolvedPath} must contain an "issues" array or be a top-level array of issues.`
+    );
+  }
+
+  if (issues.length === 0) {
+    throw new Error(`Review output file ${resolvedPath} contains no issues.`);
+  }
+
+  const parsedIndex = parseReviewIssueIndex(issueIndex, issues.length);
+  const selectedIssue = issues[parsedIndex - 1];
+  if (selectedIssue === null || typeof selectedIssue !== 'object' || Array.isArray(selectedIssue)) {
+    throw new Error(`Review issue ${parsedIndex} in ${resolvedPath} must be an object.`);
+  }
+
+  const selectedIssueRecord = selectedIssue as Record<string, unknown>;
+  const issue: Record<string, unknown> = {};
+  for (const field of ['severity', 'category', 'content', 'file', 'line', 'suggestion', 'source']) {
+    if (selectedIssueRecord[field] !== undefined) {
+      issue[field] = selectedIssueRecord[field];
+    }
+  }
+  if (issue.severity == null) {
+    issue.severity = 'major';
+  }
+  if (issue.category == null) {
+    issue.category = 'other';
+  }
+
+  return validateReviewIssueForWrite(issue, resolvedPath);
+}
+
+function buildExplicitReviewIssue(options: ReviewIssuesRejectOptions): ReviewIssue {
+  const content = options.content;
+  if (content == null || content.trim().length === 0) {
+    throw new Error('--content is required when --from-review is not provided.');
+  }
+
+  const severity = options.severity ?? 'major';
+  if (!REVIEW_SEVERITY_LEVELS.some((level) => level === severity)) {
+    throw new Error(
+      `Invalid review issue severity "${severity}". Expected one of: ${REVIEW_SEVERITY_LEVELS.join(', ')}.`
+    );
+  }
+
+  const issue: Record<string, unknown> = {
+    severity,
+    category: options.category ?? 'other',
+    content,
+  };
+  if (options.file !== undefined) {
+    issue.file = options.file;
+  }
+  if (options.line !== undefined) {
+    issue.line = options.line;
+  }
+  if (options.suggestion !== undefined) {
+    issue.suggestion = options.suggestion;
+  }
+
+  return validateReviewIssueForWrite(issue, 'explicit command options');
+}
+
+export async function rejectReviewIssue(
+  planId: number,
+  issue: ReviewIssue,
+  reason: string,
+  repoRoot: string
+): Promise<{ created: boolean }> {
+  if (reason.trim().length === 0) {
+    throw new Error('--reason is required.');
+  }
+
+  const rejectedAt = new Date().toISOString();
+  const rejectedIssue = validateReviewIssueForWrite(
+    {
+      ...issue,
+      rejected: true,
+      rejectedReason: reason,
+      rejectedAt,
+    },
+    'rejection command'
+  );
+  const issueKey = reviewIssueKey(issue);
+  const { plan: latestPlan, planPath } = await resolveReviewPlanForWriteById(planId, repoRoot);
+  const reviewIssues = [...(latestPlan.reviewIssues ?? [])];
+  const existingIndex = reviewIssues.findIndex(
+    (savedIssue) => reviewIssueKey(savedIssue) === issueKey
+  );
+
+  if (existingIndex >= 0) {
+    const existingIssue = reviewIssues[existingIndex]!;
+    reviewIssues[existingIndex] = validateReviewIssueForWrite(
+      {
+        ...existingIssue,
+        rejected: true,
+        rejectedReason: reason,
+        rejectedAt,
+      },
+      'rejection command'
+    ) as (typeof reviewIssues)[number];
+    latestPlan.reviewIssues = reviewIssues;
+    await writePlanFile(planPath, latestPlan, { cwdForIdentity: repoRoot });
+    return { created: false };
+  }
+
+  reviewIssues.push(rejectedIssue as (typeof reviewIssues)[number]);
+  latestPlan.reviewIssues = reviewIssues;
   await writePlanFile(planPath, latestPlan, { cwdForIdentity: repoRoot });
+  return { created: true };
+}
+
+function applyReviewIssueSave(
+  plan: PlanSchema,
+  issues: readonly ReviewIssue[],
+  mode: ReviewIssueSaveMode
+): number {
+  // Key-based merge deduplication is best-effort: content is LLM free text and can vary between
+  // runs. The robust suppression mechanism is the Previously Rejected Findings prompt section.
+  const rejectedIssues = (plan.reviewIssues ?? [])
+    .filter((issue) => issue.rejected === true)
+    .map((issue) => ({ ...issue }));
+  const rejectedKeys = new Set(rejectedIssues.map((issue) => reviewIssueKey(issue)));
+  const refreshedIssues = filterActionableReviewIssues(issues)
+    .map((issue) => ({ ...issue }))
+    .filter((issue) => !rejectedKeys.has(reviewIssueKey(issue)));
+
+  if (mode === 'replace') {
+    plan.reviewIssues = [...rejectedIssues, ...refreshedIssues];
+    return refreshedIssues.length;
+  }
+
+  const openIssues: ReviewIssue[] = [];
+  const openIssueIndexes = new Map<string, number>();
+  for (const issue of plan.reviewIssues ?? []) {
+    if (issue.rejected === true) {
+      continue;
+    }
+
+    const issueKey = reviewIssueKey(issue);
+    if (!openIssueIndexes.has(issueKey)) {
+      openIssueIndexes.set(issueKey, openIssues.length);
+      openIssues.push({ ...issue });
+    }
+  }
+
+  for (const issue of refreshedIssues) {
+    const issueKey = reviewIssueKey(issue);
+    const existingIndex = openIssueIndexes.get(issueKey);
+    if (existingIndex === undefined) {
+      openIssueIndexes.set(issueKey, openIssues.length);
+      openIssues.push(issue);
+    } else {
+      openIssues[existingIndex] = issue;
+    }
+  }
+
+  plan.reviewIssues = [...rejectedIssues, ...openIssues];
+  // Counts findings from THIS review that are now recorded on the plan, not rows added: a
+  // re-found finding replaces its existing entry rather than appending a duplicate, and it is
+  // still one of the findings this review saved.
+  return refreshedIssues.length;
+}
+
+/**
+ * Drops non-rejected review issues from `plan`, keeping the rejection ledger. Returns the number
+ * of entries removed. Shared by `clearSavedReviewIssues` and the disposition write so the two
+ * cannot drift on what a clear preserves.
+ */
+function applyReviewIssueClear(plan: PlanSchema): number {
+  const savedIssues = plan.reviewIssues;
+  // An absent key and an empty array both mean "nothing saved". Newly-created plans normalize
+  // list fields to `[]`, so treating only the absent case as a no-op would make this the common
+  // path for a routed plan write that changes nothing but still bumps `updatedAt` and syncs.
+  if (!savedIssues || savedIssues.length === 0) {
+    return 0;
+  }
+
+  const rejectedIssues = savedIssues.filter((issue) => issue.rejected === true);
+  const clearedCount = savedIssues.length - rejectedIssues.length;
+  if (clearedCount === 0) {
+    return 0;
+  }
+
+  if (rejectedIssues.length > 0) {
+    plan.reviewIssues = rejectedIssues;
+  } else {
+    delete plan.reviewIssues;
+  }
+  return clearedCount;
+}
+
+/**
+ * Clears saved review issues. By default rejected entries are kept, because they are the plan's
+ * rejection ledger rather than outstanding work; `{ all: true }` removes those too.
+ *
+ * Returns the number of entries removed so callers can report a no-op honestly instead of claiming
+ * a clear that did not happen.
+ */
+export async function clearSavedReviewIssues(
+  planId: number,
+  repoRoot: string,
+  options: { all?: boolean } = {}
+): Promise<number> {
+  const { plan: latestPlan, planPath } = await resolveReviewPlanForWriteById(planId, repoRoot);
+
+  if (options.all === true) {
+    const savedIssues = latestPlan.reviewIssues;
+    if (!savedIssues || savedIssues.length === 0) {
+      return 0;
+    }
+    delete latestPlan.reviewIssues;
+    await writePlanFile(planPath, latestPlan, { cwdForIdentity: repoRoot });
+    return savedIssues.length;
+  }
+
+  const clearedCount = applyReviewIssueClear(latestPlan);
+  if (clearedCount === 0) {
+    return 0;
+  }
+
+  await writePlanFile(planPath, latestPlan, { cwdForIdentity: repoRoot });
+  return clearedCount;
 }
 
 export async function listSavedReviewIssues(
@@ -356,7 +682,19 @@ export async function listSavedReviewIssues(
 }
 
 function reviewIssueKey(issue: ReviewIssue): string {
-  return JSON.stringify(issue);
+  // `file` and `line` locate the finding; `category` and `content` describe what is wrong.
+  // `id` is positional per review run, so it is not stable. Severity, suggestion, and source can
+  // change without changing the finding. Rejection fields are disposition metadata, not identity.
+  const identityFields: Record<string, string | undefined> = {
+    category: issue.category,
+    content: issue.content,
+    file: issue.file,
+    line: issue.line == null ? undefined : String(issue.line),
+  };
+  const identity = Object.fromEntries(
+    Object.entries(identityFields).sort(([left], [right]) => left.localeCompare(right))
+  );
+  return JSON.stringify(identity);
 }
 
 export async function resolveSavedReviewIssues(
@@ -367,13 +705,18 @@ export async function resolveSavedReviewIssues(
   const { plan: latestPlan, planPath } = await resolveReviewPlanForWriteById(planId, repoRoot);
   const savedIssues = latestPlan.reviewIssues ?? [];
   const actionableIssues = filterActionableReviewIssues(savedIssues);
+  const { open: openIssues } = partitionReviewIssues(savedIssues);
   if (actionableIssues.length === 0) {
     return 0;
   }
 
+  // The two branches are deliberately asymmetric. Explicit indexes address the same list
+  // `listSavedReviewIssues` prints, rejected entries included, so the numbering a user reads stays
+  // valid — and `formatSavedReviewIssue` marks rejected entries, so removing one is a deliberate
+  // act. `--all` means "clear the outstanding queue" and must not silently discard the ledger.
   const issuesToResolve =
     issueIndexes === 'all'
-      ? actionableIssues
+      ? openIssues
       : issueIndexes.map((index) => {
           if (!Number.isInteger(index) || index < 1 || index > actionableIssues.length) {
             throw new Error(
@@ -387,14 +730,30 @@ export async function resolveSavedReviewIssues(
   let resolvedCount = 0;
 
   for (const issue of issuesToResolve) {
-    const key = reviewIssueKey(issue);
-    const index = remainingIssues.findIndex((candidate) => reviewIssueKey(candidate) === key);
+    // Numeric indexes select the exact object from the same actionable list that
+    // listSavedReviewIssues exposes. Remove that object directly so a rejected entry
+    // with the same identity as an open entry cannot steal the selected index.
+    const index = remainingIssues.indexOf(issue);
     if (index >= 0) {
       remainingIssues.splice(index, 1);
       resolvedCount++;
     }
   }
 
+  return writeRemainingReviewIssues(planPath, latestPlan, remainingIssues, resolvedCount, repoRoot);
+}
+
+/**
+ * Shared write tail for both resolve paths. Keeping it in one place means a future change to how
+ * an emptied issue list is persisted cannot be applied to one resolver and missed by the other.
+ */
+async function writeRemainingReviewIssues(
+  planPath: string | null,
+  latestPlan: PlanSchema,
+  remainingIssues: NonNullable<PlanSchema['reviewIssues']>,
+  resolvedCount: number,
+  repoRoot: string
+): Promise<number> {
   if (resolvedCount === 0) {
     return 0;
   }
@@ -408,6 +767,32 @@ export async function resolveSavedReviewIssues(
   return resolvedCount;
 }
 
+/**
+ * Removes each issue that matches one of `issues` by identity, skipping rejected entries so the
+ * ledger is never consumed by a resolve. Pure so the standalone resolver and the consolidated
+ * disposition write share one definition of "resolved by identity" instead of two copies.
+ */
+function removeReviewIssuesByIdentity(
+  savedIssues: readonly ReviewIssue[],
+  issues: readonly ReviewIssue[]
+): { remainingIssues: ReviewIssue[]; resolvedCount: number } {
+  const remainingIssues = [...savedIssues];
+  let resolvedCount = 0;
+
+  for (const issue of issues) {
+    const key = reviewIssueKey(issue);
+    const index = remainingIssues.findIndex(
+      (candidate) => candidate.rejected !== true && reviewIssueKey(candidate) === key
+    );
+    if (index >= 0) {
+      remainingIssues.splice(index, 1);
+      resolvedCount++;
+    }
+  }
+
+  return { remainingIssues, resolvedCount };
+}
+
 function formatSavedReviewIssue(index: number, issue: ReviewIssue): string {
   const location = issue.file
     ? ` ${chalk.gray(issue.line ? `${issue.file}:${issue.line}` : issue.file)}`
@@ -415,7 +800,13 @@ function formatSavedReviewIssue(index: number, issue: ReviewIssue): string {
   const suggestion = issue.suggestion
     ? `\n    ${chalk.gray(`Suggestion: ${issue.suggestion}`)}`
     : '';
-  return `${index}. ${chalk.bold(issue.severity)} ${chalk.gray(issue.category)}${location}\n   ${issue.content}${suggestion}`;
+  const rejection =
+    issue.rejected === true
+      ? `\n    ${chalk.yellow('Rejected')}: ${issue.rejectedReason ?? 'No reason recorded'}${
+          issue.rejectedAt ? ` (${issue.rejectedAt})` : ''
+        }`
+      : '';
+  return `${index}. ${chalk.bold(issue.severity)} ${chalk.gray(issue.category)}${location}\n   ${issue.content}${suggestion}${rejection}`;
 }
 
 function parseReviewIssueIndexes(values: readonly string[] | undefined): number[] | 'all' {
@@ -475,8 +866,99 @@ export async function handleReviewIssuesResolveCommand(
   );
 }
 
+export async function handleReviewIssuesClearCommand(
+  planId: number,
+  options: { all?: boolean },
+  command: any
+): Promise<void> {
+  const globalOpts = command.parent?.opts?.() ?? command.opts?.() ?? {};
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
+  const clearedCount = await clearSavedReviewIssues(planId, repoRoot, {
+    all: options.all === true,
+  });
+
+  if (clearedCount === 0) {
+    log(
+      chalk.yellow(
+        options.all === true
+          ? `No saved review issues to clear for plan ${planId}.`
+          : `No open saved review issues to clear for plan ${planId}. Use --all to clear rejected entries too.`
+      )
+    );
+    return;
+  }
+
+  const issueLabel = `review issue${clearedCount === 1 ? '' : 's'}`;
+  log(
+    chalk.green(
+      options.all === true
+        ? `Cleared ${clearedCount} saved ${issueLabel} for plan ${planId}, including rejected entries.`
+        : `Cleared ${clearedCount} open saved ${issueLabel} for plan ${planId}. Rejected entries were kept.`
+    )
+  );
+}
+
+export async function handleReviewIssuesRejectCommand(
+  planId: number,
+  options: ReviewIssuesRejectOptions,
+  command: any
+): Promise<void> {
+  const reason = options.reason?.trim();
+  if (!reason) {
+    throw new Error('--reason is required.');
+  }
+
+  const hasFromReview = options.fromReview !== undefined;
+  const hasContent = options.content !== undefined;
+  if (hasFromReview && hasContent) {
+    throw new Error('Provide either --from-review or --content, not both.');
+  }
+  if (hasFromReview) {
+    // Every issue field comes from the review output JSON, so accepting these silently would
+    // discard them. Severity in particular drives the blocking gate, so a dropped --severity
+    // would be actively misleading.
+    const ignoredFields = (
+      [
+        ['--file', options.file],
+        ['--line', options.line],
+        ['--severity', options.severity],
+        ['--category', options.category],
+        ['--suggestion', options.suggestion],
+      ] as const
+    )
+      .filter(([, value]) => value !== undefined)
+      .map(([flag]) => flag);
+    if (ignoredFields.length > 0) {
+      throw new Error(
+        `${ignoredFields.join(', ')} cannot be combined with --from-review; the issue fields are read from the review output. Omit them, or use --content to supply the issue explicitly.`
+      );
+    }
+  }
+  if (options.issue !== undefined && !hasFromReview) {
+    throw new Error('--issue can only be used with --from-review.');
+  }
+  if (hasFromReview && options.issue === undefined) {
+    throw new Error('--issue is required when --from-review is provided.');
+  }
+  if (!hasFromReview && !hasContent) {
+    throw new Error(
+      'Provide either --from-review <path> with --issue <n> or --content <text> to identify the review issue.'
+    );
+  }
+
+  const issue = hasFromReview
+    ? await readReviewIssueFromFile(options.fromReview!, options.issue)
+    : buildExplicitReviewIssue(options);
+
+  const globalOpts = command.parent?.opts?.() ?? command.opts?.() ?? {};
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
+  const result = await rejectReviewIssue(planId, issue, reason, repoRoot);
+  const action = result.created ? 'Recorded a new rejection' : 'Refreshed an existing rejection';
+  log(chalk.green(`${action} for review issue on plan ${planId}. Reason: ${reason}`));
+}
+
 function summarizeReviewIssues(issues: readonly ReviewIssue[]): string {
-  const actionableIssues = filterActionableReviewIssues(issues);
+  const { open: actionableIssues } = partitionReviewIssues(issues);
   const counts = {
     critical: 0,
     major: 0,
@@ -502,7 +984,7 @@ function createReviewResultFromSavedIssues(
   diffResult: DiffResult,
   issues: readonly ReviewIssue[]
 ): ReviewResult {
-  const actionableIssues = filterActionableReviewIssues(issues);
+  const { open: actionableIssues } = partitionReviewIssues(issues);
   const summary = generateReviewSummary(actionableIssues, diffResult.changedFiles.length);
   return {
     planId: planData.id?.toString() ?? 'unknown',
@@ -554,6 +1036,7 @@ export interface ReviewCommandOptions {
   autofix?: boolean;
   autofixAll?: boolean;
   noAutofix?: boolean;
+  blockingIssuesOnlyAppendTasks?: boolean;
   createCleanupPlan?: boolean;
   cleanupPriority?: CleanupPlanOptions['priority'];
   cleanupAssign?: string;
@@ -1278,6 +1761,117 @@ async function promptForReviewIssueAction(
   }
 }
 
+/**
+ * True when the disposition asks for at least one plan mutation. An action branch that selected
+ * nothing produces the `none` disposition, which must not reach the plan write.
+ */
+function dispositionHasWork(disposition: ReviewIssueDisposition): boolean {
+  switch (disposition.kind) {
+    case 'none':
+      return false;
+    case 'append':
+      return (
+        disposition.tasksToAppend.length > 0 ||
+        disposition.issuesToSave.length > 0 ||
+        disposition.issuesToResolve.length > 0
+      );
+    case 'save':
+      return disposition.issuesToSave.length > 0;
+    case 'resolve':
+      return disposition.issuesToResolve.length > 0;
+    case 'clear':
+      return true;
+    default:
+      throw new Error(
+        `Unknown review issue disposition kind: ${String((disposition as { kind?: unknown }).kind)}`
+      );
+  }
+}
+
+function applyReviewIssueResolution(plan: PlanSchema, issues: readonly ReviewIssue[]): number {
+  const { remainingIssues, resolvedCount } = removeReviewIssuesByIdentity(
+    plan.reviewIssues ?? [],
+    issues
+  );
+  if (resolvedCount === 0) {
+    return 0;
+  }
+
+  if (remainingIssues.length > 0) {
+    plan.reviewIssues = remainingIssues;
+  } else {
+    delete plan.reviewIssues;
+  }
+  return resolvedCount;
+}
+
+export async function persistReviewIssueDisposition(
+  planId: number,
+  disposition: ReviewIssueDisposition,
+  repoRoot: string
+): Promise<ReviewIssuePersistenceResult> {
+  const { plan: latestPlan, planPath } = await resolveReviewPlanForWriteById(planId, repoRoot);
+  let planChanged = false;
+  let appendedTaskCount = 0;
+  let issuesSavedCount = 0;
+  let issuesResolvedCount = 0;
+
+  switch (disposition.kind) {
+    case 'none':
+      break;
+    case 'append':
+      appendedTaskCount =
+        disposition.tasksToAppend.length > 0
+          ? appendIssuesToPlanData(latestPlan, disposition.tasksToAppend)
+          : 0;
+      if (appendedTaskCount > 0) {
+        planChanged = true;
+      }
+
+      if (disposition.issuesToSave.length > 0) {
+        issuesSavedCount = applyReviewIssueSave(latestPlan, disposition.issuesToSave, 'merge');
+        planChanged = true;
+      }
+
+      if (disposition.issuesToResolve.length > 0) {
+        issuesResolvedCount = applyReviewIssueResolution(latestPlan, disposition.issuesToResolve);
+        if (issuesResolvedCount > 0) {
+          planChanged = true;
+        }
+      }
+      break;
+    case 'save':
+      if (disposition.issuesToSave.length > 0) {
+        issuesSavedCount = applyReviewIssueSave(latestPlan, disposition.issuesToSave, 'replace');
+        planChanged = true;
+      }
+      break;
+    case 'resolve':
+      if (disposition.issuesToResolve.length > 0) {
+        issuesResolvedCount = applyReviewIssueResolution(latestPlan, disposition.issuesToResolve);
+        if (issuesResolvedCount > 0) {
+          planChanged = true;
+        }
+      }
+      break;
+    case 'clear':
+      if (applyReviewIssueClear(latestPlan) > 0) {
+        planChanged = true;
+      }
+      break;
+    default:
+      throw new Error(
+        `Unknown review issue disposition kind: ${String((disposition as { kind?: unknown }).kind)}`
+      );
+  }
+
+  if (planChanged) {
+    await writePlanFile(planPath, latestPlan, { cwdForIdentity: repoRoot });
+  }
+
+  return { appendedTaskCount, issuesSavedCount, issuesResolvedCount };
+}
+
 async function handleReviewIssueActions(params: {
   issues: ReviewIssue[];
   reviewResult: ReviewResult;
@@ -1318,17 +1912,21 @@ async function handleReviewIssueActions(params: {
     globalOpts,
     notifyReviewInput,
   } = params;
-  const actionableIssues = filterActionableReviewIssues(issues);
+  const { open: actionableIssues } = partitionReviewIssues(issues);
+  const appendableIssues = options.blockingIssuesOnlyAppendTasks
+    ? actionableIssues.filter((issue) => isBlockingSeverity(issue.severity))
+    : actionableIssues;
+  const nonBlockingIssuesForAppend = options.blockingIssuesOnlyAppendTasks
+    ? actionableIssues.filter((issue) => !isBlockingSeverity(issue.severity))
+    : [];
 
   let shouldAutofix = false;
   let shouldCreateCleanupPlan = false;
-  let shouldAppendTasksToPlan = false;
-  let selectedIssues: ReviewIssue[] | null = null;
-  let issuesToSaveForLater: ReviewIssue[] | null = null;
+  let selectedIssues: ReviewIssue[] = [];
   let autofixExecutorName: ReviewExecutorName | null = reviewExecutorName;
-  let appendedTaskCount = 0;
-  let actionCompleted = false;
+  let savedIssuesForLater = false;
   let skipNotification = false;
+  let actionDisposition: ReviewIssueDisposition = { kind: 'none' };
   const noAutofixRequested = options.noAutofix === true || options.autofix === false;
 
   if (!noAutofixRequested && (options.autofix || options.autofixAll)) {
@@ -1355,6 +1953,9 @@ async function handleReviewIssueActions(params: {
       shouldAutofix = false;
       log(chalk.yellow('No actionable review issues available for autofix.'));
     }
+    if (shouldAutofix) {
+      actionDisposition = { kind: 'resolve', issuesToResolve: selectedIssues };
+    }
   } else if (options.createCleanupPlan) {
     shouldCreateCleanupPlan = true;
     if (actionableIssues.length > 0) {
@@ -1372,6 +1973,9 @@ async function handleReviewIssueActions(params: {
     } else {
       shouldCreateCleanupPlan = false;
       log(chalk.yellow('No actionable review issues available for cleanup plan.'));
+    }
+    if (shouldCreateCleanupPlan) {
+      actionDisposition = { kind: 'resolve', issuesToResolve: selectedIssues };
     }
   } else if (!noAutofixRequested && isInteractiveEnv) {
     const action = await promptForReviewIssueAction(notifyReviewInput);
@@ -1391,6 +1995,9 @@ async function handleReviewIssueActions(params: {
         shouldAutofix = false;
         log(chalk.yellow('No actionable review issues available for autofix.'));
       }
+      if (shouldAutofix) {
+        actionDisposition = { kind: 'resolve', issuesToResolve: selectedIssues };
+      }
     } else if (action === 'cleanup') {
       skipNotification = true;
       shouldCreateCleanupPlan = true;
@@ -1406,75 +2013,72 @@ async function handleReviewIssueActions(params: {
         shouldCreateCleanupPlan = false;
         log(chalk.yellow('No actionable review issues available for cleanup plan.'));
       }
+      if (shouldCreateCleanupPlan) {
+        actionDisposition = { kind: 'resolve', issuesToResolve: selectedIssues };
+      }
     } else if (action === 'append') {
       skipNotification = true;
-      shouldAppendTasksToPlan = true;
-      if (actionableIssues.length > 0) {
-        selectedIssues = await selectIssuesToFix(actionableIssues, 'append as plan tasks', () =>
+      if (appendableIssues.length > 0) {
+        selectedIssues = await selectIssuesToFix(appendableIssues, 'append as plan tasks', () =>
           notifyReviewInput('Review needs input: select issues to append as tasks.')
         );
-        shouldAppendTasksToPlan = selectedIssues.length > 0;
-        if (!shouldAppendTasksToPlan) {
+        if (selectedIssues.length === 0) {
           log(chalk.yellow('No issues selected to append as tasks.'));
         }
+      } else {
+        log(
+          chalk.yellow(
+            options.blockingIssuesOnlyAppendTasks
+              ? 'No blocking review issues available to append as tasks.'
+              : 'No review issues available to append as tasks.'
+          )
+        );
       }
+
+      actionDisposition = {
+        kind: 'append',
+        tasksToAppend: selectedIssues,
+        issuesToSave: nonBlockingIssuesForAppend,
+        issuesToResolve: selectedIssues,
+      };
     } else if (action === 'exit-manually-resolved') {
-      actionCompleted = true;
+      actionDisposition = { kind: 'clear' };
     } else if (action === 'exit') {
       skipNotification = true;
+      savedIssuesForLater = true;
       if (actionableIssues.length > 0) {
         selectedIssues = await selectIssuesToFix(actionableIssues, 'save for later', () =>
           notifyReviewInput('Review needs input: select issues to save for later.')
         );
-        issuesToSaveForLater = selectedIssues;
-      } else {
-        issuesToSaveForLater = [];
       }
+      actionDisposition =
+        selectedIssues.length > 0
+          ? { kind: 'save', issuesToSave: selectedIssues }
+          : { kind: 'none' };
 
-      if (issuesToSaveForLater.length > 0) {
-        actionCompleted = true;
-      } else {
+      if (selectedIssues.length === 0) {
+        // An empty selection persists nothing. The pre-consolidation code reached an empty
+        // replace-mode save here, which wiped the plan's existing open issue queue as a side
+        // effect of selecting nothing to add to it.
         log(chalk.yellow('No issues selected to save for later.'));
       }
     }
   }
 
-  if (shouldAppendTasksToPlan && !isPrintMode) {
-    const issuesToAppend =
-      selectedIssues && selectedIssues.length > 0 ? selectedIssues : actionableIssues;
-
-    if (issuesToAppend.length === 0) {
-      log(chalk.yellow('No review issues available to append as tasks.'));
-    } else {
-      try {
-        const originalStatus = planData.status;
-        const appendedCount = await appendIssuesToPlanTasks(
-          planRefForWrite,
-          issuesToAppend,
-          sharedExecutorOptions.baseDir
-        );
-        appendedTaskCount = appendedCount;
-        actionCompleted = true;
-
-        if (appendedCount > 0) {
-          await reopenParentForAppendedReviewTasks(
-            { parent: planData.parent, status: originalStatus },
-            sharedExecutorOptions.baseDir
-          );
-          const plural = appendedCount === 1 ? '' : 's';
-          log(
-            chalk.green(
-              `✓ Added ${appendedCount} review issue${plural} as task${plural} to plan ${planData.id}.`
-            )
-          );
-        } else {
-          log(chalk.gray('No new tasks were added (likely due to duplicate titles).'));
-        }
-      } catch (appendErr) {
-        const appendMessage = appendErr instanceof Error ? appendErr.message : String(appendErr);
-        log(chalk.red(`Error appending review issues to plan tasks: ${appendMessage}`));
-      }
-    }
+  const performAutofix = shouldAutofix && !noAutofixRequested;
+  // `--issues` replays findings already saved on the plan, so re-saving them would be a no-op
+  // write that still bumps `updatedAt` and syncs. This fallback exists for a fresh review whose
+  // findings would otherwise be discarded.
+  const saveAllIssuesForLater =
+    options.saveIssues === true &&
+    options.issues !== true &&
+    !savedIssuesForLater &&
+    !dispositionHasWork(actionDisposition);
+  const disposition: ReviewIssueDisposition = saveAllIssuesForLater
+    ? { kind: 'save', issuesToSave: issues }
+    : actionDisposition;
+  if (saveAllIssuesForLater) {
+    skipNotification = true;
   }
 
   if (shouldCreateCleanupPlan && planData.id && !isPrintMode) {
@@ -1496,7 +2100,7 @@ async function handleReviewIssueActions(params: {
 
     const cleanupResult = await createCleanupPlan(
       planData.id,
-      selectedIssues || actionableIssues,
+      selectedIssues.length > 0 ? selectedIssues : actionableIssues,
       cleanupOptions,
       globalOpts
     );
@@ -1511,10 +2115,7 @@ async function handleReviewIssueActions(params: {
         `  Next step: Use "tim generate ${cleanupResult.planId}" or "tim run ${cleanupResult.planId}"`
       )
     );
-    actionCompleted = true;
   }
-
-  const performAutofix = shouldAutofix && !noAutofixRequested;
 
   if (performAutofix && !isPrintMode) {
     sendStructured({
@@ -1558,44 +2159,129 @@ async function handleReviewIssueActions(params: {
     }
 
     log(chalk.green('Autofix execution completed successfully!'));
-    actionCompleted = true;
   }
 
-  if (issuesToSaveForLater && !isPrintMode) {
-    await saveReviewIssuesToPlan(
-      planRefForWrite,
-      issuesToSaveForLater,
-      sharedExecutorOptions.baseDir
-    );
-    actionCompleted = true;
+  // Persistence either completes or throws, so this doubles as "the disposition was applied".
+  const dispositionPersisted = !isPrintMode && dispositionHasWork(disposition);
+  let persistenceResult: ReviewIssuePersistenceResult = {
+    appendedTaskCount: 0,
+    issuesSavedCount: 0,
+    issuesResolvedCount: 0,
+  };
+
+  if (dispositionPersisted) {
+    try {
+      persistenceResult = await persistReviewIssueDisposition(
+        planRefForWrite,
+        disposition,
+        sharedExecutorOptions.baseDir
+      );
+    } catch (persistenceErr) {
+      // The disposition is one atomic load-mutate-write, so a failure loses all of it at once:
+      // no tasks appended, no non-blocking findings saved, no issues resolved. Swallowing that
+      // would return `{tasksAppended: 0, issuesSaved: 0}` with a success status, which batch
+      // mode's completion review reads as a clean review — the findings would vanish silently.
+      const lost: string[] = [];
+      switch (disposition.kind) {
+        case 'none':
+          break;
+        case 'append':
+          if (disposition.tasksToAppend.length > 0) {
+            lost.push(`${disposition.tasksToAppend.length} task(s) to append`);
+          }
+          if (disposition.issuesToSave.length > 0) {
+            lost.push(`${disposition.issuesToSave.length} issue(s) to save`);
+          }
+          if (disposition.issuesToResolve.length > 0) {
+            lost.push(`${disposition.issuesToResolve.length} issue(s) to resolve`);
+          }
+          break;
+        case 'save':
+          if (disposition.issuesToSave.length > 0) {
+            lost.push(`${disposition.issuesToSave.length} issue(s) to save`);
+          }
+          break;
+        case 'resolve':
+          if (disposition.issuesToResolve.length > 0) {
+            lost.push(`${disposition.issuesToResolve.length} issue(s) to resolve`);
+          }
+          break;
+        case 'clear':
+          lost.push('a clear of the remaining saved issues');
+          break;
+        default:
+          throw new Error(
+            `Unknown review issue disposition kind: ${String(
+              (disposition as { kind?: unknown }).kind
+            )}`
+          );
+      }
+      const persistenceMessage =
+        persistenceErr instanceof Error ? persistenceErr.message : String(persistenceErr);
+      throw new Error(
+        `Failed to persist review issue disposition (${lost.join(', ')}): ${persistenceMessage}`,
+        { cause: persistenceErr }
+      );
+    }
+  }
+
+  if (
+    dispositionPersisted &&
+    disposition.kind === 'append' &&
+    disposition.tasksToAppend.length > 0
+  ) {
+    if (persistenceResult.appendedTaskCount > 0) {
+      await reopenParentForAppendedReviewTasks(
+        { parent: planData.parent, status: planData.status },
+        sharedExecutorOptions.baseDir
+      );
+      const plural = persistenceResult.appendedTaskCount === 1 ? '' : 's';
+      log(
+        chalk.green(
+          `✓ Added ${persistenceResult.appendedTaskCount} review issue${plural} as task${plural} to plan ${planData.id}.`
+        )
+      );
+    } else {
+      log(chalk.gray('No new tasks were added (likely due to duplicate titles).'));
+    }
+  }
+
+  if (dispositionPersisted && disposition.kind === 'save' && disposition.issuesToSave.length > 0) {
     log(
       chalk.green(
-        `Saved ${issuesToSaveForLater.length} review issue${issuesToSaveForLater.length === 1 ? '' : 's'} for later.`
+        `Saved ${disposition.issuesToSave.length} review issue${disposition.issuesToSave.length === 1 ? '' : 's'} for later.`
       )
     );
   }
 
-  if (actionCompleted && issuesToSaveForLater == null) {
-    if (selectedIssues && selectedIssues.length > 0) {
-      const resolvedCount = await resolveSavedReviewIssues(
-        planRefForWrite,
-        selectedIssues.map((issue) => actionableIssues.indexOf(issue) + 1),
-        sharedExecutorOptions.baseDir
-      );
-      log(
-        chalk.green(
-          `Marked ${resolvedCount} saved review issue${resolvedCount === 1 ? '' : 's'} resolved.`
-        )
-      );
-    } else {
-      await clearSavedReviewIssues(planRefForWrite, sharedExecutorOptions.baseDir);
-    }
+  if (
+    dispositionPersisted &&
+    disposition.kind === 'append' &&
+    disposition.issuesToSave.length > 0
+  ) {
+    log(
+      chalk.green(
+        `Saved ${disposition.issuesToSave.length} non-blocking review issue${disposition.issuesToSave.length === 1 ? '' : 's'} for later.`
+      )
+    );
+  }
+
+  if (
+    dispositionPersisted &&
+    ((disposition.kind === 'append' && disposition.issuesToResolve.length > 0) ||
+      (disposition.kind === 'resolve' && disposition.issuesToResolve.length > 0))
+  ) {
+    log(
+      chalk.green(
+        `Marked ${persistenceResult.issuesResolvedCount} saved review issue${persistenceResult.issuesResolvedCount === 1 ? '' : 's'} resolved.`
+      )
+    );
   }
 
   return {
-    appendedTaskCount,
-    actionCompleted,
-    savedIssuesForLater: issuesToSaveForLater != null,
+    appendedTaskCount: persistenceResult.appendedTaskCount,
+    issuesSavedCount: persistenceResult.issuesSavedCount,
+    actionCompleted: dispositionPersisted,
     skipNotification,
   };
 }
@@ -2116,9 +2802,20 @@ export async function handleReviewCommand(
 
       if (options.issues) {
         const savedIssues = Array.isArray(planData.reviewIssues) ? planData.reviewIssues : [];
-        if (savedIssues.length === 0) {
-          reviewLog(chalk.yellow('No saved review issues found for this plan.'));
-          completionMessage = 'No saved review issues found.';
+        const { open: openSavedIssues, rejected: rejectedSavedIssues } =
+          partitionReviewIssues(savedIssues);
+        if (openSavedIssues.length === 0) {
+          // Rejected entries are a ledger, not outstanding work — but saying "none found" when
+          // `tim review-issues list` clearly shows them would look like data loss.
+          const message =
+            rejectedSavedIssues.length > 0
+              ? `No open saved review issues for this plan. ${rejectedSavedIssues.length} rejected ${rejectedSavedIssues.length === 1 ? 'entry remains' : 'entries remain'} on the plan; run \`tim review-issues list ${planData.id}\` to see them.`
+              : 'No saved review issues found for this plan.';
+          reviewLog(chalk.yellow(message));
+          completionMessage =
+            rejectedSavedIssues.length > 0
+              ? 'No open saved review issues found.'
+              : 'No saved review issues found.';
           skipNotification = true;
           return;
         }
@@ -2126,7 +2823,7 @@ export async function handleReviewCommand(
         reviewLog(chalk.cyan(`Using saved review issues: ${summarizeReviewIssues(savedIssues)}`));
 
         if (isPrintMode) {
-          console.log(JSON.stringify(savedIssues, null, 2));
+          console.log(JSON.stringify(openSavedIssues, null, 2));
           await Bun.sleep(500);
           completionMessage = 'Saved review issues printed.';
           skipNotification = true;
@@ -2138,10 +2835,10 @@ export async function handleReviewCommand(
         const savedReviewResult = createReviewResultFromSavedIssues(
           scopedPlanData,
           diffResult,
-          savedIssues
+          openSavedIssues
         );
         const actionResult = await handleReviewIssueActions({
-          issues: savedIssues,
+          issues: openSavedIssues,
           reviewResult: savedReviewResult,
           reviewExecutorName: normalizeReviewExecutorName(
             options.executor ?? config.defaultExecutor
@@ -2164,6 +2861,7 @@ export async function handleReviewCommand(
         });
 
         appendedTaskCount += actionResult.appendedTaskCount;
+        issuesSavedCount += actionResult.issuesSavedCount;
         skipNotification ||= actionResult.skipNotification || !actionResult.actionCompleted;
         completionMessage = actionResult.actionCompleted
           ? 'Processed saved review issues.'
@@ -2374,22 +3072,22 @@ export async function handleReviewCommand(
             notifyReviewInput,
           });
           appendedTaskCount += actionResult.appendedTaskCount;
+          issuesSavedCount += actionResult.issuesSavedCount;
           skipNotification ||= actionResult.skipNotification;
+        }
 
-          if (
-            options.saveIssues === true &&
-            !actionResult.actionCompleted &&
-            !actionResult.savedIssuesForLater
-          ) {
-            await saveReviewIssuesToPlan(contextPlanId, reviewResult.issues, gitRoot);
-            issuesSavedCount = reviewResult.issues.length;
-            skipNotification = true;
-            reviewLog(
-              chalk.green(
-                `Saved ${reviewResult.issues.length} review issue${reviewResult.issues.length === 1 ? '' : 's'} for later.`
-              )
+        // Print mode is the orchestrator's normal invocation for the structural
+        // pass, so the marker must be written there too. The --dry-run path
+        // returns before the review runs, so it never reaches this point.
+        if (options.structuralOnly && typeof contextPlanId === 'number') {
+          await withPlanAutoSync(contextPlanId, gitRoot, async () => {
+            const { plan: latestPlan, planPath } = await resolveReviewPlanForWriteById(
+              contextPlanId,
+              gitRoot
             );
-          }
+            latestPlan.structuralReviewAt = new Date().toISOString();
+            await writePlanFile(planPath, latestPlan, { cwdForIdentity: gitRoot });
+          });
         }
 
         reviewLog(chalk.green('\nCode review completed successfully!'));
@@ -2522,66 +3220,37 @@ type ReviewTaskScope = {
   remainingTasks: RemainingTask[];
 };
 
-function normalizeTaskFilterInput(value: string | string[] | undefined): string[] {
-  if (!value) {
-    return [];
-  }
-
-  const values = Array.isArray(value) ? value : [value];
-  return values
-    .flatMap((entry) => entry.split(','))
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
-function parseTaskIndexes(value: string | string[] | undefined): {
-  indexes: number[];
-  invalidTokens: string[];
-} {
-  const tokens = normalizeTaskFilterInput(value);
-  const indexes: number[] = [];
-  const invalidTokens: string[] = [];
-
-  for (const token of tokens) {
-    const parsed = Number(token);
-    if (!Number.isInteger(parsed) || parsed < 1) {
-      invalidTokens.push(token);
-      continue;
-    }
-    indexes.push(parsed - 1); // Convert 1-based input to 0-based internal index
-  }
-
-  return { indexes, invalidTokens };
-}
-
 export function resolveReviewTaskScope(
   planData: PlanSchema,
   options: ReviewTaskFilterOptions
 ): ReviewTaskScope {
-  const { indexes: taskIndexes, invalidTokens } = parseTaskIndexes(options.taskIndex);
+  const taskIndexResolution = resolveTaskIndexes(planData, options.taskIndex);
   const taskTitles = normalizeTaskFilterInput(options.taskTitle);
 
-  if (taskIndexes.length === 0 && taskTitles.length === 0 && invalidTokens.length === 0) {
+  if (
+    taskIndexResolution.selectedTasks.length === 0 &&
+    taskIndexResolution.completedTasks.length === 0 &&
+    taskTitles.length === 0 &&
+    taskIndexResolution.invalidTokens.length === 0 &&
+    taskIndexResolution.unknownIndexes.length === 0
+  ) {
     return { planData, isScoped: false, remainingTasks: [] };
   }
 
-  const tasks = planData.tasks ?? [];
-  const matchedIndexes = new Set<number>();
-  const unknownIndexes: number[] = [];
-  const unknownTitles: string[] = [];
-
-  for (const index of taskIndexes) {
-    if (index < 0 || index >= tasks.length) {
-      unknownIndexes.push(index);
-    } else {
-      matchedIndexes.add(index);
-    }
+  const matchedTasks = new Map<number, IndexedPlanTask>();
+  for (const indexedTask of [
+    ...taskIndexResolution.selectedTasks,
+    ...taskIndexResolution.completedTasks,
+  ]) {
+    matchedTasks.set(indexedTask.index, indexedTask);
   }
 
-  const taskTitleMap = tasks.map((task, index) => ({
-    index,
-    title: task.title.trim().toLowerCase(),
+  const tasks = taskIndexResolution.indexedTasks;
+  const taskTitleMap = tasks.map((indexedTask) => ({
+    ...indexedTask,
+    title: indexedTask.task.title.trim().toLowerCase(),
   }));
+  const unknownTitles: string[] = [];
 
   for (const title of taskTitles) {
     const normalizedTitle = title.trim().toLowerCase();
@@ -2589,22 +3258,20 @@ export function resolveReviewTaskScope(
       continue;
     }
 
-    const matches = taskTitleMap
-      .filter((task) => task.title === normalizedTitle)
-      .map((task) => task.index);
+    const matches = taskTitleMap.filter((task) => task.title === normalizedTitle);
 
     if (matches.length === 0) {
       unknownTitles.push(title);
       continue;
     }
 
-    for (const matchIndex of matches) {
-      matchedIndexes.add(matchIndex);
+    for (const match of matches) {
+      matchedTasks.set(match.index, match);
     }
   }
 
-  const uniqueUnknownIndexes = Array.from(new Set(unknownIndexes));
-  const uniqueInvalidTokens = Array.from(new Set(invalidTokens));
+  const uniqueUnknownIndexes = taskIndexResolution.unknownIndexes;
+  const uniqueInvalidTokens = taskIndexResolution.invalidTokens;
   const uniqueUnknownTitles = Array.from(new Set(unknownTitles));
 
   if (
@@ -2617,8 +3284,7 @@ export function resolveReviewTaskScope(
       parts.push(`Invalid task indexes: ${uniqueInvalidTokens.join(', ')}`);
     }
     if (uniqueUnknownIndexes.length > 0) {
-      // Convert back to 1-based for user display
-      parts.push(`Unknown task indexes: ${uniqueUnknownIndexes.map((i) => i + 1).join(', ')}`);
+      parts.push(`Unknown task indexes: ${uniqueUnknownIndexes.join(', ')}`);
     }
     if (uniqueUnknownTitles.length > 0) {
       parts.push(`Unknown task titles: ${uniqueUnknownTitles.join(', ')}`);
@@ -2627,17 +3293,17 @@ export function resolveReviewTaskScope(
   }
 
   // Preserve original 1-based indexes when filtering tasks
-  const filteredTasks: PlanTaskWithIndex[] = tasks
-    .map((task, index) => ({ ...task, originalIndex: index + 1 }))
-    .filter((_, index) => matchedIndexes.has(index));
+  const filteredTasks: PlanTaskWithIndex[] = [...matchedTasks.values()]
+    .sort((first, second) => first.index - second.index)
+    .map(({ index, task }) => ({ ...task, originalIndex: index }));
   const totalTasks = tasks.length;
   const taskScopeNote = `This review is limited to the tasks listed below (${filteredTasks.length} of ${totalTasks}). Other plan tasks are out of scope.`;
 
   // Compute remaining unfinished tasks outside the review scope
+  const matchedIndexes = new Set(matchedTasks.keys());
   const remainingTasks: RemainingTask[] = tasks
-    .map((task, index) => ({ index: index + 1, title: task.title, done: task.done }))
-    .filter((task) => !matchedIndexes.has(task.index - 1) && !task.done)
-    .map(({ index, title }) => ({ index, title }));
+    .filter(({ index, task }) => !matchedIndexes.has(index) && !task.done)
+    .map(({ index, task }) => ({ index, title: task.title }));
 
   return {
     planData: {
@@ -2713,7 +3379,7 @@ async function selectIssuesToFix(
         name: `${severityIcons[severity]} [${severity.toUpperCase()}] ${firstLine}`,
         description: fullDesc,
         value: issueLookup.length,
-        checked: severity === 'critical' || severity === 'major', // Pre-select critical and major issues
+        checked: isBlockingSeverity(severity), // Pre-select blocking (critical and major) issues
       });
       issueLookup.push(issue);
     }
@@ -2769,6 +3435,29 @@ export function formatReviewIssueForPrompt(issue: ReviewIssue, index: number): s
   }
 
   return parts.join('\n');
+}
+
+export function buildPreviouslyRejectedFindingsSection(
+  reviewIssues: readonly ReviewIssue[] | undefined
+): string[] {
+  const rejectedIssues = reviewIssues?.filter((issue) => issue.rejected === true) ?? [];
+  if (rejectedIssues.length === 0) {
+    return [];
+  }
+
+  return [
+    `# Previously Rejected Findings`,
+    ``,
+    `The following findings were rejected in an earlier review:`,
+    ``,
+    ...rejectedIssues.flatMap((issue, index) => [
+      formatReviewIssueForPrompt(issue, index + 1),
+      `Rejection reason: ${issue.rejectedReason?.trim() || 'No rejection reason recorded.'}`,
+      ``,
+    ]),
+    `Do not re-raise these absent new evidence; if you believe a rejection is wrong, say why explicitly.`,
+    ``,
+  ];
 }
 
 export function formatPreviousReviewContext(
@@ -2865,14 +3554,14 @@ export function buildTaskTitleFromIssue(issue: ReviewIssue): string {
   const normalized = issue.content.replace(/\s+/g, ' ').trim();
 
   if (!normalized) {
-    return 'Address Review Feedback: Review feedback';
+    return `${REVIEW_FEEDBACK_TITLE_PREFIX} Review feedback`;
   }
 
   // Extract the first sentence (ends with . ! or ? followed by space or end of string)
   const sentenceMatch = normalized.match(/^(.+?[.!?])(?:\s|$)/);
   const firstSentence = sentenceMatch ? sentenceMatch[1] : normalized;
 
-  return `Address Review Feedback: ${firstSentence}`;
+  return `${REVIEW_FEEDBACK_TITLE_PREFIX} ${firstSentence}`;
 }
 
 export function createTaskFromIssue(issue: ReviewIssue): PlanTask {
@@ -2920,7 +3609,7 @@ export function createTaskFromReviewThread(thread: PrReviewThreadDetail, prUrl: 
   const location =
     displayLine != null ? `${thread.thread.path}:${displayLine}` : thread.thread.path;
 
-  const title = `Address review: ${location}`;
+  const title = `${PR_REVIEW_THREAD_TITLE_PREFIX} ${location}`;
 
   const descriptionSegments: string[] = [];
   const commentBodies = thread.comments
@@ -2952,14 +3641,7 @@ export function createTaskFromReviewThread(thread: PrReviewThreadDetail, prUrl: 
   };
 }
 
-export async function appendIssuesToPlanTasks(
-  planId: number,
-  issues: ReviewIssue[],
-  repoRoot: string
-): Promise<number> {
-  // Re-read the plan to get the latest state (handles parallel reviews)
-  const { plan: planData, planPath } = await resolveReviewPlanForWriteById(planId, repoRoot);
-
+function appendIssuesToPlanData(planData: PlanSchema, issues: readonly ReviewIssue[]): number {
   if (!Array.isArray(planData.tasks)) {
     planData.tasks = [];
   }
@@ -2978,11 +3660,8 @@ export async function appendIssuesToPlanTasks(
     appendedCount++;
   }
 
-  if (appendedCount > 0) {
-    if (isReopenableCompletedStatus(planData.status)) {
-      planData.status = 'in_progress';
-    }
-    await writePlanFile(planPath, planData, { cwdForIdentity: repoRoot });
+  if (appendedCount > 0 && isReopenableCompletedStatus(planData.status)) {
+    planData.status = 'in_progress';
   }
 
   return appendedCount;
@@ -3396,6 +4075,7 @@ export function buildReviewPrompt(
           ``,
         ]
       : []),
+    ...buildPreviouslyRejectedFindingsSection(planData.reviewIssues),
     `# Review Instructions`,
     ``,
     `Please review the code changes above in the context of the plan requirements. Focus on:`,

@@ -100,6 +100,7 @@ export function planRowToSchemaInput(
     planGeneratedAt: row.plan_generated_at ?? undefined,
     docsUpdatedAt: row.docs_updated_at ?? undefined,
     lessonsAppliedAt: row.lessons_applied_at ?? undefined,
+    structuralReviewAt: row.structural_review_at ?? undefined,
     reviewIssues: parseOptionalReviewIssues(row.review_issues),
     parent,
     dependencies,

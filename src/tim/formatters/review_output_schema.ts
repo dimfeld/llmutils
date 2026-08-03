@@ -5,19 +5,14 @@
  */
 
 import * as z from 'zod/v4';
+import { REVIEW_SEVERITY_DESCRIPTION, REVIEW_SEVERITY_LEVELS } from '../review_severity.js';
 
 /**
  * Severity levels for review issues, from most to least severe.
  */
 export const ReviewSeveritySchema = z
-  .enum(['critical', 'major', 'minor', 'info'])
-  .describe(
-    'Severity level of the issue. ' +
-      'critical: Security vulnerabilities, data loss risks, or system-breaking bugs. ' +
-      'major: Significant bugs, performance problems, or logic errors. ' +
-      'minor: Code quality issues, style violations, or minor bugs. ' +
-      'info: Suggestions, notes, or informational observations.'
-  );
+  .enum(REVIEW_SEVERITY_LEVELS)
+  .describe(REVIEW_SEVERITY_DESCRIPTION);
 
 /**
  * Category for classifying the type of issue found.

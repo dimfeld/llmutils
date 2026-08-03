@@ -3,6 +3,7 @@ import * as z from 'zod/v4';
 import { removeAssignment } from '../db/assignment.js';
 import { upsertCanonicalPlanInTransaction, type PlanRow } from '../db/plan.js';
 import { getProjectByUuid, markProjectSyncAnnounced } from '../db/project.js';
+import { planTimestampSchema } from '../planSchema.js';
 import {
   deleteCanonicalProjectSettingRow,
   writeCanonicalProjectSettingRow,
@@ -51,6 +52,7 @@ export interface CanonicalPlanSnapshot {
     docs: string[] | null;
     changedFiles: string[] | null;
     planGeneratedAt: string | null;
+    structuralReviewAt?: string | null;
     reviewIssues: unknown[] | null;
     parentUuid: string | null;
     epic: boolean;
@@ -174,6 +176,10 @@ const CanonicalPlanSnapshotSchema = z.object({
     docs: z.array(z.string()).nullable(),
     changedFiles: z.array(z.string()).nullable(),
     planGeneratedAt: z.string().nullable(),
+    // UTC-only, matching plan validation, so a merged snapshot cannot carry a
+    // timestamp that later fails local plan validation. Optional so snapshots
+    // from nodes that predate the field still validate.
+    structuralReviewAt: planTimestampSchema.nullable().optional(),
     reviewIssues: z.array(z.unknown()).nullable(),
     parentUuid: z.string().nullable(),
     epic: z.boolean(),
@@ -392,6 +398,7 @@ function writeCanonicalSnapshot(db: Database, snapshot: CanonicalSnapshot): stri
     docs: snapshot.plan.docs,
     changedFiles: snapshot.plan.changedFiles,
     planGeneratedAt: snapshot.plan.planGeneratedAt,
+    sourceStructuralReviewAt: snapshot.plan.structuralReviewAt ?? null,
     reviewIssues: snapshot.plan.reviewIssues as never,
     tasks: snapshot.plan.tasks.map((task) => ({
       uuid: task.uuid,

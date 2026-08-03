@@ -37,6 +37,7 @@ export interface PlanRow {
   review_issues: string | null;
   docs_updated_at: string | null;
   lessons_applied_at: string | null;
+  structural_review_at: string | null;
   parent_uuid: string | null;
   base_plan_uuid: string | null;
   epic: number;
@@ -131,6 +132,7 @@ export interface UpsertPlanInput {
   sourceUpdatedAt?: string | null;
   sourceDocsUpdatedAt?: string | null;
   sourceLessonsAppliedAt?: string | null;
+  sourceStructuralReviewAt?: string | null;
   forceOverwrite?: boolean;
   status?: PlanSchema['status'];
   priority?: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
@@ -469,9 +471,10 @@ export function replacePlanStateInTableSetInTransaction(
         branch, simple, tdd, discovered_from, issue, pull_request, assigned_to,
         base_branch, base_commit, base_change_id, temp, docs, changed_files,
         plan_generated_at, review_issues, docs_updated_at, lessons_applied_at,
+        structural_review_at,
         parent_uuid, base_plan_uuid, epic, revision, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(uuid) DO UPDATE SET
         project_id = excluded.project_id,
         plan_id = excluded.plan_id,
@@ -498,6 +501,7 @@ export function replacePlanStateInTableSetInTransaction(
         review_issues = excluded.review_issues,
         docs_updated_at = excluded.docs_updated_at,
         lessons_applied_at = excluded.lessons_applied_at,
+        structural_review_at = excluded.structural_review_at,
         parent_uuid = excluded.parent_uuid,
         base_plan_uuid = excluded.base_plan_uuid,
         epic = excluded.epic,
@@ -531,6 +535,7 @@ export function replacePlanStateInTableSetInTransaction(
     plan.review_issues,
     plan.docs_updated_at,
     plan.lessons_applied_at,
+    plan.structural_review_at,
     plan.parent_uuid,
     plan.base_plan_uuid,
     plan.epic,
@@ -635,6 +640,7 @@ type PlanWriteValues = {
   review_issues: string | null;
   docs_updated_at: string | null;
   lessons_applied_at: string | null;
+  structural_review_at: string | null;
   parent_uuid: string | null;
   base_plan_uuid: string | null;
   epic: number;
@@ -667,6 +673,7 @@ function planWriteValues(projectId: number, input: UpsertPlanInput): PlanWriteVa
     review_issues: input.reviewIssues ? JSON.stringify(input.reviewIssues) : null,
     docs_updated_at: input.sourceDocsUpdatedAt ?? null,
     lessons_applied_at: input.sourceLessonsAppliedAt ?? null,
+    structural_review_at: input.sourceStructuralReviewAt ?? null,
     parent_uuid: input.parentUuid ?? null,
     base_plan_uuid: input.basePlanUuid ?? null,
     epic: input.epic ? 1 : 0,
@@ -747,13 +754,18 @@ function upsertPlanRowInTransaction(
         review_issues,
         docs_updated_at,
         lessons_applied_at,
+        structural_review_at,
         parent_uuid,
         base_plan_uuid,
         epic,
         revision,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC})
+      )
     `
     ).run(
       input.uuid,
@@ -782,6 +794,7 @@ function upsertPlanRowInTransaction(
       values.review_issues,
       values.docs_updated_at,
       values.lessons_applied_at,
+      values.structural_review_at,
       values.parent_uuid,
       values.base_plan_uuid,
       values.epic,
@@ -822,6 +835,7 @@ function upsertPlanRowInTransaction(
         review_issues = ?,
         docs_updated_at = ?,
         lessons_applied_at = ?,
+        structural_review_at = ?,
         parent_uuid = ?,
         base_plan_uuid = ?,
         epic = ?,
@@ -855,6 +869,7 @@ function upsertPlanRowInTransaction(
       values.review_issues,
       values.docs_updated_at,
       values.lessons_applied_at,
+      values.structural_review_at,
       values.parent_uuid,
       values.base_plan_uuid,
       values.epic,
@@ -960,6 +975,7 @@ export function mirrorProjectionPlanToCanonicalInTransaction(
     sourceUpdatedAt: row.updated_at,
     sourceDocsUpdatedAt: row.docs_updated_at,
     sourceLessonsAppliedAt: row.lessons_applied_at,
+    sourceStructuralReviewAt: row.structural_review_at,
     status: row.status,
     priority: row.priority,
     branch: row.branch,

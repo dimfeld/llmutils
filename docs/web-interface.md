@@ -812,7 +812,7 @@ The `PlanDetail` component displays review issues with per-issue action buttons 
 - **Add all as tasks**: Converts every saved review issue into a plan task via `convertAllReviewIssuesToTasks`, removes all converted issues from `reviewIssues`, and sets plan status to `in_progress`.
 - **Dismiss** (X button): Removes a single review issue by index via `removeReviewIssue`
 - **Convert to Task** (arrow button): Converts the issue into a plan task (using `createTaskFromIssue` from review.ts) and removes it from `reviewIssues`, setting plan status to `in_progress` via `convertReviewIssueToTask`
-- **Clear All** (header button): Removes all review issues via `clearReviewIssues`, with a confirmation dialog
+- **Clear All** (header button): Removes all review issues via `clearReviewIssues`, with a confirmation dialog. This is a full clear: unlike the CLI's `tim review-issues clear`, it also removes rejected entries (the rejected-findings ledger described in `docs/review-iteration-policy.md`), so it behaves like `tim review-issues clear --all`.
 
 All mutations use `invalidateAll()` to refresh the page after completion.
 

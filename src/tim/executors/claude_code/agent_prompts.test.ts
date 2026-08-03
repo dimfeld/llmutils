@@ -6,8 +6,14 @@ import {
   getReviewerPrompt,
   getPrDescriptionPrompt,
   buildReviewerSimplificationGuidance,
+  buildReviewerCriticalIssuesGuidance,
   FAILED_PROTOCOL_INSTRUCTIONS,
 } from './agent_prompts.ts';
+import { REVIEW_DUPLICATION_GUIDANCE, REVIEW_SEVERITY_GUIDANCE } from '../../review_severity.js';
+
+function countOccurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
 
 describe('agent_prompts failure protocol integration', () => {
   const context = 'Context and Task...';
@@ -73,9 +79,92 @@ describe('agent_prompts failure protocol integration', () => {
     expect(def.prompt).toContain('Failure Protocol');
   });
 
-  it('emphasizes critical requirements mismatches in reviewer prompt', () => {
+  it('keeps requirements mismatches blocking while calibrating them by impact', () => {
     const def = getReviewerPrompt(context);
-    expect(def.prompt).toContain('implemented but does not meet requirements is a CRITICAL issue');
+    expect(def.prompt).toContain(
+      'Functionality that is implemented but does not meet requirements is always blocking, even if it appears to work.'
+    );
+    expect(def.prompt).toContain(
+      'Label such a mismatch `critical` when the change is broken or dangerous as-is, and `major` otherwise. Never label a requirements mismatch `minor` or `info`.'
+    );
+    expect(def.prompt).not.toContain(
+      'implemented but does not meet requirements is a CRITICAL issue'
+    );
+  });
+
+  it('includes the severity rubric and repeated-defect reporting guidance', () => {
+    const def = getReviewerPrompt(context);
+
+    expect(def.prompt).toContain(
+      '- `critical` — the change is broken or dangerous as-is: data loss, a security vulnerability, a crash, or silently wrong results on mainline paths. This is blocking.'
+    );
+    expect(def.prompt).toContain(
+      '- `major` — a real correctness, regression, or missing-coverage problem that must be fixed before the work is done; a reviewer would block a merge on it. This is blocking.'
+    );
+    expect(def.prompt).toContain(
+      '- `minor` — a genuine improvement that does not block: naming, small refactors, non-mainline edge polish, or better error messages. This is non-blocking.'
+    );
+    expect(def.prompt).toContain(
+      '- `info` — observations, style, wording, and anything pre-existing. This is non-blocking.'
+    );
+    expect(def.prompt).toContain('Do not inflate style or preference findings to `major`.');
+    expect(def.prompt).toContain(
+      'Do not downgrade correctness problems to `minor` because the fix is small.'
+    );
+    expect(def.prompt).toContain('Fix effort is not part of severity; only impact is.');
+    expect(def.prompt).toContain(
+      'When the same defect class appears at multiple locations, report it as ONE finding rather than N separate findings.'
+    );
+    expect(def.prompt).toContain('this pattern appears at: <file:line list>');
+    expect(def.prompt).toContain('State the shared root cause');
+    expect(def.prompt).toContain(
+      'Set `file` and `line` to the primary instance; the other locations belong in the issue `content`.'
+    );
+  });
+
+  it('buildReviewerCriticalIssuesGuidance includes the rubric and duplication guidance by default', () => {
+    const guidance = buildReviewerCriticalIssuesGuidance();
+
+    expect(guidance).toContain(REVIEW_SEVERITY_GUIDANCE);
+    expect(guidance).toContain(REVIEW_DUPLICATION_GUIDANCE);
+    expect(guidance).toContain('## Critical Issues to Flag:');
+  });
+
+  it('buildReviewerCriticalIssuesGuidance always owns the rubric and duplication guidance', () => {
+    const guidance = buildReviewerCriticalIssuesGuidance();
+
+    expect(countOccurrences(guidance, REVIEW_SEVERITY_GUIDANCE)).toBe(1);
+    expect(countOccurrences(guidance, REVIEW_DUPLICATION_GUIDANCE)).toBe(1);
+    expect(guidance).toContain('## Critical Issues to Flag:');
+  });
+
+  it('keeps reviewer-owned guidance independent of contextContent', () => {
+    const contextWithRubric = `${context}\n\n${REVIEW_SEVERITY_GUIDANCE}\n\n${REVIEW_DUPLICATION_GUIDANCE}`;
+    const def = getReviewerPrompt(contextWithRubric);
+
+    expect(countOccurrences(def.prompt, REVIEW_SEVERITY_GUIDANCE)).toBe(2);
+    expect(countOccurrences(def.prompt, REVIEW_DUPLICATION_GUIDANCE)).toBe(2);
+  });
+
+  it('getReviewerPrompt includes the rubric exactly once when contextContent lacks it', () => {
+    const def = getReviewerPrompt(context);
+
+    expect(countOccurrences(def.prompt, REVIEW_SEVERITY_GUIDANCE)).toBe(1);
+    expect(countOccurrences(def.prompt, REVIEW_DUPLICATION_GUIDANCE)).toBe(1);
+  });
+
+  it('keeps legacy free-text severity examples aligned with the rubric', () => {
+    const def = getReviewerPrompt(context);
+
+    expect(def.prompt).toContain(
+      'CRITICAL: [The change is broken or dangerous as-is: data loss, a security vulnerability, a crash, or silently wrong results on mainline paths]'
+    );
+    expect(def.prompt).toContain(
+      'MAJOR: [A real correctness, regression, or missing-coverage problem that must be fixed before the work is done; a reviewer would block a merge on it]'
+    );
+    expect(def.prompt).toContain(
+      'MINOR: [A genuine improvement that does not block: naming, small refactors, non-mainline edge polish, or better error messages]'
+    );
   });
 
   it('requires project-root-relative file paths in reviewer findings', () => {

@@ -4,6 +4,7 @@ import { resolvePlan } from '../plan_display.js';
 import { writePlanFile } from '../plans.js';
 import { findNextActionableItem } from '../plans/find_next.js';
 import { isReopenableCompletedStatus } from '../plans/plan_state_utils.js';
+import { clearStructuralReviewMarkerForTaskAdd } from '../plans/review_follow_up_title.js';
 import type { PlanSchema, TaskSchema } from '../planSchema.js';
 import { findTaskByTitle } from '../utils/task_operations.js';
 import type { ToolContext, ToolResult } from './context.js';
@@ -36,6 +37,7 @@ export async function managePlanTaskTool(
           plan: args.plan,
           title: args.title,
           description: args.description,
+          reviewFollowUp: args.reviewFollowUp,
         },
         context
       );
@@ -110,6 +112,10 @@ export async function addPlanTaskTool(
 
     tasks.push(newTask);
     plan.tasks = tasks;
+    clearStructuralReviewMarkerForTaskAdd(plan, {
+      title,
+      reviewFollowUp: args.reviewFollowUp,
+    });
     plan.updatedAt = new Date().toISOString();
 
     await writePlanFile(planPath, plan, { cwdForIdentity: context.gitRoot });

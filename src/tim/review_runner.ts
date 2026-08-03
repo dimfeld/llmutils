@@ -13,6 +13,7 @@ import {
   type ReviewOutput,
   type ReviewIssueOutput,
 } from './formatters/review_output_schema.js';
+import { isBlockingSeverity } from './review_severity.js';
 import { log } from '../logging.js';
 
 export const REVIEW_EXECUTOR_NAMES = ['claude-code', 'codex-cli'] as const;
@@ -326,7 +327,9 @@ async function runExecutorsSerially(
 
   if ('rawOutput' in firstResult && remainingExecutors.length > 0) {
     const parsed = parseJsonReviewOutput(firstResult.rawOutput);
-    const hasBlockingIssues = parsed.issues.some((issue) => issue.severity !== 'info');
+    // Use the shared critical/major blocking definition; a minor-only review
+    // is non-blocking and earns the second executor's opinion.
+    const hasBlockingIssues = parsed.issues.some((issue) => isBlockingSeverity(issue.severity));
     if (!hasBlockingIssues) {
       results.push(
         ...(await Promise.all(

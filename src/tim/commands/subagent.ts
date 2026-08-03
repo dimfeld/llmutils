@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanByNumericId } from '../plans.js';
 import { getAllIncompleteTasks } from '../plans/find_next.js';
+import { resolveSubagentTaskScope } from '../plans/task_scope.js';
 import { buildExecutionPromptWithoutSteps } from '../prompt_builder.js';
 import {
   getImplementerPrompt,
@@ -24,6 +25,7 @@ import { parseCodexModel } from '../executors/codex_cli/model.js';
 import { getGitRoot, getUsingJj } from '../../common/git.js';
 import { runClaudeSubprocess } from '../executors/claude_code/run_claude_subprocess.js';
 import type { TimConfig } from '../configSchema.js';
+import type { PlanSchema } from '../planSchema.js';
 import type { Executor } from '../executors/types.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { log } from '../../logging.js';
@@ -42,10 +44,58 @@ interface SubagentOptions {
   input?: string;
   inputFile?: string | string[];
   outputFile?: string;
+  taskIndex?: string | string[];
 }
 
 type SubagentExecutorModelKey = 'claude' | 'codex';
 type SubagentConfigKey = 'implementer' | 'tester' | 'tddTests' | 'reviewer';
+
+/**
+ * Builds the body of a subagent's task section.
+ *
+ * With no task-index filter, every incomplete plan task is listed under the
+ * standard intro. With a filter, only the named tasks are listed and the intro
+ * states that other plan work is out of scope. Both branches number tasks with
+ * their plan-absolute 1-based index, so the numbering an orchestrator reads
+ * from a review matches the numbering it passes back in `--task-index`.
+ *
+ * Throws when a supplied index is invalid, out of range, or already done.
+ */
+export function buildSubagentTaskContext(
+  planData: PlanSchema,
+  taskIndex: string | string[] | undefined
+): string {
+  const taskScope =
+    taskIndex !== undefined ? resolveSubagentTaskScope(planData, { taskIndex }) : undefined;
+  const contextTasks =
+    taskScope?.tasks ??
+    getAllIncompleteTasks(planData).map(({ taskIndex: index, task }) => ({
+      index: index + 1,
+      task,
+    }));
+  const taskDescriptions = contextTasks
+    .map(({ index, task }) => {
+      let description = `Task ${index}: ${task.title}`;
+      if (task.description) {
+        description += `\nDescription: ${task.description}`;
+      }
+      return description;
+    })
+    .join('\n\n');
+
+  if (taskScope) {
+    return `${taskScope.scopeNote}\n\n${taskDescriptions}`;
+  }
+
+  // Every plan task can already be done when the orchestrator dispatches an
+  // unscoped fix round during the final full-plan review. Say so, rather than
+  // emitting a bare "Available tasks:" header with nothing under it.
+  if (contextTasks.length === 0) {
+    return 'All plan tasks are complete. Work only on the findings supplied in the instructions below.';
+  }
+
+  return `Available tasks:\n\n${taskDescriptions}`;
+}
 
 /**
  * A minimal executor-like object that satisfies the Executor interface
@@ -80,24 +130,14 @@ export async function handleSubagentCommand(
     (await getGitRoot()) || process.cwd()
   );
   const { plan: planData, planPath } = await resolvePlanByNumericId(planId, repoRoot);
+  // Resolve the scope before anything is materialized or executed so that an
+  // invalid index fails with no side effects.
+  const taskContext = buildSubagentTaskContext(planData, options.taskIndex);
   const planFilePath = planPath ?? (await materializePlan(planData.id, repoRoot));
   const gitRoot = await getGitRoot(path.dirname(planFilePath));
   const useJj = await getUsingJj(gitRoot);
   const executorType = options.executor || resolveDefaultSubagentExecutor(config);
   const selectedModel = resolveSubagentModel(agentType, executorType, options.model, config);
-
-  // Build the context prompt using the same pattern as batch_mode.ts
-  const incompleteTasks = getAllIncompleteTasks(planData);
-  const taskDescriptions = incompleteTasks
-    .map((taskResult) => {
-      const { taskIndex, task } = taskResult;
-      let taskDescription = `Task ${taskIndex + 1}: ${task.title}`;
-      if (task.description) {
-        taskDescription += `\nDescription: ${task.description}`;
-      }
-      return taskDescription;
-    })
-    .join('\n\n');
 
   const referenceArtifactPaths = await tryMaterializeReferenceArtifactPathsForExecution(
     gitRoot,
@@ -111,8 +151,10 @@ export async function handleSubagentCommand(
     baseDir: gitRoot,
     config,
     task: {
-      title: `${incompleteTasks.length} Tasks`,
-      description: `Available tasks:\n\n${taskDescriptions}`,
+      // Batch mode renders only the description; the title is required by the
+      // prompt-builder type but never emitted.
+      title: 'Remaining Tasks',
+      description: taskContext,
       files: [],
     },
     filePathPrefix: '@',

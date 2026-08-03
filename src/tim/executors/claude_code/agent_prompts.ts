@@ -1,5 +1,6 @@
 import type { AgentDefinition } from './agent_generator.ts';
 import { progressSectionGuidance } from '../shared/orchestrator_prompt.ts';
+import { REVIEW_DUPLICATION_GUIDANCE, REVIEW_SEVERITY_GUIDANCE } from '../../review_severity.js';
 
 const contextTaskFocus = `The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those, but keep in mind that the instructions may not have all the details from the active tasks. The instructions should reference which tasks are being worked on.`;
 
@@ -67,9 +68,9 @@ Think deeply before providing your review output.
 }
 
 export function buildReviewerCriticalIssuesGuidance(): string {
-  return `## Critical Issues to Flag:
+  return `${REVIEW_SEVERITY_GUIDANCE}\n\n${REVIEW_DUPLICATION_GUIDANCE}\n\n## Critical Issues to Flag:
 
-Any functionality that is implemented but does not meet requirements is a CRITICAL issue, even if it appears to work.
+Functionality that is implemented but does not meet requirements is always blocking, even if it appears to work. Label such a mismatch \`critical\` when the change is broken or dangerous as-is, and \`major\` otherwise. Never label a requirements mismatch \`minor\` or \`info\`.
 
 When you reference files in your findings, use file paths relative to the project root. Do not use absolute paths.
 
@@ -579,7 +580,6 @@ Stop and follow this failure protocol instead of providing a verdict:
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}
 `;
-
   return {
     name: 'reviewer',
     description:
@@ -626,41 +626,41 @@ export const issueAndVerdictFormat = `Found Issues:
 
 ---
 
-1. CRITICAL: [A critical bug, security issue, or correctness problem]
+1. CRITICAL: [The change is broken or dangerous as-is: data loss, a security vulnerability, a crash, or silently wrong results on mainline paths]
 
 [More details about the critical issue, including files and line numbers if applicable,
 explanations of the problem, and potential fixes.]
 
 ---
 
-2. CRITICAL: [A critical bug, security issue, or correctness problem]
+2. CRITICAL: [The change is broken or dangerous as-is: data loss, a security vulnerability, a crash, or silently wrong results on mainline paths]
 
 [More details about the critical issue, including files and line numbers if applicable,
 explanations of the problem, and potential fixes.]
 
 ---
 
-3. MAJOR: [A performance issue, pattern violation, or testing gap]
+3. MAJOR: [A real correctness, regression, or missing-coverage problem that must be fixed before the work is done; a reviewer would block a merge on it]
 
 [More details about the major issue, including files and line numbers if applicable,
 explanations of the problem, and potential fixes.]
 
 ---
 
-4. MAJOR: [A performance issue, pattern violation, or testing gap]
+4. MAJOR: [A real correctness, regression, or missing-coverage problem that must be fixed before the work is done; a reviewer would block a merge on it]
 
 [More details about the major issue, including files and line numbers if applicable,
 explanations of the problem, and potential fixes.]
 
 ---
 
-5. MINOR: [Style inconsistency, minor optimizations]
+5. MINOR: [A genuine improvement that does not block: naming, small refactors, non-mainline edge polish, or better error messages]
 
 [Suggestions for improving the code.]
 
 ---
 
-6. MINOR: [Style inconsistency, minor optimizations]
+6. MINOR: [A genuine improvement that does not block: naming, small refactors, non-mainline edge polish, or better error messages]
 
 [Suggestions for improving the code.]
 

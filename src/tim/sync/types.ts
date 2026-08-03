@@ -1,7 +1,7 @@
 import * as z from 'zod/v4';
 import { randomUUID } from 'node:crypto';
 import { MAX_ARTIFACT_BYTES } from '../artifacts/constants.js';
-import { prioritySchema, statusSchema } from '../planSchema.js';
+import { planTimestampSchema, prioritySchema, statusSchema } from '../planSchema.js';
 import {
   PROJECT_SETTING_NAME_PATTERN,
   planKey,
@@ -64,6 +64,9 @@ export const SyncReviewIssueValueSchema = z.object({
   line: z.union([z.number(), z.string()]).optional(),
   suggestion: z.string().optional(),
   source: z.enum(['claude-code', 'codex-cli']).optional(),
+  rejected: z.boolean().optional(),
+  rejectedReason: z.string().optional(),
+  rejectedAt: SyncIsoTimestampSchema.optional(),
 });
 export type SyncReviewIssueValue = z.infer<typeof SyncReviewIssueValueSchema>;
 
@@ -88,6 +91,11 @@ export const SyncPlanCreatePayloadSchema = z.object({
   planGeneratedAt: SyncIsoTimestampSchema.nullable().optional(),
   docsUpdatedAt: SyncIsoTimestampSchema.nullable().optional(),
   lessonsAppliedAt: SyncIsoTimestampSchema.nullable().optional(),
+  // UTC-only, matching plan validation. See the structural_review_at case in
+  // validatePlanSetScalarFieldValue: every ingress path for this column must
+  // enforce the same contract, or a peer can write a value that later fails
+  // local plan validation.
+  structuralReviewAt: planTimestampSchema.nullable().optional(),
   epic: z.boolean().optional(),
   parentUuid: SyncUuidSchema.nullable().optional(),
   issue: z.array(z.string().url()).default([]),
@@ -120,6 +128,7 @@ export const SyncPlanSetScalarPayloadSchema = z
       'plan_generated_at',
       'docs_updated_at',
       'lessons_applied_at',
+      'structural_review_at',
     ]),
     value: z.union([prioritySchema, statusSchema, z.string(), z.number(), z.boolean(), z.null()]),
     baseValue: z
@@ -182,6 +191,15 @@ function validatePlanSetScalarFieldValue(
     case 'lessons_applied_at':
       if (value !== null && typeof value !== 'string') {
         addIssue(`${field} value must be a string or null`);
+      }
+      return;
+    case 'structural_review_at':
+      // Deliberately stricter than SyncIsoTimestampSchema, which allows a UTC
+      // offset. planTimestampSchema is the same schema plan validation uses, so
+      // a peer cannot write a value here that then fails local plan validation
+      // and wedges every later write to that plan.
+      if (!planTimestampSchema.nullable().safeParse(value).success) {
+        addIssue(`${field} value must be a UTC ISO timestamp or null`);
       }
       return;
     default: {

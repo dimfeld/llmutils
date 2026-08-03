@@ -276,6 +276,7 @@ tasks:
       planFilePath,
       batchMode: true,
       executionMode: 'normal',
+      structuralReviewCompleted: true,
     };
 
     await executor.execute(prompt, batchPlanInfo);
@@ -286,6 +287,7 @@ tasks:
       expect.objectContaining({
         batchMode: true,
         planFilePath,
+        structuralReviewCompleted: true,
       })
     );
 
@@ -295,6 +297,132 @@ tasks:
     );
     expect(orchestratedContent).toContain('## Plan File');
     expect(orchestratedContent).toContain('## Remaining Tasks');
+  });
+
+  test('simple mode: structuralReviewCompleted reaches wrapWithOrchestrationSimple', async () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    const planFilePath = path.join(tempDir, 'tasks', 'simple-mode-plan.yml');
+    await fs.writeFile(
+      planFilePath,
+      `title: Simple Mode Plan\ngoal: Test simple mode threading\ndetails: test\ntasks:\n  - title: Task 1\n    done: false\n`
+    );
+
+    const planInfo: ExecutePlanInfo = {
+      planId: 'simple-123',
+      planTitle: 'Simple Mode Plan',
+      planFilePath,
+      batchMode: true,
+      executionMode: 'simple',
+      structuralReviewCompleted: true,
+    };
+
+    await executor.execute('some prompt content', planInfo);
+
+    expect(mocks.wrapWithOrchestrationSimple).toHaveBeenCalledWith(
+      expect.any(String),
+      'simple-123',
+      expect.objectContaining({
+        batchMode: true,
+        planFilePath,
+        structuralReviewCompleted: true,
+      })
+    );
+    expect(mocks.wrapWithOrchestration).not.toHaveBeenCalled();
+    expect(mocks.wrapWithOrchestrationTdd).not.toHaveBeenCalled();
+  });
+
+  test('tdd mode: structuralReviewCompleted reaches wrapWithOrchestrationTdd', async () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    const planFilePath = path.join(tempDir, 'tasks', 'tdd-mode-plan.yml');
+    await fs.writeFile(
+      planFilePath,
+      `title: TDD Mode Plan\ngoal: Test tdd mode threading\ndetails: test\ntasks:\n  - title: Task 1\n    done: false\n`
+    );
+
+    const planInfo: ExecutePlanInfo = {
+      planId: 'tdd-123',
+      planTitle: 'TDD Mode Plan',
+      planFilePath,
+      batchMode: true,
+      executionMode: 'tdd',
+      structuralReviewCompleted: true,
+    };
+
+    await executor.execute('some prompt content', planInfo);
+
+    expect(mocks.wrapWithOrchestrationTdd).toHaveBeenCalledWith(
+      expect.any(String),
+      'tdd-123',
+      expect.objectContaining({
+        batchMode: true,
+        planFilePath,
+        structuralReviewCompleted: true,
+      })
+    );
+    expect(mocks.wrapWithOrchestration).not.toHaveBeenCalled();
+    expect(mocks.wrapWithOrchestrationSimple).not.toHaveBeenCalled();
+  });
+
+  test('execution modes outside normal/simple/tdd leave the prompt unwrapped', async () => {
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        permissionsMcp: { enabled: false },
+      },
+      mockSharedOptions,
+      mockConfig
+    );
+
+    const planFilePath = path.join(tempDir, 'tasks', 'bare-mode-plan.yml');
+    await fs.writeFile(
+      planFilePath,
+      `title: Bare Mode Plan\ngoal: Test bare mode is left unwrapped\ndetails: test\ntasks:\n  - title: Task 1\n    done: false\n`
+    );
+
+    const planInfo: ExecutePlanInfo = {
+      planId: 'bare-123',
+      planTitle: 'Bare Mode Plan',
+      planFilePath,
+      batchMode: true,
+      executionMode: 'bare',
+      structuralReviewCompleted: true,
+    };
+
+    await executor.execute('some prompt content', planInfo);
+
+    expect(mocks.wrapWithOrchestration).not.toHaveBeenCalled();
+    expect(mocks.wrapWithOrchestrationSimple).not.toHaveBeenCalled();
+    expect(mocks.wrapWithOrchestrationTdd).not.toHaveBeenCalled();
+
+    // The prompt still gets the batch-mode plan-file @ prefix, but no orchestration wrapping.
+    expect(mocks.executeWithTerminalInput).toHaveBeenCalled();
+    const { prompt } = mocks.executeWithTerminalInput.mock.calls[0][0];
+    expect(prompt).toContain(`@${planFilePath}`);
+    expect(prompt).toContain('some prompt content');
+    expect(prompt).not.toContain('# Orchestration Instructions');
+    expect(prompt).not.toContain('## Workflow Instructions');
   });
 
   test('batch mode detection works correctly in integration', async () => {

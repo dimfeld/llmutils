@@ -49,6 +49,7 @@ function createPlanRow(overrides: Partial<PlanRow> = {}): PlanRow {
     plan_generated_at: '2026-03-01T00:00:00.000Z',
     docs_updated_at: '2026-03-04T00:00:00.000Z',
     lessons_applied_at: '2026-03-05T00:00:00.000Z',
+    structural_review_at: '2026-03-06T00:00:00.000Z',
     review_issues: JSON.stringify([
       {
         severity: 'major',
@@ -136,6 +137,7 @@ describe('tim plans_db', () => {
       planGeneratedAt: '2026-03-01T00:00:00.000Z',
       docsUpdatedAt: '2026-03-04T00:00:00.000Z',
       lessonsAppliedAt: '2026-03-05T00:00:00.000Z',
+      structuralReviewAt: '2026-03-06T00:00:00.000Z',
       reviewIssues: [
         {
           severity: 'major',
@@ -179,6 +181,7 @@ describe('tim plans_db', () => {
       plan_generated_at: null,
       docs_updated_at: null,
       lessons_applied_at: null,
+      structural_review_at: null,
       review_issues: null,
       parent_uuid: null,
       base_plan_uuid: null,
@@ -213,6 +216,7 @@ describe('tim plans_db', () => {
       planGeneratedAt: undefined,
       docsUpdatedAt: undefined,
       lessonsAppliedAt: undefined,
+      structuralReviewAt: undefined,
       reviewIssues: undefined,
       parent: undefined,
       basePlan: undefined,
@@ -287,6 +291,7 @@ describe('tim plans_db', () => {
     expect(columnNames).toContain('plan_generated_at');
     expect(columnNames).toContain('docs_updated_at');
     expect(columnNames).toContain('lessons_applied_at');
+    expect(columnNames).toContain('structural_review_at');
     expect(columnNames).toContain('review_issues');
     expect(columnNames).toContain('note');
     expect(columnNames).toContain('base_plan_uuid');

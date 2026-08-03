@@ -138,6 +138,7 @@ describe('tim plan_materialize', () => {
       planGeneratedAt: '2026-03-01T00:00:00.000Z',
       sourceDocsUpdatedAt: '2026-03-02T00:00:00.000Z',
       sourceLessonsAppliedAt: '2026-03-03T00:00:00.000Z',
+      sourceStructuralReviewAt: '2026-03-04T00:00:00.000Z',
       reviewIssues: [
         {
           severity: 'major',
@@ -339,6 +340,7 @@ describe('tim plan_materialize', () => {
       planGeneratedAt: '2026-03-01T00:00:00.000Z',
       docsUpdatedAt: '2026-03-02T00:00:00.000Z',
       lessonsAppliedAt: '2026-03-03T00:00:00.000Z',
+      structuralReviewAt: '2026-03-04T00:00:00.000Z',
       parent: 1,
       dependencies: [2],
       tags: ['materialize', 'sync'],
@@ -566,6 +568,7 @@ Details
     editedPlan.changedFiles = ['src/tim/plan_materialize.ts', 'src/tim/plan_materialize.test.ts'];
     editedPlan.docsUpdatedAt = '2026-03-04T00:00:00.000Z';
     editedPlan.lessonsAppliedAt = '2026-03-05T00:00:00.000Z';
+    editedPlan.structuralReviewAt = undefined;
     editedPlan.reviewIssues = [
       {
         severity: 'minor',
@@ -596,6 +599,7 @@ Details
     );
     expect(saved?.docs_updated_at).toBe('2026-03-04T00:00:00.000Z');
     expect(saved?.lessons_applied_at).toBe('2026-03-05T00:00:00.000Z');
+    expect(saved?.structural_review_at).toBeNull();
     expect(saved?.review_issues).toBe(
       '[{"severity":"minor","category":"correctness","content":"Updated review issue from materialized file","file":"src/tim/plan_materialize.test.ts","line":1}]'
     );
@@ -634,6 +638,7 @@ Details
       tags: ['materialize', 'verified'],
       dependencies: [1, 2],
     });
+    expect(rematerializedPlan.structuralReviewAt).toBeUndefined();
     expect(rematerializedPlan.temp).toBeUndefined();
     await expectShadowMatchesFile(getShadowPlanPath(repoDir, 3), planPath);
   });

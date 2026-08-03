@@ -21,11 +21,8 @@ import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
 import { promptPrefixSelect } from '../../common/input.ts';
 import stripAnsi from 'strip-ansi';
-import {
-  wrapWithOrchestration,
-  wrapWithOrchestrationSimple,
-  wrapWithOrchestrationTdd,
-} from './shared/orchestrator_prompt.ts';
+import { wrapForExecutionMode } from './shared/orchestration_wrapper.ts';
+import type { OrchestrationOptions } from './shared/orchestration_options.ts';
 import {
   parseFailedReportAnywhere,
   detectFailedLineAnywhere,
@@ -598,39 +595,33 @@ export class ClaudeCodeExecutor implements Executor {
       promptContent = `${planFileReference}\n\n${promptContent}`;
     }
 
-    // Apply orchestration wrapper when plan information is provided and in normal mode
+    // Apply the orchestration wrapper when plan information and an orchestrated execution mode
+    // are provided. Other execution modes must run without orchestration wrapping.
     if (planContextAvailable && promptContent != null) {
       const useJj = await getUsingJj(this.sharedOptions.baseDir);
-      if (planInfo.executionMode === 'normal') {
-        promptContent = wrapWithOrchestration(promptContent, planId, {
-          batchMode: planInfo.batchMode,
-          planFilePath,
-          reviewExecutor: this.sharedOptions.reviewExecutor,
-          reviewerInstructionsPath: this.timConfig.agents?.reviewer?.instructions,
-          subagentExecutor: this.sharedOptions.subagentExecutor,
-          dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
-          useJj,
-        });
-      } else if (planInfo.executionMode === 'simple') {
-        promptContent = wrapWithOrchestrationSimple(promptContent, planId, {
-          batchMode: planInfo.batchMode,
-          planFilePath,
-          reviewerInstructionsPath: this.timConfig.agents?.reviewer?.instructions,
-          subagentExecutor: this.sharedOptions.subagentExecutor,
-          dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
-          useJj,
-        });
-      } else if (planInfo.executionMode === 'tdd') {
-        promptContent = wrapWithOrchestrationTdd(promptContent, planId, {
-          batchMode: planInfo.batchMode,
-          planFilePath,
-          simpleMode: this.sharedOptions.simpleMode,
-          reviewExecutor: this.sharedOptions.reviewExecutor,
-          reviewerInstructionsPath: this.timConfig.agents?.reviewer?.instructions,
-          subagentExecutor: this.sharedOptions.subagentExecutor,
-          dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
-          useJj,
-        });
+      const orchestrationOptions: OrchestrationOptions = {
+        batchMode: planInfo.batchMode,
+        structuralReviewCompleted: planInfo.structuralReviewCompleted,
+        planFilePath,
+        reviewExecutor: this.sharedOptions.reviewExecutor,
+        reviewerInstructionsPath: this.timConfig.agents?.reviewer?.instructions,
+        simpleMode: this.sharedOptions.simpleMode,
+        subagentExecutor: this.sharedOptions.subagentExecutor,
+        dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
+        useJj,
+      };
+
+      if (
+        planInfo.executionMode === 'normal' ||
+        planInfo.executionMode === 'simple' ||
+        planInfo.executionMode === 'tdd'
+      ) {
+        promptContent = wrapForExecutionMode(
+          planInfo.executionMode,
+          promptContent,
+          planId,
+          orchestrationOptions
+        );
       }
     }
 

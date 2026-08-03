@@ -1525,6 +1525,10 @@ program
   .option('--files <files...>', 'Related files')
   .option('--docs <docs...>', 'Documentation paths')
   .option('--interactive', 'Prompt for all fields interactively')
+  .option(
+    '--review-follow-up',
+    'Mark this task as review follow-up work and preserve the structural-review marker'
+  )
   .action(async (planIdArg, options, command) => {
     const { handleAddTaskCommand } = await import('./commands/add-task.js');
     const planId = parsePlanIdFromCliArg(planIdArg);
@@ -1702,7 +1706,7 @@ addReviewCommandOptions(
 
 const reviewIssuesCommand = program
   .command('review-issues')
-  .description("List, fix, and resolve a plan's saved review issues");
+  .description("List, clear, reject, fix, and resolve a plan's saved review issues");
 
 reviewIssuesCommand
   .command('list <planId>')
@@ -1725,6 +1729,38 @@ reviewIssuesCommand
     await runWithCommandTunnelAdapter(async () => {
       const { handleReviewIssuesResolveCommand } = await import('./commands/review.js');
       await handleReviewIssuesResolveCommand(planId, issueIndexes, options, command.parent);
+    }).catch(handleCommandError);
+  });
+
+reviewIssuesCommand
+  .command('reject <planId>')
+  .description('Record a rejection for a saved or newly supplied review issue')
+  .requiredOption('--reason <reason>', 'Why this review issue is rejected')
+  .option('--from-review <path>', 'Read the issue from a structured review output JSON file')
+  .option('--issue <index>', 'One-based issue index in --from-review output')
+  .option('--file <path>', 'File path for an explicitly supplied review issue')
+  .option('--line <line>', 'Line or line range for an explicitly supplied review issue')
+  .option('--content <content>', 'Content for an explicitly supplied review issue')
+  .option('--severity <severity>', 'Severity for an explicitly supplied review issue')
+  .option('--category <category>', 'Category for an explicitly supplied review issue')
+  .option('--suggestion <suggestion>', 'Suggested fix for an explicitly supplied review issue')
+  .action(async (planIdArg, options, command) => {
+    const planId = parsePlanIdFromCliArg(planIdArg);
+    await runWithCommandTunnelAdapter(async () => {
+      const { handleReviewIssuesRejectCommand } = await import('./commands/review.js');
+      await handleReviewIssuesRejectCommand(planId, options, command.parent);
+    }).catch(handleCommandError);
+  });
+
+reviewIssuesCommand
+  .command('clear <planId>')
+  .description("Clear a plan's open saved review issues")
+  .option('--all', 'Clear rejected review issues too')
+  .action(async (planIdArg, options, command) => {
+    const planId = parsePlanIdFromCliArg(planIdArg);
+    await runWithCommandTunnelAdapter(async () => {
+      const { handleReviewIssuesClearCommand } = await import('./commands/review.js');
+      await handleReviewIssuesClearCommand(planId, options, command.parent);
     }).catch(handleCommandError);
   });
 
@@ -2283,6 +2319,10 @@ for (const agentType of ['implementer', 'tester', 'tdd-tests'] as const) {
       'Read additional instructions from file (use "-" to read from stdin)'
     )
     .option('--output-file <path>', 'Write the final subagent message to a file')
+    .option(
+      '--task-index <indexes...>',
+      'Limit the task context to these plan-absolute 1-based task indexes (repeatable or comma-separated)'
+    )
     .action(async (planIdArg: string, options: any, command: any) => {
       const { handleSubagentCommand } = await import('./commands/subagent.js');
       const planId = parsePlanIdFromCliArg(planIdArg);

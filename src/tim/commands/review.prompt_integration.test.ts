@@ -4,11 +4,18 @@ import type { ReviewIssue } from '../formatters/review_formatter.js';
 import type { DiffResult } from '../review_diff.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
+  buildPreviouslyRejectedFindingsSection,
   buildReviewPrompt,
   formatPreviousReviewContext,
   formatReviewIssueForPrompt,
   getResolvedTaskIndexesForScope,
+  resolveReviewTaskScope,
 } from './review.js';
+import { REVIEW_SEVERITY_GUIDANCE, REVIEW_DUPLICATION_GUIDANCE } from '../review_severity.js';
+
+function countOccurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
 
 const minimalPlan: PlanSchema = {
   id: 42,
@@ -102,6 +109,238 @@ describe('formatReviewIssueForPrompt', () => {
     };
     const result = formatReviewIssueForPrompt(issue, 1);
     expect(result).toContain('Location: src/hot.ts:10-15');
+  });
+});
+
+describe('buildReviewPrompt reviewer guidance', () => {
+  test('includes the severity rubric and repeated-defect reporting guidance', () => {
+    const prompt = buildReviewPrompt(minimalPlan, minimalDiff);
+
+    expect(prompt).toContain(
+      '- `critical` — the change is broken or dangerous as-is: data loss, a security vulnerability, a crash, or silently wrong results on mainline paths. This is blocking.'
+    );
+    expect(prompt).toContain(
+      '- `major` — a real correctness, regression, or missing-coverage problem that must be fixed before the work is done; a reviewer would block a merge on it. This is blocking.'
+    );
+    expect(prompt).toContain(
+      '- `minor` — a genuine improvement that does not block: naming, small refactors, non-mainline edge polish, or better error messages. This is non-blocking.'
+    );
+    expect(prompt).toContain(
+      '- `info` — observations, style, wording, and anything pre-existing. This is non-blocking.'
+    );
+    expect(prompt).toContain('Do not inflate style or preference findings to `major`.');
+    expect(prompt).toContain(
+      'Do not downgrade correctness problems to `minor` because the fix is small.'
+    );
+    expect(prompt).toContain('Fix effort is not part of severity; only impact is.');
+    expect(prompt).toContain(
+      'When the same defect class appears at multiple locations, report it as ONE finding rather than N separate findings.'
+    );
+    expect(prompt).toContain('this pattern appears at: <file:line list>');
+    expect(prompt).toContain('State the shared root cause');
+    expect(prompt).toContain(
+      'Set `file` and `line` to the primary instance; the other locations belong in the issue `content`.'
+    );
+    expect(prompt).toContain(
+      '**Pre-existing Issues:** If you notice concerns in code that was not modified by these changes, they may still be worth noting. However, any pre-existing issues MUST be labeled as "info" severity.'
+    );
+  });
+
+  test('does not duplicate the severity rubric or duplication guidance for the reviewer agent', () => {
+    const prompt = buildReviewPrompt(minimalPlan, minimalDiff);
+
+    expect(countOccurrences(prompt, REVIEW_SEVERITY_GUIDANCE)).toBe(1);
+    expect(countOccurrences(prompt, REVIEW_DUPLICATION_GUIDANCE)).toBe(1);
+  });
+});
+
+describe('buildReviewPrompt previously rejected findings', () => {
+  test('includes rejected findings, reasons, and the re-raise instruction', () => {
+    const planWithRejectedFindings: PlanSchema = {
+      ...minimalPlan,
+      reviewIssues: [
+        {
+          ...sampleIssues[0],
+          rejected: true,
+          rejectedReason: 'This query follows the project database access policy.',
+        },
+        {
+          ...sampleIssues[1],
+          rejected: true,
+          rejectedReason: 'The naming is required by the external API.',
+        },
+      ],
+    };
+
+    const prompt = buildReviewPrompt(planWithRejectedFindings, minimalDiff);
+
+    expect(prompt).toContain('# Previously Rejected Findings');
+    expect(prompt).toContain('1. [CRITICAL] security');
+    expect(prompt).toContain('Location: src/db.ts:42');
+    expect(prompt).toContain('Issue: SQL injection vulnerability in query builder');
+    expect(prompt).toContain(
+      'Rejection reason: This query follows the project database access policy.'
+    );
+    expect(prompt).toContain('2. [MINOR] style');
+    expect(prompt).toContain('Rejection reason: The naming is required by the external API.');
+    expect(prompt).toContain(
+      'Do not re-raise these absent new evidence; if you believe a rejection is wrong, say why explicitly.'
+    );
+
+    const rejectedFindingsIndex = prompt.indexOf('# Previously Rejected Findings');
+    const reviewInstructionsIndex = prompt.indexOf('# Review Instructions');
+    expect(rejectedFindingsIndex).toBeGreaterThan(-1);
+    expect(reviewInstructionsIndex).toBeGreaterThan(-1);
+    expect(rejectedFindingsIndex).toBeLessThan(reviewInstructionsIndex);
+  });
+
+  test('omits the section when reviewIssues is missing or empty', () => {
+    const prompts = [
+      buildReviewPrompt(minimalPlan, minimalDiff),
+      buildReviewPrompt({ ...minimalPlan, reviewIssues: [] }, minimalDiff),
+      buildReviewPrompt({ ...minimalPlan, reviewIssues: [sampleIssues[0]] }, minimalDiff),
+    ];
+
+    for (const prompt of prompts) {
+      expect(prompt).not.toContain('# Previously Rejected Findings');
+      expect(prompt).not.toContain('Do not re-raise these absent new evidence');
+    }
+  });
+
+  test('excludes non-rejected issues from the rejected findings section', () => {
+    const nonRejected: ReviewIssue = {
+      severity: 'major',
+      category: 'bug',
+      content: 'This finding was never rejected and should stay out of the ledger section',
+      file: 'src/still-open.ts',
+      line: 7,
+    };
+    const planWithMixedIssues: PlanSchema = {
+      ...minimalPlan,
+      reviewIssues: [
+        {
+          ...sampleIssues[0],
+          rejected: true,
+          rejectedReason: 'Rejected reason A',
+        },
+        nonRejected,
+      ],
+    };
+
+    const prompt = buildReviewPrompt(planWithMixedIssues, minimalDiff);
+    const sectionStart = prompt.indexOf('# Previously Rejected Findings');
+    const sectionEnd = prompt.indexOf('# Review Instructions');
+    expect(sectionStart).toBeGreaterThan(-1);
+    const section = prompt.slice(sectionStart, sectionEnd);
+
+    expect(section).toContain('SQL injection vulnerability in query builder');
+    expect(section).not.toContain('This finding was never rejected');
+    expect(section).not.toContain('src/still-open.ts');
+  });
+
+  test('renders default reason text when rejectedReason is absent', () => {
+    const planWithUnexplainedRejection: PlanSchema = {
+      ...minimalPlan,
+      reviewIssues: [{ ...sampleIssues[0], rejected: true }],
+    };
+
+    const prompt = buildReviewPrompt(planWithUnexplainedRejection, minimalDiff);
+    expect(prompt).toContain('Rejection reason: No rejection reason recorded.');
+    expect(prompt).not.toContain('Rejection reason: undefined');
+  });
+
+  test('does not throw and formats gracefully for a rejected issue with no file/line', () => {
+    const planWithFilelessRejection: PlanSchema = {
+      ...minimalPlan,
+      reviewIssues: [
+        {
+          severity: 'info',
+          category: 'other',
+          content: 'A rejected observation with no location',
+          rejected: true,
+          rejectedReason: 'Not applicable here',
+        },
+      ],
+    };
+
+    expect(() => buildReviewPrompt(planWithFilelessRejection, minimalDiff)).not.toThrow();
+    const prompt = buildReviewPrompt(planWithFilelessRejection, minimalDiff);
+    expect(prompt).toContain('Location: No file specified');
+    expect(prompt).toContain('Rejection reason: Not applicable here');
+  });
+
+  test('still appears when the review is scoped via resolveReviewTaskScope (--task-index)', () => {
+    const planWithRejectionAndTasks: PlanSchema = {
+      ...minimalPlan,
+      tasks: [
+        { title: 'Task One', done: false },
+        { title: 'Task Two', done: false },
+      ],
+      reviewIssues: [{ ...sampleIssues[0], rejected: true, rejectedReason: 'Already addressed' }],
+    };
+
+    const scope = resolveReviewTaskScope(planWithRejectionAndTasks, { taskIndex: ['1'] });
+    expect(scope.isScoped).toBe(true);
+
+    const prompt = buildReviewPrompt(scope.planData, minimalDiff);
+    expect(prompt).toContain('# Previously Rejected Findings');
+    expect(prompt).toContain('Rejection reason: Already addressed');
+  });
+
+  test('coexists with --input/--input-file additional context', () => {
+    const planWithRejection: PlanSchema = {
+      ...minimalPlan,
+      reviewIssues: [{ ...sampleIssues[0], rejected: true, rejectedReason: 'Handled previously' }],
+    };
+
+    // Mirrors how handleReviewCommand folds --input/--input-file into customInstructions
+    // (`## Additional Context from Orchestrator`) before calling buildReviewPrompt.
+    const customInstructions =
+      '## Additional Context from Orchestrator\n\nPlease double-check the retry logic.';
+
+    const prompt = buildReviewPrompt(
+      planWithRejection,
+      minimalDiff,
+      false,
+      false,
+      [],
+      [],
+      customInstructions
+    );
+
+    expect(prompt).toContain('# Previously Rejected Findings');
+    expect(prompt).toContain('Rejection reason: Handled previously');
+    expect(prompt).toContain('## Additional Context from Orchestrator');
+    expect(prompt).toContain('Please double-check the retry logic.');
+  });
+});
+
+describe('buildPreviouslyRejectedFindingsSection', () => {
+  test('returns an empty array when there are no issues', () => {
+    expect(buildPreviouslyRejectedFindingsSection([])).toEqual([]);
+  });
+
+  test('returns an empty array when issues is undefined', () => {
+    expect(buildPreviouslyRejectedFindingsSection(undefined)).toEqual([]);
+  });
+
+  test('returns an empty array when no issue is rejected', () => {
+    expect(buildPreviouslyRejectedFindingsSection(sampleIssues)).toEqual([]);
+  });
+
+  test('includes only rejected issues from a mixed list', () => {
+    const rejected: ReviewIssue = {
+      ...sampleIssues[0],
+      rejected: true,
+      rejectedReason: 'Intentional',
+    };
+    const lines = buildPreviouslyRejectedFindingsSection([rejected, sampleIssues[1]]);
+    const joined = lines.join('\n');
+
+    expect(joined).toContain('# Previously Rejected Findings');
+    expect(joined).toContain('SQL injection vulnerability in query builder');
+    expect(joined).toContain('Rejection reason: Intentional');
+    expect(joined).not.toContain('Inconsistent naming convention');
   });
 });
 

@@ -4,6 +4,7 @@ import {
   wrapWithOrchestrationSimple,
   wrapWithOrchestrationTdd,
 } from './orchestrator_prompt.ts';
+import { structuralPassApplies } from './review_guidance.ts';
 
 describe('orchestrator_prompt failure protocol', () => {
   it('includes failure protocol with FAILED detection and propagation', () => {
@@ -31,31 +32,35 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('15 minutes');
   });
 
-  it('requires a final full-plan review when a batch completes all remaining tasks', () => {
+  it('requires a full-plan bookend review when a batch completes all remaining tasks', () => {
     const out = wrapWithOrchestration('Context', '123', { batchMode: true });
-    expect(out).toContain('without any `--task-index` arguments');
+    expect(out).toContain('without any `--task-index` or `--since` arguments');
     expect(out).toContain('entire completed plan state is reviewed before you stop');
     expect(out).toContain('final-plan review sequence');
   });
 
-  it('reruns complete ordinary reviews until clean or bounded handoff', () => {
+  it('uses scoped review reruns until no new blocking findings or bounded handoff', () => {
     const out = wrapWithOrchestration('Context', '123', { batchMode: true });
     expect(out).toContain('follow the Review Iteration Policy');
-    expect(out).toContain('Every rerun intentionally reviews the entire plan scope');
-    expect(out).toContain('review is clean or the bounded handoff procedure has been completed');
+    expect(out).toContain('intermediate fix-verification reruns 2..n');
+    expect(out).toContain('--since <that commit>');
+    expect(out).toContain(
+      'The closing full-scope review is the last ordinary review inside the four-review budget, never an extra review.'
+    );
+    expect(out).toContain('produces no new blocking findings');
     expect(out).toContain('Review Iteration Policy');
     expect(out).toContain('issues earlier passes missed');
     expect(out).not.toContain('--review-mode');
     expect(out).not.toContain('--review-boundary');
   });
 
-  it('makes the orchestrator analyze cascading findings and propose restructuring', () => {
+  it('makes the orchestrator analyze cascading findings and propose consolidation', () => {
     const out = wrapWithOrchestration('Context', '123', { batchMode: false });
     expect(out).toContain('the review command does not classify it for you');
     expect(out).toContain('Watch for cascading findings');
-    expect(out).toContain('second occurrence in such a cascade');
+    expect(out).toContain('FIRST review that reports the same defect class at multiple locations');
     expect(out).toContain('root-cause checkpoint is orchestrator analysis');
-    expect(out).toContain('concrete restructuring proposal');
+    expect(out).toContain('concrete consolidation proposal');
     expect(out).toContain('consolidating responsibility');
   });
 
@@ -104,10 +109,12 @@ describe('orchestrator_prompt failure protocol', () => {
   it('runs structural review only after an ordinary review stopping condition', () => {
     const out = wrapWithOrchestration('Context', '123', { batchMode: true });
     expect(out).toContain(
-      'Only after the ordinary full-plan review loop has reached one of those two stopping conditions, run exactly one standalone structural simplification pass'
+      'Only after the ordinary full-plan review loop has reached a Review Iteration Policy stopping condition—no new blocking findings, or the bounded handoff completed—run exactly one standalone structural simplification pass'
     );
     expect(out).toContain('--structural-only');
-    expect(out).toContain('reached one of those two stopping conditions');
+    expect(out).toContain(
+      'reached a Review Iteration Policy stopping condition—no new blocking findings, or the bounded handoff completed'
+    );
     expect(out).toContain('run exactly one complete ordinary review afterward');
     expect(out).toContain('even if four ordinary reviews already ran');
     expect(out).toContain('explicit exception to the ordinary review run limit');
@@ -130,9 +137,9 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain(
       'you may apply the changes yourself without spawning the implementer subagent'
     );
-    expect(out).toContain('small logic adjustments');
+    expect(out).toContain('focused logic adjustments');
     expect(out).toContain(
-      'rerun `tim subagent reviewer 123 --print --output-file <output_path>` over the same complete declared scope'
+      'repeat `tim subagent reviewer 123 --print --output-file <output_path>` according to the Review Iteration Policy'
     );
   });
 
@@ -168,22 +175,57 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('Review Iteration Policy');
   });
 
-  it('uses orchestrator-owned batch review in every orchestration mode', () => {
-    const outputs = [
-      wrapWithOrchestration('Context', '123', { batchMode: true }),
-      wrapWithOrchestrationSimple('Context', '123', { batchMode: true }),
-      wrapWithOrchestrationTdd('Context', '123', { batchMode: true, simpleMode: false }),
-      wrapWithOrchestrationTdd('Context', '123', { batchMode: true, simpleMode: true }),
-    ];
+  it.each([
+    {
+      name: 'wrapWithOrchestration',
+      planId: '123',
+      phaseNumber: '4',
+      output: wrapWithOrchestration('Context', '123', { batchMode: true }),
+    },
+    {
+      name: 'wrapWithOrchestrationSimple',
+      planId: '456',
+      phaseNumber: '3',
+      output: wrapWithOrchestrationSimple('Context', '456', { batchMode: true }),
+    },
+    {
+      name: 'wrapWithOrchestrationTdd',
+      planId: '789',
+      phaseNumber: '5',
+      output: wrapWithOrchestrationTdd('Context', '789', { batchMode: true, simpleMode: false }),
+    },
+    {
+      name: 'wrapWithOrchestrationTdd (simple)',
+      planId: '1011',
+      phaseNumber: '4',
+      output: wrapWithOrchestrationTdd('Context', '1011', { batchMode: true, simpleMode: true }),
+    },
+  ])(
+    'renders the same complete batch-review guidance in $name',
+    ({
+      output,
+      planId,
+      phaseNumber,
+    }: {
+      output: string;
+      planId: string;
+      phaseNumber: string;
+    }): void => {
+      const expectedLines: string[] = [
+        `${phaseNumber}. **Review Phase**`,
+        'Review the selected task batch yourself. Inspect the implementation, diff, tests, and relevant plan requirements for correctness, regressions, missing coverage, and maintainability.',
+        'start your own native subagent to review all or part of the selected task batch if that would help',
+        'Do not run `tim subagent reviewer` for this selected-task batch review. That command is reserved for the final full-plan review after every task is complete.',
+        `tim review-issues reject ${planId} --content "<the finding>" --file <path> --line <line> --reason "..."`,
+        `tim review-issues reject ${planId} --from-review <output.json> --issue <n> --reason "..."`,
+        'Your review should focus on problems; lack of findings means the batch review passed.',
+      ];
 
-    for (const out of outputs) {
-      expect(out).toContain('Review the selected task batch yourself');
-      expect(out).toContain('native subagent');
-      expect(out).toContain('final full-plan review');
-      expect(out).toContain('tim subagent reviewer 123 --print');
-      expect(out).not.toContain('--task-index 1');
+      for (const line of expectedLines) {
+        expect(output).toContain(line);
+      }
     }
-  });
+  );
 
   it('references configured reviewer instructions for orchestrator-owned batch reviews', () => {
     const options = {
@@ -222,6 +264,695 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('Progress Updates (Plan File)');
     expect(out).toContain('## Current Progress');
     expect(out).toContain('### Remaining');
+  });
+});
+
+describe('orchestrator_prompt rejected finding recording guidance', () => {
+  const wrappers: Array<{
+    name: string;
+    planId: string;
+    call: (batchMode: boolean) => string;
+  }> = [
+    {
+      name: 'wrapWithOrchestration',
+      planId: '123',
+      call: (batchMode) => wrapWithOrchestration('Context', '123', { batchMode }),
+    },
+    {
+      name: 'wrapWithOrchestrationSimple',
+      planId: '456',
+      call: (batchMode) => wrapWithOrchestrationSimple('Context', '456', { batchMode }),
+    },
+    {
+      name: 'wrapWithOrchestrationTdd',
+      planId: '789',
+      call: (batchMode) =>
+        wrapWithOrchestrationTdd('Context', '789', { batchMode, simpleMode: false }),
+    },
+    {
+      name: 'wrapWithOrchestrationTdd (simple)',
+      planId: '1011',
+      call: (batchMode) =>
+        wrapWithOrchestrationTdd('Context', '1011', { batchMode, simpleMode: true }),
+    },
+  ];
+
+  it.each(wrappers)('$name records rejected findings in both modes', ({ call, planId }) => {
+    for (const batchMode of [false, true]) {
+      const out = call(batchMode);
+
+      expect(out).toContain('After each rejection, immediately record the finding');
+      expect(out).toContain(
+        `tim review-issues reject ${planId} --from-review <output.json> --issue <n> --reason "..."`
+      );
+      expect(out).toContain(
+        'Later reviews load these rejections automatically, so do not re-type them.'
+      );
+      expect(out).not.toContain(
+        'not relevant or acceptable to leave as-is, so the reviewer knows not to flag them again'
+      );
+      expect(out).not.toContain(
+        'issues from prior review output that you determined were not relevant'
+      );
+      if (!batchMode) {
+        // The manual --input-file fallback for passing notes to the reviewer must survive
+        // at the original (non-batch) sites, alongside the new automatic rejection guidance.
+        expect(out).toContain(
+          'via `--input-file <paths...>` so it has the full picture of what was intended and why'
+        );
+      }
+    }
+  });
+});
+
+describe('orchestrator_prompt batch-review rejection recording guidance', () => {
+  const batchWrappers: Array<{
+    name: string;
+    planId: string;
+    call: () => string;
+  }> = [
+    {
+      name: 'wrapWithOrchestration',
+      planId: '123',
+      call: () => wrapWithOrchestration('Context', '123', { batchMode: true }),
+    },
+    {
+      name: 'wrapWithOrchestrationSimple',
+      planId: '456',
+      call: () => wrapWithOrchestrationSimple('Context', '456', { batchMode: true }),
+    },
+    {
+      name: 'wrapWithOrchestrationTdd',
+      planId: '789',
+      call: () =>
+        wrapWithOrchestrationTdd('Context', '789', { batchMode: true, simpleMode: false }),
+    },
+    {
+      name: 'wrapWithOrchestrationTdd (simple)',
+      planId: '1011',
+      call: () =>
+        wrapWithOrchestrationTdd('Context', '1011', { batchMode: true, simpleMode: true }),
+    },
+  ];
+
+  it.each(batchWrappers)(
+    '$name records batch-review rejections with the explicit-field form and real plan id',
+    ({ call, planId }) => {
+      const out = call();
+
+      expect(out).toContain(
+        `tim review-issues reject ${planId} --content "<the finding>" --file <path> --line <line> --reason "..."`
+      );
+      expect(out).toContain('This review produces no reviewer output file');
+      expect(out).not.toContain(`--from-review <output.json> --issue <n>" --content`);
+      // The --from-review guidance for the final full-plan reviewer command must still be present
+      // alongside the new batch-review guidance; this addition must not displace it.
+      expect(out).toContain(
+        `tim review-issues reject ${planId} --from-review <output.json> --issue <n> --reason "..."`
+      );
+    }
+  );
+
+  it('non-batch mode does not emit batch-review rejection guidance', () => {
+    const outputs = [
+      wrapWithOrchestration('Context', '123', { batchMode: false }),
+      wrapWithOrchestrationSimple('Context', '456', { batchMode: false }),
+      wrapWithOrchestrationTdd('Context', '789', { batchMode: false, simpleMode: false }),
+      wrapWithOrchestrationTdd('Context', '1011', { batchMode: false, simpleMode: true }),
+    ];
+
+    for (const out of outputs) {
+      expect(out).not.toContain('--content "<the finding>" --file <path> --line <line>');
+      expect(out).not.toContain('This review produces no reviewer output file');
+    }
+  });
+});
+
+describe('orchestrator_prompt review iteration policy (plan 394 task 8)', () => {
+  const wrappers: Array<{
+    name: string;
+    call: (batchMode: boolean) => string;
+  }> = [
+    {
+      name: 'wrapWithOrchestration',
+      call: (batchMode) =>
+        wrapWithOrchestration('Context', '123', {
+          batchMode,
+          planFilePath: batchMode ? '/tmp/x.plan.md' : undefined,
+        }),
+    },
+    {
+      name: 'wrapWithOrchestrationSimple',
+      call: (batchMode) =>
+        wrapWithOrchestrationSimple('Context', '123', {
+          batchMode,
+          planFilePath: batchMode ? '/tmp/x.plan.md' : undefined,
+        }),
+    },
+    {
+      name: 'wrapWithOrchestrationTdd (normal)',
+      call: (batchMode) =>
+        wrapWithOrchestrationTdd('Context', '123', {
+          batchMode,
+          simpleMode: false,
+          planFilePath: batchMode ? '/tmp/x.plan.md' : undefined,
+        }),
+    },
+    {
+      name: 'wrapWithOrchestrationTdd (simple)',
+      call: (batchMode) =>
+        wrapWithOrchestrationTdd('Context', '123', {
+          batchMode,
+          simpleMode: true,
+          planFilePath: batchMode ? '/tmp/x.plan.md' : undefined,
+        }),
+    },
+  ];
+
+  describe.each(wrappers)('$name', ({ call }) => {
+    it('non-batch mode: states the three-tier scope rule and drops the blanket no-narrowing rule', () => {
+      const out = call(false);
+      expect(out).toContain('Apply this budgeted three-tier scope rule to ordinary reviews.');
+      expect(out).toContain(
+        '(1) The first ordinary review of a task batch covers the full declared scope'
+      );
+      expect(out).toContain('(2) Intermediate fix-verification reviews are diff-scoped');
+      expect(out).toContain(
+        '(3) Whenever the loop is about to stop because a complete review produced no new blocking findings or because the four-review bound is reached'
+      );
+      expect(out).toContain(
+        'The closing full-scope review is the last ordinary review inside the four-review budget, never an extra review.'
+      );
+      expect(out).toContain('If the bound is reached, review #4 is the closing full-scope review');
+      expect(out).not.toContain('Do not narrow a follow-up review to only the files changed');
+    });
+
+    it('non-batch mode: instructs recording the commit hash and using --since for fix-verification reviews', () => {
+      const out = call(false);
+      expect(out).toContain('immediately BEFORE applying fixes, record the current commit hash');
+      expect(out).toContain('git rev-parse HEAD');
+      expect(out).toContain('jj log --no-graph -r @- -T commit_id');
+      expect(out).toContain(
+        'run `tim subagent reviewer 123 --print --output-file <output_path>` with `--since <that commit>`'
+      );
+      expect(out).toContain('plus the same `--task-index` scope');
+      expect(out).toContain('enumerate in `--input` the specific findings being re-checked');
+    });
+
+    it('scopes subagent review fixes without changing initial implementation runs', () => {
+      const out = call(false);
+      expect(out).toContain(
+        'Scope every review-fix subagent run. When you dispatch a subagent to fix review findings, pass repeatable or comma-separated `--task-index` values for exactly the task(s) that own the findings.'
+      );
+      expect(out).toContain(
+        "The indexes are plan-absolute and 1-based, numbered over every plan task including completed ones, the same numbering the reviewer's `--task-index` uses."
+      );
+      expect(out).toContain('Include the findings being fixed in `--input` or `--input-file`');
+      expect(out).toContain('not to touch code outside those findings');
+      expect(out).toContain(
+        'Scope only fix rounds. The first implementation, TDD-test, and testing run of a batch covers the tasks you selected and passes no `--task-index`; only a run that fixes review findings is scoped.'
+      );
+      expect(out).toContain('an index naming a completed task fails the command');
+      expect(out).toContain(
+        'omit `--task-index` entirely and state the scope of the fix in `--input` instead'
+      );
+      expect(out).toContain('Never mark a task incomplete to work around this');
+    });
+
+    it('states the review-fix task-index rule in batch mode too', () => {
+      const out = call(true);
+      expect(out).toContain(
+        'Scope every review-fix subagent run. When you dispatch a subagent to fix review findings, pass repeatable or comma-separated `--task-index` values for exactly the task(s) that own the findings.'
+      );
+      expect(out).toContain(
+        "The indexes are plan-absolute and 1-based, numbered over every plan task including completed ones, the same numbering the reviewer's `--task-index` uses."
+      );
+      expect(out).toContain('Include the findings being fixed in `--input` or `--input-file`');
+      expect(out).toContain('not to touch code outside those findings');
+      expect(out).toContain(
+        'Scope only fix rounds. The first implementation, TDD-test, and testing run of a batch covers the tasks you selected and passes no `--task-index`; only a run that fixes review findings is scoped.'
+      );
+    });
+
+    it('states the completed-task exception: omit --task-index and describe scope in --input instead', () => {
+      for (const batchMode of [false, true]) {
+        const out = call(batchMode);
+        expect(out).toContain(
+          'Unlike the reviewer, a subagent `--task-index` accepts only tasks that are still incomplete; an index naming a completed task fails the command.'
+        );
+        expect(out).toContain('If the task that owns a finding is already marked done');
+        expect(out).toContain(
+          'common in the final full-plan sequence, where earlier iterations have already completed their tasks'
+        );
+        expect(out).toContain(
+          'omit `--task-index` entirely and state the scope of the fix in `--input` instead'
+        );
+        expect(out).toContain('Never mark a task incomplete to work around this.');
+      }
+    });
+
+    it('does not loop on unqualified review feedback in wrapper-specific guidance', () => {
+      const out = call(false);
+
+      expect(out).toContain('accepted blocking review finding');
+      expect(out).not.toContain(
+        'if review feedback requires only straightforward, contained edits'
+      );
+      expect(out).not.toContain(
+        'if review fails, loop back to implementation before moving forward'
+      );
+    });
+
+    it('states the blocking/non-blocking severity gate with the legacy free-text mapping', () => {
+      // The gate itself is ordinary-review policy and applies in both modes.
+      for (const batchMode of [false, true]) {
+        const out = call(batchMode);
+        expect(out).toContain('findings with severity `critical` or `major` are **blocking**');
+        expect(out).toContain('must be fixed in-loop');
+        expect(out).toContain('findings with severity `minor` or `info` are **non-blocking**');
+        expect(out).toContain(
+          'must be rejected with a concrete reason or captured immediately as follow-up tasks'
+        );
+        expect(out).toContain(
+          'Non-blocking findings must NEVER by themselves trigger an implementer round or another review rerun'
+        );
+        expect(out).toContain(
+          "reviewer's JSON output already carries a `severity` field per issue"
+        );
+        expect(out).toContain('map `CRITICAL`/`MAJOR` to blocking and `MINOR` to non-blocking');
+      }
+    });
+
+    it('carves the structural pass out of the severity gate only where a structural pass runs', () => {
+      const out = call(true);
+      expect(out).toContain('This gate applies to ordinary-review findings only.');
+      expect(out).toContain(
+        'accepting and fixing those findings, plus its single post-structural validation review, is expected and is not a gate violation'
+      );
+      expect(out).toContain(
+        'The post-structural validation review is outside the ordinary iteration loop. Its blocking findings do not trigger an in-loop fix or another ordinary review'
+      );
+      expect(call(false)).not.toContain('This gate applies to ordinary-review findings only.');
+    });
+
+    it('tells the orchestrator to assign the same severities to its own review findings', () => {
+      for (const batchMode of [false, true]) {
+        const out = call(batchMode);
+        expect(out).toContain(
+          'When you perform a review yourself rather than running the reviewer command, assign each of your own findings one of the same four severities before applying this gate'
+        );
+        expect(out).toContain('Fix effort is not part of severity; only impact is.');
+      }
+    });
+
+    it('keeps the closing-review rule inside the review budget everywhere it is stated', () => {
+      for (const batchMode of [false, true]) {
+        const out = call(batchMode);
+        // The rule lives in one shared constant, so every site must carry the safeguard
+        // that an already-full-scope terminal review is itself the closing review.
+        expect(out).toContain(
+          'The closing full-scope review is the last ordinary review inside the four-review budget, never an extra review.'
+        );
+        expect(out).toContain(
+          'If the review that turns out to be terminal was already full scope, it IS the closing review: do not add another one.'
+        );
+      }
+    });
+
+    it('spells out the fix-verification invocation in the batch branch too', () => {
+      const out = call(true);
+      // The batch branch renders the shared fix-verification helper; assert its full
+      // contribution so the helper cannot regress silently on this path.
+      expect(out).toContain(
+        'record the current commit hash with `git rev-parse HEAD` (or `jj log --no-graph -r @- -T commit_id` in a Jujutsu workspace) and then run `tim subagent reviewer 123 --print --output-file <output_path>` with `--since <that commit>` and the same full-plan scope (no `--task-index`), and enumerate in `--input` the specific findings being re-checked.'
+      );
+    });
+
+    it('gives the final full-plan sequence its own review budget', () => {
+      const out = call(true);
+      expect(out).toContain(
+        'under its own separate four-review budget, counted independently of the orchestrator-owned per-batch reviews above'
+      );
+      expect(out).not.toContain('the same three tiers and four-review budget');
+    });
+
+    it('states the no-new-blocking-findings termination rule', () => {
+      const out = call(false);
+      expect(out).toContain(
+        'targeted checks pass and a complete ordinary review produces no new blocking findings'
+      );
+      expect(out).toContain('a review whose only unhandled findings are non-blocking is terminal');
+      expect(out).toContain('New blocking findings extend the loop');
+    });
+
+    it('triggers the cascade checkpoint on first occurrence and calls the output a consolidation proposal', () => {
+      const out = call(false);
+      expect(out).toContain(
+        'On the FIRST review that reports the same defect class at multiple locations'
+      );
+      expect(out).toContain('Do not wait for a second occurrence across rounds');
+      expect(out).toContain('write a concrete consolidation proposal');
+      expect(out).toContain(
+        'Pass the consolidation proposal and the relevant findings to the implementer as ONE consolidated instruction instead of per-instance fixes'
+      );
+    });
+
+    it('never uses restructuring-proposal wording or focus-lens diversification language', () => {
+      for (const batchMode of [false, true]) {
+        const out = call(batchMode);
+        expect(out).not.toContain('restructuring proposal');
+        expect(out.toLowerCase()).not.toContain('restructur');
+        expect(out.toLowerCase()).not.toContain('focus-lens');
+        expect(out.toLowerCase()).not.toContain('focus lens');
+        expect(out.toLowerCase()).not.toContain('perspective diversif');
+      }
+    });
+
+    it('retains the 4-review bound and bounded-handoff wording', () => {
+      const out = call(false);
+      expect(out).toContain('Allow at most 4 ordinary review runs per task batch');
+      expect(out).toContain(
+        'the fourth ordinary review has completed and the bounded handoff procedure below has been completed'
+      );
+      expect(out).toContain(
+        'After the fourth ordinary review, do not run another ordinary review as part of this iteration loop'
+      );
+      expect(out).toContain('create a specific follow-up task if it is worth fixing');
+    });
+
+    it('batch mode: keeps the final sequence full-plan / --since / full-plan tiers and disambiguates the structural pass', () => {
+      const out = call(true);
+      expect(out).toContain('Review #1 is the full-plan bookend');
+      expect(out).toContain('without any `--task-index` or `--since` arguments');
+      expect(out).toContain('intermediate fix-verification reruns 2..n');
+      expect(out).toContain(
+        'run `tim subagent reviewer 123 --print --output-file <output_path>` with `--since <that commit>` and the same full-plan scope'
+      );
+      expect(out).toContain(
+        'The closing full-scope review is the last ordinary review inside the four-review budget, never an extra review.'
+      );
+      expect(out).toContain('If the bound is reached, review #4 is the closing full-scope review');
+      expect(out).toContain('This gives fresh eyes twice');
+      expect(out).toContain(
+        'The cascade "consolidation proposal" in the Review Iteration Policy is unrelated to this standalone `--structural-only` structural pass.'
+      );
+      expect(out).toContain(
+        'This applies to every ordinary review in this final-plan sequence, including the post-structural validation review.'
+      );
+      expect(out).not.toContain(
+        'This applies to every review in this final-plan sequence, including the structural pass'
+      );
+    });
+
+    it('batch mode: the shared review-iteration section also states the batch three-tier rule and severity gate', () => {
+      const out = call(true);
+      expect(out).toContain(
+        'the separate final full-plan sequence follows the same three tiers under its own separate four-review budget, counted independently of the orchestrator-owned per-batch reviews above: review #1 is full-plan'
+      );
+      expect(out).toContain('intermediate reruns 2..n are fix-verification reviews');
+      expect(out).toContain(
+        'The closing full-scope review is the last ordinary review inside the four-review budget, never an extra review.'
+      );
+      expect(out).toContain('findings with severity `critical` or `major` are **blocking**');
+      expect(out).toContain(
+        'targeted checks pass and a complete ordinary review produces no new blocking findings'
+      );
+    });
+  });
+});
+
+describe('orchestrator_prompt structuralReviewCompleted branch (plan 398)', () => {
+  const batchWrappers: Array<{
+    name: string;
+    planId: string;
+    call: (structuralReviewCompleted?: boolean) => string;
+  }> = [
+    {
+      name: 'wrapWithOrchestration',
+      planId: '123',
+      call: (structuralReviewCompleted) =>
+        wrapWithOrchestration('Context', '123', {
+          batchMode: true,
+          planFilePath: '/tmp/x.plan.md',
+          structuralReviewCompleted,
+        }),
+    },
+    {
+      name: 'wrapWithOrchestrationSimple',
+      planId: '456',
+      call: (structuralReviewCompleted) =>
+        wrapWithOrchestrationSimple('Context', '456', {
+          batchMode: true,
+          planFilePath: '/tmp/x.plan.md',
+          structuralReviewCompleted,
+        }),
+    },
+    {
+      name: 'wrapWithOrchestrationTdd',
+      planId: '789',
+      call: (structuralReviewCompleted) =>
+        wrapWithOrchestrationTdd('Context', '789', {
+          batchMode: true,
+          simpleMode: false,
+          planFilePath: '/tmp/x.plan.md',
+          structuralReviewCompleted,
+        }),
+    },
+    {
+      name: 'wrapWithOrchestrationTdd (simple)',
+      planId: '1011',
+      call: (structuralReviewCompleted) =>
+        wrapWithOrchestrationTdd('Context', '1011', {
+          batchMode: true,
+          simpleMode: true,
+          planFilePath: '/tmp/x.plan.md',
+          structuralReviewCompleted,
+        }),
+    },
+  ];
+
+  describe.each(batchWrappers)('$name', ({ call, planId }) => {
+    it('flag set: omits the structural-pass command and states it already ran, but keeps the ordinary final-plan loop', () => {
+      const out = call(true);
+
+      const structuralCommand = `tim subagent reviewer ${planId} --print --output-file <output_path> --structural-only`;
+      expect(out).not.toContain(structuralCommand);
+      expect(out).not.toContain('Do not rerun the structural pass automatically.');
+      expect(out).not.toContain('Resolve the structural findings you accept');
+      expect(out).not.toContain(
+        'This post-structural validation review is an explicit exception to the ordinary review run limit.'
+      );
+      expect(out).not.toContain(
+        'Only after the ordinary full-plan review loop has reached a Review Iteration Policy stopping condition'
+      );
+
+      expect(out).toContain(
+        'The standalone structural simplification pass has already run for this plan, so this run has no structural pass and no post-structural validation review.'
+      );
+      expect(out).toContain(
+        'Do not run `tim subagent reviewer` with `--structural-only`, and do not improvise a substitute structural or simplification pass.'
+      );
+      expect(out).toContain(
+        'Stop when the ordinary review loop reaches a Review Iteration Policy stopping condition.'
+      );
+
+      // The ordinary final-plan review loop text is unaffected by the flag.
+      expect(out).toContain('final-plan review sequence');
+      expect(out).toContain('Review #1 is the full-plan bookend');
+      expect(out).toContain('without any `--task-index` or `--since` arguments');
+      expect(out).toContain('intermediate fix-verification reruns 2..n');
+      expect(out).toContain(
+        `run \`tim subagent reviewer ${planId} --print --output-file <output_path>\` with \`--since <that commit>\``
+      );
+      expect(out).toContain('This gives fresh eyes twice.');
+      // The addendum sentence about the post-structural exception is dropped when the
+      // structural pass has already run — there is no exception left to describe.
+      expect(out).not.toContain(
+        'The post-structural validation review, when needed, is a separate full-plan exception after the structural pass.'
+      );
+      expect(out).toContain('This applies to every ordinary review in this final-plan sequence.');
+      expect(out).not.toContain(
+        'This applies to every ordinary review in this final-plan sequence, including the post-structural validation review.'
+      );
+      expect(out).toContain(
+        'Any review findings related to previous tasks in this plan should still be considered'
+      );
+
+      // The shared Review Iteration Policy must not authorize structural-pass work
+      // after the marker has been set.
+      expect(out).not.toContain(
+        'This gate applies to ordinary-review findings only. Findings from the standalone `--structural-only` structural pass'
+      );
+      expect(out).not.toContain(
+        'The post-structural validation review is outside the ordinary iteration loop.'
+      );
+      expect(out).not.toContain(
+        'A single ordinary review used to validate changes from the standalone structural pass is allowed in addition to this limit.'
+      );
+      expect(out).toContain(
+        'The limit bounds iterative review execution; it does not mean that remaining feedback should be discarded.'
+      );
+      expect(out).not.toContain(
+        'every finding from the fourth review and any post-structural validation review has been rejected'
+      );
+      expect(out).toContain(
+        'every finding from the fourth review has been rejected or captured in a follow-up task'
+      );
+    });
+
+    it('flag unset (explicit false) and flag omitted: keeps the full structural-pass sequence', () => {
+      for (const out of [call(false), call(undefined)]) {
+        const structuralCommand = `tim subagent reviewer ${planId} --print --output-file <output_path> --structural-only`;
+        expect(out).toContain(structuralCommand);
+        expect(out).toContain('Do not rerun the structural pass automatically.');
+        expect(out).toContain(
+          'run exactly one complete ordinary review afterward to validate the resulting plan state'
+        );
+        expect(out).toContain(
+          'This post-structural validation review is an explicit exception to the ordinary review run limit.'
+        );
+        expect(out).toContain(
+          'The post-structural validation review, when needed, is a separate full-plan exception after the structural pass.'
+        );
+        expect(out).toContain(
+          'This applies to every ordinary review in this final-plan sequence, including the post-structural validation review.'
+        );
+        expect(out).toContain(
+          'This gate applies to ordinary-review findings only. Findings from the standalone `--structural-only` structural pass'
+        );
+        expect(out).toContain(
+          'The post-structural validation review is outside the ordinary iteration loop.'
+        );
+        expect(out).toContain(
+          'A single ordinary review used to validate changes from the standalone structural pass is allowed in addition to this limit.'
+        );
+        expect(out).toContain(
+          'every finding from the fourth review and any post-structural validation review has been rejected'
+        );
+
+        expect(out).not.toContain(
+          'The standalone structural simplification pass has already run for this plan'
+        );
+      }
+    });
+  });
+
+  it('non-batch mode never emits the final-batch review guidance, regardless of the flag', () => {
+    for (const structuralReviewCompleted of [true, false, undefined]) {
+      const outputs = [
+        wrapWithOrchestration('Context', '123', { batchMode: false, structuralReviewCompleted }),
+        wrapWithOrchestrationSimple('Context', '123', {
+          batchMode: false,
+          structuralReviewCompleted,
+        }),
+        wrapWithOrchestrationTdd('Context', '123', {
+          batchMode: false,
+          simpleMode: false,
+          structuralReviewCompleted,
+        }),
+        wrapWithOrchestrationTdd('Context', '123', {
+          batchMode: false,
+          simpleMode: true,
+          structuralReviewCompleted,
+        }),
+      ];
+
+      for (const out of outputs) {
+        expect(out).not.toContain(
+          'The standalone structural simplification pass has already run for this plan'
+        );
+        expect(out).not.toContain(
+          'tim subagent reviewer 123 --print --output-file <output_path> --structural-only'
+        );
+        expect(out).not.toContain('final-plan review sequence');
+        expect(out).not.toContain('--structural-only');
+        expect(out).not.toContain('post-structural validation review');
+        expect(out).not.toContain('standalone structural simplification pass');
+
+        const structuralReviewPolicyPhrases = [
+          'This gate applies to ordinary-review findings only. Findings from the standalone `--structural-only` structural pass',
+          'The post-structural validation review is outside the ordinary iteration loop.',
+          'A single ordinary review used to validate changes from the standalone structural pass is allowed in addition to this limit.',
+          'every finding from the fourth review and any post-structural validation review has been rejected',
+        ];
+        for (const phrase of structuralReviewPolicyPhrases) {
+          expect(out).not.toContain(phrase);
+        }
+      }
+    }
+  });
+
+  it('TDD wrapper: "Keep TDD order intact" sentence includes the structural-pass clause only when the flag is unset', () => {
+    const structuralPassClause =
+      'and the standalone `--structural-only` structural pass before stopping.';
+    for (const simpleMode of [false, true]) {
+      const withFlagSet = wrapWithOrchestrationTdd('Context', '789', {
+        batchMode: true,
+        simpleMode,
+        structuralReviewCompleted: true,
+      });
+      expect(withFlagSet).toContain(
+        'Keep TDD order intact for each iteration, including the final full-plan review loop before stopping.'
+      );
+      expect(withFlagSet).not.toContain(structuralPassClause);
+
+      for (const nonBatch of [
+        wrapWithOrchestrationTdd('Context', '789', {
+          batchMode: false,
+          simpleMode,
+          structuralReviewCompleted: true,
+        }),
+        wrapWithOrchestrationTdd('Context', '789', {
+          batchMode: false,
+          simpleMode,
+          structuralReviewCompleted: false,
+        }),
+      ]) {
+        expect(nonBatch).not.toContain(structuralPassClause);
+      }
+
+      for (const withFlagUnset of [
+        wrapWithOrchestrationTdd('Context', '789', {
+          batchMode: true,
+          simpleMode,
+          structuralReviewCompleted: false,
+        }),
+        wrapWithOrchestrationTdd('Context', '789', { batchMode: true, simpleMode }),
+      ]) {
+        expect(withFlagUnset).toContain(
+          `Keep TDD order intact for each iteration, including the final full-plan review loop ${structuralPassClause}`
+        );
+      }
+    }
+  });
+
+  it.each([
+    [{ batchMode: false, structuralReviewCompleted: false }, false],
+    [{ batchMode: false, structuralReviewCompleted: true }, false],
+    [{ batchMode: true, structuralReviewCompleted: false }, true],
+    [{ batchMode: true, structuralReviewCompleted: true }, false],
+  ])(
+    'structuralPassApplies(%j) is %s',
+    (options: { batchMode: boolean; structuralReviewCompleted: boolean }, expected: boolean) => {
+      expect(structuralPassApplies(options)).toBe(expected);
+    }
+  );
+
+  it('instructs passing --review-follow-up when filing follow-up tasks, in every wrapper and mode', () => {
+    const outputs = [
+      wrapWithOrchestration('Context', '123', { batchMode: false }),
+      wrapWithOrchestration('Context', '123', { batchMode: true, planFilePath: '/plan.md' }),
+      wrapWithOrchestrationSimple('Context', '123', { batchMode: false }),
+      wrapWithOrchestrationTdd('Context', '123', { batchMode: false, simpleMode: false }),
+    ];
+
+    for (const out of outputs) {
+      expect(out).toContain('Be careful where you file follow-up work');
+      expect(out).toContain(
+        'always pass `--review-follow-up` so the task is marked as review cleanup and the completed-structural-review marker is not cleared'
+      );
+      expect(out).toContain('tim add-task');
+    }
   });
 });
 
@@ -314,6 +1045,100 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('Prefer deterministic names');
       expect(out).toContain('/tmp/claude/tim-42-<purpose>.md');
     });
+  });
+
+  it('advertises task-index support for review-fix subagents in every wrapper', () => {
+    const outputs = [
+      wrapWithOrchestration('Context', '42', { batchMode: false }),
+      wrapWithOrchestrationSimple('Context', '55', { batchMode: false }),
+      wrapWithOrchestrationTdd('Context', '71', { batchMode: false, simpleMode: false }),
+      wrapWithOrchestrationTdd('Context', '72', { batchMode: false, simpleMode: true }),
+    ];
+
+    for (const out of outputs) {
+      expect(out).toContain(
+        'The implementation subagents above also accept a `--task-index <indexes...>` option.'
+      );
+      // The advertisement line points at the policy instead of restating the
+      // flag's semantics, so it cannot go stale against the reviewer option or
+      // against a wrapper's agent list.
+      expect(out).toContain(
+        'See the Review Iteration Policy below for when to use it and what the indexes mean'
+      );
+      expect(out).toContain('do not infer its behavior from the reviewer option of the same name');
+      expect(out).not.toContain('Every subagent command listed above');
+    }
+  });
+
+  it('does not advertise a tester subagent command in simple mode, which excludes a tester', () => {
+    const out = wrapWithOrchestrationSimple('Context', '55', { batchMode: false });
+    expect(out).not.toContain('tim subagent tester');
+    expect(out).not.toMatch(/\*\*Tester\*\*/);
+    // The shared task-index guidance points at the Review Iteration Policy rather
+    // than enumerating command names, so it cannot claim this wrapper offers a
+    // tester. Guard against a future edit reintroducing an enumeration there.
+    expect(out).not.toMatch(/tester,? (and|or) tdd-tests command/);
+  });
+
+  it('points the Iteration "Return to step" line at the policy instead of restating the rule', () => {
+    const outputs = [
+      wrapWithOrchestration('Context', '42', { batchMode: false }),
+      wrapWithOrchestration('Context', '42', { batchMode: true, planFilePath: '/plan.md' }),
+      wrapWithOrchestrationTdd('Context', '71', { batchMode: false, simpleMode: false }),
+      wrapWithOrchestrationTdd('Context', '71', {
+        batchMode: true,
+        simpleMode: false,
+        planFilePath: '/plan.md',
+      }),
+    ];
+
+    for (const out of outputs) {
+      expect(out).toContain(
+        'If you are fixing review findings, scope the subagent command as the Review Iteration Policy directs'
+      );
+      // A test-only fix round is not a review-fix round, so this line must not
+      // order --task-index unconditionally: the trigger above it also fires on
+      // plain test failures.
+      expect(out).toContain('a run that only fixes failing tests is not a review-fix round');
+      expect(out).not.toContain('a fix round is scoped, unlike the initial run');
+    }
+  });
+
+  it('does not add --task-index to the initial implementer/tester/tdd-tests command lines', () => {
+    const outputs = [
+      { out: wrapWithOrchestration('Context', '42', { batchMode: false }), planId: '42' },
+      {
+        out: wrapWithOrchestration('Context', '42', { batchMode: true, planFilePath: '/plan.md' }),
+        planId: '42',
+      },
+      { out: wrapWithOrchestrationSimple('Context', '55', { batchMode: false }), planId: '55' },
+      {
+        out: wrapWithOrchestrationSimple('Context', '55', {
+          batchMode: true,
+          planFilePath: '/plan.md',
+        }),
+        planId: '55',
+      },
+      {
+        out: wrapWithOrchestrationTdd('Context', '71', { batchMode: false, simpleMode: false }),
+        planId: '71',
+      },
+      {
+        out: wrapWithOrchestrationTdd('Context', '71', {
+          batchMode: true,
+          simpleMode: false,
+          planFilePath: '/plan.md',
+        }),
+        planId: '71',
+      },
+    ];
+
+    for (const { out, planId } of outputs) {
+      expect(out).toContain(`tim subagent implementer ${planId} --input "<instructions>"`);
+      // The initial implementer/tester/tdd-tests invocation lines never carry
+      // --task-index: only fix-round commands the orchestrator writes itself do.
+      expect(out).not.toMatch(/tim subagent (implementer|tester|tdd-tests) \S+[^\n]*--task-index/);
+    }
   });
 
   describe('simple mode (wrapWithOrchestrationSimple)', () => {
@@ -417,9 +1242,9 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain(
         'you may apply the changes yourself without spawning the implementer subagent'
       );
-      expect(out).toContain('small logic adjustments');
+      expect(out).toContain('focused refactors');
       expect(out).toContain(
-        'rerun `tim subagent reviewer 71 --print --output-file <output_path>` over the same complete declared scope'
+        'rerun `tim subagent reviewer 71 --print --output-file <output_path>` according to the three-tier scope rule above'
       );
     });
 
@@ -428,8 +1253,10 @@ describe('orchestrator_prompt subagent commands', () => {
         batchMode: true,
         simpleMode: false,
       });
-      expect(out).toContain('without any `--task-index` arguments');
-      expect(out).toContain('final full-plan review loop and structural pass before stopping');
+      expect(out).toContain('without any `--task-index` or `--since` arguments');
+      expect(out).toContain(
+        'final full-plan review loop and the standalone `--structural-only` structural pass before stopping'
+      );
       expect(out).toContain('Review Iteration Policy');
     });
 

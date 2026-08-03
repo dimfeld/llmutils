@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Executor } from './executors/types.js';
 import { buildExecutorAndLog } from './executors/index.js';
 import { log } from '../logging.js';
+import { isBlockingSeverity } from './review_severity.js';
 
 vi.mock('./executors/index.js', () => ({
   buildExecutorAndLog: vi.fn(),
@@ -15,6 +16,14 @@ vi.mock('../logging.js', () => ({
 describe('review_runner', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+  });
+
+  test('isBlockingSeverity only recognizes blocking review severities', () => {
+    expect(isBlockingSeverity('critical')).toBe(true);
+    expect(isBlockingSeverity('major')).toBe(true);
+    expect(isBlockingSeverity('minor')).toBe(false);
+    expect(isBlockingSeverity('info')).toBe(false);
+    expect(isBlockingSeverity('note')).toBe(false);
   });
 
   test('prepareReviewExecutors uses executor metadata for prompt building', async () => {
@@ -308,6 +317,55 @@ describe('review_runner', () => {
     expect(codexExecute).toHaveBeenCalledTimes(0);
   });
 
+  test('runReview serializes both executors and runs codex on minor-only Claude issues', async () => {
+    const claudeOutput = {
+      issues: [
+        {
+          severity: 'minor',
+          category: 'other',
+          content: 'Minor only',
+          file: 'a.ts',
+          line: '1',
+          suggestion: 'Optional',
+        },
+      ],
+      recommendations: [],
+      actionItems: [],
+    };
+
+    const claudeExecute = vi.fn(async () => JSON.stringify(claudeOutput));
+    const codexExecute = vi.fn(async () =>
+      JSON.stringify({ issues: [], recommendations: ['ok'], actionItems: [] })
+    );
+
+    const claudeExecutor: Executor = { execute: claudeExecute };
+    const codexExecutor: Executor = { execute: codexExecute };
+
+    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) =>
+      name === 'claude-code' ? claudeExecutor : codexExecutor
+    );
+
+    const { runReview } = await import('./review_runner.js');
+    const result = await runReview({
+      executorSelection: 'both',
+      serialBoth: true,
+      config: { defaultExecutor: 'codex-cli' } as any,
+      sharedExecutorOptions: { baseDir: '/tmp' },
+      buildPrompt: vi.fn(() => 'prompt'),
+      planInfo: {
+        planId: '10',
+        planTitle: 'Serial Plan Info',
+        planFilePath: '/tmp/plan.yml',
+        baseBranch: 'main',
+        changedFiles: [],
+      },
+    });
+
+    expect(result.usedExecutors).toEqual(['claude-code', 'codex-cli']);
+    expect(claudeExecute).toHaveBeenCalledTimes(1);
+    expect(codexExecute).toHaveBeenCalledTimes(1);
+  });
+
   test('runReview serializes both executors and runs codex on info-only Claude issues', async () => {
     const claudeOutput = {
       issues: [
@@ -344,8 +402,8 @@ describe('review_runner', () => {
       sharedExecutorOptions: { baseDir: '/tmp' },
       buildPrompt: vi.fn(() => 'prompt'),
       planInfo: {
-        planId: '10',
-        planTitle: 'Serial Plan Info',
+        planId: '11',
+        planTitle: 'Serial Plan Info Only',
         planFilePath: '/tmp/plan.yml',
         baseBranch: 'main',
         changedFiles: [],

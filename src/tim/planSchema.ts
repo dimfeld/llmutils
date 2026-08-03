@@ -2,6 +2,14 @@ import * as z from 'zod/v4';
 import { PostProcessedReviewOutputIssueSchema } from './formatters/review_output_schema';
 
 export const prioritySchema = z.enum(['low', 'medium', 'high', 'urgent', 'maybe']);
+
+/**
+ * Canonical shape of a plan timestamp field: an ISO 8601 instant in UTC, with no
+ * offset. Anything that validates a plan timestamp before it can reach a plan
+ * row — including the sync boundary — must use this, so a value accepted there
+ * cannot be rejected later by plan validation on the local write path.
+ */
+export const planTimestampSchema = z.string().datetime();
 export type Priority = z.infer<typeof prioritySchema>;
 
 export const statusSchema = z.enum([
@@ -93,6 +101,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     updatedAt: z.string().datetime().optional(),
     docsUpdatedAt: z.string().datetime().optional(),
     lessonsAppliedAt: z.string().datetime().optional(),
+    structuralReviewAt: planTimestampSchema.optional(),
     tasks: z.array(taskSchema),
     baseBranch: z.string().optional(),
     baseCommit: z.string().optional(),
@@ -108,6 +117,9 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
           file: z.string().optional(),
           line: z.union([z.number(), z.string()]).optional(),
           suggestion: z.string().optional(),
+          rejected: z.boolean().optional(),
+          rejectedReason: z.string().optional(),
+          rejectedAt: z.string().datetime().optional(),
         })
       )
       .optional(),

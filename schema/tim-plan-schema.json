@@ -163,6 +163,11 @@
       "format": "date-time",
       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
     },
+    "structuralReviewAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
     "tasks": {
       "type": "array",
       "items": {
@@ -233,7 +238,7 @@
               "minor",
               "info"
             ],
-            "description": "Severity level of the issue. critical: Security vulnerabilities, data loss risks, or system-breaking bugs. major: Significant bugs, performance problems, or logic errors. minor: Code quality issues, style violations, or minor bugs. info: Suggestions, notes, or informational observations."
+            "description": "Severity level of the issue. critical: The change is broken or dangerous as-is: data loss, a security vulnerability, a crash, or silently wrong results on mainline paths. This is blocking. major: A real correctness, regression, or missing-coverage problem that must be fixed before the work is done; a reviewer would block a merge on it. This is blocking. minor: A genuine improvement that does not block: naming, small refactors, non-mainline edge polish, or better error messages. This is non-blocking. info: Observations, style, wording, and anything pre-existing. This is non-blocking."
           },
           "category": {
             "type": "string"
@@ -265,6 +270,17 @@
               "claude-code",
               "codex-cli"
             ]
+          },
+          "rejected": {
+            "type": "boolean"
+          },
+          "rejectedReason": {
+            "type": "string"
+          },
+          "rejectedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
           }
         },
         "required": [

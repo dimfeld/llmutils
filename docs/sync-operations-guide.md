@@ -41,6 +41,42 @@ Update metadata in `src/tim/sync/operation_metadata.ts`:
 - Add semantic plan refs in `getSyncOperationPlanRefs()` if projection rebuilds need related plans.
 - Keep project/project-setting operations out of plan-ref indexing unless they truly affect plan projection.
 
+## Add A New Synced Plan Scalar
+
+Most new plan state is a new field on `plan.set_scalar`, not a new operation.
+`structuralReviewAt` (migration v50) and `lessonsAppliedAt` are the worked
+examples — follow either end to end. The touch points:
+
+1. `PlanSchema` in `src/tim/planSchema.ts`, plus the regenerated public JSON
+   schema (`schema/tim-plan-schema.json`, via `scripts/update-json-schemas.ts`).
+2. Migration adding the column to **both** `plan` and `plan_canonical`, using the
+   guarded `afterUp` `ALTER TABLE` pattern.
+3. `PlanRow`, the upsert SQL, and `planWriteValues()` in `src/tim/db/plan.ts`;
+   `planRowToSchemaInput` in `src/tim/plans_db.ts`.
+4. `EDITABLE_PLAN_FIELDS` and `diffPlanFields()` in `src/tim/plan_materialize.ts`.
+   A field missing here is **silently dropped** from plan-file edits, so cover it
+   with a materialize round-trip test for both a set value and null.
+5. The `plan.set_scalar` field enum and `validatePlanSetScalarFieldValue()` in
+   `src/tim/sync/types.ts`, the snapshot schema in `src/tim/sync/snapshots.ts`,
+   `operation_metadata.ts`, and `apply_operation.ts` / `operation_fold.ts`. The
+   exhaustive `never` switch in the validator surfaces the enum sites at compile
+   time — use `bun run check` as the completeness check for those, and this list
+   for the rest.
+6. Any code that snapshots a plan row for rollback, such as the renumber
+   rollback in `src/tim/commands/renumber.ts`. A field missed there is silently
+   cleared by a rollback instead of restored.
+
+Adding a scalar field is backward compatible: older nodes strip unknown scalar
+fields instead of erroring.
+
+**Validate sync ingress with the same schema plan validation uses.** For
+timestamps that means `planTimestampSchema` from `src/tim/planSchema.ts`, not the
+looser `SyncIsoTimestampSchema`, which also accepts a UTC offset. Every ingress
+path for a column — the `plan.set_scalar` validator, the plan payload schema, and
+the canonical snapshot schema — must enforce the same contract. If sync accepts a
+value that local plan validation later rejects, every subsequent write to that
+plan fails, and the plan is wedged on that node.
+
 ## Apply And Project
 
 Main/local apply lives in `src/tim/sync/apply_operation.ts` and shared plan semantics live in `src/tim/sync/operation_fold.ts`.

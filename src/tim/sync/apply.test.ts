@@ -106,6 +106,7 @@ describe('apply helpers', () => {
       plan_generated_at: null,
       docs_updated_at: null,
       lessons_applied_at: null,
+      structural_review_at: null,
       review_issues: null,
       parent_uuid: null,
       epic: 0,
@@ -1194,6 +1195,28 @@ describe('main-node sync apply engine', () => {
     );
 
     expect(() => applyOperation(db, op)).toThrow(SyncValidationError);
+  });
+
+  test('plan.set_scalar sets and clears structural_review_at', async () => {
+    seedPlan();
+    const timestamp = '2026-04-27T12:00:00.000Z';
+    const setOperation = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'structural_review_at', value: timestamp },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+
+    expect(applyOperation(db, setOperation).status).toBe('applied');
+    expect(getPlanByUuid(db, PLAN_UUID)?.structural_review_at).toBe(timestamp);
+
+    const clearOperation = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'structural_review_at', value: null },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+
+    expect(applyOperation(db, clearOperation).status).toBe('applied');
+    expect(getPlanByUuid(db, PLAN_UUID)?.structural_review_at).toBeNull();
   });
 
   test('atomic batch rolls back applied operations when a later operation conflicts', async () => {

@@ -9,6 +9,7 @@ import {
   SyncOperationEnvelopeSchema,
   SyncOperationPayloadSchema,
   SyncOperationTypeSchema,
+  SyncReviewIssueValueSchema,
   type SyncOperationEnvelope,
 } from './types.js';
 import { SyncValidationError } from './errors.js';
@@ -113,6 +114,56 @@ describe('sync operation schemas', () => {
         planUuid: PLAN_UUID,
         field: 'docs_updated_at',
         value: 123,
+      }).success
+    ).toBe(false);
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.set_scalar',
+        planUuid: PLAN_UUID,
+        field: 'structural_review_at',
+        value: '2026-04-27T12:00:00.000Z',
+      }).success
+    ).toBe(true);
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.set_scalar',
+        planUuid: PLAN_UUID,
+        field: 'structural_review_at',
+        value: null,
+      }).success
+    ).toBe(true);
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.set_scalar',
+        planUuid: PLAN_UUID,
+        field: 'structural_review_at',
+        value: 'not-a-timestamp',
+      }).success
+    ).toBe(false);
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.set_scalar',
+        planUuid: PLAN_UUID,
+        field: 'structural_review_at',
+        value: 1_700_000_000,
+      }).success
+    ).toBe(false);
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.set_scalar',
+        planUuid: PLAN_UUID,
+        field: 'structural_review_at',
+        value: true,
+      }).success
+    ).toBe(false);
+    // Offsets are rejected: planSchema's structuralReviewAt accepts UTC only, so
+    // an offset value applied from a peer would fail every later local plan write.
+    expect(
+      SyncOperationPayloadSchema.safeParse({
+        type: 'plan.set_scalar',
+        planUuid: PLAN_UUID,
+        field: 'structural_review_at',
+        value: '2026-04-27T12:00:00.000+02:00',
       }).success
     ).toBe(false);
     expect(
@@ -370,6 +421,37 @@ describe('sync operation schemas', () => {
         },
       }).success
     ).toBe(true);
+  });
+
+  test('accepts optional rejection disposition on review issue values', () => {
+    const issue = {
+      severity: 'major' as const,
+      category: 'bug',
+      content: 'stale issue',
+    };
+
+    expect(SyncReviewIssueValueSchema.safeParse(issue).success).toBe(true);
+    expect(
+      SyncReviewIssueValueSchema.safeParse({
+        ...issue,
+        rejected: true,
+        rejectedReason: 'Intentional behavior',
+        rejectedAt: '2026-08-03T12:00:00.000Z',
+      }).success
+    ).toBe(true);
+  });
+
+  test('rejects a malformed rejectedAt timestamp on review issue values', () => {
+    const issue = {
+      severity: 'major' as const,
+      category: 'bug',
+      content: 'stale issue',
+      rejected: true,
+      rejectedReason: 'Intentional behavior',
+      rejectedAt: 'not-a-timestamp',
+    };
+
+    expect(SyncReviewIssueValueSchema.safeParse(issue).success).toBe(false);
   });
 
   test('project_setting.set requires JSON value', () => {

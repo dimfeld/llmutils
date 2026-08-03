@@ -8,10 +8,10 @@ import {
 import { CodexCliExecutorName, type CodexReasoningLevel } from '../schemas.js';
 import type { ExecutorCommonOptions, ExecutePlanInfo, ExecutorOutput } from '../types.js';
 import {
-  wrapWithOrchestration,
-  wrapWithOrchestrationSimple,
-  wrapWithOrchestrationTdd,
-} from '../shared/orchestrator_prompt.ts';
+  wrapForExecutionMode,
+  type OrchestrationExecutionMode,
+} from '../shared/orchestration_wrapper.ts';
+import type { OrchestrationOptions } from '../shared/orchestration_options.ts';
 import { executeCodexStep } from './codex_runner.js';
 
 export async function executeOrchestratorMode(
@@ -39,42 +39,36 @@ export async function executeOrchestratorMode(
     const useAtPrefix = false;
     const simpleMode = sharedOptions.simpleMode === true;
 
+    const orchestrationOptions: OrchestrationOptions = {
+      batchMode: planInfo.batchMode,
+      structuralReviewCompleted: planInfo.structuralReviewCompleted,
+      planFilePath,
+      reviewExecutor: sharedOptions.reviewExecutor,
+      reviewerInstructionsPath: timConfig.agents?.reviewer?.instructions,
+      simpleMode,
+      subagentExecutor: sharedOptions.subagentExecutor,
+      dynamicSubagentInstructions: sharedOptions.dynamicSubagentInstructions,
+      useJj,
+      useAtPrefix,
+    };
+
+    let orchestrationMode: OrchestrationExecutionMode;
     if (planInfo.executionMode === 'tdd') {
-      promptContent = wrapWithOrchestrationTdd(promptContent, planId, {
-        batchMode: planInfo.batchMode,
-        planFilePath,
-        simpleMode,
-        reviewExecutor: sharedOptions.reviewExecutor,
-        reviewerInstructionsPath: timConfig.agents?.reviewer?.instructions,
-        subagentExecutor: sharedOptions.subagentExecutor,
-        dynamicSubagentInstructions: sharedOptions.dynamicSubagentInstructions,
-        useJj,
-        useAtPrefix,
-      });
+      orchestrationMode = 'tdd';
     } else if (planInfo.executionMode === 'simple' || simpleMode) {
       // Preserve the old Codex routing semantics: normal execution with simple mode
       // enabled (via executor options or shared options) uses the simple wrapper.
-      promptContent = wrapWithOrchestrationSimple(promptContent, planId, {
-        batchMode: planInfo.batchMode,
-        planFilePath,
-        reviewerInstructionsPath: timConfig.agents?.reviewer?.instructions,
-        subagentExecutor: sharedOptions.subagentExecutor,
-        dynamicSubagentInstructions: sharedOptions.dynamicSubagentInstructions,
-        useJj,
-        useAtPrefix,
-      });
+      orchestrationMode = 'simple';
     } else {
-      promptContent = wrapWithOrchestration(promptContent, planId, {
-        batchMode: planInfo.batchMode,
-        planFilePath,
-        reviewExecutor: sharedOptions.reviewExecutor,
-        reviewerInstructionsPath: timConfig.agents?.reviewer?.instructions,
-        subagentExecutor: sharedOptions.subagentExecutor,
-        dynamicSubagentInstructions: sharedOptions.dynamicSubagentInstructions,
-        useJj,
-        useAtPrefix,
-      });
+      orchestrationMode = 'normal';
     }
+
+    promptContent = wrapForExecutionMode(
+      orchestrationMode,
+      promptContent,
+      planId,
+      orchestrationOptions
+    );
   }
 
   const output = await executeCodexStep(promptContent, gitRoot, timConfig, {

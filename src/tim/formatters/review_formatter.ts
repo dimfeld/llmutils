@@ -5,8 +5,12 @@ import chalk from 'chalk';
 import { table } from 'table';
 import { PostProcessedReviewOutputSchema } from './review_output_schema.js';
 
-export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info';
-type ReviewIssueLike = Omit<ReviewIssue, 'severity'> & { severity: ReviewSeverity | 'note' };
+import type { ReviewSeverityLevel, StoredReviewSeverity } from '../review_severity.js';
+
+// Aliased from the canonical rubric definitions so the four levels are declared in one place.
+export type ReviewSeverity = ReviewSeverityLevel;
+
+type ReviewIssueLike = Omit<ReviewIssue, 'severity'> & { severity: StoredReviewSeverity };
 
 export interface ReviewIssue {
   id?: string;
@@ -17,6 +21,9 @@ export interface ReviewIssue {
   line?: number | string;
   suggestion?: string;
   source?: 'claude-code' | 'codex-cli';
+  rejected?: boolean;
+  rejectedReason?: string;
+  rejectedAt?: string;
 }
 
 export interface ReviewSummary {

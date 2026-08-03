@@ -190,6 +190,7 @@ export function toPlanUpsertInput(
   sourceUpdatedAt?: string | null;
   sourceDocsUpdatedAt?: string | null;
   sourceLessonsAppliedAt?: string | null;
+  sourceStructuralReviewAt?: string | null;
   status: PlanSchema['status'];
   priority?: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
   branch?: string | null;
@@ -254,6 +255,7 @@ export function toPlanUpsertInput(
     sourceUpdatedAt: plan.updatedAt ?? null,
     sourceDocsUpdatedAt: plan.docsUpdatedAt ?? null,
     sourceLessonsAppliedAt: plan.lessonsAppliedAt ?? null,
+    sourceStructuralReviewAt: plan.structuralReviewAt ?? null,
     status: coercePlanStatus(plan.status),
     priority: coercePlanPriority(plan.priority),
     branch: plan.branch ?? null,

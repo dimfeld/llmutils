@@ -315,6 +315,8 @@ tim pr review-guide-comment 456 --dry-run                            # Print the
 tim pr upload-artifacts 123                                           # Post/update a PR comment with plan artifacts
 tim pr upload-artifacts 123 --pr 456                                  # Target one PR instead of all open linked PRs
 tim subagent reviewer 123 --print --output-file review.json          # Orchestrator-compatible review entry point
+tim subagent implementer 123 --input "fix finding X" --task-index 2  # Scope a fix round to one task
+tim subagent tester 123 --task-index 2,4 --input-file notes.md       # Comma-separated or repeated --task-index
 tim review 123                                      # Review a plan's work
 tim review 123 --since abc1234                      # Review changes since an exact commit
 tim review 123 --base feature/parent                # Review a branch stacked on another branch
@@ -339,6 +341,10 @@ tim review-guide diffview 123 -o out/guide.json      # Write to a custom path
 tim review-issues list 123                          # Saved plan review issues from prior reviews
 tim review 123 --issues                             # Prompt to act on saved review issues
 tim review-issues resolve 123 1 3                   # Mark saved plan review issues resolved
+tim review-issues reject 123 --from-review review.json --issue 1 --reason "Intentional behavior"
+tim review-issues reject 123 --content "Finding details" --file src/example.ts --line 42 --reason "Not applicable"
+tim review-issues clear 123                           # Clear open saved review issues
+tim review-issues clear 123 --all                     # Clear all saved review issues, including rejected entries
 tim pr fix 123 --auto-workspace --executor codex-cli --model gpt-5-codex --effort high
 tim pr fix --pr 456 --auto-workspace                 # Fix review threads on a PR with no linked plan
 tim pr comment https://github.com/owner/repo/pull/456 "Fixed the related feedback"
@@ -347,9 +353,13 @@ tim rebase 123 --auto-workspace
 
 `tim review [planId]` reviews a plan's complete declared task or plan scope. It can also run **without a plan** against three planless targets: `--current` reviews the current worktree in place (no branch switch, no workspace), `--branch <branch>` prepares a managed workspace on the requested branch (your current checkout is left untouched), and `--pr <pr-url-or-number>` prepares the head branch of a PR that belongs to the current repository. With no arguments, `tim review` first tries the existing branch-name plan auto-selection (for branches named like `123-*`), and falls back to a current-worktree planless review when no plan can be inferred — it never auto-selects a linked PR. Planless reviews are ephemeral: they save no issues, write no plan metadata, and skip plan status/notification updates, so plan-owned options such as `--save-issues`, `--structural-only`, `--include-structural`, and `--create-cleanup-plan` are rejected up front. Use `--base <branch>` to review a branch stacked on another named branch, or `--since <commit>` to select an exact stateless diff start.
 
-Ordinary plan-backed reviews are intentionally stateless. After fixing or explicitly ignoring findings, run the same review again over the complete declared scope; do not narrow follow-up reviews to only the latest fixes. Continue until one complete ordinary pass reports no unhandled issues. This allows later passes to find issues that an earlier pass missed.
+Ordinary plan-backed reviews are intentionally stateless, so the caller chooses the scope of each pass. The orchestrator prompts use a three-tier rule: the first review of a batch covers the complete declared scope, intermediate fix-verification reviews narrow to the diff with `--since <commit>` over the same task scope, and the review that ends the loop covers the complete declared scope again. The loop stops when a complete review produces no new blocking findings, where `critical` and `major` are blocking and `minor` and `info` are not. See `docs/review-iteration-policy.md` for the full policy, the severity rubric, and the four-review bound.
 
-Recurrence judgment belongs to the orchestrator rather than `tim review`: it compares successive findings by underlying cause, distinguishes incomplete fixes from newly exposed issues and regressions, and pauses for root-cause/restructuring analysis when the same defect keeps returning. After the ordinary full-plan review loop is clear, run `--structural-only` exactly once to execute only the Codex structural prompt and address high-confidence code-layout, ownership, duplication, and structural smells. `--include-structural` remains available for callers that explicitly want both reviewers in one invocation.
+`tim subagent implementer|tester|tdd-tests <planId>` accepts `--task-index <indexes...>` to narrow the subagent's task context to the named tasks. Indexes are numbered like `tim review --task-index`: plan-absolute and 1-based, counted over every task including completed ones, supplied either comma-separated (`--task-index 2,4`) or by repeating the flag. Unlike the reviewer's flag, this one selects only incomplete tasks: an index that is out of range **or points at a completed task** fails immediately with an error listing the valid incomplete indexes, and nothing executes. Without the flag, the subagent receives all incomplete tasks as before. Use this for review-fix rounds so a fix subagent cannot creep into settled work; the findings themselves still arrive through `--input`/`--input-file`.
+
+Recurrence judgment belongs to the orchestrator rather than `tim review`: it compares successive findings by underlying cause, distinguishes incomplete fixes from newly exposed issues and regressions, and writes a consolidation proposal when one review reports the same defect class at several locations. After the ordinary full-plan review loop is clear, run `--structural-only` exactly once to execute only the Codex structural prompt and address high-confidence code-layout, ownership, duplication, and structural smells. `--include-structural` remains available for callers that explicitly want both reviewers in one invocation.
+
+A successful plan-backed `--structural-only` review records the time on the plan as `structuralReviewAt`, so the "run it once" rule survives across separate orchestrator processes and workspaces. When the marker is set, batch mode omits the structural pass and post-structural validation review from the orchestrator prompt and skips the simplify pass. The completion review still runs in either marker state, but only blocking (`critical`/`major`) findings become tasks; non-blocking (`minor`/`info`) findings are saved as review issues for human triage instead of re-entering the batch loop. That split applies to the interactive "append as plan tasks" action; a non-interactive completion review appends nothing and saves every finding. Adding a substantive task clears the marker; see `tim add-task --review-follow-up` below and `docs/review-iteration-policy.md` for the full lifecycle.
 
 `tim autoreview [planId]` launches an interactive, terminal-attached agent session like `tim chat`, seeded with an orchestrator prompt that drives a review -> ask -> fix -> commit -> full re-review loop. With a plan ID, it runs one structural-only review after all ordinary findings have been fixed or skipped. Without a plan, use `--current`, `--branch <branch>`, or `--pr <pr-url-or-number>` to review the current worktree, a branch, or a PR, with `--base <base>` available for planless diffs. Plan-backed, branch, and PR targets run in managed workspaces by default, while `--current` stays in place unless you pass `--workspace`, `--auto-workspace`, or `--new-workspace`. Use `-x/--executor`, `-m/--model`, and `--effort` to choose the agent settings, with `autoreview.executor`, `autoreview.model`, and `autoreview.effort` as config defaults. Use `--non-interactive` or `--no-terminal-input` to adjust terminal interaction, `--headless-adapter` to force the headless session wrapper when tunnel forwarding is active, and `--dry-run` to print the generated orchestrator prompt without launching the agent. During the session, the agent remembers issues you skip and does not re-raise them, commits each round of selected fixes with the repository VCS, and stops when you are done or no un-skipped issues remain.
 
@@ -375,6 +385,10 @@ reviewGuide:
 Review guides can include non-actionable `<annotation file="..." line="...">...</annotation>` callouts. These render as Notes in the guide viewer sidebar and inline diff overlay, but are not submitted to GitHub or converted into cleanup work.
 
 `tim review <planId> --issues` acts on saved plan review issues from previous `tim review --save-issues` or non-interactive final review runs: choose whether to append, fix, create cleanup work, or exit, then select the specific issues. Completed actions remove only the selected saved issues. `tim review-issues list <planId>` shows the current saved issue queue, and `tim review-issues resolve <planId> <indexes...>` or `--all` marks issues resolved without running an agent.
+
+`tim review-issues reject <planId>` records a rejected finding on the plan. Use `--from-review <output.json> --issue <n>` with the structured output from `tim subagent reviewer`, or provide `--content` and optional location and severity fields directly. Every rejection requires `--reason` and remains available to later reviews.
+
+`tim review-issues clear <planId>` removes open saved findings while keeping rejected findings. Add `--all` to remove rejected findings too.
 
 `tim pr fix <planId>` starts an agent to address PR review feedback. Before launching the agent, tim refreshes the linked PR status from GitHub and injects unresolved review threads into the prompt with each PRRT thread ID and its related comments grouped together. It also injects PR-level feedback that is not attached to a review thread — review summary bodies and conversation (issue) comments — so the agent can act on issues raised there too. Because a single comment may list several issues, the agent treats each listed issue as actionable unless a later comment indicates it was already addressed, resolved, or withdrawn. The agent batches addressed review-thread replies through GitHub GraphQL pending reviews, submits those reviews, and uses `tim pr comment` only for feedback that is not represented as a review thread. It does not resolve threads or request reviews. Configure defaults with `prFix.executor`, `prFix.model`, and `prFix.effort`; CLI flags override config values.
 
@@ -554,9 +568,17 @@ tim set 123 --depends-on 119 121
 tim set 123 --base-plan 122                          # Stack this plan's branch on plan 122's branch
 tim set 123 --no-base-plan                           # Clear stacking pointer
 tim add-task 123 --title "Add tests" --description "Cover the new validation path"
+tim add-task 123 --review-follow-up --title "Address Review Feedback: null check"  # Keeps structuralReviewAt
 tim set-task-done 123 --title "Add tests"
 tim remove-task 123
 ```
+
+Adding a task clears the plan's `structuralReviewAt` marker, which records that the
+standalone structural review pass already ran for the plan at its completed state.
+Pass `--review-follow-up` to keep the marker when the new task is review cleanup
+rather than new scope. A title starting with `Address Review Feedback:` or
+`Address review:` is recognized as follow-up work even without the flag. The MCP
+add-task tool takes the same signal through its `reviewFollowUp` parameter.
 
 Complete and finalize:
 

@@ -48,6 +48,7 @@ describe('sync operation constructors', () => {
           numericPlanId: 123,
           title: 'Created offline',
           goal: 'Goal',
+          structuralReviewAt: '2026-03-03T14:00:00.000Z',
           tags: ['sync'],
           dependencies: [OTHER_PLAN_UUID],
           tasks: [{ title: 'Initial task', description: 'Do it' }],
@@ -56,7 +57,11 @@ describe('sync operation constructors', () => {
       ),
       await setPlanScalarOperation(
         PROJECT_UUID,
-        { planUuid: PLAN_UUID, field: 'status', value: 'in_progress' },
+        {
+          planUuid: PLAN_UUID,
+          field: 'structural_review_at',
+          value: '2026-03-04T14:00:00.000Z',
+        },
         { originNodeId: 'override-node', localSequence: 2 }
       ),
       await patchPlanTextOperation(
@@ -190,6 +195,22 @@ describe('sync operation constructors', () => {
       ).not.toThrow();
       expect(JSON.parse(JSON.stringify(operation))).toEqual(operation);
     }
+  });
+
+  test('setPlanScalarOperation round-trips a structural_review_at clear-to-null payload', async () => {
+    const operation = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'structural_review_at', value: null },
+      { originNodeId: 'override-node', localSequence: 1 }
+    );
+
+    expect(() => SyncOperationEnvelopeSchema.parse(operation)).not.toThrow();
+    const parsedOp = SyncOperationPayloadSchema.parse(JSON.parse(JSON.stringify(operation.op)));
+    expect(parsedOp).toMatchObject({
+      type: 'plan.set_scalar',
+      field: 'structural_review_at',
+      value: null,
+    });
   });
 
   test('generates operation UUIDs and preserves provided operation UUIDs', async () => {

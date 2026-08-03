@@ -1366,6 +1366,21 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 50,
+    up: `SELECT 1;`,
+    afterUp: (db: Database) => {
+      if (tableExists(db, 'plan') && !tableColumns(db, 'plan').has('structural_review_at')) {
+        db.exec('ALTER TABLE plan ADD COLUMN structural_review_at TEXT');
+      }
+      if (
+        tableExists(db, 'plan_canonical') &&
+        !tableColumns(db, 'plan_canonical').has('structural_review_at')
+      ) {
+        db.exec('ALTER TABLE plan_canonical ADD COLUMN structural_review_at TEXT');
+      }
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

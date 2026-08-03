@@ -10,6 +10,11 @@ import {
   type PlanReviewMetadata,
   type ReviewGuideDiffReference,
 } from './review_pr_prompt.js';
+import { REVIEW_SEVERITY_GUIDANCE, REVIEW_DUPLICATION_GUIDANCE } from '../review_severity.js';
+
+function countOccurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
 
 const METADATA: PrReviewMetadata = {
   kind: 'pr',
@@ -212,6 +217,16 @@ describe('review_pr_prompt', () => {
     expect(prompt).not.toContain('## Output Requirements');
     expect(prompt).not.toContain('## Required JSON Schema');
     expect(prompt).not.toContain('"issues"');
+  });
+
+  test('buildStandaloneReviewIssuesPrompt includes the severity rubric and duplication guidance exactly once', () => {
+    const prompt = buildStandaloneReviewIssuesPrompt({
+      metadata: METADATA,
+      useJj: false,
+    });
+
+    expect(countOccurrences(prompt, REVIEW_SEVERITY_GUIDANCE)).toBe(1);
+    expect(countOccurrences(prompt, REVIEW_DUPLICATION_GUIDANCE)).toBe(1);
   });
 
   test('buildStandaloneSimplificationReviewPrompt focuses only on simplification issues', () => {

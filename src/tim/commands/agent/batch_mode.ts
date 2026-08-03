@@ -287,6 +287,7 @@ Available tasks:\n\n${taskDescriptions}`,
           planTitle: planData.title ?? 'Untitled Plan',
           planFilePath: currentPlanFile,
           batchMode: true,
+          structuralReviewCompleted: planData.structuralReviewAt != null,
           executionMode,
           captureOutput: 'result',
           retryFastNoopOrchestratorTurn: true,
@@ -500,9 +501,16 @@ Available tasks:\n\n${taskDescriptions}`,
 
         const simplifyMode = config.simplify?.mode ?? 'after-completion';
         // Skip simplify if we did everything in a single run. This implies that the plan itself was already fairly
-        // simple.
+        // simple. The standalone structural review also covers this pass.
+        const structuralReviewCompleted = updatedPlanData.structuralReviewAt != null;
+        const skippedForInitialCompletion = initialCompletedTaskCount === 0 && iteration === 1;
         const shouldSkipSimplify =
-          simplifyMode === 'never' || (initialCompletedTaskCount === 0 && iteration === 1);
+          simplifyMode === 'never' || skippedForInitialCompletion || structuralReviewCompleted;
+        if (structuralReviewCompleted && simplifyMode !== 'never' && !skippedForInitialCompletion) {
+          log(
+            'Skipping simplify pass because the structural review has already run for this plan.'
+          );
+        }
         if (!shouldSkipSimplify && !isShuttingDown()) {
           sendStructured({
             type: 'workflow_progress',
@@ -555,11 +563,20 @@ Available tasks:\n\n${taskDescriptions}`,
             message: 'Running final review',
           });
           try {
+            // blockingIssuesOnlyAppendTasks keeps cosmetic findings from becoming tasks that
+            // re-enter the batch loop. It is inert on the non-interactive path, which reaches no
+            // append action at all and saves every finding through saveIssues instead; it is
+            // passed there for uniformity, not because the gate is enforced on that path.
             const reviewResult = await handleReviewCommand(
               updatedPlanData.id,
               isNonInteractiveReview
-                ? { cwd: baseDir, saveIssues: true, noAutofix: true }
-                : { cwd: baseDir },
+                ? {
+                    cwd: baseDir,
+                    saveIssues: true,
+                    noAutofix: true,
+                    blockingIssuesOnlyAppendTasks: true,
+                  }
+                : { cwd: baseDir, blockingIssuesOnlyAppendTasks: true },
               {
                 parent: { opts: () => ({ config: configPath }) },
               }

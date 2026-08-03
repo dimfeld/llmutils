@@ -112,6 +112,7 @@ type EditablePlanField =
   | 'planGeneratedAt'
   | 'docsUpdatedAt'
   | 'lessonsAppliedAt'
+  | 'structuralReviewAt'
   | 'dependencies'
   | 'issue'
   | 'pullRequest'
@@ -162,6 +163,7 @@ const EDITABLE_PLAN_FIELDS = [
   'planGeneratedAt',
   'docsUpdatedAt',
   'lessonsAppliedAt',
+  'structuralReviewAt',
   'dependencies',
   'issue',
   'pullRequest',
@@ -668,6 +670,11 @@ async function routeMaterializedPlanChanges(
       toNullable(filePlan.lessonsAppliedAt),
       toNullable(shadowPlan.lessonsAppliedAt),
     ],
+    [
+      'structural_review_at',
+      toNullable(filePlan.structuralReviewAt),
+      toNullable(shadowPlan.structuralReviewAt),
+    ],
   ] as const;
   const fieldToPlanField = {
     priority: 'priority',
@@ -681,6 +688,7 @@ async function routeMaterializedPlanChanges(
     plan_generated_at: 'planGeneratedAt',
     docs_updated_at: 'docsUpdatedAt',
     lessons_applied_at: 'lessonsAppliedAt',
+    structural_review_at: 'structuralReviewAt',
   } as const satisfies Record<(typeof scalarPairs)[number][0], EditablePlanField>;
 
   for (const [field, value, baseValue] of scalarPairs) {

@@ -1,6 +1,7 @@
 // Tests for review output JSON schema generation
 
 import { describe, test, expect, vi } from 'vitest';
+import * as z from 'zod/v4';
 import {
   ReviewSeveritySchema,
   ReviewCategorySchema,
@@ -9,6 +10,26 @@ import {
   getReviewOutputJsonSchema,
   getReviewOutputJsonSchemaString,
 } from './review_output_schema.js';
+import {
+  REVIEW_SEVERITY_DEFINITIONS,
+  REVIEW_SEVERITY_DESCRIPTION,
+  type ReviewSeverityLevel,
+} from '../review_severity.js';
+
+type Assert<T extends true> = T;
+type ReviewSeveritySchemaIsExact = Assert<
+  [z.infer<typeof ReviewSeveritySchema>] extends [ReviewSeverityLevel]
+    ? [ReviewSeverityLevel] extends [z.infer<typeof ReviewSeveritySchema>]
+      ? true
+      : false
+    : false
+>;
+const reviewSeveritySchemaIsExact: ReviewSeveritySchemaIsExact = true;
+void reviewSeveritySchemaIsExact;
+
+// @ts-expect-error Invalid literals must stay outside the derived severity union.
+const invalidReviewSeverity: ReviewSeverityLevel = 'warning';
+void invalidReviewSeverity;
 
 describe('ReviewSeveritySchema', () => {
   test('accepts valid severity values', () => {
@@ -27,6 +48,27 @@ describe('ReviewSeveritySchema', () => {
 
   test('keeps executor JSON severity restricted from notes', () => {
     expect(ReviewSeveritySchema.safeParse('note').success).toBe(false);
+  });
+
+  test('describes severity using the calibrated blocking rubric', () => {
+    const description = ReviewSeveritySchema.description;
+
+    expect(description).toBe(REVIEW_SEVERITY_DESCRIPTION);
+    for (const severityDefinition of REVIEW_SEVERITY_DEFINITIONS) {
+      expect(description).toContain(
+        `${severityDefinition.level}: ${severityDefinition.definition} This is ${severityDefinition.blocking ? 'blocking' : 'non-blocking'}.`
+      );
+    }
+    expect(description).not.toContain('Significant bugs, performance problems, or logic errors');
+    expect(description).not.toContain('Code quality issues, style violations, or minor bugs');
+  });
+
+  test('keeps every schema enum value in the shared severity definitions', () => {
+    const sharedLevels = new Set(REVIEW_SEVERITY_DEFINITIONS.map(({ level }) => level));
+
+    for (const level of ReviewSeveritySchema.options) {
+      expect(sharedLevels.has(level)).toBe(true);
+    }
   });
 });
 

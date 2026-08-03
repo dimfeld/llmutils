@@ -301,6 +301,11 @@ function snapshotOriginalDbState(
       docs: row.docs ? JSON.parse(row.docs) : null,
       changedFiles: row.changed_files ? JSON.parse(row.changed_files) : null,
       planGeneratedAt: row.plan_generated_at,
+      // Finalization timestamps must be carried through, or a rollback silently
+      // clears them instead of restoring the prior plan state.
+      sourceDocsUpdatedAt: row.docs_updated_at,
+      sourceLessonsAppliedAt: row.lessons_applied_at,
+      sourceStructuralReviewAt: row.structural_review_at,
       reviewIssues: row.review_issues ? JSON.parse(row.review_issues) : null,
       parentUuid: row.parent_uuid,
       epic: row.epic === 1,

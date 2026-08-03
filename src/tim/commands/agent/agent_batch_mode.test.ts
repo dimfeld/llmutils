@@ -1671,6 +1671,438 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     });
   });
 
+  describe('structuralReviewAt marker gating', () => {
+    // Scope note: this file mocks `handleReviewCommand` wholesale (see the
+    // `../review.js` mock above), so nothing here exercises the real severity
+    // partitioning that decides which findings are blocking. That gate is
+    // covered against the real implementation in
+    // `src/tim/commands/review.test.ts` (describe('blockingIssuesOnlyAppendTasks
+    // (interactive append action)')), which drives `handleReviewCommand` end to
+    // end with a stubbed review executor and asserts on the real appended
+    // tasks / saved `reviewIssues`.
+    //
+    // The tests below instead verify `batch_mode.ts`'s own control flow: how it
+    // reacts to a given `handleReviewCommand` *result* (skip the simplify pass,
+    // continue vs. stop the loop, set `needs_review`). They deliberately stub
+    // `handleReviewCommand`'s return value rather than any severity, and their
+    // names/comments call that out so a reader does not mistake them for gate
+    // coverage.
+    test('structuralReviewCompleted is threaded to the executor and skips the simplify pass when structuralReviewAt is set', async () => {
+      await createPlanFile({
+        structuralReviewAt: new Date().toISOString(),
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        simplify: { mode: 'after-completion' },
+      });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          structuralReviewAt: new Date().toISOString(),
+          tasks: [
+            {
+              title: 'Task 0',
+              description: 'Already done',
+              done: true,
+            },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      await timAgent(1, options, {});
+
+      expect(executorExecuteSpy).toHaveBeenCalledTimes(1);
+      expect(executorExecuteSpy.mock.calls[0][1]).toMatchObject({
+        structuralReviewCompleted: true,
+      });
+      expect(runSimplifySpy).not.toHaveBeenCalled();
+      expect(handleReviewCommandSpy).toHaveBeenCalledTimes(1);
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Skipping simplify pass because the structural review has already run for this plan.'
+        )
+      );
+    });
+
+    test('structuralReviewCompleted is false and the simplify pass runs when structuralReviewAt is unset', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        simplify: { mode: 'after-completion' },
+      });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 0',
+              description: 'Already done',
+              done: true,
+            },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      await timAgent(1, options, {});
+
+      expect(executorExecuteSpy).toHaveBeenCalledTimes(1);
+      expect(executorExecuteSpy.mock.calls[0][1]).toMatchObject({
+        structuralReviewCompleted: false,
+      });
+      expect(runSimplifySpy).toHaveBeenCalledTimes(1);
+      expect(handleReviewCommandSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('simplify pass is skipped for the initial-completion case even when structuralReviewAt is set, without the marker-attribution log', async () => {
+      await createPlanFile({
+        structuralReviewAt: new Date().toISOString(),
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        simplify: { mode: 'after-completion' },
+      });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          structuralReviewAt: new Date().toISOString(),
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      await timAgent(1, options, {});
+
+      expect(executorExecuteSpy).toHaveBeenCalledTimes(1);
+      expect(executorExecuteSpy.mock.calls[0][1]).toMatchObject({
+        structuralReviewCompleted: true,
+      });
+      expect(runSimplifySpy).not.toHaveBeenCalled();
+      expect(logSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Skipping simplify pass because the structural review has already run for this plan.'
+        )
+      );
+    });
+
+    test('batch loop does not continue when the completion review result reports zero appended tasks (e.g. only non-blocking findings)', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        planAutocompleteStatus: 'done',
+      });
+      // Stubbed result: represents what a completion review with only
+      // non-blocking (minor/info) findings would return. The real severity
+      // partitioning that produces this shape is exercised in review.test.ts,
+      // not here — `issuesSaved` is not read on this interactive (isTTY) code
+      // path (batch_mode.ts only consults it when isNonInteractiveReview is
+      // true), so this test proves only that `tasksAppended: 0` stops the loop.
+      handleReviewCommandSpy.mockResolvedValueOnce({ tasksAppended: 0, issuesSaved: 2 });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 0',
+              description: 'Already done',
+              done: true,
+            },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const originalIsTTY = process.stdin.isTTY;
+      Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+      try {
+        const options = { log: false } as any;
+        await timAgent(1, options, {});
+      } finally {
+        Object.defineProperty(process.stdin, 'isTTY', {
+          value: originalIsTTY,
+          configurable: true,
+        });
+      }
+
+      // No tasks were appended, so the interactive "continue running?" confirm never fires
+      // and the batch loop does not re-enter — it runs exactly one iteration.
+      expect(promptConfirmSpy).not.toHaveBeenCalled();
+      expect(executorExecuteSpy).toHaveBeenCalledTimes(1);
+      expect(handleReviewCommandSpy).toHaveBeenCalledTimes(1);
+
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.status).toBe('done');
+    });
+
+    test('batch loop continues via interactive confirm when the completion review result reports an appended task (e.g. a blocking finding)', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        planAutocompleteStatus: 'done',
+      });
+      handleReviewCommandSpy
+        .mockImplementationOnce(async () => {
+          // handleReviewCommand is stubbed here, so this hand-writes the plan
+          // mutation that the real review issue append disposition would perform for a
+          // blocking finding (review.test.ts covers the real severity gate that
+          // decides which findings reach that append path). This test's own
+          // subject is batch_mode.ts: does an appended-task result trigger the
+          // interactive confirm and continue the loop.
+          await createPlanFile({
+            tasks: [
+              {
+                title: 'Task 0',
+                description: 'Already done',
+                done: true,
+              },
+              {
+                title: 'Task 1',
+                description: 'First task',
+                steps: [{ prompt: 'Do task 1', done: true }],
+                done: true,
+              },
+              {
+                title: 'Address Review Feedback: fix the blocking finding',
+                description: 'Follow-up from review',
+                steps: [{ prompt: 'Fix it', done: false }],
+              },
+            ],
+          });
+          return { tasksAppended: 1, issuesSaved: 0 };
+        })
+        .mockResolvedValueOnce({ tasksAppended: 0, issuesSaved: 0 });
+      promptConfirmSpy.mockResolvedValueOnce(true);
+
+      let executeCallCount = 0;
+      executorExecuteSpy.mockImplementation(async () => {
+        executeCallCount += 1;
+        if (executeCallCount === 1) {
+          await createPlanFile({
+            tasks: [
+              {
+                title: 'Task 0',
+                description: 'Already done',
+                done: true,
+              },
+              {
+                title: 'Task 1',
+                description: 'First task',
+                steps: [{ prompt: 'Do task 1', done: true }],
+                done: true,
+              },
+            ],
+          });
+        } else {
+          await createPlanFile({
+            tasks: [
+              {
+                title: 'Task 0',
+                description: 'Already done',
+                done: true,
+              },
+              {
+                title: 'Task 1',
+                description: 'First task',
+                steps: [{ prompt: 'Do task 1', done: true }],
+                done: true,
+              },
+              {
+                title: 'Address Review Feedback: fix the blocking finding',
+                description: 'Follow-up from review',
+                steps: [{ prompt: 'Fix it', done: true }],
+                done: true,
+              },
+            ],
+          });
+        }
+      });
+
+      const originalIsTTY = process.stdin.isTTY;
+      Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+      try {
+        const options = { log: false } as any;
+        await timAgent(1, options, {});
+      } finally {
+        Object.defineProperty(process.stdin, 'isTTY', {
+          value: originalIsTTY,
+          configurable: true,
+        });
+      }
+
+      expect(promptConfirmSpy).toHaveBeenCalledTimes(1);
+      expect(executorExecuteSpy).toHaveBeenCalledTimes(2);
+      expect(handleReviewCommandSpy).toHaveBeenCalledTimes(2);
+
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.status).toBe('done');
+    });
+
+    test('non-interactive completion path still saves issues and sets needs_review without looping', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        planAutocompleteStatus: 'done',
+      });
+      // Stubbed result standing in for a completion review that saved issues
+      // (the real severity partitioning is covered in review.test.ts). What
+      // this test actually verifies is batch_mode.ts's own behavior: it
+      // passes `blockingIssuesOnlyAppendTasks: true` through to
+      // handleReviewCommand, and on the non-interactive path a saved-issues
+      // count > 0 sets the plan to `needs_review` without looping.
+      handleReviewCommandSpy.mockResolvedValueOnce({ tasksAppended: 0, issuesSaved: 1 });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 0',
+              description: 'Already done',
+              done: true,
+            },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      await timAgent(1, options, {});
+
+      expect(promptConfirmSpy).not.toHaveBeenCalled();
+      expect(executorExecuteSpy).toHaveBeenCalledTimes(1);
+      expect(handleReviewCommandSpy).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          saveIssues: true,
+          noAutofix: true,
+          blockingIssuesOnlyAppendTasks: true,
+        }),
+        expect.anything()
+      );
+
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.status).toBe('needs_review');
+      expect(removePlanAssignment).not.toHaveBeenCalled();
+    });
+  });
+
   describe('finalization timestamps and manual mode', () => {
     test('after-review mode runs docs when final review is clean', async () => {
       await createPlanFile({

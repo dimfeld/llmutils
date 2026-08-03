@@ -82,6 +82,7 @@ describe('tim db/plan_sync', () => {
       updatedAt: '2026-02-10T12:34:56.000Z',
       docsUpdatedAt: '2026-02-11T00:00:00.000Z',
       lessonsAppliedAt: '2026-02-12T00:00:00.000Z',
+      structuralReviewAt: '2026-02-13T00:00:00.000Z',
       status: 'in_progress' as const,
       priority: 'high' as const,
       simple: true,
@@ -125,6 +126,7 @@ describe('tim db/plan_sync', () => {
     expect(savedPlan?.updated_at).toBe('2026-02-10T12:34:56.000Z');
     expect(savedPlan?.docs_updated_at).toBe('2026-02-11T00:00:00.000Z');
     expect(savedPlan?.lessons_applied_at).toBe('2026-02-12T00:00:00.000Z');
+    expect(savedPlan?.structural_review_at).toBe('2026-02-13T00:00:00.000Z');
     expect(getPlanTagsByUuid(db, savedPlan!.uuid).map((row) => row.tag)).toEqual(['db', 'sync']);
     expect(getPlanTasksByUuid(db, savedPlan!.uuid)).toHaveLength(1);
   });

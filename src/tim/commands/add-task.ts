@@ -8,12 +8,14 @@ import type { PlanSchema } from '../planSchema.js';
 import { promptForTaskInfo, type TaskInput } from '../utils/task_operations.js';
 import type { PlanRow } from '../db/plan.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
+import { clearStructuralReviewMarkerForTaskAdd } from '../plans/review_follow_up_title.js';
 
 export interface AddTaskOptions {
   title?: string;
   description?: string;
   editor?: boolean;
   interactive?: boolean;
+  reviewFollowUp?: boolean;
 }
 
 type PlanTask = NonNullable<PlanSchema['tasks']>[number];
@@ -45,6 +47,10 @@ export async function handleAddTaskCommand(
 
     tasks.push(newTask);
     target.plan.tasks = tasks;
+    clearStructuralReviewMarkerForTaskAdd(target.plan, {
+      title: newTask.title,
+      reviewFollowUp: options.reviewFollowUp,
+    });
     target.plan.updatedAt = new Date().toISOString();
 
     await writePlanFile(planPath, target.plan, { cwdForIdentity: repoRoot, context });

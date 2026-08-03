@@ -66,6 +66,12 @@ export interface ExecutePlanInfo {
   /** Whether batch mode is enabled for processing multiple tasks */
   batchMode?: boolean;
   /**
+   * When true, the standalone `--structural-only` review pass has already run for this
+   * plan at its current completion state (`planData.structuralReviewAt` is set), so the
+   * orchestrator must not run it again.
+   */
+  structuralReviewCompleted?: boolean;
+  /**
    * Output capture mode:
    * - 'none': No output capture (default)
    * - 'all': Capture all output like the original boolean true behavior

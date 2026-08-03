@@ -48,6 +48,7 @@ Read the relevant doc before working in these areas:
 - **Executor stdin conventions** → `docs/executor-stdin-conventions.md`
 - **Codex CLI integration** (execution modes, shared orchestration prompt) → `docs/codex-cli-integration.md`
 - **Implementer / reviewer instructions** → `docs/implementer-instructions.md`, `docs/reviewer-instructions.md`
+- **Review iteration policy** (severity rubric, blocking gate, review scope tiers) → `docs/review-iteration-policy.md`
 - **Sync between nodes** → `docs/sync-between-nodes.md`
 - **Import command** → `docs/import_command.md`
 - **Proof generation and PR artifact uploads** → `docs/proof-generation.md`

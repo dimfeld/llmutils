@@ -31,6 +31,7 @@ import {
   buildArtifactSoftDeleteOperation,
   deletePlanOperation,
   deleteProjectSettingOperation,
+  setPlanScalarOperation,
   setProjectSettingOperation,
 } from './operations.js';
 import { enqueueBatch, enqueueOperation, listPendingOperations } from './queue.js';
@@ -938,6 +939,46 @@ describe('sync transport server and clients', () => {
     );
     mergeCanonicalRefresh(localDb, loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`)!);
     expect(getArtifactByUuid(localDb, ARTIFACT_UUID)?.deletedAt).toBeNull();
+  });
+
+  test('plan snapshots carry structural review timestamps through merge', async () => {
+    const mainDb = createDb();
+    const localDb = createDb();
+    seedPlan(mainDb);
+    seedPlan(localDb);
+
+    const timestamp = '2026-04-27T12:00:00.000Z';
+    const operation = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'structural_review_at', value: timestamp },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    expect(applyOperation(mainDb, operation).status).toBe('applied');
+
+    const snapshot = loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`);
+    expect(snapshot).toMatchObject({
+      type: 'plan',
+      plan: { structuralReviewAt: timestamp },
+    });
+
+    mergeCanonicalRefresh(localDb, snapshot!);
+    expect(getPlanByUuid(localDb, PLAN_UUID)?.structural_review_at).toBe(timestamp);
+
+    const clearOperation = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'structural_review_at', value: null },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    expect(applyOperation(mainDb, clearOperation).status).toBe('applied');
+
+    const clearedSnapshot = loadCanonicalSnapshot(mainDb, `plan:${PLAN_UUID}`);
+    expect(clearedSnapshot).toMatchObject({
+      type: 'plan',
+      plan: { structuralReviewAt: null },
+    });
+
+    mergeCanonicalRefresh(localDb, clearedSnapshot!);
+    expect(getPlanByUuid(localDb, PLAN_UUID)?.structural_review_at).toBeNull();
   });
 
   test('plan snapshot catch-up creates missing projection plan and localizes artifact paths', async () => {

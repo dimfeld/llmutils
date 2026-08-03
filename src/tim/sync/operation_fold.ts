@@ -770,6 +770,7 @@ function applyOperationToPlanCreate(
     review_issues: JSON.stringify(op.reviewIssues),
     docs_updated_at: op.docsUpdatedAt ?? null,
     lessons_applied_at: op.lessonsAppliedAt ?? null,
+    structural_review_at: op.structuralReviewAt ?? null,
     parent_uuid: op.parentUuid ?? null,
     epic: op.epic ? 1 : 0,
     revision: 1,

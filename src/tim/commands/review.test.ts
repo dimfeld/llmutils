@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   handleReviewCommand,
-  appendIssuesToPlanTasks,
   buildReviewPrompt,
   buildPlanlessReviewPrompt,
   detectIssuesInReview,
@@ -13,17 +12,26 @@ import {
   sanitizeBranchName,
   validateFocusAreas,
   resolveReviewTaskScope,
-  saveReviewIssuesToPlan,
   clearSavedReviewIssues,
   listSavedReviewIssues,
   resolveSavedReviewIssues,
+  persistReviewIssueDisposition,
+  rejectReviewIssue,
+  handleReviewIssuesListCommand,
+  handleReviewIssuesClearCommand,
+  handleReviewIssuesRejectCommand,
+  type ReviewIssueDisposition,
 } from './review.js';
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
+import { REVIEW_SEVERITY_LEVELS } from '../review_severity.js';
 import { generateDiffForReview } from '../review_diff.js';
 import type { PlanSchema } from '../planSchema.js';
+import type { ReviewIssue } from '../formatters/review_formatter.js';
+import { planSchema } from '../planSchema.js';
 import type { PlanWithFilename } from '../utils/hierarchy.js';
 import { readPlanFile, resolvePlanByNumericId, writePlanFile, writePlanToDb } from '../plans.js';
-import { closeDatabaseForTesting } from '../db/database.js';
+import * as plansModule from '../plans.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { clearAllTimCaches } from '../../testing.js';
 import * as notificationsModule from '../notifications.js';
@@ -177,6 +185,62 @@ function createMockReviewExecutor(
   };
 }
 
+/**
+ * Saves `issues` through the disposition that production actually builds for each mode: a
+ * `save` replaces the open queue, an `append` merges its non-blocking remainder into it. The
+ * merge form carries no tasks or resolutions so it isolates the save behavior.
+ */
+async function persistReviewIssueSave(
+  planId: number,
+  issues: readonly ReviewIssue[],
+  repoRoot: string,
+  options: { merge?: boolean } = {}
+): Promise<void> {
+  await persistReviewIssueDisposition(
+    planId,
+    options.merge === true
+      ? {
+          kind: 'append',
+          tasksToAppend: [],
+          issuesToSave: [...issues],
+          issuesToResolve: [],
+        }
+      : { kind: 'save', issuesToSave: [...issues] },
+    repoRoot
+  );
+}
+
+async function persistReviewIssueResolve(
+  planId: number,
+  issues: readonly ReviewIssue[],
+  repoRoot: string
+): Promise<number> {
+  const result = await persistReviewIssueDisposition(
+    planId,
+    { kind: 'resolve', issuesToResolve: [...issues] },
+    repoRoot
+  );
+  return result.issuesResolvedCount;
+}
+
+async function persistReviewIssueAppend(
+  planId: number,
+  issues: readonly ReviewIssue[],
+  repoRoot: string
+): Promise<number> {
+  const result = await persistReviewIssueDisposition(
+    planId,
+    {
+      kind: 'append',
+      tasksToAppend: [...issues],
+      issuesToSave: [],
+      issuesToResolve: [],
+    },
+    repoRoot
+  );
+  return result.appendedTaskCount;
+}
+
 beforeEach(async () => {
   clearAllTimCaches();
   closeDatabaseForTesting();
@@ -228,8 +292,8 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
-describe('review issue persistence helpers', () => {
-  test('saveReviewIssuesToPlan persists issues to the plan file', async () => {
+describe('review issue disposition persistence', () => {
+  test('a save disposition persists issues to the plan file', async () => {
     await writePlanToDb(
       {
         id: 1,
@@ -260,23 +324,980 @@ describe('review issue persistence helpers', () => {
       },
     ];
 
-    await saveReviewIssuesToPlan(1, issues, testDir);
+    await persistReviewIssueSave(1, issues, testDir);
 
     const updatedPlan = (await resolvePlanByNumericId(1, testDir)).plan;
     expect(updatedPlan.reviewIssues).toEqual(issues);
   });
 
-  test('clearSavedReviewIssues removes saved issues and is a no-op when absent', async () => {
+  test('rejectReviewIssue appends and refreshes a finding without duplicating it', async () => {
+    const issue = {
+      id: 'issue-reject-command',
+      severity: 'major' as const,
+      category: 'bug',
+      content: 'The existing behavior looks suspicious but is intentional.',
+      file: 'src/example.ts',
+      line: 42,
+      suggestion: 'Change the behavior',
+    };
+    await writePlanToDb(
+      {
+        id: 30,
+        title: 'Reject review issue',
+        goal: 'Record review dispositions',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    await expect(
+      rejectReviewIssue(30, issue, 'Required by the public API.', testDir)
+    ).resolves.toEqual({ created: true });
+    const firstPlan = (await resolvePlanByNumericId(30, testDir)).plan;
+    const firstRejectedAt = firstPlan.reviewIssues?.[0]?.rejectedAt;
+    expect(firstPlan.reviewIssues).toEqual([
+      {
+        ...issue,
+        rejected: true,
+        rejectedReason: 'Required by the public API.',
+        rejectedAt: firstRejectedAt,
+      },
+    ]);
+
+    await expect(
+      rejectReviewIssue(30, { ...issue }, 'Confirmed by the API contract.', testDir)
+    ).resolves.toEqual({ created: false });
+    const refreshedPlan = (await resolvePlanByNumericId(30, testDir)).plan;
+    expect(refreshedPlan.reviewIssues).toHaveLength(1);
+    expect(refreshedPlan.reviewIssues?.[0]).toMatchObject({
+      ...issue,
+      rejected: true,
+      rejectedReason: 'Confirmed by the API contract.',
+    });
+    expect(refreshedPlan.reviewIssues?.[0]?.rejectedAt).toEqual(expect.any(String));
+  });
+
+  test('handleReviewIssuesRejectCommand reads an issue from structured review output', async () => {
+    await writePlanToDb(
+      {
+        id: 31,
+        title: 'Reject from review output',
+        goal: 'Read a structured review result',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    const outputPath = join(testDir, 'review-output.json');
+    await writeFile(
+      outputPath,
+      JSON.stringify({
+        planId: '31',
+        issues: [
+          {
+            id: 'issue-from-review',
+            severity: 'minor',
+            category: 'style',
+            content: 'This naming choice is intentional.',
+            file: 'src/example.ts',
+            line: '8-9',
+            suggestion: 'Rename the value',
+            source: 'codex-cli',
+          },
+        ],
+      })
+    );
+    process.chdir(testDir);
+
+    await handleReviewIssuesRejectCommand(
+      31,
+      {
+        fromReview: outputPath,
+        issue: '1',
+        reason: 'The name matches the external API.',
+      },
+      { parent: { opts: () => ({}) } }
+    );
+
+    const updatedPlan = (await resolvePlanByNumericId(31, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([
+      expect.objectContaining({
+        severity: 'minor',
+        category: 'style',
+        content: 'This naming choice is intentional.',
+        source: 'codex-cli',
+        rejected: true,
+        rejectedReason: 'The name matches the external API.',
+        rejectedAt: expect.any(String),
+      }),
+    ]);
+  });
+
+  test('handleReviewIssuesRejectCommand accepts explicit issue fields and defaults severity and category', async () => {
+    await writePlanToDb(
+      {
+        id: 32,
+        title: 'Reject explicit issue',
+        goal: 'Record a manually supplied finding',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    process.chdir(testDir);
+
+    await handleReviewIssuesRejectCommand(
+      32,
+      {
+        content: 'This is an intentional behavior.',
+        file: 'src/manual.ts',
+        line: '17',
+        reason: 'It is required for compatibility.',
+      },
+      { parent: { opts: () => ({}) } }
+    );
+
+    const updatedPlan = (await resolvePlanByNumericId(32, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([
+      expect.objectContaining({
+        severity: 'major',
+        category: 'other',
+        content: 'This is an intentional behavior.',
+        file: 'src/manual.ts',
+        line: '17',
+        rejected: true,
+        rejectedReason: 'It is required for compatibility.',
+        rejectedAt: expect.any(String),
+      }),
+    ]);
+  });
+
+  test('handleReviewIssuesRejectCommand reports invalid input clearly', async () => {
+    process.chdir(testDir);
+    await expect(
+      handleReviewIssuesRejectCommand(
+        33,
+        { reason: 'Not applicable', fromReview: join(testDir, 'missing-review.json'), issue: '1' },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow(`Could not read review output file ${join(testDir, 'missing-review.json')}`);
+
+    await expect(
+      handleReviewIssuesRejectCommand(
+        33,
+        { reason: 'Not applicable', content: 'Finding', severity: 'urgent' },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow('Expected one of: critical, major, minor, info.');
+
+    await expect(
+      handleReviewIssuesRejectCommand(
+        33,
+        { reason: 'Not applicable', content: 'Finding', issue: '1' },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow('--issue can only be used with --from-review.');
+  });
+
+  test('handleReviewIssuesRejectCommand reports the full invalid-severity message with valid levels', async () => {
+    process.chdir(testDir);
+
+    await expect(
+      handleReviewIssuesRejectCommand(
+        33,
+        { reason: 'Not applicable', content: 'Finding', severity: 'urgent' },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow(
+      `Invalid review issue severity "urgent". Expected one of: ${REVIEW_SEVERITY_LEVELS.join(', ')}.`
+    );
+  });
+
+  test('handleReviewIssuesRejectCommand rejects each explicit field individually when combined with --from-review', async () => {
+    process.chdir(testDir);
+    const outputPath = join(testDir, 'combined-flags-output.json');
+    await writeFile(
+      outputPath,
+      JSON.stringify({
+        issues: [
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'A finding from the review output.',
+          },
+        ],
+      })
+    );
+
+    const baseOptions = { fromReview: outputPath, issue: '1', reason: 'Not applicable' };
+    const cases: Array<[string, Record<string, string>]> = [
+      ['--file', { file: 'src/other.ts' }],
+      ['--line', { line: '10' }],
+      ['--severity', { severity: 'critical' }],
+      ['--category', { category: 'security' }],
+      ['--suggestion', { suggestion: 'Do something else.' }],
+    ];
+
+    for (const [flag, extra] of cases) {
+      await expect(
+        handleReviewIssuesRejectCommand(
+          43,
+          { ...baseOptions, ...extra },
+          { parent: { opts: () => ({}) } }
+        )
+      ).rejects.toThrow(`${flag} cannot be combined with --from-review`);
+    }
+  });
+
+  test('handleReviewIssuesRejectCommand names every offending flag when several are combined with --from-review', async () => {
+    process.chdir(testDir);
+    const outputPath = join(testDir, 'combined-flags-multi-output.json');
+    await writeFile(
+      outputPath,
+      JSON.stringify({
+        issues: [
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'A finding from the review output.',
+          },
+        ],
+      })
+    );
+
+    await expect(
+      handleReviewIssuesRejectCommand(
+        43,
+        {
+          fromReview: outputPath,
+          issue: '1',
+          reason: 'Not applicable',
+          file: 'src/other.ts',
+          line: '10',
+          severity: 'critical',
+          category: 'security',
+          suggestion: 'Do something else.',
+        },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow(
+      '--file, --line, --severity, --category, --suggestion cannot be combined with --from-review'
+    );
+  });
+
+  test('handleReviewIssuesRejectCommand still allows --issue/--reason with --from-review and the explicit-field path', async () => {
+    await writePlanToDb(
+      {
+        id: 44,
+        title: 'Valid flag combinations still work',
+        goal: 'Only the invalid combination should throw',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    const outputPath = join(testDir, 'valid-combo-output.json');
+    await writeFile(
+      outputPath,
+      JSON.stringify({
+        issues: [
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'A finding from the review output.',
+          },
+        ],
+      })
+    );
+    process.chdir(testDir);
+
+    await handleReviewIssuesRejectCommand(
+      44,
+      { fromReview: outputPath, issue: '1', reason: 'Only --issue and --reason supplied.' },
+      { parent: { opts: () => ({}) } }
+    );
+    const afterFromReview = (await resolvePlanByNumericId(44, testDir)).plan;
+    expect(afterFromReview.reviewIssues).toEqual([
+      expect.objectContaining({
+        content: 'A finding from the review output.',
+        rejected: true,
+        rejectedReason: 'Only --issue and --reason supplied.',
+      }),
+    ]);
+
+    await handleReviewIssuesRejectCommand(
+      44,
+      {
+        content: 'A separate explicit finding.',
+        file: 'src/explicit.ts',
+        line: '3',
+        severity: 'critical',
+        category: 'security',
+        suggestion: 'Add validation.',
+        reason: 'The explicit-field path allows these flags together.',
+      },
+      { parent: { opts: () => ({}) } }
+    );
+    const afterExplicit = (await resolvePlanByNumericId(44, testDir)).plan;
+    expect(afterExplicit.reviewIssues).toHaveLength(2);
+    expect(afterExplicit.reviewIssues?.[1]).toMatchObject({
+      content: 'A separate explicit finding.',
+      file: 'src/explicit.ts',
+      line: '3',
+      severity: 'critical',
+      category: 'security',
+      suggestion: 'Add validation.',
+      rejected: true,
+      rejectedReason: 'The explicit-field path allows these flags together.',
+    });
+  });
+
+  test('handleReviewIssuesRejectCommand allowlists fields from --from-review', async () => {
+    await writePlanToDb(
+      {
+        id: 40,
+        title: 'Reject with unknown fields removed',
+        goal: 'Only known review issue fields should be stored from review output',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    const outputPath = join(testDir, 'unknown-fields-output.json');
+    await writeFile(
+      outputPath,
+      JSON.stringify({
+        issues: [
+          {
+            id: 'reviewer-generated-id',
+            source: 'codex-cli',
+            severity: 'major',
+            category: 'bug',
+            content: 'A finding with reviewer-only metadata.',
+            file: 'src/meta.ts',
+            line: '7',
+          },
+        ],
+      })
+    );
+    process.chdir(testDir);
+
+    await handleReviewIssuesRejectCommand(
+      40,
+      {
+        fromReview: outputPath,
+        issue: '1',
+        reason: 'The source metadata is useful; positional IDs are not.',
+      },
+      { parent: { opts: () => ({}) } }
+    );
+
+    const updatedPlan = (await resolvePlanByNumericId(40, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([
+      expect.objectContaining({
+        source: 'codex-cli',
+        content: 'A finding with reviewer-only metadata.',
+        rejected: true,
+        rejectedReason: 'The source metadata is useful; positional IDs are not.',
+      }),
+    ]);
+    expect(updatedPlan.reviewIssues?.[0]).not.toHaveProperty('id');
+  });
+
+  test('handleReviewIssuesRejectCommand rejects only the selected issue from a multi-issue --from-review file', async () => {
+    await writePlanToDb(
+      {
+        id: 34,
+        title: 'Reject a single issue from a multi-issue file',
+        goal: 'Only the selected issue should be recorded',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    const outputPath = join(testDir, 'multi-review-output.json');
+    await writeFile(
+      outputPath,
+      JSON.stringify({
+        planId: '34',
+        planTitle: 'Reject a single issue from a multi-issue file',
+        reviewTimestamp: '2026-08-03T10:00:00.000Z',
+        baseBranch: 'main',
+        summary: 'Three issues found.',
+        issues: [
+          {
+            id: 'issue-one',
+            severity: 'major',
+            category: 'bug',
+            content: 'First issue.',
+            file: 'src/one.ts',
+            line: '1',
+          },
+          {
+            id: 'issue-two',
+            severity: 'minor',
+            category: 'style',
+            content: 'Second issue, intentional naming.',
+            file: 'src/two.ts',
+            line: '2',
+          },
+          {
+            id: 'issue-three',
+            severity: 'critical',
+            category: 'security',
+            content: 'Third issue.',
+            file: 'src/three.ts',
+            line: '3',
+          },
+        ],
+        recommendations: [],
+        actionItems: [],
+      })
+    );
+    process.chdir(testDir);
+
+    await handleReviewIssuesRejectCommand(
+      34,
+      { fromReview: outputPath, issue: '2', reason: 'Naming is intentional here.' },
+      { parent: { opts: () => ({}) } }
+    );
+
+    const updatedPlan = (await resolvePlanByNumericId(34, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toHaveLength(1);
+    expect(updatedPlan.reviewIssues?.[0]).toMatchObject({
+      content: 'Second issue, intentional naming.',
+      rejected: true,
+      rejectedReason: 'Naming is intentional here.',
+    });
+  });
+
+  test('handleReviewIssuesRejectCommand reads a bare top-level array from --from-review', async () => {
+    await writePlanToDb(
+      {
+        id: 35,
+        title: 'Reject from bare array',
+        goal: 'A --from-review file may be a bare array of issues',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    const outputPath = join(testDir, 'bare-array-output.json');
+    await writeFile(
+      outputPath,
+      JSON.stringify([
+        {
+          id: 'array-issue-one',
+          severity: 'minor',
+          category: 'style',
+          content: 'A bare-array finding.',
+        },
+      ])
+    );
+    process.chdir(testDir);
+
+    await handleReviewIssuesRejectCommand(
+      35,
+      { fromReview: outputPath, issue: '1', reason: 'Bare array form works.' },
+      { parent: { opts: () => ({}) } }
+    );
+
+    const updatedPlan = (await resolvePlanByNumericId(35, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([
+      expect.objectContaining({
+        content: 'A bare-array finding.',
+        rejected: true,
+        rejectedReason: 'Bare array form works.',
+      }),
+    ]);
+  });
+
+  test('handleReviewIssuesRejectCommand accepts --content alone and applies all defaults', async () => {
+    await writePlanToDb(
+      {
+        id: 36,
+        title: 'Reject with content only',
+        goal: 'Verify defaults for severity and category',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    process.chdir(testDir);
+
+    await handleReviewIssuesRejectCommand(
+      36,
+      { content: 'A finding described with content only.', reason: 'No file context needed.' },
+      { parent: { opts: () => ({}) } }
+    );
+
+    const updatedPlan = (await resolvePlanByNumericId(36, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([
+      expect.objectContaining({
+        severity: 'major',
+        category: 'other',
+        content: 'A finding described with content only.',
+        rejected: true,
+        rejectedReason: 'No file context needed.',
+      }),
+    ]);
+    expect(updatedPlan.reviewIssues?.[0]).not.toHaveProperty('file');
+    expect(updatedPlan.reviewIssues?.[0]).not.toHaveProperty('line');
+  });
+
+  test('handleReviewIssuesRejectCommand accepts explicit severity, category, and suggestion overrides', async () => {
+    await writePlanToDb(
+      {
+        id: 37,
+        title: 'Reject with full explicit fields',
+        goal: 'Verify explicit overrides are respected',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    process.chdir(testDir);
+
+    await handleReviewIssuesRejectCommand(
+      37,
+      {
+        content: 'A fully specified manual finding.',
+        file: 'src/full.ts',
+        line: '42',
+        severity: 'critical',
+        category: 'security',
+        suggestion: 'Consider input validation.',
+        reason: 'Already mitigated elsewhere.',
+      },
+      { parent: { opts: () => ({}) } }
+    );
+
+    const updatedPlan = (await resolvePlanByNumericId(37, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([
+      expect.objectContaining({
+        content: 'A fully specified manual finding.',
+        file: 'src/full.ts',
+        line: '42',
+        severity: 'critical',
+        category: 'security',
+        suggestion: 'Consider input validation.',
+        rejected: true,
+        rejectedReason: 'Already mitigated elsewhere.',
+      }),
+    ]);
+  });
+
+  test('rejecting an issue already saved by a prior review upserts it in place without growing the array', async () => {
+    await writePlanToDb(
+      {
+        id: 38,
+        title: 'Upsert against a previously saved issue',
+        goal: 'Rejecting a saved finding should update it in place',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    const savedIssue = {
+      id: 'saved-issue',
+      severity: 'minor' as const,
+      category: 'style',
+      content: 'A previously saved, non-rejected finding.',
+      file: 'src/saved.ts',
+      line: 5,
+    };
+    const otherIssue = {
+      id: 'other-issue',
+      severity: 'major' as const,
+      category: 'bug',
+      content: 'A different finding that stays untouched.',
+      file: 'src/other.ts',
+      line: 9,
+    };
+    await persistReviewIssueSave(38, [savedIssue, otherIssue], testDir);
+
+    const outputPath = join(testDir, 'existing-issue-review.json');
+    await writeFile(
+      outputPath,
+      JSON.stringify({
+        issues: [
+          {
+            id: 'saved-issue',
+            severity: 'minor',
+            category: 'style',
+            content: 'A previously saved, non-rejected finding.',
+            file: 'src/saved.ts',
+            line: 5,
+          },
+        ],
+      })
+    );
+    process.chdir(testDir);
+
+    const logSpy = vi.mocked(loggingModule.log);
+    logSpy.mockClear();
+    await handleReviewIssuesRejectCommand(
+      38,
+      { fromReview: outputPath, issue: '1', reason: 'Confirmed intentional.' },
+      { parent: { opts: () => ({}) } }
+    );
+    expect(logSpy.mock.calls.at(-1)?.[0]).toContain('Refreshed an existing rejection');
+
+    const updatedPlan = (await resolvePlanByNumericId(38, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toHaveLength(2);
+    expect(updatedPlan.reviewIssues?.[0]).toMatchObject({
+      id: 'saved-issue',
+      content: 'A previously saved, non-rejected finding.',
+      rejected: true,
+      rejectedReason: 'Confirmed intentional.',
+    });
+    expect(updatedPlan.reviewIssues?.[1]).toEqual(otherIssue);
+
+    // A brand-new finding (no matching identity) should be appended and reported as created.
+    const brandNewOutputPath = join(testDir, 'brand-new-issue-review.json');
+    await writeFile(
+      brandNewOutputPath,
+      JSON.stringify({
+        issues: [
+          {
+            id: 'brand-new-issue',
+            severity: 'major',
+            category: 'bug',
+            content: 'A finding not previously saved.',
+          },
+        ],
+      })
+    );
+    logSpy.mockClear();
+    await handleReviewIssuesRejectCommand(
+      38,
+      { fromReview: brandNewOutputPath, issue: '1', reason: 'Not applicable here.' },
+      { parent: { opts: () => ({}) } }
+    );
+    expect(logSpy.mock.calls.at(-1)?.[0]).toContain('Recorded a new rejection');
+    expect((await resolvePlanByNumericId(38, testDir)).plan.reviewIssues).toHaveLength(3);
+  });
+
+  test('rejection survives a save disposition and the default clearSavedReviewIssues path', async () => {
+    await writePlanToDb(
+      {
+        id: 39,
+        title: 'Rejection survives the review lifecycle',
+        goal: 'A rejection recorded via the command must not be resurrected or duplicated',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    const outputPath = join(testDir, 'lifecycle-review.json');
+    await writeFile(
+      outputPath,
+      JSON.stringify({
+        issues: [
+          {
+            id: 'lifecycle-issue',
+            severity: 'minor',
+            category: 'style',
+            content: 'Finding that will be rejected then re-reported.',
+            file: 'src/lifecycle.ts',
+            line: 3,
+          },
+        ],
+      })
+    );
+    process.chdir(testDir);
+
+    await handleReviewIssuesRejectCommand(
+      39,
+      { fromReview: outputPath, issue: '1', reason: 'Not a real problem.' },
+      { parent: { opts: () => ({}) } }
+    );
+
+    // A later review re-reports the same finding as a fresh, non-rejected issue plus a new one.
+    await persistReviewIssueSave(
+      39,
+      [
+        {
+          id: 'lifecycle-issue',
+          severity: 'minor',
+          category: 'style',
+          content: 'Finding that will be rejected then re-reported.',
+          file: 'src/lifecycle.ts',
+          line: 3,
+        },
+        {
+          id: 'fresh-issue',
+          severity: 'major',
+          category: 'bug',
+          content: 'A new finding from the later review.',
+        },
+      ],
+      testDir
+    );
+
+    const afterSave = (await resolvePlanByNumericId(39, testDir)).plan;
+    expect(afterSave.reviewIssues).toHaveLength(2);
+    expect(afterSave.reviewIssues?.[0]).toMatchObject({
+      content: 'Finding that will be rejected then re-reported.',
+      rejected: true,
+    });
+    expect(afterSave.reviewIssues?.[1]).toMatchObject({ id: 'fresh-issue' });
+    expect(afterSave.reviewIssues?.[1]).not.toHaveProperty('rejected');
+
+    // A clean review (no remaining actionable issues) clears the fresh issue but keeps the rejection.
+    await clearSavedReviewIssues(39, testDir);
+    const afterClear = (await resolvePlanByNumericId(39, testDir)).plan;
+    expect(afterClear.reviewIssues).toEqual([
+      expect.objectContaining({
+        content: 'Finding that will be rejected then re-reported.',
+        rejected: true,
+      }),
+    ]);
+  });
+
+  test('handleReviewIssuesRejectCommand rejects an empty or whitespace-only --reason', async () => {
+    process.chdir(testDir);
+    await expect(
+      handleReviewIssuesRejectCommand(
+        40,
+        { content: 'Finding', reason: '' },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow('--reason is required.');
+
+    await expect(
+      handleReviewIssuesRejectCommand(
+        40,
+        { content: 'Finding', reason: '   ' },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow('--reason is required.');
+  });
+
+  test('handleReviewIssuesRejectCommand rejects both --from-review and --content together', async () => {
+    process.chdir(testDir);
+    await expect(
+      handleReviewIssuesRejectCommand(
+        40,
+        {
+          reason: 'Not applicable',
+          fromReview: join(testDir, 'unused.json'),
+          content: 'Finding',
+          issue: '1',
+        },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow('Provide either --from-review or --content, not both.');
+  });
+
+  test('handleReviewIssuesRejectCommand requires --issue when --from-review is provided', async () => {
+    process.chdir(testDir);
+    const outputPath = join(testDir, 'no-issue-arg.json');
+    await writeFile(outputPath, JSON.stringify({ issues: [{ content: 'x' }] }));
+    await expect(
+      handleReviewIssuesRejectCommand(
+        40,
+        { reason: 'Not applicable', fromReview: outputPath },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow('--issue is required when --from-review is provided.');
+  });
+
+  test('handleReviewIssuesRejectCommand requires either --from-review or --content', async () => {
+    process.chdir(testDir);
+    await expect(
+      handleReviewIssuesRejectCommand(
+        40,
+        { reason: 'Not applicable' },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow(
+      'Provide either --from-review <path> with --issue <n> or --content <text> to identify the review issue.'
+    );
+  });
+
+  test('handleReviewIssuesRejectCommand reports a clear error for invalid JSON in --from-review', async () => {
+    process.chdir(testDir);
+    const outputPath = join(testDir, 'invalid.json');
+    await writeFile(outputPath, '{ this is not valid json');
+    await expect(
+      handleReviewIssuesRejectCommand(
+        40,
+        { reason: 'Not applicable', fromReview: outputPath, issue: '1' },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow(`Could not parse review output file ${outputPath} as JSON`);
+  });
+
+  test('handleReviewIssuesRejectCommand reports a clear error when --from-review JSON has no issues array', async () => {
+    process.chdir(testDir);
+    const outputPath = join(testDir, 'no-issues-array.json');
+    await writeFile(outputPath, JSON.stringify({ planId: '1', summary: 'nothing useful here' }));
+    await expect(
+      handleReviewIssuesRejectCommand(
+        40,
+        { reason: 'Not applicable', fromReview: outputPath, issue: '1' },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow(`must contain an "issues" array or be a top-level array of issues`);
+  });
+
+  test('handleReviewIssuesRejectCommand reports a clear error when --from-review has an empty issues array', async () => {
+    process.chdir(testDir);
+    const outputPath = join(testDir, 'empty-issues.json');
+    await writeFile(outputPath, JSON.stringify({ issues: [] }));
+    await expect(
+      handleReviewIssuesRejectCommand(
+        40,
+        { reason: 'Not applicable', fromReview: outputPath, issue: '1' },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow(`contains no issues`);
+  });
+
+  test.each([
+    ['0', 'must be a positive integer'],
+    ['-1', 'must be a positive integer'],
+    ['abc', 'must be a positive integer'],
+    ['5', 'is out of range'],
+  ])(
+    'handleReviewIssuesRejectCommand reports a clear error for --issue %s',
+    async (issueValue, expectedMessageFragment) => {
+      process.chdir(testDir);
+      const outputPath = join(testDir, `issue-index-${issueValue}.json`);
+      await writeFile(
+        outputPath,
+        JSON.stringify({
+          issues: [
+            { severity: 'major', category: 'bug', content: 'a' },
+            { severity: 'minor', category: 'style', content: 'b' },
+          ],
+        })
+      );
+      await expect(
+        handleReviewIssuesRejectCommand(
+          40,
+          { reason: 'Not applicable', fromReview: outputPath, issue: issueValue },
+          { parent: { opts: () => ({}) } }
+        )
+      ).rejects.toThrow(expectedMessageFragment);
+    }
+  );
+
+  test('review issue rejection fields survive schema and DB JSON round-trip', async () => {
+    const rejectedIssue = {
+      id: 'issue-rejected',
+      severity: 'major' as const,
+      category: 'bug',
+      content: 'An intentionally rejected issue',
+      file: 'src/example.ts',
+      line: 12,
+      suggestion: 'Keep the existing behavior',
+      rejected: true,
+      rejectedReason: 'This behavior is required by the API contract.',
+      rejectedAt: '2026-08-03T12:00:00.000Z',
+    };
+    const parsedPlan = planSchema.parse({
+      id: 2,
+      title: 'Round-trip rejected issue',
+      goal: 'Verify rejection metadata persists',
+      details: 'Details',
+      tasks: [],
+      reviewIssues: [rejectedIssue],
+    });
+
+    await writePlanToDb(parsedPlan, { cwdForIdentity: testDir });
+
+    const updatedPlan = (await resolvePlanByNumericId(2, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([rejectedIssue]);
+  });
+
+  test('a save disposition preserves rejected issues and refreshes others', async () => {
+    const rejectedIssue = {
+      id: 'issue-rejected',
+      severity: 'major' as const,
+      category: 'bug',
+      content: 'An intentionally rejected issue',
+      file: 'src/example.ts',
+      line: 12,
+      suggestion: 'Keep the existing behavior',
+      rejected: true,
+      rejectedReason: 'This behavior is required by the API contract.',
+      rejectedAt: '2026-08-03T12:00:00.000Z',
+    };
+    const replacementIssue = {
+      id: 'issue-new',
+      severity: 'minor' as const,
+      category: 'testing',
+      content: 'Add a regression test',
+      file: 'src/example.test.ts',
+      line: '24-30',
+    };
+
+    await writePlanToDb(
+      {
+        id: 3,
+        title: 'Merge review issues',
+        goal: 'Keep rejected findings while refreshing active findings',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [
+          rejectedIssue,
+          {
+            id: 'issue-stale',
+            severity: 'minor',
+            category: 'style',
+            content: 'A stale issue',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    await persistReviewIssueSave(
+      3,
+      [
+        {
+          suggestion: 'Keep the existing behavior',
+          line: 12,
+          file: 'src/example.ts',
+          content: 'An intentionally rejected issue',
+          category: 'bug',
+          severity: 'major',
+          id: 'issue-rejected',
+        },
+        replacementIssue,
+      ],
+      testDir
+    );
+
+    const updatedPlan = (await resolvePlanByNumericId(3, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([rejectedIssue, replacementIssue]);
+  });
+
+  test('clearSavedReviewIssues keeps rejected issues by default and clears them with all', async () => {
     const configPath = join(testDir, '.tim.yml');
     await writeFile(configPath, 'review: {}\n');
     await writePlanToDb(
       {
-        id: 2,
+        id: 4,
         title: 'Clear review issues',
         goal: 'Verify saved issues can be removed',
         details: 'Details',
         tasks: [],
         reviewIssues: [
+          {
+            id: 'issue-rejected',
+            severity: 'major',
+            category: 'bug',
+            content: 'Keep this rejected issue',
+            rejected: true,
+            rejectedReason: 'Intentional behavior',
+            rejectedAt: '2026-08-03T12:00:00.000Z',
+          },
           {
             id: 'issue-1',
             severity: 'critical',
@@ -288,10 +1309,28 @@ describe('review issue persistence helpers', () => {
       { cwdForIdentity: testDir }
     );
 
-    await clearSavedReviewIssues(2, testDir);
-    await clearSavedReviewIssues(2, testDir);
+    await expect(clearSavedReviewIssues(4, testDir)).resolves.toBe(1);
+    const afterDefaultClear = (await resolvePlanByNumericId(4, testDir)).plan;
+    expect(afterDefaultClear.reviewIssues).toEqual([
+      {
+        id: 'issue-rejected',
+        severity: 'major',
+        category: 'bug',
+        content: 'Keep this rejected issue',
+        rejected: true,
+        rejectedReason: 'Intentional behavior',
+        rejectedAt: '2026-08-03T12:00:00.000Z',
+      },
+    ]);
 
-    const updatedPlan = (await resolvePlanByNumericId(2, testDir)).plan;
+    await expect(clearSavedReviewIssues(4, testDir)).resolves.toBe(0);
+    expect((await resolvePlanByNumericId(4, testDir)).plan.reviewIssues).toEqual(
+      afterDefaultClear.reviewIssues
+    );
+
+    await expect(clearSavedReviewIssues(4, testDir, { all: true })).resolves.toBe(1);
+
+    const updatedPlan = (await resolvePlanByNumericId(4, testDir)).plan;
     expect(updatedPlan.reviewIssues).toBeUndefined();
   });
 
@@ -340,10 +1379,36 @@ describe('review issue persistence helpers', () => {
     ]);
   });
 
+  test('resolveSavedReviewIssues deletes the reviewIssues key when the last remaining issue is resolved', async () => {
+    await writePlanToDb(
+      {
+        id: 45,
+        title: 'Resolve the only saved issue',
+        goal: 'Resolving every saved issue must drop the reviewIssues key entirely',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [
+          {
+            id: 'issue-only',
+            severity: 'major',
+            category: 'bug',
+            content: 'The only saved issue',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    await expect(resolveSavedReviewIssues(45, [1], testDir)).resolves.toBe(1);
+
+    const updatedPlan = (await resolvePlanByNumericId(45, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toBeUndefined();
+  });
+
   test('listSavedReviewIssues returns saved review issues', async () => {
     await writePlanToDb(
       {
-        id: 4,
+        id: 5,
         title: 'List review issues',
         goal: 'Show persisted review issues',
         details: 'Details',
@@ -355,23 +1420,628 @@ describe('review issue persistence helpers', () => {
             category: 'bug',
             content: 'Persisted issue',
           },
+          {
+            id: 'issue-rejected',
+            severity: 'minor',
+            category: 'style',
+            content: 'Rejected issue remains visible',
+            rejected: true,
+            rejectedReason: 'Intentional behavior',
+            rejectedAt: '2026-08-03T12:00:00.000Z',
+          },
         ],
       },
       { cwdForIdentity: testDir }
     );
 
-    await expect(listSavedReviewIssues(4, testDir)).resolves.toEqual([
+    await expect(listSavedReviewIssues(5, testDir)).resolves.toEqual([
       {
         id: 'issue-1',
         severity: 'major',
         category: 'bug',
         content: 'Persisted issue',
       },
+      {
+        id: 'issue-rejected',
+        severity: 'minor',
+        category: 'style',
+        content: 'Rejected issue remains visible',
+        rejected: true,
+        rejectedReason: 'Intentional behavior',
+        rejectedAt: '2026-08-03T12:00:00.000Z',
+      },
     ]);
+  });
+
+  test('handleReviewIssuesListCommand shows rejection reason and timestamp', async () => {
+    await writePlanToDb(
+      {
+        id: 41,
+        title: 'List rejection details',
+        goal: 'Show the rejection disposition in the ledger view',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'This finding is intentionally retained as rejected.',
+            rejected: true,
+            rejectedReason: 'The behavior is required by the public API.',
+            rejectedAt: '2026-08-03T12:00:00.000Z',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
+    process.chdir(testDir);
+
+    const logSpy = vi.mocked(loggingModule.log);
+    logSpy.mockClear();
+    await handleReviewIssuesListCommand(41, {}, { parent: { opts: () => ({}) } });
+
+    const output = logSpy.mock.calls.map(([message]) => String(message)).join('\n');
+    expect(output).toContain('Rejected');
+    expect(output).toContain('The behavior is required by the public API.');
+    expect(output).toContain('2026-08-03T12:00:00.000Z');
+  });
+
+  test('handleReviewIssuesClearCommand clears open issues and supports --all', async () => {
+    await writePlanToDb(
+      {
+        id: 42,
+        title: 'Clear review issues from the command',
+        goal: 'Expose the default and full clear paths',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'Keep this rejected issue.',
+            rejected: true,
+            rejectedReason: 'Intentional behavior.',
+            rejectedAt: '2026-08-03T12:00:00.000Z',
+          },
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'Clear this open issue.',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
+    process.chdir(testDir);
+
+    const logSpy = vi.mocked(loggingModule.log);
+    logSpy.mockClear();
+    await handleReviewIssuesClearCommand(42, {}, { parent: { opts: () => ({}) } });
+    expect((await resolvePlanByNumericId(42, testDir)).plan.reviewIssues).toHaveLength(1);
+    expect(logSpy.mock.calls.at(-1)?.[0]).toContain(
+      'Cleared 1 open saved review issue for plan 42. Rejected entries were kept.'
+    );
+
+    logSpy.mockClear();
+    await handleReviewIssuesClearCommand(42, { all: true }, { parent: { opts: () => ({}) } });
+    expect((await resolvePlanByNumericId(42, testDir)).plan.reviewIssues).toBeUndefined();
+    expect(logSpy.mock.calls.at(-1)?.[0]).toContain(
+      'Cleared 1 saved review issue for plan 42, including rejected entries.'
+    );
+
+    logSpy.mockClear();
+    await handleReviewIssuesClearCommand(42, {}, { parent: { opts: () => ({}) } });
+    expect(logSpy.mock.calls.at(-1)?.[0]).toContain(
+      'No open saved review issues to clear for plan 42. Use --all to clear rejected entries too.'
+    );
+
+    logSpy.mockClear();
+    await handleReviewIssuesClearCommand(42, { all: true }, { parent: { opts: () => ({}) } });
+    expect(logSpy.mock.calls.at(-1)?.[0]).toContain('No saved review issues to clear for plan 42.');
+  });
+
+  test('review issue rejection fields survive a plan-file write/read round trip', async () => {
+    const planPath = join(testDir, 'rejection-round-trip.plan.md');
+    const rejectedIssue = {
+      id: 'issue-rejected',
+      severity: 'major' as const,
+      category: 'bug',
+      content: 'An intentionally rejected issue',
+      rejected: true,
+      rejectedReason: 'Matches an existing accepted pattern.',
+      rejectedAt: '2026-08-03T12:00:00.000Z',
+    };
+
+    await writePlanFile(
+      planPath,
+      {
+        id: 20,
+        title: 'Plan-file round trip',
+        goal: 'Verify rejection metadata survives a file round trip',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [rejectedIssue],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    const reloaded = await readPlanFile(planPath);
+    expect(reloaded.reviewIssues).toEqual([rejectedIssue]);
+  });
+
+  test('a save disposition preserves identity across property order and review-run IDs', async () => {
+    const rejectedIssue = {
+      id: 'issue-rejected',
+      severity: 'major' as const,
+      category: 'bug',
+      content: 'Same finding reappears',
+      file: 'src/example.ts',
+      line: 12,
+      rejected: true,
+      rejectedReason: 'Already reviewed and accepted.',
+      rejectedAt: '2026-08-03T12:00:00.000Z',
+    };
+
+    await writePlanToDb(
+      {
+        id: 21,
+        title: 'Identity stability across key order',
+        goal: 'A rejected finding must not be duplicated when it reappears with reordered keys',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [rejectedIssue],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    // Same finding as `rejectedIssue`, but re-emitted fresh (non-rejected) by a later reviewer
+    // run with a different property order and a new positional ID.
+    const reappearedIssue = {
+      line: 12,
+      content: 'Same finding reappears',
+      file: 'src/example.ts',
+      category: 'bug',
+      id: 'issue-from-a-later-review-run',
+      severity: 'major' as const,
+    };
+
+    await persistReviewIssueSave(21, [reappearedIssue], testDir);
+
+    const updatedPlan = (await resolvePlanByNumericId(21, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([rejectedIssue]);
+  });
+
+  describe('clearSavedReviewIssues edge cases', () => {
+    test('does not throw when the plan has no rejected or actionable saved issues', async () => {
+      await writePlanToDb(
+        {
+          id: 22,
+          title: 'No review issues yet',
+          goal: 'Clearing must not throw when there is nothing to clear',
+          details: 'Details',
+          tasks: [],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      // A freshly created plan normalizes reviewIssues to an empty array rather than
+      // leaving the key absent; clearing it must be a safe no-op either way.
+      const beforeClear = (await resolvePlanByNumericId(22, testDir)).plan;
+      expect(beforeClear.reviewIssues ?? []).toEqual([]);
+
+      await expect(clearSavedReviewIssues(22, testDir)).resolves.toBe(0);
+
+      const updatedPlan = (await resolvePlanByNumericId(22, testDir)).plan;
+      expect(updatedPlan.reviewIssues ?? []).toEqual([]);
+      // An empty reviewIssues array must be a true no-op: no routed plan write, so
+      // updatedAt must not move even though the array is technically "present".
+      expect(updatedPlan.updatedAt).toEqual(beforeClear.updatedAt);
+    });
+
+    test('{ all: true } is also a no-op when reviewIssues is empty', async () => {
+      await writePlanToDb(
+        {
+          id: 27,
+          title: 'No review issues yet, all flag',
+          goal: 'The all escape hatch must not write when there is nothing to clear',
+          details: 'Details',
+          tasks: [],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      const beforeClear = (await resolvePlanByNumericId(27, testDir)).plan;
+      expect(beforeClear.reviewIssues ?? []).toEqual([]);
+
+      await expect(clearSavedReviewIssues(27, testDir, { all: true })).resolves.toBe(0);
+
+      const updatedPlan = (await resolvePlanByNumericId(27, testDir)).plan;
+      expect(updatedPlan.reviewIssues ?? []).toEqual([]);
+      expect(updatedPlan.updatedAt).toEqual(beforeClear.updatedAt);
+    });
+
+    test('default clear is a no-op when every saved issue is rejected', async () => {
+      const rejectedIssues = [
+        {
+          id: 'issue-rejected-1',
+          severity: 'major' as const,
+          category: 'bug',
+          content: 'First rejected issue',
+          rejected: true,
+          rejectedReason: 'Intentional behavior',
+          rejectedAt: '2026-08-03T12:00:00.000Z',
+        },
+        {
+          id: 'issue-rejected-2',
+          severity: 'minor' as const,
+          category: 'style',
+          content: 'Second rejected issue',
+          rejected: true,
+          rejectedReason: 'Cosmetic, accepted as-is',
+          rejectedAt: '2026-08-03T12:05:00.000Z',
+        },
+      ];
+
+      await writePlanToDb(
+        {
+          id: 23,
+          title: 'Only rejected issues',
+          goal: 'Default clear must leave an all-rejected list untouched',
+          details: 'Details',
+          tasks: [],
+          reviewIssues: rejectedIssues,
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      await expect(clearSavedReviewIssues(23, testDir)).resolves.toBe(0);
+
+      const updatedPlan = (await resolvePlanByNumericId(23, testDir)).plan;
+      expect(updatedPlan.reviewIssues).toEqual(rejectedIssues);
+    });
+
+    test('default clear removes the key entirely when no saved issue is rejected', async () => {
+      await writePlanToDb(
+        {
+          id: 24,
+          title: 'Only active issues',
+          goal: 'Default clear must drop the reviewIssues key when nothing is rejected',
+          details: 'Details',
+          tasks: [],
+          reviewIssues: [
+            {
+              id: 'issue-1',
+              severity: 'major',
+              category: 'bug',
+              content: 'An active issue',
+            },
+          ],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      await expect(clearSavedReviewIssues(24, testDir)).resolves.toBe(1);
+
+      const updatedPlan = (await resolvePlanByNumericId(24, testDir)).plan;
+      expect(updatedPlan.reviewIssues).toBeUndefined();
+    });
+
+    test('{ all: true } removes rejected issues too', async () => {
+      await writePlanToDb(
+        {
+          id: 25,
+          title: 'Force clear rejected issues',
+          goal: 'The all escape hatch must remove rejected entries as well',
+          details: 'Details',
+          tasks: [],
+          reviewIssues: [
+            {
+              id: 'issue-rejected',
+              severity: 'major',
+              category: 'bug',
+              content: 'A rejected issue',
+              rejected: true,
+              rejectedReason: 'Intentional behavior',
+              rejectedAt: '2026-08-03T12:00:00.000Z',
+            },
+          ],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      await clearSavedReviewIssues(25, testDir, { all: true });
+
+      const updatedPlan = (await resolvePlanByNumericId(25, testDir)).plan;
+      expect(updatedPlan.reviewIssues).toBeUndefined();
+    });
+  });
+
+  test('a save disposition behaves like before when the plan has no prior reviewIssues', async () => {
+    await writePlanToDb(
+      {
+        id: 26,
+        title: 'First save with no prior issues',
+        goal: 'Saving without an existing reviewIssues key must work like a plain overwrite',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    const issues = [
+      {
+        id: 'issue-1',
+        severity: 'critical' as const,
+        category: 'security' as const,
+        content: 'A fresh finding',
+        file: 'src/first.ts',
+        line: 5,
+      },
+    ];
+
+    await persistReviewIssueSave(26, issues, testDir);
+
+    const updatedPlan = (await resolvePlanByNumericId(26, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual(issues);
+  });
+
+  test('a save disposition excludes note severity while preserving multiple rejected entries in order', async () => {
+    const rejectedIssues = [
+      {
+        id: 'issue-rejected-a',
+        severity: 'major' as const,
+        category: 'bug',
+        content: 'First rejected issue',
+        rejected: true,
+        rejectedReason: 'Reason A',
+        rejectedAt: '2026-08-03T12:00:00.000Z',
+      },
+      {
+        id: 'issue-rejected-b',
+        severity: 'minor' as const,
+        category: 'style',
+        content: 'Second rejected issue',
+        rejected: true,
+        rejectedReason: 'Reason B',
+        rejectedAt: '2026-08-03T12:05:00.000Z',
+      },
+    ];
+
+    await writePlanToDb(
+      {
+        id: 27,
+        title: 'Multiple rejected entries',
+        goal: 'Confirm stable ordering and note filtering during merge',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: rejectedIssues,
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    const incomingIssues = [
+      {
+        id: 'issue-active',
+        severity: 'major',
+        category: 'bug',
+        content: 'An actionable issue',
+      },
+      {
+        id: 'issue-note',
+        severity: 'note',
+        category: 'other',
+        content: 'A descriptive annotation, not actionable',
+      },
+    ] as any;
+
+    await persistReviewIssueSave(27, incomingIssues, testDir);
+
+    const updatedPlan = (await resolvePlanByNumericId(27, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([...rejectedIssues, incomingIssues[0]]);
+  });
+
+  test('resolveSavedReviewIssues indexes the same list listSavedReviewIssues prints, rejected entries included', async () => {
+    const issues = [
+      {
+        id: 'issue-rejected',
+        severity: 'major',
+        category: 'bug',
+        content: 'A rejected issue that still appears in the ledger view',
+        rejected: true,
+        rejectedReason: 'Accepted behavior',
+        rejectedAt: '2026-08-03T12:00:00.000Z',
+      },
+      {
+        id: 'issue-1',
+        severity: 'major',
+        category: 'bug',
+        content: 'First actionable issue',
+      },
+      {
+        id: 'issue-2',
+        severity: 'minor',
+        category: 'testing',
+        content: 'Second actionable issue',
+      },
+    ];
+
+    await writePlanToDb(
+      {
+        id: 28,
+        title: 'Resolve among mixed dispositions',
+        goal: 'resolveSavedReviewIssues indexing must be unchanged and stay in sync with listSavedReviewIssues',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: issues,
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    // listSavedReviewIssues is a ledger view: rejected entries remain visible, so the
+    // 1-based index resolveSavedReviewIssues accepts must line up with this same list.
+    await expect(listSavedReviewIssues(28, testDir)).resolves.toEqual(issues);
+
+    // Index 2 is 'issue-1' in that ledger view.
+    await expect(resolveSavedReviewIssues(28, [2], testDir)).resolves.toBe(1);
+
+    const updatedPlan = (await resolvePlanByNumericId(28, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([issues[0], issues[2]]);
+  });
+
+  test('resolveSavedReviewIssues --all leaves rejected entries in the ledger', async () => {
+    const rejectedIssue = {
+      severity: 'major' as const,
+      category: 'bug',
+      content: 'A rejected issue that --all must keep.',
+      rejected: true,
+      rejectedReason: 'This behavior is intentional.',
+      rejectedAt: '2026-08-03T12:00:00.000Z',
+    };
+    const openIssue = {
+      severity: 'major' as const,
+      category: 'bug',
+      content: 'An open issue that --all should resolve.',
+    };
+
+    await writePlanToDb(
+      {
+        id: 30,
+        title: 'Resolve all open review issues',
+        goal: 'The all target must not remove rejected findings',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [rejectedIssue, openIssue],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    await expect(resolveSavedReviewIssues(30, 'all', testDir)).resolves.toBe(1);
+    expect((await resolvePlanByNumericId(30, testDir)).plan.reviewIssues).toEqual([rejectedIssue]);
+  });
+
+  test('a resolve disposition removes the matching open issue but never a rejection', async () => {
+    const rejectedIssue = {
+      id: 'rejected',
+      severity: 'major' as const,
+      category: 'bug',
+      content: 'The same finding is already rejected.',
+      file: 'src/review.ts',
+      line: 12,
+      rejected: true,
+      rejectedReason: 'The existing behavior is required.',
+      rejectedAt: '2026-08-03T12:00:00.000Z',
+    };
+    const openIssue = {
+      id: 'open',
+      severity: 'minor' as const,
+      category: 'bug',
+      content: 'A separate open finding.',
+      file: 'src/open.ts',
+      line: 8,
+      suggestion: 'Add a test.',
+    };
+
+    await writePlanToDb(
+      {
+        id: 31,
+        title: 'Resolve review issues by identity',
+        goal: 'Autofix resolution must not use saved-list positions',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [rejectedIssue, openIssue],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    await expect(
+      persistReviewIssueResolve(
+        31,
+        [
+          {
+            id: 'new-review-run-id',
+            severity: 'major',
+            category: 'bug',
+            content: 'A separate open finding.',
+            file: 'src/open.ts',
+            line: '8',
+          },
+        ],
+        testDir
+      )
+    ).resolves.toBe(1);
+
+    expect((await resolvePlanByNumericId(31, testDir)).plan.reviewIssues).toEqual([rejectedIssue]);
+  });
+
+  test('a resolve disposition deletes the reviewIssues key when the last remaining issue is resolved', async () => {
+    const openIssue = {
+      id: 'open-only',
+      severity: 'minor' as const,
+      category: 'bug',
+      content: 'The only saved issue, with no rejected entries alongside it.',
+      file: 'src/only.ts',
+      line: 4,
+    };
+
+    await writePlanToDb(
+      {
+        id: 46,
+        title: 'Resolve the only saved issue by identity',
+        goal: 'Resolving the last open issue must drop the reviewIssues key entirely',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [openIssue],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    await expect(
+      persistReviewIssueResolve(
+        46,
+        [
+          {
+            id: 'new-review-run-id',
+            severity: 'minor',
+            category: 'bug',
+            content: 'The only saved issue, with no rejected entries alongside it.',
+            file: 'src/only.ts',
+            line: '4',
+          },
+        ],
+        testDir
+      )
+    ).resolves.toBe(1);
+
+    expect((await resolvePlanByNumericId(46, testDir)).plan.reviewIssues).toBeUndefined();
+  });
+
+  test('resolveSavedReviewIssues throws a clear error for an out-of-range index', async () => {
+    await writePlanToDb(
+      {
+        id: 29,
+        title: 'Out of range resolve',
+        goal: 'An invalid index must throw instead of silently no-op',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [
+          {
+            id: 'issue-1',
+            severity: 'major',
+            category: 'bug',
+            content: 'Only issue',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    await expect(resolveSavedReviewIssues(29, [5], testDir)).rejects.toThrow(
+      'Review issue index 5 is out of range. Expected 1-1.'
+    );
   });
 });
 
-test('saveReviewIssuesToPlan persists only the selected review issues', async () => {
+test('a save disposition persists only the selected review issues', async () => {
   const configPath = join(testDir, '.tim.yml');
   await writeFile(configPath, 'review: {}\n');
   await writePlanToDb(
@@ -404,13 +2074,62 @@ test('saveReviewIssuesToPlan persists only the selected review issues', async ()
     },
   ];
 
-  await saveReviewIssuesToPlan(10, [reviewIssues[0]], testDir);
+  await persistReviewIssueSave(10, [reviewIssues[0]], testDir);
 
   const updatedPlan = (await resolvePlanByNumericId(10, testDir)).plan;
   expect(updatedPlan.reviewIssues).toEqual([reviewIssues[0]]);
 });
 
-test('saveReviewIssuesToPlan excludes note severity annotations', async () => {
+test('a merge save disposition preserves the open issue queue and deduplicates updates', async () => {
+  const firstIssue = {
+    id: 'issue-1',
+    severity: 'major' as const,
+    category: 'bug' as const,
+    content: 'The first issue remains open',
+    file: 'src/first.ts',
+    line: 10,
+  };
+  const secondIssue = {
+    id: 'issue-2',
+    severity: 'minor' as const,
+    category: 'testing' as const,
+    content: 'The second issue is refreshed',
+    file: 'src/second.ts',
+    line: 20,
+  };
+  const thirdIssue = {
+    id: 'issue-3',
+    severity: 'info' as const,
+    category: 'style' as const,
+    content: 'The third issue remains open',
+    file: 'src/third.ts',
+    line: 30,
+  };
+  const refreshedSecondIssue = {
+    ...secondIssue,
+    id: 'new-review-id',
+    suggestion: 'Use the updated test fixture',
+  };
+
+  await writePlanToDb(
+    {
+      id: 12,
+      title: 'Merge partial review issues',
+      goal: 'Preserve earlier issues when saving a partial append-gate subset',
+      details: 'Details',
+      tasks: [],
+      reviewIssues: [firstIssue, secondIssue, thirdIssue],
+    },
+    { cwdForIdentity: testDir }
+  );
+
+  await persistReviewIssueSave(12, [refreshedSecondIssue], testDir, { merge: true });
+
+  const updatedPlan = (await resolvePlanByNumericId(12, testDir)).plan;
+  expect(updatedPlan.reviewIssues).toEqual([firstIssue, refreshedSecondIssue, thirdIssue]);
+});
+
+test('a save disposition excludes note severity annotations', async () => {
   await writeFile(join(testDir, '.tim.yml'), 'review: {}\n');
   await writePlanToDb(
     {
@@ -440,7 +2159,7 @@ test('saveReviewIssuesToPlan excludes note severity annotations', async () => {
     },
   ] as any;
 
-  await saveReviewIssuesToPlan(11, reviewIssues, testDir);
+  await persistReviewIssueSave(11, reviewIssues, testDir);
 
   const updatedPlan = (await resolvePlanByNumericId(11, testDir)).plan;
   expect(updatedPlan.reviewIssues).toEqual([reviewIssues[0]]);
@@ -793,6 +2512,185 @@ test('uses review default executor from config when no executor option passed', 
   await handleReviewCommand(1, { noSave: true }, mockCommand);
 
   expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+});
+
+describe('persistReviewIssueDisposition union variants', () => {
+  test('a none disposition performs no plan write', async () => {
+    await writePlanToDb(
+      {
+        id: 700,
+        title: 'None disposition no-op',
+        goal: 'A none disposition must not touch the plan file',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [
+          {
+            id: 'pre-existing',
+            severity: 'minor',
+            category: 'style',
+            content: 'An untouched saved issue',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    const beforePlan = (await resolvePlanByNumericId(700, testDir)).plan;
+
+    await expect(persistReviewIssueDisposition(700, { kind: 'none' }, testDir)).resolves.toEqual({
+      appendedTaskCount: 0,
+      issuesSavedCount: 0,
+      issuesResolvedCount: 0,
+    });
+
+    const afterPlan = (await resolvePlanByNumericId(700, testDir)).plan;
+    expect(afterPlan.reviewIssues).toEqual(beforePlan.reviewIssues);
+    expect(afterPlan.tasks).toEqual(beforePlan.tasks);
+    // No routed write happened at all: updatedAt must not have moved.
+    expect(afterPlan.updatedAt).toEqual(beforePlan.updatedAt);
+  });
+
+  test('an append disposition applies its three effects atomically in one write', async () => {
+    const preExistingMatch = {
+      id: 'pre-open-to-resolve',
+      severity: 'minor' as const,
+      category: 'style' as const,
+      content: 'Inconsistent naming',
+      file: 'src/app.ts',
+      line: 20,
+    };
+    const preExistingUnrelated = {
+      id: 'pre-open-untouched',
+      severity: 'info' as const,
+      category: 'other' as const,
+      content: 'An unrelated saved issue',
+      file: 'src/other.ts',
+      line: 1,
+    };
+
+    await writePlanToDb(
+      {
+        id: 701,
+        title: 'Append disposition atomicity',
+        goal: 'One append disposition should append, save, and resolve together',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [preExistingMatch, preExistingUnrelated],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    const taskToAppend = {
+      id: 'blocking-finding',
+      severity: 'major' as const,
+      category: 'bug' as const,
+      content: 'Missing null check causes a crash',
+      file: 'src/app.ts',
+      line: 10,
+    };
+    const issueToSave = {
+      id: 'non-blocking-finding',
+      severity: 'minor' as const,
+      category: 'style' as const,
+      content: 'A fresh non-blocking finding',
+      file: 'src/fresh.ts',
+      line: 5,
+    };
+    const issueToResolve = {
+      id: 'new-review-run-id',
+      severity: 'minor' as const,
+      category: 'style' as const,
+      content: 'Inconsistent naming',
+      file: 'src/app.ts',
+      line: 20,
+    };
+
+    const result = await persistReviewIssueDisposition(
+      701,
+      {
+        kind: 'append',
+        tasksToAppend: [taskToAppend],
+        issuesToSave: [issueToSave],
+        issuesToResolve: [issueToResolve],
+      },
+      testDir
+    );
+
+    expect(result).toEqual({
+      appendedTaskCount: 1,
+      issuesSavedCount: 1,
+      issuesResolvedCount: 1,
+    });
+
+    const updatedPlan = (await resolvePlanByNumericId(701, testDir)).plan;
+    expect(updatedPlan.tasks.some((t) => t.title.includes('Missing null check'))).toBe(true);
+    // The pre-existing matching issue was resolved (removed by identity), the unrelated one
+    // survived untouched, and the freshly saved non-blocking finding was added.
+    expect(updatedPlan.reviewIssues).toEqual([
+      expect.objectContaining({ id: 'pre-open-untouched' }),
+      expect.objectContaining({ content: 'A fresh non-blocking finding' }),
+    ]);
+  });
+
+  test('a clear disposition drops open saved issues but keeps the rejected ledger', async () => {
+    const rejectedIssue = {
+      id: 'rejected-keep',
+      severity: 'major' as const,
+      category: 'bug' as const,
+      content: 'A previously rejected finding',
+      rejected: true,
+      rejectedReason: 'Intentional',
+      rejectedAt: '2026-08-03T12:00:00.000Z',
+    };
+    const openIssue = {
+      id: 'open-clear-me',
+      severity: 'minor' as const,
+      category: 'style' as const,
+      content: 'A stale open finding',
+    };
+
+    await writePlanToDb(
+      {
+        id: 702,
+        title: 'Clear disposition keeps ledger',
+        goal: 'A clear disposition should drop open issues but keep rejections',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [rejectedIssue, openIssue],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    await expect(persistReviewIssueDisposition(702, { kind: 'clear' }, testDir)).resolves.toEqual({
+      appendedTaskCount: 0,
+      issuesSavedCount: 0,
+      issuesResolvedCount: 0,
+    });
+
+    const updatedPlan = (await resolvePlanByNumericId(702, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([rejectedIssue]);
+  });
+
+  test('an unknown disposition kind throws instead of silently doing nothing', async () => {
+    await writePlanToDb(
+      {
+        id: 703,
+        title: 'Unknown disposition kind',
+        goal: 'An invalid disposition kind must throw, not silently no-op',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    await expect(
+      persistReviewIssueDisposition(
+        703,
+        { kind: 'bogus' } as unknown as ReviewIssueDisposition,
+        testDir
+      )
+    ).rejects.toThrow('Unknown review issue disposition kind: bogus');
+  });
 });
 
 describe('generateDiffForReview', () => {
@@ -1435,6 +3333,201 @@ describe('handleReviewCommand error handling', () => {
     });
   });
 
+  test('review --issues treats a plan with only rejected findings as empty', async () => {
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: '43',
+        planData: {
+          id: 43,
+          title: 'Only rejected findings',
+          goal: 'Do not offer rejected findings as an open review queue',
+          tasks: [],
+          reviewIssues: [
+            {
+              severity: 'major',
+              category: 'bug',
+              content: 'An already rejected finding.',
+              rejected: true,
+              rejectedReason: 'Intentional behavior.',
+              rejectedAt: '2026-08-03T12:00:00.000Z',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/example.ts'],
+          baseBranch: 'main',
+          diffContent: 'diff',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
+
+    const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await expect(
+        handleReviewCommand(43, { issues: true, print: true }, { parent: { opts: () => ({}) } })
+      ).resolves.toEqual({ tasksAppended: 0, issuesSaved: 0 });
+      expect(consoleLogSpy).not.toHaveBeenCalled();
+    } finally {
+      consoleLogSpy.mockRestore();
+    }
+  });
+
+  test('review --issues reports the rejection-only message, singular and plural', async () => {
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+
+    const makePlanContext = (id: number, rejectedCount: number) =>
+      createMockPlanContext({
+        resolvedPlanFile: String(id),
+        planData: {
+          id,
+          title: 'Only rejected findings',
+          goal: 'Report the rejection ledger instead of claiming no issues exist',
+          tasks: [],
+          reviewIssues: Array.from({ length: rejectedCount }, (_, index) => ({
+            severity: 'major' as const,
+            category: 'bug',
+            content: `Rejected finding ${index + 1}.`,
+            rejected: true,
+            rejectedReason: 'Intentional behavior.',
+            rejectedAt: '2026-08-03T12:00:00.000Z',
+          })),
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/example.ts'],
+          baseBranch: 'main',
+          diffContent: 'diff',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any;
+
+    const logSpy = vi.mocked(loggingModule.log);
+
+    // Singular: exactly one rejected entry.
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValueOnce(
+      makePlanContext(45, 1)
+    );
+    logSpy.mockClear();
+    await handleReviewCommand(45, { issues: true }, { parent: { opts: () => ({}) } });
+    const singularOutput = logSpy.mock.calls.map(([message]) => String(message)).join('\n');
+    expect(singularOutput).toContain(
+      'No open saved review issues for this plan. 1 rejected entry remains on the plan'
+    );
+    expect(singularOutput).toContain('tim review-issues list 45');
+    expect(singularOutput).not.toContain('entries remain');
+
+    // Plural: more than one rejected entry.
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValueOnce(
+      makePlanContext(46, 2)
+    );
+    logSpy.mockClear();
+    await handleReviewCommand(46, { issues: true }, { parent: { opts: () => ({}) } });
+    const pluralOutput = logSpy.mock.calls.map(([message]) => String(message)).join('\n');
+    expect(pluralOutput).toContain(
+      'No open saved review issues for this plan. 2 rejected entries remain on the plan'
+    );
+    expect(pluralOutput).toContain('tim review-issues list 46');
+  });
+
+  test('review --issues reports the original no-issues message when nothing was ever saved', async () => {
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: '47',
+        planData: {
+          id: 47,
+          title: 'No saved issues at all',
+          goal: 'Keep the original message when there is nothing rejected either',
+          tasks: [],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/example.ts'],
+          baseBranch: 'main',
+          diffContent: 'diff',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
+
+    const logSpy = vi.mocked(loggingModule.log);
+    logSpy.mockClear();
+    await handleReviewCommand(47, { issues: true }, { parent: { opts: () => ({}) } });
+    const output = logSpy.mock.calls.map(([message]) => String(message)).join('\n');
+    expect(output).toContain('No saved review issues found for this plan.');
+    expect(output).not.toContain('rejected entr');
+  });
+
+  test('review --issues --print emits only open findings', async () => {
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: '44',
+        planData: {
+          id: 44,
+          title: 'Mixed review findings',
+          goal: 'Print only the open portion of the saved review queue',
+          tasks: [],
+          reviewIssues: [
+            {
+              severity: 'major',
+              category: 'bug',
+              content: 'Do not print this rejected finding.',
+              rejected: true,
+              rejectedReason: 'Intentional behavior.',
+              rejectedAt: '2026-08-03T12:00:00.000Z',
+            },
+            {
+              severity: 'minor',
+              category: 'testing',
+              content: 'Print this open finding.',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/example.ts'],
+          baseBranch: 'main',
+          diffContent: 'diff',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
+
+    const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await handleReviewCommand(
+        44,
+        { issues: true, print: true },
+        { parent: { opts: () => ({}) } }
+      );
+      expect(consoleLogSpy).toHaveBeenCalledTimes(1);
+      const printed = JSON.parse(String(consoleLogSpy.mock.calls[0]?.[0])) as Array<{
+        content: string;
+      }>;
+      expect(printed).toEqual([
+        { severity: 'minor', category: 'testing', content: 'Print this open finding.' },
+      ]);
+    } finally {
+      consoleLogSpy.mockRestore();
+    }
+  });
+
   test('handles executor execution failure', async () => {
     const planFile = join(testDir, 'executor-fail.yml'); // only used in mock context
     await writePlanToDb(
@@ -1852,6 +3945,183 @@ describe('integration with executor system', () => {
     const parsed = JSON.parse(output.slice(jsonStart, jsonEnd + 1));
     expect(parsed.planId).toBe('1');
     expect(parsed.issues).toHaveLength(1);
+  });
+});
+
+describe('structuralReviewAt write path', () => {
+  const ISO_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+  function mockCleanReview(planId: number, planData: Record<string, unknown>) {
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'codex-cli',
+    } as any);
+
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: String(planId),
+        planData,
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/example.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
+
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue('main');
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+      prompt: 'mock reviewer prompt',
+    } as any);
+  }
+
+  test('a successful --structural-only review sets structuralReviewAt and persists it to the DB', async () => {
+    await writePlanToDb(
+      {
+        id: 501,
+        title: 'Structural Review Plan',
+        goal: 'Verify structural marker is set',
+        tasks: [{ title: 'Existing task', description: 'Existing work' }],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    mockCleanReview(501, {
+      id: 501,
+      title: 'Structural Review Plan',
+      goal: 'Verify structural marker is set',
+      tasks: [{ title: 'Existing task', description: 'Existing work' }],
+    });
+
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue({
+      execute: vi.fn(async () =>
+        JSON.stringify({ issues: [], recommendations: [], actionItems: [] })
+      ),
+    } as any);
+
+    const mockCommand = { parent: { opts: () => ({}) } };
+
+    await handleReviewCommand(501, { structuralOnly: true, noSave: true }, mockCommand);
+
+    const { plan: afterReview } = await resolvePlanByNumericId(501, testDir);
+    expect(afterReview.structuralReviewAt).toEqual(expect.any(String));
+    expect(afterReview.structuralReviewAt).toMatch(ISO_TIMESTAMP_RE);
+
+    // Query the column directly to confirm the value reached the DB, rather
+    // than only mutating the plan object passed to writePlanFile.
+    const storedRow = getDatabase()
+      .prepare(`SELECT structural_review_at FROM plan WHERE plan_id = ?`)
+      .get(501) as { structural_review_at: string | null } | undefined;
+    expect(storedRow?.structural_review_at).toBe(afterReview.structuralReviewAt);
+  });
+
+  test('a successful --structural-only review in print mode still sets structuralReviewAt (regression: orchestrator always uses --print)', async () => {
+    await writePlanToDb(
+      {
+        id: 502,
+        title: 'Structural Review Plan Print Mode',
+        goal: 'Verify structural marker is set under --print',
+        tasks: [{ title: 'Existing task', description: 'Existing work' }],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    mockCleanReview(502, {
+      id: 502,
+      title: 'Structural Review Plan Print Mode',
+      goal: 'Verify structural marker is set under --print',
+      tasks: [{ title: 'Existing task', description: 'Existing work' }],
+    });
+
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue({
+      execute: vi.fn(async () =>
+        JSON.stringify({ issues: [], recommendations: [], actionItems: [] })
+      ),
+    } as any);
+
+    const mockCommand = { parent: { opts: () => ({}) } };
+
+    await handleReviewCommand(
+      502,
+      { structuralOnly: true, noSave: true, print: true },
+      mockCommand
+    );
+
+    const { plan: afterReview } = await resolvePlanByNumericId(502, testDir);
+    expect(afterReview.structuralReviewAt).toMatch(ISO_TIMESTAMP_RE);
+  });
+
+  test('a structural review whose executor throws does not set structuralReviewAt', async () => {
+    await writePlanToDb(
+      {
+        id: 503,
+        title: 'Structural Review Failure Plan',
+        goal: 'Verify structural marker is not set on failure',
+        tasks: [{ title: 'Existing task', description: 'Existing work' }],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    mockCleanReview(503, {
+      id: 503,
+      title: 'Structural Review Failure Plan',
+      goal: 'Verify structural marker is not set on failure',
+      tasks: [{ title: 'Existing task', description: 'Existing work' }],
+    });
+
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue({
+      execute: vi.fn(async () => {
+        throw new Error('executor exploded');
+      }),
+    } as any);
+
+    const mockCommand = { parent: { opts: () => ({}) } };
+
+    await expect(
+      handleReviewCommand(503, { structuralOnly: true, noSave: true }, mockCommand)
+    ).rejects.toThrow('executor exploded');
+
+    const { plan: afterReview } = await resolvePlanByNumericId(503, testDir);
+    expect(afterReview.structuralReviewAt).toBeUndefined();
+  });
+
+  test('a non-structural review never sets or touches structuralReviewAt', async () => {
+    const priorStructuralReviewAt = '2026-01-01T00:00:00.000Z';
+    await writePlanToDb(
+      {
+        id: 504,
+        title: 'Ordinary Review Plan',
+        goal: 'Verify ordinary reviews do not touch the structural marker',
+        structuralReviewAt: priorStructuralReviewAt,
+        tasks: [{ title: 'Existing task', description: 'Existing work' }],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    mockCleanReview(504, {
+      id: 504,
+      title: 'Ordinary Review Plan',
+      goal: 'Verify ordinary reviews do not touch the structural marker',
+      tasks: [{ title: 'Existing task', description: 'Existing work' }],
+    });
+
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue({
+      execute: vi.fn(async () =>
+        JSON.stringify({ issues: [], recommendations: [], actionItems: [] })
+      ),
+    } as any);
+
+    const mockCommand = { parent: { opts: () => ({}) } };
+
+    await handleReviewCommand(504, { noSave: true }, mockCommand);
+
+    const { plan: afterReview } = await resolvePlanByNumericId(504, testDir);
+    expect(afterReview.structuralReviewAt).toBe(priorStructuralReviewAt);
   });
 });
 
@@ -2784,6 +5054,28 @@ describe('Security fixes', () => {
       expect(result.isScoped).toBe(true);
     });
 
+    test('permits selecting a completed task while preserving its plan index', () => {
+      const planData: PlanSchema = {
+        id: 10,
+        title: 'Completed Scope Plan',
+        goal: 'Test completed task selection',
+        tasks: [
+          { title: 'Pending One', description: 'First task', done: false },
+          { title: 'Done Task', description: 'Completed task', done: true },
+          { title: 'Pending Three', description: 'Third task', done: false },
+        ],
+      };
+
+      const result = resolveReviewTaskScope(planData, { taskIndex: ['2'] });
+
+      expect(result.planData.tasks?.map((task: any) => task.title)).toEqual(['Done Task']);
+      expect(result.planData.tasks?.map((task: any) => task.originalIndex)).toEqual([2]);
+      expect(result.remainingTasks).toEqual([
+        { index: 1, title: 'Pending One' },
+        { index: 3, title: 'Pending Three' },
+      ]);
+    });
+
     test('filters tasks by title case-insensitively and includes duplicates', () => {
       const planData: PlanSchema = {
         id: 3,
@@ -2847,6 +5139,57 @@ describe('Security fixes', () => {
       expect(() =>
         resolveReviewTaskScope(planData, { taskIndex: ['5'], taskTitle: ['Missing Task'] })
       ).toThrow('Unknown task indexes: 5; Unknown task titles: Missing Task');
+    });
+
+    test('reports an unknown index alone as scoped (not a silent unscoped pass-through)', () => {
+      const planData: PlanSchema = {
+        id: 11,
+        title: 'Unknown Index Only Plan',
+        goal: 'Test unknown index boundary',
+        tasks: [{ title: 'Task One', description: 'Only task', done: false }],
+      };
+
+      expect(() => resolveReviewTaskScope(planData, { taskIndex: ['5'] })).toThrow(
+        'Unknown task indexes: 5'
+      );
+    });
+
+    test('reports unknown task indexes in input order, not sorted', () => {
+      // Pins the review resolver's ordering policy: input order, unlike the
+      // subagent resolver which sorts ascending for its error text.
+      const planData: PlanSchema = {
+        id: 12,
+        title: 'Unknown Index Order Plan',
+        goal: 'Test unknown index ordering',
+        tasks: [{ title: 'Task One', description: 'Only task', done: false }],
+      };
+
+      expect(() => resolveReviewTaskScope(planData, { taskIndex: ['9', '5'] })).toThrow(
+        'Unknown task indexes: 9, 5'
+      );
+    });
+
+    test('dedupes repeated and comma-mixed indexes and returns them in ascending plan order', () => {
+      const planData: PlanSchema = {
+        id: 13,
+        title: 'Dedup Order Plan',
+        goal: 'Test dedup and ordering',
+        tasks: [
+          { title: 'Task One', description: '', done: false },
+          { title: 'Task Two', description: '', done: false },
+          { title: 'Task Three', description: '', done: false },
+          { title: 'Task Four', description: '', done: false },
+        ],
+      };
+
+      const result = resolveReviewTaskScope(planData, { taskIndex: ['4,1', '3', '1'] });
+
+      expect(result.planData.tasks?.map((task) => task.title)).toEqual([
+        'Task One',
+        'Task Three',
+        'Task Four',
+      ]);
+      expect(result.planData.tasks?.map((task: any) => task.originalIndex)).toEqual([1, 3, 4]);
     });
 
     test('reports negative indexes as invalid alongside missing titles', () => {
@@ -3062,7 +5405,7 @@ describe('Autofix functionality', () => {
       { cwdForIdentity: testDir }
     );
 
-    const appendedCount = await appendIssuesToPlanTasks(
+    const appendedCount = await persistReviewIssueAppend(
       299,
       [
         {
@@ -3337,6 +5680,28 @@ describe('Autofix functionality', () => {
             description: 'A test task that has issues',
           },
         ],
+        reviewIssues: [
+          {
+            id: 'previously-rejected',
+            severity: 'major',
+            category: 'style',
+            content: 'A previously rejected finding.',
+            file: 'src/old.ts',
+            line: 4,
+            rejected: true,
+            rejectedReason: 'This existing pattern is intentional.',
+            rejectedAt: '2026-08-03T12:00:00.000Z',
+          },
+          {
+            id: 'saved-open-finding',
+            severity: 'minor',
+            category: 'security',
+            content: 'Security Vulnerability - Unsafe input validation',
+            file: 'src/input.ts',
+            line: 42,
+            suggestion: 'An older suggestion for the same finding.',
+          },
+        ],
       },
       { cwdForIdentity: testDir }
     );
@@ -3457,6 +5822,14 @@ describe('Autofix functionality', () => {
         captureOutput: 'none',
       })
     );
+
+    expect((await resolvePlanByNumericId(123, testDir)).plan.reviewIssues).toEqual([
+      expect.objectContaining({
+        id: 'previously-rejected',
+        rejected: true,
+        rejectedReason: 'This existing pattern is intentional.',
+      }),
+    ]);
   });
 
   // TODO something flaky about this test
@@ -3903,6 +6276,836 @@ describe('Autofix functionality', () => {
     expect(updatedPlan.reviewIssues).toHaveLength(2);
   });
 
+  describe('blockingIssuesOnlyAppendTasks (interactive append action)', () => {
+    // This suite must run with TIM_OUTPUT_SOCKET unset. When set (tunnel mode),
+    // handleReviewCommand forces its non-interactive path regardless of
+    // TIM_INTERACTIVE, which would bypass the interactive append action entirely.
+    let originalOutputSocket: string | undefined;
+
+    beforeEach(() => {
+      originalOutputSocket = process.env.TIM_OUTPUT_SOCKET;
+      delete process.env.TIM_OUTPUT_SOCKET;
+    });
+
+    afterEach(() => {
+      if (originalOutputSocket === undefined) {
+        delete process.env.TIM_OUTPUT_SOCKET;
+      } else {
+        process.env.TIM_OUTPUT_SOCKET = originalOutputSocket;
+      }
+    });
+
+    test('interactive append only offers/appends blocking issues, saves the rest', async () => {
+      await writePlanToDb(
+        {
+          id: 129,
+          title: 'Test Blocking Gate Mixed Severity',
+          goal: 'Test blockingIssuesOnlyAppendTasks with mixed severities',
+          tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      const mockExecutor = createMockReviewExecutor(
+        JSON.stringify({
+          issues: [
+            {
+              severity: 'major',
+              category: 'bug',
+              content: 'Missing null check causes a crash',
+              file: 'src/app.ts',
+              line: '10',
+              suggestion: 'Add a null check',
+            },
+            {
+              severity: 'minor',
+              category: 'style',
+              content: 'Inconsistent naming',
+              file: 'src/app.ts',
+              line: '20',
+              suggestion: 'Rename for consistency',
+            },
+          ],
+          recommendations: [],
+          actionItems: [],
+        })
+      );
+
+      vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+        createMockPlanContext({
+          resolvedPlanFile: '129',
+          planData: {
+            id: 129,
+            title: 'Test Blocking Gate Mixed Severity',
+            goal: 'Test blockingIssuesOnlyAppendTasks with mixed severities',
+            tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/app.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }) as any
+      );
+
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'claude-code',
+      } as any);
+      vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+      vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
+      vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+        prompt: 'test review prompt',
+      } as any);
+
+      // Only one issue (the blocking "major" one) should be offered by selectIssuesToFix;
+      // select it via checkbox index 0.
+      promptSelectSpy.mockResolvedValueOnce('append' as any);
+      promptCheckboxSpy.mockResolvedValueOnce([0] as any);
+
+      const result = await handleReviewCommand(
+        129,
+        { blockingIssuesOnlyAppendTasks: true },
+        { parent: { opts: () => ({}) } }
+      );
+
+      expect(promptCheckboxSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          choices: [expect.objectContaining({ name: expect.stringContaining('[MAJOR]') })],
+        })
+      );
+
+      expect(result.tasksAppended).toBe(1);
+      expect(result.issuesSaved).toBe(1);
+
+      const updatedPlan = (await resolvePlanByNumericId(129, testDir)).plan;
+      expect(updatedPlan.tasks.some((t) => t.title.includes('Missing null check'))).toBe(true);
+      expect(updatedPlan.tasks.some((t) => t.title.includes('Inconsistent naming'))).toBe(false);
+      expect(updatedPlan.reviewIssues).toHaveLength(1);
+      expect(updatedPlan.reviewIssues?.[0]?.severity).toBe('minor');
+    });
+
+    test('interactive append with only non-blocking issues appends nothing and saves them all', async () => {
+      await writePlanToDb(
+        {
+          id: 130,
+          title: 'Test Blocking Gate Non-Blocking Only',
+          goal: 'Test blockingIssuesOnlyAppendTasks with only non-blocking issues',
+          tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      const mockExecutor = createMockReviewExecutor(
+        JSON.stringify({
+          issues: [
+            {
+              severity: 'minor',
+              category: 'style',
+              content: 'Minor naming nit',
+              file: 'src/app.ts',
+              line: '5',
+              suggestion: 'Rename',
+            },
+            {
+              severity: 'info',
+              category: 'other',
+              content: 'Pre-existing observation',
+              file: 'src/app.ts',
+              line: '6',
+              suggestion: 'No action needed',
+            },
+          ],
+          recommendations: [],
+          actionItems: [],
+        })
+      );
+
+      vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+        createMockPlanContext({
+          resolvedPlanFile: '130',
+          planData: {
+            id: 130,
+            title: 'Test Blocking Gate Non-Blocking Only',
+            goal: 'Test blockingIssuesOnlyAppendTasks with only non-blocking issues',
+            tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/app.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }) as any
+      );
+
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'claude-code',
+      } as any);
+      vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+      vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
+      vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+        prompt: 'test review prompt',
+      } as any);
+
+      promptSelectSpy.mockResolvedValueOnce('append' as any);
+
+      const result = await handleReviewCommand(
+        130,
+        { blockingIssuesOnlyAppendTasks: true },
+        { parent: { opts: () => ({}) } }
+      );
+
+      // No blocking issues exist, so selectIssuesToFix (and its checkbox prompt) is never reached.
+      expect(promptCheckboxSpy).not.toHaveBeenCalled();
+      expect(result.tasksAppended).toBe(0);
+      expect(result.issuesSaved).toBe(2);
+
+      const updatedPlan = (await resolvePlanByNumericId(130, testDir)).plan;
+      expect(updatedPlan.tasks).toHaveLength(1);
+      expect(updatedPlan.reviewIssues).toHaveLength(2);
+    });
+
+    test('flag unset: interactive append offers and appends all actionable issues, including minor', async () => {
+      await writePlanToDb(
+        {
+          id: 131,
+          title: 'Test Blocking Gate Flag Unset',
+          goal: 'Default tim review behavior without blockingIssuesOnlyAppendTasks',
+          tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      const mockExecutor = createMockReviewExecutor(
+        JSON.stringify({
+          issues: [
+            {
+              severity: 'major',
+              category: 'bug',
+              content: 'Missing null check causes a crash',
+              file: 'src/app.ts',
+              line: '10',
+              suggestion: 'Add a null check',
+            },
+            {
+              severity: 'minor',
+              category: 'style',
+              content: 'Inconsistent naming',
+              file: 'src/app.ts',
+              line: '20',
+              suggestion: 'Rename for consistency',
+            },
+          ],
+          recommendations: [],
+          actionItems: [],
+        })
+      );
+
+      vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+        createMockPlanContext({
+          resolvedPlanFile: '131',
+          planData: {
+            id: 131,
+            title: 'Test Blocking Gate Flag Unset',
+            goal: 'Default tim review behavior without blockingIssuesOnlyAppendTasks',
+            tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/app.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }) as any
+      );
+
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'claude-code',
+      } as any);
+      vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+      vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
+      vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+        prompt: 'test review prompt',
+      } as any);
+
+      promptSelectSpy.mockResolvedValueOnce('append' as any);
+      promptCheckboxSpy.mockResolvedValueOnce([0, 1] as any);
+
+      // No blockingIssuesOnlyAppendTasks option at all — matches ordinary `tim review` callers.
+      const result = await handleReviewCommand(131, {}, { parent: { opts: () => ({}) } });
+
+      expect(promptCheckboxSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          choices: [
+            expect.objectContaining({ name: expect.stringContaining('[MAJOR]') }),
+            expect.objectContaining({ name: expect.stringContaining('[MINOR]') }),
+          ],
+        })
+      );
+
+      expect(result.tasksAppended).toBe(2);
+      expect(result.issuesSaved ?? 0).toBe(0);
+
+      const updatedPlan = (await resolvePlanByNumericId(131, testDir)).plan;
+      expect(updatedPlan.tasks.some((t) => t.title.includes('Missing null check'))).toBe(true);
+      expect(updatedPlan.tasks.some((t) => t.title.includes('Inconsistent naming'))).toBe(true);
+      expect(updatedPlan.reviewIssues ?? []).toHaveLength(0);
+    });
+
+    test('flag set: a critical finding is treated as blocking and offered for append', async () => {
+      await writePlanToDb(
+        {
+          id: 132,
+          title: 'Test Blocking Gate Critical Severity',
+          goal: 'Test blockingIssuesOnlyAppendTasks treats critical as blocking',
+          tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      const mockExecutor = createMockReviewExecutor(
+        JSON.stringify({
+          issues: [
+            {
+              severity: 'critical',
+              category: 'security',
+              content: 'SQL injection via unsanitized input',
+              file: 'src/app.ts',
+              line: '30',
+              suggestion: 'Use parameterized queries',
+            },
+            {
+              severity: 'info',
+              category: 'other',
+              content: 'Pre-existing observation',
+              file: 'src/app.ts',
+              line: '6',
+              suggestion: 'No action needed',
+            },
+          ],
+          recommendations: [],
+          actionItems: [],
+        })
+      );
+
+      vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+        createMockPlanContext({
+          resolvedPlanFile: '132',
+          planData: {
+            id: 132,
+            title: 'Test Blocking Gate Critical Severity',
+            goal: 'Test blockingIssuesOnlyAppendTasks treats critical as blocking',
+            tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/app.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }) as any
+      );
+
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'claude-code',
+      } as any);
+      vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+      vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
+      vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+        prompt: 'test review prompt',
+      } as any);
+
+      promptSelectSpy.mockResolvedValueOnce('append' as any);
+      promptCheckboxSpy.mockResolvedValueOnce([0] as any);
+
+      const result = await handleReviewCommand(
+        132,
+        { blockingIssuesOnlyAppendTasks: true },
+        { parent: { opts: () => ({}) } }
+      );
+
+      expect(promptCheckboxSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          choices: [expect.objectContaining({ name: expect.stringContaining('[CRITICAL]') })],
+        })
+      );
+
+      expect(result.tasksAppended).toBe(1);
+      expect(result.issuesSaved).toBe(1);
+
+      const updatedPlan = (await resolvePlanByNumericId(132, testDir)).plan;
+      expect(updatedPlan.tasks.some((t) => t.title.includes('SQL injection'))).toBe(true);
+      expect(updatedPlan.reviewIssues).toHaveLength(1);
+      expect(updatedPlan.reviewIssues?.[0]?.severity).toBe('info');
+    });
+  });
+
+  describe('review issue disposition persistence (merge dedup, rejected survival, clear guard)', () => {
+    let originalOutputSocket: string | undefined;
+
+    beforeEach(() => {
+      originalOutputSocket = process.env.TIM_OUTPUT_SOCKET;
+      delete process.env.TIM_OUTPUT_SOCKET;
+    });
+
+    afterEach(() => {
+      if (originalOutputSocket === undefined) {
+        delete process.env.TIM_OUTPUT_SOCKET;
+      } else {
+        process.env.TIM_OUTPUT_SOCKET = originalOutputSocket;
+      }
+    });
+
+    test('append-gate merge preserves unrelated saved issues, dedups a matching identity, and keeps the rejected ledger', async () => {
+      await writePlanToDb(
+        {
+          id: 133,
+          title: 'Test Merge Dedup',
+          goal: 'Test merge mode preserves and dedups pre-existing saved issues',
+          tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+          reviewIssues: [
+            {
+              id: 'pre-open-keep',
+              severity: 'minor',
+              category: 'style',
+              content: 'Pre-existing unrelated open issue',
+              file: 'src/other.ts',
+              line: '1',
+              suggestion: 'Leave as is for now',
+            },
+            {
+              id: 'pre-open-dup',
+              severity: 'minor',
+              category: 'style',
+              content: 'Inconsistent naming',
+              file: 'src/app.ts',
+              line: '20',
+              suggestion: 'An older suggestion for the same finding',
+            },
+            {
+              id: 'pre-rejected',
+              severity: 'major',
+              category: 'bug',
+              content: 'A previously rejected finding',
+              file: 'src/rejected.ts',
+              line: '5',
+              rejected: true,
+              rejectedReason: 'Intentional, matches an existing pattern',
+              rejectedAt: '2026-08-03T12:00:00.000Z',
+            },
+          ],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      const mockExecutor = createMockReviewExecutor(
+        JSON.stringify({
+          issues: [
+            {
+              severity: 'major',
+              category: 'bug',
+              content: 'Missing null check causes a crash',
+              file: 'src/app.ts',
+              line: '10',
+              suggestion: 'Add a null check',
+            },
+            {
+              // Same identity (category/content/file/line) as the pre-existing
+              // 'pre-open-dup' issue, but with a refreshed suggestion.
+              severity: 'minor',
+              category: 'style',
+              content: 'Inconsistent naming',
+              file: 'src/app.ts',
+              line: '20',
+              suggestion: 'Rename for consistency',
+            },
+          ],
+          recommendations: [],
+          actionItems: [],
+        })
+      );
+
+      vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+        createMockPlanContext({
+          resolvedPlanFile: '133',
+          planData: {
+            id: 133,
+            title: 'Test Merge Dedup',
+            goal: 'Test merge mode preserves and dedups pre-existing saved issues',
+            tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/app.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }) as any
+      );
+
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'claude-code',
+      } as any);
+      vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+      vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
+      vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+        prompt: 'test review prompt',
+      } as any);
+
+      promptSelectSpy.mockResolvedValueOnce('append' as any);
+      promptCheckboxSpy.mockResolvedValueOnce([0] as any);
+
+      const result = await handleReviewCommand(
+        133,
+        { blockingIssuesOnlyAppendTasks: true },
+        { parent: { opts: () => ({}) } }
+      );
+
+      expect(result.tasksAppended).toBe(1);
+      expect(result.issuesSaved).toBe(1);
+
+      const updatedPlan = (await resolvePlanByNumericId(133, testDir)).plan;
+      expect(updatedPlan.tasks.some((t) => t.title.includes('Missing null check'))).toBe(true);
+
+      // Rejected entry first (per applyReviewIssueSave ordering), then open issues in their
+      // original order: the unrelated pre-existing issue untouched, and the matching-identity
+      // issue updated in place (not duplicated) with the new review's suggestion.
+      expect(updatedPlan.reviewIssues).toEqual([
+        expect.objectContaining({
+          id: 'pre-rejected',
+          rejected: true,
+          rejectedReason: 'Intentional, matches an existing pattern',
+        }),
+        expect.objectContaining({
+          id: 'pre-open-keep',
+          content: 'Pre-existing unrelated open issue',
+          suggestion: 'Leave as is for now',
+        }),
+        expect.objectContaining({
+          content: 'Inconsistent naming',
+          suggestion: 'Rename for consistency',
+        }),
+      ]);
+      expect(updatedPlan.reviewIssues).toHaveLength(3);
+    });
+
+    test('exit-manually-resolved clears saved open issues but preserves the rejected ledger, even with no new findings', async () => {
+      await writePlanToDb(
+        {
+          id: 134,
+          title: 'Test Exit Manually Resolved Clear Guard',
+          goal: 'Test clearing preserves rejected entries when nothing new is saved',
+          tasks: [{ title: 'Test task', description: 'A test task, already fixed by hand' }],
+          reviewIssues: [
+            {
+              id: 'pre-open-clear-me',
+              severity: 'minor',
+              category: 'style',
+              content: 'Stale open finding that was manually resolved',
+              file: 'src/manual.ts',
+              line: '1',
+            },
+            {
+              id: 'pre-rejected-keep',
+              severity: 'major',
+              category: 'bug',
+              content: 'A previously rejected finding',
+              file: 'src/rejected.ts',
+              line: '5',
+              rejected: true,
+              rejectedReason: 'Intentional, matches an existing pattern',
+              rejectedAt: '2026-08-03T12:00:00.000Z',
+            },
+          ],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      // The review still finds a new issue, but exit-manually-resolved discards it unsaved
+      // (the user is asserting the plan is already fixed by hand) rather than persisting it.
+      const mockExecutor = createMockReviewExecutor(
+        JSON.stringify({
+          issues: [
+            {
+              severity: 'minor',
+              category: 'style',
+              content: 'A fresh finding the user says is already handled',
+              file: 'src/manual.ts',
+              line: '2',
+              suggestion: 'No action needed',
+            },
+          ],
+          recommendations: [],
+          actionItems: [],
+        })
+      );
+
+      vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+        createMockPlanContext({
+          resolvedPlanFile: '134',
+          planData: {
+            id: 134,
+            title: 'Test Exit Manually Resolved Clear Guard',
+            goal: 'Test clearing preserves rejected entries when nothing new is saved',
+            tasks: [{ title: 'Test task', description: 'A test task, already fixed by hand' }],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/manual.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }) as any
+      );
+
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'claude-code',
+      } as any);
+      vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+      vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
+      vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+        prompt: 'test review prompt',
+      } as any);
+
+      // promptSelectSpy's beforeEach default already resolves to 'exit-manually-resolved'.
+      const result = await handleReviewCommand(134, {}, { parent: { opts: () => ({}) } });
+
+      expect(result.tasksAppended).toBe(0);
+      expect(result.issuesSaved ?? 0).toBe(0);
+
+      const updatedPlan = (await resolvePlanByNumericId(134, testDir)).plan;
+      // The freshly found issue is discarded unsaved; the stale pre-existing open issue is
+      // cleared; the rejected ledger entry survives.
+      expect(updatedPlan.reviewIssues).toEqual([
+        expect.objectContaining({
+          id: 'pre-rejected-keep',
+          rejected: true,
+        }),
+      ]);
+      expect(updatedPlan.reviewIssues).toHaveLength(1);
+    });
+
+    test('interactive exit (save-for-later) with an empty selection does not wipe the open issue queue', async () => {
+      await writePlanToDb(
+        {
+          id: 140,
+          title: 'Test Exit Empty Selection Guard',
+          goal: 'Test that choosing exit with zero issues selected is a true no-op',
+          tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+          reviewIssues: [
+            {
+              id: 'pre-open-untouched',
+              severity: 'minor',
+              category: 'style',
+              content: 'Pre-existing open issue that must survive an empty exit selection',
+              file: 'src/other.ts',
+              line: '1',
+              suggestion: 'Leave as is for now',
+            },
+            {
+              id: 'pre-rejected-untouched',
+              severity: 'major',
+              category: 'bug',
+              content: 'A previously rejected finding',
+              file: 'src/rejected.ts',
+              line: '5',
+              rejected: true,
+              rejectedReason: 'Intentional, matches an existing pattern',
+              rejectedAt: '2026-08-03T12:00:00.000Z',
+            },
+          ],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      const beforePlan = (await resolvePlanByNumericId(140, testDir)).plan;
+
+      const mockExecutor = createMockReviewExecutor(
+        JSON.stringify({
+          issues: [
+            {
+              severity: 'minor',
+              category: 'style',
+              content: 'A fresh finding the user declines to save',
+              file: 'src/app.ts',
+              line: '10',
+              suggestion: 'Consider a fix later',
+            },
+          ],
+          recommendations: [],
+          actionItems: [],
+        })
+      );
+
+      vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+        createMockPlanContext({
+          resolvedPlanFile: '140',
+          planData: {
+            id: 140,
+            title: 'Test Exit Empty Selection Guard',
+            goal: 'Test that choosing exit with zero issues selected is a true no-op',
+            tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/app.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }) as any
+      );
+
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'claude-code',
+      } as any);
+      vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+      vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
+      vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+        prompt: 'test review prompt',
+      } as any);
+
+      // Choose "Exit (save issues for later)" and select zero issues from the checkbox prompt.
+      promptSelectSpy.mockResolvedValueOnce('exit' as any);
+      promptCheckboxSpy.mockResolvedValueOnce([] as any);
+
+      const result = await handleReviewCommand(140, {}, { parent: { opts: () => ({}) } });
+
+      // Before the consolidation, an empty exit selection fell through to an empty
+      // replace-mode save, which wiped the plan's entire open issue queue. The new
+      // disposition-based path must skip persistence entirely instead.
+      expect(result.tasksAppended).toBe(0);
+      expect(result.issuesSaved ?? 0).toBe(0);
+      expect(vi.mocked(loggingModule.log)).toHaveBeenCalledWith(
+        expect.stringContaining('No issues selected to save for later.')
+      );
+
+      const updatedPlan = (await resolvePlanByNumericId(140, testDir)).plan;
+      expect(updatedPlan.reviewIssues).toEqual(beforePlan.reviewIssues);
+      // No plan write happened at all: updatedAt must not have moved.
+      expect(updatedPlan.updatedAt).toEqual(beforePlan.updatedAt);
+    });
+
+    test('--issues replay combined with --save-issues does not re-write the plan', async () => {
+      const originalOutputSocket = process.env.TIM_OUTPUT_SOCKET;
+      process.env.TIM_OUTPUT_SOCKET = '/tmp/does-not-need-to-exist.sock';
+
+      try {
+        await writePlanToDb(
+          {
+            id: 141,
+            title: 'Test Issues Replay Save Guard',
+            goal: 'Test that --issues combined with --save-issues does not re-persist',
+            tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+            reviewIssues: [
+              {
+                id: 'pre-open-replay',
+                severity: 'major',
+                category: 'bug',
+                content: 'An open issue saved from a prior review run',
+                file: 'src/app.ts',
+                line: '10',
+                suggestion: 'Fix it',
+              },
+              {
+                id: 'pre-rejected-replay',
+                severity: 'minor',
+                category: 'style',
+                content: 'A previously rejected finding',
+                file: 'src/rejected.ts',
+                line: '5',
+                rejected: true,
+                rejectedReason: 'Intentional, matches an existing pattern',
+                rejectedAt: '2026-08-03T12:00:00.000Z',
+              },
+            ],
+          },
+          { cwdForIdentity: testDir }
+        );
+
+        const beforePlan = (await resolvePlanByNumericId(141, testDir)).plan;
+
+        vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+          createMockPlanContext({
+            resolvedPlanFile: '141',
+            planData: {
+              id: 141,
+              title: 'Test Issues Replay Save Guard',
+              goal: 'Test that --issues combined with --save-issues does not re-persist',
+              tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+              reviewIssues: beforePlan.reviewIssues,
+            },
+            parentChain: [],
+            completedChildren: [],
+            diffResult: {
+              hasChanges: true,
+              changedFiles: ['src/app.ts'],
+              baseBranch: 'main',
+              diffContent: 'mock diff content',
+            },
+            incrementalSummary: null,
+            noChangesDetected: false,
+          }) as any
+        );
+
+        vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+          defaultExecutor: 'claude-code',
+        } as any);
+        vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
+
+        // Non-interactive (TIM_OUTPUT_SOCKET forces this regardless of TIM_INTERACTIVE) and
+        // noAutofix so handleReviewIssueActions takes none of its action branches; the
+        // `options.issues` replay path is what's under test here.
+        const result = await handleReviewCommand(
+          141,
+          { issues: true, saveIssues: true, noAutofix: true },
+          { parent: { opts: () => ({}) } }
+        );
+
+        expect(result.issuesSaved ?? 0).toBe(0);
+
+        const updatedPlan = (await resolvePlanByNumericId(141, testDir)).plan;
+        expect(updatedPlan.reviewIssues).toEqual(beforePlan.reviewIssues);
+        // No plan write occurred: updatedAt must not have moved.
+        expect(updatedPlan.updatedAt).toEqual(beforePlan.updatedAt);
+      } finally {
+        if (originalOutputSocket === undefined) {
+          delete process.env.TIM_OUTPUT_SOCKET;
+        } else {
+          process.env.TIM_OUTPUT_SOCKET = originalOutputSocket;
+        }
+      }
+    });
+  });
+
   test('detectIssuesInReview - detects issues via totalIssues count', () => {
     const reviewResult = {
       summary: { totalIssues: 2 },
@@ -4114,6 +7317,319 @@ describe('Autofix functionality', () => {
     expect(autofixPrompt).toContain('Fix the actionable issue');
     expect(autofixPrompt).not.toContain('Descriptive annotation only');
     expect(autofixPrompt).not.toContain('src/note.ts');
+  });
+
+  describe('interactive fix-claude and cleanup actions resolve matching saved issues', () => {
+    let originalOutputSocket: string | undefined;
+
+    beforeEach(() => {
+      originalOutputSocket = process.env.TIM_OUTPUT_SOCKET;
+      delete process.env.TIM_OUTPUT_SOCKET;
+    });
+
+    afterEach(() => {
+      if (originalOutputSocket === undefined) {
+        delete process.env.TIM_OUTPUT_SOCKET;
+      } else {
+        process.env.TIM_OUTPUT_SOCKET = originalOutputSocket;
+      }
+    });
+
+    test('interactive fix-claude resolves the saved issue it fixes, keeping the rejected ledger', async () => {
+      await writePlanToDb(
+        {
+          id: 750,
+          title: 'Interactive fix-claude resolves saved issues',
+          goal: 'Autofix via the interactive action must resolve matching saved issues',
+          tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+          reviewIssues: [
+            {
+              id: 'pre-rejected',
+              severity: 'major',
+              category: 'bug',
+              content: 'A previously rejected finding',
+              file: 'src/rejected.ts',
+              line: 5,
+              rejected: true,
+              rejectedReason: 'Intentional, matches an existing pattern',
+              rejectedAt: '2026-08-03T12:00:00.000Z',
+            },
+            {
+              id: 'pre-open-to-resolve',
+              severity: 'minor',
+              category: 'style',
+              content: 'Inconsistent naming',
+              file: 'src/app.ts',
+              line: 20,
+            },
+          ],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      const mockExecutor = {
+        execute: vi.fn(async (_prompt: string, metadata: any) => {
+          if (metadata.executionMode === 'review') {
+            return JSON.stringify({
+              issues: [
+                {
+                  severity: 'minor',
+                  category: 'style',
+                  content: 'Inconsistent naming',
+                  file: 'src/app.ts',
+                  line: '20',
+                  suggestion: 'Rename for consistency',
+                },
+              ],
+              recommendations: [],
+              actionItems: [],
+            });
+          }
+          expect(metadata.executionMode).toBe('normal');
+          return 'Autofix completed successfully';
+        }),
+      };
+
+      vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+        createMockPlanContext({
+          resolvedPlanFile: '750',
+          planData: {
+            id: 750,
+            title: 'Interactive fix-claude resolves saved issues',
+            goal: 'Autofix via the interactive action must resolve matching saved issues',
+            tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/app.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }) as any
+      );
+
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'claude-code',
+      } as any);
+      vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+      vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
+      vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+        prompt: 'test review prompt',
+      } as any);
+
+      promptSelectSpy.mockResolvedValueOnce('fix-claude' as any);
+      promptCheckboxSpy.mockResolvedValueOnce([0] as any);
+
+      const result = await handleReviewCommand(750, {}, { parent: { opts: () => ({}) } });
+
+      expect(result.tasksAppended).toBe(0);
+      expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
+
+      const updatedPlan = (await resolvePlanByNumericId(750, testDir)).plan;
+      // The matching saved finding was resolved by the autofix; the rejected ledger survives.
+      expect(updatedPlan.reviewIssues).toEqual([
+        expect.objectContaining({ id: 'pre-rejected', rejected: true }),
+      ]);
+    });
+
+    test('interactive cleanup resolves the saved issues it moves into a cleanup plan, keeping the rejected ledger', async () => {
+      await writePlanToDb(
+        {
+          id: 751,
+          title: 'Interactive cleanup resolves saved issues',
+          goal: 'Cleanup via the interactive action must resolve matching saved issues',
+          tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+          reviewIssues: [
+            {
+              id: 'pre-rejected',
+              severity: 'major',
+              category: 'bug',
+              content: 'A previously rejected finding',
+              file: 'src/rejected.ts',
+              line: 5,
+              rejected: true,
+              rejectedReason: 'Intentional, matches an existing pattern',
+              rejectedAt: '2026-08-03T12:00:00.000Z',
+            },
+            {
+              id: 'pre-open-to-resolve',
+              severity: 'minor',
+              category: 'style',
+              content: 'Inconsistent naming',
+              file: 'src/app.ts',
+              line: 20,
+            },
+          ],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      const mockExecutor = createMockReviewExecutor(
+        JSON.stringify({
+          issues: [
+            {
+              severity: 'minor',
+              category: 'style',
+              content: 'Inconsistent naming',
+              file: 'src/app.ts',
+              line: '20',
+              suggestion: 'Rename for consistency',
+            },
+          ],
+          recommendations: [],
+          actionItems: [],
+        })
+      );
+
+      vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+        createMockPlanContext({
+          resolvedPlanFile: '751',
+          planData: {
+            id: 751,
+            title: 'Interactive cleanup resolves saved issues',
+            goal: 'Cleanup via the interactive action must resolve matching saved issues',
+            tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/app.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }) as any
+      );
+
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'claude-code',
+      } as any);
+      vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+      vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
+      vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+        prompt: 'test review prompt',
+      } as any);
+
+      promptSelectSpy.mockResolvedValueOnce('cleanup' as any);
+      promptCheckboxSpy.mockResolvedValueOnce([0] as any);
+
+      const result = await handleReviewCommand(751, {}, { parent: { opts: () => ({}) } });
+
+      expect(result.tasksAppended).toBe(0);
+
+      const updatedPlan = (await resolvePlanByNumericId(751, testDir)).plan;
+      // The matching saved finding was resolved because it was selected into the cleanup
+      // plan; the rejected ledger survives.
+      expect(updatedPlan.reviewIssues).toEqual([
+        expect.objectContaining({ id: 'pre-rejected', rejected: true }),
+      ]);
+      // A real cleanup plan was created as a dependency of this plan.
+      expect(updatedPlan.dependencies?.length).toBe(1);
+    });
+  });
+
+  describe('review issue disposition persistence propagates failures', () => {
+    let originalOutputSocket: string | undefined;
+
+    beforeEach(() => {
+      originalOutputSocket = process.env.TIM_OUTPUT_SOCKET;
+      delete process.env.TIM_OUTPUT_SOCKET;
+    });
+
+    afterEach(() => {
+      if (originalOutputSocket === undefined) {
+        delete process.env.TIM_OUTPUT_SOCKET;
+      } else {
+        process.env.TIM_OUTPUT_SOCKET = originalOutputSocket;
+      }
+    });
+
+    test('a write failure during persistence propagates and names what was lost', async () => {
+      await writePlanToDb(
+        {
+          id: 752,
+          title: 'Persistence failure propagation',
+          goal: 'A failed disposition write must propagate, not be swallowed',
+          tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+        },
+        { cwdForIdentity: testDir }
+      );
+
+      const mockExecutor = createMockReviewExecutor(
+        JSON.stringify({
+          issues: [
+            {
+              severity: 'major',
+              category: 'bug',
+              content: 'A blocking finding that will fail to persist',
+              file: 'src/app.ts',
+              line: '10',
+              suggestion: 'Fix it',
+            },
+          ],
+          recommendations: [],
+          actionItems: [],
+        })
+      );
+
+      vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+        createMockPlanContext({
+          resolvedPlanFile: '752',
+          planData: {
+            id: 752,
+            title: 'Persistence failure propagation',
+            goal: 'A failed disposition write must propagate, not be swallowed',
+            tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/app.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }) as any
+      );
+
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'claude-code',
+      } as any);
+      vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+      vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
+      vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+        prompt: 'test review prompt',
+      } as any);
+
+      promptSelectSpy.mockResolvedValueOnce('append' as any);
+      promptCheckboxSpy.mockResolvedValueOnce([0] as any);
+
+      const writeSpy = vi
+        .spyOn(plansModule, 'writePlanFile')
+        .mockRejectedValueOnce(new Error('disk full'));
+
+      try {
+        await expect(
+          handleReviewCommand(752, {}, { parent: { opts: () => ({}) } })
+        ).rejects.toThrow(
+          /Failed to persist review issue disposition \(1 task\(s\) to append, 1 issue\(s\) to resolve\): disk full/
+        );
+      } finally {
+        writeSpy.mockRestore();
+      }
+
+      // The write never completed: no task was appended.
+      const updatedPlan = (await resolvePlanByNumericId(752, testDir)).plan;
+      expect(updatedPlan.tasks).toHaveLength(1);
+    });
   });
 });
 

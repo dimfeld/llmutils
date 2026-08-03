@@ -175,6 +175,13 @@ function buildTargetDescription(target: ReviewTarget): string {
   }
 }
 
+/**
+ * Note: this deliberately does not teach the implementer's `--task-index` flag,
+ * unlike the batch orchestrator prompt. Autoreview fixes a review target — a
+ * worktree, branch, or PR — and never selects a batch of plan tasks, so there is
+ * no in-scope task index for the agent to pass. Offering the flag here would
+ * only invite it to guess one.
+ */
 function buildSubagentGuidance(target: ReviewTarget): string {
   if (target.kind === 'plan') {
     return `- For non-conflicting, independent fixes, you may delegate to your own subagent capability; because this is plan-backed, \`tim subagent implementer ${target.planId} --input "..."\` is also available. Handle same-file or overlapping fixes directly to avoid conflicts.`;
