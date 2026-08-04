@@ -211,7 +211,7 @@ ${reviewer}
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
 
-Each subagent command may take a long time to complete and is expected to print no output until it finishes. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
+Each subagent command may take a long time to complete because it may run multiple iterations of builds and test suites, and is expected to print no output until it finishes. Always use a long timeout when invoking them via the shell command tool.
 `;
 }
 
@@ -236,12 +236,12 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
       : '';
 
   const implementationSteps = `
-   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a long timeout${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
    - Wait for the subagent to complete and review its output`;
 
   const testingPhase = `${options.batchMode ? '3' : '2'}. **Testing Phase**
-   - After implementation is complete, run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - After implementation is complete, run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a long timeout${dynamicNote}
    - When choosing an executor dynamically, prefer using the same executor that was used for the implementer to maintain consistency and leverage the same strengths.
    - In the input (\`--input\` or \`--input-file\`), ask the tester to create comprehensive tests for the implemented functionality, if needed
    - Emphasize that tests must test actual implementation code. Testing a reproduction or simulation of the code is useless.
@@ -457,7 +457,7 @@ ${reviewerAgent}
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
 
-Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
+Each subagent command may take a long time to complete because it may run multiple iterations of builds and test suites. Always use a long timeout when invoking them via the shell command tool.
 `;
 
   const taskSelectionPhase = options.batchMode
@@ -492,7 +492,7 @@ You MUST follow this simplified loop:
 
 ${taskSelectionPhase}
    - Explore the repository and create a plan on how to implement the task.
-   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a long timeout${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
    - Wait for the subagent to complete and review its output
 
@@ -614,7 +614,7 @@ ${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is c
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
 
-Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
+Each subagent command may take a long time to complete because it may run multiple iterations of builds and test suites. Always use a long timeout when invoking them via the shell command tool.
 `
     : `## Available Agents
 
@@ -626,7 +626,7 @@ ${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is c
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
 
-Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the shell command tool.
+Each subagent command may take a long time to complete because it may run multiple iterations of builds and test suites. Always use a long timeout when invoking them via the shell command tool.
 `;
 
   const taskSelectionPhase = options.batchMode
@@ -682,7 +682,7 @@ Each subagent command may take a long time to complete. Always use a timeout of 
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.`
     : `${verificationPhaseNumber}. **Testing Phase**
-   - Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a long timeout${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), include:
      - TDD tests output and implementer output
      - Which tasks are in scope
@@ -710,7 +710,7 @@ ${reviewExecutorGuidance}
 You MUST follow this TDD process:
 
 ${taskSelectionPhase}
-   - Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a long timeout${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), specify in-scope tasks and expected behavior to define
    - Explicitly instruct the TDD tests agent to:
      - Write tests first
@@ -719,7 +719,7 @@ ${taskSelectionPhase}
    - Capture and preserve this output for downstream phases
 
 ${implementationPhaseNumber}. **Implementation Phase**
-   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a long timeout${dynamicNote}
    - In the input, include the TDD tests output and direct the implementer to make those tests pass
    - Emphasize that implementation should be driven by existing TDD tests, not by adding unrelated new behavior
    - Wait for the subagent to complete and review its output
