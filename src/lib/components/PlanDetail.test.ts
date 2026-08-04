@@ -776,6 +776,34 @@ describe('PlanDetail', () => {
     expect(body).toContain('Required for compatibility with the external API.');
   });
 
+  test('shows the rejected issue filter disabled by default', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          reviewIssues: [
+            {
+              severity: 'major',
+              category: 'bug',
+              content: 'Open finding',
+            },
+            {
+              severity: 'minor',
+              category: 'style',
+              content: 'Rejected finding',
+              rejected: true,
+            },
+          ],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('Hide rejected');
+    expect(body).toContain('Open finding');
+    expect(body).toContain('Rejected finding');
+    expect(body).not.toMatch(/id="hide-rejected-review-issues"[^>]*checked/);
+  });
+
   test('shows Run children panel when the only eligible child is externally blocked', () => {
     const { body } = render(PlanDetailComponent, {
       props: {

@@ -469,6 +469,7 @@
   let errorMessage: string | null = $state(null);
   let successMessage: { text: string; connectionId?: string } | null = $state(null);
   let reviewIssueSubmitting: number | 'all' | 'clear' | null = $state(null);
+  let hideRejectedReviewIssues = $state(false);
   let editingNote = $state(false);
   let noteDraft = $state(untrack(() => plan.note ?? ''));
   let savingNote = $state(false);
@@ -821,6 +822,15 @@
             return parseLineStart(a.issue.line) - parseLineStart(b.issue.line);
           })
       : []
+  );
+  let displayedReviewIssues = $derived(
+    hideRejectedReviewIssues
+      ? sortedReviewIssues.filter(({ issue }) => issue.rejected !== true)
+      : sortedReviewIssues
+  );
+  let hasHiddenRejectedReviewIssues = $derived(
+    hideRejectedReviewIssues &&
+      (plan.reviewIssues?.some((issue) => issue.rejected === true) ?? false)
   );
 
   let isEligibleForProof = $derived(
@@ -1622,11 +1632,23 @@
     <!-- Review Issues -->
     {#if plan.reviewIssues && plan.reviewIssues.length > 0}
       <div>
-        <div class="mb-2 flex items-center justify-between">
+        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             Review Issues ({plan.reviewIssues.length})
           </h3>
           <div class="flex items-center gap-1.5">
+            <label
+              for="hide-rejected-review-issues"
+              class="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              <input
+                id="hide-rejected-review-issues"
+                type="checkbox"
+                bind:checked={hideRejectedReviewIssues}
+                class="rounded border-gray-300 text-amber-600 focus:ring-amber-500 dark:border-gray-600 dark:bg-gray-800"
+              />
+              Hide rejected
+            </label>
             <Button
               type="button"
               variant="outline"
@@ -1649,125 +1671,131 @@
             </button>
           </div>
         </div>
-        <ul class="space-y-2">
-          {#each sortedReviewIssues as { issue, originalIndex } (originalIndex)}
-            {@const isRejected = issue.rejected === true}
-            {@const severityClass =
-              issue.severity === 'critical'
-                ? 'border-red-500 bg-red-50 dark:bg-red-950/30'
-                : issue.severity === 'major'
-                  ? 'border-orange-400 bg-orange-50 dark:bg-orange-950/30'
-                  : issue.severity === 'minor'
-                    ? 'border-yellow-400 bg-yellow-50 dark:bg-yellow-950/30'
-                    : 'border-gray-300 bg-gray-50 dark:bg-gray-800/30'}
-            {@const severityTextClass =
-              issue.severity === 'critical'
-                ? 'text-red-700 dark:text-red-400'
-                : issue.severity === 'major'
-                  ? 'text-orange-700 dark:text-orange-400'
-                  : issue.severity === 'minor'
-                    ? 'text-yellow-700 dark:text-yellow-400'
-                    : 'text-gray-500 dark:text-gray-400'}
-            {@const issueCopyId = `issue-${originalIndex}`}
-            {@const issueCopyText = [
-              issue.file
-                ? `${issue.file}${issue.line !== undefined ? `:${issue.line}` : ''}`
-                : null,
-              issue.content,
-              issue.suggestion ? `Suggestion: ${issue.suggestion}` : null,
-            ]
-              .filter(Boolean)
-              .join('\n\n')}
-            <li class="group rounded border-l-2 px-3 py-2 text-sm {severityClass}">
-              <div class="flex items-center gap-2">
-                <span class="font-medium {severityTextClass}">{issue.severity}</span>
-                <span class="text-muted-foreground">·</span>
-                <span class="font-medium text-foreground">{issue.category}</span>
-                {#if isRejected}
-                  <span
-                    class="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
-                    title={issue.rejectedReason ?? 'No rejection reason recorded'}
-                  >
-                    Rejected
-                  </span>
-                {/if}
-                {#if issue.source}
-                  <span
-                    class="rounded bg-purple-100 px-1 py-0.5 text-xs text-purple-700 dark:bg-purple-950/50 dark:text-purple-400"
-                  >
-                    {issue.source === 'claude-code' ? 'Claude' : 'Codex'}
-                  </span>
-                {/if}
-                {#if issue.file}
-                  <span class="font-mono text-xs text-muted-foreground">
-                    {issue.file}{issue.line !== undefined ? `:${issue.line}` : ''}
-                  </span>
-                {/if}
-                <div class="ml-auto flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onclick={() => handleConvertToTask(originalIndex)}
-                    disabled={reviewIssueSubmitting !== null}
-                    class="rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-blue-100 hover:text-blue-700 disabled:opacity-50 dark:hover:bg-blue-950/50 dark:hover:text-blue-400"
-                    aria-label="Convert to task"
-                    title="Convert to task"
-                  >
-                    {reviewIssueSubmitting === originalIndex ? '...' : '→ Task'}
-                  </button>
-                  <CopyButton
-                    text={issueCopyText}
-                    mode="icon"
-                    className="rounded p-0.5 text-muted-foreground transition-opacity hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10"
-                    idleClass="opacity-0 group-hover:opacity-100"
-                    copiedClass="opacity-100"
-                    iconClass="size-3"
-                    title="Copy issue"
-                    ariaLabel="Copy issue"
-                  />
-                  <button
-                    type="button"
-                    onclick={() => handleRemoveReviewIssue(originalIndex)}
-                    disabled={reviewIssueSubmitting !== null}
-                    class="rounded p-0.5 text-muted-foreground hover:bg-red-100 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-                    aria-label="Dismiss issue"
-                    title="Dismiss issue"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg
+        {#if displayedReviewIssues.length > 0}
+          <ul class="space-y-2">
+            {#each displayedReviewIssues as { issue, originalIndex } (originalIndex)}
+              {@const isRejected = issue.rejected === true}
+              {@const severityClass =
+                issue.severity === 'critical'
+                  ? 'border-red-500 bg-red-50 dark:bg-red-950/30'
+                  : issue.severity === 'major'
+                    ? 'border-orange-400 bg-orange-50 dark:bg-orange-950/30'
+                    : issue.severity === 'minor'
+                      ? 'border-yellow-400 bg-yellow-50 dark:bg-yellow-950/30'
+                      : 'border-gray-300 bg-gray-50 dark:bg-gray-800/30'}
+              {@const severityTextClass =
+                issue.severity === 'critical'
+                  ? 'text-red-700 dark:text-red-400'
+                  : issue.severity === 'major'
+                    ? 'text-orange-700 dark:text-orange-400'
+                    : issue.severity === 'minor'
+                      ? 'text-yellow-700 dark:text-yellow-400'
+                      : 'text-gray-500 dark:text-gray-400'}
+              {@const issueCopyId = `issue-${originalIndex}`}
+              {@const issueCopyText = [
+                issue.file
+                  ? `${issue.file}${issue.line !== undefined ? `:${issue.line}` : ''}`
+                  : null,
+                issue.content,
+                issue.suggestion ? `Suggestion: ${issue.suggestion}` : null,
+              ]
+                .filter(Boolean)
+                .join('\n\n')}
+              <li class="group rounded border-l-2 px-3 py-2 text-sm {severityClass}">
+                <div class="flex items-center gap-2">
+                  <span class="font-medium {severityTextClass}">{issue.severity}</span>
+                  <span class="text-muted-foreground">·</span>
+                  <span class="font-medium text-foreground">{issue.category}</span>
+                  {#if isRejected}
+                    <span
+                      class="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+                      title={issue.rejectedReason ?? 'No rejection reason recorded'}
                     >
-                  </button>
-                </div>
-              </div>
-              <div class="plan-rendered-content mt-1 text-foreground">
-                {@html renderMarkdown(issue.content)}
-              </div>
-              {#if isRejected}
-                <div
-                  class="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
-                >
-                  <span class="font-semibold">Rejection reason:</span>
-                  {issue.rejectedReason ?? 'No rejection reason recorded'}
-                </div>
-              {/if}
-              {#if issue.suggestion}
-                <div class="mt-1 text-xs text-muted-foreground">
-                  <span class="font-medium text-green-700 dark:text-green-400">Suggestion:</span>
-                  <div class="plan-rendered-content mt-0.5 text-xs text-muted-foreground">
-                    {@html renderMarkdown(issue.suggestion)}
+                      Rejected
+                    </span>
+                  {/if}
+                  {#if issue.source}
+                    <span
+                      class="rounded bg-purple-100 px-1 py-0.5 text-xs text-purple-700 dark:bg-purple-950/50 dark:text-purple-400"
+                    >
+                      {issue.source === 'claude-code' ? 'Claude' : 'Codex'}
+                    </span>
+                  {/if}
+                  {#if issue.file}
+                    <span class="font-mono text-xs text-muted-foreground">
+                      {issue.file}{issue.line !== undefined ? `:${issue.line}` : ''}
+                    </span>
+                  {/if}
+                  <div class="ml-auto flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onclick={() => handleConvertToTask(originalIndex)}
+                      disabled={reviewIssueSubmitting !== null}
+                      class="rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-blue-100 hover:text-blue-700 disabled:opacity-50 dark:hover:bg-blue-950/50 dark:hover:text-blue-400"
+                      aria-label="Convert to task"
+                      title="Convert to task"
+                    >
+                      {reviewIssueSubmitting === originalIndex ? '...' : '→ Task'}
+                    </button>
+                    <CopyButton
+                      text={issueCopyText}
+                      mode="icon"
+                      className="rounded p-0.5 text-muted-foreground transition-opacity hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10"
+                      idleClass="opacity-0 group-hover:opacity-100"
+                      copiedClass="opacity-100"
+                      iconClass="size-3"
+                      title="Copy issue"
+                      ariaLabel="Copy issue"
+                    />
+                    <button
+                      type="button"
+                      onclick={() => handleRemoveReviewIssue(originalIndex)}
+                      disabled={reviewIssueSubmitting !== null}
+                      class="rounded p-0.5 text-muted-foreground hover:bg-red-100 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+                      aria-label="Dismiss issue"
+                      title="Dismiss issue"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg
+                      >
+                    </button>
                   </div>
                 </div>
-              {/if}
-            </li>
-          {/each}
-        </ul>
+                <div class="plan-rendered-content mt-1 text-foreground">
+                  {@html renderMarkdown(issue.content)}
+                </div>
+                {#if isRejected}
+                  <div
+                    class="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
+                  >
+                    <span class="font-semibold">Rejection reason:</span>
+                    {issue.rejectedReason ?? 'No rejection reason recorded'}
+                  </div>
+                {/if}
+                {#if issue.suggestion}
+                  <div class="mt-1 text-xs text-muted-foreground">
+                    <span class="font-medium text-green-700 dark:text-green-400">Suggestion:</span>
+                    <div class="plan-rendered-content mt-0.5 text-xs text-muted-foreground">
+                      {@html renderMarkdown(issue.suggestion)}
+                    </div>
+                  </div>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {:else if hasHiddenRejectedReviewIssues}
+          <p class="text-xs text-muted-foreground">
+            All saved review issues are rejected. Turn off “Hide rejected” to show them.
+          </p>
+        {/if}
       </div>
     {/if}
 

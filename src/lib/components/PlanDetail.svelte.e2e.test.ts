@@ -229,6 +229,62 @@ describe('PlanDetail action selection', () => {
     });
   });
 
+  test('hides rejected saved review issues when the filter is enabled', async () => {
+    renderPlan(
+      makePlanDetail({
+        reviewIssues: [
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'Open finding',
+          },
+          {
+            severity: 'minor',
+            category: 'style',
+            content: 'Rejected finding',
+            rejected: true,
+          },
+        ],
+        prStatuses: [],
+      })
+    );
+
+    const hideRejected = page.getByLabelText('Hide rejected');
+    await expect.element(hideRejected).not.toBeChecked();
+    await expect.element(page.getByText('Open finding')).toBeInTheDocument();
+    await expect.element(page.getByText('Rejected finding')).toBeInTheDocument();
+
+    await hideRejected.click();
+
+    await expect.element(page.getByText('Open finding')).toBeInTheDocument();
+    await expect.element(page.getByText('Rejected finding')).not.toBeInTheDocument();
+  });
+
+  test('does not show the rejected empty state when no rejected issues exist', async () => {
+    renderPlan(
+      makePlanDetail({
+        reviewIssues: [
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'Open finding',
+          },
+        ],
+        prStatuses: [],
+      })
+    );
+
+    await page.getByLabelText('Hide rejected').click();
+
+    await expect
+      .element(
+        page.getByText(
+          'All saved review issues are rejected. Turn off “Hide rejected” to show them.'
+        )
+      )
+      .not.toBeInTheDocument();
+  });
+
   test('shows Run Agent without Generate for a taskless simple plan', async () => {
     renderPlan(
       makePlanDetail({
