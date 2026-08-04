@@ -1651,6 +1651,7 @@
         </div>
         <ul class="space-y-2">
           {#each sortedReviewIssues as { issue, originalIndex } (originalIndex)}
+            {@const isRejected = issue.rejected === true}
             {@const severityClass =
               issue.severity === 'critical'
                 ? 'border-red-500 bg-red-50 dark:bg-red-950/30'
@@ -1682,6 +1683,14 @@
                 <span class="font-medium {severityTextClass}">{issue.severity}</span>
                 <span class="text-muted-foreground">·</span>
                 <span class="font-medium text-foreground">{issue.category}</span>
+                {#if isRejected}
+                  <span
+                    class="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+                    title={issue.rejectedReason ?? 'No rejection reason recorded'}
+                  >
+                    Rejected
+                  </span>
+                {/if}
                 {#if issue.source}
                   <span
                     class="rounded bg-purple-100 px-1 py-0.5 text-xs text-purple-700 dark:bg-purple-950/50 dark:text-purple-400"
@@ -1740,6 +1749,14 @@
               <div class="plan-rendered-content mt-1 text-foreground">
                 {@html renderMarkdown(issue.content)}
               </div>
+              {#if isRejected}
+                <div
+                  class="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
+                >
+                  <span class="font-semibold">Rejection reason:</span>
+                  {issue.rejectedReason ?? 'No rejection reason recorded'}
+                </div>
+              {/if}
               {#if issue.suggestion}
                 <div class="mt-1 text-xs text-muted-foreground">
                   <span class="font-medium text-green-700 dark:text-green-400">Suggestion:</span>

@@ -753,6 +753,29 @@ describe('PlanDetail', () => {
     expect(body).toContain('Add all as tasks');
   });
 
+  test('clearly marks rejected saved review issues with their reason', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          reviewIssues: [
+            {
+              severity: 'major',
+              category: 'bug',
+              content: 'This finding is intentional',
+              rejected: true,
+              rejectedReason: 'Required for compatibility with the external API.',
+            },
+          ],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('Rejected');
+    expect(body).toContain('Rejection reason:');
+    expect(body).toContain('Required for compatibility with the external API.');
+  });
+
   test('shows Run children panel when the only eligible child is externally blocked', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
