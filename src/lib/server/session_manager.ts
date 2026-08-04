@@ -442,8 +442,12 @@ export class SessionManager {
     }
   }
 
-  handleWebSocketConnect(connectionId: string, sendToAgent: AgentSender): SessionData {
-    const connectedAt = new Date().toISOString();
+  handleWebSocketConnect(
+    connectionId: string,
+    sendToAgent: AgentSender,
+    startedAt?: string
+  ): SessionData {
+    const connectedAt = startedAt ?? new Date().toISOString();
     const session: SessionData = {
       connectionId,
       sessionInfo: { command: 'unknown' },

@@ -177,7 +177,11 @@ describe('lib/server/session_discovery', () => {
 
     expect(server.connectedClients.size).toBe(1);
     expect(manager.dismissSession).toHaveBeenCalledWith('session-1');
-    expect(manager.handleWebSocketConnect).toHaveBeenCalledWith('session-1', expect.any(Function));
+    expect(manager.handleWebSocketConnect).toHaveBeenCalledWith(
+      'session-1',
+      expect.any(Function),
+      info.startedAt
+    );
     expect(
       manager.handleWebSocketMessage.mock.calls.map(([connectionId, message]) => [
         connectionId,
@@ -237,7 +241,8 @@ describe('lib/server/session_discovery', () => {
     await waitFor(() => manager.handleWebSocketConnect.mock.calls.length === 1);
     expect(manager.handleWebSocketConnect).toHaveBeenCalledWith(
       'hostname-session',
-      expect.any(Function)
+      expect.any(Function),
+      info.startedAt
     );
     expect(server.connectedClients.size).toBe(1);
   });
@@ -734,7 +739,8 @@ describe('lib/server/session_discovery', () => {
     await waitFor(() => manager.handleWebSocketConnect.mock.calls.length === 1);
     expect(manager.handleWebSocketConnect).toHaveBeenCalledWith(
       'retry-session',
-      expect.any(Function)
+      expect.any(Function),
+      info.startedAt
     );
   });
 

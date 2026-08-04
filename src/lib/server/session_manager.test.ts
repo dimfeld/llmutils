@@ -1851,6 +1851,12 @@ describe('lib/server/session_manager', () => {
     expect(freshSnapshot.sessions[1].messages).toHaveLength(0);
   });
 
+  test('uses the stored session start time when a discovered session connects', () => {
+    manager.handleWebSocketConnect('discovered-session', vi.fn(), '2026-03-17T09:30:00.000Z');
+
+    expect(manager.getSessionSnapshot().sessions[0]?.connectedAt).toBe('2026-03-17T09:30:00.000Z');
+  });
+
   test('keeps sessionsByPlanUuid in sync when sessions move between plans and are dismissed', () => {
     const indexedSessions = manager as unknown as {
       sessionsByPlanUuid: Map<

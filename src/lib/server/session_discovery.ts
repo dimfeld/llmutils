@@ -118,9 +118,13 @@ function registerTrackedSession(
   sessionManager: SessionManager
 ): void {
   sessionManager.dismissSession(tracked.connectionId);
-  sessionManager.handleWebSocketConnect(tracked.connectionId, (outboundMessage) => {
-    sendTrackedMessage(ws, outboundMessage);
-  });
+  sessionManager.handleWebSocketConnect(
+    tracked.connectionId,
+    (outboundMessage) => {
+      sendTrackedMessage(ws, outboundMessage);
+    },
+    tracked.info.startedAt
+  );
   tracked.registered = true;
   tracked.connected = true;
 }
