@@ -694,9 +694,7 @@ function enrichPlansWithContext(
         done: doneTaskCount,
         total: tasks.length,
       },
-      reviewIssueCount: plan.review_issues
-        ? ((JSON.parse(plan.review_issues) as PlanSchema['reviewIssues'])?.length ?? 0)
-        : 0,
+      reviewIssueCount: getReviewIssueCount(plan.review_issues),
     };
   });
 
@@ -999,10 +997,18 @@ function getReviewIssueCount(reviewIssues: string | null): number {
 
   try {
     const parsed: unknown = JSON.parse(reviewIssues);
-    return Array.isArray(parsed) ? parsed.length : 0;
+    return Array.isArray(parsed)
+      ? parsed.filter((issue) => !isRejectedReviewIssue(issue)).length
+      : 0;
   } catch {
     return 0;
   }
+}
+
+function isRejectedReviewIssue(issue: unknown): boolean {
+  return (
+    typeof issue === 'object' && issue !== null && 'rejected' in issue && issue.rejected === true
+  );
 }
 
 /**

@@ -340,6 +340,36 @@ describe('lib/server/db_queries', () => {
     expect(needsReviewPlan?.displayStatus).toBe('needs_review');
   });
 
+  test('excludes rejected review issues from plan issue counts', () => {
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'plan-review-count',
+      planId: 113,
+      title: 'Review count plan',
+      status: 'needs_review',
+      priority: 'high',
+      reviewIssues: [
+        {
+          severity: 'major',
+          category: 'bug',
+          content: 'Open issue',
+        },
+        {
+          severity: 'minor',
+          category: 'style',
+          content: 'Rejected issue',
+          rejected: true,
+          rejectedReason: 'Not applicable',
+        },
+      ],
+    });
+
+    const plan = getPlansForProject(db, projectId).find(
+      (entry) => entry.uuid === 'plan-review-count'
+    );
+
+    expect(plan?.reviewIssueCount).toBe(1);
+  });
+
   test('getPlansForProject and getPlanDetail include finish-tracking timestamps', async () => {
     const docsUpdatedAt = '2026-02-03T04:05:06.000Z';
     const lessonsAppliedAt = '2026-02-04T05:06:07.000Z';
