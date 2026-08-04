@@ -294,8 +294,10 @@ function markTasksDoneGuidance(planId: string) {
   return `
 ## Marking Tasks Done
 
-Only perform the following if no subagent failure occurred during this run.
-If any agent emitted a line beginning with 'FAILED:', do not run any of the following commands — stop immediately.
+Only perform the following if no unresolved genuine subagent failure remains.
+An agent's 'FAILED:' report is not automatically a terminal failure. Evaluate it
+using the Failure Protocol, fix recoverable problems, and continue the workflow.
+Do not mark tasks done while a genuine failure remains unresolved.
 
 When updating tasks after successful implementation, testing, and review, use the shell command 'tim set-task-done ${planId} --title "<taskTitle>"'.
 To set Task 2 done for plan 165, use 'tim set-task-done 165 --title "do it"'. To set multiple tasks done, run the command multiple times for each task.
@@ -345,12 +347,15 @@ Instruct subagents to report any plan changes they believe are necessary in thei
 \n## Failure Protocol (Conflicting/Impossible Requirements)
 
 - Monitor all subagent outputs (implementer, tester, reviewer) for a line starting with "FAILED:".
-- If any subagent emits a FAILED line, you MUST stop orchestration immediately.
+- A FAILED report is a signal to investigate, not an automatic reason to stop orchestration.
+- Read the detailed report, inspect the current work, and evaluate whether the problem is real.
+- If the problem is fixable, including a pre-existing error or an ordinary code, test, lint, type-check, build, or setup error, fix it yourself or delegate the fix to the appropriate subagent. Rerun the relevant checks and continue the workflow.
+- Treat the failure as real only when it cannot be resolved without a user decision, such as a conflicting design requirement, or when major expected functionality is missing and cannot be added safely within scope.
 - Output a concise failure message and propagate details:
   - First line: FAILED: <agent> reported a failure — <1-sentence summary>
     - Where <agent> is one of: implementer | tester | fixer | reviewer
   - Then include the subagent's detailed report verbatim (requirements, problems, possible solutions).
-- Do NOT proceed to further phases or mark tasks done after a failure.
+- Only after deciding that the failure is real should you stop further phases and output the FAILED message. Do not mark tasks done after a real failure.
 - You may add brief additional context if necessary (e.g., which tasks were being processed).`;
 
   // Batch-mode specific guidance
@@ -513,12 +518,15 @@ ${buildReviewIterationGuidance(reviewCommand, options)}`;
 ## Failure Protocol (Conflicting/Impossible Requirements)
 
 - Monitor all subagent outputs for a line starting with "FAILED:".
-- If any subagent emits a FAILED line, stop immediately.
+- A FAILED report is a signal to investigate, not an automatic reason to stop orchestration.
+- Read the detailed report, inspect the current work, and evaluate whether the problem is real.
+- If the problem is fixable, including a pre-existing error or an ordinary code, test, lint, type-check, build, or setup error, fix it yourself or delegate the fix to the appropriate subagent. Rerun the relevant checks and continue the workflow.
+- Treat the failure as real only when it cannot be resolved without a user decision, such as a conflicting design requirement, or when major expected functionality is missing and cannot be added safely within scope.
 - Output a concise failure message and propagate details:
   - First line: FAILED: <agent> reported a failure — <1-sentence summary>
     - <agent> must be one of: implementer | reviewer | orchestrator
   - Then include the subagent's detailed report verbatim.
-- Do NOT continue to other phases or mark tasks done when a failure occurs.
+- Only after deciding that the failure is real should you stop further phases and output the FAILED message. Do not mark tasks done after a real failure.
 - You may add brief context (e.g. which tasks were active) if helpful.`;
 
   const reviewGuidance = options.batchMode
@@ -742,12 +750,15 @@ ${buildReviewIterationGuidance(reviewCommand, options)}`;
 ## Failure Protocol (Conflicting/Impossible Requirements)
 
 - Monitor all subagent outputs for a line starting with "FAILED:".
-- If any subagent emits a FAILED line, stop immediately.
+- A FAILED report is a signal to investigate, not an automatic reason to stop orchestration.
+- Read the detailed report, inspect the current work, and evaluate whether the problem is real.
+- If the problem is fixable, including a pre-existing error or an ordinary code, test, lint, type-check, build, or setup error, fix it yourself or delegate the fix to the appropriate subagent. Rerun the relevant checks and continue the workflow.
+- Treat the failure as real only when it cannot be resolved without a user decision, such as a conflicting design requirement, or when major expected functionality is missing and cannot be added safely within scope.
 - Output a concise failure message and propagate details:
   - First line: FAILED: <agent> reported a failure — <1-sentence summary>
     - <agent> must be one of: tdd-tests | implementer | tester | reviewer | orchestrator
   - Then include the subagent's detailed report verbatim.
-- Do NOT continue to other phases or mark tasks done when a failure occurs.
+- Only after deciding that the failure is real should you stop further phases and output the FAILED message. Do not mark tasks done after a real failure.
 - You may add brief context (e.g. which tasks were active) if helpful.`;
 
   const reviewCommandGuidance = options.batchMode

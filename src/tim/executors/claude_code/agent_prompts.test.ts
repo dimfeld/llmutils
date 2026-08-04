@@ -22,6 +22,9 @@ describe('agent_prompts failure protocol integration', () => {
     const def = getImplementerPrompt(context);
     expect(def.prompt).toContain('FAILED:');
     expect(def.prompt).toContain('Failure Protocol');
+    expect(def.prompt).toContain('It is okay to fix pre-existing errors');
+    expect(def.prompt).toContain('not a failure condition by itself');
+    expect(def.prompt).toContain('fix it, verify the fix, and continue');
     // Sanity check a snippet from the shared template
     expect(FAILED_PROTOCOL_INSTRUCTIONS).toContain('Possible solutions');
     expect(def.prompt).toContain('Possible solutions');

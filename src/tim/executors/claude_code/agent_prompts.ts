@@ -250,6 +250,9 @@ function buildProgressGuidance(options?: ProgressGuidanceOptions): string {
 export const FAILED_PROTOCOL_INSTRUCTIONS = `
 ## Failure Protocol (Conflicting/Impossible Requirements)
 
+Use this protocol only for a genuine blocker. Do not use it for a normal code,
+test, lint, type-check, build, or setup error that you can fix.
+
 If you encounter conflicting or impossible requirements that you cannot safely resolve, do NOT proceed.
 
 Instead, stop immediately and output a single line starting with:
@@ -298,6 +301,11 @@ ${contextContent}${customInstructionsSection}
 2. Follow all coding standards and patterns established in the codebase
 3. Write code incrementally, testing as you go
 4. Use existing utilities and patterns wherever possible
+
+### Pre-existing Errors
+- It is okay to fix pre-existing errors. A pre-existing lint, type-check, test, build, or setup error is not a failure condition by itself.
+- If you can safely fix the error, fix it, verify the fix, and continue. Do not report FAILED only because the error existed before your changes.
+- Report FAILED only when the problem is a genuine blocker, such as a design decision that needs the user's input or major expected functionality that is missing and cannot be added safely within scope.
 
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to implement together. When working with multiple tasks:

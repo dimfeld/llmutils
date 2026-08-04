@@ -7,12 +7,31 @@ import {
 import { structuralPassApplies } from './review_guidance.ts';
 
 describe('orchestrator_prompt failure protocol', () => {
-  it('includes failure protocol with FAILED detection and propagation', () => {
+  it('includes failure protocol with FAILED detection and evaluation guidance', () => {
     const out = wrapWithOrchestration('Some task context', '123', { batchMode: false });
     expect(out).toContain('Failure Protocol');
     expect(out).toContain('FAILED:');
     expect(out).toContain('Monitor all subagent outputs');
     expect(out).toContain('reviewer');
+  });
+
+  it('tells every orchestrator mode to evaluate recoverable failures before stopping', () => {
+    const outputs = [
+      wrapWithOrchestration('Context', '123', { batchMode: false }),
+      wrapWithOrchestrationSimple('Context', '123', { batchMode: false }),
+      wrapWithOrchestrationTdd('Context', '123', { batchMode: false }),
+    ];
+
+    for (const out of outputs) {
+      expect(out).toContain(
+        'A FAILED report is a signal to investigate, not an automatic reason to stop orchestration.'
+      );
+      expect(out).toContain('If the problem is fixable');
+      expect(out).toContain('pre-existing error');
+      expect(out).toContain('cannot be resolved without a user decision');
+      expect(out).toContain('major expected functionality is missing');
+      expect(out).toContain('Only after deciding that the failure is real should you stop');
+    }
   });
 
   it('mentions progress section update guidance for plan file', () => {
@@ -963,7 +982,7 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('tim subagent implementer 42');
       expect(out).toContain('tim subagent tester 42');
       expect(out).toContain('shell command tool');
-      expect(out).toContain('1800000');
+      expect(out).toContain('long timeout');
     });
 
     it('does not reference Task tool for subagent invocation', () => {
@@ -1147,7 +1166,7 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('tim subagent implementer 55');
       expect(out).toContain('tim subagent reviewer 55 --print');
       expect(out).toContain('shell command tool');
-      expect(out).toContain('1800000');
+      expect(out).toContain('long timeout');
     });
 
     it('does not reference Task tool for subagent invocation', () => {
