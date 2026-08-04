@@ -832,6 +832,13 @@
     hideRejectedReviewIssues &&
       (plan.reviewIssues?.some((issue) => issue.rejected === true) ?? false)
   );
+  let reviewIssueCounts = $derived.by(() => {
+    const issues = plan.reviewIssues ?? [];
+    return {
+      nonRejected: issues.filter((issue) => issue.rejected !== true).length,
+      rejected: issues.filter((issue) => issue.rejected === true).length,
+    };
+  });
 
   let isEligibleForProof = $derived(
     isPlanEligibleForProofWithConfigured(
@@ -1634,7 +1641,7 @@
       <div>
         <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-            Review Issues ({plan.reviewIssues.length})
+            Review Issues ({reviewIssueCounts.nonRejected}/{reviewIssueCounts.rejected})
           </h3>
           <div class="flex items-center gap-1.5">
             <label

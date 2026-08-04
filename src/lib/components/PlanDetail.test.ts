@@ -749,7 +749,7 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('Review Issues (1)');
+    expect(body).toContain('Review Issues (1/0)');
     expect(body).toContain('Add all as tasks');
   });
 
@@ -771,6 +771,7 @@ describe('PlanDetail', () => {
       },
     });
 
+    expect(body).toContain('Review Issues (0/1)');
     expect(body).toContain('Rejected');
     expect(body).toContain('Rejection reason:');
     expect(body).toContain('Required for compatibility with the external API.');
@@ -798,6 +799,7 @@ describe('PlanDetail', () => {
       },
     });
 
+    expect(body).toContain('Review Issues (1/1)');
     expect(body).toContain('Hide rejected');
     expect(body).toContain('Open finding');
     expect(body).toContain('Rejected finding');
