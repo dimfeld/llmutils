@@ -38,13 +38,9 @@ export function classifyOwnPr(pr: PrStatusDetail): ClassifiedPr | null {
 
   const checkStatus = classifyCheckStatus(check_rollup_state);
 
-  // Priority: changes_requested > checks_failing > ready_to_merge
+  // Review state drives the badge. Check status is shown separately by the dot.
   if (review_decision === 'CHANGES_REQUESTED') {
     return { actionReason: 'changes_requested', checkStatus };
-  }
-
-  if (checkStatus === 'failing') {
-    return { actionReason: 'checks_failing', checkStatus };
   }
 
   if (

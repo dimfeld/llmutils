@@ -161,4 +161,44 @@ describe('PrAttentionCard', () => {
 
     expect(body).not.toContain('Approved by a reviewer');
   });
+
+  test('keeps the approved badge when checks fail', () => {
+    const { body } = render(PrAttentionCard, {
+      props: {
+        item: createItem({ actionReason: 'approved', checkStatus: 'failing' }),
+      },
+    });
+
+    expect(body).toContain('Approved');
+    expect(body).toContain('bg-red-500');
+    expect(body).not.toContain('Checks failing');
+  });
+
+  test('shows the stacked indication on an approved PR when checks fail', () => {
+    const { body } = render(PrAttentionCard, {
+      props: {
+        item: createItem({
+          actionReason: 'approved',
+          checkStatus: 'failing',
+          reviewRequestedStacked: true,
+        }),
+      },
+    });
+
+    expect(body).toContain('Approved');
+    expect(body).toContain('Stacked');
+    expect(body).toContain('bg-red-500');
+  });
+
+  test('keeps the open badge when checks fail', () => {
+    const { body } = render(PrAttentionCard, {
+      props: {
+        item: createItem({ actionReason: 'open', checkStatus: 'failing' }),
+      },
+    });
+
+    expect(body).toContain('Open');
+    expect(body).toContain('bg-red-500');
+    expect(body).not.toContain('Checks failing');
+  });
 });

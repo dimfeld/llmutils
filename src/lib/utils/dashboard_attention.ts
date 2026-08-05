@@ -29,13 +29,7 @@ export interface ActionablePr {
   owner: string;
   repo: string;
   author: string | null;
-  actionReason:
-    | 'ready_to_merge'
-    | 'checks_failing'
-    | 'changes_requested'
-    | 'review_requested'
-    | 'approved'
-    | 'open';
+  actionReason: 'ready_to_merge' | 'changes_requested' | 'review_requested' | 'approved' | 'open';
   checkStatus: 'passing' | 'failing' | 'pending' | 'none';
   linkedPlanId: number | null;
   linkedPlanUuid: string | null;

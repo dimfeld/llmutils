@@ -137,7 +137,7 @@ src/routes/projects/[projectId]/active/
 
 `getDashboardData(db, projectId)` in `plans_browser.ts` returns compact `DashboardPlan[]` rows containing only fields rendered or used for dashboard classification. It includes only `ready`, `in_progress`, `needs_review`, and `reviewed` display statuses. Full plan details are loaded separately by the nested detail route, so plan bodies, task descriptions, tags, issues, and other detail-only fields are not serialized into the dashboard layout payload.
 
-Actionable PR data is loaded client-side via `getActionablePrs` query in `src/lib/remote/dashboard.remote.ts`. Returns `ActionablePr[]` covering user's own PRs (ready to merge, checks failing, changes requested) and others' PRs where user has a pending review request. Each PR includes linked plan context when available. Classification logic is in `src/lib/utils/pr_actionability.ts` as pure functions. The query reads from cached DB data (does not require `GITHUB_TOKEN` at query time).
+Actionable PR data is loaded client-side via `getActionablePrs` query in `src/lib/remote/dashboard.remote.ts`. Returns `ActionablePr[]` covering user's own PRs (ready to merge, open, approved, or changes requested) and others' PRs where user has a pending review request. Each PR includes linked plan context when available. Check status is shown separately from the action badge. Classification logic is in `src/lib/utils/pr_actionability.ts` as pure functions. The query reads from cached DB data (does not require `GITHUB_TOKEN` at query time).
 
 ### Attention Derivation
 
@@ -150,7 +150,7 @@ Actionable PR data is loaded client-side via `getActionablePrs` query in `src/li
 Key types:
 
 - `PlanAttentionItem` — groups multiple reasons per plan: `waiting_for_input`, `needs_review`, `reviewed`, `agent_finished`. Agent finished = offline session linked to `in_progress` plan still in session manager memory (restricted to known agent-like work commands). Includes `docsUpdatedAt`, `lessonsAppliedAt`, and `needsFinishExecutor` fields for determining Finish button behavior.
-- `PrAttentionItem` — per-PR: `ready_to_merge`, `checks_failing`, `changes_requested`, `review_requested`.
+- `PrAttentionItem` — per-PR: `ready_to_merge`, `open`, `approved`, `changes_requested`, `review_requested`.
 - `ActionablePr` — type for PR actionability data (defined here for the remote query to import).
 
 ### Dashboard Layout
@@ -167,7 +167,7 @@ Server data renders immediately. A subtle "Connecting to sessions..." indicator 
 
 - `DashboardSection.svelte` — collapsible section with count badge, `▶`/`▼` toggle, Svelte 5 snippet-based content area. `defaultCollapsed` is a one-time initializer, not a live prop. Callers are responsible for not rendering when the section is empty
 - `NeedsAttentionCard.svelte` — plan attention card with plan ID, title, reason badges (Waiting for input, Needs review, Agent finished), and action buttons. Uses `<a>` for plan navigation + separate `<button>` for actions (no nested interactive elements). Shows project name when `projectId = 'all'`. For `needs_review` plans, shows a Finish button that calls `startFinish` (spawning a process) or `finishPlanQuick` (instant status transition) depending on whether executor work is needed
-- `PrAttentionCard.svelte` — PR attention card with PR title/repo as primary identity, action reason badge, check status, compact diff stats (+A / -D with green/red coloring), linked plan as secondary context. Opens GitHub URL on click
+- `PrAttentionCard.svelte` — PR attention card with PR title/repo as primary identity, action reason badge, check status dot, compact diff stats (+A / -D with green/red coloring), linked plan as secondary context. Opens GitHub URL on click
 - `RunningNowRow.svelte` — compact row with command type badge, plan title, workspace name, elapsed time. Selects session before navigating to Sessions tab
 - `ReadyToStartRow.svelte` — plan row with priority badge and inline "Run Agent" button using `startAgent()` from `plan_actions.remote.ts`. Handles launch lock with loading/launched state (30-second success timeout pattern). Tracks launched plan UUID so state resets when list reorders
 - `src/lib/utils/time.ts` — `formatRelativeTime()` helper for human-readable relative timestamps

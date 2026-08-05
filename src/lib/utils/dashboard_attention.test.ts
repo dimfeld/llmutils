@@ -291,7 +291,7 @@ describe('deriveAttentionItems', () => {
   test('puts owned PRs in ownedPrItems', () => {
     const pr = makeActionablePr({
       prUrl: 'https://github.com/org/repo/pull/42',
-      actionReason: 'checks_failing',
+      actionReason: 'open',
     });
 
     const result = deriveAttentionItems([], planIndex([]), [pr]);

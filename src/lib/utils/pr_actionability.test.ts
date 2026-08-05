@@ -146,30 +146,30 @@ describe('classifyOwnPr', () => {
       review_decision: 'CHANGES_REQUESTED',
       check_rollup_state: 'FAILURE',
     });
-    // changes_requested takes priority over checks_failing
+    // Changes requested remains the primary badge when checks fail.
     expect(classifyOwnPr(pr)).toEqual({
       actionReason: 'changes_requested',
       checkStatus: 'failing',
     });
   });
 
-  test('returns checks_failing when checks fail', () => {
+  test('keeps the approved badge when checks fail', () => {
     const pr = makePrDetail({
       check_rollup_state: 'FAILURE',
       review_decision: 'APPROVED',
     });
     expect(classifyOwnPr(pr)).toEqual({
-      actionReason: 'checks_failing',
+      actionReason: 'approved',
       checkStatus: 'failing',
     });
   });
 
-  test('returns checks_failing for ERROR check state', () => {
+  test('keeps the open badge for error check state', () => {
     const pr = makePrDetail({
       check_rollup_state: 'ERROR',
     });
     expect(classifyOwnPr(pr)).toEqual({
-      actionReason: 'checks_failing',
+      actionReason: 'open',
       checkStatus: 'failing',
     });
   });
