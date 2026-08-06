@@ -324,6 +324,12 @@ describe('orchestrator_prompt rejected finding recording guidance', () => {
       expect(out).toContain(
         `tim review-issues reject ${planId} --from-review <output.json> --issue <n> --reason "..."`
       );
+      expect(out).toContain(`tim review-issues list ${planId}`);
+      expect(out).toContain(`tim review-issues resolve ${planId} <issue-index>`);
+      expect(out).toContain(
+        'The resolve command removes the selected entry, including rejected entries'
+      );
+      expect(out).toContain('use the specific index and do not use `--all`');
       expect(out).toContain(
         'Later reviews load these rejections automatically, so do not re-type them.'
       );

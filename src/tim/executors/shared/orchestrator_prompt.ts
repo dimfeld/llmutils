@@ -12,6 +12,10 @@ import type { OrchestrationOptions } from './orchestration_options.js';
 const INPUT_COMBINATION_GUIDANCE =
   '- You can use both `--input-file` and `--input` together. `--input-file` is read first and `--input` is appended afterward.';
 
+function buildRejectedReviewIssueCleanupGuidance(planId: string): string {
+  return `- If you later fix a finding that you previously rejected and recorded, remove that rejected entry after confirming the fix. Run \`tim review-issues list ${planId}\` to find its current index, then run \`tim review-issues resolve ${planId} <issue-index>\`. The resolve command removes the selected entry, including rejected entries; use the specific index and do not use \`--all\`.`;
+}
+
 /**
  * Points at the Review Iteration Policy rather than restating what
  * `--task-index` means. The agent list this is appended to varies by wrapper,
@@ -323,6 +327,7 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 
 - **DO NOT implement code directly**. Always delegate implementation tasks to the appropriate subagent via \`tim subagent\`.
 - **DO NOT write tests directly**. Always use the tester subagent via \`tim subagent tester\` for test execution and updates.
+${buildRejectedReviewIssueCleanupGuidance(planId)}
 ${reviewGuidelines}
 - Exception: if an accepted blocking review finding requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
 - You are responsible only for coordination and ensuring the workflow is followed correctly.
@@ -537,6 +542,7 @@ ${buildReviewIterationGuidance(reviewCommand, options)}`;
   const guidance = `## Important Guidelines
 
 - Delegate implementation to \`tim subagent implementer\`.
+${buildRejectedReviewIssueCleanupGuidance(planId)}
 ${reviewGuidance}
 - ${SUBAGENT_SPECIFICITY_GUIDANCE}
 - When invoking subagents, give clear instructions in \`--input\` (or \`--input-file\`) referencing the specific task titles.
@@ -777,6 +783,7 @@ ${buildReviewIterationGuidance(reviewCommand, options)}`;
 
 - Do NOT implement code directly. Always delegate implementation via \`tim subagent implementer\`.
 ${testingGuidance}
+${buildRejectedReviewIssueCleanupGuidance(planId)}
 ${reviewCommandGuidance}
 ${reviewFollowupGuidance}
 - ${SUBAGENT_SPECIFICITY_GUIDANCE}
