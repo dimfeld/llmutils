@@ -1,4 +1,4 @@
-import { rm } from 'node:fs/promises';
+import { readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 import { clearManagedDirectoryContentsSafely } from '../../common/fs.js';
@@ -158,9 +158,15 @@ function resolveCiFixPullRequestTarget(target: PrFixTarget): PullRequestFixTarge
     return target;
   }
 
-  if (target.prStatuses.length !== 1) {
+  if (target.prStatuses.length === 0) {
     throw new Error(
-      `tim pr fix-ci requires exactly one pull request for plan ${target.plan.id}; pass --pr when the plan has multiple linked pull requests.`
+      `tim pr fix-ci requires one linked pull request for plan ${target.plan.id}, but the plan has no linked pull requests; pass --pr <url-or-number>.`
+    );
+  }
+
+  if (target.prStatuses.length > 1) {
+    throw new Error(
+      `tim pr fix-ci requires exactly one linked pull request for plan ${target.plan.id}, but the plan has multiple linked pull requests; pass --pr <url-or-number>.`
     );
   }
 
@@ -210,6 +216,36 @@ function buildCiFixLogDirectory(baseDir: string, prNumber: number, headSha: stri
   return path.resolve(baseDir, TMP_DIR, 'ci-fix', `pr-${prNumber}-${headSha.slice(0, 12)}`);
 }
 
+async function removeStaleCiFixLogDirectories(baseDir: string, prNumber: number): Promise<void> {
+  const logRoot = path.resolve(baseDir, TMP_DIR, 'ci-fix');
+  let entries: import('node:fs').Dirent[];
+
+  try {
+    entries = await readdir(logRoot, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return;
+    }
+    throw error;
+  }
+
+  const directoryPrefix = `pr-${prNumber}-`;
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith(directoryPrefix)) {
+      continue;
+    }
+
+    const candidatePath = path.join(logRoot, entry.name);
+    await clearManagedDirectoryContentsSafely({
+      baseDir,
+      relativeDir: path.relative(baseDir, candidatePath),
+      label: 'stale CI fix log',
+      create: false,
+    });
+    await rm(candidatePath, { recursive: true, force: true });
+  }
+}
+
 async function removeCiFixLogDirectory(directory: string): Promise<void> {
   await rm(directory, { recursive: true, force: true });
 }
@@ -241,7 +277,7 @@ export function buildCiFixPrompt(
     `**Head Branch:** ${target.headBranch}`,
     `**Head SHA:** ${target.headSha}`,
     '',
-    'No tim plan is associated with this run; do not update plan files, plan tasks, plan status, or plan assignments.',
+    'Do not edit plan files or change plan tasks, plan status, or plan assignments during this CI-fix run.',
     '',
     '## Failing Checks',
     ''
@@ -446,6 +482,7 @@ export async function executeCiFixCommand({
       await runPreExecutionWorkspaceSync(roundTripContext);
     }
 
+    await removeStaleCiFixLogDirectories(currentBaseDir, currentTarget.prNumber);
     ciFixLogDirectory = buildCiFixLogDirectory(
       currentBaseDir,
       currentTarget.prNumber,
@@ -541,6 +578,17 @@ export async function executeCiFixCommand({
       }
     }
 
+    if (ciFixLogDirectory) {
+      try {
+        await removeCiFixLogDirectory(ciFixLogDirectory);
+      } catch (err) {
+        warn(`Failed to remove CI fix logs from ${ciFixLogDirectory}: ${err as Error}`);
+      } finally {
+        unregisterLogCleanup?.();
+        unregisterLogCleanup = undefined;
+      }
+    }
+
     if (roundTripContext) {
       try {
         await runPostExecutionWorkspaceSync(roundTripContext, 'CI fixes');
@@ -554,16 +602,6 @@ export async function executeCiFixCommand({
         touchWorkspaceInfo(touchedWorkspacePath);
       } catch (err) {
         warn(`Failed to update workspace last used time: ${err as Error}`);
-      }
-    }
-
-    if (ciFixLogDirectory) {
-      try {
-        await removeCiFixLogDirectory(ciFixLogDirectory);
-      } catch (err) {
-        warn(`Failed to remove CI fix logs from ${ciFixLogDirectory}: ${err as Error}`);
-      } finally {
-        unregisterLogCleanup?.();
       }
     }
 

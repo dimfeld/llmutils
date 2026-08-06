@@ -30,6 +30,8 @@ const state = vi.hoisted(() => ({
   simulateCleanupDuringCollect: false,
   cleanupSizeAfterSimulatedCleanup: 0,
   collectDirExistsAfterSimulatedCleanup: true,
+  postSyncLogDirectoryExists: true,
+  postSyncCleanupSize: 0,
   executorExecute: vi.fn(async (..._args: unknown[]) => {}),
   lifecycleCtor: vi.fn(),
   lifecycleStartup: vi.fn(async () => {}),
@@ -255,6 +257,32 @@ function makeTarget(): PullRequestFixTarget {
   };
 }
 
+function makePlanTarget(prStatuses: AnyObject[]): AnyObject {
+  return {
+    kind: 'plan',
+    planId: 401,
+    plan: {
+      id: 401,
+      uuid: 'plan-401',
+      title: 'CI fix plan',
+    },
+    planPath: null,
+    repoRoot: tempDir,
+    prStatuses,
+  };
+}
+
+function makePlanPrStatus(prNumber: number): AnyObject {
+  const detail = makeDetail();
+  detail.status = {
+    ...(detail.status as AnyObject),
+    pr_number: prNumber,
+    pr_url: `https://github.com/example/repo/pull/${prNumber}`,
+    title: `Fix CI ${prNumber}`,
+  };
+  return detail;
+}
+
 function makeNestedCommand(): { parent: { parent: { opts: () => { config: string } } } } {
   return {
     parent: {
@@ -317,6 +345,8 @@ describe('tim/commands/ci_fix', () => {
     state.simulateCleanupDuringCollect = false;
     state.cleanupSizeAfterSimulatedCleanup = 0;
     state.collectDirExistsAfterSimulatedCleanup = true;
+    state.postSyncLogDirectoryExists = true;
+    state.postSyncCleanupSize = 0;
     state.executorExecute.mockReset();
     state.executorExecute.mockResolvedValue(undefined);
     state.lifecycleCtor.mockReset();
@@ -436,6 +466,10 @@ describe('tim/commands/ci_fix', () => {
     expect(prompt).toContain('environmental or flaky');
     expect(prompt).toContain('re-running the check');
     expect(prompt).toContain('jj bookmark set <current-bookmark> -r @-');
+    expect(prompt).toContain(
+      'Do not edit plan files or change plan tasks, plan status, or plan assignments during this CI-fix run.'
+    );
+    expect(prompt).not.toContain('No tim plan is associated with this run');
     expect(prompt).toContain('Do not edit plan files in PR mode.');
     expect(prompt).not.toContain('inline log');
   });
@@ -473,6 +507,86 @@ describe('tim/commands/ci_fix', () => {
     expect(CleanupRegistry.getInstance().size).toBe(0);
   });
 
+  test('proceeds with a plan target that has exactly one linked pull request', async () => {
+    state.target = makePlanTarget([makePlanPrStatus(42)]);
+
+    await executeCiFixCommand({
+      target: state.target as never,
+      options: {},
+      config: state.config as never,
+      noninteractive: false,
+      terminalInputEnabled: true,
+    });
+
+    expect(mockRefreshPrCheckStatus).toHaveBeenCalledWith(
+      state.db,
+      'https://github.com/example/repo/pull/42'
+    );
+    expect(mockSetupWorkspace).toHaveBeenCalled();
+    expect(mockBuildExecutorAndLog).toHaveBeenCalled();
+  });
+
+  test('rejects a plan target with no linked pull requests', async () => {
+    state.target = makePlanTarget([]);
+
+    await expect(
+      executeCiFixCommand({
+        target: state.target as never,
+        options: {},
+        config: state.config as never,
+        noninteractive: false,
+        terminalInputEnabled: true,
+      })
+    ).rejects.toThrow('plan has no linked pull requests');
+
+    expect(mockRefreshPrCheckStatus).not.toHaveBeenCalled();
+    expect(mockSetupWorkspace).not.toHaveBeenCalled();
+    expect(mockBuildExecutorAndLog).not.toHaveBeenCalled();
+  });
+
+  test('rejects a plan target with multiple linked pull requests', async () => {
+    state.target = makePlanTarget([makePlanPrStatus(42), makePlanPrStatus(43)]);
+
+    await expect(
+      executeCiFixCommand({
+        target: state.target as never,
+        options: {},
+        config: state.config as never,
+        noninteractive: false,
+        terminalInputEnabled: true,
+      })
+    ).rejects.toThrow('plan has multiple linked pull requests');
+
+    expect(mockRefreshPrCheckStatus).not.toHaveBeenCalled();
+    expect(mockSetupWorkspace).not.toHaveBeenCalled();
+    expect(mockBuildExecutorAndLog).not.toHaveBeenCalled();
+  });
+
+  test.each(['base_branch', 'head_branch', 'head_sha'] as const)(
+    'rejects a plan target with incomplete %s metadata',
+    async (missingField) => {
+      const prStatus = makePlanPrStatus(42);
+      prStatus.status = {
+        ...(prStatus.status as AnyObject),
+        [missingField]: undefined,
+      };
+      state.target = makePlanTarget([prStatus]);
+
+      await expect(
+        executeCiFixCommand({
+          target: state.target as never,
+          options: {},
+          config: state.config as never,
+          noninteractive: false,
+          terminalInputEnabled: true,
+        })
+      ).rejects.toThrow('incomplete pull request branch metadata');
+
+      expect(mockRefreshPrCheckStatus).not.toHaveBeenCalled();
+      expect(mockSetupWorkspace).not.toHaveBeenCalled();
+    }
+  );
+
   test('refreshes checks, creates logs in the selected workspace, and removes them on exit', async () => {
     const roundTripContext = {
       executionWorkspacePath: state.workspaceDir,
@@ -493,9 +607,12 @@ describe('tim/commands/ci_fix', () => {
     };
     mockLoadEffectiveConfig.mockResolvedValue(state.config as never);
 
-    const staleDirectory = path.join(state.workspaceDir, '.tim/tmp/ci-fix/pr-42-abc123def456');
+    const staleDirectory = path.join(state.workspaceDir, '.tim/tmp/ci-fix/pr-42-oldsha');
+    const unrelatedDirectory = path.join(state.workspaceDir, '.tim/tmp/ci-fix/pr-43-oldsha');
     await fs.mkdir(staleDirectory, { recursive: true });
     await fs.writeFile(path.join(staleDirectory, 'stale.log'), 'stale');
+    await fs.mkdir(unrelatedDirectory, { recursive: true });
+    await fs.writeFile(path.join(unrelatedDirectory, 'keep.log'), 'keep');
 
     await executeCiFixCommand({
       target: state.target as never,
@@ -579,6 +696,9 @@ describe('tim/commands/ci_fix', () => {
     expect(mockRunPostExecutionWorkspaceSync).toHaveBeenCalledWith(roundTripContext, 'CI fixes');
     expect(mockTouchWorkspaceInfo).toHaveBeenCalledWith(state.workspaceDir);
     expect(await fs.stat(staleDirectory).catch(() => null)).toBeNull();
+    expect(
+      await fs.stat(path.join(unrelatedDirectory, 'keep.log')).catch(() => null)
+    ).not.toBeNull();
     expect(CleanupRegistry.getInstance().size).toBe(0);
   });
 
@@ -634,6 +754,35 @@ describe('tim/commands/ci_fix', () => {
       ),
       expect.anything()
     );
+  });
+
+  test('removes CI fix logs and unregisters cleanup before post-execution sync', async () => {
+    const roundTripContext = {
+      executionWorkspacePath: state.workspaceDir,
+      primaryWorkspacePath: tempDir,
+      refName: 'feature/ci-fix',
+      branchCreatedDuringSetup: false,
+    };
+    mockPrepareWorkspaceRoundTrip.mockResolvedValue(roundTripContext as never);
+    mockRunPostExecutionWorkspaceSync.mockImplementationOnce(async () => {
+      state.postSyncLogDirectoryExists = await fs
+        .stat(state.collectDestDir)
+        .then(() => true)
+        .catch(() => false);
+      state.postSyncCleanupSize = CleanupRegistry.getInstance().size;
+    });
+
+    await executeCiFixCommand({
+      target: state.target as never,
+      options: {},
+      config: state.config as never,
+      noninteractive: false,
+      terminalInputEnabled: true,
+    });
+
+    expect(state.postSyncLogDirectoryExists).toBe(false);
+    expect(state.postSyncCleanupSize).toBe(0);
+    expect(mockRunPostExecutionWorkspaceSync).toHaveBeenCalledWith(roundTripContext, 'CI fixes');
   });
 
   test('CLI options override ciFix executor, model, and effort configuration', async () => {
@@ -798,6 +947,31 @@ describe('tim/commands/ci_fix', () => {
       })
     );
     expect(mockSetupWorkspace).not.toHaveBeenCalled();
+  });
+
+  test('includes plan and linked PR metadata in a plan-target headless session', async () => {
+    state.target = makePlanTarget([makePlanPrStatus(42)]);
+    mockResolvePrFixTargetIntent.mockReturnValueOnce({ mode: 'plan', planId: 401 });
+    mockResolvePrFixTarget.mockResolvedValueOnce(state.target as never);
+    mockSelectFailingChecks.mockReturnValueOnce({ checks: [], noRequiredConfig: false } as never);
+
+    await handleCiFixCommand(401, {}, makeNestedCommand());
+
+    expect(mockRunWithHeadlessAdapterIfEnabled).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'ci-fix',
+        plan: {
+          id: 401,
+          uuid: 'plan-401',
+          title: 'CI fix plan',
+        },
+        sessionInfo: {
+          linkedPrUrl: 'https://github.com/example/repo/pull/42',
+          linkedPrNumber: 42,
+          linkedPrTitle: 'Fix CI 42',
+        },
+      })
+    );
   });
 
   test('rejects a fork before workspace allocation', async () => {
