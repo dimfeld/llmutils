@@ -1,4 +1,11 @@
+import { mkdir } from 'node:fs/promises';
+import * as path from 'node:path';
+
 import type { Octokit } from 'octokit';
+
+import { secureWrite } from '../fs.js';
+import type { PrStatusCheckRun } from './pr_status.js';
+import { FAILURE_CHECK_CONCLUSIONS } from './required_check_rollup.js';
 
 export interface ParsedActionsDetailsUrl {
   owner: string;
@@ -11,6 +18,10 @@ type ActionsWorkflowJob = Awaited<
   ReturnType<Octokit['rest']['actions']['listJobsForWorkflowRun']>
 >['data']['jobs'][number];
 
+type ActionsWorkflowRun = Awaited<
+  ReturnType<Octokit['rest']['actions']['listWorkflowRunsForRepo']>
+>['data']['workflow_runs'][number];
+
 export type WorkflowJob = ActionsWorkflowJob & {
   steps: NonNullable<ActionsWorkflowJob['steps']>;
 };
@@ -19,6 +30,37 @@ export interface DownloadJobLogResult {
   content: string | null;
   error?: string;
 }
+
+export type FailingCheckLogInput = Pick<
+  PrStatusCheckRun,
+  'name' | 'source' | 'conclusion' | 'detailsUrl'
+> & {
+  required: boolean;
+};
+
+export interface FailingCheckLogManifestEntry {
+  checkName: string;
+  source: PrStatusCheckRun['source'];
+  conclusion: PrStatusCheckRun['conclusion'];
+  detailsUrl: string | null;
+  logPath: string | null;
+  failedSteps: string[];
+  required: boolean;
+  error?: string;
+}
+
+export interface CollectFailingCheckLogsOptions {
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+  headSha: string;
+  failingChecks: readonly FailingCheckLogInput[];
+  destDir: string;
+  concurrency?: number;
+}
+
+export const DEFAULT_LOG_DOWNLOAD_CONCURRENCY = 4;
+export const MAX_LOG_DOWNLOAD_CONCURRENCY = 4;
 
 function parsePositiveInteger(value: string): number | null {
   if (!/^[1-9]\d*$/.test(value)) {
@@ -215,4 +257,299 @@ export async function downloadJobLog(
       error: `GitHub Actions logs for job ${jobId} are unavailable: ${getErrorMessage(error)} (logs may have expired)`,
     };
   }
+}
+
+function validateConcurrency(concurrency: number | undefined): number {
+  if (concurrency === undefined) {
+    return DEFAULT_LOG_DOWNLOAD_CONCURRENCY;
+  }
+
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+    throw new RangeError('Log download concurrency must be a positive safe integer');
+  }
+
+  return Math.min(concurrency, MAX_LOG_DOWNLOAD_CONCURRENCY);
+}
+
+function getRunCacheKey(owner: string, repo: string, runId: number): string {
+  return `${owner}\u0000${repo}\u0000${runId}`;
+}
+
+function findMatchingJob(
+  jobs: readonly WorkflowJob[],
+  checkName: string,
+  jobId: number | undefined
+): WorkflowJob | null {
+  if (jobId !== undefined) {
+    const jobWithMatchingId = jobs.find((job) => job.id === jobId);
+    if (jobWithMatchingId?.name === checkName) {
+      return jobWithMatchingId;
+    }
+  }
+
+  return jobs.find((job) => job.name === checkName) ?? null;
+}
+
+function getFailedStepNames(job: WorkflowJob): string[] {
+  return job.steps
+    .filter((step) => FAILURE_CHECK_CONCLUSIONS.has(step.conclusion ?? ''))
+    .map((step) => step.name);
+}
+
+function isFailingWorkflowJob(job: WorkflowJob): boolean {
+  return FAILURE_CHECK_CONCLUSIONS.has(job.conclusion ?? '');
+}
+
+function sanitizeCheckName(checkName: string): string {
+  const sanitized = checkName
+    .normalize('NFKC')
+    .replace(/[^A-Za-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100);
+
+  return sanitized || 'check';
+}
+
+function allocateLogFilename(checkName: string, usedFilenames: Set<string>): string {
+  const baseName = sanitizeCheckName(checkName);
+  let suffix = 1;
+
+  while (true) {
+    const filename = `${baseName}${suffix === 1 ? '' : `-${suffix}`}.log`;
+    const filenameKey = filename.toLocaleLowerCase('en-US');
+    if (!usedFilenames.has(filenameKey)) {
+      usedFilenames.add(filenameKey);
+      return filename;
+    }
+
+    suffix += 1;
+  }
+}
+
+function getUnresolvedJobError(
+  check: FailingCheckLogInput,
+  reason: string,
+  detailsUrl: string | null
+): string {
+  const linkContext = detailsUrl ? ` Investigate ${detailsUrl}.` : '';
+  return `${reason} for failing check "${check.name}".${linkContext}`;
+}
+
+function getWorkflowRunsForHeadSha(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  headSha: string
+): Promise<ActionsWorkflowRun[]> {
+  return octokit.paginate(octokit.rest.actions.listWorkflowRunsForRepo, {
+    owner,
+    repo,
+    head_sha: headSha,
+  });
+}
+
+async function runWithConcurrency<T>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  let nextIndex = 0;
+
+  async function runWorker(): Promise<void> {
+    while (true) {
+      const itemIndex = nextIndex;
+      nextIndex += 1;
+      if (itemIndex >= items.length) {
+        return;
+      }
+
+      await worker(items[itemIndex]);
+    }
+  }
+
+  const workerCount = Math.min(items.length, concurrency);
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+}
+
+interface ResolvedFailingCheckJob {
+  index: number;
+  check: FailingCheckLogInput;
+  owner: string;
+  repo: string;
+  job: WorkflowJob;
+  relativeLogPath: string;
+}
+
+export async function collectFailingCheckLogs(
+  options: CollectFailingCheckLogsOptions
+): Promise<FailingCheckLogManifestEntry[]> {
+  const downloadConcurrency = validateConcurrency(options.concurrency);
+  const absoluteDestDir = path.resolve(options.destDir);
+  const manifests: FailingCheckLogManifestEntry[] = options.failingChecks.map((check) => ({
+    checkName: check.name,
+    source: check.source,
+    conclusion: check.conclusion,
+    detailsUrl: check.detailsUrl,
+    logPath: null,
+    failedSteps: [],
+    required: check.required,
+  }));
+
+  const jobsByRun = new Map<string, Promise<WorkflowJob[]>>();
+  const getJobs = (owner: string, repo: string, runId: number): Promise<WorkflowJob[]> => {
+    const cacheKey = getRunCacheKey(owner, repo, runId);
+    const cachedJobs = jobsByRun.get(cacheKey);
+    if (cachedJobs) {
+      return cachedJobs;
+    }
+
+    const jobs = listRunJobs(options.octokit, owner, repo, runId);
+    jobsByRun.set(cacheKey, jobs);
+    return jobs;
+  };
+
+  let workflowRunsForHeadSha: Promise<ActionsWorkflowRun[]> | undefined;
+  const fallbackJobsByName = new Map<string, Promise<WorkflowJob | null>>();
+  const findFallbackJob = (check: FailingCheckLogInput): Promise<WorkflowJob | null> => {
+    const cachedJob = fallbackJobsByName.get(check.name);
+    if (cachedJob) {
+      return cachedJob;
+    }
+
+    const jobPromise = (async (): Promise<WorkflowJob | null> => {
+      workflowRunsForHeadSha ??= getWorkflowRunsForHeadSha(
+        options.octokit,
+        options.owner,
+        options.repo,
+        options.headSha
+      );
+      const workflowRuns = await workflowRunsForHeadSha;
+      let lastJobsError: unknown;
+
+      for (const workflowRun of workflowRuns) {
+        let jobs: WorkflowJob[];
+        try {
+          jobs = await getJobs(options.owner, options.repo, workflowRun.id);
+        } catch (error) {
+          lastJobsError = error;
+          continue;
+        }
+
+        const job = findMatchingJob(jobs, check.name, undefined);
+        if (job && isFailingWorkflowJob(job)) {
+          return job;
+        }
+      }
+
+      if (lastJobsError) {
+        throw lastJobsError;
+      }
+
+      return null;
+    })();
+    fallbackJobsByName.set(check.name, jobPromise);
+    return jobPromise;
+  };
+
+  const resolvedJobs: ResolvedFailingCheckJob[] = [];
+  for (let index = 0; index < options.failingChecks.length; index += 1) {
+    const check = options.failingChecks[index];
+    try {
+      const parsedDetailsUrl = check.detailsUrl ? parseActionsDetailsUrl(check.detailsUrl) : null;
+      let resolvedJob: ResolvedFailingCheckJob | null;
+
+      if (parsedDetailsUrl) {
+        const jobs = await getJobs(
+          parsedDetailsUrl.owner,
+          parsedDetailsUrl.repo,
+          parsedDetailsUrl.runId
+        );
+        const job = findMatchingJob(jobs, check.name, parsedDetailsUrl.jobId);
+        resolvedJob = job
+          ? {
+              index,
+              check,
+              owner: parsedDetailsUrl.owner,
+              repo: parsedDetailsUrl.repo,
+              job,
+              relativeLogPath: '',
+            }
+          : null;
+        if (!resolvedJob) {
+          manifests[index].error = getUnresolvedJobError(
+            check,
+            `No latest-attempt GitHub Actions job matched workflow run ${parsedDetailsUrl.runId}`,
+            check.detailsUrl
+          );
+          continue;
+        }
+      } else {
+        const fallbackJob = await findFallbackJob(check);
+        if (!fallbackJob) {
+          manifests[index].error = getUnresolvedJobError(
+            check,
+            `No GitHub Actions job matched head SHA ${options.headSha}`,
+            check.detailsUrl
+          );
+          continue;
+        }
+        resolvedJob = {
+          index,
+          check,
+          owner: options.owner,
+          repo: options.repo,
+          job: fallbackJob,
+          relativeLogPath: '',
+        };
+      }
+
+      if (!isFailingWorkflowJob(resolvedJob.job)) {
+        manifests[index].error = getUnresolvedJobError(
+          check,
+          `The matched GitHub Actions job did not have a failing conclusion (${resolvedJob.job.conclusion ?? 'unknown'})`,
+          check.detailsUrl
+        );
+        continue;
+      }
+
+      manifests[index].failedSteps = getFailedStepNames(resolvedJob.job);
+      resolvedJobs.push(resolvedJob);
+    } catch (error) {
+      manifests[index].error = getErrorMessage(error);
+    }
+  }
+
+  if (resolvedJobs.length === 0) {
+    return manifests;
+  }
+
+  await mkdir(absoluteDestDir, { recursive: true });
+  const usedFilenames = new Set<string>();
+  for (const resolvedJob of resolvedJobs) {
+    resolvedJob.relativeLogPath = allocateLogFilename(resolvedJob.check.name, usedFilenames);
+  }
+
+  await runWithConcurrency(resolvedJobs, downloadConcurrency, async (resolvedJob) => {
+    const manifest = manifests[resolvedJob.index];
+    try {
+      const downloadedLog = await downloadJobLog(
+        options.octokit,
+        resolvedJob.owner,
+        resolvedJob.repo,
+        resolvedJob.job.id
+      );
+      if (downloadedLog.content === null) {
+        manifest.error = downloadedLog.error ?? 'GitHub Actions returned no job log content';
+        return;
+      }
+
+      await secureWrite(absoluteDestDir, resolvedJob.relativeLogPath, downloadedLog.content);
+      manifest.logPath = path.join(absoluteDestDir, resolvedJob.relativeLogPath);
+    } catch (error) {
+      manifest.error = getErrorMessage(error);
+    }
+  });
+
+  return manifests;
 }
