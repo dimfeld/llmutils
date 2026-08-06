@@ -6,8 +6,10 @@ import * as path from 'node:path';
 
 import {
   collectFailingCheckLogs,
+  DEFAULT_LOG_DOWNLOAD_CONCURRENCY,
   downloadJobLog,
   listRunJobs,
+  MAX_LOG_DOWNLOAD_CONCURRENCY,
   parseActionsDetailsUrl,
   type FailingCheckLogInput,
   type WorkflowJob,
@@ -301,14 +303,35 @@ describe('downloadJobLog', () => {
     });
   });
 
-  test('rejects a response that is not plaintext', async () => {
+  test('decodes an ArrayBuffer response body as UTF-8', async () => {
     const downloadJobLogsForWorkflowRun = vi.fn(async () => ({
-      data: new Uint8Array([108, 111, 103]),
+      data: new TextEncoder().encode('binary log\n').buffer,
     }));
     const octokit = createOctokit({ downloadJobLogsForWorkflowRun });
 
+    await expect(downloadJobLog(octokit, 'example', 'repo', 456)).resolves.toEqual({
+      content: 'binary log\n',
+    });
+  });
+
+  test.each([
+    ['Uint8Array', new TextEncoder().encode('typed array log\n'), 'typed array log\n'],
+    ['Buffer', Buffer.from('buffer log\n', 'utf8'), 'buffer log\n'],
+  ])('decodes an %s response body as UTF-8', async (_description, data, expectedContent) => {
+    const downloadJobLogsForWorkflowRun = vi.fn(async () => ({ data }));
+    const octokit = createOctokit({ downloadJobLogsForWorkflowRun });
+
+    await expect(downloadJobLog(octokit, 'example', 'repo', 456)).resolves.toEqual({
+      content: expectedContent,
+    });
+  });
+
+  test('rejects a response with an unexpected body shape', async () => {
+    const downloadJobLogsForWorkflowRun = vi.fn(async () => ({ data: { logs: 'not plaintext' } }));
+    const octokit = createOctokit({ downloadJobLogsForWorkflowRun });
+
     await expect(downloadJobLog(octokit, 'example', 'repo', 456)).rejects.toThrow(
-      'Expected plaintext logs for GitHub Actions job 456'
+      'Expected plaintext or binary logs for GitHub Actions job 456'
     );
   });
 
@@ -418,6 +441,141 @@ describe('collectFailingCheckLogs', () => {
     await expect(fs.readFile(path.join(tempDir, 'build.log'), 'utf8')).resolves.toBe(
       'log for 789\n'
     );
+  });
+
+  test('accepts a present job ID when its display name differs from the check name', async () => {
+    const detailsUrl = 'https://github.com/example/repo/actions/runs/124/job/457';
+    const latestAttemptJob = makeJob(457, 'reusable-workflow / build');
+    const listJobsForWorkflowRun = vi.fn();
+    const paginate = vi.fn(
+      async (endpoint: unknown, params: Record<string, unknown>): Promise<WorkflowJob[]> => {
+        expect(endpoint).toBe(listJobsForWorkflowRun);
+        expect(params).toMatchObject({
+          owner: 'example',
+          repo: 'repo',
+          run_id: 124,
+          filter: 'latest',
+        });
+        return [latestAttemptJob];
+      }
+    );
+    const downloadJobLogsForWorkflowRun = vi.fn(async (params: { job_id: number }) => ({
+      data: `log for ${params.job_id}\n`,
+    }));
+    const octokit = createOctokit({
+      listJobsForWorkflowRun,
+      downloadJobLogsForWorkflowRun,
+      paginate,
+    });
+
+    const manifest = await collectFailingCheckLogs({
+      octokit,
+      owner: 'example',
+      repo: 'repo',
+      headSha: 'head-sha',
+      failingChecks: [makeFailingCheck('build', detailsUrl)],
+      destDir: tempDir,
+    });
+
+    expect(downloadJobLogsForWorkflowRun).toHaveBeenCalledWith({
+      owner: 'example',
+      repo: 'repo',
+      job_id: 457,
+    });
+    expect(manifest[0]).toMatchObject({
+      checkName: 'build',
+      logPath: path.join(tempDir, 'build.log'),
+      failedSteps: ['Run tests'],
+    });
+  });
+
+  test('keeps a matched non-failing job unresolved without downloading it', async () => {
+    const detailsUrl = 'https://github.com/example/repo/actions/runs/125/job/458';
+    const listJobsForWorkflowRun = vi.fn();
+    const paginate = vi.fn(
+      async (endpoint: unknown, params: Record<string, unknown>): Promise<WorkflowJob[]> => {
+        expect(endpoint).toBe(listJobsForWorkflowRun);
+        expect(params.run_id).toBe(125);
+        return [makeJob(458, 'build', { conclusion: 'success' })];
+      }
+    );
+    const downloadJobLogsForWorkflowRun = vi.fn();
+    const octokit = createOctokit({
+      listJobsForWorkflowRun,
+      downloadJobLogsForWorkflowRun,
+      paginate,
+    });
+
+    const manifest = await collectFailingCheckLogs({
+      octokit,
+      owner: 'example',
+      repo: 'repo',
+      headSha: 'head-sha',
+      failingChecks: [makeFailingCheck('build', detailsUrl)],
+      destDir: tempDir,
+    });
+
+    expect(manifest).toEqual([
+      {
+        checkName: 'build',
+        source: 'check_run',
+        conclusion: 'failure',
+        detailsUrl,
+        logPath: null,
+        failedSteps: [],
+        required: true,
+        error: expect.stringContaining('success'),
+      },
+    ]);
+    expect(downloadJobLogsForWorkflowRun).not.toHaveBeenCalled();
+    await expect(fs.readdir(tempDir)).resolves.toEqual([]);
+  });
+
+  test('isolates an ordinary job-list resolution failure to its check', async () => {
+    const firstDetailsUrl = 'https://github.com/example/repo/actions/runs/126/job/459';
+    const secondDetailsUrl = 'https://github.com/example/repo/actions/runs/127/job/460';
+    const jobListError = Object.assign(new Error('job listing failed'), { status: 500 });
+    const listJobsForWorkflowRun = vi.fn();
+    const paginate = vi.fn(
+      async (endpoint: unknown, params: Record<string, unknown>): Promise<WorkflowJob[]> => {
+        expect(endpoint).toBe(listJobsForWorkflowRun);
+        if (params.run_id === 126) {
+          throw jobListError;
+        }
+        return [makeJob(460, 'build-two')];
+      }
+    );
+    const downloadJobLogsForWorkflowRun = vi.fn(async (params: { job_id: number }) => ({
+      data: `log for ${params.job_id}\n`,
+    }));
+    const octokit = createOctokit({
+      listJobsForWorkflowRun,
+      downloadJobLogsForWorkflowRun,
+      paginate,
+    });
+
+    const manifest = await collectFailingCheckLogs({
+      octokit,
+      owner: 'example',
+      repo: 'repo',
+      headSha: 'head-sha',
+      failingChecks: [
+        makeFailingCheck('build-one', firstDetailsUrl),
+        makeFailingCheck('build-two', secondDetailsUrl),
+      ],
+      destDir: tempDir,
+    });
+
+    expect(manifest[0]).toMatchObject({
+      checkName: 'build-one',
+      logPath: null,
+      error: 'job listing failed',
+    });
+    expect(manifest[1]).toMatchObject({
+      checkName: 'build-two',
+      logPath: path.join(tempDir, 'build-two.log'),
+    });
+    expect(downloadJobLogsForWorkflowRun).toHaveBeenCalledTimes(1);
   });
 
   test('falls back to paginated workflow runs and matches a job by name', async () => {
@@ -659,6 +817,91 @@ describe('collectFailingCheckLogs', () => {
     expect(downloadJobLogsForWorkflowRun).toHaveBeenCalledTimes(checks.length);
   });
 
+  test('caps concurrent log downloads at the maximum', async () => {
+    const checks = Array.from({ length: 6 }, (_, index) =>
+      makeFailingCheck(
+        `build-${index + 1}`,
+        `https://github.com/example/repo/actions/runs/${index + 1}/job/${index + 101}`
+      )
+    );
+    const listJobsForWorkflowRun = vi.fn();
+    const paginate = vi.fn(
+      async (endpoint: unknown, params: Record<string, unknown>): Promise<WorkflowJob[]> => {
+        expect(endpoint).toBe(listJobsForWorkflowRun);
+        const index = Number(params.run_id) - 1;
+        return [makeJob(index + 101, `build-${index + 1}`)];
+      }
+    );
+    let activeDownloads = 0;
+    let maximumActiveDownloads = 0;
+    const downloadJobLogsForWorkflowRun = vi.fn(async (params: { job_id: number }) => {
+      activeDownloads += 1;
+      maximumActiveDownloads = Math.max(maximumActiveDownloads, activeDownloads);
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      activeDownloads -= 1;
+      return { data: `log for ${params.job_id}\n` };
+    });
+    const octokit = createOctokit({
+      listJobsForWorkflowRun,
+      downloadJobLogsForWorkflowRun,
+      paginate,
+    });
+
+    await collectFailingCheckLogs({
+      octokit,
+      owner: 'example',
+      repo: 'repo',
+      headSha: 'head-sha',
+      failingChecks: checks,
+      destDir: tempDir,
+      concurrency: MAX_LOG_DOWNLOAD_CONCURRENCY + 2,
+    });
+
+    expect(maximumActiveDownloads).toBe(MAX_LOG_DOWNLOAD_CONCURRENCY);
+  });
+
+  test('uses the default concurrent download bound', async () => {
+    const checks = Array.from({ length: 6 }, (_, index) =>
+      makeFailingCheck(
+        `build-${index + 1}`,
+        `https://github.com/example/repo/actions/runs/${index + 1}/job/${index + 101}`
+      )
+    );
+    const listJobsForWorkflowRun = vi.fn();
+    const paginate = vi.fn(
+      async (endpoint: unknown, params: Record<string, unknown>): Promise<WorkflowJob[]> => {
+        expect(endpoint).toBe(listJobsForWorkflowRun);
+        const index = Number(params.run_id) - 1;
+        return [makeJob(index + 101, `build-${index + 1}`)];
+      }
+    );
+    let activeDownloads = 0;
+    let maximumActiveDownloads = 0;
+    const downloadJobLogsForWorkflowRun = vi.fn(async (params: { job_id: number }) => {
+      activeDownloads += 1;
+      maximumActiveDownloads = Math.max(maximumActiveDownloads, activeDownloads);
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      activeDownloads -= 1;
+      return { data: `log for ${params.job_id}\n` };
+    });
+    const octokit = createOctokit({
+      listJobsForWorkflowRun,
+      downloadJobLogsForWorkflowRun,
+      paginate,
+    });
+
+    await collectFailingCheckLogs({
+      octokit,
+      owner: 'example',
+      repo: 'repo',
+      headSha: 'head-sha',
+      failingChecks: checks,
+      destDir: tempDir,
+    });
+
+    expect(maximumActiveDownloads).toBe(DEFAULT_LOG_DOWNLOAD_CONCURRENCY);
+  });
+
   test('captures expired and non-404 errors per check without aborting the batch', async () => {
     const checks = [
       makeFailingCheck('success', 'https://github.com/example/repo/actions/runs/1/job/101'),
@@ -704,15 +947,72 @@ describe('collectFailingCheckLogs', () => {
     expect(manifest[1]).toMatchObject({
       checkName: 'expired',
       logPath: null,
+      failedSteps: ['Run tests'],
       error: expect.stringContaining('logs may have expired'),
     });
     expect(manifest[2]).toMatchObject({
       checkName: 'unavailable',
       logPath: null,
+      failedSteps: ['Run tests'],
       error: 'GitHub is unavailable',
     });
     expect(downloadJobLogsForWorkflowRun).toHaveBeenCalledTimes(3);
   });
+
+  test.each([401, 403, 429])(
+    'propagates systemic HTTP %s errors during job resolution',
+    async (status) => {
+      const systemicError = Object.assign(new Error(`GitHub returned ${status}`), { status });
+      const listJobsForWorkflowRun = vi.fn();
+      const paginate = vi.fn(async () => {
+        throw systemicError;
+      });
+      const octokit = createOctokit({ listJobsForWorkflowRun, paginate });
+
+      await expect(
+        collectFailingCheckLogs({
+          octokit,
+          owner: 'example',
+          repo: 'repo',
+          headSha: 'head-sha',
+          failingChecks: [
+            makeFailingCheck('build', 'https://github.com/example/repo/actions/runs/1/job/101'),
+          ],
+          destDir: tempDir,
+        })
+      ).rejects.toBe(systemicError);
+    }
+  );
+
+  test.each([401, 403, 429])(
+    'propagates systemic HTTP %s errors during log download',
+    async (status) => {
+      const systemicError = Object.assign(new Error(`GitHub returned ${status}`), { status });
+      const listJobsForWorkflowRun = vi.fn();
+      const paginate = vi.fn(async () => [makeJob(101, 'build')]);
+      const downloadJobLogsForWorkflowRun = vi.fn(async () => {
+        throw systemicError;
+      });
+      const octokit = createOctokit({
+        listJobsForWorkflowRun,
+        downloadJobLogsForWorkflowRun,
+        paginate,
+      });
+
+      await expect(
+        collectFailingCheckLogs({
+          octokit,
+          owner: 'example',
+          repo: 'repo',
+          headSha: 'head-sha',
+          failingChecks: [
+            makeFailingCheck('build', 'https://github.com/example/repo/actions/runs/1/job/101'),
+          ],
+          destDir: tempDir,
+        })
+      ).rejects.toBe(systemicError);
+    }
+  );
 
   test('uses safe deterministic filenames and disambiguates collisions', async () => {
     const checks = [

@@ -228,6 +228,28 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isSystemicHttpError(error: unknown): boolean {
+  const status = getHttpStatus(error);
+  return status === 401 || status === 403 || status === 429;
+}
+
+function decodeLogContent(content: unknown, jobId: number): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (content instanceof ArrayBuffer) {
+    return new TextDecoder().decode(content);
+  }
+
+  if (ArrayBuffer.isView(content)) {
+    const bytes = new Uint8Array(content.buffer, content.byteOffset, content.byteLength);
+    return new TextDecoder().decode(bytes);
+  }
+
+  throw new TypeError(`Expected plaintext or binary logs for GitHub Actions job ${jobId}`);
+}
+
 export async function downloadJobLog(
   octokit: Octokit,
   owner: string,
@@ -240,13 +262,7 @@ export async function downloadJobLog(
       repo,
       job_id: jobId,
     });
-    const content = response.data as unknown;
-
-    if (typeof content !== 'string') {
-      throw new TypeError(`Expected plaintext logs for GitHub Actions job ${jobId}`);
-    }
-
-    return { content };
+    return { content: decodeLogContent(response.data as unknown, jobId) };
   } catch (error) {
     if (getHttpStatus(error) !== 404) {
       throw error;
@@ -282,7 +298,7 @@ function findMatchingJob(
 ): WorkflowJob | null {
   if (jobId !== undefined) {
     const jobWithMatchingId = jobs.find((job) => job.id === jobId);
-    if (jobWithMatchingId?.name === checkName) {
+    if (jobWithMatchingId) {
       return jobWithMatchingId;
     }
   }
@@ -441,6 +457,9 @@ export async function collectFailingCheckLogs(
         try {
           jobs = await getJobs(options.owner, options.repo, workflowRun.id);
         } catch (error) {
+          if (isSystemicHttpError(error)) {
+            throw error;
+          }
           lastJobsError = error;
           continue;
         }
@@ -525,6 +544,9 @@ export async function collectFailingCheckLogs(
       manifests[index].failedSteps = getFailedStepNames(resolvedJob.job);
       resolvedJobs.push(resolvedJob);
     } catch (error) {
+      if (isSystemicHttpError(error)) {
+        throw error;
+      }
       manifests[index].error = getErrorMessage(error);
     }
   }
@@ -556,6 +578,9 @@ export async function collectFailingCheckLogs(
       await secureWrite(absoluteDestDir, resolvedJob.relativeLogPath, downloadedLog.content);
       manifest.logPath = path.join(absoluteDestDir, resolvedJob.relativeLogPath);
     } catch (error) {
+      if (isSystemicHttpError(error)) {
+        throw error;
+      }
       manifest.error = getErrorMessage(error);
     }
   });
