@@ -43,6 +43,7 @@ Read the relevant doc before working in these areas:
 - **Linear integration** → `docs/linear-integration.md`
 - **Slack integration** → `docs/slack-integration.md`
 - **GitHub diffs** → `docs/github-diffs.md`
+- **CI check classification and Actions logs** → `docs/ci-check-logs.md`
 - **Git/jj patterns** → `docs/git-jj-patterns.md`
 - **OS process interaction** → `docs/os-process-interaction.md`
 - **Executor stdin conventions** → `docs/executor-stdin-conventions.md`
