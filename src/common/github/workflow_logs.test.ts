@@ -334,6 +334,37 @@ describe('collectFailingCheckLogs', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
+  test('does no API or filesystem work when there are no failing checks', async () => {
+    const listWorkflowRunsForRepo = vi.fn();
+    const listJobsForWorkflowRun = vi.fn();
+    const downloadJobLogsForWorkflowRun = vi.fn();
+    const paginate = vi.fn();
+    const octokit = createOctokit({
+      listWorkflowRunsForRepo,
+      listJobsForWorkflowRun,
+      downloadJobLogsForWorkflowRun,
+      paginate,
+    });
+    const emptyDestDir = path.join(tempDir, 'empty-destination');
+
+    await expect(
+      collectFailingCheckLogs({
+        octokit,
+        owner: 'example',
+        repo: 'repo',
+        headSha: 'head-sha',
+        failingChecks: [],
+        destDir: emptyDestDir,
+      })
+    ).resolves.toEqual([]);
+
+    expect(listWorkflowRunsForRepo).not.toHaveBeenCalled();
+    expect(listJobsForWorkflowRun).not.toHaveBeenCalled();
+    expect(downloadJobLogsForWorkflowRun).not.toHaveBeenCalled();
+    expect(paginate).not.toHaveBeenCalled();
+    await expect(fs.stat(emptyDestDir)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   test('writes logs and matches a stale rerun job id by name in the latest attempt', async () => {
     const staleJobUrl = 'https://github.com/example/repo/actions/runs/123/job/456';
     const latestAttemptJob = makeJob(789, 'build');
@@ -391,7 +422,15 @@ describe('collectFailingCheckLogs', () => {
 
   test('falls back to paginated workflow runs and matches a job by name', async () => {
     const detailsUrl = 'https://ci.example.test/build/123';
-    const listWorkflowRunsForRepo = vi.fn();
+    const listWorkflowRunsForRepo = vi.fn(
+      async (params: {
+        page?: number;
+      }): Promise<{ data: { workflow_runs: Array<{ id: number }> } }> => {
+        return params.page === 1
+          ? { data: { workflow_runs: [{ id: 10 }] } }
+          : { data: { workflow_runs: [{ id: 11 }] } };
+      }
+    );
     const listJobsForWorkflowRun = vi.fn();
     const paginate = vi.fn(
       async (endpoint: unknown, params: Record<string, unknown>): Promise<unknown[]> => {
@@ -401,7 +440,10 @@ describe('collectFailingCheckLogs', () => {
             repo: 'repo',
             head_sha: 'head-sha',
           });
-          return [{ id: 10 }, { id: 11 }];
+
+          const firstPage = await listWorkflowRunsForRepo({ ...params, page: 1 });
+          const secondPage = await listWorkflowRunsForRepo({ ...params, page: 2 });
+          return [...firstPage.data.workflow_runs, ...secondPage.data.workflow_runs];
         }
 
         expect(endpoint).toBe(listJobsForWorkflowRun);
@@ -430,7 +472,19 @@ describe('collectFailingCheckLogs', () => {
       destDir: tempDir,
     });
 
-    expect(listWorkflowRunsForRepo).not.toHaveBeenCalled();
+    expect(listWorkflowRunsForRepo).toHaveBeenCalledTimes(2);
+    expect(listWorkflowRunsForRepo).toHaveBeenNthCalledWith(1, {
+      owner: 'example',
+      repo: 'repo',
+      head_sha: 'head-sha',
+      page: 1,
+    });
+    expect(listWorkflowRunsForRepo).toHaveBeenNthCalledWith(2, {
+      owner: 'example',
+      repo: 'repo',
+      head_sha: 'head-sha',
+      page: 2,
+    });
     expect(downloadJobLogsForWorkflowRun).toHaveBeenCalledWith({
       owner: 'example',
       repo: 'repo',
@@ -491,6 +545,73 @@ describe('collectFailingCheckLogs', () => {
     ]);
     expect(downloadJobLogsForWorkflowRun).not.toHaveBeenCalled();
     await expect(fs.readdir(tempDir)).resolves.toEqual([]);
+  });
+
+  test('preserves unresolved status-context and third-party check entries', async () => {
+    const checks = [
+      makeFailingCheck('external-status', 'https://ci.example.test/status/1', {
+        source: 'status_context',
+        required: false,
+      }),
+      makeFailingCheck('third-party-check', 'https://vercel.com/example/deployments/2', {
+        required: true,
+      }),
+    ];
+    const listWorkflowRunsForRepo = vi.fn();
+    const listJobsForWorkflowRun = vi.fn();
+    const paginate = vi.fn(
+      async (endpoint: unknown, params: Record<string, unknown>): Promise<unknown[]> => {
+        expect(endpoint).toBe(listWorkflowRunsForRepo);
+        expect(params).toEqual({
+          owner: 'example',
+          repo: 'repo',
+          head_sha: 'head-sha',
+        });
+        return [];
+      }
+    );
+    const downloadJobLogsForWorkflowRun = vi.fn();
+    const octokit = createOctokit({
+      listWorkflowRunsForRepo,
+      listJobsForWorkflowRun,
+      downloadJobLogsForWorkflowRun,
+      paginate,
+    });
+
+    const manifest = await collectFailingCheckLogs({
+      octokit,
+      owner: 'example',
+      repo: 'repo',
+      headSha: 'head-sha',
+      failingChecks: checks,
+      destDir: tempDir,
+    });
+
+    expect(manifest).toEqual([
+      {
+        checkName: 'external-status',
+        source: 'status_context',
+        conclusion: 'failure',
+        detailsUrl: 'https://ci.example.test/status/1',
+        logPath: null,
+        failedSteps: [],
+        required: false,
+        error: expect.stringContaining('https://ci.example.test/status/1'),
+      },
+      {
+        checkName: 'third-party-check',
+        source: 'check_run',
+        conclusion: 'failure',
+        detailsUrl: 'https://vercel.com/example/deployments/2',
+        logPath: null,
+        failedSteps: [],
+        required: true,
+        error: expect.stringContaining('https://vercel.com/example/deployments/2'),
+      },
+    ]);
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(listJobsForWorkflowRun).not.toHaveBeenCalled();
+    expect(downloadJobLogsForWorkflowRun).not.toHaveBeenCalled();
   });
 
   test('limits concurrent log downloads to the requested bound', async () => {
@@ -642,31 +763,82 @@ describe('collectFailingCheckLogs', () => {
     );
   });
 
-  test('rejects invalid concurrency values', async () => {
-    const octokit = createOctokit({});
-    const check = makeFailingCheck('build', null);
+  test('keeps empty and Windows-reserved names contained and unique', async () => {
+    const checks = ['', '.', '..', 'CON', 'con', 'PRN', 'COM1', 'LPT9'].map((name, index) =>
+      makeFailingCheck(
+        name,
+        `https://github.com/example/repo/actions/runs/${index + 1}/job/${index + 101}`
+      )
+    );
+    const listJobsForWorkflowRun = vi.fn();
+    const paginate = vi.fn(
+      async (endpoint: unknown, params: Record<string, unknown>): Promise<WorkflowJob[]> => {
+        expect(endpoint).toBe(listJobsForWorkflowRun);
+        const index = Number(params.run_id) - 1;
+        return [makeJob(index + 101, checks[index].name)];
+      }
+    );
+    const downloadJobLogsForWorkflowRun = vi.fn(async (params: { job_id: number }) => ({
+      data: `log for ${params.job_id}\n`,
+    }));
+    const octokit = createOctokit({
+      listJobsForWorkflowRun,
+      downloadJobLogsForWorkflowRun,
+      paginate,
+    });
 
-    await expect(
-      collectFailingCheckLogs({
-        octokit,
-        owner: 'example',
-        repo: 'repo',
-        headSha: 'head-sha',
-        failingChecks: [check],
-        destDir: tempDir,
-        concurrency: 0,
-      })
-    ).rejects.toThrow('positive safe integer');
-    await expect(
-      collectFailingCheckLogs({
-        octokit,
-        owner: 'example',
-        repo: 'repo',
-        headSha: 'head-sha',
-        failingChecks: [check],
-        destDir: tempDir,
-        concurrency: Number.POSITIVE_INFINITY,
-      })
-    ).rejects.toThrow('positive safe integer');
+    const manifest = await collectFailingCheckLogs({
+      octokit,
+      owner: 'example',
+      repo: 'repo',
+      headSha: 'head-sha',
+      failingChecks: checks,
+      destDir: tempDir,
+    });
+
+    const logPaths = manifest.map((entry) => entry.logPath);
+    const resolvedLogPaths = logPaths.filter((logPath): logPath is string => logPath !== null);
+    expect(resolvedLogPaths).toHaveLength(checks.length);
+    expect(
+      new Set(resolvedLogPaths.map((logPath) => logPath.toLocaleLowerCase('en-US'))).size
+    ).toBe(checks.length);
+
+    const windowsReservedBases = new Set(['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'LPT9']);
+    for (const logPath of resolvedLogPaths) {
+      const relativePath = path.relative(tempDir, logPath);
+      expect(relativePath).not.toMatch(/^\.\.(?:[\\/]|$)/);
+      expect(path.isAbsolute(relativePath)).toBe(false);
+      expect(relativePath).toMatch(/^[A-Za-z0-9_-]+\.log$/);
+      expect(windowsReservedBases.has(path.basename(relativePath, '.log').toUpperCase())).toBe(
+        false
+      );
+      await expect(fs.readFile(logPath, 'utf8')).resolves.toMatch(/^log for \d+\n$/);
+    }
+
+    expect(manifest.slice(0, 3).map((entry) => path.basename(entry.logPath ?? ''))).toEqual([
+      'check.log',
+      'check-2.log',
+      'check-3.log',
+    ]);
   });
+
+  test.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects invalid concurrency value %s',
+    async (concurrency) => {
+      const octokit = createOctokit({});
+      const check = makeFailingCheck('build', null);
+
+      await expect(
+        collectFailingCheckLogs({
+          octokit,
+          owner: 'example',
+          repo: 'repo',
+          headSha: 'head-sha',
+          failingChecks: [check],
+          destDir: tempDir,
+          concurrency,
+        })
+      ).rejects.toThrow('positive safe integer');
+    }
+  );
 });

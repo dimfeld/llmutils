@@ -308,7 +308,16 @@ function sanitizeCheckName(checkName: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 100);
 
-  return sanitized || 'check';
+  const baseName = sanitized || 'check';
+
+  // These names are reserved device names on Windows, even when an extension
+  // is appended. Prefix them so a check named, for example, "CON" can still
+  // be written safely on every supported platform.
+  if (/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(baseName)) {
+    return `check-${baseName}`;
+  }
+
+  return baseName;
 }
 
 function allocateLogFilename(checkName: string, usedFilenames: Set<string>): string {
