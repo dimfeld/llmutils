@@ -26,10 +26,7 @@ export type WorkflowJob = ActionsWorkflowJob & {
   steps: NonNullable<ActionsWorkflowJob['steps']>;
 };
 
-export interface DownloadJobLogResult {
-  content: string | null;
-  error?: string;
-}
+export type DownloadJobLogResult = { ok: true; content: string } | { ok: false; error: string };
 
 export type FailingCheckLogInput = Pick<
   PrStatusCheckRun,
@@ -261,14 +258,14 @@ export async function downloadJobLog(
       repo,
       job_id: jobId,
     });
-    return { content: decodeLogContent(response.data as unknown, jobId) };
+    return { ok: true, content: decodeLogContent(response.data as unknown, jobId) };
   } catch (error) {
     if (getHttpStatus(error) !== 404) {
       throw error;
     }
 
     return {
-      content: null,
+      ok: false,
       error: `GitHub Actions logs for job ${jobId} are unavailable: ${getErrorMessage(error)} (logs may have expired)`,
     };
   }
@@ -595,8 +592,8 @@ export async function collectFailingCheckLogs(
         resolvedJob.repo,
         resolvedJob.job.id
       );
-      if (downloadedLog.content === null) {
-        manifest.error = downloadedLog.error ?? 'GitHub Actions returned no job log content';
+      if (!downloadedLog.ok) {
+        manifest.error = downloadedLog.error;
         return;
       }
 

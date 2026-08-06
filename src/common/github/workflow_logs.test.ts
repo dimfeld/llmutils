@@ -296,6 +296,7 @@ describe('downloadJobLog', () => {
     const octokit = createOctokit({ downloadJobLogsForWorkflowRun });
 
     await expect(downloadJobLog(octokit, 'example', 'repo', 456)).resolves.toEqual({
+      ok: true,
       content: 'line one\nline two\n',
     });
     expect(downloadJobLogsForWorkflowRun).toHaveBeenCalledWith({
@@ -313,7 +314,7 @@ describe('downloadJobLog', () => {
     const octokit = createOctokit({ downloadJobLogsForWorkflowRun });
 
     await expect(downloadJobLog(octokit, 'example', 'repo', 456)).resolves.toEqual({
-      content: null,
+      ok: false,
       error: expect.stringContaining('logs may have expired'),
     });
   });
@@ -328,7 +329,7 @@ describe('downloadJobLog', () => {
     const octokit = createOctokit({ downloadJobLogsForWorkflowRun });
 
     await expect(downloadJobLog(octokit, 'example', 'repo', 456)).resolves.toEqual({
-      content: null,
+      ok: false,
       error: expect.stringContaining('job 456'),
     });
   });
@@ -340,6 +341,7 @@ describe('downloadJobLog', () => {
     const octokit = createOctokit({ downloadJobLogsForWorkflowRun });
 
     await expect(downloadJobLog(octokit, 'example', 'repo', 456)).resolves.toEqual({
+      ok: true,
       content: 'binary log\n',
     });
   });
@@ -352,6 +354,7 @@ describe('downloadJobLog', () => {
     const octokit = createOctokit({ downloadJobLogsForWorkflowRun });
 
     await expect(downloadJobLog(octokit, 'example', 'repo', 456)).resolves.toEqual({
+      ok: true,
       content: expectedContent,
     });
   });
