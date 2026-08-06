@@ -8,11 +8,13 @@
     refreshPrStatus,
   } from '$lib/remote/pr_status.remote.js';
   import type { PrStatusRow } from '$tim/db/pr_status.js';
-  import { startFixThreads } from '$lib/remote/review_thread_actions.remote.js';
+  import { startFixThreads, startCiFix } from '$lib/remote/review_thread_actions.remote.js';
   import {
     getFixButtonState,
     getFixStartResultState,
   } from '$lib/components/pr_fix_launch_state.js';
+  import { normalizeGitHubUsername } from '$common/github/username.js';
+  import { canFixCi } from '$lib/utils/ci_fix_eligibility.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { hasRelevantPrUpdate } from '$lib/utils/pr_update_events.js';
   import {
@@ -58,9 +60,33 @@
     effectivePrs.some((pr) => pr.reviewThreads?.some((rt) => !rt.thread.is_resolved)) ?? false
   );
 
+  let hasFailingOwnPr = $derived.by(() => {
+    const configuredUsername = prData.configuredUsername;
+    if (!configuredUsername) return false;
+    return effectivePrs.some((pr) => {
+      const isOwnPr =
+        !!pr.status.author &&
+        normalizeGitHubUsername(pr.status.author) === normalizeGitHubUsername(configuredUsername);
+      return canFixCi({ isOwnPr, status: pr.status });
+    });
+  });
+
   let sessionActiveForPlan = $derived.by(() => {
     for (const session of sessionManager.sessions.values()) {
       if (session.status === 'active' && session.sessionInfo.planUuid === planUuid) {
+        return true;
+      }
+    }
+    return false;
+  });
+
+  let ciFixSessionActiveForPlan = $derived.by(() => {
+    for (const session of sessionManager.sessions.values()) {
+      if (
+        session.status === 'active' &&
+        session.sessionInfo.planUuid === planUuid &&
+        session.sessionInfo.command === 'ci-fix'
+      ) {
         return true;
       }
     }
@@ -71,14 +97,33 @@
   let refreshing = $state(false);
   let fixStarting = $state(false);
   let fixLaunched = $state(false);
+  let ciFixStarting = $state(false);
+  let ciFixLaunched = $state(false);
   let fixButtonState = $derived(
     getFixButtonState({ refreshing, fixStarting, fixLaunched, sessionActive: sessionActiveForPlan })
+  );
+  let ciFixButtonState = $derived(
+    getFixButtonState(
+      {
+        refreshing,
+        fixStarting: ciFixStarting,
+        fixLaunched: ciFixLaunched,
+        sessionActive: ciFixSessionActiveForPlan,
+      },
+      'Fix CI'
+    )
   );
 
   // Reset fixLaunched when session discovery catches up or plan changes
   $effect(() => {
     if (sessionActiveForPlan && fixLaunched) {
       fixLaunched = false;
+    }
+  });
+
+  $effect(() => {
+    if (ciFixSessionActiveForPlan && ciFixLaunched) {
+      ciFixLaunched = false;
     }
   });
 
@@ -92,6 +137,8 @@
     void planUuid;
     fixLaunched = false;
     fixStarting = false;
+    ciFixLaunched = false;
+    ciFixStarting = false;
   });
 
   // Timeout fallback: if no session appears within 30s, reset fixLaunched
@@ -99,6 +146,14 @@
     if (!fixLaunched) return;
     const timer = setTimeout(() => {
       fixLaunched = false;
+    }, 30_000);
+    return () => clearTimeout(timer);
+  });
+
+  $effect(() => {
+    if (!ciFixLaunched) return;
+    const timer = setTimeout(() => {
+      ciFixLaunched = false;
     }, 30_000);
     return () => clearTimeout(timer);
   });
@@ -125,6 +180,32 @@
     } finally {
       if (planUuid === requestPlanUuid) {
         fixStarting = false;
+      }
+    }
+  }
+
+  async function handleStartCiFix() {
+    if (ciFixStarting || ciFixLaunched || ciFixSessionActiveForPlan) {
+      return;
+    }
+    const requestPlanUuid = planUuid;
+    ciFixStarting = true;
+    refreshError = null;
+    try {
+      const result = await startCiFix({ planUuid: requestPlanUuid });
+      if (planUuid !== requestPlanUuid) return;
+      const fixResultState = getFixStartResultState(result.status);
+      ciFixLaunched = fixResultState.fixLaunched;
+      refreshError = fixResultState.message;
+      if (fixResultState.fixLaunched) {
+        toast.success('CI fix agent started');
+      }
+    } catch (err) {
+      if (planUuid !== requestPlanUuid) return;
+      refreshError = `Failed to start CI fix: ${err}`;
+    } finally {
+      if (planUuid === requestPlanUuid) {
+        ciFixStarting = false;
       }
     }
   }
@@ -174,6 +255,16 @@
       Pull Requests
     </h3>
     <div class="flex items-center gap-1.5">
+      {#if hasFailingOwnPr}
+        <button
+          onclick={handleStartCiFix}
+          disabled={ciFixButtonState.disabled}
+          class="rounded px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 hover:text-red-900 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+          aria-label="Fix failing CI checks"
+        >
+          {ciFixButtonState.label}
+        </button>
+      {/if}
       {#if hasUnresolvedThreads}
         <button
           onclick={handleStartFix}

@@ -9,6 +9,7 @@ import {
   syncPlanPrLinks,
 } from '$common/github/pr_status_service.js';
 import { resolveGitHubToken } from '$common/github/token.js';
+import { getGitHubUsername } from '$common/github/user.js';
 import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { setPullRequestDraftState } from '$common/github/pull_requests.js';
 import { categorizePrUrls, parseJsonStringArray } from '$lib/server/db_queries.js';
@@ -154,6 +155,8 @@ export const getPrStatus = query(planUuidSchema, async ({ planUuid }) => {
     error(404, 'Plan not found');
   }
 
+  const { config } = await getServerContext();
+
   const { valid: prUrls, invalid: invalidPrUrls } = categorizePrUrls(
     parseJsonStringArray(plan.pull_request)
   );
@@ -182,12 +185,15 @@ export const getPrStatus = query(planUuidSchema, async ({ planUuid }) => {
     })
   );
 
+  const configuredUsername = await getGitHubUsername({ githubUsername: config.githubUsername });
+
   return {
     prUrls,
     invalidPrUrls,
     prStatuses,
     latestReviewGuidesByPrUrl,
     tokenConfigured: !!resolveGitHubToken(),
+    configuredUsername,
   };
 });
 
