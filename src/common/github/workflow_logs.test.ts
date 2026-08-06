@@ -108,6 +108,31 @@ describe('parseActionsDetailsUrl', () => {
     expect(parseActionsDetailsUrl(url)).toEqual(expected);
   });
 
+  test('decodes owner and repository segments once before parsing the run path', () => {
+    expect(
+      parseActionsDetailsUrl(
+        'https://github.com/octo%2Dcat/repo%5Fname/actions/runs/123/attempts/2/job/456'
+      )
+    ).toEqual({ owner: 'octo-cat', repo: 'repo_name', runId: 123, jobId: 456 });
+  });
+
+  test.each([
+    ['a double-encoded owner character', 'https://github.com/octo%252Dcat/repo/actions/runs/123'],
+    [
+      'a double-encoded repository character',
+      'https://github.com/octocat/repo%255Fname/actions/runs/123',
+    ],
+    ['an encoded separator in the owner', 'https://github.com/octo%2Fcat/repo/actions/runs/123'],
+    [
+      'an encoded separator in the repository',
+      'https://github.com/octocat/repo%2Fname/actions/runs/123',
+    ],
+    ['a malformed owner escape', 'https://github.com/octo%ZZcat/repo/actions/runs/123'],
+    ['a malformed repository escape', 'https://github.com/octocat/repo%2/actions/runs/123'],
+  ])('returns null for %s', (_description, url) => {
+    expect(parseActionsDetailsUrl(url)).toBeNull();
+  });
+
   test.each([
     'not a URL',
     'http://github.com/example/repo/actions/runs/123',
@@ -140,8 +165,6 @@ describe('parseActionsDetailsUrl', () => {
     'https://github.com/example/repo/actions/runs/123/job/456/extra',
     'https://github.com/example/repo/actions/runs/123/attempts/2/extra',
     'https://github.com/example/repo/actions/runs/123/attempts/2/job/456/extra',
-    'https://github.com/%2565xample/repo/actions/runs/123',
-    'https://github.com/example/re%2570o/actions/runs/123',
   ])('returns null for %s', (url) => {
     expect(parseActionsDetailsUrl(url)).toBeNull();
   });
