@@ -9,11 +9,13 @@ import {
   syncPlanPrLinks,
 } from '$common/github/pr_status_service.js';
 import { resolveGitHubToken } from '$common/github/token.js';
+import { getGitHubUsername } from '$common/github/user.js';
 import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { setPullRequestDraftState } from '$common/github/pull_requests.js';
 import { categorizePrUrls, parseJsonStringArray } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
 import { withRequiredCheckRollupStates } from '$lib/server/required_check_rollup.js';
+import type { PrStatusDetailWithRequiredChecks } from '$lib/server/required_check_rollup.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { cleanOrphanedPrStatus, getPrStatusByUrl, getPrStatusForPlan } from '$tim/db/pr_status.js';
@@ -41,6 +43,15 @@ const togglePrDraftStatusSchema = z.object({
 interface LatestReviewGuideSummary {
   id: number;
   createdAt: string;
+}
+
+export interface PrStatusResponse {
+  prUrls: string[];
+  invalidPrUrls: string[];
+  prStatuses: PrStatusDetailWithRequiredChecks[];
+  latestReviewGuidesByPrUrl: Record<string, LatestReviewGuideSummary>;
+  tokenConfigured: boolean;
+  configuredUsername: string | null;
 }
 
 async function loadPlanAndContext(planUuid: string) {
@@ -148,48 +159,56 @@ async function refreshPlanPrStatusFromGitHub(
   return { error: refreshError };
 }
 
-export const getPrStatus = query(planUuidSchema, async ({ planUuid }) => {
-  const { db, plan } = await loadPlanAndContext(planUuid);
-  if (!plan) {
-    error(404, 'Plan not found');
+export const getPrStatus = query(
+  planUuidSchema,
+  async ({ planUuid }): Promise<PrStatusResponse> => {
+    const { db, plan } = await loadPlanAndContext(planUuid);
+    if (!plan) {
+      error(404, 'Plan not found');
+    }
+
+    const { config } = await getServerContext();
+
+    const { valid: prUrls, invalid: invalidPrUrls } = categorizePrUrls(
+      parseJsonStringArray(plan.pull_request)
+    );
+    const prStatuses = withRequiredCheckRollupStates(
+      db,
+      getPrStatusForPlan(db, plan.uuid, prUrls, { includeReviewThreads: true })
+    );
+    const latestReviewGuidesByPrUrl = Object.fromEntries(
+      prStatuses.flatMap((pr) => {
+        const latestGuide = getLatestReviewGuideByPrUrl(db, pr.status.pr_url, {
+          projectId: plan.project_id,
+        });
+        if (!latestGuide) {
+          return [];
+        }
+
+        return [
+          [
+            pr.status.pr_url,
+            {
+              id: latestGuide.id,
+              createdAt: latestGuide.created_at,
+            } satisfies LatestReviewGuideSummary,
+          ],
+        ];
+      })
+    );
+
+    const configuredUsername = await getGitHubUsername({ githubUsername: config.githubUsername });
+
+    return {
+      prUrls,
+      invalidPrUrls,
+      prStatuses,
+      latestReviewGuidesByPrUrl,
+      tokenConfigured: !!resolveGitHubToken(),
+      configuredUsername,
+    };
   }
-
-  const { valid: prUrls, invalid: invalidPrUrls } = categorizePrUrls(
-    parseJsonStringArray(plan.pull_request)
-  );
-  const prStatuses = withRequiredCheckRollupStates(
-    db,
-    getPrStatusForPlan(db, plan.uuid, prUrls, { includeReviewThreads: true })
-  );
-  const latestReviewGuidesByPrUrl = Object.fromEntries(
-    prStatuses.flatMap((pr) => {
-      const latestGuide = getLatestReviewGuideByPrUrl(db, pr.status.pr_url, {
-        projectId: plan.project_id,
-      });
-      if (!latestGuide) {
-        return [];
-      }
-
-      return [
-        [
-          pr.status.pr_url,
-          {
-            id: latestGuide.id,
-            createdAt: latestGuide.created_at,
-          } satisfies LatestReviewGuideSummary,
-        ],
-      ];
-    })
-  );
-
-  return {
-    prUrls,
-    invalidPrUrls,
-    prStatuses,
-    latestReviewGuidesByPrUrl,
-    tokenConfigured: !!resolveGitHubToken(),
-  };
-});
+);
 
 export const refreshPrStatus = command(planUuidSchema, async ({ planUuid }) => {
   const { db, plan } = await loadPlanAndContext(planUuid);

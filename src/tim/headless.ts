@@ -40,6 +40,7 @@ export type HeadlessCommand =
   | 'proof'
   | 'pr-create'
   | 'pr-fix'
+  | 'ci-fix'
   | 'shell';
 
 interface RunWithHeadlessOptions<T> {

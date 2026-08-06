@@ -66,7 +66,11 @@
 
   let displayCommand = $derived.by(() => {
     const cmd = session.sessionInfo.command;
-    return cmd === 'unknown' ? 'connecting...' : cmd;
+    if (cmd === 'unknown') {
+      return 'connecting...';
+    }
+
+    return cmd === 'ci-fix' ? 'Fix CI' : cmd;
   });
 
   function handleDismiss(e: MouseEvent) {

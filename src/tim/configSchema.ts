@@ -39,6 +39,7 @@ export const lifecycleCommandContextSchema = z.enum([
   'review',
   'proof',
   'pr-fix',
+  'ci-fix',
   'shell',
   'autoreview',
 ]);
@@ -677,6 +678,22 @@ export const timConfigSchema = z
       .strict()
       .optional()
       .describe('Configuration for the pr fix command'),
+    /** Default settings for CI failure fixes */
+    ciFix: z
+      .object({
+        executor: z
+          .enum([ClaudeCodeExecutorName, CodexCliExecutorName])
+          .optional()
+          .describe('Executor to use for CI failure fixes'),
+        model: z.string().optional().describe('Model to use for CI failure fixes'),
+        effort: z
+          .union([claudeCodeReasoningEffortSchema, codexReasoningLevelSchema])
+          .optional()
+          .describe('Reasoning effort to use for CI failure fixes'),
+      })
+      .strict()
+      .optional()
+      .describe('Configuration for the ci-fix command'),
     /** Default settings for the autoreview command */
     autoreview: z
       .object({
@@ -1156,6 +1173,7 @@ export interface TimRuntimeConfigMetadata {
 
 export type TimConfig = z.output<typeof timConfigSchema> & TimRuntimeConfigMetadata;
 export type TimConfigInput = z.input<typeof timConfigSchema>;
+export type CiFixConfig = NonNullable<z.output<typeof timConfigSchema>['ciFix']>;
 export type ProofGenerationConfig = z.output<typeof proofGenerationSchema>;
 export type MediaHostConfig = z.output<typeof mediaHostSchema>;
 export type TimEnvironmentConfig = z.output<typeof timEnvironmentConfigSchema>;

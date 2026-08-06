@@ -10,10 +10,14 @@ export interface ShortcutCallbacks {
 /** Returns true if the event target is a text-entry element where Ctrl+/ would type a character. */
 export function isTypingTarget(event: KeyboardEvent): boolean {
   const target = event.target;
-  if (!target) return false;
-  const tagName = target.tagName;
+  if (!target || typeof target !== 'object') return false;
+
+  const candidate = target as { tagName?: unknown; isContentEditable?: unknown };
+  if (typeof candidate.tagName !== 'string') return false;
+
+  const tagName = candidate.tagName;
   if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return true;
-  if (target.isContentEditable) return true;
+  if (candidate.isContentEditable === true) return true;
   return false;
 }
 

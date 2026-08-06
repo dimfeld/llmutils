@@ -376,6 +376,7 @@ describe('runWithHeadlessAdapterIfEnabled', () => {
       'proof',
       'pr-create',
       'pr-fix',
+      'ci-fix',
     ] as const) {
       expect(shouldRecordHeadlessJobForTests(command)).toBe(true);
     }

@@ -8,8 +8,8 @@
   let { data }: PageProps = $props();
 
   let planUuid = $derived(page.params.planUuid);
-  let projectId = $derived(page.params.projectId);
-  let result = $derived(await getPlanDetail({ planUuid }));
+  let projectId = $derived(data.projectId);
+  let result = $derived(planUuid ? await getPlanDetail({ planUuid }) : null);
 
   let projectName = $derived.by(() => {
     if (!result || projectId !== 'all') return undefined;

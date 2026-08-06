@@ -137,6 +137,7 @@ function makePlanRow(overrides: Partial<PlanRow> = {}): PlanRow {
 describe('agent-multi command', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('TIM_PATH', '');
     mocks.getGitRoot.mockResolvedValue('/repo');
     mocks.resolveProjectContext.mockResolvedValue({ projectId: 123 });
     mocks.getDatabase.mockReturnValue({ __db: true });

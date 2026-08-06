@@ -20,9 +20,11 @@
   import {
     startPrAutoreview,
     startFixPrThreads,
+    startPrCiFix,
     startPrShell,
     startPrReviewGuide,
   } from '$lib/remote/review_thread_actions.remote.js';
+  import { canFixCi } from '$lib/utils/ci_fix_eligibility.js';
   import { getPrReviews } from '$lib/remote/pr_reviews.remote.js';
   import {
     getFixButtonState,
@@ -112,9 +114,11 @@
   let draftUpdating = $state(false);
   let reviewGuideRunning = $state(false);
   let fixStarting = $state(false);
+  let ciFixStarting = $state(false);
   let autoreviewStarting = $state(false);
   let shellStarting = $state(false);
   let fixLaunched = $state(false);
+  let ciFixLaunched = $state(false);
   let actionError = $state<string | null>(null);
   // let graphitePrUrl = $derived(
   //   `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`
@@ -162,6 +166,7 @@
   let canToggleDraft = $derived(tokenConfigured && pr.status.state === 'open' && isOwnPr);
   let draftButtonLabel = $derived(pr.status.draft ? 'Mark ready for review' : 'Convert to draft');
   let canFixUnresolvedThreads = $derived(isOwnPr && unresolvedReviewThreadCount > 0);
+  let showFixCi = $derived(canFixCi({ isOwnPr, status: pr.status }));
   let canonicalPrUrl = $derived(tryCanonicalizePrUrl(pr.status.pr_url));
   let sessionActive = $derived.by(() => {
     if (!canonicalPrUrl) {
@@ -169,6 +174,13 @@
     }
 
     return sessionManager.hasActiveSessionForPr(canonicalPrUrl).active;
+  });
+  let ciFixSessionActive = $derived.by(() => {
+    if (!canonicalPrUrl) {
+      return false;
+    }
+
+    return sessionManager.hasActiveSessionForPr(canonicalPrUrl, 'ci-fix').active;
   });
   let fixButtonState = $derived(
     getFixButtonState({
@@ -178,10 +190,27 @@
       sessionActive,
     })
   );
+  let ciFixButtonState = $derived(
+    getFixButtonState(
+      {
+        refreshing,
+        fixStarting: ciFixStarting,
+        fixLaunched: ciFixLaunched,
+        sessionActive: ciFixSessionActive,
+      },
+      'Fix CI'
+    )
+  );
 
   $effect(() => {
     if (sessionActive && fixLaunched) {
       fixLaunched = false;
+    }
+  });
+
+  $effect(() => {
+    if (ciFixSessionActive && ciFixLaunched) {
+      ciFixLaunched = false;
     }
   });
 
@@ -190,6 +219,8 @@
     void pr.status.pr_number;
     fixLaunched = false;
     fixStarting = false;
+    ciFixLaunched = false;
+    ciFixStarting = false;
     autoreviewStarting = false;
     shellStarting = false;
     actionError = null;
@@ -199,6 +230,14 @@
     if (!fixLaunched) return;
     const timer = setTimeout(() => {
       fixLaunched = false;
+    }, 30_000);
+    return () => clearTimeout(timer);
+  });
+
+  $effect(() => {
+    if (!ciFixLaunched) return;
+    const timer = setTimeout(() => {
+      ciFixLaunched = false;
     }, 30_000);
     return () => clearTimeout(timer);
   });
@@ -263,6 +302,33 @@
     } finally {
       if (pr.status.pr_number === requestPrNumber) {
         fixStarting = false;
+      }
+    }
+  }
+
+  async function handleStartCiFix() {
+    if (!showFixCi || ciFixStarting || ciFixLaunched || ciFixSessionActive) {
+      return;
+    }
+
+    const requestPrNumber = pr.status.pr_number;
+    actionError = null;
+    ciFixStarting = true;
+    try {
+      const result = await startPrCiFix({
+        projectId: Number(projectId),
+        prNumber: requestPrNumber,
+      });
+      if (pr.status.pr_number !== requestPrNumber) return;
+      const fixResultState = getFixStartResultState(result.status, 'pr');
+      ciFixLaunched = fixResultState.fixLaunched;
+      actionError = fixResultState.message;
+    } catch (err) {
+      if (pr.status.pr_number !== requestPrNumber) return;
+      actionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      if (pr.status.pr_number === requestPrNumber) {
+        ciFixStarting = false;
       }
     }
   }
@@ -697,7 +763,7 @@
     {/if}
 
     <!-- Check Runs -->
-    {#if pr.checks.length > 0}
+    {#if pr.checks.length > 0 || showFixCi}
       <details open>
         <summary
           class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
@@ -721,6 +787,21 @@
           </span>
         </summary>
         <div class="mt-1.5 pl-2">
+          {#if showFixCi}
+            <div class="mb-2 flex justify-end">
+              <button
+                onclick={handleStartCiFix}
+                disabled={ciFixButtonState.disabled}
+                class="rounded-md px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 hover:text-red-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+                aria-label="Fix failing CI checks"
+              >
+                {ciFixButtonState.label}
+              </button>
+            </div>
+          {/if}
+          {#if pr.checks.length === 0}
+            <p class="text-sm text-muted-foreground">No check runs are recorded.</p>
+          {/if}
           <PrCheckRunList checks={visibleChecks} requiredCheckNames={pr.requiredCheckNames ?? []} />
         </div>
       </details>

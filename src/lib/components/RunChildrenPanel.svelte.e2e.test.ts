@@ -28,6 +28,7 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startShell: vi.fn(),
   startUpdateDocs: vi.fn(),
   startCreatePr: vi.fn(),
+  startUploadArtifacts: vi.fn(),
   startPlanReviewGuide: vi.fn(),
   startProof: vi.fn(),
   finishPlanQuick: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
 vi.mock('$lib/remote/review_issue_actions.remote.js', () => ({
   removeReviewIssue: vi.fn(),
   convertReviewIssueToTask: vi.fn(),
+  convertAllReviewIssuesToTasks: vi.fn(),
   clearReviewIssues: vi.fn(),
 }));
 

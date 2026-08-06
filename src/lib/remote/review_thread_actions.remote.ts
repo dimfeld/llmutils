@@ -23,6 +23,8 @@ import {
 } from '$lib/server/launch_lock.js';
 import {
   spawnAutoreviewForPrProcess,
+  spawnCiFixForPrProcess,
+  spawnCiFixProcess,
   spawnPrFixForPrProcess,
   spawnPrFixProcess,
   spawnPrReviewGuideProcess,
@@ -30,6 +32,7 @@ import {
   type SpawnTargetProcessResult,
 } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
+import { isCiFixEligibleForUsername } from '$lib/server/ci_fix_eligibility.js';
 import {
   createPullRequestReviewCommentReply,
   resolveReviewThread,
@@ -40,6 +43,7 @@ import { getPlanByUuid } from '$tim/db/plan.js';
 import {
   getPrStatusForPlan,
   getPrStatusByProjectAndNumber,
+  type PrStatusDetail,
   type PrReviewThreadCommentRow,
   type PrReviewThreadDetail,
   type PrReviewThreadRow,
@@ -389,6 +393,67 @@ export const startFixThreads = command(startFixThreadsSchema, async ({ planUuid 
   return { status: 'started' as const, planId: plan.plan_id };
 });
 
+const startCiFixSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startCiFix = command(startCiFixSchema, async ({ planUuid }) => {
+  const { db, config } = await getServerContext();
+
+  const plan = getPlanByUuid(db, planUuid);
+  if (!plan) {
+    error(404, 'Plan not found');
+  }
+
+  // Match startFixThreads: include explicit PR URLs so fallback-linked PRs are found.
+  const explicitPrUrls = parseJsonStringArray(plan.pull_request);
+  const { valid: validPrUrls } = categorizePrUrls(explicitPrUrls);
+  const prStatuses = getPrStatusForPlan(
+    db,
+    planUuid,
+    validPrUrls.length > 0 ? validPrUrls : undefined
+  );
+  const username = await getGitHubUsername({ githubUsername: config.githubUsername });
+  if (!prStatuses.some((prStatus) => isCiFixEligibleForUsername(db, prStatus, username))) {
+    error(400, 'No eligible pull request with failing checks to fix');
+  }
+
+  const activeSession = getSessionManager().hasActiveSessionForPlan(planUuid);
+  if (activeSession.active) {
+    return { status: 'already_running' as const, connectionId: activeSession.connectionId };
+  }
+
+  if (isPlanLaunching(planUuid)) {
+    return { status: 'already_running' as const };
+  }
+
+  const primaryWorkspacePath = getPrimaryWorkspacePath(db, plan.project_id);
+  if (!primaryWorkspacePath) {
+    error(400, 'Project does not have a primary workspace');
+  }
+
+  setLaunchLock(planUuid);
+
+  let result;
+  try {
+    result = await spawnCiFixProcess(plan.plan_id, primaryWorkspacePath);
+  } catch (e) {
+    clearLaunchLock(planUuid);
+    throw e;
+  }
+
+  if (!result.success) {
+    clearLaunchLock(planUuid);
+    error(500, result.error);
+  }
+
+  if (result.earlyExit) {
+    clearLaunchLock(planUuid);
+  }
+
+  return { status: 'started' as const, planId: plan.plan_id };
+});
+
 const startFixPrThreadsSchema = z.object({
   projectId: z.number().int(),
   prNumber: z.number().int(),
@@ -462,7 +527,8 @@ async function launchPrTimCommand(
   commandName: string,
   projectId: number,
   prNumber: number,
-  spawnProcess: (prUrlOrNumber: string, cwd: string) => Promise<SpawnTargetProcessResult>
+  spawnProcess: (prUrlOrNumber: string, cwd: string) => Promise<SpawnTargetProcessResult>,
+  eligibilityCheck?: (prStatus: PrStatusDetail) => Promise<boolean>
 ): Promise<
   { status: 'started'; prUrl: string } | { status: 'already_running'; connectionId?: string }
 > {
@@ -476,6 +542,10 @@ async function launchPrTimCommand(
   const canonicalPrUrl = tryCanonicalizePrUrl(prStatus.status.pr_url);
   if (!canonicalPrUrl) {
     error(404, 'PR not found');
+  }
+
+  if (eligibilityCheck && !(await eligibilityCheck(prStatus))) {
+    error(400, 'PR is not eligible for CI fix');
   }
 
   const activeSession = getSessionManager().hasActiveSessionForPr(canonicalPrUrl);
@@ -523,6 +593,14 @@ export const startPrAutoreview = command(
 
 export const startPrShell = command(startPrReviewGuideSchema, async ({ projectId, prNumber }) =>
   launchPrTimCommand('shell', projectId, prNumber, spawnShellForPrProcess)
+);
+
+export const startPrCiFix = command(startPrReviewGuideSchema, async ({ projectId, prNumber }) =>
+  launchPrTimCommand('ci-fix', projectId, prNumber, spawnCiFixForPrProcess, async (prStatus) => {
+    const { config, db } = await getServerContext();
+    const username = await getGitHubUsername({ githubUsername: config.githubUsername });
+    return isCiFixEligibleForUsername(db, prStatus, username);
+  })
 );
 
 export const startPrReviewGuide = command(

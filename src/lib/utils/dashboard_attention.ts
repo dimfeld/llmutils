@@ -116,6 +116,7 @@ const AGENT_FINISHED_COMMANDS = new Set([
   'chat',
   'pr-create',
   'pr-fix',
+  'ci-fix',
 ]);
 
 const RUNNING_NOW_INCLUDED_NONINTERACTIVE_COMMANDS = new Set([
@@ -125,6 +126,7 @@ const RUNNING_NOW_INCLUDED_NONINTERACTIVE_COMMANDS = new Set([
   'chat',
   'pr-create',
   'pr-fix',
+  'ci-fix',
 ]);
 
 const RUNNING_NOW_EXCLUDED_INTERACTIVE_COMMANDS = new Set(['review-guide', 'show']);

@@ -260,6 +260,15 @@ export async function spawnPrFixProcess(planId: number, cwd: string): Promise<Sp
   );
 }
 
+export async function spawnCiFixProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
+  return spawnPlanTimProcess(
+    describeTarget('plan', planId),
+    planId,
+    ['pr', 'fix-ci', String(planId), '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
+}
+
 export async function spawnPrFixForPrProcess(
   prUrlOrNumber: string,
   cwd: string
@@ -268,6 +277,18 @@ export async function spawnPrFixForPrProcess(
     describeTarget('pr', prUrlOrNumber),
     null,
     ['pr', 'fix', '--pr', prUrlOrNumber, '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
+}
+
+export async function spawnCiFixForPrProcess(
+  prUrlOrNumber: string,
+  cwd: string
+): Promise<SpawnTargetProcessResult> {
+  return spawnTimProcess(
+    describeTarget('pr', prUrlOrNumber),
+    null,
+    ['pr', 'fix-ci', '--pr', prUrlOrNumber, '--auto-workspace', '--no-terminal-input'],
     cwd
   );
 }

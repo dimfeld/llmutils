@@ -17,8 +17,12 @@ const mockGetPrStatus = vi.fn();
 const mockRefreshPrStatus = vi.fn();
 const mockFullRefreshPrStatus = vi.fn();
 const mockStartFixThreads = vi.fn();
+const mockStartCiFix = vi.fn();
 const sessionManager = {
-  sessions: new Map<string, { status: string; sessionInfo: { planUuid?: string } }>(),
+  sessions: new Map<
+    string,
+    { status: string; sessionInfo: { planUuid?: string; command?: string } }
+  >(),
   onEvent: vi.fn(() => () => {}),
 };
 vi.mock('$lib/remote/pr_status.remote.js', () => ({
@@ -28,6 +32,7 @@ vi.mock('$lib/remote/pr_status.remote.js', () => ({
 }));
 vi.mock('$lib/remote/review_thread_actions.remote.js', () => ({
   startFixThreads: (...args: unknown[]) => mockStartFixThreads(...args),
+  startCiFix: (...args: unknown[]) => mockStartCiFix(...args),
 }));
 
 vi.mock('$lib/stores/session_state.svelte.js', () => ({
@@ -183,6 +188,7 @@ async function renderSection(props: {
   invalidPrUrls?: string[];
   prStatuses: PrStatusDetail[];
   latestReviewGuidesByPrUrl?: Record<string, { id: number; createdAt: string }>;
+  configuredUsername?: string | null;
 }) {
   mockGetPrStatus.mockReturnValue(
     Promise.resolve({
@@ -191,6 +197,7 @@ async function renderSection(props: {
       prStatuses: props.prStatuses,
       latestReviewGuidesByPrUrl: props.latestReviewGuidesByPrUrl ?? {},
       tokenConfigured: true,
+      configuredUsername: props.configuredUsername ?? null,
     })
   );
 
@@ -206,6 +213,7 @@ describe('PrStatusSection', () => {
   beforeEach(() => {
     sessionManager.sessions.clear();
     mockStartFixThreads.mockReset();
+    mockStartCiFix.mockReset();
   });
 
   test('renders with the session manager available for client-side PR subscriptions', async () => {
@@ -231,6 +239,7 @@ describe('PrStatusSection', () => {
         invalidPrUrls: [],
         prStatuses: [],
         tokenConfigured: false,
+        configuredUsername: null,
       })
     );
 
@@ -824,5 +833,112 @@ describe('PrStatusSection', () => {
     expect(body).not.toContain('files changed');
     expect(body).not.toContain('text-green-600');
     expect(body).not.toContain('text-red-600');
+  });
+
+  test('shows Fix CI button when the configured user authored a PR with failing checks', async () => {
+    const detail = makePrDetail({
+      status: { author: 'testuser', check_rollup_state: 'failure' },
+      checks: [makeCheck({ conclusion: 'failure' })],
+    });
+
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      configuredUsername: 'testuser',
+    });
+
+    expect(body).toContain('Fix CI');
+    expect(body).toContain('aria-label="Fix failing CI checks"');
+  });
+
+  test('hides Fix CI button when check rollup is not failing', async () => {
+    const detail = makePrDetail({
+      status: { author: 'testuser', check_rollup_state: 'success' },
+      checks: [makeCheck({ conclusion: 'success' })],
+    });
+
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      configuredUsername: 'testuser',
+    });
+
+    expect(body).not.toContain('Fix CI');
+    expect(body).not.toContain('aria-label="Fix failing CI checks"');
+  });
+
+  test('hides Fix CI button when the PR is not authored by the configured user', async () => {
+    const detail = makePrDetail({
+      status: { author: 'someone-else', check_rollup_state: 'failure' },
+      checks: [makeCheck({ conclusion: 'failure' })],
+    });
+
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      configuredUsername: 'testuser',
+    });
+
+    expect(body).not.toContain('Fix CI');
+  });
+
+  test('hides Fix CI button when no configured username is available', async () => {
+    const detail = makePrDetail({
+      status: { author: 'testuser', check_rollup_state: 'failure' },
+      checks: [makeCheck({ conclusion: 'failure' })],
+    });
+
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      configuredUsername: null,
+    });
+
+    expect(body).not.toContain('Fix CI');
+  });
+
+  test('shows Session Active on the Fix CI button when a ci-fix session is active for the plan', async () => {
+    sessionManager.sessions.set('conn-ci-fix', {
+      status: 'active',
+      sessionInfo: { planUuid: 'plan-ci-active', command: 'ci-fix' },
+    });
+
+    const detail = makePrDetail({
+      status: { author: 'testuser', check_rollup_state: 'failure' },
+      checks: [makeCheck({ conclusion: 'failure' })],
+    });
+
+    const { body } = await renderSection({
+      planUuid: 'plan-ci-active',
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      configuredUsername: 'testuser',
+    });
+
+    expect(body).toContain('Session Active');
+    expect(body).toContain('aria-label="Fix failing CI checks"');
+    expect(body).toContain('<button disabled=""');
+  });
+
+  test('does not show Session Active for an active non-CI session on the plan', async () => {
+    sessionManager.sessions.set('conn-pr-fix', {
+      status: 'active',
+      sessionInfo: { planUuid: 'plan-ci-active', command: 'pr-fix' },
+    });
+
+    const detail = makePrDetail({
+      status: { author: 'testuser', check_rollup_state: 'failure' },
+      checks: [makeCheck({ conclusion: 'failure' })],
+    });
+
+    const { body } = await renderSection({
+      planUuid: 'plan-ci-active',
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      configuredUsername: 'testuser',
+    });
+
+    expect(body).toContain('Fix CI');
+    expect(body).not.toContain('Session Active');
   });
 });

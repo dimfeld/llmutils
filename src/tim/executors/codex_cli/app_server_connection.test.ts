@@ -22,7 +22,16 @@ function buildSpawnEnv(extra: Record<string, string>): Record<string, string> {
       env[key] = value;
     }
   }
-  return { ...env, ...extra };
+  const firstPathEntry = extra.PATH?.split(':')[0];
+  const result = {
+    ...env,
+    ...extra,
+    ...(firstPathEntry ? { TIM_PATH: path.join(firstPathEntry, 'tim') } : {}),
+  };
+  if (!(TIM_CODEX_APP_SERVER_SOCKET in extra)) {
+    result[TIM_CODEX_APP_SERVER_SOCKET] = '';
+  }
+  return result;
 }
 
 async function readJsonLines(filePath: string): Promise<any[]> {
@@ -345,16 +354,23 @@ async function setupExternalSocketServer(socketPath: string): Promise<Bun.Server
 
 describe('CodexAppServerConnection', () => {
   let mockServer: MockServerPaths;
+  const originalPath = process.env.PATH;
   const originalCloseTimeout = process.env.TIM_CODEX_APP_SERVER_CLOSE_TIMEOUT_MS;
   const originalForceCloseTimeout = process.env.TIM_CODEX_APP_SERVER_FORCE_CLOSE_TIMEOUT_MS;
 
   beforeEach(async () => {
     mockServer = await setupMockCodexServer();
+    process.env.PATH = `${mockServer.rootDir}:${originalPath ?? ''}`;
     process.env.TIM_CODEX_APP_SERVER_CLOSE_TIMEOUT_MS = '50';
     process.env.TIM_CODEX_APP_SERVER_FORCE_CLOSE_TIMEOUT_MS = '50';
   });
 
   afterEach(async () => {
+    if (originalPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = originalPath;
+    }
     if (originalCloseTimeout === undefined) {
       delete process.env.TIM_CODEX_APP_SERVER_CLOSE_TIMEOUT_MS;
     } else {

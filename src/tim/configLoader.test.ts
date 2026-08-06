@@ -1556,6 +1556,39 @@ defaultExecutor: direct-call
       expect(config.prFix?.effort).toBe('high');
     });
 
+    test('loadEffectiveConfig deep merges ciFix from local config', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          ciFix: {
+            executor: 'claude-code',
+            model: 'opus',
+            effort: 'high',
+          },
+        }),
+        'utf-8'
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          ciFix: {
+            model: 'sonnet',
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.ciFix?.executor).toBe('claude-code');
+      expect(config.ciFix?.model).toBe('sonnet');
+      expect(config.ciFix?.effort).toBe('high');
+    });
+
     test('loadEffectiveConfig deep merges simplify from local config', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       const localConfigPath = path.join(configDir, 'tim.local.yml');

@@ -2,6 +2,7 @@
   import CheckCircle from '@lucide/svelte/icons/check-circle';
   import Copy from '@lucide/svelte/icons/copy';
   import { mergeProps } from 'bits-ui';
+  import type { HTMLButtonAttributes } from 'svelte/elements';
   import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
   type CopyState = 'idle' | 'copied' | 'failed';
@@ -120,7 +121,7 @@
             onclick: handleButtonClick,
           },
           props
-        )}
+        ) as HTMLButtonAttributes}
         <button {...buttonProps}>
           {#if copyState === 'copied'}
             <CheckCircle class={copiedIconClass} />

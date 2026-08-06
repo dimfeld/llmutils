@@ -14,7 +14,7 @@ export interface ActivityJob extends JobRow {
 /** Job types whose natural output is a generated review guide. */
 const REVIEW_JOB_TYPES = new Set(['review', 'review-guide', 'autoreview']);
 /** Job types whose natural output is the created/updated pull request. */
-const PR_JOB_TYPES = new Set(['pr-create', 'pr-fix']);
+const PR_JOB_TYPES = new Set(['pr-create', 'pr-fix', 'ci-fix']);
 
 function planHref(job: JobRow): string | null {
   if (job.project_id == null || !job.plan_uuid) {

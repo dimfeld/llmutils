@@ -908,6 +908,23 @@ describe('configSchema', () => {
       expect(result.lifecycle?.commands?.[0]?.runIn).toEqual(['pr-fix']);
     });
 
+    test('accepts ci-fix as a lifecycle command context', () => {
+      const config = {
+        lifecycle: {
+          commands: [
+            {
+              title: 'CI fix prep',
+              command: 'pnpm install',
+              runIn: ['ci-fix'],
+            },
+          ],
+        },
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.lifecycle?.commands?.[0]?.runIn).toEqual(['ci-fix']);
+    });
+
     test('accepts shell as a lifecycle command context', () => {
       const config = {
         lifecycle: {
@@ -1933,6 +1950,50 @@ describe('configSchema', () => {
       expect(result.prFix?.executor).toBe('codex-cli');
       expect(result.prFix?.model).toBe('gpt-5-codex');
       expect(result.prFix?.effort).toBe('xhigh');
+    });
+
+    test('accepts ciFix executor, model, and effort configuration', () => {
+      const result = timConfigSchema.parse({
+        ciFix: {
+          executor: 'codex-cli',
+          model: 'gpt-5-codex',
+          effort: 'xhigh',
+        },
+      });
+
+      expect(result.ciFix?.executor).toBe('codex-cli');
+      expect(result.ciFix?.model).toBe('gpt-5-codex');
+      expect(result.ciFix?.effort).toBe('xhigh');
+    });
+
+    test('ciFix is optional and does not apply schema defaults', () => {
+      expect(timConfigSchema.parse({}).ciFix).toBeUndefined();
+    });
+
+    test('rejects invalid ciFix executor, effort, and unknown fields', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          ciFix: {
+            executor: 'copy-paste',
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          ciFix: {
+            effort: 'extreme',
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          ciFix: {
+            unsupported: true,
+          },
+        })
+      ).toThrow();
     });
 
     test('accepts autoreview executor, model, and effort configuration', () => {

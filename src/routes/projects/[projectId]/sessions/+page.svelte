@@ -10,6 +10,10 @@
   // after navigation has already completed, and we need to react to those changes too.
   $effect(() => {
     const projectId = page.params.projectId;
+    if (!projectId) {
+      return;
+    }
+
     const lastId = sessionManager.getLastSelectedSessionId(projectId);
     if (lastId && sessionManager.initialized && sessionManager.sessions.has(lastId)) {
       goto(`/projects/${projectId}/sessions/${encodeURIComponent(lastId)}`, {

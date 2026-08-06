@@ -10,15 +10,15 @@ export interface FixButtonStateInput {
 
 export interface FixButtonState {
   disabled: boolean;
-  label: 'Starting...' | 'Fix Started' | 'Session Active' | 'Fix Unresolved';
+  label: 'Starting...' | 'Fix Started' | 'Session Active' | 'Fix Unresolved' | 'Fix CI';
 }
 
-export function getFixButtonState({
-  refreshing,
-  fixStarting,
-  fixLaunched,
-  sessionActive,
-}: FixButtonStateInput): FixButtonState {
+export function getFixButtonState(
+  input: FixButtonStateInput,
+  defaultLabel: FixButtonState['label'] = 'Fix Unresolved'
+): FixButtonState {
+  const { fixStarting, fixLaunched, sessionActive, refreshing } = input;
+
   if (fixStarting) {
     return { disabled: true, label: 'Starting...' };
   }
@@ -33,7 +33,7 @@ export function getFixButtonState({
 
   return {
     disabled: refreshing,
-    label: 'Fix Unresolved',
+    label: defaultLabel,
   };
 }
 

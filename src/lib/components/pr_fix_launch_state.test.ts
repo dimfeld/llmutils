@@ -63,4 +63,35 @@ describe('pr_fix_launch_state', () => {
       label: 'Session Active',
     });
   });
+
+  test('getFixButtonState keeps the Fix Unresolved default label', () => {
+    expect(
+      getFixButtonState({
+        refreshing: false,
+        fixStarting: false,
+        fixLaunched: false,
+        sessionActive: false,
+      })
+    ).toEqual({
+      disabled: false,
+      label: 'Fix Unresolved',
+    });
+  });
+
+  test('getFixButtonState supports a CI-specific default label', () => {
+    expect(
+      getFixButtonState(
+        {
+          refreshing: false,
+          fixStarting: false,
+          fixLaunched: false,
+          sessionActive: false,
+        },
+        'Fix CI'
+      )
+    ).toEqual({
+      disabled: false,
+      label: 'Fix CI',
+    });
+  });
 });
