@@ -37,6 +37,8 @@ import {
   spawnAgentMultiProcess,
   spawnAgentProcess,
   spawnAutoreviewProcess,
+  spawnCiFixForPrProcess,
+  spawnCiFixProcess,
   spawnChatProcess,
   spawnGenerateProcess,
   spawnPlanReviewGuideProcess,
@@ -593,6 +595,58 @@ describe('lib/server/plan_actions', () => {
       'tim',
       'pr',
       'fix',
+      '--pr',
+      prUrl,
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
+    expect(options).toMatchObject({
+      cwd: '/tmp/primary-workspace',
+      stdin: 'ignore',
+      detached: true,
+    });
+    expect(result).toEqual({ success: true });
+    expect((result as { planId?: number }).planId).toBeUndefined();
+  });
+
+  test('spawnCiFixProcess spawns tim pr fix-ci for the plan with auto-workspace flags', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnCiFixProcess(205, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual(['tim', '__daemon-launch']);
+    expect(daemonPayload(options as never).workerCommand).toEqual([
+      'tim',
+      'pr',
+      'fix-ci',
+      '205',
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
+    expect(result).toEqual({ success: true, planId: 205 });
+  });
+
+  test('spawnCiFixForPrProcess spawns tim pr fix-ci --pr with the PR URL and auto-workspace flags', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const prUrl = 'https://github.com/owner/repo/pull/5';
+    const resultPromise = spawnCiFixForPrProcess(prUrl, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual(['tim', '__daemon-launch']);
+    expect(daemonPayload(options as never).workerCommand).toEqual([
+      'tim',
+      'pr',
+      'fix-ci',
       '--pr',
       prUrl,
       '--auto-workspace',

@@ -46,6 +46,8 @@ const { createPullRequestReviewCommentReplyMock, resolveReviewThreadMock } = vi.
 
 const {
   spawnAutoreviewForPrProcessMock,
+  spawnCiFixForPrProcessMock,
+  spawnCiFixProcessMock,
   spawnPrFixForPrProcessMock,
   spawnPrFixProcessMock,
   spawnShellForPrProcessMock,
@@ -56,6 +58,27 @@ const {
       cwd: string
     ) => Promise<{
       success: boolean;
+      error?: string;
+      earlyExit?: boolean;
+    }>
+  >(),
+  spawnCiFixForPrProcessMock: vi.fn<
+    (
+      prUrlOrNumber: string,
+      cwd: string
+    ) => Promise<{
+      success: boolean;
+      error?: string;
+      earlyExit?: boolean;
+    }>
+  >(),
+  spawnCiFixProcessMock: vi.fn<
+    (
+      planId: number,
+      cwd: string
+    ) => Promise<{
+      success: boolean;
+      planId?: number;
       error?: string;
       earlyExit?: boolean;
     }>
@@ -105,6 +128,10 @@ vi.mock('$common/github/pull_requests.js', async (importOriginal) => {
 vi.mock('$lib/server/plan_actions.js', () => ({
   spawnAutoreviewForPrProcess: (...args: Parameters<typeof spawnAutoreviewForPrProcessMock>) =>
     spawnAutoreviewForPrProcessMock(...args),
+  spawnCiFixForPrProcess: (...args: Parameters<typeof spawnCiFixForPrProcessMock>) =>
+    spawnCiFixForPrProcessMock(...args),
+  spawnCiFixProcess: (...args: Parameters<typeof spawnCiFixProcessMock>) =>
+    spawnCiFixProcessMock(...args),
   spawnPrFixForPrProcess: (...args: Parameters<typeof spawnPrFixForPrProcessMock>) =>
     spawnPrFixForPrProcessMock(...args),
   spawnPrFixProcess: (...args: Parameters<typeof spawnPrFixProcessMock>) =>
@@ -117,9 +144,11 @@ import {
   convertThreadToTask,
   replyToThread,
   resolveThread,
+  startCiFix,
   startFixPrThreads,
   startFixThreads,
   startPrAutoreview,
+  startPrCiFix,
   startPrShell,
 } from './review_thread_actions.remote.js';
 import {
@@ -1750,5 +1779,251 @@ describe('startFixPrThreads', () => {
     expect(result).toEqual({ status: 'started', planId: 500 });
     expect(spawnPrFixProcessMock).toHaveBeenCalledWith(500, '/tmp/plan-alongside-workspace');
     expect(spawnPrFixForPrProcessMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('ci-fix launch commands', () => {
+  let tempDir: string;
+  let projectId: number;
+
+  const PR_URL = 'https://github.com/owner/repo/pull/42';
+
+  function seedCiPlan(options: {
+    planUuid: string;
+    planId: number;
+    author?: string | null;
+    checkRollupState?: string | null;
+    projectId?: number;
+  }): void {
+    const targetProjectId = options.projectId ?? projectId;
+    nonSyncedUpsertPlan(currentDb, targetProjectId, {
+      uuid: options.planUuid,
+      planId: options.planId,
+      title: `Plan ${options.planId}`,
+      goal: 'Test plan',
+      details: 'Test details',
+      status: 'pending',
+      pullRequest: [PR_URL],
+    });
+
+    const prStatus = upsertPrStatus(currentDb, {
+      prUrl: PR_URL,
+      owner: 'owner',
+      repo: 'repo',
+      prNumber: 42,
+      author: options.author ?? 'configured-user',
+      title: 'CI fix PR',
+      state: 'open',
+      draft: false,
+      checkRollupState: options.checkRollupState ?? 'failure',
+      lastFetchedAt: new Date().toISOString(),
+    });
+
+    currentDb
+      .prepare(`INSERT INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'explicit')`)
+      .run(options.planUuid, prStatus.status.id);
+  }
+
+  function seedCiPr(
+    options: {
+      author?: string | null;
+      checkRollupState?: string | null;
+    } = {}
+  ): void {
+    upsertPrStatus(currentDb, {
+      prUrl: PR_URL,
+      owner: 'owner',
+      repo: 'repo',
+      prNumber: 42,
+      author: options.author ?? 'configured-user',
+      title: 'CI fix PR',
+      state: 'open',
+      draft: false,
+      checkRollupState: options.checkRollupState ?? 'failure',
+      lastFetchedAt: new Date().toISOString(),
+    });
+  }
+
+  beforeAll(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-ci-fix-actions-remote-test-'));
+  });
+
+  beforeEach(() => {
+    currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
+    currentManager = new SessionManager(currentDb);
+    currentConfig = defaultConfig();
+    projectId = getOrCreateProject(currentDb, 'github.com__owner__repo').id;
+    spawnCiFixForPrProcessMock.mockReset();
+    spawnCiFixProcessMock.mockReset();
+  });
+
+  afterEach(() => {
+    resetLaunchLockState();
+    currentDb.close(false);
+  });
+
+  afterAll(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('startPrCiFix starts a CI fix for an own PR with failing checks', async () => {
+    seedCiPr();
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/ci-fix-pr-workspace',
+      workspaceType: 'primary',
+    });
+    spawnCiFixForPrProcessMock.mockResolvedValue({ success: true });
+
+    const result = await invokeCommand(startPrCiFix, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({ status: 'started', prUrl: PR_URL });
+    expect(spawnCiFixForPrProcessMock).toHaveBeenCalledWith(PR_URL, '/tmp/ci-fix-pr-workspace');
+    expect(isPrLaunching(PR_URL)).toBe(true);
+  });
+
+  test('startPrCiFix rejects a PR that is not eligible', async () => {
+    seedCiPr({ author: 'someone-else' });
+
+    await expect(invokeCommand(startPrCiFix, { projectId, prNumber: 42 })).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'PR is not eligible for CI fix' },
+    });
+    expect(spawnCiFixForPrProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('startPrCiFix returns already_running for an active PR session', async () => {
+    seedCiPr();
+    currentManager.handleWebSocketConnect('ci-fix-pr-active', () => {});
+    currentManager.handleWebSocketMessage('ci-fix-pr-active', {
+      type: 'session_info',
+      command: 'ci-fix',
+      interactive: false,
+      linkedPrUrl: PR_URL,
+      workspacePath: '/tmp/ci-fix-pr-workspace',
+    });
+
+    const result = await invokeCommand(startPrCiFix, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({
+      status: 'already_running',
+      connectionId: 'ci-fix-pr-active',
+    });
+    expect(spawnCiFixForPrProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('startPrCiFix returns already_running when the PR launch lock is held', async () => {
+    seedCiPr();
+    setPrLaunchLock(PR_URL);
+
+    const result = await invokeCommand(startPrCiFix, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({ status: 'already_running' });
+    expect(spawnCiFixForPrProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('startPrCiFix clears the launch lock when spawning fails', async () => {
+    seedCiPr();
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/ci-fix-pr-workspace',
+      workspaceType: 'primary',
+    });
+    spawnCiFixForPrProcessMock.mockResolvedValue({ success: false, error: 'binary not found' });
+
+    await expect(invokeCommand(startPrCiFix, { projectId, prNumber: 42 })).rejects.toMatchObject({
+      status: 500,
+      body: { message: 'binary not found' },
+    });
+    expect(isPrLaunching(PR_URL)).toBe(false);
+  });
+
+  test('startPrCiFix rejects a project that does not own the PR repository', async () => {
+    seedCiPr();
+    const otherProjectId = getOrCreateProject(currentDb, 'github.com__other__repo').id;
+
+    await expect(
+      invokeCommand(startPrCiFix, { projectId: otherProjectId, prNumber: 42 })
+    ).rejects.toMatchObject({
+      status: 404,
+      body: { message: 'PR not found' },
+    });
+    expect(spawnCiFixForPrProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('startCiFix starts a plan-scoped CI fix for an eligible linked PR', async () => {
+    seedCiPlan({ planUuid: 'ci-fix-plan-start', planId: 403 });
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/ci-fix-plan-workspace',
+      workspaceType: 'primary',
+    });
+    spawnCiFixProcessMock.mockResolvedValue({ success: true, planId: 403 });
+
+    const result = await invokeCommand(startCiFix, { planUuid: 'ci-fix-plan-start' });
+
+    expect(result).toEqual({ status: 'started', planId: 403 });
+    expect(spawnCiFixProcessMock).toHaveBeenCalledWith(403, '/tmp/ci-fix-plan-workspace');
+    expect(isPlanLaunching('ci-fix-plan-start')).toBe(true);
+  });
+
+  test('startCiFix rejects a plan without an eligible linked PR', async () => {
+    seedCiPlan({ planUuid: 'ci-fix-plan-ineligible', planId: 404, checkRollupState: 'success' });
+
+    await expect(
+      invokeCommand(startCiFix, { planUuid: 'ci-fix-plan-ineligible' })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'No eligible pull request with failing checks to fix' },
+    });
+    expect(spawnCiFixProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('startCiFix returns already_running for an active plan session', async () => {
+    seedCiPlan({ planUuid: 'ci-fix-plan-active', planId: 405 });
+    currentManager.handleWebSocketConnect('ci-fix-plan-active-session', () => {});
+    currentManager.handleWebSocketMessage('ci-fix-plan-active-session', {
+      type: 'session_info',
+      command: 'ci-fix',
+      interactive: false,
+      planUuid: 'ci-fix-plan-active',
+      workspacePath: '/tmp/ci-fix-plan-workspace',
+    });
+
+    const result = await invokeCommand(startCiFix, { planUuid: 'ci-fix-plan-active' });
+
+    expect(result).toEqual({
+      status: 'already_running',
+      connectionId: 'ci-fix-plan-active-session',
+    });
+    expect(spawnCiFixProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('startCiFix returns already_running when the plan launch lock is held', async () => {
+    seedCiPlan({ planUuid: 'ci-fix-plan-locked', planId: 406 });
+    setLaunchLock('ci-fix-plan-locked');
+
+    const result = await invokeCommand(startCiFix, { planUuid: 'ci-fix-plan-locked' });
+
+    expect(result).toEqual({ status: 'already_running' });
+    expect(spawnCiFixProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('startCiFix clears the launch lock when spawning fails', async () => {
+    seedCiPlan({ planUuid: 'ci-fix-plan-failed', planId: 407 });
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/ci-fix-plan-workspace',
+      workspaceType: 'primary',
+    });
+    spawnCiFixProcessMock.mockResolvedValue({ success: false, error: 'binary not found' });
+
+    await expect(
+      invokeCommand(startCiFix, { planUuid: 'ci-fix-plan-failed' })
+    ).rejects.toMatchObject({
+      status: 500,
+      body: { message: 'binary not found' },
+    });
+    expect(isPlanLaunching('ci-fix-plan-failed')).toBe(false);
   });
 });
