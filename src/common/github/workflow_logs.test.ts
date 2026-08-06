@@ -80,6 +80,11 @@ describe('parseActionsDetailsUrl', () => {
       { owner: 'example', repo: 'repo', runId: 123 },
     ],
     [
+      'run-only URL with percent-encoded repository segments',
+      'https://github.com/%65xample/re%70o/actions/runs/123',
+      { owner: 'example', repo: 'repo', runId: 123 },
+    ],
+    [
       'run and job URL',
       'https://github.com/example/repo/actions/runs/123/job/456',
       { owner: 'example', repo: 'repo', runId: 123, jobId: 456 },
@@ -135,6 +140,8 @@ describe('parseActionsDetailsUrl', () => {
     'https://github.com/example/repo/actions/runs/123/job/456/extra',
     'https://github.com/example/repo/actions/runs/123/attempts/2/extra',
     'https://github.com/example/repo/actions/runs/123/attempts/2/job/456/extra',
+    'https://github.com/%2565xample/repo/actions/runs/123',
+    'https://github.com/example/re%2570o/actions/runs/123',
   ])('returns null for %s', (url) => {
     expect(parseActionsDetailsUrl(url)).toBeNull();
   });

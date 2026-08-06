@@ -80,12 +80,11 @@ function decodePathSegment(value: string): string | null {
 }
 
 function parseRepositorySegment(value: string): string | null {
-  const decoded = decodePathSegment(value);
-  if (!decoded || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(decoded)) {
+  if (!value || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(value)) {
     return null;
   }
 
-  return decoded;
+  return value;
 }
 
 function parseJobIdFromPath(pathSegments: string[]): number | null | undefined {
