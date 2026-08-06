@@ -75,6 +75,10 @@ function parseJobIdFromPath(pathSegments: string[]): number | null | undefined {
 }
 
 export function parseActionsDetailsUrl(url: string): ParsedActionsDetailsUrl | null {
+  if (url.trim() !== url) {
+    return null;
+  }
+
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(url);
