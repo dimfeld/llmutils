@@ -39,6 +39,7 @@ export const lifecycleCommandContextSchema = z.enum([
   'review',
   'proof',
   'pr-fix',
+  'ci-fix',
   'shell',
   'autoreview',
 ]);
