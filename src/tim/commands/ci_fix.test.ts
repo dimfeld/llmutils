@@ -374,7 +374,7 @@ describe('tim/commands/ci_fix', () => {
         .catch(() => false);
       state.cleanupSizeDuringCollect = CleanupRegistry.getInstance().size;
       if (state.simulateCleanupDuringCollect) {
-        await CleanupRegistry.getInstance().executeAllAsync();
+        CleanupRegistry.getInstance().executeAll();
         state.cleanupSizeAfterSimulatedCleanup = CleanupRegistry.getInstance().size;
         state.collectDirExistsAfterSimulatedCleanup = await fs
           .stat(state.collectDestDir)

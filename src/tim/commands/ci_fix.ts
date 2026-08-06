@@ -1,3 +1,4 @@
+import { rmSync } from 'node:fs';
 import { readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -250,6 +251,10 @@ async function removeCiFixLogDirectory(directory: string): Promise<void> {
   await rm(directory, { recursive: true, force: true });
 }
 
+function removeCiFixLogDirectorySync(directory: string): void {
+  rmSync(directory, { recursive: true, force: true });
+}
+
 export function buildCiFixPrompt(
   target: PullRequestFixTarget,
   manifest: readonly FailingCheckLogManifestEntry[],
@@ -489,8 +494,8 @@ export async function executeCiFixCommand({
       currentTarget.headSha
     );
     const relativeLogDirectory = path.relative(currentBaseDir, ciFixLogDirectory);
-    unregisterLogCleanup = CleanupRegistry.getInstance().register(async () => {
-      await removeCiFixLogDirectory(ciFixLogDirectory!);
+    unregisterLogCleanup = CleanupRegistry.getInstance().register(() => {
+      removeCiFixLogDirectorySync(ciFixLogDirectory!);
     });
     await clearManagedDirectoryContentsSafely({
       baseDir: currentBaseDir,
