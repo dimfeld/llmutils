@@ -130,6 +130,8 @@ describe('RunningNowRow', () => {
     expect(body).toContain('PR #100');
     expect(body).toContain('Fix CI failures');
     expect(body).not.toContain('No plan');
+    expect(body).toMatch(/>\s*Fix CI\s*<\/span>/);
+    expect(body).not.toMatch(/>\s*ci-fix\s*<\/span>/);
   });
 
   test('shows No plan fallback when no plan and no PR identity', async () => {

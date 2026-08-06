@@ -42,6 +42,7 @@
     commandStyles[session.command] ??
       'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
   );
+  let commandLabel = $derived(session.command === 'ci-fix' ? 'Fix CI' : session.command);
 
   function navigateToSession() {
     sessionManager.selectSession(session.connectionId, projectId);
@@ -61,7 +62,7 @@
     <span
       class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium {commandClass}"
     >
-      {session.command}
+      {commandLabel}
     </span>
     {#if session.planTitle}
       <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">

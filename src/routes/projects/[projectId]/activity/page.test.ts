@@ -39,6 +39,8 @@ describe('activity page CI fix jobs', () => {
     });
 
     expect(body).toContain('Fix CI');
+    expect(body).toMatch(/>\s*Fix CI\s*<\/td>/);
+    expect(body).not.toContain('>ci-fix</td>');
     expect(body).toContain('PR #42');
     expect(body).toContain('Plan #42: Repair CI');
   });

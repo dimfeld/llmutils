@@ -262,5 +262,7 @@ describe('SessionRow', () => {
 
     expect(body).toContain('PR #13');
     expect(body).toContain('Fix CI failures');
+    expect(body).toMatch(/>\s*Fix CI\s*<\/span>/);
+    expect(body).not.toMatch(/>\s*ci-fix\s*<\/span>/);
   });
 });
