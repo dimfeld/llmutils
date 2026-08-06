@@ -2023,6 +2023,28 @@ describe('lib/server/session_manager', () => {
     });
   });
 
+  test('hasActiveSessionForPr finds an active CI fix session', () => {
+    const prUrl = 'https://github.com/owner/repo/pull/22';
+
+    manager.handleWebSocketConnect('ci-fix-active', () => {});
+    manager.handleWebSocketMessage('ci-fix-active', {
+      type: 'session_info',
+      command: 'ci-fix',
+      interactive: false,
+      linkedPrUrl: prUrl,
+      workspacePath: '/tmp/ws-ci-fix',
+    });
+
+    expect(manager.hasActiveSessionForPr(prUrl)).toEqual({
+      active: true,
+      connectionId: 'ci-fix-active',
+    });
+    expect(manager.hasActiveSessionForPr(prUrl, 'ci-fix')).toEqual({
+      active: true,
+      connectionId: 'ci-fix-active',
+    });
+  });
+
   test('hasActiveSessionForPlan returns only matching active sessions', () => {
     manager.handleWebSocketConnect('generate-active', () => {});
     manager.handleWebSocketMessage('generate-active', {

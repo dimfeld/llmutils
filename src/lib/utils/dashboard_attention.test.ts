@@ -181,6 +181,19 @@ describe('deriveAttentionItems', () => {
     expect(result.planItems[0].reasons).toEqual([{ type: 'agent_finished' }]);
   });
 
+  test('detects agent_finished from an offline CI fix session', () => {
+    const plan = makePlan({ uuid: 'plan-1', displayStatus: 'in_progress' });
+    const session = makeSession({
+      connectionId: 'ci-fix-1',
+      status: 'offline',
+      sessionInfo: { command: 'ci-fix', planUuid: 'plan-1' },
+    });
+
+    const result = deriveAttentionItems([plan], planIndex([session]), []);
+    expect(result.planItems).toHaveLength(1);
+    expect(result.planItems[0].reasons).toEqual([{ type: 'agent_finished' }]);
+  });
+
   test('does not flag agent_finished for offline session when plan is not in_progress', () => {
     const plan = makePlan({ uuid: 'plan-1', displayStatus: 'needs_review' });
     const session = makeSession({
@@ -400,6 +413,10 @@ describe('deriveRunningNowSessions', () => {
         connectionId: 'pr-fix-1',
         sessionInfo: { command: 'pr-fix' },
       }),
+      makeSession({
+        connectionId: 'ci-fix-1',
+        sessionInfo: { command: 'ci-fix' },
+      }),
     ];
 
     const result = deriveRunningNowSessions(sessions, 'all');
@@ -408,6 +425,7 @@ describe('deriveRunningNowSessions', () => {
       'gen-1',
       'chat-1',
       'pr-fix-1',
+      'ci-fix-1',
     ]);
   });
 
@@ -548,6 +566,32 @@ describe('deriveRunningNowSessions', () => {
       connectedAt: '2026-01-01T12:00:00Z',
       projectId: 3,
     });
+  });
+
+  test('maps PR identity for no-plan CI fix sessions', () => {
+    const session = makeSession({
+      connectionId: 'ci-fix-1',
+      sessionInfo: {
+        command: 'ci-fix',
+        linkedPrUrl: 'https://github.com/owner/repo/pull/8',
+        linkedPrNumber: 8,
+        linkedPrTitle: 'Fix CI failures',
+        workspacePath: '/workspace',
+      },
+      connectedAt: '2026-01-01T12:00:00Z',
+      projectId: 3,
+    });
+
+    const result = deriveRunningNowSessions([session], 'all');
+    expect(result[0]).toEqual(
+      expect.objectContaining({
+        connectionId: 'ci-fix-1',
+        prUrl: 'https://github.com/owner/repo/pull/8',
+        prNumber: 8,
+        prTitle: 'Fix CI failures',
+        command: 'ci-fix',
+      })
+    );
   });
 });
 

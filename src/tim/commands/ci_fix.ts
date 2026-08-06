@@ -59,14 +59,8 @@ interface RootCommandLike {
   };
 }
 
-export interface CiFixConfig {
-  executor?: string;
-  model?: string;
-  effort?: string;
-}
-
 type EffectiveConfig = Awaited<ReturnType<typeof loadEffectiveConfig>>;
-type CiFixEffectiveConfig = EffectiveConfig & { ciFix?: CiFixConfig };
+export type { CiFixConfig } from '../configSchema.js';
 
 export type CiFixCommandOptions = PrFixCommandOptions;
 
@@ -361,7 +355,7 @@ export async function executeCiFixCommand({
 }: {
   target: PrFixTarget;
   options: CiFixCommandOptions;
-  config: CiFixEffectiveConfig;
+  config: EffectiveConfig;
   noninteractive: boolean;
   terminalInputEnabled: boolean;
 }): Promise<void> {
@@ -390,7 +384,7 @@ export async function executeCiFixCommand({
     linkedPrTitle: currentTarget.title,
   });
 
-  const configuredCiFix = (config as CiFixEffectiveConfig).ciFix;
+  const configuredCiFix = config.ciFix;
   const executorName =
     resolveStringOption(options.executor) ??
     resolveStringOption(options.orchestrator) ??

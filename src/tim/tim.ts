@@ -1939,6 +1939,37 @@ prCommand
     await handlePrFixCommand(planIdOrPr, options, command).catch(handleCommandError);
   });
 
+prCommand
+  .command('fix-ci [planIdOrPr]')
+  .description('Diagnose and fix failing CI checks using an AI agent')
+  .option('--pr <pr-url-or-number>', 'Fix failing CI checks for a PR without a plan')
+  .option('--plan <planId>', 'Fix failing CI checks for a plan-linked PR')
+  .option('--current', 'Unsupported for pr fix-ci; use tim review --current')
+  .option('--branch <branch>', 'Unsupported for pr fix-ci; use tim review --branch')
+  .addOption(
+    new Option('-x, --executor <name>', 'The executor to use').choices(['claude-code', 'codex-cli'])
+  )
+  .option('-m, --model <model>', 'Model override')
+  .addOption(
+    new Option('--effort <level>', 'Reasoning effort override').choices([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+  )
+  .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
+  .option('-w, --workspace <name>', 'Use a specific workspace')
+  .option('--nw, --new-workspace', 'Create a new workspace instead of reusing an existing one')
+  .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
+  .option('--non-interactive', 'No user prompts')
+  .option('--no-terminal-input', 'Disable terminal input')
+  .action(async (planIdOrPr, options, command) => {
+    const { handleCiFixCommand } = await import('./commands/ci_fix.js');
+    await handleCiFixCommand(planIdOrPr, options, command).catch(handleCommandError);
+  });
+
 const prReviewGuideCommand = prCommand
   .command('review-guide [pr-url-or-number]')
   .description('Run standalone AI review on any PR')

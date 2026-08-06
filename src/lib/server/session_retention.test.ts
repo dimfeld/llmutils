@@ -19,12 +19,15 @@ describe('session retention policies', () => {
   test('uses short retention for review comment sessions and longer retention for agents', () => {
     const comment = getInactiveSessionRetentionPolicy('review-guide-comment', 'offline');
     const agent = getInactiveSessionRetentionPolicy('agent', 'offline');
+    const ciFix = getInactiveSessionRetentionPolicy('ci-fix', 'offline');
 
     expect(comment.ttlMs).toBe(30 * 60 * 1000);
     expect(comment.maxMessages).toBe(100);
     expect(agent.ttlMs).toBe(7 * 24 * 60 * 60 * 1000);
     expect(agent.maxMessages).toBe(500);
     expect(agent.maxBytes).toBeGreaterThan(comment.maxBytes);
+    expect(ciFix.ttlMs).toBe(3 * 24 * 60 * 60 * 1000);
+    expect(ciFix.maxMessages).toBe(250);
   });
 
   test('notifications use their dedicated bounded policy', () => {

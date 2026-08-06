@@ -666,6 +666,75 @@ describe('tim/commands/ci_fix', () => {
     );
   });
 
+  test('uses ciFix configuration before global executor and model defaults', async () => {
+    state.config = {
+      defaultExecutor: 'claude-code',
+      models: { execution: 'global-model' },
+      ciFix: {
+        executor: 'codex-cli',
+        model: 'ci-fix-model',
+        effort: 'low',
+      },
+    };
+
+    await executeCiFixCommand({
+      target: state.target as never,
+      options: {},
+      config: state.config as never,
+      noninteractive: false,
+      terminalInputEnabled: true,
+    });
+
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+      'codex-cli',
+      expect.objectContaining({ model: 'ci-fix-model' }),
+      state.config,
+      expect.objectContaining({ reasoning: { default: 'low' } })
+    );
+    expect(mockDefaultModelForExecutor).not.toHaveBeenCalled();
+  });
+
+  test('uses global defaults before executor-specific fallbacks', async () => {
+    state.config = {
+      defaultExecutor: 'codex-cli',
+      models: { execution: 'global-model' },
+    };
+
+    await executeCiFixCommand({
+      target: state.target as never,
+      options: {},
+      config: state.config as never,
+      noninteractive: false,
+      terminalInputEnabled: true,
+    });
+
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+      'codex-cli',
+      expect.objectContaining({ model: 'global-model' }),
+      state.config,
+      undefined
+    );
+    expect(mockDefaultModelForExecutor).not.toHaveBeenCalled();
+  });
+
+  test('falls back to the built-in executor and model defaults', async () => {
+    await executeCiFixCommand({
+      target: state.target as never,
+      options: {},
+      config: state.config as never,
+      noninteractive: false,
+      terminalInputEnabled: true,
+    });
+
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+      'claude-code',
+      expect.objectContaining({ model: 'default-model' }),
+      state.config,
+      undefined
+    );
+    expect(mockDefaultModelForExecutor).toHaveBeenCalledWith('claude-code', 'execution');
+  });
+
   test('registers and unregisters log cleanup even when executor execution fails', async () => {
     state.executorExecute.mockRejectedValueOnce(new Error('executor failed'));
 

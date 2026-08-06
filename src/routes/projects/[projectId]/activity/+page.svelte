@@ -28,6 +28,7 @@
     'update-docs': 'Update docs',
     'pr-create': 'Create PR',
     'pr-fix': 'Fix PR',
+    'ci-fix': 'Fix CI',
     'run-prompt': 'Run prompt',
     shell: 'Shell',
   };
@@ -39,7 +40,7 @@
   function prefersPrTarget(job: ActivityJob): boolean {
     return (
       job.pr_url != null &&
-      ['review-guide', 'autoreview', 'pr-create', 'pr-fix'].includes(job.job_type)
+      ['review-guide', 'autoreview', 'pr-create', 'pr-fix', 'ci-fix'].includes(job.job_type)
     );
   }
 

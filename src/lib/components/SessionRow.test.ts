@@ -244,4 +244,23 @@ describe('SessionRow', () => {
 
     expect(body).toContain('PR #12');
   });
+
+  test('shows PR identity for a no-plan CI fix session', async () => {
+    const { body } = await render(SessionRow, {
+      props: {
+        session: createSession({
+          sessionInfo: {
+            command: 'ci-fix',
+            linkedPrNumber: 13,
+            linkedPrTitle: 'Fix CI failures',
+            workspacePath: '/tmp/ws',
+          },
+        }),
+        href: '/projects/1/sessions/conn-1',
+      },
+    });
+
+    expect(body).toContain('PR #13');
+    expect(body).toContain('Fix CI failures');
+  });
 });

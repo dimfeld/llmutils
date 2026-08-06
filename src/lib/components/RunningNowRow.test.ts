@@ -112,6 +112,26 @@ describe('RunningNowRow', () => {
     expect(body).not.toContain('No plan');
   });
 
+  test('shows PR identity for a no-plan CI fix session', async () => {
+    const { body } = await render(RunningNowRow, {
+      props: {
+        session: createSession({
+          planUuid: null,
+          planId: null,
+          planTitle: null,
+          prNumber: 100,
+          prTitle: 'Fix CI failures',
+          command: 'ci-fix',
+        }),
+        projectId: '7',
+      },
+    });
+
+    expect(body).toContain('PR #100');
+    expect(body).toContain('Fix CI failures');
+    expect(body).not.toContain('No plan');
+  });
+
   test('shows No plan fallback when no plan and no PR identity', async () => {
     const { body } = await render(RunningNowRow, {
       props: {

@@ -412,6 +412,15 @@ prFix:
   effort: high
 ```
 
+`tim pr fix-ci --pr <pr-url-or-number>` diagnoses failing CI checks for a pull request. It downloads available GitHub Actions logs into the selected workspace, asks the agent to diagnose each failure and confirm the proposed actions, then applies the requested fixes and pushes them to the PR branch. Configure defaults with `ciFix.executor`, `ciFix.model`, and `ciFix.effort`; CLI flags override these values.
+
+```yaml
+ciFix:
+  executor: codex-cli
+  model: gpt-5-codex
+  effort: high
+```
+
 ### Automatic PR review-guide comments
 
 `tim pr review-guide-comment <prUrlOrNumber>` generates a short, comment-sized review guide and posts it directly to the PR as a comment (distinct from the in-app review guide above, which embeds full diffs for the web viewer). The comment groups the changes into a few logical sections and flags the specific places a human reviewer should look closely. It checks out the PR branch in a managed workspace (`--auto-workspace`), runs an executor (codex-cli by default; override with `-x claude-code`), logs the generated guide, and posts via the configured GitHub App installation token. Use `--dry-run` to generate and log the guide without posting it.
@@ -838,7 +847,7 @@ lifecycle:
       shutdown: 'dropdb "$DATABASE_NAME"'
 ```
 
-Use `runIn: [agent]`, `runIn: [review]`, `runIn: [proof]`, `runIn: [pr-fix]`, `runIn: [shell]`, or `runIn: [autoreview]` to scope setup to a specific command context. Omit `runIn` for shared setup.
+Use `runIn: [agent]`, `runIn: [review]`, `runIn: [proof]`, `runIn: [pr-fix]`, `runIn: [ci-fix]`, `runIn: [shell]`, or `runIn: [autoreview]` to scope setup to a specific command context. Omit `runIn` for shared setup.
 
 **Workspace `.env` updates:** Use `lifecycle.env` for values that tim must write into each
 managed workspace `.env` when it selects or creates that workspace. String values add or update

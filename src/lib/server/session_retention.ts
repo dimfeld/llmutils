@@ -42,7 +42,7 @@ export const DEFAULT_SESSION_RETENTION_CONFIG: SessionRetentionConfig = {
 };
 
 const AGENT_COMMANDS = new Set(['agent', 'agent-multi', 'chat', 'autoreview']);
-const MEDIUM_COMMANDS = new Set(['generate', 'pr-fix', 'rebase']);
+const MEDIUM_COMMANDS = new Set(['generate', 'pr-fix', 'ci-fix', 'rebase']);
 const SHORT_COMMANDS = new Set(['proof', 'upload-artifacts', 'update-docs', 'finish', 'pr-create']);
 const IMPORTANT_RAW_TYPES = new Set([
   'agent_session_start',
