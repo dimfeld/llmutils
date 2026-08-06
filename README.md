@@ -55,6 +55,17 @@ bun run tim -- --help
 bun run tim -- list
 ```
 
+### Restore missing session files
+
+If a live `tim agent` process is missing its session file, run this from the
+repository root:
+
+```bash
+bun scripts/restore-session-files.ts
+```
+
+Use `--dry-run` to inspect the files before writing them.
+
 ## Configure a Project
 
 Run these commands inside the repository you want `tim` to manage, not necessarily inside the `llmutils` repository:
