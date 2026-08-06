@@ -239,6 +239,7 @@ describe('PrStatusSection', () => {
         invalidPrUrls: [],
         prStatuses: [],
         tokenConfigured: false,
+        configuredUsername: null,
       })
     );
 
@@ -917,5 +918,27 @@ describe('PrStatusSection', () => {
     expect(body).toContain('Session Active');
     expect(body).toContain('aria-label="Fix failing CI checks"');
     expect(body).toContain('<button disabled=""');
+  });
+
+  test('does not show Session Active for an active non-CI session on the plan', async () => {
+    sessionManager.sessions.set('conn-pr-fix', {
+      status: 'active',
+      sessionInfo: { planUuid: 'plan-ci-active', command: 'pr-fix' },
+    });
+
+    const detail = makePrDetail({
+      status: { author: 'testuser', check_rollup_state: 'failure' },
+      checks: [makeCheck({ conclusion: 'failure' })],
+    });
+
+    const { body } = await renderSection({
+      planUuid: 'plan-ci-active',
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      configuredUsername: 'testuser',
+    });
+
+    expect(body).toContain('Fix CI');
+    expect(body).not.toContain('Session Active');
   });
 });

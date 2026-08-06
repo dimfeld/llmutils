@@ -763,7 +763,7 @@
     {/if}
 
     <!-- Check Runs -->
-    {#if pr.checks.length > 0}
+    {#if pr.checks.length > 0 || showFixCi}
       <details open>
         <summary
           class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
@@ -798,6 +798,9 @@
                 {ciFixButtonState.label}
               </button>
             </div>
+          {/if}
+          {#if pr.checks.length === 0}
+            <p class="text-sm text-muted-foreground">No check runs are recorded.</p>
           {/if}
           <PrCheckRunList checks={visibleChecks} requiredCheckNames={pr.requiredCheckNames ?? []} />
         </div>

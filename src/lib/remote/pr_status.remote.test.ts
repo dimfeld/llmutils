@@ -350,6 +350,7 @@ describe('pr_status remote functions', () => {
       prStatuses: [],
       latestReviewGuidesByPrUrl: {},
       tokenConfigured: false,
+      configuredUsername: null,
     });
   });
 

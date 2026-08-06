@@ -137,6 +137,10 @@ describe('PrDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionManager.sessions.clear();
+    sessionManager.hasActiveSessionForPr.mockReset();
+    sessionManager.hasActiveSessionForPr.mockImplementation(
+      (_url: string, _command?: string | string[]) => ({ active: false })
+    );
   });
 
   test('renders the current user review-request label in the badge bar', async () => {
@@ -523,6 +527,50 @@ describe('PrDetail', () => {
     expect(body).toContain('aria-label="Fix failing CI checks"');
   });
 
+  test('shows Fix CI from the failing rollup when check-run rows are missing', async () => {
+    const pr = createPr();
+    pr.status.check_rollup_state = 'failure';
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        username: 'alice',
+      },
+    });
+
+    expect(body).toContain('Fix CI');
+    expect(body).toContain('No check runs are recorded.');
+  });
+
+  test('hides Fix CI when no viewer username is available', async () => {
+    const pr = createPr();
+    pr.status.check_rollup_state = 'failure';
+    pr.checks = [
+      {
+        id: 1,
+        pr_status_id: 1,
+        name: 'CI / build',
+        source: 'check_run',
+        status: 'completed',
+        conclusion: 'failure',
+        details_url: 'https://github.com/example/repo/actions/runs/1',
+        started_at: '2026-03-18T10:00:00.000Z',
+        completed_at: '2026-03-18T10:01:00.000Z',
+      },
+    ];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+      },
+    });
+
+    expect(body).not.toContain('Fix CI');
+    expect(body).not.toContain('aria-label="Fix failing CI checks"');
+  });
+
   test('hides Fix CI button when check rollup is not failing', async () => {
     const pr = createPr();
     pr.status.check_rollup_state = 'success';
@@ -616,5 +664,40 @@ describe('PrDetail', () => {
 
     expect(body).toContain('Session Active');
     expect(body).toContain('aria-label="Fix failing CI checks"');
+  });
+
+  test('does not show Session Active for an active non-CI PR session', async () => {
+    sessionManager.hasActiveSessionForPr.mockImplementation(
+      (_url: string, command?: string | string[]) => ({
+        active: command == null,
+      })
+    );
+
+    const pr = createPr();
+    pr.status.check_rollup_state = 'failure';
+    pr.checks = [
+      {
+        id: 1,
+        pr_status_id: 1,
+        name: 'CI / build',
+        source: 'check_run',
+        status: 'completed',
+        conclusion: 'failure',
+        details_url: 'https://github.com/example/repo/actions/runs/1',
+        started_at: '2026-03-18T10:00:00.000Z',
+        completed_at: '2026-03-18T10:01:00.000Z',
+      },
+    ];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        username: 'alice',
+      },
+    });
+
+    expect(body).toContain('Fix CI');
+    expect(body).not.toContain('Session Active');
   });
 });
