@@ -578,6 +578,64 @@ describe('collectFailingCheckLogs', () => {
     expect(downloadJobLogsForWorkflowRun).toHaveBeenCalledTimes(1);
   });
 
+  test('uses the head-SHA fallback instead of accessing a different repository', async () => {
+    const detailsUrl = 'https://github.com/other/repo/actions/runs/128/job/461';
+    const listWorkflowRunsForRepo = vi.fn();
+    const listJobsForWorkflowRun = vi.fn();
+    const jobListParams: Record<string, unknown>[] = [];
+    const paginate = vi.fn(
+      async (endpoint: unknown, params: Record<string, unknown>): Promise<unknown[]> => {
+        if (endpoint === listWorkflowRunsForRepo) {
+          expect(params).toEqual({
+            owner: 'example',
+            repo: 'repo',
+            head_sha: 'head-sha',
+          });
+          return [{ id: 12 }];
+        }
+
+        expect(endpoint).toBe(listJobsForWorkflowRun);
+        jobListParams.push(params);
+        return [makeJob(511, 'build')];
+      }
+    );
+    const downloadJobLogsForWorkflowRun = vi.fn(async () => ({ data: 'fallback log\n' }));
+    const octokit = createOctokit({
+      listWorkflowRunsForRepo,
+      listJobsForWorkflowRun,
+      downloadJobLogsForWorkflowRun,
+      paginate,
+    });
+
+    const manifest = await collectFailingCheckLogs({
+      octokit,
+      owner: 'example',
+      repo: 'repo',
+      headSha: 'head-sha',
+      failingChecks: [makeFailingCheck('build', detailsUrl)],
+      destDir: tempDir,
+    });
+
+    expect(jobListParams).toEqual([
+      {
+        owner: 'example',
+        repo: 'repo',
+        run_id: 12,
+        filter: 'latest',
+      },
+    ]);
+    expect(downloadJobLogsForWorkflowRun).toHaveBeenCalledWith({
+      owner: 'example',
+      repo: 'repo',
+      job_id: 511,
+    });
+    expect(manifest[0]).toMatchObject({
+      checkName: 'build',
+      detailsUrl,
+      logPath: path.join(tempDir, 'build.log'),
+    });
+  });
+
   test('falls back to paginated workflow runs and matches a job by name', async () => {
     const detailsUrl = 'https://ci.example.test/build/123';
     const listWorkflowRunsForRepo = vi.fn(
@@ -655,6 +713,47 @@ describe('collectFailingCheckLogs', () => {
       failedSteps: ['Run tests'],
       required: false,
     });
+  });
+
+  test('preserves the underlying error when every fallback job listing fails', async () => {
+    const detailsUrl = 'https://ci.example.test/build/124';
+    const jobListError = Object.assign(new Error('fallback job listing failed'), { status: 500 });
+    const listWorkflowRunsForRepo = vi.fn();
+    const listJobsForWorkflowRun = vi.fn();
+    const paginate = vi.fn(
+      async (endpoint: unknown, _params: Record<string, unknown>): Promise<unknown[]> => {
+        if (endpoint === listWorkflowRunsForRepo) {
+          return [{ id: 13 }, { id: 14 }];
+        }
+
+        expect(endpoint).toBe(listJobsForWorkflowRun);
+        throw jobListError;
+      }
+    );
+    const downloadJobLogsForWorkflowRun = vi.fn();
+    const octokit = createOctokit({
+      listWorkflowRunsForRepo,
+      listJobsForWorkflowRun,
+      downloadJobLogsForWorkflowRun,
+      paginate,
+    });
+
+    const manifest = await collectFailingCheckLogs({
+      octokit,
+      owner: 'example',
+      repo: 'repo',
+      headSha: 'head-sha',
+      failingChecks: [makeFailingCheck('build', detailsUrl)],
+      destDir: tempDir,
+    });
+
+    expect(manifest[0]).toMatchObject({
+      checkName: 'build',
+      logPath: null,
+      error: 'fallback job listing failed',
+    });
+    expect(manifest[0].error).not.toContain('No GitHub Actions job matched head SHA');
+    expect(downloadJobLogsForWorkflowRun).not.toHaveBeenCalled();
   });
 
   test('keeps unresolved non-Actions checks with a link and no log', async () => {
@@ -1011,6 +1110,63 @@ describe('collectFailingCheckLogs', () => {
           destDir: tempDir,
         })
       ).rejects.toBe(systemicError);
+    }
+  );
+
+  test.each([403, 429])(
+    'stops queued downloads and drains in-flight workers after systemic HTTP %s errors',
+    async (status) => {
+      const checks = Array.from({ length: MAX_LOG_DOWNLOAD_CONCURRENCY + 2 }, (_, index) =>
+        makeFailingCheck(
+          `build-${index + 1}`,
+          `https://github.com/example/repo/actions/runs/${index + 1}/job/${index + 101}`
+        )
+      );
+      const systemicError = Object.assign(new Error(`GitHub returned ${status}`), { status });
+      const listJobsForWorkflowRun = vi.fn();
+      const paginate = vi.fn(
+        async (endpoint: unknown, params: Record<string, unknown>): Promise<WorkflowJob[]> => {
+          expect(endpoint).toBe(listJobsForWorkflowRun);
+          const runId = Number(params.run_id);
+          return [makeJob(runId + 100, `build-${runId}`)];
+        }
+      );
+      const startedJobIds: number[] = [];
+      const downloadJobLogsForWorkflowRun = vi.fn(async (params: { job_id: number }) => {
+        startedJobIds.push(params.job_id);
+        if (params.job_id === 101) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 5));
+          throw systemicError;
+        }
+
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+        return { data: `log for ${params.job_id}\n` };
+      });
+      const octokit = createOctokit({
+        listJobsForWorkflowRun,
+        downloadJobLogsForWorkflowRun,
+        paginate,
+      });
+      const destDir = path.join(tempDir, 'logs');
+
+      await expect(
+        collectFailingCheckLogs({
+          octokit,
+          owner: 'example',
+          repo: 'repo',
+          headSha: 'head-sha',
+          failingChecks: checks,
+          destDir,
+        })
+      ).rejects.toBe(systemicError);
+
+      expect(startedJobIds).toEqual([101, 102, 103, 104]);
+      expect(startedJobIds).not.toContain(105);
+      expect(startedJobIds).not.toContain(106);
+
+      await fs.rm(destDir, { recursive: true, force: true });
+      await new Promise<void>((resolve) => setTimeout(resolve, 75));
+      await expect(fs.stat(destDir)).rejects.toMatchObject({ code: 'ENOENT' });
     }
   );
 

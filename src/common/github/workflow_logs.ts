@@ -291,6 +291,17 @@ function getRunCacheKey(owner: string, repo: string, runId: number): string {
   return `${owner}\u0000${repo}\u0000${runId}`;
 }
 
+function isSameRepository(
+  parsedDetailsUrl: ParsedActionsDetailsUrl,
+  owner: string,
+  repo: string
+): boolean {
+  return (
+    parsedDetailsUrl.owner.toLowerCase() === owner.toLowerCase() &&
+    parsedDetailsUrl.repo.toLowerCase() === repo.toLowerCase()
+  );
+}
+
 function findMatchingJob(
   jobs: readonly WorkflowJob[],
   checkName: string,
@@ -380,21 +391,36 @@ async function runWithConcurrency<T>(
   worker: (item: T) => Promise<void>
 ): Promise<void> {
   let nextIndex = 0;
+  let aborted = false;
+  let firstError: unknown;
 
   async function runWorker(): Promise<void> {
-    while (true) {
+    while (!aborted) {
       const itemIndex = nextIndex;
       nextIndex += 1;
       if (itemIndex >= items.length) {
         return;
       }
 
-      await worker(items[itemIndex]);
+      try {
+        await worker(items[itemIndex]);
+      } catch (error) {
+        if (!aborted) {
+          aborted = true;
+          firstError = error;
+        }
+        return;
+      }
     }
   }
 
   const workerCount = Math.min(items.length, concurrency);
-  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  const workers = Array.from({ length: workerCount }, () => runWorker());
+  await Promise.allSettled(workers);
+
+  if (aborted) {
+    throw firstError;
+  }
 }
 
 interface ResolvedFailingCheckJob {
@@ -487,7 +513,7 @@ export async function collectFailingCheckLogs(
       const parsedDetailsUrl = check.detailsUrl ? parseActionsDetailsUrl(check.detailsUrl) : null;
       let resolvedJob: ResolvedFailingCheckJob | null;
 
-      if (parsedDetailsUrl) {
+      if (parsedDetailsUrl && isSameRepository(parsedDetailsUrl, options.owner, options.repo)) {
         const jobs = await getJobs(
           parsedDetailsUrl.owner,
           parsedDetailsUrl.repo,
