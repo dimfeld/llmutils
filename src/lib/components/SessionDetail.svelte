@@ -8,6 +8,7 @@
   import Wrench from '@lucide/svelte/icons/wrench';
   import { toast } from 'svelte-sonner';
   import { mergeProps } from 'bits-ui';
+  import type { HTMLButtonAttributes } from 'svelte/elements';
   import { exportSessionAsMarkdown, generateExportFilename } from '$lib/utils/session_export.js';
 
   import type { SessionData } from '$lib/types/session.js';
@@ -503,7 +504,7 @@
                   'aria-label': 'Download transcript',
                 },
                 props
-              )}
+              ) as HTMLButtonAttributes}
               <button {...buttonProps}>
                 <Download class="size-4" />
               </button>
@@ -561,7 +562,7 @@
                     'aria-label': 'Open new terminal',
                   },
                   props
-                )}
+                ) as HTMLButtonAttributes}
                 <button {...buttonProps}>
                   <AppWindow class="size-4" />
                 </button>
@@ -583,7 +584,7 @@
                     'aria-label': 'Activate terminal pane',
                   },
                   props
-                )}
+                ) as HTMLButtonAttributes}
                 <button {...buttonProps}>
                   <TerminalIcon class="size-4" />
                 </button>
@@ -612,7 +613,7 @@
                     'aria-pressed': showLifecycleOutput,
                   },
                   props
-                )}
+                ) as HTMLButtonAttributes}
                 <button {...buttonProps}>
                   <Wrench class="size-4" />
                 </button>
@@ -639,7 +640,7 @@
                     'aria-label': planPaneLabel,
                   },
                   props
-                )}
+                ) as HTMLButtonAttributes}
                 <button {...buttonProps}>
                   {#if planPaneCollapsed}
                     <PanelRightOpen class="size-4" />

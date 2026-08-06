@@ -12,9 +12,21 @@ import { CodexAppServerConnection } from './app_server_connection.js';
 
 describe('CodexAppServerConnection project environment', () => {
   let tempDirs: string[] = [];
+  const originalPath = process.env.PATH;
+  const originalSocket = process.env.TIM_CODEX_APP_SERVER_SOCKET;
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    if (originalPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = originalPath;
+    }
+    if (originalSocket === undefined) {
+      delete process.env.TIM_CODEX_APP_SERVER_SOCKET;
+    } else {
+      process.env.TIM_CODEX_APP_SERVER_SOCKET = originalSocket;
+    }
     await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
     tempDirs = [];
   });
@@ -24,6 +36,8 @@ describe('CodexAppServerConnection project environment', () => {
     const previousHighPriority = process.env.TIM_HIGH_PRIORITY;
     const cwd = await mkdtemp(join(tmpdir(), 'tim-codex-app-server-env-'));
     tempDirs.push(cwd);
+    process.env.PATH = `${cwd}:${originalPath ?? ''}`;
+    delete process.env.TIM_CODEX_APP_SERVER_SOCKET;
     await writeFile(
       join(cwd, '.env'),
       [
@@ -81,6 +95,8 @@ const server = Bun.serve({
       cwd,
       env: {
         PATH: `${cwd}:${process.env.PATH ?? ''}`,
+        TIM_PATH: join(cwd, 'tim'),
+        TIM_CODEX_APP_SERVER_SOCKET: '',
         MOCK_ENV_LOG: envLogPath,
         TIM_EXECUTOR: 'codex',
         TIM_NOTIFY_SUPPRESS: '1',

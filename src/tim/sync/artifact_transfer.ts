@@ -64,7 +64,6 @@ export async function uploadArtifact(options: ArtifactTransferOptions): Promise<
         'x-artifact-sha256': options.artifact.sha256,
       }),
       body,
-      duplex: 'half',
     });
 
     if (!response.ok) {

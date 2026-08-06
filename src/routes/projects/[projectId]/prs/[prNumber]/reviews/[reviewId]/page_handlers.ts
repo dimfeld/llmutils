@@ -164,7 +164,13 @@ function defaultGetScrollContainer(node: HTMLElement): HTMLElement {
     current = getComposedParentElement(current);
   }
 
-  return node.ownerDocument?.scrollingElement ?? node.ownerDocument?.documentElement ?? node;
+  const scrollingElement = node.ownerDocument?.scrollingElement;
+  if (scrollingElement instanceof HTMLElement) {
+    return scrollingElement;
+  }
+
+  const documentElement = node.ownerDocument?.documentElement;
+  return documentElement instanceof HTMLElement ? documentElement : node;
 }
 
 function defaultIsElementVisible(node: HTMLElement, scrollContainer: HTMLElement): boolean {

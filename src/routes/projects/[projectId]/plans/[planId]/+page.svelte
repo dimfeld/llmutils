@@ -13,7 +13,7 @@
     return project ? projectDisplayName(project.repository_id, data.currentUsername) : undefined;
   });
 
-  let projectId = $derived(page.params.projectId);
+  let projectId = $derived(data.projectId);
 </script>
 
 <PlanDetail
