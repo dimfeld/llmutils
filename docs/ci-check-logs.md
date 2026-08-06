@@ -6,11 +6,11 @@ command; they contain no CLI code and no web UI code.
 
 ## Modules
 
-| Module | Purpose |
-| --- | --- |
+| Module                                       | Purpose                                                          |
+| -------------------------------------------- | ---------------------------------------------------------------- |
 | `src/common/github/required_check_rollup.ts` | Classification of check runs and the required-check rollup state |
-| `src/common/github/select_failing_checks.ts` | Selection of the failing checks, with a `required` annotation |
-| `src/common/github/workflow_logs.ts` | GitHub Actions URL parsing, job listing, and log download |
+| `src/common/github/select_failing_checks.ts` | Selection of the failing checks, with a `required` annotation    |
+| `src/common/github/workflow_logs.ts`         | GitHub Actions URL parsing, job listing, and log download        |
 
 `src/lib/server/required_check_rollup.ts` stays as a re-export shim. The rollup module was moved
 into `src/common/` because the CLI must not import from `src/lib`. Web code can continue to import
