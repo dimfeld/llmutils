@@ -31,6 +31,7 @@ process.env.TIM_LOAD_GLOBAL_CONFIG = '0';
 const tmpPath = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-test-'));
 process.env.XDG_CONFIG_HOME = tmpPath;
 process.env.XDG_DATA_HOME = path.join(tmpPath, 'data');
+process.env.XDG_CACHE_HOME = path.join(tmpPath, 'cache');
 afterEach(() => {
   closeDatabaseForTesting();
 });

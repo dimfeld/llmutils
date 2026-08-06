@@ -246,6 +246,19 @@ describe('session_server/runtime_dir', () => {
     expect(process.listeners('exit').length).toBe(beforeExitCount - 1);
   });
 
+  test('exit cleanup keeps using the registered session file path', () => {
+    const info = createInfo({ pid: 41043 });
+    const filePath = writeSessionInfoFile(info);
+
+    process.env.XDG_CACHE_HOME = path.join(tempDir, 'different-cache');
+
+    const exitHandler = process.listeners('exit').at(-1) as () => void;
+    exitHandler();
+
+    expect(fs.existsSync(filePath)).toBe(false);
+    expect(process.listeners('exit')).not.toContain(exitHandler);
+  });
+
   test('unregisterSessionInfoFileCleanup removes exit handler', () => {
     const info = createInfo({ pid: 41042 });
     writeSessionInfoFile(info);

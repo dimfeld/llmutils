@@ -60,6 +60,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   private readonly serverSessionId?: string;
   private readonly serverStartedAt?: string;
   private readonly onDestroy?: () => void;
+  private sessionInfoFilePath?: string;
   private destroyHookFired = false;
 
   private sessionServer: EmbeddedServerHandle | undefined;
@@ -492,7 +493,7 @@ export class HeadlessAdapter implements LoggerAdapter {
       return;
     }
 
-    writeSessionInfoFile(info);
+    this.sessionInfoFilePath = writeSessionInfoFile(info);
   }
 
   private stopSessionServer(): void {
@@ -501,7 +502,7 @@ export class HeadlessAdapter implements LoggerAdapter {
     }
     this.sessionServer.stop();
     this.sessionServer = undefined;
-    removeSessionInfoFile(process.pid);
+    removeSessionInfoFile(process.pid, this.sessionInfoFilePath);
   }
 
   private broadcastSessionInfo(): void {

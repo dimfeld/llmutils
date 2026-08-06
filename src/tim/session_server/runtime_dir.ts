@@ -141,17 +141,19 @@ export function getTimSessionDir(): string {
   return sessionDir;
 }
 
-export function registerSessionInfoFileCleanup(pid: number): void {
+export function registerSessionInfoFileCleanup(pid: number, filePath?: string): void {
   if (cleanupHandlersByPid.has(pid)) {
     return;
   }
+
+  const cleanupFilePath = filePath ?? getSessionInfoFilePath(pid);
 
   // Cleanup only removes the file and unregisters. Does not call process.exit()
   // because top-level signal handlers in tim.ts own termination semantics.
   // The 'exit' event fires after process.exit() is called by those handlers.
   const cleanup = () => {
     try {
-      fs.rmSync(getSessionInfoFilePath(pid), { force: true });
+      fs.rmSync(cleanupFilePath, { force: true });
     } catch {
       // Ignore cleanup errors during shutdown.
     } finally {
@@ -180,14 +182,14 @@ export function writeSessionInfoFile(info: SessionInfoFile): string {
 
   fs.writeFileSync(tmpPath, payload, 'utf8');
   fs.renameSync(tmpPath, filePath);
-  registerSessionInfoFileCleanup(info.pid);
+  registerSessionInfoFileCleanup(info.pid, filePath);
 
   return filePath;
 }
 
-export function removeSessionInfoFile(pid: number): void {
+export function removeSessionInfoFile(pid: number, filePath?: string): void {
   unregisterSessionInfoFileCleanup(pid);
-  fs.rmSync(getSessionInfoFilePath(pid), { force: true });
+  fs.rmSync(filePath ?? getSessionInfoFilePath(pid), { force: true });
 }
 
 export function readSessionInfoFile(pidOrPath: number | string): SessionInfoFile {
