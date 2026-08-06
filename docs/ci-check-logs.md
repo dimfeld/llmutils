@@ -1,8 +1,9 @@
 # CI Check Classification and Actions Logs
 
 Library modules in `src/common/github/` that find the failing checks of a pull request and
-download the related GitHub Actions job logs. These are the building blocks for the CI fix
-command; they contain no CLI code and no web UI code.
+download the related GitHub Actions job logs, plus the `tim pr fix-ci` command that consumes them.
+The `src/common/github/` modules contain no CLI code and no web UI code; the command layer lives in
+`src/tim/commands/ci_fix.ts`.
 
 ## Modules
 
@@ -133,9 +134,87 @@ Behavior worth knowing:
 Full logs can be tens of megabytes. This layer only stores them on disk; excerpting them for a
 prompt is the job of the caller.
 
+## The `tim pr fix-ci` command
+
+`src/tim/commands/ci_fix.ts` holds the command. The internal and headless command name is
+`ci-fix`; the CLI name is `tim pr fix-ci`. It is registered in `src/tim/tim.ts` under `pr` with the
+same option block as `pr fix` (`--pr`, `--plan`, `-x/--executor`, `-m/--model`, `--effort`,
+`--aw/--auto-workspace`, `-w/--workspace`, `--nw/--new-workspace`, `--no-workspace-sync`,
+`--non-interactive`, `--no-terminal-input`).
+
+### Flow
+
+1. `resolvePrFixTargetIntent` / `resolvePrFixTarget` (re-used from `pr.ts`) give the same target
+   semantics as `pr fix`. A plan target must resolve to exactly one linked PR, otherwise the
+   command errors and asks for `--pr`. `GITHUB_TOKEN` (or `gh` auth) is required.
+2. `refreshPrCheckStatus` force-refreshes the check status, then `getRequiredCheckNames` and
+   `selectFailingChecks` pick the failing checks. **With no failing check the command logs
+   `No failing checks for PR #n` and returns** — before any workspace or lock is taken, per the
+   repo rule that validation runs before resource allocation.
+3. `ensurePrFixHeadBranchPushableOnOrigin` rejects fork PRs whose head branch is missing on
+   `origin`.
+4. Executor, model, and effort resolve as: command option → `config.ciFix.*` →
+   `config.defaultExecutor` / `config.models.execution` → `DEFAULT_EXECUTOR` /
+   `defaultModelForExecutor`. `buildCiFixExecutorOptions` maps `--effort` to
+   `reasoningEffort` for claude-code and to `reasoning.default` for codex-cli, merged over any
+   existing codex `reasoning` config.
+5. A managed workspace is always used, on the PR head branch with `createBranch: false`. Without
+   `-w` the workspace is auto-selected. Then `prepareWorkspaceRoundTrip` and
+   `runPreExecutionWorkspaceSync` run, and lifecycle commands start with the context `ci-fix`
+   (`runIn: [ci-fix]`).
+6. Logs are downloaded **after** checkout, into the selected workspace at
+   `<workspace>/.tim/tmp/ci-fix/pr-<number>-<first-12-of-head-sha>/` (`TMP_DIR` comes from
+   `src/tim/plan_materialize.ts`). Stale directories of the same PR — any earlier head SHA — are
+   removed first through `clearManagedDirectoryContentsSafely` (see `docs/path-safety.md`).
+7. `buildCiFixPrompt` builds the prompt and the executor runs it with
+   `planId: 'pr-<n>-ci'` and `executionMode: 'planning'`.
+8. The `finally` block shuts down lifecycle commands, deletes the log directory, runs
+   `runPostExecutionWorkspaceSync(ctx, 'CI fixes')`, and touches the workspace info. A
+   `CleanupRegistry` handler deletes the log directory synchronously on Ctrl-C; it is unregistered
+   after the normal deletion.
+
+### The prompt
+
+`buildCiFixPrompt(target, manifest, options)` is an inline string, like the prompt builders in
+`pr.ts`. It never inlines log content — logs are tens of megabytes — and refers to each log by
+absolute path only.
+
+- **Pull Request Context** — the same fields as the `pr fix` prompt, plus an instruction not to
+  edit plan files or plan state.
+- **Failing Checks** — one numbered subsection per manifest entry with the check name, a
+  `REQUIRED` or `not-required` scope marker, the conclusion, the failed step names, and either
+  `Log file: <absolute path>` or "No logs available" with the details URL. With
+  `noRequiredConfig: true` (no branch protection and no rulesets) the prompt states that all
+  failing checks are in scope and every entry is marked required.
+- **Responsibilities** — diagnose every failure; present a numbered summary with a proposed fix
+  and **wait for the user's direction**; fix the required failures only, and others only on
+  request; propose a re-run instead of a code change for environmental or flaky failures; run the
+  local checks; commit and push (with jj bookmark guidance); do not edit plan files.
+
+### Configuration
+
+`ciFix: {executor, model, effort}` in `configSchema.ts`, the same shape as `prFix`. No zod
+defaults — fallbacks are applied at the read site. `configLoader.ts` merges the key with
+`mergeConfigKey('ciFix')`, so a local config overlay merges per field instead of replacing the
+block. `schema/tim-config-schema.json` carries the generated JSON schema.
+
+### Command-name registry
+
+`ci-fix` is registered alongside `pr-fix` in the `HeadlessCommand` union
+(`src/tim/headless.ts`, which also records it as a job), the lifecycle command-context enum
+(`configSchema.ts`), the `MEDIUM_COMMANDS` retention tier
+(`src/lib/server/session_retention.ts`), `AGENT_FINISHED_COMMANDS` and
+`RUNNING_NOW_INCLUDED_NONINTERACTIVE_COMMANDS` (`src/lib/utils/dashboard_attention.ts`), and the
+activity page's `PR_JOB_TYPES` and label map, where it is shown as "Fix CI".
+
 ## Tests
 
 `src/common/github/workflow_logs.test.ts`, `select_failing_checks.test.ts`, and
 `required_check_rollup.test.ts`. The Actions tests use a mocked Octokit — this is API-shape code,
 and the mock matches the pattern of the other GitHub module tests. Run them with
 `bun run test src/common/github`.
+
+The command tests are `src/tim/commands/ci_fix.test.ts` (module mocks in the style of
+`pr.test.ts`: no-failing-checks early exit, executor precedence, prompt content, headless
+wrapping, log-directory lifecycle) and `src/tim/tim.ci_fix_options.test.ts` for the CLI option
+block.

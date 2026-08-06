@@ -358,6 +358,7 @@ tim review-issues clear 123                           # Clear open saved review 
 tim review-issues clear 123 --all                     # Clear all saved review issues, including rejected entries
 tim pr fix 123 --auto-workspace --executor codex-cli --model gpt-5-codex --effort high
 tim pr fix --pr 456 --auto-workspace                 # Fix review threads on a PR with no linked plan
+tim pr fix-ci --pr 456 --auto-workspace              # Diagnose and fix the failing CI checks of a PR
 tim pr comment https://github.com/owner/repo/pull/456 "Fixed the related feedback"
 tim rebase 123 --auto-workspace
 ```
@@ -413,6 +414,8 @@ prFix:
 ```
 
 `tim pr fix-ci --pr <pr-url-or-number>` diagnoses failing CI checks for a pull request. It downloads available GitHub Actions logs into the selected workspace, asks the agent to diagnose each failure and confirm the proposed actions, then applies the requested fixes and pushes them to the PR branch. Configure defaults with `ciFix.executor`, `ciFix.model`, and `ciFix.effort`; CLI flags override these values.
+
+Target resolution matches `tim pr fix`: `--pr` wins, then `--plan`, then the positional argument (a number means a plan ID, a URL means a PR), and with no argument the plan is inferred from the workspace. A plan target must have exactly one linked pull request. The command refreshes the check status from GitHub first; when no check is failing it prints `No failing checks for PR #n` and exits before it takes a workspace. Otherwise it always prepares a managed workspace on the PR head branch, and it refuses fork PRs whose head branch is not on `origin`. Logs go to `.tim/tmp/ci-fix/pr-<number>-<short-sha>/` in that workspace and are deleted when the command exits, including on Ctrl-C. The agent must present a numbered diagnosis of every failure and wait for your direction; by default it fixes only the required checks. See `docs/ci-check-logs.md` for details.
 
 ```yaml
 ciFix:
