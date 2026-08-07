@@ -397,7 +397,6 @@ export async function ingestWebhookEvents(
 
   // Cache known repos once per ingestion run to avoid repeated DB queries
   const knownRepos = getKnownRepoFullNames(db);
-  const handlerOptions: WebhookHandlerOptions = { knownRepos };
 
   // Fetch and process in batches until the server returns fewer than BATCH_SIZE events
   while (true) {
@@ -432,6 +431,10 @@ export async function ingestWebhookEvents(
 
       try {
         const payload = JSON.parse(event.payloadJson) as unknown;
+        const handlerOptions: WebhookHandlerOptions = {
+          knownRepos,
+          receivedAt: event.receivedAt,
+        };
         const result =
           event.eventType === 'pull_request'
             ? handlePullRequestEvent(db, payload, handlerOptions)

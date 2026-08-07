@@ -619,6 +619,12 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
 
 export interface WebhookHandlerOptions {
   knownRepos?: Set<string>;
+  /** Delivery timestamp used as a fallback when an inbox signal has no payload timestamp. */
+  receivedAt?: string;
+}
+
+function getSignalEventAt(eventAt: string | null, options?: WebhookHandlerOptions): string {
+  return eventAt ?? options?.receivedAt ?? getNowIsoString();
 }
 
 function isKnownRepository(db: Database, fullName: string, knownRepos?: Set<string>): boolean {
@@ -672,7 +678,7 @@ export function handleIssueCommentEvent(
         actor: parsed.comment.author,
         actorType: parsed.comment.authorType,
         summary: getCommentExcerpt(parsed.comment.body),
-        eventAt: parsed.comment.createdAt ?? getNowIsoString(),
+        eventAt: getSignalEventAt(parsed.comment.createdAt, options),
       },
     ],
   };
@@ -694,6 +700,7 @@ export function handlePullRequestEvent(
   const state =
     pullRequest.state === 'closed' ? (pullRequest.mergedAt ? 'merged' : 'closed') : 'open';
   const eventTime = pullRequest.updatedAt ?? getNowIsoString();
+  const signalEventTime = getSignalEventAt(pullRequest.updatedAt, options);
   const { updated, isNewRow, prDraftTransition } = db
     .transaction((nextOwner: string, nextRepo: string) => {
       const repositoryId = constructGitHubRepositoryId(nextOwner, nextRepo);
@@ -834,7 +841,7 @@ export function handlePullRequestEvent(
       prTitle: pullRequest.title,
       prAuthor: pullRequest.author,
       actor: pullRequest.requestedReviewerLogin,
-      eventAt: eventTime,
+      eventAt: signalEventTime,
     });
   }
 
@@ -850,7 +857,7 @@ export function handlePullRequestEvent(
       actor: eventActor.actor,
       actorType: eventActor.actorType,
       summary: parsed.reason,
-      eventAt: eventTime,
+      eventAt: signalEventTime,
     });
   }
 
@@ -948,7 +955,7 @@ export function handlePullRequestReviewEvent(
       : undefined;
 
   const inboxSignals: InboxSignal[] = [];
-  const reviewEventAt = parsed.review.submittedAt ?? getNowIsoString();
+  const reviewEventAt = getSignalEventAt(parsed.review.submittedAt, options);
   if (parsed.action === 'submitted' && reviewState === 'APPROVED') {
     inboxSignals.push({
       kind: 'pr_approved',
@@ -1006,7 +1013,7 @@ export function handlePullRequestReviewEvent(
 export function handlePullRequestReviewThreadEvent(
   db: Database,
   payload: unknown,
-  _options?: WebhookHandlerOptions
+  options?: WebhookHandlerOptions
 ): WebhookHandlerResult {
   const parsed = parseReviewThreadPayload(payload);
   if (!parsed) {
@@ -1089,7 +1096,7 @@ export function handlePullRequestReviewThreadEvent(
       actor: parsed.comment.author,
       actorType: parsed.comment.authorType,
       summary: commentExcerpt,
-      eventAt: parsed.comment.createdAt ?? getNowIsoString(),
+      eventAt: getSignalEventAt(parsed.comment.createdAt, options),
     });
   }
 
@@ -1153,7 +1160,7 @@ export function handleCheckRunEvent(
         prAuthor: row.author,
         actor: parsed.checkRun.name,
         summary: conclusion ? `${parsed.checkRun.name} (${conclusion})` : parsed.checkRun.name,
-        eventAt: parsed.checkRun.completedAt ?? getNowIsoString(),
+        eventAt: getSignalEventAt(parsed.checkRun.completedAt, options),
       });
     }
   }
