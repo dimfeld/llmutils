@@ -205,7 +205,31 @@ block. `schema/tim-config-schema.json` carries the generated JSON schema.
 (`configSchema.ts`), the `MEDIUM_COMMANDS` retention tier
 (`src/lib/server/session_retention.ts`), `AGENT_FINISHED_COMMANDS` and
 `RUNNING_NOW_INCLUDED_NONINTERACTIVE_COMMANDS` (`src/lib/utils/dashboard_attention.ts`), and the
-activity page's `PR_JOB_TYPES` and label map, where it is shown as "Fix CI".
+activity page's `PR_JOB_TYPES` and label map, where it is shown as "Fix CI". `SessionRow.svelte` and
+`RunningNowRow.svelte` show the same "Fix CI" label instead of the raw command name.
+
+## Web UI launch
+
+The web UI starts the command from two plain **"Fix CI"** buttons:
+
+- `PrDetail.svelte` — in the Check Runs section header. Calls the `startPrCiFix` remote command,
+  which spawns the no-plan form `tim pr fix-ci --pr <url> --auto-workspace --no-terminal-input`.
+- `PrStatusSection.svelte` — next to the plan section's "Fix Unresolved" button. Calls `startCiFix`,
+  which spawns the plan-scoped form `tim pr fix-ci <planId> --auto-workspace --no-terminal-input`.
+
+Both buttons are gated on `canFixCi()` (`src/lib/utils/ci_fix_eligibility.ts`): the viewer must be
+the PR author, and the check rollup must be failing. The gate reads the rollup state instead of the
+individual `pr_check_run` rows, because webhook ingest can drop `check_run` events that arrive
+before the PR row exists, while refresh always fills in the rollup. The rollup used is the
+_effective_ one from `withRequiredCheckRollupState()`, so a failing optional check does not offer
+the button. The server re-checks the same rule with `isCiFixEligibleForUsername()`
+(`src/lib/server/ci_fix_eligibility.ts`) and returns HTTP 400 when it does not hold.
+
+Duplicate launches are blocked at three layers: the client hides or disables the button while a
+session is active, the remote command checks `SessionManager.hasActiveSessionForPr` /
+`hasActiveSessionForPlan`, and the launch lock (`src/lib/server/launch_lock.ts`) covers the gap
+before the spawned session registers. See `docs/web-interface.md` for the component and remote
+function details.
 
 ## Tests
 

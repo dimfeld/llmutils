@@ -310,6 +310,7 @@ Useful web actions:
 - Use **Full Refresh from GitHub API** when webhook data is missing or stale.
 - Expand unresolved PR review threads and reply, resolve, or convert them to plan tasks.
 - Use **Fix Unresolved** to spawn `tim pr fix` for review thread cleanup.
+- Use **Fix CI** to spawn `tim pr fix-ci` when the required checks of your own PR fail. The button is in the Check Runs section of the PR detail page and in the plan detail page's PR section; it is hidden for PRs you did not author and for PRs whose required checks pass.
 - Open stored PR review guides from project PR pages when standalone review has been run.
 - **Generate Full Guide** from the plan detail page to run a plan-only review (no PR required), or **Generate Guide Only** to skip issue extraction and only generate the guide; past review guides for the plan are listed with status badges and link to a viewer route.
 
@@ -415,7 +416,7 @@ prFix:
 
 `tim pr fix-ci --pr <pr-url-or-number>` diagnoses failing CI checks for a pull request. It downloads available GitHub Actions logs into the selected workspace, asks the agent to diagnose each failure and confirm the proposed actions, then applies the requested fixes and pushes them to the PR branch. Configure defaults with `ciFix.executor`, `ciFix.model`, and `ciFix.effort`; CLI flags override these values.
 
-Target resolution matches `tim pr fix`: `--pr` wins, then `--plan`, then the positional argument (a number means a plan ID, a URL means a PR), and with no argument the plan is inferred from the workspace. A plan target must have exactly one linked pull request. The command refreshes the check status from GitHub first; when no check is failing it prints `No failing checks for PR #n` and exits before it takes a workspace. Otherwise it always prepares a managed workspace on the PR head branch, and it refuses fork PRs whose head branch is not on `origin`. Logs go to `.tim/tmp/ci-fix/pr-<number>-<short-sha>/` in that workspace and are deleted when the command exits, including on Ctrl-C. The agent must present a numbered diagnosis of every failure and wait for your direction; by default it fixes only the required checks. See `docs/ci-check-logs.md` for details.
+Target resolution matches `tim pr fix`: `--pr` wins, then `--plan`, then the positional argument (a number means a plan ID, a URL means a PR), and with no argument the plan is inferred from the workspace. A plan target must have exactly one linked pull request. The command refreshes the check status from GitHub first; when no check is failing it prints `No failing checks for PR #n` and exits before it takes a workspace. Otherwise it always prepares a managed workspace on the PR head branch, and it refuses fork PRs whose head branch is not on `origin`. Logs go to `.tim/tmp/ci-fix/pr-<number>-<short-sha>/` in that workspace and are deleted when the command exits, including on Ctrl-C. The agent must present a numbered diagnosis of every failure and wait for your direction; by default it fixes only the required checks. The web UI starts the same command from the **Fix CI** buttons on the PR detail page and on a plan's PR section. See `docs/ci-check-logs.md` for details.
 
 ```yaml
 ciFix:
