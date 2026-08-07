@@ -14,6 +14,7 @@ vi.mock('$lib/remote/session_actions.remote.js', () => ({
   openTerminal: vi.fn(),
   sendSessionPromptResponse: vi.fn(),
   sendSessionUserInput: vi.fn(),
+  terminateExecutor: vi.fn(),
 }));
 
 import {
@@ -25,6 +26,7 @@ import {
   openTerminal,
   sendSessionPromptResponse,
   sendSessionUserInput,
+  terminateExecutor,
 } from '$lib/remote/session_actions.remote.js';
 import { SessionManager } from './session_state.svelte.js';
 import { getSessionGroupKey, getSessionGroupLabel } from './session_group_utils.js';
@@ -46,6 +48,7 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
     projectId: overrides.projectId ?? null,
     planContent: overrides.planContent ?? null,
     planTasks: overrides.planTasks ?? [],
+    processTree: overrides.processTree ?? [],
     messages: overrides.messages ?? [],
     activePrompts: overrides.activePrompts ?? [],
     isReplaying: overrides.isReplaying ?? false,
@@ -305,6 +308,34 @@ describe('SessionManager remote action wrappers', () => {
     vi.mocked(sendSessionUserInput).mockRejectedValueOnce(new Error('boom'));
 
     await expect(manager.sendUserInput('conn-2', 'continue')).resolves.toBe(false);
+  });
+
+  test('terminateExecutor forwards the opaque node ID and returns the remote result', async () => {
+    const manager = new SessionManager();
+    vi.mocked(terminateExecutor).mockResolvedValueOnce({
+      executorId: 'executor-1',
+      status: 'terminated',
+    });
+
+    await expect(manager.terminateExecutor('conn-exec', 'executor-1')).resolves.toEqual({
+      executorId: 'executor-1',
+      status: 'terminated',
+    });
+    expect(vi.mocked(terminateExecutor)).toHaveBeenCalledWith({
+      connectionId: 'conn-exec',
+      executorId: 'executor-1',
+    });
+  });
+
+  test('terminateExecutor returns a clear request failure when the remote command throws', async () => {
+    const manager = new SessionManager();
+    vi.mocked(terminateExecutor).mockRejectedValueOnce(new Error('routing failed'));
+
+    await expect(manager.terminateExecutor('conn-exec', 'executor-1')).resolves.toEqual({
+      executorId: 'executor-1',
+      status: 'request_failed',
+      message: 'routing failed',
+    });
   });
 
   test('dismissSession forwards the remote payload, returns true, and clears unread notifications on success', async () => {

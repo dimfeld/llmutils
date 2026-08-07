@@ -31,6 +31,62 @@ export type SessionProcessKind = 'tim' | 'executor';
 
 export type SessionProcessState = 'starting' | 'running' | 'exited' | 'orphaned';
 
+/** Results returned by a safe, opaque process-control request. */
+export type SessionProcessTerminationResult =
+  | 'terminated'
+  | 'requested'
+  | 'already_exited'
+  | 'not_owned'
+  | 'not_executor'
+  | 'stale_target'
+  | 'unknown_process_state'
+  | 'signal_failed'
+  | 'unknown_executor'
+  | 'owner_not_registered'
+  | 'owner_not_connected'
+  | 'send_failed'
+  | 'request_timeout';
+
+export const SESSION_PROCESS_TERMINATION_RESULTS = new Set<SessionProcessTerminationResult>([
+  'terminated',
+  'requested',
+  'already_exited',
+  'not_owned',
+  'not_executor',
+  'stale_target',
+  'unknown_process_state',
+  'signal_failed',
+  'unknown_executor',
+  'owner_not_registered',
+  'owner_not_connected',
+  'send_failed',
+  'request_timeout',
+]);
+
+export function isSessionProcessTerminationResult(
+  value: unknown
+): value is SessionProcessTerminationResult {
+  return (
+    typeof value === 'string' &&
+    SESSION_PROCESS_TERMINATION_RESULTS.has(value as SessionProcessTerminationResult)
+  );
+}
+
+export interface SessionProcessTerminationResultEvent {
+  executorId: ProcessId;
+  requestId: string;
+  result: SessionProcessTerminationResult;
+  error?: string;
+}
+
+/** Sends a targeted control request to one connected tim owner channel. */
+export type SessionProcessOwnerChannelSender = (
+  executorId: ProcessId,
+  requestId?: string
+) => boolean;
+
+export type SessionProcessOwnerChannelRouteResult = 'sent' | 'owner_not_connected' | 'send_failed';
+
 export interface SessionProcessNode {
   processId: ProcessId;
   parentProcessId?: ProcessId;
@@ -317,7 +373,11 @@ export class SessionProcessRegistry {
   private readonly nodes = new Map<ProcessId, SessionProcessNode>();
   private readonly ownerChannels = new Map<ProcessId, string>();
   private readonly processIdsByChannel = new Map<string, Set<ProcessId>>();
+  private readonly channelSenders = new Map<string, SessionProcessOwnerChannelSender>();
   private readonly listeners = new Set<SessionProcessListener>();
+  private readonly terminationResultListeners = new Set<
+    (event: SessionProcessTerminationResultEvent) => void
+  >();
   private readonly now: () => Date;
   private readonly idGenerator: () => ProcessId;
   private readonly active: boolean;
@@ -346,6 +406,65 @@ export class SessionProcessRegistry {
     };
   }
 
+  subscribeTerminationResults(
+    listener: (event: SessionProcessTerminationResultEvent) => void
+  ): () => void {
+    this.terminationResultListeners.add(listener);
+    return () => {
+      this.terminationResultListeners.delete(listener);
+    };
+  }
+
+  registerOwnerChannelSender(channelId: string, sender: SessionProcessOwnerChannelSender): boolean {
+    if (!this.active || !isNonEmptyString(channelId, 512)) {
+      return false;
+    }
+
+    this.channelSenders.set(channelId, sender);
+    return true;
+  }
+
+  unregisterOwnerChannelSender(channelId: string): void {
+    this.channelSenders.delete(channelId);
+  }
+
+  /** Routes a request using the channel bound to the executor's tim owner. */
+  sendTerminationToOwner(
+    executorId: ProcessId,
+    requestId?: string
+  ): SessionProcessOwnerChannelRouteResult {
+    const channelId = this.getExecutorOwnerChannel(executorId);
+    if (!channelId) {
+      return 'owner_not_connected';
+    }
+
+    const sender = this.channelSenders.get(channelId);
+    if (!sender) {
+      return 'owner_not_connected';
+    }
+
+    try {
+      return sender(executorId, requestId) ? 'sent' : 'send_failed';
+    } catch {
+      return 'send_failed';
+    }
+  }
+
+  /** Delivers a result returned by a nested tim owner to headless listeners. */
+  emitTerminationResult(event: SessionProcessTerminationResultEvent): void {
+    if (!this.active || !isProcessId(event.executorId) || !event.requestId) {
+      return;
+    }
+
+    for (const listener of this.terminationResultListeners) {
+      try {
+        listener({ ...event });
+      } catch {
+        // A result observer must not affect registry state or later observers.
+      }
+    }
+  }
+
   get(processId: ProcessId): SessionProcessNode | undefined {
     const node = this.nodes.get(processId);
     return node ? cloneNode(node) : undefined;
@@ -361,6 +480,19 @@ export class SessionProcessRegistry {
       return [];
     }
 
+    const compareProcessIds = (left: ProcessId, right: ProcessId): number => {
+      const leftNode = this.nodes.get(left);
+      const rightNode = this.nodes.get(right);
+      if (!leftNode || !rightNode) {
+        return left.localeCompare(right);
+      }
+
+      return (
+        leftNode.startedAt.localeCompare(rightNode.startedAt) ||
+        leftNode.processId.localeCompare(rightNode.processId)
+      );
+    };
+
     const childrenByParent = new Map<ProcessId, ProcessId[]>();
     const roots: ProcessId[] = [];
     for (const node of this.nodes.values()) {
@@ -371,6 +503,11 @@ export class SessionProcessRegistry {
       } else {
         roots.push(node.processId);
       }
+    }
+
+    roots.sort(compareProcessIds);
+    for (const children of childrenByParent.values()) {
+      children.sort(compareProcessIds);
     }
 
     const ordered: SessionProcessNode[] = [];
@@ -393,7 +530,7 @@ export class SessionProcessRegistry {
     for (const rootId of roots) {
       visit(rootId);
     }
-    for (const processId of this.nodes.keys()) {
+    for (const processId of [...this.nodes.keys()].sort(compareProcessIds)) {
       visit(processId);
     }
     return ordered;
@@ -641,6 +778,7 @@ export class SessionProcessRegistry {
       return [];
     }
     const processIds = [...(this.processIdsByChannel.get(channelId) ?? [])];
+    this.unregisterOwnerChannelSender(channelId);
     this.processIdsByChannel.delete(channelId);
     const affected: ProcessId[] = [];
     for (const processId of processIds) {

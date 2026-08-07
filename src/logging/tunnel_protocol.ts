@@ -4,6 +4,7 @@ import type {
   ProcessId,
   SessionProcessKind,
   SessionProcessState,
+  SessionProcessTerminationResult,
 } from '../common/session_process.js';
 
 /**
@@ -98,7 +99,8 @@ export type TunnelProcessMessage =
   | TunnelProcessRegisterMessage
   | TunnelProcessUpdateMessage
   | TunnelProcessExitMessage
-  | TunnelProcessRemoveMessage;
+  | TunnelProcessRemoveMessage
+  | TunnelTerminateExecutorResultMessage;
 
 /**
  * Union type for all messages sent from client to server over the tunnel socket as JSONL.
@@ -141,6 +143,15 @@ export interface TunnelTerminateExecutorMessage {
   requestId?: string;
 }
 
+/** Result returned by a nested tim owner after handling a targeted request. */
+export interface TunnelTerminateExecutorResultMessage {
+  type: 'terminate_executor_result';
+  executorId: ProcessId;
+  requestId: string;
+  result: SessionProcessTerminationResult;
+  error?: string;
+}
+
 /**
  * Union type for all messages sent from server to client over the tunnel socket as JSONL.
  * Separate from TunnelMessage (client->server) to maintain clear protocol directionality.
@@ -161,7 +172,8 @@ export function isTunnelProcessMessage(message: TunnelMessage): message is Tunne
     message.type === 'process_register' ||
     message.type === 'process_update' ||
     message.type === 'process_exit' ||
-    message.type === 'process_remove'
+    message.type === 'process_remove' ||
+    message.type === 'terminate_executor_result'
   );
 }
 

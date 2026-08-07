@@ -29,6 +29,7 @@ import {
 import { HeadlessAdapter } from './headless_adapter.js';
 import {
   isProcessId,
+  isSessionProcessTerminationResult,
   type ProcessId,
   type SessionProcessRegistry,
 } from '../common/session_process.js';
@@ -474,6 +475,15 @@ function isValidProcessMessage(message: Record<string, unknown>): boolean {
         isProcessId(message.processId) &&
         (message.subtree === undefined || typeof message.subtree === 'boolean')
       );
+    case 'terminate_executor_result':
+      return (
+        isProcessId(message.executorId) &&
+        typeof message.requestId === 'string' &&
+        message.requestId.length > 0 &&
+        message.requestId.length <= 256 &&
+        isSessionProcessTerminationResult(message.result) &&
+        isValidOptionalString(message.error, 4096)
+      );
     default:
       return false;
   }
@@ -503,6 +513,7 @@ export function isValidTunnelMessage(message: unknown): message is TunnelMessage
     case 'process_update':
     case 'process_exit':
     case 'process_remove':
+    case 'terminate_executor_result':
       return isValidProcessMessage(msg);
     default:
       return false;
@@ -760,6 +771,13 @@ export function createTunnelServer(
       state.processIds = new Set<ProcessId>();
       clients.set(clientId, channel);
       clientStates.set(clientId, state);
+      processRegistry?.registerOwnerChannelSender(clientId, (executorId, requestId) =>
+        channel.send({
+          type: 'terminate_executor',
+          executorId,
+          ...(requestId ? { requestId } : {}),
+        })
+      );
       return state;
     };
 
@@ -896,6 +914,19 @@ export function createTunnelServer(
           // Removal is idempotent, including a late message after disconnect.
           return true;
         }
+        case 'terminate_executor_result': {
+          const tracked = trackedProcesses.get(message.executorId);
+          if (!tracked || tracked.clientId !== client.id || tracked.kind !== 'executor') {
+            return false;
+          }
+          processRegistry?.emitTerminationResult({
+            executorId: message.executorId,
+            requestId: message.requestId,
+            result: message.result,
+            error: message.error,
+          });
+          return true;
+        }
       }
     };
 
@@ -907,6 +938,7 @@ export function createTunnelServer(
       state.connected = false;
       clients.delete(clientId);
       clientStates.delete(clientId);
+      processRegistry?.unregisterOwnerChannelSender(clientId);
       const processIds = [...state.processIds];
       if (processRegistry) {
         const removed = processRegistry.releaseChannel(clientId, 'remove');

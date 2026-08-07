@@ -2,6 +2,7 @@ import { command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
+import { isProcessId } from '$common/session_process.js';
 import { getServerContext } from '$lib/server/init.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { focusTerminalPane, openTerminalInDirectory } from '$lib/server/terminal_control.js';
@@ -26,6 +27,14 @@ const promptResponseSchema = sessionTargetSchema.extend({
 
 const userInputSchema = sessionTargetSchema.extend({
   content: z.string(),
+});
+
+const terminateExecutorSchema = sessionTargetSchema.extend({
+  executorId: z
+    .string()
+    .min(1)
+    .max(256)
+    .refine(isProcessId, 'executorId must be an opaque process ID'),
 });
 
 export const activateSessionTerminalPane = command(terminalPaneSchema, async (target) => {
@@ -60,6 +69,11 @@ export const sendSessionUserInput = command(userInputSchema, async (target) => {
   if (!sent) {
     error(404, 'Session not found');
   }
+});
+
+/** Requests safe termination of one live executor identified by opaque node ID. */
+export const terminateExecutor = command(terminateExecutorSchema, async (target) => {
+  return getSessionManager().terminateExecutor(target.connectionId, target.executorId);
 });
 
 export const endSession = command(sessionTargetSchema, async (target) => {

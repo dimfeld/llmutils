@@ -19,6 +19,9 @@ describe('headless_message_utils', () => {
       'output',
       'pty_output',
       'session_ended',
+      'process_tree_snapshot',
+      'process_tree_update',
+      'executor_termination_result',
     ]);
     expect([...VALID_HEADLESS_SERVER_TYPES]).toEqual([
       'prompt_response',
@@ -27,6 +30,7 @@ describe('headless_message_utils', () => {
       'pty_resize',
       'end_session',
       'force_end_session',
+      'terminate_executor',
       'notification_subscribers_changed',
     ]);
   });
@@ -57,6 +61,51 @@ describe('headless_message_utils', () => {
       type: 'session_info',
       command: 'shell',
       hidePlanDetails: true,
+    });
+
+    const processTree = [
+      {
+        processId: 'root-1',
+        kind: 'tim',
+        label: 'tim agent',
+        startedAt: '2026-03-17T10:00:00.000Z',
+        state: 'running',
+      },
+      {
+        processId: 'executor-1',
+        parentProcessId: 'root-1',
+        ownerProcessId: 'root-1',
+        kind: 'executor',
+        label: 'Claude executor',
+        pid: 1234,
+        command: 'claude --stream',
+        startIdentity: 'Mon Mar 17 10:00:01 2026',
+        startedAt: '2026-03-17T10:00:01.000Z',
+        state: 'running',
+      },
+    ];
+    expect(
+      parseHeadlessMessage(
+        JSON.stringify({ type: 'process_tree_snapshot', processes: processTree })
+      )
+    ).toEqual({
+      type: 'process_tree_snapshot',
+      processes: processTree,
+    });
+    expect(
+      parseHeadlessMessage(
+        JSON.stringify({
+          type: 'executor_termination_result',
+          requestId: 'request-1',
+          executorId: 'executor-1',
+          result: 'terminated',
+        })
+      )
+    ).toEqual({
+      type: 'executor_termination_result',
+      requestId: 'request-1',
+      executorId: 'executor-1',
+      result: 'terminated',
     });
 
     expect(
@@ -111,6 +160,24 @@ describe('headless_message_utils', () => {
       )
     ).toBeNull();
     expect(parseHeadlessMessage(JSON.stringify({ type: 'plan_content', content: 123 }))).toBeNull();
+    expect(
+      parseHeadlessMessage(
+        JSON.stringify({
+          type: 'process_tree_update',
+          processes: [{ ...processTree[0], pid: 0 }],
+        })
+      )
+    ).toBeNull();
+    expect(
+      parseHeadlessMessage(
+        JSON.stringify({
+          type: 'executor_termination_result',
+          requestId: 'request-1',
+          executorId: 'executor-1',
+          result: 'not-a-result',
+        })
+      )
+    ).toBeNull();
     expect(parseHeadlessMessage(JSON.stringify({ type: 'unknown' }))).toBeNull();
     expect(parseHeadlessMessage('not-json')).toBeNull();
   });
@@ -159,6 +226,19 @@ describe('headless_message_utils', () => {
     ).toEqual({
       type: 'notification_subscribers_changed',
       hasSubscribers: true,
+    });
+    expect(
+      parseHeadlessServerMessage(
+        JSON.stringify({
+          type: 'terminate_executor',
+          requestId: 'request-1',
+          executorId: 'executor-1',
+        })
+      )
+    ).toEqual({
+      type: 'terminate_executor',
+      requestId: 'request-1',
+      executorId: 'executor-1',
     });
 
     expect(
@@ -210,5 +290,14 @@ describe('headless_message_utils', () => {
       )
     ).toBeNull();
     expect(parseHeadlessServerMessage(JSON.stringify({ type: 'output' }))).toBeNull();
+    expect(
+      parseHeadlessServerMessage(
+        JSON.stringify({
+          type: 'terminate_executor',
+          requestId: 'request-1',
+          executorId: 'not an opaque id',
+        })
+      )
+    ).toBeNull();
   });
 });

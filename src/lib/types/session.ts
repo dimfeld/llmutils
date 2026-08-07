@@ -158,6 +158,49 @@ export interface SessionPlanTask {
   done: boolean;
 }
 
+export type SessionProcessKind = 'tim' | 'executor';
+export type SessionProcessState = 'starting' | 'running' | 'exited' | 'orphaned';
+
+export interface SessionProcessNode {
+  processId: string;
+  parentProcessId?: string;
+  kind: SessionProcessKind;
+  label: string;
+  ownerProcessId?: string;
+  pid?: number;
+  command?: string;
+  startIdentity?: string;
+  startedAt: string;
+  state: SessionProcessState;
+  endedAt?: string;
+  exitCode?: number | null;
+  signal?: string;
+}
+
+export type SessionExecutorTerminationStatus =
+  | 'terminated'
+  | 'requested'
+  | 'already_exited'
+  | 'not_owned'
+  | 'not_executor'
+  | 'stale_target'
+  | 'unknown_process_state'
+  | 'signal_failed'
+  | 'unknown_executor'
+  | 'owner_not_registered'
+  | 'owner_not_connected'
+  | 'send_failed'
+  | 'request_timeout'
+  | 'offline'
+  | 'session_not_found'
+  | 'request_failed';
+
+export interface SessionExecutorTerminationResult {
+  executorId: string;
+  status: SessionExecutorTerminationStatus;
+  message?: string;
+}
+
 export interface SessionData {
   connectionId: string;
   sessionInfo: HeadlessSessionInfo;
@@ -166,6 +209,7 @@ export interface SessionData {
   projectId: number | null;
   planContent: string | null;
   planTasks: SessionPlanTask[];
+  processTree: SessionProcessNode[];
   messages: DisplayMessage[];
   activePrompts: ActivePrompt[];
   isReplaying: boolean;
@@ -207,6 +251,11 @@ export interface SessionPlanContentEvent {
   connectionId: string;
   planContent: string;
   planTasks: SessionPlanTask[];
+}
+
+export interface SessionProcessTreeEvent {
+  connectionId: string;
+  processTree: SessionProcessNode[];
 }
 
 export interface SessionPromptEvent {
@@ -258,6 +307,7 @@ export interface SessionClientEventMap {
   'session:disconnect': SessionDisconnectEvent;
   'session:message': SessionMessageEvent;
   'session:plan-content': SessionPlanContentEvent;
+  'session:process-tree': SessionProcessTreeEvent;
   'session:prompt': SessionPromptEvent;
   'session:prompt-cleared': SessionPromptClearedEvent;
   'session:dismissed': SessionDismissedEvent;

@@ -43,6 +43,7 @@ import {
   dismissSession,
   sendSessionPromptResponse,
   sendSessionUserInput,
+  terminateExecutor,
 } from './session_actions.remote.js';
 
 describe('session remote actions', () => {
@@ -173,6 +174,71 @@ describe('session remote actions', () => {
       invokeCommand(sendSessionUserInput, {
         connectionId,
       } as never)
+    ).rejects.toBeTruthy();
+  });
+
+  test('terminateExecutor validates opaque IDs and returns the owner result', async () => {
+    const connectionId = 'conn-terminate';
+    const sentMessages: HeadlessServerMessage[] = [];
+    currentManager.handleWebSocketConnect(connectionId, (message) => {
+      sentMessages.push(message);
+    });
+
+    const resultPromise = invokeCommand(terminateExecutor, {
+      connectionId,
+      executorId: 'executor-1',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const request = sentMessages.find((message) => message.type === 'terminate_executor');
+    expect(request).toMatchObject({
+      type: 'terminate_executor',
+      executorId: 'executor-1',
+      requestId: expect.any(String),
+    });
+    if (!request || request.type !== 'terminate_executor') {
+      throw new Error('The terminate request was not sent');
+    }
+
+    currentManager.handleWebSocketMessage(connectionId, {
+      type: 'executor_termination_result',
+      requestId: request.requestId,
+      executorId: request.executorId,
+      result: 'terminated',
+    });
+
+    await expect(resultPromise).resolves.toEqual({
+      executorId: 'executor-1',
+      status: 'terminated',
+    });
+  });
+
+  test('terminateExecutor returns clear offline and missing-session results', async () => {
+    await expect(
+      invokeCommand(terminateExecutor, {
+        connectionId: 'missing',
+        executorId: 'executor-1',
+      })
+    ).resolves.toEqual({ executorId: 'executor-1', status: 'session_not_found' });
+
+    const connectionId = 'conn-offline-terminate';
+    currentManager.handleWebSocketConnect(connectionId, vi.fn());
+    currentManager.handleWebSocketDisconnect(connectionId);
+
+    await expect(
+      invokeCommand(terminateExecutor, {
+        connectionId,
+        executorId: 'executor-1',
+      })
+    ).resolves.toEqual({ executorId: 'executor-1', status: 'offline' });
+  });
+
+  test('terminateExecutor rejects malformed opaque IDs', async () => {
+    await expect(
+      invokeCommand(terminateExecutor, {
+        connectionId: 'missing',
+        executorId: 'not an opaque process id',
+      })
     ).rejects.toBeTruthy();
   });
 

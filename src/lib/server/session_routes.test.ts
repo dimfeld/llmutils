@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
+import type { ProcessId, SessionProcessNode } from '../../common/session_process.js';
 
 import { SessionManager } from './session_manager.js';
 import { createSessionEventsResponse, formatSseEvent } from './session_routes.js';
@@ -239,6 +240,56 @@ describe('lib/server/session_routes', () => {
     await reader!.cancel();
   });
 
+  test('createSessionEventsResponse forwards live process tree events over SSE', async () => {
+    const abortController = new AbortController();
+    const response = createSessionEventsResponse(manager, abortController.signal);
+    const reader = response.body?.getReader();
+    expect(reader).toBeDefined();
+
+    const decoder = new TextDecoder();
+    const streamState = { buffer: '' };
+    expect(await readSseEvent(reader!, decoder, streamState)).toMatchObject({
+      event: 'session:list',
+    });
+    expect(await readSseEvent(reader!, decoder, streamState)).toMatchObject({
+      event: 'rate-limit:updated',
+    });
+    expect(await readSseEvent(reader!, decoder, streamState)).toEqual({
+      event: 'session:sync-complete',
+      data: {},
+    });
+
+    manager.handleWebSocketConnect('conn-tree-sse', vi.fn());
+    expect(await readSseEvent(reader!, decoder, streamState)).toMatchObject({
+      event: 'session:new',
+    });
+
+    const processTree: SessionProcessNode[] = [
+      {
+        processId: 'root-sse' as ProcessId,
+        kind: 'tim',
+        label: 'tim agent',
+        startedAt: '2026-03-17T10:00:00.000Z',
+        state: 'running',
+      },
+    ];
+    manager.handleWebSocketMessage('conn-tree-sse', {
+      type: 'process_tree_snapshot',
+      processes: processTree,
+    });
+
+    expect(await readSseEvent(reader!, decoder, streamState)).toEqual({
+      event: 'session:process-tree',
+      data: {
+        connectionId: 'conn-tree-sse',
+        processTree,
+      },
+    });
+
+    abortController.abort();
+    await reader!.cancel();
+  });
+
   test('createSessionEventsResponse forwards every session event type and cleans up subscriptions', async () => {
     const unsubscribeSpy = vi.spyOn(manager, 'unsubscribe');
     const abortController = new AbortController();
@@ -415,7 +466,7 @@ describe('lib/server/session_routes', () => {
 
     abortController.abort();
     expect(await reader!.read()).toEqual({ done: true, value: undefined });
-    expect(unsubscribeSpy).toHaveBeenCalledTimes(10);
+    expect(unsubscribeSpy).toHaveBeenCalledTimes(11);
   });
 
   test('createSessionEventsResponse snapshot hides replayed prompts until replay ends', async () => {

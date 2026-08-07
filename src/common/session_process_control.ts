@@ -10,6 +10,7 @@ import {
   TIM_PROCESS_ID,
   TIM_SESSION_ID,
   type ProcessId,
+  type SessionProcessTerminationResult,
   type SessionProcessExit,
   type SessionProcessUpdate,
 } from './session_process.js';
@@ -40,14 +41,7 @@ export interface SessionProcessTransport {
   removeProcess(processId: ProcessId, subtree?: boolean): boolean;
 }
 
-export type SessionProcessTerminationResult =
-  | 'terminated'
-  | 'already_exited'
-  | 'not_owned'
-  | 'not_executor'
-  | 'stale_target'
-  | 'unknown_process_state'
-  | 'signal_failed';
+export type { SessionProcessTerminationResult } from './session_process.js';
 
 export interface SessionProcessOwnerOptions {
   sessionId: string;
@@ -464,8 +458,8 @@ export function runWithSessionProcessOwner<T>(
 
 export function createExecutorControlHandler(
   owner: SessionProcessOwner
-): (message: TunnelTerminateExecutorMessage) => void {
+): (message: TunnelTerminateExecutorMessage) => SessionProcessTerminationResult {
   return (message) => {
-    owner.terminateExecutor(message.executorId);
+    return owner.terminateExecutor(message.executorId);
   };
 }

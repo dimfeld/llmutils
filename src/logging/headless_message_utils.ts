@@ -1,4 +1,9 @@
 import type { HeadlessMessage, HeadlessServerMessage } from './headless_protocol.js';
+import {
+  isProcessId,
+  isSessionProcessTerminationResult,
+  type SessionProcessNode,
+} from '../common/session_process.js';
 
 export const VALID_HEADLESS_TYPES = new Set<HeadlessMessage['type']>([
   'session_info',
@@ -8,6 +13,9 @@ export const VALID_HEADLESS_TYPES = new Set<HeadlessMessage['type']>([
   'output',
   'pty_output',
   'session_ended',
+  'process_tree_snapshot',
+  'process_tree_update',
+  'executor_termination_result',
 ]);
 
 export const VALID_HEADLESS_SERVER_TYPES = new Set<HeadlessServerMessage['type']>([
@@ -17,6 +25,7 @@ export const VALID_HEADLESS_SERVER_TYPES = new Set<HeadlessServerMessage['type']
   'pty_resize',
   'end_session',
   'force_end_session',
+  'terminate_executor',
   'notification_subscribers_changed',
 ]);
 
@@ -60,6 +69,50 @@ function isStrictBase64(value: unknown): value is string {
 
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+function isOptionalPositiveInteger(value: unknown): boolean {
+  return value === undefined || isPositiveInteger(value);
+}
+
+function isOptionalString(value: unknown, maxLength = 2048): boolean {
+  return value === undefined || (typeof value === 'string' && value.length <= maxLength);
+}
+
+function isProcessNode(value: unknown): value is SessionProcessNode {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const node = value as Record<string, unknown>;
+  return (
+    isProcessId(node.processId) &&
+    (node.parentProcessId === undefined || isProcessId(node.parentProcessId)) &&
+    (node.ownerProcessId === undefined || isProcessId(node.ownerProcessId)) &&
+    (node.kind === 'tim' || node.kind === 'executor') &&
+    typeof node.label === 'string' &&
+    node.label.trim().length > 0 &&
+    node.label.length <= 512 &&
+    isOptionalPositiveInteger(node.pid) &&
+    isOptionalString(node.command) &&
+    isOptionalString(node.startIdentity) &&
+    typeof node.startedAt === 'string' &&
+    node.startedAt.length > 0 &&
+    node.startedAt.length <= 512 &&
+    (node.state === 'starting' ||
+      node.state === 'running' ||
+      node.state === 'exited' ||
+      node.state === 'orphaned') &&
+    isOptionalString(node.endedAt, 512) &&
+    (node.exitCode === undefined ||
+      node.exitCode === null ||
+      (typeof node.exitCode === 'number' && Number.isInteger(node.exitCode))) &&
+    isOptionalString(node.signal, 128)
+  );
+}
+
+function isProcessTree(value: unknown): value is SessionProcessNode[] {
+  return Array.isArray(value) && value.every((node) => isProcessNode(node));
 }
 
 export function parseHeadlessMessage(payload: string): HeadlessMessage | null {
@@ -109,6 +162,26 @@ export function parseHeadlessMessage(payload: string): HeadlessMessage | null {
     return null;
   }
 
+  if (
+    (parsed.type === 'process_tree_snapshot' || parsed.type === 'process_tree_update') &&
+    !isProcessTree(parsed.processes)
+  ) {
+    return null;
+  }
+
+  if (parsed.type === 'executor_termination_result') {
+    if (
+      typeof parsed.requestId !== 'string' ||
+      parsed.requestId.length === 0 ||
+      parsed.requestId.length > 256 ||
+      !isProcessId(parsed.executorId) ||
+      !isSessionProcessTerminationResult(parsed.result) ||
+      (parsed.error !== undefined && typeof parsed.error !== 'string')
+    ) {
+      return null;
+    }
+  }
+
   return parsed as unknown as HeadlessMessage;
 }
 
@@ -152,6 +225,16 @@ export function parseHeadlessServerMessage(payload: string): HeadlessServerMessa
     case 'end_session':
       return parsed as unknown as HeadlessServerMessage;
     case 'force_end_session':
+      return parsed as unknown as HeadlessServerMessage;
+    case 'terminate_executor':
+      if (
+        typeof parsed.requestId !== 'string' ||
+        parsed.requestId.length === 0 ||
+        parsed.requestId.length > 256 ||
+        !isProcessId(parsed.executorId)
+      ) {
+        return null;
+      }
       return parsed as unknown as HeadlessServerMessage;
     case 'notification_subscribers_changed':
       if (typeof parsed.hasSubscribers !== 'boolean') {

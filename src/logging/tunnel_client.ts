@@ -2,7 +2,12 @@ import net from 'node:net';
 import type { LoggerAdapter } from './adapter.js';
 import { writeToLogFile } from './common.js';
 import { debug } from '../common/process.js';
-import { isProcessId, type ProcessId } from '../common/session_process.js';
+import {
+  isProcessId,
+  isSessionProcessTerminationResult,
+  type ProcessId,
+  type SessionProcessTerminationResult,
+} from '../common/session_process.js';
 import {
   TIM_OUTPUT_SOCKET,
   serializeArgs,
@@ -94,7 +99,9 @@ export class TunnelAdapter implements LoggerAdapter {
   private connected: boolean = true;
   private pendingPrompts: Map<string, PendingPromptRequest> = new Map();
   private userInputHandler?: (content: string) => void;
-  private executorControlHandler?: (message: TunnelTerminateExecutorMessage) => void;
+  private executorControlHandler?: (
+    message: TunnelTerminateExecutorMessage
+  ) => SessionProcessTerminationResult | void;
 
   constructor(socket: net.Socket) {
     this.socket = socket;
@@ -158,9 +165,26 @@ export class TunnelAdapter implements LoggerAdapter {
         break;
       case 'terminate_executor':
         try {
-          this.executorControlHandler?.(message);
+          const result = this.executorControlHandler?.(message);
+          if (message.requestId && isSessionProcessTerminationResult(result)) {
+            this.send({
+              type: 'terminate_executor_result',
+              executorId: message.executorId,
+              requestId: message.requestId,
+              result,
+            });
+          }
         } catch (err) {
           writeToLogFile(`[tunnel] Executor control handler error: ${err as Error}\n`);
+          if (message.requestId) {
+            this.send({
+              type: 'terminate_executor_result',
+              executorId: message.executorId,
+              requestId: message.requestId,
+              result: 'signal_failed',
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
         }
         break;
     }
@@ -176,7 +200,9 @@ export class TunnelAdapter implements LoggerAdapter {
 
   /** Registers the owner-side handler for targeted executor control requests. */
   setExecutorControlHandler(
-    callback: ((message: TunnelTerminateExecutorMessage) => void) | undefined
+    callback:
+      | ((message: TunnelTerminateExecutorMessage) => SessionProcessTerminationResult | void)
+      | undefined
   ): void {
     this.executorControlHandler = callback;
   }

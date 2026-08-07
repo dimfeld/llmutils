@@ -5,7 +5,12 @@ import {
   MAX_CLIENT_MESSAGES,
   parseSessionEventPayload,
 } from './session_state_events.js';
-import type { ActivePrompt, DisplayMessage, SessionData } from '$lib/types/session.js';
+import type {
+  ActivePrompt,
+  DisplayMessage,
+  SessionData,
+  SessionProcessNode,
+} from '$lib/types/session.js';
 
 function createMessage(overrides: Partial<DisplayMessage> = {}): DisplayMessage {
   const seq = overrides.seq ?? 0;
@@ -47,6 +52,7 @@ function createSession(connectionId = 'conn-1'): SessionData {
     projectId: null,
     planContent: null,
     planTasks: [],
+    processTree: [],
     messages: [
       createMessage({ id: `${connectionId}-0`, body: { type: 'text', text: 'existing' } }),
     ],
@@ -347,6 +353,44 @@ describe('applySessionEvent', () => {
     expect(updated?.planContent).toBe('# current plan');
     expect(updated?.planTasks).toEqual([{ title: 'Task', description: 'Do it', done: false }]);
     expect(updated?.messages).toBe(previousMessages);
+  });
+
+  test('session:process-tree replaces the live tree without sharing node objects', () => {
+    const session = createSession();
+    const state = createState(session);
+    const processTree: SessionProcessNode[] = [
+      {
+        processId: 'root-1',
+        kind: 'tim',
+        label: 'tim agent',
+        startedAt: '2026-03-17T10:00:00.000Z',
+        state: 'running',
+      },
+      {
+        processId: 'executor-1',
+        parentProcessId: 'root-1',
+        ownerProcessId: 'root-1',
+        kind: 'executor',
+        label: 'executor',
+        pid: 4321,
+        startedAt: '2026-03-17T10:00:01.000Z',
+        state: 'running',
+      },
+    ];
+
+    applySessionEvent(
+      'session:process-tree',
+      { connectionId: session.connectionId, processTree },
+      state
+    );
+
+    const updated = state.sessions.get(session.connectionId);
+    expect(updated?.processTree).toEqual(processTree);
+    expect(updated?.processTree).not.toBe(processTree);
+    expect(updated?.processTree[0]).not.toBe(processTree[0]);
+
+    processTree[0]!.label = 'changed outside the store';
+    expect(updated?.processTree[0]?.label).toBe('tim agent');
   });
 
   test('session:prompt-cleared only clears the matching prompt', () => {

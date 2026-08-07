@@ -362,6 +362,62 @@ describe('tunnel process plumbing', () => {
     expect(terminatedB).toEqual([executorB]);
   });
 
+  it('returns an owner termination result through the tunnel and rejects stale control results', async () => {
+    const terminationResults: Array<{
+      executorId: ProcessId;
+      requestId: string;
+      result: string;
+      error?: string;
+    }> = [];
+    const { registry, rootExecutor, socketPath } = await createFixture();
+    registry.subscribeTerminationResults((event) => terminationResults.push(event));
+
+    const client = await createTunnelAdapter(socketPath);
+    adapters.push(client);
+    const tim = processId('tim-result');
+    const executor = processId('executor-result');
+    client.setExecutorControlHandler(() => 'terminated');
+    client.registerProcess({
+      processId: tim,
+      parentProcessId: rootExecutor,
+      kind: 'tim',
+      label: 'result tim',
+    });
+    client.registerProcess({
+      processId: executor,
+      parentProcessId: tim,
+      kind: 'executor',
+      label: 'result executor',
+    });
+    await waitFor(() => registry.has(executor));
+
+    expect(server?.sendExecutorTermination(executor, 'request-result')).toMatchObject({ ok: true });
+    await waitFor(() => terminationResults.length === 1);
+    expect(terminationResults).toEqual([
+      {
+        executorId: executor,
+        requestId: 'request-result',
+        result: 'terminated',
+        error: undefined,
+      },
+    ]);
+
+    // A result from a client that does not own the tracked executor cannot
+    // enter the root registry.
+    const rawSocket = await connectRaw(socketPath);
+    rawSocket.write(
+      `${JSON.stringify({
+        type: 'terminate_executor_result',
+        executorId: executor,
+        requestId: 'request-forged',
+        result: 'terminated',
+      })}\n`
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    expect(terminationResults).toHaveLength(1);
+    rawSocket.end();
+  });
+
   it('rejects lifecycle messages from a different client and preserves the owner branch', async () => {
     const accepted: Array<{ processId: ProcessId; clientId: string }> = [];
     const { registry, rootExecutor, socketPath } = await createFixture({
