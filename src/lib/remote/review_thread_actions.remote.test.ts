@@ -5,15 +5,22 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
+import { upsertBranchMergeRequirements } from '$tim/db/branch_merge_requirements.js';
 import { getPlanByUuid, getPlanTasksByUuid, nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
-import { upsertPrStatus, type StoredPrReviewThreadInput } from '$tim/db/pr_status.js';
+import {
+  getPrStatusByProjectAndNumber,
+  upsertPrStatus,
+  type StoredPrCheckRunInput,
+  type StoredPrReviewThreadInput,
+} from '$tim/db/pr_status.js';
 import { recordWorkspace } from '$tim/db/workspace.js';
 import type { TimConfig } from '$tim/configSchema.js';
 import type { PlanSchema } from '$tim/planSchema.js';
 import { setApplyBatchOperationHookForTesting } from '$tim/sync/apply.js';
 import { SessionManager } from '$lib/server/session_manager.js';
 import { invokeCommand } from '$lib/test-utils/invoke_command.js';
+import { withRequiredCheckRollupState } from '$lib/server/required_check_rollup.js';
 
 let currentDb: Database;
 let currentManager: SessionManager;
@@ -1793,6 +1800,8 @@ describe('ci-fix launch commands', () => {
     planId: number;
     author?: string | null;
     checkRollupState?: string | null;
+    baseBranch?: string | null;
+    checks?: StoredPrCheckRunInput[];
     projectId?: number;
   }): void {
     const targetProjectId = options.projectId ?? projectId;
@@ -1816,7 +1825,9 @@ describe('ci-fix launch commands', () => {
       state: 'open',
       draft: false,
       checkRollupState: options.checkRollupState ?? 'failure',
+      baseBranch: options.baseBranch,
       lastFetchedAt: new Date().toISOString(),
+      checks: options.checks,
     });
 
     currentDb
@@ -1828,6 +1839,8 @@ describe('ci-fix launch commands', () => {
     options: {
       author?: string | null;
       checkRollupState?: string | null;
+      baseBranch?: string | null;
+      checks?: StoredPrCheckRunInput[];
     } = {}
   ): void {
     upsertPrStatus(currentDb, {
@@ -1840,7 +1853,25 @@ describe('ci-fix launch commands', () => {
       state: 'open',
       draft: false,
       checkRollupState: options.checkRollupState ?? 'failure',
+      baseBranch: options.baseBranch,
       lastFetchedAt: new Date().toISOString(),
+      checks: options.checks,
+    });
+  }
+
+  function seedRequiredCheckRequirement(): void {
+    upsertBranchMergeRequirements(currentDb, {
+      owner: 'owner',
+      repo: 'repo',
+      branchName: 'main',
+      lastFetchedAt: new Date().toISOString(),
+      requirements: [
+        {
+          sourceKind: 'legacy_branch_protection',
+          sourceId: 0,
+          checks: [{ context: 'required-check' }],
+        },
+      ],
     });
   }
 
@@ -1880,6 +1911,42 @@ describe('ci-fix launch commands', () => {
     expect(result).toEqual({ status: 'started', prUrl: PR_URL });
     expect(spawnCiFixForPrProcessMock).toHaveBeenCalledWith(PR_URL, '/tmp/ci-fix-pr-workspace');
     expect(isPrLaunching(PR_URL)).toBe(true);
+  });
+
+  test('startPrCiFix uses the required-check effective rollup', async () => {
+    seedRequiredCheckRequirement();
+    seedCiPr({
+      checkRollupState: 'success',
+      baseBranch: 'main',
+      checks: [
+        {
+          name: 'required-check',
+          source: 'check_run',
+          status: 'completed',
+          conclusion: 'failure',
+        },
+      ],
+    });
+    const rawPrStatus = getPrStatusByProjectAndNumber(currentDb, projectId, 42);
+    expect(rawPrStatus?.status.check_rollup_state).toBe('success');
+    expect(rawPrStatus).not.toBeNull();
+    expect(withRequiredCheckRollupState(currentDb, rawPrStatus!).status.check_rollup_state).toBe(
+      'failure'
+    );
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/ci-fix-effective-rollup-workspace',
+      workspaceType: 'primary',
+    });
+    spawnCiFixForPrProcessMock.mockResolvedValue({ success: true });
+
+    const result = await invokeCommand(startPrCiFix, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({ status: 'started', prUrl: PR_URL });
+    expect(spawnCiFixForPrProcessMock).toHaveBeenCalledWith(
+      PR_URL,
+      '/tmp/ci-fix-effective-rollup-workspace'
+    );
   });
 
   test('startPrCiFix rejects a PR that is not eligible', async () => {
@@ -1965,6 +2032,46 @@ describe('ci-fix launch commands', () => {
     expect(result).toEqual({ status: 'started', planId: 403 });
     expect(spawnCiFixProcessMock).toHaveBeenCalledWith(403, '/tmp/ci-fix-plan-workspace');
     expect(isPlanLaunching('ci-fix-plan-start')).toBe(true);
+  });
+
+  test('startCiFix uses the required-check effective rollup', async () => {
+    seedRequiredCheckRequirement();
+    seedCiPlan({
+      planUuid: 'ci-fix-plan-effective-rollup',
+      planId: 408,
+      checkRollupState: 'success',
+      baseBranch: 'main',
+      checks: [
+        {
+          name: 'required-check',
+          source: 'check_run',
+          status: 'completed',
+          conclusion: 'failure',
+        },
+      ],
+    });
+    const rawPrStatus = getPrStatusByProjectAndNumber(currentDb, projectId, 42);
+    expect(rawPrStatus?.status.check_rollup_state).toBe('success');
+    expect(rawPrStatus).not.toBeNull();
+    expect(withRequiredCheckRollupState(currentDb, rawPrStatus!).status.check_rollup_state).toBe(
+      'failure'
+    );
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/ci-fix-effective-plan-rollup-workspace',
+      workspaceType: 'primary',
+    });
+    spawnCiFixProcessMock.mockResolvedValue({ success: true, planId: 408 });
+
+    const result = await invokeCommand(startCiFix, {
+      planUuid: 'ci-fix-plan-effective-rollup',
+    });
+
+    expect(result).toEqual({ status: 'started', planId: 408 });
+    expect(spawnCiFixProcessMock).toHaveBeenCalledWith(
+      408,
+      '/tmp/ci-fix-effective-plan-rollup-workspace'
+    );
   });
 
   test('startCiFix rejects a plan without an eligible linked PR', async () => {

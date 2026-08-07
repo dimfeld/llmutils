@@ -32,12 +32,12 @@ import {
   type SpawnTargetProcessResult,
 } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
+import { isCiFixEligibleForUsername } from '$lib/server/ci_fix_eligibility.js';
 import {
   createPullRequestReviewCommentReply,
   resolveReviewThread,
 } from '$common/github/pull_requests.js';
 import { getGitHubUsername } from '$common/github/user.js';
-import { normalizeGitHubUsername } from '$common/github/username.js';
 import { createTaskFromReviewThread } from '$tim/commands/review.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import {
@@ -49,7 +49,6 @@ import {
   type PrReviewThreadRow,
 } from '$tim/db/pr_status.js';
 import { tryCanonicalizePrUrl } from '$common/github/identifiers.js';
-import { canFixCi } from '$lib/utils/ci_fix_eligibility.js';
 
 const convertThreadToTaskSchema = z.object({
   planUuid: z.string().min(1),
@@ -394,15 +393,6 @@ export const startFixThreads = command(startFixThreadsSchema, async ({ planUuid 
   return { status: 'started' as const, planId: plan.plan_id };
 });
 
-function isCiFixEligibleForUsername(prStatus: PrStatusDetail, username: string | null): boolean {
-  const isOwnPr =
-    username !== null &&
-    prStatus.status.author !== null &&
-    normalizeGitHubUsername(prStatus.status.author) === normalizeGitHubUsername(username);
-
-  return canFixCi({ status: prStatus.status, isOwnPr });
-}
-
 const startCiFixSchema = z.object({
   planUuid: z.string().min(1),
 });
@@ -424,7 +414,7 @@ export const startCiFix = command(startCiFixSchema, async ({ planUuid }) => {
     validPrUrls.length > 0 ? validPrUrls : undefined
   );
   const username = await getGitHubUsername({ githubUsername: config.githubUsername });
-  if (!prStatuses.some((prStatus) => isCiFixEligibleForUsername(prStatus, username))) {
+  if (!prStatuses.some((prStatus) => isCiFixEligibleForUsername(db, prStatus, username))) {
     error(400, 'No eligible pull request with failing checks to fix');
   }
 
@@ -607,9 +597,9 @@ export const startPrShell = command(startPrReviewGuideSchema, async ({ projectId
 
 export const startPrCiFix = command(startPrReviewGuideSchema, async ({ projectId, prNumber }) =>
   launchPrTimCommand('ci-fix', projectId, prNumber, spawnCiFixForPrProcess, async (prStatus) => {
-    const { config } = await getServerContext();
+    const { config, db } = await getServerContext();
     const username = await getGitHubUsername({ githubUsername: config.githubUsername });
-    return isCiFixEligibleForUsername(prStatus, username);
+    return isCiFixEligibleForUsername(db, prStatus, username);
   })
 );
 
