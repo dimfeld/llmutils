@@ -43,7 +43,7 @@
   import NewReviewIssueModal from '../../routes/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/NewReviewIssueModal.svelte';
   import SubmitReviewDialog from '../../routes/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/SubmitReviewDialog.svelte';
   import { normalizeGutterRange } from '../../routes/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/new_issue_modal_utils.js';
-  import { extractRemoteErrorMessage } from '../../routes/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/remote_error.js';
+  import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
   import {
     highlightAnnotationNode,
     type AnnotationHighlightHandle,

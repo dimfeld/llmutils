@@ -10,7 +10,7 @@
     submitReviewToGitHub,
   } from '$lib/remote/pr_review_submission.remote.js';
   import type { ReviewIssueRow } from '$tim/db/review.js';
-  import { extractRemoteErrorMessage } from './remote_error.js';
+  import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
 
   type SubmitEvent = 'APPROVE' | 'COMMENT' | 'REQUEST_CHANGES';
 

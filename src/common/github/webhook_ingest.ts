@@ -11,11 +11,14 @@ import {
 import { tryCanonicalizePrUrl } from './identifiers.js';
 import {
   handleCheckRunEvent,
+  handleIssueCommentEvent,
   handlePullRequestEvent,
   handlePullRequestReviewEvent,
   handlePullRequestReviewThreadEvent,
+  type InboxSignal,
   type PrDraftTransition,
   type PrRefreshTarget,
+  type WebhookHandlerResult,
   type WebhookHandlerOptions,
 } from './webhook_event_handlers.js';
 import { constructGitHubRepositoryId } from './pull_requests.js';
@@ -44,7 +47,24 @@ import { setPlanScalarOperation } from '../../tim/sync/operations.js';
 import type { TimConfig } from '../../tim/configSchema.js';
 import { isWebhookSideEffectAllowed } from './webhook_side_effects.js';
 
+export type { InboxSignal };
+
 const MERGEABLE_REFRESH_DELAY_MS = 15_000;
+
+type WebhookEventHandler = (
+  db: Database,
+  payload: unknown,
+  options: WebhookHandlerOptions
+) => WebhookHandlerResult;
+
+const WEBHOOK_EVENT_HANDLERS: ReadonlyMap<string, WebhookEventHandler> = new Map([
+  ['pull_request', handlePullRequestEvent],
+  ['issue_comment', handleIssueCommentEvent],
+  ['pull_request_review', handlePullRequestReviewEvent],
+  ['pull_request_review_thread', handlePullRequestReviewThreadEvent],
+  ['pull_request_review_comment', handlePullRequestReviewThreadEvent],
+  ['check_run', handleCheckRunEvent],
+]);
 
 type DelayFn = (ms: number) => Promise<void>;
 
@@ -319,6 +339,8 @@ export interface IngestResult {
   prsReadyForReview: ReadyForReviewPr[];
   /** Reviews submitted on known PRs during this run (side-effect cutoff already applied). */
   reviewsSubmitted: SubmittedPrReview[];
+  /** Raw inbox signals emitted by handlers during this run. */
+  inboxSignals: InboxSignal[];
   errors: string[];
 }
 
@@ -351,6 +373,7 @@ export async function ingestWebhookEvents(
       prsUpdated: [],
       prsReadyForReview: [],
       reviewsSubmitted: [],
+      inboxSignals: [],
       errors: [],
     };
   }
@@ -363,6 +386,7 @@ export async function ingestWebhookEvents(
       prsUpdated: [],
       prsReadyForReview: [],
       reviewsSubmitted: [],
+      inboxSignals: [],
       errors: ['WEBHOOK_INTERNAL_API_TOKEN is not configured but TIM_WEBHOOK_SERVER_URL is set'],
     };
   }
@@ -379,6 +403,8 @@ export async function ingestWebhookEvents(
   const prsReadyForReview = new Map<string, ReadyForReviewPr>();
   /** Deduplicated submitted reviews, keyed by "prUrl:author:state". */
   const reviewsSubmitted = new Map<string, SubmittedPrReview>();
+  /** Deduplicated inbox signals, keyed by kind, PR, actor/target, and event time. */
+  const inboxSignals = new Map<string, InboxSignal>();
   const errors: string[] = [];
   /** Deduplicated set of PRs needing API refresh, keyed by "owner/repo#number:type[:threadId]". */
   const apiRefreshTargets = new Map<string, PrRefreshTarget>();
@@ -387,7 +413,6 @@ export async function ingestWebhookEvents(
 
   // Cache known repos once per ingestion run to avoid repeated DB queries
   const knownRepos = getKnownRepoFullNames(db);
-  const handlerOptions: WebhookHandlerOptions = { knownRepos };
 
   // Fetch and process in batches until the server returns fewer than BATCH_SIZE events
   while (true) {
@@ -422,20 +447,27 @@ export async function ingestWebhookEvents(
 
       try {
         const payload = JSON.parse(event.payloadJson) as unknown;
-        const result =
-          event.eventType === 'pull_request'
-            ? handlePullRequestEvent(db, payload, handlerOptions)
-            : event.eventType === 'pull_request_review'
-              ? handlePullRequestReviewEvent(db, payload, handlerOptions)
-              : event.eventType === 'pull_request_review_thread' ||
-                  event.eventType === 'pull_request_review_comment'
-                ? handlePullRequestReviewThreadEvent(db, payload, handlerOptions)
-                : event.eventType === 'check_run'
-                  ? handleCheckRunEvent(db, payload, handlerOptions)
-                  : null;
+        const handlerOptions: WebhookHandlerOptions = {
+          knownRepos,
+          receivedAt: event.receivedAt,
+        };
+        const handler = WEBHOOK_EVENT_HANDLERS.get(event.eventType);
+        const result = handler ? handler(db, payload, handlerOptions) : null;
 
         if (!result) {
           continue;
+        }
+
+        for (const signal of result.inboxSignals ?? []) {
+          const eventAt = signal.eventAt ?? event.receivedAt;
+          const normalizedSignal: InboxSignal =
+            signal.eventAt === eventAt ? signal : { ...signal, eventAt };
+          const signalIdentity =
+            normalizedSignal.kind === 'review_requested'
+              ? normalizedSignal.requestedReviewer
+              : normalizedSignal.actor;
+          const key = `${normalizedSignal.kind}:${normalizedSignal.prUrl}:${signalIdentity}:${normalizedSignal.eventAt}`;
+          inboxSignals.set(key, normalizedSignal);
         }
 
         console.log(
@@ -642,6 +674,7 @@ export async function ingestWebhookEvents(
     prsUpdated: [...prsUpdated],
     prsReadyForReview: [...prsReadyForReview.values()],
     reviewsSubmitted: [...reviewsSubmitted.values()],
+    inboxSignals: [...inboxSignals.values()],
     errors,
   };
 }

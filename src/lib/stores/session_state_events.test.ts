@@ -559,4 +559,21 @@ describe('applySessionEvent', () => {
     expect(state.getSelectedSessionId()).toBe(session.connectionId);
     expect(state.getInitialized()).toBe(false);
   });
+
+  test('inbox:updated leaves the session store unchanged', () => {
+    const session = createSession();
+    const state = createState(session);
+
+    applySessionEvent(
+      'inbox:updated',
+      {
+        projectIds: [12, 34],
+      },
+      state
+    );
+
+    expect(state.sessions.get(session.connectionId)).toBe(session);
+    expect(state.getSelectedSessionId()).toBe(session.connectionId);
+    expect(state.getInitialized()).toBe(false);
+  });
 });

@@ -168,6 +168,7 @@ export interface SessionManagerEvents {
   'session:prompt-cleared': { connectionId: string; requestId: string };
   'session:dismissed': { connectionId: string };
   'pr:updated': { prUrls: string[]; projectIds: number[] };
+  'inbox:updated': { projectIds: number[] };
   'rate-limit:updated': { state: RateLimitState };
 }
 
@@ -192,6 +193,7 @@ const SESSION_EVENT_NAMES: SessionEventName[] = [
   'session:prompt-cleared',
   'session:dismissed',
   'pr:updated',
+  'inbox:updated',
   'rate-limit:updated',
 ];
 
@@ -1069,6 +1071,18 @@ export class SessionManager {
     }
 
     this.emit('pr:updated', { prUrls, projectIds });
+  }
+
+  hasInboxUpdateListeners(): boolean {
+    return this.eventEmitter.listenerCount('inbox:updated') > 0;
+  }
+
+  emitInboxUpdate(projectIds: number[]): void {
+    if (projectIds.length === 0) {
+      return;
+    }
+
+    this.emit('inbox:updated', { projectIds });
   }
 
   private emit<T extends SessionEventName>(eventName: T, payload: SessionManagerEvents[T]): void {

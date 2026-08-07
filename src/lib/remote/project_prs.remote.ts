@@ -2,9 +2,10 @@ import { command, query } from '$app/server';
 import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
-import { formatWebhookIngestErrors, ingestWebhookEvents } from '$common/github/webhook_ingest.js';
+import { formatWebhookIngestErrors } from '$common/github/webhook_ingest.js';
 import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
+import { getReviewerPredicate, parseRequestedReviewers } from '$common/github/pr_relevance.js';
 import { normalizeGitHubUsername } from '$common/github/username.js';
 import { resolveGitHubToken } from '$common/github/token.js';
 import {
@@ -17,6 +18,7 @@ import { getServerContext } from '$lib/server/init.js';
 import { withRequiredCheckRollupStates } from '$lib/server/required_check_rollup.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import { getSessionManager } from '$lib/server/session_context.js';
+import { ingestWebhookEventsWithInbox } from '$lib/server/webhook_ingest_orchestrator.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getProjectById, listProjects } from '$tim/db/project.js';
 import {
@@ -418,21 +420,6 @@ async function refreshAllProjectPrsFromGitHub(): Promise<RefreshResult> {
   return { newLinks };
 }
 
-function parseRequestedReviewers(requestedReviewers: string | null): string[] {
-  if (!requestedReviewers) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(requestedReviewers);
-    return Array.isArray(parsed)
-      ? parsed.filter((value): value is string => typeof value === 'string')
-      : [];
-  } catch {
-    return [];
-  }
-}
-
 function partitionCachedProjectPrs(
   prs: EnrichedProjectPr[],
   username: string | null
@@ -451,13 +438,11 @@ function partitionCachedProjectPrs(
   for (const pr of prs) {
     const isAuthored =
       pr.status.author != null && normalizeGitHubUsername(pr.status.author) === normalizedUsername;
-    const isRequestedReviewer =
-      parseRequestedReviewers(pr.status.requested_reviewers).some(
-        (reviewer) => normalizeGitHubUsername(reviewer) === normalizedUsername
-      ) || pr.reviewRequests.some((row) => row.reviewer === username);
-    const hasSubmittedReview = pr.reviews.some(
-      (review) =>
-        normalizeGitHubUsername(review.author) === normalizedUsername && review.state !== 'PENDING'
+    const { isRequestedReviewer, hasSubmittedReview } = getReviewerPredicate(
+      parseRequestedReviewers(pr.status.requested_reviewers),
+      pr.reviewRequests,
+      pr.reviews,
+      username
     );
     const isReviewing = isRequestedReviewer || hasSubmittedReview;
 
@@ -573,7 +558,9 @@ export const refreshProjectPrs = command(
 
       if (getWebhookServerUrl()) {
         try {
-          const ingestResult = await ingestWebhookEvents(db);
+          const ingestResult = await ingestWebhookEventsWithInbox(db, {
+            getSessionManager,
+          });
           try {
             emitPrUpdatesForIngestResult(db, ingestResult, getSessionManager());
           } catch (err) {
@@ -605,7 +592,9 @@ export const refreshProjectPrs = command(
       // It does not run refreshProjectPrsService(), so stale-PR cleanup such as
       // marking missing PRs closed is left to the Full Refresh from GitHub action.
       try {
-        const ingestResult = await ingestWebhookEvents(db);
+        const ingestResult = await ingestWebhookEventsWithInbox(db, {
+          getSessionManager,
+        });
         try {
           emitPrUpdatesForIngestResult(db, ingestResult, getSessionManager());
         } catch {

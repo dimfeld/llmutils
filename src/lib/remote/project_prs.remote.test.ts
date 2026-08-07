@@ -43,9 +43,12 @@ vi.mock('$common/github/webhook_client.js', () => ({
 }));
 
 vi.mock('$common/github/webhook_ingest.js', () => ({
-  ingestWebhookEvents,
   formatWebhookIngestErrors: (errors: string[]) =>
     errors.length > 0 ? `Webhook ingestion had issues: ${errors.join('; ')}` : undefined,
+}));
+
+vi.mock('$lib/server/webhook_ingest_orchestrator.js', () => ({
+  ingestWebhookEventsWithInbox: ingestWebhookEvents,
 }));
 
 vi.mock('$common/github/project_pr_service.js', () => ({
@@ -130,7 +133,9 @@ describe('project_prs remote functions', () => {
 
     const result = await invokeCommand(refreshProjectPrs, { projectId: String(projectId) });
 
-    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb);
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
+    });
     expect(mockEmitPrUpdatesForIngestResult).toHaveBeenCalledWith(
       currentDb,
       expect.objectContaining({ prsUpdated: [] }),
@@ -138,6 +143,67 @@ describe('project_prs remote functions', () => {
     );
     expect(refreshProjectPrsService).not.toHaveBeenCalled();
     expect(result).toEqual({ newLinks: [] });
+  });
+
+  test('refreshProjectPrs delegates inbox signals through the shared ingest helper', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    const inboxSignal = {
+      kind: 'pr_comment',
+      repo: 'example/repo',
+      prNumber: 9,
+      prUrl: 'https://github.com/example/repo/pull/9',
+      actor: 'commenter-1',
+      eventAt: '2026-06-01T10:00:00.000Z',
+    };
+    ingestWebhookEvents.mockResolvedValue({
+      eventsIngested: 1,
+      prsUpdated: [],
+      inboxSignals: [inboxSignal],
+      errors: [],
+    });
+    const { refreshProjectPrs } = await import('./project_prs.remote.js');
+
+    await invokeCommand(refreshProjectPrs, { projectId: String(projectId) });
+
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
+    });
+  });
+
+  test('refreshProjectPrs delegates empty inbox results through the shared ingest helper', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    const { refreshProjectPrs } = await import('./project_prs.remote.js');
+
+    await invokeCommand(refreshProjectPrs, { projectId: String(projectId) });
+
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
+    });
+  });
+
+  test('refreshProjectPrs forwards inbox signals when refreshing all projects', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    const inboxSignal = {
+      kind: 'pr_merged',
+      repo: 'example/repo',
+      prNumber: 9,
+      prUrl: 'https://github.com/example/repo/pull/9',
+      actor: 'author-1',
+      eventAt: '2026-06-01T10:00:00.000Z',
+    };
+    ingestWebhookEvents.mockResolvedValue({
+      eventsIngested: 1,
+      prsUpdated: [],
+      inboxSignals: [inboxSignal],
+      errors: [],
+    });
+    const { refreshProjectPrs } = await import('./project_prs.remote.js');
+
+    await invokeCommand(refreshProjectPrs, { projectId: 'all' });
+
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
+    });
   });
 
   test('getLinearPrReviewUrl returns null for non-Linear projects', async () => {
@@ -351,6 +417,30 @@ describe('project_prs remote functions', () => {
     expect(result.reviewing[0]?.status.pr_number).toBe(18);
     expect(result.reviewing[0]?.currentUserReviewRequestLabel).toBe('Review Requested');
     expect(result.reviewing[0]?.currentUserReviewRequestedAt).toBe('2026-03-30T11:00:00.000Z');
+  });
+
+  test('getProjectPrs matches mixed-case stored reviewer logins', async () => {
+    const created = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/22',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 22,
+      title: 'Mixed-case reviewer PR',
+      state: 'open',
+      draft: false,
+      author: 'someone-else',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+    upsertPrReviewRequestByReviewer(currentDb, created.status.id, {
+      reviewer: 'DiMfElD',
+      action: 'requested',
+      eventAt: '2026-03-30T11:00:00.000Z',
+    });
+
+    const { getProjectPrs } = await import('./project_prs.remote.js');
+    const result = await invokeQuery(getProjectPrs, { projectId: String(projectId) });
+
+    expect(result.reviewing.map((pr) => pr.status.pr_number)).toEqual([22]);
   });
 
   test('getProjectPrs marks a review-requested PR stacked on another review-requested PR', async () => {

@@ -11,7 +11,7 @@
   import { Textarea } from '$lib/components/ui/textarea/index.js';
   import { untrack } from 'svelte';
   import { buildPatch, validatePatch, type ReviewIssuePatch } from './review_issue_editor_utils.js';
-  import { extractRemoteErrorMessage } from './remote_error.js';
+  import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
 
   export type { ReviewIssuePatch };
 

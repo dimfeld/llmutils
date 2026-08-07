@@ -38,6 +38,7 @@ import {
   resolveReviewThread,
 } from '$common/github/pull_requests.js';
 import { getGitHubUsername } from '$common/github/user.js';
+import { TIM_LINKED_PR_URL_ENV } from '$tim/headless.js';
 import { createTaskFromReviewThread } from '$tim/commands/review.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import {
@@ -605,20 +606,8 @@ export const startPrCiFix = command(startPrReviewGuideSchema, async ({ projectId
 
 export const startPrReviewGuide = command(
   startPrReviewGuideSchema,
-  async ({ projectId, prNumber }) => {
-    const { db } = await getServerContext();
-
-    const primaryWorkspacePath = getPrimaryWorkspacePath(db, projectId);
-    if (!primaryWorkspacePath) {
-      error(400, 'Project does not have a primary workspace');
-    }
-
-    const result = await spawnPrReviewGuideProcess(prNumber, primaryWorkspacePath);
-
-    if (!result.success) {
-      error(500, result.error);
-    }
-
-    return { status: 'started' as const };
-  }
+  async ({ projectId, prNumber }) =>
+    launchPrTimCommand('review-guide', projectId, prNumber, (prUrlOrNumber, cwd) =>
+      spawnPrReviewGuideProcess(prNumber, cwd, { [TIM_LINKED_PR_URL_ENV]: prUrlOrNumber })
+    )
 );

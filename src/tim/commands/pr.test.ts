@@ -102,13 +102,16 @@ vi.mock('../../common/github/webhook_client.js', () => ({
 }));
 
 vi.mock('../../common/github/webhook_ingest.js', () => ({
-  ingestWebhookEvents: vi.fn(async (..._args: unknown[]) => ({
+  formatWebhookIngestErrors: (errors: string[]) =>
+    errors.length > 0 ? `Webhook ingestion had issues: ${errors.join('; ')}` : undefined,
+}));
+
+vi.mock('../../lib/server/webhook_ingest_orchestrator.js', () => ({
+  ingestWebhookEventsWithInbox: vi.fn(async (..._args: unknown[]) => ({
     eventsIngested: 0,
     prsUpdated: [],
     errors: [],
   })),
-  formatWebhookIngestErrors: (errors: string[]) =>
-    errors.length > 0 ? `Webhook ingestion had issues: ${errors.join('; ')}` : undefined,
 }));
 
 vi.mock('../../common/github/pull_requests.js', () => ({
@@ -303,7 +306,7 @@ import {
 import { refreshProjectPrs as mockRefreshProjectPrsFn } from '../../common/github/project_pr_service.js';
 import { getGitHubUsername as mockGetGitHubUsernameFn } from '../../common/github/user.js';
 import { getWebhookServerUrl as mockGetWebhookServerUrlFn } from '../../common/github/webhook_client.js';
-import { ingestWebhookEvents as mockIngestWebhookEventsFn } from '../../common/github/webhook_ingest.js';
+import { ingestWebhookEventsWithInbox as mockIngestWebhookEventsFn } from '../../lib/server/webhook_ingest_orchestrator.js';
 import {
   fetchOpenPullRequests as mockFetchOpenPullRequestsFn,
   postPullRequestComment as mockPostPullRequestCommentFn,
@@ -792,6 +795,36 @@ describe('tim/commands/pr', () => {
 
     expect(mockSyncPlanPrLinks).not.toHaveBeenCalled();
     expect(logs).toContain('Plan 248 has no linked pull requests and no branch to look up.');
+  });
+
+  test('status delegates webhook ingest and inbox processing through the shared helper', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    const inboxSignal = {
+      kind: 'pr_comment',
+      repo: 'example/repo',
+      prNumber: 605,
+      prUrl: 'https://github.com/example/repo/pull/605',
+      actor: 'commenter-1',
+      eventAt: '2026-06-01T10:00:00.000Z',
+    };
+    mockIngestWebhookEvents.mockResolvedValueOnce({
+      eventsIngested: 1,
+      prsUpdated: [],
+      inboxSignals: [inboxSignal],
+      errors: [],
+    });
+
+    await prModule.handlePrStatusCommand(248, {}, createNestedCommand());
+
+    expect(mockIngestWebhookEvents).toHaveBeenCalledWith(dbHandle);
+  });
+
+  test('status delegates empty inbox results through the shared helper', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+
+    await prModule.handlePrStatusCommand(248, {}, createNestedCommand());
+
+    expect(mockIngestWebhookEvents).toHaveBeenCalledWith(dbHandle);
   });
 
   test('status uses webhook auto-linked PRs from the plan_pr junction when the plan file has none', async () => {

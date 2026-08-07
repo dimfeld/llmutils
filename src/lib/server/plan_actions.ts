@@ -8,6 +8,7 @@ import {
   type DaemonProcessPayload,
 } from '../../common/daemon_process.js';
 import { buildWorkspaceCommandEnv } from '$common/env.js';
+import { TIM_LINKED_PR_URL_ENV } from '$tim/headless.js';
 import {
   createLogFile as createLogFileImpl,
   formatLogFileName as formatLogFileNameImpl,
@@ -277,7 +278,8 @@ export async function spawnPrFixForPrProcess(
     describeTarget('pr', prUrlOrNumber),
     null,
     ['pr', 'fix', '--pr', prUrlOrNumber, '--auto-workspace', '--no-terminal-input'],
-    cwd
+    cwd,
+    { [TIM_LINKED_PR_URL_ENV]: prUrlOrNumber }
   );
 }
 
@@ -289,7 +291,8 @@ export async function spawnCiFixForPrProcess(
     describeTarget('pr', prUrlOrNumber),
     null,
     ['pr', 'fix-ci', '--pr', prUrlOrNumber, '--auto-workspace', '--no-terminal-input'],
-    cwd
+    cwd,
+    { [TIM_LINKED_PR_URL_ENV]: prUrlOrNumber }
   );
 }
 
@@ -315,7 +318,7 @@ export async function spawnAutoreviewForPrProcess(
     null,
     ['autoreview', '--pr', prUrlOrNumber, '--no-terminal-input'],
     cwd,
-    { TIM_HIDE_PLAN_DETAILS: '1' }
+    { TIM_HIDE_PLAN_DETAILS: '1', [TIM_LINKED_PR_URL_ENV]: prUrlOrNumber }
   );
 }
 
@@ -338,7 +341,7 @@ export async function spawnShellForPrProcess(
     null,
     ['shell', '--pr', prUrlOrNumber, '--auto-workspace', '--non-interactive'],
     cwd,
-    { TIM_HIDE_PLAN_DETAILS: '1' }
+    { TIM_HIDE_PLAN_DETAILS: '1', [TIM_LINKED_PR_URL_ENV]: prUrlOrNumber }
   );
 }
 
@@ -405,13 +408,15 @@ export async function spawnUpdateDocsProcess(
 
 export async function spawnPrReviewGuideProcess(
   prNumber: number,
-  cwd: string
+  cwd: string,
+  envOverrides?: Record<string, string>
 ): Promise<SpawnProcessResult> {
   return spawnPlanTimProcess(
     describeTarget('pr', prNumber),
     prNumber,
     ['pr', 'review-guide', String(prNumber), '--auto-workspace'],
-    cwd
+    cwd,
+    envOverrides
   );
 }
 

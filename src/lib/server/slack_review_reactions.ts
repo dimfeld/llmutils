@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
-import { normalizeGitHubUsername } from '$common/github/username.js';
+import { isBotLogin, normalizeGitHubUsername } from '$common/github/username.js';
 import type { SubmittedPrReview } from '$common/github/webhook_ingest.js';
 import { addSlackReaction, type SlackReactionSender } from '$common/slack/slack_client.js';
 import type { TimConfig } from '$tim/configSchema.js';
@@ -24,10 +24,6 @@ export interface ProcessSlackReviewReactionsOptions {
   config?: TimConfig;
   sender?: SlackReactionSender;
   nowMs?: number;
-}
-
-function isBotLogin(login: string): boolean {
-  return login.toLowerCase().endsWith('[bot]');
 }
 
 /**

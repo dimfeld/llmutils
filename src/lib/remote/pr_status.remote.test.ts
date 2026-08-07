@@ -54,9 +54,12 @@ vi.mock('$common/github/webhook_client.js', () => ({
 }));
 
 vi.mock('$common/github/webhook_ingest.js', () => ({
-  ingestWebhookEvents,
   formatWebhookIngestErrors: (errors: string[]) =>
     errors.length > 0 ? `Webhook ingestion had issues: ${errors.join('; ')}` : undefined,
+}));
+
+vi.mock('$lib/server/webhook_ingest_orchestrator.js', () => ({
+  ingestWebhookEventsWithInbox: ingestWebhookEvents,
 }));
 
 vi.mock('$lib/server/pr_event_utils.js', () => ({
@@ -457,9 +460,47 @@ describe('pr_status remote functions', () => {
 
     const result = await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
 
-    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb);
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
+    });
     expect(ensurePrStatusFresh).not.toHaveBeenCalled();
     expect(result.error).toBeUndefined();
+  });
+
+  test('refreshPrStatus delegates inbox signals through the shared ingest helper', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    const inboxSignal = {
+      kind: 'pr_approved',
+      repo: 'example/repo',
+      prNumber: 1,
+      prUrl: 'https://github.com/example/repo/pull/1',
+      actor: 'reviewer-1',
+      eventAt: '2026-06-01T10:00:00.000Z',
+    };
+    ingestWebhookEvents.mockResolvedValue({
+      eventsIngested: 1,
+      prsUpdated: [],
+      inboxSignals: [inboxSignal],
+      errors: [],
+    });
+    const { refreshPrStatus } = await import('./pr_status.remote.js');
+
+    await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
+    });
+  });
+
+  test('refreshPrStatus delegates empty inbox results through the shared ingest helper', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    const { refreshPrStatus } = await import('./pr_status.remote.js');
+
+    await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
+    });
   });
 
   test('refreshPrStatus syncs links and refreshes each PR when GITHUB_TOKEN is configured', async () => {
@@ -499,7 +540,9 @@ describe('pr_status remote functions', () => {
     const { refreshPrStatus } = await import('./pr_status.remote.js');
     const result = await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
 
-    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb);
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
+    });
     // In webhook mode, should NOT call ensurePrStatusFresh (that's for the GitHub API path)
     expect(ensurePrStatusFresh).not.toHaveBeenCalled();
     // PR 2 is not cached, so should report it as not yet available

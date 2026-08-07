@@ -11,9 +11,14 @@
   import { requestNotificationPermission } from '$lib/utils/browser_notifications.js';
   import { clearAppBadge, setAppBadge } from '$lib/utils/pwa_badge.js';
   import { handleGlobalShortcuts } from '$lib/utils/keyboard_shortcuts.js';
+  import {
+    resolveTabSlugForIndex,
+    resolvePreservedTabForProjectSwitch,
+  } from '$lib/utils/tab_navigation.js';
   import { getSidebarOrderedProjects, projectUrl } from '$lib/stores/project.svelte.js';
   import { registerDismissedSessionCleanup } from '$lib/stores/ui_state_cleanup.js';
   import CommandBar from '$lib/components/CommandBar.svelte';
+  import InboxIndicator from '$lib/components/InboxIndicator.svelte';
   import RateLimitIndicator from '$lib/components/RateLimitIndicator.svelte';
   import SyncIndicator from '$lib/components/SyncIndicator.svelte';
   import { ModeWatcher, setMode, userPrefersMode } from 'mode-watcher';
@@ -71,9 +76,6 @@
     }
   });
 
-  const baseTabSlugs = ['sessions', 'active', 'prs', 'activity', 'plans'] as const;
-  const projectTabSlugs = [...baseTabSlugs, 'settings'] as const;
-
   function handleShortcuts(event: KeyboardEvent) {
     handleGlobalShortcuts(event, {
       focusSearch() {
@@ -84,9 +86,8 @@
         return !!input;
       },
       navigateTab(tabIndex: number) {
-        const tabSlugs = projectId === 'all' ? baseTabSlugs : projectTabSlugs;
-        const slug = tabSlugs[tabIndex - 1];
-        if (slug && !(projectId === 'all' && slug === 'settings')) {
+        const slug = resolveTabSlugForIndex(projectId, tabIndex);
+        if (slug) {
           void goto(projectUrl(projectId, slug));
           return true;
         }
@@ -100,11 +101,7 @@
         // Mirror ProjectSidebar: only projects with plans, featured first then unfeatured
         // Settings tab isn't valid for other projects, fall back to sessions
         const currentTab = page.url.pathname.split('/')[3] ?? 'sessions';
-        const tab =
-          currentTab === 'settings' ||
-          !baseTabSlugs.includes(currentTab as (typeof baseTabSlugs)[number])
-            ? 'sessions'
-            : currentTab;
+        const tab = resolvePreservedTabForProjectSwitch(currentTab);
         // Ctrl+Shift+1 = all projects, Ctrl+Shift+2..9 = projects in sidebar order
         if (projectIndex === 1) {
           void goto(projectUrl('all', tab));
@@ -200,6 +197,7 @@
           </Tooltip.Trigger>
           <Tooltip.Content sideOffset={8}>Open current page in new window</Tooltip.Content>
         </Tooltip.Root>
+        <InboxIndicator />
         <SyncIndicator />
         <RateLimitIndicator />
         <Tooltip.Root>

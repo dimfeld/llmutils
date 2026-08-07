@@ -2,7 +2,7 @@ import { command, query } from '$app/server';
 import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
-import { formatWebhookIngestErrors, ingestWebhookEvents } from '$common/github/webhook_ingest.js';
+import { formatWebhookIngestErrors } from '$common/github/webhook_ingest.js';
 import {
   ensurePrStatusFresh,
   refreshPrStatus as refreshPrStatusFromApi,
@@ -18,6 +18,7 @@ import { withRequiredCheckRollupStates } from '$lib/server/required_check_rollup
 import type { PrStatusDetailWithRequiredChecks } from '$lib/server/required_check_rollup.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import { getSessionManager } from '$lib/server/session_context.js';
+import { ingestWebhookEventsWithInbox } from '$lib/server/webhook_ingest_orchestrator.js';
 import { cleanOrphanedPrStatus, getPrStatusByUrl, getPrStatusForPlan } from '$tim/db/pr_status.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import { getLatestReviewGuideByPrUrl } from '$tim/db/review.js';
@@ -221,7 +222,9 @@ export const refreshPrStatus = command(planUuidSchema, async ({ planUuid }) => {
 
   if (webhookServerUrl) {
     try {
-      const ingestResult = await ingestWebhookEvents(db);
+      const ingestResult = await ingestWebhookEventsWithInbox(db, {
+        getSessionManager,
+      });
       try {
         emitPrUpdatesForIngestResult(db, ingestResult, getSessionManager());
       } catch (err) {

@@ -8,7 +8,7 @@
   import type { ReviewIssueRow, ReviewIssueSide } from '$tim/db/review.js';
 
   import { buildCreateReviewIssueInput } from './new_issue_modal_utils.js';
-  import { extractRemoteErrorMessage } from './remote_error.js';
+  import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
 
   interface Props {
     open: boolean;

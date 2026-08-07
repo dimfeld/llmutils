@@ -33,6 +33,11 @@ export interface PrStatusRow {
   updated_at: string;
 }
 
+export interface PrStatusProjectNumber {
+  projectId: number;
+  prNumber: number;
+}
+
 export interface PrCheckRunRow {
   id: number;
   pr_status_id: number;
@@ -910,6 +915,92 @@ export function getPrStatusByProjectAndNumber(
   }
 
   return getDetailById(db, row.id, options);
+}
+
+const PROJECT_ID_LOOKUP_BATCH_SIZE = 500;
+const PR_STATUS_LOOKUP_BATCH_SIZE = 200;
+
+function chunkValues<T>(values: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+}
+
+export function listExistingPrStatusProjectNumbers(
+  db: Database,
+  pairs: ReadonlyArray<PrStatusProjectNumber>
+): PrStatusProjectNumber[] {
+  const uniquePairs = Array.from(
+    new Map(pairs.map((pair) => [`${pair.projectId}:${pair.prNumber}`, pair])).values()
+  );
+  if (uniquePairs.length === 0) {
+    return [];
+  }
+
+  const projectIds = Array.from(new Set(uniquePairs.map((pair) => pair.projectId)));
+  const projectRows: Array<{ id: number; repository_id: string }> = [];
+  for (const projectIdBatch of chunkValues(projectIds, PROJECT_ID_LOOKUP_BATCH_SIZE)) {
+    projectRows.push(
+      ...(db
+        .prepare(
+          `
+            SELECT id, repository_id
+            FROM project
+            WHERE id IN (${projectIdBatch.map(() => '?').join(', ')})
+          `
+        )
+        .all(...projectIdBatch) as Array<{ id: number; repository_id: string }>)
+    );
+  }
+  const ownerReposByProjectId = new Map<number, { owner: string; repo: string }>();
+
+  for (const projectRow of projectRows) {
+    const ownerRepo = parseOwnerRepoFromRepositoryId(projectRow.repository_id);
+    if (ownerRepo) {
+      ownerReposByProjectId.set(projectRow.id, ownerRepo);
+    }
+  }
+
+  const githubPairs = uniquePairs.flatMap((pair) => {
+    const ownerRepo = ownerReposByProjectId.get(pair.projectId);
+    return ownerRepo ? [{ ...pair, ownerRepo }] : [];
+  });
+  if (githubPairs.length === 0) {
+    return [];
+  }
+
+  const matchedKeys = new Set<string>();
+  for (const pairBatch of chunkValues(githubPairs, PR_STATUS_LOOKUP_BATCH_SIZE)) {
+    const conditions = pairBatch
+      .map(
+        () =>
+          '(project.id = ? AND ps.owner = ? COLLATE NOCASE AND ps.repo = ? COLLATE NOCASE AND ps.pr_number = ?)'
+      )
+      .join(' OR ');
+    const parameters = pairBatch.flatMap((pair) => [
+      pair.projectId,
+      pair.ownerRepo.owner,
+      pair.ownerRepo.repo,
+      pair.prNumber,
+    ]);
+    const rows = db
+      .prepare(
+        `
+          SELECT DISTINCT project.id AS project_id, ps.pr_number
+          FROM pr_status ps
+          INNER JOIN project ON ${conditions}
+        `
+      )
+      .all(...parameters) as Array<{ project_id: number; pr_number: number }>;
+
+    for (const row of rows) {
+      matchedKeys.add(`${row.project_id}:${row.pr_number}`);
+    }
+  }
+
+  return uniquePairs.filter((pair) => matchedKeys.has(`${pair.projectId}:${pair.prNumber}`));
 }
 
 export function updatePrMergeableAndReviewDecision(

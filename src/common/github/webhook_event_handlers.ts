@@ -2,6 +2,8 @@ import type { Database } from 'bun:sqlite';
 import { canonicalizePrUrl } from './identifiers.js';
 import { getProjectPlanBranchMatches } from './project_pr_service.js';
 import { constructGitHubRepositoryId } from './pull_requests.js';
+import { classifyCheckRun, getRequiredCheckNames } from './required_check_rollup.js';
+import type { BranchMergeRequirementsDetail } from '../../tim/db/branch_merge_requirements.js';
 import { getProject } from '../../tim/db/project.js';
 import {
   clearPrCheckRuns,
@@ -29,6 +31,44 @@ export interface PrRefreshTarget {
 }
 
 export type PrDraftTransition = 'became_ready' | 'became_draft';
+
+export type InboxSignalKind =
+  | 'review_requested'
+  | 'pr_comment'
+  | 'pr_merged'
+  | 'pr_approved'
+  | 'ci_failure'
+  | 'merge_queue_removed';
+
+interface InboxSignalBase {
+  /** Owner/repository full name. */
+  repo: string;
+  prNumber: number;
+  /** Canonical GitHub pull request URL. */
+  prUrl: string;
+  prTitle?: string | null;
+  /** Pull request author login, when available. */
+  prAuthor?: string | null;
+  actor: string;
+  /** GitHub account type (for example, User or Bot), when known. */
+  actorType?: string | null;
+  /** Comment excerpt, failing check name, or dequeue reason. */
+  summary?: string | null;
+  /** Best-effort timestamp for the event. */
+  eventAt: string;
+}
+
+export interface ReviewRequestedInboxSignal extends InboxSignalBase {
+  kind: 'review_requested';
+  /** Login of the user GitHub requested to review the pull request. */
+  requestedReviewer: string;
+}
+
+export interface OtherInboxSignal extends InboxSignalBase {
+  kind: Exclude<InboxSignalKind, 'review_requested'>;
+}
+
+export type InboxSignal = ReviewRequestedInboxSignal | OtherInboxSignal;
 
 /** A review submitted on a known PR, surfaced so callers can run side effects. */
 export interface ReviewSubmission {
@@ -58,6 +98,7 @@ export interface WebhookHandlerResult {
   prReadyForReview?: boolean;
   /** Present when a pull_request_review "submitted" event landed on a known PR. */
   reviewSubmission?: ReviewSubmission;
+  inboxSignals?: InboxSignal[];
 }
 
 interface ParsedRepoInfo {
@@ -68,6 +109,11 @@ interface ParsedRepoInfo {
 
 interface ParsedPullRequestPayload {
   action: string | null;
+  reason: string | null;
+  sender: {
+    login: string;
+    type: string | null;
+  } | null;
   repository: ParsedRepoInfo;
   pullRequest: {
     number: number;
@@ -86,6 +132,23 @@ interface ParsedPullRequestPayload {
     labels: Array<{ name: string; color: string | null }>;
     requestedReviewers: string[];
     requestedReviewerLogin: string | null;
+  };
+}
+
+interface ParsedIssueCommentPayload {
+  action: string | null;
+  repository: ParsedRepoInfo;
+  issue: {
+    number: number;
+    title: string | null;
+    author: string | null;
+    isPullRequest: boolean;
+  };
+  comment: {
+    body: string | null;
+    author: string;
+    authorType: string | null;
+    createdAt: string | null;
   };
 }
 
@@ -144,12 +207,36 @@ interface ParsedReviewThreadPayload {
     id: string | null;
     body: string | null;
     author: string | null;
+    authorType: string | null;
     createdAt: string | null;
   } | null;
 }
 
 function getNowIsoString(): string {
   return new Date().toISOString();
+}
+
+export function getCommentExcerpt(body: string | null): string | null {
+  if (body === null) {
+    return null;
+  }
+
+  const excerpt = body.replaceAll(/\r\n|\r|\n/g, ' ').trim();
+  return excerpt.length > 0 ? excerpt.slice(0, 200) : null;
+}
+
+function parseActor(value: unknown): { login: string; type: string | null } | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const login = (value as { login?: unknown }).login;
+  if (typeof login !== 'string') {
+    return null;
+  }
+
+  const type = (value as { type?: unknown }).type;
+  return { login, type: typeof type === 'string' ? type : null };
 }
 
 function parseRepository(payload: unknown): ParsedRepoInfo | null {
@@ -246,6 +333,8 @@ function parsePullRequestPayload(payload: unknown): ParsedPullRequestPayload | n
   const deletions = (pullRequest as { deletions?: unknown }).deletions;
   const changedFiles = (pullRequest as { changed_files?: unknown }).changed_files;
   const title = (pullRequest as { title?: unknown }).title;
+  const reason = (payload as { reason?: unknown }).reason;
+  const sender = parseActor((payload as { sender?: unknown }).sender);
   const requestedReviewer =
     (payload as { requested_reviewer?: unknown }).requested_reviewer ??
     (pullRequest as { requested_reviewer?: unknown }).requested_reviewer;
@@ -255,6 +344,8 @@ function parsePullRequestPayload(payload: unknown): ParsedPullRequestPayload | n
       typeof (payload as { action?: unknown }).action === 'string'
         ? ((payload as { action?: string }).action ?? null)
         : null,
+    reason: typeof reason === 'string' ? reason : null,
+    sender,
     repository,
     pullRequest: {
       number,
@@ -287,6 +378,51 @@ function parsePullRequestPayload(payload: unknown): ParsedPullRequestPayload | n
         (pullRequest as { requested_reviewers?: unknown }).requested_reviewers
       ),
       requestedReviewerLogin: parseRequestedReviewer(requestedReviewer),
+    },
+  };
+}
+
+function parseIssueCommentPayload(payload: unknown): ParsedIssueCommentPayload | null {
+  const repository = parseRepository(payload);
+  if (!repository || !payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const issue = (payload as { issue?: unknown }).issue;
+  const comment = (payload as { comment?: unknown }).comment;
+  if (!issue || typeof issue !== 'object' || !comment || typeof comment !== 'object') {
+    return null;
+  }
+
+  const number = (issue as { number?: unknown }).number;
+  const title = (issue as { title?: unknown }).title;
+  const issueAuthor = parseActor((issue as { user?: unknown }).user);
+  const issuePullRequest = (issue as { pull_request?: unknown }).pull_request;
+  const commentAuthor = parseActor((comment as { user?: unknown }).user);
+  const body = (comment as { body?: unknown }).body;
+  const createdAt = (comment as { created_at?: unknown }).created_at;
+
+  if (typeof number !== 'number' || !commentAuthor) {
+    return null;
+  }
+
+  return {
+    action:
+      typeof (payload as { action?: unknown }).action === 'string'
+        ? ((payload as { action?: string }).action ?? null)
+        : null,
+    repository,
+    issue: {
+      number,
+      title: typeof title === 'string' ? title : null,
+      author: issueAuthor?.login ?? null,
+      isPullRequest: Boolean(issuePullRequest && typeof issuePullRequest === 'object'),
+    },
+    comment: {
+      body: typeof body === 'string' ? body : null,
+      author: commentAuthor.login,
+      authorType: commentAuthor.type,
+      createdAt: typeof createdAt === 'string' ? createdAt : null,
     },
   };
 }
@@ -431,6 +567,7 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
     id: string | null;
     body: string | null;
     author: string | null;
+    authorType: string | null;
     createdAt: string | null;
   } | null = null;
   if (comment && typeof comment === 'object') {
@@ -452,6 +589,10 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
       author:
         typeof commentUser === 'object' && commentUser
           ? (commentUser as { login?: string | null }).login || null
+          : null,
+      authorType:
+        typeof commentUser === 'object' && commentUser
+          ? (commentUser as { type?: string | null }).type || null
           : null,
       createdAt: typeof createdAt === 'string' ? createdAt : null,
     };
@@ -489,6 +630,12 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
 
 export interface WebhookHandlerOptions {
   knownRepos?: Set<string>;
+  /** Delivery timestamp used as a fallback when an inbox signal has no payload timestamp. */
+  receivedAt?: string;
+}
+
+function getSignalEventAt(eventAt: string | null, options?: WebhookHandlerOptions): string {
+  return eventAt ?? options?.receivedAt ?? getNowIsoString();
 }
 
 function isKnownRepository(db: Database, fullName: string, knownRepos?: Set<string>): boolean {
@@ -497,6 +644,55 @@ function isKnownRepository(db: Database, fullName: string, knownRepos?: Set<stri
 
 function getCanonicalPrUrl(owner: string, repo: string, prNumber: number): string {
   return canonicalizePrUrl(`https://github.com/${owner}/${repo}/pull/${prNumber}`);
+}
+
+function getPullRequestEventActor(
+  parsed: ParsedPullRequestPayload
+): { actor: string; actorType: string | null } | null {
+  if (parsed.sender?.login) {
+    return { actor: parsed.sender.login, actorType: parsed.sender.type };
+  }
+
+  if (parsed.pullRequest.author) {
+    return { actor: parsed.pullRequest.author, actorType: null };
+  }
+
+  return null;
+}
+
+export function handleIssueCommentEvent(
+  db: Database,
+  payload: unknown,
+  options?: WebhookHandlerOptions
+): WebhookHandlerResult {
+  const parsed = parseIssueCommentPayload(payload);
+  if (
+    !parsed ||
+    !isKnownRepository(db, parsed.repository.fullName, options?.knownRepos) ||
+    parsed.action !== 'created' ||
+    !parsed.issue.isPullRequest
+  ) {
+    return { updated: false };
+  }
+
+  const { owner, repo } = parsed.repository;
+  return {
+    updated: false,
+    inboxSignals: [
+      {
+        kind: 'pr_comment',
+        repo: parsed.repository.fullName,
+        prNumber: parsed.issue.number,
+        prUrl: getCanonicalPrUrl(owner, repo, parsed.issue.number),
+        prTitle: parsed.issue.title,
+        prAuthor: parsed.issue.author,
+        actor: parsed.comment.author,
+        actorType: parsed.comment.authorType,
+        summary: getCommentExcerpt(parsed.comment.body),
+        eventAt: getSignalEventAt(parsed.comment.createdAt, options),
+      },
+    ],
+  };
 }
 
 export function handlePullRequestEvent(
@@ -514,6 +710,8 @@ export function handlePullRequestEvent(
   const prUrl = getCanonicalPrUrl(owner, repo, pullRequest.number);
   const state =
     pullRequest.state === 'closed' ? (pullRequest.mergedAt ? 'merged' : 'closed') : 'open';
+  const eventTime = pullRequest.updatedAt ?? getNowIsoString();
+  const signalEventTime = getSignalEventAt(pullRequest.updatedAt, options);
   const { updated, isNewRow, prDraftTransition } = db
     .transaction((nextOwner: string, nextRepo: string) => {
       const repositoryId = constructGitHubRepositoryId(nextOwner, nextRepo);
@@ -529,7 +727,6 @@ export function handlePullRequestEvent(
         parsed.action === 'synchronize' ||
         parsed.action === 'opened' ||
         parsed.action === 'reopened';
-      const eventTime = pullRequest.updatedAt ?? getNowIsoString();
       const enteredReadyForReview =
         state === 'open' &&
         (parsed.action === 'ready_for_review' ||
@@ -644,6 +841,53 @@ export function handlePullRequestEvent(
     state === 'open' &&
     (parsed.action === 'ready_for_review' || (parsed.action === 'opened' && !pullRequest.draft));
 
+  const inboxSignals: InboxSignal[] = [];
+  const eventActor = getPullRequestEventActor(parsed);
+  if (parsed.action === 'review_requested' && pullRequest.requestedReviewerLogin && eventActor) {
+    inboxSignals.push({
+      kind: 'review_requested',
+      repo: parsed.repository.fullName,
+      prNumber: pullRequest.number,
+      prUrl,
+      prTitle: pullRequest.title,
+      prAuthor: pullRequest.author,
+      actor: eventActor.actor,
+      actorType: eventActor.actorType,
+      requestedReviewer: pullRequest.requestedReviewerLogin,
+      eventAt: signalEventTime,
+    });
+  }
+
+  if (parsed.action === 'dequeued' && eventActor) {
+    // Plan 407 suppresses this signal when the same ingest run also reports a merge.
+    inboxSignals.push({
+      kind: 'merge_queue_removed',
+      repo: parsed.repository.fullName,
+      prNumber: pullRequest.number,
+      prUrl,
+      prTitle: pullRequest.title,
+      prAuthor: pullRequest.author,
+      actor: eventActor.actor,
+      actorType: eventActor.actorType,
+      summary: parsed.reason,
+      eventAt: signalEventTime,
+    });
+  }
+
+  if (parsed.action === 'closed' && pullRequest.mergedAt && eventActor) {
+    inboxSignals.push({
+      kind: 'pr_merged',
+      repo: parsed.repository.fullName,
+      prNumber: pullRequest.number,
+      prUrl,
+      prTitle: pullRequest.title,
+      prAuthor: pullRequest.author,
+      actor: eventActor.actor,
+      actorType: eventActor.actorType,
+      eventAt: pullRequest.mergedAt,
+    });
+  }
+
   return {
     updated,
     prUrl,
@@ -660,6 +904,7 @@ export function handlePullRequestEvent(
           },
         ]
       : [],
+    ...(inboxSignals.length > 0 ? { inboxSignals } : {}),
   };
 }
 
@@ -722,10 +967,47 @@ export function handlePullRequestReviewEvent(
         }
       : undefined;
 
+  const inboxSignals: InboxSignal[] = [];
+  const reviewEventAt = getSignalEventAt(parsed.review.submittedAt, options);
+  if (parsed.action === 'submitted' && reviewState === 'APPROVED') {
+    inboxSignals.push({
+      kind: 'pr_approved',
+      repo: parsed.repository.fullName,
+      prNumber: parsed.pullRequestNumber,
+      prUrl: row.pr_url,
+      prTitle: row.title,
+      prAuthor: row.author,
+      actor: parsed.review.author,
+      actorType: parsed.review.authorType,
+      eventAt: reviewEventAt,
+    });
+  }
+
+  const reviewCommentExcerpt = getCommentExcerpt(parsed.review.body);
+  if (
+    parsed.action === 'submitted' &&
+    (reviewState === 'COMMENTED' || reviewState === 'CHANGES_REQUESTED') &&
+    reviewCommentExcerpt !== null
+  ) {
+    inboxSignals.push({
+      kind: 'pr_comment',
+      repo: parsed.repository.fullName,
+      prNumber: parsed.pullRequestNumber,
+      prUrl: row.pr_url,
+      prTitle: row.title,
+      prAuthor: row.author,
+      actor: parsed.review.author,
+      actorType: parsed.review.authorType,
+      summary: reviewCommentExcerpt,
+      eventAt: reviewEventAt,
+    });
+  }
+
   return {
     updated,
     prUrl: row.pr_url,
     ...(reviewSubmission ? { reviewSubmission } : {}),
+    ...(inboxSignals.length > 0 ? { inboxSignals } : {}),
     apiRefreshTargets:
       updated && affectsReviewDecision
         ? [
@@ -744,7 +1026,7 @@ export function handlePullRequestReviewEvent(
 export function handlePullRequestReviewThreadEvent(
   db: Database,
   payload: unknown,
-  _options?: WebhookHandlerOptions
+  options?: WebhookHandlerOptions
 ): WebhookHandlerResult {
   const parsed = parseReviewThreadPayload(payload);
   if (!parsed) {
@@ -814,10 +1096,28 @@ export function handlePullRequestReviewThreadEvent(
     },
   ];
 
+  const commentExcerpt = getCommentExcerpt(parsed.comment?.body ?? null);
+  const inboxSignals: InboxSignal[] = [];
+  if (action === 'created' && parsed.comment?.author && commentExcerpt !== null) {
+    inboxSignals.push({
+      kind: 'pr_comment',
+      repo: repository.fullName,
+      prNumber: pullRequest.number,
+      prUrl: canonicalPrUrl,
+      prTitle: pullRequest.title,
+      prAuthor: pullRequest.author,
+      actor: parsed.comment.author,
+      actorType: parsed.comment.authorType,
+      summary: commentExcerpt,
+      eventAt: getSignalEventAt(parsed.comment.createdAt, options),
+    });
+  }
+
   return {
     updated: true,
     prUrl: canonicalPrUrl,
     apiRefreshTargets,
+    ...(inboxSignals.length > 0 ? { inboxSignals } : {}),
   };
 }
 
@@ -833,6 +1133,8 @@ export function handleCheckRunEvent(
 
   const { owner, repo } = parsed.repository;
   const prUrls = new Set<string>();
+  const inboxSignals: InboxSignal[] = [];
+  const requiredCheckCache = new Map<string, BranchMergeRequirementsDetail | null>();
 
   for (const pullRequest of parsed.checkRun.pullRequests) {
     const row = getPrStatusByRepoAndNumber(db, owner, repo, pullRequest.number);
@@ -855,11 +1157,31 @@ export function handleCheckRunEvent(
       recomputeCheckRollupState(db, nextRowId);
     }).immediate(row.id);
     prUrls.add(row.pr_url);
+
+    if (
+      parsed.checkRun.status === 'completed' &&
+      classifyCheckRun(parsed.checkRun) === 'failing' &&
+      getRequiredCheckNames(db, row, requiredCheckCache).includes(parsed.checkRun.name)
+    ) {
+      const conclusion = parsed.checkRun.conclusion;
+      inboxSignals.push({
+        kind: 'ci_failure',
+        repo: parsed.repository.fullName,
+        prNumber: pullRequest.number,
+        prUrl: row.pr_url,
+        prTitle: row.title,
+        prAuthor: row.author,
+        actor: parsed.checkRun.name,
+        summary: conclusion ? `${parsed.checkRun.name} (${conclusion})` : parsed.checkRun.name,
+        eventAt: getSignalEventAt(parsed.checkRun.completedAt, options),
+      });
+    }
   }
 
   return {
     updated: prUrls.size > 0,
     prUrls: [...prUrls],
+    ...(inboxSignals.length > 0 ? { inboxSignals } : {}),
   };
 }
 

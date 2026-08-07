@@ -57,11 +57,22 @@ const {
   spawnCiFixProcessMock,
   spawnPrFixForPrProcessMock,
   spawnPrFixProcessMock,
+  spawnPrReviewGuideProcessMock,
   spawnShellForPrProcessMock,
 } = vi.hoisted(() => ({
   spawnAutoreviewForPrProcessMock: vi.fn<
     (
       prUrlOrNumber: string,
+      cwd: string
+    ) => Promise<{
+      success: boolean;
+      error?: string;
+      earlyExit?: boolean;
+    }>
+  >(),
+  spawnPrReviewGuideProcessMock: vi.fn<
+    (
+      prNumber: number,
       cwd: string
     ) => Promise<{
       success: boolean;
@@ -143,6 +154,8 @@ vi.mock('$lib/server/plan_actions.js', () => ({
     spawnPrFixForPrProcessMock(...args),
   spawnPrFixProcess: (...args: Parameters<typeof spawnPrFixProcessMock>) =>
     spawnPrFixProcessMock(...args),
+  spawnPrReviewGuideProcess: (...args: Parameters<typeof spawnPrReviewGuideProcessMock>) =>
+    spawnPrReviewGuideProcessMock(...args),
   spawnShellForPrProcess: (...args: Parameters<typeof spawnShellForPrProcessMock>) =>
     spawnShellForPrProcessMock(...args),
 }));
@@ -156,6 +169,7 @@ import {
   startFixThreads,
   startPrAutoreview,
   startPrCiFix,
+  startPrReviewGuide,
   startPrShell,
 } from './review_thread_actions.remote.js';
 import {
@@ -1520,6 +1534,7 @@ describe('startFixPrThreads', () => {
     spawnAutoreviewForPrProcessMock.mockReset();
     spawnPrFixForPrProcessMock.mockReset();
     spawnPrFixProcessMock.mockReset();
+    spawnPrReviewGuideProcessMock.mockReset();
     spawnShellForPrProcessMock.mockReset();
   });
 
@@ -1594,6 +1609,120 @@ describe('startFixPrThreads', () => {
       '/tmp/pr-primary-workspace'
     );
     expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
+  });
+
+  test('spawns tim pr review-guide for a PR with the canonical PR URL', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnPrReviewGuideProcessMock.mockResolvedValue({ success: true });
+
+    const result = await invokeCommand(startPrReviewGuide, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
+    expect(spawnPrReviewGuideProcessMock).toHaveBeenCalledWith(42, '/tmp/pr-primary-workspace', {
+      TIM_LINKED_PR_URL: CANONICAL_PR_URL,
+    });
+    expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
+  });
+
+  test('startPrReviewGuide returns already_running for an active PR session and does not spawn again', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    currentManager.handleWebSocketConnect('review-guide-pr-active', () => {});
+    currentManager.handleWebSocketMessage('review-guide-pr-active', {
+      type: 'session_info',
+      command: 'review-guide',
+      interactive: false,
+      linkedPrUrl: CANONICAL_PR_URL,
+      workspacePath: '/tmp/pr-primary-workspace',
+    });
+
+    const result = await invokeCommand(startPrReviewGuide, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({
+      status: 'already_running',
+      connectionId: 'review-guide-pr-active',
+    });
+    expect(spawnPrReviewGuideProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('startPrReviewGuide returns already_running when the PR launch lock is held', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    setPrLaunchLock(CANONICAL_PR_URL);
+
+    const result = await invokeCommand(startPrReviewGuide, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({ status: 'already_running' });
+    expect(spawnPrReviewGuideProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('startPrReviewGuide clears the launch lock when spawning fails', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnPrReviewGuideProcessMock.mockResolvedValue({ success: false, error: 'binary not found' });
+
+    await expect(
+      invokeCommand(startPrReviewGuide, { projectId, prNumber: 42 })
+    ).rejects.toMatchObject({
+      status: 500,
+      body: { message: 'binary not found' },
+    });
+    expect(isPrLaunching(CANONICAL_PR_URL)).toBe(false);
+  });
+
+  test('startPrReviewGuide: duplicate launch prevented after lock expiry when session has linkedPrUrl from initial session_info', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const projectId = getProjectId();
+      seedPrStatusWithUnresolvedThread(currentDb, 42);
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/pr-primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnPrReviewGuideProcessMock.mockResolvedValue({ success: true });
+
+      const result1 = await invokeCommand(startPrReviewGuide, { projectId, prNumber: 42 });
+      expect(result1).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
+      expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
+
+      // Simulate a slow-starting process: the launch lock expires while the
+      // command gathers PR context, before the session sends its metadata.
+      vi.advanceTimersByTime(30_001);
+      expect(isPrLaunching(CANONICAL_PR_URL)).toBe(false);
+
+      // The initial session_info includes linkedPrUrl from the
+      // TIM_LINKED_PR_URL env var, so the session is indexed before the
+      // second launch attempt even though the lock has expired.
+      currentManager.handleWebSocketConnect('rg-slow-start', () => {});
+      currentManager.handleWebSocketMessage('rg-slow-start', {
+        type: 'session_info',
+        command: 'review-guide',
+        interactive: false,
+        linkedPrUrl: CANONICAL_PR_URL,
+        workspacePath: '/tmp/pr-primary-workspace',
+      });
+
+      const result2 = await invokeCommand(startPrReviewGuide, { projectId, prNumber: 42 });
+      expect(result2).toEqual({
+        status: 'already_running',
+        connectionId: 'rg-slow-start',
+      });
+      expect(spawnPrReviewGuideProcessMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('sets PR launch lock after spawn succeeds', async () => {

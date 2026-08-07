@@ -129,7 +129,7 @@ describe('lib/server/slack_review_reactions', () => {
       db,
       [
         buildReview({ author: 'dependabot', authorType: 'Bot' }),
-        buildReview({ author: 'github-actions[bot]', authorType: null }),
+        buildReview({ author: 'github-actions[Bot]', authorType: 'User' }),
       ],
       { config: buildConfig(), sender }
     );

@@ -415,7 +415,7 @@ describe('lib/server/session_routes', () => {
 
     abortController.abort();
     expect(await reader!.read()).toEqual({ done: true, value: undefined });
-    expect(unsubscribeSpy).toHaveBeenCalledTimes(10);
+    expect(unsubscribeSpy).toHaveBeenCalledTimes(11);
   });
 
   test('createSessionEventsResponse snapshot hides replayed prompts until replay ends', async () => {

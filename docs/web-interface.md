@@ -51,7 +51,7 @@ When reusing code originally written for CLI (same `process.cwd()` as the projec
 ### Remote Function Error Shapes
 
 - SvelteKit's `error(status, body)` accepts a structured body. Use it to tag distinct failure modes (e.g. `{ kind: 'persistence-failed', message, githubReviewUrl }`) and surface enough context for the UI to render a safe recovery path. Generic string errors force the UI to regex-match the message, and "Retry" on an already-completed remote side-effect causes duplicates. Augment `App.Error` in `src/app.d.ts` to type the extra fields.
-- In the client, unwrap remote-function errors with a shared helper (`extractRemoteErrorMessage`) that reads `err.body.message` → string body → `err.message` → `String(err)`. Raw `String(err)` at DOM error sites renders `[object Object]`.
+- In the client, unwrap remote-function errors with `extractRemoteErrorMessage` from `$lib/utils/remote_error.ts` — it reads `err.body.message` → string body → `err.message` → `String(err)`. Raw `String(err)` at DOM error sites renders `[object Object]`.
 - Separate remote side-effects from local DB persistence in catch blocks with nested try/catches. Conflating them either (a) records a synthetic failure row for a remote call that actually succeeded or (b) masks the real error when persistence also throws.
 - Validate user-supplied ids at the remote boundary **before** making external API calls. Silently filtering unknown/duplicate/cross-entity ids inside the pipeline turns "invalid selection" into "partial success" — the worst kind of bug to debug. Share the validation between any preview/partition query and the commit command so they can't drift.
 - **Do not collapse a picker/search remote error into empty results.** "No matches found" and "the search failed" are distinct UX states — keep the query's error (`.error`) separate from an empty `.current` and render each differently (empty state vs. error state with retry). Swallowing the error into an empty list hides failures from the user and will be flagged in review.
@@ -70,7 +70,7 @@ When reusing code originally written for CLI (same `process.cwd()` as the projec
 ## Architecture
 
 - Route structure: `/projects/[projectId]/{tab}` where `projectId` is a numeric ID or `all`
-- Tabs: `sessions`, `active`, `prs`, `reviews`, `plans`, `settings` (settings tab hidden for `all` pseudo-project)
+- Tabs: `sessions`, `active`, `prs`, `activity`, `inbox`, `plans`, `settings` (settings tab hidden for `all` pseudo-project)
 - `src/lib/server/plans_browser.ts` is the abstraction layer between route handlers and `db_queries.ts`
 - Display statuses (`blocked`, `recently_done`) are computed server-side in `db_queries.ts`, not stored in DB
 - Cookie-based project persistence: `src/lib/stores/project.svelte.ts` manages the last-selected project ID (httpOnly cookie, server-read only)
@@ -230,6 +230,94 @@ Shared overlap utilities live in `src/lib/utils/pr_update_events.ts`: `hasReleva
 
 **Design note**: `eventEmitter.listenerCount('pr:updated')` is used instead of `sseSubscriberCount` to guard DB lookups, because `sseSubscriberCount` is incremented after event subscriptions are attached in `createSessionEventsResponse()`, creating a race window where events could be dropped during SSE setup.
 
+## Inbox
+
+### Push-Based Inbox Updates via SSE
+
+The PR inbox uses the same push model with an `inbox:updated` event whose payload is `{ projectIds: number[] }` — only the affected projects, no item payload. The global toolbar query refreshes on every event. Project-scoped consumers can use the project IDs to skip unrelated refreshes.
+
+**Server-side flow**: `processInboxSignals()` (`src/lib/server/inbox_producer.ts`) collects the project IDs it wrote rows for and, at the end of the batch, calls `sessionManager.emitInboxUpdate(projectIds)` — guarded by `hasInboxUpdateListeners()`, and skipped when no row was written. `emitInboxUpdate()` also ignores an empty array, so an idle tick produces no frame. The session manager gets into the producer through `ingestWebhookEventsWithInbox()` (`src/lib/server/webhook_ingest_orchestrator.ts`), which every ingest caller uses; web callers pass `getSessionManager` and the CLI passes nothing (no SSE clients exist there). See [Inbox](database.md#inbox) for the producer's relevance and filtering rules.
+
+**Adding another event type** touches four places, and `inbox:updated` is the smallest complete example: the `SessionManagerEvents` map plus the server `eventTypes` array in `src/lib/server/session_manager.ts`, the payload type in `src/lib/types/session.ts`, the client `eventTypes` array in `src/lib/stores/session_state.svelte.ts`, and a case in `applySessionEvent` in `src/lib/stores/session_state_events.ts`. Like `pr:updated`, `inbox:updated` is a **no-op** in `applySessionEvent`: it changes no session-store state, and components subscribe directly through `sessionManager.onEvent()`. Omitting the client `eventTypes` entry is the silent-failure case — the server emits and nothing listens.
+
+### Inbox Remote Functions
+
+`src/lib/remote/inbox.remote.ts` is the only web entry point to the inbox. Every function takes `projectId` as a string that matches `/^(\d+|all)$/` — the same convention as `getActionablePrs` in `dashboard.remote.ts`.
+
+- `getInboxItems({ projectId, includeRead })` reads undismissed rows through `listRecentInboxItems()`, enriches them, and returns `{ items, unreadCount, totalCount }`. Without `includeRead` it returns at most 50 unread rows (the toolbar bell); with `includeRead: true` it returns at most 100 rows including already-read ones (the full page). `unreadCount` and `totalCount` are separate indexed counts over the whole scope, not over the returned page, so the header counts stay correct when the limit truncates the list.
+- `markInboxItemsRead({ ids })`, `markAllInboxItemsRead({ projectId })`, and `dismissInboxItem({ id })` call the matching `src/tim/db/inbox_item.ts` helper and then refresh the affected query scopes on the server, so open clients get fresh data without a round trip of their own.
+
+**Refresh scopes**: each mutation helper returns the project IDs of the rows it actually changed (see [Inbox](database.md#inbox)). The command refreshes `getInboxItems` for `'all'` plus each distinct affected project ID, in parallel, and for **both** argument shapes (`{ projectId }` and `{ projectId, includeRead: true }`) — remote query caches are keyed by the full argument object, so refreshing only one shape leaves the other surface stale. The `'all'` scope is always refreshed because the toolbar bell subscribes to it; per-project scopes are refreshed only when a row in that project changed, so a no-op mutation costs one refresh instead of one per project.
+
+**Cross-tab consistency**: each mutation also calls `sessionManager.emitInboxUpdate(projectIds)` through `emitInboxUpdateIfAvailable()`. Server-side query refresh only reaches the client that issued the mutation; the SSE event is what makes _other_ open tabs (and the bell alongside the page in the same tab) update after a mark-read, mark-all-read, or dismiss. The helper swallows a missing session manager, because tests and early startup have no SSE layer.
+
+**Enrichment** lives in `src/lib/server/inbox_enrichment.ts` rather than in the remote file, so tests can call `enrichInboxItems(db, rows)` against an in-memory database with no SvelteKit request context. The full-screen inbox page uses the same function. Per row it adds:
+
+- `viewHref` — the internal `/projects/{projectId}/prs/{prNumber}` route, but only when a `pr_status` row for that project and PR number exists locally (batched through `listExistingPrStatusProjectNumbers()` in `src/tim/db/pr_status.ts`). Otherwise it falls back to the external GitHub URL, so a link never points at a PR page the web UI cannot render. That lookup resolves each project's `repository_id` to `owner`/`repo` first and then matches `pr_status` rows on owner, repo, and number (case-insensitively), instead of rebuilding a repository ID inside SQL. Both stages are chunked (500 project IDs, 200 pairs) so a large inbox cannot exceed SQLite's variable limit, and the result is filtered back against the deduplicated input pairs, so a project whose `repository_id` is not a parseable GitHub one simply yields no match.
+- `planHref` — set when exactly one plan links to the row's PR, resolved with one batched `getLinkedPlansByPrUrl()` call. A PR with several linked plans is ambiguous, so it gets no plan link.
+- `action` — a launch descriptor `{ type, projectId, prNumber, planUuid? }`. Kind maps to type: `review_requested` → `review-guide`, `pr_comment` → `pr-fix`, `ci_failure` → `ci-fix`, `merge_queue_removed` → `github` (the external link is the action), and `pr_merged` / `pr_approved` / `reviewed_pr_comment` → `null` (view-only). `reviewed_pr_comment` means someone commented on a PR the user reviewed but does not own — running a PR fix there would edit another person's branch, so it gets a view link only. The descriptor only names the action; it does not spawn anything.
+
+`src/lib/server/object_hrefs.ts` holds the shared `planHref(projectId, planUuid)` and `prHref(projectId, prNumber, prUrl)` helpers. They are plain functions over IDs, used by both the inbox enrichment and the activity route (`src/routes/projects/[projectId]/activity/+page.server.ts`), which keeps its own job-type-specific `viewHref` logic on top of them.
+
+### Toolbar Inbox Indicator
+
+`InboxIndicator.svelte` is mounted in the global header next to the sync indicator. It queries `getInboxItems({ projectId: 'all' })`, so one bell aggregates unread items from every project. The query is consumed through its resource's `.current` value instead of top-level `await`; a temporary query error therefore does not tear down the always-mounted header.
+
+The bell is always visible: blue with an unread-count badge when items are unread, dim gray otherwise. Hovering it opens a dark popover with up to 10 rows. Each row shows a kind icon, PR title, kind label, repository and actor, relative time, and an aggregation count when several events were combined. Because the bell query omits `includeRead`, every row in the popover is unread by definition — rows are styled unread unconditionally (tinted background, bold title, blue dot) rather than branching on `read_at`, which would render a read-looking row only in the moment between a mark-read click and the refresh. Pure display derivation (trigger label, count wording, per-kind icon key and label) lives in `inbox_indicator_state.ts` with its own unit test, the same split as `sync_indicator_state.ts`.
+
+Opening the popover does not change read state. A row with an internal `viewHref` is a button that marks the item read and calls `goto()`; a row with an external `viewHref` is an anchor with `target="_blank" rel="noopener noreferrer"` that marks the item read on click. **Mark all read** appears only when something is unread and updates every project. The popover also has a loading state, an error state with a **Retry** button, and an **All caught up** empty state; mutation failures raise a toast through `extractRemoteErrorMessage` instead of breaking the header. The footer links to `/projects/{projectId}/inbox` using the current route's project, falling back to the first row's project, and is hidden when neither is known.
+
+The popover's `open` state is bound so internal navigation can close it explicitly (`popoverOpen = false` before `goto()`, including in the footer link's intercepted click handler). A hover-triggered popover does not close by itself when the route changes underneath it, so without this it stays pinned over the destination page.
+
+The component subscribes to `sessionManager.onEvent()` in `onMount()` and calls the inbox query's `.refresh()` when it receives `inbox:updated`. It removes that subscription on unmount. Because SSE is the primary update path, it also refreshes the query every 60 seconds as a polling fallback.
+
+### Full Inbox Page
+
+Route `src/routes/projects/[projectId]/inbox/+page.svelte` renders the full inbox. It has no `+page.server.ts` — data loads via `getInboxItems({ projectId, includeRead: true })` from the remote layer, so both read and unread items appear with distinct styling. The `projectId` comes from the route param and may be `'all'` or a numeric project ID.
+
+Layout follows the Activity page: `max-w-6xl` container, header with "Inbox" title plus `{unread} unread · {total} total` counts and a "Mark all read" button (rendered only when something is unread), a bordered table with `hover:bg-muted/40` rows, and a dashed-border empty state.
+
+Each row shows:
+
+- **Kind badge** with per-kind label and color pair following the `bg-{c}-100 text-{c}-800 dark:bg-{c}-900/30 dark:text-{c}-300` convention: review_requested (purple), pr_comment (blue), reviewed_pr_comment (sky), pr_approved (green), pr_merged (violet), ci_failure (red), merge_queue_removed (amber).
+- PR title (falling back to `pr_url`), repository, actor, and the summary excerpt.
+- Aggregated `event_count` with a per-kind noun ("3 comments", "3 failures") when greater than 1.
+- Relative time (`formatRelativeTime(last_event_at)`) with the absolute first and latest event times in an `openOnHover` Popover.
+- View link using the enriched `{href, external}` from `viewHref` — external links get `target="_blank" rel="noopener noreferrer"` and a `↗` suffix.
+- Per-kind action button and a Dismiss button (icon-only with aria-label).
+
+**Loading and error states** are three-way, not two-way: a spinner-style box only while loading with no data yet, a full-box error with **Retry** when the query failed and there is no data, and — when a _refresh_ fails but stale data is still in hand — an inline red banner with **Retry** above the still-rendered list. Collapsing the last case into the full-box error would blank out a working list on a transient refresh failure.
+
+**Per-kind actions** reuse existing launch commands — no new spawn paths:
+
+| Kind                                                | Action           | Launch command                                                                                                         |
+| --------------------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `review_requested`                                  | Run Review Guide | `startPrReviewGuide({ projectId, prNumber })`                                                                          |
+| `pr_comment`                                        | Fix PR           | `startFixPrThreads({ projectId, prNumber })`; prefers `startFixThreads({ planUuid })` when enriched with a linked plan |
+| `ci_failure`                                        | Fix CI           | `startPrCiFix({ projectId, prNumber })`; prefers `startCiFix({ planUuid })` when enriched with a linked plan           |
+| `merge_queue_removed`                               | View on GitHub ↗ | No launch — a plain external link to the PR page, suppressed when the row's view link is already the same external URL |
+| `pr_approved` / `pr_merged` / `reviewed_pr_comment` | (view only)      | No action button                                                                                                       |
+
+The `projectId` passed to launch commands is always the item's own numeric project ID from the enriched action descriptor, not the route param (which may be `'all'`).
+
+Launch handling follows the `ReadyToStartRow.svelte` pattern with per-row state keyed by item id: `SvelteSet` for in-flight ids and `SvelteMap` for launched status and error text (native `Map`/`Set` mutations do **not** trigger Svelte updates, so the reactive collections are required here). The button renders Starting… → Started / Already running, or the error text plus a **Retry** button. State resets after 30 seconds, and pending timeouts are cleared in `onDestroy`. On `already_running` with a `connectionId`, the page navigates to `/projects/{itemProjectId}/sessions/{connectionId}`.
+
+If that navigation rejects, the catch block **clears** the just-recorded launched status (and its reset timeout) before storing the error. Leaving the status in place would keep the "already launched" guard at the top of the handler active, so Retry would silently do nothing until the 30-second reset fired.
+
+**Read semantics**: opening the page marks nothing read. Clicking a view link or an action button calls `markInboxItemsRead({ ids: [id] })` alongside the navigation/launch — the mutation is fired without awaiting, so it never blocks navigation, and its failure surfaces as a toast. "Mark all read" calls `markAllInboxItemsRead({ projectId })` scoped to the route's project (`'all'` marks everything). Dismiss calls `dismissInboxItem({ id })`. Unread rows are visually distinct: a blue-tinted row background, a blue dot with `role="img"` and an "Unread" label, and a semibold title.
+
+**Live updates**: the page subscribes to `inbox:updated` via `sessionManager.onEvent()` and refreshes the query on that event. A 60-second polling fallback mirrors the toolbar indicator. Both are cleaned up on unmount. Refresh failures during these background updates are swallowed, since the visible refresh-error banner is driven by the query's own error state.
+
+Pure display and state helpers are extracted to `src/routes/projects/[projectId]/inbox/inbox_page_state.ts` (`getKindBadge`, `getEventCountLabel`, `formatAbsoluteTime`, `getActionButtonConfig`) with a colocated unit test. The file must not start with `+` — SvelteKit rejects unknown `+` files in a route directory. The same rule applies to the page's `inbox-page.svelte.e2e.test.ts`.
+
+### Tab and Keyboard Shortcuts
+
+Tab descriptors are defined once in `src/lib/utils/tab_navigation.ts` as `BASE_TABS` and `PROJECT_TABS` (base tabs plus Settings). Both `TabNav.svelte` and the keyboard shortcut layer import from this single source of truth. **To add a tab, add a `{ label, slug }` entry to `BASE_TABS`** — rendering order, `Ctrl+1..N` shortcuts, and `Ctrl+Shift+N` project-switch preservation all derive from it automatically.
+
+The current order is: Sessions (Ctrl+1), Active Work (Ctrl+2), Pull Requests (Ctrl+3), Activity (Ctrl+4), Inbox (Ctrl+5), Plans (Ctrl+6), Settings (Ctrl+7, numeric projects only). Ctrl+8/9 do nothing.
+
+`handleGlobalShortcuts` forwards **all** of Ctrl+1..9 to the tab callback (`TAB_DIGIT_MAX = 9`) and lets `resolveTabSlugForIndex()` decide validity — it returns `undefined` for an out-of-range index and for Settings on the all-projects pseudo-project. A digit cap in the key handler is a second, easy-to-forget copy of the tab count: the cap used to be 5, which silently made the Settings tab unreachable by keyboard once the list grew past five entries.
+
 ## Plan Task Counts
 
 Task completion counts are fetched via a remote query in `src/lib/remote/plan_task_counts.remote.ts`:
@@ -366,7 +454,7 @@ HTTP POST to `/messages` on port 8123 creates lightweight "notification" session
 
 Browser clients receive real-time updates via SSE and interact with sessions through remote `command()` functions:
 
-- **SSE endpoint** (`src/routes/api/sessions/events/+server.ts`): `GET` returns a `ReadableStream` with SSE headers. On connect, calls `registerSSESubscriber()` and sends `session:list` snapshot, replays any buffered events, then sends `session:sync-complete` to signal that initial state is fully loaded. After sync, streams live events (`session:new`, `session:update`, `session:disconnect`, `session:message`, `session:prompt`, `session:prompt-cleared`, `session:dismissed`, `session:plan-content`, `pr:updated`). Uses subscribe-before-snapshot pattern with buffering to avoid lost-event race conditions. On stream teardown, calls `unregisterSSESubscriber()` to update agent notification suppression state.
+- **SSE endpoint** (`src/routes/api/sessions/events/+server.ts`): `GET` returns a `ReadableStream` with SSE headers. On connect, calls `registerSSESubscriber()` and sends `session:list` snapshot, replays any buffered events, then sends `session:sync-complete` to signal that initial state is fully loaded. After sync, streams live events (`session:new`, `session:update`, `session:disconnect`, `session:message`, `session:prompt`, `session:prompt-cleared`, `session:dismissed`, `session:plan-content`, `pr:updated`, `inbox:updated`). Uses subscribe-before-snapshot pattern with buffering to avoid lost-event race conditions. On stream teardown, calls `unregisterSSESubscriber()` to update agent notification suppression state.
 
 #### SSE Implementation Gotchas
 
@@ -390,7 +478,7 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - SSE subscribes before taking snapshot to avoid lost-event race window, with event buffering during snapshot delivery
 - `sendPromptResponse` validates requestId against the `activePrompts` array and removes the matched prompt on success — prevents duplicate responses from multiple browser tabs. Multiple prompts can be active simultaneously (e.g., from concurrent subagents); the UI shows the oldest first
 - SSE enqueue calls are wrapped in try/catch for resilience against closed streams
-- **Webhook poller** (`src/lib/server/webhook_poller.ts`): Periodic ingestion of webhook events via `ingestWebhookEvents(db)`. Enabled by `TIM_WEBHOOK_POLL_INTERVAL` env var (seconds, minimum 5, clamped to max 86400). First poll is delayed 15 seconds after startup to avoid churn during HMR reloads. Uses an in-flight guard to skip overlapping ticks. Requires `TIM_WEBHOOK_SERVER_URL` and `WEBHOOK_INTERNAL_API_TOKEN` to also be set. Returns `null` (no-op) when not configured. Accepts an `onPrUpdated` callback invoked after successful ingestion with non-empty `prsUpdated`; wired in `hooks.server.ts` to emit `pr:updated` SSE events via `emitPrUpdatesForIngestResult()` from `src/lib/server/pr_event_utils.ts`.
+- **Webhook poller** (`src/lib/server/webhook_poller.ts`): Periodic ingestion of webhook events via `ingestWebhookEventsWithInbox(db, { sessionManager })` (the shared wrapper around `ingestWebhookEvents` that also runs the inbox producer). Enabled by `TIM_WEBHOOK_POLL_INTERVAL` env var (seconds, minimum 5, clamped to max 86400). First poll is delayed 15 seconds after startup to avoid churn during HMR reloads. Uses an in-flight guard to skip overlapping ticks. Requires `TIM_WEBHOOK_SERVER_URL` and `WEBHOOK_INTERNAL_API_TOKEN` to also be set. Returns `null` (no-op) when not configured. Accepts an `onPrUpdated` callback invoked after successful ingestion with non-empty `prsUpdated`; wired in `hooks.server.ts` to emit `pr:updated` SSE events via `emitPrUpdatesForIngestResult()` from `src/lib/server/pr_event_utils.ts`. The same `hooks.server.ts` call passes the `sessionManager` option, which the orchestrator hands to the inbox producer so it can emit `inbox:updated`.
 - **Slack notifier** (`src/lib/server/slack_notifier.ts`): Background review-request notification loop. Starts when at least one Slack workspace has `reviewNotifier.enabled: true`, reads pending `pr_review_request` rows with `notified_at IS NULL`, groups them by PR, applies a fixed 30-second debounce, posts one Slack channel message per enabled repo/PR targeting an opted-in workspace, and marks rows notified after a confirmed send. When machine-local `githubWebhooks.ignoreSideEffectsBefore` is set, pending rows before that timestamp are marked notified without posting. It is kicked by the webhook poller's `onPrUpdated` callback and also runs about every 15 seconds so debounced requests can fire without another webhook.
 - **Shutdown**: `hooks.server.ts` registers SIGTERM/SIGINT handlers that stop the Slack notifier, webhook poller, discovery client, and WebSocket server, then call `process.exit(0)` for clean production shutdown. HMR-safe cleanup uses `Symbol.for` singleton pattern. Custom signal handlers suppress default Node.js termination, so explicit `process.exit()` is required.
 
@@ -476,7 +564,11 @@ The root layout (`+layout.svelte`) registers a `<svelte:window onkeydown>` handl
 | **Ctrl+/**                     | Focus the search input on the Plans tab    | Suppressed when focus is in a text input, textarea, select, or contenteditable element |
 | **Ctrl+1**                     | Navigate to Sessions tab                   | Always active, even in text inputs                                                     |
 | **Ctrl+2**                     | Navigate to Active Work tab                | Always active                                                                          |
-| **Ctrl+3**                     | Navigate to Plans tab                      | Always active                                                                          |
+| **Ctrl+3**                     | Navigate to Pull Requests tab              | Always active                                                                          |
+| **Ctrl+4**                     | Navigate to Activity tab                   | Always active                                                                          |
+| **Ctrl+5**                     | Navigate to Inbox tab                      | Always active                                                                          |
+| **Ctrl+6**                     | Navigate to Plans tab                      | Always active                                                                          |
+| **Ctrl+7**                     | Navigate to Settings tab                   | Numeric projects only; does nothing on All Projects                                    |
 
 Tab navigation uses `goto()` with `projectUrl()` to build the correct route for the current project context.
 
@@ -606,6 +698,8 @@ The dialog stays open with per-button spinners during launch. Dismissal is preve
 - **Session lookup** (`SessionManager.hasActiveSessionForPlan(planUuid, command?)`): Checks whether an active session exists for a given plan UUID. The `command` parameter is optional — when omitted, matches any active session regardless of command type. Used without a command filter for duplicate prevention across all plan-scoped commands.
 - **Launch lock** (`src/lib/server/launch_lock.ts`): In-memory per-target lock (stored on `globalThis` for HMR safety) bridging the gap between process spawn and WebSocket session registration. The generic primitives (`setLaunchLockForTarget()` / `clearLaunchLockForTarget()` / `isTargetLaunching()`) take an opaque target key; thin wrappers (`setLaunchLock`/`isPlanLaunching` for plans, `setPrLaunchLock`/`isPrLaunching` for PRs) build the `plan:<planUuid>` and `pr:<canonicalPrUrl>` keys. Exported as a separate module because SvelteKit remote function files can only export `command()` results. Subscribes to `SessionManager.subscribe('session:update')` to clear locks when sessions register (by plan UUID and by `linkedPrUrl`).
 - **PR session lookup** (`SessionManager.hasActiveSessionForPr(canonicalPrUrl, command?)`): Mirrors `hasActiveSessionForPlan` for no-plan PR fix launches. Sessions are indexed by `sessionInfo.linkedPrUrl` (`sessionsByPrUrl`), letting the PR detail page detect active/starting/running fix sessions without a linked plan.
+- **Shared PR launch helper** (`launchPrTimCommand()` in `src/lib/remote/review_thread_actions.remote.ts`): The single path for every PR-scoped launch — `startFixPrThreads`, `startPrCiFix`, and `startPrReviewGuide`. It resolves the `pr_status` row, canonicalizes the PR URL, runs an optional eligibility check, returns `{ status: 'already_running', connectionId? }` when `hasActiveSessionForPr` or the launch lock says a launch is in flight, then takes the lock and spawns. The lock is released again when the spawn throws, fails, or exits early. Any new PR-scoped launch button should go through this helper rather than spawning directly: `startPrReviewGuide` originally did its own spawn with no session check or lock, which let a double click start two review-guide sessions for the same PR.
+- **Slow-start race and `TIM_LINKED_PR_URL`**: The PR launch lock clears on the first `session:update` carrying a matching `linkedPrUrl`, or after 30 seconds. A command that only learns its PR while running (`tim pr review-guide` resolves the PR during `gatherPrContext`) can take longer than that to publish `linkedPrUrl`, so the lock expires before the session is detectable and a second launch slips through. The web UI therefore passes the canonical PR URL to the spawned process in the `TIM_LINKED_PR_URL` environment variable (exported from `src/tim/headless.ts`); `buildSessionInfo` reads it and includes `linkedPrUrl` in the **initial** session info, so `hasActiveSessionForPr` matches as soon as the session registers. Every PR-targeted spawn wrapper in `src/lib/server/plan_actions.ts` sets it.
 - **PR-scoped launch remote** (`src/lib/remote/review_thread_actions.remote.ts`): Launches no-plan `tim pr fix --pr` from the PR detail page. Verifies the PR belongs to the project, confirms unresolved review threads exist, checks active sessions and launch locks by canonical PR URL, resolves the primary workspace, and spawns `tim pr fix --pr <pr-url-or-number> --auto-workspace --no-terminal-input`. Plan-detail PR status fix flows stay plan-scoped.
 - **CI fix launch remotes** (`src/lib/remote/review_thread_actions.remote.ts`): `startPrCiFix` uses `launchPrTimCommand()` for the PR-detail **Fix CI** button. It re-checks `canFixCi()` on the server after normalizing the configured GitHub username, then canonicalizes the PR, checks `hasActiveSessionForPr`, acquires the PR launch lock, resolves the project workspace, and spawns `spawnCiFixForPrProcess()`. `startCiFix` performs the same eligibility check for linked plan PRs, rejects plans without an eligible PR, checks `hasActiveSessionForPlan`, acquires the plan launch lock, and spawns `spawnCiFixProcess()`. These checks provide the client session check, server session check, and launch-lock layers needed to prevent duplicate launches.
 - **CI fix spawn wrappers** (`src/lib/server/plan_actions.ts`): `spawnCiFixForPrProcess()` launches `tim pr fix-ci --pr <url> --auto-workspace --no-terminal-input`; `spawnCiFixProcess()` launches the plan-scoped equivalent. Both use the detached daemon launch path and its early-exit check.

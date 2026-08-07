@@ -11,6 +11,15 @@ import { markJobFinished, recordJobStart, updateJobFromSessionInfo } from './db/
 import { getBinaryRealPath, getBuildSha, getBuildTime } from './build_info.js';
 
 export const DEFAULT_HEADLESS_URL = 'ws://localhost:8123/tim-agent';
+
+/**
+ * Environment variable set by the web UI when spawning PR-targeted commands.
+ * Lets the spawned process include `linkedPrUrl` in its initial session_info
+ * so `hasActiveSessionForPr` detects the session before `gatherPrContext`
+ * finishes — closing the slow-start race where the 30 s launch lock expires
+ * before the command calls `updateHeadlessSessionInfo`.
+ */
+export const TIM_LINKED_PR_URL_ENV = 'TIM_LINKED_PR_URL';
 const warnedInvalidHeadlessUrls = new Set<string>();
 const jobIdsByAdapter = new WeakMap<HeadlessAdapter, number>();
 
@@ -124,6 +133,8 @@ export async function buildHeadlessSessionInfo(
     // No-op: headless session metadata is best-effort.
   }
 
+  const linkedPrUrl = process.env[TIM_LINKED_PR_URL_ENV]?.trim() || undefined;
+
   return {
     command,
     interactive,
@@ -131,6 +142,7 @@ export async function buildHeadlessSessionInfo(
     planId: plan?.id,
     planUuid: plan?.uuid,
     planTitle: plan?.title,
+    linkedPrUrl,
     workspacePath,
     gitRemote,
     terminalPaneId: weztermPaneId || undefined,

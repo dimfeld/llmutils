@@ -1,0 +1,275 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
+  import { toast } from 'svelte-sonner';
+  import Bell from '@lucide/svelte/icons/bell';
+  import Eye from '@lucide/svelte/icons/eye';
+  import MessageCircle from '@lucide/svelte/icons/message-circle';
+  import GitMerge from '@lucide/svelte/icons/git-merge';
+  import Check from '@lucide/svelte/icons/check';
+  import CircleX from '@lucide/svelte/icons/circle-x';
+  import ListX from '@lucide/svelte/icons/list-x';
+  import { Popover, PopoverContent, PopoverTrigger } from '$lib/components/ui/popover/index.js';
+  import {
+    getInboxItems,
+    markInboxItemsRead,
+    markAllInboxItemsRead,
+    type EnrichedInboxItem,
+  } from '$lib/remote/inbox.remote.js';
+  import { useSessionManager } from '$lib/stores/session_state.svelte.js';
+  import { formatRelativeTime } from '$lib/utils/time.js';
+  import {
+    getInboxIndicatorState,
+    getInboxRowDisplay,
+    type InboxKindIconKey,
+  } from './inbox_indicator_state.js';
+  import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
+
+  const sessionManager = useSessionManager();
+
+  const ICON_COMPONENTS: Record<InboxKindIconKey, typeof Eye> = {
+    eye: Eye,
+    'message-circle': MessageCircle,
+    'git-merge': GitMerge,
+    check: Check,
+    'circle-x': CircleX,
+    'list-x': ListX,
+  };
+
+  let inboxQuery = $derived(getInboxItems({ projectId: 'all' }));
+  let data = $derived(inboxQuery.current);
+  let queryLoading = $derived(inboxQuery.loading);
+  let queryError = $derived(inboxQuery.error);
+  let indicator = $derived(getInboxIndicatorState(data));
+  let showLoading = $derived(queryLoading && !data && !queryError);
+  let triggerLabel = $derived(
+    queryError ? 'Inbox unavailable' : showLoading ? 'Loading inbox' : indicator.label
+  );
+
+  let popoverOpen = $state(false);
+
+  let displayItems = $derived((data?.items ?? []).slice(0, 10));
+
+  let footerProjectId = $derived.by(() => {
+    const routeProjectId = page.params.projectId;
+    if (routeProjectId === 'all') {
+      return 'all';
+    }
+    if (routeProjectId && /^\d+$/.test(routeProjectId)) {
+      return routeProjectId;
+    }
+    const firstItem = displayItems[0];
+    if (firstItem?.project_id != null) {
+      return String(firstItem.project_id);
+    }
+    return null;
+  });
+
+  onMount(() => {
+    const unsubscribe = sessionManager.onEvent((eventName) => {
+      if (eventName === 'inbox:updated') {
+        void refreshInboxQuery();
+      }
+    });
+
+    const pollInterval = setInterval(() => {
+      void refreshInboxQuery();
+    }, 60_000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(pollInterval);
+    };
+  });
+
+  function reportInboxFailure(action: string, error: unknown): void {
+    toast.error(`Failed to ${action}: ${extractRemoteErrorMessage(error)}`);
+  }
+
+  async function refreshInboxQuery(showFailure = false): Promise<void> {
+    try {
+      await inboxQuery.refresh();
+    } catch (error) {
+      if (showFailure) {
+        reportInboxFailure('refresh the inbox', error);
+      }
+    }
+  }
+
+  async function runInboxMutation(action: string, mutation: () => Promise<unknown>): Promise<void> {
+    try {
+      await mutation();
+    } catch (error) {
+      reportInboxFailure(action, error);
+    }
+  }
+
+  function markInboxItemRead(id: number): Promise<void> {
+    return runInboxMutation('mark the inbox item as read', () => markInboxItemsRead({ ids: [id] }));
+  }
+
+  async function handleRowClick(item: EnrichedInboxItem): Promise<void> {
+    void markInboxItemRead(item.id);
+    if (item.viewHref) {
+      if (item.viewHref.external) {
+        window.open(item.viewHref.href, '_blank', 'noopener,noreferrer');
+      } else {
+        popoverOpen = false;
+        try {
+          await goto(item.viewHref.href);
+        } catch (error) {
+          reportInboxFailure('open the inbox item', error);
+        }
+      }
+    }
+  }
+
+  async function handleFooterLinkClick(event: MouseEvent): Promise<void> {
+    event.preventDefault();
+    popoverOpen = false;
+    if (footerProjectId) {
+      try {
+        await goto(`/projects/${footerProjectId}/inbox`);
+      } catch (error) {
+        reportInboxFailure('open the inbox page', error);
+      }
+    }
+  }
+
+  function handleMarkAllRead(): void {
+    void runInboxMutation('mark all inbox items as read', () =>
+      markAllInboxItemsRead({ projectId: 'all' })
+    );
+  }
+
+  function handleRetry(): void {
+    void refreshInboxQuery(true);
+  }
+</script>
+
+{#snippet rowContent(item: EnrichedInboxItem)}
+  {@const row = getInboxRowDisplay(item)}
+  {@const KindIcon = ICON_COMPONENTS[row.kindIconKey]}
+  <div class="mt-0.5 shrink-0 text-gray-400">
+    <KindIcon class="size-4" />
+  </div>
+  <div class="min-w-0 flex-1">
+    <div class="flex items-baseline gap-1.5">
+      <span class="truncate text-sm font-semibold text-gray-100" title={row.title}>
+        {row.title}
+      </span>
+    </div>
+    <div class="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
+      <span>{row.kindLabel}</span>
+      {#if row.countLabel}
+        <span>·</span>
+        <span>{row.countLabel}</span>
+      {/if}
+    </div>
+    <div class="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
+      {#if row.subtitle}
+        <span class="truncate">{row.subtitle}</span>
+        <span>·</span>
+      {/if}
+      <span class="shrink-0">{formatRelativeTime(item.last_event_at)}</span>
+    </div>
+  </div>
+  <div class="mt-1.5 size-2 shrink-0 rounded-full bg-blue-400" role="img" aria-label="Unread"></div>
+{/snippet}
+
+<Popover bind:open={popoverOpen}>
+  <PopoverTrigger
+    openOnHover
+    openDelay={150}
+    closeDelay={100}
+    class={[
+      'flex items-center gap-1 rounded-md p-1.5 transition-colors hover:bg-white/10',
+      indicator.hasUnread ? 'text-blue-300' : 'text-gray-300',
+    ]}
+    aria-label={triggerLabel}
+    title={triggerLabel}
+  >
+    <Bell class="size-4" />
+    {#if indicator.hasUnread}
+      <span class="text-xs font-semibold tabular-nums">
+        {indicator.unreadCount}
+      </span>
+    {/if}
+  </PopoverTrigger>
+
+  <PopoverContent
+    align="end"
+    class="w-80 rounded-lg border border-gray-600 bg-gray-800 p-0 text-gray-200 shadow-xl"
+  >
+    <div class="flex items-center justify-between border-b border-gray-700 px-3 py-2">
+      <h3 class="text-xs font-semibold tracking-wider text-gray-400 uppercase">Inbox</h3>
+      {#if indicator.hasUnread}
+        <button
+          type="button"
+          class="text-xs text-blue-400 hover:text-blue-300"
+          onclick={handleMarkAllRead}
+          aria-label="Mark all inbox items as read"
+        >
+          Mark all read
+        </button>
+      {/if}
+    </div>
+
+    {#if queryError}
+      <div class="px-3 py-5 text-center text-sm text-red-300" role="alert">
+        <p>Unable to load the inbox.</p>
+        <button
+          type="button"
+          class="mt-2 rounded border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-gray-700"
+          onclick={handleRetry}
+          aria-label="Retry loading inbox"
+        >
+          Retry
+        </button>
+      </div>
+    {:else if showLoading}
+      <div class="px-3 py-6 text-center text-sm text-gray-400" aria-live="polite">
+        Loading inbox…
+      </div>
+    {:else if displayItems.length === 0}
+      <div class="px-3 py-6 text-center text-sm text-gray-400">All caught up</div>
+    {:else}
+      <div class="max-h-80 overflow-y-auto">
+        {#each displayItems as item (item.id)}
+          {#if item.viewHref?.external}
+            <a
+              href={item.viewHref.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="flex items-start gap-2.5 border-b border-gray-700/50 bg-gray-700/30 px-3 py-2 transition-colors last:border-b-0 hover:bg-gray-700/50"
+              onclick={() => void markInboxItemRead(item.id)}
+            >
+              {@render rowContent(item)}
+            </a>
+          {:else}
+            <button
+              type="button"
+              class="flex w-full items-start gap-2.5 border-b border-gray-700/50 bg-gray-700/30 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-gray-700/50"
+              onclick={() => handleRowClick(item)}
+            >
+              {@render rowContent(item)}
+            </button>
+          {/if}
+        {/each}
+      </div>
+    {/if}
+
+    {#if footerProjectId}
+      <div class="border-t border-gray-700 px-3 py-2 text-center">
+        <a
+          href="/projects/{footerProjectId}/inbox"
+          class="text-xs text-blue-400 hover:text-blue-300"
+          onclick={handleFooterLinkClick}
+        >
+          View all notifications
+        </a>
+      </div>
+    {/if}
+  </PopoverContent>
+</Popover>

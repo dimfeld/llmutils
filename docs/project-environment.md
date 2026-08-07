@@ -123,7 +123,10 @@ It accepts shell-friendly uppercase names such as `DATABASE_URL` and
 `APP_INSTANCE`, while continuing to reserve the built-in `TIM_*` context names.
 
 Other `TIM_*` names that tim reads for its own process control — for example
-`TIM_EXECUTOR` and the `TIM_GITHUB_APP_*` / `TIM_WEBHOOK_*` family — are **not**
+`TIM_EXECUTOR`, `TIM_LINKED_PR_URL` (set by the web UI when spawning a
+PR-targeted command, so the session publishes `linkedPrUrl` immediately; see
+[web-interface.md](web-interface.md#server-side-infrastructure)), and the
+`TIM_GITHUB_APP_*` / `TIM_WEBHOOK_*` family — are **not**
 reserved at the schema level, and they should not be added to the schema's
 rejection set. Protect those variables later through **env composition and
 explicit override precedence** (the layering in `src/common/env.ts`), not by
