@@ -10,6 +10,7 @@ import {
   findLocalConfigPath,
   loadEffectiveConfig,
   clearConfigCache,
+  mergeInboxConfig,
 } from './configLoader.ts';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import {
@@ -93,6 +94,43 @@ afterEach(async () => {
   if (tempDir) {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
+});
+
+describe('mergeInboxConfig', () => {
+  test('overrides enabled and concatenates normalized, deduplicated usernames', () => {
+    const merged = mergeInboxConfig(
+      {
+        prs: {
+          enabled: true,
+          ignoreUsers: ['GlobalUser', 'global-bot[bot]'],
+        },
+      },
+      {
+        prs: {
+          enabled: false,
+          ignoreUsers: ['globaluser', 'LocalUser', 'GLOBAL-BOT[BOT]'],
+        },
+      }
+    );
+
+    expect(merged).toEqual({
+      prs: {
+        enabled: false,
+        ignoreUsers: ['GlobalUser', 'global-bot[bot]', 'LocalUser'],
+      },
+    });
+  });
+
+  test('preserves values from one layer and does not materialize absent keys', () => {
+    expect(mergeInboxConfig(undefined, undefined)).toBeUndefined();
+    expect(mergeInboxConfig({}, {})).toEqual({});
+    expect(mergeInboxConfig({ prs: { enabled: true } }, { prs: {} })).toEqual({
+      prs: { enabled: true },
+    });
+    expect(mergeInboxConfig(undefined, { prs: { ignoreUsers: ['repo-only'] } })).toEqual({
+      prs: { ignoreUsers: ['repo-only'] },
+    });
+  });
 });
 
 describe('configLoader', () => {

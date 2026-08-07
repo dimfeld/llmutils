@@ -540,6 +540,59 @@ describe('configSchema', () => {
     });
   });
 
+  describe('inbox configuration', () => {
+    test('accepts pull request settings without applying defaults', () => {
+      const result = timConfigSchema.parse({
+        inbox: {
+          prs: {
+            enabled: false,
+            ignoreUsers: ['dependabot[bot]', 'reviewer'],
+          },
+        },
+      });
+
+      expect(result.inbox).toEqual({
+        prs: {
+          enabled: false,
+          ignoreUsers: ['dependabot[bot]', 'reviewer'],
+        },
+      });
+    });
+
+    test('rejects unknown keys inside inbox and inbox.prs', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          inbox: {
+            unknown: true,
+          },
+        })
+      ).toThrow();
+
+      expect(() =>
+        timConfigSchema.parse({
+          inbox: {
+            prs: {
+              unknown: true,
+            },
+          },
+        })
+      ).toThrow();
+    });
+
+    test('does not inject inbox or pull request defaults', () => {
+      expect(timConfigSchema.parse({}).inbox).toBeUndefined();
+
+      const emptyInbox = timConfigSchema.parse({ inbox: {} });
+      expect(emptyInbox.inbox).toEqual({});
+      expect(emptyInbox.inbox?.prs).toBeUndefined();
+
+      const emptyPrs = timConfigSchema.parse({ inbox: { prs: {} } });
+      expect(emptyPrs.inbox?.prs).toEqual({});
+      expect(emptyPrs.inbox?.prs?.enabled).toBeUndefined();
+      expect(emptyPrs.inbox?.prs?.ignoreUsers).toBeUndefined();
+    });
+  });
+
   describe('tags configuration', () => {
     test('accepts allowed tags array', () => {
       const config = {
