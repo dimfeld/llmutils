@@ -57,14 +57,14 @@ type WebhookEventHandler = (
   options: WebhookHandlerOptions
 ) => WebhookHandlerResult;
 
-const WEBHOOK_EVENT_HANDLERS: Readonly<Record<string, WebhookEventHandler | undefined>> = {
-  pull_request: handlePullRequestEvent,
-  issue_comment: handleIssueCommentEvent,
-  pull_request_review: handlePullRequestReviewEvent,
-  pull_request_review_thread: handlePullRequestReviewThreadEvent,
-  pull_request_review_comment: handlePullRequestReviewThreadEvent,
-  check_run: handleCheckRunEvent,
-};
+const WEBHOOK_EVENT_HANDLERS: ReadonlyMap<string, WebhookEventHandler> = new Map([
+  ['pull_request', handlePullRequestEvent],
+  ['issue_comment', handleIssueCommentEvent],
+  ['pull_request_review', handlePullRequestReviewEvent],
+  ['pull_request_review_thread', handlePullRequestReviewThreadEvent],
+  ['pull_request_review_comment', handlePullRequestReviewThreadEvent],
+  ['check_run', handleCheckRunEvent],
+]);
 
 type DelayFn = (ms: number) => Promise<void>;
 
@@ -451,7 +451,7 @@ export async function ingestWebhookEvents(
           knownRepos,
           receivedAt: event.receivedAt,
         };
-        const handler = WEBHOOK_EVENT_HANDLERS[event.eventType];
+        const handler = WEBHOOK_EVENT_HANDLERS.get(event.eventType);
         const result = handler ? handler(db, payload, handlerOptions) : null;
 
         if (!result) {
