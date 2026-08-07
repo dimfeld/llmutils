@@ -6,6 +6,13 @@ import { HeadlessAdapter } from './headless_adapter.ts';
 import type { HeadlessMessage, HeadlessServerMessage } from './headless_protocol.ts';
 import { createRecordingAdapter } from './test_helpers.ts';
 import { readSessionInfoFile } from '../tim/session_server/runtime_dir.ts';
+import {
+  TIM_OWNER_PROCESS_ID,
+  TIM_PARENT_PROCESS_ID,
+  TIM_PROCESS_ID,
+  TIM_SESSION_ID,
+  type ProcessId,
+} from '../common/session_process.ts';
 
 function parseMessage(
   message: string | Buffer | ArrayBuffer | ArrayBufferView
@@ -82,6 +89,36 @@ afterEach(async () => {
 });
 
 describe('HeadlessAdapter', () => {
+  it('registers the root tim process for executor ownership and restores its environment', async () => {
+    const before = {
+      [TIM_SESSION_ID]: process.env[TIM_SESSION_ID],
+      [TIM_PROCESS_ID]: process.env[TIM_PROCESS_ID],
+      [TIM_PARENT_PROCESS_ID]: process.env[TIM_PARENT_PROCESS_ID],
+      [TIM_OWNER_PROCESS_ID]: process.env[TIM_OWNER_PROCESS_ID],
+    };
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);
+
+    const registry = adapter.getProcessRegistry();
+    expect(registry?.getSnapshot()).toHaveLength(1);
+    expect(registry?.getSnapshot()[0]).toMatchObject({
+      kind: 'tim',
+      label: 'tim agent',
+      pid: process.pid,
+      state: 'running',
+    });
+    expect(process.env[TIM_SESSION_ID]).toEqual(expect.any(String));
+    expect(process.env[TIM_PROCESS_ID]).toEqual(expect.any(String));
+    expect(process.env[TIM_PARENT_PROCESS_ID]).toBeUndefined();
+    expect(process.env[TIM_OWNER_PROCESS_ID]).toBeUndefined();
+
+    await adapter.destroy();
+    expect(process.env[TIM_SESSION_ID]).toBe(before[TIM_SESSION_ID]);
+    expect(process.env[TIM_PROCESS_ID]).toBe(before[TIM_PROCESS_ID]);
+    expect(process.env[TIM_PARENT_PROCESS_ID]).toBe(before[TIM_PARENT_PROCESS_ID]);
+    expect(process.env[TIM_OWNER_PROCESS_ID]).toBe(before[TIM_OWNER_PROCESS_ID]);
+  });
+
   it('buffers output in replay history and forwards local output', async () => {
     const { adapter: wrapped, calls } = createRecordingAdapter();
     const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);
@@ -188,14 +225,447 @@ describe('HeadlessAdapter', () => {
       gitRemote: 'git@example.com:repo.git',
       sessionId: expect.any(String),
     });
-    expect(messages[1]).toEqual({ type: 'plan_content', content: '# latest plan', tasks: [] });
-    expect(messages[2]).toEqual({ type: 'replay_start' });
-    expect(messages[3]).toMatchObject({ type: 'output', seq: 1 });
-    expect(messages[4]).toMatchObject({ type: 'output', seq: 2 });
-    expect(messages[5]).toEqual({ type: 'replay_end' });
+    expect(messages[1]).toMatchObject({
+      type: 'process_tree_snapshot',
+      processes: [expect.objectContaining({ kind: 'tim', label: 'tim agent' })],
+    });
+    expect(messages[2]).toEqual({ type: 'plan_content', content: '# latest plan', tasks: [] });
+    expect(messages[3]).toEqual({ type: 'replay_start' });
+    expect(messages[4]).toMatchObject({ type: 'output', seq: 1 });
+    expect(messages[5]).toMatchObject({ type: 'output', seq: 2 });
+    expect(messages[6]).toEqual({ type: 'replay_end' });
 
     ws.close();
     await adapter.destroy();
+  });
+
+  it('replays a deterministic process tree and broadcasts complete live snapshots', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);
+    const registry = adapter.getProcessRegistry();
+    expect(registry).toBeDefined();
+
+    const root = registry!.getSnapshot()[0]!;
+    const firstExecutorId = 'executor-1' as ProcessId;
+    const nestedTimId = 'nested-tim-1' as ProcessId;
+    const nestedExecutorId = 'nested-executor-1' as ProcessId;
+    registry!.register({
+      processId: firstExecutorId,
+      parentProcessId: root.processId,
+      ownerProcessId: root.processId,
+      kind: 'executor',
+      label: 'first executor',
+      startedAt: '2026-03-17T10:00:02.000Z',
+      state: 'running',
+    });
+    registry!.register({
+      processId: nestedTimId,
+      parentProcessId: firstExecutorId,
+      ownerProcessId: firstExecutorId,
+      kind: 'tim',
+      label: 'nested tim',
+      startedAt: '2026-03-17T10:00:03.000Z',
+      state: 'running',
+    });
+    registry!.register({
+      processId: nestedExecutorId,
+      parentProcessId: nestedTimId,
+      ownerProcessId: nestedTimId,
+      kind: 'executor',
+      label: 'nested executor',
+      startedAt: '2026-03-17T10:00:04.000Z',
+      state: 'running',
+    });
+
+    const port = (adapter as any).sessionServer.port as number;
+    const ws = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+    const messages: HeadlessMessage[] = [];
+    ws.addEventListener('message', (event) => {
+      const parsed = parseMessage(event.data as string);
+      if (parsed) {
+        messages.push(parsed);
+      }
+    });
+    await waitFor(() => messages.some((message) => message.type === 'replay_end'));
+
+    const initialSnapshot = messages.find((message) => message.type === 'process_tree_snapshot');
+    expect(initialSnapshot?.type).toBe('process_tree_snapshot');
+    expect(initialSnapshot?.processes.map((process) => process.processId)).toEqual([
+      root.processId,
+      firstExecutorId,
+      nestedTimId,
+      nestedExecutorId,
+    ]);
+
+    messages.length = 0;
+    const secondExecutorId = 'executor-2' as ProcessId;
+    registry!.register({
+      processId: secondExecutorId,
+      parentProcessId: root.processId,
+      ownerProcessId: root.processId,
+      kind: 'executor',
+      label: 'second executor',
+      startedAt: '2026-03-17T10:00:01.000Z',
+      state: 'running',
+    });
+    await waitFor(() => messages.some((message) => message.type === 'process_tree_update'));
+
+    const update = messages.find((message) => message.type === 'process_tree_update');
+    expect(update?.type).toBe('process_tree_update');
+    expect(update?.processes.map((process) => process.processId)).toEqual([
+      root.processId,
+      secondExecutorId,
+      firstExecutorId,
+      nestedTimId,
+      nestedExecutorId,
+    ]);
+
+    const ws2 = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+    const reconnectMessages: HeadlessMessage[] = [];
+    ws2.addEventListener('message', (event) => {
+      const parsed = parseMessage(event.data as string);
+      if (parsed) {
+        reconnectMessages.push(parsed);
+      }
+    });
+    await waitFor(() => reconnectMessages.some((message) => message.type === 'replay_end'));
+    const reconnectSnapshot = reconnectMessages.find(
+      (message) => message.type === 'process_tree_snapshot'
+    );
+    expect(reconnectSnapshot?.type).toBe('process_tree_snapshot');
+    expect(reconnectSnapshot?.processes.map((process) => process.processId)).toEqual([
+      root.processId,
+      secondExecutorId,
+      firstExecutorId,
+      nestedTimId,
+      nestedExecutorId,
+    ]);
+
+    ws.close();
+    ws2.close();
+    await adapter.destroy();
+  });
+
+  it('routes targeted termination to the owning channel and fans out force shutdown', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);
+    const registry = adapter.getProcessRegistry();
+    expect(registry).toBeDefined();
+    const root = registry!.getSnapshot()[0]!;
+    const ownerExecutorId = 'owner-executor' as ProcessId;
+    const nestedTimId = 'nested-tim' as ProcessId;
+    const executorId = 'nested-executor' as ProcessId;
+    const staleExecutorId = 'stale-executor' as ProcessId;
+
+    expect(
+      registry!.register({
+        processId: ownerExecutorId,
+        parentProcessId: root.processId,
+        ownerProcessId: root.processId,
+        kind: 'executor',
+        label: 'orchestrator',
+        startedAt: '2026-03-17T10:00:01.000Z',
+        state: 'running',
+      })
+    ).toBeDefined();
+
+    const routedRequests: Array<{ executorId: ProcessId; requestId?: string }> = [];
+    expect(
+      registry!.registerOwnerChannelSender('nested-channel', (targetExecutorId, requestId) => {
+        routedRequests.push({ executorId: targetExecutorId, requestId });
+        return true;
+      })
+    ).toBe(true);
+    expect(
+      registry!.register(
+        {
+          processId: nestedTimId,
+          parentProcessId: ownerExecutorId,
+          ownerProcessId: ownerExecutorId,
+          kind: 'tim',
+          label: 'subagent tim',
+          startedAt: '2026-03-17T10:00:02.000Z',
+          state: 'running',
+        },
+        { ownerChannelId: 'nested-channel' }
+      )
+    ).toBeDefined();
+    expect(
+      registry!.register({
+        processId: executorId,
+        parentProcessId: nestedTimId,
+        ownerProcessId: nestedTimId,
+        kind: 'executor',
+        label: 'subagent executor',
+        startedAt: '2026-03-17T10:00:03.000Z',
+        state: 'running',
+      })
+    ).toBeDefined();
+    expect(
+      registry!.register({
+        processId: staleExecutorId,
+        parentProcessId: nestedTimId,
+        ownerProcessId: nestedTimId,
+        kind: 'executor',
+        label: 'stale executor',
+        startedAt: '2026-03-17T10:00:04.000Z',
+        state: 'running',
+      })
+    ).toBeDefined();
+    registry!.exit(staleExecutorId);
+
+    const port = (adapter as any).sessionServer.port as number;
+    const ws = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+    const messages: HeadlessMessage[] = [];
+    ws.addEventListener('message', (event) => {
+      const parsed = parseMessage(event.data as string);
+      if (parsed) {
+        messages.push(parsed);
+      }
+    });
+    await waitFor(() => messages.some((message) => message.type === 'replay_end'));
+
+    ws.send(
+      JSON.stringify({
+        type: 'terminate_executor',
+        requestId: 'remote-request',
+        executorId,
+      })
+    );
+    await waitFor(() =>
+      routedRequests.some(
+        (request) => request.executorId === executorId && request.requestId === 'remote-request'
+      )
+    );
+    expect(routedRequests).toEqual([{ executorId, requestId: 'remote-request' }]);
+
+    registry!.emitTerminationResult({
+      executorId,
+      requestId: 'remote-request',
+      result: 'terminated',
+    });
+    await waitFor(() =>
+      messages.some(
+        (message) =>
+          message.type === 'executor_termination_result' && message.requestId === 'remote-request'
+      )
+    );
+    expect(
+      messages.find(
+        (message) =>
+          message.type === 'executor_termination_result' && message.requestId === 'remote-request'
+      )
+    ).toMatchObject({ executorId, result: 'terminated' });
+
+    ws.send(
+      JSON.stringify({
+        type: 'terminate_executor',
+        requestId: 'signal-failure-request',
+        executorId,
+      })
+    );
+    await waitFor(() =>
+      routedRequests.some(
+        (request) =>
+          request.executorId === executorId && request.requestId === 'signal-failure-request'
+      )
+    );
+    registry!.emitTerminationResult({
+      executorId,
+      requestId: 'signal-failure-request',
+      result: 'signal_failed',
+      error: 'permission denied',
+    });
+    await waitFor(() =>
+      messages.some(
+        (message) =>
+          message.type === 'executor_termination_result' &&
+          message.requestId === 'signal-failure-request'
+      )
+    );
+    expect(
+      messages.find(
+        (message) =>
+          message.type === 'executor_termination_result' &&
+          message.requestId === 'signal-failure-request'
+      )
+    ).toEqual({
+      type: 'executor_termination_result',
+      requestId: 'signal-failure-request',
+      executorId,
+      result: 'signal_failed',
+      error: 'permission denied',
+    });
+
+    ws.send(
+      JSON.stringify({
+        type: 'terminate_executor',
+        requestId: 'missing-request',
+        executorId: 'missing-executor',
+      })
+    );
+    ws.send(
+      JSON.stringify({
+        type: 'terminate_executor',
+        requestId: 'tim-request',
+        executorId: root.processId,
+      })
+    );
+    ws.send(
+      JSON.stringify({
+        type: 'terminate_executor',
+        requestId: 'stale-request',
+        executorId: staleExecutorId,
+      })
+    );
+    await waitFor(
+      () => messages.filter((message) => message.type === 'executor_termination_result').length >= 4
+    );
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'executor_termination_result',
+          requestId: 'missing-request',
+          result: 'unknown_executor',
+        }),
+        expect.objectContaining({
+          type: 'executor_termination_result',
+          requestId: 'tim-request',
+          result: 'not_executor',
+        }),
+        expect.objectContaining({
+          type: 'executor_termination_result',
+          requestId: 'stale-request',
+          result: 'stale_target',
+        }),
+      ])
+    );
+
+    const endSession = vi.fn();
+    adapter.setEndSessionHandler(endSession);
+    const requestCountBeforeForce = routedRequests.length;
+    ws.send(JSON.stringify({ type: 'force_end_session' }));
+    await waitFor(() => routedRequests.length > requestCountBeforeForce);
+    expect(routedRequests).toContainEqual({ executorId, requestId: undefined });
+
+    const requestCountBeforeEnd = routedRequests.length;
+    ws.send(JSON.stringify({ type: 'end_session' }));
+    await waitFor(() => endSession.mock.calls.length === 1);
+    expect(routedRequests).toHaveLength(requestCountBeforeEnd);
+
+    ws.close();
+    await adapter.destroy();
+  });
+
+  it('fans out force end and root teardown to every connected nested owner', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);
+    const registry = adapter.getProcessRegistry();
+    expect(registry).toBeDefined();
+    const root = registry!.getSnapshot()[0]!;
+    const routedRequests: Array<{ channelId: string; executorId: ProcessId }> = [];
+
+    const branches = [
+      {
+        channelId: 'nested-channel-a',
+        ownerExecutorId: 'owner-executor-a' as ProcessId,
+        timId: 'nested-tim-a' as ProcessId,
+        executorId: 'nested-executor-a' as ProcessId,
+        startedAt: '2026-03-17T10:00:01.000Z',
+      },
+      {
+        channelId: 'nested-channel-b',
+        ownerExecutorId: 'owner-executor-b' as ProcessId,
+        timId: 'nested-tim-b' as ProcessId,
+        executorId: 'nested-executor-b' as ProcessId,
+        startedAt: '2026-03-17T10:00:02.000Z',
+      },
+    ];
+
+    for (const branch of branches) {
+      expect(
+        registry!.register({
+          processId: branch.ownerExecutorId,
+          parentProcessId: root.processId,
+          ownerProcessId: root.processId,
+          kind: 'executor',
+          label: branch.ownerExecutorId,
+          startedAt: branch.startedAt,
+          state: 'running',
+        })
+      ).toBeDefined();
+      expect(
+        registry!.registerOwnerChannelSender(branch.channelId, (executorId) => {
+          routedRequests.push({ channelId: branch.channelId, executorId });
+          return true;
+        })
+      ).toBe(true);
+      expect(
+        registry!.register(
+          {
+            processId: branch.timId,
+            parentProcessId: branch.ownerExecutorId,
+            ownerProcessId: branch.ownerExecutorId,
+            kind: 'tim',
+            label: branch.timId,
+            startedAt: branch.startedAt,
+            state: 'running',
+          },
+          { ownerChannelId: branch.channelId }
+        )
+      ).toBeDefined();
+      expect(
+        registry!.register({
+          processId: branch.executorId,
+          parentProcessId: branch.timId,
+          ownerProcessId: branch.timId,
+          kind: 'executor',
+          label: branch.executorId,
+          startedAt: branch.startedAt,
+          state: 'running',
+        })
+      ).toBeDefined();
+    }
+
+    const port = (adapter as any).sessionServer.port as number;
+    const ws = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+    const messages: HeadlessMessage[] = [];
+    ws.addEventListener('message', (event) => {
+      const parsed = parseMessage(event.data as string);
+      if (parsed) {
+        messages.push(parsed);
+      }
+    });
+    await waitFor(() => messages.some((message) => message.type === 'replay_end'));
+
+    const endSession = vi.fn();
+    adapter.setEndSessionHandler(endSession);
+    ws.send(JSON.stringify({ type: 'force_end_session' } satisfies HeadlessServerMessage));
+    await waitFor(() => routedRequests.length === branches.length);
+    expect(routedRequests).toEqual([
+      { channelId: 'nested-channel-a', executorId: 'nested-executor-a' },
+      { channelId: 'nested-channel-b', executorId: 'nested-executor-b' },
+    ]);
+
+    const requestCountBeforeGracefulEnd = routedRequests.length;
+    ws.send(JSON.stringify({ type: 'end_session' } satisfies HeadlessServerMessage));
+    await waitFor(() => endSession.mock.calls.length === 1);
+    expect(routedRequests).toHaveLength(requestCountBeforeGracefulEnd);
+
+    await adapter.destroy();
+    expect(routedRequests).toEqual([
+      { channelId: 'nested-channel-a', executorId: 'nested-executor-a' },
+      { channelId: 'nested-channel-b', executorId: 'nested-executor-b' },
+      { channelId: 'nested-channel-a', executorId: 'nested-executor-a' },
+      { channelId: 'nested-channel-b', executorId: 'nested-executor-b' },
+    ]);
+
+    const registryInternals = registry as unknown as {
+      listeners: Set<unknown>;
+      terminationResultListeners: Set<unknown>;
+    };
+    expect(registryInternals.listeners.size).toBe(0);
+    expect(registryInternals.terminationResultListeners.size).toBe(0);
   });
 
   it('sends PTY session info and buffered output without structured replay markers', async () => {

@@ -8,7 +8,7 @@ import { formatStructuredMessage } from '../../logging/console_formatter.js';
 import type { StructuredMessage } from '../../logging/structured_messages.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
-import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
+import { createExecutorTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
 import { codexReasoningLevelSchema, type CodexReasoningLevel } from '../executors/schemas.js';
@@ -321,7 +321,7 @@ async function executeClaudePrompt(
     try {
       tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
       tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
-      tunnelServer = await createTunnelServer(tunnelSocketPath);
+      tunnelServer = await createExecutorTunnelServer(tunnelSocketPath);
     } catch (err) {
       debugLog('Could not create tunnel server for output forwarding:', err);
     }
@@ -339,6 +339,7 @@ async function executeClaudePrompt(
 
   try {
     const result = await spawnAndLogOutput(args, {
+      sessionProcessLabel: 'Claude prompt',
       cwd: options.cwd,
       env: {
         TIM_EXECUTOR: 'claude',
@@ -437,7 +438,7 @@ async function executeCodexPrompt(
     if (!isTunnelActive()) {
       try {
         tunnelSocketPath = path.join(tempDir, 'output.sock');
-        tunnelServer = await createTunnelServer(tunnelSocketPath);
+        tunnelServer = await createExecutorTunnelServer(tunnelSocketPath);
       } catch (err) {
         debugLog('Could not create tunnel server for output forwarding:', err);
       }
@@ -455,6 +456,7 @@ async function executeCodexPrompt(
     const formatter = createCodexStdoutFormatter();
     let killedByTimeout = false;
     const result = await spawnAndLogOutput(args, {
+      sessionProcessLabel: 'Codex prompt',
       cwd: options.cwd,
       env: {
         TIM_EXECUTOR: 'codex',
@@ -526,6 +528,7 @@ async function executeCodexPrompt(
       );
       let correctionKilledByTimeout = false;
       const correctionResult = await spawnAndLogOutput(correctionArgs, {
+        sessionProcessLabel: 'Codex schema correction',
         cwd: options.cwd,
         env: {
           TIM_EXECUTOR: 'codex',
@@ -584,6 +587,7 @@ async function executeCodexPrompt(
         );
         let conversionKilledByTimeout = false;
         const conversionResult = await spawnAndLogOutput(conversionArgs, {
+          sessionProcessLabel: 'Codex schema conversion',
           cwd: options.cwd,
           env: {
             TIM_EXECUTOR: 'codex',

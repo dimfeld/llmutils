@@ -1,6 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { StructuredMessage } from './structured_messages.js';
 import type { WriteOptions } from './tunnel_protocol.js';
+import {
+  getCurrentSessionProcessOwner,
+  getSessionProcessOwnerForAdapter,
+  runWithSessionProcessOwner,
+} from '../common/session_process_control.js';
 
 /**
  * Interface that all logger adapters must implement.
@@ -52,7 +57,8 @@ export function getLoggerAdapter(): LoggerAdapter | undefined {
 export function runWithLogger<T>(adapter: LoggerAdapter, callback: () => Promise<T>): Promise<T> {
   return adapterStorage.run(adapter, async () => {
     try {
-      return await callback();
+      const owner = getSessionProcessOwnerForAdapter(adapter) ?? getCurrentSessionProcessOwner();
+      return await (owner ? runWithSessionProcessOwner(owner, callback) : callback());
     } catch (e) {
       adapter.error(e);
       throw e;

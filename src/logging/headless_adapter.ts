@@ -11,6 +11,23 @@ import type {
 import { serializeArgs } from './tunnel_protocol.js';
 import type { TunnelMessage, WriteOptions } from './tunnel_protocol.js';
 import { debug } from '../common/process_state.js';
+import {
+  registerSessionProcessOwner,
+  SessionProcessOwner,
+  unregisterSessionProcessOwner,
+  type SessionProcessTerminationResult,
+} from '../common/session_process_control.js';
+import {
+  createProcessId,
+  SessionProcessRegistry,
+  SessionProcessRegistryLifecycleSink,
+  TIM_OWNER_PROCESS_ID,
+  TIM_PARENT_PROCESS_ID,
+  TIM_PROCESS_ID,
+  TIM_SESSION_ID,
+  type ProcessId,
+  type SessionProcessChange,
+} from '../common/session_process.js';
 import type { StructuredMessage } from './structured_messages.js';
 import {
   startEmbeddedServer,
@@ -60,7 +77,12 @@ export class HeadlessAdapter implements LoggerAdapter {
   private readonly serverSessionId?: string;
   private readonly serverStartedAt?: string;
   private readonly onDestroy?: () => void;
+  private readonly processRegistry?: SessionProcessRegistry;
+  private readonly processOwner?: SessionProcessOwner;
+  private readonly processEnvironmentBefore: Record<string, string | undefined> = {};
   private sessionInfoFilePath?: string;
+  private processRegistryUnsubscribe?: () => void;
+  private processTerminationResultUnsubscribe?: () => void;
   private destroyHookFired = false;
 
   private sessionServer: EmbeddedServerHandle | undefined;
@@ -79,6 +101,14 @@ export class HeadlessAdapter implements LoggerAdapter {
   private endSessionHandler?: () => void;
   private forceEndSessionHandler?: () => void;
   private hasBrowserNotificationSubscribers = false;
+  private readonly pendingTerminationRequests = new Map<
+    string,
+    {
+      connectionId: string;
+      executorId: ProcessId;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
 
   constructor(
     sessionInfo: HeadlessSessionInfo,
@@ -96,19 +126,62 @@ export class HeadlessAdapter implements LoggerAdapter {
     if (options && 'serverPort' in options && options.serverPort != null) {
       this.serverSessionId = crypto.randomUUID();
       this.serverStartedAt = new Date().toISOString();
-      this.sessionServer = startEmbeddedServer({
-        port: options.serverPort,
-        hostname: options.serverHostname,
-        bearerToken: options.bearerToken,
-        onConnect: (connectionId) => this.sendReplayToServerClient(connectionId),
-        onMessage: (_connectionId, message) => this.handleServerMessage(message),
-        onDisconnect: () => {
-          if (!this.hasConnectedClients()) {
-            this.hasBrowserNotificationSubscribers = false;
+      this.processRegistry = new SessionProcessRegistry({ sessionId: this.serverSessionId });
+      const rootProcessId = createProcessId();
+      this.processRegistry.register({
+        processId: rootProcessId,
+        kind: 'tim',
+        label: `tim ${sessionInfo.command}`,
+        pid: process.pid,
+        command: process.argv.join(' '),
+        startedAt: this.serverStartedAt,
+        state: 'running',
+      });
+      this.processOwner = new SessionProcessOwner({
+        sessionId: this.serverSessionId,
+        ownerProcessId: rootProcessId,
+        lifecycleSink: new SessionProcessRegistryLifecycleSink(this.processRegistry),
+        onTerminationResult: (executorId, result, error) => {
+          if (result === 'signal_failed' || result === 'unknown_process_state') {
+            const detail = error instanceof Error ? `: ${error.message}` : '';
+            this.wrappedAdapter.warn(`Could not terminate executor ${executorId}${detail}`);
           }
         },
       });
-      this.writeSessionInfoFile();
+      this.setRootProcessEnvironment(this.serverSessionId, rootProcessId);
+      this.processRegistryUnsubscribe = this.processRegistry.subscribe((change) => {
+        this.broadcastProcessTreeUpdate();
+        this.handleProcessRegistryChange(change);
+      });
+      this.processTerminationResultUnsubscribe = this.processRegistry.subscribeTerminationResults(
+        (event) => {
+          this.handleProcessTerminationResult(event);
+        }
+      );
+      registerSessionProcessOwner(this, this.processOwner);
+      try {
+        this.sessionServer = startEmbeddedServer({
+          port: options.serverPort,
+          hostname: options.serverHostname,
+          bearerToken: options.bearerToken,
+          onConnect: (connectionId) => this.sendReplayToServerClient(connectionId),
+          onMessage: (connectionId, message) => this.handleServerMessage(connectionId, message),
+          onDisconnect: (connectionId) => {
+            this.clearPendingTerminationRequests(connectionId);
+            if (!this.hasConnectedClients()) {
+              this.hasBrowserNotificationSubscribers = false;
+            }
+          },
+        });
+        this.writeSessionInfoFile();
+      } catch (error) {
+        try {
+          this.stopSessionServer();
+        } finally {
+          this.disposeProcessTracking();
+        }
+        throw error;
+      }
     }
   }
 
@@ -181,6 +254,8 @@ export class HeadlessAdapter implements LoggerAdapter {
   destroySync(): void {
     this.destroyed = true;
     this.rejectAllPending();
+    this.terminateAllRegisteredExecutors();
+    this.disposeProcessTracking();
     this.stopSessionServer();
     this.fireDestroyHook();
   }
@@ -214,6 +289,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   async destroy(): Promise<void> {
     this.destroyed = true;
     this.rejectAllPending();
+    this.terminateAllRegisteredExecutors();
 
     const sessionServer = this.sessionServer;
     if (sessionServer && this.hasConnectedClients()) {
@@ -221,14 +297,26 @@ export class HeadlessAdapter implements LoggerAdapter {
       await sessionServer.drain();
     }
 
+    this.disposeProcessTracking();
     this.stopSessionServer();
     this.fireDestroyHook();
+  }
+
+  /** Returns the local authoritative process registry for this root session. */
+  getProcessRegistry(): SessionProcessRegistry | undefined {
+    return this.processRegistry;
+  }
+
+  /** Routes a targeted control request to a direct executor child. */
+  terminateExecutor(executorId: ProcessId): SessionProcessTerminationResult {
+    const result = this.routeExecutorTermination(executorId);
+    return result === 'pending' ? 'requested' : result;
   }
 
   /**
    * Handles an incoming server→client message from the websocket.
    */
-  private handleServerMessage(message: HeadlessServerMessage): void {
+  private handleServerMessage(connectionId: string, message: HeadlessServerMessage): void {
     switch (message.type) {
       case 'prompt_response': {
         const pending = this.pendingPrompts.get(message.requestId);
@@ -283,6 +371,7 @@ export class HeadlessAdapter implements LoggerAdapter {
         break;
       case 'force_end_session':
         this.rejectAllPending('Session force ended');
+        this.terminateAllRegisteredExecutors();
         try {
           this.forceEndSessionHandler?.();
         } catch (err) {
@@ -292,6 +381,22 @@ export class HeadlessAdapter implements LoggerAdapter {
       case 'notification_subscribers_changed':
         this.hasBrowserNotificationSubscribers = message.hasSubscribers;
         break;
+      case 'terminate_executor': {
+        const result = this.requestExecutorTermination(
+          connectionId,
+          message.executorId,
+          message.requestId
+        );
+        if (result !== 'pending') {
+          this.sendExecutorTerminationResult(
+            connectionId,
+            message.requestId,
+            message.executorId,
+            result
+          );
+        }
+        break;
+      }
     }
   }
 
@@ -313,6 +418,208 @@ export class HeadlessAdapter implements LoggerAdapter {
 
   setForceEndSessionHandler(callback: (() => void) | undefined): void {
     this.forceEndSessionHandler = callback;
+  }
+
+  private requestExecutorTermination(
+    connectionId: string,
+    executorId: ProcessId,
+    requestId: string
+  ): SessionProcessTerminationResult | 'pending' {
+    const existing = this.pendingTerminationRequests.get(requestId);
+    if (existing) {
+      return existing.connectionId === connectionId && existing.executorId === executorId
+        ? 'pending'
+        : 'send_failed';
+    }
+
+    const result = this.routeExecutorTermination(executorId, requestId, () => {
+      const timer = setTimeout(() => {
+        const pending = this.pendingTerminationRequests.get(requestId);
+        if (!pending || pending.executorId !== executorId) {
+          return;
+        }
+        this.pendingTerminationRequests.delete(requestId);
+        this.sendExecutorTerminationResult(
+          pending.connectionId,
+          requestId,
+          executorId,
+          'request_timeout'
+        );
+      }, 10_000);
+      timer.unref?.();
+      this.pendingTerminationRequests.set(requestId, { connectionId, executorId, timer });
+    });
+
+    if (result !== 'pending') {
+      const pending = this.pendingTerminationRequests.get(requestId);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pendingTerminationRequests.delete(requestId);
+      }
+    }
+    return result;
+  }
+
+  /** Validates one target, then performs local termination or remote owner routing. */
+  private routeExecutorTermination(
+    executorId: ProcessId,
+    requestId?: string,
+    prepareRemoteRoute?: () => void
+  ): SessionProcessTerminationResult | 'pending' {
+    const registry = this.processRegistry;
+    if (!registry) {
+      return 'unknown_executor';
+    }
+
+    const executor = registry.get(executorId);
+    if (!executor) {
+      return 'unknown_executor';
+    }
+    if (executor.kind !== 'executor') {
+      return 'not_executor';
+    }
+    if (executor.state === 'exited' || executor.state === 'orphaned') {
+      return 'stale_target';
+    }
+
+    const processOwner = this.processOwner;
+    if (processOwner && executor.ownerProcessId === processOwner.ownerProcessId) {
+      return processOwner.terminateExecutor(executorId);
+    }
+
+    if (!executor.ownerProcessId || !registry.get(executor.ownerProcessId)) {
+      return 'owner_not_registered';
+    }
+
+    prepareRemoteRoute?.();
+    const route = registry.sendTerminationToOwner(executorId, requestId);
+    if (route === 'sent') {
+      return requestId ? 'pending' : 'requested';
+    }
+    return route;
+  }
+
+  private clearPendingTerminationRequests(connectionId?: string): void {
+    for (const [requestId, pending] of this.pendingTerminationRequests) {
+      if (connectionId !== undefined && pending.connectionId !== connectionId) {
+        continue;
+      }
+      clearTimeout(pending.timer);
+      this.pendingTerminationRequests.delete(requestId);
+    }
+  }
+
+  private sendExecutorTerminationResult(
+    connectionId: string,
+    requestId: string,
+    executorId: ProcessId,
+    result: SessionProcessTerminationResult,
+    error?: string
+  ): void {
+    this.sessionServer?.sendTo(connectionId, {
+      type: 'executor_termination_result',
+      requestId,
+      executorId,
+      result,
+      ...(error ? { error } : {}),
+    });
+  }
+
+  private handleProcessTerminationResult(event: {
+    executorId: ProcessId;
+    requestId: string;
+    result: SessionProcessTerminationResult;
+    error?: string;
+  }): void {
+    if (!this.pendingTerminationRequests.has(event.requestId)) {
+      return;
+    }
+
+    const pending = this.pendingTerminationRequests.get(event.requestId);
+    if (!pending || pending.executorId !== event.executorId) {
+      return;
+    }
+
+    this.completePendingTermination(event.requestId, event.result, event.error);
+  }
+
+  private handleProcessRegistryChange(change: SessionProcessChange): void {
+    if (change.type === 'exited') {
+      this.completePendingTerminationForExecutor(change.node.processId, 'already_exited');
+      for (const processId of change.orphanedProcessIds) {
+        this.completePendingTerminationForExecutor(processId, 'owner_not_connected');
+      }
+      return;
+    }
+
+    if (change.type === 'owner_lost') {
+      for (const processId of change.processIds) {
+        this.completePendingTerminationForExecutor(processId, 'owner_not_connected');
+      }
+      return;
+    }
+
+    if (change.type === 'removed') {
+      for (const processId of change.processIds) {
+        this.completePendingTerminationForExecutor(processId, 'unknown_executor');
+      }
+    }
+  }
+
+  private completePendingTerminationForExecutor(
+    executorId: ProcessId,
+    result: SessionProcessTerminationResult
+  ): void {
+    for (const [requestId, pending] of this.pendingTerminationRequests) {
+      if (pending.executorId === executorId) {
+        this.completePendingTermination(requestId, result);
+      }
+    }
+  }
+
+  private completePendingTermination(
+    requestId: string,
+    result: SessionProcessTerminationResult,
+    error?: string
+  ): void {
+    const pending = this.pendingTerminationRequests.get(requestId);
+    if (!pending) {
+      return;
+    }
+
+    clearTimeout(pending.timer);
+    this.pendingTerminationRequests.delete(requestId);
+    this.sendExecutorTerminationResult(
+      pending.connectionId,
+      requestId,
+      pending.executorId,
+      result,
+      error
+    );
+  }
+
+  /** Requests termination from every currently registered executor owner. */
+  private terminateAllRegisteredExecutors(): void {
+    const registry = this.processRegistry;
+    if (!registry) {
+      return;
+    }
+
+    for (const node of registry.getSnapshot()) {
+      if (node.kind !== 'executor' || node.state === 'exited' || node.state === 'orphaned') {
+        continue;
+      }
+
+      const result = this.terminateExecutor(node.processId);
+      if (
+        result === 'signal_failed' ||
+        result === 'unknown_process_state' ||
+        result === 'owner_not_connected' ||
+        result === 'send_failed'
+      ) {
+        this.wrappedAdapter.warn(`Could not terminate executor ${node.processId}: ${result}`);
+      }
+    }
   }
 
   waitForPromptResponse(requestId: string): { promise: Promise<unknown>; cancel: () => void } {
@@ -438,6 +745,10 @@ export class HeadlessAdapter implements LoggerAdapter {
       type: 'session_info',
       sessionId: this.serverSessionId,
     });
+    server.sendTo(connectionId, {
+      type: 'process_tree_snapshot',
+      processes: this.processRegistry?.getSnapshot() ?? [],
+    });
     if (this.sessionInfo.pty) {
       for (const entry of this.ptyBuffer) {
         server.sendTo(connectionId, this.ptyOutputFrame(entry));
@@ -457,6 +768,17 @@ export class HeadlessAdapter implements LoggerAdapter {
       server.sendToRaw(connectionId, entry.payload);
     }
     server.sendTo(connectionId, { type: 'replay_end' });
+  }
+
+  private broadcastProcessTreeUpdate(): void {
+    if (this.destroyed || !this.sessionServer || !this.processRegistry) {
+      return;
+    }
+
+    this.sessionServer.broadcast({
+      type: 'process_tree_update',
+      processes: this.processRegistry.getSnapshot(),
+    });
   }
 
   private buildSessionInfoFile(): SessionInfoFile | undefined {
@@ -503,6 +825,47 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.sessionServer.stop();
     this.sessionServer = undefined;
     removeSessionInfoFile(process.pid, this.sessionInfoFilePath);
+  }
+
+  private setRootProcessEnvironment(sessionId: string, processId: ProcessId): void {
+    for (const key of [
+      TIM_SESSION_ID,
+      TIM_PROCESS_ID,
+      TIM_PARENT_PROCESS_ID,
+      TIM_OWNER_PROCESS_ID,
+    ]) {
+      this.processEnvironmentBefore[key] = process.env[key];
+    }
+    process.env[TIM_SESSION_ID] = sessionId;
+    process.env[TIM_PROCESS_ID] = processId;
+    delete process.env[TIM_PARENT_PROCESS_ID];
+    delete process.env[TIM_OWNER_PROCESS_ID];
+  }
+
+  private disposeProcessTracking(): void {
+    if (!this.processOwner) {
+      return;
+    }
+    this.processRegistryUnsubscribe?.();
+    this.processRegistryUnsubscribe = undefined;
+    this.processTerminationResultUnsubscribe?.();
+    this.processTerminationResultUnsubscribe = undefined;
+    this.clearPendingTerminationRequests();
+    this.processOwner.dispose();
+    unregisterSessionProcessOwner(this);
+    for (const key of [
+      TIM_SESSION_ID,
+      TIM_PROCESS_ID,
+      TIM_PARENT_PROCESS_ID,
+      TIM_OWNER_PROCESS_ID,
+    ]) {
+      const value = this.processEnvironmentBefore[key];
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
   }
 
   private broadcastSessionInfo(): void {

@@ -34,7 +34,7 @@ import { addPermission, getPermissions } from '../db/permission.js';
 import { getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
-import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
+import { createExecutorTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
 import { setupPermissionsMcp } from './claude_code/permissions_mcp_setup.js';
@@ -686,7 +686,7 @@ export class ClaudeCodeExecutor implements Executor {
     if (!isTunnelActive()) {
       try {
         const promptHandler = createPromptRequestHandler();
-        tunnelServer = await createTunnelServer(tunnelSocketPath, {
+        tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
           onPromptRequest: promptHandler,
         });
       } catch (err) {
@@ -778,6 +778,7 @@ export class ClaudeCodeExecutor implements Executor {
       let killedByTimeout = false;
       resetToolUseCache();
       const streaming = await spawnWithStreamingIO(args, {
+        sessionProcessLabel: 'Claude execution',
         env: {
           CLAUDECODE: '',
           TIM_EXECUTOR: 'claude',

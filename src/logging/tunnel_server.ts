@@ -14,17 +14,34 @@ import { getLoggerAdapter } from './adapter.js';
 import { ConsoleAdapter } from './console.js';
 import { indentEveryLine } from './console_formatter.js';
 import type {
+  ServerTunnelMessage,
   TunnelMessage,
+  TunnelProcessMessage,
   TunnelPromptResponseMessage,
   TunnelUserInputMessage,
 } from './tunnel_protocol.js';
-import { isStructuredTunnelMessage } from './tunnel_protocol.js';
+import { isStructuredTunnelMessage, isTunnelProcessMessage } from './tunnel_protocol.js';
 import {
   structuredMessageTypeList,
   type StructuredMessage,
   type PromptRequestMessage,
 } from './structured_messages.js';
 import { HeadlessAdapter } from './headless_adapter.js';
+import {
+  isProcessId,
+  isValidSessionProcessExit,
+  isValidSessionProcessRegistration,
+  isValidSessionProcessTerminationResultEvent,
+  isValidSessionProcessUpdate,
+  type ProcessId,
+  type SessionProcessRegistry,
+} from '../common/session_process.js';
+import { getCurrentSessionProcessRegistry } from '../common/session_process_control.js';
+import {
+  TunnelProcessRouter,
+  type TunnelControlResult,
+  type TunnelProcessChannel,
+} from './tunnel_process_router.js';
 
 export const structuredMessageTypes = new Set<StructuredMessage['type']>(structuredMessageTypeList);
 
@@ -399,7 +416,36 @@ function createLineSplitter(): (input: string) => string[] {
  * Validates that a parsed JSON object has the expected structure for a TunnelMessage.
  * Returns true if the message is valid, false otherwise.
  */
-function isValidTunnelMessage(message: unknown): message is TunnelMessage {
+function isValidProcessMessage(message: Record<string, unknown>): boolean {
+  switch (message.type) {
+    case 'process_register':
+      return isValidSessionProcessRegistration(message, { requireProcessId: true });
+    case 'process_update':
+      return (
+        isProcessId(message.processId) &&
+        isValidSessionProcessUpdate(message, { requireChange: true }) &&
+        Object.keys(message).some((key) => key !== 'type' && key !== 'processId')
+      );
+    case 'process_exit':
+      return isProcessId(message.processId) && isValidSessionProcessExit(message);
+    case 'process_remove':
+      return (
+        isProcessId(message.processId) &&
+        (message.subtree === undefined || typeof message.subtree === 'boolean')
+      );
+    case 'terminate_executor_result':
+      return isValidSessionProcessTerminationResultEvent({
+        executorId: message.executorId,
+        requestId: message.requestId,
+        result: message.result,
+        error: message.error,
+      });
+    default:
+      return false;
+  }
+}
+
+export function isValidTunnelMessage(message: unknown): message is TunnelMessage {
   if (typeof message !== 'object' || message === null) {
     return false;
   }
@@ -419,6 +465,12 @@ function isValidTunnelMessage(message: unknown): message is TunnelMessage {
       );
     case 'structured':
       return isValidStructuredMessagePayload(msg.message);
+    case 'process_register':
+    case 'process_update':
+    case 'process_exit':
+    case 'process_remove':
+    case 'terminate_executor_result':
+      return isValidProcessMessage(msg);
     default:
       return false;
   }
@@ -429,6 +481,10 @@ function isValidTunnelMessage(message: unknown): message is TunnelMessage {
  * Malformed or unrecognized messages are silently dropped.
  */
 function dispatchMessage(message: TunnelMessage): void {
+  if (isTunnelProcessMessage(message)) {
+    return;
+  }
+
   const shouldIndent = shouldIndentForTerminalOutput();
 
   if (isStructuredTunnelMessage(message)) {
@@ -498,6 +554,9 @@ export type PromptRequestHandler = (
   respond: (response: TunnelPromptResponseMessage) => void
 ) => void | Promise<void>;
 
+export type TunnelClientChannel = TunnelProcessChannel;
+export type { TunnelControlResult } from './tunnel_process_router.js';
+
 /**
  * Options for creating a tunnel server.
  */
@@ -514,7 +573,15 @@ export interface TunnelServerOptions {
    * Optional callback invoked for every valid tunnel message received from clients.
    * This runs before the message is dispatched to normal logging handlers.
    */
-  onMessage?: (message: TunnelMessage) => void;
+  onMessage?: (message: TunnelMessage, client: TunnelClientChannel) => void;
+  /** Receives a stable channel as soon as a client connects. */
+  onClientConnect?: (client: TunnelClientChannel) => void;
+  /** Receives the same channel after the client disconnects. */
+  onClientDisconnect?: (client: TunnelClientChannel) => void;
+  /** Receives validated process lifecycle messages after registry handling. */
+  onProcessMessage?: (message: TunnelProcessMessage, client: TunnelClientChannel) => void;
+  /** Optional authoritative in-memory registry for lifecycle messages and routing. */
+  processRegistry?: SessionProcessRegistry;
 }
 
 /**
@@ -523,10 +590,38 @@ export interface TunnelServerOptions {
 export interface TunnelServer {
   /** The underlying net.Server instance */
   server: net.Server;
+  /** Stable channels for currently connected clients, keyed by channel ID. */
+  clients: ReadonlyMap<string, TunnelClientChannel>;
   /** Broadcasts user terminal input to all connected clients */
   sendUserInput: (content: string) => void;
+  /** Sends one server-to-client control message over a specific channel. */
+  sendToClient: (clientId: string, message: ServerTunnelMessage) => boolean;
+  /** Binds a registered tim owner to a connected client channel. */
+  bindOwnerToClient: (ownerProcessId: ProcessId, clientId: string) => boolean;
+  /** Routes a targeted executor termination request to its registered owner. */
+  sendExecutorTermination: (executorId: ProcessId, requestId?: string) => TunnelControlResult;
+  /** Alias used by callers that route more than termination controls. */
+  sendExecutorControl: (executorId: ProcessId, requestId?: string) => TunnelControlResult;
   /** Closes the server and removes the socket file */
   close: () => void;
+}
+
+/** Options for the tunnel owned by one executor process. */
+export type ExecutorTunnelServerOptions = Omit<TunnelServerOptions, 'processRegistry'>;
+
+/**
+ * Creates an executor tunnel with the registry from the current owner context.
+ * Keeping this lookup here prevents individual executor implementations from
+ * forgetting to attach process-control routing.
+ */
+export function createExecutorTunnelServer(
+  socketPath: string,
+  options?: ExecutorTunnelServerOptions
+): Promise<TunnelServer> {
+  return createTunnelServer(socketPath, {
+    ...options,
+    processRegistry: getCurrentSessionProcessRegistry(),
+  });
 }
 
 /**
@@ -548,7 +643,14 @@ export function createTunnelServer(
   socketPath: string,
   options?: TunnelServerOptions
 ): Promise<TunnelServer> {
-  const { onPromptRequest, onMessage } = options ?? {};
+  const {
+    onPromptRequest,
+    onMessage,
+    onClientConnect,
+    onClientDisconnect,
+    onProcessMessage,
+    processRegistry,
+  } = options ?? {};
 
   return new Promise<TunnelServer>((resolve, reject) => {
     // Remove any stale socket file from a previous run
@@ -558,40 +660,111 @@ export function createTunnelServer(
       // File doesn't exist, that's fine
     }
 
-    const clients = new Set<net.Socket>();
+    interface TunnelClientState {
+      socket: net.Socket;
+      channel: TunnelClientChannel;
+      connected: boolean;
+    }
+
+    const clients = new Map<string, TunnelClientChannel>();
+    const clientStates = new Map<string, TunnelClientState>();
+    const processRouter = new TunnelProcessRouter(processRegistry);
+
+    let disconnectClient: (clientId: string) => void = () => {};
+
+    const createClientChannel = (socket: net.Socket): TunnelClientState => {
+      const clientId = crypto.randomUUID();
+      const state = {} as TunnelClientState;
+      const channel: TunnelClientChannel = {
+        id: clientId,
+        get connected(): boolean {
+          return state.connected && !socket.destroyed;
+        },
+        send: (message: ServerTunnelMessage): boolean => {
+          if (!state.connected || socket.destroyed) {
+            return false;
+          }
+          try {
+            socket.write(`${JSON.stringify(message)}\n`);
+            return true;
+          } catch {
+            state.connected = false;
+            disconnectClient(clientId);
+            return false;
+          }
+        },
+      };
+      state.socket = socket;
+      state.channel = channel;
+      state.connected = true;
+      clients.set(clientId, channel);
+      clientStates.set(clientId, state);
+      processRouter.registerClient(channel);
+      return state;
+    };
+
+    const handleProcessMessage = (
+      message: TunnelProcessMessage,
+      client: TunnelClientChannel
+    ): boolean => {
+      return processRouter.handleProcessMessage(message, client);
+    };
+
+    disconnectClient = (clientId: string): void => {
+      const state = clientStates.get(clientId);
+      if (!state) {
+        return;
+      }
+      state.connected = false;
+      clients.delete(clientId);
+      clientStates.delete(clientId);
+      processRouter.unregisterClient(clientId);
+      try {
+        onClientDisconnect?.(state.channel);
+      } catch {
+        // Disconnect observers must not affect other clients.
+      }
+    };
+
+    const sendToClient = (clientId: string, message: ServerTunnelMessage): boolean => {
+      return clients.get(clientId)?.send(message) ?? false;
+    };
+
+    const bindOwnerToClient = (ownerProcessId: ProcessId, clientId: string): boolean => {
+      return processRouter.bindOwnerToClient(ownerProcessId, clientId);
+    };
+
+    const sendExecutorTermination = (
+      executorId: ProcessId,
+      requestId?: string
+    ): TunnelControlResult => {
+      return processRouter.sendExecutorTermination(executorId, requestId);
+    };
+
+    const sendExecutorControl = (executorId: ProcessId, requestId?: string): TunnelControlResult =>
+      processRouter.sendExecutorControl(executorId, requestId);
 
     const sendUserInput = (content: string): void => {
       const message: TunnelUserInputMessage = { type: 'user_input', content };
-      const serialized = JSON.stringify(message) + '\n';
-
-      for (const client of clients) {
-        if (client.destroyed) {
-          clients.delete(client);
-          continue;
-        }
-        try {
-          client.write(serialized);
-        } catch {
-          // Socket write failed - drop this client
-          clients.delete(client);
-        }
+      for (const client of clients.values()) {
+        client.send(message);
       }
     };
 
     const server = net.createServer((socket) => {
-      clients.add(socket);
+      const state = createClientChannel(socket);
+      const { channel } = state;
       const splitLines = createLineSplitter();
 
-      /**
-       * Writes a JSONL-encoded server->client message back to this client socket.
-       */
+      try {
+        onClientConnect?.(channel);
+      } catch {
+        // A connect observer must not prevent protocol handling.
+      }
+
+      /** Writes a prompt response back to this stable client channel. */
       const writeResponse = (response: TunnelPromptResponseMessage): void => {
-        if (socket.destroyed) return;
-        try {
-          socket.write(JSON.stringify(response) + '\n');
-        } catch {
-          // Socket write failed - client is gone
-        }
+        channel.send(response);
       };
 
       socket.on('data', (data) => {
@@ -616,10 +789,21 @@ export function createTunnelServer(
 
           if (onMessage) {
             try {
-              onMessage(parsed);
+              onMessage(parsed, channel);
             } catch {
               // Ignore callback errors to avoid affecting tunnel behavior
             }
+          }
+
+          if (isTunnelProcessMessage(parsed)) {
+            if (handleProcessMessage(parsed, channel)) {
+              try {
+                onProcessMessage?.(parsed, channel);
+              } catch {
+                // Process observers must not affect protocol handling.
+              }
+            }
+            continue;
           }
 
           // Check if this is a prompt_request that needs special handling
@@ -660,10 +844,10 @@ export function createTunnelServer(
       });
 
       socket.on('error', () => {
-        // Client disconnected or errored - nothing to do
+        // Client disconnected or errored; close performs the cleanup.
       });
       socket.on('close', () => {
-        clients.delete(socket);
+        disconnectClient(channel.id);
       });
     });
 
@@ -678,6 +862,10 @@ export function createTunnelServer(
       if (closed) return;
       closed = true;
       unregister?.();
+      for (const state of Array.from(clientStates.values())) {
+        state.socket.destroy();
+        disconnectClient(state.channel.id);
+      }
       server.close();
       try {
         fs.unlinkSync(socketPath);
@@ -705,7 +893,16 @@ export function createTunnelServer(
 
     server.listen(socketPath, () => {
       listening = true;
-      resolve({ server, close, sendUserInput });
+      resolve({
+        server,
+        clients,
+        sendUserInput,
+        sendToClient,
+        bindOwnerToClient,
+        sendExecutorTermination,
+        sendExecutorControl,
+        close,
+      });
     });
   });
 }

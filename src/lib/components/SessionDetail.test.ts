@@ -83,6 +83,7 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
     projectId: overrides.projectId ?? 3,
     planContent: overrides.planContent ?? null,
     planTasks: overrides.planTasks ?? [],
+    processTree: overrides.processTree ?? [],
     messages: overrides.messages ?? [],
     activePrompts: overrides.activePrompts ?? [],
     isReplaying: overrides.isReplaying ?? false,
@@ -139,6 +140,89 @@ describe('SessionDetail', () => {
     const { body } = await render(SessionDetail, { props: { session } });
 
     expect(body).not.toContain('End Session');
+  });
+
+  test('shows a loading state in the process section for an active session with no tree yet', async () => {
+    const session = createSession({ status: 'active', processTree: [] });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('Loading processes');
+    expect(body).toContain('role="status"');
+    expect(body).not.toContain('role="tree"');
+  });
+
+  test('does not render a process section for an offline session with no tracked processes', async () => {
+    const session = createSession({ status: 'offline', processTree: [] });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).not.toContain('Loading processes');
+    expect(body).not.toContain('No active processes');
+    expect(body).not.toContain('role="tree"');
+  });
+
+  test('does not render a process section for a notification session with no tracked processes', async () => {
+    const session = createSession({ status: 'notification', processTree: [] });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).not.toContain('Loading processes');
+    expect(body).not.toContain('No active processes');
+    expect(body).not.toContain('role="tree"');
+  });
+
+  test('renders the process tree section alongside, but distinct from, End Session controls', async () => {
+    const session = createSession({
+      status: 'active',
+      processTree: [
+        {
+          processId: 'tim1',
+          kind: 'tim',
+          label: 'root agent',
+          startedAt: '2026-03-25T10:00:00.000Z',
+          state: 'running',
+        },
+        {
+          processId: 'exec1',
+          parentProcessId: 'tim1',
+          kind: 'executor',
+          label: 'claude streaming',
+          startedAt: '2026-03-25T10:00:00.000Z',
+          state: 'running',
+        },
+      ],
+    });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('role="tree"');
+    expect(body).toContain('aria-label="Session processes"');
+    expect(body).toContain('root agent');
+    expect(body).toContain('claude streaming');
+    // The executor's Terminate action is a distinct control from the
+    // session-wide End Session button and must not be confused with it.
+    expect(body).toContain('Terminate claude streaming');
+    expect(body).toContain('End Session');
+    expect(body).not.toContain('Terminate root agent');
+  });
+
+  test('renders the process tree for offline sessions without a Terminate action', async () => {
+    const session = createSession({
+      status: 'offline',
+      processTree: [
+        {
+          processId: 'exec1',
+          kind: 'executor',
+          label: 'claude streaming',
+          startedAt: '2026-03-25T10:00:00.000Z',
+          state: 'exited',
+          exitCode: 0,
+        },
+      ],
+    });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('role="tree"');
+    expect(body).toContain('claude streaming');
+    expect(body).not.toContain('End Session');
+    expect(body).not.toContain('Terminate claude streaming');
   });
 
   test('renders message input with aria-label when session has active freeform prompt', async () => {

@@ -8,6 +8,11 @@ import type {
   HeadlessServerMessage,
   HeadlessSessionInfo,
 } from '../../logging/headless_protocol.js';
+import { toProcessId, type SessionProcessNode } from '../../common/session_process.js';
+import type {
+  SessionExecutorTerminationResult,
+  SessionExecutorTerminationStatus,
+} from '$lib/types/session.js';
 import type {
   FileChangeItem,
   PromptConfig,
@@ -132,6 +137,7 @@ export interface SessionData {
   projectId: number | null;
   planContent: string | null;
   planTasks: SessionPlanTask[];
+  processTree: SessionProcessNode[];
   messages: DisplayMessage[];
   activePrompts: ActivePrompt[];
   isReplaying: boolean;
@@ -164,6 +170,10 @@ export interface SessionManagerEvents {
     planContent: string;
     planTasks: SessionPlanTask[];
   };
+  'session:process-tree': {
+    connectionId: string;
+    processTree: SessionProcessNode[];
+  };
   'session:prompt': { connectionId: string; prompt: ActivePrompt };
   'session:prompt-cleared': { connectionId: string; requestId: string };
   'session:dismissed': { connectionId: string };
@@ -183,12 +193,20 @@ interface SessionInternals {
   messageBytes: number;
 }
 
+interface PendingExecutorTermination {
+  connectionId: string;
+  executorId: string;
+  resolve: (result: SessionExecutorTerminationResult) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 const SESSION_EVENT_NAMES: SessionEventName[] = [
   'session:new',
   'session:update',
   'session:disconnect',
   'session:message',
   'session:plan-content',
+  'session:process-tree',
   'session:prompt',
   'session:prompt-cleared',
   'session:dismissed',
@@ -199,6 +217,7 @@ const SESSION_EVENT_NAMES: SessionEventName[] = [
 
 const NOTIFICATION_SEQ = 0;
 const MAX_SNAPSHOT_MESSAGES = 500;
+const EXECUTOR_TERMINATION_TIMEOUT_MS = 10_000;
 const MAX_PTY_OUTPUT_CACHE_BYTES = 256 * 1024;
 const INTERACTIVE_NOTIFICATION_EXCLUDED_COMMANDS = new Set(['agent', 'review-guide']);
 // Also bound the cache by frame count so a flood of empty/tiny pty_output frames
@@ -398,6 +417,12 @@ export function formatTunnelMessage(
         },
         rawType: message.type,
       };
+    case 'process_register':
+    case 'process_update':
+    case 'process_exit':
+    case 'process_remove':
+    case 'terminate_executor_result':
+      return null;
   }
 }
 
@@ -407,6 +432,7 @@ export class SessionManager {
   private readonly sessionsByPlanUuid = new SvelteMap<string, SessionData[]>();
   private readonly sessionsByPrUrl = new SvelteMap<string, SessionData[]>();
   private readonly senders = new Map<string, AgentSender>();
+  private readonly pendingExecutorTerminations = new Map<string, PendingExecutorTermination>();
   private readonly ptySubscribers = new Map<string, Set<PtySubscriber>>();
   private readonly ptyOutputCaches = new Map<string, PtyOutputCache>();
   private readonly internals = new Map<string, SessionInternals>();
@@ -442,6 +468,21 @@ export class SessionManager {
     if (this.pruneTimer) {
       clearInterval(this.pruneTimer);
     }
+    this.resolvePendingExecutorTerminations(undefined, 'request_failed');
+  }
+
+  private resolvePendingExecutorTerminations(
+    connectionId: string | undefined,
+    status: 'offline' | 'request_failed'
+  ): void {
+    for (const [requestId, pending] of this.pendingExecutorTerminations) {
+      if (connectionId !== undefined && pending.connectionId !== connectionId) {
+        continue;
+      }
+      clearTimeout(pending.timer);
+      this.pendingExecutorTerminations.delete(requestId);
+      pending.resolve({ executorId: pending.executorId, status });
+    }
   }
 
   handleWebSocketConnect(
@@ -458,6 +499,7 @@ export class SessionManager {
       projectId: null,
       planContent: null,
       planTasks: [],
+      processTree: [],
       messages: [],
       activePrompts: [],
       isReplaying: false,
@@ -492,6 +534,7 @@ export class SessionManager {
 
   handleWebSocketDisconnect(connectionId: string): SessionData | null {
     this.senders.delete(connectionId);
+    this.resolvePendingExecutorTerminations(connectionId, 'offline');
     const session = this.sessions.get(connectionId);
     if (!session) {
       return null;
@@ -501,6 +544,7 @@ export class SessionManager {
     session.disconnectedAt = new Date().toISOString();
     session.isReplaying = false;
     session.activePrompts = [];
+    session.processTree = [];
 
     const internals = this.internals.get(connectionId);
     if (internals) {
@@ -601,6 +645,37 @@ export class SessionManager {
           planTasks: session.planTasks,
         });
         return;
+      case 'process_tree_snapshot':
+      case 'process_tree_update': {
+        if (session.status !== 'active') {
+          return;
+        }
+        session.processTree = message.processes.map((process) => ({ ...process }));
+        this.emit('session:process-tree', {
+          connectionId,
+          processTree: session.processTree.map((process) => ({ ...process })),
+        });
+        return;
+      }
+      case 'executor_termination_result': {
+        const pending = this.pendingExecutorTerminations.get(message.requestId);
+        if (
+          !pending ||
+          pending.connectionId !== connectionId ||
+          pending.executorId !== message.executorId
+        ) {
+          return;
+        }
+
+        clearTimeout(pending.timer);
+        this.pendingExecutorTerminations.delete(message.requestId);
+        pending.resolve({
+          executorId: message.executorId,
+          status: message.result as SessionExecutorTerminationStatus,
+          ...(message.error ? { message: message.error } : {}),
+        });
+        return;
+      }
       case 'output': {
         const displayMessage = formatTunnelMessage(
           connectionId,
@@ -675,6 +750,7 @@ export class SessionManager {
         projectId: this.resolveProjectId(payload.gitRemote),
         planContent: null,
         planTasks: [],
+        processTree: [],
         messages: [],
         activePrompts: [],
         isReplaying: false,
@@ -688,6 +764,7 @@ export class SessionManager {
     session.sessionInfo = sessionInfo;
     session.status = 'notification';
     session.disconnectedAt = now;
+    session.processTree = [];
     session.projectId = this.resolveProjectId(payload.gitRemote);
     session.groupKey = groupKey;
     const existingInternals = this.internals.get(connectionId);
@@ -775,6 +852,60 @@ export class SessionManager {
       type: 'user_input',
       content,
     });
+  }
+
+  async terminateExecutor(
+    connectionId: string,
+    executorId: string
+  ): Promise<SessionExecutorTerminationResult> {
+    const session = this.sessions.get(connectionId);
+    if (!session) {
+      return { executorId, status: 'session_not_found' };
+    }
+    if (session.status !== 'active' || !this.senders.has(connectionId)) {
+      return { executorId, status: 'offline' };
+    }
+
+    const processId = toProcessId(executorId);
+    if (!processId) {
+      return { executorId, status: 'unknown_executor' };
+    }
+
+    const requestId = crypto.randomUUID();
+    const resultPromise = new Promise<SessionExecutorTerminationResult>((resolve) => {
+      const timer = setTimeout(() => {
+        const pending = this.pendingExecutorTerminations.get(requestId);
+        if (!pending) {
+          return;
+        }
+        this.pendingExecutorTerminations.delete(requestId);
+        resolve({ executorId, status: 'request_timeout' });
+      }, EXECUTOR_TERMINATION_TIMEOUT_MS);
+      timer.unref?.();
+      this.pendingExecutorTerminations.set(requestId, {
+        connectionId,
+        executorId,
+        resolve,
+        timer,
+      });
+    });
+
+    if (
+      !this.trySend(connectionId, {
+        type: 'terminate_executor',
+        requestId,
+        executorId: processId,
+      })
+    ) {
+      const pending = this.pendingExecutorTerminations.get(requestId);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pendingExecutorTerminations.delete(requestId);
+        pending.resolve({ executorId, status: 'offline' });
+      }
+    }
+
+    return resultPromise;
   }
 
   sendPtyInput(connectionId: string, data: string): boolean {
@@ -1416,6 +1547,7 @@ export class SessionManager {
 
     this.removeSessionFromPlanIndex(session);
     this.removeSessionFromPrUrlIndex(session);
+    this.resolvePendingExecutorTerminations(connectionId, 'offline');
     this.sessions.delete(connectionId);
     this.senders.delete(connectionId);
     this.clearPtySessionState(connectionId);
@@ -1432,6 +1564,7 @@ export class SessionManager {
       ...session,
       sessionInfo: { ...session.sessionInfo },
       planTasks: session.planTasks.map((task) => ({ ...task })),
+      processTree: session.processTree.map((process) => ({ ...process })),
       messages: messages.map((message) => ({ ...message, body: cloneBody(message.body) })),
       activePrompts: !session.isReplaying ? session.activePrompts.map(cloneActivePrompt) : [],
     };
@@ -1443,6 +1576,7 @@ export class SessionManager {
       ...session,
       sessionInfo: { ...session.sessionInfo },
       planTasks: session.planTasks.map((task) => ({ ...task })),
+      processTree: session.processTree.map((process) => ({ ...process })),
       messages: [],
       activePrompts: !session.isReplaying ? session.activePrompts.map(cloneActivePrompt) : [],
     };

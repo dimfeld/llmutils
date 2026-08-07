@@ -3,14 +3,41 @@ import net from 'node:net';
 import path from 'node:path';
 import fs from 'node:fs';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
-import { TunnelAdapter, createTunnelAdapter, isTunnelActive } from './tunnel_client.ts';
+import {
+  TunnelAdapter,
+  TunnelSessionProcessLifecycleSink,
+  createTunnelAdapter,
+  isTunnelActive,
+  isValidServerTunnelMessage,
+} from './tunnel_client.ts';
+import { isValidTunnelMessage } from './tunnel_server.ts';
 import { TIM_OUTPUT_SOCKET } from './tunnel_protocol.ts';
 import type { TunnelMessage } from './tunnel_protocol.ts';
 import type { StructuredMessage } from './structured_messages.ts';
+import {
+  toProcessId,
+  normalizeSessionProcessCommand,
+  type ProcessId,
+  type SessionProcessRegistration,
+} from '../common/session_process.ts';
 
 // Use /tmp/claude as the base for mkdtemp to keep socket paths short enough
 // for the Unix domain socket path length limit (104 bytes on macOS).
 const TEMP_BASE = '/tmp/claude';
+
+function processId(value: string): ProcessId {
+  const result = toProcessId(value);
+  if (!result) {
+    throw new Error(`Invalid test process ID: ${value}`);
+  }
+  return result;
+}
+
+const MAX_PROCESS_COMMAND_LENGTH = 64 * 1024;
+
+function processCommand(length: number): string {
+  return `codex ${'prompt-token '.repeat(Math.ceil((length - 6) / 13))}`.slice(0, length);
+}
 
 /**
  * Helper: creates a real Unix domain socket server that collects received JSONL messages.
@@ -163,6 +190,140 @@ describe('TunnelAdapter', () => {
     testServer?.close();
     testServer = null;
     await rm(testDir, { recursive: true, force: true });
+  });
+
+  it('validates lifecycle payloads with the canonical process contract', () => {
+    let registration: SessionProcessRegistration | undefined;
+    let update: Record<string, unknown> | undefined;
+    let registrationCalls = 0;
+    let updateCalls = 0;
+    const adapter = {
+      registerProcess: (value: SessionProcessRegistration & { processId: ProcessId }): boolean => {
+        registrationCalls++;
+        registration = value;
+        return true;
+      },
+      updateProcess: (_processId: ProcessId, value: Record<string, unknown>): boolean => {
+        updateCalls++;
+        update = value;
+        return true;
+      },
+      exitProcess: (): boolean => true,
+      removeProcess: (): boolean => true,
+    } as unknown as TunnelAdapter;
+    const sink = new TunnelSessionProcessLifecycleSink(adapter);
+    const executor = processId('sink-executor');
+    const command = processCommand(MAX_PROCESS_COMMAND_LENGTH);
+    const overLimitCommand = processCommand(MAX_PROCESS_COMMAND_LENGTH + 1);
+
+    expect(
+      sink.registerProcess({
+        processId: executor,
+        kind: 'executor',
+        label: 'Codex prompt',
+        command,
+      })
+    ).toBe(true);
+    expect(registration?.command).toBe(command);
+    expect(sink.updateProcess(executor, { command, state: 'running' })).toBe(true);
+    expect(update).toEqual({ command, state: 'running' });
+    expect(registrationCalls).toBe(1);
+    expect(updateCalls).toBe(1);
+
+    expect(
+      sink.registerProcess({
+        processId: processId('oversized-sink-executor'),
+        kind: 'executor',
+        label: 'oversized Codex prompt',
+        command: overLimitCommand,
+      })
+    ).toBe(true);
+    expect(registration?.command).toBe(normalizeSessionProcessCommand(overLimitCommand));
+    expect(sink.updateProcess(executor, { command: overLimitCommand })).toBe(true);
+    expect(update).toEqual({
+      command: normalizeSessionProcessCommand(overLimitCommand),
+    });
+    expect(registrationCalls).toBe(2);
+    expect(updateCalls).toBe(2);
+    expect(
+      sink.registerProcess({
+        processId: processId('malformed-command-executor'),
+        kind: 'executor',
+        label: 'malformed command',
+        command: 42 as unknown as string,
+      })
+    ).toBe(false);
+    expect(sink.updateProcess(executor, { command: 42 as unknown as string })).toBe(false);
+    expect(registrationCalls).toBe(2);
+    expect(updateCalls).toBe(2);
+
+    expect(
+      isValidTunnelMessage({
+        type: 'process_register',
+        processId: executor,
+        kind: 'executor',
+        label: 'maximum Codex prompt',
+        command,
+      })
+    ).toBe(true);
+    expect(
+      isValidTunnelMessage({
+        type: 'process_update',
+        processId: executor,
+        command,
+        state: 'running',
+      })
+    ).toBe(true);
+    expect(
+      isValidTunnelMessage({
+        type: 'process_register',
+        processId: executor,
+        kind: 'executor',
+        label: 'oversized Codex prompt',
+        command: overLimitCommand,
+      })
+    ).toBe(false);
+    expect(
+      isValidTunnelMessage({
+        type: 'process_register',
+        processId: 'not an opaque id',
+        kind: 'executor',
+        label: 'maximum Codex prompt',
+        command,
+      })
+    ).toBe(false);
+    expect(
+      isValidTunnelMessage({
+        type: 'process_register',
+        processId: executor,
+        parentProcessId: 'not an opaque parent id',
+        ownerProcessId: 'owner-id',
+        kind: 'executor',
+        label: 'maximum Codex prompt',
+        command,
+      })
+    ).toBe(false);
+    expect(
+      isValidTunnelMessage({
+        type: 'process_update',
+        processId: executor,
+        ownerProcessId: 'not an opaque owner id',
+        command,
+        state: 'running',
+      })
+    ).toBe(false);
+
+    expect(
+      sink.registerProcess({
+        processId: processId('invalid-start-identity'),
+        kind: 'executor',
+        label: 'invalid start identity',
+        startIdentity: 'x'.repeat(2049),
+      })
+    ).toBe(false);
+    expect(sink.updateProcess(executor, { startIdentity: 'x'.repeat(2049) })).toBe(false);
+    expect(sink.exitProcess(executor, { endedAt: '' })).toBe(false);
+    expect(sink.removeProcess('not a process id' as ProcessId)).toBe(false);
   });
 
   describe('createTunnelAdapter', () => {
@@ -364,6 +525,57 @@ describe('TunnelAdapter', () => {
       expect(messages[2]).toEqual({ type: 'warn', args: ['third'] });
       expect(messages[3]).toEqual({ type: 'stdout', data: 'fourth' });
       expect(messages[4]).toEqual({ type: 'stderr', data: 'fifth' });
+    });
+
+    it('sends process lifecycle messages and reports disconnected sends', async () => {
+      testServer = await createTestServer(socketPath);
+      adapter = await createTunnelAdapter(socketPath);
+      const executor = processId('executor-client');
+
+      expect(
+        adapter.registerProcess({
+          processId: executor,
+          kind: 'executor',
+          label: 'client executor',
+          pid: 42,
+          command: 'agent --run',
+        })
+      ).toBe(true);
+      expect(adapter.updateProcess(executor, { state: 'running', startIdentity: 'start-1' })).toBe(
+        true
+      );
+      expect(adapter.exitProcess(executor, { exitCode: 0, signal: undefined })).toBe(true);
+      expect(adapter.removeProcess(executor, false)).toBe(true);
+
+      await waitForMessages(testServer.getMessages, 4);
+      expect(testServer.getMessages()).toEqual([
+        expect.objectContaining({
+          type: 'process_register',
+          processId: executor,
+          kind: 'executor',
+        }),
+        {
+          type: 'process_update',
+          processId: executor,
+          state: 'running',
+          startIdentity: 'start-1',
+        },
+        {
+          type: 'process_exit',
+          processId: executor,
+          exitCode: 0,
+        },
+        {
+          type: 'process_remove',
+          processId: executor,
+          subtree: false,
+        },
+      ]);
+
+      await adapter.destroy();
+      expect(adapter.updateProcess(executor, { label: 'after disconnect' })).toBe(false);
+      expect(adapter.exitProcess(executor)).toBe(false);
+      expect(adapter.removeProcess(executor)).toBe(false);
     });
   });
 
@@ -894,6 +1106,56 @@ describe('TunnelAdapter bidirectional transport', () => {
     );
 
     await expect(resultPromise).resolves.toBe('ok');
+  });
+
+  it('validates targeted executor control messages before invoking the handler', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+    const received: ProcessId[] = [];
+    adapter.setExecutorControlHandler((message) => {
+      received.push(message.executorId);
+    });
+
+    expect(
+      isValidServerTunnelMessage({ type: 'terminate_executor', executorId: 'executor-1' })
+    ).toBe(true);
+    expect(
+      isValidServerTunnelMessage({ type: 'terminate_executor', executorId: 'not an id' })
+    ).toBe(false);
+    expect(
+      isValidServerTunnelMessage({
+        type: 'terminate_executor',
+        executorId: 'executor-1',
+        requestId: '',
+      })
+    ).toBe(false);
+
+    const startWait = Date.now();
+    while (testServer.getSockets().length < 1 && Date.now() - startWait < 1000) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const socket = testServer.getSockets()[0];
+    socket.write(`${JSON.stringify({ type: 'terminate_executor', executorId: 'not an id' })}\n`);
+    socket.write(
+      `${JSON.stringify({
+        type: 'terminate_executor',
+        executorId: 'executor-1',
+        requestId: '',
+      })}\n`
+    );
+    socket.write(
+      `${JSON.stringify({
+        type: 'terminate_executor',
+        executorId: 'executor-1',
+        requestId: 'request-1',
+      })}\n`
+    );
+
+    const receivedStart = Date.now();
+    while (received.length < 1 && Date.now() - receivedStart < 1000) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(received).toEqual([processId('executor-1')]);
   });
 });
 

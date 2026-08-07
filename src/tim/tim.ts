@@ -45,9 +45,19 @@ import { CleanupRegistry } from '../common/cleanup_registry.js';
 import { startMcpServer } from './mcp/server.js';
 import { enableAutoClaim } from './assignments/auto_claim.js';
 import { handleCleanupCommand } from './commands/cleanup.js';
-import { runWithLogger } from '../logging.js';
-import { type TunnelAdapter, createTunnelAdapter } from '../logging/tunnel_client.js';
+import { runWithLogger, warn } from '../logging.js';
+import {
+  type TunnelAdapter,
+  createTunnelAdapter,
+  createTunnelSessionProcessLifecycleSink,
+} from '../logging/tunnel_client.js';
 import { TIM_OUTPUT_SOCKET } from '../logging/tunnel_protocol.js';
+import {
+  createExecutorControlHandler,
+  createNestedTimProcessRuntime,
+  registerSessionProcessOwner,
+  unregisterSessionProcessOwner,
+} from '../common/session_process_control.js';
 import { isDeferSignalExit, isShuttingDown, setShuttingDown } from './shutdown_state.js';
 import {
   getPlanParameters,
@@ -112,9 +122,28 @@ async function runWithCommandTunnelAdapter<T>(callback: () => Promise<T> | T): P
 
   const cleanupRegistry = CleanupRegistry.getInstance();
   const unregisterCleanup = cleanupRegistry.register(() => tunnelAdapter.destroySync());
+  const nestedRuntime = createNestedTimProcessRuntime(
+    createTunnelSessionProcessLifecycleSink(tunnelAdapter),
+    process.argv.slice(2, 4).join(' ') || 'nested tim',
+    (executorId, result, error) => {
+      if (result === 'signal_failed' || result === 'unknown_process_state') {
+        const detail = error instanceof Error ? `: ${error.message}` : '';
+        warn(`Could not terminate executor ${executorId}${detail}`);
+      }
+    }
+  );
+  if (nestedRuntime) {
+    registerSessionProcessOwner(tunnelAdapter, nestedRuntime.owner);
+    tunnelAdapter.setExecutorControlHandler(createExecutorControlHandler(nestedRuntime.owner));
+  }
   try {
     return await runWithLogger(tunnelAdapter, async () => await callback());
   } finally {
+    if (nestedRuntime) {
+      tunnelAdapter.setExecutorControlHandler(undefined);
+      unregisterSessionProcessOwner(tunnelAdapter);
+      nestedRuntime.dispose();
+    }
     unregisterCleanup();
     try {
       await tunnelAdapter.destroy();

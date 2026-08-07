@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   sendStructured: vi.fn(),
   isTunnelActive: vi.fn(),
   createTunnelServer: vi.fn(),
+  createExecutorTunnelServer: vi.fn(),
   createPromptRequestHandler: vi.fn(),
   getRepositoryIdentity: vi.fn(),
   getDatabase: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('../../logging/tunnel_client.js', () => ({
 }));
 vi.mock('../../logging/tunnel_server.js', () => ({
   createTunnelServer: mocks.createTunnelServer,
+  createExecutorTunnelServer: mocks.createTunnelServer,
 }));
 vi.mock('../../logging/tunnel_prompt_handler.js', () => ({
   createPromptRequestHandler: mocks.createPromptRequestHandler,

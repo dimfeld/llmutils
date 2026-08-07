@@ -6,7 +6,7 @@ import { debugLog, error, log, sendStructured, warn } from '../../../logging';
 import { getLoggerAdapter } from '../../../logging/adapter.js';
 import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
 import { isTunnelActive, TunnelAdapter } from '../../../logging/tunnel_client.js';
-import { createTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
+import { createExecutorTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
 import { CodexAppServerConnection } from './app_server_connection';
@@ -176,7 +176,9 @@ export async function executeCodexStepViaAppServer(
       tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
       tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
       const promptHandler = createPromptRequestHandler();
-      tunnelServer = await createTunnelServer(tunnelSocketPath, { onPromptRequest: promptHandler });
+      tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
+        onPromptRequest: promptHandler,
+      });
     } catch (err) {
       debugLog('Could not create tunnel server for output forwarding:', err);
     }
@@ -346,6 +348,7 @@ export async function executeCodexStepViaAppServer(
   try {
     connection = await CodexAppServerConnection.create({
       cwd,
+      sessionProcessLabel: 'Codex app-server',
       env: {
         TIM_EXECUTOR: 'codex',
         AGENT: process.env.AGENT || '1',

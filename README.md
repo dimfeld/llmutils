@@ -264,6 +264,14 @@ Open the Vite URL printed by the command. The app groups data by project and pro
 
 The web UI discovers running agent processes through session files in `~/.cache/tim/sessions/` and connects to each process over its embedded local WebSocket server. It also uses SSE to update the browser as sessions and PR status change.
 
+Session Detail also shows the live, ephemeral process tree for a headless session. It includes
+nested `tim` commands and their Claude or Codex executors, with labels, state, elapsed time, and
+PID when available. You can terminate one live executor after confirmation; tim routes the
+request to the owning `tim` process and validates the process identity before sending `SIGTERM`.
+**End Session** and **Force End** remain session-wide controls.
+Process tracking is explicit and session-scoped; it does not add a PID-based control API or write
+process state to the plan database.
+
 Commands launched from the web UI are fully daemonized on macOS and Linux. They run in sessions and process groups separate from the web server and are reparented outside its process tree, so agent sessions continue through web server or PM2 restarts. Set `TIM_PATH` in the web server environment when the daemon stages should use a specific `tim` executable.
 
 Completed sessions are retained in memory with command-aware limits. Short-lived automation such

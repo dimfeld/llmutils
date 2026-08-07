@@ -5,6 +5,16 @@
 
 import type { StructuredMessage } from '../../logging/structured_messages.js';
 import type { OutputOrigin } from '../../logging/tunnel_protocol.js';
+import type {
+  SessionProcessNode as DomainSessionProcessNode,
+  SessionProcessTerminationResult,
+} from '../../common/session_process.js';
+
+export type {
+  SessionProcessKind,
+  SessionProcessState,
+  SessionProcessTerminationResult,
+} from '../../common/session_process.js';
 
 export type SessionStatus = 'active' | 'offline' | 'notification';
 
@@ -158,6 +168,28 @@ export interface SessionPlanTask {
   done: boolean;
 }
 
+/** Client transport form of the common process node; opaque IDs are strings on the wire. */
+export type SessionProcessNode = Omit<
+  DomainSessionProcessNode,
+  'processId' | 'parentProcessId' | 'ownerProcessId'
+> & {
+  processId: string;
+  parentProcessId?: string;
+  ownerProcessId?: string;
+};
+
+export type SessionExecutorTerminationStatus =
+  | SessionProcessTerminationResult
+  | 'offline'
+  | 'session_not_found'
+  | 'request_failed';
+
+export interface SessionExecutorTerminationResult {
+  executorId: string;
+  status: SessionExecutorTerminationStatus;
+  message?: string;
+}
+
 export interface SessionData {
   connectionId: string;
   sessionInfo: HeadlessSessionInfo;
@@ -166,6 +198,7 @@ export interface SessionData {
   projectId: number | null;
   planContent: string | null;
   planTasks: SessionPlanTask[];
+  processTree: SessionProcessNode[];
   messages: DisplayMessage[];
   activePrompts: ActivePrompt[];
   isReplaying: boolean;
@@ -207,6 +240,11 @@ export interface SessionPlanContentEvent {
   connectionId: string;
   planContent: string;
   planTasks: SessionPlanTask[];
+}
+
+export interface SessionProcessTreeEvent {
+  connectionId: string;
+  processTree: SessionProcessNode[];
 }
 
 export interface SessionPromptEvent {
@@ -262,6 +300,7 @@ export interface SessionClientEventMap {
   'session:disconnect': SessionDisconnectEvent;
   'session:message': SessionMessageEvent;
   'session:plan-content': SessionPlanContentEvent;
+  'session:process-tree': SessionProcessTreeEvent;
   'session:prompt': SessionPromptEvent;
   'session:prompt-cleared': SessionPromptClearedEvent;
   'session:dismissed': SessionDismissedEvent;

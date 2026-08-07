@@ -159,6 +159,7 @@ async function createHarness(options?: {
 
   vi.doMock('../../../logging/tunnel_server.js', () => ({
     createTunnelServer: createTunnelServerMock,
+    createExecutorTunnelServer: createTunnelServerMock,
   }));
 
   vi.doMock('../../../logging/tunnel_prompt_handler.js', () => ({
@@ -715,6 +716,7 @@ describe('executeCodexStepViaAppServer', () => {
 
     expect(harness.connectionCreateOptions.current).toMatchObject({
       cwd: '/repo',
+      sessionProcessLabel: 'Codex app-server',
       timEnvironment,
       env: {
         TIM_EXECUTOR: 'codex',

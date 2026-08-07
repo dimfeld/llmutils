@@ -2,8 +2,31 @@ import net from 'node:net';
 import type { LoggerAdapter } from './adapter.js';
 import { writeToLogFile } from './common.js';
 import { debug } from '../common/process.js';
-import { TIM_OUTPUT_SOCKET, serializeArgs } from './tunnel_protocol.js';
-import type { TunnelMessage, ServerTunnelMessage, WriteOptions } from './tunnel_protocol.js';
+import {
+  isProcessId,
+  isValidSessionProcessExit,
+  isValidSessionProcessRegistration,
+  isValidSessionProcessUpdate,
+  isSessionProcessTerminationResult,
+  normalizeSessionProcessCommand,
+  type ProcessId,
+  type SessionProcessExit,
+  type SessionProcessLifecycleSink,
+  type SessionProcessRegistration,
+  type SessionProcessTerminationResult,
+  type SessionProcessUpdate,
+} from '../common/session_process.js';
+import {
+  TIM_OUTPUT_SOCKET,
+  serializeArgs,
+  type TunnelProcessRemoveMessage,
+} from './tunnel_protocol.js';
+import type {
+  ServerTunnelMessage,
+  TunnelMessage,
+  TunnelTerminateExecutorMessage,
+  WriteOptions,
+} from './tunnel_protocol.js';
 import type { StructuredMessage, PromptRequestMessage } from './structured_messages.js';
 import { formatStructuredMessage } from './console_formatter.js';
 
@@ -33,7 +56,7 @@ function createLineSplitter(): (input: string) => string[] {
 /**
  * Validates that a parsed JSON object is a valid ServerTunnelMessage.
  */
-function isValidServerTunnelMessage(message: unknown): message is ServerTunnelMessage {
+export function isValidServerTunnelMessage(message: unknown): message is ServerTunnelMessage {
   if (typeof message !== 'object' || message === null) {
     return false;
   }
@@ -48,6 +71,14 @@ function isValidServerTunnelMessage(message: unknown): message is ServerTunnelMe
       );
     case 'user_input':
       return typeof msg.content === 'string';
+    case 'terminate_executor':
+      return (
+        isProcessId(msg.executorId) &&
+        (msg.requestId === undefined ||
+          (typeof msg.requestId === 'string' &&
+            msg.requestId.length > 0 &&
+            msg.requestId.length <= 256))
+      );
     default:
       return false;
   }
@@ -73,6 +104,9 @@ export class TunnelAdapter implements LoggerAdapter {
   private connected: boolean = true;
   private pendingPrompts: Map<string, PendingPromptRequest> = new Map();
   private userInputHandler?: (content: string) => void;
+  private executorControlHandler?: (
+    message: TunnelTerminateExecutorMessage
+  ) => SessionProcessTerminationResult | void;
 
   constructor(socket: net.Socket) {
     this.socket = socket;
@@ -134,6 +168,30 @@ export class TunnelAdapter implements LoggerAdapter {
           writeToLogFile(`[tunnel] User input handler error: ${err as Error}\n`);
         }
         break;
+      case 'terminate_executor':
+        try {
+          const result = this.executorControlHandler?.(message);
+          if (message.requestId && isSessionProcessTerminationResult(result)) {
+            this.send({
+              type: 'terminate_executor_result',
+              executorId: message.executorId,
+              requestId: message.requestId,
+              result,
+            });
+          }
+        } catch (err) {
+          writeToLogFile(`[tunnel] Executor control handler error: ${err as Error}\n`);
+          if (message.requestId) {
+            this.send({
+              type: 'terminate_executor_result',
+              executorId: message.executorId,
+              requestId: message.requestId,
+              result: 'signal_failed',
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+        break;
     }
   }
 
@@ -143,6 +201,15 @@ export class TunnelAdapter implements LoggerAdapter {
    */
   setUserInputHandler(callback: ((content: string) => void) | undefined): void {
     this.userInputHandler = callback;
+  }
+
+  /** Registers the owner-side handler for targeted executor control requests. */
+  setExecutorControlHandler(
+    callback:
+      | ((message: TunnelTerminateExecutorMessage) => SessionProcessTerminationResult | void)
+      | undefined
+  ): void {
+    this.executorControlHandler = callback;
   }
 
   /**
@@ -198,6 +265,31 @@ export class TunnelAdapter implements LoggerAdapter {
         reject(new Error('Failed to send prompt request over tunnel'));
       }
     });
+  }
+
+  /** Sends a process registration event to the parent tim process. */
+  registerProcess(process: SessionProcessRegistration & { processId: ProcessId }): boolean {
+    return this.send({ type: 'process_register', ...process });
+  }
+
+  /** Sends a process metadata update to the parent tim process. */
+  updateProcess(processId: ProcessId, update: SessionProcessUpdate): boolean {
+    return this.send({ type: 'process_update', processId, ...update });
+  }
+
+  /** Sends an idempotent process exit event to the parent tim process. */
+  exitProcess(processId: ProcessId, details: SessionProcessExit = {}): boolean {
+    return this.send({ type: 'process_exit', processId, ...details });
+  }
+
+  /** Removes a process node from the parent registry. */
+  removeProcess(processId: ProcessId, subtree: boolean = true): boolean {
+    const message: TunnelProcessRemoveMessage = {
+      type: 'process_remove',
+      processId,
+      subtree,
+    };
+    return this.send(message);
   }
 
   /**
@@ -343,6 +435,63 @@ export class TunnelAdapter implements LoggerAdapter {
       this.socket.end();
     });
   }
+}
+
+/** Adapts a tunnel client to the common session process lifecycle contract. */
+export class TunnelSessionProcessLifecycleSink implements SessionProcessLifecycleSink {
+  readonly registry = undefined;
+
+  constructor(private readonly adapter: TunnelAdapter) {}
+
+  registerProcess(registration: SessionProcessRegistration): boolean {
+    const normalizedRegistration =
+      typeof registration.command !== 'string'
+        ? registration
+        : { ...registration, command: normalizeSessionProcessCommand(registration.command) };
+    if (!isValidSessionProcessRegistration(normalizedRegistration, { requireProcessId: true })) {
+      return false;
+    }
+    const processId = normalizedRegistration.processId;
+    if (!processId) {
+      return false;
+    }
+    return this.adapter.registerProcess({ ...normalizedRegistration, processId });
+  }
+
+  updateProcess(processId: ProcessId, update: SessionProcessUpdate): boolean {
+    const normalizedUpdate =
+      typeof update.command !== 'string'
+        ? update
+        : { ...update, command: normalizeSessionProcessCommand(update.command) };
+    if (
+      !isProcessId(processId) ||
+      !isValidSessionProcessUpdate(normalizedUpdate, { requireChange: true })
+    ) {
+      return false;
+    }
+    return this.adapter.updateProcess(processId, normalizedUpdate);
+  }
+
+  exitProcess(processId: ProcessId, details: SessionProcessExit = {}): boolean {
+    if (!isProcessId(processId) || !isValidSessionProcessExit(details)) {
+      return false;
+    }
+    return this.adapter.exitProcess(processId, details);
+  }
+
+  removeProcess(processId: ProcessId, subtree: boolean = true): boolean {
+    if (!isProcessId(processId) || typeof subtree !== 'boolean') {
+      return false;
+    }
+    return this.adapter.removeProcess(processId, subtree);
+  }
+}
+
+/** Creates the lifecycle sink used by a nested tim tunnel owner. */
+export function createTunnelSessionProcessLifecycleSink(
+  adapter: TunnelAdapter
+): TunnelSessionProcessLifecycleSink {
+  return new TunnelSessionProcessLifecycleSink(adapter);
 }
 
 /**

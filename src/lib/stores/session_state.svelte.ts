@@ -9,12 +9,14 @@ import {
   openTerminal,
   sendSessionPromptResponse,
   sendSessionUserInput,
+  terminateExecutor as terminateExecutorRemote,
 } from '$lib/remote/session_actions.remote.js';
 import type {
   SessionClientEvent,
   SessionClientEventMap,
   SessionClientEventName,
   SessionData,
+  SessionExecutorTerminationResult,
   SessionGroup,
   RateLimitState,
 } from '$lib/types/session.js';
@@ -376,6 +378,7 @@ export class SessionManager {
       'session:disconnect',
       'session:message',
       'session:plan-content',
+      'session:process-tree',
       'session:prompt',
       'session:prompt-cleared',
       'session:dismissed',
@@ -436,6 +439,21 @@ export class SessionManager {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  async terminateExecutor(
+    connectionId: string,
+    executorId: string
+  ): Promise<SessionExecutorTerminationResult> {
+    try {
+      return await terminateExecutorRemote({ connectionId, executorId });
+    } catch (error) {
+      return {
+        executorId,
+        status: 'request_failed',
+        message: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 

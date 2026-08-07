@@ -1,4 +1,9 @@
 import type { TunnelMessage } from './tunnel_protocol.js';
+import type {
+  ProcessId,
+  SessionProcessNode,
+  SessionProcessTerminationResultEvent,
+} from '../common/session_process.js';
 
 export interface HeadlessSessionInfo {
   sessionId?: string;
@@ -65,6 +70,23 @@ export interface HeadlessSessionEndedMessage {
   type: 'session_ended';
 }
 
+/** Complete process-tree state sent during the initial handshake/replay. */
+export interface HeadlessProcessTreeSnapshotMessage {
+  type: 'process_tree_snapshot';
+  processes: SessionProcessNode[];
+}
+
+/** Complete process-tree state sent after a live registry change. */
+export interface HeadlessProcessTreeUpdateMessage {
+  type: 'process_tree_update';
+  processes: SessionProcessNode[];
+}
+
+/** Result of a targeted executor termination request. */
+export type HeadlessExecutorTerminationResultMessage = {
+  type: 'executor_termination_result';
+} & SessionProcessTerminationResultEvent;
+
 export type HeadlessMessage =
   | HeadlessSessionInfoMessage
   | HeadlessOutputMessage
@@ -72,7 +94,10 @@ export type HeadlessMessage =
   | HeadlessReplayStartMessage
   | HeadlessReplayEndMessage
   | HeadlessPlanContentMessage
-  | HeadlessSessionEndedMessage;
+  | HeadlessSessionEndedMessage
+  | HeadlessProcessTreeSnapshotMessage
+  | HeadlessProcessTreeUpdateMessage
+  | HeadlessExecutorTerminationResultMessage;
 
 /** Server→client message: response to a prompt_request. */
 export interface HeadlessPromptResponseServerMessage {
@@ -111,6 +136,13 @@ export interface HeadlessForceEndSessionServerMessage {
   type: 'force_end_session';
 }
 
+/** Server→client request to terminate one opaque executor node. */
+export interface HeadlessTerminateExecutorServerMessage {
+  type: 'terminate_executor';
+  requestId: string;
+  executorId: ProcessId;
+}
+
 /** Server→client message: browser notification subscriber status update. */
 export interface HeadlessNotificationSubscribersMessage {
   type: 'notification_subscribers_changed';
@@ -125,4 +157,5 @@ export type HeadlessServerMessage =
   | HeadlessPtyResizeServerMessage
   | HeadlessEndSessionServerMessage
   | HeadlessForceEndSessionServerMessage
+  | HeadlessTerminateExecutorServerMessage
   | HeadlessNotificationSubscribersMessage;

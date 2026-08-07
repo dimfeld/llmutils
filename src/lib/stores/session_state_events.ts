@@ -86,10 +86,14 @@ function mergeSessionPreservingMessages(
   existing: SessionData | undefined,
   incoming: SessionData
 ): SessionData {
+  const normalizedIncoming = {
+    ...incoming,
+    processTree: incoming.processTree ?? existing?.processTree ?? [],
+  };
   if (existing && incoming.messages.length === 0) {
-    return { ...incoming, messages: existing.messages };
+    return { ...normalizedIncoming, messages: existing.messages };
   }
-  return incoming;
+  return normalizedIncoming;
 }
 
 function syncSessionPlanIndex(
@@ -198,6 +202,16 @@ export function applySessionEvent<TEventName extends SessionClientEventName>(
           ...session,
           planContent: event.payload.planContent,
           planTasks: event.payload.planTasks,
+        });
+      }
+      break;
+    }
+    case 'session:process-tree': {
+      const session = state.sessions.get(event.payload.connectionId);
+      if (session) {
+        setSession(state, {
+          ...session,
+          processTree: event.payload.processTree.map((process) => ({ ...process })),
         });
       }
       break;

@@ -13,7 +13,7 @@ import {
 import { error, warn, debugLog } from '../../../logging';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { createCodexStdoutFormatter } from './format';
-import { createTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
+import { createExecutorTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
 import { executeCodexStepViaAppServer } from './app_server_runner';
@@ -129,7 +129,9 @@ export async function executeCodexStep(
       tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
       tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
       const promptHandler = createPromptRequestHandler();
-      tunnelServer = await createTunnelServer(tunnelSocketPath, { onPromptRequest: promptHandler });
+      tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
+        onPromptRequest: promptHandler,
+      });
     } catch (err) {
       debugLog('Could not create tunnel server for output forwarding:', err);
     }
@@ -170,6 +172,7 @@ export async function executeCodexStep(
       let result: Awaited<ReturnType<typeof spawnAndLogOutput>>;
       try {
         result = await spawnAndLogOutput(attemptArgs, {
+          sessionProcessLabel: `Codex CLI attempt ${attempt}`,
           cwd,
           env: {
             TIM_EXECUTOR: 'codex',

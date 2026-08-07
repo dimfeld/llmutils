@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
+import type { ProcessId, SessionProcessNode } from '../../common/session_process.js';
 
 import { SessionManager } from './session_manager.js';
 import { createSessionEventsResponse, formatSseEvent } from './session_routes.js';
@@ -127,6 +128,54 @@ describe('lib/server/session_routes', () => {
     expect(unregisterSpy).toHaveBeenCalledTimes(1);
   });
 
+  test('createSessionEventsResponse includes the authoritative process tree in the initial snapshot', async () => {
+    manager.handleWebSocketConnect('conn-tree-initial', vi.fn());
+    const processTree: SessionProcessNode[] = [
+      {
+        processId: 'root-initial' as ProcessId,
+        kind: 'tim',
+        label: 'tim agent',
+        startedAt: '2026-03-17T10:00:00.000Z',
+        state: 'running',
+      },
+      {
+        processId: 'executor-initial' as ProcessId,
+        parentProcessId: 'root-initial' as ProcessId,
+        ownerProcessId: 'root-initial' as ProcessId,
+        kind: 'executor',
+        label: 'executor',
+        pid: 4321,
+        startedAt: '2026-03-17T10:00:01.000Z',
+        state: 'running',
+      },
+    ];
+    manager.handleWebSocketMessage('conn-tree-initial', {
+      type: 'process_tree_snapshot',
+      processes: processTree,
+    });
+
+    const abortController = new AbortController();
+    const response = createSessionEventsResponse(manager, abortController.signal);
+    const reader = response.body?.getReader();
+    expect(reader).toBeDefined();
+
+    const initialEvent = await readSseEvent(reader!, new TextDecoder(), { buffer: '' });
+    expect(initialEvent).toEqual({
+      event: 'session:list',
+      data: {
+        sessions: [
+          expect.objectContaining({
+            connectionId: 'conn-tree-initial',
+            processTree,
+          }),
+        ],
+      },
+    });
+
+    abortController.abort();
+    await reader!.cancel();
+  });
+
   test('createSessionEventsResponse forwards token_usage payloads intact through SSE', async () => {
     const abortController = new AbortController();
     const response = createSessionEventsResponse(manager, abortController.signal);
@@ -232,6 +281,56 @@ describe('lib/server/session_routes', () => {
             }),
           },
         }),
+      },
+    });
+
+    abortController.abort();
+    await reader!.cancel();
+  });
+
+  test('createSessionEventsResponse forwards live process tree events over SSE', async () => {
+    const abortController = new AbortController();
+    const response = createSessionEventsResponse(manager, abortController.signal);
+    const reader = response.body?.getReader();
+    expect(reader).toBeDefined();
+
+    const decoder = new TextDecoder();
+    const streamState = { buffer: '' };
+    expect(await readSseEvent(reader!, decoder, streamState)).toMatchObject({
+      event: 'session:list',
+    });
+    expect(await readSseEvent(reader!, decoder, streamState)).toMatchObject({
+      event: 'rate-limit:updated',
+    });
+    expect(await readSseEvent(reader!, decoder, streamState)).toEqual({
+      event: 'session:sync-complete',
+      data: {},
+    });
+
+    manager.handleWebSocketConnect('conn-tree-sse', vi.fn());
+    expect(await readSseEvent(reader!, decoder, streamState)).toMatchObject({
+      event: 'session:new',
+    });
+
+    const processTree: SessionProcessNode[] = [
+      {
+        processId: 'root-sse' as ProcessId,
+        kind: 'tim',
+        label: 'tim agent',
+        startedAt: '2026-03-17T10:00:00.000Z',
+        state: 'running',
+      },
+    ];
+    manager.handleWebSocketMessage('conn-tree-sse', {
+      type: 'process_tree_snapshot',
+      processes: processTree,
+    });
+
+    expect(await readSseEvent(reader!, decoder, streamState)).toEqual({
+      event: 'session:process-tree',
+      data: {
+        connectionId: 'conn-tree-sse',
+        processTree,
       },
     });
 
@@ -415,7 +514,7 @@ describe('lib/server/session_routes', () => {
 
     abortController.abort();
     expect(await reader!.read()).toEqual({ done: true, value: undefined });
-    expect(unsubscribeSpy).toHaveBeenCalledTimes(11);
+    expect(unsubscribeSpy).toHaveBeenCalledTimes(12);
   });
 
   test('createSessionEventsResponse snapshot hides replayed prompts until replay ends', async () => {

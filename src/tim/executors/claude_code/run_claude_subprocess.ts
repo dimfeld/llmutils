@@ -28,7 +28,7 @@ import {
 } from './format.js';
 import { executeWithTerminalInput } from './terminal_input_lifecycle.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
-import { createTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
+import { createExecutorTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
@@ -331,7 +331,7 @@ export async function runClaudeSubprocess(
   if (!isTunnelActive()) {
     try {
       const promptHandler = createPromptRequestHandler();
-      tunnelServer = await createTunnelServer(tunnelSocketPath, {
+      tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
         onPromptRequest: promptHandler,
       });
     } catch (err) {
@@ -414,6 +414,7 @@ export async function runClaudeSubprocess(
     }
 
     const streaming = await spawnWithStreamingIO(args, {
+      sessionProcessLabel: `Claude ${label}`,
       env: {
         CLAUDECODE: '',
         TIM_EXECUTOR: 'claude',
