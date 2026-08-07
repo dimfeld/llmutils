@@ -396,6 +396,11 @@ export function formatTunnelMessage(
         },
         rawType: message.type,
       };
+    case 'process_register':
+    case 'process_update':
+    case 'process_exit':
+    case 'process_remove':
+      return null;
   }
 }
 
