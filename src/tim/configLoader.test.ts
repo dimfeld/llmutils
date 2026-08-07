@@ -121,6 +121,35 @@ describe('mergeInboxConfig', () => {
     });
   });
 
+  test('deduplicates usernames within a single configured layer', () => {
+    expect(
+      mergeInboxConfig(
+        {
+          prs: {
+            ignoreUsers: ['SingleLayerUser', 'singlelayeruser', 'AnotherUser'],
+          },
+        },
+        undefined
+      )
+    ).toEqual({
+      prs: {
+        ignoreUsers: ['SingleLayerUser', 'AnotherUser'],
+      },
+    });
+
+    expect(
+      mergeInboxConfig(undefined, {
+        prs: {
+          ignoreUsers: ['RepoOnly', 'repoonly'],
+        },
+      })
+    ).toEqual({
+      prs: {
+        ignoreUsers: ['RepoOnly'],
+      },
+    });
+  });
+
   test('preserves values from one layer and does not materialize absent keys', () => {
     expect(mergeInboxConfig(undefined, undefined)).toBeUndefined();
     expect(mergeInboxConfig({}, {})).toEqual({});
@@ -645,6 +674,131 @@ defaultExecutor: ${DEFAULT_EXECUTOR}
         ]);
       } finally {
         if (originalEnv !== undefined) {
+          process.env.TIM_LOAD_GLOBAL_CONFIG = originalEnv;
+        }
+      }
+    });
+
+    test('loadEffectiveConfig concatenates inbox users across global, repo, and local config', async () => {
+      const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;
+      delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+
+      try {
+        const globalConfigPath = path.join(fakeHomeDir, '.config', 'tim', 'config.yml');
+        await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await fs.writeFile(
+          globalConfigPath,
+          yaml.stringify({
+            inbox: {
+              prs: {
+                enabled: true,
+                ignoreUsers: ['a', 'botX'],
+              },
+            },
+          }),
+          'utf-8'
+        );
+
+        const mainConfigPath = path.join(configDir, 'tim.yml');
+        await fs.writeFile(
+          mainConfigPath,
+          yaml.stringify({
+            inbox: {
+              prs: {
+                enabled: true,
+                ignoreUsers: ['b'],
+              },
+            },
+          }),
+          'utf-8'
+        );
+
+        const localConfigPath = path.join(configDir, 'tim.local.yml');
+        await fs.writeFile(
+          localConfigPath,
+          yaml.stringify({
+            inbox: {
+              prs: {
+                enabled: false,
+                ignoreUsers: ['A', 'c'],
+              },
+            },
+          }),
+          'utf-8'
+        );
+
+        const config = await loadEffectiveConfig();
+
+        expect(config.inbox).toEqual({
+          prs: {
+            enabled: false,
+            ignoreUsers: ['a', 'botX', 'b', 'c'],
+          },
+        });
+      } finally {
+        if (originalEnv === undefined) {
+          delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+        } else {
+          process.env.TIM_LOAD_GLOBAL_CONFIG = originalEnv;
+        }
+      }
+    });
+
+    test('loadEffectiveConfig preserves repo-only inbox configuration', async () => {
+      const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;
+      process.env.TIM_LOAD_GLOBAL_CONFIG = '0';
+
+      try {
+        const mainConfigPath = path.join(configDir, 'tim.yml');
+        await fs.writeFile(
+          mainConfigPath,
+          yaml.stringify({
+            inbox: {
+              prs: {
+                enabled: true,
+                ignoreUsers: ['RepoOnly', 'repoonly'],
+              },
+            },
+          }),
+          'utf-8'
+        );
+
+        const config = await loadEffectiveConfig();
+
+        expect(config.inbox).toEqual({
+          prs: {
+            enabled: true,
+            ignoreUsers: ['RepoOnly'],
+          },
+        });
+      } finally {
+        if (originalEnv === undefined) {
+          delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+        } else {
+          process.env.TIM_LOAD_GLOBAL_CONFIG = originalEnv;
+        }
+      }
+    });
+
+    test('loadEffectiveConfig omits inbox when no config tier defines it', async () => {
+      const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;
+      process.env.TIM_LOAD_GLOBAL_CONFIG = '0';
+
+      try {
+        const mainConfigPath = path.join(configDir, 'tim.yml');
+        await fs.writeFile(
+          mainConfigPath,
+          yaml.stringify({ defaultExecutor: DEFAULT_EXECUTOR }),
+          'utf-8'
+        );
+
+        const config = await loadEffectiveConfig();
+
+        expect(config.inbox).toBeUndefined();
+      } finally {
+        if (originalEnv === undefined) {
+          delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+        } else {
           process.env.TIM_LOAD_GLOBAL_CONFIG = originalEnv;
         }
       }
