@@ -16,6 +16,8 @@ import {
   upsertPrStatusMetadata,
 } from '../../tim/db/pr_status.js';
 import {
+  getCommentExcerpt,
+  handleIssueCommentEvent,
   handlePullRequestEvent,
   handlePullRequestReviewEvent,
   handleCheckRunEvent,
@@ -1579,5 +1581,439 @@ describe('common/github/webhook_event_handlers', () => {
         check_run: { name: 'ci', status: 'completed', pull_requests: [{ number: 1 }] },
       })
     ).toEqual({ updated: false });
+  });
+
+  describe('getCommentExcerpt', () => {
+    test('returns null for a null body', () => {
+      expect(getCommentExcerpt(null)).toBeNull();
+    });
+
+    test('returns null for a whitespace-only body', () => {
+      expect(getCommentExcerpt('   \n\n  \r\n  ')).toBeNull();
+    });
+
+    test('collapses CRLF, CR, and LF newlines into spaces', () => {
+      expect(getCommentExcerpt('line one\r\nline two\rline three\nline four')).toBe(
+        'line one line two line three line four'
+      );
+    });
+
+    test('trims surrounding whitespace', () => {
+      expect(getCommentExcerpt('  padded body  ')).toBe('padded body');
+    });
+
+    test('truncates to 200 characters', () => {
+      const body = 'x'.repeat(250);
+      const excerpt = getCommentExcerpt(body);
+      expect(excerpt).toHaveLength(200);
+      expect(excerpt).toBe('x'.repeat(200));
+    });
+
+    test('does not truncate a body of exactly 200 characters', () => {
+      const body = 'y'.repeat(200);
+      expect(getCommentExcerpt(body)).toBe(body);
+    });
+  });
+
+  describe('handleIssueCommentEvent', () => {
+    test('emits a pr_comment signal for a newly created PR conversation comment', () => {
+      const result = handleIssueCommentEvent(db, {
+        action: 'created',
+        repository: { full_name: 'example/repo' },
+        issue: {
+          number: 77,
+          title: 'Issue-shaped PR title',
+          user: { login: 'pr-author' },
+          pull_request: { url: 'https://api.github.com/repos/example/repo/pulls/77' },
+        },
+        comment: {
+          body: 'Thanks for the update!\nLooks good to me.',
+          user: { login: 'commenter', type: 'User' },
+          created_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result.updated).toBe(false);
+      expect(result.inboxSignals).toEqual([
+        {
+          kind: 'pr_comment',
+          repo: 'example/repo',
+          prNumber: 77,
+          prUrl: 'https://github.com/example/repo/pull/77',
+          prTitle: 'Issue-shaped PR title',
+          prAuthor: 'pr-author',
+          actor: 'commenter',
+          actorType: 'User',
+          summary: 'Thanks for the update! Looks good to me.',
+          eventAt: '2026-03-30T12:00:00.000Z',
+        },
+      ]);
+    });
+
+    test('falls back to the current time when created_at is missing', () => {
+      const before = new Date();
+      const result = handleIssueCommentEvent(db, {
+        action: 'created',
+        repository: { full_name: 'example/repo' },
+        issue: {
+          number: 78,
+          title: 'PR',
+          user: { login: 'pr-author' },
+          pull_request: {},
+        },
+        comment: {
+          body: 'no timestamp on this one',
+          user: { login: 'commenter', type: 'User' },
+        },
+      });
+      const after = new Date();
+
+      expect(result.inboxSignals).toHaveLength(1);
+      const eventAt = new Date(result.inboxSignals![0].eventAt);
+      expect(eventAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(eventAt.getTime()).toBeLessThanOrEqual(after.getTime());
+    });
+
+    test('makes no DB writes for a PR comment', () => {
+      const before = db.prepare('SELECT COUNT(*) as count FROM pr_status').get() as {
+        count: number;
+      };
+
+      handleIssueCommentEvent(db, {
+        action: 'created',
+        repository: { full_name: 'example/repo' },
+        issue: {
+          number: 79,
+          title: 'PR',
+          user: { login: 'pr-author' },
+          pull_request: {},
+        },
+        comment: {
+          body: 'a comment',
+          user: { login: 'commenter', type: 'User' },
+          created_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      const after = db.prepare('SELECT COUNT(*) as count FROM pr_status').get() as {
+        count: number;
+      };
+      expect(after.count).toBe(before.count);
+    });
+
+    test('does not require an existing pr_status row to emit a signal', () => {
+      const existing = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/501');
+      expect(existing).toBeNull();
+
+      const result = handleIssueCommentEvent(db, {
+        action: 'created',
+        repository: { full_name: 'example/repo' },
+        issue: {
+          number: 501,
+          title: 'Brand new PR',
+          user: { login: 'pr-author' },
+          pull_request: {},
+        },
+        comment: {
+          body: 'first comment ever on this PR',
+          user: { login: 'commenter', type: 'User' },
+          created_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result.inboxSignals).toHaveLength(1);
+      expect(result.inboxSignals![0].prUrl).toBe('https://github.com/example/repo/pull/501');
+    });
+
+    test('ignores plain issue comments without a pull_request marker', () => {
+      const result = handleIssueCommentEvent(db, {
+        action: 'created',
+        repository: { full_name: 'example/repo' },
+        issue: {
+          number: 80,
+          title: 'Just an issue',
+          user: { login: 'issue-author' },
+        },
+        comment: {
+          body: 'not a PR comment',
+          user: { login: 'commenter', type: 'User' },
+          created_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result).toEqual({ updated: false });
+    });
+
+    test('ignores non-created actions such as edited', () => {
+      const result = handleIssueCommentEvent(db, {
+        action: 'edited',
+        repository: { full_name: 'example/repo' },
+        issue: {
+          number: 81,
+          title: 'PR',
+          user: { login: 'pr-author' },
+          pull_request: {},
+        },
+        comment: {
+          body: 'an edited comment',
+          user: { login: 'commenter', type: 'User' },
+          created_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result).toEqual({ updated: false });
+    });
+
+    test('ignores deleted actions', () => {
+      const result = handleIssueCommentEvent(db, {
+        action: 'deleted',
+        repository: { full_name: 'example/repo' },
+        issue: {
+          number: 82,
+          title: 'PR',
+          user: { login: 'pr-author' },
+          pull_request: {},
+        },
+        comment: {
+          body: 'deleted comment',
+          user: { login: 'commenter', type: 'User' },
+          created_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result).toEqual({ updated: false });
+    });
+
+    test('ignores events for unknown repositories', () => {
+      const result = handleIssueCommentEvent(db, {
+        action: 'created',
+        repository: { full_name: 'other/repo' },
+        issue: {
+          number: 83,
+          title: 'PR',
+          user: { login: 'pr-author' },
+          pull_request: {},
+        },
+        comment: {
+          body: 'a comment',
+          user: { login: 'commenter', type: 'User' },
+          created_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result).toEqual({ updated: false });
+    });
+
+    test('returns updated:false for unparsable payloads', () => {
+      expect(handleIssueCommentEvent(db, {})).toEqual({ updated: false });
+      expect(handleIssueCommentEvent(db, { repository: { full_name: 'example/repo' } })).toEqual({
+        updated: false,
+      });
+    });
+  });
+
+  describe('handlePullRequestEvent inbox signals', () => {
+    test('emits merge_queue_removed with the dequeue reason and sender as actor', () => {
+      const result = handlePullRequestEvent(db, {
+        action: 'dequeued',
+        reason: 'merge conflict detected',
+        repository: { full_name: 'example/repo' },
+        sender: { login: 'mergequeue-bot', type: 'Bot' },
+        pull_request: {
+          number: 90,
+          title: 'Dequeued PR',
+          state: 'open',
+          draft: false,
+          merged_at: null,
+          user: { login: 'pr-author' },
+          head: { sha: 'sha-90', ref: 'feature/dequeue' },
+          base: { ref: 'main' },
+          labels: [],
+          requested_reviewers: [],
+          updated_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result.inboxSignals).toEqual([
+        {
+          kind: 'merge_queue_removed',
+          repo: 'example/repo',
+          prNumber: 90,
+          prUrl: 'https://github.com/example/repo/pull/90',
+          prTitle: 'Dequeued PR',
+          prAuthor: 'pr-author',
+          actor: 'mergequeue-bot',
+          actorType: 'Bot',
+          summary: 'merge conflict detected',
+          eventAt: '2026-03-30T12:00:00.000Z',
+        },
+      ]);
+    });
+
+    test('falls back to the PR author as actor when sender is missing on dequeue', () => {
+      const result = handlePullRequestEvent(db, {
+        action: 'dequeued',
+        reason: 'unmergeable',
+        repository: { full_name: 'example/repo' },
+        pull_request: {
+          number: 91,
+          title: 'Dequeued PR without sender',
+          state: 'open',
+          draft: false,
+          merged_at: null,
+          user: { login: 'pr-author' },
+          head: { sha: 'sha-91', ref: 'feature/dequeue-2' },
+          base: { ref: 'main' },
+          labels: [],
+          requested_reviewers: [],
+          updated_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result.inboxSignals).toEqual([
+        expect.objectContaining({
+          kind: 'merge_queue_removed',
+          actor: 'pr-author',
+          actorType: null,
+          summary: 'unmergeable',
+        }),
+      ]);
+    });
+
+    test('emits review_requested with the requested reviewer as actor', () => {
+      const result = handlePullRequestEvent(db, {
+        action: 'review_requested',
+        repository: { full_name: 'example/repo' },
+        requested_reviewer: { login: 'reviewer-x' },
+        pull_request: {
+          number: 92,
+          title: 'PR needing review',
+          state: 'open',
+          draft: false,
+          merged_at: null,
+          user: { login: 'pr-author' },
+          head: { sha: 'sha-92', ref: 'feature/review' },
+          base: { ref: 'main' },
+          labels: [],
+          requested_reviewers: [{ login: 'reviewer-x' }],
+          updated_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result.inboxSignals).toEqual([
+        {
+          kind: 'review_requested',
+          repo: 'example/repo',
+          prNumber: 92,
+          prUrl: 'https://github.com/example/repo/pull/92',
+          prTitle: 'PR needing review',
+          prAuthor: 'pr-author',
+          actor: 'reviewer-x',
+          eventAt: '2026-03-30T12:00:00.000Z',
+        },
+      ]);
+    });
+
+    test('does not emit review_requested when no reviewer login is present', () => {
+      const result = handlePullRequestEvent(db, {
+        action: 'review_requested',
+        repository: { full_name: 'example/repo' },
+        pull_request: {
+          number: 93,
+          title: 'PR',
+          state: 'open',
+          draft: false,
+          merged_at: null,
+          user: { login: 'pr-author' },
+          head: { sha: 'sha-93', ref: 'feature/review-2' },
+          base: { ref: 'main' },
+          labels: [],
+          requested_reviewers: [],
+          updated_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result.inboxSignals).toBeUndefined();
+    });
+
+    test('emits pr_merged when a PR closes with merged_at set', () => {
+      const result = handlePullRequestEvent(db, {
+        action: 'closed',
+        repository: { full_name: 'example/repo' },
+        sender: { login: 'closer', type: 'User' },
+        pull_request: {
+          number: 94,
+          title: 'Merged PR',
+          state: 'closed',
+          draft: false,
+          merged_at: '2026-03-30T15:00:00.000Z',
+          user: { login: 'pr-author' },
+          head: { sha: 'sha-94', ref: 'feature/merge' },
+          base: { ref: 'main' },
+          labels: [],
+          requested_reviewers: [],
+          updated_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result.inboxSignals).toEqual([
+        {
+          kind: 'pr_merged',
+          repo: 'example/repo',
+          prNumber: 94,
+          prUrl: 'https://github.com/example/repo/pull/94',
+          prTitle: 'Merged PR',
+          prAuthor: 'pr-author',
+          actor: 'closer',
+          actorType: 'User',
+          eventAt: '2026-03-30T15:00:00.000Z',
+        },
+      ]);
+    });
+
+    test('does not emit pr_merged when a PR closes without merging', () => {
+      const result = handlePullRequestEvent(db, {
+        action: 'closed',
+        repository: { full_name: 'example/repo' },
+        sender: { login: 'closer', type: 'User' },
+        pull_request: {
+          number: 95,
+          title: 'Closed without merge',
+          state: 'closed',
+          draft: false,
+          merged_at: null,
+          user: { login: 'pr-author' },
+          head: { sha: 'sha-95', ref: 'feature/close' },
+          base: { ref: 'main' },
+          labels: [],
+          requested_reviewers: [],
+          updated_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result.inboxSignals).toBeUndefined();
+    });
+
+    test('does not emit any inbox signal for unrelated actions like labeled or synchronize', () => {
+      const result = handlePullRequestEvent(db, {
+        action: 'synchronize',
+        repository: { full_name: 'example/repo' },
+        pull_request: {
+          number: 96,
+          title: 'PR',
+          state: 'open',
+          draft: false,
+          merged_at: null,
+          user: { login: 'pr-author' },
+          head: { sha: 'sha-96', ref: 'feature/sync' },
+          base: { ref: 'main' },
+          labels: [],
+          requested_reviewers: [],
+          updated_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result.inboxSignals).toBeUndefined();
+    });
   });
 });
