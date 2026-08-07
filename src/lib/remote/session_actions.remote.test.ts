@@ -242,6 +242,25 @@ describe('session remote actions', () => {
     ).rejects.toBeTruthy();
   });
 
+  test('terminateExecutor enforces the exact opaque-ID length and character boundary', async () => {
+    const maximumLengthId = `a${'b'.repeat(255)}`;
+    await expect(
+      invokeCommand(terminateExecutor, {
+        connectionId: 'missing',
+        executorId: maximumLengthId,
+      })
+    ).resolves.toEqual({ executorId: maximumLengthId, status: 'session_not_found' });
+
+    for (const executorId of ['', ' leading-space', `a${'b'.repeat(256)}`]) {
+      await expect(
+        invokeCommand(terminateExecutor, {
+          connectionId: 'missing',
+          executorId,
+        } as never)
+      ).rejects.toBeTruthy();
+    }
+  });
+
   test('endSession validates input and forwards end_session', async () => {
     const connectionId = 'conn-end';
     const sentMessages: HeadlessServerMessage[] = [];

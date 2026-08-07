@@ -393,6 +393,80 @@ describe('applySessionEvent', () => {
     expect(updated?.processTree[0]?.label).toBe('tim agent');
   });
 
+  test('session process state converges across initial, incremental, reconnect, and disconnect events', () => {
+    const session = createSession('conn-converge');
+    const state = createState();
+    const initialTree: SessionProcessNode[] = [
+      {
+        processId: 'root-converge',
+        kind: 'tim',
+        label: 'tim agent',
+        startedAt: '2026-03-17T10:00:00.000Z',
+        state: 'running',
+      },
+    ];
+    const liveTree: SessionProcessNode[] = [
+      ...initialTree,
+      {
+        processId: 'executor-converge',
+        parentProcessId: 'root-converge',
+        ownerProcessId: 'root-converge',
+        kind: 'executor',
+        label: 'executor',
+        pid: 4321,
+        startedAt: '2026-03-17T10:00:01.000Z',
+        state: 'running',
+      },
+    ];
+    const exitedTree = liveTree.map((process) =>
+      process.processId === 'executor-converge' ? { ...process, state: 'exited' as const } : process
+    );
+
+    applySessionEvent(
+      'session:list',
+      { sessions: [{ ...session, processTree: initialTree }] },
+      state
+    );
+    expect(state.sessions.get(session.connectionId)?.processTree).toEqual(initialTree);
+
+    applySessionEvent(
+      'session:process-tree',
+      { connectionId: session.connectionId, processTree: liveTree },
+      state
+    );
+    expect(state.sessions.get(session.connectionId)?.processTree).toEqual(liveTree);
+
+    applySessionEvent(
+      'session:update',
+      {
+        session: {
+          ...state.sessions.get(session.connectionId)!,
+          processTree: exitedTree,
+          messages: [],
+        },
+      },
+      state
+    );
+    expect(state.sessions.get(session.connectionId)?.processTree).toEqual(exitedTree);
+
+    applySessionEvent(
+      'session:disconnect',
+      {
+        session: {
+          ...state.sessions.get(session.connectionId)!,
+          status: 'offline',
+          processTree: [],
+          messages: [],
+        },
+      },
+      state
+    );
+    expect(state.sessions.get(session.connectionId)).toMatchObject({
+      status: 'offline',
+      processTree: [],
+    });
+  });
+
   test('session:prompt-cleared only clears the matching prompt', () => {
     const session = createSession();
     session.activePrompts = [createPrompt({ requestId: 'prompt-keep' })];

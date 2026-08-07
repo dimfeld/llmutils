@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { HeadlessServerMessage } from '../../logging/headless_protocol.js';
+import type { ProcessId, SessionProcessNode } from '../../common/session_process.js';
 import {
   startEmbeddedServer,
   type EmbeddedServerHandle,
@@ -507,6 +508,31 @@ describe('lib/server/session_discovery', () => {
     db = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
     const manager = new SessionManager(db);
     const receivedServerMessages: HeadlessServerMessage[] = [];
+    const processTree: SessionProcessNode[] = [
+      {
+        processId: 'root-discovery' as ProcessId,
+        kind: 'tim',
+        label: 'tim agent',
+        startedAt: '2026-03-23T00:00:00.000Z',
+        state: 'running',
+      },
+      {
+        processId: 'executor-discovery' as ProcessId,
+        parentProcessId: 'root-discovery' as ProcessId,
+        ownerProcessId: 'root-discovery' as ProcessId,
+        kind: 'executor',
+        label: 'Claude executor',
+        pid: 4321,
+        command: 'claude --stream-json',
+        startedAt: '2026-03-23T00:00:01.000Z',
+        state: 'running',
+      },
+    ];
+    const updatedProcessTree = processTree.map((process) =>
+      process.processId === 'executor-discovery'
+        ? { ...process, state: 'exited' as const, exitCode: 0 }
+        : process
+    );
 
     let server!: EmbeddedServerHandle;
     server = startEmbeddedServer({
@@ -522,6 +548,10 @@ describe('lib/server/session_discovery', () => {
           planTitle: 'tim web gui connects to websocket server of tim processes',
           workspacePath: '/tmp/integration-workspace',
           gitRemote: 'git@github.com:tim/test.git',
+        });
+        server.sendTo(connectionId, {
+          type: 'process_tree_snapshot',
+          processes: processTree,
         });
         server.sendTo(connectionId, { type: 'replay_start' });
         server.sendTo(connectionId, {
@@ -596,6 +626,7 @@ describe('lib/server/session_discovery', () => {
           promptType: 'confirm',
         }),
       ],
+      processTree,
     });
     expect(replayedSession?.messages).toEqual([
       expect.objectContaining({
@@ -638,6 +669,15 @@ describe('lib/server/session_discovery', () => {
       body: { type: 'monospaced', text: 'live output\n' },
     });
 
+    server.broadcast({
+      type: 'process_tree_update',
+      processes: updatedProcessTree,
+    });
+    await waitFor(
+      () => manager.getSessionSnapshot().sessions[0]?.processTree.at(-1)?.state === 'exited'
+    );
+    expect(manager.getSessionSnapshot().sessions[0]?.processTree).toEqual(updatedProcessTree);
+
     expect(manager.sendPromptResponse('integration-session', 'req-integration', true)).toBe('sent');
     await waitFor(() =>
       receivedServerMessages.some((message) => message.type === 'prompt_response')
@@ -664,6 +704,7 @@ describe('lib/server/session_discovery', () => {
       return sessions.length === 1 && sessions[0]?.status === 'active';
     });
     await waitFor(() => server.connectedClients.size === 1);
+    expect(manager.getSessionSnapshot().sessions[0]?.processTree).toEqual(processTree);
 
     discovery.stop();
     discovery = null;

@@ -809,6 +809,93 @@ describe('lib/server/session_manager', () => {
     });
   });
 
+  test('forwards missing, stale, non-executor, routing, and signal results exactly', async () => {
+    const outcomes: Array<{
+      result:
+        | 'unknown_executor'
+        | 'not_executor'
+        | 'stale_target'
+        | 'owner_not_registered'
+        | 'owner_not_connected'
+        | 'send_failed'
+        | 'signal_failed';
+      message: string;
+    }> = [
+      { result: 'unknown_executor', message: 'No such executor.' },
+      { result: 'not_executor', message: 'The selected node is not an executor.' },
+      { result: 'stale_target', message: 'The process identity changed.' },
+      { result: 'owner_not_registered', message: 'The owner is missing.' },
+      { result: 'owner_not_connected', message: 'The owner disconnected.' },
+      { result: 'send_failed', message: 'The owner channel rejected the request.' },
+      { result: 'signal_failed', message: 'SIGTERM failed.' },
+    ];
+
+    for (const [index, outcome] of outcomes.entries()) {
+      const connectionId = `conn-result-${index}`;
+      const sentMessages: HeadlessServerMessage[] = [];
+      manager.handleWebSocketConnect(connectionId, (message) => {
+        sentMessages.push(message);
+      });
+
+      const resultPromise = manager.terminateExecutor(connectionId, `executor-${index}`);
+      const request = sentMessages.find((message) => message.type === 'terminate_executor');
+      expect(request).toMatchObject({
+        type: 'terminate_executor',
+        executorId: `executor-${index}`,
+        requestId: expect.any(String),
+      });
+      if (!request || request.type !== 'terminate_executor') {
+        throw new Error('The terminate request was not sent');
+      }
+
+      manager.handleWebSocketMessage(connectionId, {
+        type: 'executor_termination_result',
+        requestId: request.requestId,
+        executorId: request.executorId,
+        result: outcome.result,
+        error: outcome.message,
+      });
+
+      await expect(resultPromise).resolves.toEqual({
+        executorId: `executor-${index}`,
+        status: outcome.result,
+        message: outcome.message,
+      });
+    }
+  });
+
+  test('resolves pending termination requests when the session disconnects, send fails, or stops', async () => {
+    const disconnectSender = vi.fn<(message: HeadlessServerMessage) => void>();
+    manager.handleWebSocketConnect('conn-disconnect', disconnectSender);
+    const disconnectPromise = manager.terminateExecutor('conn-disconnect', 'executor-disconnect');
+    manager.handleWebSocketDisconnect('conn-disconnect');
+    await expect(disconnectPromise).resolves.toEqual({
+      executorId: 'executor-disconnect',
+      status: 'offline',
+    });
+
+    const throwingSender = vi.fn<(message: HeadlessServerMessage) => void>(() => {
+      throw new Error('socket closed during send');
+    });
+    manager.handleWebSocketConnect('conn-send-failure', throwingSender);
+    const sendFailurePromise = manager.terminateExecutor(
+      'conn-send-failure',
+      'executor-send-failure'
+    );
+    await expect(sendFailurePromise).resolves.toEqual({
+      executorId: 'executor-send-failure',
+      status: 'offline',
+    });
+
+    manager.handleWebSocketConnect('conn-stop', vi.fn());
+    const stopPromise = manager.terminateExecutor('conn-stop', 'executor-stop');
+    manager.stop();
+    await expect(stopPromise).resolves.toEqual({
+      executorId: 'executor-stop',
+      status: 'request_failed',
+    });
+  });
+
   test('replaces session metadata and regroups when session_info is re-sent on the same connection', () => {
     const originalProject = getOrCreateProject(db, 'repo-1', {
       remoteUrl: 'https://example.com/repo-1.git',
@@ -1340,9 +1427,23 @@ describe('lib/server/session_manager', () => {
       command: 'review-guide-comment',
       interactive: false,
     });
+    retentionManager.handleWebSocketMessage('review-comment', {
+      type: 'process_tree_snapshot',
+      processes: [
+        {
+          processId: 'retained-root' as ProcessId,
+          kind: 'tim',
+          label: 'tim review-guide-comment',
+          startedAt: '2026-03-17T10:00:00.000Z',
+          state: 'running',
+        },
+      ],
+    });
     retentionManager.handleWebSocketDisconnect('review-comment');
 
-    expect(retentionManager.getSessionSnapshot().sessions).toHaveLength(1);
+    expect(retentionManager.getSessionSnapshot().sessions).toEqual([
+      expect.objectContaining({ connectionId: 'review-comment', processTree: [] }),
+    ]);
 
     nowMs += 31 * 60 * 1000;
     const result = retentionManager.pruneSessions();

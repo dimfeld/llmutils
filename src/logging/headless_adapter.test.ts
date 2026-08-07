@@ -247,13 +247,33 @@ describe('HeadlessAdapter', () => {
 
     const root = registry!.getSnapshot()[0]!;
     const firstExecutorId = 'executor-1' as ProcessId;
+    const nestedTimId = 'nested-tim-1' as ProcessId;
+    const nestedExecutorId = 'nested-executor-1' as ProcessId;
     registry!.register({
       processId: firstExecutorId,
       parentProcessId: root.processId,
       ownerProcessId: root.processId,
       kind: 'executor',
       label: 'first executor',
-      startedAt: '2026-03-17T10:00:01.000Z',
+      startedAt: '2026-03-17T10:00:02.000Z',
+      state: 'running',
+    });
+    registry!.register({
+      processId: nestedTimId,
+      parentProcessId: firstExecutorId,
+      ownerProcessId: firstExecutorId,
+      kind: 'tim',
+      label: 'nested tim',
+      startedAt: '2026-03-17T10:00:03.000Z',
+      state: 'running',
+    });
+    registry!.register({
+      processId: nestedExecutorId,
+      parentProcessId: nestedTimId,
+      ownerProcessId: nestedTimId,
+      kind: 'executor',
+      label: 'nested executor',
+      startedAt: '2026-03-17T10:00:04.000Z',
       state: 'running',
     });
 
@@ -269,13 +289,13 @@ describe('HeadlessAdapter', () => {
     await waitFor(() => messages.some((message) => message.type === 'replay_end'));
 
     const initialSnapshot = messages.find((message) => message.type === 'process_tree_snapshot');
-    expect(initialSnapshot).toMatchObject({
-      type: 'process_tree_snapshot',
-      processes: [
-        expect.objectContaining({ processId: root.processId, kind: 'tim' }),
-        expect.objectContaining({ processId: firstExecutorId, kind: 'executor' }),
-      ],
-    });
+    expect(initialSnapshot?.type).toBe('process_tree_snapshot');
+    expect(initialSnapshot?.processes.map((process) => process.processId)).toEqual([
+      root.processId,
+      firstExecutorId,
+      nestedTimId,
+      nestedExecutorId,
+    ]);
 
     messages.length = 0;
     const secondExecutorId = 'executor-2' as ProcessId;
@@ -285,20 +305,20 @@ describe('HeadlessAdapter', () => {
       ownerProcessId: root.processId,
       kind: 'executor',
       label: 'second executor',
-      startedAt: '2026-03-17T10:00:02.000Z',
+      startedAt: '2026-03-17T10:00:01.000Z',
       state: 'running',
     });
     await waitFor(() => messages.some((message) => message.type === 'process_tree_update'));
 
     const update = messages.find((message) => message.type === 'process_tree_update');
-    expect(update).toMatchObject({
-      type: 'process_tree_update',
-      processes: [
-        expect.objectContaining({ processId: root.processId }),
-        expect.objectContaining({ processId: firstExecutorId }),
-        expect.objectContaining({ processId: secondExecutorId }),
-      ],
-    });
+    expect(update?.type).toBe('process_tree_update');
+    expect(update?.processes.map((process) => process.processId)).toEqual([
+      root.processId,
+      secondExecutorId,
+      firstExecutorId,
+      nestedTimId,
+      nestedExecutorId,
+    ]);
 
     const ws2 = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
     const reconnectMessages: HeadlessMessage[] = [];
@@ -309,16 +329,17 @@ describe('HeadlessAdapter', () => {
       }
     });
     await waitFor(() => reconnectMessages.some((message) => message.type === 'replay_end'));
-    expect(reconnectMessages.find((message) => message.type === 'process_tree_snapshot')).toEqual(
-      expect.objectContaining({
-        type: 'process_tree_snapshot',
-        processes: expect.arrayContaining([
-          expect.objectContaining({ processId: root.processId }),
-          expect.objectContaining({ processId: firstExecutorId }),
-          expect.objectContaining({ processId: secondExecutorId }),
-        ]),
-      })
+    const reconnectSnapshot = reconnectMessages.find(
+      (message) => message.type === 'process_tree_snapshot'
     );
+    expect(reconnectSnapshot?.type).toBe('process_tree_snapshot');
+    expect(reconnectSnapshot?.processes.map((process) => process.processId)).toEqual([
+      root.processId,
+      secondExecutorId,
+      firstExecutorId,
+      nestedTimId,
+      nestedExecutorId,
+    ]);
 
     ws.close();
     ws2.close();
@@ -439,6 +460,46 @@ describe('HeadlessAdapter', () => {
     ws.send(
       JSON.stringify({
         type: 'terminate_executor',
+        requestId: 'signal-failure-request',
+        executorId,
+      })
+    );
+    await waitFor(() =>
+      routedRequests.some(
+        (request) =>
+          request.executorId === executorId && request.requestId === 'signal-failure-request'
+      )
+    );
+    registry!.emitTerminationResult({
+      executorId,
+      requestId: 'signal-failure-request',
+      result: 'signal_failed',
+      error: 'permission denied',
+    });
+    await waitFor(() =>
+      messages.some(
+        (message) =>
+          message.type === 'executor_termination_result' &&
+          message.requestId === 'signal-failure-request'
+      )
+    );
+    expect(
+      messages.find(
+        (message) =>
+          message.type === 'executor_termination_result' &&
+          message.requestId === 'signal-failure-request'
+      )
+    ).toEqual({
+      type: 'executor_termination_result',
+      requestId: 'signal-failure-request',
+      executorId,
+      result: 'signal_failed',
+      error: 'permission denied',
+    });
+
+    ws.send(
+      JSON.stringify({
+        type: 'terminate_executor',
         requestId: 'missing-request',
         executorId: 'missing-executor',
       })
@@ -494,6 +555,117 @@ describe('HeadlessAdapter', () => {
 
     ws.close();
     await adapter.destroy();
+  });
+
+  it('fans out force end and root teardown to every connected nested owner', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);
+    const registry = adapter.getProcessRegistry();
+    expect(registry).toBeDefined();
+    const root = registry!.getSnapshot()[0]!;
+    const routedRequests: Array<{ channelId: string; executorId: ProcessId }> = [];
+
+    const branches = [
+      {
+        channelId: 'nested-channel-a',
+        ownerExecutorId: 'owner-executor-a' as ProcessId,
+        timId: 'nested-tim-a' as ProcessId,
+        executorId: 'nested-executor-a' as ProcessId,
+        startedAt: '2026-03-17T10:00:01.000Z',
+      },
+      {
+        channelId: 'nested-channel-b',
+        ownerExecutorId: 'owner-executor-b' as ProcessId,
+        timId: 'nested-tim-b' as ProcessId,
+        executorId: 'nested-executor-b' as ProcessId,
+        startedAt: '2026-03-17T10:00:02.000Z',
+      },
+    ];
+
+    for (const branch of branches) {
+      expect(
+        registry!.register({
+          processId: branch.ownerExecutorId,
+          parentProcessId: root.processId,
+          ownerProcessId: root.processId,
+          kind: 'executor',
+          label: branch.ownerExecutorId,
+          startedAt: branch.startedAt,
+          state: 'running',
+        })
+      ).toBeDefined();
+      expect(
+        registry!.registerOwnerChannelSender(branch.channelId, (executorId) => {
+          routedRequests.push({ channelId: branch.channelId, executorId });
+          return true;
+        })
+      ).toBe(true);
+      expect(
+        registry!.register(
+          {
+            processId: branch.timId,
+            parentProcessId: branch.ownerExecutorId,
+            ownerProcessId: branch.ownerExecutorId,
+            kind: 'tim',
+            label: branch.timId,
+            startedAt: branch.startedAt,
+            state: 'running',
+          },
+          { ownerChannelId: branch.channelId }
+        )
+      ).toBeDefined();
+      expect(
+        registry!.register({
+          processId: branch.executorId,
+          parentProcessId: branch.timId,
+          ownerProcessId: branch.timId,
+          kind: 'executor',
+          label: branch.executorId,
+          startedAt: branch.startedAt,
+          state: 'running',
+        })
+      ).toBeDefined();
+    }
+
+    const port = (adapter as any).sessionServer.port as number;
+    const ws = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+    const messages: HeadlessMessage[] = [];
+    ws.addEventListener('message', (event) => {
+      const parsed = parseMessage(event.data as string);
+      if (parsed) {
+        messages.push(parsed);
+      }
+    });
+    await waitFor(() => messages.some((message) => message.type === 'replay_end'));
+
+    const endSession = vi.fn();
+    adapter.setEndSessionHandler(endSession);
+    ws.send(JSON.stringify({ type: 'force_end_session' } satisfies HeadlessServerMessage));
+    await waitFor(() => routedRequests.length === branches.length);
+    expect(routedRequests).toEqual([
+      { channelId: 'nested-channel-a', executorId: 'nested-executor-a' },
+      { channelId: 'nested-channel-b', executorId: 'nested-executor-b' },
+    ]);
+
+    const requestCountBeforeGracefulEnd = routedRequests.length;
+    ws.send(JSON.stringify({ type: 'end_session' } satisfies HeadlessServerMessage));
+    await waitFor(() => endSession.mock.calls.length === 1);
+    expect(routedRequests).toHaveLength(requestCountBeforeGracefulEnd);
+
+    await adapter.destroy();
+    expect(routedRequests).toEqual([
+      { channelId: 'nested-channel-a', executorId: 'nested-executor-a' },
+      { channelId: 'nested-channel-b', executorId: 'nested-executor-b' },
+      { channelId: 'nested-channel-a', executorId: 'nested-executor-a' },
+      { channelId: 'nested-channel-b', executorId: 'nested-executor-b' },
+    ]);
+
+    const registryInternals = registry as unknown as {
+      listeners: Set<unknown>;
+      terminationResultListeners: Set<unknown>;
+    };
+    expect(registryInternals.listeners.size).toBe(0);
+    expect(registryInternals.terminationResultListeners.size).toBe(0);
   });
 
   it('sends PTY session info and buffered output without structured replay markers', async () => {
