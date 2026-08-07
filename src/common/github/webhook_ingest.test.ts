@@ -1778,7 +1778,6 @@ describe('common/github/webhook_ingest', () => {
     });
 
     test('backfills eventAt with the delivery receivedAt when the signal has no timestamp of its own', async () => {
-      const before = new Date();
       mocks.fetchWebhookEvents.mockResolvedValueOnce([
         buildIssueCommentEvent({
           id: 77,
@@ -1792,16 +1791,12 @@ describe('common/github/webhook_ingest', () => {
       ]);
 
       const result = await ingestWebhookEvents(db);
-      const after = new Date();
 
-      expect(result.inboxSignals).toHaveLength(1);
-      const eventAt = new Date(result.inboxSignals[0].eventAt);
-      // The handler cannot derive a timestamp from the payload and falls back to the
-      // current time, which ingest carries through unchanged (event.receivedAt is only
-      // used as a fallback for signals that reach ingest with no eventAt at all).
-      expect(eventAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
-      expect(eventAt.getTime()).toBeLessThanOrEqual(after.getTime());
-      expect(result.inboxSignals[0].eventAt).not.toBe('2020-01-01T00:00:00.000Z');
+      // The handler cannot derive a timestamp from the payload, so it falls back to
+      // the delivery's receivedAt (passed through via WebhookHandlerOptions).
+      expect(result.inboxSignals).toEqual([
+        expect.objectContaining({ eventAt: '2020-01-01T00:00:00.000Z' }),
+      ]);
     });
 
     test('does not emit a signal for plain issue comments without a pull_request marker', async () => {
