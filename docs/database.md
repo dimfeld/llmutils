@@ -427,6 +427,8 @@ Rows are self-contained on purpose. `webhook_log` payloads are pruned after 7 da
 - `dismissInboxItem(db, id)`: Sets `dismissed_at`, and `read_at` too if it was null.
 - `pruneOldInboxItems(db, maxAgeDays = 30)`: Deletes rows older than the cutoff and returns the deleted count. Intended to be called on a throttle from the webhook poller tick.
 
+**Configuration**: the repo-settable `inbox.prs` config block (`enabled`, `ignoreUsers`) controls which events become inbox items. See [PR inbox](../README.md#pr-inbox) in the README. Neither field has a zod default: `enabled` is treated as true when GitHub webhooks are configured and `ignoreUsers` as `[]` at the read sites. `ignoreUsers` merges by concatenation across the global, repo, and local config layers (`mergeInboxConfig` in `src/tim/configLoader.ts`), deduped with `normalizeGitHubUsername`. Actors whose login ends in `[bot]` are always ignored; that check is the shared `isBotLogin` helper in `src/common/github/username.ts`, which `src/lib/server/slack_review_reactions.ts` also uses.
+
 ### Project Settings
 
 Per-project key-value settings stored in the database (migration v16). Used by the web UI for project-level configuration that doesn't belong in YAML config files.
