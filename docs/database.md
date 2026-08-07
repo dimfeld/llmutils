@@ -405,13 +405,27 @@ Beyond updating `pr_status`, the dispatch loop applies plan-status side effects 
 
 ### Inbox
 
-The `inbox_item` table stores the aggregated GitHub-webhook notification feed for the inbox feature. It is local-only and has no sync support.
+The `inbox_item` table (migration v51) stores the aggregated GitHub-webhook notification feed for the inbox feature. Like `job`, `webhook_log`, and the `pr_*` tables, it is local-only and has no sync support: rows are per-machine, derived from webhook events, and carry read state that is meaningless on another node.
 
 **Table**:
 
-- `inbox_item`: One row per kind and canonical PR, aggregated by the unique `dedupe_key`. A new event re-surfaces the row by clearing `read_at` and `dismissed_at` and bumping `last_event_at`.
+- `inbox_item`: One row per kind and canonical PR, aggregated by the unique `dedupe_key`. Columns: `id`, `project_id` (FK to `project(id)` ON DELETE CASCADE, nullable), `kind`, `pr_url`, `pr_number`, `repo`, `pr_title`, `actor`, `event_count` (DEFAULT 1), `summary`, `dedupe_key` (UNIQUE), `first_event_at`, `last_event_at`, `created_at`, `updated_at`, `read_at`, `dismissed_at`. Indexes on `(project_id, last_event_at)` and `read_at`.
 
-**CRUD module** (`src/tim/db/inbox_item.ts`).
+Rows are self-contained on purpose. `webhook_log` payloads are pruned after 7 days and orphaned `pr_status` rows are cleaned up after about a day, so everything the inbox displays (title, repo, actor, URL) is denormalized onto the row instead of joined at read time. That also keeps the unread count a single indexed `COUNT(*)`.
+
+**Kinds** (`INBOX_ITEM_KINDS`): `review_requested`, `pr_comment`, `reviewed_pr_comment`, `pr_merged`, `pr_approved`, `ci_failure`, `merge_queue_removed`. There is no `CHECK` constraint on `kind` — the accessor validates at the write path, so the kind list can grow without a migration.
+
+**Aggregation and re-surface**: `dedupe_key` defaults to `<kind>:<canonical pr_url>`, so repeated events for the same PR and kind upsert into the one row, increment `event_count`, and bump `last_event_at`. The upsert also clears `read_at` and `dismissed_at`, which re-surfaces a row the user already handled. All read paths order by `last_event_at DESC`, so a re-surfaced row returns to the top.
+
+**CRUD module** (`src/tim/db/inbox_item.ts`):
+
+- `upsertInboxItem(db, input)`: Validates `kind`, canonicalizes `prUrl`, and runs the `ON CONFLICT(dedupe_key) DO UPDATE` described above. `summary`, `actor`, and `pr_title` use `COALESCE(excluded.col, col)` so a sparse event does not erase existing values. `first_event_at` is set on insert only; both timestamps default to now when `eventAt` is absent. Returns the row.
+- `listRecentInboxItems(db, { projectId, limit, includeRead })`: `projectId` is a project ID or `'all'`. Always excludes dismissed rows; excludes read rows unless `includeRead`. Ordered by `last_event_at DESC, id DESC`, default `limit` 50.
+- `countUnreadInboxItems(db, { projectId })`: Counts rows with `read_at IS NULL AND dismissed_at IS NULL`, with the same `'all'` handling.
+- `markInboxItemsRead(db, ids)`: Sets `read_at` only on rows that are still unread, so `read_at` stays the first-read time.
+- `markAllReadBefore(db, { cutoff, projectId })`: Marks unread, undismissed rows with `last_event_at <= cutoff`. The cutoff keeps a "mark all read" click from swallowing events that arrive during the round trip.
+- `dismissInboxItem(db, id)`: Sets `dismissed_at`, and `read_at` too if it was null.
+- `pruneOldInboxItems(db, maxAgeDays = 30)`: Deletes rows older than the cutoff and returns the deleted count. Intended to be called on a throttle from the webhook poller tick.
 
 ### Project Settings
 
