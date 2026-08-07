@@ -10,6 +10,10 @@ import {
   type TimWorkspaceCommandEnvironmentOptions,
 } from '../../../common/env.js';
 import { debugLog, writeStderr } from '../../../logging';
+import {
+  getCurrentSessionProcessOwner,
+  type SessionExecutorLifecycle,
+} from '../../../common/session_process_control.js';
 
 export const TIM_CODEX_APP_SERVER_SOCKET = 'TIM_CODEX_APP_SERVER_SOCKET';
 const DEFAULT_CLOSE_TIMEOUT_MS = 2_000;
@@ -78,6 +82,8 @@ export interface ConnectionOptions {
   cwd: string;
   env?: Record<string, string>;
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+  /** Display label used when the owned app-server process is tracked. */
+  sessionProcessLabel?: string;
   onNotification?: (method: string, params: unknown) => void;
   onServerRequest?: (method: string, id: number, params: unknown) => Promise<unknown>;
   onExit?: (info: { exitCode: number; signal?: NodeJS.Signals }) => void;
@@ -103,6 +109,7 @@ type AppServerOwner =
       closing: boolean;
       stderrTask: Promise<void>;
       exitTask: Promise<void>;
+      lifecycle?: SessionExecutorLifecycle;
     }
   | {
       kind: 'external';
@@ -650,27 +657,42 @@ export class CodexAppServerConnection {
   ): Promise<{ owner: AppServerOwner; socketPath: string }> {
     const socketTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-codex-app-server-'));
     const socketPath = path.join(socketTempDir, 'codex.sock');
+    const lifecycle = getCurrentSessionProcessOwner()?.prepareExecutor({
+      label: options.sessionProcessLabel ?? 'Codex app-server',
+      command: `codex app-server --listen unix://${socketPath}`,
+    });
     const spawnEnv = {
       ...env,
+      ...lifecycle?.environment,
       [TIM_CODEX_APP_SERVER_SOCKET]: socketPath,
     };
-    const proc = Bun.spawn(['codex', 'app-server', '--listen', `unix://${socketPath}`], {
-      cwd: options.cwd,
-      env: spawnEnv,
-      stdio: ['ignore', 'ignore', 'pipe'],
-    });
+    let proc: Bun.Subprocess<'ignore', 'ignore', 'pipe'>;
+    try {
+      proc = Bun.spawn(['codex', 'app-server', '--listen', `unix://${socketPath}`], {
+        cwd: options.cwd,
+        env: spawnEnv,
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      lifecycle?.markSpawned(proc);
+    } catch (error) {
+      lifecycle?.markSpawnFailed();
+      await fs.rm(socketTempDir, { recursive: true, force: true }).catch(() => {});
+      throw error;
+    }
     const owner = {
       kind: 'spawned' as const,
       proc,
       socketTempDir,
       closing: false,
+      lifecycle,
       stderrTask: CodexAppServerConnection.consumeProcessStderr(proc),
       exitTask: Promise.resolve(),
     };
     owner.exitTask = CodexAppServerConnection.monitorProcessExit(
       proc,
       options,
-      () => owner.closing
+      () => owner.closing,
+      lifecycle
     );
     return { owner, socketPath };
   }
@@ -882,10 +904,12 @@ export class CodexAppServerConnection {
   private static async monitorProcessExit(
     proc: CodexProcessWithStderr,
     options: ConnectionOptions,
-    isClosing: () => boolean
+    isClosing: () => boolean,
+    lifecycle?: SessionExecutorLifecycle
   ): Promise<void> {
     const exitCode = await proc.exited;
     const signal = proc.signalCode;
+    lifecycle?.markExited({ exitCode, signal });
     if (!isClosing()) {
       options.onExit?.({ exitCode, signal: signal ?? undefined });
     }

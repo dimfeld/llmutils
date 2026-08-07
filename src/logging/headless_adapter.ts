@@ -11,6 +11,21 @@ import type {
 import { serializeArgs } from './tunnel_protocol.js';
 import type { TunnelMessage, WriteOptions } from './tunnel_protocol.js';
 import { debug } from '../common/process_state.js';
+import {
+  registerSessionProcessOwner,
+  SessionProcessOwner,
+  unregisterSessionProcessOwner,
+  type SessionProcessTerminationResult,
+} from '../common/session_process_control.js';
+import {
+  createProcessId,
+  SessionProcessRegistry,
+  TIM_OWNER_PROCESS_ID,
+  TIM_PARENT_PROCESS_ID,
+  TIM_PROCESS_ID,
+  TIM_SESSION_ID,
+  type ProcessId,
+} from '../common/session_process.js';
 import type { StructuredMessage } from './structured_messages.js';
 import {
   startEmbeddedServer,
@@ -60,6 +75,9 @@ export class HeadlessAdapter implements LoggerAdapter {
   private readonly serverSessionId?: string;
   private readonly serverStartedAt?: string;
   private readonly onDestroy?: () => void;
+  private readonly processRegistry?: SessionProcessRegistry;
+  private readonly processOwner?: SessionProcessOwner;
+  private readonly processEnvironmentBefore: Record<string, string | undefined> = {};
   private sessionInfoFilePath?: string;
   private destroyHookFired = false;
 
@@ -96,19 +114,52 @@ export class HeadlessAdapter implements LoggerAdapter {
     if (options && 'serverPort' in options && options.serverPort != null) {
       this.serverSessionId = crypto.randomUUID();
       this.serverStartedAt = new Date().toISOString();
-      this.sessionServer = startEmbeddedServer({
-        port: options.serverPort,
-        hostname: options.serverHostname,
-        bearerToken: options.bearerToken,
-        onConnect: (connectionId) => this.sendReplayToServerClient(connectionId),
-        onMessage: (_connectionId, message) => this.handleServerMessage(message),
-        onDisconnect: () => {
-          if (!this.hasConnectedClients()) {
-            this.hasBrowserNotificationSubscribers = false;
+      this.processRegistry = new SessionProcessRegistry({ sessionId: this.serverSessionId });
+      const rootProcessId = createProcessId();
+      this.processRegistry.register({
+        processId: rootProcessId,
+        kind: 'tim',
+        label: `tim ${sessionInfo.command}`,
+        pid: process.pid,
+        command: process.argv.join(' '),
+        startedAt: this.serverStartedAt,
+        state: 'running',
+      });
+      this.processOwner = new SessionProcessOwner({
+        sessionId: this.serverSessionId,
+        ownerProcessId: rootProcessId,
+        registry: this.processRegistry,
+        onTerminationResult: (executorId, result, error) => {
+          if (result === 'signal_failed' || result === 'unknown_process_state') {
+            const detail = error instanceof Error ? `: ${error.message}` : '';
+            this.wrappedAdapter.warn(`Could not terminate executor ${executorId}${detail}`);
           }
         },
       });
-      this.writeSessionInfoFile();
+      this.setRootProcessEnvironment(this.serverSessionId, rootProcessId);
+      registerSessionProcessOwner(this, this.processOwner);
+      try {
+        this.sessionServer = startEmbeddedServer({
+          port: options.serverPort,
+          hostname: options.serverHostname,
+          bearerToken: options.bearerToken,
+          onConnect: (connectionId) => this.sendReplayToServerClient(connectionId),
+          onMessage: (_connectionId, message) => this.handleServerMessage(message),
+          onDisconnect: () => {
+            if (!this.hasConnectedClients()) {
+              this.hasBrowserNotificationSubscribers = false;
+            }
+          },
+        });
+        this.writeSessionInfoFile();
+      } catch (error) {
+        try {
+          this.stopSessionServer();
+        } finally {
+          this.disposeProcessTracking();
+        }
+        throw error;
+      }
     }
   }
 
@@ -181,6 +232,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   destroySync(): void {
     this.destroyed = true;
     this.rejectAllPending();
+    this.disposeProcessTracking();
     this.stopSessionServer();
     this.fireDestroyHook();
   }
@@ -221,8 +273,19 @@ export class HeadlessAdapter implements LoggerAdapter {
       await sessionServer.drain();
     }
 
+    this.disposeProcessTracking();
     this.stopSessionServer();
     this.fireDestroyHook();
+  }
+
+  /** Returns the local authoritative process registry for this root session. */
+  getProcessRegistry(): SessionProcessRegistry | undefined {
+    return this.processRegistry;
+  }
+
+  /** Routes a targeted control request to a direct executor child. */
+  terminateExecutor(executorId: ProcessId): SessionProcessTerminationResult {
+    return this.processOwner?.terminateExecutor(executorId) ?? 'not_owned';
   }
 
   /**
@@ -503,6 +566,42 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.sessionServer.stop();
     this.sessionServer = undefined;
     removeSessionInfoFile(process.pid, this.sessionInfoFilePath);
+  }
+
+  private setRootProcessEnvironment(sessionId: string, processId: ProcessId): void {
+    for (const key of [
+      TIM_SESSION_ID,
+      TIM_PROCESS_ID,
+      TIM_PARENT_PROCESS_ID,
+      TIM_OWNER_PROCESS_ID,
+    ]) {
+      this.processEnvironmentBefore[key] = process.env[key];
+    }
+    process.env[TIM_SESSION_ID] = sessionId;
+    process.env[TIM_PROCESS_ID] = processId;
+    delete process.env[TIM_PARENT_PROCESS_ID];
+    delete process.env[TIM_OWNER_PROCESS_ID];
+  }
+
+  private disposeProcessTracking(): void {
+    if (!this.processOwner) {
+      return;
+    }
+    this.processOwner.dispose();
+    unregisterSessionProcessOwner(this);
+    for (const key of [
+      TIM_SESSION_ID,
+      TIM_PROCESS_ID,
+      TIM_PARENT_PROCESS_ID,
+      TIM_OWNER_PROCESS_ID,
+    ]) {
+      const value = this.processEnvironmentBefore[key];
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
   }
 
   private broadcastSessionInfo(): void {

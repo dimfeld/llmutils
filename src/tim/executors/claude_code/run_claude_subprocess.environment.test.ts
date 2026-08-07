@@ -127,6 +127,7 @@ describe('runClaudeSubprocess project environment', () => {
     expect(vi.mocked(spawnWithStreamingIO)).toHaveBeenCalledOnce();
     expect(vi.mocked(spawnWithStreamingIO).mock.calls[0][1]).toMatchObject({
       cwd: '/tmp/project',
+      sessionProcessLabel: 'Claude test',
       timEnvironment,
       env: {
         TIM_EXECUTOR: 'claude',

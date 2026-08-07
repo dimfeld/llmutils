@@ -37,6 +37,7 @@ import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
+import { getCurrentSessionProcessRegistry } from '../../common/session_process_control.js';
 import { setupPermissionsMcp } from './claude_code/permissions_mcp_setup.js';
 import { runClaudeSubprocess, buildAllowedToolsList } from './claude_code/run_claude_subprocess.js';
 import { executeWithTerminalInput } from './claude_code/terminal_input_lifecycle.ts';
@@ -688,6 +689,7 @@ export class ClaudeCodeExecutor implements Executor {
         const promptHandler = createPromptRequestHandler();
         tunnelServer = await createTunnelServer(tunnelSocketPath, {
           onPromptRequest: promptHandler,
+          processRegistry: getCurrentSessionProcessRegistry(),
         });
       } catch (err) {
         debugLog('Could not create tunnel server for output forwarding:', err);
@@ -778,6 +780,7 @@ export class ClaudeCodeExecutor implements Executor {
       let killedByTimeout = false;
       resetToolUseCache();
       const streaming = await spawnWithStreamingIO(args, {
+        sessionProcessLabel: 'Claude execution',
         env: {
           CLAUDECODE: '',
           TIM_EXECUTOR: 'claude',

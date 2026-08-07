@@ -6,6 +6,12 @@ import { HeadlessAdapter } from './headless_adapter.ts';
 import type { HeadlessMessage, HeadlessServerMessage } from './headless_protocol.ts';
 import { createRecordingAdapter } from './test_helpers.ts';
 import { readSessionInfoFile } from '../tim/session_server/runtime_dir.ts';
+import {
+  TIM_OWNER_PROCESS_ID,
+  TIM_PARENT_PROCESS_ID,
+  TIM_PROCESS_ID,
+  TIM_SESSION_ID,
+} from '../common/session_process.ts';
 
 function parseMessage(
   message: string | Buffer | ArrayBuffer | ArrayBufferView
@@ -82,6 +88,36 @@ afterEach(async () => {
 });
 
 describe('HeadlessAdapter', () => {
+  it('registers the root tim process for executor ownership and restores its environment', async () => {
+    const before = {
+      [TIM_SESSION_ID]: process.env[TIM_SESSION_ID],
+      [TIM_PROCESS_ID]: process.env[TIM_PROCESS_ID],
+      [TIM_PARENT_PROCESS_ID]: process.env[TIM_PARENT_PROCESS_ID],
+      [TIM_OWNER_PROCESS_ID]: process.env[TIM_OWNER_PROCESS_ID],
+    };
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);
+
+    const registry = adapter.getProcessRegistry();
+    expect(registry?.getSnapshot()).toHaveLength(1);
+    expect(registry?.getSnapshot()[0]).toMatchObject({
+      kind: 'tim',
+      label: 'tim agent',
+      pid: process.pid,
+      state: 'running',
+    });
+    expect(process.env[TIM_SESSION_ID]).toEqual(expect.any(String));
+    expect(process.env[TIM_PROCESS_ID]).toEqual(expect.any(String));
+    expect(process.env[TIM_PARENT_PROCESS_ID]).toBeUndefined();
+    expect(process.env[TIM_OWNER_PROCESS_ID]).toBeUndefined();
+
+    await adapter.destroy();
+    expect(process.env[TIM_SESSION_ID]).toBe(before[TIM_SESSION_ID]);
+    expect(process.env[TIM_PROCESS_ID]).toBe(before[TIM_PROCESS_ID]);
+    expect(process.env[TIM_PARENT_PROCESS_ID]).toBe(before[TIM_PARENT_PROCESS_ID]);
+    expect(process.env[TIM_OWNER_PROCESS_ID]).toBe(before[TIM_OWNER_PROCESS_ID]);
+  });
+
   it('buffers output in replay history and forwards local output', async () => {
     const { adapter: wrapped, calls } = createRecordingAdapter();
     const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);

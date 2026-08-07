@@ -729,6 +729,7 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     expect(harness.spawnWithStreamingIOMock).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({
+        sessionProcessLabel: 'Claude execution',
         timEnvironment,
         env: expect.objectContaining({
           TIM_EXECUTOR: 'claude',

@@ -31,6 +31,7 @@ import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { createTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
+import { getCurrentSessionProcessRegistry } from '../../../common/session_process_control.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
 import { getDatabase } from '../../db/database.js';
 import { getPermissions } from '../../db/permission.js';
@@ -333,6 +334,7 @@ export async function runClaudeSubprocess(
       const promptHandler = createPromptRequestHandler();
       tunnelServer = await createTunnelServer(tunnelSocketPath, {
         onPromptRequest: promptHandler,
+        processRegistry: getCurrentSessionProcessRegistry(),
       });
     } catch (err) {
       debugLog(`Could not create tunnel server for ${label} output forwarding:`, err);
@@ -414,6 +416,7 @@ export async function runClaudeSubprocess(
     }
 
     const streaming = await spawnWithStreamingIO(args, {
+      sessionProcessLabel: `Claude ${label}`,
       env: {
         CLAUDECODE: '',
         TIM_EXECUTOR: 'claude',

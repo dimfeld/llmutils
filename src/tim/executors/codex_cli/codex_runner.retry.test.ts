@@ -252,6 +252,7 @@ describe('executeCodexStep subprocess monitor wiring', () => {
     });
 
     expect(vi.mocked(spawnAndLogOutput).mock.calls[0][1]).toMatchObject({
+      sessionProcessLabel: 'Codex CLI attempt 1',
       timEnvironment,
       env: {
         TIM_EXECUTOR: 'codex',

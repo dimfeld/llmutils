@@ -715,6 +715,7 @@ describe('executeCodexStepViaAppServer', () => {
 
     expect(harness.connectionCreateOptions.current).toMatchObject({
       cwd: '/repo',
+      sessionProcessLabel: 'Codex app-server',
       timEnvironment,
       env: {
         TIM_EXECUTOR: 'codex',
