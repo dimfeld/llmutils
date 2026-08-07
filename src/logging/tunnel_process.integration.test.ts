@@ -120,6 +120,178 @@ describe('tunnel process plumbing', () => {
     socket.end();
   });
 
+  it('rejects malformed lifecycle fields while accepting a valid nested registration', async () => {
+    const received: TunnelProcessMessage[] = [];
+    const { registry, rootExecutor, socketPath } = await createFixture({
+      onProcessMessage: (message) => received.push(message),
+    });
+
+    const socket = await connectRaw(socketPath);
+    const invalidMessages: Record<string, unknown>[] = [
+      {
+        type: 'process_register',
+        processId: 'tim-invalid-kind',
+        parentProcessId: rootExecutor,
+        kind: 'worker',
+        label: 'invalid kind',
+      },
+      {
+        type: 'process_register',
+        processId: 'tim-invalid-label',
+        parentProcessId: rootExecutor,
+        kind: 'tim',
+        label: '   ',
+      },
+      {
+        type: 'process_register',
+        processId: 'tim-invalid-pid',
+        parentProcessId: rootExecutor,
+        kind: 'tim',
+        label: 'invalid pid',
+        pid: 0,
+      },
+      {
+        type: 'process_register',
+        processId: 'tim-invalid-parent',
+        parentProcessId: 'not a process id',
+        kind: 'tim',
+        label: 'invalid parent',
+      },
+      {
+        type: 'process_update',
+        processId: 'root-executor',
+      },
+      {
+        type: 'process_update',
+        processId: 'root-executor',
+        state: 'unknown',
+      },
+      {
+        type: 'process_exit',
+        processId: 'root-executor',
+        exitCode: 1.5,
+      },
+      {
+        type: 'process_exit',
+        processId: 'root-executor',
+        signal: 'x'.repeat(129),
+      },
+      {
+        type: 'process_remove',
+        processId: 'root-executor',
+        subtree: 'yes',
+      },
+    ];
+    for (const message of invalidMessages) {
+      socket.write(`${JSON.stringify(message)}\n`);
+    }
+    socket.write(
+      `${JSON.stringify({
+        type: 'process_register',
+        processId: 'tim-valid',
+        parentProcessId: rootExecutor,
+        ownerProcessId: rootExecutor,
+        kind: 'tim',
+        label: 'valid nested tim',
+      })}\n`
+    );
+
+    await waitFor(() => received.length === 1);
+    expect(received[0]).toMatchObject({
+      type: 'process_register',
+      processId: processId('tim-valid'),
+    });
+    expect(registry.getSnapshot().map((node) => node.processId)).toEqual([
+      processId('root'),
+      rootExecutor,
+      processId('tim-valid'),
+    ]);
+    socket.end();
+  });
+
+  it('builds nested and parallel branches from real tunnel lifecycle messages', async () => {
+    const { registry, rootExecutor, socketPath } = await createFixture();
+    const clientA = await createTunnelAdapter(socketPath);
+    const clientB = await createTunnelAdapter(socketPath);
+    adapters.push(clientA, clientB);
+
+    const timA = processId('tim-a');
+    const executorA = processId('executor-a');
+    const nestedTimA = processId('nested-tim-a');
+    const nestedExecutorA = processId('nested-executor-a');
+    const timB = processId('tim-b');
+    const executorB = processId('executor-b');
+
+    expect(
+      clientA.registerProcess({
+        processId: timA,
+        parentProcessId: rootExecutor,
+        kind: 'tim',
+        label: 'tim A',
+      })
+    ).toBe(true);
+    expect(
+      clientA.registerProcess({
+        processId: executorA,
+        parentProcessId: timA,
+        kind: 'executor',
+        label: 'executor A',
+      })
+    ).toBe(true);
+    expect(
+      clientA.registerProcess({
+        processId: nestedTimA,
+        parentProcessId: executorA,
+        kind: 'tim',
+        label: 'nested tim A',
+      })
+    ).toBe(true);
+    expect(
+      clientA.registerProcess({
+        processId: nestedExecutorA,
+        parentProcessId: nestedTimA,
+        kind: 'executor',
+        label: 'nested executor A',
+      })
+    ).toBe(true);
+    expect(
+      clientB.registerProcess({
+        processId: timB,
+        parentProcessId: rootExecutor,
+        kind: 'tim',
+        label: 'tim B',
+      })
+    ).toBe(true);
+    expect(
+      clientB.registerProcess({
+        processId: executorB,
+        parentProcessId: timB,
+        kind: 'executor',
+        label: 'executor B',
+      })
+    ).toBe(true);
+
+    await waitFor(() => registry.size === 8);
+    expect(registry.getSnapshot().map((node) => node.processId)).toEqual([
+      processId('root'),
+      rootExecutor,
+      timA,
+      executorA,
+      nestedTimA,
+      nestedExecutorA,
+      timB,
+      executorB,
+    ]);
+    expect(registry.get(nestedTimA)).toMatchObject({
+      parentProcessId: executorA,
+      ownerProcessId: executorA,
+    });
+    expect(registry.get(nestedExecutorA)).toMatchObject({
+      parentProcessId: nestedTimA,
+      ownerProcessId: nestedTimA,
+    });
+  });
+
   it('gives each client a stable channel and routes termination only to the matching owner', async () => {
     const channels: TunnelClientChannel[] = [];
     const { registry, rootExecutor, socketPath } = await createFixture({
@@ -190,6 +362,124 @@ describe('tunnel process plumbing', () => {
     expect(terminatedB).toEqual([executorB]);
   });
 
+  it('rejects lifecycle messages from a different client and preserves the owner branch', async () => {
+    const accepted: Array<{ processId: ProcessId; clientId: string }> = [];
+    const { registry, rootExecutor, socketPath } = await createFixture({
+      onProcessMessage: (message, client) => {
+        accepted.push({ processId: message.processId, clientId: client.id });
+      },
+    });
+    const clientA = await createTunnelAdapter(socketPath);
+    const clientB = await createTunnelAdapter(socketPath);
+    adapters.push(clientA, clientB);
+
+    const timA = processId('tim-owned-a');
+    const executorA = processId('executor-owned-a');
+    const executorB = processId('executor-forbidden-b');
+    clientA.registerProcess({
+      processId: timA,
+      parentProcessId: rootExecutor,
+      kind: 'tim',
+      label: 'tim A',
+    });
+    clientA.registerProcess({
+      processId: executorA,
+      parentProcessId: timA,
+      kind: 'executor',
+      label: 'executor A',
+    });
+    await waitFor(() => registry.has(executorA));
+    const acceptedBeforeAttack = accepted.length;
+
+    clientB.updateProcess(executorA, { label: 'hijacked' });
+    clientB.exitProcess(executorA, { exitCode: 99 });
+    clientB.removeProcess(timA);
+    clientB.registerProcess({
+      processId: executorB,
+      parentProcessId: timA,
+      ownerProcessId: timA,
+      kind: 'executor',
+      label: 'executor B',
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    expect(accepted).toHaveLength(acceptedBeforeAttack);
+    expect(registry.get(timA)).toMatchObject({ state: 'running', label: 'tim A' });
+    expect(registry.get(executorA)).toMatchObject({ state: 'running', label: 'executor A' });
+    expect(registry.has(executorB)).toBe(false);
+  });
+
+  it('accepts duplicate and late lifecycle messages without recreating or changing a node', async () => {
+    const received: TunnelProcessMessage[] = [];
+    const { registry, rootExecutor, socketPath } = await createFixture({
+      onProcessMessage: (message) => received.push(message),
+    });
+    const client = await createTunnelAdapter(socketPath);
+    adapters.push(client);
+    const tim = processId('tim-idempotent');
+    const executor = processId('executor-idempotent');
+
+    const timRegistration = {
+      processId: tim,
+      parentProcessId: rootExecutor,
+      kind: 'tim' as const,
+      label: 'idempotent tim',
+    };
+    const executorRegistration = {
+      processId: executor,
+      parentProcessId: tim,
+      kind: 'executor' as const,
+      label: 'idempotent executor',
+    };
+    client.registerProcess(timRegistration);
+    client.registerProcess(timRegistration);
+    client.registerProcess(executorRegistration);
+    client.registerProcess(executorRegistration);
+    await waitFor(() => registry.has(executor));
+    await waitFor(() => received.length >= 4);
+
+    client.updateProcess(executor, { pid: 42, command: 'agent --run' });
+    client.updateProcess(executor, { pid: 42, command: 'agent --run' });
+    await waitFor(() => registry.get(executor)?.pid === 42);
+    await waitFor(() => received.length >= 6);
+    client.exitProcess(executor, { exitCode: 0 });
+    client.exitProcess(executor, { exitCode: 1 });
+    await waitFor(() => registry.get(executor)?.state === 'exited');
+    await waitFor(() => received.length >= 8);
+    client.updateProcess(executor, { label: 'late label', state: 'running' });
+    await waitFor(() => received.length >= 9);
+    expect(registry.get(executor)).toMatchObject({
+      label: 'idempotent executor',
+      parentProcessId: tim,
+      ownerProcessId: tim,
+      state: 'exited',
+    });
+    expect(registry.getOwnerChannel(tim)).toBeDefined();
+    client.registerProcess(executorRegistration);
+    await waitFor(() => received.length >= 10);
+    client.removeProcess(executor);
+    client.removeProcess(executor);
+    await waitFor(() => !registry.has(executor));
+    await waitFor(() => received.length >= 12);
+
+    expect(registry.get(tim)).toMatchObject({ label: 'idempotent tim', state: 'running' });
+    expect(registry.has(executor)).toBe(false);
+    expect(received.map((message) => message.type)).toEqual([
+      'process_register',
+      'process_register',
+      'process_register',
+      'process_register',
+      'process_update',
+      'process_update',
+      'process_exit',
+      'process_exit',
+      'process_update',
+      'process_register',
+      'process_remove',
+      'process_remove',
+    ]);
+  });
+
   it('cleans a client owner subtree when its tunnel disconnects', async () => {
     const { registry, rootExecutor, socketPath } = await createFixture();
     const client = await createTunnelAdapter(socketPath);
@@ -248,6 +538,46 @@ describe('tunnel process plumbing', () => {
       reason: 'send_failed',
     });
     channel.send = originalSend;
+  });
+
+  it('reports unknown, non-executor, and disconnected owner targets', async () => {
+    const { registry, root, rootExecutor, socketPath } = await createFixture();
+    expect(server!.sendExecutorTermination(processId('missing'))).toEqual({
+      ok: false,
+      reason: 'unknown_executor',
+    });
+    expect(server!.sendExecutorTermination(root)).toEqual({
+      ok: false,
+      reason: 'not_executor',
+    });
+    expect(server!.sendExecutorTermination(rootExecutor)).toEqual({
+      ok: false,
+      reason: 'owner_not_connected',
+    });
+
+    const client = await createTunnelAdapter(socketPath);
+    adapters.push(client);
+    const tim = processId('tim-disconnect-owner');
+    const executor = processId('executor-disconnect-owner');
+    client.registerProcess({
+      processId: tim,
+      parentProcessId: rootExecutor,
+      kind: 'tim',
+      label: 'tim owner',
+    });
+    client.registerProcess({
+      processId: executor,
+      parentProcessId: tim,
+      kind: 'executor',
+      label: 'executor',
+    });
+    await waitFor(() => registry.has(executor));
+    await client.destroy();
+    await waitFor(() => !registry.has(tim));
+    expect(server!.sendExecutorTermination(executor)).toEqual({
+      ok: false,
+      reason: 'unknown_executor',
+    });
   });
 
   it('rejects a termination request after the executor has exited', async () => {

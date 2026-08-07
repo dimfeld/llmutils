@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   createChildSessionProcessEnvironment,
+  createProcessId,
   createSessionProcessRegistryFromEnvironment,
   isSessionProcessTrackingEnabled,
   readSessionProcessEnvironment,
   SessionProcessRegistry,
+  TIM_OWNER_PROCESS_ID,
   TIM_PARENT_PROCESS_ID,
   TIM_PROCESS_ID,
   TIM_SESSION_ID,
@@ -64,6 +66,54 @@ describe('SessionProcessRegistry', () => {
       parentProcessId: processId('executor-1'),
       ownerProcessId: processId('executor-1'),
     });
+  });
+
+  it('rejects invalid inherited relationships and clears stale child relationships', () => {
+    expect(
+      readSessionProcessEnvironment({
+        [TIM_SESSION_ID]: 'session-1',
+        [TIM_PROCESS_ID]: 'not valid',
+      })
+    ).toBeUndefined();
+    expect(
+      readSessionProcessEnvironment({
+        [TIM_SESSION_ID]: 'session-1',
+        [TIM_PROCESS_ID]: 'tim-1',
+        [TIM_PARENT_PROCESS_ID]: 'not valid',
+      })
+    ).toBeUndefined();
+    expect(
+      readSessionProcessEnvironment({
+        [TIM_SESSION_ID]: 'session-1',
+        [TIM_PROCESS_ID]: 'tim-1',
+        [TIM_OWNER_PROCESS_ID]: 'not valid',
+      })
+    ).toBeUndefined();
+
+    const child = createChildSessionProcessEnvironment(
+      {
+        [TIM_SESSION_ID]: 'old-session',
+        [TIM_PROCESS_ID]: 'old-process',
+        [TIM_PARENT_PROCESS_ID]: 'old-parent',
+        [TIM_OWNER_PROCESS_ID]: 'old-owner',
+      },
+      { sessionId: 'session-1', processId: processId('root-child') }
+    );
+
+    expect(child.env[TIM_PARENT_PROCESS_ID]).toBeUndefined();
+    expect(child.env[TIM_OWNER_PROCESS_ID]).toBeUndefined();
+    expect(readSessionProcessEnvironment(child.env)).toEqual({
+      sessionId: 'session-1',
+      processId: processId('root-child'),
+    });
+  });
+
+  it('validates generated and parsed opaque process IDs', () => {
+    expect(toProcessId('valid-id')).toBe(processId('valid-id'));
+    expect(toProcessId('')).toBeUndefined();
+    expect(toProcessId('has whitespace')).toBeUndefined();
+    expect(toProcessId('x'.repeat(257))).toBeUndefined();
+    expect(() => createProcessId(() => 'bad id')).toThrow(/invalid opaque ID/i);
   });
 
   it('requires a session plus either headless or tunnel transport', () => {
@@ -139,6 +189,68 @@ describe('SessionProcessRegistry', () => {
     ]);
   });
 
+  it('rejects invalid node kinds, relationships, and metadata without changing the tree', () => {
+    const registry = createRegistry();
+    const root = processId('root');
+    const executor = processId('executor');
+    const nestedTim = processId('nested-tim');
+
+    expect(registry.register({ processId: root, kind: 'tim', label: 'root' })).toBeDefined();
+    expect(
+      registry.register({ processId: executor, kind: 'executor', label: 'root executor' })
+    ).toBeUndefined();
+    expect(
+      registry.register({
+        processId: nestedTim,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'tim',
+        label: 'invalid parent kind',
+      })
+    ).toBeUndefined();
+    expect(
+      registry.register({
+        processId: executor,
+        parentProcessId: root,
+        ownerProcessId: processId('unknown-owner'),
+        kind: 'executor',
+        label: 'invalid owner kind',
+      })
+    ).toBeUndefined();
+    expect(
+      registry.register({
+        processId: executor,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'valid default relationship',
+      })
+    ).toBeDefined();
+    expect(registry.get(executor)?.ownerProcessId).toBe(root);
+    expect(registry.remove(executor)).toEqual([executor]);
+    expect(
+      registry.register({
+        processId: executor,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: '   ',
+      })
+    ).toBeUndefined();
+    expect(
+      registry.register({
+        processId: executor,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'invalid pid',
+        pid: 0,
+      })
+    ).toBeUndefined();
+    expect(registry.size).toBe(1);
+    expect(registry.getSnapshot().map((node) => node.processId)).toEqual([root]);
+  });
+
   it('makes duplicate registration and late lifecycle events harmless', () => {
     const registry = createRegistry();
     const root = processId('root');
@@ -182,6 +294,68 @@ describe('SessionProcessRegistry', () => {
       label: 'executor',
     });
     expect(changes).toEqual(['registered', 'registered', 'exited']);
+  });
+
+  it('merges duplicate registration metadata but rejects identity changes', () => {
+    const registry = createRegistry();
+    const root = processId('root');
+    const executor = processId('executor');
+    const changes: string[] = [];
+    registry.subscribe((change) => changes.push(change.type));
+
+    registry.register({ processId: root, kind: 'tim', label: 'root' });
+    registry.register({
+      processId: executor,
+      parentProcessId: root,
+      ownerProcessId: root,
+      kind: 'executor',
+      label: 'executor',
+      state: 'starting',
+    });
+
+    expect(
+      registry.register({
+        processId: executor,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'executor',
+        pid: 42,
+        command: 'agent --run',
+        state: 'running',
+      })
+    ).toMatchObject({
+      processId: executor,
+      pid: 42,
+      command: 'agent --run',
+      state: 'running',
+    });
+    expect(
+      registry.register({
+        processId: executor,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'renamed executor',
+      })
+    ).toBeUndefined();
+    expect(
+      registry.register({
+        processId: executor,
+        parentProcessId: processId('other-parent'),
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'executor',
+      })
+    ).toBeUndefined();
+
+    expect(registry.get(executor)).toMatchObject({
+      label: 'executor',
+      pid: 42,
+      command: 'agent --run',
+      state: 'running',
+    });
+    expect(changes).toEqual(['registered', 'registered', 'updated']);
   });
 
   it('removes a disconnected owner subtree and routes owner channels by node identity', () => {
@@ -274,6 +448,97 @@ describe('SessionProcessRegistry', () => {
 
     expect(registry.releaseChannel('client-a', 'orphan')).toEqual([tim]);
     expect(registry.get(tim)).toMatchObject({ state: 'orphaned' });
+  });
+
+  it('marks every descendant of a lost owner and leaves sibling branches live', () => {
+    const registry = createRegistry();
+    const root = processId('root');
+    const rootExecutor = processId('root-executor');
+    const timA = processId('tim-a');
+    const executorA = processId('executor-a');
+    const nestedTimA = processId('nested-tim-a');
+    const timB = processId('tim-b');
+    const executorB = processId('executor-b');
+    const changes: string[] = [];
+    registry.subscribe((change) => changes.push(change.type));
+
+    registry.register({ processId: root, kind: 'tim', label: 'root' });
+    registry.register({
+      processId: rootExecutor,
+      parentProcessId: root,
+      ownerProcessId: root,
+      kind: 'executor',
+      label: 'root executor',
+    });
+    registry.register(
+      {
+        processId: timA,
+        parentProcessId: rootExecutor,
+        ownerProcessId: rootExecutor,
+        kind: 'tim',
+        label: 'tim A',
+      },
+      { ownerChannelId: 'client-a' }
+    );
+    registry.register({
+      processId: executorA,
+      parentProcessId: timA,
+      ownerProcessId: timA,
+      kind: 'executor',
+      label: 'executor A',
+    });
+    registry.register(
+      {
+        processId: nestedTimA,
+        parentProcessId: executorA,
+        ownerProcessId: executorA,
+        kind: 'tim',
+        label: 'nested tim A',
+      },
+      { ownerChannelId: 'client-a' }
+    );
+    registry.register({
+      processId: timB,
+      parentProcessId: rootExecutor,
+      ownerProcessId: rootExecutor,
+      kind: 'tim',
+      label: 'tim B',
+    });
+    registry.register({
+      processId: executorB,
+      parentProcessId: timB,
+      ownerProcessId: timB,
+      kind: 'executor',
+      label: 'executor B',
+    });
+
+    expect(registry.releaseChannel('client-a', 'orphan')).toEqual([timA, executorA, nestedTimA]);
+    expect(registry.get(timA)).toMatchObject({ state: 'orphaned' });
+    expect(registry.get(executorA)).toMatchObject({ state: 'orphaned' });
+    expect(registry.get(nestedTimA)).toMatchObject({ state: 'orphaned' });
+    expect(registry.get(executorB)).toMatchObject({ state: 'running' });
+    expect(registry.getExecutorOwnerChannel(executorA)).toBeUndefined();
+    expect(changes.at(-1)).toBe('owner_lost');
+    expect(registry.releaseChannel('client-a', 'orphan')).toEqual([]);
+  });
+
+  it('does not expose mutable internal nodes and isolates listener failures', () => {
+    const registry = createRegistry();
+    const root = processId('root');
+    const listenerCalls: string[] = [];
+    registry.subscribe(() => {
+      throw new Error('listener failure');
+    });
+    registry.subscribe((change) => listenerCalls.push(change.type));
+
+    const node = registry.register({ processId: root, kind: 'tim', label: 'root' });
+    expect(node).toBeDefined();
+    node!.label = 'mutated outside registry';
+    const snapshot = registry.getSnapshot();
+    snapshot[0]!.label = 'mutated snapshot';
+
+    expect(registry.get(root)).toMatchObject({ label: 'root' });
+    expect(listenerCalls).toEqual(['registered']);
   });
 
   it('does not regress a running node to starting on a late update', () => {

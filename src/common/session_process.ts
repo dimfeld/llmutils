@@ -505,6 +505,7 @@ export class SessionProcessRegistry {
       ...update,
       parentProcessId: update.parentProcessId ?? current.parentProcessId,
       ownerProcessId: update.ownerProcessId ?? current.ownerProcessId,
+      label: update.label ?? current.label,
       pid: update.pid === null ? undefined : (update.pid ?? current.pid),
       command: update.command === null ? undefined : (update.command ?? current.command),
       startIdentity:
