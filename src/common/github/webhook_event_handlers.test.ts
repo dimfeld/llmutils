@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import { DATABASE_FILENAME, openDatabase } from '../../tim/db/database.js';
 import { nonSyncedUpsertPlan } from '../../tim/db/plan.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
+import { upsertBranchMergeRequirements } from '../../tim/db/branch_merge_requirements.js';
 import {
   getPrStatusByUrl,
   recomputeCheckRollupState,
@@ -2010,6 +2011,412 @@ describe('common/github/webhook_event_handlers', () => {
           labels: [],
           requested_reviewers: [],
           updated_at: '2026-03-30T12:00:00.000Z',
+        },
+      });
+
+      expect(result.inboxSignals).toBeUndefined();
+    });
+  });
+
+  describe('handlePullRequestReviewEvent inbox signals', () => {
+    beforeEach(() => {
+      upsertPrStatus(db, {
+        prUrl: 'https://github.com/example/repo/pull/70',
+        owner: 'example',
+        repo: 'repo',
+        prNumber: 70,
+        title: 'Reviewed PR',
+        author: 'pr-author',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-03-30T00:00:00.000Z',
+      });
+    });
+
+    test('emits pr_approved when a review is submitted as approved', () => {
+      const result = handlePullRequestReviewEvent(db, {
+        action: 'submitted',
+        repository: { full_name: 'example/repo' },
+        pull_request: { number: 70 },
+        review: {
+          state: 'approved',
+          body: null,
+          submitted_at: '2026-03-30T10:00:00.000Z',
+          user: { login: 'reviewer-1', type: 'User' },
+        },
+      });
+
+      expect(result.inboxSignals).toEqual([
+        {
+          kind: 'pr_approved',
+          repo: 'example/repo',
+          prNumber: 70,
+          prUrl: 'https://github.com/example/repo/pull/70',
+          prTitle: 'Reviewed PR',
+          prAuthor: 'pr-author',
+          actor: 'reviewer-1',
+          actorType: 'User',
+          eventAt: '2026-03-30T10:00:00.000Z',
+        },
+      ]);
+    });
+
+    test('emits pr_comment with an excerpt when a changes-requested review has a body', () => {
+      const result = handlePullRequestReviewEvent(db, {
+        action: 'submitted',
+        repository: { full_name: 'example/repo' },
+        pull_request: { number: 70 },
+        review: {
+          state: 'changes_requested',
+          body: 'Please fix\r\nthis edge case.',
+          submitted_at: '2026-03-30T10:05:00.000Z',
+          user: { login: 'reviewer-2', type: 'User' },
+        },
+      });
+
+      expect(result.inboxSignals).toEqual([
+        {
+          kind: 'pr_comment',
+          repo: 'example/repo',
+          prNumber: 70,
+          prUrl: 'https://github.com/example/repo/pull/70',
+          prTitle: 'Reviewed PR',
+          prAuthor: 'pr-author',
+          actor: 'reviewer-2',
+          actorType: 'User',
+          summary: 'Please fix this edge case.',
+          eventAt: '2026-03-30T10:05:00.000Z',
+        },
+      ]);
+    });
+
+    test('emits pr_comment with an excerpt when a commented review has a body', () => {
+      const result = handlePullRequestReviewEvent(db, {
+        action: 'submitted',
+        repository: { full_name: 'example/repo' },
+        pull_request: { number: 70 },
+        review: {
+          state: 'commented',
+          body: 'Nice work overall.',
+          submitted_at: '2026-03-30T10:10:00.000Z',
+          user: { login: 'reviewer-3', type: 'User' },
+        },
+      });
+
+      expect(result.inboxSignals).toEqual([
+        expect.objectContaining({
+          kind: 'pr_comment',
+          actor: 'reviewer-3',
+          summary: 'Nice work overall.',
+        }),
+      ]);
+    });
+
+    test('does not emit a comment signal when a commented review has an empty or whitespace-only body', () => {
+      const emptyBodyResult = handlePullRequestReviewEvent(db, {
+        action: 'submitted',
+        repository: { full_name: 'example/repo' },
+        pull_request: { number: 70 },
+        review: {
+          state: 'commented',
+          body: '',
+          submitted_at: '2026-03-30T10:15:00.000Z',
+          user: { login: 'reviewer-4', type: 'User' },
+        },
+      });
+      expect(emptyBodyResult.inboxSignals).toBeUndefined();
+
+      const whitespaceBodyResult = handlePullRequestReviewEvent(db, {
+        action: 'submitted',
+        repository: { full_name: 'example/repo' },
+        pull_request: { number: 70 },
+        review: {
+          state: 'commented',
+          body: '   \n  \r\n  ',
+          submitted_at: '2026-03-30T10:16:00.000Z',
+          user: { login: 'reviewer-5', type: 'User' },
+        },
+      });
+      expect(whitespaceBodyResult.inboxSignals).toBeUndefined();
+    });
+
+    test('does not emit a comment signal when a null body is submitted for changes-requested or commented reviews', () => {
+      const result = handlePullRequestReviewEvent(db, {
+        action: 'submitted',
+        repository: { full_name: 'example/repo' },
+        pull_request: { number: 70 },
+        review: {
+          state: 'changes_requested',
+          body: null,
+          submitted_at: '2026-03-30T10:20:00.000Z',
+          user: { login: 'reviewer-6', type: 'User' },
+        },
+      });
+
+      expect(result.inboxSignals).toBeUndefined();
+    });
+
+    test('does not emit any inbox signal when the pr_status row is missing', () => {
+      const result = handlePullRequestReviewEvent(db, {
+        action: 'submitted',
+        repository: { full_name: 'example/repo' },
+        pull_request: { number: 999 },
+        review: {
+          state: 'approved',
+          body: 'Looks good',
+          submitted_at: '2026-03-30T10:25:00.000Z',
+          user: { login: 'reviewer-7', type: 'User' },
+        },
+      });
+
+      expect(result).toEqual({ updated: false });
+      expect(result.inboxSignals).toBeUndefined();
+    });
+
+    test('does not emit any inbox signal for non-submitted review actions', () => {
+      const result = handlePullRequestReviewEvent(db, {
+        action: 'edited',
+        repository: { full_name: 'example/repo' },
+        pull_request: { number: 70 },
+        review: {
+          state: 'approved',
+          body: null,
+          submitted_at: '2026-03-30T10:30:00.000Z',
+          user: { login: 'reviewer-1', type: 'User' },
+        },
+      });
+
+      expect(result.inboxSignals).toBeUndefined();
+    });
+  });
+
+  describe('handlePullRequestReviewThreadEvent inbox signals', () => {
+    beforeEach(() => {
+      upsertPrStatus(db, {
+        prUrl: 'https://github.com/example/repo/pull/71',
+        owner: 'example',
+        repo: 'repo',
+        prNumber: 71,
+        title: 'Threaded PR',
+        author: 'pr-author',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-03-30T00:00:00.000Z',
+      });
+    });
+
+    test('emits a pr_comment signal with author, type, body, and timestamp for a created review comment', () => {
+      const result = handlePullRequestReviewThreadEvent(db, {
+        action: 'created',
+        repository: { full_name: 'example/repo' },
+        pull_request: {
+          number: 71,
+          title: 'Threaded PR',
+          state: 'open',
+          draft: false,
+          user: { login: 'pr-author' },
+        },
+        comment: {
+          id: 555,
+          body: 'This line needs a fix.',
+          created_at: '2026-03-30T11:00:00.000Z',
+          user: { login: 'inline-commenter', type: 'User' },
+        },
+      });
+
+      expect(result.inboxSignals).toEqual([
+        {
+          kind: 'pr_comment',
+          repo: 'example/repo',
+          prNumber: 71,
+          prUrl: 'https://github.com/example/repo/pull/71',
+          prTitle: 'Threaded PR',
+          prAuthor: 'pr-author',
+          actor: 'inline-commenter',
+          actorType: 'User',
+          summary: 'This line needs a fix.',
+          eventAt: '2026-03-30T11:00:00.000Z',
+        },
+      ]);
+      expect(result.updated).toBe(true);
+    });
+
+    test('does not emit a signal for a thread-resolved event with no comment', () => {
+      const result = handlePullRequestReviewThreadEvent(db, {
+        action: 'resolved',
+        repository: { full_name: 'example/repo' },
+        pull_request: {
+          number: 71,
+          title: 'Threaded PR',
+          state: 'open',
+          draft: false,
+        },
+        thread: {
+          node_id: 'PRRT_thread_71',
+          is_resolved: true,
+        },
+      });
+
+      expect(result.inboxSignals).toBeUndefined();
+      // Existing thread-resolution behavior (no cached thread row) still queues a refresh.
+      expect(result.apiRefreshTargets).toEqual([
+        {
+          owner: 'example',
+          repo: 'repo',
+          prNumber: 71,
+          operation: 'review thread resolved',
+          type: 'review_threads',
+          threadId: 'PRRT_thread_71',
+        },
+      ]);
+    });
+
+    test('does not emit a signal for a created action when the comment has no body', () => {
+      const result = handlePullRequestReviewThreadEvent(db, {
+        action: 'created',
+        repository: { full_name: 'example/repo' },
+        pull_request: {
+          number: 71,
+          title: 'Threaded PR',
+          state: 'open',
+          draft: false,
+        },
+        comment: {
+          id: 556,
+          body: null,
+          created_at: '2026-03-30T11:05:00.000Z',
+          user: { login: 'inline-commenter', type: 'User' },
+        },
+      });
+
+      expect(result.inboxSignals).toBeUndefined();
+    });
+  });
+
+  describe('handleCheckRunEvent inbox signals', () => {
+    beforeEach(() => {
+      upsertPrStatus(db, {
+        prUrl: 'https://github.com/example/repo/pull/72',
+        owner: 'example',
+        repo: 'repo',
+        prNumber: 72,
+        title: 'Checked PR',
+        author: 'pr-author',
+        state: 'open',
+        draft: false,
+        baseBranch: 'main',
+        lastFetchedAt: '2026-03-30T00:00:00.000Z',
+      });
+    });
+
+    test('emits ci_failure when a completed required check fails', () => {
+      upsertBranchMergeRequirements(db, {
+        owner: 'example',
+        repo: 'repo',
+        branchName: 'main',
+        lastFetchedAt: '2026-03-30T00:00:00.000Z',
+        requirements: [
+          {
+            sourceKind: 'legacy_branch_protection',
+            sourceId: 0,
+            checks: [{ context: 'ci' }],
+          },
+        ],
+      });
+
+      const result = handleCheckRunEvent(db, {
+        repository: { full_name: 'example/repo' },
+        check_run: {
+          name: 'ci',
+          status: 'completed',
+          conclusion: 'failure',
+          completed_at: '2026-03-30T12:00:00.000Z',
+          pull_requests: [{ number: 72 }],
+        },
+      });
+
+      expect(result.inboxSignals).toEqual([
+        {
+          kind: 'ci_failure',
+          repo: 'example/repo',
+          prNumber: 72,
+          prUrl: 'https://github.com/example/repo/pull/72',
+          prTitle: 'Checked PR',
+          prAuthor: 'pr-author',
+          actor: 'ci',
+          summary: 'ci (failure)',
+          eventAt: '2026-03-30T12:00:00.000Z',
+        },
+      ]);
+    });
+
+    test('does not emit ci_failure for a failing check that is not in the required list', () => {
+      upsertBranchMergeRequirements(db, {
+        owner: 'example',
+        repo: 'repo',
+        branchName: 'main',
+        lastFetchedAt: '2026-03-30T00:00:00.000Z',
+        requirements: [
+          {
+            sourceKind: 'legacy_branch_protection',
+            sourceId: 0,
+            checks: [{ context: 'ci' }],
+          },
+        ],
+      });
+
+      const result = handleCheckRunEvent(db, {
+        repository: { full_name: 'example/repo' },
+        check_run: {
+          name: 'optional-lint',
+          status: 'completed',
+          conclusion: 'failure',
+          completed_at: '2026-03-30T12:05:00.000Z',
+          pull_requests: [{ number: 72 }],
+        },
+      });
+
+      expect(result.inboxSignals).toBeUndefined();
+    });
+
+    test('does not emit ci_failure for a completed successful check', () => {
+      upsertBranchMergeRequirements(db, {
+        owner: 'example',
+        repo: 'repo',
+        branchName: 'main',
+        lastFetchedAt: '2026-03-30T00:00:00.000Z',
+        requirements: [
+          {
+            sourceKind: 'legacy_branch_protection',
+            sourceId: 0,
+            checks: [{ context: 'ci' }],
+          },
+        ],
+      });
+
+      const result = handleCheckRunEvent(db, {
+        repository: { full_name: 'example/repo' },
+        check_run: {
+          name: 'ci',
+          status: 'completed',
+          conclusion: 'success',
+          completed_at: '2026-03-30T12:10:00.000Z',
+          pull_requests: [{ number: 72 }],
+        },
+      });
+
+      expect(result.inboxSignals).toBeUndefined();
+    });
+
+    test('does not emit ci_failure when no branch merge requirements exist', () => {
+      const result = handleCheckRunEvent(db, {
+        repository: { full_name: 'example/repo' },
+        check_run: {
+          name: 'ci',
+          status: 'completed',
+          conclusion: 'failure',
+          completed_at: '2026-03-30T12:15:00.000Z',
+          pull_requests: [{ number: 72 }],
         },
       });
 

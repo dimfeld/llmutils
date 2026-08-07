@@ -1623,4 +1623,203 @@ describe('common/github/webhook_ingest', () => {
     // Two PRs from batch2 that needed refresh (opened action), deduplicated
     expect(mocks.fetchAndUpdatePrMergeableStatus).toHaveBeenCalledTimes(2);
   });
+
+  describe('inboxSignals collection', () => {
+    function buildIssueCommentEvent(params: {
+      id: number;
+      deliveryId: string;
+      action?: string;
+      prNumber: number;
+      title?: string;
+      prAuthor?: string;
+      author: string;
+      authorType?: string;
+      body?: string | null;
+      commentCreatedAt?: string | null;
+      receivedAt?: string;
+      isPullRequest?: boolean;
+    }): Record<string, unknown> {
+      return {
+        id: params.id,
+        deliveryId: params.deliveryId,
+        eventType: 'issue_comment',
+        action: params.action ?? 'created',
+        repositoryFullName: 'example/repo',
+        receivedAt: params.receivedAt ?? '2026-03-30T10:00:00.000Z',
+        payloadJson: JSON.stringify({
+          action: params.action ?? 'created',
+          repository: { full_name: 'example/repo' },
+          issue: {
+            number: params.prNumber,
+            title: params.title ?? 'Webhook PR',
+            user: { login: params.prAuthor ?? 'pr-author' },
+            ...(params.isPullRequest === false ? {} : { pull_request: {} }),
+          },
+          comment: {
+            body: params.body === undefined ? 'a comment' : params.body,
+            ...(params.commentCreatedAt === undefined
+              ? { created_at: '2026-03-30T09:59:00.000Z' }
+              : params.commentCreatedAt === null
+                ? {}
+                : { created_at: params.commentCreatedAt }),
+            user: {
+              login: params.author,
+              ...(params.authorType ? { type: params.authorType } : {}),
+            },
+          },
+        }),
+      };
+    }
+
+    test('dispatches issue_comment events to the handler and populates inboxSignals', async () => {
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        buildIssueCommentEvent({
+          id: 71,
+          deliveryId: 'issue-comment-1',
+          prNumber: 80,
+          title: 'Issue-shaped PR',
+          prAuthor: 'pr-author',
+          author: 'commenter',
+          authorType: 'User',
+          body: 'Thanks for the update!',
+          commentCreatedAt: '2026-03-30T10:00:00.000Z',
+        }),
+      ]);
+
+      const result = await ingestWebhookEvents(db);
+
+      expect(result.eventsIngested).toBe(1);
+      expect(result.inboxSignals).toEqual([
+        {
+          kind: 'pr_comment',
+          repo: 'example/repo',
+          prNumber: 80,
+          prUrl: 'https://github.com/example/repo/pull/80',
+          prTitle: 'Issue-shaped PR',
+          prAuthor: 'pr-author',
+          actor: 'commenter',
+          actorType: 'User',
+          summary: 'Thanks for the update!',
+          eventAt: '2026-03-30T10:00:00.000Z',
+        },
+      ]);
+      // issue_comment handlers make no metadata writes, so no PR refresh is triggered.
+      expect(result.prsUpdated).toEqual([]);
+    });
+
+    test('does not populate a signal for a duplicate delivery id', async () => {
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        buildIssueCommentEvent({
+          id: 72,
+          deliveryId: 'issue-comment-dup',
+          prNumber: 81,
+          author: 'commenter',
+          body: 'first delivery',
+          commentCreatedAt: '2026-03-30T10:00:00.000Z',
+        }),
+        buildIssueCommentEvent({
+          id: 73,
+          deliveryId: 'issue-comment-dup',
+          prNumber: 81,
+          author: 'commenter',
+          body: 'second delivery, same id',
+          commentCreatedAt: '2026-03-30T10:01:00.000Z',
+        }),
+      ]);
+
+      const result = await ingestWebhookEvents(db);
+
+      expect(result.eventsIngested).toBe(1);
+      expect(result.inboxSignals).toEqual([
+        expect.objectContaining({ summary: 'first delivery', eventAt: '2026-03-30T10:00:00.000Z' }),
+      ]);
+    });
+
+    test('dedups repeated signals sharing kind, PR, actor, and eventAt across deliveries', async () => {
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        buildIssueCommentEvent({
+          id: 74,
+          deliveryId: 'issue-comment-a',
+          prNumber: 82,
+          author: 'commenter',
+          body: 'same comment resent',
+          commentCreatedAt: '2026-03-30T10:00:00.000Z',
+        }),
+        buildIssueCommentEvent({
+          id: 75,
+          deliveryId: 'issue-comment-b',
+          prNumber: 82,
+          author: 'commenter',
+          body: 'same comment resent',
+          commentCreatedAt: '2026-03-30T10:00:00.000Z',
+        }),
+        buildIssueCommentEvent({
+          id: 76,
+          deliveryId: 'issue-comment-c',
+          prNumber: 82,
+          author: 'commenter',
+          body: 'a distinct later comment',
+          commentCreatedAt: '2026-03-30T10:05:00.000Z',
+        }),
+      ]);
+
+      const result = await ingestWebhookEvents(db);
+
+      expect(result.eventsIngested).toBe(3);
+      // Deliveries a and b share kind/prUrl/actor/eventAt and collapse into one signal;
+      // delivery c has a distinct eventAt and stays separate.
+      expect(result.inboxSignals).toHaveLength(2);
+      expect(result.inboxSignals).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ summary: 'same comment resent' }),
+          expect.objectContaining({ summary: 'a distinct later comment' }),
+        ])
+      );
+    });
+
+    test('backfills eventAt with the delivery receivedAt when the signal has no timestamp of its own', async () => {
+      const before = new Date();
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        buildIssueCommentEvent({
+          id: 77,
+          deliveryId: 'issue-comment-no-timestamp',
+          prNumber: 83,
+          author: 'commenter',
+          body: 'no created_at on this comment',
+          commentCreatedAt: null,
+          receivedAt: '2020-01-01T00:00:00.000Z',
+        }),
+      ]);
+
+      const result = await ingestWebhookEvents(db);
+      const after = new Date();
+
+      expect(result.inboxSignals).toHaveLength(1);
+      const eventAt = new Date(result.inboxSignals[0].eventAt);
+      // The handler cannot derive a timestamp from the payload and falls back to the
+      // current time, which ingest carries through unchanged (event.receivedAt is only
+      // used as a fallback for signals that reach ingest with no eventAt at all).
+      expect(eventAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(eventAt.getTime()).toBeLessThanOrEqual(after.getTime());
+      expect(result.inboxSignals[0].eventAt).not.toBe('2020-01-01T00:00:00.000Z');
+    });
+
+    test('does not emit a signal for plain issue comments without a pull_request marker', async () => {
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        buildIssueCommentEvent({
+          id: 78,
+          deliveryId: 'issue-comment-plain',
+          prNumber: 84,
+          author: 'commenter',
+          body: 'not a PR comment',
+          isPullRequest: false,
+        }),
+      ]);
+
+      const result = await ingestWebhookEvents(db);
+
+      expect(result.eventsIngested).toBe(1);
+      expect(result.inboxSignals).toEqual([]);
+    });
+  });
 });
