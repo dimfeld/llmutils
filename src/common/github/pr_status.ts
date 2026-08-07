@@ -117,6 +117,7 @@ interface GraphQlReviewNode {
 
 interface GraphQlCheckRunNode {
   __typename: 'CheckRun';
+  databaseId: number | null;
   name: string;
   status: string;
   conclusion: string | null;
@@ -331,6 +332,7 @@ const fullStatusQuery = `
                   nodes {
                     __typename
                     ... on CheckRun {
+                      databaseId
                       name
                       status
                       conclusion
@@ -368,6 +370,7 @@ const checkStatusQuery = `
                   nodes {
                     __typename
                     ... on CheckRun {
+                      databaseId
                       name
                       status
                       conclusion
@@ -740,6 +743,66 @@ function normalizeCheckRun(node: GraphQlCheckContextNode): PrStatusCheckRun {
   };
 }
 
+function getCheckContextKey(node: GraphQlCheckContextNode): string {
+  const name = node.__typename === 'CheckRun' ? node.name : node.context;
+  return `${node.__typename}\u0000${name}`;
+}
+
+function getCheckContextTimestamp(node: GraphQlCheckContextNode): string | null {
+  if (node.__typename === 'StatusContext') {
+    return node.createdAt;
+  }
+
+  if (node.startedAt && node.completedAt) {
+    return node.startedAt > node.completedAt ? node.startedAt : node.completedAt;
+  }
+
+  return node.completedAt ?? node.startedAt;
+}
+
+function isNewerCheckContext(
+  candidate: GraphQlCheckContextNode,
+  existing: GraphQlCheckContextNode
+): boolean {
+  if (
+    candidate.__typename === 'CheckRun' &&
+    existing.__typename === 'CheckRun' &&
+    typeof candidate.databaseId === 'number' &&
+    typeof existing.databaseId === 'number' &&
+    candidate.databaseId !== existing.databaseId
+  ) {
+    return candidate.databaseId > existing.databaseId;
+  }
+
+  const candidateTimestamp = getCheckContextTimestamp(candidate);
+  const existingTimestamp = getCheckContextTimestamp(existing);
+  if (candidateTimestamp !== null && existingTimestamp !== null) {
+    return candidateTimestamp >= existingTimestamp;
+  }
+
+  return candidateTimestamp !== null || existingTimestamp === null;
+}
+
+function keepLatestCheckContexts(
+  nodes: Array<GraphQlCheckContextNode | null>
+): GraphQlCheckContextNode[] {
+  const latestByKey = new Map<string, GraphQlCheckContextNode>();
+
+  for (const node of nodes) {
+    if (node === null) {
+      continue;
+    }
+
+    const key = getCheckContextKey(node);
+    const existing = latestByKey.get(key);
+    if (!existing || isNewerCheckContext(node, existing)) {
+      latestByKey.set(key, node);
+    }
+  }
+
+  return [...latestByKey.values()];
+}
+
 function getLatestCommitNode(commits: { nodes: Array<GraphQlCommitNode | null> | null } | null) {
   return commits?.nodes?.find((node): node is GraphQlCommitNode => node !== null)?.commit ?? null;
 }
@@ -754,9 +817,9 @@ function normalizeChecks(
   commits: { nodes: Array<GraphQlCommitNode | null> | null } | null
 ): PrCheckStatusResult {
   const statusRollup = getStatusRollupFromCommits(commits);
-  const checks = (statusRollup?.contexts?.nodes ?? [])
-    .filter((node): node is GraphQlCheckContextNode => node !== null)
-    .map(normalizeCheckRun);
+  const checks = keepLatestCheckContexts(statusRollup?.contexts?.nodes ?? []).map(
+    normalizeCheckRun
+  );
 
   return {
     checks,

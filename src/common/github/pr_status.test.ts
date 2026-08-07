@@ -660,6 +660,7 @@ describe('common/github/pr_status', () => {
                       nodes: [
                         {
                           __typename: 'CheckRun',
+                          databaseId: 123,
                           name: 'lint',
                           status: 'IN_PROGRESS',
                           conclusion: null,
@@ -699,6 +700,98 @@ describe('common/github/pr_status', () => {
         },
       ],
       checkRollupState: 'pending',
+    });
+  });
+
+  test('fetchPrCheckStatus keeps the newest run when duplicate check names are unordered', async () => {
+    const graphql = vi.fn(async () => ({
+      repository: {
+        pullRequest: {
+          commits: {
+            nodes: [
+              {
+                commit: {
+                  statusCheckRollup: {
+                    state: 'FAILURE',
+                    contexts: {
+                      nodes: [
+                        {
+                          __typename: 'CheckRun',
+                          databaseId: 300,
+                          name: 'Test',
+                          status: 'COMPLETED',
+                          conclusion: 'FAILURE',
+                          detailsUrl: 'https://example.com/checks/new-failure',
+                          startedAt: '2026-03-20T00:10:00.000Z',
+                          completedAt: '2026-03-20T00:20:00.000Z',
+                        },
+                        {
+                          __typename: 'CheckRun',
+                          databaseId: 200,
+                          name: 'Test',
+                          status: 'COMPLETED',
+                          conclusion: 'SKIPPED',
+                          detailsUrl: 'https://example.com/checks/old-skipped',
+                          startedAt: '2026-03-20T00:01:00.000Z',
+                          completedAt: '2026-03-20T00:01:00.000Z',
+                        },
+                        {
+                          __typename: 'CheckRun',
+                          databaseId: 401,
+                          name: 'Lint',
+                          status: 'IN_PROGRESS',
+                          conclusion: null,
+                          detailsUrl: 'https://example.com/checks/new-running',
+                          startedAt: '2026-03-20T00:30:00.000Z',
+                          completedAt: null,
+                        },
+                        {
+                          __typename: 'CheckRun',
+                          databaseId: 400,
+                          name: 'Lint',
+                          status: 'COMPLETED',
+                          conclusion: 'FAILURE',
+                          detailsUrl: 'https://example.com/checks/old-failure',
+                          startedAt: '2026-03-20T00:05:00.000Z',
+                          completedAt: '2026-03-20T00:15:00.000Z',
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    }));
+
+    vi.mocked(octokitModule.getOctokit).mockReturnValue({ graphql });
+
+    const { fetchPrCheckStatus } = await import('./pr_status.ts');
+
+    await expect(fetchPrCheckStatus('owner', 'repo', 43)).resolves.toEqual({
+      checks: [
+        {
+          name: 'Test',
+          status: 'completed',
+          conclusion: 'failure',
+          detailsUrl: 'https://example.com/checks/new-failure',
+          startedAt: '2026-03-20T00:10:00.000Z',
+          completedAt: '2026-03-20T00:20:00.000Z',
+          source: 'check_run',
+        },
+        {
+          name: 'Lint',
+          status: 'in_progress',
+          conclusion: null,
+          detailsUrl: 'https://example.com/checks/new-running',
+          startedAt: '2026-03-20T00:30:00.000Z',
+          completedAt: null,
+          source: 'check_run',
+        },
+      ],
+      checkRollupState: 'failure',
     });
   });
 
