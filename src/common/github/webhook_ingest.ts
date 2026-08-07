@@ -18,6 +18,7 @@ import {
   type InboxSignal,
   type PrDraftTransition,
   type PrRefreshTarget,
+  type WebhookHandlerResult,
   type WebhookHandlerOptions,
 } from './webhook_event_handlers.js';
 import { constructGitHubRepositoryId } from './pull_requests.js';
@@ -49,6 +50,21 @@ import { isWebhookSideEffectAllowed } from './webhook_side_effects.js';
 export type { InboxSignal };
 
 const MERGEABLE_REFRESH_DELAY_MS = 15_000;
+
+type WebhookEventHandler = (
+  db: Database,
+  payload: unknown,
+  options: WebhookHandlerOptions
+) => WebhookHandlerResult;
+
+const WEBHOOK_EVENT_HANDLERS: Readonly<Record<string, WebhookEventHandler | undefined>> = {
+  pull_request: handlePullRequestEvent,
+  issue_comment: handleIssueCommentEvent,
+  pull_request_review: handlePullRequestReviewEvent,
+  pull_request_review_thread: handlePullRequestReviewThreadEvent,
+  pull_request_review_comment: handlePullRequestReviewThreadEvent,
+  check_run: handleCheckRunEvent,
+};
 
 type DelayFn = (ms: number) => Promise<void>;
 
@@ -435,19 +451,8 @@ export async function ingestWebhookEvents(
           knownRepos,
           receivedAt: event.receivedAt,
         };
-        const result =
-          event.eventType === 'pull_request'
-            ? handlePullRequestEvent(db, payload, handlerOptions)
-            : event.eventType === 'issue_comment'
-              ? handleIssueCommentEvent(db, payload, handlerOptions)
-              : event.eventType === 'pull_request_review'
-                ? handlePullRequestReviewEvent(db, payload, handlerOptions)
-                : event.eventType === 'pull_request_review_thread' ||
-                    event.eventType === 'pull_request_review_comment'
-                  ? handlePullRequestReviewThreadEvent(db, payload, handlerOptions)
-                  : event.eventType === 'check_run'
-                    ? handleCheckRunEvent(db, payload, handlerOptions)
-                    : null;
+        const handler = WEBHOOK_EVENT_HANDLERS[event.eventType];
+        const result = handler ? handler(db, payload, handlerOptions) : null;
 
         if (!result) {
           continue;
