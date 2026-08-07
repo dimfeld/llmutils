@@ -9,8 +9,14 @@ import {
   getDefaultSlackDailyDigestTimezone,
 } from '../common/slack/slack_daily_digest_config.js';
 import { quiet } from '../common/process.js';
+import { normalizeGitHubUsername } from '../common/github/username.js';
 import { debugLog, error, log, warn } from '../logging.js';
-import { type TimConfig, timConfigSchema, getDefaultConfig } from './configSchema.js';
+import {
+  type InboxConfigInput,
+  type TimConfig,
+  timConfigSchema,
+  getDefaultConfig,
+} from './configSchema.js';
 import {
   RepositoryConfigResolver,
   type RepositoryConfigResolution,
@@ -49,6 +55,58 @@ function removeUnknownConfigKeys(
   }
 
   return { config: clonedConfig, paths };
+}
+
+function dedupeGitHubUsernames(usernames: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+
+  for (const username of usernames) {
+    const normalizedUsername = normalizeGitHubUsername(username);
+    if (seen.has(normalizedUsername)) {
+      continue;
+    }
+
+    seen.add(normalizedUsername);
+    deduped.push(username);
+  }
+
+  return deduped;
+}
+
+/**
+ * Merges repository-settable pull request inbox configuration across config layers.
+ * Username lists are concatenated and deduplicated case-insensitively.
+ */
+export function mergeInboxConfig(
+  mainConfig: InboxConfigInput | undefined,
+  localConfig: InboxConfigInput | undefined
+): InboxConfigInput | undefined {
+  if (localConfig === undefined || mainConfig === undefined) {
+    return localConfig ?? mainConfig;
+  }
+
+  const mainPrs = mainConfig.prs;
+  const localPrs = localConfig.prs;
+  if (mainPrs === undefined && localPrs === undefined) {
+    return {};
+  }
+
+  const mergedPrs: NonNullable<InboxConfigInput['prs']> = {};
+
+  const enabled = localPrs?.enabled ?? mainPrs?.enabled;
+  if (enabled !== undefined) {
+    mergedPrs.enabled = enabled;
+  }
+
+  if (mainPrs?.ignoreUsers !== undefined || localPrs?.ignoreUsers !== undefined) {
+    mergedPrs.ignoreUsers = dedupeGitHubUsernames([
+      ...(mainPrs?.ignoreUsers ?? []),
+      ...(localPrs?.ignoreUsers ?? []),
+    ]);
+  }
+
+  return { prs: mergedPrs };
 }
 
 /**
@@ -149,6 +207,11 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
   mergeConfigKey('tags');
   mergeConfigKey('updateDocs');
   mergeConfigKey('workspaceCreation');
+
+  // Handle inbox.prs: preserve scalar overrides and concatenate ignored usernames.
+  if (localConfig.inbox !== undefined) {
+    merged.inbox = mergeInboxConfig(mainConfig.inbox, localConfig.inbox);
+  }
 
   // Handle executors: deep merge objects
   if (localConfig.executors !== undefined) {

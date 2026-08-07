@@ -364,6 +364,31 @@ export const githubWebhooksConfigSchema = z
 
 export type GitHubWebhooksConfigInput = z.infer<typeof githubWebhooksConfigSchema>;
 
+export const inboxPrsConfigSchema = z
+  .object({
+    enabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether pull request inbox notifications are enabled. Defaults to true when GitHub webhooks are configured.'
+      ),
+    ignoreUsers: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'GitHub usernames whose comments/reviews never create inbox items. Merged (concatenated and deduped) across global, repo, and local config. [bot]-suffixed logins are always ignored.'
+      ),
+  })
+  .strict();
+
+export const inboxConfigSchema = z
+  .object({
+    prs: inboxPrsConfigSchema.optional().describe('Pull request inbox notification behavior'),
+  })
+  .strict();
+
+export type InboxConfigInput = z.infer<typeof inboxConfigSchema>;
+
 export const proofGenerationSchema = z
   .object({
     mode: z
@@ -498,6 +523,8 @@ export const timConfigSchema = z
     githubWebhooks: githubWebhooksConfigSchema
       .optional()
       .describe('Machine-local GitHub webhook ingestion behavior'),
+    /** Pull request inbox notification behavior. */
+    inbox: inboxConfigSchema.optional().describe('PR inbox notification behavior (repo-settable)'),
     /** Project-level environment variables rendered at process launch time. */
     environment: timEnvironmentConfigSchema.optional(),
     /** Issue tracking service to use for import commands and issue-related operations. Defaults to 'github'. */
