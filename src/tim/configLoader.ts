@@ -74,20 +74,6 @@ function dedupeGitHubUsernames(usernames: string[]): string[] {
   return deduped;
 }
 
-function normalizeInboxConfig(config: InboxConfigInput): InboxConfigInput {
-  if (config.prs?.ignoreUsers === undefined) {
-    return config;
-  }
-
-  return {
-    ...config,
-    prs: {
-      ...config.prs,
-      ignoreUsers: dedupeGitHubUsernames(config.prs.ignoreUsers),
-    },
-  };
-}
-
 /**
  * Merges repository-settable pull request inbox configuration across config layers.
  * Username lists are concatenated and deduplicated case-insensitively.
@@ -96,26 +82,18 @@ export function mergeInboxConfig(
   mainConfig: InboxConfigInput | undefined,
   localConfig: InboxConfigInput | undefined
 ): InboxConfigInput | undefined {
-  if (mainConfig === undefined) {
-    return localConfig === undefined ? undefined : normalizeInboxConfig(localConfig);
+  if (mainConfig === undefined && localConfig === undefined) {
+    return undefined;
   }
 
-  if (localConfig === undefined) {
-    return normalizeInboxConfig(mainConfig);
-  }
-
-  const mainPrs = mainConfig.prs;
-  const localPrs = localConfig.prs;
+  const mergedConfig: InboxConfigInput = { ...mainConfig, ...localConfig };
+  const mainPrs = mainConfig?.prs;
+  const localPrs = localConfig?.prs;
   if (mainPrs === undefined && localPrs === undefined) {
-    return {};
+    return mergedConfig;
   }
 
-  const mergedPrs: NonNullable<InboxConfigInput['prs']> = {};
-
-  const enabled = localPrs?.enabled ?? mainPrs?.enabled;
-  if (enabled !== undefined) {
-    mergedPrs.enabled = enabled;
-  }
+  const mergedPrs: NonNullable<InboxConfigInput['prs']> = { ...mainPrs, ...localPrs };
 
   if (mainPrs?.ignoreUsers !== undefined || localPrs?.ignoreUsers !== undefined) {
     mergedPrs.ignoreUsers = dedupeGitHubUsernames([
@@ -124,7 +102,8 @@ export function mergeInboxConfig(
     ]);
   }
 
-  return { prs: mergedPrs };
+  mergedConfig.prs = mergedPrs;
+  return mergedConfig;
 }
 
 /**
