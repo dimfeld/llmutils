@@ -1381,6 +1381,34 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 51,
+    up: `
+      CREATE TABLE IF NOT EXISTS inbox_item (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER REFERENCES project(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        pr_url TEXT NOT NULL,
+        pr_number INTEGER,
+        repo TEXT,
+        pr_title TEXT,
+        actor TEXT,
+        event_count INTEGER NOT NULL DEFAULT 1,
+        summary TEXT,
+        dedupe_key TEXT NOT NULL UNIQUE,
+        first_event_at TEXT NOT NULL,
+        last_event_at TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        read_at TEXT,
+        dismissed_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_inbox_item_project_last_event
+        ON inbox_item(project_id, last_event_at);
+      CREATE INDEX IF NOT EXISTS idx_inbox_item_read_at
+        ON inbox_item(read_at);
+    `,
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {
