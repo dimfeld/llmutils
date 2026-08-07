@@ -63,12 +63,6 @@ function isInboxItemKind(value: unknown): value is InboxItemKind {
   return typeof value === 'string' && (INBOX_ITEM_KINDS as readonly string[]).includes(value);
 }
 
-function getInboxItemByDedupeKey(db: Database, dedupeKey: string): InboxItemRow | null {
-  return db
-    .prepare('SELECT * FROM inbox_item WHERE dedupe_key = ?')
-    .get(dedupeKey) as InboxItemRow | null;
-}
-
 export function upsertInboxItem(db: Database, input: UpsertInboxItemInput): InboxItemRow {
   if (!isInboxItemKind(input.kind)) {
     throw new Error(`Unknown inbox item kind: ${String(input.kind)}`);
@@ -76,58 +70,56 @@ export function upsertInboxItem(db: Database, input: UpsertInboxItemInput): Inbo
 
   const canonicalPrUrl = canonicalizePrUrl(input.prUrl);
   const dedupeKey = input.dedupeKey ?? `${input.kind}:${canonicalPrUrl}`;
-  const upsertInTransaction = db.transaction((nextInput: UpsertInboxItemInput): InboxItemRow => {
-    db.prepare(
+  const row = db
+    .prepare(
       `
-          INSERT INTO inbox_item (
-            project_id,
-            kind,
-            pr_url,
-            pr_number,
-            repo,
-            pr_title,
-            actor,
-            summary,
-            dedupe_key,
-            first_event_at,
-            last_event_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
-            COALESCE(?, ${SQL_NOW_ISO_UTC}),
-            COALESCE(?, ${SQL_NOW_ISO_UTC})
-          )
-          ON CONFLICT(dedupe_key) DO UPDATE SET
-            event_count = event_count + 1,
-            last_event_at = excluded.last_event_at,
-            summary = COALESCE(excluded.summary, summary),
-            actor = COALESCE(excluded.actor, actor),
-            pr_title = COALESCE(excluded.pr_title, pr_title),
-            updated_at = ${SQL_NOW_ISO_UTC},
-            read_at = NULL,
-            dismissed_at = NULL
-        `
-    ).run(
-      nextInput.projectId ?? null,
-      nextInput.kind,
+        INSERT INTO inbox_item (
+          project_id,
+          kind,
+          pr_url,
+          pr_number,
+          repo,
+          pr_title,
+          actor,
+          summary,
+          dedupe_key,
+          first_event_at,
+          last_event_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
+          COALESCE(?, ${SQL_NOW_ISO_UTC}),
+          COALESCE(?, ${SQL_NOW_ISO_UTC})
+        )
+        ON CONFLICT(dedupe_key) DO UPDATE SET
+          event_count = event_count + 1,
+          last_event_at = excluded.last_event_at,
+          summary = COALESCE(excluded.summary, summary),
+          actor = COALESCE(excluded.actor, actor),
+          pr_title = COALESCE(excluded.pr_title, pr_title),
+          updated_at = ${SQL_NOW_ISO_UTC},
+          read_at = NULL,
+          dismissed_at = NULL
+        RETURNING *
+      `
+    )
+    .get(
+      input.projectId ?? null,
+      input.kind,
       canonicalPrUrl,
-      nextInput.prNumber ?? null,
-      nextInput.repo ?? null,
-      nextInput.prTitle ?? null,
-      nextInput.actor ?? null,
-      nextInput.summary ?? null,
+      input.prNumber ?? null,
+      input.repo ?? null,
+      input.prTitle ?? null,
+      input.actor ?? null,
+      input.summary ?? null,
       dedupeKey,
-      nextInput.eventAt ?? null,
-      nextInput.eventAt ?? null
-    );
+      input.eventAt ?? null,
+      input.eventAt ?? null
+    ) as InboxItemRow | null;
 
-    const row = getInboxItemByDedupeKey(db, dedupeKey);
-    if (!row) {
-      throw new Error(`Failed to upsert inbox item with dedupe key ${dedupeKey}`);
-    }
+  if (!row) {
+    throw new Error(`Failed to upsert inbox item with dedupe key ${dedupeKey}`);
+  }
 
-    return row;
-  });
-
-  return upsertInTransaction.immediate(input);
+  return row;
 }
 
 export function listRecentInboxItems(
@@ -194,20 +186,16 @@ export function markInboxItemsRead(db: Database, ids: ReadonlyArray<number>): vo
     return;
   }
 
-  const markInTransaction = db.transaction((nextIds: ReadonlyArray<number>): void => {
-    const placeholders = nextIds.map(() => '?').join(', ');
-    db.prepare(
-      `
-        UPDATE inbox_item
-        SET read_at = ${SQL_NOW_ISO_UTC},
-            updated_at = ${SQL_NOW_ISO_UTC}
-        WHERE id IN (${placeholders})
-          AND read_at IS NULL
-      `
-    ).run(...nextIds);
-  });
-
-  markInTransaction.immediate(ids);
+  const placeholders = ids.map(() => '?').join(', ');
+  db.prepare(
+    `
+      UPDATE inbox_item
+      SET read_at = ${SQL_NOW_ISO_UTC},
+          updated_at = ${SQL_NOW_ISO_UTC}
+      WHERE id IN (${placeholders})
+        AND read_at IS NULL
+    `
+  ).run(...ids);
 }
 
 export function markAllReadBefore(db: Database, options: MarkAllReadBeforeOptions): void {
