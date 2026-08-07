@@ -2,6 +2,8 @@ import type { Database } from 'bun:sqlite';
 import { canonicalizePrUrl } from './identifiers.js';
 import { getProjectPlanBranchMatches } from './project_pr_service.js';
 import { constructGitHubRepositoryId } from './pull_requests.js';
+import { classifyCheckRun, getRequiredCheckNames } from './required_check_rollup.js';
+import type { BranchMergeRequirementsDetail } from '../../tim/db/branch_merge_requirements.js';
 import { getProject } from '../../tim/db/project.js';
 import {
   clearPrCheckRuns,
@@ -194,6 +196,7 @@ interface ParsedReviewThreadPayload {
     id: string | null;
     body: string | null;
     author: string | null;
+    authorType: string | null;
     createdAt: string | null;
   } | null;
 }
@@ -553,6 +556,7 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
     id: string | null;
     body: string | null;
     author: string | null;
+    authorType: string | null;
     createdAt: string | null;
   } | null = null;
   if (comment && typeof comment === 'object') {
@@ -574,6 +578,10 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
       author:
         typeof commentUser === 'object' && commentUser
           ? (commentUser as { login?: string | null }).login || null
+          : null,
+      authorType:
+        typeof commentUser === 'object' && commentUser
+          ? (commentUser as { type?: string | null }).type || null
           : null,
       createdAt: typeof createdAt === 'string' ? createdAt : null,
     };
@@ -939,10 +947,47 @@ export function handlePullRequestReviewEvent(
         }
       : undefined;
 
+  const inboxSignals: InboxSignal[] = [];
+  const reviewEventAt = parsed.review.submittedAt ?? getNowIsoString();
+  if (parsed.action === 'submitted' && reviewState === 'APPROVED') {
+    inboxSignals.push({
+      kind: 'pr_approved',
+      repo: parsed.repository.fullName,
+      prNumber: parsed.pullRequestNumber,
+      prUrl: row.pr_url,
+      prTitle: row.title,
+      prAuthor: row.author,
+      actor: parsed.review.author,
+      actorType: parsed.review.authorType,
+      eventAt: reviewEventAt,
+    });
+  }
+
+  const reviewCommentExcerpt = getCommentExcerpt(parsed.review.body);
+  if (
+    parsed.action === 'submitted' &&
+    (reviewState === 'COMMENTED' || reviewState === 'CHANGES_REQUESTED') &&
+    reviewCommentExcerpt !== null
+  ) {
+    inboxSignals.push({
+      kind: 'pr_comment',
+      repo: parsed.repository.fullName,
+      prNumber: parsed.pullRequestNumber,
+      prUrl: row.pr_url,
+      prTitle: row.title,
+      prAuthor: row.author,
+      actor: parsed.review.author,
+      actorType: parsed.review.authorType,
+      summary: reviewCommentExcerpt,
+      eventAt: reviewEventAt,
+    });
+  }
+
   return {
     updated,
     prUrl: row.pr_url,
     ...(reviewSubmission ? { reviewSubmission } : {}),
+    ...(inboxSignals.length > 0 ? { inboxSignals } : {}),
     apiRefreshTargets:
       updated && affectsReviewDecision
         ? [
@@ -1031,10 +1076,28 @@ export function handlePullRequestReviewThreadEvent(
     },
   ];
 
+  const commentExcerpt = getCommentExcerpt(parsed.comment?.body ?? null);
+  const inboxSignals: InboxSignal[] = [];
+  if (action === 'created' && parsed.comment?.author && commentExcerpt !== null) {
+    inboxSignals.push({
+      kind: 'pr_comment',
+      repo: repository.fullName,
+      prNumber: pullRequest.number,
+      prUrl: canonicalPrUrl,
+      prTitle: pullRequest.title,
+      prAuthor: pullRequest.author,
+      actor: parsed.comment.author,
+      actorType: parsed.comment.authorType,
+      summary: commentExcerpt,
+      eventAt: parsed.comment.createdAt ?? getNowIsoString(),
+    });
+  }
+
   return {
     updated: true,
     prUrl: canonicalPrUrl,
     apiRefreshTargets,
+    ...(inboxSignals.length > 0 ? { inboxSignals } : {}),
   };
 }
 
@@ -1050,6 +1113,8 @@ export function handleCheckRunEvent(
 
   const { owner, repo } = parsed.repository;
   const prUrls = new Set<string>();
+  const inboxSignals: InboxSignal[] = [];
+  const requiredCheckCache = new Map<string, BranchMergeRequirementsDetail | null>();
 
   for (const pullRequest of parsed.checkRun.pullRequests) {
     const row = getPrStatusByRepoAndNumber(db, owner, repo, pullRequest.number);
@@ -1072,11 +1137,31 @@ export function handleCheckRunEvent(
       recomputeCheckRollupState(db, nextRowId);
     }).immediate(row.id);
     prUrls.add(row.pr_url);
+
+    if (
+      parsed.checkRun.status === 'completed' &&
+      classifyCheckRun(parsed.checkRun) === 'failing' &&
+      getRequiredCheckNames(db, row, requiredCheckCache).includes(parsed.checkRun.name)
+    ) {
+      const conclusion = parsed.checkRun.conclusion;
+      inboxSignals.push({
+        kind: 'ci_failure',
+        repo: parsed.repository.fullName,
+        prNumber: pullRequest.number,
+        prUrl: row.pr_url,
+        prTitle: row.title,
+        prAuthor: row.author,
+        actor: parsed.checkRun.name,
+        summary: conclusion ? `${parsed.checkRun.name} (${conclusion})` : parsed.checkRun.name,
+        eventAt: parsed.checkRun.completedAt ?? getNowIsoString(),
+      });
+    }
   }
 
   return {
     updated: prUrls.size > 0,
     prUrls: [...prUrls],
+    ...(inboxSignals.length > 0 ? { inboxSignals } : {}),
   };
 }
 

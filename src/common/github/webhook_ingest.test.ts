@@ -1154,6 +1154,7 @@ describe('common/github/webhook_ingest', () => {
       prsUpdated: [],
       prsReadyForReview: [],
       reviewsSubmitted: [],
+      inboxSignals: [],
       errors: [],
     });
     expect(mocks.fetchWebhookEvents).not.toHaveBeenCalled();
@@ -1347,6 +1348,7 @@ describe('common/github/webhook_ingest', () => {
         },
       ],
       reviewsSubmitted: [],
+      inboxSignals: [],
       errors: [],
     });
 
@@ -1357,6 +1359,7 @@ describe('common/github/webhook_ingest', () => {
       prsUpdated: [],
       prsReadyForReview: [],
       reviewsSubmitted: [],
+      inboxSignals: [],
       errors: [],
     });
     // pruneOldWebhookLogs was called once (first run had events), not on second run

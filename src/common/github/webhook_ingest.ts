@@ -11,9 +11,11 @@ import {
 import { tryCanonicalizePrUrl } from './identifiers.js';
 import {
   handleCheckRunEvent,
+  handleIssueCommentEvent,
   handlePullRequestEvent,
   handlePullRequestReviewEvent,
   handlePullRequestReviewThreadEvent,
+  type InboxSignal,
   type PrDraftTransition,
   type PrRefreshTarget,
   type WebhookHandlerOptions,
@@ -43,6 +45,8 @@ import { getProjectUuidForId, routeSyncOperation } from '../../tim/sync/write_ro
 import { setPlanScalarOperation } from '../../tim/sync/operations.js';
 import type { TimConfig } from '../../tim/configSchema.js';
 import { isWebhookSideEffectAllowed } from './webhook_side_effects.js';
+
+export type { InboxSignal };
 
 const MERGEABLE_REFRESH_DELAY_MS = 15_000;
 
@@ -319,6 +323,8 @@ export interface IngestResult {
   prsReadyForReview: ReadyForReviewPr[];
   /** Reviews submitted on known PRs during this run (side-effect cutoff already applied). */
   reviewsSubmitted: SubmittedPrReview[];
+  /** Raw inbox signals emitted by handlers during this run. */
+  inboxSignals: InboxSignal[];
   errors: string[];
 }
 
@@ -351,6 +357,7 @@ export async function ingestWebhookEvents(
       prsUpdated: [],
       prsReadyForReview: [],
       reviewsSubmitted: [],
+      inboxSignals: [],
       errors: [],
     };
   }
@@ -363,6 +370,7 @@ export async function ingestWebhookEvents(
       prsUpdated: [],
       prsReadyForReview: [],
       reviewsSubmitted: [],
+      inboxSignals: [],
       errors: ['WEBHOOK_INTERNAL_API_TOKEN is not configured but TIM_WEBHOOK_SERVER_URL is set'],
     };
   }
@@ -379,6 +387,8 @@ export async function ingestWebhookEvents(
   const prsReadyForReview = new Map<string, ReadyForReviewPr>();
   /** Deduplicated submitted reviews, keyed by "prUrl:author:state". */
   const reviewsSubmitted = new Map<string, SubmittedPrReview>();
+  /** Deduplicated inbox signals, keyed by "kind:prUrl:actor:eventAt". */
+  const inboxSignals = new Map<string, InboxSignal>();
   const errors: string[] = [];
   /** Deduplicated set of PRs needing API refresh, keyed by "owner/repo#number:type[:threadId]". */
   const apiRefreshTargets = new Map<string, PrRefreshTarget>();
@@ -425,17 +435,27 @@ export async function ingestWebhookEvents(
         const result =
           event.eventType === 'pull_request'
             ? handlePullRequestEvent(db, payload, handlerOptions)
-            : event.eventType === 'pull_request_review'
-              ? handlePullRequestReviewEvent(db, payload, handlerOptions)
-              : event.eventType === 'pull_request_review_thread' ||
-                  event.eventType === 'pull_request_review_comment'
-                ? handlePullRequestReviewThreadEvent(db, payload, handlerOptions)
-                : event.eventType === 'check_run'
-                  ? handleCheckRunEvent(db, payload, handlerOptions)
-                  : null;
+            : event.eventType === 'issue_comment'
+              ? handleIssueCommentEvent(db, payload, handlerOptions)
+              : event.eventType === 'pull_request_review'
+                ? handlePullRequestReviewEvent(db, payload, handlerOptions)
+                : event.eventType === 'pull_request_review_thread' ||
+                    event.eventType === 'pull_request_review_comment'
+                  ? handlePullRequestReviewThreadEvent(db, payload, handlerOptions)
+                  : event.eventType === 'check_run'
+                    ? handleCheckRunEvent(db, payload, handlerOptions)
+                    : null;
 
         if (!result) {
           continue;
+        }
+
+        for (const signal of result.inboxSignals ?? []) {
+          const eventAt = signal.eventAt ?? event.receivedAt;
+          const normalizedSignal: InboxSignal =
+            signal.eventAt === eventAt ? signal : { ...signal, eventAt };
+          const key = `${normalizedSignal.kind}:${normalizedSignal.prUrl}:${normalizedSignal.actor}:${normalizedSignal.eventAt}`;
+          inboxSignals.set(key, normalizedSignal);
         }
 
         console.log(
@@ -642,6 +662,7 @@ export async function ingestWebhookEvents(
     prsUpdated: [...prsUpdated],
     prsReadyForReview: [...prsReadyForReview.values()],
     reviewsSubmitted: [...reviewsSubmitted.values()],
+    inboxSignals: [...inboxSignals.values()],
     errors,
   };
 }
