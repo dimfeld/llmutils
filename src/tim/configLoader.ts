@@ -74,6 +74,20 @@ function dedupeGitHubUsernames(usernames: string[]): string[] {
   return deduped;
 }
 
+function normalizeInboxConfig(config: InboxConfigInput): InboxConfigInput {
+  if (config.prs?.ignoreUsers === undefined) {
+    return config;
+  }
+
+  return {
+    ...config,
+    prs: {
+      ...config.prs,
+      ignoreUsers: dedupeGitHubUsernames(config.prs.ignoreUsers),
+    },
+  };
+}
+
 /**
  * Merges repository-settable pull request inbox configuration across config layers.
  * Username lists are concatenated and deduplicated case-insensitively.
@@ -82,8 +96,12 @@ export function mergeInboxConfig(
   mainConfig: InboxConfigInput | undefined,
   localConfig: InboxConfigInput | undefined
 ): InboxConfigInput | undefined {
-  if (localConfig === undefined || mainConfig === undefined) {
-    return localConfig ?? mainConfig;
+  if (mainConfig === undefined) {
+    return localConfig === undefined ? undefined : normalizeInboxConfig(localConfig);
+  }
+
+  if (localConfig === undefined) {
+    return normalizeInboxConfig(mainConfig);
   }
 
   const mainPrs = mainConfig.prs;

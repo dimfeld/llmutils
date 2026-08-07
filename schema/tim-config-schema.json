@@ -213,6 +213,31 @@
       },
       "additionalProperties": false
     },
+    "inbox": {
+      "description": "PR inbox notification behavior (repo-settable)",
+      "type": "object",
+      "properties": {
+        "prs": {
+          "description": "Pull request inbox notification behavior",
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "description": "Whether pull request inbox notifications are enabled. Defaults to true when GitHub webhooks are configured.",
+              "type": "boolean"
+            },
+            "ignoreUsers": {
+              "description": "GitHub usernames whose comments/reviews never create inbox items. Merged (concatenated and deduped) across global, repo, and local config. [bot]-suffixed logins are always ignored.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "environment": {
       "type": "object",
       "propertyNames": {
