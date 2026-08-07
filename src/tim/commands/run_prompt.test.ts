@@ -4,6 +4,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { getLoggerAdapter } from '../../logging/adapter.js';
 import {
+  runWithSessionProcessOwner,
+  SessionProcessOwner,
+} from '../../common/session_process_control.js';
+import { SessionProcessRegistry, toProcessId } from '../../common/session_process.js';
+import {
   buildClaudeRunPromptArgs,
   buildCodexRunPromptArgs,
   handleRunPromptCommand,
@@ -549,5 +554,86 @@ describe('handleRunPromptCommand', () => {
         }),
       })
     );
+  });
+});
+
+describe.skipIf(process.platform === 'win32')('run-prompt session process integration', () => {
+  test('tracks the real Claude prompt child through its full lifecycle', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-run-prompt-process-'));
+    const originalPath = process.env.PATH;
+    const originalOutputSocket = process.env.TIM_OUTPUT_SOCKET;
+    const claudePath = path.join(tempDir, 'claude');
+    const resultLine = JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      duration_ms: 1,
+      duration_api_ms: 1,
+      is_error: false,
+      num_turns: 1,
+      result: 'tracked prompt response',
+      session_id: 'run-prompt-session',
+    });
+
+    await fs.writeFile(claudePath, `#!/bin/sh\nprintf '%s\\n' ${JSON.stringify(resultLine)}\n`);
+    await fs.chmod(claudePath, 0o755);
+    process.env.PATH = `${tempDir}:${originalPath ?? ''}`;
+    process.env.TIM_OUTPUT_SOCKET = path.join(tempDir, 'unused-output.sock');
+
+    const registry = new SessionProcessRegistry({ sessionId: 'run-prompt-session' });
+    const ownerProcessId = toProcessId('run-prompt-owner');
+    if (!ownerProcessId) {
+      throw new Error('Invalid run-prompt owner process ID');
+    }
+    registry.register({ processId: ownerProcessId, kind: 'tim', label: 'run-prompt owner' });
+    const owner = new SessionProcessOwner({
+      sessionId: 'run-prompt-session',
+      ownerProcessId,
+      registry,
+    });
+    const stdoutWrites: string[] = [];
+
+    try {
+      await runWithSessionProcessOwner(owner, () =>
+        handleRunPromptCommand(
+          'run the tracked prompt',
+          { executor: 'claude', quiet: true },
+          {},
+          {
+            loadEffectiveConfigFn: async () => ({ headless: {} }) as any,
+            isTunnelActiveFn: () => true,
+            runWithHeadlessAdapterIfEnabledFn: async (headlessOptions) =>
+              headlessOptions.callback(),
+            stdoutWrite: (output) => {
+              stdoutWrites.push(output);
+            },
+            stdinIsTTY: true,
+          }
+        )
+      );
+
+      expect(stdoutWrites).toEqual(['tracked prompt response\n']);
+      expect(registry.getSnapshot()).toContainEqual(
+        expect.objectContaining({
+          kind: 'executor',
+          label: 'Claude prompt',
+          state: 'exited',
+          command: expect.stringContaining('claude'),
+        })
+      );
+      expect(owner.childCount).toBe(0);
+    } finally {
+      owner.dispose();
+      if (originalPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = originalPath;
+      }
+      if (originalOutputSocket === undefined) {
+        delete process.env.TIM_OUTPUT_SOCKET;
+      } else {
+        process.env.TIM_OUTPUT_SOCKET = originalOutputSocket;
+      }
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

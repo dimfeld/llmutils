@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createNestedTimProcessRuntime,
+  createExecutorControlHandler,
   SessionProcessOwner,
   type SessionProcessTransport,
 } from './session_process_control.js';
@@ -135,10 +136,80 @@ describe('SessionProcessOwner', () => {
     });
     expect(owner.terminateExecutor(lifecycle!.processId)).toBe('unknown_process_state');
     expect(kill).not.toHaveBeenCalled();
+    expect(owner.childCount).toBe(1);
 
     processLister.mockReturnValueOnce([createProcessInfo(processInfo.pid, 'unrelated')]);
     expect(owner.terminateExecutor(lifecycle!.processId)).toBe('stale_target');
     expect(kill).not.toHaveBeenCalled();
+    expect(owner.childCount).toBe(0);
+  });
+
+  it('rejects a missing or reused PID when any identity field differs', () => {
+    const cases: Array<{
+      name: string;
+      current: ProcessInfo[];
+      result: 'already_exited' | 'stale_target';
+    }> = [
+      {
+        name: 'the PID is absent',
+        current: [createProcessInfo(1235, 'claude', 'start-1')],
+        result: 'already_exited',
+      },
+      {
+        name: 'the parent PID differs',
+        current: [{ ...createProcessInfo(1234, 'claude', 'start-1'), ppid: process.pid + 1 }],
+        result: 'stale_target',
+      },
+      {
+        name: 'the command differs',
+        current: [createProcessInfo(1234, 'unrelated', 'start-1')],
+        result: 'stale_target',
+      },
+      {
+        name: 'the opaque start identity differs',
+        current: [createProcessInfo(1234, 'claude', 'start-2')],
+        result: 'stale_target',
+      },
+    ];
+
+    for (const testCase of cases) {
+      const processInfo = createProcessInfo(1234, 'claude', 'start-1');
+      const processLister = vi.fn<() => ProcessInfo[]>(() => [processInfo]);
+      const owner = createOwner(processLister);
+      const lifecycle = owner.prepareExecutor({
+        label: `Claude ${testCase.name}`,
+        command: 'claude',
+      });
+      const kill = vi.fn();
+      lifecycle?.markSpawned({ pid: processInfo.pid, kill });
+
+      processLister.mockReturnValueOnce(testCase.current);
+
+      expect(owner.terminateExecutor(lifecycle!.processId)).toBe(testCase.result);
+      expect(kill).not.toHaveBeenCalled();
+      expect(owner.childCount).toBe(0);
+    }
+  });
+
+  it('keeps a child retryable after a transient process-list failure', () => {
+    const processInfo = createProcessInfo(1234, 'claude');
+    const processLister = vi.fn<() => ProcessInfo[]>(() => [processInfo]);
+    const owner = createOwner(processLister);
+    const lifecycle = owner.prepareExecutor({ label: 'Claude', command: processInfo.command });
+    const kill = vi.fn();
+    lifecycle?.markSpawned({ pid: processInfo.pid, kill });
+
+    processLister.mockImplementationOnce(() => {
+      throw new Error('transient ps failure');
+    });
+    expect(owner.terminateExecutor(lifecycle!.processId)).toBe('unknown_process_state');
+    expect(owner.childCount).toBe(1);
+    expect(kill).not.toHaveBeenCalled();
+
+    processLister.mockReturnValueOnce([processInfo]);
+    expect(owner.terminateExecutor(lifecycle.processId)).toBe('terminated');
+    expect(kill).toHaveBeenCalledOnce();
+    lifecycle.markExited({ signal: 'SIGTERM' });
     expect(owner.childCount).toBe(0);
   });
 
@@ -167,6 +238,43 @@ describe('SessionProcessOwner', () => {
     expect(owner.childCount).toBe(1);
     expect(owner.terminateExecutor(retryLifecycle.processId)).toBe('terminated');
     expect(retryKill).toHaveBeenCalledTimes(2);
+  });
+
+  it('allows only the owner with the direct-child handle to terminate an executor', () => {
+    const processInfo = createProcessInfo(1234, 'claude');
+    const processLister = vi.fn<() => ProcessInfo[]>(() => [processInfo]);
+    const owner = createOwner(processLister);
+    const otherOwner = new SessionProcessOwner({
+      sessionId: 'session-1',
+      ownerProcessId: processId('other-owner'),
+      processLister,
+    });
+    const lifecycle = owner.prepareExecutor({ label: 'Claude', command: processInfo.command });
+    const kill = vi.fn();
+    lifecycle?.markSpawned({ pid: processInfo.pid, kill });
+
+    expect(otherOwner.terminateExecutor(lifecycle!.processId)).toBe('not_owned');
+    expect(kill).not.toHaveBeenCalled();
+    expect(owner.terminateExecutor(lifecycle.processId)).toBe('terminated');
+    expect(kill).toHaveBeenCalledOnce();
+  });
+
+  it('does not signal twice and ignores controls after the child exits', () => {
+    const processInfo = createProcessInfo(1234, 'claude');
+    const owner = createOwner(() => [processInfo]);
+    const lifecycle = owner.prepareExecutor({ label: 'Claude', command: processInfo.command });
+    const kill = vi.fn();
+    lifecycle?.markSpawned({ pid: processInfo.pid, kill });
+    const handleControl = createExecutorControlHandler(owner);
+
+    handleControl({ type: 'terminate_executor', executorId: lifecycle!.processId });
+    handleControl({ type: 'terminate_executor', executorId: lifecycle!.processId });
+    expect(kill).toHaveBeenCalledOnce();
+
+    lifecycle?.markExited({ signal: 'SIGTERM' });
+    handleControl({ type: 'terminate_executor', executorId: lifecycle!.processId });
+    expect(kill).toHaveBeenCalledOnce();
+    expect(owner.childCount).toBe(0);
   });
 
   it('uses the local registry for root-owned executors', () => {

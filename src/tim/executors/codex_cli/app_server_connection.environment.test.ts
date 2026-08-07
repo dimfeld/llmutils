@@ -3,6 +3,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+import {
+  runWithSessionProcessOwner,
+  SessionProcessOwner,
+} from '../../../common/session_process_control.js';
+import { SessionProcessRegistry, toProcessId } from '../../../common/session_process.js';
+
 vi.mock('../../../logging.ts', () => ({
   debugLog: vi.fn(),
   writeStderr: vi.fn(),
@@ -91,45 +97,75 @@ const server = Bun.serve({
     await writeFile(codexPath, `#!/bin/sh\nexec bun "${serverPath}" "$@"\n`);
     await chmod(codexPath, 0o755);
 
-    const connection = await CodexAppServerConnection.create({
-      cwd,
-      env: {
-        PATH: `${cwd}:${process.env.PATH ?? ''}`,
-        TIM_PATH: join(cwd, 'tim'),
-        TIM_CODEX_APP_SERVER_SOCKET: '',
-        MOCK_ENV_LOG: envLogPath,
+    const registry = new SessionProcessRegistry({ sessionId: 'app-server-session' });
+    const ownerProcessId = toProcessId('app-server-owner');
+    if (!ownerProcessId) {
+      throw new Error('Invalid app-server owner process ID');
+    }
+    registry.register({ processId: ownerProcessId, kind: 'tim', label: 'app-server owner' });
+    const owner = new SessionProcessOwner({
+      sessionId: 'app-server-session',
+      ownerProcessId,
+      registry,
+    });
+
+    const connection = await runWithSessionProcessOwner(owner, () =>
+      CodexAppServerConnection.create({
+        cwd,
+        env: {
+          PATH: `${cwd}:${process.env.PATH ?? ''}`,
+          TIM_PATH: join(cwd, 'tim'),
+          TIM_CODEX_APP_SERVER_SOCKET: '',
+          MOCK_ENV_LOG: envLogPath,
+          TIM_EXECUTOR: 'codex',
+          TIM_NOTIFY_SUPPRESS: '1',
+          TMPDIR: '/tmp/codex-app-server/',
+          TIM_PLAN_ID: 'explicit-plan',
+        },
+        timEnvironment: {
+          environment: {
+            TIM_DATABASE_NAME: 'project_{{planId}}',
+            TIM_HIGH_PRIORITY: {
+              value: 'high_{{planId}}',
+              precedence: 'override-dotenv',
+            },
+          },
+          context: {
+            planId: '374',
+          },
+        },
+      })
+    );
+
+    try {
+      const appServerNode = registry
+        .getSnapshot()
+        .find((node) => node.label === 'Codex app-server');
+      expect(appServerNode).toMatchObject({
+        kind: 'executor',
+        state: 'running',
+        pid: expect.any(Number),
+        startIdentity: expect.any(String),
+      });
+
+      const capturedEnv = JSON.parse(await readFile(envLogPath, 'utf8'));
+      expect(capturedEnv).toMatchObject({
+        TIM_DATABASE_NAME: 'dotenv_database',
+        TIM_HIGH_PRIORITY: 'high_374',
+        TIM_PLAN_ID: 'explicit-plan',
         TIM_EXECUTOR: 'codex',
         TIM_NOTIFY_SUPPRESS: '1',
         TMPDIR: '/tmp/codex-app-server/',
-        TIM_PLAN_ID: 'explicit-plan',
-      },
-      timEnvironment: {
-        environment: {
-          TIM_DATABASE_NAME: 'project_{{planId}}',
-          TIM_HIGH_PRIORITY: {
-            value: 'high_{{planId}}',
-            precedence: 'override-dotenv',
-          },
-        },
-        context: {
-          planId: '374',
-        },
-      },
-    });
+        TIM_CODEX_APP_SERVER_SOCKET: expect.stringContaining('codex.sock'),
+      });
+      expect(process.env.TIM_DATABASE_NAME).toBe(previousDatabaseName);
+      expect(process.env.TIM_HIGH_PRIORITY).toBe(previousHighPriority);
 
-    const capturedEnv = JSON.parse(await readFile(envLogPath, 'utf8'));
-    expect(capturedEnv).toMatchObject({
-      TIM_DATABASE_NAME: 'dotenv_database',
-      TIM_HIGH_PRIORITY: 'high_374',
-      TIM_PLAN_ID: 'explicit-plan',
-      TIM_EXECUTOR: 'codex',
-      TIM_NOTIFY_SUPPRESS: '1',
-      TMPDIR: '/tmp/codex-app-server/',
-      TIM_CODEX_APP_SERVER_SOCKET: expect.stringContaining('codex.sock'),
-    });
-    expect(process.env.TIM_DATABASE_NAME).toBe(previousDatabaseName);
-    expect(process.env.TIM_HIGH_PRIORITY).toBe(previousHighPriority);
-
-    await connection.close();
+      await connection.close();
+      expect(registry.get(appServerNode!.processId)).toMatchObject({ state: 'exited' });
+    } finally {
+      await connection.close();
+      owner.dispose();
+    }
   });
 });

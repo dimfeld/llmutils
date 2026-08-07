@@ -97,6 +97,13 @@ describe('executeCodexStep retries', () => {
     const firstArgs = vi.mocked(spawnAndLogOutput).mock.calls[0][0];
     const secondArgs = vi.mocked(spawnAndLogOutput).mock.calls[1][0];
 
+    expect(vi.mocked(spawnAndLogOutput).mock.calls[0][1]).toMatchObject({
+      sessionProcessLabel: 'Codex CLI attempt 1',
+    });
+    expect(vi.mocked(spawnAndLogOutput).mock.calls[1][1]).toMatchObject({
+      sessionProcessLabel: 'Codex CLI attempt 2',
+    });
+
     expect(firstArgs.slice(-2)).toEqual(['--json', 'prompt']);
     expect(secondArgs.slice(-4)).toEqual(['--json', 'resume', 'thread-123', 'continue']);
   });
@@ -122,6 +129,9 @@ describe('executeCodexStep retries', () => {
     );
 
     expect(vi.mocked(spawnAndLogOutput)).toHaveBeenCalledTimes(3);
+    expect(
+      vi.mocked(spawnAndLogOutput).mock.calls.map(([, options]) => options?.sessionProcessLabel)
+    ).toEqual(['Codex CLI attempt 1', 'Codex CLI attempt 2', 'Codex CLI attempt 3']);
   });
 });
 
