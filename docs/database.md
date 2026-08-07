@@ -403,6 +403,16 @@ Beyond updating `pr_status`, the dispatch loop applies plan-status side effects 
 - **Web — plan PR status** (`src/lib/remote/pr_status.remote.ts`): `refreshPrStatus` calls `ingestWebhookEvents(db)` first, then pre-filters explicit PR URLs to only those already cached in the DB before calling `syncPlanPrLinks` — this prevents webhook mode from triggering GitHub API fetches for uncached URLs. PRs not yet seen via webhooks are reported as warnings. Falls back to direct GitHub API refresh when webhooks are not configured. When a plan has no PR URLs, always syncs junction links to prune stale rows (even in webhook mode). `fullRefreshPrStatus` bypasses webhooks entirely and uses `refreshPrStatus()` (unconditional API call) rather than `ensurePrStatusFresh()`, ensuring a true full refresh from GitHub regardless of `last_fetched_at` — the plan-level equivalent of `fullRefreshProjectPrs`.
 - **CLI — `tim pr status`** (`src/tim/commands/pr.ts`): Calls `ingestWebhookEvents(db)` before displaying PR data when configured. In webhook mode, calls `syncPlanPrLinks` with only already-cached explicit URLs (never triggers GitHub API fetch) to keep the junction table consistent with the plan file. `--force-refresh` flag bypasses webhooks and fetches directly from GitHub API. When `TIM_WEBHOOK_SERVER_URL` is not set, preserves existing direct-API behavior.
 
+### Inbox
+
+The `inbox_item` table stores the aggregated GitHub-webhook notification feed for the inbox feature. It is local-only and has no sync support.
+
+**Table**:
+
+- `inbox_item`: One row per kind and canonical PR, aggregated by the unique `dedupe_key`. A new event re-surfaces the row by clearing `read_at` and `dismissed_at` and bumping `last_event_at`.
+
+**CRUD module** (`src/tim/db/inbox_item.ts`).
+
 ### Project Settings
 
 Per-project key-value settings stored in the database (migration v16). Used by the web UI for project-level configuration that doesn't belong in YAML config files.
