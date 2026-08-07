@@ -1817,4 +1817,74 @@ describe('common/github/webhook_ingest', () => {
       expect(result.inboxSignals).toEqual([]);
     });
   });
+
+  describe('unsupported event types', () => {
+    function buildGenericEvent(params: {
+      id: number;
+      deliveryId: string;
+      eventType: string;
+      receivedAt?: string;
+    }): Record<string, unknown> {
+      return {
+        id: params.id,
+        deliveryId: params.deliveryId,
+        eventType: params.eventType,
+        action: 'created',
+        repositoryFullName: 'example/repo',
+        receivedAt: params.receivedAt ?? '2026-03-30T10:00:00.000Z',
+        payloadJson: JSON.stringify({
+          action: 'created',
+          repository: { full_name: 'example/repo' },
+        }),
+      };
+    }
+
+    test.each(['constructor', '__proto__', 'toString', 'hasOwnProperty'])(
+      'event type %s does not dispatch a handler or resolve to an inherited Object.prototype member',
+      async (eventType) => {
+        mocks.fetchWebhookEvents.mockResolvedValueOnce([
+          buildGenericEvent({ id: 90, deliveryId: `unsupported-${eventType}`, eventType }),
+        ]);
+
+        const result = await ingestWebhookEvents(db);
+
+        expect(result.eventsIngested).toBe(1);
+        expect(result.errors).toEqual([]);
+        expect(result.prsUpdated).toEqual([]);
+        expect(result.inboxSignals).toEqual([]);
+      }
+    );
+
+    test('processes a normal event before and after an unsupported/inherited-key event type without side effects leaking between them', async () => {
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        buildGenericEvent({ id: 91, deliveryId: 'unsupported-before', eventType: 'constructor' }),
+      ]);
+      enqueuePullRequestEvent({
+        id: 92,
+        deliveryId: 'normal-pull-request',
+        action: 'opened',
+        prNumber: 950,
+        title: 'Normal PR after unsupported event',
+        draft: false,
+      });
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        buildGenericEvent({ id: 93, deliveryId: 'unsupported-after', eventType: '__proto__' }),
+      ]);
+
+      const first = await ingestWebhookEvents(db);
+      expect(first.errors).toEqual([]);
+      expect(first.prsUpdated).toEqual([]);
+
+      const second = await ingestWebhookEvents(db);
+      expect(second.errors).toEqual([]);
+      expect(second.prsUpdated).toEqual(['https://github.com/example/repo/pull/950']);
+
+      const third = await ingestWebhookEvents(db);
+      expect(third.errors).toEqual([]);
+      expect(third.prsUpdated).toEqual([]);
+      expect(third.inboxSignals).toEqual([]);
+
+      expect(getWebhookCursor(db)).toBe(93);
+    });
+  });
 });
