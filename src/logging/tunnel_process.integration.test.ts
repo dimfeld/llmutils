@@ -2,10 +2,20 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import net from 'node:net';
 import path from 'node:path';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { SessionProcessRegistry, toProcessId, type ProcessId } from '../common/session_process.ts';
+import {
+  SessionProcessRegistry,
+  SessionProcessRegistryLifecycleSink,
+  toProcessId,
+  type ProcessId,
+} from '../common/session_process.ts';
+import {
+  runWithSessionProcessOwner,
+  SessionProcessOwner,
+} from '../common/session_process_control.ts';
 import { createTunnelAdapter, type TunnelAdapter } from './tunnel_client.ts';
 import {
   createTunnelServer,
+  createExecutorTunnelServer,
   type TunnelClientChannel,
   type TunnelServer,
   type TunnelServerOptions,
@@ -81,6 +91,41 @@ describe('tunnel process plumbing', () => {
     server = await createTunnelServer(socketPath, { processRegistry: registry, ...extraOptions });
     return { registry, root, rootExecutor, socketPath };
   }
+
+  it('injects the current owner registry into executor tunnel servers', async () => {
+    const registry = new SessionProcessRegistry({ sessionId: 'session-factory' });
+    const root = processId('factory-root');
+    const rootExecutor = processId('factory-root-executor');
+    registry.register({ processId: root, kind: 'tim', label: 'factory root' });
+    registry.register({
+      processId: rootExecutor,
+      parentProcessId: root,
+      ownerProcessId: root,
+      kind: 'executor',
+      label: 'factory root executor',
+    });
+    const owner = new SessionProcessOwner({
+      sessionId: 'session-factory',
+      ownerProcessId: root,
+      lifecycleSink: new SessionProcessRegistryLifecycleSink(registry),
+    });
+    const socketPath = path.join(testDir, 'factory-output.sock');
+
+    server = await runWithSessionProcessOwner(owner, () => createExecutorTunnelServer(socketPath));
+    const client = await createTunnelAdapter(socketPath);
+    adapters.push(client);
+    const nestedTim = processId('factory-nested-tim');
+    client.registerProcess({
+      processId: nestedTim,
+      parentProcessId: rootExecutor,
+      ownerProcessId: rootExecutor,
+      kind: 'tim',
+      label: 'factory nested tim',
+    });
+
+    await waitFor(() => registry.has(nestedTim));
+    expect(registry.getOwnerChannel(nestedTim)).toBeDefined();
+  });
 
   it('accepts validated lifecycle messages and keeps malformed messages out of the registry', async () => {
     const received: TunnelProcessMessage[] = [];

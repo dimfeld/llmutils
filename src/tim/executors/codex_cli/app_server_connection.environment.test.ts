@@ -7,7 +7,11 @@ import {
   runWithSessionProcessOwner,
   SessionProcessOwner,
 } from '../../../common/session_process_control.js';
-import { SessionProcessRegistry, toProcessId } from '../../../common/session_process.js';
+import {
+  SessionProcessRegistry,
+  SessionProcessRegistryLifecycleSink,
+  toProcessId,
+} from '../../../common/session_process.js';
 
 vi.mock('../../../logging.ts', () => ({
   debugLog: vi.fn(),
@@ -108,7 +112,7 @@ const server = Bun.serve({
     const owner = new SessionProcessOwner({
       sessionId: 'app-server-session',
       ownerProcessId,
-      registry,
+      lifecycleSink: new SessionProcessRegistryLifecycleSink(registry),
     });
 
     const connection = await runWithSessionProcessOwner(owner, () =>

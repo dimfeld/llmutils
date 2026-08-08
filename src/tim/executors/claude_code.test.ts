@@ -589,6 +589,7 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
 
     vi.doMock('../../logging/tunnel_server.js', () => ({
       createTunnelServer: createTunnelServerMock,
+      createExecutorTunnelServer: createTunnelServerMock,
     }));
 
     vi.doMock('../../logging/tunnel_prompt_handler.js', () => ({
@@ -1629,6 +1630,10 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
         capturedTunnelServerOptions.push(options);
         return { close: vi.fn(() => {}) };
       }),
+      createExecutorTunnelServer: vi.fn(async (_socketPath: string, options?: any) => {
+        capturedTunnelServerOptions.push(options);
+        return { close: vi.fn(() => {}) };
+      }),
     }));
 
     // Ensure isTunnelActive returns false so the tunnel server gets created
@@ -1670,6 +1675,10 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
 
     vi.doMock('../../logging/tunnel_server.ts', () => ({
       createTunnelServer: vi.fn(async (_socketPath: string, options?: any) => {
+        capturedTunnelServerOptions.push(options);
+        return { close: vi.fn(() => {}) };
+      }),
+      createExecutorTunnelServer: vi.fn(async (_socketPath: string, options?: any) => {
         capturedTunnelServerOptions.push(options);
         return { close: vi.fn(() => {}) };
       }),

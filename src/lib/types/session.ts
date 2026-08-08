@@ -5,6 +5,16 @@
 
 import type { StructuredMessage } from '../../logging/structured_messages.js';
 import type { OutputOrigin } from '../../logging/tunnel_protocol.js';
+import type {
+  SessionProcessNode as DomainSessionProcessNode,
+  SessionProcessTerminationResult,
+} from '../../common/session_process.js';
+
+export type {
+  SessionProcessKind,
+  SessionProcessState,
+  SessionProcessTerminationResult,
+} from '../../common/session_process.js';
 
 export type SessionStatus = 'active' | 'offline' | 'notification';
 
@@ -158,39 +168,18 @@ export interface SessionPlanTask {
   done: boolean;
 }
 
-export type SessionProcessKind = 'tim' | 'executor';
-export type SessionProcessState = 'starting' | 'running' | 'exited' | 'orphaned';
-
-export interface SessionProcessNode {
+/** Client transport form of the common process node; opaque IDs are strings on the wire. */
+export type SessionProcessNode = Omit<
+  DomainSessionProcessNode,
+  'processId' | 'parentProcessId' | 'ownerProcessId'
+> & {
   processId: string;
   parentProcessId?: string;
-  kind: SessionProcessKind;
-  label: string;
   ownerProcessId?: string;
-  pid?: number;
-  command?: string;
-  startIdentity?: string;
-  startedAt: string;
-  state: SessionProcessState;
-  endedAt?: string;
-  exitCode?: number | null;
-  signal?: string;
-}
+};
 
 export type SessionExecutorTerminationStatus =
-  | 'terminated'
-  | 'requested'
-  | 'already_exited'
-  | 'not_owned'
-  | 'not_executor'
-  | 'stale_target'
-  | 'unknown_process_state'
-  | 'signal_failed'
-  | 'unknown_executor'
-  | 'owner_not_registered'
-  | 'owner_not_connected'
-  | 'send_failed'
-  | 'request_timeout'
+  | SessionProcessTerminationResult
   | 'offline'
   | 'session_not_found'
   | 'request_failed';

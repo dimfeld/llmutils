@@ -405,6 +405,20 @@ nested requests return the owner's final result. Results are grouped as follows:
 
 The UI reports these statuses instead of treating a failed or stale stop as successful.
 
+#### Process-control implementation boundaries
+
+The common session-process module is the type and validation authority for node, lifecycle, and
+termination payloads. Tunnel and headless parsers delegate to these validators, so a payload
+cannot be valid in one transport and invalid in the other. `SessionProcessOwner` receives one
+domain lifecycle sink: the root uses a registry adapter and a nested `tim` process uses a tunnel
+adapter. Common process code does not depend on tunnel message types.
+
+`TunnelProcessRouter` owns channel authorization, owner cleanup, and targeted control routing.
+It keeps channel capabilities only; the session registry remains the only process tree. Executor
+tunnel servers are created through `createExecutorTunnelServer()`, which obtains the current
+registry from the owner context. When the context is inactive, the lifecycle sink and router are
+safe no-ops and normal non-headless CLI behavior is unchanged.
+
 #### Session state and reconnect behavior
 
 `SessionManager` keeps `processTree` in `SessionData` and emits `session:process-tree` for both

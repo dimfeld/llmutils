@@ -3,7 +3,6 @@ import {
   createNestedTimProcessRuntime,
   createExecutorControlHandler,
   SessionProcessOwner,
-  type SessionProcessTransport,
 } from './session_process_control.js';
 import {
   SessionProcessRegistry,
@@ -11,7 +10,9 @@ import {
   TIM_PARENT_PROCESS_ID,
   TIM_PROCESS_ID,
   TIM_SESSION_ID,
+  SessionProcessRegistryLifecycleSink,
   toProcessId,
+  type SessionProcessLifecycleSink,
   type ProcessId,
 } from './session_process.js';
 import type { ProcessInfo } from './process_listing.js';
@@ -24,7 +25,7 @@ function processId(value: string): ProcessId {
   return result;
 }
 
-function createTransport(): SessionProcessTransport & {
+function createTransport(): SessionProcessLifecycleSink & {
   registrations: Array<Record<string, unknown>>;
   updates: Array<{ processId: ProcessId; update: Record<string, unknown> }>;
   exits: Array<{ processId: ProcessId; details: Record<string, unknown> | undefined }>;
@@ -60,12 +61,12 @@ function createRegistry(): SessionProcessRegistry {
 
 function createOwner(
   processLister: () => ProcessInfo[],
-  transport: SessionProcessTransport = createTransport()
+  lifecycleSink: SessionProcessLifecycleSink = createTransport()
 ): SessionProcessOwner {
   return new SessionProcessOwner({
     sessionId: 'session-1',
     ownerProcessId: processId('owner'),
-    transport,
+    lifecycleSink,
     processLister,
   });
 }
@@ -283,7 +284,7 @@ describe('SessionProcessOwner', () => {
     const owner = new SessionProcessOwner({
       sessionId: 'session-1',
       ownerProcessId: processId('owner'),
-      registry,
+      lifecycleSink: new SessionProcessRegistryLifecycleSink(registry),
       processLister: () => [processInfo],
     });
     const lifecycle = owner.prepareExecutor({

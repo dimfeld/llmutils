@@ -4,6 +4,12 @@ import {
   createProcessId,
   createSessionProcessRegistryFromEnvironment,
   isSessionProcessTrackingEnabled,
+  isValidSessionProcessExit,
+  isValidSessionProcessNode,
+  isValidSessionProcessRegistration,
+  isValidSessionProcessTerminationResultEvent,
+  isValidSessionProcessUpdate,
+  SessionProcessRegistryLifecycleSink,
   readSessionProcessEnvironment,
   SessionProcessRegistry,
   TIM_OWNER_PROCESS_ID,
@@ -28,6 +34,81 @@ function createRegistry(): SessionProcessRegistry {
     now: () => new Date('2026-08-07T12:00:00.000Z'),
   });
 }
+
+describe('session process payload validators', () => {
+  const root = processId('root');
+  const executor = processId('executor');
+
+  it('accepts valid domain payloads and rejects unsafe metadata', () => {
+    expect(
+      isValidSessionProcessRegistration({
+        processId: executor,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'executor',
+        command: 'tim agent',
+        startIdentity: 'Fri Aug  7 12:00:00 2026',
+        startedAt: '2026-08-07T12:00:00.000Z',
+        state: 'starting',
+      })
+    ).toBe(true);
+    expect(isValidSessionProcessRegistration({ kind: 'executor', label: 'executor' })).toBe(true);
+    expect(
+      isValidSessionProcessRegistration({
+        kind: 'executor',
+        label: 'executor',
+        command: 'x'.repeat(2049),
+      })
+    ).toBe(false);
+    expect(isValidSessionProcessUpdate({ pid: null, command: null, state: 'running' })).toBe(true);
+    expect(isValidSessionProcessUpdate({ label: '   ' })).toBe(false);
+    expect(isValidSessionProcessExit({ exitCode: null, signal: 'SIGTERM' })).toBe(true);
+    expect(isValidSessionProcessExit({ endedAt: '' })).toBe(false);
+    expect(
+      isValidSessionProcessNode({
+        processId: executor,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'executor',
+        startedAt: '2026-08-07T12:00:00.000Z',
+        state: 'running',
+      })
+    ).toBe(true);
+    expect(
+      isValidSessionProcessTerminationResultEvent({
+        executorId: executor,
+        requestId: 'request-1',
+        result: 'terminated',
+      })
+    ).toBe(true);
+    expect(
+      isValidSessionProcessTerminationResultEvent({
+        executorId: executor,
+        requestId: 'request-1',
+        result: 'terminated',
+        error: 'x'.repeat(4097),
+      })
+    ).toBe(false);
+  });
+});
+
+describe('SessionProcessRegistryLifecycleSink', () => {
+  it('degrades to safe no-ops when its registry is inactive', () => {
+    const registry = createSessionProcessRegistryFromEnvironment({});
+    const sink = new SessionProcessRegistryLifecycleSink(registry);
+    const process = processId('inactive-process');
+
+    expect(
+      sink.registerProcess({ processId: process, kind: 'tim', label: 'inactive process' })
+    ).toBe(true);
+    expect(sink.updateProcess(process, { state: 'running' })).toBe(true);
+    expect(sink.exitProcess(process)).toBe(true);
+    expect(sink.removeProcess(process)).toBe(true);
+    expect(registry.getSnapshot()).toEqual([]);
+  });
+});
 
 describe('SessionProcessRegistry', () => {
   it('stays inactive without a live session transport', () => {

@@ -133,6 +133,23 @@ export interface SessionProcessExit {
   signal?: string;
 }
 
+/**
+ * Receives lifecycle events for one session process owner.
+ *
+ * The sink is deliberately expressed in domain types. Transport adapters can
+ * serialize these events for a tunnel, while a local registry adapter can
+ * apply them in memory without making the common process code depend on a
+ * wire protocol.
+ */
+export interface SessionProcessLifecycleSink {
+  /** The local registry when this is a registry-backed sink. */
+  readonly registry?: SessionProcessRegistry;
+  registerProcess(registration: SessionProcessRegistration): boolean;
+  updateProcess(processId: ProcessId, update: SessionProcessUpdate): boolean;
+  exitProcess(processId: ProcessId, details?: SessionProcessExit): boolean;
+  removeProcess(processId: ProcessId, subtree?: boolean): boolean;
+}
+
 export type SessionProcessChange =
   | {
       type: 'registered';
@@ -205,6 +222,145 @@ function isNonEmptyString(
 
 function isValidPid(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+function isOptionalString(value: unknown, maxLength: number): boolean {
+  return value === undefined || (typeof value === 'string' && value.length <= maxLength);
+}
+
+function isOptionalNullableString(value: unknown, maxLength: number): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (typeof value === 'string' && value.length <= maxLength)
+  );
+}
+
+function isOptionalProcessId(value: unknown): boolean {
+  return value === undefined || isProcessId(value);
+}
+
+function isOptionalNullablePid(value: unknown): boolean {
+  return value === undefined || value === null || isValidPid(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export interface SessionProcessRegistrationValidationOptions {
+  requireProcessId?: boolean;
+}
+
+/** Validates a process registration payload independently of tree relationships. */
+export function isValidSessionProcessRegistration(
+  value: unknown,
+  options: SessionProcessRegistrationValidationOptions = {}
+): value is SessionProcessRegistration {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    (options.requireProcessId
+      ? isProcessId(value.processId)
+      : isOptionalProcessId(value.processId)) &&
+    isOptionalProcessId(value.parentProcessId) &&
+    isOptionalProcessId(value.ownerProcessId) &&
+    (value.kind === 'tim' || value.kind === 'executor') &&
+    isNonEmptyString(value.label, MAX_PROCESS_LABEL_LENGTH) &&
+    (value.pid === undefined || isValidPid(value.pid)) &&
+    isOptionalString(value.command, 2048) &&
+    isOptionalString(value.startIdentity, 2048) &&
+    (value.startedAt === undefined || isNonEmptyString(value.startedAt, 512)) &&
+    (value.state === undefined || value.state === 'starting' || value.state === 'running')
+  );
+}
+
+/** Validates mutable process metadata sent after registration. */
+export function isValidSessionProcessUpdate(
+  value: unknown,
+  options: { requireChange?: boolean } = {}
+): value is SessionProcessUpdate {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    isOptionalProcessId(value.parentProcessId) &&
+    isOptionalProcessId(value.ownerProcessId) &&
+    (value.label === undefined || isNonEmptyString(value.label, MAX_PROCESS_LABEL_LENGTH)) &&
+    isOptionalNullablePid(value.pid) &&
+    isOptionalNullableString(value.command, 2048) &&
+    isOptionalNullableString(value.startIdentity, 2048) &&
+    (value.state === undefined ||
+      value.state === 'starting' ||
+      value.state === 'running' ||
+      value.state === 'exited' ||
+      value.state === 'orphaned') &&
+    (!options.requireChange || Object.keys(value).length > 0)
+  );
+}
+
+/** Validates process exit details. */
+export function isValidSessionProcessExit(value: unknown): value is SessionProcessExit {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    (value.endedAt === undefined || isNonEmptyString(value.endedAt, 512)) &&
+    (value.exitCode === undefined ||
+      value.exitCode === null ||
+      (typeof value.exitCode === 'number' && Number.isInteger(value.exitCode))) &&
+    isOptionalString(value.signal, 128)
+  );
+}
+
+/** Validates one complete process node received by a session client. */
+export function isValidSessionProcessNode(value: unknown): value is SessionProcessNode {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    isProcessId(value.processId) &&
+    isOptionalProcessId(value.parentProcessId) &&
+    isOptionalProcessId(value.ownerProcessId) &&
+    (value.kind === 'tim' || value.kind === 'executor') &&
+    isNonEmptyString(value.label, MAX_PROCESS_LABEL_LENGTH) &&
+    (value.pid === undefined || isValidPid(value.pid)) &&
+    isOptionalString(value.command, 2048) &&
+    isOptionalString(value.startIdentity, 2048) &&
+    isNonEmptyString(value.startedAt, 512) &&
+    (value.state === 'starting' ||
+      value.state === 'running' ||
+      value.state === 'exited' ||
+      value.state === 'orphaned') &&
+    isOptionalString(value.endedAt, 512) &&
+    (value.exitCode === undefined ||
+      value.exitCode === null ||
+      (typeof value.exitCode === 'number' && Number.isInteger(value.exitCode))) &&
+    isOptionalString(value.signal, 128)
+  );
+}
+
+/** Validates a correlated termination result event. */
+export function isValidSessionProcessTerminationResultEvent(
+  value: unknown
+): value is SessionProcessTerminationResultEvent {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    isProcessId(value.executorId) &&
+    typeof value.requestId === 'string' &&
+    value.requestId.length > 0 &&
+    value.requestId.length <= 256 &&
+    isSessionProcessTerminationResult(value.result) &&
+    isOptionalString(value.error, 4096)
+  );
 }
 
 function cloneNode(node: SessionProcessNode): SessionProcessNode {
@@ -452,7 +608,7 @@ export class SessionProcessRegistry {
 
   /** Delivers a result returned by a nested tim owner to headless listeners. */
   emitTerminationResult(event: SessionProcessTerminationResultEvent): void {
-    if (!this.active || !isProcessId(event.executorId) || !event.requestId) {
+    if (!this.active || !isValidSessionProcessTerminationResultEvent(event)) {
       return;
     }
 
@@ -604,7 +760,7 @@ export class SessionProcessRegistry {
   }
 
   update(processId: ProcessId, update: SessionProcessUpdate): SessionProcessNode | undefined {
-    if (!this.active) {
+    if (!this.active || !isValidSessionProcessUpdate(update)) {
       return undefined;
     }
     const current = this.nodes.get(processId);
@@ -666,7 +822,7 @@ export class SessionProcessRegistry {
   }
 
   exit(processId: ProcessId, details: SessionProcessExit = {}): SessionProcessNode | undefined {
-    if (!this.active) {
+    if (!this.active || !isValidSessionProcessExit(details)) {
       return undefined;
     }
     const current = this.nodes.get(processId);
@@ -839,21 +995,7 @@ export class SessionProcessRegistry {
   }
 
   private isValidRegistration(registration: SessionProcessRegistration): boolean {
-    return (
-      (registration.processId === undefined || isProcessId(registration.processId)) &&
-      (registration.parentProcessId === undefined || isProcessId(registration.parentProcessId)) &&
-      (registration.ownerProcessId === undefined || isProcessId(registration.ownerProcessId)) &&
-      (registration.kind === 'tim' || registration.kind === 'executor') &&
-      isNonEmptyString(registration.label, MAX_PROCESS_LABEL_LENGTH) &&
-      (registration.pid === undefined || isValidPid(registration.pid)) &&
-      (registration.command === undefined || typeof registration.command === 'string') &&
-      (registration.startIdentity === undefined ||
-        typeof registration.startIdentity === 'string') &&
-      (registration.startedAt === undefined || isNonEmptyString(registration.startedAt)) &&
-      (registration.state === undefined ||
-        registration.state === 'starting' ||
-        registration.state === 'running')
-    );
+    return isValidSessionProcessRegistration(registration);
   }
 
   private relationshipsExist(
@@ -954,3 +1096,49 @@ export class SessionProcessRegistry {
     }
   }
 }
+
+/** Adapts a local registry to the domain lifecycle sink contract. */
+export class SessionProcessRegistryLifecycleSink implements SessionProcessLifecycleSink {
+  readonly registry: SessionProcessRegistry;
+
+  constructor(registry: SessionProcessRegistry) {
+    this.registry = registry;
+  }
+
+  registerProcess(registration: SessionProcessRegistration): boolean {
+    if (!this.registry.isActive) {
+      return true;
+    }
+    return this.registry.register(registration) !== undefined;
+  }
+
+  updateProcess(processId: ProcessId, update: SessionProcessUpdate): boolean {
+    if (!this.registry.isActive) {
+      return true;
+    }
+    return this.registry.update(processId, update) !== undefined;
+  }
+
+  exitProcess(processId: ProcessId, details: SessionProcessExit = {}): boolean {
+    if (!this.registry.isActive) {
+      return true;
+    }
+    return this.registry.exit(processId, details) !== undefined;
+  }
+
+  removeProcess(processId: ProcessId, subtree: boolean = true): boolean {
+    if (!this.registry.isActive) {
+      return true;
+    }
+    const removed = this.registry.remove(processId, subtree);
+    return removed.length > 0 || !this.registry.has(processId);
+  }
+}
+
+/** A safe no-op sink used when no live session transport is available. */
+export const NOOP_SESSION_PROCESS_LIFECYCLE_SINK: SessionProcessLifecycleSink = {
+  registerProcess: () => true,
+  updateProcess: () => true,
+  exitProcess: () => true,
+  removeProcess: () => true,
+};

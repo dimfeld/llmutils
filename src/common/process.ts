@@ -337,11 +337,23 @@ function setupOutputProcessing(
   };
 }
 
-export async function spawnWithStreamingIO(
+type TrackedSpawnContext = {
+  proc: Bun.Subprocess<SpawnOptions.Writable, 'pipe', 'pipe'>;
+  trackResult: (result: Promise<SpawnAndLogOutputResult>) => Promise<SpawnAndLogOutputResult>;
+};
+
+/**
+ * Performs the lifecycle work shared by both public output-spawn functions.
+ * The caller still controls stdio and the returned shape, while this helper
+ * owns registration, environment propagation, spawn failure cleanup, and
+ * result/exit reporting.
+ */
+async function spawnTrackedProcess<T>(
   cmd: string[],
-  options?: SpawnAndLogOutputOptions
-): Promise<StreamingProcess> {
-  debugLog('Running', cmd, options);
+  options: SpawnAndLogOutputOptions | undefined,
+  stdio: ['pipe' | 'ignore', 'pipe', 'pipe'],
+  start: (context: TrackedSpawnContext) => T
+): Promise<T> {
   const sessionOwner = getCurrentSessionProcessOwner();
   const lifecycle = options?.sessionProcessLabel
     ? sessionOwner?.prepareExecutor({
@@ -350,7 +362,30 @@ export async function spawnWithStreamingIO(
       })
     : undefined;
   let spawned = false;
-  let spawnedProcess: { kill: (signal?: NodeJS.Signals) => void } | undefined;
+  let spawnedProcess:
+    | { kill: (signal?: NodeJS.Signals) => void; exited: Promise<number> }
+    | undefined;
+
+  const trackResult = (
+    result: Promise<SpawnAndLogOutputResult>
+  ): Promise<SpawnAndLogOutputResult> =>
+    result.then(
+      (value) => {
+        lifecycle?.markExited(value);
+        return value;
+      },
+      async (error) => {
+        try {
+          spawnedProcess?.kill('SIGTERM');
+          await spawnedProcess?.exited;
+        } catch {
+          // The child may already have exited while output processing failed.
+        }
+        lifecycle?.markExited();
+        throw error;
+      }
+    );
+
   try {
     const env = await buildWorkspaceCommandEnv(
       options?.cwd,
@@ -365,40 +400,13 @@ export async function spawnWithStreamingIO(
     const proc = Bun.spawn(cmd, {
       cwd: options?.cwd,
       env,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio,
     });
     spawned = true;
     spawnedProcess = proc;
     lifecycle?.markSpawned(proc);
     options?.onSpawn?.(proc.pid);
-
-    if (!proc.stdin) {
-      throw new Error('Failed to create stdin pipe for spawned process');
-    }
-    const outputProcessing = setupOutputProcessing(proc, options);
-    const result = outputProcessing.result.then(
-      (value) => {
-        lifecycle?.markExited(value);
-        return value;
-      },
-      async (error) => {
-        try {
-          proc.kill('SIGTERM');
-          await proc.exited;
-        } catch {
-          // The child may already have exited while output processing failed.
-        }
-        lifecycle?.markExited();
-        throw error;
-      }
-    );
-
-    return {
-      pid: proc.pid,
-      stdin: proc.stdin,
-      result,
-      kill: outputProcessing.kill,
-    };
+    return start({ proc, trackResult });
   } catch (error) {
     if (spawned) {
       try {
@@ -414,6 +422,25 @@ export async function spawnWithStreamingIO(
   }
 }
 
+export async function spawnWithStreamingIO(
+  cmd: string[],
+  options?: SpawnAndLogOutputOptions
+): Promise<StreamingProcess> {
+  debugLog('Running', cmd, options);
+  return spawnTrackedProcess(cmd, options, ['pipe', 'pipe', 'pipe'], ({ proc, trackResult }) => {
+    if (!proc.stdin || typeof proc.stdin === 'number') {
+      throw new Error('Failed to create stdin pipe for spawned process');
+    }
+    const outputProcessing = setupOutputProcessing(proc, options);
+    return {
+      pid: proc.pid,
+      stdin: proc.stdin,
+      result: trackResult(outputProcessing.result),
+      kill: outputProcessing.kill,
+    };
+  });
+}
+
 export async function spawnAndLogOutput(
   cmd: string[],
   options?: SpawnAndLogOutputOptions
@@ -426,67 +453,10 @@ export async function spawnAndLogOutput(
   }
 
   debugLog('Running', cmd, options);
-  const sessionOwner = getCurrentSessionProcessOwner();
-  const lifecycle = options?.sessionProcessLabel
-    ? sessionOwner?.prepareExecutor({
-        label: options.sessionProcessLabel,
-        command: cmd.join(' '),
-      })
-    : undefined;
-  let spawned = false;
-  let spawnedProcess: { kill: (signal?: NodeJS.Signals) => void } | undefined;
-  try {
-    const env = await buildWorkspaceCommandEnv(
-      options?.cwd,
-      {
-        ...options?.env,
-        ...lifecycle?.environment,
-      },
-      {
-        timEnvironment: options?.timEnvironment,
-      }
-    );
-    log(`> ${cmd.join(' ')}`);
-    const proc = Bun.spawn(cmd, {
-      cwd: options?.cwd,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    spawned = true;
-    spawnedProcess = proc;
-    lifecycle?.markSpawned(proc);
-    options?.onSpawn?.(proc.pid);
-
-    const result = setupOutputProcessing(proc, options).result.then(
-      (value) => {
-        lifecycle?.markExited(value);
-        return value;
-      },
-      async (error) => {
-        try {
-          proc.kill('SIGTERM');
-          await proc.exited;
-        } catch {
-          // The child may already have exited while output processing failed.
-        }
-        lifecycle?.markExited();
-        throw error;
-      }
-    );
-    return result;
-  } catch (error) {
-    if (spawned) {
-      try {
-        spawnedProcess?.kill('SIGTERM');
-      } catch {
-        // The child may already have exited.
-      }
-      lifecycle?.markExited();
-    } else {
-      lifecycle?.markSpawnFailed();
-    }
-    throw error;
-  }
+  log(`> ${cmd.join(' ')}`);
+  return spawnTrackedProcess(cmd, options, ['ignore', 'pipe', 'pipe'], ({ proc, trackResult }) =>
+    trackResult(setupOutputProcessing(proc, options).result)
+  );
 }
 
 /**

@@ -29,10 +29,19 @@ import {
 import { HeadlessAdapter } from './headless_adapter.js';
 import {
   isProcessId,
-  isSessionProcessTerminationResult,
+  isValidSessionProcessExit,
+  isValidSessionProcessRegistration,
+  isValidSessionProcessTerminationResultEvent,
+  isValidSessionProcessUpdate,
   type ProcessId,
   type SessionProcessRegistry,
 } from '../common/session_process.js';
+import { getCurrentSessionProcessRegistry } from '../common/session_process_control.js';
+import {
+  TunnelProcessRouter,
+  type TunnelControlResult,
+  type TunnelProcessChannel,
+} from './tunnel_process_router.js';
 
 export const structuredMessageTypes = new Set<StructuredMessage['type']>(structuredMessageTypeList);
 
@@ -407,83 +416,30 @@ function createLineSplitter(): (input: string) => string[] {
  * Validates that a parsed JSON object has the expected structure for a TunnelMessage.
  * Returns true if the message is valid, false otherwise.
  */
-function isValidOptionalPid(value: unknown): boolean {
-  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value > 0);
-}
-
-function isValidOptionalString(value: unknown, maxLength: number = 2048): boolean {
-  return value === undefined || (typeof value === 'string' && value.length <= maxLength);
-}
-
-function isValidOptionalProcessId(value: unknown): boolean {
-  return value === undefined || isProcessId(value);
-}
-
 function isValidProcessMessage(message: Record<string, unknown>): boolean {
   switch (message.type) {
     case 'process_register':
-      return (
-        isProcessId(message.processId) &&
-        (message.parentProcessId === undefined || isProcessId(message.parentProcessId)) &&
-        (message.ownerProcessId === undefined || isProcessId(message.ownerProcessId)) &&
-        (message.kind === 'tim' || message.kind === 'executor') &&
-        typeof message.label === 'string' &&
-        message.label.trim().length > 0 &&
-        message.label.length <= 512 &&
-        isValidOptionalPid(message.pid) &&
-        isValidOptionalString(message.command) &&
-        isValidOptionalString(message.startIdentity) &&
-        isValidOptionalString(message.startedAt, 512) &&
-        (message.state === undefined || message.state === 'starting' || message.state === 'running')
-      );
+      return isValidSessionProcessRegistration(message, { requireProcessId: true });
     case 'process_update':
       return (
         isProcessId(message.processId) &&
-        isValidOptionalProcessId(message.parentProcessId) &&
-        isValidOptionalProcessId(message.ownerProcessId) &&
-        (message.label === undefined ||
-          (typeof message.label === 'string' &&
-            message.label.trim().length > 0 &&
-            message.label.length <= 512)) &&
-        (message.pid === undefined ||
-          message.pid === null ||
-          (typeof message.pid === 'number' && Number.isInteger(message.pid) && message.pid > 0)) &&
-        (message.command === undefined ||
-          message.command === null ||
-          typeof message.command === 'string') &&
-        (message.startIdentity === undefined ||
-          message.startIdentity === null ||
-          typeof message.startIdentity === 'string') &&
-        (message.state === undefined ||
-          message.state === 'starting' ||
-          message.state === 'running' ||
-          message.state === 'exited' ||
-          message.state === 'orphaned') &&
+        isValidSessionProcessUpdate(message, { requireChange: true }) &&
         Object.keys(message).some((key) => key !== 'type' && key !== 'processId')
       );
     case 'process_exit':
-      return (
-        isProcessId(message.processId) &&
-        isValidOptionalString(message.endedAt, 512) &&
-        (message.exitCode === undefined ||
-          message.exitCode === null ||
-          (typeof message.exitCode === 'number' && Number.isInteger(message.exitCode))) &&
-        isValidOptionalString(message.signal, 128)
-      );
+      return isProcessId(message.processId) && isValidSessionProcessExit(message);
     case 'process_remove':
       return (
         isProcessId(message.processId) &&
         (message.subtree === undefined || typeof message.subtree === 'boolean')
       );
     case 'terminate_executor_result':
-      return (
-        isProcessId(message.executorId) &&
-        typeof message.requestId === 'string' &&
-        message.requestId.length > 0 &&
-        message.requestId.length <= 256 &&
-        isSessionProcessTerminationResult(message.result) &&
-        isValidOptionalString(message.error, 4096)
-      );
+      return isValidSessionProcessTerminationResultEvent({
+        executorId: message.executorId,
+        requestId: message.requestId,
+        result: message.result,
+        error: message.error,
+      });
     default:
       return false;
   }
@@ -598,25 +554,8 @@ export type PromptRequestHandler = (
   respond: (response: TunnelPromptResponseMessage) => void
 ) => void | Promise<void>;
 
-/** A stable channel for one connected tunnel client. */
-export interface TunnelClientChannel {
-  readonly id: string;
-  readonly connected: boolean;
-  send: (message: ServerTunnelMessage) => boolean;
-}
-
-export type TunnelControlResult =
-  | { ok: true; clientId: string }
-  | {
-      ok: false;
-      reason:
-        | 'unknown_executor'
-        | 'not_executor'
-        | 'stale_executor'
-        | 'owner_not_registered'
-        | 'owner_not_connected'
-        | 'send_failed';
-    };
+export type TunnelClientChannel = TunnelProcessChannel;
+export type { TunnelControlResult } from './tunnel_process_router.js';
 
 /**
  * Options for creating a tunnel server.
@@ -667,6 +606,24 @@ export interface TunnelServer {
   close: () => void;
 }
 
+/** Options for the tunnel owned by one executor process. */
+export type ExecutorTunnelServerOptions = Omit<TunnelServerOptions, 'processRegistry'>;
+
+/**
+ * Creates an executor tunnel with the registry from the current owner context.
+ * Keeping this lookup here prevents individual executor implementations from
+ * forgetting to attach process-control routing.
+ */
+export function createExecutorTunnelServer(
+  socketPath: string,
+  options?: ExecutorTunnelServerOptions
+): Promise<TunnelServer> {
+  return createTunnelServer(socketPath, {
+    ...options,
+    processRegistry: getCurrentSessionProcessRegistry(),
+  });
+}
+
 /**
  * Creates a Unix domain socket server that receives JSONL-encoded tunnel messages
  * from child tim processes and re-emits them through the local logging system.
@@ -703,43 +660,15 @@ export function createTunnelServer(
       // File doesn't exist, that's fine
     }
 
-    interface TrackedTunnelProcess {
-      processId: ProcessId;
-      parentProcessId?: ProcessId;
-      ownerProcessId?: ProcessId;
-      kind: 'tim' | 'executor';
-      state: 'starting' | 'running' | 'exited' | 'orphaned';
-      clientId: string;
-    }
-
     interface TunnelClientState {
       socket: net.Socket;
       channel: TunnelClientChannel;
       connected: boolean;
-      processIds: Set<ProcessId>;
     }
 
     const clients = new Map<string, TunnelClientChannel>();
     const clientStates = new Map<string, TunnelClientState>();
-    const trackedProcesses = new Map<ProcessId, TrackedTunnelProcess>();
-
-    const removeTrackedProcess = (processId: ProcessId): void => {
-      const tracked = trackedProcesses.get(processId);
-      if (!tracked) {
-        return;
-      }
-      trackedProcesses.delete(processId);
-      clientStates.get(tracked.clientId)?.processIds.delete(processId);
-    };
-
-    const removeTrackedSubtree = (processId: ProcessId): void => {
-      for (const tracked of Array.from(trackedProcesses.values())) {
-        if (tracked.parentProcessId === processId) {
-          removeTrackedSubtree(tracked.processId);
-        }
-      }
-      removeTrackedProcess(processId);
-    };
+    const processRouter = new TunnelProcessRouter(processRegistry);
 
     let disconnectClient: (clientId: string) => void = () => {};
 
@@ -768,16 +697,9 @@ export function createTunnelServer(
       state.socket = socket;
       state.channel = channel;
       state.connected = true;
-      state.processIds = new Set<ProcessId>();
       clients.set(clientId, channel);
       clientStates.set(clientId, state);
-      processRegistry?.registerOwnerChannelSender(clientId, (executorId, requestId) =>
-        channel.send({
-          type: 'terminate_executor',
-          executorId,
-          ...(requestId ? { requestId } : {}),
-        })
-      );
+      processRouter.registerClient(channel);
       return state;
     };
 
@@ -785,149 +707,7 @@ export function createTunnelServer(
       message: TunnelProcessMessage,
       client: TunnelClientChannel
     ): boolean => {
-      switch (message.type) {
-        case 'process_register': {
-          const ownerProcessId = message.ownerProcessId ?? message.parentProcessId;
-          const tracked = trackedProcesses.get(message.processId);
-          if (
-            tracked &&
-            (tracked.clientId !== client.id ||
-              tracked.kind !== message.kind ||
-              tracked.parentProcessId !== message.parentProcessId ||
-              tracked.ownerProcessId !== ownerProcessId)
-          ) {
-            return false;
-          }
-
-          if (message.kind === 'executor' && ownerProcessId && processRegistry) {
-            const owner = processRegistry.get(ownerProcessId);
-            if (
-              !owner ||
-              owner.kind !== 'tim' ||
-              processRegistry.getOwnerChannel(ownerProcessId) !== client.id
-            ) {
-              return false;
-            }
-          }
-
-          const node = processRegistry?.register(
-            {
-              processId: message.processId,
-              parentProcessId: message.parentProcessId,
-              kind: message.kind,
-              label: message.label,
-              ownerProcessId,
-              pid: message.pid,
-              command: message.command,
-              startIdentity: message.startIdentity,
-              startedAt: message.startedAt,
-              state: message.state,
-            },
-            message.kind === 'tim' ? { ownerChannelId: client.id } : {}
-          );
-          if (processRegistry && !node) {
-            return false;
-          }
-
-          const state = node?.state ?? message.state ?? 'running';
-          trackedProcesses.set(message.processId, {
-            processId: message.processId,
-            parentProcessId: message.parentProcessId,
-            ownerProcessId,
-            kind: message.kind,
-            state,
-            clientId: client.id,
-          });
-          clientStates.get(client.id)?.processIds.add(message.processId);
-          return true;
-        }
-        case 'process_update': {
-          const tracked = trackedProcesses.get(message.processId);
-          if (tracked && tracked.clientId !== client.id) {
-            return false;
-          }
-          if (!tracked && processRegistry?.has(message.processId)) {
-            return false;
-          }
-          if (processRegistry && !processRegistry.has(message.processId)) {
-            return true;
-          }
-          if (!processRegistry && !tracked) {
-            return true;
-          }
-          const node = processRegistry?.update(message.processId, {
-            parentProcessId: message.parentProcessId,
-            ownerProcessId: message.ownerProcessId,
-            label: message.label,
-            pid: message.pid,
-            command: message.command,
-            startIdentity: message.startIdentity,
-            state: message.state,
-          });
-          if (processRegistry && !node) {
-            return false;
-          }
-          if (tracked) {
-            tracked.parentProcessId = message.parentProcessId ?? tracked.parentProcessId;
-            tracked.ownerProcessId = message.ownerProcessId ?? tracked.ownerProcessId;
-            tracked.state = message.state ?? tracked.state;
-          }
-          return true;
-        }
-        case 'process_exit': {
-          const tracked = trackedProcesses.get(message.processId);
-          if (tracked && tracked.clientId !== client.id) {
-            return false;
-          }
-          if (!tracked && processRegistry?.has(message.processId)) {
-            return false;
-          }
-          if (processRegistry && processRegistry.has(message.processId)) {
-            processRegistry.exit(message.processId, {
-              endedAt: message.endedAt,
-              exitCode: message.exitCode,
-              signal: message.signal,
-            });
-          }
-          if (tracked) {
-            tracked.state = 'exited';
-          }
-          // An exit event is intentionally accepted after cleanup. This makes
-          // normal exit/finally races idempotent.
-          return true;
-        }
-        case 'process_remove': {
-          const tracked = trackedProcesses.get(message.processId);
-          if (tracked && tracked.clientId !== client.id) {
-            return false;
-          }
-          if (!tracked && processRegistry?.has(message.processId)) {
-            return false;
-          }
-          if (message.subtree === false) {
-            processRegistry?.remove(message.processId, false);
-            removeTrackedProcess(message.processId);
-          } else {
-            processRegistry?.removeSubtree(message.processId);
-            removeTrackedSubtree(message.processId);
-          }
-          // Removal is idempotent, including a late message after disconnect.
-          return true;
-        }
-        case 'terminate_executor_result': {
-          const tracked = trackedProcesses.get(message.executorId);
-          if (!tracked || tracked.clientId !== client.id || tracked.kind !== 'executor') {
-            return false;
-          }
-          processRegistry?.emitTerminationResult({
-            executorId: message.executorId,
-            requestId: message.requestId,
-            result: message.result,
-            error: message.error,
-          });
-          return true;
-        }
-      }
+      return processRouter.handleProcessMessage(message, client);
     };
 
     disconnectClient = (clientId: string): void => {
@@ -938,19 +718,7 @@ export function createTunnelServer(
       state.connected = false;
       clients.delete(clientId);
       clientStates.delete(clientId);
-      processRegistry?.unregisterOwnerChannelSender(clientId);
-      const processIds = [...state.processIds];
-      if (processRegistry) {
-        const removed = processRegistry.releaseChannel(clientId, 'remove');
-        for (const processId of removed) {
-          removeTrackedSubtree(processId);
-          removeTrackedProcess(processId);
-        }
-      }
-      for (const processId of processIds) {
-        removeTrackedSubtree(processId);
-        removeTrackedProcess(processId);
-      }
+      processRouter.unregisterClient(clientId);
       try {
         onClientDisconnect?.(state.channel);
       } catch {
@@ -963,98 +731,18 @@ export function createTunnelServer(
     };
 
     const bindOwnerToClient = (ownerProcessId: ProcessId, clientId: string): boolean => {
-      const client = clients.get(clientId);
-      if (!client) {
-        return false;
-      }
-      if (processRegistry) {
-        if (!processRegistry.bindOwnerToChannel(ownerProcessId, clientId)) {
-          return false;
-        }
-      } else {
-        const owner = trackedProcesses.get(ownerProcessId);
-        if (!owner || owner.kind !== 'tim' || owner.clientId !== clientId) {
-          return false;
-        }
-      }
-      clientStates.get(clientId)?.processIds.add(ownerProcessId);
-      return true;
+      return processRouter.bindOwnerToClient(ownerProcessId, clientId);
     };
 
     const sendExecutorTermination = (
       executorId: ProcessId,
       requestId?: string
     ): TunnelControlResult => {
-      if (!isProcessId(executorId)) {
-        return { ok: false, reason: 'unknown_executor' };
-      }
-
-      let ownerProcessId: ProcessId | undefined;
-      let channelId: string | undefined;
-      if (processRegistry) {
-        const executor = processRegistry.get(executorId);
-        if (!executor) {
-          return { ok: false, reason: 'unknown_executor' };
-        }
-        if (executor.kind !== 'executor') {
-          return { ok: false, reason: 'not_executor' };
-        }
-        if (executor.state === 'exited' || executor.state === 'orphaned') {
-          return { ok: false, reason: 'stale_executor' };
-        }
-        ownerProcessId = executor.ownerProcessId;
-        if (!ownerProcessId) {
-          return { ok: false, reason: 'owner_not_registered' };
-        }
-        const owner = processRegistry.get(ownerProcessId);
-        if (!owner || owner.kind !== 'tim') {
-          return { ok: false, reason: 'owner_not_registered' };
-        }
-        if (owner.state === 'exited' || owner.state === 'orphaned') {
-          return { ok: false, reason: 'stale_executor' };
-        }
-        channelId = processRegistry.getExecutorOwnerChannel(executorId);
-        if (!channelId) {
-          return { ok: false, reason: 'owner_not_connected' };
-        }
-      } else {
-        const executor = trackedProcesses.get(executorId);
-        if (!executor) {
-          return { ok: false, reason: 'unknown_executor' };
-        }
-        if (executor.kind !== 'executor') {
-          return { ok: false, reason: 'not_executor' };
-        }
-        if (executor.state === 'exited' || executor.state === 'orphaned') {
-          return { ok: false, reason: 'stale_executor' };
-        }
-        ownerProcessId = executor.ownerProcessId;
-        if (!ownerProcessId) {
-          return { ok: false, reason: 'owner_not_registered' };
-        }
-        const owner = trackedProcesses.get(ownerProcessId);
-        if (!owner || owner.kind !== 'tim') {
-          return { ok: false, reason: 'owner_not_registered' };
-        }
-        if (owner.state === 'exited' || owner.state === 'orphaned') {
-          return { ok: false, reason: 'stale_executor' };
-        }
-        channelId = owner.clientId;
-      }
-
-      const client = channelId ? clients.get(channelId) : undefined;
-      if (!client || !client.connected) {
-        return { ok: false, reason: 'owner_not_connected' };
-      }
-      const sent = client.send({
-        type: 'terminate_executor',
-        executorId,
-        requestId,
-      });
-      return sent ? { ok: true, clientId: channelId! } : { ok: false, reason: 'send_failed' };
+      return processRouter.sendExecutorTermination(executorId, requestId);
     };
 
-    const sendExecutorControl = sendExecutorTermination;
+    const sendExecutorControl = (executorId: ProcessId, requestId?: string): TunnelControlResult =>
+      processRouter.sendExecutorControl(executorId, requestId);
 
     const sendUserInput = (content: string): void => {
       const message: TunnelUserInputMessage = { type: 'user_input', content };

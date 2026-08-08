@@ -221,6 +221,7 @@ describe('CodexCliExecutor - failure detection across agents', () => {
     vi.doMock('../../../logging/tunnel_client.js', () => ({ isTunnelActive: vi.fn(() => false) }));
     vi.doMock('../../../logging/tunnel_server.js', () => ({
       createTunnelServer: vi.fn(async () => ({ close: vi.fn() })),
+      createExecutorTunnelServer: vi.fn(async () => ({ close: vi.fn() })),
     }));
     vi.doMock('../../../logging/tunnel_prompt_handler.js', () => ({
       createPromptRequestHandler: vi.fn(() => vi.fn()),
@@ -318,6 +319,7 @@ describe('CodexCliExecutor - failure detection across agents', () => {
     vi.doMock('../../../logging/tunnel_client.js', () => ({ isTunnelActive: vi.fn(() => false) }));
     vi.doMock('../../../logging/tunnel_server.js', () => ({
       createTunnelServer: vi.fn(async () => ({ close: vi.fn() })),
+      createExecutorTunnelServer: vi.fn(async () => ({ close: vi.fn() })),
     }));
     vi.doMock('../../../logging/tunnel_prompt_handler.js', () => ({
       createPromptRequestHandler: vi.fn(() => vi.fn()),

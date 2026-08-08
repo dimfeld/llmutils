@@ -6,10 +6,9 @@ import { debugLog, error, log, sendStructured, warn } from '../../../logging';
 import { getLoggerAdapter } from '../../../logging/adapter.js';
 import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
 import { isTunnelActive, TunnelAdapter } from '../../../logging/tunnel_client.js';
-import { createTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
+import { createExecutorTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
-import { getCurrentSessionProcessRegistry } from '../../../common/session_process_control.js';
 import { CodexAppServerConnection } from './app_server_connection';
 import {
   normalizeSubprocessMonitorRules,
@@ -177,9 +176,8 @@ export async function executeCodexStepViaAppServer(
       tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
       tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
       const promptHandler = createPromptRequestHandler();
-      tunnelServer = await createTunnelServer(tunnelSocketPath, {
+      tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
         onPromptRequest: promptHandler,
-        processRegistry: getCurrentSessionProcessRegistry(),
       });
     } catch (err) {
       debugLog('Could not create tunnel server for output forwarding:', err);

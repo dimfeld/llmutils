@@ -1,7 +1,8 @@
 import type { HeadlessMessage, HeadlessServerMessage } from './headless_protocol.js';
 import {
   isProcessId,
-  isSessionProcessTerminationResult,
+  isValidSessionProcessNode,
+  isValidSessionProcessTerminationResultEvent,
   type SessionProcessNode,
 } from '../common/session_process.js';
 
@@ -71,48 +72,8 @@ function isPositiveInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
 
-function isOptionalPositiveInteger(value: unknown): boolean {
-  return value === undefined || isPositiveInteger(value);
-}
-
-function isOptionalString(value: unknown, maxLength = 2048): boolean {
-  return value === undefined || (typeof value === 'string' && value.length <= maxLength);
-}
-
-function isProcessNode(value: unknown): value is SessionProcessNode {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return false;
-  }
-
-  const node = value as Record<string, unknown>;
-  return (
-    isProcessId(node.processId) &&
-    (node.parentProcessId === undefined || isProcessId(node.parentProcessId)) &&
-    (node.ownerProcessId === undefined || isProcessId(node.ownerProcessId)) &&
-    (node.kind === 'tim' || node.kind === 'executor') &&
-    typeof node.label === 'string' &&
-    node.label.trim().length > 0 &&
-    node.label.length <= 512 &&
-    isOptionalPositiveInteger(node.pid) &&
-    isOptionalString(node.command) &&
-    isOptionalString(node.startIdentity) &&
-    typeof node.startedAt === 'string' &&
-    node.startedAt.length > 0 &&
-    node.startedAt.length <= 512 &&
-    (node.state === 'starting' ||
-      node.state === 'running' ||
-      node.state === 'exited' ||
-      node.state === 'orphaned') &&
-    isOptionalString(node.endedAt, 512) &&
-    (node.exitCode === undefined ||
-      node.exitCode === null ||
-      (typeof node.exitCode === 'number' && Number.isInteger(node.exitCode))) &&
-    isOptionalString(node.signal, 128)
-  );
-}
-
 function isProcessTree(value: unknown): value is SessionProcessNode[] {
-  return Array.isArray(value) && value.every((node) => isProcessNode(node));
+  return Array.isArray(value) && value.every((node) => isValidSessionProcessNode(node));
 }
 
 export function parseHeadlessMessage(payload: string): HeadlessMessage | null {
@@ -170,14 +131,7 @@ export function parseHeadlessMessage(payload: string): HeadlessMessage | null {
   }
 
   if (parsed.type === 'executor_termination_result') {
-    if (
-      typeof parsed.requestId !== 'string' ||
-      parsed.requestId.length === 0 ||
-      parsed.requestId.length > 256 ||
-      !isProcessId(parsed.executorId) ||
-      !isSessionProcessTerminationResult(parsed.result) ||
-      (parsed.error !== undefined && typeof parsed.error !== 'string')
-    ) {
+    if (!isValidSessionProcessTerminationResultEvent(parsed)) {
       return null;
     }
   }

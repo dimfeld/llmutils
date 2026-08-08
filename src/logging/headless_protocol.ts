@@ -2,7 +2,7 @@ import type { TunnelMessage } from './tunnel_protocol.js';
 import type {
   ProcessId,
   SessionProcessNode,
-  SessionProcessTerminationResult,
+  SessionProcessTerminationResultEvent,
 } from '../common/session_process.js';
 
 export interface HeadlessSessionInfo {
@@ -83,13 +83,9 @@ export interface HeadlessProcessTreeUpdateMessage {
 }
 
 /** Result of a targeted executor termination request. */
-export interface HeadlessExecutorTerminationResultMessage {
+export type HeadlessExecutorTerminationResultMessage = {
   type: 'executor_termination_result';
-  requestId: string;
-  executorId: ProcessId;
-  result: SessionProcessTerminationResult;
-  error?: string;
-}
+} & SessionProcessTerminationResultEvent;
 
 export type HeadlessMessage =
   | HeadlessSessionInfoMessage

@@ -34,10 +34,9 @@ import { addPermission, getPermissions } from '../db/permission.js';
 import { getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
-import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
+import { createExecutorTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
-import { getCurrentSessionProcessRegistry } from '../../common/session_process_control.js';
 import { setupPermissionsMcp } from './claude_code/permissions_mcp_setup.js';
 import { runClaudeSubprocess, buildAllowedToolsList } from './claude_code/run_claude_subprocess.js';
 import { executeWithTerminalInput } from './claude_code/terminal_input_lifecycle.ts';
@@ -687,9 +686,8 @@ export class ClaudeCodeExecutor implements Executor {
     if (!isTunnelActive()) {
       try {
         const promptHandler = createPromptRequestHandler();
-        tunnelServer = await createTunnelServer(tunnelSocketPath, {
+        tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
           onPromptRequest: promptHandler,
-          processRegistry: getCurrentSessionProcessRegistry(),
         });
       } catch (err) {
         debugLog('Could not create tunnel server for output forwarding:', err);

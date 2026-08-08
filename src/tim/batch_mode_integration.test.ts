@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   getOrCreateProject: vi.fn(),
   isTunnelActive: vi.fn(),
   createTunnelServer: vi.fn(),
+  createExecutorTunnelServer: vi.fn(),
   createPromptRequestHandler: vi.fn(),
   resetToolUseCache: vi.fn(),
   createLineSplitter: vi.fn(),
@@ -96,6 +97,7 @@ describe('Batch Mode Integration Tests', () => {
     }));
     vi.doMock('../logging/tunnel_server.js', () => ({
       createTunnelServer: mocks.createTunnelServer,
+      createExecutorTunnelServer: mocks.createTunnelServer,
     }));
     vi.doMock('../logging/tunnel_prompt_handler.js', () => ({
       createPromptRequestHandler: mocks.createPromptRequestHandler,

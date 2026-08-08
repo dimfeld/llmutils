@@ -132,6 +132,13 @@ Future executor implementations must use one of these helpers or apply the same 
 direct spawn site. Utility subprocesses, PTY shells, and `agent-multi` tim children are not
 executor nodes.
 
+The shared lifecycle helper is the only common spawn boundary. `SessionProcessOwner` accepts one
+domain `SessionProcessLifecycleSink`; the root adapts it to the session registry, and nested tim
+processes adapt it to their tunnel. This keeps lifecycle code independent of tunnel DTOs. Use
+`createExecutorTunnelServer()` for every executor-owned tunnel server so it receives the registry
+from the current owner context. The Codex app-server remains a direct spawn site and must keep
+the explicit prepare/mark lifecycle calls.
+
 ### Process environment and nested tim commands
 
 The process-control values are explicit and limited to these variables:
@@ -167,6 +174,11 @@ The root tunnel server sends `terminate_executor` to the one client channel boun
 `tim` owner. It validates process IDs, process kinds, parent and owner relationships, and channel
 ownership. The owner handler calls `terminateExecutor()` on its direct-child map. It cannot signal
 an executor that it did not create, and the tunnel protocol has no arbitrary-PID signal operation.
+
+The process registry is the only process-tree state. Tunnel routing stores connected channel
+capabilities, not a second process map. Common runtime validators are used by both tunnel and
+headless protocol parsers. This keeps duplicate registration, exit races, disconnect cleanup, and
+replay behavior consistent across transports.
 
 Each lifecycle operation is safe to repeat. Exit and remove messages that arrive after a normal
 cleanup are ignored or accepted as no-ops. When a tunnel client disconnects, the root removes the

@@ -8,8 +8,7 @@ import { formatStructuredMessage } from '../../logging/console_formatter.js';
 import type { StructuredMessage } from '../../logging/structured_messages.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
-import { getCurrentSessionProcessRegistry } from '../../common/session_process_control.js';
-import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
+import { createExecutorTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
 import { codexReasoningLevelSchema, type CodexReasoningLevel } from '../executors/schemas.js';
@@ -322,9 +321,7 @@ async function executeClaudePrompt(
     try {
       tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
       tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
-      tunnelServer = await createTunnelServer(tunnelSocketPath, {
-        processRegistry: getCurrentSessionProcessRegistry(),
-      });
+      tunnelServer = await createExecutorTunnelServer(tunnelSocketPath);
     } catch (err) {
       debugLog('Could not create tunnel server for output forwarding:', err);
     }
@@ -441,9 +438,7 @@ async function executeCodexPrompt(
     if (!isTunnelActive()) {
       try {
         tunnelSocketPath = path.join(tempDir, 'output.sock');
-        tunnelServer = await createTunnelServer(tunnelSocketPath, {
-          processRegistry: getCurrentSessionProcessRegistry(),
-        });
+        tunnelServer = await createExecutorTunnelServer(tunnelSocketPath);
       } catch (err) {
         debugLog('Could not create tunnel server for output forwarding:', err);
       }

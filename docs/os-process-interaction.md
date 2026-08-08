@@ -57,6 +57,19 @@ This owner check applies to root-owned executors and to nested executors after a
 their owning `tim` process through the tunnel. The opaque session process ID selects the owner;
 the OS PID is never the UI control key.
 
+## Explicit session process tracking
+
+Do not use `ps` as the source of the session process tree. A `SessionProcessRegistry` receives
+explicit registration, update, exit, and removal events. It stores opaque node IDs, parent and
+owner relationships, lifecycle state, and optional OS identity metadata. The registry is
+ephemeral and exists only for the live session.
+
+The root session routes a targeted executor request to the tunnel channel bound to the executor's
+`tim` owner. The tunnel server stores only connected channel capabilities; it must not keep a
+second process map or expose a PID-based signal operation. The owner keeps a direct-child handle
+and performs the fresh PID/PPID/command/`lstart` checks above. If tracking is inactive, lifecycle
+events are safe no-ops and existing CLI execution continues without process-control behavior.
+
 ## User-supplied regex/string matchers
 
 When users provide patterns that you'll repeatedly evaluate against process metadata across polls:

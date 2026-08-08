@@ -159,6 +159,7 @@ async function createHarness(options?: {
 
   vi.doMock('../../../logging/tunnel_server.js', () => ({
     createTunnelServer: createTunnelServerMock,
+    createExecutorTunnelServer: createTunnelServerMock,
   }));
 
   vi.doMock('../../../logging/tunnel_prompt_handler.js', () => ({

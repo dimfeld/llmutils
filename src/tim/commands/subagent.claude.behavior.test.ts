@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   loadAgentInstructionsFor: vi.fn(),
   isTunnelActive: vi.fn(),
   createTunnelServer: vi.fn(),
+  createExecutorTunnelServer: vi.fn(),
   log: vi.fn(),
   error: vi.fn(),
   warn: vi.fn(),
@@ -64,6 +65,7 @@ vi.mock('../../logging/tunnel_client.js', () => ({
 }));
 vi.mock('../../logging/tunnel_server.js', () => ({
   createTunnelServer: mocks.createTunnelServer,
+  createExecutorTunnelServer: mocks.createTunnelServer,
 }));
 vi.mock('../../logging/tunnel_prompt_handler.js', () => ({
   createPromptRequestHandler: mocks.createPromptRequestHandler,

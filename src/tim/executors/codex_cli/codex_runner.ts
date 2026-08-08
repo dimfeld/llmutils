@@ -13,10 +13,9 @@ import {
 import { error, warn, debugLog } from '../../../logging';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { createCodexStdoutFormatter } from './format';
-import { createTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
+import { createExecutorTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
-import { getCurrentSessionProcessRegistry } from '../../../common/session_process_control.js';
 import { executeCodexStepViaAppServer } from './app_server_runner';
 import { isCodexAppServerEnabled } from './app_server_mode';
 import {
@@ -130,9 +129,8 @@ export async function executeCodexStep(
       tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
       tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
       const promptHandler = createPromptRequestHandler();
-      tunnelServer = await createTunnelServer(tunnelSocketPath, {
+      tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
         onPromptRequest: promptHandler,
-        processRegistry: getCurrentSessionProcessRegistry(),
       });
     } catch (err) {
       debugLog('Could not create tunnel server for output forwarding:', err);

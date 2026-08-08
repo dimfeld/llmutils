@@ -2,9 +2,10 @@ import { inspect } from 'node:util';
 import type { StructuredMessage } from './structured_messages.js';
 import type {
   ProcessId,
-  SessionProcessKind,
-  SessionProcessState,
-  SessionProcessTerminationResult,
+  SessionProcessExit,
+  SessionProcessRegistration,
+  SessionProcessTerminationResultEvent,
+  SessionProcessUpdate,
 } from '../common/session_process.js';
 
 /**
@@ -52,41 +53,22 @@ export interface StructuredTunnelMessage {
 }
 
 /** Registers a tim or executor node in the root session process registry. */
-export interface TunnelProcessRegisterMessage {
+export type TunnelProcessRegisterMessage = {
   type: 'process_register';
-  processId: ProcessId;
-  parentProcessId?: ProcessId;
-  kind: SessionProcessKind;
-  label: string;
-  ownerProcessId?: ProcessId;
-  pid?: number;
-  command?: string;
-  startIdentity?: string;
-  startedAt?: string;
-  state?: Extract<SessionProcessState, 'starting' | 'running'>;
-}
+} & Required<Pick<SessionProcessRegistration, 'processId'>> &
+  Omit<SessionProcessRegistration, 'processId'>;
 
 /** Updates mutable metadata for a registered process node. */
-export interface TunnelProcessUpdateMessage {
+export type TunnelProcessUpdateMessage = {
   type: 'process_update';
   processId: ProcessId;
-  parentProcessId?: ProcessId;
-  ownerProcessId?: ProcessId;
-  label?: string;
-  pid?: number | null;
-  command?: string | null;
-  startIdentity?: string | null;
-  state?: SessionProcessState;
-}
+} & SessionProcessUpdate;
 
 /** Marks a registered process as exited. */
-export interface TunnelProcessExitMessage {
+export type TunnelProcessExitMessage = {
   type: 'process_exit';
   processId: ProcessId;
-  endedAt?: string;
-  exitCode?: number | null;
-  signal?: string;
-}
+} & SessionProcessExit;
 
 /** Removes one process node, optionally with all descendants. */
 export interface TunnelProcessRemoveMessage {
@@ -144,13 +126,9 @@ export interface TunnelTerminateExecutorMessage {
 }
 
 /** Result returned by a nested tim owner after handling a targeted request. */
-export interface TunnelTerminateExecutorResultMessage {
+export type TunnelTerminateExecutorResultMessage = {
   type: 'terminate_executor_result';
-  executorId: ProcessId;
-  requestId: string;
-  result: SessionProcessTerminationResult;
-  error?: string;
-}
+} & SessionProcessTerminationResultEvent;
 
 /**
  * Union type for all messages sent from server to client over the tunnel socket as JSONL.

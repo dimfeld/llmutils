@@ -6,15 +6,16 @@ import {
   isProcessId,
   isSessionProcessTerminationResult,
   type ProcessId,
+  type SessionProcessExit,
+  type SessionProcessLifecycleSink,
+  type SessionProcessRegistration,
   type SessionProcessTerminationResult,
+  type SessionProcessUpdate,
 } from '../common/session_process.js';
 import {
   TIM_OUTPUT_SOCKET,
   serializeArgs,
-  type TunnelProcessExitMessage,
-  type TunnelProcessRegisterMessage,
   type TunnelProcessRemoveMessage,
-  type TunnelProcessUpdateMessage,
 } from './tunnel_protocol.js';
 import type {
   ServerTunnelMessage,
@@ -263,23 +264,17 @@ export class TunnelAdapter implements LoggerAdapter {
   }
 
   /** Sends a process registration event to the parent tim process. */
-  registerProcess(process: Omit<TunnelProcessRegisterMessage, 'type'>): boolean {
+  registerProcess(process: SessionProcessRegistration & { processId: ProcessId }): boolean {
     return this.send({ type: 'process_register', ...process });
   }
 
   /** Sends a process metadata update to the parent tim process. */
-  updateProcess(
-    processId: ProcessId,
-    update: Omit<TunnelProcessUpdateMessage, 'type' | 'processId'>
-  ): boolean {
+  updateProcess(processId: ProcessId, update: SessionProcessUpdate): boolean {
     return this.send({ type: 'process_update', processId, ...update });
   }
 
   /** Sends an idempotent process exit event to the parent tim process. */
-  exitProcess(
-    processId: ProcessId,
-    details: Omit<TunnelProcessExitMessage, 'type' | 'processId'> = {}
-  ): boolean {
+  exitProcess(processId: ProcessId, details: SessionProcessExit = {}): boolean {
     return this.send({ type: 'process_exit', processId, ...details });
   }
 
@@ -436,6 +431,40 @@ export class TunnelAdapter implements LoggerAdapter {
       this.socket.end();
     });
   }
+}
+
+/** Adapts a tunnel client to the common session process lifecycle contract. */
+export class TunnelSessionProcessLifecycleSink implements SessionProcessLifecycleSink {
+  readonly registry = undefined;
+
+  constructor(private readonly adapter: TunnelAdapter) {}
+
+  registerProcess(registration: SessionProcessRegistration): boolean {
+    const processId = registration.processId;
+    if (!processId) {
+      return false;
+    }
+    return this.adapter.registerProcess({ ...registration, processId });
+  }
+
+  updateProcess(processId: ProcessId, update: SessionProcessUpdate): boolean {
+    return this.adapter.updateProcess(processId, update);
+  }
+
+  exitProcess(processId: ProcessId, details: SessionProcessExit = {}): boolean {
+    return this.adapter.exitProcess(processId, details);
+  }
+
+  removeProcess(processId: ProcessId, subtree: boolean = true): boolean {
+    return this.adapter.removeProcess(processId, subtree);
+  }
+}
+
+/** Creates the lifecycle sink used by a nested tim tunnel owner. */
+export function createTunnelSessionProcessLifecycleSink(
+  adapter: TunnelAdapter
+): TunnelSessionProcessLifecycleSink {
+  return new TunnelSessionProcessLifecycleSink(adapter);
 }
 
 /**

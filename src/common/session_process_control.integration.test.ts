@@ -5,7 +5,6 @@ import {
   getCurrentSessionProcessOwner,
   runWithSessionProcessOwner,
   SessionProcessOwner,
-  type SessionProcessTransport,
 } from './session_process_control.js';
 import {
   SessionProcessRegistry,
@@ -13,7 +12,9 @@ import {
   TIM_PARENT_PROCESS_ID,
   TIM_PROCESS_ID,
   TIM_SESSION_ID,
+  SessionProcessRegistryLifecycleSink,
   toProcessId,
+  type SessionProcessLifecycleSink,
   type ProcessId,
 } from './session_process.js';
 
@@ -60,7 +61,7 @@ describePlatform('session process control real-process integration', () => {
     const owner = new SessionProcessOwner({
       sessionId,
       ownerProcessId,
-      registry,
+      lifecycleSink: new SessionProcessRegistryLifecycleSink(registry),
     });
     owners.push(owner);
     return { registry, owner };
@@ -72,7 +73,7 @@ describePlatform('session process control real-process integration', () => {
     const owner = new SessionProcessOwner({
       sessionId: 'real-session',
       ownerProcessId: processId('real-owner'),
-      registry,
+      lifecycleSink: new SessionProcessRegistryLifecycleSink(registry),
     });
 
     await runWithSessionProcessOwner(owner, async () => {
@@ -118,7 +119,7 @@ describePlatform('session process control real-process integration', () => {
     const owner = new SessionProcessOwner({
       sessionId: 'utility-session',
       ownerProcessId: processId('utility-owner'),
-      registry,
+      lifecycleSink: new SessionProcessRegistryLifecycleSink(registry),
     });
 
     const result = await runWithSessionProcessOwner(owner, () =>
@@ -233,7 +234,7 @@ describePlatform('session process control real-process integration', () => {
     process.env[TIM_OWNER_PROCESS_ID] = 'root-owner';
 
     const registrations: Array<Record<string, unknown>> = [];
-    const transport: SessionProcessTransport = {
+    const lifecycleSink: SessionProcessLifecycleSink = {
       registerProcess: (registration) => {
         registrations.push(registration);
         return true;
@@ -245,7 +246,7 @@ describePlatform('session process control real-process integration', () => {
 
     let runtime: ReturnType<typeof createNestedTimProcessRuntime>;
     try {
-      runtime = createNestedTimProcessRuntime(transport, 'nested tim');
+      runtime = createNestedTimProcessRuntime(lifecycleSink, 'nested tim');
       expect(runtime).toBeDefined();
       if (!runtime) {
         throw new Error('Expected nested runtime');

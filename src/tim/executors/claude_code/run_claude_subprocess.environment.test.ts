@@ -25,6 +25,7 @@ vi.mock('../../../logging/tunnel_client.js', () => ({
 
 vi.mock('../../../logging/tunnel_server.js', () => ({
   createTunnelServer: vi.fn(),
+  createExecutorTunnelServer: vi.fn(),
 }));
 
 vi.mock('../../../logging/tunnel_prompt_handler.js', () => ({

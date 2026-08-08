@@ -20,6 +20,7 @@ import {
 import {
   createProcessId,
   SessionProcessRegistry,
+  SessionProcessRegistryLifecycleSink,
   TIM_OWNER_PROCESS_ID,
   TIM_PARENT_PROCESS_ID,
   TIM_PROCESS_ID,
@@ -139,7 +140,7 @@ export class HeadlessAdapter implements LoggerAdapter {
       this.processOwner = new SessionProcessOwner({
         sessionId: this.serverSessionId,
         ownerProcessId: rootProcessId,
-        registry: this.processRegistry,
+        lifecycleSink: new SessionProcessRegistryLifecycleSink(this.processRegistry),
         onTerminationResult: (executorId, result, error) => {
           if (result === 'signal_failed' || result === 'unknown_process_state') {
             const detail = error instanceof Error ? `: ${error.message}` : '';
@@ -308,33 +309,8 @@ export class HeadlessAdapter implements LoggerAdapter {
 
   /** Routes a targeted control request to a direct executor child. */
   terminateExecutor(executorId: ProcessId): SessionProcessTerminationResult {
-    const registry = this.processRegistry;
-    if (!registry) {
-      return 'unknown_executor';
-    }
-
-    const executor = registry.get(executorId);
-    if (!executor) {
-      return 'unknown_executor';
-    }
-    if (executor.kind !== 'executor') {
-      return 'not_executor';
-    }
-    if (executor.state === 'exited' || executor.state === 'orphaned') {
-      return 'stale_target';
-    }
-
-    const processOwner = this.processOwner;
-    if (processOwner && executor.ownerProcessId === processOwner.ownerProcessId) {
-      return processOwner.terminateExecutor(executorId);
-    }
-
-    if (!executor.ownerProcessId || !registry.get(executor.ownerProcessId)) {
-      return 'owner_not_registered';
-    }
-
-    const route = registry.sendTerminationToOwner(executorId);
-    return route === 'sent' ? 'requested' : route;
+    const result = this.routeExecutorTermination(executorId);
+    return result === 'pending' ? 'requested' : result;
   }
 
   /**
@@ -456,9 +432,47 @@ export class HeadlessAdapter implements LoggerAdapter {
         : 'send_failed';
     }
 
+    const result = this.routeExecutorTermination(executorId, requestId, () => {
+      const timer = setTimeout(() => {
+        const pending = this.pendingTerminationRequests.get(requestId);
+        if (!pending || pending.executorId !== executorId) {
+          return;
+        }
+        this.pendingTerminationRequests.delete(requestId);
+        this.sendExecutorTerminationResult(
+          pending.connectionId,
+          requestId,
+          executorId,
+          'request_timeout'
+        );
+      }, 10_000);
+      timer.unref?.();
+      this.pendingTerminationRequests.set(requestId, { connectionId, executorId, timer });
+    });
+
+    if (result !== 'pending') {
+      const pending = this.pendingTerminationRequests.get(requestId);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pendingTerminationRequests.delete(requestId);
+      }
+    }
+    return result;
+  }
+
+  /** Validates one target, then performs local termination or remote owner routing. */
+  private routeExecutorTermination(
+    executorId: ProcessId,
+    requestId?: string,
+    prepareRemoteRoute?: () => void
+  ): SessionProcessTerminationResult | 'pending' {
     const registry = this.processRegistry;
-    const executor = registry?.get(executorId);
-    if (!registry || !executor) {
+    if (!registry) {
+      return 'unknown_executor';
+    }
+
+    const executor = registry.get(executorId);
+    if (!executor) {
       return 'unknown_executor';
     }
     if (executor.kind !== 'executor') {
@@ -477,29 +491,11 @@ export class HeadlessAdapter implements LoggerAdapter {
       return 'owner_not_registered';
     }
 
-    const timer = setTimeout(() => {
-      const pending = this.pendingTerminationRequests.get(requestId);
-      if (!pending || pending.executorId !== executorId) {
-        return;
-      }
-      this.pendingTerminationRequests.delete(requestId);
-      this.sendExecutorTerminationResult(
-        pending.connectionId,
-        requestId,
-        executorId,
-        'request_timeout'
-      );
-    }, 10_000);
-    timer.unref?.();
-    this.pendingTerminationRequests.set(requestId, { connectionId, executorId, timer });
-
+    prepareRemoteRoute?.();
     const route = registry.sendTerminationToOwner(executorId, requestId);
     if (route === 'sent') {
-      return 'pending';
+      return requestId ? 'pending' : 'requested';
     }
-
-    clearTimeout(timer);
-    this.pendingTerminationRequests.delete(requestId);
     return route;
   }
 

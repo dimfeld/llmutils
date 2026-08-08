@@ -46,7 +46,11 @@ import { startMcpServer } from './mcp/server.js';
 import { enableAutoClaim } from './assignments/auto_claim.js';
 import { handleCleanupCommand } from './commands/cleanup.js';
 import { runWithLogger, warn } from '../logging.js';
-import { type TunnelAdapter, createTunnelAdapter } from '../logging/tunnel_client.js';
+import {
+  type TunnelAdapter,
+  createTunnelAdapter,
+  createTunnelSessionProcessLifecycleSink,
+} from '../logging/tunnel_client.js';
 import { TIM_OUTPUT_SOCKET } from '../logging/tunnel_protocol.js';
 import {
   createExecutorControlHandler,
@@ -119,7 +123,7 @@ async function runWithCommandTunnelAdapter<T>(callback: () => Promise<T> | T): P
   const cleanupRegistry = CleanupRegistry.getInstance();
   const unregisterCleanup = cleanupRegistry.register(() => tunnelAdapter.destroySync());
   const nestedRuntime = createNestedTimProcessRuntime(
-    tunnelAdapter,
+    createTunnelSessionProcessLifecycleSink(tunnelAdapter),
     process.argv.slice(2, 4).join(' ') || 'nested tim',
     (executorId, result, error) => {
       if (result === 'signal_failed' || result === 'unknown_process_state') {

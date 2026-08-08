@@ -7,7 +7,11 @@ import {
   runWithSessionProcessOwner,
   SessionProcessOwner,
 } from '../../common/session_process_control.js';
-import { SessionProcessRegistry, toProcessId } from '../../common/session_process.js';
+import {
+  SessionProcessRegistry,
+  SessionProcessRegistryLifecycleSink,
+  toProcessId,
+} from '../../common/session_process.js';
 import {
   buildClaudeRunPromptArgs,
   buildCodexRunPromptArgs,
@@ -588,7 +592,7 @@ describe.skipIf(process.platform === 'win32')('run-prompt session process integr
     const owner = new SessionProcessOwner({
       sessionId: 'run-prompt-session',
       ownerProcessId,
-      registry,
+      lifecycleSink: new SessionProcessRegistryLifecycleSink(registry),
     });
     const stdoutWrites: string[] = [];
 

@@ -4,22 +4,19 @@ import {
   createChildSessionProcessEnvironment,
   createProcessId,
   readSessionProcessEnvironment,
-  SessionProcessRegistry,
+  NOOP_SESSION_PROCESS_LIFECYCLE_SINK,
   TIM_OWNER_PROCESS_ID,
   TIM_PARENT_PROCESS_ID,
   TIM_PROCESS_ID,
   TIM_SESSION_ID,
   type ProcessId,
-  type SessionProcessTerminationResult,
   type SessionProcessExit,
+  type SessionProcessLifecycleSink,
+  type SessionProcessRegistry,
+  type SessionProcessRegistration,
+  type SessionProcessTerminationResult,
   type SessionProcessUpdate,
 } from './session_process.js';
-import type {
-  TunnelProcessExitMessage,
-  TunnelProcessRegisterMessage,
-  TunnelProcessUpdateMessage,
-  TunnelTerminateExecutorMessage,
-} from '../logging/tunnel_protocol.js';
 
 /** A process handle with the only operation an owner is allowed to perform. */
 export interface SessionChildProcessHandle {
@@ -27,27 +24,12 @@ export interface SessionChildProcessHandle {
   kill: (signal?: NodeJS.Signals) => void;
 }
 
-/** The lifecycle methods needed by a parent tunnel or local session registry. */
-export interface SessionProcessTransport {
-  registerProcess(process: Omit<TunnelProcessRegisterMessage, 'type'>): boolean;
-  updateProcess(
-    processId: ProcessId,
-    update: Omit<TunnelProcessUpdateMessage, 'type' | 'processId'>
-  ): boolean;
-  exitProcess(
-    processId: ProcessId,
-    details?: Omit<TunnelProcessExitMessage, 'type' | 'processId'>
-  ): boolean;
-  removeProcess(processId: ProcessId, subtree?: boolean): boolean;
-}
-
 export type { SessionProcessTerminationResult } from './session_process.js';
 
 export interface SessionProcessOwnerOptions {
   sessionId: string;
   ownerProcessId: ProcessId;
-  transport?: SessionProcessTransport;
-  registry?: SessionProcessRegistry;
+  lifecycleSink?: SessionProcessLifecycleSink;
   processLister?: () => ProcessInfo[];
   now?: () => Date;
   onTerminationResult?: (
@@ -107,7 +89,7 @@ function processControlEnvironment(
 
 function exitDetails(
   details: { exitCode?: number | null; signal?: NodeJS.Signals | null } | undefined
-): Omit<TunnelProcessExitMessage, 'type' | 'processId'> {
+): SessionProcessExit {
   return {
     ...(details?.exitCode !== undefined ? { exitCode: details.exitCode } : {}),
     ...(details?.signal ? { signal: details.signal } : {}),
@@ -117,7 +99,7 @@ function exitDetails(
 /**
  * Owns only the direct executor children of one tim process.
  *
- * The registry or tunnel is the lifecycle event sink. The direct-child map is
+ * The lifecycle sink receives domain events. The direct-child map is
  * deliberately separate: it is the capability which prevents a control
  * request from becoming an arbitrary PID signal API.
  */
@@ -126,18 +108,16 @@ export class SessionProcessOwner {
   private readonly processLister: () => ProcessInfo[];
   private readonly now: () => Date;
   private readonly onTerminationResult?: SessionProcessOwnerOptions['onTerminationResult'];
+  readonly lifecycleSink: SessionProcessLifecycleSink;
   private disposed = false;
 
   readonly sessionId: string;
   readonly ownerProcessId: ProcessId;
-  readonly transport?: SessionProcessTransport;
-  readonly registry?: SessionProcessRegistry;
 
   constructor(options: SessionProcessOwnerOptions) {
     this.sessionId = options.sessionId;
     this.ownerProcessId = options.ownerProcessId;
-    this.transport = options.transport;
-    this.registry = options.registry;
+    this.lifecycleSink = options.lifecycleSink ?? NOOP_SESSION_PROCESS_LIFECYCLE_SINK;
     this.processLister = options.processLister ?? listProcesses;
     this.now = options.now ?? (() => new Date());
     this.onTerminationResult = options.onTerminationResult;
@@ -154,7 +134,7 @@ export class SessionProcessOwner {
     }
 
     const processId = createProcessId();
-    const registration: Omit<TunnelProcessRegisterMessage, 'type'> = {
+    const registration: SessionProcessRegistration = {
       processId,
       parentProcessId: this.ownerProcessId,
       ownerProcessId: this.ownerProcessId,
@@ -165,23 +145,22 @@ export class SessionProcessOwner {
       state: 'starting',
     };
 
-    const transportRegistered = this.transport?.registerProcess(registration) ?? true;
-    if (!transportRegistered) {
+    if (!this.lifecycleSink.registerProcess(registration)) {
       return undefined;
     }
 
-    const registryNode = this.registry?.register(registration);
-    if (this.registry && !registryNode) {
-      this.transport?.removeProcess(processId, true);
-      return undefined;
+    let childEnvironment: ReturnType<typeof createChildSessionProcessEnvironment>;
+    try {
+      childEnvironment = createChildSessionProcessEnvironment(process.env, {
+        sessionId: this.sessionId,
+        parentProcessId: this.ownerProcessId,
+        ownerProcessId: this.ownerProcessId,
+        processId,
+      });
+    } catch (error) {
+      this.lifecycleSink.removeProcess(processId, true);
+      throw error;
     }
-
-    const childEnvironment = createChildSessionProcessEnvironment(process.env, {
-      sessionId: this.sessionId,
-      parentProcessId: this.ownerProcessId,
-      ownerProcessId: this.ownerProcessId,
-      processId,
-    });
     const tracked: TrackedExecutor = {
       processId,
       environment: processControlEnvironment(childEnvironment.env),
@@ -276,8 +255,7 @@ export class SessionProcessOwner {
     }
     this.terminateAll();
     this.disposed = true;
-    this.transport?.exitProcess(this.ownerProcessId, details);
-    this.registry?.exit(this.ownerProcessId, details);
+    this.lifecycleSink.exitProcess(this.ownerProcessId, details);
   }
 
   private markSpawned(tracked: TrackedExecutor, handle: SessionChildProcessHandle): void {
@@ -309,8 +287,7 @@ export class SessionProcessOwner {
       state: 'running',
       ...(tracked.startIdentity ? { startIdentity: tracked.startIdentity } : {}),
     };
-    this.transport?.updateProcess(tracked.processId, update);
-    this.registry?.update(tracked.processId, update);
+    this.lifecycleSink.updateProcess(tracked.processId, update);
 
     if (this.disposed) {
       this.terminateTrackedExecutor(tracked);
@@ -327,8 +304,7 @@ export class SessionProcessOwner {
     tracked.finished = true;
     this.children.delete(tracked.processId);
     const exit = exitDetails(details);
-    this.transport?.exitProcess(tracked.processId, exit);
-    this.registry?.exit(tracked.processId, exit);
+    this.lifecycleSink.exitProcess(tracked.processId, exit);
   }
 
   private reportTermination(
@@ -354,7 +330,7 @@ export interface NestedTimProcessRuntime {
 
 /** Registers a tim process launched by an executor over that executor's tunnel. */
 export function createNestedTimProcessRuntime(
-  transport: SessionProcessTransport,
+  lifecycleSink: SessionProcessLifecycleSink,
   label: string,
   onTerminationResult?: SessionProcessOwnerOptions['onTerminationResult']
 ): NestedTimProcessRuntime | undefined {
@@ -364,7 +340,7 @@ export function createNestedTimProcessRuntime(
   }
 
   const processId = createProcessId();
-  const registration: Omit<TunnelProcessRegisterMessage, 'type'> = {
+  const registration: SessionProcessRegistration = {
     processId,
     parentProcessId: inherited.processId,
     ownerProcessId: inherited.processId,
@@ -373,20 +349,26 @@ export function createNestedTimProcessRuntime(
     startedAt: new Date().toISOString(),
     state: 'running',
   };
-  if (!transport.registerProcess(registration)) {
+  if (!lifecycleSink.registerProcess(registration)) {
     return undefined;
   }
 
-  const childEnvironment = createChildSessionProcessEnvironment(process.env, {
-    sessionId: inherited.sessionId,
-    parentProcessId: inherited.processId,
-    ownerProcessId: inherited.processId,
-    processId,
-  });
+  let childEnvironment: ReturnType<typeof createChildSessionProcessEnvironment>;
+  try {
+    childEnvironment = createChildSessionProcessEnvironment(process.env, {
+      sessionId: inherited.sessionId,
+      parentProcessId: inherited.processId,
+      ownerProcessId: inherited.processId,
+      processId,
+    });
+  } catch (error) {
+    lifecycleSink.removeProcess(processId, true);
+    throw error;
+  }
   const owner = new SessionProcessOwner({
     sessionId: inherited.sessionId,
     ownerProcessId: processId,
-    transport,
+    lifecycleSink,
     onTerminationResult,
   });
   const previousEnvironment = processControlEnvironment(process.env);
@@ -446,7 +428,7 @@ export function getCurrentSessionProcessOwner(): SessionProcessOwner | undefined
 }
 
 export function getCurrentSessionProcessRegistry(): SessionProcessRegistry | undefined {
-  return ownerStorage.getStore()?.registry;
+  return ownerStorage.getStore()?.lifecycleSink.registry;
 }
 
 export function runWithSessionProcessOwner<T>(
@@ -458,7 +440,7 @@ export function runWithSessionProcessOwner<T>(
 
 export function createExecutorControlHandler(
   owner: SessionProcessOwner
-): (message: TunnelTerminateExecutorMessage) => SessionProcessTerminationResult {
+): (message: { executorId: ProcessId }) => SessionProcessTerminationResult {
   return (message) => {
     return owner.terminateExecutor(message.executorId);
   };
