@@ -384,7 +384,7 @@ describe('lib/server/inbox_producer', () => {
     expect(pruneCalls).toBe(2);
   });
 
-  test('self-actions are skipped even when otherwise relevant', async () => {
+  test('self-actions are skipped for non-merge signals even when otherwise relevant', async () => {
     const affected = await processInboxSignals(db, [makeSignal({ actor: 'octocat' })], {
       loadConfig: async () => baseConfig(),
       resolveUsername: async () => 'octocat',
@@ -392,6 +392,23 @@ describe('lib/server/inbox_producer', () => {
 
     expect(affected).toEqual([]);
     expect(countInboxItems()).toBe(0);
+  });
+
+  test('keeps a merge notification when the user performed the merge', async () => {
+    const affected = await processInboxSignals(
+      db,
+      [makeSignal({ kind: 'pr_merged', actor: 'octocat', prAuthor: 'octocat' })],
+      {
+        loadConfig: async () => baseConfig(),
+        resolveUsername: async () => 'octocat',
+      }
+    );
+
+    expect(affected).toEqual([projectId]);
+    expect(db.prepare('SELECT kind, actor FROM inbox_item').get()).toEqual({
+      kind: 'pr_merged',
+      actor: 'octocat',
+    });
   });
 
   test('bot actors are filtered from comment/review signals by [bot] suffix alone', async () => {

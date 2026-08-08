@@ -63,7 +63,7 @@ function isBotOrIgnoredActor(
 }
 
 function isSelfAction(signal: InboxSignal, kind: InboxItemKind, username: string): boolean {
-  if (kind === 'review_requested') {
+  if (kind === 'review_requested' || kind === 'pr_merged') {
     return false;
   }
 
