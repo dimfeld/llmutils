@@ -605,20 +605,8 @@ export const startPrCiFix = command(startPrReviewGuideSchema, async ({ projectId
 
 export const startPrReviewGuide = command(
   startPrReviewGuideSchema,
-  async ({ projectId, prNumber }) => {
-    const { db } = await getServerContext();
-
-    const primaryWorkspacePath = getPrimaryWorkspacePath(db, projectId);
-    if (!primaryWorkspacePath) {
-      error(400, 'Project does not have a primary workspace');
-    }
-
-    const result = await spawnPrReviewGuideProcess(prNumber, primaryWorkspacePath);
-
-    if (!result.success) {
-      error(500, result.error);
-    }
-
-    return { status: 'started' as const };
-  }
+  async ({ projectId, prNumber }) =>
+    launchPrTimCommand('review-guide', projectId, prNumber, (_prUrlOrNumber, cwd) =>
+      spawnPrReviewGuideProcess(prNumber, cwd)
+    )
 );

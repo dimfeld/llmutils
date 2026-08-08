@@ -167,7 +167,16 @@
         await goto(`/projects/${action.projectId}/sessions/${result.connectionId}`);
       }
     } catch (err) {
-      launchErrors.set(item.id, `${err as Error}`);
+      // Supersede any launched status recorded above so a rejected navigation
+      // (e.g. goto failing after an already_running result) doesn't leave the
+      // guard at the top of this function blocking Retry until the 30s timeout.
+      const timeout = launchTimeouts.get(item.id);
+      if (timeout) {
+        clearTimeout(timeout);
+        launchTimeouts.delete(item.id);
+      }
+      launchedIds.delete(item.id);
+      launchErrors.set(item.id, extractRemoteErrorMessage(err));
     } finally {
       launchingIds.delete(item.id);
     }

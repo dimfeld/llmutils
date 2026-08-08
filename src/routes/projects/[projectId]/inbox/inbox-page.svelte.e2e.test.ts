@@ -374,6 +374,36 @@ describe('inbox full page', () => {
     expect(mocks.startPrReviewGuide).toHaveBeenCalledTimes(1);
   });
 
+  test('shows Retry immediately (not after the 30s timeout) when goto rejects on already_running, and Retry works', async () => {
+    mocks.startPrReviewGuide.mockResolvedValue({
+      status: 'already_running',
+      connectionId: 'conn-1',
+    });
+    mocks.goto.mockRejectedValueOnce(new Error('navigation failed'));
+    const item = makeItem({
+      id: 17,
+      kind: 'review_requested',
+      action: { type: 'review-guide', projectId: 7, prNumber: 42 },
+    });
+    renderPage(makeResponse({ items: [item], unreadCount: 1 }));
+
+    await page.getByRole('button', { name: 'Run Review Guide' }).click();
+
+    // The failed navigation must surface a Retry button right away, not leave the row
+    // stuck showing "Already running" until the 30s auto-clear timeout.
+    await expect.element(page.getByRole('button', { name: 'Retry' })).toBeVisible();
+    await expect
+      .element(page.getByText('Already running', { exact: true }))
+      .not.toBeInTheDocument();
+
+    mocks.goto.mockResolvedValueOnce(undefined);
+    await page.getByRole('button', { name: 'Retry' }).click();
+
+    await expect.poll(() => mocks.startPrReviewGuide.mock.calls.length).toBe(2);
+    await expect.poll(() => mocks.goto.mock.calls.length).toBe(2);
+    await expect.element(page.getByText('Already running', { exact: true })).toBeVisible();
+  });
+
   test('clicking Mark all read scopes the command to the current route project', async () => {
     renderPage(makeResponse({ items: [makeItem()], unreadCount: 1 }));
 
