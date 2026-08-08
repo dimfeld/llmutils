@@ -391,9 +391,10 @@ that the process exited during the race, so the stop is treated as complete. Oth
 are reported and the live handle remains retryable.
 
 The remote command `terminateExecutor` validates the opaque ID, sends the targeted request through
-the session WebSocket, and waits up to 10 seconds for the correlated result. Direct root-owner
-results are normally `terminated` or `already_exited`; nested-owner requests normally return
-`requested` before the owner sends its result. Results are grouped as follows:
+the session WebSocket, and waits up to 10 seconds for the correlated result. The adapter uses
+`requested` as its immediate result when it routes a nested request. The web action then waits for
+the owner result. Direct root-owner requests normally return `terminated` or `already_exited`;
+nested requests return the owner's final result. Results are grouped as follows:
 
 - success: `terminated`, `requested`, `already_exited`;
 - safety: `stale_target`, `unknown_process_state`;
