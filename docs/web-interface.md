@@ -70,7 +70,7 @@ When reusing code originally written for CLI (same `process.cwd()` as the projec
 ## Architecture
 
 - Route structure: `/projects/[projectId]/{tab}` where `projectId` is a numeric ID or `all`
-- Tabs: `sessions`, `active`, `prs`, `reviews`, `plans`, `settings` (settings tab hidden for `all` pseudo-project)
+- Tabs: `sessions`, `active`, `prs`, `activity`, `inbox`, `plans`, `settings` (settings tab hidden for `all` pseudo-project)
 - `src/lib/server/plans_browser.ts` is the abstraction layer between route handlers and `db_queries.ts`
 - Display statuses (`blocked`, `recently_done`) are computed server-side in `db_queries.ts`, not stored in DB
 - Cookie-based project persistence: `src/lib/stores/project.svelte.ts` manages the last-selected project ID (httpOnly cookie, server-read only)
@@ -266,6 +266,50 @@ The bell is always visible: blue with an unread-count badge when items are unrea
 Opening the popover does not change read state. A row with an internal `viewHref` is a button that marks the item read and calls `goto()`; a row with an external `viewHref` is an anchor with `target="_blank" rel="noopener noreferrer"` that marks the item read on click. **Mark all read** appears only when something is unread and updates every project. The popover also has a loading state, an error state with a **Retry** button, and an **All caught up** empty state; mutation failures raise a toast instead of breaking the header. The footer links to `/projects/{projectId}/inbox` using the current route's project, falling back to the first row's project, and is hidden when neither is known.
 
 The component subscribes to `sessionManager.onEvent()` in `onMount()` and calls the inbox query's `.refresh()` when it receives `inbox:updated`. It removes that subscription on unmount. Because SSE is the primary update path, it also refreshes the query every 60 seconds as a polling fallback.
+
+### Full Inbox Page
+
+Route `src/routes/projects/[projectId]/inbox/+page.svelte` renders the full inbox. It has no `+page.server.ts` — data loads via `getInboxItems({ projectId, includeRead: true })` from the remote layer, so both read and unread items appear with distinct styling. The `projectId` comes from the route param and may be `'all'` or a numeric project ID.
+
+Layout follows the Activity page: `max-w-6xl` container, header with "Inbox" title plus unread/total counts and a "Mark all read" button, bordered table with `hover:bg-muted/40` rows, and a dashed-border empty state.
+
+Each row shows:
+
+- **Kind badge** with per-kind label and color pair following the `bg-{c}-100 text-{c}-800 dark:bg-{c}-900/30 dark:text-{c}-300` convention: review_requested (purple), pr_comment (blue), reviewed_pr_comment (teal), pr_approved (green), pr_merged (violet), ci_failure (red), merge_queue_removed (amber).
+- PR title, repository, and actor.
+- Aggregated `event_count` ("3 comments") when greater than 1.
+- Relative time (`formatRelativeTime(last_event_at)`) with the absolute timestamp in an `openOnHover` Popover.
+- View link using the enriched `{viewHref, external}` from the query — external links get `target="_blank" rel="noopener noreferrer"` and a `↗` suffix.
+- Per-kind action button and a Dismiss button (icon-only with aria-label).
+
+**Per-kind actions** reuse existing launch commands — no new spawn paths:
+
+| Kind                                                | Action           | Launch command                                                                                                         |
+| --------------------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `review_requested`                                  | Run Review Guide | `startPrReviewGuide({ projectId, prNumber })`                                                                          |
+| `pr_comment`                                        | Fix PR           | `startFixPrThreads({ projectId, prNumber })`; prefers `startFixThreads({ planUuid })` when enriched with a linked plan |
+| `ci_failure`                                        | Fix CI           | `startPrCiFix({ projectId, prNumber })`; prefers `startCiFix({ planUuid })` when enriched with a linked plan           |
+| `merge_queue_removed`                               | (external link)  | Plain link to the GitHub PR page                                                                                       |
+| `pr_approved` / `pr_merged` / `reviewed_pr_comment` | (view only)      | No action button                                                                                                       |
+
+The `projectId` passed to launch commands is always the item's own numeric project ID from the enriched data, not the route param (which may be `'all'`).
+
+Launch handling copies the `ReadyToStartRow.svelte` + `pr_fix_launch_state.ts` pattern: per-row starting/launched/error state using `SvelteMap` and `SvelteSet` (native `Map`/`Set` mutations inside `$state` do not trigger Svelte updates), `getFixButtonState`/`getFixStartResultState` helpers, 30-second state reset, and on `already_running` navigates to `/projects/{itemProjectId}/sessions/{connectionId}`.
+
+**Read semantics**: opening the page marks nothing read. Clicking a view link or an action button calls `markInboxItemsRead({ ids: [id] })` alongside the navigation/launch — the mutation does not block navigation. "Mark all read" calls `markAllInboxItemsRead({ projectId })` scoped to the route's project. Dismiss calls `dismissInboxItem({ id })` and hides the row. Unread rows are visually distinct (bold text, colored left-border accent).
+
+**Live updates**: the page subscribes to `inbox:updated` via `sessionManager.onEvent()` and refreshes the query on that event. A 60-second polling fallback mirrors the toolbar indicator. Both subscriptions are cleaned up on unmount.
+
+Pure display and state helpers are extracted to `src/routes/projects/[projectId]/inbox/inbox_page_state.ts` (`getKindBadge`, `getEventCountLabel`, `formatAbsoluteTime`, `getActionButtonConfig`) with a colocated unit test.
+
+### Tab and Keyboard Shortcuts
+
+The Inbox tab appears in `TabNav.svelte` as `{ label: 'Inbox', slug: 'inbox' }`, positioned after Activity and before Plans. **Adding a tab to `TabNav` requires updating two other places to keep keyboard shortcuts in sync:**
+
+1. `baseTabSlugs` in `src/routes/+layout.svelte` — drives `Ctrl+1..N` tab navigation via `navigateTab()`.
+2. `projectTabSlugs` (derived from `baseTabSlugs` with `'settings'` appended) — used by `Ctrl+Shift+N` project switching to preserve the current tab.
+
+Both arrays must list slugs in the same order as `baseTabs` in `TabNav.svelte`. The current order is: sessions (Ctrl+1), active (Ctrl+2), prs (Ctrl+3), activity (Ctrl+4), inbox (Ctrl+5), plans (Ctrl+6), settings (Ctrl+7, numeric projects only).
 
 ## Plan Task Counts
 
@@ -513,7 +557,10 @@ The root layout (`+layout.svelte`) registers a `<svelte:window onkeydown>` handl
 | **Ctrl+/**                     | Focus the search input on the Plans tab    | Suppressed when focus is in a text input, textarea, select, or contenteditable element |
 | **Ctrl+1**                     | Navigate to Sessions tab                   | Always active, even in text inputs                                                     |
 | **Ctrl+2**                     | Navigate to Active Work tab                | Always active                                                                          |
-| **Ctrl+3**                     | Navigate to Plans tab                      | Always active                                                                          |
+| **Ctrl+3**                     | Navigate to Pull Requests tab              | Always active                                                                          |
+| **Ctrl+4**                     | Navigate to Activity tab                   | Always active                                                                          |
+| **Ctrl+5**                     | Navigate to Inbox tab                      | Always active                                                                          |
+| **Ctrl+6**                     | Navigate to Plans tab                      | Always active                                                                          |
 
 Tab navigation uses `goto()` with `projectUrl()` to build the correct route for the current project context.
 

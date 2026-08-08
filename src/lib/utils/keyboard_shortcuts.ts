@@ -33,12 +33,12 @@ const DIGIT_MAP: Record<string, number> = {
   Digit9: 9,
 };
 
-const TAB_DIGIT_MAX = 5;
+const TAB_DIGIT_MAX = 6;
 
 /**
  * Handles global keyboard shortcuts using physical key codes for locale independence.
  * - Ctrl+/ → focusSearch (suppressed in typing targets)
- * - Ctrl+1/2/3/4/5 → navigateTab (always active)
+ * - Ctrl+1/2/3/4/5/6 → navigateTab (always active)
  * - Ctrl+Shift+1 → all projects, Ctrl+Shift+2..9 → project by index (always active)
  */
 export function handleGlobalShortcuts(event: KeyboardEvent, callbacks: ShortcutCallbacks): void {
