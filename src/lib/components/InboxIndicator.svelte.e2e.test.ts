@@ -306,13 +306,14 @@ describe('InboxIndicator browser behavior', () => {
       .toHaveAttribute('href', '/projects/all/inbox');
   });
 
-  test('closes the popover when the footer link is clicked', async () => {
+  test('closes the popover and navigates via goto when the footer link is clicked', async () => {
     renderIndicator(makeResponse({ items: [makeItem()], unreadCount: 1 }));
     await openPopover();
 
     await page.getByRole('link', { name: 'View all notifications' }).click();
 
     await expect.element(page.getByRole('heading', { name: 'Inbox' })).not.toBeInTheDocument();
+    expect(mocks.goto).toHaveBeenCalledWith('/projects/7/inbox');
   });
 
   test('refreshes on inbox SSE events and cleans up the subscription and polling timer', async () => {

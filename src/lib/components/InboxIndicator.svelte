@@ -125,6 +125,18 @@
     }
   }
 
+  async function handleFooterLinkClick(event: MouseEvent): Promise<void> {
+    event.preventDefault();
+    popoverOpen = false;
+    if (footerProjectId) {
+      try {
+        await goto(`/projects/${footerProjectId}/inbox`);
+      } catch (error) {
+        reportInboxFailure('open the inbox page', error);
+      }
+    }
+  }
+
   function handleMarkAllRead(): void {
     void runInboxMutation('mark all inbox items as read', () =>
       markAllInboxItemsRead({ projectId: 'all' })
@@ -253,7 +265,7 @@
         <a
           href="/projects/{footerProjectId}/inbox"
           class="text-xs text-blue-400 hover:text-blue-300"
-          onclick={() => (popoverOpen = false)}
+          onclick={handleFooterLinkClick}
         >
           View all notifications
         </a>
