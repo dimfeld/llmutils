@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { toast } from 'svelte-sonner';
@@ -39,10 +40,10 @@
   let totalCount = $derived(items.length);
 
   // Per-row launch state keyed by item id
-  let launchingIds = $state<Set<number>>(new Set());
-  let launchedIds = $state<Map<number, 'started' | 'already_running'>>(new Map());
-  let launchErrors = $state<Map<number, string>>(new Map());
-  let launchTimeouts = $state<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  let launchingIds = new SvelteSet<number>();
+  let launchedIds = new SvelteMap<number, 'started' | 'already_running'>();
+  let launchErrors = new SvelteMap<number, string>();
+  let launchTimeouts = new Map<number, ReturnType<typeof setTimeout>>();
 
   onMount(() => {
     const unsubscribe = sessionManager.onEvent((eventName) => {

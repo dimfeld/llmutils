@@ -48,6 +48,34 @@ describe('TabNav', () => {
     expect(body).toContain('href="/projects/1/plans"');
   });
 
+  test('renders the Inbox tab between Activity and Plans, matching the layout shortcut slug order', () => {
+    const { body } = render(TabNav, {
+      props: {
+        projectId: '1',
+      },
+    });
+
+    expect(body).toContain('href="/projects/1/inbox"');
+    expect(body).toContain('title="Inbox"');
+
+    const activityIndex = body.indexOf('href="/projects/1/activity"');
+    const inboxIndex = body.indexOf('href="/projects/1/inbox"');
+    const plansIndex = body.indexOf('href="/projects/1/plans"');
+    expect(activityIndex).toBeGreaterThan(-1);
+    expect(activityIndex).toBeLessThan(inboxIndex);
+    expect(inboxIndex).toBeLessThan(plansIndex);
+  });
+
+  test('renders the Inbox tab for the all-projects view', () => {
+    const { body } = render(TabNav, {
+      props: {
+        projectId: 'all',
+      },
+    });
+
+    expect(body).toContain('href="/projects/all/inbox"');
+  });
+
   test('renders an attention dot on the Sessions tab when requested', () => {
     const { body } = render(TabNav, {
       props: {
