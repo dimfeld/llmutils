@@ -7,8 +7,10 @@ import {
 } from '$common/github/webhook_ingest.js';
 import { getWebhookInternalApiToken, getWebhookServerUrl } from '$common/github/webhook_client.js';
 
+import { processInboxSignals } from './inbox_producer.js';
 import { triggerReviewGuideComments } from './review_guide_comment_trigger.js';
 import { processSlackReviewReactions } from './slack_review_reactions.js';
+import type { SessionManager } from './session_manager.js';
 import type { WebhookPollerHandle } from './session_context.js';
 
 const MIN_POLL_INTERVAL_SECONDS = 5;
@@ -17,6 +19,7 @@ const INITIAL_POLL_DELAY_MS = 15_000;
 
 interface StartWebhookPollerOptions {
   onPrUpdated?: (result: IngestResult) => void;
+  sessionManager?: Pick<SessionManager, 'emitInboxUpdate' | 'hasInboxUpdateListeners'>;
 }
 
 export function getWebhookPollIntervalMs(): number | null {
@@ -82,6 +85,11 @@ export function startWebhookPoller(
       }
       if ((result.reviewsSubmitted?.length ?? 0) > 0) {
         await processSlackReviewReactions(db, result.reviewsSubmitted);
+      }
+      if ((result.inboxSignals?.length ?? 0) > 0) {
+        await processInboxSignals(db, result.inboxSignals, {
+          sessionManager: options.sessionManager,
+        });
       }
     } catch (error) {
       console.error('[webhook_poller] Polling failed', error);

@@ -230,6 +230,10 @@ export interface PrUpdatedEvent {
   projectIds: number[];
 }
 
+export interface InboxUpdatedEvent {
+  projectIds: number[];
+}
+
 export type RateLimitProvider = 'claude' | 'codex';
 
 export interface RateLimitEntry {
@@ -262,6 +266,7 @@ export interface SessionClientEventMap {
   'session:prompt-cleared': SessionPromptClearedEvent;
   'session:dismissed': SessionDismissedEvent;
   'pr:updated': PrUpdatedEvent;
+  'inbox:updated': InboxUpdatedEvent;
   'rate-limit:updated': RateLimitUpdatedEvent;
 }
 

@@ -16,6 +16,7 @@ import { buildLinearPrReviewUrl } from '$common/linear_pr_review.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import { getServerContext } from '$lib/server/init.js';
 import { withRequiredCheckRollupStates } from '$lib/server/required_check_rollup.js';
+import { processInboxSignals } from '$lib/server/inbox_producer.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
@@ -578,6 +579,11 @@ export const refreshProjectPrs = command(
           } catch (err) {
             console.warn('[project_prs] Failed to emit PR update event', err);
           }
+          if ((ingestResult.inboxSignals?.length ?? 0) > 0) {
+            await processInboxSignals(db, ingestResult.inboxSignals, {
+              sessionManager: getSessionManager(),
+            });
+          }
           const ingestError = formatWebhookIngestErrors(ingestResult.errors);
           getProjectPrs({ projectId }).refresh();
           return ingestError ? { error: ingestError, newLinks: [] } : { newLinks: [] };
@@ -609,6 +615,11 @@ export const refreshProjectPrs = command(
           emitPrUpdatesForIngestResult(db, ingestResult, getSessionManager());
         } catch {
           // SSE emission is best-effort; don't fail the refresh
+        }
+        if ((ingestResult.inboxSignals?.length ?? 0) > 0) {
+          await processInboxSignals(db, ingestResult.inboxSignals, {
+            sessionManager: getSessionManager(),
+          });
         }
         const ingestError = formatWebhookIngestErrors(ingestResult.errors);
         getProjectPrs({ projectId }).refresh();

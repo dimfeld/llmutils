@@ -380,6 +380,7 @@ export class SessionManager {
       'session:prompt-cleared',
       'session:dismissed',
       'pr:updated',
+      'inbox:updated',
       'rate-limit:updated',
     ];
 

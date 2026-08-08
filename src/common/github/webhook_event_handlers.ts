@@ -35,6 +35,7 @@ export type PrDraftTransition = 'became_ready' | 'became_draft';
 export type InboxSignalKind =
   | 'review_requested'
   | 'pr_comment'
+  | 'reviewed_pr_comment'
   | 'pr_merged'
   | 'pr_approved'
   | 'ci_failure'

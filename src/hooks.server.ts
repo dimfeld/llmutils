@@ -199,6 +199,7 @@ export const init: ServerInit = async () => {
     const webhookPoller =
       existingWebhookPoller ??
       startWebhookPoller(db, {
+        sessionManager,
         onPrUpdated: (result) => {
           try {
             emitPrUpdatesForIngestResult(db, result, sessionManager);

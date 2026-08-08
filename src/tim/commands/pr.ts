@@ -23,6 +23,7 @@ import {
 } from '../../common/github/pull_requests.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { fetchPrIssueComments, type PrIssueComment } from '../../common/github/pr_status.js';
+import { processInboxSignals } from '../../lib/server/inbox_producer.js';
 import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
@@ -754,6 +755,9 @@ export async function handlePrStatusCommand(
   if (useWebhookFirst) {
     const ingestResult = await ingestWebhookEvents(db);
     logWebhookIngestWarnings(ingestResult.errors);
+    if ((ingestResult.inboxSignals?.length ?? 0) > 0) {
+      await processInboxSignals(db, ingestResult.inboxSignals);
+    }
 
     if (plan.uuid) {
       const cachedExplicitUrls = explicitPrUrls.filter((url) => getPrStatusByUrl(db, url) !== null);

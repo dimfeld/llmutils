@@ -239,6 +239,9 @@ export function applySessionEvent<TEventName extends SessionClientEventName>(
     case 'pr:updated': {
       break;
     }
+    case 'inbox:updated': {
+      break;
+    }
     case 'rate-limit:updated': {
       state.setRateLimitState?.(event.payload.state);
       break;
