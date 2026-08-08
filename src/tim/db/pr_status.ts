@@ -928,16 +928,51 @@ export function listExistingPrStatusProjectNumbers(
     return [];
   }
 
-  const conditions = uniquePairs.map(() => '(project.id = ? AND ps.pr_number = ?)').join(' OR ');
-  const parameters = uniquePairs.flatMap((pair) => [pair.projectId, pair.prNumber]);
+  const projectIds = Array.from(new Set(uniquePairs.map((pair) => pair.projectId)));
+  const projectRows = db
+    .prepare(
+      `
+        SELECT id, repository_id
+        FROM project
+        WHERE id IN (${projectIds.map(() => '?').join(', ')})
+      `
+    )
+    .all(...projectIds) as Array<{ id: number; repository_id: string }>;
+  const ownerReposByProjectId = new Map<number, { owner: string; repo: string }>();
+
+  for (const projectRow of projectRows) {
+    const ownerRepo = parseOwnerRepoFromRepositoryId(projectRow.repository_id);
+    if (ownerRepo) {
+      ownerReposByProjectId.set(projectRow.id, ownerRepo);
+    }
+  }
+
+  const githubPairs = uniquePairs.flatMap((pair) => {
+    const ownerRepo = ownerReposByProjectId.get(pair.projectId);
+    return ownerRepo ? [{ ...pair, ownerRepo }] : [];
+  });
+  if (githubPairs.length === 0) {
+    return [];
+  }
+
+  const conditions = githubPairs
+    .map(
+      () =>
+        '(project.id = ? AND ps.owner = ? COLLATE NOCASE AND ps.repo = ? COLLATE NOCASE AND ps.pr_number = ?)'
+    )
+    .join(' OR ');
+  const parameters = githubPairs.flatMap((pair) => [
+    pair.projectId,
+    pair.ownerRepo.owner,
+    pair.ownerRepo.repo,
+    pair.prNumber,
+  ]);
   const rows = db
     .prepare(
       `
         SELECT project.id AS project_id, ps.pr_number
         FROM pr_status ps
-        INNER JOIN project
-          ON project.repository_id = ('github.com__' || ps.owner || '__' || ps.repo) COLLATE NOCASE
-        WHERE ${conditions}
+        INNER JOIN project ON ${conditions}
       `
     )
     .all(...parameters) as Array<{ project_id: number; pr_number: number }>;

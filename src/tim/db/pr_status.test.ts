@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { constructGitHubRepositoryId } from '../../common/github/pull_requests.js';
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
   cleanOrphanedPrStatus,
@@ -16,6 +17,7 @@ import {
   getPrStatusByUrl,
   getPrStatusByUrls,
   getPrStatusForPlan,
+  listExistingPrStatusProjectNumbers,
   linkPlanToPr,
   recomputeCheckRollupState,
   unlinkPlanFromPr,
@@ -1535,6 +1537,115 @@ describe('tim db/pr_status', () => {
     const results = getPrStatusesForRepo(db, 'example', 'repo');
     expect(results.map((detail) => detail.status.pr_number)).toEqual([301]);
     expect(results[0]?.status.requested_reviewers).toBe('["dimfeld"]');
+  });
+
+  test('listExistingPrStatusProjectNumbers matches owner and repo case-insensitively', () => {
+    const githubProject = getOrCreateProject(
+      db,
+      constructGitHubRepositoryId('ExampleOwner', 'ExampleRepo')
+    );
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/exampleowner/examplerepo/pull/305',
+      owner: 'exampleowner',
+      repo: 'examplerepo',
+      prNumber: 305,
+      title: 'Case-insensitive lookup',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(
+      listExistingPrStatusProjectNumbers(db, [{ projectId: githubProject.id, prNumber: 305 }])
+    ).toEqual([{ projectId: githubProject.id, prNumber: 305 }]);
+  });
+
+  test('listExistingPrStatusProjectNumbers does not match a PR to the wrong project', () => {
+    const firstProject = getOrCreateProject(
+      db,
+      constructGitHubRepositoryId('first-owner', 'first-repo')
+    );
+    const secondProject = getOrCreateProject(
+      db,
+      constructGitHubRepositoryId('second-owner', 'second-repo')
+    );
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/first-owner/first-repo/pull/306',
+      owner: 'first-owner',
+      repo: 'first-repo',
+      prNumber: 306,
+      title: 'First project PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/second-owner/second-repo/pull/306',
+      owner: 'second-owner',
+      repo: 'second-repo',
+      prNumber: 306,
+      title: 'Second project PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const results = listExistingPrStatusProjectNumbers(db, [
+      { projectId: firstProject.id, prNumber: 306 },
+      { projectId: firstProject.id, prNumber: 307 },
+      { projectId: secondProject.id, prNumber: 306 },
+    ]);
+
+    expect(results).toEqual([
+      { projectId: firstProject.id, prNumber: 306 },
+      { projectId: secondProject.id, prNumber: 306 },
+    ]);
+  });
+
+  test('listExistingPrStatusProjectNumbers skips non-GitHub repository IDs', () => {
+    const nonGithubProject = getOrCreateProject(
+      db,
+      'gitlab.com__non-github-owner__non-github-repo'
+    );
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/non-github-owner/non-github-repo/pull/308',
+      owner: 'non-github-owner',
+      repo: 'non-github-repo',
+      prNumber: 308,
+      title: 'Non-GitHub repository ID',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(
+      listExistingPrStatusProjectNumbers(db, [{ projectId: nonGithubProject.id, prNumber: 308 }])
+    ).toEqual([]);
+  });
+
+  test('listExistingPrStatusProjectNumbers deduplicates repeated inputs', () => {
+    const githubProject = getOrCreateProject(
+      db,
+      constructGitHubRepositoryId('duplicate-owner', 'duplicate-repo')
+    );
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/duplicate-owner/duplicate-repo/pull/309',
+      owner: 'duplicate-owner',
+      repo: 'duplicate-repo',
+      prNumber: 309,
+      title: 'Duplicate input lookup',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(
+      listExistingPrStatusProjectNumbers(db, [
+        { projectId: githubProject.id, prNumber: 309 },
+        { projectId: githubProject.id, prNumber: 309 },
+        { projectId: githubProject.id, prNumber: 309 },
+      ])
+    ).toEqual([{ projectId: githubProject.id, prNumber: 309 }]);
   });
 
   test('findPrStatusesByRepositoryBranch matches repo case-insensitively and branch exactly', () => {
