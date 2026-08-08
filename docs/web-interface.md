@@ -230,13 +230,23 @@ Shared overlap utilities live in `src/lib/utils/pr_update_events.ts`: `hasReleva
 
 **Design note**: `eventEmitter.listenerCount('pr:updated')` is used instead of `sseSubscriberCount` to guard DB lookups, because `sseSubscriberCount` is incremented after event subscriptions are attached in `createSessionEventsResponse()`, creating a race window where events could be dropped during SSE setup.
 
+## Inbox
+
 ### Push-Based Inbox Updates via SSE
 
-The PR inbox uses the same push model with an `inbox:updated` event whose payload is `{ projectIds: number[] }` — only the affected projects, no item payload. Clients refetch their own inbox query when a listed project is relevant to them.
+The PR inbox uses the same push model with an `inbox:updated` event whose payload is `{ projectIds: number[] }` — only the affected projects, no item payload. The global toolbar query refreshes on every event. Project-scoped consumers can use the project IDs to skip unrelated refreshes.
 
 **Server-side flow**: `processInboxSignals()` (`src/lib/server/inbox_producer.ts`) collects the project IDs it wrote rows for and, at the end of the batch, calls `sessionManager.emitInboxUpdate(projectIds)` — guarded by `hasInboxUpdateListeners()`, and skipped when no row was written. `emitInboxUpdate()` also ignores an empty array, so an idle tick produces no frame. The session manager gets into the producer through `ingestWebhookEventsWithInbox()` (`src/lib/server/webhook_ingest_orchestrator.ts`), which every ingest caller uses; web callers pass `getSessionManager` and the CLI passes nothing (no SSE clients exist there). See [Inbox](database.md#inbox) for the producer's relevance and filtering rules.
 
 **Adding another event type** touches four places, and `inbox:updated` is the smallest complete example: the `SessionManagerEvents` map plus the server `eventTypes` array in `src/lib/server/session_manager.ts`, the payload type in `src/lib/types/session.ts`, the client `eventTypes` array in `src/lib/stores/session_state.svelte.ts`, and a case in `applySessionEvent` in `src/lib/stores/session_state_events.ts`. Like `pr:updated`, `inbox:updated` is a **no-op** in `applySessionEvent`: it changes no session-store state, and components subscribe directly through `sessionManager.onEvent()`. Omitting the client `eventTypes` entry is the silent-failure case — the server emits and nothing listens.
+
+### Toolbar Inbox Indicator
+
+`InboxIndicator.svelte` is mounted in the global header next to the sync indicator. It queries `getInboxItems({ projectId: 'all' })`, so one bell aggregates unread items from every project. The query is consumed through its resource's `.current` value instead of top-level `await`; a temporary query error therefore does not tear down the always-mounted header.
+
+The bell is always visible and shows an unread-count badge when needed. Hovering it opens a dark popover with up to 10 unread rows. Each row shows the notification kind, PR title, repository, actor, relative time, and an aggregation count when several events were combined. Opening the popover does not change read state. Selecting a row marks it read and navigates to the internal PR page or opens the external GitHub PR link in a new tab. **Mark all read** updates every project, and the empty state says **All caught up**. The footer links to `/projects/{projectId}/inbox`; the full project inbox page is the separate surface covered by plan 409.
+
+The component subscribes to `sessionManager.onEvent()` in `onMount()` and calls the inbox query's `.refresh()` when it receives `inbox:updated`. It removes that subscription on unmount. Because SSE is the primary update path, it also refreshes the query every 60 seconds as a polling fallback.
 
 ## Plan Task Counts
 
