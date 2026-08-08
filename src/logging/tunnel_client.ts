@@ -8,6 +8,7 @@ import {
   isValidSessionProcessRegistration,
   isValidSessionProcessUpdate,
   isSessionProcessTerminationResult,
+  normalizeSessionProcessCommand,
   type ProcessId,
   type SessionProcessExit,
   type SessionProcessLifecycleSink,
@@ -443,21 +444,32 @@ export class TunnelSessionProcessLifecycleSink implements SessionProcessLifecycl
   constructor(private readonly adapter: TunnelAdapter) {}
 
   registerProcess(registration: SessionProcessRegistration): boolean {
-    if (!isValidSessionProcessRegistration(registration, { requireProcessId: true })) {
+    const normalizedRegistration =
+      typeof registration.command !== 'string'
+        ? registration
+        : { ...registration, command: normalizeSessionProcessCommand(registration.command) };
+    if (!isValidSessionProcessRegistration(normalizedRegistration, { requireProcessId: true })) {
       return false;
     }
-    const processId = registration.processId;
+    const processId = normalizedRegistration.processId;
     if (!processId) {
       return false;
     }
-    return this.adapter.registerProcess({ ...registration, processId });
+    return this.adapter.registerProcess({ ...normalizedRegistration, processId });
   }
 
   updateProcess(processId: ProcessId, update: SessionProcessUpdate): boolean {
-    if (!isProcessId(processId) || !isValidSessionProcessUpdate(update, { requireChange: true })) {
+    const normalizedUpdate =
+      typeof update.command !== 'string'
+        ? update
+        : { ...update, command: normalizeSessionProcessCommand(update.command) };
+    if (
+      !isProcessId(processId) ||
+      !isValidSessionProcessUpdate(normalizedUpdate, { requireChange: true })
+    ) {
       return false;
     }
-    return this.adapter.updateProcess(processId, update);
+    return this.adapter.updateProcess(processId, normalizedUpdate);
   }
 
   exitProcess(processId: ProcessId, details: SessionProcessExit = {}): boolean {

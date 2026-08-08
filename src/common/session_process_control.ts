@@ -4,6 +4,7 @@ import {
   createChildSessionProcessEnvironment,
   createProcessId,
   readSessionProcessEnvironment,
+  normalizeSessionProcessCommand,
   NOOP_SESSION_PROCESS_LIFECYCLE_SINK,
   TIM_OWNER_PROCESS_ID,
   TIM_PARENT_PROCESS_ID,
@@ -60,7 +61,7 @@ interface TrackedExecutor extends SessionExecutorLifecycle {
   handle?: SessionChildProcessHandle;
   pid?: number;
   /** Full command captured from the process list; never use a display value here. */
-  command?: string;
+  capturedCommand?: string;
   startIdentity?: string;
   processInfoCaptured: boolean;
   finished: boolean;
@@ -142,7 +143,7 @@ export class SessionProcessOwner {
       ownerProcessId: this.ownerProcessId,
       kind: 'executor',
       label: options.label,
-      command: options.command,
+      command: normalizeSessionProcessCommand(options.command),
       startedAt: this.now().toISOString(),
       state: 'starting',
     };
@@ -195,7 +196,7 @@ export class SessionProcessOwner {
       tracked.pid === undefined ||
       !tracked.processInfoCaptured ||
       !tracked.startIdentity ||
-      !tracked.command
+      !tracked.capturedCommand
     ) {
       return this.reportTermination(tracked.processId, 'unknown_process_state');
     }
@@ -216,7 +217,7 @@ export class SessionProcessOwner {
 
     if (
       current.ppid !== process.pid ||
-      current.command !== tracked.command ||
+      current.command !== tracked.capturedCommand ||
       current.startTime !== tracked.startIdentity
     ) {
       this.markExited(tracked);
@@ -276,16 +277,14 @@ export class SessionProcessOwner {
     }
 
     if (processInfo) {
-      tracked.command = processInfo.command;
+      tracked.capturedCommand = processInfo.command;
       tracked.startIdentity = processInfo.startTime;
       tracked.processInfoCaptured = true;
-    } else {
-      tracked.command = tracked.expectedCommand;
     }
 
     const update: SessionProcessUpdate = {
       pid: tracked.pid,
-      command: tracked.command,
+      command: normalizeSessionProcessCommand(tracked.capturedCommand ?? tracked.expectedCommand),
       state: 'running',
       ...(tracked.startIdentity ? { startIdentity: tracked.startIdentity } : {}),
     };

@@ -11,6 +11,7 @@ import {
   TIM_PROCESS_ID,
   TIM_SESSION_ID,
   SessionProcessRegistryLifecycleSink,
+  normalizeSessionProcessCommand,
   toProcessId,
   type SessionProcessLifecycleSink,
   type ProcessId,
@@ -352,16 +353,19 @@ describe('SessionProcessOwner', () => {
     expect(owner.childCount).toBe(0);
   });
 
-  it('prepares, propagates, and safely terminates an executor at the 64 KiB command boundary', () => {
+  it('prepares, propagates, and safely terminates an executor over the 64 KiB command boundary', () => {
     const registry = createRegistry();
-    const command = processCommand(MAX_PROCESS_COMMAND_LENGTH);
-    const processInfo = createProcessInfo(1234, command);
+    const overLimitCommand = processCommand(MAX_PROCESS_COMMAND_LENGTH + 1);
+    const processInfo = createProcessInfo(1234, overLimitCommand);
     const processLister = vi.fn<() => ProcessInfo[]>(() => [processInfo]);
     const owner = createOwner(processLister, new SessionProcessRegistryLifecycleSink(registry));
-    const lifecycle = owner.prepareExecutor({ label: 'Maximum Codex prompt', command });
+    const lifecycle = owner.prepareExecutor({
+      label: 'Oversized Codex prompt',
+      command: overLimitCommand,
+    });
     const kill = vi.fn();
 
-    expect(command).toHaveLength(MAX_PROCESS_COMMAND_LENGTH);
+    expect(overLimitCommand).toHaveLength(MAX_PROCESS_COMMAND_LENGTH + 1);
     expect(lifecycle).toBeDefined();
     expect(lifecycle?.environment).toMatchObject({
       TIM_SESSION_ID: 'session-1',
@@ -369,12 +373,16 @@ describe('SessionProcessOwner', () => {
       TIM_OWNER_PROCESS_ID: 'owner',
     });
     expect(lifecycle?.environment[TIM_PROCESS_ID]).toBe(lifecycle?.processId);
+    expect(registry.get(lifecycle!.processId)).toMatchObject({
+      state: 'starting',
+      command: normalizeSessionProcessCommand(overLimitCommand),
+    });
 
     lifecycle?.markSpawned({ pid: processInfo.pid, kill });
     expect(registry.get(lifecycle!.processId)).toMatchObject({
       state: 'running',
       pid: processInfo.pid,
-      command,
+      command: normalizeSessionProcessCommand(overLimitCommand),
       startIdentity: processInfo.startTime,
     });
 
@@ -382,13 +390,31 @@ describe('SessionProcessOwner', () => {
     expect(kill).toHaveBeenCalledWith('SIGTERM');
     lifecycle?.markExited({ signal: 'SIGTERM' });
 
-    const overLimit = owner.prepareExecutor({
-      label: 'Oversized Codex prompt',
-      command: processCommand(MAX_PROCESS_COMMAND_LENGTH + 1),
+    const mismatchProcessLister = vi.fn<() => ProcessInfo[]>(() => [
+      createProcessInfo(1234, overLimitCommand),
+    ]);
+    const mismatchOwner = createOwner(
+      mismatchProcessLister,
+      new SessionProcessRegistryLifecycleSink(registry)
+    );
+    const mismatchLifecycle = mismatchOwner.prepareExecutor({
+      label: 'Mismatched oversized Codex prompt',
+      command: overLimitCommand,
     });
-    expect(overLimit).toBeUndefined();
-    expect(owner.childCount).toBe(0);
-    expect(registry.getSnapshot()).toHaveLength(2);
+    const mismatchKill = vi.fn();
+    mismatchLifecycle?.markSpawned({ pid: 1234, kill: mismatchKill });
+    const sameDisplayDifferentCommand = `${overLimitCommand.slice(0, MAX_PROCESS_COMMAND_LENGTH)}different`;
+    mismatchProcessLister.mockReturnValueOnce([
+      createProcessInfo(1234, sameDisplayDifferentCommand),
+    ]);
+
+    expect(mismatchLifecycle).toBeDefined();
+    expect(registry.get(mismatchLifecycle!.processId)?.command).toBe(
+      normalizeSessionProcessCommand(overLimitCommand)
+    );
+    expect(mismatchOwner.terminateExecutor(mismatchLifecycle!.processId)).toBe('stale_target');
+    expect(mismatchKill).not.toHaveBeenCalled();
+    expect(mismatchOwner.childCount).toBe(0);
   });
 
   it('safely handles a child that finishes spawning during owner disposal', () => {

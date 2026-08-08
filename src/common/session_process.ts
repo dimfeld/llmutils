@@ -28,6 +28,7 @@ const MAX_PROCESS_LABEL_LENGTH = 512;
  */
 const MAX_PROCESS_COMMAND_LENGTH = 64 * 1024;
 const MAX_PROCESS_START_IDENTITY_LENGTH = 2048;
+const SESSION_PROCESS_COMMAND_TRUNCATION_MARKER = ' …[truncated]';
 
 declare const processIdBrand: unique symbol;
 
@@ -249,6 +250,20 @@ function isOptionalProcessId(value: unknown): boolean {
 
 function isOptionalNullablePid(value: unknown): boolean {
   return value === undefined || value === null || isValidPid(value);
+}
+
+/**
+ * Bounds command metadata for display and transport without changing the
+ * command kept privately by an executor owner for identity checks.
+ */
+export function normalizeSessionProcessCommand(command: string): string {
+  if (command.length <= MAX_PROCESS_COMMAND_LENGTH) {
+    return command;
+  }
+
+  const prefixLength =
+    MAX_PROCESS_COMMAND_LENGTH - SESSION_PROCESS_COMMAND_TRUNCATION_MARKER.length;
+  return `${command.slice(0, prefixLength)}${SESSION_PROCESS_COMMAND_TRUNCATION_MARKER}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1116,14 +1131,22 @@ export class SessionProcessRegistryLifecycleSink implements SessionProcessLifecy
     if (!this.registry.isActive) {
       return true;
     }
-    return this.registry.register(registration) !== undefined;
+    const normalizedRegistration =
+      typeof registration.command !== 'string'
+        ? registration
+        : { ...registration, command: normalizeSessionProcessCommand(registration.command) };
+    return this.registry.register(normalizedRegistration) !== undefined;
   }
 
   updateProcess(processId: ProcessId, update: SessionProcessUpdate): boolean {
     if (!this.registry.isActive) {
       return true;
     }
-    return this.registry.update(processId, update) !== undefined;
+    const normalizedUpdate =
+      typeof update.command !== 'string'
+        ? update
+        : { ...update, command: normalizeSessionProcessCommand(update.command) };
+    return this.registry.update(processId, normalizedUpdate) !== undefined;
   }
 
   exitProcess(processId: ProcessId, details: SessionProcessExit = {}): boolean {

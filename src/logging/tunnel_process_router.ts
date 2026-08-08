@@ -1,6 +1,7 @@
 import type { ServerTunnelMessage, TunnelProcessMessage } from './tunnel_protocol.js';
 import {
   isProcessId,
+  normalizeSessionProcessCommand,
   type ProcessId,
   type SessionProcessRegistry,
 } from '../common/session_process.js';
@@ -166,6 +167,11 @@ export class TunnelProcessRouter {
       return false;
     }
 
+    const command =
+      typeof message.command === 'string'
+        ? normalizeSessionProcessCommand(message.command)
+        : message.command;
+
     const node = registry.register(
       {
         processId: message.processId,
@@ -174,7 +180,7 @@ export class TunnelProcessRouter {
         label: message.label,
         ownerProcessId,
         pid: message.pid,
-        command: message.command,
+        command,
         startIdentity: message.startIdentity,
         startedAt: message.startedAt,
         state: message.state,
@@ -197,13 +203,18 @@ export class TunnelProcessRouter {
       return true;
     }
 
+    const command =
+      typeof message.command === 'string'
+        ? normalizeSessionProcessCommand(message.command)
+        : message.command;
+
     return (
       registry.update(processId, {
         parentProcessId: message.parentProcessId,
         ownerProcessId: message.ownerProcessId,
         label: message.label,
         pid: message.pid,
-        command: message.command,
+        command,
         startIdentity: message.startIdentity,
         state: message.state,
       }) !== undefined

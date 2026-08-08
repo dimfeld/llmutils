@@ -16,6 +16,7 @@ import type { TunnelMessage } from './tunnel_protocol.ts';
 import type { StructuredMessage } from './structured_messages.ts';
 import {
   toProcessId,
+  normalizeSessionProcessCommand,
   type ProcessId,
   type SessionProcessRegistration,
 } from '../common/session_process.ts';
@@ -236,10 +237,25 @@ describe('TunnelAdapter', () => {
         label: 'oversized Codex prompt',
         command: overLimitCommand,
       })
+    ).toBe(true);
+    expect(registration?.command).toBe(normalizeSessionProcessCommand(overLimitCommand));
+    expect(sink.updateProcess(executor, { command: overLimitCommand })).toBe(true);
+    expect(update).toEqual({
+      command: normalizeSessionProcessCommand(overLimitCommand),
+    });
+    expect(registrationCalls).toBe(2);
+    expect(updateCalls).toBe(2);
+    expect(
+      sink.registerProcess({
+        processId: processId('malformed-command-executor'),
+        kind: 'executor',
+        label: 'malformed command',
+        command: 42 as unknown as string,
+      })
     ).toBe(false);
-    expect(sink.updateProcess(executor, { command: overLimitCommand })).toBe(false);
-    expect(registrationCalls).toBe(1);
-    expect(updateCalls).toBe(1);
+    expect(sink.updateProcess(executor, { command: 42 as unknown as string })).toBe(false);
+    expect(registrationCalls).toBe(2);
+    expect(updateCalls).toBe(2);
 
     expect(
       isValidTunnelMessage({

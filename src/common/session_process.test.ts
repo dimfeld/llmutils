@@ -4,6 +4,7 @@ import {
   createProcessId,
   createSessionProcessRegistryFromEnvironment,
   isSessionProcessTrackingEnabled,
+  normalizeSessionProcessCommand,
   isValidSessionProcessExit,
   isValidSessionProcessNode,
   isValidSessionProcessRegistration,
@@ -105,6 +106,11 @@ describe('session process payload validators', () => {
 
     expect(commandAtLimit).toHaveLength(MAX_PROCESS_COMMAND_LENGTH);
     expect(commandOverLimit).toHaveLength(MAX_PROCESS_COMMAND_LENGTH + 1);
+    expect(normalizeSessionProcessCommand(commandAtLimit)).toBe(commandAtLimit);
+    expect(normalizeSessionProcessCommand(commandOverLimit)).toHaveLength(
+      MAX_PROCESS_COMMAND_LENGTH
+    );
+    expect(normalizeSessionProcessCommand(commandOverLimit)).toMatch(/…\[truncated\]$/);
     expect(
       isValidSessionProcessRegistration({
         processId: executor,
@@ -185,6 +191,28 @@ describe('SessionProcessRegistryLifecycleSink', () => {
     expect(sink.exitProcess(process)).toBe(true);
     expect(sink.removeProcess(process)).toBe(true);
     expect(registry.getSnapshot()).toEqual([]);
+  });
+
+  it('normalizes oversized command metadata before local registry validation', () => {
+    const registry = createRegistry();
+    const sink = new SessionProcessRegistryLifecycleSink(registry);
+    registry.register({ processId: processId('root'), kind: 'tim', label: 'root' });
+    const executor = processId('normalized-local-executor');
+    const command = processCommand(MAX_PROCESS_COMMAND_LENGTH + 1);
+
+    expect(
+      sink.registerProcess({
+        processId: executor,
+        parentProcessId: processId('root'),
+        ownerProcessId: processId('root'),
+        kind: 'executor',
+        label: 'oversized local executor',
+        command,
+      })
+    ).toBe(true);
+    expect(registry.get(executor)?.command).toBe(normalizeSessionProcessCommand(command));
+    expect(sink.updateProcess(executor, { command })).toBe(true);
+    expect(registry.get(executor)?.command).toBe(normalizeSessionProcessCommand(command));
   });
 });
 
