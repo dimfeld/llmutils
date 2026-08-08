@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 import { isTypingTarget, handleGlobalShortcuts } from './keyboard_shortcuts.js';
+import { resolvePreservedTabForProjectSwitch, resolveTabSlugForIndex } from './tab_navigation.js';
 
 function makeKeyEvent(
   code: string,
@@ -312,6 +313,22 @@ describe('handleGlobalShortcuts', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce();
   });
 
+  test('Ctrl+6 calls navigateTab with 6 (TAB_DIGIT_MAX boundary, matches 6-tab nav)', () => {
+    const navigateTab = vi.fn();
+    const event = makeKeyEvent('Digit6', { ctrlKey: true });
+    handleGlobalShortcuts(event, { navigateTab });
+    expect(navigateTab).toHaveBeenCalledWith(6);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  test('Ctrl+7 does NOT call navigateTab (past TAB_DIGIT_MAX boundary)', () => {
+    const navigateTab = vi.fn();
+    const event = makeKeyEvent('Digit7', { ctrlKey: true });
+    handleGlobalShortcuts(event, { navigateTab });
+    expect(navigateTab).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
   test('does nothing when no callbacks provided', () => {
     const event = makeKeyEvent('Slash', { ctrlKey: true });
     handleGlobalShortcuts(event, {});
@@ -330,5 +347,60 @@ describe('handleGlobalShortcuts', () => {
     const event = makeKeyEvent('Digit1', { ctrlKey: true });
     handleGlobalShortcuts(event, { focusSearch });
     expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
+  describe('integration with tab_navigation (regression for the 5->6 tab shift)', () => {
+    test('Ctrl+6 reaches the Plans tab end-to-end via resolveTabSlugForIndex', () => {
+      let resolvedSlug: string | undefined;
+      const event = makeKeyEvent('Digit6', { ctrlKey: true });
+      handleGlobalShortcuts(event, {
+        navigateTab(tabIndex) {
+          resolvedSlug = resolveTabSlugForIndex('1', tabIndex);
+          return !!resolvedSlug;
+        },
+      });
+      expect(resolvedSlug).toBe('plans');
+      expect(event.preventDefault).toHaveBeenCalledOnce();
+    });
+
+    test('Ctrl+5 reaches the Inbox tab end-to-end via resolveTabSlugForIndex', () => {
+      let resolvedSlug: string | undefined;
+      const event = makeKeyEvent('Digit5', { ctrlKey: true });
+      handleGlobalShortcuts(event, {
+        navigateTab(tabIndex) {
+          resolvedSlug = resolveTabSlugForIndex('1', tabIndex);
+          return !!resolvedSlug;
+        },
+      });
+      expect(resolvedSlug).toBe('inbox');
+      expect(event.preventDefault).toHaveBeenCalledOnce();
+    });
+
+    test('Ctrl+7 does not resolve any tab and does not prevent default', () => {
+      let resolvedSlug: string | undefined = 'unset';
+      const event = makeKeyEvent('Digit7', { ctrlKey: true });
+      handleGlobalShortcuts(event, {
+        navigateTab(tabIndex) {
+          resolvedSlug = resolveTabSlugForIndex('1', tabIndex);
+          return !!resolvedSlug;
+        },
+      });
+      // navigateTab is never invoked because TAB_DIGIT_MAX blocks digit 7 first.
+      expect(resolvedSlug).toBe('unset');
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    });
+
+    test('Ctrl+Shift+2 project switch preserves the Inbox tab', () => {
+      let preservedTab: string | undefined;
+      const event = makeKeyEvent('Digit2', { ctrlKey: true, shiftKey: true });
+      handleGlobalShortcuts(event, {
+        navigateProject(projectIndex) {
+          preservedTab = resolvePreservedTabForProjectSwitch('inbox');
+          return true;
+        },
+      });
+      expect(preservedTab).toBe('inbox');
+      expect(event.preventDefault).toHaveBeenCalledOnce();
+    });
   });
 });
