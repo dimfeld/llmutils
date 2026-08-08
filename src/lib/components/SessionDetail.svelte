@@ -29,6 +29,7 @@
     isLifecycleOutputShown,
     toggleLifecycleOutput,
   } from './session_detail_state.js';
+  import ProcessTree from './ProcessTree.svelte';
   import CopyButton from './CopyButton.svelte';
   import { afterNavigate, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
@@ -342,6 +343,8 @@
   function handleToggleLifecycleOutput() {
     toggleLifecycleOutput(uiState, session.connectionId, showLifecycleOutput);
   }
+
+  let hasProcessTree = $derived(session.processTree.length > 0);
 
   let hasMessages = $derived(session.messages.length > 0);
   let activePrompt = $derived(session.activePrompts[0] ?? null);
@@ -705,6 +708,16 @@
       </div>
     {/if}
   </div>
+
+  {#if hasProcessTree}
+    <div class="shrink-0 border-b border-border px-4 py-2">
+      <ProcessTree
+        processTree={session.processTree}
+        connectionId={session.connectionId}
+        sessionStatus={session.status}
+      />
+    </div>
+  {/if}
 
   {#snippet messagesPane()}
     {#if session.pty}
