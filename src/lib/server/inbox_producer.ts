@@ -27,6 +27,7 @@ export interface InboxProducerOptions {
   now?: () => number;
   loadConfig?: typeof loadEffectiveConfig;
   resolveUsername?: typeof getGitHubUsername;
+  pruneInboxItems?: typeof pruneOldInboxItems;
   sessionManager?: Pick<SessionManager, 'emitInboxUpdate' | 'hasInboxUpdateListeners'>;
 }
 
@@ -175,7 +176,8 @@ async function maybePruneInboxItems(db: Database, options: InboxProducerOptions)
   }
 
   try {
-    const deletedCount = pruneOldInboxItems(db, 30);
+    const prune = options.pruneInboxItems ?? pruneOldInboxItems;
+    const deletedCount = prune(db, 30);
     lastPrunedAt = now;
     if (deletedCount > 0) {
       console.info(`[inbox] Pruned ${deletedCount} old inbox items`);
