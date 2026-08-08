@@ -5,7 +5,7 @@ import * as z from 'zod';
 import { formatWebhookIngestErrors } from '$common/github/webhook_ingest.js';
 import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
-import { getReviewerPredicate } from '$common/github/pr_relevance.js';
+import { getReviewerPredicate, parseRequestedReviewers } from '$common/github/pr_relevance.js';
 import { normalizeGitHubUsername } from '$common/github/username.js';
 import { resolveGitHubToken } from '$common/github/token.js';
 import {
@@ -418,21 +418,6 @@ async function refreshAllProjectPrsFromGitHub(): Promise<RefreshResult> {
 
   getProjectPrs({ projectId: 'all' }).refresh();
   return { newLinks };
-}
-
-function parseRequestedReviewers(requestedReviewers: string | null): string[] {
-  if (!requestedReviewers) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(requestedReviewers);
-    return Array.isArray(parsed)
-      ? parsed.filter((value): value is string => typeof value === 'string')
-      : [];
-  } catch {
-    return [];
-  }
 }
 
 function partitionCachedProjectPrs(

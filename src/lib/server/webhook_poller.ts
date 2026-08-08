@@ -68,9 +68,9 @@ export function startWebhookPoller(
 
     inProgress = true;
     try {
-      const result = options.sessionManager
-        ? await ingestWebhookEventsWithInbox(db, { sessionManager: options.sessionManager })
-        : await ingestWebhookEventsWithInbox(db);
+      const result = await ingestWebhookEventsWithInbox(db, {
+        sessionManager: options.sessionManager,
+      });
       const formattedErrors = formatWebhookIngestErrors(result.errors);
       if (formattedErrors) {
         console.warn(`[webhook_poller] ${formattedErrors}`);

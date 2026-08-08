@@ -406,7 +406,7 @@ describe('lib/server/webhook_poller', () => {
 
     await vi.advanceTimersByTimeAsync(15_000);
     expect(mocks.ingestWebhookEvents).toHaveBeenCalledTimes(1);
-    expect(mocks.ingestWebhookEvents).toHaveBeenCalledWith(null);
+    expect(mocks.ingestWebhookEvents).toHaveBeenCalledWith(null, { sessionManager: undefined });
 
     handle?.stop();
   });

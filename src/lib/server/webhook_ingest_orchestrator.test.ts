@@ -111,6 +111,9 @@ describe('ingestWebhookEventsWithInbox', () => {
 
     await expect(ingestWebhookEventsWithInbox(null as Database)).resolves.toBe(result);
 
+    expect(mocks.processInboxSignals).toHaveBeenCalledWith(null, result.inboxSignals, {
+      sessionManager: undefined,
+    });
     expect(warnSpy).toHaveBeenCalledWith('[webhook_ingest] Inbox post-processing failed', error);
     warnSpy.mockRestore();
   });

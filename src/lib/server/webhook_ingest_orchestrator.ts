@@ -1,10 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
-import {
-  ingestWebhookEvents,
-  type IngestResult,
-  type IngestWebhookEventsOptions,
-} from '$common/github/webhook_ingest.js';
+import { ingestWebhookEvents, type IngestResult } from '$common/github/webhook_ingest.js';
 
 import { processInboxSignals } from './inbox_producer.js';
 import type { SessionManager } from './session_manager.js';
@@ -19,7 +15,6 @@ export interface WebhookIngestOrchestratorOptions {
   sessionManager?: InboxSessionManager;
   /** Resolve the server manager inside the best-effort post-ingest boundary. */
   getSessionManager?: () => InboxSessionManager;
-  ingestOptions?: IngestWebhookEventsOptions;
 }
 
 /**
@@ -32,9 +27,7 @@ export async function ingestWebhookEventsWithInbox(
   db: Database,
   options: WebhookIngestOrchestratorOptions = {}
 ): Promise<IngestResult> {
-  const ingestResult = options.ingestOptions
-    ? await ingestWebhookEvents(db, options.ingestOptions)
-    : await ingestWebhookEvents(db);
+  const ingestResult = await ingestWebhookEvents(db);
 
   if ((ingestResult.inboxSignals?.length ?? 0) === 0) {
     return ingestResult;
@@ -42,11 +35,7 @@ export async function ingestWebhookEventsWithInbox(
 
   try {
     const sessionManager = options.sessionManager ?? options.getSessionManager?.();
-    if (sessionManager) {
-      await processInboxSignals(db, ingestResult.inboxSignals, { sessionManager });
-    } else {
-      await processInboxSignals(db, ingestResult.inboxSignals);
-    }
+    await processInboxSignals(db, ingestResult.inboxSignals, { sessionManager });
   } catch (error) {
     console.warn('[webhook_ingest] Inbox post-processing failed', error);
   }
