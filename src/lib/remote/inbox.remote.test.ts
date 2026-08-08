@@ -125,18 +125,19 @@ describe('inbox remote functions', () => {
     });
     expect(multiplePlanItem?.action).not.toHaveProperty('planUuid');
 
-    const expectedActionTypes: Array<[InboxItemKind, string | null]> = [
-      ['review_requested', 'review-guide'],
-      ['pr_comment', 'pr-fix'],
-      ['reviewed_pr_comment', 'pr-fix'],
-      ['pr_merged', null],
-      ['pr_approved', null],
-      ['ci_failure', 'ci-fix'],
-      ['merge_queue_removed', 'github'],
+    const expectedActions: Array<[InboxItemKind, string | null, number | null]> = [
+      ['review_requested', 'review-guide', 101],
+      ['pr_comment', 'pr-fix', 102],
+      ['reviewed_pr_comment', 'pr-fix', 103],
+      ['pr_merged', null, 104],
+      ['pr_approved', null, 105],
+      ['ci_failure', 'ci-fix', null],
+      ['merge_queue_removed', 'github', 107],
     ];
-    for (const [kind, type] of expectedActionTypes) {
+    for (const [kind, type, prNumber] of expectedActions) {
       const item = items.find((candidate) => candidate.kind === kind);
-      expect(item?.action.type).toBe(type);
+      expect(item).toBeDefined();
+      expect(item?.action).toMatchObject({ type, projectId, prNumber });
     }
 
     const externalItem = items.find((item) => item.kind === 'ci_failure');
@@ -179,19 +180,58 @@ describe('inbox remote functions', () => {
       unreadCount: 1,
       items: [expect.objectContaining({ id: projectItem.id, project_id: projectId })],
     });
+
+    await expect(
+      invokeQuery(getInboxItems, { projectId: String(otherProjectId) })
+    ).resolves.toMatchObject({
+      unreadCount: 1,
+      items: [expect.objectContaining({ id: otherProjectItem.id, project_id: otherProjectId })],
+    });
+  });
+
+  test('returns the newest 50 items while counting every unread item', async () => {
+    const seededRows = Array.from({ length: 55 }, (_, index) =>
+      seedInboxItem({
+        prNumber: 600 + index,
+        eventAt: new Date(Date.UTC(2026, 7, 1, 0, index, 0)).toISOString(),
+      })
+    );
+
+    const { getInboxItems } = await import('./inbox.remote.js');
+    const result = await invokeQuery(getInboxItems, { projectId: String(projectId) });
+
+    expect(result.unreadCount).toBe(55);
+    expect(result.items).toHaveLength(50);
+    expect(result.items.map((item) => item.id)).toEqual(
+      seededRows
+        .slice(5)
+        .reverse()
+        .map((row) => row.id)
+    );
+    expect(result.items.map((item) => item.last_event_at)).toEqual(
+      seededRows
+        .slice(5)
+        .reverse()
+        .map((row) => row.last_event_at)
+    );
   });
 
   test('marks selected inbox items read', async () => {
     const { markInboxItemsRead } = await import('./inbox.remote.js');
     const item = seedInboxItem({ prNumber: 301 });
+    const untouchedItem = seedInboxItem({ prNumber: 302 });
 
     await invokeCommand(markInboxItemsRead, { ids: [item.id] });
 
-    const row = currentDb
+    const rows = currentDb
       .prepare('SELECT read_at, dismissed_at FROM inbox_item WHERE id = ?')
-      .get(item.id) as { read_at: string | null; dismissed_at: string | null };
-    expect(row.read_at).not.toBeNull();
-    expect(row.dismissed_at).toBeNull();
+      .all(item.id) as Array<{ read_at: string | null; dismissed_at: string | null }>;
+    expect(rows).toEqual([{ read_at: expect.any(String), dismissed_at: null }]);
+
+    const untouchedRow = currentDb
+      .prepare('SELECT read_at, dismissed_at FROM inbox_item WHERE id = ?')
+      .get(untouchedItem.id) as { read_at: string | null; dismissed_at: string | null };
+    expect(untouchedRow).toEqual({ read_at: null, dismissed_at: null });
   });
 
   test('marks all items read for one project and then across all projects', async () => {
@@ -203,6 +243,10 @@ describe('inbox remote functions', () => {
       prUrl: 'https://github.com/other/repo/pull/402',
       repo: 'other/repo',
     });
+    const futureItem = seedInboxItem({
+      prNumber: 403,
+      eventAt: '2099-01-01T00:00:00.000Z',
+    });
 
     await invokeCommand(markAllInboxItemsRead, { projectId: String(projectId) });
 
@@ -212,6 +256,7 @@ describe('inbox remote functions', () => {
     expect(afterProjectRead).toEqual([
       { id: projectItem.id, read_at: expect.any(String) },
       { id: otherProjectItem.id, read_at: null },
+      { id: futureItem.id, read_at: null },
     ]);
 
     await invokeCommand(markAllInboxItemsRead, { projectId: 'all' });
@@ -222,11 +267,12 @@ describe('inbox remote functions', () => {
     expect(afterAllRead).toEqual([
       { read_at: expect.any(String) },
       { read_at: expect.any(String) },
+      { read_at: null },
     ]);
   });
 
   test('dismisses an inbox item and marks it read', async () => {
-    const { dismissInboxItem } = await import('./inbox.remote.js');
+    const { dismissInboxItem, getInboxItems } = await import('./inbox.remote.js');
     const item = seedInboxItem({ prNumber: 501 });
 
     await invokeCommand(dismissInboxItem, { id: item.id });
@@ -236,5 +282,12 @@ describe('inbox remote functions', () => {
       .get(item.id) as { read_at: string | null; dismissed_at: string | null };
     expect(row.read_at).not.toBeNull();
     expect(row.dismissed_at).not.toBeNull();
+
+    await expect(
+      invokeQuery(getInboxItems, { projectId: String(projectId) })
+    ).resolves.toMatchObject({
+      unreadCount: 0,
+      items: [],
+    });
   });
 });
