@@ -449,6 +449,30 @@ describe('lib/server/session_manager', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  test('emitInboxUpdate publishes inbox:updated event and skips empty projectIds', () => {
+    const listener = vi.fn();
+    manager.subscribe('inbox:updated', listener);
+
+    expect(manager.hasInboxUpdateListeners()).toBe(true);
+
+    manager.emitInboxUpdate([12, 34]);
+
+    expect(listener).toHaveBeenCalledWith({ projectIds: [12, 34] });
+
+    manager.emitInboxUpdate([]);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  test('hasInboxUpdateListeners reflects subscription state', () => {
+    expect(manager.hasInboxUpdateListeners()).toBe(false);
+
+    const unsubscribe = manager.subscribe('inbox:updated', vi.fn());
+    expect(manager.hasInboxUpdateListeners()).toBe(true);
+
+    unsubscribe();
+    expect(manager.hasInboxUpdateListeners()).toBe(false);
+  });
+
   test('formatTunnelMessage passes through unknown structured message types as structured body', () => {
     const message = formatTunnelMessage('conn-1', 9, {
       type: 'structured',

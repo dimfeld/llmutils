@@ -6,6 +6,7 @@ import { constructGitHubRepositoryId } from '../../common/github/pull_requests.j
 import { getOrCreateProject } from '../../tim/db/project.js';
 import { recordWorkspace } from '../../tim/db/workspace.js';
 import { upsertPrStatus } from '../../tim/db/pr_status.js';
+import { markInboxItemsRead } from '../../tim/db/inbox_item.js';
 import type { InboxSignal } from '../../common/github/webhook_event_handlers.js';
 import type { TimConfig } from '../../tim/configSchema.js';
 import { processInboxSignals, resetInboxPruneThrottle } from './inbox_producer.js';
@@ -281,5 +282,262 @@ describe('lib/server/inbox_producer', () => {
     // documents that repeated empty-signal ticks do not throw and the throttle
     // survives across calls (regression guard for resetInboxPruneThrottle wiring).
     expect(countInboxItems()).toBe(0);
+  });
+
+  test('prune throttle seam is invoked at most once per 24 hours', async () => {
+    let nowMs = Date.parse('2026-06-01T00:00:00.000Z');
+    let pruneCalls = 0;
+    const options = {
+      loadConfig: async () => baseConfig(),
+      resolveUsername: async () => 'octocat',
+      now: () => nowMs,
+      pruneInboxItems: (() => {
+        pruneCalls += 1;
+        return 0;
+      }) as unknown as typeof import('../../tim/db/inbox_item.js').pruneOldInboxItems,
+    };
+
+    await processInboxSignals(db, [], options);
+    expect(pruneCalls).toBe(1);
+
+    nowMs += 60 * 60 * 1000; // +1h, still within the 24h window
+    await processInboxSignals(db, [], options);
+    expect(pruneCalls).toBe(1);
+
+    nowMs += 23 * 60 * 60 * 1000 + 30_000; // now past 24h since the first prune
+    await processInboxSignals(db, [], options);
+    expect(pruneCalls).toBe(2);
+  });
+
+  test('self-actions are skipped even when otherwise relevant', async () => {
+    const affected = await processInboxSignals(db, [makeSignal({ actor: 'octocat' })], {
+      loadConfig: async () => baseConfig(),
+      resolveUsername: async () => 'octocat',
+    });
+
+    expect(affected).toEqual([]);
+    expect(countInboxItems()).toBe(0);
+  });
+
+  test('bot actors are filtered from comment/review signals by [bot] suffix', async () => {
+    const affected = await processInboxSignals(
+      db,
+      [makeSignal({ actor: 'dependabot[bot]', actorType: 'Bot' })],
+      {
+        loadConfig: async () => baseConfig(),
+        resolveUsername: async () => 'octocat',
+      }
+    );
+
+    expect(affected).toEqual([]);
+    expect(countInboxItems()).toBe(0);
+  });
+
+  test('bot actors are filtered from comment/review signals by actorType Bot', async () => {
+    const affected = await processInboxSignals(
+      db,
+      [makeSignal({ actor: 'some-automation', actorType: 'Bot' })],
+      {
+        loadConfig: async () => baseConfig(),
+        resolveUsername: async () => 'octocat',
+      }
+    );
+
+    expect(affected).toEqual([]);
+    expect(countInboxItems()).toBe(0);
+  });
+
+  test('ignoreUsers filters actors case-insensitively', async () => {
+    const affected = await processInboxSignals(db, [makeSignal({ actor: 'Some-Bot[bot]' })], {
+      loadConfig: async () => baseConfig({ inbox: { prs: { ignoreUsers: ['some-bot[bot]'] } } }),
+      resolveUsername: async () => 'octocat',
+    });
+
+    expect(affected).toEqual([]);
+    expect(countInboxItems()).toBe(0);
+  });
+
+  test('aggregates repeated signals into one row, bumping event_count and re-clearing read_at', async () => {
+    const options = {
+      loadConfig: async () => baseConfig(),
+      resolveUsername: async () => 'octocat',
+    };
+
+    await processInboxSignals(db, [makeSignal({ summary: 'First comment' })], options);
+    let row = db.prepare('SELECT * FROM inbox_item').get() as Record<string, unknown>;
+    expect(row.event_count).toBe(1);
+    expect(row.summary).toBe('First comment');
+
+    markInboxItemsRead(db, [row.id as number]);
+    row = db.prepare('SELECT * FROM inbox_item').get() as Record<string, unknown>;
+    expect(row.read_at).not.toBeNull();
+
+    const secondEventAt = new Date(Date.now() + 1000).toISOString();
+    await processInboxSignals(
+      db,
+      [
+        makeSignal({
+          actor: 'commenter-2',
+          summary: 'Second comment',
+          eventAt: secondEventAt,
+        }),
+      ],
+      options
+    );
+
+    expect(countInboxItems()).toBe(1);
+    row = db.prepare('SELECT * FROM inbox_item').get() as Record<string, unknown>;
+    expect(row.event_count).toBe(2);
+    expect(row.summary).toBe('Second comment');
+    expect(row.last_event_at).toBe(secondEventAt);
+    expect(row.read_at).toBeNull();
+  });
+
+  describe('reviewed_pr_comment relevance', () => {
+    const REVIEWED_PR_NUMBER = 43;
+    const REVIEWED_PR_URL = `https://github.com/${REPO_FULL_NAME}/pull/${REVIEWED_PR_NUMBER}`;
+
+    function seedReviewedPr(reviews: Array<{ author: string; state: string }> = []): void {
+      upsertPrStatus(db, {
+        prUrl: REVIEWED_PR_URL,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: REVIEWED_PR_NUMBER,
+        author: 'other-author',
+        title: 'Someone else PR',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-06-01T09:00:00.000Z',
+        reviews,
+      });
+    }
+
+    function reviewedSignal(overrides: Partial<InboxSignal> = {}): InboxSignal {
+      return makeSignal({
+        kind: 'reviewed_pr_comment',
+        prNumber: REVIEWED_PR_NUMBER,
+        prUrl: REVIEWED_PR_URL,
+        actor: 'third-party',
+        prAuthor: 'other-author',
+        ...overrides,
+      });
+    }
+
+    test('routes to reviewed_pr_comment when the user submitted a non-PENDING review', async () => {
+      seedReviewedPr([{ author: 'octocat', state: 'APPROVED' }]);
+
+      const affected = await processInboxSignals(db, [reviewedSignal()], {
+        loadConfig: async () => baseConfig(),
+        resolveUsername: async () => 'octocat',
+      });
+
+      expect(affected).toEqual([projectId]);
+      expect(db.prepare('SELECT kind FROM inbox_item').get()).toEqual({
+        kind: 'reviewed_pr_comment',
+      });
+    });
+
+    test('routes to reviewed_pr_comment when the user has an active review request', async () => {
+      upsertPrStatus(db, {
+        prUrl: REVIEWED_PR_URL,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: REVIEWED_PR_NUMBER,
+        author: 'other-author',
+        title: 'Someone else PR',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-06-01T09:00:00.000Z',
+        requestedReviewers: ['octocat'],
+      });
+
+      const affected = await processInboxSignals(db, [reviewedSignal()], {
+        loadConfig: async () => baseConfig(),
+        resolveUsername: async () => 'octocat',
+      });
+
+      expect(affected).toEqual([projectId]);
+      expect(countInboxItems()).toBe(1);
+    });
+
+    test('does not route to reviewed_pr_comment when the user has a PENDING review only', async () => {
+      seedReviewedPr([{ author: 'octocat', state: 'PENDING' }]);
+
+      const affected = await processInboxSignals(db, [reviewedSignal()], {
+        loadConfig: async () => baseConfig(),
+        resolveUsername: async () => 'octocat',
+      });
+
+      expect(affected).toEqual([]);
+      expect(countInboxItems()).toBe(0);
+    });
+
+    test('is skipped when the PR author is the user, even if otherwise a reviewer', async () => {
+      upsertPrStatus(db, {
+        prUrl: REVIEWED_PR_URL,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: REVIEWED_PR_NUMBER,
+        author: 'octocat',
+        title: 'Someone else PR',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-06-01T09:00:00.000Z',
+        reviews: [{ author: 'octocat', state: 'APPROVED' }],
+      });
+
+      const affected = await processInboxSignals(db, [reviewedSignal({ prAuthor: 'octocat' })], {
+        loadConfig: async () => baseConfig(),
+        resolveUsername: async () => 'octocat',
+      });
+
+      expect(affected).toEqual([]);
+      expect(countInboxItems()).toBe(0);
+    });
+  });
+
+  describe('merge_queue_removed suppression', () => {
+    test('is suppressed when pr_status already shows the PR merged', async () => {
+      upsertPrStatus(db, {
+        prUrl: `https://github.com/${REPO_FULL_NAME}/pull/42`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 42,
+        author: 'octocat',
+        title: 'Fix the thing',
+        state: 'closed',
+        draft: false,
+        mergedAt: '2026-06-01T10:00:00.000Z',
+        lastFetchedAt: '2026-06-01T10:00:00.000Z',
+      });
+
+      const affected = await processInboxSignals(
+        db,
+        [makeSignal({ kind: 'merge_queue_removed', actor: 'merge-queue-bot' })],
+        {
+          loadConfig: async () => baseConfig(),
+          resolveUsername: async () => 'octocat',
+        }
+      );
+
+      expect(affected).toEqual([]);
+      expect(countInboxItems()).toBe(0);
+    });
+
+    test('creates a row when the PR is unmerged and alone in the batch', async () => {
+      const affected = await processInboxSignals(
+        db,
+        [makeSignal({ kind: 'merge_queue_removed', actor: 'merge-queue-bot' })],
+        {
+          loadConfig: async () => baseConfig(),
+          resolveUsername: async () => 'octocat',
+        }
+      );
+
+      expect(affected).toEqual([projectId]);
+      expect(db.prepare('SELECT kind FROM inbox_item').get()).toEqual({
+        kind: 'merge_queue_removed',
+      });
+    });
   });
 });
