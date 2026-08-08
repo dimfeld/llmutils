@@ -452,6 +452,9 @@ Rows are self-contained on purpose. `webhook_log` payloads are pruned after 7 da
 - `markInboxItemsRead(db, ids)`: Sets `read_at` only on rows that are still unread, so `read_at` stays the first-read time.
 - `markAllReadBefore(db, { cutoff, projectId })`: Marks unread, undismissed rows with `last_event_at <= cutoff`. The cutoff keeps a "mark all read" click from swallowing events that arrive during the round trip.
 - `dismissInboxItem(db, id)`: Sets `dismissed_at`, and `read_at` too if it was null.
+
+  The three mutation helpers use `RETURNING project_id` and return the sorted, distinct, non-null project IDs of the rows they actually changed. Callers therefore know the affected scopes without a separate `SELECT`, and a no-op mutation (already-read rows, an unknown id) returns an empty array instead of a false refresh. Rows with a null `project_id` contribute nothing to the returned list.
+
 - `pruneOldInboxItems(db, maxAgeDays = 30)`: Deletes rows older than the cutoff and returns the deleted count. Intended to be called on a throttle from the webhook poller tick.
 
 **Producer** (`src/lib/server/inbox_producer.ts`): `processInboxSignals(db, signals, options)` turns signals into rows and returns the sorted affected project IDs. It runs from `ingestWebhookEventsWithInbox()`, so every ingest path feeds it. Each signal is wrapped in its own try/catch — one bad signal cannot stop the batch. Per signal:

@@ -240,11 +240,30 @@ The PR inbox uses the same push model with an `inbox:updated` event whose payloa
 
 **Adding another event type** touches four places, and `inbox:updated` is the smallest complete example: the `SessionManagerEvents` map plus the server `eventTypes` array in `src/lib/server/session_manager.ts`, the payload type in `src/lib/types/session.ts`, the client `eventTypes` array in `src/lib/stores/session_state.svelte.ts`, and a case in `applySessionEvent` in `src/lib/stores/session_state_events.ts`. Like `pr:updated`, `inbox:updated` is a **no-op** in `applySessionEvent`: it changes no session-store state, and components subscribe directly through `sessionManager.onEvent()`. Omitting the client `eventTypes` entry is the silent-failure case — the server emits and nothing listens.
 
+### Inbox Remote Functions
+
+`src/lib/remote/inbox.remote.ts` is the only web entry point to the inbox. Every function takes `projectId` as a string that matches `/^(\d+|all)$/` — the same convention as `getActionablePrs` in `dashboard.remote.ts`.
+
+- `getInboxItems({ projectId })` reads at most 50 unread, undismissed rows through `listRecentInboxItems()`, enriches them, and returns `{ items, unreadCount }`.
+- `markInboxItemsRead({ ids })`, `markAllInboxItemsRead({ projectId })`, and `dismissInboxItem({ id })` call the matching `src/tim/db/inbox_item.ts` helper and then refresh the affected query scopes on the server, so open clients get fresh data without a round trip of their own.
+
+**Refresh scopes**: each mutation helper returns the project IDs of the rows it actually changed (see [Inbox](database.md#inbox)). The command refreshes `getInboxItems` for `'all'` plus each distinct affected project ID, in parallel. The `'all'` scope is always refreshed because the toolbar bell subscribes to it; per-project scopes are refreshed only when a row in that project changed, so a no-op mutation costs one refresh instead of one per project.
+
+**Enrichment** lives in `src/lib/server/inbox_enrichment.ts` rather than in the remote file, so tests can call `enrichInboxItems(db, rows)` against an in-memory database with no SvelteKit request context. The full-screen inbox page uses the same function. Per row it adds:
+
+- `viewHref` — the internal `/projects/{projectId}/prs/{prNumber}` route, but only when a `pr_status` row for that project and PR number exists locally (batched through `listExistingPrStatusProjectNumbers()` in `src/tim/db/pr_status.ts`). Otherwise it falls back to the external GitHub URL, so a link never points at a PR page the web UI cannot render.
+- `planHref` — set when exactly one plan links to the row's PR, resolved with one batched `getLinkedPlansByPrUrl()` call. A PR with several linked plans is ambiguous, so it gets no plan link.
+- `action` — a launch descriptor `{ type, projectId, prNumber, planUuid? }`. Kind maps to type: `review_requested` → `review-guide`, `pr_comment` / `reviewed_pr_comment` → `pr-fix`, `ci_failure` → `ci-fix`, `merge_queue_removed` → `github` (the external link is the action), and `pr_merged` / `pr_approved` → `null` (view-only). The descriptor only names the action; it does not spawn anything.
+
+`src/lib/server/object_hrefs.ts` holds the shared `planHref(projectId, planUuid)` and `prHref(projectId, prNumber, prUrl)` helpers. They are plain functions over IDs, used by both the inbox enrichment and the activity route (`src/routes/projects/[projectId]/activity/+page.server.ts`), which keeps its own job-type-specific `viewHref` logic on top of them.
+
 ### Toolbar Inbox Indicator
 
 `InboxIndicator.svelte` is mounted in the global header next to the sync indicator. It queries `getInboxItems({ projectId: 'all' })`, so one bell aggregates unread items from every project. The query is consumed through its resource's `.current` value instead of top-level `await`; a temporary query error therefore does not tear down the always-mounted header.
 
-The bell is always visible and shows an unread-count badge when needed. Hovering it opens a dark popover with up to 10 unread rows. Each row shows the notification kind, PR title, repository, actor, relative time, and an aggregation count when several events were combined. Opening the popover does not change read state. Selecting a row marks it read and navigates to the internal PR page or opens the external GitHub PR link in a new tab. **Mark all read** updates every project, and the empty state says **All caught up**. The footer links to `/projects/{projectId}/inbox`; the full project inbox page is the separate surface covered by plan 409.
+The bell is always visible: blue with an unread-count badge when items are unread, dim gray otherwise. Hovering it opens a dark popover with up to 10 rows. Each row shows a kind icon, PR title, kind label, repository and actor, relative time, an aggregation count when several events were combined, and a dot when the row is unread. Pure display derivation (trigger label, count wording, per-kind icon key and label) lives in `inbox_indicator_state.ts` with its own unit test, the same split as `sync_indicator_state.ts`.
+
+Opening the popover does not change read state. A row with an internal `viewHref` is a button that marks the item read and calls `goto()`; a row with an external `viewHref` is an anchor with `target="_blank" rel="noopener noreferrer"` that marks the item read on click. **Mark all read** appears only when something is unread and updates every project. The popover also has a loading state, an error state with a **Retry** button, and an **All caught up** empty state; mutation failures raise a toast instead of breaking the header. The footer links to `/projects/{projectId}/inbox` using the current route's project, falling back to the first row's project, and is hidden when neither is known.
 
 The component subscribes to `sessionManager.onEvent()` in `onMount()` and calls the inbox query's `.refresh()` when it receives `inbox:updated`. It removes that subscription on unmount. Because SSE is the primary update path, it also refreshes the query every 60 seconds as a polling fallback.
 
