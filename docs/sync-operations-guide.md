@@ -92,6 +92,29 @@ Persistent-node optimistic projection is driven by `src/tim/sync/projection_targ
 - For plan operations, make sure `getAffectedProjectionPlanUuids()` includes inbound owners when dependencies or parent links can change.
 - Keep projection rebuilds deterministic from canonical tables plus active queued operations.
 
+### Conflict Semantics
+
+Do not treat every revision mismatch as a conflict. A plan revision advances for
+changes to any field, list, or task, so the revision alone does not prove that
+two operations overlap.
+
+- `plan.set_scalar` uses last-writer-wins ordering on the main node. The main
+  node's accepted operation order is the deterministic order.
+- `plan.patch_text` and `plan.update_task_text` use their `base` and `new`
+  values for a three-way merge. A stale revision is allowed when the patch
+  applies cleanly to the current value. Create a conflict only when the text
+  changes overlap and the patch cannot apply.
+- `plan.set_parent` may proceed across an unrelated revision change when the
+  current parent still matches `previousParentUuid`.
+- Destructive or identity-sensitive operations, such as task removal and plan
+  deletion, keep strict revision checks where the payload has no semantic
+  pre-state that can prove the operation is safe.
+
+Atomic batch rejection records must retain the underlying conflict reason.
+Sibling records must state that they were rolled back and include the cause so
+`tim sync show-rejected` can distinguish the conflict-causing operation from
+batch fallout.
+
 ## Snapshots And Catch-Up
 
 If an operation invalidates a target key that other nodes need to merge, update `src/tim/sync/server.ts` and `src/tim/sync/snapshots.ts`.

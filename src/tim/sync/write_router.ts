@@ -454,7 +454,10 @@ async function routeSyncBatchWithMode(
         conflictId: result.results[conflictIndex]?.conflictId,
         operationType: conflictOperation.op.type,
         fieldPath: getOperationFieldPath(conflictOperation),
-        reason: result.results[conflictIndex]?.error?.message ?? result.error?.message,
+        reason:
+          result.results[conflictIndex]?.error?.message ??
+          result.results[conflictIndex]?.conflictReason ??
+          result.error?.message,
       }
     );
   }

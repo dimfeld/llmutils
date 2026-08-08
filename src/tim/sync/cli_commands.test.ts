@@ -494,6 +494,9 @@ describe('tim sync CLI node commands', () => {
       resolution: null,
       resolved_by_node: null,
     });
+    db.prepare(
+      'UPDATE sync_operation SET batch_id = ?, batch_atomic = 1 WHERE operation_uuid = ?'
+    ).run('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', rejected.operationUuid);
 
     await handleSyncShowRejectedCommand({}, command, { db, config: config('persistent') });
 
@@ -504,6 +507,8 @@ describe('tim sync CLI node commands', () => {
     expect(line).toContain('Project: github.com__example__repo (project 1)');
     expect(line).toContain('Plan: #1 — Plan (target)');
     expect(line).toContain(`Target: plan plan:${PLAN_UUID}`);
+    expect(line).toContain('Batch: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa (atomic), failed member');
+    expect(line).toContain('Created at:');
     expect(line).toContain('Reason: bad operation');
     expect(line).toContain(`Attempted values: ${JSON.stringify(rejected.op)}`);
     expect(line).toContain('Conflict (tags): stale_revision');

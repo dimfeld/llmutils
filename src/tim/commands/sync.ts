@@ -66,8 +66,11 @@ interface RejectedOperationRow {
   target_type: string;
   target_key: string;
   operation_type: string;
+  batch_id: string | null;
+  batch_atomic: number;
   payload: string;
   last_error: string | null;
+  created_at: string;
   updated_at: string;
   project_id: number | null;
   repository_id: string | null;
@@ -176,6 +179,14 @@ function formatRejectedOperation(
     `  Operation: ${row.operation_type}`,
     `  Project: ${formatRejectedProject(row)}`,
   ];
+  if (row.batch_id) {
+    const role = row.last_error?.startsWith('Operation rolled back because')
+      ? 'rolled-back member'
+      : row.last_error?.startsWith('Atomic batch aborted')
+        ? 'conflict cause'
+        : 'failed member';
+    lines.push(`  Batch: ${row.batch_id}${row.batch_atomic === 1 ? ' (atomic)' : ''}, ${role}`);
+  }
   if (planRefs.length > 0) {
     const requestedPlanIds = requestedNumericPlanIds(row.payload);
     lines.push(
@@ -187,6 +198,7 @@ function formatRejectedOperation(
   lines.push(
     `  Target: ${row.target_type} ${row.target_key}`,
     `  Origin: ${row.origin_node_id}, sequence ${row.local_sequence}`,
+    `  Created at: ${row.created_at}`,
     `  Rejected at: ${row.updated_at}`,
     `  Reason: ${row.last_error ?? 'No reason recorded'}`,
     `  Attempted values: ${formatRejectedPayload(row.payload)}`
@@ -448,8 +460,11 @@ export async function handleSyncShowRejectedCommand(
           operation.target_type,
           operation.target_key,
           operation.operation_type,
+          operation.batch_id,
+          operation.batch_atomic,
           operation.payload,
           operation.last_error,
+          operation.created_at,
           operation.updated_at,
           project.id AS project_id,
           project.repository_id,

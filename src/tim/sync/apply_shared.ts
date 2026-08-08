@@ -65,13 +65,25 @@ export function resultFromRecordedOperation(
   const resolvedNumericPlanId =
     typeof metadata.resolvedNumericPlanId === 'number' ? metadata.resolvedNumericPlanId : undefined;
   let conflictId = typeof metadata.conflictId === 'string' ? metadata.conflictId : undefined;
-  if (row.status === 'conflict' && !conflictId) {
+  let conflictReason: string | undefined;
+  if (row.status === 'conflict') {
     const conflict = db
       .prepare(
-        'SELECT conflict_id FROM sync_conflict WHERE operation_uuid = ? ORDER BY created_at LIMIT 1'
+        `SELECT conflict_id, reason, field_path
+         FROM sync_conflict
+         WHERE operation_uuid = ?
+         ORDER BY created_at
+         LIMIT 1`
       )
-      .get(row.operation_uuid) as { conflict_id: string } | null;
-    conflictId = conflict?.conflict_id;
+      .get(row.operation_uuid) as {
+      conflict_id: string;
+      reason: string;
+      field_path: string | null;
+    } | null;
+    conflictId = conflictId ?? conflict?.conflict_id;
+    conflictReason = conflict
+      ? `${conflict.reason}${conflict.field_path ? `: ${conflict.field_path}` : ''}`
+      : undefined;
   }
   const errorMessage =
     typeof metadata.error === 'string'
@@ -95,6 +107,7 @@ export function resultFromRecordedOperation(
       ? metadata.invalidations.filter((key): key is string => typeof key === 'string')
       : [],
     conflictId,
+    conflictReason,
     resolvedNumericPlanId,
     acknowledged:
       effectiveStatus === 'applied' ||
@@ -137,8 +150,11 @@ export function getOperationByOriginSequence(
 }
 
 export class ConflictAccepted extends Error {
-  constructor(readonly conflictId: string) {
-    super('Sync operation accepted as conflict');
+  constructor(
+    readonly conflictId: string,
+    message: string
+  ) {
+    super(message);
   }
 }
 

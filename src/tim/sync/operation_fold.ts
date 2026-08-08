@@ -161,7 +161,7 @@ function applyOperationToUnchecked(
       const isStale =
         adapter.baseRevisionMode === 'projection'
           ? shouldSkipProjectionBaseRevision(adapter, op, baseTarget)
-          : !baseTarget.exists || baselineRevision !== op.baseRevision;
+          : canonicalRevisionMismatchIsConflict(adapter, op, baseTarget, baselineRevision);
       if (isStale && !incomingValueAlreadyApplied(adapter, op)) {
         applyOperationToPrecondition(
           `Stale base revision for plan ${baseTarget.planUuid}`,
@@ -303,6 +303,40 @@ function applyOperationToUnchecked(
       const exhaustive: never = op;
       return exhaustive;
     }
+  }
+}
+
+function canonicalRevisionMismatchIsConflict(
+  adapter: ApplyOperationToAdapter,
+  op: Extract<SyncOperationPayload, { baseRevision?: number }>,
+  target: BaseRevisionTarget,
+  baselineRevision: number
+): boolean {
+  if (!target.exists) {
+    return true;
+  }
+  if (baselineRevision === op.baseRevision) {
+    return false;
+  }
+
+  switch (op.type) {
+    case 'plan.set_scalar':
+      // Scalars use last-writer-wins ordering at the main node. A revision can
+      // advance because any other field, list, or task on the plan changed.
+      return false;
+    case 'plan.patch_text':
+    case 'plan.update_task_text':
+      // Text operations carry their actual base value. Let mergeText decide
+      // whether the concurrent edits overlap instead of rejecting on revision.
+      return false;
+    case 'plan.set_parent':
+      return !projectionParentPrestateMatches(adapter, op);
+    case 'plan.remove_task':
+    case 'plan.delete':
+    case 'plan.promote_task':
+      return true;
+    default:
+      return false;
   }
 }
 

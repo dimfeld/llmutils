@@ -875,6 +875,7 @@ function operationResult(
       invalidations: result.invalidations.length > 0 ? result.invalidations : undefined,
       error:
         result.error?.message ??
+        result.conflictReason ??
         'Operation rejected because its atomic batch did not commit on the main node',
     };
   }
@@ -884,7 +885,7 @@ function operationResult(
     sequenceIds: result.sequenceIds.length > 0 ? result.sequenceIds : undefined,
     invalidations: result.invalidations.length > 0 ? result.invalidations : undefined,
     conflictId: result.conflictId,
-    error: result.error?.message,
+    error: result.error?.message ?? result.conflictReason,
   };
 }
 

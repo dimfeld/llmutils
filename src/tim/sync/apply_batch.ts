@@ -253,7 +253,7 @@ function rolledBackBatchResults(
   return operations.map((operation, index) => {
     if (index === causeIndex) {
       if (cause.status === 'conflict') {
-        const message = atomicConflictAbortMessage(cause.error);
+        const message = atomicConflictAbortMessage(cause.error, cause.conflictReason);
         const error = new SyncValidationError(message, {
           operationUuid: operation.operationUuid,
           issues: [],
@@ -273,8 +273,10 @@ function rolledBackBatchResults(
     // we mark siblings terminal 'rejected' rather than retryable. applyBatch
     // durably persists those rejection rows after rollback so the per-origin
     // FIFO floor advances past the whole aborted batch.
+    const causeMessage = cause.error?.message ?? cause.conflictReason;
+    const causeDetail = causeMessage ? `: ${causeMessage}` : '';
     const error = new SyncValidationError(
-      'Operation rolled back because its batch did not commit',
+      `Operation rolled back because its batch did not commit${causeDetail}`,
       {
         operationUuid: operation.operationUuid,
         issues: [],
@@ -373,7 +375,7 @@ function persistBatchRejections(
       // operation record is a rejection rather than status='conflict'.
       const message =
         result.status === 'conflict'
-          ? atomicConflictAbortMessage(result.error)
+          ? atomicConflictAbortMessage(result.error, result.conflictReason)
           : (result.error?.message ?? options.fallbackMessage);
       rejectOperation(db, operation.operationUuid, message);
     }
@@ -381,9 +383,10 @@ function persistBatchRejections(
   persist.immediate();
 }
 
-function atomicConflictAbortMessage(cause: Error | undefined): string {
-  return cause
-    ? `Atomic batch aborted: conflict diagnosed but not persisted: ${cause.message}`
+function atomicConflictAbortMessage(cause: Error | undefined, conflictReason?: string): string {
+  const detail = cause?.message ?? conflictReason;
+  return detail
+    ? `Atomic batch aborted: conflict diagnosed but not persisted: ${detail}`
     : 'Atomic batch aborted: conflict diagnosed but not persisted';
 }
 

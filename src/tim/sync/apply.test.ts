@@ -1056,9 +1056,10 @@ describe('main-node sync apply engine', () => {
       },
     ]);
     expect(operationRows()[1].last_error).toContain(`Unknown plan ${OTHER_PLAN_UUID}`);
-    expect(operationRows()[0].last_error).toBe(
+    expect(operationRows()[0].last_error).toContain(
       'Operation rolled back because its batch did not commit'
     );
+    expect(operationRows()[0].last_error).toContain(`Unknown plan ${OTHER_PLAN_UUID}`);
     expect(countRows('sync_sequence')).toBe(0);
 
     // Make the originally-invalid dependency valid before replay. A real replay
@@ -1148,7 +1149,7 @@ describe('main-node sync apply engine', () => {
     );
   });
 
-  test('canonical adapter rejects stale CAS as a conflict without mutating canonical rows', async () => {
+  test('canonical adapter applies stale scalar revisions with last-writer-wins ordering', async () => {
     seedPlan();
     const op = await setPlanScalarOperation(
       PROJECT_UUID,
@@ -1158,14 +1159,12 @@ describe('main-node sync apply engine', () => {
 
     const result = applyOperation(db, op);
 
-    expect(result.status).toBe('conflict');
-    expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('pending');
+    expect(result.status).toBe('applied');
+    expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('in_progress');
     expect(db.prepare('SELECT status FROM plan_canonical WHERE uuid = ?').get(PLAN_UUID)).toEqual({
-      status: 'pending',
+      status: 'in_progress',
     });
-    expect(
-      db.prepare('SELECT reason FROM sync_conflict WHERE operation_uuid = ?').get(op.operationUuid)
-    ).toEqual({ reason: 'stale_revision' });
+    expect(countRows('sync_conflict')).toBe(0);
   });
 
   test('canonical adapter preserves cycle validation for dependency operations', async () => {
@@ -1263,8 +1262,9 @@ describe('main-node sync apply engine', () => {
       },
     ]);
     expect(operationRows()[2].last_error).toContain(
-      'Atomic batch aborted: conflict diagnosed but not persisted'
+      'Atomic batch aborted: conflict diagnosed but not persisted: stale_revision'
     );
+    expect(operationRows()[1].last_error).toContain('stale_revision');
     expect(countRows('sync_conflict')).toBe(0);
     expect(
       db.prepare('SELECT value, revision FROM project_setting WHERE setting = ?').get('color')
@@ -1398,7 +1398,7 @@ describe('main-node sync apply engine', () => {
     ).toEqual([PLAN_UUID]);
   });
 
-  test('non-atomic plan batch still conflicts on the second stale same-plan op', async () => {
+  test('non-atomic plan scalar batch applies stale revisions with last-writer-wins ordering', async () => {
     seedPlan();
     const status = await setPlanScalarOperation(
       PROJECT_UUID,
@@ -1421,16 +1421,16 @@ describe('main-node sync apply engine', () => {
     );
 
     expect(result.status).toBe('applied');
-    expect(result.results.map((item) => item.status)).toEqual(['applied', 'conflict']);
+    expect(result.results.map((item) => item.status)).toEqual(['applied', 'applied']);
     expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
       status: 'in_progress',
-      priority: null,
-      revision: 2,
+      priority: 'high',
+      revision: 3,
     });
-    expect(countRows('sync_conflict')).toBe(1);
+    expect(countRows('sync_conflict')).toBe(0);
   });
 
-  test('atomic batch with stale baseRevision predating the batch rolls back', async () => {
+  test('atomic plan scalar batch applies stale revisions with last-writer-wins ordering', async () => {
     seedPlan();
     const status = await setPlanScalarOperation(
       PROJECT_UUID,
@@ -1453,14 +1453,96 @@ describe('main-node sync apply engine', () => {
       })
     );
 
-    expect(result.status).toBe('conflict');
-    expect(result.results.map((item) => item.status)).toEqual(['conflict', 'rejected']);
+    expect(result.status).toBe('applied');
+    expect(result.results.map((item) => item.status)).toEqual(['applied', 'applied']);
     expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
-      status: 'pending',
-      priority: null,
-      revision: 1,
+      status: 'in_progress',
+      priority: 'high',
+      revision: 3,
     });
     expect(countRows('sync_conflict')).toBe(0);
+  });
+
+  test('stale plan text revisions merge when concurrent changes do not overlap', async () => {
+    const base = 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n';
+    seedPlanRow({
+      uuid: PLAN_UUID,
+      planId: 1,
+      title: 'Plan 1',
+      details: base,
+      status: 'pending',
+      tasks: [{ uuid: TASK_UUID, title: 'Task one', description: 'old description' }],
+      forceOverwrite: true,
+    });
+    const concurrent = await patchPlanTextOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        field: 'details',
+        base,
+        new: 'one updated\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n',
+        baseRevision: 1,
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    expect(applyOperation(db, concurrent).status).toBe('applied');
+
+    const stale = await patchPlanTextOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        field: 'details',
+        base,
+        new: 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten updated\n',
+        baseRevision: 1,
+      },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    const result = applyOperation(db, stale);
+
+    expect(result.status).toBe('applied');
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+      details: 'one updated\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten updated\n',
+      revision: 3,
+    });
+    expect(countRows('sync_conflict')).toBe(0);
+  });
+
+  test('stale plan text revisions report a conflict only when edits overlap', async () => {
+    seedPlan();
+    const concurrent = await patchPlanTextOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        field: 'details',
+        base: 'alpha\nbeta\ngamma\n',
+        new: 'alpha\nbeta from current\ngamma\n',
+        baseRevision: 1,
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    expect(applyOperation(db, concurrent).status).toBe('applied');
+
+    const stale = await patchPlanTextOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        field: 'details',
+        base: 'alpha\nbeta\ngamma\n',
+        new: 'alpha\nbeta from incoming\ngamma\n',
+        baseRevision: 1,
+      },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    const result = applyOperation(db, stale);
+
+    expect(result.status).toBe('conflict');
+    expect(result.conflictReason).toContain('text_merge_failed');
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+      details: 'alpha\nbeta from current\ngamma\n',
+      revision: 2,
+    });
+    expect(countRows('sync_conflict')).toBe(1);
   });
 
   test('atomic batch accepts two task text ops with the same pre-batch task baseRevision', async () => {
@@ -1506,6 +1588,70 @@ describe('main-node sync apply engine', () => {
     expect(task).toMatchObject({
       title: 'Renamed task',
       description: 'new description',
+      revision: 3,
+    });
+  });
+
+  test('non-atomic task text operations merge by field despite stale task revisions', async () => {
+    seedPlan();
+    const title = await updatePlanTaskTextOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        taskUuid: TASK_UUID,
+        field: 'title',
+        base: 'Task one',
+        new: 'Renamed task',
+        baseRevision: 1,
+      },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    const description = await updatePlanTaskTextOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        taskUuid: TASK_UUID,
+        field: 'description',
+        base: 'old description',
+        new: 'new description',
+        baseRevision: 1,
+      },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+
+    expect(applyOperation(db, title).status).toBe('applied');
+    expect(applyOperation(db, description).status).toBe('applied');
+    expect(getPlanTasksByUuid(db, PLAN_UUID)[0]).toMatchObject({
+      title: 'Renamed task',
+      description: 'new description',
+      revision: 3,
+    });
+  });
+
+  test('set_parent accepts an unrelated stale plan revision when the prior parent still matches', async () => {
+    seedPlan();
+    seedPlan(OTHER_PLAN_UUID, 2, TASK_UUID_2);
+    const status = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'status', value: 'in_progress', baseRevision: 1 },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    const parent = await setPlanParentOperation(
+      PROJECT_UUID,
+      {
+        planUuid: PLAN_UUID,
+        newParentUuid: OTHER_PLAN_UUID,
+        previousParentUuid: null,
+        baseRevision: 1,
+      },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+
+    expect(applyOperation(db, status).status).toBe('applied');
+    expect(applyOperation(db, parent).status).toBe('applied');
+    expect(getPlanByUuid(db, PLAN_UUID)).toMatchObject({
+      status: 'in_progress',
+      parent_uuid: OTHER_PLAN_UUID,
       revision: 3,
     });
   });
@@ -1609,9 +1755,10 @@ describe('main-node sync apply engine', () => {
       [2, 'rejected'],
       [3, 'rejected'],
     ]);
-    expect(operationRows()[2].last_error).toBe(
+    expect(operationRows()[2].last_error).toContain(
       'Operation rolled back because its batch did not commit'
     );
+    expect(operationRows()[2].last_error).toContain(`Unknown plan ${OTHER_PLAN_UUID}`);
     const next = await addPlanTagOperation(
       PROJECT_UUID,
       { planUuid: PLAN_UUID, tag: 'next' },
@@ -1665,7 +1812,7 @@ describe('main-node sync apply engine', () => {
       [1, 'applied'],
       [2, 'rejected'],
     ]);
-    expect(operationRows()[1].last_error).toBe(
+    expect(operationRows()[1].last_error).toContain(
       'Operation rolled back because its batch did not commit'
     );
 
@@ -1878,9 +2025,10 @@ describe('main-node sync apply engine', () => {
       expect(result.error).toBe(originalError);
       expect(result.results[0].error).toBe(originalError);
       expect(result.results[1].error).toBeInstanceOf(SyncValidationError);
-      expect(result.results[1].error?.message).toBe(
+      expect(result.results[1].error?.message).toContain(
         'Operation rolled back because its batch did not commit'
       );
+      expect(result.results[1].error?.message).toContain(originalError.message);
       expect(result.results[1].error?.cause).toBe(originalError);
     } finally {
       setApplyBatchOperationHookForTesting(null);
@@ -1935,9 +2083,10 @@ describe('main-node sync apply engine', () => {
       expect(result.results[0].error).toBe(thrownError);
       // Sibling's slot is a generic rollback error with .cause chained back to the original.
       expect(result.results[1].error).toBeInstanceOf(SyncValidationError);
-      expect(result.results[1].error?.message).toBe(
+      expect(result.results[1].error?.message).toContain(
         'Operation rolled back because its batch did not commit'
       );
+      expect(result.results[1].error?.message).toContain(thrownError.message);
       expect(result.results[1].error?.cause).toBe(thrownError);
       // No tags should have been applied.
       expect(getPlanTagsByUuid(db, PLAN_UUID)).toEqual([]);
@@ -2458,7 +2607,7 @@ describe('main-node sync apply engine', () => {
     ]);
   });
 
-  test('set-like operations with stale baseRevision conflict and no-op replay does not add sequence', async () => {
+  test('set-like operations apply stale scalar revisions and no-op replay adds no sequence', async () => {
     seedPlan();
     const statusOp = await setPlanScalarOperation(
       PROJECT_UUID,
@@ -2475,8 +2624,8 @@ describe('main-node sync apply engine', () => {
     applyOperation(db, tagOp);
     applyOperation(db, tagOp);
 
-    expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('pending');
-    expect(countRows('sync_sequence')).toBe(1);
+    expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('in_progress');
+    expect(countRows('sync_sequence')).toBe(2);
   });
 
   test('stale scalar op is accepted as a no-op when incoming already matches current', async () => {

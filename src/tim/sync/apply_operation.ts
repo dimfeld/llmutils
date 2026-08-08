@@ -228,6 +228,7 @@ export function applyOperationInTransaction(
           sequenceIds: [],
           invalidations: [],
           conflictId,
+          conflictReason: `tombstoned_target: ${nextEnvelope.targetKey} was deleted before ${nextEnvelope.op.type} could apply`,
           acknowledged: true,
         };
       }
@@ -253,6 +254,7 @@ export function applyOperationInTransaction(
           sequenceIds: [],
           invalidations: [],
           conflictId: error.conflictId,
+          conflictReason: error.message,
           acknowledged: true,
         };
       }
@@ -548,7 +550,10 @@ function applyCanonicalPlanPayload(
           normalizedPayload
         );
         markOperationConflict(db, envelope.operationUuid, conflictId);
-        throw new ConflictAccepted(conflictId);
+        throw new ConflictAccepted(
+          conflictId,
+          `text_merge_failed: ${envelope.op.type} could not merge concurrent changes to ${conflictFieldPath(envelope.op) ?? envelope.targetKey}`
+        );
       }
       if (error.code === 'stale_revision') {
         const currentValue = currentBaseRevision(adapter, envelope.op);
@@ -568,7 +573,10 @@ function applyCanonicalPlanPayload(
             reason: 'stale_revision',
           });
           markOperationConflict(db, envelope.operationUuid, conflictId);
-          throw new ConflictAccepted(conflictId);
+          throw new ConflictAccepted(
+            conflictId,
+            `stale_revision: ${envelope.op.type} expected revision ${'baseRevision' in envelope.op ? envelope.op.baseRevision : 'unknown'}, current revision is ${currentValue}`
+          );
         }
       }
       throw validationError(envelope, error.message);
@@ -650,7 +658,10 @@ function staleSettingConflict(
     reason: 'stale_revision',
   });
   markOperationConflict(db, envelope.operationUuid, conflictId);
-  throw new ConflictAccepted(conflictId);
+  throw new ConflictAccepted(
+    conflictId,
+    `stale_revision: ${envelope.op.type} for project setting ${op.setting} expected revision ${op.baseRevision}, current value is ${currentValue}`
+  );
 }
 
 function resolvedNumericPlanIdForOperation(

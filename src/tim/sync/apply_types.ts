@@ -13,6 +13,7 @@ export interface ApplyOperationResult {
   sequenceIds: number[];
   invalidations: TargetKey[];
   conflictId?: string;
+  conflictReason?: string;
   acknowledged: boolean;
   resolvedNumericPlanId?: number;
   error?: Error;
