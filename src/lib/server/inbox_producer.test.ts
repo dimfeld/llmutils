@@ -5,7 +5,7 @@ import { openDatabase } from '../../tim/db/database.js';
 import { constructGitHubRepositoryId } from '../../common/github/pull_requests.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
 import { recordWorkspace } from '../../tim/db/workspace.js';
-import { upsertPrStatus } from '../../tim/db/pr_status.js';
+import { upsertPrStatus, upsertPrReviewRequestByReviewer } from '../../tim/db/pr_status.js';
 import { markInboxItemsRead } from '../../tim/db/inbox_item.js';
 import type { InboxSignal } from '../../common/github/webhook_event_handlers.js';
 import type { TimConfig } from '../../tim/configSchema.js';
@@ -113,6 +113,72 @@ describe('lib/server/inbox_producer', () => {
     });
   });
 
+  describe('author-owned kind relevance matrix', () => {
+    const AUTHOR_OWNED_KINDS: InboxSignal['kind'][] = [
+      'pr_comment',
+      'pr_approved',
+      'pr_merged',
+      'ci_failure',
+      'merge_queue_removed',
+    ];
+
+    test.each(AUTHOR_OWNED_KINDS)(
+      'routes %s to an inbox row when the PR author is the user',
+      async (kind) => {
+        const prNumber = 200 + AUTHOR_OWNED_KINDS.indexOf(kind);
+        const prUrl = `https://github.com/${REPO_FULL_NAME}/pull/${prNumber}`;
+        upsertPrStatus(db, {
+          prUrl,
+          owner: OWNER,
+          repo: REPO,
+          prNumber,
+          author: 'octocat',
+          title: 'Authored by the user',
+          state: 'open',
+          draft: false,
+          lastFetchedAt: '2026-06-01T09:00:00.000Z',
+        });
+
+        const affected = await processInboxSignals(
+          db,
+          [makeSignal({ kind, prNumber, prUrl, actor: 'someone-else', prAuthor: 'octocat' })],
+          { loadConfig: async () => baseConfig(), resolveUsername: async () => 'octocat' }
+        );
+
+        expect(affected).toEqual([projectId]);
+        expect(db.prepare('SELECT kind FROM inbox_item').get()).toEqual({ kind });
+      }
+    );
+
+    test.each(AUTHOR_OWNED_KINDS)(
+      'skips %s when the PR author is not the user and the user is not reviewing',
+      async (kind) => {
+        const prNumber = 300 + AUTHOR_OWNED_KINDS.indexOf(kind);
+        const prUrl = `https://github.com/${REPO_FULL_NAME}/pull/${prNumber}`;
+        upsertPrStatus(db, {
+          prUrl,
+          owner: OWNER,
+          repo: REPO,
+          prNumber,
+          author: 'someone-else',
+          title: 'Authored by someone else',
+          state: 'open',
+          draft: false,
+          lastFetchedAt: '2026-06-01T09:00:00.000Z',
+        });
+
+        const affected = await processInboxSignals(
+          db,
+          [makeSignal({ kind, prNumber, prUrl, actor: 'third-party', prAuthor: 'someone-else' })],
+          { loadConfig: async () => baseConfig(), resolveUsername: async () => 'octocat' }
+        );
+
+        expect(affected).toEqual([]);
+        expect(countInboxItems()).toBe(0);
+      }
+    );
+  });
+
   test('skips signals for unknown repositories without throwing', async () => {
     const affected = await processInboxSignals(db, [makeSignal({ repo: 'other/unknown-repo' })], {
       loadConfig: async () => baseConfig(),
@@ -139,19 +205,28 @@ describe('lib/server/inbox_producer', () => {
     expect(countInboxItems()).toBe(1);
   });
 
-  test('skips signals before the side-effect cutoff', async () => {
-    const affected = await processInboxSignals(db, [makeSignal()], {
-      loadConfig: async () =>
-        baseConfig({
-          githubWebhooks: {
-            ignoreSideEffectsBefore: new Date(Date.now() + 60_000).toISOString(),
-          },
-        }),
-      resolveUsername: async () => 'octocat',
-    });
+  test('skips signals before the cutoff and accepts signals after the same cutoff', async () => {
+    const cutoff = '2026-06-01T12:00:00.000Z';
+    const loadConfig = async () =>
+      baseConfig({
+        githubWebhooks: { ignoreSideEffectsBefore: cutoff },
+      });
 
-    expect(affected).toEqual([]);
+    const beforeCutoff = await processInboxSignals(
+      db,
+      [makeSignal({ eventAt: '2026-06-01T11:59:59.000Z' })],
+      { loadConfig, resolveUsername: async () => 'octocat' }
+    );
+    expect(beforeCutoff).toEqual([]);
     expect(countInboxItems()).toBe(0);
+
+    const afterCutoff = await processInboxSignals(
+      db,
+      [makeSignal({ eventAt: '2026-06-01T12:00:01.000Z' })],
+      { loadConfig, resolveUsername: async () => 'octocat' }
+    );
+    expect(afterCutoff).toEqual([projectId]);
+    expect(countInboxItems()).toBe(1);
   });
 
   test('skips when no username resolves', async () => {
@@ -319,10 +394,12 @@ describe('lib/server/inbox_producer', () => {
     expect(countInboxItems()).toBe(0);
   });
 
-  test('bot actors are filtered from comment/review signals by [bot] suffix', async () => {
+  test('bot actors are filtered from comment/review signals by [bot] suffix alone', async () => {
+    // actorType stays 'User' so this proves suffix-based filtering independently of the
+    // actorType check exercised by the next test.
     const affected = await processInboxSignals(
       db,
-      [makeSignal({ actor: 'dependabot[bot]', actorType: 'Bot' })],
+      [makeSignal({ actor: 'dependabot[bot]', actorType: 'User' })],
       {
         loadConfig: async () => baseConfig(),
         resolveUsername: async () => 'octocat',
@@ -438,7 +515,7 @@ describe('lib/server/inbox_producer', () => {
     });
 
     test('routes to reviewed_pr_comment when the user has an active review request', async () => {
-      upsertPrStatus(db, {
+      const status = upsertPrStatus(db, {
         prUrl: REVIEWED_PR_URL,
         owner: OWNER,
         repo: REPO,
@@ -448,7 +525,13 @@ describe('lib/server/inbox_producer', () => {
         state: 'open',
         draft: false,
         lastFetchedAt: '2026-06-01T09:00:00.000Z',
-        requestedReviewers: ['octocat'],
+      });
+      // Seed a real pr_review_request row (not the requested_reviewers JSON snapshot) so
+      // this test proves the DB-row path of the reviewer predicate independently.
+      upsertPrReviewRequestByReviewer(db, status.status.id, {
+        reviewer: 'octocat',
+        action: 'requested',
+        eventAt: '2026-06-01T09:30:00.000Z',
       });
 
       const affected = await processInboxSignals(db, [reviewedSignal()], {
