@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getWebhookServerUrl: vi.fn<() => string | null>(),
   getWebhookInternalApiToken: vi.fn<() => string | null>(),
   processSlackReviewReactions: vi.fn<(...args: unknown[]) => Promise<void>>(),
+  processInboxSignals: vi.fn<(...args: unknown[]) => Promise<number[]>>(),
 }));
 
 vi.mock('$common/github/webhook_ingest.js', () => ({
@@ -22,6 +23,10 @@ vi.mock('$common/github/webhook_client.js', () => ({
 
 vi.mock('./slack_review_reactions.js', () => ({
   processSlackReviewReactions: mocks.processSlackReviewReactions,
+}));
+
+vi.mock('./inbox_producer.js', () => ({
+  processInboxSignals: mocks.processInboxSignals,
 }));
 
 import {
@@ -59,6 +64,7 @@ describe('lib/server/webhook_poller', () => {
 
     mocks.ingestWebhookEvents.mockResolvedValue({ prsUpdated: [], errors: [] });
     mocks.formatWebhookIngestErrors.mockReturnValue(undefined);
+    mocks.processInboxSignals.mockResolvedValue([]);
     mocks.getWebhookServerUrl.mockImplementation(() => process.env.TIM_WEBHOOK_SERVER_URL ?? null);
     mocks.getWebhookInternalApiToken.mockImplementation(
       () => process.env.WEBHOOK_INTERNAL_API_TOKEN ?? null
@@ -357,6 +363,55 @@ describe('lib/server/webhook_poller', () => {
     await vi.advanceTimersByTimeAsync(15_000);
     expect(mocks.ingestWebhookEvents).toHaveBeenCalledTimes(1);
     expect(mocks.processSlackReviewReactions).not.toHaveBeenCalled();
+
+    handle?.stop();
+  });
+
+  test('poller forwards inbox signals to the inbox producer with the session manager', async () => {
+    process.env.TIM_WEBHOOK_POLL_INTERVAL = '5';
+    process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
+
+    const inboxSignal = {
+      kind: 'pr_comment',
+      repo: 'example/repo',
+      prNumber: 17,
+      prUrl: 'https://github.com/example/repo/pull/17',
+      actor: 'commenter-1',
+      eventAt: '2026-06-01T10:00:00.000Z',
+    };
+    mocks.ingestWebhookEvents.mockResolvedValue({
+      prsUpdated: [],
+      inboxSignals: [inboxSignal],
+      errors: [],
+    } as unknown as { prsUpdated: string[]; errors: string[] });
+    mocks.processInboxSignals.mockResolvedValue([1]);
+
+    const sessionManager = {
+      hasInboxUpdateListeners: vi.fn(() => true),
+      emitInboxUpdate: vi.fn(),
+    };
+
+    const db = null as Database;
+    const handle = startWebhookPoller(db, { sessionManager });
+
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(mocks.processInboxSignals).toHaveBeenCalledWith(db, [inboxSignal], { sessionManager });
+
+    handle?.stop();
+  });
+
+  test('poller skips the inbox producer when there are no inbox signals', async () => {
+    process.env.TIM_WEBHOOK_POLL_INTERVAL = '5';
+    process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
+
+    const handle = startWebhookPoller(null as Database);
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(mocks.ingestWebhookEvents).toHaveBeenCalledTimes(1);
+    expect(mocks.processInboxSignals).not.toHaveBeenCalled();
 
     handle?.stop();
   });

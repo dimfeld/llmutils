@@ -20,6 +20,7 @@ const ensurePrStatusFresh = vi.fn();
 const refreshPrStatusFromApi = vi.fn();
 const ingestWebhookEvents = vi.fn();
 const mockEmitPrUpdatesForIngestResult = vi.fn();
+const mockProcessInboxSignals = vi.fn().mockResolvedValue([]);
 const mockSessionManager = { emitPrUpdate: vi.fn() };
 const { setPullRequestDraftState } = vi.hoisted(() => ({
   setPullRequestDraftState: vi.fn(),
@@ -61,6 +62,10 @@ vi.mock('$common/github/webhook_ingest.js', () => ({
 
 vi.mock('$lib/server/pr_event_utils.js', () => ({
   emitPrUpdatesForIngestResult: mockEmitPrUpdatesForIngestResult,
+}));
+
+vi.mock('$lib/server/inbox_producer.js', () => ({
+  processInboxSignals: mockProcessInboxSignals,
 }));
 
 vi.mock('$lib/server/session_context.js', () => ({
@@ -123,6 +128,8 @@ describe('pr_status remote functions', () => {
     setPullRequestDraftState.mockReset();
     ingestWebhookEvents.mockReset();
     mockEmitPrUpdatesForIngestResult.mockReset();
+    mockProcessInboxSignals.mockReset();
+    mockProcessInboxSignals.mockResolvedValue([]);
     mockSessionManager.emitPrUpdate.mockReset();
     currentWebhookServerUrl = null;
     ingestWebhookEvents.mockResolvedValue({
@@ -460,6 +467,40 @@ describe('pr_status remote functions', () => {
     expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb);
     expect(ensurePrStatusFresh).not.toHaveBeenCalled();
     expect(result.error).toBeUndefined();
+  });
+
+  test('refreshPrStatus forwards inbox signals to the inbox producer with the session manager', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    const inboxSignal = {
+      kind: 'pr_approved',
+      repo: 'example/repo',
+      prNumber: 1,
+      prUrl: 'https://github.com/example/repo/pull/1',
+      actor: 'reviewer-1',
+      eventAt: '2026-06-01T10:00:00.000Z',
+    };
+    ingestWebhookEvents.mockResolvedValue({
+      eventsIngested: 1,
+      prsUpdated: [],
+      inboxSignals: [inboxSignal],
+      errors: [],
+    });
+    const { refreshPrStatus } = await import('./pr_status.remote.js');
+
+    await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(mockProcessInboxSignals).toHaveBeenCalledWith(currentDb, [inboxSignal], {
+      sessionManager: mockSessionManager,
+    });
+  });
+
+  test('refreshPrStatus skips the inbox producer when ingest reports no inbox signals', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    const { refreshPrStatus } = await import('./pr_status.remote.js');
+
+    await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(mockProcessInboxSignals).not.toHaveBeenCalled();
   });
 
   test('refreshPrStatus syncs links and refreshes each PR when GITHUB_TOKEN is configured', async () => {

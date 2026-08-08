@@ -29,6 +29,7 @@ const {
   getPreferredProjectGitRoot: vi.fn(),
 }));
 const mockEmitPrUpdatesForIngestResult = vi.fn();
+const mockProcessInboxSignals = vi.fn().mockResolvedValue([]);
 const mockSessionManager = { emitPrUpdate: vi.fn() };
 
 vi.mock('$lib/server/init.js', () => ({
@@ -54,6 +55,10 @@ vi.mock('$common/github/project_pr_service.js', () => ({
 
 vi.mock('$lib/server/pr_event_utils.js', () => ({
   emitPrUpdatesForIngestResult: mockEmitPrUpdatesForIngestResult,
+}));
+
+vi.mock('$lib/server/inbox_producer.js', () => ({
+  processInboxSignals: mockProcessInboxSignals,
 }));
 
 vi.mock('$lib/server/session_context.js', () => ({
@@ -101,6 +106,8 @@ describe('project_prs remote functions', () => {
     loadEffectiveConfig.mockReset();
     getPreferredProjectGitRoot.mockReset();
     mockEmitPrUpdatesForIngestResult.mockReset();
+    mockProcessInboxSignals.mockReset();
+    mockProcessInboxSignals.mockResolvedValue([]);
     mockSessionManager.emitPrUpdate.mockReset();
 
     ingestWebhookEvents.mockResolvedValue({
@@ -138,6 +145,65 @@ describe('project_prs remote functions', () => {
     );
     expect(refreshProjectPrsService).not.toHaveBeenCalled();
     expect(result).toEqual({ newLinks: [] });
+  });
+
+  test('refreshProjectPrs forwards inbox signals to the inbox producer with the session manager', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    const inboxSignal = {
+      kind: 'pr_comment',
+      repo: 'example/repo',
+      prNumber: 9,
+      prUrl: 'https://github.com/example/repo/pull/9',
+      actor: 'commenter-1',
+      eventAt: '2026-06-01T10:00:00.000Z',
+    };
+    ingestWebhookEvents.mockResolvedValue({
+      eventsIngested: 1,
+      prsUpdated: [],
+      inboxSignals: [inboxSignal],
+      errors: [],
+    });
+    const { refreshProjectPrs } = await import('./project_prs.remote.js');
+
+    await invokeCommand(refreshProjectPrs, { projectId: String(projectId) });
+
+    expect(mockProcessInboxSignals).toHaveBeenCalledWith(currentDb, [inboxSignal], {
+      sessionManager: mockSessionManager,
+    });
+  });
+
+  test('refreshProjectPrs skips the inbox producer when ingest reports no inbox signals', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    const { refreshProjectPrs } = await import('./project_prs.remote.js');
+
+    await invokeCommand(refreshProjectPrs, { projectId: String(projectId) });
+
+    expect(mockProcessInboxSignals).not.toHaveBeenCalled();
+  });
+
+  test('refreshProjectPrs forwards inbox signals when refreshing all projects', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    const inboxSignal = {
+      kind: 'pr_merged',
+      repo: 'example/repo',
+      prNumber: 9,
+      prUrl: 'https://github.com/example/repo/pull/9',
+      actor: 'author-1',
+      eventAt: '2026-06-01T10:00:00.000Z',
+    };
+    ingestWebhookEvents.mockResolvedValue({
+      eventsIngested: 1,
+      prsUpdated: [],
+      inboxSignals: [inboxSignal],
+      errors: [],
+    });
+    const { refreshProjectPrs } = await import('./project_prs.remote.js');
+
+    await invokeCommand(refreshProjectPrs, { projectId: 'all' });
+
+    expect(mockProcessInboxSignals).toHaveBeenCalledWith(currentDb, [inboxSignal], {
+      sessionManager: mockSessionManager,
+    });
   });
 
   test('getLinearPrReviewUrl returns null for non-Linear projects', async () => {
