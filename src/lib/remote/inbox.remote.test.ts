@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { invokeCommand, invokeQuery } from '$lib/test-utils/invoke_command.js';
 import { enrichInboxItems } from '$lib/server/inbox_enrichment.js';
-import { refreshInboxQueryScopes } from '$lib/server/inbox_query_scopes.js';
 import { openDatabase } from '$tim/db/database.js';
 import {
   markInboxItemsRead as markInboxItemsReadRows,
@@ -18,14 +17,36 @@ import { getOrCreateProject } from '$tim/db/project.js';
 
 let currentDb: Database;
 
-vi.mock('$lib/server/inbox_query_scopes.js', async () => {
-  const actual = await vi.importActual<typeof import('$lib/server/inbox_query_scopes.js')>(
-    '$lib/server/inbox_query_scopes.js'
-  );
-  return {
-    ...actual,
-    refreshInboxQueryScopes: vi.fn(actual.refreshInboxQueryScopes),
-  };
+const { refreshedScopes } = vi.hoisted(() => ({ refreshedScopes: [] as string[] }));
+
+vi.mock('$app/server', () => {
+  function query(
+    _schema: unknown,
+    fn: (arg: { projectId: string }) => Promise<unknown>
+  ): (arg: { projectId: string }) => Promise<unknown> {
+    const wrapper = (arg: { projectId: string }): Promise<unknown> => {
+      const result = Promise.resolve(fn(arg)) as Promise<unknown> & {
+        refresh: () => Promise<void>;
+      };
+      result.refresh = async (): Promise<void> => {
+        refreshedScopes.push(arg.projectId);
+      };
+      return result;
+    };
+    Object.defineProperty(wrapper, '__', { value: { type: 'query', id: '', name: '' } });
+    return wrapper;
+  }
+
+  function command(
+    _schema: unknown,
+    fn: (arg: unknown) => Promise<unknown>
+  ): (arg: unknown) => Promise<unknown> {
+    const wrapper = async (arg: unknown): Promise<unknown> => fn(arg);
+    Object.defineProperty(wrapper, '__', { value: { type: 'command', id: '', name: '' } });
+    return wrapper;
+  }
+
+  return { command, query };
 });
 
 vi.mock('$lib/server/init.js', () => ({
@@ -45,6 +66,7 @@ describe('inbox remote functions', () => {
     projectId = getOrCreateProject(currentDb, 'github.com__example__repo').id;
     otherProjectId = getOrCreateProject(currentDb, 'github.com__other__repo').id;
     nextPrNumber = 1;
+    refreshedScopes.length = 0;
   });
 
   afterEach(() => {
@@ -92,19 +114,6 @@ describe('inbox remote functions', () => {
     });
     linkPlanToPr(currentDb, planUuid, pr.status.id);
   }
-
-  test('refreshes all and each distinct affected project scope', async () => {
-    const refreshedScopes: string[] = [];
-
-    await refreshInboxQueryScopes(
-      [otherProjectId, projectId, otherProjectId],
-      async (scope: string): Promise<void> => {
-        refreshedScopes.push(scope);
-      }
-    );
-
-    expect(refreshedScopes).toEqual(['all', String(projectId), String(otherProjectId)]);
-  });
 
   test('enriches hrefs, linked plans, and action descriptors for every inbox kind', async () => {
     const singlePlanUrl = 'https://github.com/example/repo/pull/101';
@@ -249,8 +258,16 @@ describe('inbox remote functions', () => {
     const { markInboxItemsRead } = await import('./inbox.remote.js');
     const item = seedInboxItem({ prNumber: 301 });
     const untouchedItem = seedInboxItem({ prNumber: 302 });
+    const otherProjectItem = seedInboxItem({
+      projectId: otherProjectId,
+      prNumber: 303,
+      prUrl: 'https://github.com/other/repo/pull/303',
+      repo: 'other/repo',
+    });
 
-    await invokeCommand(markInboxItemsRead, { ids: [item.id] });
+    await invokeCommand(markInboxItemsRead, { ids: [item.id, otherProjectItem.id] });
+
+    expect(refreshedScopes).toEqual(['all', String(projectId), String(otherProjectId)]);
 
     const rows = currentDb
       .prepare('SELECT read_at, dismissed_at FROM inbox_item WHERE id = ?')
@@ -261,6 +278,10 @@ describe('inbox remote functions', () => {
       .prepare('SELECT read_at, dismissed_at FROM inbox_item WHERE id = ?')
       .get(untouchedItem.id) as { read_at: string | null; dismissed_at: string | null };
     expect(untouchedRow).toEqual({ read_at: null, dismissed_at: null });
+
+    refreshedScopes.length = 0;
+    await invokeCommand(markInboxItemsRead, { ids: [item.id, otherProjectItem.id] });
+    expect(refreshedScopes).toEqual(['all']);
   });
 
   test('marks all items read for one project and then across all projects', async () => {
@@ -278,6 +299,7 @@ describe('inbox remote functions', () => {
     });
 
     await invokeCommand(markAllInboxItemsRead, { projectId: String(projectId) });
+    expect(refreshedScopes).toEqual(['all', String(projectId)]);
 
     const afterProjectRead = currentDb
       .prepare('SELECT id, read_at FROM inbox_item ORDER BY id')
@@ -293,10 +315,10 @@ describe('inbox remote functions', () => {
       eventAt: '2026-08-01T00:00:00.000Z',
     });
 
+    refreshedScopes.length = 0;
     await invokeCommand(markAllInboxItemsRead, { projectId: 'all' });
 
-    const refreshCalls = vi.mocked(refreshInboxQueryScopes).mock.calls;
-    expect(refreshCalls.at(-1)?.[0]).toEqual([projectId, otherProjectId]);
+    expect(refreshedScopes).toEqual(['all', String(projectId), String(otherProjectId)]);
 
     const afterAllRead = currentDb
       .prepare('SELECT read_at FROM inbox_item ORDER BY id')
@@ -315,6 +337,7 @@ describe('inbox remote functions', () => {
     const item = seedInboxItem({ prNumber: 501 });
 
     await invokeCommand(dismissInboxItem, { id: item.id });
+    expect(refreshedScopes).toEqual(['all', String(projectId)]);
 
     const row = currentDb
       .prepare('SELECT read_at, dismissed_at FROM inbox_item WHERE id = ?')

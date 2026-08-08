@@ -3,12 +3,9 @@ import * as z from 'zod';
 
 import { enrichInboxItems, type EnrichedInboxItem } from '$lib/server/inbox_enrichment.js';
 import { getServerContext } from '$lib/server/init.js';
-import { refreshInboxQueryScopes } from '$lib/server/inbox_query_scopes.js';
 import {
   countUnreadInboxItems,
   dismissInboxItem as dismissInboxItemRow,
-  getInboxItemProjectIds,
-  getInboxItemProjectIdsBefore,
   listRecentInboxItems,
   markAllReadBefore,
   markInboxItemsRead as markInboxItemsReadRows,
@@ -51,18 +48,22 @@ export const getInboxItems = query(
   }
 );
 
-async function refreshInboxQueries(projectIds: ReadonlyArray<number> = []): Promise<void> {
-  await refreshInboxQueryScopes(projectIds, async (projectId: string): Promise<void> => {
-    await getInboxItems({ projectId }).refresh();
-  });
+async function refreshInboxQueries(projectIds: ReadonlyArray<number>): Promise<void> {
+  const scopes = [
+    'all',
+    ...Array.from(new Set(projectIds))
+      .sort((left, right) => left - right)
+      .map(String),
+  ];
+
+  await Promise.all(scopes.map((projectId) => getInboxItems({ projectId }).refresh()));
 }
 
 export const markInboxItemsRead = command(
   markInboxItemsReadSchema,
   async ({ ids }): Promise<void> => {
     const { db } = await getServerContext();
-    const projectIds = getInboxItemProjectIds(db, ids);
-    markInboxItemsReadRows(db, ids);
+    const projectIds = markInboxItemsReadRows(db, ids);
     await refreshInboxQueries(projectIds);
   }
 );
@@ -75,9 +76,7 @@ export const markAllInboxItemsRead = command(
       cutoff: new Date().toISOString(),
       ...(projectId === 'all' ? {} : { projectId: Number(projectId) }),
     } satisfies { cutoff: string; projectId?: number };
-    const affectedProjectIds =
-      projectId === 'all' ? getInboxItemProjectIdsBefore(db, options) : [Number(projectId)];
-    markAllReadBefore(db, options);
+    const affectedProjectIds = markAllReadBefore(db, options);
     await refreshInboxQueries(affectedProjectIds);
   }
 );
@@ -86,8 +85,7 @@ export const dismissInboxItem = command(
   z.object({ id: z.number().int() }),
   async ({ id }): Promise<void> => {
     const { db } = await getServerContext();
-    const projectIds = getInboxItemProjectIds(db, [id]);
-    dismissInboxItemRow(db, id);
+    const projectIds = dismissInboxItemRow(db, id);
     await refreshInboxQueries(projectIds);
   }
 );

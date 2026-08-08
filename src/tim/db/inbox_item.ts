@@ -181,74 +181,35 @@ export function countUnreadInboxItems(
   return row.count;
 }
 
-export function getInboxItemProjectIds(db: Database, ids: ReadonlyArray<number>): number[] {
+function getDistinctProjectIds(rows: Array<{ project_id: number | null }>): number[] {
+  return Array.from(
+    new Set(rows.flatMap((row) => (row.project_id === null ? [] : [row.project_id])))
+  ).sort((left, right) => left - right);
+}
+
+export function markInboxItemsRead(db: Database, ids: ReadonlyArray<number>): number[] {
   if (ids.length === 0) {
     return [];
   }
 
   const placeholders = ids.map(() => '?').join(', ');
-  return db
+  const rows = db
     .prepare(
       `
-        SELECT DISTINCT project_id
-        FROM inbox_item
+        UPDATE inbox_item
+        SET read_at = ${SQL_NOW_ISO_UTC},
+            updated_at = ${SQL_NOW_ISO_UTC}
         WHERE id IN (${placeholders})
-          AND project_id IS NOT NULL
-        ORDER BY project_id
+          AND read_at IS NULL
+        RETURNING project_id
       `
     )
-    .all(...ids)
-    .map((row) => (row as { project_id: number }).project_id);
+    .all(...ids) as Array<{ project_id: number | null }>;
+
+  return getDistinctProjectIds(rows);
 }
 
-export function getInboxItemProjectIdsBefore(
-  db: Database,
-  options: MarkAllReadBeforeOptions
-): number[] {
-  const conditions = [
-    'read_at IS NULL',
-    'dismissed_at IS NULL',
-    'last_event_at <= ?',
-    'project_id IS NOT NULL',
-  ];
-  const parameters: Array<number | string> = [options.cutoff];
-
-  if (options.projectId !== undefined) {
-    conditions.push('project_id = ?');
-    parameters.push(options.projectId);
-  }
-
-  return db
-    .prepare(
-      `
-        SELECT DISTINCT project_id
-        FROM inbox_item
-        WHERE ${conditions.join(' AND ')}
-        ORDER BY project_id
-      `
-    )
-    .all(...parameters)
-    .map((row) => (row as { project_id: number }).project_id);
-}
-
-export function markInboxItemsRead(db: Database, ids: ReadonlyArray<number>): void {
-  if (ids.length === 0) {
-    return;
-  }
-
-  const placeholders = ids.map(() => '?').join(', ');
-  db.prepare(
-    `
-      UPDATE inbox_item
-      SET read_at = ${SQL_NOW_ISO_UTC},
-          updated_at = ${SQL_NOW_ISO_UTC}
-      WHERE id IN (${placeholders})
-        AND read_at IS NULL
-    `
-  ).run(...ids);
-}
-
-export function markAllReadBefore(db: Database, options: MarkAllReadBeforeOptions): void {
+export function markAllReadBefore(db: Database, options: MarkAllReadBeforeOptions): number[] {
   const conditions = ['read_at IS NULL', 'dismissed_at IS NULL', 'last_event_at <= ?'];
   const parameters: Array<number | string> = [options.cutoff];
 
@@ -257,26 +218,36 @@ export function markAllReadBefore(db: Database, options: MarkAllReadBeforeOption
     parameters.push(options.projectId);
   }
 
-  db.prepare(
-    `
-      UPDATE inbox_item
-      SET read_at = ${SQL_NOW_ISO_UTC},
-          updated_at = ${SQL_NOW_ISO_UTC}
-      WHERE ${conditions.join(' AND ')}
-    `
-  ).run(...parameters);
+  const rows = db
+    .prepare(
+      `
+        UPDATE inbox_item
+        SET read_at = ${SQL_NOW_ISO_UTC},
+            updated_at = ${SQL_NOW_ISO_UTC}
+        WHERE ${conditions.join(' AND ')}
+        RETURNING project_id
+      `
+    )
+    .all(...parameters) as Array<{ project_id: number | null }>;
+
+  return getDistinctProjectIds(rows);
 }
 
-export function dismissInboxItem(db: Database, id: number): void {
-  db.prepare(
-    `
-      UPDATE inbox_item
-      SET dismissed_at = ${SQL_NOW_ISO_UTC},
-          read_at = COALESCE(read_at, ${SQL_NOW_ISO_UTC}),
-          updated_at = ${SQL_NOW_ISO_UTC}
-      WHERE id = ?
-    `
-  ).run(id);
+export function dismissInboxItem(db: Database, id: number): number[] {
+  const rows = db
+    .prepare(
+      `
+        UPDATE inbox_item
+        SET dismissed_at = ${SQL_NOW_ISO_UTC},
+            read_at = COALESCE(read_at, ${SQL_NOW_ISO_UTC}),
+            updated_at = ${SQL_NOW_ISO_UTC}
+        WHERE id = ?
+        RETURNING project_id
+      `
+    )
+    .all(id) as Array<{ project_id: number | null }>;
+
+  return getDistinctProjectIds(rows);
 }
 
 export function pruneOldInboxItems(db: Database, maxAgeDays = 30): number {
