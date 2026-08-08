@@ -229,186 +229,205 @@
           Retry
         </button>
       </div>
-    {:else if items.length > 0}
-      <div class="overflow-hidden rounded-lg border border-border">
-        <table class="w-full border-collapse text-sm">
-          <thead class="bg-muted/50 text-xs tracking-wide text-muted-foreground uppercase">
-            <tr>
-              <th class="px-4 py-2 text-left font-semibold">Type</th>
-              <th class="px-4 py-2 text-left font-semibold">Notification</th>
-              <th class="px-4 py-2 text-left font-semibold">Time</th>
-              <th class="px-4 py-2 text-right font-semibold">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            {#each items as item (item.id)}
-              {@const badge = getKindBadge(item.kind)}
-              {@const actionConfig = getActionButtonConfig(item)}
-              {@const eventCount = getEventCountLabel(item)}
-              {@const isUnread = !item.read_at}
-              {@const isLaunching = launchingIds.has(item.id)}
-              {@const launchStatus = launchedIds.get(item.id)}
-              {@const hasLaunchError = launchErrors.has(item.id)}
-              <tr
-                class={[
-                  'transition-colors hover:bg-muted/40',
-                  isUnread ? 'bg-blue-50/50 dark:bg-blue-950/20' : '',
-                ]}
-              >
-                <td class="px-4 py-3">
-                  <span
-                    class={[
-                      'inline-block rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap',
-                      badge.colorClasses,
-                    ]}
-                  >
-                    {badge.label}
-                  </span>
-                </td>
-
-                <td class="max-w-md px-4 py-3">
-                  <div class="flex items-center gap-2">
-                    {#if isUnread}
-                      <span
-                        class="size-2 shrink-0 rounded-full bg-blue-500 dark:bg-blue-400"
-                        role="img"
-                        aria-label="Unread"
-                      ></span>
-                    {/if}
-                    <div class="min-w-0">
-                      <span
-                        class={[
-                          'block truncate',
-                          isUnread ? 'font-semibold text-foreground' : 'text-foreground',
-                        ]}
-                        title={item.pr_title ?? item.pr_url}
-                      >
-                        {item.pr_title ?? item.pr_url}
-                      </span>
-                      <span class="mt-0.5 block truncate text-xs text-muted-foreground">
-                        {[item.repo, item.actor].filter(Boolean).join(' · ')}
-                        {#if eventCount}
-                          <span class="ml-1">· {eventCount}</span>
-                        {/if}
-                        {#if item.summary}
-                          <span class="ml-1">· {item.summary}</span>
-                        {/if}
-                      </span>
-                    </div>
-                  </div>
-                </td>
-
-                <td class="px-4 py-3 text-muted-foreground">
-                  <Popover>
-                    <PopoverTrigger
-                      openOnHover
-                      openDelay={150}
-                      closeDelay={100}
-                      class="cursor-default underline decoration-dotted underline-offset-2"
+    {:else}
+      {#if queryError && data}
+        <div
+          class="mb-4 flex items-center justify-between rounded-lg border border-red-300 bg-red-50 px-4 py-3 dark:border-red-800 dark:bg-red-950/30"
+          role="alert"
+        >
+          <p class="text-sm text-red-700 dark:text-red-300">
+            Failed to refresh inbox: {extractRemoteErrorMessage(queryError)}
+          </p>
+          <button
+            type="button"
+            class="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-700 dark:bg-red-900/50 dark:text-red-300 dark:hover:bg-red-900"
+            onclick={() => refreshQuery()}
+          >
+            Retry
+          </button>
+        </div>
+      {/if}
+      {#if items.length > 0}
+        <div class="overflow-hidden rounded-lg border border-border">
+          <table class="w-full border-collapse text-sm">
+            <thead class="bg-muted/50 text-xs tracking-wide text-muted-foreground uppercase">
+              <tr>
+                <th class="px-4 py-2 text-left font-semibold">Type</th>
+                <th class="px-4 py-2 text-left font-semibold">Notification</th>
+                <th class="px-4 py-2 text-left font-semibold">Time</th>
+                <th class="px-4 py-2 text-right font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-border">
+              {#each items as item (item.id)}
+                {@const badge = getKindBadge(item.kind)}
+                {@const actionConfig = getActionButtonConfig(item)}
+                {@const eventCount = getEventCountLabel(item)}
+                {@const isUnread = !item.read_at}
+                {@const isLaunching = launchingIds.has(item.id)}
+                {@const launchStatus = launchedIds.get(item.id)}
+                {@const hasLaunchError = launchErrors.has(item.id)}
+                <tr
+                  class={[
+                    'transition-colors hover:bg-muted/40',
+                    isUnread ? 'bg-blue-50/50 dark:bg-blue-950/20' : '',
+                  ]}
+                >
+                  <td class="px-4 py-3">
+                    <span
+                      class={[
+                        'inline-block rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap',
+                        badge.colorClasses,
+                      ]}
                     >
-                      {formatRelativeTime(item.last_event_at)}
-                    </PopoverTrigger>
-                    <PopoverContent align="start" class="w-72 text-xs">
-                      <dl class="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
-                        <dt class="text-muted-foreground">First event</dt>
-                        <dd class="text-foreground">
-                          {formatAbsoluteTime(item.first_event_at)}
-                        </dd>
-                        <dt class="text-muted-foreground">Latest event</dt>
-                        <dd class="text-foreground">
-                          {formatAbsoluteTime(item.last_event_at)}
-                        </dd>
-                      </dl>
-                    </PopoverContent>
-                  </Popover>
-                </td>
+                      {badge.label}
+                    </span>
+                  </td>
 
-                <td class="px-4 py-3">
-                  <div class="flex items-center justify-end gap-2">
-                    {#if item.viewHref}
-                      {#if item.viewHref.external}
-                        <a
-                          href={item.viewHref.href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="text-sm font-medium text-primary hover:underline"
-                          onclick={() => markItemRead(item.id)}
-                        >
-                          View ↗
-                        </a>
-                      {:else}
-                        <button
-                          type="button"
-                          class="text-sm font-medium text-primary hover:underline"
-                          onclick={() => handleViewClick(item)}
-                        >
-                          View
-                        </button>
+                  <td class="max-w-md px-4 py-3">
+                    <div class="flex items-center gap-2">
+                      {#if isUnread}
+                        <span
+                          class="size-2 shrink-0 rounded-full bg-blue-500 dark:bg-blue-400"
+                          role="img"
+                          aria-label="Unread"
+                        ></span>
                       {/if}
-                    {/if}
+                      <div class="min-w-0">
+                        <span
+                          class={[
+                            'block truncate',
+                            isUnread ? 'font-semibold text-foreground' : 'text-foreground',
+                          ]}
+                          title={item.pr_title ?? item.pr_url}
+                        >
+                          {item.pr_title ?? item.pr_url}
+                        </span>
+                        <span class="mt-0.5 block truncate text-xs text-muted-foreground">
+                          {[item.repo, item.actor].filter(Boolean).join(' · ')}
+                          {#if eventCount}
+                            <span class="ml-1">· {eventCount}</span>
+                          {/if}
+                          {#if item.summary}
+                            <span class="ml-1">· {item.summary}</span>
+                          {/if}
+                        </span>
+                      </div>
+                    </div>
+                  </td>
 
-                    {#if actionConfig}
-                      {#if actionConfig.type === 'external-link'}
-                        {#if !item.viewHref?.external}
+                  <td class="px-4 py-3 text-muted-foreground">
+                    <Popover>
+                      <PopoverTrigger
+                        openOnHover
+                        openDelay={150}
+                        closeDelay={100}
+                        class="cursor-default underline decoration-dotted underline-offset-2"
+                      >
+                        {formatRelativeTime(item.last_event_at)}
+                      </PopoverTrigger>
+                      <PopoverContent align="start" class="w-72 text-xs">
+                        <dl class="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
+                          <dt class="text-muted-foreground">First event</dt>
+                          <dd class="text-foreground">
+                            {formatAbsoluteTime(item.first_event_at)}
+                          </dd>
+                          <dt class="text-muted-foreground">Latest event</dt>
+                          <dd class="text-foreground">
+                            {formatAbsoluteTime(item.last_event_at)}
+                          </dd>
+                        </dl>
+                      </PopoverContent>
+                    </Popover>
+                  </td>
+
+                  <td class="px-4 py-3">
+                    <div class="flex items-center justify-end gap-2">
+                      {#if item.viewHref}
+                        {#if item.viewHref.external}
                           <a
-                            href={item.pr_url}
+                            href={item.viewHref.href}
                             target="_blank"
                             rel="noopener noreferrer"
                             class="text-sm font-medium text-primary hover:underline"
                             onclick={() => markItemRead(item.id)}
                           >
-                            {actionConfig.label} ↗
+                            View ↗
                           </a>
-                        {/if}
-                      {:else if actionConfig.type === 'launch'}
-                        {#if hasLaunchError}
-                          <button
-                            type="button"
-                            class="shrink-0 rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600"
-                            onclick={(e) => handleActionClick(e, item)}
-                          >
-                            Retry
-                          </button>
-                        {:else if launchStatus === 'already_running'}
-                          <span class="shrink-0 text-xs text-muted-foreground">
-                            Already running
-                          </span>
-                        {:else if launchStatus === 'started'}
-                          <span class="shrink-0 text-xs text-green-600 dark:text-green-400">
-                            Started
-                          </span>
                         {:else}
                           <button
                             type="button"
-                            class="shrink-0 rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-700 dark:hover:bg-blue-600"
-                            disabled={isLaunching}
-                            onclick={(e) => handleActionClick(e, item)}
+                            class="text-sm font-medium text-primary hover:underline"
+                            onclick={() => handleViewClick(item)}
                           >
-                            {isLaunching ? 'Starting...' : actionConfig.label}
+                            View
                           </button>
                         {/if}
                       {/if}
-                    {/if}
 
-                    <button
-                      type="button"
-                      class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      onclick={(e) => handleDismiss(e, item.id)}
-                      aria-label="Dismiss notification"
-                    >
-                      <X class="size-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {:else}
-      <div class="rounded-lg border border-dashed border-border px-6 py-10 text-center">
-        <p class="text-sm text-muted-foreground">No inbox notifications.</p>
-      </div>
+                      {#if actionConfig}
+                        {#if actionConfig.type === 'external-link'}
+                          {#if !item.viewHref?.external}
+                            <a
+                              href={item.pr_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="text-sm font-medium text-primary hover:underline"
+                              onclick={() => markItemRead(item.id)}
+                            >
+                              {actionConfig.label} ↗
+                            </a>
+                          {/if}
+                        {:else if actionConfig.type === 'launch'}
+                          {#if hasLaunchError}
+                            <button
+                              type="button"
+                              class="shrink-0 rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600"
+                              onclick={(e) => handleActionClick(e, item)}
+                            >
+                              Retry
+                            </button>
+                          {:else if launchStatus === 'already_running'}
+                            <span class="shrink-0 text-xs text-muted-foreground">
+                              Already running
+                            </span>
+                          {:else if launchStatus === 'started'}
+                            <span class="shrink-0 text-xs text-green-600 dark:text-green-400">
+                              Started
+                            </span>
+                          {:else}
+                            <button
+                              type="button"
+                              class="shrink-0 rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-700 dark:hover:bg-blue-600"
+                              disabled={isLaunching}
+                              onclick={(e) => handleActionClick(e, item)}
+                            >
+                              {isLaunching ? 'Starting...' : actionConfig.label}
+                            </button>
+                          {/if}
+                        {/if}
+                      {/if}
+
+                      <button
+                        type="button"
+                        class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        onclick={(e) => handleDismiss(e, item.id)}
+                        aria-label="Dismiss notification"
+                      >
+                        <X class="size-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <div class="rounded-lg border border-dashed border-border px-6 py-10 text-center">
+          <p class="text-sm text-muted-foreground">No inbox notifications.</p>
+        </div>
+      {/if}
     {/if}
   </div>
 </div>

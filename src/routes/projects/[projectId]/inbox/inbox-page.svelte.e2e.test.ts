@@ -426,6 +426,27 @@ describe('inbox full page', () => {
     await expect.element(page.getByText('No inbox notifications.')).not.toBeInTheDocument();
   });
 
+  test('shows a refresh error banner with retry while preserving cached items', async () => {
+    const items = [makeItem({ id: 1, pr_title: 'Cached item' })];
+    mocks.inboxQuery.current = makeResponse({ items, unreadCount: 1, totalCount: 1 });
+    mocks.inboxQuery.error = new Error('Connection lost');
+    mocks.inboxQuery.loading = false;
+    mocks.getInboxItems.mockReturnValue(mocks.inboxQuery);
+    unmountRendered = render(InboxPage).unmount;
+
+    await expect.element(page.getByRole('alert')).toBeVisible();
+    await expect.element(page.getByText(/Failed to refresh inbox/)).toBeVisible();
+    await expect.element(page.getByText('Connection lost')).toBeVisible();
+
+    await expect.element(page.getByText('Cached item', { exact: true })).toBeVisible();
+    await expect.element(page.getByText('1 unread · 1 total')).toBeVisible();
+
+    await expect.element(page.getByText('No inbox notifications.')).not.toBeInTheDocument();
+
+    await page.getByRole('alert').getByRole('button', { name: 'Retry' }).click();
+    expect(mocks.inboxQuery.refresh).toHaveBeenCalledTimes(1);
+  });
+
   test('shows an error message with retry button when the query fails', async () => {
     mocks.inboxQuery.current = null;
     mocks.inboxQuery.loading = false;
