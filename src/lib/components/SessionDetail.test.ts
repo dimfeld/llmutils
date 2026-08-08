@@ -142,10 +142,29 @@ describe('SessionDetail', () => {
     expect(body).not.toContain('End Session');
   });
 
-  test('does not render a process tree section when there are no tracked processes', async () => {
+  test('shows a loading state in the process section for an active session with no tree yet', async () => {
     const session = createSession({ status: 'active', processTree: [] });
     const { body } = await render(SessionDetail, { props: { session } });
 
+    expect(body).toContain('Loading processes');
+    expect(body).toContain('role="status"');
+    expect(body).not.toContain('role="tree"');
+  });
+
+  test('does not render a process section for an offline session with no tracked processes', async () => {
+    const session = createSession({ status: 'offline', processTree: [] });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).not.toContain('Loading processes');
+    expect(body).not.toContain('No active processes');
+    expect(body).not.toContain('role="tree"');
+  });
+
+  test('does not render a process section for a notification session with no tracked processes', async () => {
+    const session = createSession({ status: 'notification', processTree: [] });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).not.toContain('Loading processes');
     expect(body).not.toContain('No active processes');
     expect(body).not.toContain('role="tree"');
   });

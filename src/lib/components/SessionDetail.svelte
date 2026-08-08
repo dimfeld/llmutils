@@ -345,6 +345,8 @@
   }
 
   let hasProcessTree = $derived(session.processTree.length > 0);
+  let showProcessSection = $derived(hasProcessTree || session.status === 'active');
+  let processTreeLoading = $derived(session.status === 'active' && !hasProcessTree);
 
   let hasMessages = $derived(session.messages.length > 0);
   let activePrompt = $derived(session.activePrompts[0] ?? null);
@@ -709,12 +711,13 @@
     {/if}
   </div>
 
-  {#if hasProcessTree}
+  {#if showProcessSection}
     <div class="shrink-0 border-b border-border px-4 py-2">
       <ProcessTree
         processTree={session.processTree}
         connectionId={session.connectionId}
         sessionStatus={session.status}
+        loading={processTreeLoading}
       />
     </div>
   {/if}

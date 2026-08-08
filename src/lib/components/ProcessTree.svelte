@@ -23,9 +23,10 @@
     processTree: SessionProcessNode[];
     connectionId: string;
     sessionStatus: 'active' | 'offline' | 'notification';
+    loading?: boolean;
   }
 
-  let { processTree, connectionId, sessionStatus }: Props = $props();
+  let { processTree, connectionId, sessionStatus, loading = false }: Props = $props();
   const sessionManager = useSessionManager();
 
   let roots = $derived(buildProcessTree(processTree));
@@ -144,7 +145,9 @@
   }
 </script>
 
-{#if flatNodes.length === 0}
+{#if loading && flatNodes.length === 0}
+  <p class="py-2 text-xs text-muted-foreground" role="status">Loading processes…</p>
+{:else if flatNodes.length === 0}
   <p class="py-2 text-xs text-muted-foreground">No active processes</p>
 {:else}
   <ul role="tree" aria-label="Session processes" class="space-y-0.5">
@@ -205,7 +208,11 @@
 
         {#if showTerminate}
           {#if ts?.pending}
-            <span class="ml-auto flex shrink-0 items-center gap-1 text-muted-foreground">
+            <span
+              class="ml-auto flex shrink-0 items-center gap-1 text-muted-foreground"
+              role="status"
+              aria-live="polite"
+            >
               <Loader class="size-3 animate-spin" />
               <span>Terminating…</span>
             </span>
@@ -229,6 +236,8 @@
           {:else if ts?.result}
             {@const outcome = classifyTerminationStatus(ts.result.status)}
             <span
+              role="status"
+              aria-live="polite"
               class="ml-auto shrink-0 text-xs {outcome === 'success'
                 ? 'text-green-400'
                 : outcome === 'stale'
@@ -254,6 +263,8 @@
         {#if !showTerminate && ts?.result}
           {@const outcome = classifyTerminationStatus(ts.result.status)}
           <span
+            role="status"
+            aria-live="polite"
             class="ml-auto shrink-0 text-xs {outcome === 'success'
               ? 'text-green-400'
               : outcome === 'stale'

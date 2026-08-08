@@ -38,12 +38,36 @@ describe('ProcessTree', () => {
     terminateExecutor.mockReset();
   });
 
-  test('shows empty message when processTree is empty', async () => {
+  test('shows empty message when processTree is empty and not loading', async () => {
     render(ProcessTree, {
       props: { processTree: [], connectionId: 'conn-1', sessionStatus: 'active' },
     });
 
     await expect.element(page.getByText('No active processes')).toBeVisible();
+  });
+
+  test('shows accessible loading state when loading prop is true', async () => {
+    render(ProcessTree, {
+      props: { processTree: [], connectionId: 'conn-1', sessionStatus: 'active', loading: true },
+    });
+
+    const loading = page.getByText('Loading processes…');
+    await expect.element(loading).toBeVisible();
+    await expect.element(loading).toHaveAttribute('role', 'status');
+    await expect.element(page.getByText('No active processes')).not.toBeInTheDocument();
+  });
+
+  test('renders the tree instead of loading when nodes arrive', async () => {
+    const nodes: SessionProcessNode[] = [
+      makeNode({ processId: 'p1', kind: 'tim', label: 'agent', state: 'running' }),
+    ];
+
+    render(ProcessTree, {
+      props: { processTree: nodes, connectionId: 'conn-1', sessionStatus: 'active', loading: true },
+    });
+
+    await expect.element(page.getByRole('tree', { name: 'Session processes' })).toBeVisible();
+    await expect.element(page.getByText('Loading processes…')).not.toBeInTheDocument();
   });
 
   test('renders a single process with label and state', async () => {
@@ -530,6 +554,37 @@ describe('ProcessTree', () => {
 
     await expect.element(page.getByRole('img', { name: 'Starting' })).toBeInTheDocument();
     await expect.element(page.getByRole('button', { name: /Terminate booting/ })).toBeVisible();
+  });
+
+  test('pending termination indicator has accessible live status', async () => {
+    let resolveTermination: (value: SessionExecutorTerminationResult) => void = () => {};
+    terminateExecutor.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveTermination = resolve;
+        })
+    );
+
+    const nodes: SessionProcessNode[] = [
+      makeNode({ processId: 'exec1', kind: 'executor', label: 'claude', state: 'running' }),
+    ];
+
+    render(ProcessTree, {
+      props: { processTree: nodes, connectionId: 'conn-1', sessionStatus: 'active' },
+    });
+
+    await page.getByRole('button', { name: /Terminate claude/ }).click();
+    await page.getByRole('button', { name: 'Confirm' }).click();
+
+    const pendingStatus = page.getByRole('status');
+    await expect.element(pendingStatus).toBeVisible();
+    await expect.element(pendingStatus).toHaveAttribute('aria-live', 'polite');
+
+    resolveTermination({ executorId: 'exec1', status: 'terminated' });
+
+    const resultStatus = page.getByRole('status');
+    await expect.element(resultStatus).toBeVisible();
+    await expect.element(resultStatus).toHaveAttribute('aria-live', 'polite');
   });
 
   test('does not send a second termination request while one is still pending', async () => {
