@@ -169,7 +169,7 @@ describe('inbox remote functions', () => {
     const expectedActions: Array<[InboxItemKind, string | null, number | null]> = [
       ['review_requested', 'review-guide', 101],
       ['pr_comment', 'pr-fix', 102],
-      ['reviewed_pr_comment', 'pr-fix', 103],
+      ['reviewed_pr_comment', null, 103],
       ['pr_merged', null, 104],
       ['pr_approved', null, 105],
       ['ci_failure', 'ci-fix', null],
@@ -212,6 +212,7 @@ describe('inbox remote functions', () => {
 
     await expect(invokeQuery(getInboxItems, { projectId: 'all' })).resolves.toMatchObject({
       unreadCount: 2,
+      totalCount: 3,
       items: [
         expect.objectContaining({ id: projectItem.id, project_id: projectId }),
         expect.objectContaining({ id: otherProjectItem.id, project_id: otherProjectId }),
@@ -222,6 +223,7 @@ describe('inbox remote functions', () => {
       invokeQuery(getInboxItems, { projectId: String(projectId) })
     ).resolves.toMatchObject({
       unreadCount: 1,
+      totalCount: 2,
       items: [expect.objectContaining({ id: projectItem.id, project_id: projectId })],
     });
 
@@ -229,6 +231,7 @@ describe('inbox remote functions', () => {
       invokeQuery(getInboxItems, { projectId: String(otherProjectId) })
     ).resolves.toMatchObject({
       unreadCount: 1,
+      totalCount: 1,
       items: [expect.objectContaining({ id: otherProjectItem.id, project_id: otherProjectId })],
     });
   });
@@ -245,6 +248,7 @@ describe('inbox remote functions', () => {
     const result = await invokeQuery(getInboxItems, { projectId: String(projectId) });
 
     expect(result.unreadCount).toBe(55);
+    expect(result.totalCount).toBe(55);
     expect(result.items).toHaveLength(50);
     expect(result.items.map((item) => item.id)).toEqual(
       seededRows
@@ -258,6 +262,41 @@ describe('inbox remote functions', () => {
         .reverse()
         .map((row) => row.last_event_at)
     );
+  });
+
+  test('totalCount includes read items and unreadCount never exceeds totalCount with >100 items', async () => {
+    const total = 120;
+    const readCount = 30;
+    for (let i = 0; i < total; i++) {
+      seedInboxItem({
+        prNumber: 800 + i,
+        eventAt: new Date(Date.UTC(2026, 7, 1, 0, i % 60, i)).toISOString(),
+      });
+    }
+
+    const readIds = currentDb
+      .prepare('SELECT id FROM inbox_item ORDER BY id LIMIT ?')
+      .all(readCount) as Array<{ id: number }>;
+    markInboxItemsReadRows(
+      currentDb,
+      readIds.map((row) => row.id)
+    );
+
+    const { getInboxItems } = await import('./inbox.remote.js');
+
+    const unreadResult = await invokeQuery(getInboxItems, { projectId: String(projectId) });
+    expect(unreadResult.totalCount).toBe(total);
+    expect(unreadResult.unreadCount).toBe(total - readCount);
+    expect(unreadResult.unreadCount).toBeLessThanOrEqual(unreadResult.totalCount);
+    expect(unreadResult.items).toHaveLength(50);
+
+    const includeReadResult = await invokeQuery(getInboxItems, {
+      projectId: String(projectId),
+      includeRead: true,
+    });
+    expect(includeReadResult.totalCount).toBe(total);
+    expect(includeReadResult.unreadCount).toBe(total - readCount);
+    expect(includeReadResult.items).toHaveLength(100);
   });
 
   test('marks selected inbox items read', async () => {
@@ -380,6 +419,7 @@ describe('inbox remote functions', () => {
       invokeQuery(getInboxItems, { projectId: String(projectId) })
     ).resolves.toMatchObject({
       unreadCount: 0,
+      totalCount: 0,
       items: [],
     });
   });

@@ -3,6 +3,7 @@ import type { Database } from 'bun:sqlite';
 
 import { openDatabase } from './database.js';
 import {
+  countTotalInboxItems,
   countUnreadInboxItems,
   dismissInboxItem,
   INBOX_ITEM_KINDS,
@@ -371,6 +372,11 @@ describe('tim db/inbox_item', () => {
     expect(countUnreadInboxItems(db, { projectId })).toBe(1);
     expect(countUnreadInboxItems(db, { projectId: otherProjectId })).toBe(1);
     expect(countUnreadInboxItems(db, { projectId: 'all' })).toBe(2);
+
+    expect(countTotalInboxItems(db, { projectId })).toBe(2);
+    expect(countTotalInboxItems(db, { projectId: otherProjectId })).toBe(2);
+    expect(countTotalInboxItems(db, { projectId: 'all' })).toBe(4);
+
     expect(getInboxRow(projectUnread.id).read_at).toBeNull();
     expect(getInboxRow(otherUnread.id).read_at).toBeNull();
   });

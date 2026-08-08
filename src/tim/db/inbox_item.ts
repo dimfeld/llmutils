@@ -181,6 +181,28 @@ export function countUnreadInboxItems(
   return row.count;
 }
 
+export function countTotalInboxItems(db: Database, options: { projectId: number | 'all' }): number {
+  const conditions = ['dismissed_at IS NULL'];
+  const parameters: Array<number | string> = [];
+
+  if (options.projectId !== 'all') {
+    conditions.push('project_id = ?');
+    parameters.push(options.projectId);
+  }
+
+  const row = db
+    .prepare(
+      `
+        SELECT COUNT(*) AS count
+        FROM inbox_item
+        WHERE ${conditions.join(' AND ')}
+      `
+    )
+    .get(...parameters) as { count: number };
+
+  return row.count;
+}
+
 function getDistinctProjectIds(rows: Array<{ project_id: number | null }>): number[] {
   return Array.from(
     new Set(rows.flatMap((row) => (row.project_id === null ? [] : [row.project_id])))

@@ -29,8 +29,9 @@ function getActionType(kind: InboxItemKind): InboxActionType | null {
     case 'review_requested':
       return 'review-guide';
     case 'pr_comment':
-    case 'reviewed_pr_comment':
       return 'pr-fix';
+    case 'reviewed_pr_comment':
+      return null;
     case 'ci_failure':
       return 'ci-fix';
     case 'merge_queue_removed':

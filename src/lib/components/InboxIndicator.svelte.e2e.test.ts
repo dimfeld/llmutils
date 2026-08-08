@@ -87,7 +87,7 @@ function makeItem(overrides: Partial<EnrichedInboxItem> = {}): EnrichedInboxItem
 }
 
 function makeResponse(overrides: Partial<InboxItemsResponse> = {}): InboxItemsResponse {
-  return { items: [], unreadCount: 0, ...overrides };
+  return { items: [], unreadCount: 0, totalCount: 0, ...overrides };
 }
 
 function renderIndicator(response: InboxItemsResponse | null): void {

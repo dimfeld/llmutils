@@ -102,7 +102,7 @@ function makeItem(overrides: Partial<EnrichedInboxItem> = {}): EnrichedInboxItem
 }
 
 function makeResponse(overrides: Partial<InboxItemsResponse> = {}): InboxItemsResponse {
-  return { items: [], unreadCount: 0, ...overrides };
+  return { items: [], unreadCount: 0, totalCount: 0, ...overrides };
 }
 
 function renderPage(response: InboxItemsResponse | null): void {
@@ -145,6 +145,7 @@ describe('inbox full page', () => {
       makeResponse({
         items: [makeItem({ id: 1 }), makeItem({ id: 2, read_at: '2026-08-07T12:00:00.000Z' })],
         unreadCount: 1,
+        totalCount: 2,
       })
     );
 
@@ -235,6 +236,28 @@ describe('inbox full page', () => {
 
     await link.click();
     expect(mocks.markInboxItemsRead).toHaveBeenCalledWith({ ids: [10] });
+  });
+
+  test('merge_queue_removed with a locally-known PR shows both internal View and external GitHub link', async () => {
+    const item = makeItem({
+      id: 30,
+      kind: 'merge_queue_removed',
+      viewHref: { href: '/projects/7/prs/42', external: false },
+      action: { type: 'github', projectId: 7, prNumber: 42 },
+    });
+    renderPage(makeResponse({ items: [item], unreadCount: 1 }));
+
+    await expect.element(page.getByRole('button', { name: 'View' })).toBeVisible();
+
+    const githubLink = page.getByRole('link', { name: /View on GitHub/ });
+    await expect
+      .element(githubLink)
+      .toHaveAttribute('href', 'https://github.com/owner/repo/pull/42');
+    await expect.element(githubLink).toHaveAttribute('target', '_blank');
+    await expect.element(githubLink).toHaveAttribute('rel', 'noopener noreferrer');
+
+    await githubLink.click();
+    expect(mocks.markInboxItemsRead).toHaveBeenCalledWith({ ids: [30] });
   });
 
   test('review_requested rows show a Run Review Guide button that launches and marks read', async () => {
@@ -390,6 +413,31 @@ describe('inbox full page', () => {
     renderPage(makeResponse());
 
     await expect.element(page.getByText('No inbox notifications.')).toBeVisible();
+  });
+
+  test('shows a loading indicator during initial load and not the empty state', async () => {
+    mocks.inboxQuery.current = null;
+    mocks.inboxQuery.loading = true;
+    mocks.inboxQuery.error = null;
+    mocks.getInboxItems.mockReturnValue(mocks.inboxQuery);
+    unmountRendered = render(InboxPage).unmount;
+
+    await expect.element(page.getByText('Loading inbox...')).toBeVisible();
+    await expect.element(page.getByText('No inbox notifications.')).not.toBeInTheDocument();
+  });
+
+  test('shows an error message with retry button when the query fails', async () => {
+    mocks.inboxQuery.current = null;
+    mocks.inboxQuery.loading = false;
+    mocks.inboxQuery.error = new Error('Network timeout');
+    mocks.getInboxItems.mockReturnValue(mocks.inboxQuery);
+    unmountRendered = render(InboxPage).unmount;
+
+    await expect.element(page.getByText(/Failed to load inbox/)).toBeVisible();
+    await expect.element(page.getByText('No inbox notifications.')).not.toBeInTheDocument();
+
+    await page.getByRole('button', { name: 'Retry' }).click();
+    expect(mocks.inboxQuery.refresh).toHaveBeenCalledTimes(1);
   });
 
   test('refreshes the query on inbox:updated SSE events and on the polling fallback', async () => {

@@ -8,6 +8,7 @@ function makeResponse(overrides: Partial<InboxItemsResponse> = {}): InboxItemsRe
   return {
     items: [],
     unreadCount: 0,
+    totalCount: 0,
     ...overrides,
   };
 }

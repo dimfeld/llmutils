@@ -36,9 +36,12 @@
 
   let inboxQuery = $derived(getInboxItems({ projectId, includeRead: true }));
   let data = $derived(inboxQuery.current);
+  let queryLoading = $derived(inboxQuery.loading);
+  let queryError = $derived(inboxQuery.error);
   let items = $derived(data?.items ?? []);
   let unreadCount = $derived(data?.unreadCount ?? 0);
-  let totalCount = $derived(items.length);
+  let totalCount = $derived(data?.totalCount ?? 0);
+  let showLoading = $derived(queryLoading && !data && !queryError);
 
   // Per-row launch state keyed by item id
   let launchingIds = new SvelteSet<number>();
@@ -209,7 +212,24 @@
       </div>
     </div>
 
-    {#if items.length > 0}
+    {#if showLoading}
+      <div class="rounded-lg border border-dashed border-border px-6 py-10 text-center">
+        <p class="text-sm text-muted-foreground">Loading inbox...</p>
+      </div>
+    {:else if queryError && !data}
+      <div class="rounded-lg border border-dashed border-border px-6 py-10 text-center">
+        <p class="text-sm text-red-600 dark:text-red-400">
+          Failed to load inbox: {extractRemoteErrorMessage(queryError)}
+        </p>
+        <button
+          type="button"
+          class="mt-3 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+          onclick={() => refreshQuery()}
+        >
+          Retry
+        </button>
+      </div>
+    {:else if items.length > 0}
       <div class="overflow-hidden rounded-lg border border-border">
         <table class="w-full border-collapse text-sm">
           <thead class="bg-muted/50 text-xs tracking-wide text-muted-foreground uppercase">
@@ -328,8 +348,18 @@
                     {/if}
 
                     {#if actionConfig}
-                      {#if actionConfig.type === 'external-link' && item.viewHref?.external}
-                        <!-- External-link actions share the View link above -->
+                      {#if actionConfig.type === 'external-link'}
+                        {#if !item.viewHref?.external}
+                          <a
+                            href={item.pr_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-sm font-medium text-primary hover:underline"
+                            onclick={() => markItemRead(item.id)}
+                          >
+                            {actionConfig.label} ↗
+                          </a>
+                        {/if}
                       {:else if actionConfig.type === 'launch'}
                         {#if hasLaunchError}
                           <button

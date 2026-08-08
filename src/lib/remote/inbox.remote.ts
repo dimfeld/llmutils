@@ -5,6 +5,7 @@ import { enrichInboxItems, type EnrichedInboxItem } from '$lib/server/inbox_enri
 import { getServerContext } from '$lib/server/init.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import {
+  countTotalInboxItems,
   countUnreadInboxItems,
   dismissInboxItem as dismissInboxItemRow,
   listRecentInboxItems,
@@ -34,6 +35,7 @@ const markInboxItemsReadSchema = z.object({
 export interface InboxItemsResponse {
   items: EnrichedInboxItem[];
   unreadCount: number;
+  totalCount: number;
 }
 
 export const getInboxItems = query(
@@ -50,6 +52,7 @@ export const getInboxItems = query(
     return {
       items: enrichInboxItems(db, rows),
       unreadCount: countUnreadInboxItems(db, { projectId: scope }),
+      totalCount: countTotalInboxItems(db, { projectId: scope }),
     };
   }
 );
