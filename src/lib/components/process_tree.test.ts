@@ -78,6 +78,35 @@ describe('buildProcessTree', () => {
     expect(roots).toHaveLength(1);
     expect(roots[0].children).toHaveLength(2);
   });
+
+  test('self-referencing parent does not hang and drops the node from the tree', () => {
+    const nodes = [makeNode({ processId: 'a', parentProcessId: 'a' })];
+    const roots = buildProcessTree(nodes);
+    expect(roots).toHaveLength(0);
+    expect(flattenTree(roots)).toHaveLength(0);
+  });
+
+  test('mutual parent cycle does not hang and produces no roots', () => {
+    const nodes = [
+      makeNode({ processId: 'a', parentProcessId: 'b' }),
+      makeNode({ processId: 'b', parentProcessId: 'a' }),
+    ];
+    const roots = buildProcessTree(nodes);
+    expect(roots).toHaveLength(0);
+    expect(flattenTree(roots)).toHaveLength(0);
+  });
+
+  test('cyclic pair does not affect an unrelated valid root', () => {
+    const nodes = [
+      makeNode({ processId: 'a', parentProcessId: 'b' }),
+      makeNode({ processId: 'b', parentProcessId: 'a' }),
+      makeNode({ processId: 'root', label: 'valid root' }),
+    ];
+    const roots = buildProcessTree(nodes);
+    expect(roots).toHaveLength(1);
+    expect(roots[0].process.processId).toBe('root');
+    expect(flattenTree(roots)).toHaveLength(1);
+  });
 });
 
 describe('flattenTree', () => {
@@ -180,6 +209,31 @@ describe('classifyTerminationStatus', () => {
     expect(classifyTerminationStatus('request_timeout')).toBe('error');
     expect(classifyTerminationStatus('offline')).toBe('error');
     expect(classifyTerminationStatus('request_failed')).toBe('error');
+  });
+
+  test('every known status maps to exactly one outcome', () => {
+    const expected: Record<string, 'success' | 'stale' | 'error'> = {
+      terminated: 'success',
+      requested: 'success',
+      already_exited: 'success',
+      not_owned: 'error',
+      not_executor: 'error',
+      stale_target: 'stale',
+      unknown_process_state: 'stale',
+      signal_failed: 'error',
+      unknown_executor: 'error',
+      owner_not_registered: 'error',
+      owner_not_connected: 'error',
+      send_failed: 'error',
+      request_timeout: 'error',
+      offline: 'error',
+      session_not_found: 'error',
+      request_failed: 'error',
+    };
+
+    for (const [status, outcome] of Object.entries(expected)) {
+      expect(classifyTerminationStatus(status as never)).toBe(outcome);
+    }
   });
 });
 

@@ -142,6 +142,70 @@ describe('SessionDetail', () => {
     expect(body).not.toContain('End Session');
   });
 
+  test('does not render a process tree section when there are no tracked processes', async () => {
+    const session = createSession({ status: 'active', processTree: [] });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).not.toContain('No active processes');
+    expect(body).not.toContain('role="tree"');
+  });
+
+  test('renders the process tree section alongside, but distinct from, End Session controls', async () => {
+    const session = createSession({
+      status: 'active',
+      processTree: [
+        {
+          processId: 'tim1',
+          kind: 'tim',
+          label: 'root agent',
+          startedAt: '2026-03-25T10:00:00.000Z',
+          state: 'running',
+        },
+        {
+          processId: 'exec1',
+          parentProcessId: 'tim1',
+          kind: 'executor',
+          label: 'claude streaming',
+          startedAt: '2026-03-25T10:00:00.000Z',
+          state: 'running',
+        },
+      ],
+    });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('role="tree"');
+    expect(body).toContain('aria-label="Session processes"');
+    expect(body).toContain('root agent');
+    expect(body).toContain('claude streaming');
+    // The executor's Terminate action is a distinct control from the
+    // session-wide End Session button and must not be confused with it.
+    expect(body).toContain('Terminate claude streaming');
+    expect(body).toContain('End Session');
+    expect(body).not.toContain('Terminate root agent');
+  });
+
+  test('renders the process tree for offline sessions without a Terminate action', async () => {
+    const session = createSession({
+      status: 'offline',
+      processTree: [
+        {
+          processId: 'exec1',
+          kind: 'executor',
+          label: 'claude streaming',
+          startedAt: '2026-03-25T10:00:00.000Z',
+          state: 'exited',
+          exitCode: 0,
+        },
+      ],
+    });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('role="tree"');
+    expect(body).toContain('claude streaming');
+    expect(body).not.toContain('End Session');
+    expect(body).not.toContain('Terminate claude streaming');
+  });
+
   test('renders message input with aria-label when session has active freeform prompt', async () => {
     const session = createSession({
       status: 'active',
