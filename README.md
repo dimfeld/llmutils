@@ -266,9 +266,9 @@ The web UI discovers running agent processes through session files in `~/.cache/
 
 Session Detail also shows the live, ephemeral process tree for a headless session. It includes
 nested `tim` commands and their Claude or Codex executors, with labels, state, elapsed time, and
-PID when available. You can terminate one live executor after confirmation; tim routes the
-request to the owning `tim` process and validates the process identity before sending `SIGTERM`.
-**End Session** and **Force End** remain session-wide controls.
+PID when available. You can end or terminate one live executor after confirmation. A shared Codex
+app-server appears as a logical Codex thread node without a PID, so End can interrupt that thread
+without stopping other executors. **End Session** and **Force End** remain session-wide controls.
 Process tracking is explicit and session-scoped; it does not add a PID-based control API or write
 process state to the plan database.
 

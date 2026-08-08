@@ -3,6 +3,7 @@ import {
   isProcessId,
   normalizeSessionProcessCommand,
   type ProcessId,
+  type SessionProcessControlOperation,
   type SessionProcessRegistry,
 } from '../common/session_process.js';
 
@@ -45,11 +46,12 @@ export class TunnelProcessRouter {
 
   registerClient(channel: TunnelProcessChannel): void {
     this.channels.set(channel.id, channel);
-    this.registry?.registerOwnerChannelSender(channel.id, (executorId, requestId) =>
+    this.registry?.registerOwnerChannelSender(channel.id, (executorId, requestId, operation) =>
       channel.send({
         type: 'terminate_executor',
         executorId,
         ...(requestId ? { requestId } : {}),
+        ...(operation && operation !== 'terminate' ? { action: operation } : {}),
       })
     );
   }
@@ -89,6 +91,18 @@ export class TunnelProcessRouter {
   }
 
   sendExecutorTermination(executorId: ProcessId, requestId?: string): TunnelControlResult {
+    return this.sendExecutorOperation(executorId, 'terminate', requestId);
+  }
+
+  sendExecutorEnd(executorId: ProcessId, requestId?: string): TunnelControlResult {
+    return this.sendExecutorOperation(executorId, 'end', requestId);
+  }
+
+  private sendExecutorOperation(
+    executorId: ProcessId,
+    operation: SessionProcessControlOperation,
+    requestId?: string
+  ): TunnelControlResult {
     const registry = this.registry;
     if (!registry || !isProcessId(executorId)) {
       return { ok: false, reason: 'unknown_executor' };
@@ -130,6 +144,7 @@ export class TunnelProcessRouter {
       type: 'terminate_executor',
       executorId,
       ...(requestId ? { requestId } : {}),
+      ...(operation !== 'terminate' ? { action: operation } : {}),
     });
     return sent ? { ok: true, clientId } : { ok: false, reason: 'send_failed' };
   }
@@ -182,6 +197,8 @@ export class TunnelProcessRouter {
         pid: message.pid,
         command,
         startIdentity: message.startIdentity,
+        control: message.control,
+        threadId: message.threadId,
         startedAt: message.startedAt,
         state: message.state,
       },
@@ -216,6 +233,7 @@ export class TunnelProcessRouter {
         pid: message.pid,
         command,
         startIdentity: message.startIdentity,
+        threadId: message.threadId,
         state: message.state,
       }) !== undefined
     );

@@ -14,6 +14,7 @@ import {
   getCurrentSessionProcessOwner,
   type SessionExecutorLifecycle,
 } from '../../../common/session_process_control.js';
+import type { SessionProcessUpdate } from '../../../common/session_process.js';
 
 export const TIM_CODEX_APP_SERVER_SOCKET = 'TIM_CODEX_APP_SERVER_SOCKET';
 const DEFAULT_CLOSE_TIMEOUT_MS = 2_000;
@@ -660,6 +661,7 @@ export class CodexAppServerConnection {
     const lifecycle = getCurrentSessionProcessOwner()?.prepareExecutor({
       label: options.sessionProcessLabel ?? 'Codex app-server',
       command: `codex app-server --listen unix://${socketPath}`,
+      control: 'both',
     });
     const spawnEnv = {
       ...env,
@@ -703,6 +705,18 @@ export class CodexAppServerConnection {
 
   get pid(): number | undefined {
     return this.owner.kind === 'spawned' ? this.owner.proc.pid : undefined;
+  }
+
+  setGracefulEndHandler(handler: (() => void) | undefined): void {
+    if (this.owner.kind === 'spawned') {
+      this.owner.lifecycle?.setGracefulEndHandler(handler);
+    }
+  }
+
+  updateMetadata(update: SessionProcessUpdate): void {
+    if (this.owner.kind === 'spawned') {
+      this.owner.lifecycle?.updateMetadata(update);
+    }
   }
 
   async threadStart(params: ThreadStartParams): Promise<ThreadResult> {

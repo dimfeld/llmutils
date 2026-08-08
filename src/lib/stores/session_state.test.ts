@@ -9,6 +9,7 @@ vi.mock('$lib/remote/session_actions.remote.js', () => ({
   activateSessionTerminalPane: vi.fn(),
   dismissInactiveSessions: vi.fn(),
   dismissSession: vi.fn(),
+  endExecutor: vi.fn(),
   endSession: vi.fn(),
   forceEndSession: vi.fn(),
   openTerminal: vi.fn(),
@@ -21,6 +22,7 @@ import {
   activateSessionTerminalPane,
   dismissInactiveSessions,
   dismissSession,
+  endExecutor,
   endSession,
   forceEndSession,
   openTerminal,
@@ -335,6 +337,23 @@ describe('SessionManager remote action wrappers', () => {
       executorId: 'executor-1',
       status: 'request_failed',
       message: 'routing failed',
+    });
+  });
+
+  test('endExecutor forwards the opaque node ID and returns the remote result', async () => {
+    const manager = new SessionManager();
+    vi.mocked(endExecutor).mockResolvedValueOnce({
+      executorId: 'executor-1',
+      status: 'ended',
+    });
+
+    await expect(manager.endExecutor('conn-exec', 'executor-1')).resolves.toEqual({
+      executorId: 'executor-1',
+      status: 'ended',
+    });
+    expect(vi.mocked(endExecutor)).toHaveBeenCalledWith({
+      connectionId: 'conn-exec',
+      executorId: 'executor-1',
     });
   });
 

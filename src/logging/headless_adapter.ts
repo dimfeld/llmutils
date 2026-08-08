@@ -26,6 +26,7 @@ import {
   TIM_PROCESS_ID,
   TIM_SESSION_ID,
   type ProcessId,
+  type SessionProcessControlOperation,
   type SessionProcessChange,
 } from '../common/session_process.js';
 import type { StructuredMessage } from './structured_messages.js';
@@ -142,9 +143,14 @@ export class HeadlessAdapter implements LoggerAdapter {
         ownerProcessId: rootProcessId,
         lifecycleSink: new SessionProcessRegistryLifecycleSink(this.processRegistry),
         onTerminationResult: (executorId, result, error) => {
-          if (result === 'signal_failed' || result === 'unknown_process_state') {
+          if (
+            result === 'signal_failed' ||
+            result === 'unknown_process_state' ||
+            result === 'end_failed' ||
+            result === 'end_not_supported'
+          ) {
             const detail = error instanceof Error ? `: ${error.message}` : '';
-            this.wrappedAdapter.warn(`Could not terminate executor ${executorId}${detail}`);
+            this.wrappedAdapter.warn(`Could not control executor ${executorId}${detail}`);
           }
         },
       });
@@ -309,7 +315,13 @@ export class HeadlessAdapter implements LoggerAdapter {
 
   /** Routes a targeted control request to a direct executor child. */
   terminateExecutor(executorId: ProcessId): SessionProcessTerminationResult {
-    const result = this.routeExecutorTermination(executorId);
+    const result = this.routeExecutorControl(executorId, 'terminate');
+    return result === 'pending' ? 'requested' : result;
+  }
+
+  /** Routes a graceful end request to one live executor. */
+  endExecutor(executorId: ProcessId): SessionProcessTerminationResult {
+    const result = this.routeExecutorControl(executorId, 'end');
     return result === 'pending' ? 'requested' : result;
   }
 
@@ -385,7 +397,8 @@ export class HeadlessAdapter implements LoggerAdapter {
         const result = this.requestExecutorTermination(
           connectionId,
           message.executorId,
-          message.requestId
+          message.requestId,
+          message.action ?? 'terminate'
         );
         if (result !== 'pending') {
           this.sendExecutorTerminationResult(
@@ -423,7 +436,8 @@ export class HeadlessAdapter implements LoggerAdapter {
   private requestExecutorTermination(
     connectionId: string,
     executorId: ProcessId,
-    requestId: string
+    requestId: string,
+    operation: SessionProcessControlOperation
   ): SessionProcessTerminationResult | 'pending' {
     const existing = this.pendingTerminationRequests.get(requestId);
     if (existing) {
@@ -432,7 +446,7 @@ export class HeadlessAdapter implements LoggerAdapter {
         : 'send_failed';
     }
 
-    const result = this.routeExecutorTermination(executorId, requestId, () => {
+    const result = this.routeExecutorControl(executorId, operation, requestId, () => {
       const timer = setTimeout(() => {
         const pending = this.pendingTerminationRequests.get(requestId);
         if (!pending || pending.executorId !== executorId) {
@@ -461,8 +475,9 @@ export class HeadlessAdapter implements LoggerAdapter {
   }
 
   /** Validates one target, then performs local termination or remote owner routing. */
-  private routeExecutorTermination(
+  private routeExecutorControl(
     executorId: ProcessId,
+    operation: SessionProcessControlOperation,
     requestId?: string,
     prepareRemoteRoute?: () => void
   ): SessionProcessTerminationResult | 'pending' {
@@ -484,7 +499,9 @@ export class HeadlessAdapter implements LoggerAdapter {
 
     const processOwner = this.processOwner;
     if (processOwner && executor.ownerProcessId === processOwner.ownerProcessId) {
-      return processOwner.terminateExecutor(executorId);
+      return operation === 'end'
+        ? processOwner.endExecutor(executorId)
+        : processOwner.terminateExecutor(executorId);
     }
 
     if (!executor.ownerProcessId || !registry.get(executor.ownerProcessId)) {
@@ -492,7 +509,10 @@ export class HeadlessAdapter implements LoggerAdapter {
     }
 
     prepareRemoteRoute?.();
-    const route = registry.sendTerminationToOwner(executorId, requestId);
+    const route =
+      operation === 'end'
+        ? registry.sendEndToOwner(executorId, requestId)
+        : registry.sendTerminationToOwner(executorId, requestId);
     if (route === 'sent') {
       return requestId ? 'pending' : 'requested';
     }
@@ -610,14 +630,19 @@ export class HeadlessAdapter implements LoggerAdapter {
         continue;
       }
 
-      const result = this.terminateExecutor(node.processId);
+      const result =
+        node.control === 'end'
+          ? this.endExecutor(node.processId)
+          : this.terminateExecutor(node.processId);
       if (
         result === 'signal_failed' ||
         result === 'unknown_process_state' ||
+        result === 'end_failed' ||
+        result === 'end_not_supported' ||
         result === 'owner_not_connected' ||
         result === 'send_failed'
       ) {
-        this.wrappedAdapter.warn(`Could not terminate executor ${node.processId}: ${result}`);
+        this.wrappedAdapter.warn(`Could not control executor ${node.processId}: ${result}`);
       }
     }
   }

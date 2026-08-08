@@ -177,9 +177,10 @@ Nested tim processes send these JSONL messages to the root tunnel server:
 - `terminate_executor_result`
 
 The root tunnel server sends `terminate_executor` to the one client channel bound to the selected
-`tim` owner. It validates process IDs, process kinds, parent and owner relationships, and channel
-ownership. The owner handler calls `terminateExecutor()` on its direct-child map. It cannot signal
-an executor that it did not create, and the tunnel protocol has no arbitrary-PID signal operation.
+`tim` owner. The message can request `terminate` (the backwards-compatible default) or `end`. It
+validates process IDs, process kinds, parent and owner relationships, and channel ownership. The
+owner handler calls the matching operation on its direct-child map. It cannot control an executor
+that it did not create, and the tunnel protocol has no arbitrary-PID signal operation.
 
 The process registry is the only process-tree state. Tunnel routing stores connected channel
 capabilities, not a second process map. Common runtime validators are used by both tunnel and
@@ -209,7 +210,9 @@ shared stdin lifecycle. Codex app-server interrupts its active turn. `force_end_
 asks the headless adapter to terminate every live registered executor, including nested executors
 through their owners, and then invokes the provider force handler. Root adapter destruction also
 fans out termination before it closes the embedded server. These controls are session-wide; they
-are separate from the targeted `terminate_executor` request.
+are separate from the targeted `terminate_executor` request. A targeted `end` request uses the
+same graceful provider callback for one executor. A shared Codex app-server registers a logical
+thread executor node, so this callback can interrupt one thread without ending other threads.
 
 ## `executeWithTerminalInput()` Branching
 

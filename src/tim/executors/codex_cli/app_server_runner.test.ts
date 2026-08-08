@@ -23,7 +23,9 @@ interface Harness {
   connectionCreateMock: ReturnType<typeof vi.fn>;
   connection: {
     isAlive: boolean;
-    pid: number;
+    pid?: number;
+    setGracefulEndHandler: ReturnType<typeof vi.fn>;
+    updateMetadata: ReturnType<typeof vi.fn>;
     threadStart: ReturnType<typeof vi.fn>;
     turnStart: ReturnType<typeof vi.fn>;
     turnSteer: ReturnType<typeof vi.fn>;
@@ -63,6 +65,7 @@ interface Harness {
 
 async function createHarness(options?: {
   tunnelActive?: boolean;
+  sharedAppServer?: boolean;
   finalMessage?: string;
   failedMessage?: string | undefined;
   terminalInputLines?: string[];
@@ -101,7 +104,9 @@ async function createHarness(options?: {
 
   const connection = {
     isAlive: true,
-    pid: 4242,
+    pid: options?.sharedAppServer ? undefined : 4242,
+    setGracefulEndHandler: vi.fn(),
+    updateMetadata: vi.fn(),
     threadStart: vi.fn(async () => ({ threadId: 'thread-1' })),
     turnStart: vi.fn(async () => ({ turnId: 'turn-1' })),
     turnSteer: vi.fn(async () => ({ turnId: 'turn-1' })),
@@ -896,6 +901,69 @@ describe('executeCodexStepViaAppServer', () => {
           call[0].content === 'gui input'
       )
     ).toBe(false);
+  });
+
+  test('registers a logical executor node for a shared app-server connection', async () => {
+    const harness = await createHarness({ sharedAppServer: true });
+    harness.connection.turnStart.mockImplementationOnce(async () => ({ turnId: 'turn-1' }));
+    harness.connection.turnInterrupt.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'interrupted' },
+      });
+    });
+
+    const { runWithSessionProcessOwner, SessionProcessOwner } =
+      await import('../../../common/session_process_control.js');
+    const { SessionProcessRegistry, SessionProcessRegistryLifecycleSink, toProcessId } =
+      await import('../../../common/session_process.js');
+    const registry = new SessionProcessRegistry({ sessionId: 'shared-session' });
+    const ownerProcessId = toProcessId('shared-owner');
+    if (!ownerProcessId) {
+      throw new Error('Invalid test owner process ID');
+    }
+    registry.register({
+      processId: ownerProcessId,
+      kind: 'tim',
+      label: 'shared owner',
+      state: 'running',
+    });
+    const owner = new SessionProcessOwner({
+      sessionId: 'shared-session',
+      ownerProcessId,
+      lifecycleSink: new SessionProcessRegistryLifecycleSink(registry),
+    });
+
+    try {
+      const result = runWithSessionProcessOwner(owner, () =>
+        harness.executeCodexStepViaAppServer('do work', '/repo', {})
+      );
+
+      await waitFor(() =>
+        registry
+          .getSnapshot()
+          .some((node) => node.label === 'Codex thread' && node.state === 'running')
+      );
+      const liveLogicalNode = registry
+        .getSnapshot()
+        .find((node) => node.label === 'Codex thread' && node.state === 'running');
+      expect(liveLogicalNode).toBeDefined();
+      expect(owner.endExecutor(liveLogicalNode!.processId)).toBe('ended');
+      await expect(result).resolves.toBe('final agent message');
+
+      const logicalNode = registry.getSnapshot().find((node) => node.label === 'Codex thread');
+      expect(logicalNode).toMatchObject({
+        kind: 'executor',
+        control: 'end',
+        threadId: 'thread-1',
+        command: 'codex thread thread-1',
+        state: 'exited',
+      });
+      expect(logicalNode?.pid).toBeUndefined();
+      expect(harness.connection.setGracefulEndHandler).toHaveBeenCalledTimes(1);
+      expect(harness.connection.updateMetadata).toHaveBeenCalledWith({ threadId: 'thread-1' });
+    } finally {
+      owner.dispose();
+    }
   });
 
   test('headless end session interrupts an active chat turn', async () => {

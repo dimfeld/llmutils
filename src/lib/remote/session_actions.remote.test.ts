@@ -41,6 +41,7 @@ import {
   forceEndSession,
   dismissInactiveSessions,
   dismissSession,
+  endExecutor,
   sendSessionPromptResponse,
   sendSessionUserInput,
   terminateExecutor,
@@ -231,6 +232,43 @@ describe('session remote actions', () => {
         executorId: 'executor-1',
       })
     ).resolves.toEqual({ executorId: 'executor-1', status: 'offline' });
+  });
+
+  test('endExecutor sends the graceful-end operation and returns the owner result', async () => {
+    const connectionId = 'conn-end-executor';
+    const sentMessages: HeadlessServerMessage[] = [];
+    currentManager.handleWebSocketConnect(connectionId, (message) => {
+      sentMessages.push(message);
+    });
+
+    const resultPromise = invokeCommand(endExecutor, {
+      connectionId,
+      executorId: 'executor-1',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const request = sentMessages.find((message) => message.type === 'terminate_executor');
+    expect(request).toMatchObject({
+      type: 'terminate_executor',
+      executorId: 'executor-1',
+      requestId: expect.any(String),
+      action: 'end',
+    });
+    if (!request || request.type !== 'terminate_executor') {
+      throw new Error('The end request was not sent');
+    }
+
+    currentManager.handleWebSocketMessage(connectionId, {
+      type: 'executor_termination_result',
+      requestId: request.requestId,
+      executorId: request.executorId,
+      result: 'ended',
+    });
+
+    await expect(resultPromise).resolves.toEqual({
+      executorId: 'executor-1',
+      status: 'ended',
+    });
   });
 
   test('terminateExecutor rejects malformed opaque IDs', async () => {

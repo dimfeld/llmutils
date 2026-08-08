@@ -12,6 +12,7 @@ import {
   TIM_SESSION_ID,
   type ProcessId,
   type SessionProcessExit,
+  type SessionProcessControl,
   type SessionProcessLifecycleSink,
   type SessionProcessRegistry,
   type SessionProcessRegistration,
@@ -43,21 +44,39 @@ export interface SessionProcessOwnerOptions {
 export interface PrepareSessionExecutorOptions {
   label: string;
   command: string;
+  control?: Exclude<SessionProcessControl, 'end'>;
 }
 
 export interface SessionExecutorLifecycle {
   readonly processId: ProcessId;
   /** Only the explicit process-control variables are returned to the child. */
   readonly environment: Record<string, string>;
+  setGracefulEndHandler(handler: (() => void) | undefined): void;
+  updateMetadata(update: SessionProcessUpdate): void;
   markSpawned(handle: SessionChildProcessHandle): void;
   markSpawnFailed(): void;
+  markExited(details?: { exitCode?: number | null; signal?: NodeJS.Signals | null }): void;
+}
+
+export interface PrepareLogicalSessionExecutorOptions {
+  label: string;
+  command?: string;
+  threadId?: string;
+}
+
+export interface SessionLogicalExecutorLifecycle {
+  readonly processId: ProcessId;
+  setGracefulEndHandler(handler: (() => void) | undefined): void;
+  updateMetadata(update: SessionProcessUpdate): void;
+  markStarted(): void;
   markExited(details?: { exitCode?: number | null; signal?: NodeJS.Signals | null }): void;
 }
 
 interface TrackedExecutor extends SessionExecutorLifecycle {
   readonly label: string;
   /** Full producer command used only for the owner-side identity comparison. */
-  readonly expectedCommand: string;
+  readonly expectedCommand?: string;
+  readonly control: SessionProcessControl;
   handle?: SessionChildProcessHandle;
   pid?: number;
   /** Full command captured from the process list; never use a display value here. */
@@ -66,6 +85,8 @@ interface TrackedExecutor extends SessionExecutorLifecycle {
   processInfoCaptured: boolean;
   finished: boolean;
   terminationRequested: boolean;
+  endRequested: boolean;
+  gracefulEndHandler?: () => void;
 }
 
 function isEsrch(error: unknown): boolean {
@@ -144,6 +165,7 @@ export class SessionProcessOwner {
       kind: 'executor',
       label: options.label,
       command: normalizeSessionProcessCommand(options.command),
+      ...(options.control ? { control: options.control } : {}),
       startedAt: this.now().toISOString(),
       state: 'starting',
     };
@@ -169,15 +191,76 @@ export class SessionProcessOwner {
       environment: processControlEnvironment(childEnvironment.env),
       label: options.label,
       expectedCommand: options.command,
+      control: options.control ?? 'terminate',
       processInfoCaptured: false,
       finished: false,
       terminationRequested: false,
+      endRequested: false,
+      setGracefulEndHandler: (handler) => this.setGracefulEndHandler(tracked, handler),
+      updateMetadata: (update) => this.updateMetadata(tracked, update),
       markSpawned: (handle) => this.markSpawned(tracked, handle),
       markSpawnFailed: () => this.markExited(tracked),
       markExited: (details) => this.markExited(tracked, details),
     };
     this.children.set(processId, tracked);
     return tracked;
+  }
+
+  /** Registers an executor represented by a logical provider session rather than an OS child. */
+  prepareLogicalExecutor(
+    options: PrepareLogicalSessionExecutorOptions
+  ): SessionLogicalExecutorLifecycle | undefined {
+    if (this.disposed || !options.label.trim()) {
+      return undefined;
+    }
+
+    const processId = createProcessId();
+    const registration: SessionProcessRegistration = {
+      processId,
+      parentProcessId: this.ownerProcessId,
+      ownerProcessId: this.ownerProcessId,
+      kind: 'executor',
+      label: options.label,
+      control: 'end',
+      ...(options.threadId ? { threadId: options.threadId } : {}),
+      ...(options.command ? { command: normalizeSessionProcessCommand(options.command) } : {}),
+      startedAt: this.now().toISOString(),
+      state: 'starting',
+    };
+
+    if (!this.lifecycleSink.registerProcess(registration)) {
+      return undefined;
+    }
+
+    const tracked: TrackedExecutor = {
+      processId,
+      environment: {},
+      label: options.label,
+      expectedCommand: options.command,
+      control: 'end',
+      processInfoCaptured: false,
+      finished: false,
+      terminationRequested: false,
+      endRequested: false,
+      setGracefulEndHandler: (handler) => this.setGracefulEndHandler(tracked, handler),
+      updateMetadata: (update) => this.updateMetadata(tracked, update),
+      markSpawned: () => {},
+      markSpawnFailed: () => this.markExited(tracked),
+      markExited: (details) => this.markExited(tracked, details),
+    };
+    this.children.set(processId, tracked);
+
+    return {
+      processId,
+      setGracefulEndHandler: (handler) => this.setGracefulEndHandler(tracked, handler),
+      updateMetadata: (update) => this.updateMetadata(tracked, update),
+      markStarted: () => {
+        if (!tracked.finished) {
+          this.lifecycleSink.updateProcess(processId, { state: 'running' });
+        }
+      },
+      markExited: (details) => this.markExited(tracked, details),
+    };
   }
 
   /** Handles one server-routed control request for this owner. */
@@ -188,6 +271,29 @@ export class SessionProcessOwner {
     }
 
     return this.terminateTrackedExecutor(tracked);
+  }
+
+  /** Handles one graceful end request for an owned executor. */
+  endExecutor(executorId: ProcessId): SessionProcessTerminationResult {
+    const tracked = this.children.get(executorId);
+    if (this.disposed || !tracked || tracked.finished) {
+      return this.reportTermination(executorId, 'not_owned');
+    }
+    if ((tracked.control !== 'end' && tracked.control !== 'both') || !tracked.gracefulEndHandler) {
+      return this.reportTermination(executorId, 'end_not_supported');
+    }
+    if (tracked.endRequested) {
+      return this.reportTermination(executorId, 'ended');
+    }
+
+    try {
+      tracked.endRequested = true;
+      tracked.gracefulEndHandler();
+      return this.reportTermination(executorId, 'ended');
+    } catch (error) {
+      tracked.endRequested = false;
+      return this.reportTermination(executorId, 'end_failed', error);
+    }
   }
 
   private terminateTrackedExecutor(tracked: TrackedExecutor): SessionProcessTerminationResult {
@@ -247,6 +353,8 @@ export class SessionProcessOwner {
     for (const tracked of this.children.values()) {
       if (tracked.handle) {
         this.terminateExecutor(tracked.processId);
+      } else if (tracked.gracefulEndHandler) {
+        this.endExecutor(tracked.processId);
       }
     }
   }
@@ -259,6 +367,18 @@ export class SessionProcessOwner {
     this.terminateAll();
     this.disposed = true;
     this.lifecycleSink.exitProcess(this.ownerProcessId, details);
+  }
+
+  private setGracefulEndHandler(tracked: TrackedExecutor, handler: (() => void) | undefined): void {
+    if (!tracked.finished) {
+      tracked.gracefulEndHandler = handler;
+    }
+  }
+
+  private updateMetadata(tracked: TrackedExecutor, update: SessionProcessUpdate): void {
+    if (!tracked.finished) {
+      this.lifecycleSink.updateProcess(tracked.processId, update);
+    }
   }
 
   private markSpawned(tracked: TrackedExecutor, handle: SessionChildProcessHandle): void {
@@ -284,7 +404,9 @@ export class SessionProcessOwner {
 
     const update: SessionProcessUpdate = {
       pid: tracked.pid,
-      command: normalizeSessionProcessCommand(tracked.capturedCommand ?? tracked.expectedCommand),
+      command: normalizeSessionProcessCommand(
+        tracked.capturedCommand ?? tracked.expectedCommand ?? ''
+      ),
       state: 'running',
       ...(tracked.startIdentity ? { startIdentity: tracked.startIdentity } : {}),
     };
@@ -441,8 +563,13 @@ export function runWithSessionProcessOwner<T>(
 
 export function createExecutorControlHandler(
   owner: SessionProcessOwner
-): (message: { executorId: ProcessId }) => SessionProcessTerminationResult {
+): (message: {
+  executorId: ProcessId;
+  action?: 'terminate' | 'end';
+}) => SessionProcessTerminationResult {
   return (message) => {
-    return owner.terminateExecutor(message.executorId);
+    return message.action === 'end'
+      ? owner.endExecutor(message.executorId)
+      : owner.terminateExecutor(message.executorId);
   };
 }

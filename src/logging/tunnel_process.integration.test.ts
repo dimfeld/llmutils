@@ -530,6 +530,55 @@ describe('tunnel process plumbing', () => {
     rawSocket.end();
   });
 
+  it('routes graceful end to the owning client and preserves logical executor metadata', async () => {
+    const terminationResults: Array<{
+      executorId: ProcessId;
+      requestId: string;
+      result: string;
+    }> = [];
+    const { registry, rootExecutor, socketPath } = await createFixture();
+    registry.subscribeTerminationResults((event) => terminationResults.push(event));
+
+    const client = await createTunnelAdapter(socketPath);
+    adapters.push(client);
+    const tim = processId('tim-end');
+    const executor = processId('executor-end');
+    client.setExecutorControlHandler((message) => {
+      expect(message.action).toBe('end');
+      return 'ended';
+    });
+    client.registerProcess({
+      processId: tim,
+      parentProcessId: rootExecutor,
+      kind: 'tim',
+      label: 'end tim',
+    });
+    client.registerProcess({
+      processId: executor,
+      parentProcessId: tim,
+      kind: 'executor',
+      label: 'Codex thread',
+      control: 'end',
+      threadId: 'thread-end',
+    });
+
+    await waitFor(() => registry.has(executor));
+    expect(registry.get(executor)).toMatchObject({
+      control: 'end',
+      threadId: 'thread-end',
+    });
+
+    expect(server?.sendExecutorEnd(executor, 'request-end')).toMatchObject({ ok: true });
+    await waitFor(() => terminationResults.length === 1);
+    expect(terminationResults).toEqual([
+      {
+        executorId: executor,
+        requestId: 'request-end',
+        result: 'ended',
+      },
+    ]);
+  });
+
   it('rejects lifecycle messages from a different client and preserves the owner branch', async () => {
     const accepted: Array<{ processId: ProcessId; clientId: string }> = [];
     const { registry, rootExecutor, socketPath } = await createFixture({

@@ -76,6 +76,11 @@ export const terminateExecutor = command(terminateExecutorSchema, async (target)
   return getSessionManager().terminateExecutor(target.connectionId, target.executorId);
 });
 
+/** Requests a graceful end of one live executor identified by opaque node ID. */
+export const endExecutor = command(terminateExecutorSchema, async (target) => {
+  return getSessionManager().endExecutor(target.connectionId, target.executorId);
+});
+
 export const endSession = command(sessionTargetSchema, async (target) => {
   const ended = getSessionManager().endSession(target.connectionId);
   if (!ended) {

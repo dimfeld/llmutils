@@ -126,9 +126,14 @@ async function runWithCommandTunnelAdapter<T>(callback: () => Promise<T> | T): P
     createTunnelSessionProcessLifecycleSink(tunnelAdapter),
     process.argv.slice(2, 4).join(' ') || 'nested tim',
     (executorId, result, error) => {
-      if (result === 'signal_failed' || result === 'unknown_process_state') {
+      if (
+        result === 'signal_failed' ||
+        result === 'unknown_process_state' ||
+        result === 'end_failed' ||
+        result === 'end_not_supported'
+      ) {
         const detail = error instanceof Error ? `: ${error.message}` : '';
-        warn(`Could not terminate executor ${executorId}${detail}`);
+        warn(`Could not control executor ${executorId}${detail}`);
       }
     }
   );

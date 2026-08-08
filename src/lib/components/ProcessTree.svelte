@@ -14,6 +14,7 @@
     processStateLabel,
     processKindLabel,
     canTerminate,
+    canEnd,
     classifyTerminationStatus,
     terminationStatusMessage,
     isLiveProcess,
@@ -34,39 +35,47 @@
   let roots = $derived(buildProcessTree(activeProcessTree));
   let flatNodes = $derived(flattenTree(roots));
 
-  interface TerminationState {
+  type ControlOperation = 'terminate' | 'end';
+
+  interface ControlState {
+    operation: ControlOperation;
     confirming: boolean;
     pending: boolean;
     result: SessionExecutorTerminationResult | null;
   }
 
-  let terminationStates = $state(new Map<string, TerminationState>());
+  let controlStates = $state(new Map<string, ControlState>());
 
-  function getTerminationState(processId: string): TerminationState | undefined {
-    return terminationStates.get(processId);
+  function getControlState(processId: string): ControlState | undefined {
+    return controlStates.get(processId);
   }
 
-  function requestTerminate(processId: string): void {
-    const newMap = new Map(terminationStates);
-    newMap.set(processId, { confirming: true, pending: false, result: null });
-    terminationStates = newMap;
+  function requestControl(processId: string, operation: ControlOperation): void {
+    const newMap = new Map(controlStates);
+    newMap.set(processId, { operation, confirming: true, pending: false, result: null });
+    controlStates = newMap;
   }
 
-  function cancelTerminate(processId: string): void {
-    const newMap = new Map(terminationStates);
+  function cancelControl(processId: string): void {
+    const newMap = new Map(controlStates);
     newMap.delete(processId);
-    terminationStates = newMap;
+    controlStates = newMap;
   }
 
-  async function confirmTerminate(processId: string): Promise<void> {
-    const current = terminationStates.get(processId);
+  async function confirmControl(processId: string): Promise<void> {
+    const current = controlStates.get(processId);
     if (current?.pending) return;
 
-    const newMap = new Map(terminationStates);
-    newMap.set(processId, { confirming: false, pending: true, result: null });
-    terminationStates = newMap;
+    if (!current) return;
 
-    const result = await sessionManager.terminateExecutor(connectionId, processId);
+    const newMap = new Map(controlStates);
+    newMap.set(processId, { ...current, confirming: false, pending: true, result: null });
+    controlStates = newMap;
+
+    const result =
+      current.operation === 'end'
+        ? await sessionManager.endExecutor(connectionId, processId)
+        : await sessionManager.terminateExecutor(connectionId, processId);
 
     const outcome = classifyTerminationStatus(result.status);
     const message = terminationStatusMessage(result.status);
@@ -79,12 +88,12 @@
       toast.error(message);
     }
 
-    const updatedMap = new Map(terminationStates);
-    updatedMap.set(processId, { confirming: false, pending: false, result });
-    terminationStates = updatedMap;
+    const updatedMap = new Map(controlStates);
+    updatedMap.set(processId, { ...current, confirming: false, pending: false, result });
+    controlStates = updatedMap;
 
     setTimeout(() => {
-      terminationStates = new Map([...terminationStates].filter(([key]) => key !== processId));
+      controlStates = new Map([...controlStates].filter(([key]) => key !== processId));
     }, 3000);
   }
 
@@ -153,8 +162,10 @@
   <ul role="tree" aria-label="Session processes" class="space-y-0.5">
     {#each flatNodes as node (node.process.processId)}
       {@const process = node.process}
-      {@const ts = getTerminationState(process.processId)}
+      {@const cs = getControlState(process.processId)}
       {@const showTerminate = canTerminate(process) && sessionStatus === 'active'}
+      {@const showEnd = canEnd(process) && sessionStatus === 'active'}
+      {@const showControls = showTerminate || showEnd}
       <li
         role="treeitem"
         aria-selected="false"
@@ -206,35 +217,35 @@
           </span>
         {/if}
 
-        {#if showTerminate}
-          {#if ts?.pending}
+        {#if showControls || cs?.result}
+          {#if cs?.pending}
             <span
               class="ml-auto flex shrink-0 items-center gap-1 text-muted-foreground"
               role="status"
               aria-live="polite"
             >
               <Loader class="size-3 animate-spin" />
-              <span>Terminating…</span>
+              <span>{cs.operation === 'end' ? 'Ending…' : 'Terminating…'}</span>
             </span>
-          {:else if ts?.confirming}
+          {:else if cs?.confirming}
             <span class="ml-auto flex shrink-0 items-center gap-1">
               <button
                 type="button"
                 class="rounded bg-red-600 px-1.5 py-0.5 text-xs font-medium text-white hover:bg-red-700"
-                onclick={() => confirmTerminate(process.processId)}
+                onclick={() => confirmControl(process.processId)}
               >
                 Confirm
               </button>
               <button
                 type="button"
                 class="rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground"
-                onclick={() => cancelTerminate(process.processId)}
+                onclick={() => cancelControl(process.processId)}
               >
                 Cancel
               </button>
             </span>
-          {:else if ts?.result}
-            {@const outcome = classifyTerminationStatus(ts.result.status)}
+          {:else if cs?.result}
+            {@const outcome = classifyTerminationStatus(cs.result.status)}
             <span
               role="status"
               aria-live="polite"
@@ -244,35 +255,35 @@
                   ? 'text-amber-400'
                   : 'text-red-400'}"
             >
-              {terminationStatusMessage(ts.result.status)}
+              {terminationStatusMessage(cs.result.status)}
             </span>
           {:else}
-            <button
-              type="button"
-              class="ml-auto flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-red-400 transition-colors hover:bg-red-950/40 hover:text-red-300"
-              onclick={() => requestTerminate(process.processId)}
-              title="Terminate executor"
-              aria-label="Terminate {process.label}"
-            >
-              <OctagonX class="size-3" />
-              Terminate
-            </button>
+            <span class="ml-auto flex shrink-0 items-center gap-1">
+              {#if showEnd}
+                <button
+                  type="button"
+                  class="rounded px-1.5 py-0.5 text-xs text-amber-400 transition-colors hover:bg-amber-950/40 hover:text-amber-300"
+                  onclick={() => requestControl(process.processId, 'end')}
+                  title="Gracefully end executor"
+                  aria-label="End {process.label}"
+                >
+                  End
+                </button>
+              {/if}
+              {#if showTerminate}
+                <button
+                  type="button"
+                  class="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-red-400 transition-colors hover:bg-red-950/40 hover:text-red-300"
+                  onclick={() => requestControl(process.processId, 'terminate')}
+                  title="Terminate executor"
+                  aria-label="Terminate {process.label}"
+                >
+                  <OctagonX class="size-3" />
+                  Terminate
+                </button>
+              {/if}
+            </span>
           {/if}
-        {/if}
-
-        {#if !showTerminate && ts?.result}
-          {@const outcome = classifyTerminationStatus(ts.result.status)}
-          <span
-            role="status"
-            aria-live="polite"
-            class="ml-auto shrink-0 text-xs {outcome === 'success'
-              ? 'text-green-400'
-              : outcome === 'stale'
-                ? 'text-amber-400'
-                : 'text-red-400'}"
-          >
-            {terminationStatusMessage(ts.result.status)}
-          </span>
         {/if}
       </li>
     {/each}

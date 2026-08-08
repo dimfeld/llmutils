@@ -149,6 +149,7 @@ const server = Bun.serve({
         .find((node) => node.label === 'Codex app-server');
       expect(appServerNode).toMatchObject({
         kind: 'executor',
+        control: 'both',
         state: 'running',
         pid: expect.any(Number),
         startIdentity: expect.any(String),

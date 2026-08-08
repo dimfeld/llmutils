@@ -404,6 +404,8 @@ job history. A node has these main fields:
   child of a `tim` node.
 - `kind`, `label`, `ownerProcessId`, `startedAt`, and `state` — the process kind, display label,
   direct control owner, start time, and one of `starting`, `running`, `exited`, or `orphaned`.
+- `control` and `threadId` — the controls available for an executor (`terminate`, `end`, or
+  `both`) and an optional provider execution ID.
 - `pid`, `command`, and `startIdentity` — optional OS details. `startIdentity` is an opaque
   `ps lstart` value. The UI also keeps `endedAt`, exit code, and signal details when a process
   exits.
@@ -442,8 +444,10 @@ prevents stale parent or owner values from leaking into a new root child.
 The existing Unix-socket tunnel keeps its output, prompt, and user-input behavior. Process
 lifecycle messages use JSONL in the client-to-server direction:
 
-- `process_register` adds a `tim` or `executor` node.
-- `process_update` changes mutable metadata such as PID, command, start identity, or state.
+- `process_register` adds a `tim` or `executor` node. Executor nodes can declare `control` as
+  `terminate`, `end`, or `both`, and can include a provider-specific `threadId`.
+- `process_update` changes mutable metadata such as PID, command, start identity, thread ID, or
+  state.
 - `process_exit` records normal completion and exit details.
 - `process_remove` removes one node, optionally with its subtree.
 - `terminate_executor_result` returns a result from an owner that handled a targeted request.
@@ -463,8 +467,9 @@ The embedded session WebSocket uses these agent-to-server messages for the brows
 - `executor_termination_result` carries the correlated `requestId`, opaque `executorId`, result
   status, and an optional error.
 
-The server-to-agent message `terminate_executor` carries the request ID and opaque executor ID.
-It is separate from `end_session` and `force_end_session`, which remain session-wide controls.
+The server-to-agent message `terminate_executor` carries the request ID, opaque executor ID, and
+an optional `action` (`terminate` or `end`). It is separate from `end_session` and
+`force_end_session`, which remain session-wide controls.
 
 #### Ownership and safe control
 
@@ -485,20 +490,27 @@ were never captured, is unknown and is not permission to signal. A mismatch is a
 that the process exited during the race, so the stop is treated as complete. Other signal errors
 are reported and the live handle remains retryable.
 
-The remote command `terminateExecutor` validates the opaque ID, sends the targeted request through
-the session WebSocket, and waits up to 10 seconds for the correlated result. The adapter uses
-`requested` as its immediate result when it routes a nested request. The web action then waits for
-the owner result. Direct root-owner requests normally return `terminated` or `already_exited`;
-nested requests return the owner's final result. Results are grouped as follows:
+The remote commands `terminateExecutor` and `endExecutor` validate the opaque ID, send the
+targeted request through the session WebSocket, and wait up to 10 seconds for the correlated
+result. The adapter uses `requested` as its immediate result when it routes a nested request. The
+web action then waits for the owner result. Direct root-owner requests normally return
+`terminated`, `already_exited`, or `ended`; nested requests return the owner's final result.
+Results are grouped as follows:
 
-- success: `terminated`, `requested`, `already_exited`;
+- success: `terminated`, `requested`, `already_exited`, `ended`;
 - safety: `stale_target`, `unknown_process_state`;
 - signal: `signal_failed`;
+- graceful end: `end_not_supported`, `end_failed`;
 - target validation: `unknown_executor`, `not_executor`, `not_owned`, `owner_not_registered`;
 - routing: `owner_not_connected`, `send_failed`, `request_timeout`;
 - session or client failure: `offline`, `session_not_found`, `request_failed`.
 
-The UI reports these statuses instead of treating a failed or stale stop as successful.
+The UI reports these statuses instead of treating a failed or stale control request as successful.
+
+Graceful end is an owner capability, not a signal operation. For example, Codex app-server
+owners call `turn/interrupt` for the selected thread and then let that executor finish its normal
+cleanup. A shared app-server has no new child process for each `tim subagent`, so the owner
+registers a logical `Codex thread` executor node with no PID and the thread ID in its metadata.
 
 #### Process-control implementation boundaries
 
@@ -535,11 +547,12 @@ session teardown and restores the previous environment values.
 The Session Detail page renders active (`starting` or `running`) nodes as an accessible
 `role="tree"` list. The underlying registry can retain exited and orphaned nodes for lifecycle
 tracking, but the UI does not display them. Each visible row shows the kind, useful label, lifecycle
-state, elapsed time, and PID when available. Only a live executor row in an active session has a
-**Terminate** action. The action requires confirmation, shows a live
-**Terminating…** status, and announces the result through an `aria-live` region and a toast.
-`tim` rows, exited rows, orphaned rows, offline sessions, and notification sessions do not get a
-targeted terminate action.
+state, elapsed time, and PID when available. A live executor row in an active session exposes only
+the controls declared by that node. **End** requests graceful executor shutdown. **Terminate**
+sends the safe SIGTERM operation. Both controls require confirmation, show a live status, and
+announce the result through an `aria-live` region and a toast. A logical executor such as a shared
+Codex thread has an End control but no PID. `tim` rows, exited rows, orphaned rows, offline
+sessions, and notification sessions do not get targeted controls.
 
 **End Session** remains graceful and uses the current executor-specific path. Claude closes its
 input or uses its existing fallback; Codex app-server interrupts the active turn; and a PTY

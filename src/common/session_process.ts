@@ -39,6 +39,12 @@ export type SessionProcessKind = 'tim' | 'executor';
 
 export type SessionProcessState = 'starting' | 'running' | 'exited' | 'orphaned';
 
+/** Controls exposed for one live executor node. */
+export type SessionProcessControl = 'terminate' | 'end' | 'both';
+
+/** Targeted control operation sent to an executor owner. */
+export type SessionProcessControlOperation = 'terminate' | 'end';
+
 /** Results returned by a safe, opaque process-control request. */
 export type SessionProcessTerminationResult =
   | 'terminated'
@@ -53,7 +59,10 @@ export type SessionProcessTerminationResult =
   | 'owner_not_registered'
   | 'owner_not_connected'
   | 'send_failed'
-  | 'request_timeout';
+  | 'request_timeout'
+  | 'ended'
+  | 'end_not_supported'
+  | 'end_failed';
 
 export const SESSION_PROCESS_TERMINATION_RESULTS = new Set<SessionProcessTerminationResult>([
   'terminated',
@@ -69,6 +78,9 @@ export const SESSION_PROCESS_TERMINATION_RESULTS = new Set<SessionProcessTermina
   'owner_not_connected',
   'send_failed',
   'request_timeout',
+  'ended',
+  'end_not_supported',
+  'end_failed',
 ]);
 
 export function isSessionProcessTerminationResult(
@@ -90,7 +102,8 @@ export interface SessionProcessTerminationResultEvent {
 /** Sends a targeted control request to one connected tim owner channel. */
 export type SessionProcessOwnerChannelSender = (
   executorId: ProcessId,
-  requestId?: string
+  requestId?: string,
+  operation?: SessionProcessControlOperation
 ) => boolean;
 
 export type SessionProcessOwnerChannelRouteResult = 'sent' | 'owner_not_connected' | 'send_failed';
@@ -101,6 +114,9 @@ export interface SessionProcessNode {
   kind: SessionProcessKind;
   label: string;
   ownerProcessId?: ProcessId;
+  control?: SessionProcessControl;
+  /** Provider-specific logical execution ID, such as a Codex thread ID. */
+  threadId?: string;
   pid?: number;
   command?: string;
   /** An opaque OS start identity, such as the output of `ps lstart`. */
@@ -118,6 +134,9 @@ export interface SessionProcessRegistration {
   kind: SessionProcessKind;
   label: string;
   ownerProcessId?: ProcessId;
+  control?: SessionProcessControl;
+  /** Provider-specific logical execution ID, such as a Codex thread ID. */
+  threadId?: string;
   pid?: number;
   command?: string;
   startIdentity?: string;
@@ -132,6 +151,7 @@ export interface SessionProcessUpdate {
   pid?: number | null;
   command?: string | null;
   startIdentity?: string | null;
+  threadId?: string | null;
   state?: SessionProcessState;
 }
 
@@ -291,6 +311,11 @@ export function isValidSessionProcessRegistration(
     isOptionalProcessId(value.ownerProcessId) &&
     (value.kind === 'tim' || value.kind === 'executor') &&
     isNonEmptyString(value.label, MAX_PROCESS_LABEL_LENGTH) &&
+    (value.control === undefined ||
+      value.control === 'terminate' ||
+      value.control === 'end' ||
+      value.control === 'both') &&
+    (value.threadId === undefined || isNonEmptyString(value.threadId, 512)) &&
     (value.pid === undefined || isValidPid(value.pid)) &&
     isOptionalString(value.command, MAX_PROCESS_COMMAND_LENGTH) &&
     isOptionalString(value.startIdentity, MAX_PROCESS_START_IDENTITY_LENGTH) &&
@@ -312,6 +337,9 @@ export function isValidSessionProcessUpdate(
     isOptionalProcessId(value.parentProcessId) &&
     isOptionalProcessId(value.ownerProcessId) &&
     (value.label === undefined || isNonEmptyString(value.label, MAX_PROCESS_LABEL_LENGTH)) &&
+    (value.threadId === undefined ||
+      value.threadId === null ||
+      isNonEmptyString(value.threadId, 512)) &&
     isOptionalNullablePid(value.pid) &&
     isOptionalNullableString(value.command, MAX_PROCESS_COMMAND_LENGTH) &&
     isOptionalNullableString(value.startIdentity, MAX_PROCESS_START_IDENTITY_LENGTH) &&
@@ -351,6 +379,11 @@ export function isValidSessionProcessNode(value: unknown): value is SessionProce
     isOptionalProcessId(value.ownerProcessId) &&
     (value.kind === 'tim' || value.kind === 'executor') &&
     isNonEmptyString(value.label, MAX_PROCESS_LABEL_LENGTH) &&
+    (value.control === undefined ||
+      value.control === 'terminate' ||
+      value.control === 'end' ||
+      value.control === 'both') &&
+    (value.threadId === undefined || isNonEmptyString(value.threadId, 512)) &&
     (value.pid === undefined || isValidPid(value.pid)) &&
     isOptionalString(value.command, MAX_PROCESS_COMMAND_LENGTH) &&
     isOptionalString(value.startIdentity, MAX_PROCESS_START_IDENTITY_LENGTH) &&
@@ -611,6 +644,19 @@ export class SessionProcessRegistry {
     executorId: ProcessId,
     requestId?: string
   ): SessionProcessOwnerChannelRouteResult {
+    return this.sendControlToOwner(executorId, 'terminate', requestId);
+  }
+
+  /** Routes a targeted end request using the channel bound to the executor's tim owner. */
+  sendEndToOwner(executorId: ProcessId, requestId?: string): SessionProcessOwnerChannelRouteResult {
+    return this.sendControlToOwner(executorId, 'end', requestId);
+  }
+
+  private sendControlToOwner(
+    executorId: ProcessId,
+    operation: SessionProcessControlOperation,
+    requestId?: string
+  ): SessionProcessOwnerChannelRouteResult {
     const channelId = this.getExecutorOwnerChannel(executorId);
     if (!channelId) {
       return 'owner_not_connected';
@@ -622,7 +668,7 @@ export class SessionProcessRegistry {
     }
 
     try {
-      return sender(executorId, requestId) ? 'sent' : 'send_failed';
+      return sender(executorId, requestId, operation) ? 'sent' : 'send_failed';
     } catch {
       return 'send_failed';
     }
@@ -762,6 +808,8 @@ export class SessionProcessRegistry {
       kind: registration.kind,
       label: registration.label,
       ownerProcessId,
+      ...(registration.control ? { control: registration.control } : {}),
+      ...(registration.threadId ? { threadId: registration.threadId } : {}),
       pid: registration.pid,
       command: registration.command,
       startIdentity: registration.startIdentity,
@@ -821,6 +869,7 @@ export class SessionProcessRegistry {
       parentProcessId: update.parentProcessId ?? current.parentProcessId,
       ownerProcessId: update.ownerProcessId ?? current.ownerProcessId,
       label: update.label ?? current.label,
+      threadId: update.threadId === null ? undefined : (update.threadId ?? current.threadId),
       pid: update.pid === null ? undefined : (update.pid ?? current.pid),
       command: update.command === null ? undefined : (update.command ?? current.command),
       startIdentity:
@@ -1058,6 +1107,8 @@ export class SessionProcessRegistry {
     const next: SessionProcessNode = {
       ...current,
       label: registration.label,
+      ...(registration.control ? { control: registration.control } : {}),
+      ...(registration.threadId ? { threadId: registration.threadId } : {}),
       pid: registration.pid ?? current.pid,
       command: registration.command ?? current.command,
       startIdentity: registration.startIdentity ?? current.startIdentity,

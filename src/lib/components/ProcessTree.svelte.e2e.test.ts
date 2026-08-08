@@ -5,10 +5,12 @@ import { render } from 'vitest-browser-svelte';
 import type { SessionProcessNode, SessionExecutorTerminationResult } from '$lib/types/session.js';
 
 const terminateExecutor = vi.fn<[string, string], Promise<SessionExecutorTerminationResult>>();
+const endExecutor = vi.fn<[string, string], Promise<SessionExecutorTerminationResult>>();
 
 vi.mock('$lib/stores/session_state.svelte.js', () => ({
   useSessionManager: () => ({
     terminateExecutor,
+    endExecutor,
   }),
 }));
 
@@ -36,6 +38,7 @@ function makeNode(overrides: Partial<SessionProcessNode> = {}): SessionProcessNo
 describe('ProcessTree', () => {
   beforeEach(() => {
     terminateExecutor.mockReset();
+    endExecutor.mockReset();
   });
 
   test('shows empty message when processTree is empty and not loading', async () => {
@@ -241,6 +244,78 @@ describe('ProcessTree', () => {
     });
 
     await expect.element(page.getByText('Process terminated')).toBeVisible();
+  });
+
+  test('shows End for a logical executor without a PID', async () => {
+    const nodes: SessionProcessNode[] = [
+      makeNode({
+        processId: 'thread-node',
+        kind: 'executor',
+        label: 'Codex thread',
+        control: 'end',
+        threadId: 'thread-1',
+        state: 'running',
+      }),
+    ];
+
+    render(ProcessTree, {
+      props: { processTree: nodes, connectionId: 'conn-1', sessionStatus: 'active' },
+    });
+
+    await expect.element(page.getByRole('button', { name: 'End Codex thread' })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: /Terminate/ })).not.toBeInTheDocument();
+    await expect.element(page.getByText('thread-1')).not.toBeInTheDocument();
+  });
+
+  test('End confirmation calls endExecutor and shows success', async () => {
+    endExecutor.mockResolvedValue({
+      executorId: 'exec1',
+      status: 'ended',
+    });
+
+    const nodes: SessionProcessNode[] = [
+      makeNode({
+        processId: 'exec1',
+        kind: 'executor',
+        label: 'Codex thread',
+        control: 'end',
+        state: 'running',
+      }),
+    ];
+
+    render(ProcessTree, {
+      props: { processTree: nodes, connectionId: 'conn-1', sessionStatus: 'active' },
+    });
+
+    await page.getByRole('button', { name: 'End Codex thread' }).click();
+    await page.getByRole('button', { name: 'Confirm' }).click();
+
+    await vi.waitFor(() => {
+      expect(endExecutor).toHaveBeenCalledWith('conn-1', 'exec1');
+    });
+
+    await expect.element(page.getByText('Executor end requested')).toBeVisible();
+  });
+
+  test('shows both graceful End and force Terminate for dual-control executors', async () => {
+    const nodes: SessionProcessNode[] = [
+      makeNode({
+        processId: 'exec1',
+        kind: 'executor',
+        label: 'Codex app-server',
+        control: 'both',
+        state: 'running',
+      }),
+    ];
+
+    render(ProcessTree, {
+      props: { processTree: nodes, connectionId: 'conn-1', sessionStatus: 'active' },
+    });
+
+    await expect.element(page.getByRole('button', { name: 'End Codex app-server' })).toBeVisible();
+    await expect
+      .element(page.getByRole('button', { name: 'Terminate Codex app-server' }))
+      .toBeVisible();
   });
 
   test('shows stale target message when process identity changed', async () => {

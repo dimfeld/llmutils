@@ -600,6 +600,8 @@ export interface TunnelServer {
   bindOwnerToClient: (ownerProcessId: ProcessId, clientId: string) => boolean;
   /** Routes a targeted executor termination request to its registered owner. */
   sendExecutorTermination: (executorId: ProcessId, requestId?: string) => TunnelControlResult;
+  /** Routes a targeted graceful end request to its registered owner. */
+  sendExecutorEnd: (executorId: ProcessId, requestId?: string) => TunnelControlResult;
   /** Alias used by callers that route more than termination controls. */
   sendExecutorControl: (executorId: ProcessId, requestId?: string) => TunnelControlResult;
   /** Closes the server and removes the socket file */
@@ -740,6 +742,9 @@ export function createTunnelServer(
     ): TunnelControlResult => {
       return processRouter.sendExecutorTermination(executorId, requestId);
     };
+
+    const sendExecutorEnd = (executorId: ProcessId, requestId?: string): TunnelControlResult =>
+      processRouter.sendExecutorEnd(executorId, requestId);
 
     const sendExecutorControl = (executorId: ProcessId, requestId?: string): TunnelControlResult =>
       processRouter.sendExecutorControl(executorId, requestId);
@@ -900,6 +905,7 @@ export function createTunnelServer(
         sendToClient,
         bindOwnerToClient,
         sendExecutorTermination,
+        sendExecutorEnd,
         sendExecutorControl,
         close,
       });

@@ -185,7 +185,8 @@ export function parseHeadlessServerMessage(payload: string): HeadlessServerMessa
         typeof parsed.requestId !== 'string' ||
         parsed.requestId.length === 0 ||
         parsed.requestId.length > 256 ||
-        !isProcessId(parsed.executorId)
+        !isProcessId(parsed.executorId) ||
+        (parsed.action !== undefined && parsed.action !== 'terminate' && parsed.action !== 'end')
       ) {
         return null;
       }

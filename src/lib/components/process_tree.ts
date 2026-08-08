@@ -95,7 +95,19 @@ export function isLiveProcess(state: SessionProcessState): boolean {
 }
 
 export function canTerminate(node: SessionProcessNode): boolean {
-  return node.kind === 'executor' && isLiveProcess(node.state);
+  return (
+    node.kind === 'executor' &&
+    isLiveProcess(node.state) &&
+    (node.control === undefined || node.control === 'terminate' || node.control === 'both')
+  );
+}
+
+export function canEnd(node: SessionProcessNode): boolean {
+  return (
+    node.kind === 'executor' &&
+    isLiveProcess(node.state) &&
+    (node.control === 'end' || node.control === 'both')
+  );
 }
 
 export type TerminationOutcome = 'success' | 'stale' | 'error';
@@ -107,6 +119,7 @@ export function classifyTerminationStatus(
     case 'terminated':
     case 'requested':
     case 'already_exited':
+    case 'ended':
       return 'success';
     case 'stale_target':
     case 'unknown_process_state':
@@ -144,6 +157,12 @@ export function terminationStatusMessage(status: SessionExecutorTerminationStatu
       return 'Failed to send termination request';
     case 'request_timeout':
       return 'Termination request timed out';
+    case 'ended':
+      return 'Executor end requested';
+    case 'end_not_supported':
+      return 'Graceful end is not supported';
+    case 'end_failed':
+      return 'Failed to end executor';
     case 'offline':
       return 'Session is offline';
     case 'session_not_found':

@@ -1,6 +1,7 @@
 import type { TunnelMessage } from './tunnel_protocol.js';
 import type {
   ProcessId,
+  SessionProcessControlOperation,
   SessionProcessNode,
   SessionProcessTerminationResultEvent,
 } from '../common/session_process.js';
@@ -141,6 +142,8 @@ export interface HeadlessTerminateExecutorServerMessage {
   type: 'terminate_executor';
   requestId: string;
   executorId: ProcessId;
+  /** Omitted for backwards-compatible SIGTERM termination. */
+  action?: SessionProcessControlOperation;
 }
 
 /** Server→client message: browser notification subscriber status update. */

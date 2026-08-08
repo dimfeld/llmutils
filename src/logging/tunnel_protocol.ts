@@ -2,6 +2,7 @@ import { inspect } from 'node:util';
 import type { StructuredMessage } from './structured_messages.js';
 import type {
   ProcessId,
+  SessionProcessControlOperation,
   SessionProcessExit,
   SessionProcessRegistration,
   SessionProcessTerminationResultEvent,
@@ -123,6 +124,8 @@ export interface TunnelTerminateExecutorMessage {
   type: 'terminate_executor';
   executorId: ProcessId;
   requestId?: string;
+  /** Omitted for backwards-compatible SIGTERM termination. */
+  action?: SessionProcessControlOperation;
 }
 
 /** Result returned by a nested tim owner after handling a targeted request. */

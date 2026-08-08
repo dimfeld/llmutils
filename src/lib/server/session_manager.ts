@@ -8,7 +8,11 @@ import type {
   HeadlessServerMessage,
   HeadlessSessionInfo,
 } from '../../logging/headless_protocol.js';
-import { toProcessId, type SessionProcessNode } from '../../common/session_process.js';
+import {
+  toProcessId,
+  type SessionProcessControlOperation,
+  type SessionProcessNode,
+} from '../../common/session_process.js';
 import type {
   SessionExecutorTerminationResult,
   SessionExecutorTerminationStatus,
@@ -858,6 +862,21 @@ export class SessionManager {
     connectionId: string,
     executorId: string
   ): Promise<SessionExecutorTerminationResult> {
+    return this.requestExecutorControl(connectionId, executorId, 'terminate');
+  }
+
+  async endExecutor(
+    connectionId: string,
+    executorId: string
+  ): Promise<SessionExecutorTerminationResult> {
+    return this.requestExecutorControl(connectionId, executorId, 'end');
+  }
+
+  private async requestExecutorControl(
+    connectionId: string,
+    executorId: string,
+    operation: SessionProcessControlOperation
+  ): Promise<SessionExecutorTerminationResult> {
     const session = this.sessions.get(connectionId);
     if (!session) {
       return { executorId, status: 'session_not_found' };
@@ -895,6 +914,7 @@ export class SessionManager {
         type: 'terminate_executor',
         requestId,
         executorId: processId,
+        ...(operation !== 'terminate' ? { action: operation } : {}),
       })
     ) {
       const pending = this.pendingExecutorTerminations.get(requestId);

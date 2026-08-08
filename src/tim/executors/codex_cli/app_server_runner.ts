@@ -24,6 +24,10 @@ import {
   validateJsonOutputAgainstSchema,
 } from './schema_output';
 import { TerminalInputReader } from '../claude_code/terminal_input.ts';
+import {
+  getCurrentSessionProcessOwner,
+  type SessionLogicalExecutorLifecycle,
+} from '../../../common/session_process_control.js';
 
 class SessionEndedError extends Error {
   constructor() {
@@ -195,6 +199,7 @@ export async function executeCodexStepViaAppServer(
   });
 
   let connection: CodexAppServerConnection | undefined;
+  let logicalExecutorLifecycle: SessionLogicalExecutorLifecycle | undefined;
   let monitorHandle: SubprocessMonitorHandle | undefined;
   let activeInputQueue: UserInputQueue | undefined;
   let threadId: string | undefined;
@@ -404,6 +409,8 @@ export async function executeCodexStepViaAppServer(
       onServerRequest: approvalHandler,
     });
 
+    connection.setGracefulEndHandler(endActiveSession);
+
     if (subprocessMonitorRules?.length && connection.pid !== undefined) {
       monitorHandle = startSubprocessMonitor({
         rootPid: connection.pid,
@@ -420,8 +427,19 @@ export async function executeCodexStepViaAppServer(
       model,
     });
     threadId = threadResult.threadId;
+    connection.updateMetadata({ threadId });
     const activeConnection = connection;
     let activeThreadId = threadId;
+
+    if (connection.pid === undefined) {
+      logicalExecutorLifecycle = getCurrentSessionProcessOwner()?.prepareLogicalExecutor({
+        label: 'Codex thread',
+        command: `codex thread ${threadId}`,
+        threadId,
+      });
+      logicalExecutorLifecycle?.setGracefulEndHandler(endActiveSession);
+      logicalExecutorLifecycle?.markStarted();
+    }
 
     const executeTurnWithRetry = async (initialInput: string): Promise<void> => {
       let promptForAttempt = initialInput;
@@ -837,6 +855,11 @@ export async function executeCodexStepViaAppServer(
         });
         activeThreadId = conversionThreadResult.threadId;
         threadId = activeThreadId;
+        connection.updateMetadata({ threadId: activeThreadId });
+        logicalExecutorLifecycle?.updateMetadata({
+          threadId: activeThreadId,
+          command: `codex thread ${activeThreadId}`,
+        });
         await executeTurnWithRetry(
           buildOutputSchemaConversionPrompt({
             schema: outputSchemaForValidation,
@@ -872,6 +895,7 @@ export async function executeCodexStepViaAppServer(
     clearInactivityTimer();
     activeInputQueue?.close();
     monitorHandle?.stop();
+    logicalExecutorLifecycle?.markExited();
 
     if (connection) {
       try {

@@ -130,6 +130,57 @@ describe('SessionProcessOwner', () => {
     expect(owner.terminateExecutor(lifecycle!.processId)).toBe('not_owned');
   });
 
+  it('registers logical executors and routes graceful end without an OS process', () => {
+    const transport = createTransport();
+    const owner = createOwner(() => [], transport);
+    const lifecycle = owner.prepareLogicalExecutor({
+      label: 'Codex thread',
+      command: 'codex thread thread-1',
+      threadId: 'thread-1',
+    });
+    const end = vi.fn();
+
+    expect(lifecycle).toBeDefined();
+    expect(transport.registrations).toContainEqual(
+      expect.objectContaining({
+        processId: lifecycle?.processId,
+        kind: 'executor',
+        label: 'Codex thread',
+        control: 'end',
+        threadId: 'thread-1',
+        command: 'codex thread thread-1',
+        state: 'starting',
+      })
+    );
+
+    lifecycle?.setGracefulEndHandler(end);
+    lifecycle?.markStarted();
+    expect(transport.updates).toContainEqual({
+      processId: lifecycle?.processId,
+      update: { state: 'running' },
+    });
+
+    const handleControl = createExecutorControlHandler(owner);
+    expect(handleControl({ executorId: lifecycle!.processId, action: 'end' })).toBe('ended');
+    expect(end).toHaveBeenCalledOnce();
+    expect(owner.endExecutor(lifecycle!.processId)).toBe('ended');
+    expect(end).toHaveBeenCalledOnce();
+
+    lifecycle?.markExited();
+    expect(owner.childCount).toBe(0);
+    expect(transport.exits).toContainEqual({
+      processId: lifecycle?.processId,
+      details: {},
+    });
+  });
+
+  it('reports graceful end as unsupported when no handler is registered', () => {
+    const owner = createOwner(() => []);
+    const lifecycle = owner.prepareLogicalExecutor({ label: 'Codex thread' });
+
+    expect(owner.endExecutor(lifecycle!.processId)).toBe('end_not_supported');
+  });
+
   it('never signals when process inspection fails or the identity is stale', () => {
     const transport = createTransport();
     const processInfo = createProcessInfo(1234, 'codex exec');

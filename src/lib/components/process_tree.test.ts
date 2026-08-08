@@ -7,6 +7,7 @@ import {
   processStateLabel,
   processKindLabel,
   canTerminate,
+  canEnd,
   classifyTerminationStatus,
   terminationStatusMessage,
 } from './process_tree.js';
@@ -189,6 +190,31 @@ describe('canTerminate', () => {
   test('returns false for tim processes regardless of state', () => {
     expect(canTerminate(makeNode({ kind: 'tim', state: 'running' }))).toBe(false);
   });
+
+  test('returns false for end-only executors', () => {
+    expect(canTerminate(makeNode({ kind: 'executor', state: 'running', control: 'end' }))).toBe(
+      false
+    );
+  });
+
+  test('returns true for both-control executors', () => {
+    expect(canTerminate(makeNode({ kind: 'executor', state: 'running', control: 'both' }))).toBe(
+      true
+    );
+  });
+});
+
+describe('canEnd', () => {
+  test('returns true for live end-capable executors', () => {
+    expect(canEnd(makeNode({ kind: 'executor', state: 'running', control: 'end' }))).toBe(true);
+    expect(canEnd(makeNode({ kind: 'executor', state: 'starting', control: 'both' }))).toBe(true);
+  });
+
+  test('returns false for terminate-only and non-live nodes', () => {
+    expect(canEnd(makeNode({ kind: 'executor', state: 'running' }))).toBe(false);
+    expect(canEnd(makeNode({ kind: 'executor', state: 'exited', control: 'end' }))).toBe(false);
+    expect(canEnd(makeNode({ kind: 'tim', state: 'running', control: 'end' }))).toBe(false);
+  });
 });
 
 describe('classifyTerminationStatus', () => {
@@ -196,6 +222,7 @@ describe('classifyTerminationStatus', () => {
     expect(classifyTerminationStatus('terminated')).toBe('success');
     expect(classifyTerminationStatus('requested')).toBe('success');
     expect(classifyTerminationStatus('already_exited')).toBe('success');
+    expect(classifyTerminationStatus('ended')).toBe('success');
   });
 
   test('stale statuses', () => {
@@ -216,6 +243,7 @@ describe('classifyTerminationStatus', () => {
       terminated: 'success',
       requested: 'success',
       already_exited: 'success',
+      ended: 'success',
       not_owned: 'error',
       not_executor: 'error',
       stale_target: 'stale',
@@ -226,6 +254,8 @@ describe('classifyTerminationStatus', () => {
       owner_not_connected: 'error',
       send_failed: 'error',
       request_timeout: 'error',
+      end_not_supported: 'error',
+      end_failed: 'error',
       offline: 'error',
       session_not_found: 'error',
       request_failed: 'error',
@@ -253,6 +283,9 @@ describe('terminationStatusMessage', () => {
       'owner_not_connected',
       'send_failed',
       'request_timeout',
+      'ended',
+      'end_not_supported',
+      'end_failed',
       'offline',
       'session_not_found',
       'request_failed',

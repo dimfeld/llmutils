@@ -4,6 +4,7 @@ import {
   activateSessionTerminalPane,
   dismissInactiveSessions,
   dismissSession,
+  endExecutor as endExecutorRemote,
   endSession as endSessionRemote,
   forceEndSession as forceEndSessionRemote,
   openTerminal,
@@ -448,6 +449,21 @@ export class SessionManager {
   ): Promise<SessionExecutorTerminationResult> {
     try {
       return await terminateExecutorRemote({ connectionId, executorId });
+    } catch (error) {
+      return {
+        executorId,
+        status: 'request_failed',
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async endExecutor(
+    connectionId: string,
+    executorId: string
+  ): Promise<SessionExecutorTerminationResult> {
+    try {
+      return await endExecutorRemote({ connectionId, executorId });
     } catch (error) {
       return {
         executorId,

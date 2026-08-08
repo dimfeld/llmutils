@@ -77,7 +77,8 @@ export function isValidServerTunnelMessage(message: unknown): message is ServerT
         (msg.requestId === undefined ||
           (typeof msg.requestId === 'string' &&
             msg.requestId.length > 0 &&
-            msg.requestId.length <= 256))
+            msg.requestId.length <= 256)) &&
+        (msg.action === undefined || msg.action === 'terminate' || msg.action === 'end')
       );
     default:
       return false;
@@ -186,7 +187,7 @@ export class TunnelAdapter implements LoggerAdapter {
               type: 'terminate_executor_result',
               executorId: message.executorId,
               requestId: message.requestId,
-              result: 'signal_failed',
+              result: message.action === 'end' ? 'end_failed' : 'signal_failed',
               error: err instanceof Error ? err.message : String(err),
             });
           }
