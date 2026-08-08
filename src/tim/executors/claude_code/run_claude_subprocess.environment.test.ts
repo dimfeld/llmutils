@@ -129,6 +129,7 @@ describe('runClaudeSubprocess project environment', () => {
     expect(vi.mocked(spawnWithStreamingIO).mock.calls[0][1]).toMatchObject({
       cwd: '/tmp/project',
       sessionProcessLabel: 'Claude test',
+      sessionProcessControl: 'both',
       timEnvironment,
       env: {
         TIM_EXECUTOR: 'claude',

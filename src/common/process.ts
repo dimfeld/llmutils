@@ -21,7 +21,10 @@ import { getUsingJj, hasUncommittedChanges } from './git.js';
 import { debug, quiet, setDebug, setQuiet } from './process_state.js';
 import type { StructuredMessage } from '../logging/structured_messages.js';
 import { buildWorkspaceCommandEnv, type TimWorkspaceCommandEnvironmentOptions } from './env.js';
-import { getCurrentSessionProcessOwner } from './session_process_control.js';
+import {
+  getCurrentSessionProcessOwner,
+  type SessionExecutorLifecycle,
+} from './session_process_control.js';
 export { debug, quiet, setDebug, setQuiet };
 
 /** The type of executor that may have spawned this process */
@@ -139,6 +142,10 @@ export type SpawnAndLogOutputOptions = {
   onSpawn?: (pid: number) => void;
   /** Display label used when this process is registered as a session executor. */
   sessionProcessLabel?: string;
+  /** Controls available for the registered session executor. */
+  sessionProcessControl?: 'terminate' | 'both';
+  /** Called after the registered process has been spawned and tracked. */
+  onSessionProcessReady?: (lifecycle: SessionExecutorLifecycle) => void;
   /** When true, the SIGTSTP handler will not re-send SIGTSTP to actually suspend the process.
    * Used in tests to avoid suspending the test runner. */
   _skipSelfSuspend?: boolean;
@@ -359,6 +366,7 @@ async function spawnTrackedProcess<T>(
     ? sessionOwner?.prepareExecutor({
         label: options.sessionProcessLabel,
         command: cmd.join(' '),
+        control: options.sessionProcessControl,
       })
     : undefined;
   let spawned = false;
@@ -406,7 +414,11 @@ async function spawnTrackedProcess<T>(
     spawnedProcess = proc;
     lifecycle?.markSpawned(proc);
     options?.onSpawn?.(proc.pid);
-    return start({ proc, trackResult });
+    const result = start({ proc, trackResult });
+    if (lifecycle) {
+      options?.onSessionProcessReady?.(lifecycle);
+    }
+    return result;
   } catch (error) {
     if (spawned) {
       try {

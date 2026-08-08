@@ -109,6 +109,35 @@ describePlatform('session process control real-process integration', () => {
     owner.dispose();
   });
 
+  it('supports graceful end handlers for tracked streaming children', async () => {
+    const { registry, owner } = createTrackedOwner('graceful-session', 'graceful-owner');
+    let endHandler: (() => void) | undefined;
+
+    try {
+      streaming = await runWithSessionProcessOwner(owner, () =>
+        spawnWithStreamingIO(['cat'], {
+          sessionProcessLabel: 'graceful executor',
+          sessionProcessControl: 'both',
+          onSessionProcessReady: (lifecycle) => {
+            endHandler = () => streaming?.stdin.end();
+            lifecycle.setGracefulEndHandler(endHandler);
+          },
+        })
+      );
+
+      const executor = registry.getSnapshot().find((node) => node.label === 'graceful executor');
+      expect(executor).toMatchObject({
+        control: 'both',
+        state: 'running',
+        pid: streaming.pid,
+      });
+      expect(owner.endExecutor(executor!.processId)).toBe('ended');
+      expect(await streaming.result).toMatchObject({ exitCode: 0, signal: null });
+    } finally {
+      owner.dispose();
+    }
+  });
+
   it('does not track utility children without an explicit executor label', async () => {
     const registry = new SessionProcessRegistry({ sessionId: 'utility-session' });
     registry.register({

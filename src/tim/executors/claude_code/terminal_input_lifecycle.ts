@@ -147,6 +147,7 @@ export interface ExecuteWithTerminalInputResult {
   observeFormattedMessage: (formatted: FormattedClaudeMessage) => void;
   sendFollowUpForInterceptedResult: (content: string) => void;
   acceptedSuccessfulFinalResult: () => boolean;
+  endSession: () => void;
   cleanup: () => void;
 }
 
@@ -379,6 +380,11 @@ export function executeWithTerminalInput(
     sendFollowUpForInterceptedResult,
     acceptedSuccessfulFinalResult: (): boolean =>
       backgroundActivityTracker.acceptedSuccessfulFinalResult(),
+    endSession: () => {
+      clearTunnelUserInputHandler();
+      clearHeadlessUserInputHandler();
+      forceCloseInputNow();
+    },
     cleanup: () => {
       backgroundActivityTracker.cancel();
       clearTunnelUserInputHandler();

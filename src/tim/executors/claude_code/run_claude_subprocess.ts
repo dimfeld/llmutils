@@ -415,6 +415,10 @@ export async function runClaudeSubprocess(
 
     const streaming = await spawnWithStreamingIO(args, {
       sessionProcessLabel: `Claude ${label}`,
+      sessionProcessControl: 'both',
+      onSessionProcessReady: (lifecycle) => {
+        lifecycle.setGracefulEndHandler(() => terminalInputResult?.endSession?.());
+      },
       env: {
         CLAUDECODE: '',
         TIM_EXECUTOR: 'claude',

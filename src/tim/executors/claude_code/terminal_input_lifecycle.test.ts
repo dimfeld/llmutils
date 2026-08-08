@@ -501,6 +501,36 @@ describe('terminal_input_lifecycle', () => {
     controller.cleanup();
   });
 
+  it('ends an active session by stopping input and closing stdin', () => {
+    const stdinEndSpy = vi.fn(async () => {});
+    const stopSpy = vi.fn(() => {});
+
+    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+    mockTerminalInputReaderFactory = (_options: TerminalInputReaderOptions) => ({
+      start: () => true,
+      stop: stopSpy,
+    });
+
+    const controller = executeWithTerminalInput({
+      streaming: makeStreaming({ stdinEnd: stdinEndSpy }),
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: true,
+      tunnelForwardingEnabled: false,
+    });
+
+    controller.endSession();
+
+    expect(stopSpy).toHaveBeenCalledTimes(1);
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+    controller.cleanup();
+  });
+
   it('non-interactive runs send the prompt without ending stdin until the result decision', () => {
     vi.useFakeTimers();
     const stdinEndSpy = vi.fn(async () => {});

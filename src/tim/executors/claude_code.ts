@@ -779,6 +779,10 @@ export class ClaudeCodeExecutor implements Executor {
       resetToolUseCache();
       const streaming = await spawnWithStreamingIO(args, {
         sessionProcessLabel: 'Claude execution',
+        sessionProcessControl: 'both',
+        onSessionProcessReady: (lifecycle) => {
+          lifecycle.setGracefulEndHandler(() => terminalInputResult?.endSession?.());
+        },
         env: {
           CLAUDECODE: '',
           TIM_EXECUTOR: 'claude',
