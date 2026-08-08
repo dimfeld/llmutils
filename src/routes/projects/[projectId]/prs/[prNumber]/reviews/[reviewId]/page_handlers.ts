@@ -1,5 +1,5 @@
 import type { ReviewIssuePatch } from './review_issue_editor_utils.js';
-import { extractRemoteErrorMessage } from './remote_error.js';
+import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
 
 export interface EditableReviewIssueRow {
   id: number;

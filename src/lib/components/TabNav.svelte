@@ -1,24 +1,14 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { projectUrl } from '$lib/stores/project.svelte.js';
+  import { BASE_TABS, PROJECT_TABS } from '$lib/utils/tab_navigation.js';
 
   let {
     projectId,
     showSessionsAttentionDot = false,
   }: { projectId: string; showSessionsAttentionDot?: boolean } = $props();
 
-  const baseTabs = [
-    { label: 'Sessions', slug: 'sessions' },
-    { label: 'Active Work', slug: 'active' },
-    { label: 'Pull Requests', slug: 'prs' },
-    { label: 'Activity', slug: 'activity' },
-    { label: 'Inbox', slug: 'inbox' },
-    { label: 'Plans', slug: 'plans' },
-  ];
-
-  let tabs = $derived(
-    projectId !== 'all' ? [...baseTabs, { label: 'Settings', slug: 'settings' }] : baseTabs
-  );
+  let tabs = $derived(projectId !== 'all' ? PROJECT_TABS : BASE_TABS);
 
   let pathname = $derived(page.url.pathname);
 

@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
+  BASE_TABS,
+  PROJECT_TABS,
   baseTabSlugs,
   projectTabSlugs,
   resolvePreservedTabForProjectSwitch,
@@ -7,12 +9,27 @@ import {
 } from './tab_navigation.js';
 
 describe('tab_navigation', () => {
-  test('baseTabSlugs has Inbox between Activity and Plans, matching TabNav order', () => {
-    expect(baseTabSlugs).toEqual(['sessions', 'active', 'prs', 'activity', 'inbox', 'plans']);
+  test('BASE_TABS has Inbox between Activity and Plans', () => {
+    expect(BASE_TABS.map((t) => t.slug)).toEqual([
+      'sessions',
+      'active',
+      'prs',
+      'activity',
+      'inbox',
+      'plans',
+    ]);
   });
 
-  test('projectTabSlugs appends settings after the base tabs', () => {
-    expect(projectTabSlugs).toEqual([...baseTabSlugs, 'settings']);
+  test('PROJECT_TABS appends Settings after the base tabs', () => {
+    expect(PROJECT_TABS).toEqual([...BASE_TABS, { label: 'Settings', slug: 'settings' }]);
+  });
+
+  test('baseTabSlugs is derived from BASE_TABS', () => {
+    expect(baseTabSlugs).toEqual(BASE_TABS.map((t) => t.slug));
+  });
+
+  test('projectTabSlugs is derived from PROJECT_TABS', () => {
+    expect(projectTabSlugs).toEqual(PROJECT_TABS.map((t) => t.slug));
   });
 
   describe('resolveTabSlugForIndex', () => {

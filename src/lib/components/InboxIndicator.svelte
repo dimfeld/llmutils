@@ -24,7 +24,7 @@
     getInboxRowDisplay,
     type InboxKindIconKey,
   } from './inbox_indicator_state.js';
-  import { extractRemoteErrorMessage } from '../../routes/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/remote_error.js';
+  import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
 
   const sessionManager = useSessionManager();
 

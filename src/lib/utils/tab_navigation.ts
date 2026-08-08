@@ -1,10 +1,23 @@
-/**
- * Tab slug order for the project nav bar. Must stay in sync with `TabNav.svelte`'s
- * `baseTabs` array (same order). The keyboard shortcut layer passes all Ctrl+1..9
- * through to `resolveTabSlugForIndex`, which decides whether the index is valid.
- */
-export const baseTabSlugs = ['sessions', 'active', 'prs', 'activity', 'inbox', 'plans'] as const;
-export const projectTabSlugs = [...baseTabSlugs, 'settings'] as const;
+export interface TabDescriptor {
+  label: string;
+  slug: string;
+}
+
+export const BASE_TABS: readonly TabDescriptor[] = [
+  { label: 'Sessions', slug: 'sessions' },
+  { label: 'Active Work', slug: 'active' },
+  { label: 'Pull Requests', slug: 'prs' },
+  { label: 'Activity', slug: 'activity' },
+  { label: 'Inbox', slug: 'inbox' },
+  { label: 'Plans', slug: 'plans' },
+] as const;
+
+const SETTINGS_TAB: TabDescriptor = { label: 'Settings', slug: 'settings' };
+
+export const PROJECT_TABS: readonly TabDescriptor[] = [...BASE_TABS, SETTINGS_TAB];
+
+export const baseTabSlugs = BASE_TABS.map((t) => t.slug);
+export const projectTabSlugs = PROJECT_TABS.map((t) => t.slug);
 
 /**
  * Resolves the tab slug that Ctrl+`tabIndex` should navigate to for the given project
@@ -26,10 +39,7 @@ export function resolveTabSlugForIndex(projectId: string, tabIndex: number): str
  * which doesn't exist on other projects).
  */
 export function resolvePreservedTabForProjectSwitch(currentTab: string): string {
-  if (
-    currentTab === 'settings' ||
-    !baseTabSlugs.includes(currentTab as (typeof baseTabSlugs)[number])
-  ) {
+  if (currentTab === 'settings' || !baseTabSlugs.includes(currentTab)) {
     return 'sessions';
   }
   return currentTab;

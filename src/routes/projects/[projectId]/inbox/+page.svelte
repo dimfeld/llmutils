@@ -28,7 +28,7 @@
     getEventCountLabel,
     formatAbsoluteTime,
   } from './inbox_page_state.js';
-  import { extractRemoteErrorMessage } from '../prs/[prNumber]/reviews/[reviewId]/remote_error.js';
+  import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
 
   const sessionManager = useSessionManager();
 

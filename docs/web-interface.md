@@ -51,7 +51,7 @@ When reusing code originally written for CLI (same `process.cwd()` as the projec
 ### Remote Function Error Shapes
 
 - SvelteKit's `error(status, body)` accepts a structured body. Use it to tag distinct failure modes (e.g. `{ kind: 'persistence-failed', message, githubReviewUrl }`) and surface enough context for the UI to render a safe recovery path. Generic string errors force the UI to regex-match the message, and "Retry" on an already-completed remote side-effect causes duplicates. Augment `App.Error` in `src/app.d.ts` to type the extra fields.
-- In the client, unwrap remote-function errors with a shared helper (`extractRemoteErrorMessage`) that reads `err.body.message` → string body → `err.message` → `String(err)`. Raw `String(err)` at DOM error sites renders `[object Object]`.
+- In the client, unwrap remote-function errors with `extractRemoteErrorMessage` from `$lib/utils/remote_error.ts` — it reads `err.body.message` → string body → `err.message` → `String(err)`. Raw `String(err)` at DOM error sites renders `[object Object]`.
 - Separate remote side-effects from local DB persistence in catch blocks with nested try/catches. Conflating them either (a) records a synthetic failure row for a remote call that actually succeeded or (b) masks the real error when persistence also throws.
 - Validate user-supplied ids at the remote boundary **before** making external API calls. Silently filtering unknown/duplicate/cross-entity ids inside the pipeline turns "invalid selection" into "partial success" — the worst kind of bug to debug. Share the validation between any preview/partition query and the commit command so they can't drift.
 - **Do not collapse a picker/search remote error into empty results.** "No matches found" and "the search failed" are distinct UX states — keep the query's error (`.error`) separate from an empty `.current` and render each differently (empty state vs. error state with retry). Swallowing the error into an empty list hides failures from the user and will be flagged in review.
@@ -304,12 +304,9 @@ Pure display and state helpers are extracted to `src/routes/projects/[projectId]
 
 ### Tab and Keyboard Shortcuts
 
-The Inbox tab appears in `TabNav.svelte` as `{ label: 'Inbox', slug: 'inbox' }`, positioned after Activity and before Plans. **Adding a tab to `TabNav` requires updating the slug arrays in `src/lib/utils/tab_navigation.ts`:**
+Tab descriptors are defined once in `src/lib/utils/tab_navigation.ts` as `BASE_TABS` and `PROJECT_TABS` (base tabs plus Settings). Both `TabNav.svelte` and the keyboard shortcut layer import from this single source of truth. **To add a tab, add a `{ label, slug }` entry to `BASE_TABS`** — rendering order, `Ctrl+1..N` shortcuts, and `Ctrl+Shift+N` project-switch preservation all derive from it automatically.
 
-- `baseTabSlugs` — drives `Ctrl+1..N` tab navigation via `resolveTabSlugForIndex()`.
-- `projectTabSlugs` (derived from `baseTabSlugs` with `'settings'` appended) — used by `Ctrl+Shift+N` project switching to preserve the current tab.
-
-Both arrays must list slugs in the same order as `baseTabs` in `TabNav.svelte`. The keyboard shortcut layer passes all `Ctrl+1..9` through; `resolveTabSlugForIndex` decides whether the index maps to a valid tab. The current order is: sessions (Ctrl+1), active (Ctrl+2), prs (Ctrl+3), activity (Ctrl+4), inbox (Ctrl+5), plans (Ctrl+6), settings (Ctrl+7, numeric projects only). Ctrl+8/9 do nothing.
+The current order is: Sessions (Ctrl+1), Active Work (Ctrl+2), Pull Requests (Ctrl+3), Activity (Ctrl+4), Inbox (Ctrl+5), Plans (Ctrl+6), Settings (Ctrl+7, numeric projects only). Ctrl+8/9 do nothing.
 
 ## Plan Task Counts
 
