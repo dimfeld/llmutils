@@ -2,7 +2,7 @@ import { command, query } from '$app/server';
 import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
-import { formatWebhookIngestErrors, ingestWebhookEvents } from '$common/github/webhook_ingest.js';
+import { formatWebhookIngestErrors } from '$common/github/webhook_ingest.js';
 import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
 import { getReviewerPredicate } from '$common/github/pr_relevance.js';
@@ -16,9 +16,9 @@ import { buildLinearPrReviewUrl } from '$common/linear_pr_review.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import { getServerContext } from '$lib/server/init.js';
 import { withRequiredCheckRollupStates } from '$lib/server/required_check_rollup.js';
-import { processInboxSignals } from '$lib/server/inbox_producer.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import { getSessionManager } from '$lib/server/session_context.js';
+import { ingestWebhookEventsWithInbox } from '$lib/server/webhook_ingest_orchestrator.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getProjectById, listProjects } from '$tim/db/project.js';
 import {
@@ -573,16 +573,13 @@ export const refreshProjectPrs = command(
 
       if (getWebhookServerUrl()) {
         try {
-          const ingestResult = await ingestWebhookEvents(db);
+          const ingestResult = await ingestWebhookEventsWithInbox(db, {
+            getSessionManager,
+          });
           try {
             emitPrUpdatesForIngestResult(db, ingestResult, getSessionManager());
           } catch (err) {
             console.warn('[project_prs] Failed to emit PR update event', err);
-          }
-          if ((ingestResult.inboxSignals?.length ?? 0) > 0) {
-            await processInboxSignals(db, ingestResult.inboxSignals, {
-              sessionManager: getSessionManager(),
-            });
           }
           const ingestError = formatWebhookIngestErrors(ingestResult.errors);
           getProjectPrs({ projectId }).refresh();
@@ -610,16 +607,13 @@ export const refreshProjectPrs = command(
       // It does not run refreshProjectPrsService(), so stale-PR cleanup such as
       // marking missing PRs closed is left to the Full Refresh from GitHub action.
       try {
-        const ingestResult = await ingestWebhookEvents(db);
+        const ingestResult = await ingestWebhookEventsWithInbox(db, {
+          getSessionManager,
+        });
         try {
           emitPrUpdatesForIngestResult(db, ingestResult, getSessionManager());
         } catch {
           // SSE emission is best-effort; don't fail the refresh
-        }
-        if ((ingestResult.inboxSignals?.length ?? 0) > 0) {
-          await processInboxSignals(db, ingestResult.inboxSignals, {
-            sessionManager: getSessionManager(),
-          });
         }
         const ingestError = formatWebhookIngestErrors(ingestResult.errors);
         getProjectPrs({ projectId }).refresh();

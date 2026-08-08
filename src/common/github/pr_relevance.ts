@@ -48,7 +48,7 @@ export function getReviewerPredicate(
   return { isRequestedReviewer, hasSubmittedReview };
 }
 
-function parseRequestedReviewers(requestedReviewers: string | null): string[] {
+export function parseRequestedReviewers(requestedReviewers: string | null): string[] {
   if (!requestedReviewers) {
     return [];
   }

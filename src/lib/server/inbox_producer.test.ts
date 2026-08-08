@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Database } from 'bun:sqlite';
 
 import { openDatabase } from '../../tim/db/database.js';
@@ -491,7 +491,9 @@ describe('lib/server/inbox_producer', () => {
 
     function reviewedSignal(overrides: Partial<InboxSignal> = {}): InboxSignal {
       return makeSignal({
-        kind: 'reviewed_pr_comment',
+        // Handlers emit every comment as pr_comment. The producer chooses the
+        // reviewed_pr_comment inbox kind after checking PR ownership and review state.
+        kind: 'pr_comment',
         prNumber: REVIEWED_PR_NUMBER,
         prUrl: REVIEWED_PR_URL,
         actor: 'third-party',
@@ -512,6 +514,33 @@ describe('lib/server/inbox_producer', () => {
       expect(db.prepare('SELECT kind FROM inbox_item').get()).toEqual({
         kind: 'reviewed_pr_comment',
       });
+    });
+
+    test('reuses the loaded PR detail for reviewer relevance', async () => {
+      upsertPrStatus(db, {
+        prUrl: REVIEWED_PR_URL,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: REVIEWED_PR_NUMBER,
+        author: 'other-author',
+        title: 'Someone else PR',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-06-01T09:00:00.000Z',
+        reviews: [{ author: 'octocat', state: 'APPROVED' }],
+      });
+      const prepareSpy = vi.spyOn(db, 'prepare');
+
+      const affected = await processInboxSignals(db, [reviewedSignal()], {
+        loadConfig: async () => baseConfig(),
+        resolveUsername: async () => 'octocat',
+      });
+
+      expect(affected).toEqual([projectId]);
+      const detailLookupCount = prepareSpy.mock.calls.filter(
+        ([sql]) => sql.includes('FROM pr_status') && sql.includes('COLLATE NOCASE')
+      ).length;
+      expect(detailLookupCount).toBe(1);
     });
 
     test('routes to reviewed_pr_comment when the user has an active review request', async () => {
@@ -555,7 +584,7 @@ describe('lib/server/inbox_producer', () => {
       expect(countInboxItems()).toBe(0);
     });
 
-    test('is skipped when the PR author is the user, even if otherwise a reviewer', async () => {
+    test('routes to pr_comment when the PR author is the user, even if otherwise a reviewer', async () => {
       upsertPrStatus(db, {
         prUrl: REVIEWED_PR_URL,
         owner: OWNER,
@@ -574,8 +603,8 @@ describe('lib/server/inbox_producer', () => {
         resolveUsername: async () => 'octocat',
       });
 
-      expect(affected).toEqual([]);
-      expect(countInboxItems()).toBe(0);
+      expect(affected).toEqual([projectId]);
+      expect(db.prepare('SELECT kind FROM inbox_item').get()).toEqual({ kind: 'pr_comment' });
     });
   });
 

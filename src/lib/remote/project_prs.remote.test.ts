@@ -29,7 +29,6 @@ const {
   getPreferredProjectGitRoot: vi.fn(),
 }));
 const mockEmitPrUpdatesForIngestResult = vi.fn();
-const mockProcessInboxSignals = vi.fn().mockResolvedValue([]);
 const mockSessionManager = { emitPrUpdate: vi.fn() };
 
 vi.mock('$lib/server/init.js', () => ({
@@ -44,9 +43,12 @@ vi.mock('$common/github/webhook_client.js', () => ({
 }));
 
 vi.mock('$common/github/webhook_ingest.js', () => ({
-  ingestWebhookEvents,
   formatWebhookIngestErrors: (errors: string[]) =>
     errors.length > 0 ? `Webhook ingestion had issues: ${errors.join('; ')}` : undefined,
+}));
+
+vi.mock('$lib/server/webhook_ingest_orchestrator.js', () => ({
+  ingestWebhookEventsWithInbox: ingestWebhookEvents,
 }));
 
 vi.mock('$common/github/project_pr_service.js', () => ({
@@ -55,10 +57,6 @@ vi.mock('$common/github/project_pr_service.js', () => ({
 
 vi.mock('$lib/server/pr_event_utils.js', () => ({
   emitPrUpdatesForIngestResult: mockEmitPrUpdatesForIngestResult,
-}));
-
-vi.mock('$lib/server/inbox_producer.js', () => ({
-  processInboxSignals: mockProcessInboxSignals,
 }));
 
 vi.mock('$lib/server/session_context.js', () => ({
@@ -106,8 +104,6 @@ describe('project_prs remote functions', () => {
     loadEffectiveConfig.mockReset();
     getPreferredProjectGitRoot.mockReset();
     mockEmitPrUpdatesForIngestResult.mockReset();
-    mockProcessInboxSignals.mockReset();
-    mockProcessInboxSignals.mockResolvedValue([]);
     mockSessionManager.emitPrUpdate.mockReset();
 
     ingestWebhookEvents.mockResolvedValue({
@@ -137,7 +133,9 @@ describe('project_prs remote functions', () => {
 
     const result = await invokeCommand(refreshProjectPrs, { projectId: String(projectId) });
 
-    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb);
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
+    });
     expect(mockEmitPrUpdatesForIngestResult).toHaveBeenCalledWith(
       currentDb,
       expect.objectContaining({ prsUpdated: [] }),
@@ -147,7 +145,7 @@ describe('project_prs remote functions', () => {
     expect(result).toEqual({ newLinks: [] });
   });
 
-  test('refreshProjectPrs forwards inbox signals to the inbox producer with the session manager', async () => {
+  test('refreshProjectPrs delegates inbox signals through the shared ingest helper', async () => {
     currentWebhookServerUrl = 'https://webhooks.example.com';
     const inboxSignal = {
       kind: 'pr_comment',
@@ -167,18 +165,20 @@ describe('project_prs remote functions', () => {
 
     await invokeCommand(refreshProjectPrs, { projectId: String(projectId) });
 
-    expect(mockProcessInboxSignals).toHaveBeenCalledWith(currentDb, [inboxSignal], {
-      sessionManager: mockSessionManager,
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
     });
   });
 
-  test('refreshProjectPrs skips the inbox producer when ingest reports no inbox signals', async () => {
+  test('refreshProjectPrs delegates empty inbox results through the shared ingest helper', async () => {
     currentWebhookServerUrl = 'https://webhooks.example.com';
     const { refreshProjectPrs } = await import('./project_prs.remote.js');
 
     await invokeCommand(refreshProjectPrs, { projectId: String(projectId) });
 
-    expect(mockProcessInboxSignals).not.toHaveBeenCalled();
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
+    });
   });
 
   test('refreshProjectPrs forwards inbox signals when refreshing all projects', async () => {
@@ -201,8 +201,8 @@ describe('project_prs remote functions', () => {
 
     await invokeCommand(refreshProjectPrs, { projectId: 'all' });
 
-    expect(mockProcessInboxSignals).toHaveBeenCalledWith(currentDb, [inboxSignal], {
-      sessionManager: mockSessionManager,
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
     });
   });
 

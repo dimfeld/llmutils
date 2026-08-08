@@ -102,17 +102,16 @@ vi.mock('../../common/github/webhook_client.js', () => ({
 }));
 
 vi.mock('../../common/github/webhook_ingest.js', () => ({
-  ingestWebhookEvents: vi.fn(async (..._args: unknown[]) => ({
-    eventsIngested: 0,
-    prsUpdated: [],
-    errors: [],
-  })),
   formatWebhookIngestErrors: (errors: string[]) =>
     errors.length > 0 ? `Webhook ingestion had issues: ${errors.join('; ')}` : undefined,
 }));
 
-vi.mock('../../lib/server/inbox_producer.js', () => ({
-  processInboxSignals: vi.fn(async (..._args: unknown[]) => []),
+vi.mock('../../lib/server/webhook_ingest_orchestrator.js', () => ({
+  ingestWebhookEventsWithInbox: vi.fn(async (..._args: unknown[]) => ({
+    eventsIngested: 0,
+    prsUpdated: [],
+    errors: [],
+  })),
 }));
 
 vi.mock('../../common/github/pull_requests.js', () => ({
@@ -307,8 +306,7 @@ import {
 import { refreshProjectPrs as mockRefreshProjectPrsFn } from '../../common/github/project_pr_service.js';
 import { getGitHubUsername as mockGetGitHubUsernameFn } from '../../common/github/user.js';
 import { getWebhookServerUrl as mockGetWebhookServerUrlFn } from '../../common/github/webhook_client.js';
-import { ingestWebhookEvents as mockIngestWebhookEventsFn } from '../../common/github/webhook_ingest.js';
-import { processInboxSignals as mockProcessInboxSignalsFn } from '../../lib/server/inbox_producer.js';
+import { ingestWebhookEventsWithInbox as mockIngestWebhookEventsFn } from '../../lib/server/webhook_ingest_orchestrator.js';
 import {
   fetchOpenPullRequests as mockFetchOpenPullRequestsFn,
   postPullRequestComment as mockPostPullRequestCommentFn,
@@ -370,7 +368,6 @@ const mockRefreshProjectPrs = vi.mocked(mockRefreshProjectPrsFn);
 const mockGetGitHubUsername = vi.mocked(mockGetGitHubUsernameFn);
 const mockGetWebhookServerUrl = vi.mocked(mockGetWebhookServerUrlFn);
 const mockIngestWebhookEvents = vi.mocked(mockIngestWebhookEventsFn);
-const mockProcessInboxSignals = vi.mocked(mockProcessInboxSignalsFn);
 const mockCanonicalizePrUrl = vi.mocked(mockCanonicalizePrUrlFn);
 const mockDeduplicatePrUrls = vi.mocked(mockDeduplicatePrUrlsFn);
 const mockParsePrOrIssueNumber = vi.mocked(mockParsePrOrIssueNumberFn);
@@ -800,7 +797,7 @@ describe('tim/commands/pr', () => {
     expect(logs).toContain('Plan 248 has no linked pull requests and no branch to look up.');
   });
 
-  test('status forwards inbox signals from webhook ingest to the inbox producer', async () => {
+  test('status delegates webhook ingest and inbox processing through the shared helper', async () => {
     currentWebhookServerUrl = 'https://webhooks.example.com';
     const inboxSignal = {
       kind: 'pr_comment',
@@ -819,15 +816,15 @@ describe('tim/commands/pr', () => {
 
     await prModule.handlePrStatusCommand(248, {}, createNestedCommand());
 
-    expect(mockProcessInboxSignals).toHaveBeenCalledWith(dbHandle, [inboxSignal]);
+    expect(mockIngestWebhookEvents).toHaveBeenCalledWith(dbHandle);
   });
 
-  test('status does not call the inbox producer when ingest reports no inbox signals', async () => {
+  test('status delegates empty inbox results through the shared helper', async () => {
     currentWebhookServerUrl = 'https://webhooks.example.com';
 
     await prModule.handlePrStatusCommand(248, {}, createNestedCommand());
 
-    expect(mockProcessInboxSignals).not.toHaveBeenCalled();
+    expect(mockIngestWebhookEvents).toHaveBeenCalledWith(dbHandle);
   });
 
   test('status uses webhook auto-linked PRs from the plan_pr junction when the plan file has none', async () => {

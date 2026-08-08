@@ -8,10 +8,7 @@ import {
 } from '../../common/github/identifiers.js';
 import { fetchRemoteBranch, getGitRepository, remoteBranchExists } from '../../common/git.js';
 import { getWebhookServerUrl } from '../../common/github/webhook_client.js';
-import {
-  formatWebhookIngestErrors,
-  ingestWebhookEvents,
-} from '../../common/github/webhook_ingest.js';
+import { formatWebhookIngestErrors } from '../../common/github/webhook_ingest.js';
 import { resolveGitHubToken } from '../../common/github/token.js';
 import { getGitHubUsername } from '../../common/github/user.js';
 import { refreshProjectPrs } from '../../common/github/project_pr_service.js';
@@ -23,7 +20,7 @@ import {
 } from '../../common/github/pull_requests.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { fetchPrIssueComments, type PrIssueComment } from '../../common/github/pr_status.js';
-import { processInboxSignals } from '../../lib/server/inbox_producer.js';
+import { ingestWebhookEventsWithInbox } from '../../lib/server/webhook_ingest_orchestrator.js';
 import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
@@ -753,11 +750,8 @@ export async function handlePrStatusCommand(
 
   // Ingest webhook events early so auto-linked PRs are available for junction checks
   if (useWebhookFirst) {
-    const ingestResult = await ingestWebhookEvents(db);
+    const ingestResult = await ingestWebhookEventsWithInbox(db);
     logWebhookIngestWarnings(ingestResult.errors);
-    if ((ingestResult.inboxSignals?.length ?? 0) > 0) {
-      await processInboxSignals(db, ingestResult.inboxSignals);
-    }
 
     if (plan.uuid) {
       const cachedExplicitUrls = explicitPrUrls.filter((url) => getPrStatusByUrl(db, url) !== null);

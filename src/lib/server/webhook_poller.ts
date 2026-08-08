@@ -1,17 +1,13 @@
 import type { Database } from 'bun:sqlite';
 
-import {
-  formatWebhookIngestErrors,
-  ingestWebhookEvents,
-  type IngestResult,
-} from '$common/github/webhook_ingest.js';
+import { formatWebhookIngestErrors, type IngestResult } from '$common/github/webhook_ingest.js';
 import { getWebhookInternalApiToken, getWebhookServerUrl } from '$common/github/webhook_client.js';
 
-import { processInboxSignals } from './inbox_producer.js';
 import { triggerReviewGuideComments } from './review_guide_comment_trigger.js';
 import { processSlackReviewReactions } from './slack_review_reactions.js';
 import type { SessionManager } from './session_manager.js';
 import type { WebhookPollerHandle } from './session_context.js';
+import { ingestWebhookEventsWithInbox } from './webhook_ingest_orchestrator.js';
 
 const MIN_POLL_INTERVAL_SECONDS = 5;
 const MAX_POLL_INTERVAL_SECONDS = 86_400; // 24 hours — prevents 32-bit timer overflow
@@ -72,7 +68,9 @@ export function startWebhookPoller(
 
     inProgress = true;
     try {
-      const result = await ingestWebhookEvents(db);
+      const result = options.sessionManager
+        ? await ingestWebhookEventsWithInbox(db, { sessionManager: options.sessionManager })
+        : await ingestWebhookEventsWithInbox(db);
       const formattedErrors = formatWebhookIngestErrors(result.errors);
       if (formattedErrors) {
         console.warn(`[webhook_poller] ${formattedErrors}`);
@@ -85,11 +83,6 @@ export function startWebhookPoller(
       }
       if ((result.reviewsSubmitted?.length ?? 0) > 0) {
         await processSlackReviewReactions(db, result.reviewsSubmitted);
-      }
-      if ((result.inboxSignals?.length ?? 0) > 0) {
-        await processInboxSignals(db, result.inboxSignals, {
-          sessionManager: options.sessionManager,
-        });
       }
     } catch (error) {
       console.error('[webhook_poller] Polling failed', error);

@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 
 import { tryCanonicalizePrUrl } from '../../common/github/identifiers.js';
-import { getReviewerPredicateForPr } from '../../common/github/pr_relevance.js';
+import { getReviewerPredicate, parseRequestedReviewers } from '../../common/github/pr_relevance.js';
 import { constructGitHubRepositoryId } from '../../common/github/pull_requests.js';
 import { isBotLogin, normalizeGitHubUsername } from '../../common/github/username.js';
 import { getGitHubUsername, type GitHubUsernameOptions } from '../../common/github/user.js';
@@ -94,18 +94,23 @@ function isUserAuthor(
 }
 
 function isUserReviewing(
-  db: Database,
-  projectId: number,
-  signal: InboxSignal,
+  status: ReturnType<typeof getPrStatusByProjectAndNumber>,
   username: string
 ): boolean {
-  const predicate = getReviewerPredicateForPr(db, projectId, signal.prNumber, username);
-  return predicate !== null && (predicate.isRequestedReviewer || predicate.hasSubmittedReview);
+  if (!status) {
+    return false;
+  }
+
+  const predicate = getReviewerPredicate(
+    parseRequestedReviewers(status.status.requested_reviewers),
+    status.reviewRequests,
+    status.reviews,
+    username
+  );
+  return predicate.isRequestedReviewer || predicate.hasSubmittedReview;
 }
 
 function getInboxKind(
-  db: Database,
-  projectId: number,
   signal: InboxSignal,
   status: ReturnType<typeof getPrStatusByProjectAndNumber>,
   username: string
@@ -116,11 +121,10 @@ function getInboxKind(
         ? 'review_requested'
         : null;
     case 'pr_comment':
-    case 'reviewed_pr_comment':
       if (isUserAuthor(signal, status, username)) {
-        return signal.kind === 'pr_comment' ? 'pr_comment' : null;
+        return 'pr_comment';
       }
-      return isUserReviewing(db, projectId, signal, username) ? 'reviewed_pr_comment' : null;
+      return isUserReviewing(status, username) ? 'reviewed_pr_comment' : null;
     case 'pr_approved':
     case 'pr_merged':
     case 'ci_failure':
@@ -249,7 +253,7 @@ export async function processInboxSignals(
         continue;
       }
 
-      const kind = getInboxKind(db, project.id, signal, status, context.username);
+      const kind = getInboxKind(signal, status, context.username);
       if (!kind || isBotOrIgnoredActor(signal, kind, context.ignoredUsers)) {
         continue;
       }

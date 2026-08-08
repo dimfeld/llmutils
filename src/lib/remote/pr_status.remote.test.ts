@@ -20,7 +20,6 @@ const ensurePrStatusFresh = vi.fn();
 const refreshPrStatusFromApi = vi.fn();
 const ingestWebhookEvents = vi.fn();
 const mockEmitPrUpdatesForIngestResult = vi.fn();
-const mockProcessInboxSignals = vi.fn().mockResolvedValue([]);
 const mockSessionManager = { emitPrUpdate: vi.fn() };
 const { setPullRequestDraftState } = vi.hoisted(() => ({
   setPullRequestDraftState: vi.fn(),
@@ -55,17 +54,16 @@ vi.mock('$common/github/webhook_client.js', () => ({
 }));
 
 vi.mock('$common/github/webhook_ingest.js', () => ({
-  ingestWebhookEvents,
   formatWebhookIngestErrors: (errors: string[]) =>
     errors.length > 0 ? `Webhook ingestion had issues: ${errors.join('; ')}` : undefined,
 }));
 
-vi.mock('$lib/server/pr_event_utils.js', () => ({
-  emitPrUpdatesForIngestResult: mockEmitPrUpdatesForIngestResult,
+vi.mock('$lib/server/webhook_ingest_orchestrator.js', () => ({
+  ingestWebhookEventsWithInbox: ingestWebhookEvents,
 }));
 
-vi.mock('$lib/server/inbox_producer.js', () => ({
-  processInboxSignals: mockProcessInboxSignals,
+vi.mock('$lib/server/pr_event_utils.js', () => ({
+  emitPrUpdatesForIngestResult: mockEmitPrUpdatesForIngestResult,
 }));
 
 vi.mock('$lib/server/session_context.js', () => ({
@@ -128,8 +126,6 @@ describe('pr_status remote functions', () => {
     setPullRequestDraftState.mockReset();
     ingestWebhookEvents.mockReset();
     mockEmitPrUpdatesForIngestResult.mockReset();
-    mockProcessInboxSignals.mockReset();
-    mockProcessInboxSignals.mockResolvedValue([]);
     mockSessionManager.emitPrUpdate.mockReset();
     currentWebhookServerUrl = null;
     ingestWebhookEvents.mockResolvedValue({
@@ -464,12 +460,14 @@ describe('pr_status remote functions', () => {
 
     const result = await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
 
-    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb);
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
+    });
     expect(ensurePrStatusFresh).not.toHaveBeenCalled();
     expect(result.error).toBeUndefined();
   });
 
-  test('refreshPrStatus forwards inbox signals to the inbox producer with the session manager', async () => {
+  test('refreshPrStatus delegates inbox signals through the shared ingest helper', async () => {
     currentWebhookServerUrl = 'https://webhooks.example.com';
     const inboxSignal = {
       kind: 'pr_approved',
@@ -489,18 +487,20 @@ describe('pr_status remote functions', () => {
 
     await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
 
-    expect(mockProcessInboxSignals).toHaveBeenCalledWith(currentDb, [inboxSignal], {
-      sessionManager: mockSessionManager,
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
     });
   });
 
-  test('refreshPrStatus skips the inbox producer when ingest reports no inbox signals', async () => {
+  test('refreshPrStatus delegates empty inbox results through the shared ingest helper', async () => {
     currentWebhookServerUrl = 'https://webhooks.example.com';
     const { refreshPrStatus } = await import('./pr_status.remote.js');
 
     await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
 
-    expect(mockProcessInboxSignals).not.toHaveBeenCalled();
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
+    });
   });
 
   test('refreshPrStatus syncs links and refreshes each PR when GITHUB_TOKEN is configured', async () => {
@@ -540,7 +540,9 @@ describe('pr_status remote functions', () => {
     const { refreshPrStatus } = await import('./pr_status.remote.js');
     const result = await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
 
-    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb);
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
+      getSessionManager: expect.any(Function),
+    });
     // In webhook mode, should NOT call ensurePrStatusFresh (that's for the GitHub API path)
     expect(ensurePrStatusFresh).not.toHaveBeenCalled();
     // PR 2 is not cached, so should report it as not yet available
