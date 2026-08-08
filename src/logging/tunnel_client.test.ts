@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import {
   TunnelAdapter,
+  TunnelSessionProcessLifecycleSink,
   createTunnelAdapter,
   isTunnelActive,
   isValidServerTunnelMessage,
@@ -12,7 +13,11 @@ import {
 import { TIM_OUTPUT_SOCKET } from './tunnel_protocol.ts';
 import type { TunnelMessage } from './tunnel_protocol.ts';
 import type { StructuredMessage } from './structured_messages.ts';
-import { toProcessId, type ProcessId } from '../common/session_process.ts';
+import {
+  toProcessId,
+  type ProcessId,
+  type SessionProcessRegistration,
+} from '../common/session_process.ts';
 
 // Use /tmp/claude as the base for mkdtemp to keep socket paths short enough
 // for the Unix domain socket path length limit (104 bytes on macOS).
@@ -177,6 +182,50 @@ describe('TunnelAdapter', () => {
     testServer?.close();
     testServer = null;
     await rm(testDir, { recursive: true, force: true });
+  });
+
+  it('validates lifecycle payloads with the canonical process contract', () => {
+    let registration: SessionProcessRegistration | undefined;
+    let update: Record<string, unknown> | undefined;
+    const adapter = {
+      registerProcess: (value: SessionProcessRegistration & { processId: ProcessId }): boolean => {
+        registration = value;
+        return true;
+      },
+      updateProcess: (_processId: ProcessId, value: Record<string, unknown>): boolean => {
+        update = value;
+        return true;
+      },
+      exitProcess: (): boolean => true,
+      removeProcess: (): boolean => true,
+    } as unknown as TunnelAdapter;
+    const sink = new TunnelSessionProcessLifecycleSink(adapter);
+    const executor = processId('sink-executor');
+    const command = `codex exec --json ${'prompt-token '.repeat(500)}`;
+
+    expect(
+      sink.registerProcess({
+        processId: executor,
+        kind: 'executor',
+        label: 'Codex prompt',
+        command,
+      })
+    ).toBe(true);
+    expect(registration?.command).toBe(command);
+    expect(sink.updateProcess(executor, { command, state: 'running' })).toBe(true);
+    expect(update).toEqual({ command, state: 'running' });
+
+    expect(
+      sink.registerProcess({
+        processId: processId('invalid-start-identity'),
+        kind: 'executor',
+        label: 'invalid start identity',
+        startIdentity: 'x'.repeat(2049),
+      })
+    ).toBe(false);
+    expect(sink.updateProcess(executor, { startIdentity: 'x'.repeat(2049) })).toBe(false);
+    expect(sink.exitProcess(executor, { endedAt: '' })).toBe(false);
+    expect(sink.removeProcess('not a process id' as ProcessId)).toBe(false);
   });
 
   describe('createTunnelAdapter', () => {

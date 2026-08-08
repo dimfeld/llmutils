@@ -60,7 +60,7 @@ describe('session process payload validators', () => {
         label: 'executor',
         command: 'x'.repeat(2049),
       })
-    ).toBe(false);
+    ).toBe(true);
     expect(isValidSessionProcessUpdate({ pid: null, command: null, state: 'running' })).toBe(true);
     expect(isValidSessionProcessUpdate({ label: '   ' })).toBe(false);
     expect(isValidSessionProcessExit({ exitCode: null, signal: 'SIGTERM' })).toBe(true);
@@ -437,6 +437,42 @@ describe('SessionProcessRegistry', () => {
       state: 'running',
     });
     expect(changes).toEqual(['registered', 'registered', 'updated']);
+  });
+
+  it('retains multi-kilobyte command metadata through registration and updates', () => {
+    const registry = createRegistry();
+    const root = processId('root');
+    const executor = processId('long-command-executor');
+    const command = `codex exec --json ${'prompt-token '.repeat(500)}`;
+
+    expect(command.length).toBeGreaterThan(2048);
+    registry.register({ processId: root, kind: 'tim', label: 'root' });
+
+    expect(
+      registry.register({
+        processId: executor,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'long Codex executor',
+        command,
+        state: 'starting',
+      })
+    ).toMatchObject({ command, state: 'starting' });
+
+    expect(registry.update(executor, { command, state: 'running' })).toMatchObject({
+      command,
+      state: 'running',
+    });
+    expect(isValidSessionProcessNode(registry.get(executor))).toBe(true);
+    expect(
+      isValidSessionProcessRegistration({
+        kind: 'executor',
+        label: 'executor',
+        command,
+        startIdentity: 'x'.repeat(2049),
+      })
+    ).toBe(false);
   });
 
   it('removes a disconnected owner subtree and routes owner channels by node identity', () => {

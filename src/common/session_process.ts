@@ -21,6 +21,13 @@ export const TIM_PROCESS_OWNER_ID = TIM_OWNER_PROCESS_ID;
 const TIM_OUTPUT_SOCKET_ENV = 'TIM_OUTPUT_SOCKET';
 const PROCESS_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
 const MAX_PROCESS_LABEL_LENGTH = 512;
+/**
+ * Command lines are diagnostic metadata. Provider prompts can make them much
+ * longer than an ordinary shell command, so keep a generous transport bound.
+ * This value is not used for process-control identity checks.
+ */
+const MAX_PROCESS_COMMAND_LENGTH = 64 * 1024;
+const MAX_PROCESS_START_IDENTITY_LENGTH = 2048;
 
 declare const processIdBrand: unique symbol;
 
@@ -270,8 +277,8 @@ export function isValidSessionProcessRegistration(
     (value.kind === 'tim' || value.kind === 'executor') &&
     isNonEmptyString(value.label, MAX_PROCESS_LABEL_LENGTH) &&
     (value.pid === undefined || isValidPid(value.pid)) &&
-    isOptionalString(value.command, 2048) &&
-    isOptionalString(value.startIdentity, 2048) &&
+    isOptionalString(value.command, MAX_PROCESS_COMMAND_LENGTH) &&
+    isOptionalString(value.startIdentity, MAX_PROCESS_START_IDENTITY_LENGTH) &&
     (value.startedAt === undefined || isNonEmptyString(value.startedAt, 512)) &&
     (value.state === undefined || value.state === 'starting' || value.state === 'running')
   );
@@ -291,8 +298,8 @@ export function isValidSessionProcessUpdate(
     isOptionalProcessId(value.ownerProcessId) &&
     (value.label === undefined || isNonEmptyString(value.label, MAX_PROCESS_LABEL_LENGTH)) &&
     isOptionalNullablePid(value.pid) &&
-    isOptionalNullableString(value.command, 2048) &&
-    isOptionalNullableString(value.startIdentity, 2048) &&
+    isOptionalNullableString(value.command, MAX_PROCESS_COMMAND_LENGTH) &&
+    isOptionalNullableString(value.startIdentity, MAX_PROCESS_START_IDENTITY_LENGTH) &&
     (value.state === undefined ||
       value.state === 'starting' ||
       value.state === 'running' ||
@@ -330,8 +337,8 @@ export function isValidSessionProcessNode(value: unknown): value is SessionProce
     (value.kind === 'tim' || value.kind === 'executor') &&
     isNonEmptyString(value.label, MAX_PROCESS_LABEL_LENGTH) &&
     (value.pid === undefined || isValidPid(value.pid)) &&
-    isOptionalString(value.command, 2048) &&
-    isOptionalString(value.startIdentity, 2048) &&
+    isOptionalString(value.command, MAX_PROCESS_COMMAND_LENGTH) &&
+    isOptionalString(value.startIdentity, MAX_PROCESS_START_IDENTITY_LENGTH) &&
     isNonEmptyString(value.startedAt, 512) &&
     (value.state === 'starting' ||
       value.state === 'running' ||

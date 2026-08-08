@@ -307,6 +307,45 @@ describe('SessionProcessOwner', () => {
     });
   });
 
+  it('keeps multi-kilobyte provider commands registered and safely terminable', () => {
+    const transport = createTransport();
+    const command = `codex exec --json ${'prompt-token '.repeat(500)}`;
+    const processInfo = createProcessInfo(1234, command);
+    const processLister = vi.fn<() => ProcessInfo[]>(() => [processInfo]);
+    const owner = createOwner(processLister, transport);
+    const lifecycle = owner.prepareExecutor({
+      label: 'Codex CLI prompt',
+      command,
+    });
+    const kill = vi.fn();
+
+    expect(command.length).toBeGreaterThan(2048);
+    expect(lifecycle).toBeDefined();
+    expect(transport.registrations).toContainEqual(
+      expect.objectContaining({
+        processId: lifecycle?.processId,
+        command,
+        state: 'starting',
+      })
+    );
+
+    lifecycle?.markSpawned({ pid: processInfo.pid, kill });
+    expect(transport.updates).toContainEqual({
+      processId: lifecycle?.processId,
+      update: {
+        pid: processInfo.pid,
+        command,
+        startIdentity: processInfo.startTime,
+        state: 'running',
+      },
+    });
+
+    expect(owner.terminateExecutor(lifecycle!.processId)).toBe('terminated');
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    lifecycle?.markExited({ signal: 'SIGTERM' });
+    expect(owner.childCount).toBe(0);
+  });
+
   it('safely handles a child that finishes spawning during owner disposal', () => {
     const transport = createTransport();
     const processInfo = createProcessInfo(1234, 'claude');

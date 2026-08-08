@@ -55,9 +55,11 @@ export interface SessionExecutorLifecycle {
 
 interface TrackedExecutor extends SessionExecutorLifecycle {
   readonly label: string;
+  /** Full producer command used only for the owner-side identity comparison. */
   readonly expectedCommand: string;
   handle?: SessionChildProcessHandle;
   pid?: number;
+  /** Full command captured from the process list; never use a display value here. */
   command?: string;
   startIdentity?: string;
   processInfoCaptured: boolean;

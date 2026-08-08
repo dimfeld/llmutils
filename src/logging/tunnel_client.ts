@@ -4,6 +4,9 @@ import { writeToLogFile } from './common.js';
 import { debug } from '../common/process.js';
 import {
   isProcessId,
+  isValidSessionProcessExit,
+  isValidSessionProcessRegistration,
+  isValidSessionProcessUpdate,
   isSessionProcessTerminationResult,
   type ProcessId,
   type SessionProcessExit,
@@ -440,6 +443,9 @@ export class TunnelSessionProcessLifecycleSink implements SessionProcessLifecycl
   constructor(private readonly adapter: TunnelAdapter) {}
 
   registerProcess(registration: SessionProcessRegistration): boolean {
+    if (!isValidSessionProcessRegistration(registration, { requireProcessId: true })) {
+      return false;
+    }
     const processId = registration.processId;
     if (!processId) {
       return false;
@@ -448,14 +454,23 @@ export class TunnelSessionProcessLifecycleSink implements SessionProcessLifecycl
   }
 
   updateProcess(processId: ProcessId, update: SessionProcessUpdate): boolean {
+    if (!isProcessId(processId) || !isValidSessionProcessUpdate(update, { requireChange: true })) {
+      return false;
+    }
     return this.adapter.updateProcess(processId, update);
   }
 
   exitProcess(processId: ProcessId, details: SessionProcessExit = {}): boolean {
+    if (!isProcessId(processId) || !isValidSessionProcessExit(details)) {
+      return false;
+    }
     return this.adapter.exitProcess(processId, details);
   }
 
   removeProcess(processId: ProcessId, subtree: boolean = true): boolean {
+    if (!isProcessId(processId) || typeof subtree !== 'boolean') {
+      return false;
+    }
     return this.adapter.removeProcess(processId, subtree);
   }
 }

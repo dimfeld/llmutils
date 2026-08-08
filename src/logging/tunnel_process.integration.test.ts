@@ -254,6 +254,42 @@ describe('tunnel process plumbing', () => {
     socket.end();
   });
 
+  it('accepts multi-kilobyte provider command metadata through the tunnel', async () => {
+    const { registry, rootExecutor, socketPath } = await createFixture();
+    const client = await createTunnelAdapter(socketPath);
+    adapters.push(client);
+    const tim = processId('long-command-tim');
+    const executor = processId('long-command-executor');
+    const command = `codex exec --json ${'prompt-token '.repeat(500)}`;
+
+    expect(command.length).toBeGreaterThan(2048);
+    expect(
+      client.registerProcess({
+        processId: tim,
+        parentProcessId: rootExecutor,
+        ownerProcessId: rootExecutor,
+        kind: 'tim',
+        label: 'long-command tim',
+      })
+    ).toBe(true);
+    expect(
+      client.registerProcess({
+        processId: executor,
+        parentProcessId: tim,
+        ownerProcessId: tim,
+        kind: 'executor',
+        label: 'Codex CLI prompt',
+        command,
+        state: 'starting',
+      })
+    ).toBe(true);
+
+    await waitFor(() => registry.get(executor)?.command === command);
+    expect(client.updateProcess(executor, { command, state: 'running' })).toBe(true);
+    await waitFor(() => registry.get(executor)?.state === 'running');
+    expect(registry.get(executor)).toMatchObject({ command, state: 'running' });
+  });
+
   it('builds nested and parallel branches from real tunnel lifecycle messages', async () => {
     const { registry, rootExecutor, socketPath } = await createFixture();
     const clientA = await createTunnelAdapter(socketPath);

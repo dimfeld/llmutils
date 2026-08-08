@@ -640,4 +640,138 @@ describe.skipIf(process.platform === 'win32')('run-prompt session process integr
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
+
+  test('tracks a long Codex CLI prompt, propagates process identity, and terminates safely', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-run-prompt-codex-process-'));
+    const originalPath = process.env.PATH;
+    const originalOutputSocket = process.env.TIM_OUTPUT_SOCKET;
+    const codexPath = path.join(tempDir, 'codex');
+    const identityPath = path.join(tempDir, 'identity.txt');
+    const longPrompt = 'prompt-token-'.repeat(500);
+    const script = [
+      '#!/usr/bin/env node',
+      "const identity = [process.env.TIM_SESSION_ID, process.env.TIM_PROCESS_ID, process.env.TIM_PARENT_PROCESS_ID, process.env.TIM_OWNER_PROCESS_ID].join('|');",
+      "require('node:fs').writeFileSync(require('node:path').join(__dirname, 'identity.txt'), identity);",
+      "process.stdout.write(JSON.stringify({ type: 'item.completed', item: { item_type: 'agent_message', text: identity } }) + '\\n');",
+      "process.on('SIGTERM', () => process.exit(0));",
+      'setInterval(() => {}, 1000);',
+    ].join('\n');
+
+    await fs.writeFile(codexPath, script);
+    await fs.chmod(codexPath, 0o755);
+    process.env.PATH = `${tempDir}:${originalPath ?? ''}`;
+    process.env.TIM_OUTPUT_SOCKET = path.join(tempDir, 'unused-output.sock');
+
+    const sessionId = 'run-prompt-codex-session';
+    const ownerProcessId = toProcessId('run-prompt-codex-owner');
+    if (!ownerProcessId) {
+      throw new Error('Invalid run-prompt Codex owner process ID');
+    }
+    const registry = new SessionProcessRegistry({ sessionId });
+    registry.register({ processId: ownerProcessId, kind: 'tim', label: 'run-prompt Codex owner' });
+    const owner = new SessionProcessOwner({
+      sessionId,
+      ownerProcessId,
+      lifecycleSink: new SessionProcessRegistryLifecycleSink(registry),
+    });
+    const stdoutWrites: string[] = [];
+    let runPromise: Promise<void> | undefined;
+
+    try {
+      runPromise = runWithSessionProcessOwner(owner, () =>
+        handleRunPromptCommand(
+          longPrompt,
+          { executor: 'codex', quiet: true },
+          {},
+          {
+            loadEffectiveConfigFn: async () => ({ headless: {} }) as any,
+            isTunnelActiveFn: () => true,
+            runWithHeadlessAdapterIfEnabledFn: async (headlessOptions) =>
+              headlessOptions.callback(),
+            stdoutWrite: (output) => {
+              stdoutWrites.push(output);
+            },
+            stdinIsTTY: true,
+          }
+        )
+      );
+
+      let executor = registry
+        .getSnapshot()
+        .find(
+          (node) =>
+            node.kind === 'executor' &&
+            node.label === 'Codex prompt' &&
+            node.state === 'running' &&
+            (node.command?.length ?? 0) > 2048
+        );
+      const waitStartedAt = Date.now();
+      while (!executor && Date.now() - waitStartedAt < 2000) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        executor = registry
+          .getSnapshot()
+          .find(
+            (node) =>
+              node.kind === 'executor' &&
+              node.label === 'Codex prompt' &&
+              node.state === 'running' &&
+              (node.command?.length ?? 0) > 2048
+          );
+      }
+
+      expect(executor).toMatchObject({
+        kind: 'executor',
+        state: 'running',
+        parentProcessId: ownerProcessId,
+        ownerProcessId,
+        pid: expect.any(Number),
+      });
+      expect(executor?.command?.length).toBeGreaterThan(2048);
+      expect(executor?.command).toContain(codexPath);
+
+      const expectedIdentity = `${sessionId}|${executor!.processId}|${ownerProcessId}|${ownerProcessId}`;
+      const identityWaitStartedAt = Date.now();
+      while (Date.now() - identityWaitStartedAt < 2000) {
+        try {
+          await fs.access(identityPath);
+          break;
+        } catch {
+          await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        }
+      }
+      await expect(fs.readFile(identityPath, 'utf8')).resolves.toBe(expectedIdentity);
+
+      expect(owner.terminateExecutor(executor!.processId)).toBe('terminated');
+      let runError: unknown;
+      try {
+        await runPromise;
+      } catch (error) {
+        runError = error;
+      }
+      if (runError) {
+        expect(runError).toMatchObject({
+          message: expect.stringMatching(/Codex exited with non-zero exit code/),
+        });
+      }
+      expect(stdoutWrites).toEqual(runError ? [] : [`${expectedIdentity}\n`]);
+      expect(registry.get(executor!.processId)).toMatchObject({ state: 'exited' });
+      expect(owner.childCount).toBe(0);
+    } finally {
+      if (runPromise) {
+        await runPromise.catch(() => {});
+      }
+      owner.dispose();
+      if (originalPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = originalPath;
+      }
+      if (originalOutputSocket === undefined) {
+        delete process.env.TIM_OUTPUT_SOCKET;
+      } else {
+        process.env.TIM_OUTPUT_SOCKET = originalOutputSocket;
+      }
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
 });
