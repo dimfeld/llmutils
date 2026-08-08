@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { getServerContext } from '$lib/server/init.js';
+import { planHref, prHref } from '$lib/server/object_hrefs.js';
 import { getLatestReviewByPlanUuid, getLatestReviewByPrUrl } from '$tim/db/review.js';
 import { listRecentJobs, type JobRow } from '$tim/db/job.js';
 import type { PageServerLoad } from './$types';
@@ -15,23 +16,6 @@ export interface ActivityJob extends JobRow {
 const REVIEW_JOB_TYPES = new Set(['review', 'review-guide', 'autoreview']);
 /** Job types whose natural output is the created/updated pull request. */
 const PR_JOB_TYPES = new Set(['pr-create', 'pr-fix', 'ci-fix']);
-
-function planHref(job: JobRow): string | null {
-  if (job.project_id == null || !job.plan_uuid) {
-    return null;
-  }
-  return `/projects/${job.project_id}/plans/${job.plan_uuid}`;
-}
-
-function prHref(job: JobRow): { href: string; external: boolean } | null {
-  if (job.project_id != null && job.pr_number != null) {
-    return { href: `/projects/${job.project_id}/prs/${job.pr_number}`, external: false };
-  }
-  if (job.pr_url) {
-    return { href: job.pr_url, external: true };
-  }
-  return null;
-}
 
 function reviewHref(job: JobRow, reviewId: number): string | null {
   if (job.project_id == null) {
@@ -67,9 +51,9 @@ function resolveOutput(db: Database, job: JobRow): { href: string | null; extern
       }
     }
     // Fall back to the plan or PR if no guide is stored yet.
-    const pr = prHref(job);
+    const pr = prHref(job.project_id, job.pr_number, job.pr_url);
     if (job.plan_uuid) {
-      return { href: planHref(job), external: false };
+      return { href: planHref(job.project_id, job.plan_uuid), external: false };
     }
     if (pr) {
       return pr;
@@ -87,20 +71,20 @@ function resolveOutput(db: Database, job: JobRow): { href: string | null; extern
 
   // PR jobs jump to the pull request.
   if (PR_JOB_TYPES.has(job.job_type)) {
-    const pr = prHref(job);
+    const pr = prHref(job.project_id, job.pr_number, job.pr_url);
     if (pr) {
       return pr;
     }
-    return { href: planHref(job), external: false };
+    return { href: planHref(job.project_id, job.plan_uuid), external: false };
   }
 
   // Everything else (agent, generate, rebase, chat, ...) jumps to the plan,
   // falling back to a linked PR when there is no plan.
-  const plan = planHref(job);
+  const plan = planHref(job.project_id, job.plan_uuid);
   if (plan) {
     return { href: plan, external: false };
   }
-  const pr = prHref(job);
+  const pr = prHref(job.project_id, job.pr_number, job.pr_url);
   if (pr) {
     return pr;
   }
