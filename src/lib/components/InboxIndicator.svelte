@@ -24,6 +24,7 @@
     getInboxRowDisplay,
     type InboxKindIconKey,
   } from './inbox_indicator_state.js';
+  import { extractRemoteErrorMessage } from '../../routes/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/remote_error.js';
 
   const sessionManager = useSessionManager();
 
@@ -45,6 +46,8 @@
   let triggerLabel = $derived(
     queryError ? 'Inbox unavailable' : showLoading ? 'Loading inbox' : indicator.label
   );
+
+  let popoverOpen = $state(false);
 
   let displayItems = $derived((data?.items ?? []).slice(0, 10));
 
@@ -80,12 +83,8 @@
     };
   });
 
-  function getErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-  }
-
   function reportInboxFailure(action: string, error: unknown): void {
-    toast.error(`Failed to ${action}: ${getErrorMessage(error)}`);
+    toast.error(`Failed to ${action}: ${extractRemoteErrorMessage(error)}`);
   }
 
   async function refreshInboxQuery(showFailure = false): Promise<void> {
@@ -116,6 +115,7 @@
       if (item.viewHref.external) {
         window.open(item.viewHref.href, '_blank', 'noopener,noreferrer');
       } else {
+        popoverOpen = false;
         try {
           await goto(item.viewHref.href);
         } catch (error) {
@@ -139,16 +139,12 @@
 {#snippet rowContent(item: EnrichedInboxItem)}
   {@const row = getInboxRowDisplay(item)}
   {@const KindIcon = ICON_COMPONENTS[row.kindIconKey]}
-  {@const isUnread = !item.read_at}
   <div class="mt-0.5 shrink-0 text-gray-400">
     <KindIcon class="size-4" />
   </div>
   <div class="min-w-0 flex-1">
     <div class="flex items-baseline gap-1.5">
-      <span
-        class={['truncate text-sm', isUnread ? 'font-semibold text-gray-100' : 'text-gray-300']}
-        title={row.title}
-      >
+      <span class="truncate text-sm font-semibold text-gray-100" title={row.title}>
         {row.title}
       </span>
     </div>
@@ -167,16 +163,10 @@
       <span class="shrink-0">{formatRelativeTime(item.last_event_at)}</span>
     </div>
   </div>
-  {#if isUnread}
-    <div
-      class="mt-1.5 size-2 shrink-0 rounded-full bg-blue-400"
-      role="img"
-      aria-label="Unread"
-    ></div>
-  {/if}
+  <div class="mt-1.5 size-2 shrink-0 rounded-full bg-blue-400" role="img" aria-label="Unread"></div>
 {/snippet}
 
-<Popover>
+<Popover bind:open={popoverOpen}>
   <PopoverTrigger
     openOnHover
     openDelay={150}
@@ -240,10 +230,7 @@
               href={item.viewHref.href}
               target="_blank"
               rel="noopener noreferrer"
-              class={[
-                'flex items-start gap-2.5 border-b border-gray-700/50 px-3 py-2 transition-colors last:border-b-0 hover:bg-gray-700/50',
-                !item.read_at ? 'bg-gray-700/30' : '',
-              ]}
+              class="flex items-start gap-2.5 border-b border-gray-700/50 bg-gray-700/30 px-3 py-2 transition-colors last:border-b-0 hover:bg-gray-700/50"
               onclick={() => void markInboxItemRead(item.id)}
             >
               {@render rowContent(item)}
@@ -251,10 +238,7 @@
           {:else}
             <button
               type="button"
-              class={[
-                'flex w-full items-start gap-2.5 border-b border-gray-700/50 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-gray-700/50',
-                !item.read_at ? 'bg-gray-700/30' : '',
-              ]}
+              class="flex w-full items-start gap-2.5 border-b border-gray-700/50 bg-gray-700/30 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-gray-700/50"
               onclick={() => handleRowClick(item)}
             >
               {@render rowContent(item)}
@@ -269,6 +253,7 @@
         <a
           href="/projects/{footerProjectId}/inbox"
           class="text-xs text-blue-400 hover:text-blue-300"
+          onclick={() => (popoverOpen = false)}
         >
           View all notifications
         </a>

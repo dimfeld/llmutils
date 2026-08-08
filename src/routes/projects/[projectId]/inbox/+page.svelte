@@ -28,6 +28,7 @@
     getEventCountLabel,
     formatAbsoluteTime,
   } from './inbox_page_state.js';
+  import { extractRemoteErrorMessage } from '../prs/[prNumber]/reviews/[reviewId]/remote_error.js';
 
   const sessionManager = useSessionManager();
 
@@ -96,9 +97,7 @@
 
   function markItemRead(id: number): void {
     markInboxItemsRead({ ids: [id] }).catch((error: unknown) => {
-      toast.error(
-        `Failed to mark item as read: ${error instanceof Error ? error.message : String(error)}`
-      );
+      toast.error(`Failed to mark item as read: ${extractRemoteErrorMessage(error)}`);
     });
   }
 
@@ -173,18 +172,14 @@
 
   function handleMarkAllRead(): void {
     markAllInboxItemsRead({ projectId }).catch((error: unknown) => {
-      toast.error(
-        `Failed to mark all as read: ${error instanceof Error ? error.message : String(error)}`
-      );
+      toast.error(`Failed to mark all as read: ${extractRemoteErrorMessage(error)}`);
     });
   }
 
   function handleDismiss(event: MouseEvent, id: number): void {
     event.stopPropagation();
     dismissInboxItem({ id }).catch((error: unknown) => {
-      toast.error(
-        `Failed to dismiss item: ${error instanceof Error ? error.message : String(error)}`
-      );
+      toast.error(`Failed to dismiss item: ${extractRemoteErrorMessage(error)}`);
     });
   }
 </script>

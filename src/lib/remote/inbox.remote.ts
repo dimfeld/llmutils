@@ -3,6 +3,7 @@ import * as z from 'zod';
 
 import { enrichInboxItems, type EnrichedInboxItem } from '$lib/server/inbox_enrichment.js';
 import { getServerContext } from '$lib/server/init.js';
+import { getSessionManager } from '$lib/server/session_context.js';
 import {
   countUnreadInboxItems,
   dismissInboxItem as dismissInboxItemRow,
@@ -53,6 +54,14 @@ export const getInboxItems = query(
   }
 );
 
+function emitInboxUpdateIfAvailable(projectIds: ReadonlyArray<number>): void {
+  try {
+    getSessionManager().emitInboxUpdate([...projectIds]);
+  } catch {
+    // Session manager may not be initialized in tests or during startup
+  }
+}
+
 async function refreshInboxQueries(projectIds: ReadonlyArray<number>): Promise<void> {
   const scopes = [
     'all',
@@ -75,6 +84,7 @@ export const markInboxItemsRead = command(
     const { db } = await getServerContext();
     const projectIds = markInboxItemsReadRows(db, ids);
     await refreshInboxQueries(projectIds);
+    emitInboxUpdateIfAvailable(projectIds);
   }
 );
 
@@ -88,6 +98,7 @@ export const markAllInboxItemsRead = command(
     } satisfies { cutoff: string; projectId?: number };
     const affectedProjectIds = markAllReadBefore(db, options);
     await refreshInboxQueries(affectedProjectIds);
+    emitInboxUpdateIfAvailable(affectedProjectIds);
   }
 );
 
@@ -97,5 +108,6 @@ export const dismissInboxItem = command(
     const { db } = await getServerContext();
     const projectIds = dismissInboxItemRow(db, id);
     await refreshInboxQueries(projectIds);
+    emitInboxUpdateIfAvailable(projectIds);
   }
 );

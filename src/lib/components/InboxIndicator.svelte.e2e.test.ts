@@ -180,7 +180,20 @@ describe('InboxIndicator browser behavior', () => {
     );
   });
 
-  test('marks an internal row read and navigates to its internal href', async () => {
+  test('extracts the message from a structured HttpError body', async () => {
+    const structuredError = { body: { message: 'project not found' } };
+    mocks.markAllInboxItemsRead.mockRejectedValueOnce(structuredError);
+    renderIndicator(makeResponse({ items: [makeItem()], unreadCount: 1 }));
+    await openPopover();
+
+    await page.getByRole('button', { name: 'Mark all inbox items as read' }).click();
+    await expect.poll(() => mocks.toast.error.mock.calls.length).toBe(1);
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      'Failed to mark all inbox items as read: project not found'
+    );
+  });
+
+  test('marks an internal row read, closes the popover, and navigates to its internal href', async () => {
     renderIndicator(makeResponse({ items: [makeItem()], unreadCount: 1 }));
     await openPopover();
 
@@ -188,6 +201,7 @@ describe('InboxIndicator browser behavior', () => {
 
     expect(mocks.markInboxItemsRead).toHaveBeenCalledWith({ ids: [1] });
     expect(mocks.goto).toHaveBeenCalledWith('/projects/7/prs/42');
+    await expect.element(page.getByRole('heading', { name: 'Inbox' })).not.toBeInTheDocument();
   });
 
   test('renders an external row as a new-tab link and marks it read on click', async () => {
@@ -278,6 +292,15 @@ describe('InboxIndicator browser behavior', () => {
     await expect
       .element(page.getByRole('link', { name: 'View all notifications' }))
       .toHaveAttribute('href', '/projects/all/inbox');
+  });
+
+  test('closes the popover when the footer link is clicked', async () => {
+    renderIndicator(makeResponse({ items: [makeItem()], unreadCount: 1 }));
+    await openPopover();
+
+    await page.getByRole('link', { name: 'View all notifications' }).click();
+
+    await expect.element(page.getByRole('heading', { name: 'Inbox' })).not.toBeInTheDocument();
   });
 
   test('refreshes on inbox SSE events and cleans up the subscription and polling timer', async () => {
