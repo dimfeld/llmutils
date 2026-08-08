@@ -10,6 +10,7 @@ import {
   isTunnelActive,
   isValidServerTunnelMessage,
 } from './tunnel_client.ts';
+import { isValidTunnelMessage } from './tunnel_server.ts';
 import { TIM_OUTPUT_SOCKET } from './tunnel_protocol.ts';
 import type { TunnelMessage } from './tunnel_protocol.ts';
 import type { StructuredMessage } from './structured_messages.ts';
@@ -29,6 +30,12 @@ function processId(value: string): ProcessId {
     throw new Error(`Invalid test process ID: ${value}`);
   }
   return result;
+}
+
+const MAX_PROCESS_COMMAND_LENGTH = 64 * 1024;
+
+function processCommand(length: number): string {
+  return `codex ${'prompt-token '.repeat(Math.ceil((length - 6) / 13))}`.slice(0, length);
 }
 
 /**
@@ -187,12 +194,16 @@ describe('TunnelAdapter', () => {
   it('validates lifecycle payloads with the canonical process contract', () => {
     let registration: SessionProcessRegistration | undefined;
     let update: Record<string, unknown> | undefined;
+    let registrationCalls = 0;
+    let updateCalls = 0;
     const adapter = {
       registerProcess: (value: SessionProcessRegistration & { processId: ProcessId }): boolean => {
+        registrationCalls++;
         registration = value;
         return true;
       },
       updateProcess: (_processId: ProcessId, value: Record<string, unknown>): boolean => {
+        updateCalls++;
         update = value;
         return true;
       },
@@ -201,7 +212,8 @@ describe('TunnelAdapter', () => {
     } as unknown as TunnelAdapter;
     const sink = new TunnelSessionProcessLifecycleSink(adapter);
     const executor = processId('sink-executor');
-    const command = `codex exec --json ${'prompt-token '.repeat(500)}`;
+    const command = processCommand(MAX_PROCESS_COMMAND_LENGTH);
+    const overLimitCommand = processCommand(MAX_PROCESS_COMMAND_LENGTH + 1);
 
     expect(
       sink.registerProcess({
@@ -214,6 +226,76 @@ describe('TunnelAdapter', () => {
     expect(registration?.command).toBe(command);
     expect(sink.updateProcess(executor, { command, state: 'running' })).toBe(true);
     expect(update).toEqual({ command, state: 'running' });
+    expect(registrationCalls).toBe(1);
+    expect(updateCalls).toBe(1);
+
+    expect(
+      sink.registerProcess({
+        processId: processId('oversized-sink-executor'),
+        kind: 'executor',
+        label: 'oversized Codex prompt',
+        command: overLimitCommand,
+      })
+    ).toBe(false);
+    expect(sink.updateProcess(executor, { command: overLimitCommand })).toBe(false);
+    expect(registrationCalls).toBe(1);
+    expect(updateCalls).toBe(1);
+
+    expect(
+      isValidTunnelMessage({
+        type: 'process_register',
+        processId: executor,
+        kind: 'executor',
+        label: 'maximum Codex prompt',
+        command,
+      })
+    ).toBe(true);
+    expect(
+      isValidTunnelMessage({
+        type: 'process_update',
+        processId: executor,
+        command,
+        state: 'running',
+      })
+    ).toBe(true);
+    expect(
+      isValidTunnelMessage({
+        type: 'process_register',
+        processId: executor,
+        kind: 'executor',
+        label: 'oversized Codex prompt',
+        command: overLimitCommand,
+      })
+    ).toBe(false);
+    expect(
+      isValidTunnelMessage({
+        type: 'process_register',
+        processId: 'not an opaque id',
+        kind: 'executor',
+        label: 'maximum Codex prompt',
+        command,
+      })
+    ).toBe(false);
+    expect(
+      isValidTunnelMessage({
+        type: 'process_register',
+        processId: executor,
+        parentProcessId: 'not an opaque parent id',
+        ownerProcessId: 'owner-id',
+        kind: 'executor',
+        label: 'maximum Codex prompt',
+        command,
+      })
+    ).toBe(false);
+    expect(
+      isValidTunnelMessage({
+        type: 'process_update',
+        processId: executor,
+        ownerProcessId: 'not an opaque owner id',
+        command,
+        state: 'running',
+      })
+    ).toBe(false);
 
     expect(
       sink.registerProcess({

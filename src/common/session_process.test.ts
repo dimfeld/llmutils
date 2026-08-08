@@ -35,6 +35,12 @@ function createRegistry(): SessionProcessRegistry {
   });
 }
 
+const MAX_PROCESS_COMMAND_LENGTH = 64 * 1024;
+
+function processCommand(length: number): string {
+  return `codex ${'prompt-token '.repeat(Math.ceil((length - 6) / 13))}`.slice(0, length);
+}
+
 describe('session process payload validators', () => {
   const root = processId('root');
   const executor = processId('executor');
@@ -89,6 +95,78 @@ describe('session process payload validators', () => {
         requestId: 'request-1',
         result: 'terminated',
         error: 'x'.repeat(4097),
+      })
+    ).toBe(false);
+  });
+
+  it('accepts diagnostic commands through 64 KiB while keeping identity fields strict', () => {
+    const commandAtLimit = processCommand(MAX_PROCESS_COMMAND_LENGTH);
+    const commandOverLimit = processCommand(MAX_PROCESS_COMMAND_LENGTH + 1);
+
+    expect(commandAtLimit).toHaveLength(MAX_PROCESS_COMMAND_LENGTH);
+    expect(commandOverLimit).toHaveLength(MAX_PROCESS_COMMAND_LENGTH + 1);
+    expect(
+      isValidSessionProcessRegistration({
+        processId: executor,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'long executor',
+        command: commandAtLimit,
+      })
+    ).toBe(true);
+    expect(isValidSessionProcessUpdate({ command: commandAtLimit, state: 'running' })).toBe(true);
+    expect(
+      isValidSessionProcessNode({
+        processId: executor,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'long executor',
+        command: commandAtLimit,
+        startedAt: '2026-08-07T12:00:00.000Z',
+        state: 'running',
+      })
+    ).toBe(true);
+    expect(
+      isValidSessionProcessRegistration({
+        processId: executor,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'long executor',
+        command: commandOverLimit,
+      })
+    ).toBe(false);
+    expect(isValidSessionProcessUpdate({ command: commandOverLimit })).toBe(false);
+    expect(
+      isValidSessionProcessRegistration({
+        processId: 'not an opaque process id' as ProcessId,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'long executor',
+        command: commandAtLimit,
+      })
+    ).toBe(false);
+    expect(
+      isValidSessionProcessRegistration({
+        processId: executor,
+        parentProcessId: 'not an opaque parent id' as ProcessId,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'long executor',
+        command: commandAtLimit,
+      })
+    ).toBe(false);
+    expect(
+      isValidSessionProcessRegistration({
+        processId: executor,
+        parentProcessId: root,
+        ownerProcessId: 'not an opaque owner id' as ProcessId,
+        kind: 'executor',
+        label: 'long executor',
+        command: commandAtLimit,
       })
     ).toBe(false);
   });
@@ -439,13 +517,18 @@ describe('SessionProcessRegistry', () => {
     expect(changes).toEqual(['registered', 'registered', 'updated']);
   });
 
-  it('retains multi-kilobyte command metadata through registration and updates', () => {
+  it('retains command metadata through the 64 KiB registration and update boundary', () => {
     const registry = createRegistry();
     const root = processId('root');
     const executor = processId('long-command-executor');
-    const command = `codex exec --json ${'prompt-token '.repeat(500)}`;
+    const maxExecutor = processId('max-command-executor');
+    const overLimitExecutor = processId('over-limit-executor');
+    const commandOver2048 = processCommand(2049);
+    const commandAtLimit = processCommand(MAX_PROCESS_COMMAND_LENGTH);
+    const commandOverLimit = processCommand(MAX_PROCESS_COMMAND_LENGTH + 1);
 
-    expect(command.length).toBeGreaterThan(2048);
+    expect(commandOver2048).toHaveLength(2049);
+    expect(commandAtLimit).toHaveLength(MAX_PROCESS_COMMAND_LENGTH);
     registry.register({ processId: root, kind: 'tim', label: 'root' });
 
     expect(
@@ -455,21 +538,45 @@ describe('SessionProcessRegistry', () => {
         ownerProcessId: root,
         kind: 'executor',
         label: 'long Codex executor',
-        command,
+        command: commandOver2048,
         state: 'starting',
       })
-    ).toMatchObject({ command, state: 'starting' });
+    ).toMatchObject({ command: commandOver2048, state: 'starting' });
 
-    expect(registry.update(executor, { command, state: 'running' })).toMatchObject({
-      command,
+    expect(registry.update(executor, { command: commandAtLimit, state: 'running' })).toMatchObject({
+      command: commandAtLimit,
       state: 'running',
     });
+    expect(registry.update(executor, { command: commandOverLimit })).toBeUndefined();
+    expect(registry.get(executor)?.command).toBe(commandAtLimit);
+
+    expect(
+      registry.register({
+        processId: maxExecutor,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'maximum command executor',
+        command: commandAtLimit,
+      })
+    ).toMatchObject({ command: commandAtLimit });
+    expect(
+      registry.register({
+        processId: overLimitExecutor,
+        parentProcessId: root,
+        ownerProcessId: root,
+        kind: 'executor',
+        label: 'over-limit executor',
+        command: commandOverLimit,
+      })
+    ).toBeUndefined();
+    expect(registry.has(overLimitExecutor)).toBe(false);
     expect(isValidSessionProcessNode(registry.get(executor))).toBe(true);
     expect(
       isValidSessionProcessRegistration({
         kind: 'executor',
         label: 'executor',
-        command,
+        command: commandAtLimit,
         startIdentity: 'x'.repeat(2049),
       })
     ).toBe(false);

@@ -109,6 +109,30 @@ describe('executeCodexStep retries', () => {
     expect(secondArgs.slice(-4)).toEqual(['--json', 'resume', 'thread-123', 'continue']);
   });
 
+  test('passes a multi-kilobyte prompt unchanged to the Codex CLI spawn path', async () => {
+    const prompt = 'Review this provider-shaped prompt token. '.repeat(200);
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (_args: string[], opts: any) => {
+      opts?.formatStdout?.('chunk');
+      return { exitCode: 0, stdout: '', stderr: '', signal: null, killedByInactivity: false };
+    });
+
+    vi.mocked(createCodexStdoutFormatter).mockReturnValue({
+      formatChunk: () => '',
+      getFinalAgentMessage: () => 'ok',
+      getFailedAgentMessage: () => undefined,
+      getThreadId: () => undefined,
+      getSessionId: () => undefined,
+    } as any);
+
+    await expect(executeCodexStep(prompt, '/tmp', {} as any)).resolves.toBe('ok');
+
+    const [args, options] = vi.mocked(spawnAndLogOutput).mock.calls[0]!;
+    expect(prompt.length).toBeGreaterThan(2048);
+    expect(args.at(-1)).toBe(prompt);
+    expect(args.join(' ').length).toBeGreaterThan(2048);
+    expect(options).toMatchObject({ sessionProcessLabel: 'Codex CLI attempt 1' });
+  });
+
   test('stops after three failed attempts when codex keeps exiting', async () => {
     vi.mocked(spawnAndLogOutput).mockImplementation(async (_args: string[], opts: any) => {
       if (opts?.formatStdout) {

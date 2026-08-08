@@ -255,14 +255,20 @@ describe('tunnel process plumbing', () => {
   });
 
   it('accepts multi-kilobyte provider command metadata through the tunnel', async () => {
-    const { registry, rootExecutor, socketPath } = await createFixture();
+    const received: TunnelProcessMessage[] = [];
+    const { registry, rootExecutor, socketPath } = await createFixture({
+      onProcessMessage: (message) => received.push(message),
+    });
     const client = await createTunnelAdapter(socketPath);
     adapters.push(client);
     const tim = processId('long-command-tim');
     const executor = processId('long-command-executor');
-    const command = `codex exec --json ${'prompt-token '.repeat(500)}`;
+    const maxCommand = `codex ${'prompt-token '.repeat(5050)}`.slice(0, 64 * 1024);
+    const overLimitCommand = `${maxCommand}x`;
+    const overLimitExecutor = processId('over-limit-command-executor');
 
-    expect(command.length).toBeGreaterThan(2048);
+    expect(maxCommand).toHaveLength(64 * 1024);
+    expect(overLimitCommand).toHaveLength(64 * 1024 + 1);
     expect(
       client.registerProcess({
         processId: tim,
@@ -279,15 +285,40 @@ describe('tunnel process plumbing', () => {
         ownerProcessId: tim,
         kind: 'executor',
         label: 'Codex CLI prompt',
-        command,
+        command: maxCommand,
         state: 'starting',
       })
     ).toBe(true);
 
-    await waitFor(() => registry.get(executor)?.command === command);
-    expect(client.updateProcess(executor, { command, state: 'running' })).toBe(true);
+    await waitFor(() => registry.get(executor)?.command === maxCommand);
+    expect(client.updateProcess(executor, { command: maxCommand, state: 'running' })).toBe(true);
     await waitFor(() => registry.get(executor)?.state === 'running');
-    expect(registry.get(executor)).toMatchObject({ command, state: 'running' });
+    expect(registry.get(executor)).toMatchObject({ command: maxCommand, state: 'running' });
+    expect(received.map((message) => message.type)).toEqual([
+      'process_register',
+      'process_register',
+      'process_update',
+    ]);
+
+    // TunnelAdapter.send() reports only that bytes were written. The server's
+    // canonical validator must reject this payload without creating a node.
+    expect(
+      client.registerProcess({
+        processId: overLimitExecutor,
+        parentProcessId: tim,
+        ownerProcessId: tim,
+        kind: 'executor',
+        label: 'oversized Codex prompt',
+        command: overLimitCommand,
+      })
+    ).toBe(true);
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    expect(registry.has(overLimitExecutor)).toBe(false);
+    expect(received.map((message) => message.type)).toEqual([
+      'process_register',
+      'process_register',
+      'process_update',
+    ]);
   });
 
   it('builds nested and parallel branches from real tunnel lifecycle messages', async () => {

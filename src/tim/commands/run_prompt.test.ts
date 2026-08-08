@@ -641,6 +641,143 @@ describe.skipIf(process.platform === 'win32')('run-prompt session process integr
     }
   });
 
+  test('tracks and terminates a long Claude run-prompt argv with full identity metadata', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-run-prompt-claude-long-process-'));
+    const originalPath = process.env.PATH;
+    const originalOutputSocket = process.env.TIM_OUTPUT_SOCKET;
+    const claudePath = path.join(tempDir, 'claude');
+    const identityPath = path.join(tempDir, 'identity.txt');
+    const longPrompt = 'prompt-token-'.repeat(500);
+    const sessionId = 'run-prompt-claude-long-session';
+    const resultLine = JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      duration_ms: 1,
+      duration_api_ms: 1,
+      is_error: false,
+      num_turns: 1,
+      result: 'long Claude response',
+      session_id: sessionId,
+    });
+    const script = [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const identity = [process.env.TIM_SESSION_ID, process.env.TIM_PROCESS_ID, process.env.TIM_PARENT_PROCESS_ID, process.env.TIM_OWNER_PROCESS_ID].join('|');",
+      "fs.writeFileSync(path.join(__dirname, 'identity.txt'), identity);",
+      `process.stdout.write(${JSON.stringify(`${resultLine}\n`)});`,
+      "process.on('SIGTERM', () => process.exit(0));",
+      'setInterval(() => {}, 1000);',
+    ].join('\n');
+
+    await fs.writeFile(claudePath, script);
+    await fs.chmod(claudePath, 0o755);
+    process.env.PATH = `${tempDir}:${originalPath ?? ''}`;
+    process.env.TIM_OUTPUT_SOCKET = path.join(tempDir, 'unused-output.sock');
+
+    const ownerProcessId = toProcessId('run-prompt-claude-long-owner');
+    if (!ownerProcessId) {
+      throw new Error('Invalid long Claude owner process ID');
+    }
+    const registry = new SessionProcessRegistry({ sessionId });
+    registry.register({ processId: ownerProcessId, kind: 'tim', label: 'long Claude owner' });
+    const owner = new SessionProcessOwner({
+      sessionId,
+      ownerProcessId,
+      lifecycleSink: new SessionProcessRegistryLifecycleSink(registry),
+    });
+    const stdoutWrites: string[] = [];
+    let runPromise: Promise<void> | undefined;
+
+    try {
+      runPromise = runWithSessionProcessOwner(owner, () =>
+        handleRunPromptCommand(
+          longPrompt,
+          { executor: 'claude', quiet: true },
+          {},
+          {
+            loadEffectiveConfigFn: async () => ({ headless: {} }) as any,
+            isTunnelActiveFn: () => true,
+            runWithHeadlessAdapterIfEnabledFn: async (headlessOptions) =>
+              headlessOptions.callback(),
+            stdoutWrite: (output) => {
+              stdoutWrites.push(output);
+            },
+            stdinIsTTY: true,
+          }
+        )
+      );
+
+      let executor = registry
+        .getSnapshot()
+        .find(
+          (node) =>
+            node.kind === 'executor' &&
+            node.label === 'Claude prompt' &&
+            node.state === 'running' &&
+            (node.command?.length ?? 0) > 2048
+        );
+      const waitStartedAt = Date.now();
+      while (!executor && Date.now() - waitStartedAt < 2000) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        executor = registry
+          .getSnapshot()
+          .find(
+            (node) =>
+              node.kind === 'executor' &&
+              node.label === 'Claude prompt' &&
+              node.state === 'running' &&
+              (node.command?.length ?? 0) > 2048
+          );
+      }
+
+      expect(executor).toMatchObject({
+        kind: 'executor',
+        state: 'running',
+        parentProcessId: ownerProcessId,
+        ownerProcessId,
+        pid: expect.any(Number),
+      });
+      expect(executor?.command?.length).toBeGreaterThan(2048);
+      expect(executor?.command).toContain(claudePath);
+      expect(executor?.command).toContain(longPrompt);
+
+      const expectedIdentity = `${sessionId}|${executor!.processId}|${ownerProcessId}|${ownerProcessId}`;
+      const identityWaitStartedAt = Date.now();
+      while (Date.now() - identityWaitStartedAt < 2000) {
+        try {
+          await fs.access(identityPath);
+          break;
+        } catch {
+          await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        }
+      }
+      await expect(fs.readFile(identityPath, 'utf8')).resolves.toBe(expectedIdentity);
+
+      expect(owner.terminateExecutor(executor!.processId)).toBe('terminated');
+      await expect(runPromise).resolves.toBeUndefined();
+      expect(stdoutWrites).toEqual(['long Claude response\n']);
+      expect(registry.get(executor!.processId)).toMatchObject({ state: 'exited' });
+      expect(owner.childCount).toBe(0);
+    } finally {
+      if (runPromise) {
+        await runPromise.catch(() => {});
+      }
+      owner.dispose();
+      if (originalPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = originalPath;
+      }
+      if (originalOutputSocket === undefined) {
+        delete process.env.TIM_OUTPUT_SOCKET;
+      } else {
+        process.env.TIM_OUTPUT_SOCKET = originalOutputSocket;
+      }
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test('tracks a long Codex CLI prompt, propagates process identity, and terminates safely', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-run-prompt-codex-process-'));
     const originalPath = process.env.PATH;

@@ -75,6 +75,12 @@ function createProcessInfo(pid: number, command: string, startTime = 'start-1'):
   return { pid, ppid: process.pid, command, startTime };
 }
 
+const MAX_PROCESS_COMMAND_LENGTH = 64 * 1024;
+
+function processCommand(length: number): string {
+  return `codex ${'prompt-token '.repeat(Math.ceil((length - 6) / 13))}`.slice(0, length);
+}
+
 describe('SessionProcessOwner', () => {
   it('registers before spawn, propagates identity, and removes the direct-child handle on exit', () => {
     const transport = createTransport();
@@ -344,6 +350,45 @@ describe('SessionProcessOwner', () => {
     expect(kill).toHaveBeenCalledWith('SIGTERM');
     lifecycle?.markExited({ signal: 'SIGTERM' });
     expect(owner.childCount).toBe(0);
+  });
+
+  it('prepares, propagates, and safely terminates an executor at the 64 KiB command boundary', () => {
+    const registry = createRegistry();
+    const command = processCommand(MAX_PROCESS_COMMAND_LENGTH);
+    const processInfo = createProcessInfo(1234, command);
+    const processLister = vi.fn<() => ProcessInfo[]>(() => [processInfo]);
+    const owner = createOwner(processLister, new SessionProcessRegistryLifecycleSink(registry));
+    const lifecycle = owner.prepareExecutor({ label: 'Maximum Codex prompt', command });
+    const kill = vi.fn();
+
+    expect(command).toHaveLength(MAX_PROCESS_COMMAND_LENGTH);
+    expect(lifecycle).toBeDefined();
+    expect(lifecycle?.environment).toMatchObject({
+      TIM_SESSION_ID: 'session-1',
+      TIM_PARENT_PROCESS_ID: 'owner',
+      TIM_OWNER_PROCESS_ID: 'owner',
+    });
+    expect(lifecycle?.environment[TIM_PROCESS_ID]).toBe(lifecycle?.processId);
+
+    lifecycle?.markSpawned({ pid: processInfo.pid, kill });
+    expect(registry.get(lifecycle!.processId)).toMatchObject({
+      state: 'running',
+      pid: processInfo.pid,
+      command,
+      startIdentity: processInfo.startTime,
+    });
+
+    expect(owner.terminateExecutor(lifecycle!.processId)).toBe('terminated');
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    lifecycle?.markExited({ signal: 'SIGTERM' });
+
+    const overLimit = owner.prepareExecutor({
+      label: 'Oversized Codex prompt',
+      command: processCommand(MAX_PROCESS_COMMAND_LENGTH + 1),
+    });
+    expect(overLimit).toBeUndefined();
+    expect(owner.childCount).toBe(0);
+    expect(registry.getSnapshot()).toHaveLength(2);
   });
 
   it('safely handles a child that finishes spawning during owner disposal', () => {
