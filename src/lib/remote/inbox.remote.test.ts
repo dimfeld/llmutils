@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { invokeCommand, invokeQuery } from '$lib/test-utils/invoke_command.js';
 import { enrichInboxItems } from '$lib/server/inbox_enrichment.js';
+import { SessionManager } from '$lib/server/session_manager.js';
+import { setSessionManager } from '$lib/server/session_context.js';
 import { openDatabase } from '$tim/db/database.js';
 import {
   markInboxItemsRead as markInboxItemsReadRows,
@@ -69,9 +71,11 @@ describe('inbox remote functions', () => {
     otherProjectId = getOrCreateProject(currentDb, 'github.com__other__repo').id;
     nextPrNumber = 1;
     refreshedScopes.length = 0;
+    setSessionManager(null);
   });
 
   afterEach(() => {
+    setSessionManager(null);
     currentDb.close(false);
   });
 
@@ -377,6 +381,103 @@ describe('inbox remote functions', () => {
     ).resolves.toMatchObject({
       unreadCount: 0,
       items: [],
+    });
+  });
+
+  describe('inbox:updated SSE emission', () => {
+    function withRecordedEmissions(): { emissions: number[][] } {
+      const manager = new SessionManager(currentDb, { autoPruneIntervalMs: 0 });
+      const emissions: number[][] = [];
+      manager.subscribe('inbox:updated', (payload) => {
+        emissions.push([...payload.projectIds]);
+      });
+      setSessionManager(manager);
+      return { emissions };
+    }
+
+    test('does not throw when no session manager is initialized', async () => {
+      const { markInboxItemsRead } = await import('./inbox.remote.js');
+      const item = seedInboxItem({ prNumber: 701 });
+
+      await expect(invokeCommand(markInboxItemsRead, { ids: [item.id] })).resolves.toBeUndefined();
+    });
+
+    test('emits inbox:updated with the affected project id on markInboxItemsRead', async () => {
+      const { markInboxItemsRead } = await import('./inbox.remote.js');
+      const { emissions } = withRecordedEmissions();
+      const item = seedInboxItem({ prNumber: 702 });
+
+      await invokeCommand(markInboxItemsRead, { ids: [item.id] });
+
+      expect(emissions).toEqual([[projectId]]);
+    });
+
+    test('emits inbox:updated for both project ids when marking items across projects', async () => {
+      const { markInboxItemsRead } = await import('./inbox.remote.js');
+      const { emissions } = withRecordedEmissions();
+      const item = seedInboxItem({ prNumber: 703 });
+      const otherProjectItem = seedInboxItem({
+        projectId: otherProjectId,
+        prNumber: 704,
+        prUrl: 'https://github.com/other/repo/pull/704',
+        repo: 'other/repo',
+      });
+
+      await invokeCommand(markInboxItemsRead, { ids: [item.id, otherProjectItem.id] });
+
+      expect(emissions).toHaveLength(1);
+      expect(emissions[0]).toEqual(expect.arrayContaining([projectId, otherProjectId]));
+      expect(emissions[0]).toHaveLength(2);
+    });
+
+    test('does not emit inbox:updated when nothing was actually marked read', async () => {
+      const { markInboxItemsRead } = await import('./inbox.remote.js');
+      const { emissions } = withRecordedEmissions();
+      const item = seedInboxItem({ prNumber: 705 });
+      await invokeCommand(markInboxItemsRead, { ids: [item.id] });
+
+      emissions.length = 0;
+      await invokeCommand(markInboxItemsRead, { ids: [item.id] });
+
+      expect(emissions).toEqual([]);
+    });
+
+    test('emits inbox:updated for the affected project on markAllInboxItemsRead', async () => {
+      const { markAllInboxItemsRead } = await import('./inbox.remote.js');
+      const { emissions } = withRecordedEmissions();
+      seedInboxItem({ prNumber: 706 });
+
+      await invokeCommand(markAllInboxItemsRead, { projectId: String(projectId) });
+
+      expect(emissions).toEqual([[projectId]]);
+    });
+
+    test('emits inbox:updated for every project when marking all as read across all projects', async () => {
+      const { markAllInboxItemsRead } = await import('./inbox.remote.js');
+      const { emissions } = withRecordedEmissions();
+      seedInboxItem({ prNumber: 707 });
+      seedInboxItem({
+        projectId: otherProjectId,
+        prNumber: 708,
+        prUrl: 'https://github.com/other/repo/pull/708',
+        repo: 'other/repo',
+      });
+
+      await invokeCommand(markAllInboxItemsRead, { projectId: 'all' });
+
+      expect(emissions).toHaveLength(1);
+      expect(emissions[0]).toEqual(expect.arrayContaining([projectId, otherProjectId]));
+      expect(emissions[0]).toHaveLength(2);
+    });
+
+    test('emits inbox:updated for the affected project on dismissInboxItem', async () => {
+      const { dismissInboxItem } = await import('./inbox.remote.js');
+      const { emissions } = withRecordedEmissions();
+      const item = seedInboxItem({ prNumber: 709 });
+
+      await invokeCommand(dismissInboxItem, { id: item.id });
+
+      expect(emissions).toEqual([[projectId]]);
     });
   });
 });

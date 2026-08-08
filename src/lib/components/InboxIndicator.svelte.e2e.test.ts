@@ -159,6 +159,18 @@ describe('InboxIndicator browser behavior', () => {
     expect(mocks.markInboxItemsRead).not.toHaveBeenCalled();
   });
 
+  test('applies unread row styling with a valid Tailwind class regardless of read_at', async () => {
+    const readItem = makeItem({ read_at: '2026-08-01T00:00:00.000Z' });
+
+    renderIndicator(makeResponse({ items: [readItem], unreadCount: 1 }));
+    await openPopover();
+
+    const row = page.getByRole('button', { name: /Fix the widget/ });
+    await expect.element(row).toHaveClass(/bg-gray-700\/30/);
+    await expect.element(row).not.toHaveClass(/bg-gray-750/);
+    await expect.element(row.getByRole('img', { name: 'Unread' })).toBeInTheDocument();
+  });
+
   test('marks all visible inbox items read from the popup', async () => {
     renderIndicator(makeResponse({ items: [makeItem()], unreadCount: 1 }));
     await openPopover();
