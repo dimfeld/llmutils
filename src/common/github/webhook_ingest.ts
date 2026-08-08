@@ -403,7 +403,7 @@ export async function ingestWebhookEvents(
   const prsReadyForReview = new Map<string, ReadyForReviewPr>();
   /** Deduplicated submitted reviews, keyed by "prUrl:author:state". */
   const reviewsSubmitted = new Map<string, SubmittedPrReview>();
-  /** Deduplicated inbox signals, keyed by "kind:prUrl:actor:eventAt". */
+  /** Deduplicated inbox signals, keyed by kind, PR, actor/target, and event time. */
   const inboxSignals = new Map<string, InboxSignal>();
   const errors: string[] = [];
   /** Deduplicated set of PRs needing API refresh, keyed by "owner/repo#number:type[:threadId]". */
@@ -462,7 +462,11 @@ export async function ingestWebhookEvents(
           const eventAt = signal.eventAt ?? event.receivedAt;
           const normalizedSignal: InboxSignal =
             signal.eventAt === eventAt ? signal : { ...signal, eventAt };
-          const key = `${normalizedSignal.kind}:${normalizedSignal.prUrl}:${normalizedSignal.actor}:${normalizedSignal.eventAt}`;
+          const signalIdentity =
+            normalizedSignal.kind === 'review_requested'
+              ? normalizedSignal.requestedReviewer
+              : normalizedSignal.actor;
+          const key = `${normalizedSignal.kind}:${normalizedSignal.prUrl}:${signalIdentity}:${normalizedSignal.eventAt}`;
           inboxSignals.set(key, normalizedSignal);
         }
 

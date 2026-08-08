@@ -41,8 +41,7 @@ export type InboxSignalKind =
   | 'ci_failure'
   | 'merge_queue_removed';
 
-export interface InboxSignal {
-  kind: InboxSignalKind;
+interface InboxSignalBase {
   /** Owner/repository full name. */
   repo: string;
   prNumber: number;
@@ -59,6 +58,18 @@ export interface InboxSignal {
   /** Best-effort timestamp for the event. */
   eventAt: string;
 }
+
+export interface ReviewRequestedInboxSignal extends InboxSignalBase {
+  kind: 'review_requested';
+  /** Login of the user GitHub requested to review the pull request. */
+  requestedReviewer: string;
+}
+
+export interface OtherInboxSignal extends InboxSignalBase {
+  kind: Exclude<InboxSignalKind, 'review_requested'>;
+}
+
+export type InboxSignal = ReviewRequestedInboxSignal | OtherInboxSignal;
 
 /** A review submitted on a known PR, surfaced so callers can run side effects. */
 export interface ReviewSubmission {
@@ -833,7 +844,7 @@ export function handlePullRequestEvent(
 
   const inboxSignals: InboxSignal[] = [];
   const eventActor = getPullRequestEventActor(parsed);
-  if (parsed.action === 'review_requested' && pullRequest.requestedReviewerLogin) {
+  if (parsed.action === 'review_requested' && pullRequest.requestedReviewerLogin && eventActor) {
     inboxSignals.push({
       kind: 'review_requested',
       repo: parsed.repository.fullName,
@@ -841,7 +852,9 @@ export function handlePullRequestEvent(
       prUrl,
       prTitle: pullRequest.title,
       prAuthor: pullRequest.author,
-      actor: pullRequest.requestedReviewerLogin,
+      actor: eventActor.actor,
+      actorType: eventActor.actorType,
+      requestedReviewer: pullRequest.requestedReviewerLogin,
       eventAt: signalEventTime,
     });
   }

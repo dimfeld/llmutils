@@ -88,6 +88,30 @@ describe('lib/server/inbox_producer', () => {
     expect(row.event_count).toBe(1);
   });
 
+  test('matches review_requested by requested reviewer and stores the sender as actor', async () => {
+    const affected = await processInboxSignals(
+      db,
+      [
+        makeSignal({
+          kind: 'review_requested',
+          actor: 'requester',
+          actorType: 'User',
+          requestedReviewer: 'OcToCaT',
+        }),
+      ],
+      {
+        loadConfig: async () => baseConfig(),
+        resolveUsername: async () => 'octocat',
+      }
+    );
+
+    expect(affected).toEqual([projectId]);
+    expect(db.prepare('SELECT kind, actor FROM inbox_item').get()).toEqual({
+      kind: 'review_requested',
+      actor: 'requester',
+    });
+  });
+
   test('skips signals for unknown repositories without throwing', async () => {
     const affected = await processInboxSignals(db, [makeSignal({ repo: 'other/unknown-repo' })], {
       loadConfig: async () => baseConfig(),

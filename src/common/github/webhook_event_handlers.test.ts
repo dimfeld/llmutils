@@ -1881,10 +1881,11 @@ describe('common/github/webhook_event_handlers', () => {
       ]);
     });
 
-    test('emits review_requested with the requested reviewer as actor', () => {
+    test('emits review_requested with the sender as actor and requested reviewer separately', () => {
       const result = handlePullRequestEvent(db, {
         action: 'review_requested',
         repository: { full_name: 'example/repo' },
+        sender: { login: 'requester', type: 'User' },
         requested_reviewer: { login: 'reviewer-x' },
         pull_request: {
           number: 92,
@@ -1909,7 +1910,9 @@ describe('common/github/webhook_event_handlers', () => {
           prUrl: 'https://github.com/example/repo/pull/92',
           prTitle: 'PR needing review',
           prAuthor: 'pr-author',
-          actor: 'reviewer-x',
+          actor: 'requester',
+          actorType: 'User',
+          requestedReviewer: 'reviewer-x',
           eventAt: '2026-03-30T12:00:00.000Z',
         },
       ]);

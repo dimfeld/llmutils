@@ -1625,6 +1625,55 @@ describe('common/github/webhook_ingest', () => {
   });
 
   describe('inboxSignals collection', () => {
+    test('preserves the review requester and webhook sender separately', async () => {
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        {
+          id: 70,
+          deliveryId: 'review-requested-1',
+          eventType: 'pull_request',
+          action: 'review_requested',
+          repositoryFullName: 'example/repo',
+          receivedAt: '2026-03-30T10:00:00.000Z',
+          payloadJson: JSON.stringify({
+            action: 'review_requested',
+            repository: { full_name: 'example/repo' },
+            sender: { login: 'requester', type: 'User' },
+            requested_reviewer: { login: 'reviewer-x' },
+            pull_request: {
+              number: 79,
+              title: 'Review me',
+              state: 'open',
+              draft: false,
+              merged_at: null,
+              user: { login: 'pr-author' },
+              head: { sha: 'sha-79', ref: 'feature/review' },
+              base: { ref: 'main' },
+              labels: [],
+              requested_reviewers: [{ login: 'reviewer-x' }],
+              updated_at: '2026-03-30T10:00:00.000Z',
+            },
+          }),
+        },
+      ]);
+
+      const result = await ingestWebhookEvents(db);
+
+      expect(result.inboxSignals).toEqual([
+        {
+          kind: 'review_requested',
+          repo: 'example/repo',
+          prNumber: 79,
+          prUrl: 'https://github.com/example/repo/pull/79',
+          prTitle: 'Review me',
+          prAuthor: 'pr-author',
+          actor: 'requester',
+          actorType: 'User',
+          requestedReviewer: 'reviewer-x',
+          eventAt: '2026-03-30T10:00:00.000Z',
+        },
+      ]);
+    });
+
     function buildIssueCommentEvent(params: {
       id: number;
       deliveryId: string;

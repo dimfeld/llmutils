@@ -111,7 +111,9 @@ function getInboxKind(
 ): InboxItemKind | null {
   switch (signal.kind) {
     case 'review_requested':
-      return normalizeGitHubUsername(signal.actor) === username ? 'review_requested' : null;
+      return normalizeGitHubUsername(signal.requestedReviewer) === username
+        ? 'review_requested'
+        : null;
     case 'pr_comment':
     case 'reviewed_pr_comment':
       if (isUserAuthor(signal, status, username)) {
