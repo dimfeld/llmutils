@@ -191,7 +191,9 @@ githubWebhooks:
 
 ### PR inbox
 
-Webhook events also feed the PR inbox. Unlike `githubWebhooks`, the `inbox` block is repo-settable, so it can live in `~/.config/tim/config.yml`, `.tim/config/tim.yml`, or `.tim/config/tim.local.yml`:
+Webhook events also feed the PR inbox. An item is created when something needs your attention on a PR: a review request for you, a comment or approval on a PR you authored, a comment on a PR you are reviewing, a required check failing on your PR, your PR being merged, or your PR leaving the merge queue without merging. Your own actions, bot accounts, and events before `githubWebhooks.ignoreSideEffectsBefore` never create items, and repeated events on the same PR update one item instead of stacking up. Items need `githubUsername` (or a logged-in `gh`) to know which PRs are yours.
+
+Unlike `githubWebhooks`, the `inbox` block is repo-settable, so it can live in `~/.config/tim/config.yml`, `.tim/config/tim.yml`, or `.tim/config/tim.local.yml`:
 
 ```yaml
 inbox:
