@@ -181,6 +181,26 @@ export function countUnreadInboxItems(
   return row.count;
 }
 
+export function getInboxItemProjectIds(db: Database, ids: ReadonlyArray<number>): number[] {
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const placeholders = ids.map(() => '?').join(', ');
+  return db
+    .prepare(
+      `
+        SELECT DISTINCT project_id
+        FROM inbox_item
+        WHERE id IN (${placeholders})
+          AND project_id IS NOT NULL
+        ORDER BY project_id
+      `
+    )
+    .all(...ids)
+    .map((row) => (row as { project_id: number }).project_id);
+}
+
 export function markInboxItemsRead(db: Database, ids: ReadonlyArray<number>): void {
   if (ids.length === 0) {
     return;

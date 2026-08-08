@@ -3,9 +3,11 @@ import * as z from 'zod';
 
 import { enrichInboxItems, type EnrichedInboxItem } from '$lib/server/inbox_enrichment.js';
 import { getServerContext } from '$lib/server/init.js';
+import { refreshInboxQueryScopes } from '$lib/server/inbox_query_scopes.js';
 import {
   countUnreadInboxItems,
   dismissInboxItem as dismissInboxItemRow,
+  getInboxItemProjectIds,
   listRecentInboxItems,
   markAllReadBefore,
   markInboxItemsRead as markInboxItemsReadRows,
@@ -48,19 +50,19 @@ export const getInboxItems = query(
   }
 );
 
-async function refreshInboxQueries(projectId?: string): Promise<void> {
-  await getInboxItems({ projectId: 'all' }).refresh();
-  if (projectId !== undefined) {
+async function refreshInboxQueries(projectIds: ReadonlyArray<number> = []): Promise<void> {
+  await refreshInboxQueryScopes(projectIds, async (projectId: string): Promise<void> => {
     await getInboxItems({ projectId }).refresh();
-  }
+  });
 }
 
 export const markInboxItemsRead = command(
   markInboxItemsReadSchema,
   async ({ ids }): Promise<void> => {
     const { db } = await getServerContext();
+    const projectIds = getInboxItemProjectIds(db, ids);
     markInboxItemsReadRows(db, ids);
-    await refreshInboxQueries();
+    await refreshInboxQueries(projectIds);
   }
 );
 
@@ -73,7 +75,7 @@ export const markAllInboxItemsRead = command(
       ...(projectId === 'all' ? {} : { projectId: Number(projectId) }),
     };
     markAllReadBefore(db, options);
-    await refreshInboxQueries(projectId === 'all' ? undefined : projectId);
+    await refreshInboxQueries(projectId === 'all' ? [] : [Number(projectId)]);
   }
 );
 
@@ -81,7 +83,8 @@ export const dismissInboxItem = command(
   z.object({ id: z.number().int() }),
   async ({ id }): Promise<void> => {
     const { db } = await getServerContext();
+    const projectIds = getInboxItemProjectIds(db, [id]);
     dismissInboxItemRow(db, id);
-    await refreshInboxQueries();
+    await refreshInboxQueries(projectIds);
   }
 );

@@ -5,6 +5,7 @@ import { openDatabase } from './database.js';
 import {
   countUnreadInboxItems,
   dismissInboxItem,
+  getInboxItemProjectIds,
   INBOX_ITEM_KINDS,
   listRecentInboxItems,
   markAllReadBefore,
@@ -373,6 +374,28 @@ describe('tim db/inbox_item', () => {
     expect(countUnreadInboxItems(db, { projectId: 'all' })).toBe(2);
     expect(getInboxRow(projectUnread.id).read_at).toBeNull();
     expect(getInboxRow(otherUnread.id).read_at).toBeNull();
+  });
+
+  test('returns distinct project IDs for selected inbox items', () => {
+    const firstProjectItem = upsertInboxItem(db, makeInput({ prNumber: 25 }));
+    const secondProjectItem = upsertInboxItem(db, makeInput({ prNumber: 26 }));
+    const otherProjectItem = upsertInboxItem(
+      db,
+      makeInput({ projectId: otherProjectId, prNumber: 27 })
+    );
+    const unscopedItem = upsertInboxItem(db, makeInput({ projectId: null, prNumber: 28 }));
+
+    expect(
+      getInboxItemProjectIds(db, [
+        otherProjectItem.id,
+        firstProjectItem.id,
+        secondProjectItem.id,
+        otherProjectItem.id,
+        unscopedItem.id,
+        999999,
+      ])
+    ).toEqual([projectId, otherProjectId]);
+    expect(getInboxItemProjectIds(db, [])).toEqual([]);
   });
 
   test('marks only selected items read and preserves their first read time', () => {

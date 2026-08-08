@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { invokeCommand, invokeQuery } from '$lib/test-utils/invoke_command.js';
 import { enrichInboxItems } from '$lib/server/inbox_enrichment.js';
+import { refreshInboxQueryScopes } from '$lib/server/inbox_query_scopes.js';
 import { openDatabase } from '$tim/db/database.js';
 import {
   markInboxItemsRead as markInboxItemsReadRows,
@@ -81,6 +82,19 @@ describe('inbox remote functions', () => {
     });
     linkPlanToPr(currentDb, planUuid, pr.status.id);
   }
+
+  test('refreshes all and each distinct affected project scope', async () => {
+    const refreshedScopes: string[] = [];
+
+    await refreshInboxQueryScopes(
+      [otherProjectId, projectId, otherProjectId],
+      async (scope: string): Promise<void> => {
+        refreshedScopes.push(scope);
+      }
+    );
+
+    expect(refreshedScopes).toEqual(['all', String(projectId), String(otherProjectId)]);
+  });
 
   test('enriches hrefs, linked plans, and action descriptors for every inbox kind', async () => {
     const singlePlanUrl = 'https://github.com/example/repo/pull/101';
