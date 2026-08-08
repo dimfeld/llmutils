@@ -115,7 +115,7 @@ describe('ProcessTree', () => {
     await expect.element(page.getByText('12345')).toBeVisible();
   });
 
-  test('shows exit code for exited processes', async () => {
+  test('does not render exited processes', async () => {
     const nodes: SessionProcessNode[] = [
       makeNode({ processId: 'p1', label: 'done', state: 'exited', exitCode: 1 }),
     ];
@@ -124,19 +124,21 @@ describe('ProcessTree', () => {
       props: { processTree: nodes, connectionId: 'conn-1', sessionStatus: 'active' },
     });
 
-    await expect.element(page.getByText('exit 1')).toBeVisible();
+    await expect.element(page.getByText('done')).not.toBeInTheDocument();
+    await expect.element(page.getByText('No active processes')).toBeVisible();
   });
 
-  test('shows signal for exited processes', async () => {
+  test('does not render orphaned processes', async () => {
     const nodes: SessionProcessNode[] = [
-      makeNode({ processId: 'p1', label: 'killed', state: 'exited', signal: 'SIGTERM' }),
+      makeNode({ processId: 'p1', label: 'orphaned', state: 'orphaned', signal: 'SIGTERM' }),
     ];
 
     render(ProcessTree, {
       props: { processTree: nodes, connectionId: 'conn-1', sessionStatus: 'active' },
     });
 
-    await expect.element(page.getByText('SIGTERM')).toBeVisible();
+    await expect.element(page.getByText('orphaned')).not.toBeInTheDocument();
+    await expect.element(page.getByText('No active processes')).toBeVisible();
   });
 
   test('shows Terminate button only for live executor nodes in active sessions', async () => {
@@ -325,7 +327,7 @@ describe('ProcessTree', () => {
     expect(await items.all()).toHaveLength(4);
   });
 
-  test('renders orphaned state with correct indicator', async () => {
+  test('does not render orphaned state', async () => {
     const nodes: SessionProcessNode[] = [
       makeNode({
         processId: 'p1',
@@ -339,7 +341,8 @@ describe('ProcessTree', () => {
       props: { processTree: nodes, connectionId: 'conn-1', sessionStatus: 'active' },
     });
 
-    await expect.element(page.getByRole('img', { name: 'Orphaned' })).toBeInTheDocument();
+    await expect.element(page.getByRole('img', { name: 'Orphaned' })).not.toBeInTheDocument();
+    await expect.element(page.getByText('No active processes')).toBeVisible();
   });
 
   test('handles missing parent gracefully (orphan becomes root)', async () => {
@@ -441,7 +444,7 @@ describe('ProcessTree', () => {
     await expect.element(subAExec).toHaveAttribute('aria-level', '4');
   });
 
-  test('reflects live prop updates keyed by process ID (new node appears, exited node updates)', async () => {
+  test('reflects live prop updates keyed by process ID and removes exited nodes', async () => {
     const running: SessionProcessNode[] = [
       makeNode({ processId: 'tim1', kind: 'tim', label: 'root', state: 'running' }),
       makeNode({
@@ -485,11 +488,11 @@ describe('ProcessTree', () => {
 
     await rerender({ processTree: updated, connectionId: 'conn-1', sessionStatus: 'active' });
 
-    expect(await page.getByRole('treeitem').all()).toHaveLength(3);
+    expect(await page.getByRole('treeitem').all()).toHaveLength(2);
     await expect
       .element(page.getByRole('button', { name: /Terminate claude streaming/ }))
       .not.toBeInTheDocument();
-    await expect.element(page.getByText('exit 0')).toBeVisible();
+    await expect.element(page.getByText('claude streaming')).not.toBeInTheDocument();
     await expect.element(page.getByText('new subagent')).toBeVisible();
     await expect
       .element(page.getByRole('button', { name: /Terminate new subagent/ }))
@@ -513,7 +516,7 @@ describe('ProcessTree', () => {
     await expect.element(page.getByText('transient')).not.toBeInTheDocument();
   });
 
-  test('shows a deterministic elapsed time for a completed process', async () => {
+  test('does not show elapsed time for a completed process', async () => {
     const nodes: SessionProcessNode[] = [
       makeNode({
         processId: 'p1',
@@ -528,7 +531,8 @@ describe('ProcessTree', () => {
       props: { processTree: nodes, connectionId: 'conn-1', sessionStatus: 'active' },
     });
 
-    await expect.element(page.getByText('3m 15s')).toBeVisible();
+    await expect.element(page.getByText('done')).not.toBeInTheDocument();
+    await expect.element(page.getByText('No active processes')).toBeVisible();
   });
 
   test('never shows Terminate for a live tim process, even in an active session', async () => {

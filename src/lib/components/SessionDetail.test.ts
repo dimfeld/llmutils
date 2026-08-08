@@ -203,7 +203,7 @@ describe('SessionDetail', () => {
     expect(body).not.toContain('Terminate root agent');
   });
 
-  test('renders the process tree for offline sessions without a Terminate action', async () => {
+  test('does not render exited processes for offline sessions', async () => {
     const session = createSession({
       status: 'offline',
       processTree: [
@@ -219,8 +219,8 @@ describe('SessionDetail', () => {
     });
     const { body } = await render(SessionDetail, { props: { session } });
 
-    expect(body).toContain('role="tree"');
-    expect(body).toContain('claude streaming');
+    expect(body).not.toContain('role="tree"');
+    expect(body).not.toContain('claude streaming');
     expect(body).not.toContain('End Session');
     expect(body).not.toContain('Terminate claude streaming');
   });

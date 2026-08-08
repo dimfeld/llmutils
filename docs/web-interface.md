@@ -532,10 +532,11 @@ session teardown and restores the previous environment values.
 
 #### Session controls and UI behavior
 
-The Session Detail page renders the tree as an accessible `role="tree"` list. Each row shows the
-kind, useful label, lifecycle state, elapsed time, and PID when available. Exited rows can also
-show the exit code or signal. Only a live (`starting` or `running`) executor row in an active
-session has a **Terminate** action. The action requires confirmation, shows a live
+The Session Detail page renders active (`starting` or `running`) nodes as an accessible
+`role="tree"` list. The underlying registry can retain exited and orphaned nodes for lifecycle
+tracking, but the UI does not display them. Each visible row shows the kind, useful label, lifecycle
+state, elapsed time, and PID when available. Only a live executor row in an active session has a
+**Terminate** action. The action requires confirmation, shows a live
 **Terminating…** status, and announces the result through an `aria-live` region and a toast.
 `tim` rows, exited rows, orphaned rows, offline sessions, and notification sessions do not get a
 targeted terminate action.

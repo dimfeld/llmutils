@@ -16,6 +16,7 @@
     canTerminate,
     classifyTerminationStatus,
     terminationStatusMessage,
+    isLiveProcess,
     type ProcessTreeNode,
   } from './process_tree.js';
 
@@ -29,7 +30,8 @@
   let { processTree, connectionId, sessionStatus, loading = false }: Props = $props();
   const sessionManager = useSessionManager();
 
-  let roots = $derived(buildProcessTree(processTree));
+  let activeProcessTree = $derived(processTree.filter((process) => isLiveProcess(process.state)));
+  let roots = $derived(buildProcessTree(activeProcessTree));
   let flatNodes = $derived(flattenTree(roots));
 
   interface TerminationState {
@@ -117,9 +119,7 @@
   let now = $state(Date.now());
   let timerInterval: ReturnType<typeof setInterval> | undefined;
 
-  let hasLiveProcess = $derived(
-    processTree.some((p) => p.state === 'starting' || p.state === 'running')
-  );
+  let hasLiveProcess = $derived(activeProcessTree.length > 0);
 
   $effect(() => {
     if (hasLiveProcess) {

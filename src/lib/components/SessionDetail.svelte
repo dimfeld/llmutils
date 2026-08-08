@@ -30,6 +30,7 @@
     toggleLifecycleOutput,
   } from './session_detail_state.js';
   import ProcessTree from './ProcessTree.svelte';
+  import { isLiveProcess } from './process_tree.js';
   import CopyButton from './CopyButton.svelte';
   import { afterNavigate, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
@@ -344,9 +345,14 @@
     toggleLifecycleOutput(uiState, session.connectionId, showLifecycleOutput);
   }
 
-  let hasProcessTree = $derived(session.processTree.length > 0);
-  let showProcessSection = $derived(hasProcessTree || session.status === 'active');
-  let processTreeLoading = $derived(session.status === 'active' && !hasProcessTree);
+  let hasProcessTreeData = $derived(session.processTree.length > 0);
+  let hasLiveProcessTree = $derived(
+    session.processTree.some((process) => isLiveProcess(process.state))
+  );
+  let showProcessSection = $derived(
+    hasLiveProcessTree || (session.status === 'active' && !hasProcessTreeData)
+  );
+  let processTreeLoading = $derived(session.status === 'active' && !hasProcessTreeData);
 
   let hasMessages = $derived(session.messages.length > 0);
   let activePrompt = $derived(session.activePrompts[0] ?? null);
