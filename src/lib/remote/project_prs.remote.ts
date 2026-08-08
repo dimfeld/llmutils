@@ -5,6 +5,7 @@ import * as z from 'zod';
 import { formatWebhookIngestErrors, ingestWebhookEvents } from '$common/github/webhook_ingest.js';
 import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
+import { getReviewerPredicate } from '$common/github/pr_relevance.js';
 import { normalizeGitHubUsername } from '$common/github/username.js';
 import { resolveGitHubToken } from '$common/github/token.js';
 import {
@@ -451,13 +452,11 @@ function partitionCachedProjectPrs(
   for (const pr of prs) {
     const isAuthored =
       pr.status.author != null && normalizeGitHubUsername(pr.status.author) === normalizedUsername;
-    const isRequestedReviewer =
-      parseRequestedReviewers(pr.status.requested_reviewers).some(
-        (reviewer) => normalizeGitHubUsername(reviewer) === normalizedUsername
-      ) || pr.reviewRequests.some((row) => row.reviewer === username);
-    const hasSubmittedReview = pr.reviews.some(
-      (review) =>
-        normalizeGitHubUsername(review.author) === normalizedUsername && review.state !== 'PENDING'
+    const { isRequestedReviewer, hasSubmittedReview } = getReviewerPredicate(
+      parseRequestedReviewers(pr.status.requested_reviewers),
+      pr.reviewRequests,
+      pr.reviews,
+      username
     );
     const isReviewing = isRequestedReviewer || hasSubmittedReview;
 

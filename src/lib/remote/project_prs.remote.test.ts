@@ -353,6 +353,30 @@ describe('project_prs remote functions', () => {
     expect(result.reviewing[0]?.currentUserReviewRequestedAt).toBe('2026-03-30T11:00:00.000Z');
   });
 
+  test('getProjectPrs matches mixed-case stored reviewer logins', async () => {
+    const created = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/22',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 22,
+      title: 'Mixed-case reviewer PR',
+      state: 'open',
+      draft: false,
+      author: 'someone-else',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+    upsertPrReviewRequestByReviewer(currentDb, created.status.id, {
+      reviewer: 'DiMfElD',
+      action: 'requested',
+      eventAt: '2026-03-30T11:00:00.000Z',
+    });
+
+    const { getProjectPrs } = await import('./project_prs.remote.js');
+    const result = await invokeQuery(getProjectPrs, { projectId: String(projectId) });
+
+    expect(result.reviewing.map((pr) => pr.status.pr_number)).toEqual([22]);
+  });
+
   test('getProjectPrs marks a review-requested PR stacked on another review-requested PR', async () => {
     const base = upsertPrStatus(currentDb, {
       prUrl: 'https://github.com/example/repo/pull/30',
