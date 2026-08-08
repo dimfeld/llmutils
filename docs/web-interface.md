@@ -320,6 +320,13 @@ job history. A node has these main fields:
   `ps lstart` value. The UI also keeps `endedAt`, exit code, and signal details when a process
   exits.
 
+`command` is diagnostic metadata for display. Provider prompts can make a command line very long,
+so validation allows up to 64 KiB and `startIdentity` up to 2048 characters. Registration and
+update paths normalize a longer command to a bounded value with a `…[truncated]` suffix before it
+reaches the registry, whether it arrives from the local owner, the tunnel client, or the tunnel
+router. This normalized value never feeds a process-identity check; each owner keeps the full
+captured command privately for that purpose.
+
 The registry returns a stable parent-before-child order. This makes a tree such as
 `root tim -> orchestrator executor -> subagent tim -> subagent executor` and parallel executor
 branches deterministic. The registry is active only when a headless server or an inherited
@@ -382,11 +389,11 @@ metadata. It takes a fresh process list and requires all of these values to matc
 
 1. PID
 2. PPID equal to the current owner process
-3. full command
+3. full command, compared against the command the owner captured from the process list
 4. opaque `lstart` start identity
 
-A missing process is already exited. A process-list failure is unknown and is not permission to
-signal. A mismatch is a stale target and is not signalled. `ESRCH` from the signal operation means
+A missing process is already exited. A process-list failure, or a child whose process-list details
+were never captured, is unknown and is not permission to signal. A mismatch is a stale target and is not signalled. `ESRCH` from the signal operation means
 that the process exited during the race, so the stop is treated as complete. Other signal errors
 are reported and the live handle remains retryable.
 

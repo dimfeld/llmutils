@@ -124,6 +124,12 @@ The shared process helpers use `sessionProcessLabel` to register an executor wit
 4. `markExited()` records exit details and removes the direct-child control handle. A spawn error
    calls `markSpawnFailed()` so the registration does not remain live.
 
+The command reported to the tree is display metadata. Long command lines, such as a large inline
+prompt, are normalized to a bounded value before registration, so they cannot make a lifecycle
+message invalid. The owner keeps the full captured command privately for the identity check in
+`docs/os-process-interaction.md`; if the process list was never read for that child, a later
+termination request reports `unknown_process_state` instead of signalling.
+
 Claude streaming and Claude subprocess execution use `spawnWithStreamingIO()`. Codex CLI attempts
 use `spawnAndLogOutput()`. Both helpers use the same lifecycle contract. The Codex app-server is
 a direct `Bun.spawn()` site, so `app_server_connection.ts` calls `prepareExecutor()`, passes the

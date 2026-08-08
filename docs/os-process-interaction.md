@@ -46,8 +46,14 @@ checks to pass:
 The check must use the full command and the unmodified `lstart` value. Do not parse or normalize
 `lstart`. A PID match without the other three values is not safe to signal.
 
+Keep the identity command separate from the displayed command. The owner compares the full command
+that it captured from the process list, not the command that it reported to the registry or the
+tunnel. Command metadata sent to the tree is length-bounded and can be truncated, so it is display
+data only. Do not compare a truncated, expected, or user-supplied command value.
+
 If the PID is absent, treat the executor as already exited and remove its direct-child capability.
-If `ps` fails or its output cannot be trusted, return an unknown process state and do not signal.
+If the owner never captured process-list details for the child, the state is unknown and it must
+not signal. If `ps` fails or its output cannot be trusted, return an unknown process state and do not signal.
 Keep the tracked child so a later request can retry after a transient listing failure. If any
 identity value differs, mark the target stale and do not signal it. If `kill()` returns `ESRCH`,
 the process exited during the race and the stop is already complete. Report other signal errors,
