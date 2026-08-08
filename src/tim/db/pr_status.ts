@@ -917,6 +917,17 @@ export function getPrStatusByProjectAndNumber(
   return getDetailById(db, row.id, options);
 }
 
+const PROJECT_ID_LOOKUP_BATCH_SIZE = 500;
+const PR_STATUS_LOOKUP_BATCH_SIZE = 200;
+
+function chunkValues<T>(values: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+}
+
 export function listExistingPrStatusProjectNumbers(
   db: Database,
   pairs: ReadonlyArray<PrStatusProjectNumber>
@@ -929,15 +940,20 @@ export function listExistingPrStatusProjectNumbers(
   }
 
   const projectIds = Array.from(new Set(uniquePairs.map((pair) => pair.projectId)));
-  const projectRows = db
-    .prepare(
-      `
-        SELECT id, repository_id
-        FROM project
-        WHERE id IN (${projectIds.map(() => '?').join(', ')})
-      `
-    )
-    .all(...projectIds) as Array<{ id: number; repository_id: string }>;
+  const projectRows: Array<{ id: number; repository_id: string }> = [];
+  for (const projectIdBatch of chunkValues(projectIds, PROJECT_ID_LOOKUP_BATCH_SIZE)) {
+    projectRows.push(
+      ...(db
+        .prepare(
+          `
+            SELECT id, repository_id
+            FROM project
+            WHERE id IN (${projectIdBatch.map(() => '?').join(', ')})
+          `
+        )
+        .all(...projectIdBatch) as Array<{ id: number; repository_id: string }>)
+    );
+  }
   const ownerReposByProjectId = new Map<number, { owner: string; repo: string }>();
 
   for (const projectRow of projectRows) {
@@ -955,29 +971,36 @@ export function listExistingPrStatusProjectNumbers(
     return [];
   }
 
-  const conditions = githubPairs
-    .map(
-      () =>
-        '(project.id = ? AND ps.owner = ? COLLATE NOCASE AND ps.repo = ? COLLATE NOCASE AND ps.pr_number = ?)'
-    )
-    .join(' OR ');
-  const parameters = githubPairs.flatMap((pair) => [
-    pair.projectId,
-    pair.ownerRepo.owner,
-    pair.ownerRepo.repo,
-    pair.prNumber,
-  ]);
-  const rows = db
-    .prepare(
-      `
-        SELECT project.id AS project_id, ps.pr_number
-        FROM pr_status ps
-        INNER JOIN project ON ${conditions}
-      `
-    )
-    .all(...parameters) as Array<{ project_id: number; pr_number: number }>;
+  const matchedKeys = new Set<string>();
+  for (const pairBatch of chunkValues(githubPairs, PR_STATUS_LOOKUP_BATCH_SIZE)) {
+    const conditions = pairBatch
+      .map(
+        () =>
+          '(project.id = ? AND ps.owner = ? COLLATE NOCASE AND ps.repo = ? COLLATE NOCASE AND ps.pr_number = ?)'
+      )
+      .join(' OR ');
+    const parameters = pairBatch.flatMap((pair) => [
+      pair.projectId,
+      pair.ownerRepo.owner,
+      pair.ownerRepo.repo,
+      pair.prNumber,
+    ]);
+    const rows = db
+      .prepare(
+        `
+          SELECT DISTINCT project.id AS project_id, ps.pr_number
+          FROM pr_status ps
+          INNER JOIN project ON ${conditions}
+        `
+      )
+      .all(...parameters) as Array<{ project_id: number; pr_number: number }>;
 
-  return rows.map((row) => ({ projectId: row.project_id, prNumber: row.pr_number }));
+    for (const row of rows) {
+      matchedKeys.add(`${row.project_id}:${row.pr_number}`);
+    }
+  }
+
+  return uniquePairs.filter((pair) => matchedKeys.has(`${pair.projectId}:${pair.prNumber}`));
 }
 
 export function updatePrMergeableAndReviewDecision(

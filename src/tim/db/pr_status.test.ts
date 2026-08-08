@@ -1539,6 +1539,10 @@ describe('tim db/pr_status', () => {
     expect(results[0]?.status.requested_reviewers).toBe('["dimfeld"]');
   });
 
+  test('listExistingPrStatusProjectNumbers returns no rows for empty input', () => {
+    expect(listExistingPrStatusProjectNumbers(db, [])).toEqual([]);
+  });
+
   test('listExistingPrStatusProjectNumbers matches owner and repo case-insensitively', () => {
     const githubProject = getOrCreateProject(
       db,
@@ -1646,6 +1650,63 @@ describe('tim db/pr_status', () => {
         { projectId: githubProject.id, prNumber: 309 },
       ])
     ).toEqual([{ projectId: githubProject.id, prNumber: 309 }]);
+  });
+
+  test('listExistingPrStatusProjectNumbers deduplicates duplicate database matches', () => {
+    const githubProject = getOrCreateProject(
+      db,
+      constructGitHubRepositoryId('duplicate-result-owner', 'duplicate-result-repo')
+    );
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/duplicate-result-owner/duplicate-result-repo/pull/310',
+      owner: 'duplicate-result-owner',
+      repo: 'duplicate-result-repo',
+      prNumber: 310,
+      title: 'First duplicate result',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/DUPLICATE-RESULT-OWNER/duplicate-result-repo/pulls/310',
+      owner: 'DUPLICATE-RESULT-OWNER',
+      repo: 'DUPLICATE-RESULT-REPO',
+      prNumber: 310,
+      title: 'Second duplicate result',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(
+      listExistingPrStatusProjectNumbers(db, [{ projectId: githubProject.id, prNumber: 310 }])
+    ).toEqual([{ projectId: githubProject.id, prNumber: 310 }]);
+  });
+
+  test('listExistingPrStatusProjectNumbers batches large inputs', () => {
+    const githubProject = getOrCreateProject(
+      db,
+      constructGitHubRepositoryId('large-lookup-owner', 'large-lookup-repo')
+    );
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/large-lookup-owner/large-lookup-repo/pull/1310',
+      owner: 'large-lookup-owner',
+      repo: 'large-lookup-repo',
+      prNumber: 1310,
+      title: 'Large lookup',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const pairs = Array.from({ length: 1_310 }, (_, index) => ({
+      projectId: githubProject.id,
+      prNumber: index + 1,
+    }));
+
+    expect(listExistingPrStatusProjectNumbers(db, pairs)).toEqual([
+      { projectId: githubProject.id, prNumber: 1310 },
+    ]);
   });
 
   test('findPrStatusesByRepositoryBranch matches repo case-insensitively and branch exactly', () => {
