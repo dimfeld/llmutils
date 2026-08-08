@@ -28,6 +28,35 @@ Treat a transient `ps` failure (non-zero exit, parse error) as **unknown**, not 
 - ESRCH on SIGTERM/SIGKILL means the process is already gone — silently clean up. Other errors should be logged, and any `killing` flag cleared so future polls can retry rather than getting stuck.
 - Don't include the root/parent PID itself in any descendant action — BFS must explicitly exclude it.
 
+## Targeted executor signals
+
+The session process registry is the authoritative source for the process tree. OS inspection is a
+safety check only. The web server does not accept a PID and does not signal an arbitrary process.
+Each `tim` owner keeps a direct-child executor handle and the metadata captured when that child
+starts.
+
+Before sending `SIGTERM`, the owner takes a fresh process list and requires all four identity
+checks to pass:
+
+1. The current PID equals the tracked PID.
+2. The current PPID equals the owner process PID.
+3. The full current command equals the tracked command.
+4. The current `lstart` value equals the tracked opaque start identity.
+
+The check must use the full command and the unmodified `lstart` value. Do not parse or normalize
+`lstart`. A PID match without the other three values is not safe to signal.
+
+If the PID is absent, treat the executor as already exited and remove its direct-child capability.
+If `ps` fails or its output cannot be trusted, return an unknown process state and do not signal.
+Keep the tracked child so a later request can retry after a transient listing failure. If any
+identity value differs, mark the target stale and do not signal it. If `kill()` returns `ESRCH`,
+the process exited during the race and the stop is already complete. Report other signal errors,
+but keep the live handle retryable.
+
+This owner check applies to root-owned executors and to nested executors after a request reaches
+their owning `tim` process through the tunnel. The opaque session process ID selects the owner;
+the OS PID is never the UI control key.
+
 ## User-supplied regex/string matchers
 
 When users provide patterns that you'll repeatedly evaluate against process metadata across polls:

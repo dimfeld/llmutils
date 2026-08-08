@@ -305,6 +305,142 @@ The sessions system uses a discovery-based architecture where the web GUI discov
 - Non-tunnel `agent_session_end` structured messages set `triggersNotification` when the session's `session_info.interactive` flag is true, except for explicitly opted-out session commands such as `agent` and `review-guide`. The client uses this for browser notifications and the blue attention dot, so new interactive commands should set `interactive: true` in headless session metadata rather than adding command names to a web UI allowlist.
 - `MessageCategory` on the wire is simplified to `'log' | 'error' | 'structured'`. The richer display categories (lifecycle, llmOutput, toolUse, fileChange, command, progress, error, userInput) are computed client-side from the structured message's `type` field via `getDisplayCategory()`.
 
+### Live process tree and targeted termination
+
+Each live headless session has an in-memory `SessionProcessRegistry`. The registry is the
+authoritative source for the session process tree. It is not stored in the plan database or in
+job history. A node has these main fields:
+
+- `processId` — an opaque, session-scoped ID. It is not an OS PID and must not be used as one.
+- `parentProcessId` — the tree parent. A `tim` node is a child of an executor. An executor is a
+  child of a `tim` node.
+- `kind`, `label`, `ownerProcessId`, `startedAt`, and `state` — the process kind, display label,
+  direct control owner, start time, and one of `starting`, `running`, `exited`, or `orphaned`.
+- `pid`, `command`, and `startIdentity` — optional OS details. `startIdentity` is an opaque
+  `ps lstart` value. The UI also keeps `endedAt`, exit code, and signal details when a process
+  exits.
+
+The registry returns a stable parent-before-child order. This makes a tree such as
+`root tim -> orchestrator executor -> subagent tim -> subagent executor` and parallel executor
+branches deterministic. The registry is active only when a headless server or an inherited
+tunnel is available. A normal CLI run without either transport keeps its existing behavior.
+
+#### Process identity propagation
+
+The root `HeadlessAdapter` creates the root `tim` node and sets these environment variables for
+tracked children:
+
+| Variable                | Meaning                                                      |
+| ----------------------- | ------------------------------------------------------------ |
+| `TIM_SESSION_ID`        | The live session ID.                                         |
+| `TIM_PROCESS_ID`        | The opaque ID of the current node.                           |
+| `TIM_PARENT_PROCESS_ID` | The opaque tree parent of the current node.                  |
+| `TIM_OWNER_PROCESS_ID`  | The `tim` node that owns the current executor, when present. |
+
+Executor spawn helpers create a new opaque executor ID and pass the explicit relationship values
+to the child. A nested `tim` command reads these values, registers itself below the executor that
+started it, and replaces the values for its own children. It then owns its direct executors. This
+prevents stale parent or owner values from leaking into a new root child.
+
+#### Lifecycle and protocol direction
+
+The existing Unix-socket tunnel keeps its output, prompt, and user-input behavior. Process
+lifecycle messages use JSONL in the client-to-server direction:
+
+- `process_register` adds a `tim` or `executor` node.
+- `process_update` changes mutable metadata such as PID, command, start identity, or state.
+- `process_exit` records normal completion and exit details.
+- `process_remove` removes one node, optionally with its subtree.
+- `terminate_executor_result` returns a result from an owner that handled a targeted request.
+
+The tunnel server validates each message and binds each registered `tim` owner to the stable
+client channel that sent it. It accepts an executor only when its owner is a registered `tim`
+node on that same channel. A server-to-client `terminate_executor` message can then reach only
+that owner. User input remains broadcast to tunnel clients, as before; process control is
+targeted.
+
+The embedded session WebSocket uses these agent-to-server messages for the browser session:
+
+- `process_tree_snapshot` is a complete, ordered tree sent during every connection replay,
+  before normal output replay (or before PTY scrollback for a PTY session).
+- `process_tree_update` is a complete, ordered tree sent after each live registry change. The
+  client does not need to reconstruct the tree from individual lifecycle events.
+- `executor_termination_result` carries the correlated `requestId`, opaque `executorId`, result
+  status, and an optional error.
+
+The server-to-agent message `terminate_executor` carries the request ID and opaque executor ID.
+It is separate from `end_session` and `force_end_session`, which remain session-wide controls.
+
+#### Ownership and safe control
+
+The root registry routes a targeted request to the tunnel channel bound to the selected executor's
+`tim` owner. An executor owned by the root `tim` process uses the same owner API without a tunnel
+hop. The web server never accepts an arbitrary PID and never signals a PID from the browser.
+
+Before an owner sends `SIGTERM`, it must have the direct-child handle and captured process
+metadata. It takes a fresh process list and requires all of these values to match:
+
+1. PID
+2. PPID equal to the current owner process
+3. full command
+4. opaque `lstart` start identity
+
+A missing process is already exited. A process-list failure is unknown and is not permission to
+signal. A mismatch is a stale target and is not signalled. `ESRCH` from the signal operation means
+that the process exited during the race, so the stop is treated as complete. Other signal errors
+are reported and the live handle remains retryable.
+
+The remote command `terminateExecutor` validates the opaque ID, sends the targeted request through
+the session WebSocket, and waits up to 10 seconds for the correlated result. Direct root-owner
+results are normally `terminated` or `already_exited`; nested-owner requests normally return
+`requested` before the owner sends its result. Results are grouped as follows:
+
+- success: `terminated`, `requested`, `already_exited`;
+- safety: `stale_target`, `unknown_process_state`;
+- signal: `signal_failed`;
+- target validation: `unknown_executor`, `not_executor`, `not_owned`, `owner_not_registered`;
+- routing: `owner_not_connected`, `send_failed`, `request_timeout`;
+- session or client failure: `offline`, `session_not_found`, `request_failed`.
+
+The UI reports these statuses instead of treating a failed or stale stop as successful.
+
+#### Session state and reconnect behavior
+
+`SessionManager` keeps `processTree` in `SessionData` and emits `session:process-tree` for both
+snapshots and live updates. The SSE `session:list` snapshot includes the current tree, and the
+SSE stream sends later `session:process-tree` events without a page reload. The client store
+replaces the tree with each complete snapshot and copies each node, so replay and live updates
+converge to the same state. A reconnect receives the current complete tree again. When the agent
+WebSocket disconnects, the offline session clears its process tree; a later reconnect restores it
+from the next snapshot.
+
+Normal executor exit removes the direct-child control handle and leaves an `exited` node for the
+live session view. When a `tim` owner exits, its live descendants become `orphaned`. A tunnel
+client disconnect removes the nodes owned by that channel and their subtrees. Late exit and
+removal messages are safe and idempotent. The root adapter removes all process tracking during
+session teardown and restores the previous environment values.
+
+#### Session controls and UI behavior
+
+The Session Detail page renders the tree as an accessible `role="tree"` list. Each row shows the
+kind, useful label, lifecycle state, elapsed time, and PID when available. Exited rows can also
+show the exit code or signal. Only a live (`starting` or `running`) executor row in an active
+session has a **Terminate** action. The action requires confirmation, shows a live
+**Terminating…** status, and announces the result through an `aria-live` region and a toast.
+`tim` rows, exited rows, orphaned rows, offline sessions, and notification sessions do not get a
+targeted terminate action.
+
+**End Session** remains graceful and uses the current executor-specific path. Claude closes its
+input or uses its existing fallback; Codex app-server interrupts the active turn; and a PTY
+session closes its terminal. **Force End** first asks the root registry to terminate every live
+registered executor, routing nested requests to their owners, and then runs the executor-specific
+force path. Root adapter shutdown also fans out termination requests before it tears down the
+session server. These actions do not change the targeted Terminate action into a session-wide
+PID operation.
+
+Process state is ephemeral. It exists only while the session manager or tim process is alive and
+is never written to the plan database or job history.
+
 ### PTY Sessions
 
 The `tim shell` command (`src/tim/commands/pty.ts`) runs an interactive login shell (`zsh -l` by default, overridable via `--shell` / `$SHELL`) inside a `Bun.Terminal` PTY in a prepared workspace, and exposes it as a `pty` session over the same embedded-server / discovery transport as other sessions. PTY sessions use a **distinct, raw-byte protocol** that bypasses the structured-message and replay machinery:
@@ -366,7 +502,7 @@ HTTP POST to `/messages` on port 8123 creates lightweight "notification" session
 
 Browser clients receive real-time updates via SSE and interact with sessions through remote `command()` functions:
 
-- **SSE endpoint** (`src/routes/api/sessions/events/+server.ts`): `GET` returns a `ReadableStream` with SSE headers. On connect, calls `registerSSESubscriber()` and sends `session:list` snapshot, replays any buffered events, then sends `session:sync-complete` to signal that initial state is fully loaded. After sync, streams live events (`session:new`, `session:update`, `session:disconnect`, `session:message`, `session:prompt`, `session:prompt-cleared`, `session:dismissed`, `session:plan-content`, `pr:updated`). Uses subscribe-before-snapshot pattern with buffering to avoid lost-event race conditions. On stream teardown, calls `unregisterSSESubscriber()` to update agent notification suppression state.
+- **SSE endpoint** (`src/routes/api/sessions/events/+server.ts`): `GET` returns a `ReadableStream` with SSE headers. On connect, calls `registerSSESubscriber()` and sends `session:list` snapshot, replays any buffered events, then sends `session:sync-complete` to signal that initial state is fully loaded. After sync, streams live events (`session:new`, `session:update`, `session:disconnect`, `session:message`, `session:prompt`, `session:prompt-cleared`, `session:dismissed`, `session:plan-content`, `session:process-tree`, `pr:updated`). Uses subscribe-before-snapshot pattern with buffering to avoid lost-event race conditions. On stream teardown, calls `unregisterSSESubscriber()` to update agent notification suppression state.
 
 #### SSE Implementation Gotchas
 
@@ -376,8 +512,9 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - **Session actions** (`src/lib/remote/session_actions.remote.ts`): remote `command(...)` functions for session interactions:
   - `sendSessionPromptResponse`: validates `{ connectionId, requestId, value }` and forwards prompt responses. Throws 400 for wrong requestId, 404 for missing session.
   - `sendSessionUserInput`: validates `{ connectionId, content }` and sends free-form text to interactive sessions.
+  - `terminateExecutor`: validates `{ connectionId, executorId }`, requires an opaque process ID, and returns the correlated safe-termination status. It does not expose a PID signal API.
   - `dismissSession`: validates `{ connectionId }` and removes offline/notification sessions.
-  - `endSession`: validates `{ connectionId }` and sends an `end_session` message to the agent process. For interactive sessions, this gracefully closes subprocess stdin (equivalent to Ctrl-D); for non-interactive sessions, it sends SIGTERM. Throws 404 for missing session.
+  - `endSession`: validates `{ connectionId }` and sends an `end_session` message to the agent process. Claude uses its graceful input-close path, Codex app-server interrupts its active turn, and a PTY session closes its terminal. Throws 404 for missing session.
   - `dismissInactiveSessions`: bulk-dismisses all inactive sessions, returns `{ dismissed: number }`.
   - `activateSessionTerminalPane`: resolves the WezTerm pane from session metadata, switches to the pane's workspace, activates the pane, and brings WezTerm to the foreground on macOS.
   - `openTerminal`: opens a new terminal window in the specified directory. Reads `terminalApp` from config (defaults to WezTerm). Uses `wezterm start --cwd` for WezTerm or `open -a <app>` for other macOS terminal apps. macOS only.

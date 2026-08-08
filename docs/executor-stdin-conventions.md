@@ -105,6 +105,94 @@ Codex app-server sessions do not use stdin closure or subprocess `SIGTERM` as th
 
 The normal and force web UI end-session actions both use this app-server path for Codex so the Codex side can shut down the turn cleanly instead of relying on subprocess stdin or signals.
 
+## Session process lifecycle and tunnel controls
+
+When a headless session or an inherited tunnel is active, executor lifecycle tracking runs beside
+the stdin lifecycle. It does not change how executor output, prompts, user input, or PTY data are
+forwarded.
+
+### Shared executor spawn API
+
+The shared process helpers use `sessionProcessLabel` to register an executor with the current
+`SessionProcessOwner`:
+
+1. `prepareExecutor()` registers an opaque executor ID in `starting` state before the OS process
+   starts.
+2. The helper merges the lifecycle environment into the child environment.
+3. `markSpawned()` records the OS PID, command, and opaque `ps lstart` identity when the process
+   list is available, then changes the node to `running`.
+4. `markExited()` records exit details and removes the direct-child control handle. A spawn error
+   calls `markSpawnFailed()` so the registration does not remain live.
+
+Claude streaming and Claude subprocess execution use `spawnWithStreamingIO()`. Codex CLI attempts
+use `spawnAndLogOutput()`. Both helpers use the same lifecycle contract. The Codex app-server is
+a direct `Bun.spawn()` site, so `app_server_connection.ts` calls `prepareExecutor()`, passes the
+returned environment, and calls `markSpawned()`, `markSpawnFailed()`, and `markExited()` itself.
+Future executor implementations must use one of these helpers or apply the same contract at each
+direct spawn site. Utility subprocesses, PTY shells, and `agent-multi` tim children are not
+executor nodes.
+
+### Process environment and nested tim commands
+
+The process-control values are explicit and limited to these variables:
+
+| Variable                | Value in a child                     |
+| ----------------------- | ------------------------------------ |
+| `TIM_SESSION_ID`        | The current live session ID.         |
+| `TIM_PROCESS_ID`        | The new child node's opaque ID.      |
+| `TIM_PARENT_PROCESS_ID` | The new child node's tree parent ID. |
+| `TIM_OWNER_PROCESS_ID`  | The `tim` owner ID for an executor.  |
+
+The values are not OS PIDs. The helper removes undefined parent and owner values before it starts
+a root child, so a stale inherited relationship cannot change ownership.
+
+When an executor starts a nested `tim` command, the command connects to the inherited
+`TIM_OUTPUT_SOCKET`. It registers a new `tim` node under the executor that launched it, installs
+its own `SessionProcessOwner`, and uses its tunnel connection for lifecycle messages. Its executor
+children then register below that nested `tim` node. If no root session or tunnel is present,
+tracking is disabled and normal CLI behavior stays unchanged. A failed tunnel connection falls
+back to local logging and does not enable partial process control.
+
+### Tunnel message direction and ownership
+
+Nested tim processes send these JSONL messages to the root tunnel server:
+
+- `process_register`
+- `process_update`
+- `process_exit`
+- `process_remove`
+- `terminate_executor_result`
+
+The root tunnel server sends `terminate_executor` to the one client channel bound to the selected
+`tim` owner. It validates process IDs, process kinds, parent and owner relationships, and channel
+ownership. The owner handler calls `terminateExecutor()` on its direct-child map. It cannot signal
+an executor that it did not create, and the tunnel protocol has no arbitrary-PID signal operation.
+
+Each lifecycle operation is safe to repeat. Exit and remove messages that arrive after a normal
+cleanup are ignored or accepted as no-ops. When a tunnel client disconnects, the root removes the
+nodes registered by that channel and their subtrees. The owner also clears its handlers during
+cleanup, so late control messages cannot write to closed stdin or signal a released child.
+
+### Termination and shutdown fan-out
+
+An owner may send `SIGTERM` only after it checks the tracked direct child against a fresh process
+list. PID, PPID, full command, and opaque `lstart` identity must all match. A transient process
+list failure returns `unknown_process_state` and does not send a signal. A missing process returns
+`already_exited`. `ESRCH` from `kill()` has the same already-completed meaning. Other signal
+errors return `signal_failed` and keep the child retryable.
+
+The headless adapter routes root-owned executors locally and routes nested executors through the
+owner tunnel. A nested request can first return `requested`; the owner then sends a correlated
+`terminate_executor_result`. The request ID and executor ID must both match before a result is
+accepted. A request that waits too long returns `request_timeout`.
+
+`end_session` keeps the existing graceful provider path. Claude closes its input through the
+shared stdin lifecycle. Codex app-server interrupts its active turn. `force_end_session` first
+asks the headless adapter to terminate every live registered executor, including nested executors
+through their owners, and then invokes the provider force handler. Root adapter destruction also
+fans out termination before it closes the embedded server. These controls are session-wide; they
+are separate from the targeted `terminate_executor` request.
+
 ## `executeWithTerminalInput()` Branching
 
 The shared helper in `terminal_input_lifecycle.ts` handles three distinct modes:
