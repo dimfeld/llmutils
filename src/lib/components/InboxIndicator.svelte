@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { toast } from 'svelte-sonner';
   import Bell from '@lucide/svelte/icons/bell';
   import Eye from '@lucide/svelte/icons/eye';
   import MessageCircle from '@lucide/svelte/icons/message-circle';
@@ -37,13 +38,22 @@
 
   let inboxQuery = $derived(getInboxItems({ projectId: 'all' }));
   let data = $derived(inboxQuery.current);
+  let queryLoading = $derived(inboxQuery.loading);
+  let queryError = $derived(inboxQuery.error);
   let indicator = $derived(getInboxIndicatorState(data));
+  let showLoading = $derived(queryLoading && !data && !queryError);
+  let triggerLabel = $derived(
+    queryError ? 'Inbox unavailable' : showLoading ? 'Loading inbox' : indicator.label
+  );
 
   let displayItems = $derived((data?.items ?? []).slice(0, 10));
 
   let footerProjectId = $derived.by(() => {
     const routeProjectId = page.params.projectId;
-    if (routeProjectId && routeProjectId !== 'all' && /^\d+$/.test(routeProjectId)) {
+    if (routeProjectId === 'all') {
+      return 'all';
+    }
+    if (routeProjectId && /^\d+$/.test(routeProjectId)) {
       return routeProjectId;
     }
     const firstItem = displayItems[0];
@@ -56,12 +66,12 @@
   onMount(() => {
     const unsubscribe = sessionManager.onEvent((eventName) => {
       if (eventName === 'inbox:updated') {
-        void inboxQuery.refresh();
+        void refreshInboxQuery();
       }
     });
 
     const pollInterval = setInterval(() => {
-      void inboxQuery.refresh();
+      void refreshInboxQuery();
     }, 60_000);
 
     return () => {
@@ -70,19 +80,59 @@
     };
   });
 
+  function getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  function reportInboxFailure(action: string, error: unknown): void {
+    toast.error(`Failed to ${action}: ${getErrorMessage(error)}`);
+  }
+
+  async function refreshInboxQuery(showFailure = false): Promise<void> {
+    try {
+      await inboxQuery.refresh();
+    } catch (error) {
+      if (showFailure) {
+        reportInboxFailure('refresh the inbox', error);
+      }
+    }
+  }
+
+  async function runInboxMutation(action: string, mutation: () => Promise<unknown>): Promise<void> {
+    try {
+      await mutation();
+    } catch (error) {
+      reportInboxFailure(action, error);
+    }
+  }
+
+  function markInboxItemRead(id: number): Promise<void> {
+    return runInboxMutation('mark the inbox item as read', () => markInboxItemsRead({ ids: [id] }));
+  }
+
   async function handleRowClick(item: EnrichedInboxItem): Promise<void> {
-    void markInboxItemsRead({ ids: [item.id] });
+    void markInboxItemRead(item.id);
     if (item.viewHref) {
       if (item.viewHref.external) {
         window.open(item.viewHref.href, '_blank', 'noopener,noreferrer');
       } else {
-        await goto(item.viewHref.href);
+        try {
+          await goto(item.viewHref.href);
+        } catch (error) {
+          reportInboxFailure('open the inbox item', error);
+        }
       }
     }
   }
 
   function handleMarkAllRead(): void {
-    void markAllInboxItemsRead({ projectId: 'all' });
+    void runInboxMutation('mark all inbox items as read', () =>
+      markAllInboxItemsRead({ projectId: 'all' })
+    );
+  }
+
+  function handleRetry(): void {
+    void refreshInboxQuery(true);
   }
 </script>
 
@@ -135,8 +185,8 @@
       'flex items-center gap-1 rounded-md p-1.5 transition-colors hover:bg-white/10',
       indicator.hasUnread ? 'text-blue-300' : 'text-gray-300',
     ]}
-    aria-label={indicator.label}
-    title={indicator.label}
+    aria-label={triggerLabel}
+    title={triggerLabel}
   >
     <Bell class="size-4" />
     {#if indicator.hasUnread}
@@ -164,7 +214,23 @@
       {/if}
     </div>
 
-    {#if displayItems.length === 0}
+    {#if queryError}
+      <div class="px-3 py-5 text-center text-sm text-red-300" role="alert">
+        <p>Unable to load the inbox.</p>
+        <button
+          type="button"
+          class="mt-2 rounded border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-gray-700"
+          onclick={handleRetry}
+          aria-label="Retry loading inbox"
+        >
+          Retry
+        </button>
+      </div>
+    {:else if showLoading}
+      <div class="px-3 py-6 text-center text-sm text-gray-400" aria-live="polite">
+        Loading inbox…
+      </div>
+    {:else if displayItems.length === 0}
       <div class="px-3 py-6 text-center text-sm text-gray-400">All caught up</div>
     {:else}
       <div class="max-h-80 overflow-y-auto">
@@ -178,7 +244,7 @@
                 'flex items-start gap-2.5 border-b border-gray-700/50 px-3 py-2 transition-colors last:border-b-0 hover:bg-gray-700/50',
                 !item.read_at ? 'bg-gray-750/30' : '',
               ]}
-              onclick={() => void markInboxItemsRead({ ids: [item.id] })}
+              onclick={() => void markInboxItemRead(item.id)}
             >
               {@render rowContent(item)}
             </a>

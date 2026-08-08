@@ -11,12 +11,17 @@ const mocks = vi.hoisted(() => {
   return {
     inboxQuery: {
       current: null as unknown,
+      error: null as unknown,
+      loading: false,
       refresh: vi.fn(async (): Promise<void> => undefined),
     },
     getInboxItems: vi.fn(),
     markInboxItemsRead: vi.fn(async (): Promise<void> => undefined),
     markAllInboxItemsRead: vi.fn(async (): Promise<void> => undefined),
     goto: vi.fn(async (): Promise<void> => undefined),
+    toast: {
+      error: vi.fn(),
+    },
     pageState: { params: { projectId: '7' } },
     sessionCallbacks,
     unsubscribe,
@@ -45,6 +50,10 @@ vi.mock('$lib/remote/inbox.remote.js', () => ({
 
 vi.mock('$lib/stores/session_state.svelte.js', () => ({
   useSessionManager: () => mocks.sessionManager,
+}));
+
+vi.mock('svelte-sonner', () => ({
+  toast: mocks.toast,
 }));
 
 import InboxIndicator from './InboxIndicator.svelte';
@@ -81,20 +90,29 @@ function makeResponse(overrides: Partial<InboxItemsResponse> = {}): InboxItemsRe
   return { items: [], unreadCount: 0, ...overrides };
 }
 
-function renderIndicator(response: InboxItemsResponse): void {
+function renderIndicator(response: InboxItemsResponse | null): void {
   mocks.inboxQuery.current = response;
   mocks.getInboxItems.mockReturnValue(mocks.inboxQuery);
   unmountRendered = render(InboxIndicator).unmount;
 }
 
 async function openPopover(): Promise<void> {
-  await page.getByRole('button', { name: /unread inbox item/ }).click();
+  await page.getByRole('button', { name: /inbox/i }).first().click();
   await expect.element(page.getByRole('heading', { name: 'Inbox' })).toBeVisible();
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.inboxQuery.current = null;
+  mocks.inboxQuery.error = null;
+  mocks.inboxQuery.loading = false;
+  mocks.inboxQuery.refresh.mockReset();
+  mocks.inboxQuery.refresh.mockResolvedValue(undefined);
+  mocks.markInboxItemsRead.mockReset();
+  mocks.markInboxItemsRead.mockResolvedValue(undefined);
+  mocks.markAllInboxItemsRead.mockReset();
+  mocks.markAllInboxItemsRead.mockResolvedValue(undefined);
+  mocks.toast.error.mockReset();
   mocks.sessionCallbacks.length = 0;
   mocks.pageState.params.projectId = '7';
 });
@@ -150,6 +168,18 @@ describe('InboxIndicator browser behavior', () => {
     expect(mocks.markAllInboxItemsRead).toHaveBeenCalledWith({ projectId: 'all' });
   });
 
+  test('reports a rejected command through the shared toast path', async () => {
+    mocks.markAllInboxItemsRead.mockRejectedValueOnce(new Error('server unavailable'));
+    renderIndicator(makeResponse({ items: [makeItem()], unreadCount: 1 }));
+    await openPopover();
+
+    await page.getByRole('button', { name: 'Mark all inbox items as read' }).click();
+    await expect.poll(() => mocks.toast.error.mock.calls.length).toBe(1);
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      'Failed to mark all inbox items as read: server unavailable'
+    );
+  });
+
   test('marks an internal row read and navigates to its internal href', async () => {
     renderIndicator(makeResponse({ items: [makeItem()], unreadCount: 1 }));
     await openPopover();
@@ -191,6 +221,31 @@ describe('InboxIndicator browser behavior', () => {
       .not.toBeInTheDocument();
   });
 
+  test('shows a distinct loading state while the inbox query is pending', async () => {
+    mocks.inboxQuery.loading = true;
+    renderIndicator(null);
+
+    await expect.element(page.getByRole('button', { name: 'Loading inbox' })).toBeVisible();
+    await openPopover();
+    await expect.element(page.getByText('Loading inbox…', { exact: true })).toBeVisible();
+    await expect.element(page.getByText('All caught up', { exact: true })).not.toBeInTheDocument();
+  });
+
+  test('shows a rejected query state and provides a retry action', async () => {
+    mocks.inboxQuery.error = new Error('query failed');
+    renderIndicator(null);
+
+    await expect.element(page.getByRole('button', { name: 'Inbox unavailable' })).toBeVisible();
+    await openPopover();
+    await expect.element(page.getByRole('alert')).toBeVisible();
+    await expect
+      .element(page.getByText('Unable to load the inbox.', { exact: true }))
+      .toBeVisible();
+
+    await page.getByRole('button', { name: 'Retry loading inbox' }).click();
+    expect(mocks.inboxQuery.refresh).toHaveBeenCalledTimes(1);
+  });
+
   test('uses the current project for the footer link, then falls back to the first row project', async () => {
     renderIndicator(makeResponse({ items: [makeItem({ project_id: 8 })], unreadCount: 1 }));
     await openPopover();
@@ -206,6 +261,23 @@ describe('InboxIndicator browser behavior', () => {
     await expect
       .element(page.getByRole('link', { name: 'View all notifications' }))
       .toHaveAttribute('href', '/projects/8/inbox');
+  });
+
+  test('preserves the all-project footer target with rows and in the empty state', async () => {
+    mocks.pageState.params.projectId = 'all';
+    renderIndicator(makeResponse({ items: [makeItem({ project_id: 8 })], unreadCount: 1 }));
+    await openPopover();
+    await expect
+      .element(page.getByRole('link', { name: 'View all notifications' }))
+      .toHaveAttribute('href', '/projects/all/inbox');
+
+    unmountRendered?.();
+    unmountRendered = null;
+    renderIndicator(makeResponse());
+    await openPopover();
+    await expect
+      .element(page.getByRole('link', { name: 'View all notifications' }))
+      .toHaveAttribute('href', '/projects/all/inbox');
   });
 
   test('refreshes on inbox SSE events and cleans up the subscription and polling timer', async () => {

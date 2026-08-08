@@ -8,6 +8,7 @@ import {
   countUnreadInboxItems,
   dismissInboxItem as dismissInboxItemRow,
   getInboxItemProjectIds,
+  getInboxItemProjectIdsBefore,
   listRecentInboxItems,
   markAllReadBefore,
   markInboxItemsRead as markInboxItemsReadRows,
@@ -73,9 +74,11 @@ export const markAllInboxItemsRead = command(
     const options = {
       cutoff: new Date().toISOString(),
       ...(projectId === 'all' ? {} : { projectId: Number(projectId) }),
-    };
+    } satisfies { cutoff: string; projectId?: number };
+    const affectedProjectIds =
+      projectId === 'all' ? getInboxItemProjectIdsBefore(db, options) : [Number(projectId)];
     markAllReadBefore(db, options);
-    await refreshInboxQueries(projectId === 'all' ? [] : [Number(projectId)]);
+    await refreshInboxQueries(affectedProjectIds);
   }
 );
 

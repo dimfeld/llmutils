@@ -33,6 +33,11 @@ export interface PrStatusRow {
   updated_at: string;
 }
 
+export interface PrStatusProjectNumber {
+  projectId: number;
+  prNumber: number;
+}
+
 export interface PrCheckRunRow {
   id: number;
   pr_status_id: number;
@@ -910,6 +915,34 @@ export function getPrStatusByProjectAndNumber(
   }
 
   return getDetailById(db, row.id, options);
+}
+
+export function listExistingPrStatusProjectNumbers(
+  db: Database,
+  pairs: ReadonlyArray<PrStatusProjectNumber>
+): PrStatusProjectNumber[] {
+  const uniquePairs = Array.from(
+    new Map(pairs.map((pair) => [`${pair.projectId}:${pair.prNumber}`, pair])).values()
+  );
+  if (uniquePairs.length === 0) {
+    return [];
+  }
+
+  const conditions = uniquePairs.map(() => '(project.id = ? AND ps.pr_number = ?)').join(' OR ');
+  const parameters = uniquePairs.flatMap((pair) => [pair.projectId, pair.prNumber]);
+  const rows = db
+    .prepare(
+      `
+        SELECT project.id AS project_id, ps.pr_number
+        FROM pr_status ps
+        INNER JOIN project
+          ON project.repository_id = ('github.com__' || ps.owner || '__' || ps.repo) COLLATE NOCASE
+        WHERE ${conditions}
+      `
+    )
+    .all(...parameters) as Array<{ project_id: number; pr_number: number }>;
+
+  return rows.map((row) => ({ projectId: row.project_id, prNumber: row.pr_number }));
 }
 
 export function updatePrMergeableAndReviewDecision(

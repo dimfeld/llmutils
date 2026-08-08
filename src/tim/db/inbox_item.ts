@@ -201,6 +201,36 @@ export function getInboxItemProjectIds(db: Database, ids: ReadonlyArray<number>)
     .map((row) => (row as { project_id: number }).project_id);
 }
 
+export function getInboxItemProjectIdsBefore(
+  db: Database,
+  options: MarkAllReadBeforeOptions
+): number[] {
+  const conditions = [
+    'read_at IS NULL',
+    'dismissed_at IS NULL',
+    'last_event_at <= ?',
+    'project_id IS NOT NULL',
+  ];
+  const parameters: Array<number | string> = [options.cutoff];
+
+  if (options.projectId !== undefined) {
+    conditions.push('project_id = ?');
+    parameters.push(options.projectId);
+  }
+
+  return db
+    .prepare(
+      `
+        SELECT DISTINCT project_id
+        FROM inbox_item
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY project_id
+      `
+    )
+    .all(...parameters)
+    .map((row) => (row as { project_id: number }).project_id);
+}
+
 export function markInboxItemsRead(db: Database, ids: ReadonlyArray<number>): void {
   if (ids.length === 0) {
     return;

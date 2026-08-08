@@ -6,6 +6,7 @@ import {
   countUnreadInboxItems,
   dismissInboxItem,
   getInboxItemProjectIds,
+  getInboxItemProjectIdsBefore,
   INBOX_ITEM_KINDS,
   listRecentInboxItems,
   markAllReadBefore,
@@ -396,6 +397,49 @@ describe('tim db/inbox_item', () => {
       ])
     ).toEqual([projectId, otherProjectId]);
     expect(getInboxItemProjectIds(db, [])).toEqual([]);
+  });
+
+  test('returns project IDs for unread items affected by mark-all', () => {
+    const projectItem = upsertInboxItem(
+      db,
+      makeInput({ prNumber: 29, eventAt: '2026-05-02T00:00:00.000Z' })
+    );
+    const otherProjectItem = upsertInboxItem(
+      db,
+      makeInput({
+        projectId: otherProjectId,
+        prNumber: 30,
+        eventAt: '2026-05-02T00:01:00.000Z',
+      })
+    );
+    const futureItem = upsertInboxItem(
+      db,
+      makeInput({ prNumber: 31, eventAt: '2026-05-03T00:00:00.000Z' })
+    );
+    const readItem = upsertInboxItem(
+      db,
+      makeInput({ prNumber: 32, eventAt: '2026-05-02T00:02:00.000Z' })
+    );
+    const dismissedItem = upsertInboxItem(
+      db,
+      makeInput({ prNumber: 33, eventAt: '2026-05-02T00:03:00.000Z' })
+    );
+
+    markInboxItemsRead(db, [readItem.id]);
+    dismissInboxItem(db, dismissedItem.id);
+
+    expect(getInboxItemProjectIdsBefore(db, { cutoff: '2026-05-02T00:01:00.000Z' })).toEqual([
+      projectId,
+      otherProjectId,
+    ]);
+    expect(
+      getInboxItemProjectIdsBefore(db, {
+        cutoff: '2026-05-02T00:01:00.000Z',
+        projectId,
+      })
+    ).toEqual([projectId]);
+    expect(projectItem.id).not.toBe(futureItem.id);
+    expect(otherProjectItem.id).not.toBe(readItem.id);
   });
 
   test('marks only selected items read and preserves their first read time', () => {

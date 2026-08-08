@@ -18,6 +18,16 @@ import { getOrCreateProject } from '$tim/db/project.js';
 
 let currentDb: Database;
 
+vi.mock('$lib/server/inbox_query_scopes.js', async () => {
+  const actual = await vi.importActual<typeof import('$lib/server/inbox_query_scopes.js')>(
+    '$lib/server/inbox_query_scopes.js'
+  );
+  return {
+    ...actual,
+    refreshInboxQueryScopes: vi.fn(actual.refreshInboxQueryScopes),
+  };
+});
+
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
     config: {} as never,
@@ -99,6 +109,7 @@ describe('inbox remote functions', () => {
   test('enriches hrefs, linked plans, and action descriptors for every inbox kind', async () => {
     const singlePlanUrl = 'https://github.com/example/repo/pull/101';
     const multiplePlanUrl = 'https://github.com/example/repo/pull/102';
+    const orphanUrl = 'https://github.com/example/repo/pull/108';
 
     addPlanLink(singlePlanUrl, 'plan-single', 1);
     addPlanLink(multiplePlanUrl, 'plan-multiple-a', 2);
@@ -116,6 +127,7 @@ describe('inbox remote functions', () => {
         prUrl: 'https://github.com/example/repo/pull/106',
       }),
       seedInboxItem({ kind: 'merge_queue_removed', prNumber: 107 }),
+      seedInboxItem({ prNumber: 108, prUrl: orphanUrl }),
     ];
 
     const items = enrichInboxItems(currentDb, rows);
@@ -159,6 +171,9 @@ describe('inbox remote functions', () => {
       href: 'https://github.com/example/repo/pull/106',
       external: true,
     });
+
+    const orphanItem = items.find((item) => item.pr_number === 108);
+    expect(orphanItem?.viewHref).toEqual({ href: orphanUrl, external: true });
   });
 
   test('scopes query results to one project or all projects and returns unread count', async () => {
@@ -273,7 +288,15 @@ describe('inbox remote functions', () => {
       { id: futureItem.id, read_at: null },
     ]);
 
+    const globalProjectItem = seedInboxItem({
+      prNumber: 404,
+      eventAt: '2026-08-01T00:00:00.000Z',
+    });
+
     await invokeCommand(markAllInboxItemsRead, { projectId: 'all' });
+
+    const refreshCalls = vi.mocked(refreshInboxQueryScopes).mock.calls;
+    expect(refreshCalls.at(-1)?.[0]).toEqual([projectId, otherProjectId]);
 
     const afterAllRead = currentDb
       .prepare('SELECT read_at FROM inbox_item ORDER BY id')
@@ -282,7 +305,9 @@ describe('inbox remote functions', () => {
       { read_at: expect.any(String) },
       { read_at: expect.any(String) },
       { read_at: null },
+      { read_at: expect.any(String) },
     ]);
+    expect(globalProjectItem.id).toBeGreaterThan(futureItem.id);
   });
 
   test('dismisses an inbox item and marks it read', async () => {
