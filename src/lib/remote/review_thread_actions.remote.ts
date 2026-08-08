@@ -38,6 +38,7 @@ import {
   resolveReviewThread,
 } from '$common/github/pull_requests.js';
 import { getGitHubUsername } from '$common/github/user.js';
+import { TIM_LINKED_PR_URL_ENV } from '$tim/headless.js';
 import { createTaskFromReviewThread } from '$tim/commands/review.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import {
@@ -606,7 +607,7 @@ export const startPrCiFix = command(startPrReviewGuideSchema, async ({ projectId
 export const startPrReviewGuide = command(
   startPrReviewGuideSchema,
   async ({ projectId, prNumber }) =>
-    launchPrTimCommand('review-guide', projectId, prNumber, (_prUrlOrNumber, cwd) =>
-      spawnPrReviewGuideProcess(prNumber, cwd)
+    launchPrTimCommand('review-guide', projectId, prNumber, (prUrlOrNumber, cwd) =>
+      spawnPrReviewGuideProcess(prNumber, cwd, { [TIM_LINKED_PR_URL_ENV]: prUrlOrNumber })
     )
 );

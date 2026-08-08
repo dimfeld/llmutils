@@ -276,6 +276,7 @@
                 {@const isLaunching = launchingIds.has(item.id)}
                 {@const launchStatus = launchedIds.get(item.id)}
                 {@const hasLaunchError = launchErrors.has(item.id)}
+                {@const launchError = launchErrors.get(item.id)}
                 <tr
                   class={[
                     'transition-colors hover:bg-muted/40',
@@ -389,6 +390,12 @@
                           {/if}
                         {:else if actionConfig.type === 'launch'}
                           {#if hasLaunchError}
+                            <span
+                              class="shrink-0 text-xs text-red-600 dark:text-red-400"
+                              role="alert"
+                            >
+                              {launchError}
+                            </span>
                             <button
                               type="button"
                               class="shrink-0 rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600"

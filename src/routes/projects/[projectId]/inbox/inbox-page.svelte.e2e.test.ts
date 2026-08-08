@@ -374,7 +374,7 @@ describe('inbox full page', () => {
     expect(mocks.startPrReviewGuide).toHaveBeenCalledTimes(1);
   });
 
-  test('shows Retry immediately (not after the 30s timeout) when goto rejects on already_running, and Retry works', async () => {
+  test('shows Retry with error message when goto rejects on already_running, and Retry works', async () => {
     mocks.startPrReviewGuide.mockResolvedValue({
       status: 'already_running',
       connectionId: 'conn-1',
@@ -395,6 +395,9 @@ describe('inbox full page', () => {
     await expect
       .element(page.getByText('Already running', { exact: true }))
       .not.toBeInTheDocument();
+    // The navigation error message must be visible in an accessible alert element.
+    await expect.element(page.getByRole('alert')).toBeVisible();
+    await expect.element(page.getByText('navigation failed')).toBeVisible();
 
     mocks.goto.mockResolvedValueOnce(undefined);
     await page.getByRole('button', { name: 'Retry' }).click();
@@ -402,6 +405,8 @@ describe('inbox full page', () => {
     await expect.poll(() => mocks.startPrReviewGuide.mock.calls.length).toBe(2);
     await expect.poll(() => mocks.goto.mock.calls.length).toBe(2);
     await expect.element(page.getByText('Already running', { exact: true })).toBeVisible();
+    // Error should be cleared after successful retry
+    await expect.element(page.getByRole('alert')).not.toBeInTheDocument();
   });
 
   test('clicking Mark all read scopes the command to the current route project', async () => {
@@ -522,7 +527,7 @@ describe('inbox full page', () => {
     clearIntervalSpy.mockRestore();
   });
 
-  test('reports a rejected action-button launch through the shared toast/retry path', async () => {
+  test('shows the error message and Retry when a launch command rejects', async () => {
     mocks.startPrCiFix.mockRejectedValueOnce(new Error('spawn failed'));
     const item = makeItem({
       id: 22,
@@ -534,5 +539,15 @@ describe('inbox full page', () => {
     await page.getByRole('button', { name: 'Fix CI' }).click();
 
     await expect.element(page.getByRole('button', { name: 'Retry' })).toBeVisible();
+    await expect.element(page.getByRole('alert')).toBeVisible();
+    await expect.element(page.getByText('spawn failed')).toBeVisible();
+
+    // Retry succeeds
+    mocks.startPrCiFix.mockResolvedValueOnce({ status: 'started' });
+    await page.getByRole('button', { name: 'Retry' }).click();
+
+    await expect.poll(() => mocks.startPrCiFix.mock.calls.length).toBe(2);
+    await expect.element(page.getByText('Started', { exact: true })).toBeVisible();
+    await expect.element(page.getByRole('alert')).not.toBeInTheDocument();
   });
 });

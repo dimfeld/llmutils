@@ -61,6 +61,7 @@ afterEach(async () => {
   delete process.env.TIM_SERVER_HOSTNAME;
   delete process.env.TIM_WS_BEARER_TOKEN;
   delete process.env.WEZTERM_PANE;
+  delete process.env.TIM_LINKED_PR_URL;
   if (originalXdgCacheHome === undefined) {
     delete process.env.XDG_CACHE_HOME;
   } else {
@@ -292,6 +293,28 @@ describe('buildHeadlessSessionInfo', () => {
     expect(info.interactive).toBe(true);
     expect(info.terminalPaneId).toBe('42');
     expect(info.terminalType).toBe('wezterm');
+  });
+
+  test('includes linkedPrUrl from TIM_LINKED_PR_URL env var', async () => {
+    process.env.TIM_LINKED_PR_URL = 'https://github.com/owner/repo/pull/42';
+
+    const info = await buildHeadlessSessionInfo('review-guide', false);
+
+    expect(info.linkedPrUrl).toBe('https://github.com/owner/repo/pull/42');
+  });
+
+  test('omits linkedPrUrl when TIM_LINKED_PR_URL is unset', async () => {
+    const info = await buildHeadlessSessionInfo('review-guide', false);
+
+    expect(info.linkedPrUrl).toBeUndefined();
+  });
+
+  test('omits linkedPrUrl when TIM_LINKED_PR_URL is empty or whitespace', async () => {
+    process.env.TIM_LINKED_PR_URL = '  ';
+
+    const info = await buildHeadlessSessionInfo('review-guide', false);
+
+    expect(info.linkedPrUrl).toBeUndefined();
   });
 });
 

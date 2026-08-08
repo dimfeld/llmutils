@@ -1624,7 +1624,9 @@ describe('startFixPrThreads', () => {
     const result = await invokeCommand(startPrReviewGuide, { projectId, prNumber: 42 });
 
     expect(result).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
-    expect(spawnPrReviewGuideProcessMock).toHaveBeenCalledWith(42, '/tmp/pr-primary-workspace');
+    expect(spawnPrReviewGuideProcessMock).toHaveBeenCalledWith(42, '/tmp/pr-primary-workspace', {
+      TIM_LINKED_PR_URL: CANONICAL_PR_URL,
+    });
     expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
   });
 
@@ -1677,6 +1679,47 @@ describe('startFixPrThreads', () => {
       body: { message: 'binary not found' },
     });
     expect(isPrLaunching(CANONICAL_PR_URL)).toBe(false);
+  });
+
+  test('startPrReviewGuide: duplicate launch prevented after lock expiry when session has linkedPrUrl from initial session_info', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnPrReviewGuideProcessMock.mockResolvedValue({ success: true });
+
+    const result1 = await invokeCommand(startPrReviewGuide, { projectId, prNumber: 42 });
+    expect(result1).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
+    expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
+
+    // Simulate the session connecting and sending initial session_info
+    // that includes linkedPrUrl (provided by the TIM_LINKED_PR_URL env var).
+    // This happens before gatherPrContext finishes in the spawned process.
+    currentManager.handleWebSocketConnect('rg-slow-start', () => {});
+    currentManager.handleWebSocketMessage('rg-slow-start', {
+      type: 'session_info',
+      command: 'review-guide',
+      interactive: false,
+      linkedPrUrl: CANONICAL_PR_URL,
+      workspacePath: '/tmp/pr-primary-workspace',
+    });
+
+    // The session:update listener cleared the launch lock when linkedPrUrl arrived.
+    expect(isPrLaunching(CANONICAL_PR_URL)).toBe(false);
+
+    // Without the env-var fix, linkedPrUrl would be absent from the initial
+    // session_info and the lock would time out with no session indexed by
+    // PR URL — opening a window for duplicates. With the fix, the session
+    // is already indexed, so a second launch returns already_running.
+    const result2 = await invokeCommand(startPrReviewGuide, { projectId, prNumber: 42 });
+    expect(result2).toEqual({
+      status: 'already_running',
+      connectionId: 'rg-slow-start',
+    });
+    expect(spawnPrReviewGuideProcessMock).toHaveBeenCalledTimes(1);
   });
 
   test('sets PR launch lock after spawn succeeds', async () => {
