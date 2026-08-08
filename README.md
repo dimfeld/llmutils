@@ -193,6 +193,8 @@ githubWebhooks:
 
 Webhook events also feed the PR inbox. An item is created when something needs your attention on a PR: a review request for you, a comment or approval on a PR you authored, a comment on a PR you are reviewing, a required check failing on your PR, your PR being merged, or your PR leaving the merge queue without merging. Your own actions are ignored, comment/review events from bot accounts are ignored, and events before `githubWebhooks.ignoreSideEffectsBefore` never create items. Repeated events on the same PR update one item instead of stacking up. Items need `githubUsername` (or a logged-in `gh`) to know which PRs are yours.
 
+Read the inbox in the web UI: the toolbar bell shows unread items from every project, and the **Inbox** tab (`/projects/{projectId}/inbox`, or All Projects) shows the full list with read and dismissed state. Rows carry an action where one makes sense — **Run Review Guide** for a review request, **Fix PR** for a comment on your PR, **Fix CI** for a failing check — which launches the same session the Pull Requests tab would. Items are marked read when you click a link or an action, never by just opening the page.
+
 Unlike `githubWebhooks`, the `inbox` block is repo-settable, so it can live in `~/.config/tim/config.yml`, `.tim/config/tim.yml`, or `.tim/config/tim.local.yml`:
 
 ```yaml

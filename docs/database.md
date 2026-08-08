@@ -449,6 +449,7 @@ Rows are self-contained on purpose. `webhook_log` payloads are pruned after 7 da
 - `upsertInboxItem(db, input)`: Validates `kind`, canonicalizes `prUrl`, and runs the `ON CONFLICT(dedupe_key) DO UPDATE` described above. `summary`, `actor`, and `pr_title` use `COALESCE(excluded.col, col)` so a sparse event does not erase existing values. `first_event_at` is set on insert only; both timestamps default to now when `eventAt` is absent. Returns the row.
 - `listRecentInboxItems(db, { projectId, limit, includeRead })`: `projectId` is a project ID or `'all'`. Always excludes dismissed rows; excludes read rows unless `includeRead`. Ordered by `last_event_at DESC, id DESC`, default `limit` 50.
 - `countUnreadInboxItems(db, { projectId })`: Counts rows with `read_at IS NULL AND dismissed_at IS NULL`, with the same `'all'` handling.
+- `countTotalInboxItems(db, { projectId })`: Counts all undismissed rows, read or not. The inbox page shows "N unread · M total", and both counts must cover the whole scope rather than the truncated page `listRecentInboxItems()` returns.
 - `markInboxItemsRead(db, ids)`: Sets `read_at` only on rows that are still unread, so `read_at` stays the first-read time.
 - `markAllReadBefore(db, { cutoff, projectId })`: Marks unread, undismissed rows with `last_event_at <= cutoff`. The cutoff keeps a "mark all read" click from swallowing events that arrive during the round trip.
 - `dismissInboxItem(db, id)`: Sets `dismissed_at`, and `read_at` too if it was null.
