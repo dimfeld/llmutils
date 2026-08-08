@@ -1,7 +1,7 @@
 /**
  * Tab slug order for the project nav bar. Must stay in sync with `TabNav.svelte`'s
- * `baseTabs` array (same order) and with `TAB_DIGIT_MAX` in `keyboard_shortcuts.ts`
- * (must equal `baseTabSlugs.length` so Ctrl+N reaches every tab and no further).
+ * `baseTabs` array (same order). The keyboard shortcut layer passes all Ctrl+1..9
+ * through to `resolveTabSlugForIndex`, which decides whether the index is valid.
  */
 export const baseTabSlugs = ['sessions', 'active', 'prs', 'activity', 'inbox', 'plans'] as const;
 export const projectTabSlugs = [...baseTabSlugs, 'settings'] as const;

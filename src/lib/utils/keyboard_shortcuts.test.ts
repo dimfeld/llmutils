@@ -313,7 +313,7 @@ describe('handleGlobalShortcuts', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce();
   });
 
-  test('Ctrl+6 calls navigateTab with 6 (TAB_DIGIT_MAX boundary, matches 6-tab nav)', () => {
+  test('Ctrl+6 calls navigateTab with 6', () => {
     const navigateTab = vi.fn();
     const event = makeKeyEvent('Digit6', { ctrlKey: true });
     handleGlobalShortcuts(event, { navigateTab });
@@ -321,11 +321,19 @@ describe('handleGlobalShortcuts', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce();
   });
 
-  test('Ctrl+7 does NOT call navigateTab (past TAB_DIGIT_MAX boundary)', () => {
+  test('Ctrl+7 calls navigateTab with 7 (resolver decides validity)', () => {
     const navigateTab = vi.fn();
     const event = makeKeyEvent('Digit7', { ctrlKey: true });
     handleGlobalShortcuts(event, { navigateTab });
-    expect(navigateTab).not.toHaveBeenCalled();
+    expect(navigateTab).toHaveBeenCalledWith(7);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  test('Ctrl+7 does not prevent default when navigateTab returns false', () => {
+    const navigateTab = vi.fn(() => false);
+    const event = makeKeyEvent('Digit7', { ctrlKey: true });
+    handleGlobalShortcuts(event, { navigateTab });
+    expect(navigateTab).toHaveBeenCalledWith(7);
     expect(event.preventDefault).not.toHaveBeenCalled();
   });
 
@@ -376,8 +384,8 @@ describe('handleGlobalShortcuts', () => {
       expect(event.preventDefault).toHaveBeenCalledOnce();
     });
 
-    test('Ctrl+7 does not resolve any tab and does not prevent default', () => {
-      let resolvedSlug: string | undefined = 'unset';
+    test('Ctrl+7 resolves to settings for a numeric project', () => {
+      let resolvedSlug: string | undefined;
       const event = makeKeyEvent('Digit7', { ctrlKey: true });
       handleGlobalShortcuts(event, {
         navigateTab(tabIndex) {
@@ -385,8 +393,46 @@ describe('handleGlobalShortcuts', () => {
           return !!resolvedSlug;
         },
       });
-      // navigateTab is never invoked because TAB_DIGIT_MAX blocks digit 7 first.
-      expect(resolvedSlug).toBe('unset');
+      expect(resolvedSlug).toBe('settings');
+      expect(event.preventDefault).toHaveBeenCalledOnce();
+    });
+
+    test('Ctrl+7 does nothing for all-projects (no settings tab)', () => {
+      let resolvedSlug: string | undefined = 'unset';
+      const event = makeKeyEvent('Digit7', { ctrlKey: true });
+      handleGlobalShortcuts(event, {
+        navigateTab(tabIndex) {
+          resolvedSlug = resolveTabSlugForIndex('all', tabIndex);
+          return !!resolvedSlug;
+        },
+      });
+      expect(resolvedSlug).toBeUndefined();
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    });
+
+    test('Ctrl+8 does nothing (out of range for all contexts)', () => {
+      let resolvedSlug: string | undefined = 'unset';
+      const event = makeKeyEvent('Digit8', { ctrlKey: true });
+      handleGlobalShortcuts(event, {
+        navigateTab(tabIndex) {
+          resolvedSlug = resolveTabSlugForIndex('1', tabIndex);
+          return !!resolvedSlug;
+        },
+      });
+      expect(resolvedSlug).toBeUndefined();
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    });
+
+    test('Ctrl+9 does nothing (out of range for all contexts)', () => {
+      let resolvedSlug: string | undefined = 'unset';
+      const event = makeKeyEvent('Digit9', { ctrlKey: true });
+      handleGlobalShortcuts(event, {
+        navigateTab(tabIndex) {
+          resolvedSlug = resolveTabSlugForIndex('1', tabIndex);
+          return !!resolvedSlug;
+        },
+      });
+      expect(resolvedSlug).toBeUndefined();
       expect(event.preventDefault).not.toHaveBeenCalled();
     });
 

@@ -304,12 +304,12 @@ Pure display and state helpers are extracted to `src/routes/projects/[projectId]
 
 ### Tab and Keyboard Shortcuts
 
-The Inbox tab appears in `TabNav.svelte` as `{ label: 'Inbox', slug: 'inbox' }`, positioned after Activity and before Plans. **Adding a tab to `TabNav` requires updating two other places to keep keyboard shortcuts in sync:**
+The Inbox tab appears in `TabNav.svelte` as `{ label: 'Inbox', slug: 'inbox' }`, positioned after Activity and before Plans. **Adding a tab to `TabNav` requires updating the slug arrays in `src/lib/utils/tab_navigation.ts`:**
 
-1. `baseTabSlugs` in `src/routes/+layout.svelte` — drives `Ctrl+1..N` tab navigation via `navigateTab()`.
-2. `projectTabSlugs` (derived from `baseTabSlugs` with `'settings'` appended) — used by `Ctrl+Shift+N` project switching to preserve the current tab.
+- `baseTabSlugs` — drives `Ctrl+1..N` tab navigation via `resolveTabSlugForIndex()`.
+- `projectTabSlugs` (derived from `baseTabSlugs` with `'settings'` appended) — used by `Ctrl+Shift+N` project switching to preserve the current tab.
 
-Both arrays must list slugs in the same order as `baseTabs` in `TabNav.svelte`. The current order is: sessions (Ctrl+1), active (Ctrl+2), prs (Ctrl+3), activity (Ctrl+4), inbox (Ctrl+5), plans (Ctrl+6), settings (Ctrl+7, numeric projects only).
+Both arrays must list slugs in the same order as `baseTabs` in `TabNav.svelte`. The keyboard shortcut layer passes all `Ctrl+1..9` through; `resolveTabSlugForIndex` decides whether the index maps to a valid tab. The current order is: sessions (Ctrl+1), active (Ctrl+2), prs (Ctrl+3), activity (Ctrl+4), inbox (Ctrl+5), plans (Ctrl+6), settings (Ctrl+7, numeric projects only). Ctrl+8/9 do nothing.
 
 ## Plan Task Counts
 
@@ -561,6 +561,7 @@ The root layout (`+layout.svelte`) registers a `<svelte:window onkeydown>` handl
 | **Ctrl+4**                     | Navigate to Activity tab                   | Always active                                                                          |
 | **Ctrl+5**                     | Navigate to Inbox tab                      | Always active                                                                          |
 | **Ctrl+6**                     | Navigate to Plans tab                      | Always active                                                                          |
+| **Ctrl+7**                     | Navigate to Settings tab                   | Numeric projects only; does nothing on All Projects                                    |
 
 Tab navigation uses `goto()` with `projectUrl()` to build the correct route for the current project context.
 
