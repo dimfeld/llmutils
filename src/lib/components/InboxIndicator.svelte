@@ -242,7 +242,7 @@
               rel="noopener noreferrer"
               class={[
                 'flex items-start gap-2.5 border-b border-gray-700/50 px-3 py-2 transition-colors last:border-b-0 hover:bg-gray-700/50',
-                !item.read_at ? 'bg-gray-750/30' : '',
+                !item.read_at ? 'bg-gray-700/30' : '',
               ]}
               onclick={() => void markInboxItemRead(item.id)}
             >
@@ -253,7 +253,7 @@
               type="button"
               class={[
                 'flex w-full items-start gap-2.5 border-b border-gray-700/50 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-gray-700/50',
-                !item.read_at ? 'bg-gray-750/30' : '',
+                !item.read_at ? 'bg-gray-700/30' : '',
               ]}
               onclick={() => handleRowClick(item)}
             >

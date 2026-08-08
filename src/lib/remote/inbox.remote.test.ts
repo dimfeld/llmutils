@@ -17,19 +17,21 @@ import { getOrCreateProject } from '$tim/db/project.js';
 
 let currentDb: Database;
 
-const { refreshedScopes } = vi.hoisted(() => ({ refreshedScopes: [] as string[] }));
+const { refreshedScopes } = vi.hoisted(() => ({
+  refreshedScopes: [] as { projectId: string; includeRead?: boolean }[],
+}));
 
 vi.mock('$app/server', () => {
   function query(
     _schema: unknown,
-    fn: (arg: { projectId: string }) => Promise<unknown>
-  ): (arg: { projectId: string }) => Promise<unknown> {
-    const wrapper = (arg: { projectId: string }): Promise<unknown> => {
+    fn: (arg: { projectId: string; includeRead?: boolean }) => Promise<unknown>
+  ): (arg: { projectId: string; includeRead?: boolean }) => Promise<unknown> {
+    const wrapper = (arg: { projectId: string; includeRead?: boolean }): Promise<unknown> => {
       const result = Promise.resolve(fn(arg)) as Promise<unknown> & {
         refresh: () => Promise<void>;
       };
       result.refresh = async (): Promise<void> => {
-        refreshedScopes.push(arg.projectId);
+        refreshedScopes.push({ projectId: arg.projectId, includeRead: arg.includeRead });
       };
       return result;
     };
@@ -267,7 +269,15 @@ describe('inbox remote functions', () => {
 
     await invokeCommand(markInboxItemsRead, { ids: [item.id, otherProjectItem.id] });
 
-    expect(refreshedScopes).toEqual(['all', String(projectId), String(otherProjectId)]);
+    expect(refreshedScopes.map((s) => s.projectId)).toEqual([
+      'all',
+      'all',
+      String(projectId),
+      String(projectId),
+      String(otherProjectId),
+      String(otherProjectId),
+    ]);
+    expect(refreshedScopes.filter((s) => s.includeRead)).toHaveLength(3);
 
     const rows = currentDb
       .prepare('SELECT read_at, dismissed_at FROM inbox_item WHERE id = ?')
@@ -281,7 +291,7 @@ describe('inbox remote functions', () => {
 
     refreshedScopes.length = 0;
     await invokeCommand(markInboxItemsRead, { ids: [item.id, otherProjectItem.id] });
-    expect(refreshedScopes).toEqual(['all']);
+    expect(refreshedScopes.map((s) => s.projectId)).toEqual(['all', 'all']);
   });
 
   test('marks all items read for one project and then across all projects', async () => {
@@ -299,7 +309,12 @@ describe('inbox remote functions', () => {
     });
 
     await invokeCommand(markAllInboxItemsRead, { projectId: String(projectId) });
-    expect(refreshedScopes).toEqual(['all', String(projectId)]);
+    expect(refreshedScopes.map((s) => s.projectId)).toEqual([
+      'all',
+      'all',
+      String(projectId),
+      String(projectId),
+    ]);
 
     const afterProjectRead = currentDb
       .prepare('SELECT id, read_at FROM inbox_item ORDER BY id')
@@ -318,7 +333,14 @@ describe('inbox remote functions', () => {
     refreshedScopes.length = 0;
     await invokeCommand(markAllInboxItemsRead, { projectId: 'all' });
 
-    expect(refreshedScopes).toEqual(['all', String(projectId), String(otherProjectId)]);
+    expect(refreshedScopes.map((s) => s.projectId)).toEqual([
+      'all',
+      'all',
+      String(projectId),
+      String(projectId),
+      String(otherProjectId),
+      String(otherProjectId),
+    ]);
 
     const afterAllRead = currentDb
       .prepare('SELECT read_at FROM inbox_item ORDER BY id')
@@ -337,7 +359,12 @@ describe('inbox remote functions', () => {
     const item = seedInboxItem({ prNumber: 501 });
 
     await invokeCommand(dismissInboxItem, { id: item.id });
-    expect(refreshedScopes).toEqual(['all', String(projectId)]);
+    expect(refreshedScopes.map((s) => s.projectId)).toEqual([
+      'all',
+      'all',
+      String(projectId),
+      String(projectId),
+    ]);
 
     const row = currentDb
       .prepare('SELECT read_at, dismissed_at FROM inbox_item WHERE id = ?')

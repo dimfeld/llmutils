@@ -21,6 +21,11 @@ const projectIdSchema = z.object({
   projectId: z.string().regex(/^(\d+|all)$/),
 });
 
+const inboxQuerySchema = z.object({
+  projectId: z.string().regex(/^(\d+|all)$/),
+  includeRead: z.boolean().optional(),
+});
+
 const markInboxItemsReadSchema = z.object({
   ids: z.array(z.number().int()),
 });
@@ -31,14 +36,14 @@ export interface InboxItemsResponse {
 }
 
 export const getInboxItems = query(
-  projectIdSchema,
-  async ({ projectId }): Promise<InboxItemsResponse> => {
+  inboxQuerySchema,
+  async ({ projectId, includeRead }): Promise<InboxItemsResponse> => {
     const { db } = await getServerContext();
     const scope = projectId === 'all' ? 'all' : Number(projectId);
     const rows = listRecentInboxItems(db, {
       projectId: scope,
-      limit: 50,
-      includeRead: false,
+      limit: includeRead ? 100 : 50,
+      includeRead: includeRead ?? false,
     });
 
     return {
@@ -56,7 +61,12 @@ async function refreshInboxQueries(projectIds: ReadonlyArray<number>): Promise<v
       .map(String),
   ];
 
-  await Promise.all(scopes.map((projectId) => getInboxItems({ projectId }).refresh()));
+  await Promise.all(
+    scopes.flatMap((projectId) => [
+      getInboxItems({ projectId }).refresh(),
+      getInboxItems({ projectId, includeRead: true }).refresh(),
+    ])
+  );
 }
 
 export const markInboxItemsRead = command(

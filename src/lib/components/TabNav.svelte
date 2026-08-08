@@ -12,6 +12,7 @@
     { label: 'Active Work', slug: 'active' },
     { label: 'Pull Requests', slug: 'prs' },
     { label: 'Activity', slug: 'activity' },
+    { label: 'Inbox', slug: 'inbox' },
     { label: 'Plans', slug: 'plans' },
   ];
 
