@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 
 import { tryCanonicalizePrUrl } from '../../common/github/identifiers.js';
-import { getReviewerPredicate, parseRequestedReviewers } from '../../common/github/pr_relevance.js';
+import { getReviewerPredicate } from '../../common/github/pr_relevance.js';
 import { constructGitHubRepositoryId } from '../../common/github/pull_requests.js';
 import { isBotLogin, normalizeGitHubUsername } from '../../common/github/username.js';
 import { getGitHubUsername, type GitHubUsernameOptions } from '../../common/github/user.js';
@@ -93,7 +93,7 @@ function isUserAuthor(
   return author !== null && normalizeGitHubUsername(author) === username;
 }
 
-function isUserReviewing(
+function hasUserSubmittedReview(
   status: ReturnType<typeof getPrStatusByProjectAndNumber>,
   username: string
 ): boolean {
@@ -101,13 +101,7 @@ function isUserReviewing(
     return false;
   }
 
-  const predicate = getReviewerPredicate(
-    parseRequestedReviewers(status.status.requested_reviewers),
-    status.reviewRequests,
-    status.reviews,
-    username
-  );
-  return predicate.isRequestedReviewer || predicate.hasSubmittedReview;
+  return getReviewerPredicate([], [], status.reviews, username).hasSubmittedReview;
 }
 
 function getInboxKind(
@@ -124,7 +118,7 @@ function getInboxKind(
       if (isUserAuthor(signal, status, username)) {
         return 'pr_comment';
       }
-      return isUserReviewing(status, username) ? 'reviewed_pr_comment' : null;
+      return hasUserSubmittedReview(status, username) ? 'reviewed_pr_comment' : null;
     case 'pr_approved':
     case 'pr_merged':
     case 'ci_failure':

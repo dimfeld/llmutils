@@ -560,7 +560,7 @@ describe('lib/server/inbox_producer', () => {
       expect(detailLookupCount).toBe(1);
     });
 
-    test('routes to reviewed_pr_comment when the user has an active review request', async () => {
+    test('does not route to reviewed_pr_comment for an active review request without a review', async () => {
       const status = upsertPrStatus(db, {
         prUrl: REVIEWED_PR_URL,
         owner: OWNER,
@@ -585,8 +585,8 @@ describe('lib/server/inbox_producer', () => {
         resolveUsername: async () => 'octocat',
       });
 
-      expect(affected).toEqual([projectId]);
-      expect(countInboxItems()).toBe(1);
+      expect(affected).toEqual([]);
+      expect(countInboxItems()).toBe(0);
     });
 
     test('does not route to reviewed_pr_comment when the user has a PENDING review only', async () => {
