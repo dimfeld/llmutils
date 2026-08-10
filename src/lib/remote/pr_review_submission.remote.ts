@@ -13,6 +13,7 @@ import {
   type ReviewIssueForSubmission,
 } from '$common/github/pr_reviews.js';
 import { getOctokit } from '$common/github/octokit.js';
+import * as prStatusService from '$common/github/pr_status_service.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import {
   createPrReviewSubmission,
@@ -197,7 +198,7 @@ function requireReviewForDiff(
 } {
   const prDetail = getSubmissionPrDetail(db, review);
   const prUrl = review.pr_url ?? prDetail?.status.pr_url;
-  const baseBranch = review.base_branch ?? prDetail?.status.base_branch;
+  const baseBranch = prDetail?.status.base_branch ?? review.base_branch;
   if (!prUrl) {
     error(400, `Review ${review.id} is not associated with a PR`);
   }
@@ -258,8 +259,10 @@ export const getSubmissionPartition = command(
         appendToBody: [],
       };
     }
-    const { owner, repo, baseBranch } = requireReviewForDiff(db, review);
+    const { prUrl, owner, repo, baseBranch } = requireReviewForDiff(db, review);
     const { diff, usedCommitSha, fellBack } = await fetchDiffWithFallback(
+      db,
+      prUrl,
       owner,
       repo,
       baseBranch,
@@ -515,18 +518,50 @@ function isMissingCommitError(err: unknown): boolean {
 }
 
 async function fetchDiffWithFallback(
+  db: Database,
+  prUrl: string,
   owner: string,
   repo: string,
   baseBranch: string,
   commitSha: string,
   fallbackCommitSha: string | undefined
 ): Promise<{ diff: string; usedCommitSha: string; fellBack: boolean }> {
+  let currentBaseBranch = baseBranch;
+
   try {
-    const diff = await fetchPullRequestDiff(owner, repo, baseBranch, commitSha);
+    const diff = await fetchPullRequestDiff(owner, repo, currentBaseBranch, commitSha);
     return { diff, usedCommitSha: commitSha, fellBack: false };
   } catch (err) {
-    if (fallbackCommitSha && fallbackCommitSha !== commitSha && isMissingCommitError(err)) {
-      const diff = await fetchPullRequestDiff(owner, repo, baseBranch, fallbackCommitSha);
+    if (!isMissingCommitError(err)) {
+      throw err;
+    }
+
+    const refreshedPr = await prStatusService.refreshPrStatus(db, prUrl);
+    const refreshedBaseBranch = refreshedPr.status.base_branch;
+    if (refreshedBaseBranch && refreshedBaseBranch !== currentBaseBranch) {
+      currentBaseBranch = refreshedBaseBranch;
+      try {
+        const diff = await fetchPullRequestDiff(owner, repo, currentBaseBranch, commitSha);
+        return { diff, usedCommitSha: commitSha, fellBack: false };
+      } catch (refreshedBaseError) {
+        if (!isMissingCommitError(refreshedBaseError)) {
+          throw refreshedBaseError;
+        }
+        if (fallbackCommitSha && fallbackCommitSha !== commitSha) {
+          const diff = await fetchPullRequestDiff(
+            owner,
+            repo,
+            currentBaseBranch,
+            fallbackCommitSha
+          );
+          return { diff, usedCommitSha: fallbackCommitSha, fellBack: true };
+        }
+        throw refreshedBaseError;
+      }
+    }
+
+    if (fallbackCommitSha && fallbackCommitSha !== commitSha) {
+      const diff = await fetchPullRequestDiff(owner, repo, currentBaseBranch, fallbackCommitSha);
       return { diff, usedCommitSha: fallbackCommitSha, fellBack: true };
     }
     throw err;
@@ -591,8 +626,10 @@ export const submitReviewToGitHub = command(
         fellBackToHead = true;
       }
     } else {
-      const { owner, repo, baseBranch } = requireReviewForDiff(db, review);
+      const { prUrl: diffPrUrl, owner, repo, baseBranch } = requireReviewForDiff(db, review);
       const fetched = await fetchDiffWithFallback(
+        db,
+        diffPrUrl,
         owner,
         repo,
         baseBranch,

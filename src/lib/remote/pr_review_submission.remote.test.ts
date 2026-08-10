@@ -7,6 +7,7 @@ import { nonSyncedUpsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import * as reviewDbModule from '$tim/db/review.js';
+import * as prStatusService from '$common/github/pr_status_service.js';
 import {
   createPrReviewSubmission,
   createReview,
@@ -62,6 +63,9 @@ describe('pr_review_submission remote functions', () => {
     currentConfig = { githubUsername: 'configured-reviewer' };
     compareCommitsMock.mockReset();
     submitPrReviewMock.mockReset();
+    vi.spyOn(prStatusService, 'refreshPrStatus').mockImplementation(
+      async () => ({ status: { base_branch: 'main' } }) as never
+    );
   });
 
   afterEach(() => {
@@ -1382,6 +1386,56 @@ describe('pr_review_submission remote functions', () => {
     );
   });
 
+  test('getSubmissionPartition prefers the current cached PR base over the review base', async () => {
+    const prUrl = 'https://github.com/example/repo/pull/205';
+    const review = seedReview(prUrl, { baseBranch: 'stacked-base' });
+    upsertPrStatus(currentDb, {
+      prUrl,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 205,
+      author: 'author',
+      title: 'Retargeted PR',
+      state: 'open',
+      draft: false,
+      headSha: 'supplied-sha',
+      baseBranch: 'main',
+      headBranch: 'feature/review-submission',
+      lastFetchedAt: '2026-08-10T00:00:00.000Z',
+    });
+    const issue = seedIssue(review.id, {
+      severity: 'minor',
+      category: 'style',
+      content: 'Needs check',
+      file: 'src/app.ts',
+      line: '11',
+      startLine: null,
+      suggestion: null,
+      side: 'RIGHT',
+    });
+    compareCommitsMock.mockResolvedValue({
+      data: [
+        'diff --git a/src/app.ts b/src/app.ts',
+        '--- a/src/app.ts',
+        '+++ b/src/app.ts',
+        '@@ -10,2 +10,3 @@',
+        ' context',
+        '+new line',
+      ].join('\n'),
+    });
+
+    await invokeCommand(getSubmissionPartition, {
+      reviewId: review.id,
+      issueIds: [issue.id],
+      commitSha: 'supplied-sha',
+    });
+
+    expect(compareCommitsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ basehead: 'main...supplied-sha' })
+    );
+    expect(prStatusService.refreshPrStatus).not.toHaveBeenCalled();
+  });
+
   test('getSubmissionPartition falls back to fallbackCommitSha on 404', async () => {
     const review = seedReview('https://github.com/example/repo/pull/311', { baseBranch: 'main' });
     const issue = seedIssue(review.id, {
@@ -1425,6 +1479,54 @@ describe('pr_review_submission remote functions', () => {
       2,
       expect.objectContaining({ basehead: 'main...head-sha' })
     );
+  });
+
+  test('getSubmissionPartition refreshes a retargeted PR and retries with its new base', async () => {
+    const prUrl = 'https://github.com/example/repo/pull/315';
+    const review = seedReview(prUrl, { baseBranch: 'stacked-base' });
+    const issue = seedIssue(review.id, {
+      severity: 'minor',
+      category: 'style',
+      content: 'Needs check',
+      file: 'src/app.ts',
+      line: '11',
+      startLine: null,
+      suggestion: null,
+      side: 'RIGHT',
+    });
+
+    vi.mocked(prStatusService.refreshPrStatus).mockResolvedValueOnce({
+      status: { base_branch: 'main' },
+    } as never);
+    const notFound = Object.assign(new Error('Not Found'), { status: 404 });
+    compareCommitsMock.mockRejectedValueOnce(notFound).mockResolvedValueOnce({
+      data: [
+        'diff --git a/src/app.ts b/src/app.ts',
+        '--- a/src/app.ts',
+        '+++ b/src/app.ts',
+        '@@ -10,2 +10,3 @@',
+        ' context',
+        '+new line',
+      ].join('\n'),
+    });
+
+    const result = await invokeCommand(getSubmissionPartition, {
+      reviewId: review.id,
+      issueIds: [issue.id],
+      commitSha: 'reviewed-sha',
+    });
+
+    expect(prStatusService.refreshPrStatus).toHaveBeenCalledWith(currentDb, prUrl);
+    expect(compareCommitsMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ basehead: 'stacked-base...reviewed-sha' })
+    );
+    expect(compareCommitsMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ basehead: 'main...reviewed-sha' })
+    );
+    expect(result.usedCommitSha).toBe('reviewed-sha');
+    expect(result.fellBackToHead).toBe(false);
   });
 
   test('getSubmissionPartition with empty issues still resolves fallback', async () => {
