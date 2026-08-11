@@ -550,7 +550,7 @@ Use your Todo tools to track progress through these steps:
 
 # Version Control
 
-Plan files are temporary materialized files under .tim/plans and are not tracked by version control. Your plan updates sync to the tim database. Do not create a VCS commit for plan-only work because there is nothing to commit. Do not make unrelated code changes to create a commit.
+Plan files are temporary materialized files under .tim/plans and are not tracked by version control. Your plan updates sync to the tim database. Do not create a VCS commit for plan-only work because there is nothing to commit.
 
 ${generateClaudeCodeGenerationPrompt(contextBlock, {
   includeMarkdownFormat: false,
