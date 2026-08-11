@@ -298,8 +298,7 @@ export async function spawnAutoreviewProcess(
     describeTarget('plan', planId),
     planId,
     ['autoreview', String(planId), '--no-terminal-input'],
-    cwd,
-    { TIM_HIDE_PLAN_DETAILS: '1' }
+    cwd
   );
 }
 

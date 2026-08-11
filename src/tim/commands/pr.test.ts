@@ -250,6 +250,14 @@ vi.mock('../headless.js', () => ({
   updateHeadlessSessionInfo: vi.fn(),
 }));
 
+vi.mock('../../logging/adapter.js', () => ({
+  getLoggerAdapter: vi.fn(),
+}));
+
+vi.mock('../plan_file_watcher.js', () => ({
+  watchPlanFile: vi.fn(() => ({ close: vi.fn(), closeAndFlush: vi.fn() })),
+}));
+
 vi.mock('../lifecycle.js', () => ({
   LifecycleManager: class {
     constructor(...args: unknown[]) {
@@ -345,6 +353,9 @@ import {
 } from '../plans.js';
 import { loadEffectiveConfig as mockLoadEffectiveConfigFn } from '../configLoader.js';
 import { isTunnelActive as mockIsTunnelActiveFn } from '../../logging/tunnel_client.js';
+import { getLoggerAdapter as mockGetLoggerAdapterFn } from '../../logging/adapter.js';
+import { HeadlessAdapter } from '../../logging/headless_adapter.js';
+import { watchPlanFile as mockWatchPlanFileFn } from '../plan_file_watcher.js';
 import {
   runWithHeadlessAdapterIfEnabled as mockRunWithHeadlessAdapterIfEnabledFn,
   updateHeadlessSessionInfo as mockUpdateHeadlessSessionInfoFn,
@@ -394,6 +405,8 @@ const mockResolvePlanByUuid = vi.mocked(mockResolvePlanByUuidFn);
 const mockWritePlanFile = vi.mocked(mockWritePlanFileFn);
 const mockLoadEffectiveConfig = vi.mocked(mockLoadEffectiveConfigFn);
 const mockIsTunnelActive = vi.mocked(mockIsTunnelActiveFn);
+const mockGetLoggerAdapter = vi.mocked(mockGetLoggerAdapterFn);
+const mockWatchPlanFile = vi.mocked(mockWatchPlanFileFn);
 const mockRunWithHeadlessAdapterIfEnabled = vi.mocked(mockRunWithHeadlessAdapterIfEnabledFn);
 const mockUpdateHeadlessSessionInfo = vi.mocked(mockUpdateHeadlessSessionInfoFn);
 const mockSyncPlanToDb = vi.mocked(mockSyncPlanToDbFn);
@@ -523,6 +536,7 @@ describe('tim/commands/pr', () => {
     mockLoadEffectiveConfig.mockResolvedValue({});
     mockIsTunnelActive.mockReset();
     mockIsTunnelActive.mockReturnValue(false);
+    mockGetLoggerAdapter.mockReset();
     mockRunWithHeadlessAdapterIfEnabled.mockClear();
     mockRunWithHeadlessAdapterIfEnabled.mockImplementation(
       async (options: { callback: () => Promise<unknown> }) => options.callback()
@@ -535,6 +549,8 @@ describe('tim/commands/pr', () => {
       executorId === 'codex-cli' ? 'gpt-5.6-terra' : 'opus'
     );
     mockExecutorExecute.mockClear();
+    mockWatchPlanFile.mockReset();
+    mockWatchPlanFile.mockReturnValue({ close: vi.fn(), closeAndFlush: vi.fn() });
     lifecycleMocks.ctor.mockClear();
     lifecycleMocks.startup.mockClear();
     lifecycleMocks.shutdown.mockClear();
@@ -1788,6 +1804,42 @@ describe('tim/commands/pr', () => {
       })
     );
     expect(typeof mockRunWithHeadlessAdapterIfEnabled.mock.calls[0]?.[0].callback).toBe('function');
+  });
+
+  test('pr fix streams plan content through a headless session', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Add a null check.' }],
+          }),
+        ],
+      },
+    ];
+    const sendPlanContent = vi.fn();
+    const headlessAdapter = Object.assign(Object.create(HeadlessAdapter.prototype), {
+      sendPlanContent,
+    }) as HeadlessAdapter;
+    const closeAndFlush = vi.fn(async () => {});
+    mockGetLoggerAdapter.mockReturnValue(headlessAdapter);
+    mockWatchPlanFile.mockReturnValue({ close: vi.fn(), closeAndFlush });
+
+    await handlePrFixCommand(248, {}, createNestedCommand());
+
+    expect(mockWatchPlanFile).toHaveBeenCalledWith(currentPlanPath, expect.any(Function));
+    const onContent = mockWatchPlanFile.mock.calls[0]?.[1];
+    onContent?.({
+      content: '# PR status monitoring',
+      tasks: [{ title: 'Fix feedback', description: 'Address review comments', done: false }],
+    });
+    expect(sendPlanContent).toHaveBeenCalledWith('# PR status monitoring', [
+      { title: 'Fix feedback', description: 'Address review comments', done: false },
+    ]);
+    expect(closeAndFlush).toHaveBeenCalledTimes(1);
   });
 
   test('pr fix keeps headless session interactive when terminal input is disabled', async () => {

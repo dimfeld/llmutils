@@ -22,6 +22,8 @@ import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_
 import { fetchPrIssueComments, type PrIssueComment } from '../../common/github/pr_status.js';
 import { ingestWebhookEventsWithInbox } from '../../lib/server/webhook_ingest_orchestrator.js';
 import { log, warn } from '../../logging.js';
+import { getLoggerAdapter } from '../../logging/adapter.js';
+import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -73,6 +75,7 @@ import { runWithHeadlessAdapterIfEnabled, updateHeadlessSessionInfo } from '../h
 import { LifecycleManager } from '../lifecycle.js';
 import { isShuttingDown } from '../shutdown_state.js';
 import { gatherPrContext } from '../utils/pr_context_gathering.js';
+import { watchPlanFile } from '../plan_file_watcher.js';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -1563,6 +1566,7 @@ async function executePrFixCommand({
   let currentPlanFile = target.kind === 'plan' ? (target.planPath ?? '') : '';
   let touchedWorkspacePath: string | null = null;
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
+  let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
   let lifecycleManager: LifecycleManager | undefined;
   let executionError: unknown;
 
@@ -1684,6 +1688,14 @@ async function executePrFixCommand({
       disableInactivityTimeout: true,
       timEnvironment,
     };
+
+    const loggerAdapter = getLoggerAdapter();
+    if (target.kind === 'plan' && currentPlanFile && loggerAdapter instanceof HeadlessAdapter) {
+      planWatcher = watchPlanFile(currentPlanFile, ({ content, tasks }) => {
+        loggerAdapter.sendPlanContent(content, tasks);
+      });
+    }
+
     const executor = buildExecutorAndLog(
       executorName,
       sharedExecutorOptions,
@@ -1710,6 +1722,8 @@ async function executePrFixCommand({
   } finally {
     let roundTripError: unknown;
     let lifecycleShutdownError: unknown;
+    await planWatcher?.closeAndFlush();
+
     if (lifecycleManager) {
       try {
         await lifecycleManager.shutdown();

@@ -98,6 +98,7 @@ describe('lib/server/plan_actions', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.mocked(buildWorkspaceCommandEnv).mockClear();
     delete process.env.TIM_PATH;
     vi.setSystemTime(new Date('2026-04-19T00:00:00.000Z'));
     vi.mocked(fs.mkdirSync).mockImplementation(() => {});
@@ -545,7 +546,7 @@ describe('lib/server/plan_actions', () => {
     expect(result).toEqual({ success: true, planId: 204 });
   });
 
-  test('web-launched shell and autoreview request hidden plan details', async () => {
+  test('web-launched shell hides plan details but autoreview keeps the plan pane', async () => {
     vi.mocked(buildWorkspaceCommandEnv).mockResolvedValue({ PATH: '/usr/bin' });
     const proc = createFakeProcess({ exitCode: null });
     const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
@@ -571,9 +572,16 @@ describe('lib/server/plan_actions', () => {
       '206',
       '--no-terminal-input',
     ]);
-    expect(vi.mocked(buildWorkspaceCommandEnv)).toHaveBeenCalledWith('/tmp/primary-workspace', {
-      TIM_HIDE_PLAN_DETAILS: '1',
-    });
+    expect(vi.mocked(buildWorkspaceCommandEnv)).toHaveBeenNthCalledWith(
+      1,
+      '/tmp/primary-workspace',
+      { TIM_HIDE_PLAN_DETAILS: '1' }
+    );
+    expect(vi.mocked(buildWorkspaceCommandEnv)).toHaveBeenNthCalledWith(
+      2,
+      '/tmp/primary-workspace',
+      undefined
+    );
   });
 
   test('spawnAgentMultiProcess passes the epic plan id to the CLI', async () => {
