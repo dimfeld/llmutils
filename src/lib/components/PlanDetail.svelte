@@ -1913,14 +1913,12 @@
         {@const optionKey = chatOptionKey(option)}
         <Button
           onclick={() => handleChat(option)}
-          class={option.executor === ClaudeCodeExecutorName
-            ? 'justify-between bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600'
-            : 'justify-between bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600'}
+          class="justify-between"
           disabled={!!startingChat}
         >
           {#if startingChat === optionKey}
             <span
-              class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+              class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
             ></span>
             Starting…
           {:else}
