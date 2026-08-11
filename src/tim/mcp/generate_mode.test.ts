@@ -243,6 +243,12 @@ describe('tim MCP generate mode helpers', () => {
     expect(message?.text).toContain('generate a detailed implementation plan');
     expect(message?.text).toContain("'tim tools update-plan-tasks' CLI command");
     expect(message?.text).toContain(
+      'Plan files are temporary materialized files under .tim/plans and are not tracked by version control.'
+    );
+    expect(message?.text).toContain(
+      'Do not create a VCS commit for plan-only work because there is nothing to commit.'
+    );
+    expect(message?.text).toContain(
       'Before you create the structured tasks for this plan, you MUST evaluate whether the work should be split'
     );
     expect(message?.text).toContain('Break the project into phases');

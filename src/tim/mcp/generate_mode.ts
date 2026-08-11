@@ -548,6 +548,10 @@ Use your Todo tools to track progress through these steps:
 - [ ] Propose plan split - suggest a possible decomposition into sibling child plans and confirm with the user before creating tasks
 - [ ] Add tasks - use the 'tim tools update-plan-tasks' CLI command to add tasks
 
+# Version Control
+
+Plan files are temporary materialized files under .tim/plans and are not tracked by version control. Your plan updates sync to the tim database. Do not create a VCS commit for plan-only work because there is nothing to commit. Do not make unrelated code changes to create a commit.
+
 ${generateClaudeCodeGenerationPrompt(contextBlock, {
   includeMarkdownFormat: false,
   withBlockingSubissues: false,
