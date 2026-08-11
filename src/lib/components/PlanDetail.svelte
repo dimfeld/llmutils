@@ -13,7 +13,7 @@
   import { renderMarkdown } from '$lib/utils/markdown_parser.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { onDestroy, untrack } from 'svelte';
-  import { afterNavigate, invalidateAll } from '$app/navigation';
+  import { afterNavigate, goto, invalidateAll } from '$app/navigation';
   import { updatePlanMetadata } from '$lib/remote/plan_metadata.remote.js';
   import { extractPlanMetadataErrorMessage } from './plan_metadata_form_utils.js';
   import {
@@ -472,6 +472,7 @@
   }
 
   let chatDialogOpen = $state(false);
+  let cancelChatSessionWait: (() => void) | null = null;
   let startedSuccessfully = $state(false);
   let errorMessage: string | null = $state(null);
   let successMessage: { text: string; connectionId?: string } | null = $state(null);
@@ -578,6 +579,7 @@
 
   onDestroy(() => {
     clearReviewGuideResetTimeout();
+    cancelChatSessionWait?.();
   });
 
   afterNavigate(({ from, to }) => {
@@ -667,6 +669,61 @@
   function applyStartError(actionPlanUuid: string, err: unknown): void {
     if (actionPlanUuid !== plan.uuid) return;
     errorMessage = `${err as Error}`;
+  }
+
+  function findActiveChatSession(planUuid: string): string | null {
+    const session = (sessionManager.sessionsByPlanUuid.get(planUuid) ?? []).find(
+      (candidate) => candidate.status === 'active' && candidate.sessionInfo.command === 'chat'
+    );
+    return session?.connectionId ?? null;
+  }
+
+  function waitForActiveChatSession(planUuid: string): Promise<string | null> {
+    cancelChatSessionWait?.();
+
+    const existingConnectionId = findActiveChatSession(planUuid);
+    if (existingConnectionId) {
+      return Promise.resolve(existingConnectionId);
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      let unsubscribe: (() => void) | null = null;
+
+      const finish = (connectionId: string | null) => {
+        if (settled) return;
+        settled = true;
+        if (timeout) clearTimeout(timeout);
+        unsubscribe?.();
+        if (cancelChatSessionWait === cancel) cancelChatSessionWait = null;
+        resolve(connectionId);
+      };
+
+      const cancel = () => finish(null);
+      cancelChatSessionWait = cancel;
+      unsubscribe = sessionManager.onEvent(() => {
+        const connectionId = findActiveChatSession(planUuid);
+        if (connectionId) finish(connectionId);
+      });
+      timeout = setTimeout(() => finish(null), 30_000);
+
+      const connectionId = findActiveChatSession(planUuid);
+      if (connectionId) finish(connectionId);
+    });
+  }
+
+  async function navigateToChatSession(
+    actionPlanUuid: string,
+    result: StartActionResult
+  ): Promise<void> {
+    const connectionId =
+      result.status === 'already_running' && result.connectionId
+        ? result.connectionId
+        : await waitForActiveChatSession(actionPlanUuid);
+    if (!connectionId || actionPlanUuid !== plan.uuid) return;
+
+    await goto(`/projects/${projectId}/sessions/${encodeURIComponent(connectionId)}`);
   }
 
   async function handleGenerate() {
@@ -812,6 +869,7 @@
         model: option.model,
       });
       applyStartResult(actionPlanUuid, result, 'Chat started');
+      await navigateToChatSession(actionPlanUuid, result);
     } catch (err) {
       applyStartError(actionPlanUuid, err);
     } finally {
