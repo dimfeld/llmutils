@@ -225,22 +225,16 @@ export async function spawnAgentMultiProcess(
 export async function spawnChatProcess(
   planId: number,
   cwd: string,
-  executor: 'claude' | 'codex'
+  executor: string,
+  model?: string
 ): Promise<SpawnProcessResult> {
-  return spawnPlanTimProcess(
-    describeTarget('plan', planId),
-    planId,
-    [
-      'chat',
-      '--plan',
-      String(planId),
-      '--executor',
-      executor,
-      '--auto-workspace',
-      '--no-terminal-input',
-    ],
-    cwd
-  );
+  const args = ['chat', '--plan', String(planId), '--executor', executor, '--auto-workspace'];
+  if (model !== undefined) {
+    args.push('--model', model);
+  }
+  args.push('--no-terminal-input');
+
+  return spawnPlanTimProcess(describeTarget('plan', planId), planId, args, cwd);
 }
 
 export async function spawnRebaseProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {

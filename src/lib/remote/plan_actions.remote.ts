@@ -365,16 +365,22 @@ export const startAgentMulti = command(
 
 const startChatSchema = z.object({
   planUuid: z.string().min(1),
-  executor: z.enum(['claude', 'codex']),
+  executor: z.enum(['claude', 'codex', 'claude-code', 'codex-cli']),
+  model: z.string().min(1).optional(),
 });
 
-export const startChat = command(startChatSchema, async ({ planUuid, executor }) => {
+export const startChat = command(startChatSchema, async ({ planUuid, executor, model }) => {
   return launchTimCommand(
     'chat',
     planUuid,
     isPlanEligibleForChat,
     'Plan is not eligible for chat',
-    (planId, cwd) => spawnChatProcess(planId, cwd, executor)
+    (planId, cwd) => {
+      if (model === undefined) {
+        return spawnChatProcess(planId, cwd, executor);
+      }
+      return spawnChatProcess(planId, cwd, executor, model);
+    }
   );
 });
 

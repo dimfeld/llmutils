@@ -9,6 +9,7 @@ const testContext = vi.hoisted(() => ({
   db: null as Database | null,
   loadProofConfiguredForProject: vi.fn(),
   loadMediaHostConfiguredForProject: vi.fn(),
+  loadChatExecutorOptionsForProject: vi.fn(),
 }));
 
 vi.mock('$lib/server/init.js', () => ({
@@ -23,6 +24,7 @@ vi.mock('$lib/server/init.js', () => ({
 vi.mock('$lib/server/plans_browser.js', () => ({
   loadProofConfiguredForProject: testContext.loadProofConfiguredForProject,
   loadMediaHostConfiguredForProject: testContext.loadMediaHostConfiguredForProject,
+  loadChatExecutorOptionsForProject: testContext.loadChatExecutorOptionsForProject,
 }));
 
 import { load } from './+page.server.js';
@@ -38,6 +40,10 @@ describe('projects/[projectId]/active/plan/[planUuid]/+page.server', () => {
     testContext.loadProofConfiguredForProject.mockResolvedValue(true);
     testContext.loadMediaHostConfiguredForProject.mockReset();
     testContext.loadMediaHostConfiguredForProject.mockResolvedValue(true);
+    testContext.loadChatExecutorOptionsForProject.mockReset();
+    testContext.loadChatExecutorOptionsForProject.mockResolvedValue([
+      { executor: 'claude-code', model: 'claude-opus-4.6' },
+    ]);
 
     projectId = getOrCreateProject(db, 'active-proof-route-repo', {
       remoteUrl: 'https://example.com/active-proof-route-repo.git',
@@ -64,10 +70,15 @@ describe('projects/[projectId]/active/plan/[planUuid]/+page.server', () => {
       load({
         params: { projectId: String(projectId), planUuid: 'active-proof-plan' },
       } as never)
-    ).resolves.toEqual({ proofConfigured: true, mediaHostConfigured: true });
+    ).resolves.toEqual({
+      proofConfigured: true,
+      mediaHostConfigured: true,
+      chatExecutorOptions: [{ executor: 'claude-code', model: 'claude-opus-4.6' }],
+    });
 
     expect(testContext.loadProofConfiguredForProject).toHaveBeenCalledWith(db, projectId);
     expect(testContext.loadMediaHostConfiguredForProject).toHaveBeenCalledWith(db, projectId);
+    expect(testContext.loadChatExecutorOptionsForProject).toHaveBeenCalledWith(db, projectId);
   });
 
   test('returns false when the plan does not exist', async () => {
@@ -75,9 +86,14 @@ describe('projects/[projectId]/active/plan/[planUuid]/+page.server', () => {
       load({
         params: { projectId: String(projectId), planUuid: 'missing-plan' },
       } as never)
-    ).resolves.toEqual({ proofConfigured: false, mediaHostConfigured: false });
+    ).resolves.toEqual({
+      proofConfigured: false,
+      mediaHostConfigured: false,
+      chatExecutorOptions: undefined,
+    });
 
     expect(testContext.loadProofConfiguredForProject).not.toHaveBeenCalled();
     expect(testContext.loadMediaHostConfiguredForProject).not.toHaveBeenCalled();
+    expect(testContext.loadChatExecutorOptionsForProject).not.toHaveBeenCalled();
   });
 });

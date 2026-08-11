@@ -758,6 +758,7 @@ Important config areas:
 - `lifecycle.env` - merge selected values into each managed workspace `.env`
 - `subprocessMonitor` - opt-in timeouts for stuck Claude/Codex tool subprocesses
 - `smallTasks` - executor/model for lightweight helper passes (defaults to `codex-cli` with `gpt-5.6-luna:medium`)
+- `chat` - executor and model choices shown in the web Chat dialog
 - `updateDocs` - controls automatic agent documentation updates; `applyLessons` is retained for manual finalization compatibility
 - `artifactRetentionDays` - days before soft-deleted artifacts and artifacts on completed plans are eligible for purge (default 30)
 - `mediaHost.baseUrl` - origin-only media host URL used by `tim pr upload-artifacts`
@@ -771,6 +772,17 @@ in one place when you want to swap the lightweight model or executor:
 smallTasks:
   executor: codex-cli
   model: gpt-5.6-luna:medium
+```
+
+Configure the web Chat dialog with one or more executor/model choices. If `chat` is not set, the
+dialog shows Claude Code and Codex CLI with their default models.
+
+```yaml
+chat:
+  - executor: claude-code
+    model: claude-opus-4.6
+  - executor: codex-cli
+    model: gpt-5.6-luna:high
 ```
 
 The `simplify` block controls the optional code-simplification pass that runs after an agent finishes implementation and before final review. `simplify.mode` accepts `after-completion` (default) or `never`; `simplify.model` and `simplify.executor` (`claude-code` or `codex-cli`) override the executor used for the pass; `simplify.include` and `simplify.exclude` add free-form scoping guidance. The standalone `tim simplify <planId>` command always runs regardless of `simplify.mode`.

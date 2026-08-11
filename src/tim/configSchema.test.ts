@@ -11,6 +11,34 @@ import {
 } from './environment.js';
 
 describe('configSchema', () => {
+  describe('chat', () => {
+    test('accepts executor and model choices without applying a default', () => {
+      const result = timConfigSchema.parse({
+        chat: [
+          { executor: 'claude-code', model: 'claude-opus-4.6' },
+          { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
+        ],
+      });
+
+      expect(result.chat).toEqual([
+        { executor: 'claude-code', model: 'claude-opus-4.6' },
+        { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
+      ]);
+      expect(timConfigSchema.parse({}).chat).toBeUndefined();
+    });
+
+    test('rejects duplicate executor and model choices', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          chat: [
+            { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
+            { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
+          ],
+        })
+      ).toThrow();
+    });
+  });
+
   describe('mediaHost', () => {
     const originalApiKey = process.env.MEDIA_HOST_API_KEY;
 

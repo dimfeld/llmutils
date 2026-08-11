@@ -3,6 +3,7 @@ import { getServerContext } from '$lib/server/init.js';
 import {
   getPlanDetailRouteData,
   loadMediaHostConfiguredForProject,
+  loadChatExecutorOptionsForProject,
   loadProofConfiguredForProject,
   toPlanDetailView,
   toPlanReviewListItems,
@@ -28,6 +29,10 @@ export const load: PageServerLoad = async ({ params, url }) => {
     db,
     result.planDetail.projectId
   );
+  const chatExecutorOptions = await loadChatExecutorOptionsForProject(
+    db,
+    result.planDetail.projectId
+  );
 
   return {
     planDetail: toPlanDetailView(result.planDetail),
@@ -35,5 +40,6 @@ export const load: PageServerLoad = async ({ params, url }) => {
     openInEditorEnabled: Boolean(process.env.TIM_ENABLE_OPEN_IN_EDITOR),
     proofConfigured,
     mediaHostConfigured,
+    chatExecutorOptions,
   };
 };

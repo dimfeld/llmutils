@@ -6,6 +6,8 @@
   import { toast } from 'svelte-sonner';
 
   import type { PlanDetailView } from '$lib/server/db_queries.js';
+  import type { ChatExecutorOption } from '$tim/configSchema.js';
+  import { ClaudeCodeExecutorName, CodexCliExecutorName } from '$tim/executors/schemas.js';
   import type { PlanReviewListItem } from '$lib/server/plans_browser.js';
   import type { PrStatusRow } from '$tim/db/pr_status.js';
   import { renderMarkdown } from '$lib/utils/markdown_parser.js';
@@ -65,6 +67,10 @@
     openInEditorEnabled = false,
     proofConfigured = false,
     mediaHostConfigured = false,
+    chatExecutorOptions = [
+      { executor: ClaudeCodeExecutorName },
+      { executor: CodexCliExecutorName },
+    ],
   }: {
     plan: PlanDetailView;
     reviews?: PlanReviewListItem[];
@@ -74,6 +80,7 @@
     openInEditorEnabled?: boolean;
     proofConfigured?: boolean;
     mediaHostConfigured?: boolean;
+    chatExecutorOptions?: ChatExecutorOption[];
   } = $props();
 
   const sessionManager = useSessionManager();
@@ -360,7 +367,7 @@
   let startingReview = $state(false);
   let startingAutoreview = $state(false);
   let startingShell = $state(false);
-  let startingChat: 'claude' | 'codex' | false = $state(false);
+  let startingChat: string | false = $state(false);
   let startingFinish = $state(false);
   let startingCreatePr = $state(false);
   let reviewGuideRunning: 'full' | 'guide-only' | false = $state(false);
@@ -784,13 +791,26 @@
     }
   }
 
-  async function handleChat(executor: 'claude' | 'codex') {
+  function chatExecutorLabel(executor: ChatExecutorOption['executor']): string {
+    return executor === ClaudeCodeExecutorName ? 'Claude Code' : 'Codex CLI';
+  }
+
+  function chatOptionKey(option: ChatExecutorOption): string {
+    return `${option.executor}:${option.model ?? ''}`;
+  }
+
+  async function handleChat(option: ChatExecutorOption) {
     const actionPlanUuid = plan.uuid;
-    startingChat = executor;
+    const optionKey = chatOptionKey(option);
+    startingChat = optionKey;
     errorMessage = null;
     successMessage = null;
     try {
-      const result = await startChat({ planUuid: actionPlanUuid, executor });
+      const result = await startChat({
+        planUuid: actionPlanUuid,
+        executor: option.executor,
+        model: option.model,
+      });
       applyStartResult(actionPlanUuid, result, 'Chat started');
     } catch (err) {
       applyStartError(actionPlanUuid, err);
@@ -1886,37 +1906,29 @@
   <Dialog.Content class="sm:max-w-md">
     <Dialog.Header>
       <Dialog.Title>Start Chat Session</Dialog.Title>
-      <Dialog.Description>Choose which AI assistant to use</Dialog.Description>
+      <Dialog.Description>Choose an executor and model</Dialog.Description>
     </Dialog.Header>
-    <div class="flex gap-3 py-4">
-      <Button
-        onclick={() => handleChat('claude')}
-        class="flex-1 bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-        disabled={!!startingChat}
-      >
-        {#if startingChat === 'claude'}
-          <span
-            class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-          ></span>
-          Starting…
-        {:else}
-          Claude
-        {/if}
-      </Button>
-      <Button
-        onclick={() => handleChat('codex')}
-        class="flex-1 bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-        disabled={!!startingChat}
-      >
-        {#if startingChat === 'codex'}
-          <span
-            class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-          ></span>
-          Starting…
-        {:else}
-          Codex
-        {/if}
-      </Button>
+    <div class="grid gap-3 py-4">
+      {#each chatExecutorOptions as option (chatOptionKey(option))}
+        {@const optionKey = chatOptionKey(option)}
+        <Button
+          onclick={() => handleChat(option)}
+          class={option.executor === ClaudeCodeExecutorName
+            ? 'justify-between bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600'
+            : 'justify-between bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600'}
+          disabled={!!startingChat}
+        >
+          {#if startingChat === optionKey}
+            <span
+              class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+            ></span>
+            Starting…
+          {:else}
+            <span>{chatExecutorLabel(option.executor)}</span>
+            <span class="text-xs opacity-80">{option.model ?? 'Default model'}</span>
+          {/if}
+        </Button>
+      {/each}
     </div>
   </Dialog.Content>
 </Dialog.Root>

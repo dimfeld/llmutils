@@ -374,6 +374,33 @@ describe('lib/server/plan_actions', () => {
     expect(result).toEqual({ success: true, planId: 189 });
   });
 
+  test('spawnChatProcess passes a configured model to tim chat', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnChatProcess(
+      192,
+      '/tmp/primary-workspace',
+      'codex-cli',
+      'gpt-5.6-luna:high'
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+    await resultPromise;
+
+    expect(daemonPayload(spawnSpy.mock.calls[0][1] as never).workerCommand).toEqual([
+      'tim',
+      'chat',
+      '--plan',
+      '192',
+      '--executor',
+      'codex-cli',
+      '--auto-workspace',
+      '--model',
+      'gpt-5.6-luna:high',
+      '--no-terminal-input',
+    ]);
+  });
+
   test('spawnChatProcess returns stderr when the process exits during the early-exit window', async () => {
     const proc = createFakeProcess({
       exitCode: 1,

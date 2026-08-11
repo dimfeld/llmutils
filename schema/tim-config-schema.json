@@ -271,6 +271,33 @@
       },
       "description": "Project-level environment variables rendered at process launch time"
     },
+    "chat": {
+      "description": "Executor and model choices for web chat sessions",
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "executor": {
+            "type": "string",
+            "enum": [
+              "claude-code",
+              "codex-cli"
+            ],
+            "description": "Executor to use for the chat session"
+          },
+          "model": {
+            "description": "Optional model to use for the chat session",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "executor"
+        ],
+        "additionalProperties": false
+      }
+    },
     "issueTracker": {
       "description": "Issue tracking service to use for import commands and issue-related operations",
       "type": "string",

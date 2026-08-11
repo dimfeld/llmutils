@@ -488,6 +488,45 @@ export const timEnvironmentConfigSchema = z
   .record(timEnvironmentVariableNameSchema, timEnvironmentEntrySchema)
   .describe('Project-level environment variables rendered at process launch time');
 
+/** Executor and model option shown by the web Chat dialog. */
+export const chatExecutorOptionSchema = z
+  .object({
+    executor: z
+      .enum([ClaudeCodeExecutorName, CodexCliExecutorName])
+      .describe('Executor to use for the chat session'),
+    model: z.string().min(1).optional().describe('Optional model to use for the chat session'),
+  })
+  .strict()
+  .superRefine((options, ctx) => {
+    // This check runs on each item only as a placeholder for the array-level
+    // uniqueness check below.
+    if (options.model?.trim() === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Model must not be empty',
+        path: ['model'],
+      });
+    }
+  });
+
+const chatExecutorOptionsSchema = z
+  .array(chatExecutorOptionSchema)
+  .min(1)
+  .superRefine((options, ctx) => {
+    const seen = new Set<string>();
+    for (const [index, option] of options.entries()) {
+      const key = `${option.executor}:${option.model ?? ''}`;
+      if (seen.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Chat executor and model options must be unique',
+          path: [index],
+        });
+      }
+      seen.add(key);
+    }
+  });
+
 /**
  * Main configuration schema for tim.
  */
@@ -527,6 +566,10 @@ export const timConfigSchema = z
     inbox: inboxConfigSchema.optional().describe('PR inbox notification behavior (repo-settable)'),
     /** Project-level environment variables rendered at process launch time. */
     environment: timEnvironmentConfigSchema.optional(),
+    /** Executor and model choices shown in the web Chat dialog. */
+    chat: chatExecutorOptionsSchema
+      .optional()
+      .describe('Executor and model choices for web chat sessions'),
     /** Issue tracking service to use for import commands and issue-related operations. Defaults to 'github'. */
     issueTracker: z
       .enum(['github', 'linear'])
@@ -1204,6 +1247,7 @@ export type CiFixConfig = NonNullable<z.output<typeof timConfigSchema>['ciFix']>
 export type ProofGenerationConfig = z.output<typeof proofGenerationSchema>;
 export type MediaHostConfig = z.output<typeof mediaHostSchema>;
 export type TimEnvironmentConfig = z.output<typeof timEnvironmentConfigSchema>;
+export type ChatExecutorOption = z.output<typeof chatExecutorOptionSchema>;
 export type PostApplyCommand = z.output<typeof postApplyCommandSchema>;
 export type LifecycleCommand = z.infer<typeof lifecycleCommandSchema>;
 export type NotificationCommand = z.output<typeof notificationCommandSchema>;

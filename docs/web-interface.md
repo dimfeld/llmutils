@@ -836,10 +836,9 @@ An "Open Terminal" button (AppWindow icon) appears next to each workspace path i
 
 ### Executor Selection Dialog
 
-When launching a Chat session, a dialog opens to choose the executor:
-
-- **Claude** (claude_code executor) — blue themed button
-- **Codex** (codex_cli executor) — green themed button
+When launching a Chat session, a dialog opens with the executor/model choices from the project's
+`chat` configuration. Each choice uses the configured executor and optional model. If `chat` is not
+configured, the dialog shows Claude Code and Codex CLI with their default models.
 
 The dialog stays open with per-button spinners during launch. Dismissal is prevented while a launch is in flight.
 

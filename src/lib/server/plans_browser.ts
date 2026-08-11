@@ -19,6 +19,13 @@ import { isProofConfigured } from '$lib/utils/proof_eligibility.js';
 import { isMediaHostConfigured } from '$tim/configSchema.js';
 import type { DashboardPlan } from '$lib/utils/dashboard_attention.js';
 import { hasPlanPrData } from '$lib/utils/plan_pr_presence.js';
+import { ClaudeCodeExecutorName, CodexCliExecutorName } from '$tim/executors/schemas.js';
+import type { ChatExecutorOption } from '$tim/configSchema.js';
+
+export const DEFAULT_CHAT_EXECUTOR_OPTIONS: ChatExecutorOption[] = [
+  { executor: ClaudeCodeExecutorName },
+  { executor: CodexCliExecutorName },
+];
 
 export async function loadFinishConfigForProject(
   db: Database,
@@ -83,6 +90,26 @@ export async function loadMediaHostConfiguredForProject(
       `Failed to load tim config for project ${projectId} when checking mediaHost: ${err as Error}`
     );
     return false;
+  }
+}
+
+export async function loadChatExecutorOptionsForProject(
+  db: Database,
+  projectId: number
+): Promise<ChatExecutorOption[]> {
+  const cwd = getPreferredProjectGitRoot(db, projectId);
+  if (!cwd) {
+    return DEFAULT_CHAT_EXECUTOR_OPTIONS;
+  }
+
+  try {
+    const config = await loadEffectiveConfig(undefined, { cwd });
+    return config.chat ?? DEFAULT_CHAT_EXECUTOR_OPTIONS;
+  } catch (err) {
+    console.warn(
+      `Failed to load tim config for project ${projectId} when loading Chat options: ${err as Error}`
+    );
+    return DEFAULT_CHAT_EXECUTOR_OPTIONS;
   }
 }
 

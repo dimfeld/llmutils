@@ -16,6 +16,7 @@ import {
   getDashboardData,
   getPlanDetailRouteData,
   getPlansPageData,
+  loadChatExecutorOptionsForProject,
   loadProofConfiguredForProject,
   toPlanDetailView,
   toPlanReviewListItems,
@@ -68,7 +69,10 @@ describe('lib/server/plans_browser', () => {
 
     vi.mocked(loadEffectiveConfig).mockImplementation(async (_overridePath, options) => {
       if (options?.cwd === '/tmp/repo-plans-browser-1') {
-        return { updateDocs: { mode: 'after-completion', applyLessons: true } } as any;
+        return {
+          updateDocs: { mode: 'after-completion', applyLessons: true },
+          chat: [{ executor: 'codex-cli', model: 'gpt-5.6-luna:high' }],
+        } as any;
       }
       if (options?.cwd === '/tmp/repo-plans-browser-2') {
         return { updateDocs: { mode: 'never', applyLessons: false } } as any;
@@ -286,6 +290,12 @@ describe('lib/server/plans_browser', () => {
     vi.mocked(loadEffectiveConfig).mockResolvedValue({ proofGeneration: {} } as any);
 
     await expect(loadProofConfiguredForProject(db, projectId)).resolves.toBe(false);
+  });
+
+  test('loadChatExecutorOptionsForProject reads choices from the project git root', async () => {
+    await expect(loadChatExecutorOptionsForProject(db, projectId)).resolves.toEqual([
+      { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
+    ]);
   });
 
   test('getDashboardData includes reviewed plans and omits pending dependents', async () => {
