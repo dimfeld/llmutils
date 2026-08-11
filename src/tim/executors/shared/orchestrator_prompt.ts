@@ -1,6 +1,7 @@
 import {
   buildBatchReviewRejectionGuidance,
   buildFinalBatchReviewGuidance,
+  buildFullPlanReviewCommand,
   buildReviewCommand,
   buildReviewIterationGuidance,
   buildReviewRejectionGuidance,
@@ -203,7 +204,7 @@ Decision guidance: ${instructions}
 function buildAvailableAgents(planId: string, options: OrchestrationOptions): string {
   const executorFlag = buildSubagentExecutorFlag(options);
   const reviewer = options.batchMode
-    ? `- **Full-plan reviewer**: Only when the selected batch completes every remaining task, run \`${buildReviewCommand(planId, options)}\` via the shell command tool. Do not use \`tim subagent reviewer\` for selected-task batch reviews.`
+    ? `- **Full-plan reviewer**: Only when the selected batch completes every remaining task, run \`${buildFullPlanReviewCommand(planId)}\` via the shell command tool, without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use \`tim subagent reviewer\` for selected-task batch reviews.`
     : `- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)`;
   return `## Available Agents
 
@@ -252,7 +253,9 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
    - In the input, instruct the tester to run tests and fix any failures
    - Include relevant context from the implementer's output in the input`;
 
-  const reviewCommand = buildReviewCommand(planId, options);
+  const reviewCommand = options.batchMode
+    ? buildFullPlanReviewCommand(planId)
+    : buildReviewCommand(planId, options);
   const reviewExecutorGuidance = options.reviewExecutor
     ? `   - Use the review executor override provided: \`--executor ${options.reviewExecutor}\`.`
     : '';
@@ -315,7 +318,9 @@ After marking tasks done, commit your changes with a descriptive message about w
  * Builds the important guidelines section
  */
 function buildImportantGuidelines(planId: string, options: OrchestrationOptions): string {
-  const reviewCommand = buildReviewCommand(planId, options);
+  const reviewCommand = options.batchMode
+    ? buildFullPlanReviewCommand(planId)
+    : buildReviewCommand(planId, options);
   const reviewGuidelines = options.batchMode
     ? `- **Review each selected task batch yourself.** Do not run \`tim subagent reviewer\` for per-batch review. You may start your own native review subagent if useful, but you must assess its findings and own the result.
 - Reserve \`${reviewCommand}\` for the final full-plan review that runs only after all plan tasks are complete.
@@ -447,7 +452,9 @@ export function wrapWithOrchestrationSimple(
   });
   const executorFlag = buildSubagentExecutorFlag(options);
   const dynamicGuidance = buildDynamicExecutorGuidance(options);
-  const reviewCommand = buildReviewCommand(planId, options);
+  const reviewCommand = options.batchMode
+    ? buildFullPlanReviewCommand(planId)
+    : buildReviewCommand(planId, options);
   const reviewExecutorGuidance = options.reviewExecutor
     ? `   - Use the review executor override provided: \`--executor ${options.reviewExecutor}\`.`
     : '';
@@ -457,7 +464,7 @@ export function wrapWithOrchestrationSimple(
 You are coordinating a tim streamlined two-phase workflow (implement → review) for the tasks below. tim is a tool for managing step-by-step project plans.`;
 
   const reviewerAgent = options.batchMode
-    ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${reviewCommand}\`. Do not use it for the selected-task batch review.`
+    ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${reviewCommand}\` without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use it for the selected-task batch review.`
     : `- **Reviewer**: Run \`${reviewCommand}\` via the shell command tool`;
   const availableAgents = `## Available Agents
 
@@ -624,7 +631,7 @@ You MUST enforce TDD order:
 You have three specialized subagents available via the shell command tool:
 - **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${buildReviewCommand(planId, options)}\`. Do not use it for the selected-task batch review.` : `- **Reviewer**: Run \`${buildReviewCommand(planId, options)}\` via the shell command tool`}
+${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${buildFullPlanReviewCommand(planId)}\` without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use it for the selected-task batch review.` : `- **Reviewer**: Run \`${buildReviewCommand(planId, options)}\` via the shell command tool`}
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
 
@@ -636,7 +643,7 @@ You have four specialized subagents available via the shell command tool:
 - **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${buildReviewCommand(planId, options)}\`. Do not use it for the selected-task batch review.` : `- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)`}
+${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${buildFullPlanReviewCommand(planId)}\` without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use it for the selected-task batch review.` : `- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)`}
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
 
@@ -674,7 +681,9 @@ Each subagent command may take a long time to complete because it may run multip
       ? '7'
       : '6';
 
-  const reviewCommand = buildReviewCommand(planId, options);
+  const reviewCommand = options.batchMode
+    ? buildFullPlanReviewCommand(planId)
+    : buildReviewCommand(planId, options);
   const reviewExecutorGuidance = options.reviewExecutor
     ? `   - Use the review executor override provided: \`--executor ${options.reviewExecutor}\`.`
     : '';

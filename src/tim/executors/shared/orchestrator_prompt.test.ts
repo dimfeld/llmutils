@@ -52,8 +52,17 @@ describe('orchestrator_prompt failure protocol', () => {
   });
 
   it('requires a full-plan bookend review when a batch completes all remaining tasks', () => {
-    const out = wrapWithOrchestration('Context', '123', { batchMode: true });
+    const out = wrapWithOrchestration('Context', '123', {
+      batchMode: true,
+      reviewExecutor: 'codex-cli',
+    });
     expect(out).toContain('without any `--task-index` or `--since` arguments');
+    expect(out).toContain(
+      'without any `--executor` option so the review runs with all configured agents for full coverage'
+    );
+    expect(out).not.toContain(
+      'tim subagent reviewer 123 --print --output-file <output_path> --executor codex-cli'
+    );
     expect(out).toContain('entire completed plan state is reviewed before you stop');
     expect(out).toContain('final-plan review sequence');
   });

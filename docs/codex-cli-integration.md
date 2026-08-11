@@ -112,9 +112,11 @@ orchestrator to read and apply the file.
 `--executor` / `defaultSubagentExecutor` and dynamic subagent instructions are
 reflected in the orchestration prompt the same way as for Claude.
 `--review-executor` is reflected in prompts that invoke `tim subagent reviewer`,
-which delegates to the `tim review` handler. In batch mode the override therefore
-applies to the final full-plan review, not the orchestrator-owned selected-task
-reviews. Ordinary reviewer-subagent passes are stateless, so the orchestration
+which delegates to the `tim review` handler. It applies to ordinary reviewer-
+subagent passes. The final full-plan review intentionally omits `--executor` so
+the review can run all configured agents for full coverage. In batch mode this
+applies after the orchestrator-owned selected-task reviews. Ordinary
+reviewer-subagent passes are stateless, so the orchestration
 prompt picks the scope of each pass: the first review of a batch and the review
 that ends the loop cover the complete declared task or plan scope, while
 intermediate fix-verification reviews use `--since <commit>` over the same task

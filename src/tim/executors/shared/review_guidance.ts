@@ -13,6 +13,10 @@ export function buildReviewCommand(planId: string, options: OrchestrationOptions
   return baseCommand;
 }
 
+export function buildFullPlanReviewCommand(planId: string): string {
+  return `tim subagent reviewer ${planId} --print --output-file <output_path>`;
+}
+
 export function buildReviewRejectionGuidance(planId: string): string {
   return `After each rejection, immediately record the finding with \`tim review-issues reject ${planId} --from-review <output.json> --issue <n> --reason "..."\`. Use the same \`<output.json>\` path passed to the reviewer's \`--output-file\` and the finding's 1-based index in that output. Later reviews load these rejections automatically, so do not re-type them.`;
 }
@@ -64,7 +68,7 @@ export function buildFinalBatchReviewGuidance(
   }
 
   const structuralPassWillRun: boolean = structuralPassApplies(options);
-  const reviewCommand = buildReviewCommand(planId, options);
+  const reviewCommand = buildFullPlanReviewCommand(planId);
   const fixVerificationInvocation: string = buildReviewFixVerificationInvocation(
     reviewCommand,
     'full-plan'
