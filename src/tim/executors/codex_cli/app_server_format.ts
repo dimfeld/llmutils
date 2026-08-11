@@ -88,6 +88,67 @@ function extractTextField(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
+function extractRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function formatAutoApprovalAction(payload: Record<string, unknown>): string {
+  const action = extractRecord(payload.action);
+  if (!action) {
+    return 'Reviewing an automatic approval action.';
+  }
+
+  const actionType = extractTextField(action.type) ?? 'unknown';
+  const source = extractTextField(action.source);
+  const command = normalizeCommand(action.command);
+  const cwd = extractTextField(action.cwd);
+  const lines = [`Action: ${actionType}`];
+
+  if (source) {
+    lines.push(`Source: ${source}`);
+  }
+  if (command) {
+    lines.push(`Command:\n${command}`);
+  }
+  if (cwd) {
+    lines.push(`Working directory: ${cwd}`);
+  }
+
+  return lines.join('\n');
+}
+
+function formatAutoApprovalReview(payload: Record<string, unknown>): string {
+  const review = extractRecord(payload.review);
+  if (!review) {
+    return 'No review result was provided.';
+  }
+
+  const status = extractTextField(review.status) ?? 'unknown';
+  const decisionSource = extractTextField(payload.decisionSource);
+  const riskLevel = extractTextField(review.riskLevel);
+  const userAuthorization = extractTextField(review.userAuthorization);
+  const rationale = extractTextField(review.rationale);
+  const lines = [`Status: ${status}`];
+
+  if (decisionSource) {
+    lines.push(`Decision source: ${decisionSource}`);
+  }
+  if (riskLevel) {
+    lines.push(`Risk level: ${riskLevel}`);
+  }
+  if (userAuthorization) {
+    lines.push(`User authorization: ${userAuthorization}`);
+  }
+  if (rationale) {
+    lines.push(`Rationale: ${rationale}`);
+  }
+
+  return lines.join('\n');
+}
+
 function extractStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((entry) => typeof entry === 'string') : [];
 }
@@ -706,6 +767,40 @@ export function createAppServerFormatter(model?: string) {
               },
             }
           : { type: method };
+      }
+
+      if (lowerMethod === 'llm/item/autoapprovalreview/started') {
+        return {
+          type: method,
+          structured: {
+            type: 'llm_tool_use',
+            timestamp: ts,
+            toolName: 'Automatic Approval Review',
+            inputSummary: formatAutoApprovalAction(payload),
+          },
+        };
+      }
+
+      if (lowerMethod === 'llm/item/autoapprovalreview/completed') {
+        const review = extractRecord(payload.review);
+        return {
+          type: method,
+          structured: {
+            type: 'llm_tool_result',
+            timestamp: ts,
+            toolName: 'Automatic Approval Review',
+            resultSummary: formatAutoApprovalReview(payload),
+            result: review,
+          },
+        };
+      }
+
+      if (
+        lowerMethod === 'llm/guardianwarning' &&
+        extractTextField(payload.message)?.startsWith('Automatic approval review ')
+      ) {
+        // The completed auto-approval review has the same rationale in a result message.
+        return { type: method };
       }
 
       if (

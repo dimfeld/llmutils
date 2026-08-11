@@ -301,6 +301,77 @@ describe('createAppServerFormatter', () => {
     );
   });
 
+  test('formats automatic approval review events without repeating the command', () => {
+    const formatter = createAppServerFormatter();
+    const command = 'gh api graphql -f query=submitPullRequestReview';
+
+    const started = formatter.handleNotification('llm/item/autoApprovalReview/started', {
+      reviewId: 'review-1',
+      review: { status: 'inProgress', riskLevel: null, userAuthorization: null, rationale: null },
+      action: {
+        type: 'command',
+        source: 'unifiedExec',
+        command,
+        cwd: '/repo',
+      },
+    });
+    expect(started.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_use',
+        toolName: 'Automatic Approval Review',
+        inputSummary: [
+          'Action: command',
+          'Source: unifiedExec',
+          `Command:\n${command}`,
+          'Working directory: /repo',
+        ].join('\n'),
+      })
+    );
+    expect(started.structured).not.toEqual(expect.objectContaining({ input: expect.anything() }));
+
+    const completed = formatter.handleNotification('llm/item/autoApprovalReview/completed', {
+      reviewId: 'review-1',
+      decisionSource: 'agent',
+      review: {
+        status: 'approved',
+        riskLevel: 'medium',
+        userAuthorization: 'high',
+        rationale: 'The user authorized this scoped PR review comment.',
+      },
+      action: { type: 'command', command, cwd: '/repo' },
+    });
+    expect(completed.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_result',
+        toolName: 'Automatic Approval Review',
+        resultSummary: [
+          'Status: approved',
+          'Decision source: agent',
+          'Risk level: medium',
+          'User authorization: high',
+          'Rationale: The user authorized this scoped PR review comment.',
+        ].join('\n'),
+        result: {
+          status: 'approved',
+          riskLevel: 'medium',
+          userAuthorization: 'high',
+          rationale: 'The user authorized this scoped PR review comment.',
+        },
+      })
+    );
+    expect(JSON.stringify(completed.structured)).not.toContain(command);
+  });
+
+  test('suppresses guardian warnings that duplicate automatic approval review results', () => {
+    const formatter = createAppServerFormatter();
+
+    expect(
+      formatter.handleNotification('llm.guardianWarning', {
+        message: 'Automatic approval review approved.',
+      })
+    ).toEqual({ type: 'llm.guardianWarning' });
+  });
+
   test('formats in-progress collab agent tool call items as tool use', () => {
     const formatter = createAppServerFormatter();
     const message = formatter.handleNotification('item/started', {
