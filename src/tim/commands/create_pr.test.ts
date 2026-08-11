@@ -176,7 +176,7 @@ describe('create_pr command helpers', () => {
       expect(prompt).toContain('Plan ID: 317');
       expect(prompt).toContain('Issue reference: DF-123');
       expect(prompt).toContain('latest(ancestors(trunk()) & ancestors(@))');
-      expect(prompt).toContain('Manual Testing Runbooks section copied from the Plan Context');
+      expect(prompt).toContain('omit this section when the plan details do not contain');
       expect(prompt).toContain('include an "Out of scope" subsection');
     });
 
