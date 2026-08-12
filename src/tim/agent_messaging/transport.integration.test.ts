@@ -90,7 +90,8 @@ async function expectProtocolError(
 async function sendRawChunks(
   socketPath: string,
   chunks: readonly Uint8Array[],
-  timeoutMs: number = 5_000
+  timeoutMs: number = 5_000,
+  closeAfterWrites: boolean = false
 ): Promise<MailboxAcknowledgement | undefined> {
   return new Promise<MailboxAcknowledgement | undefined>((resolve, reject) => {
     const socket = net.createConnection(socketPath);
@@ -129,6 +130,9 @@ async function sendRawChunks(
               });
             });
             await new Promise<void>((resolveTurn) => setImmediate(resolveTurn));
+          }
+          if (closeAfterWrites && !settled) {
+            socket.end();
           }
         } catch (error) {
           socket.destroy();
@@ -261,17 +265,34 @@ describe('agent messaging transport integration', () => {
     ).toBe(true);
     expect(workerMessages.get('worker-two')).toHaveLength(12);
 
-    const reply = await session.sendMessage(identity(workerOne), target('orchestrator'), {
-      requestId: 'worker-reply',
-      content: 'reply from worker-one',
-    });
+    const [reply, peerReply] = await Promise.all([
+      session.sendMessage(identity(workerOne), target('orchestrator'), {
+        requestId: 'worker-reply',
+        content: 'reply from worker-one',
+      }),
+      session.sendMessage(identity(workerTwo), target('worker-one'), {
+        requestId: 'peer-reply',
+        content: 'reply from worker-two',
+      }),
+    ]);
     expect(reply).toMatchObject({ success: true, delivery: 'started-idle-turn' });
-    expect(rootMessages[0]).toMatchObject({
-      sourceId: workerOne.registration.id,
-      sourceName: workerOne.registration.name,
-      targetName: 'orchestrator',
-      content: 'reply from worker-one',
-    });
+    expect(peerReply).toMatchObject({ success: true, delivery: 'steered' });
+    expect(rootMessages).toContainEqual(
+      expect.objectContaining({
+        sourceId: workerOne.registration.id,
+        sourceName: workerOne.registration.name,
+        targetName: 'orchestrator',
+        content: 'reply from worker-one',
+      })
+    );
+    expect(workerMessages.get('worker-one')).toContainEqual(
+      expect.objectContaining({
+        sourceId: workerTwo.registration.id,
+        sourceName: workerTwo.registration.name,
+        targetName: workerOne.registration.name,
+        content: 'reply from worker-two',
+      })
+    );
   });
 
   test('enforces exact UTF-8 and pending FIFO boundaries through the session client', async () => {
@@ -325,6 +346,20 @@ describe('agent messaging transport integration', () => {
     expect(targetHandle.receiver.drainPending().map((entry) => entry.request.content)).toEqual(
       Array.from({ length: MAX_PENDING_MESSAGES_PER_RECIPIENT }, (_, index) => `queue-${index + 1}`)
     );
+    expect(targetHandle.receiver.pendingCount).toBe(0);
+
+    const afterDrainAcknowledgement = await session.sendMessage(
+      identity(root),
+      target('limit-target'),
+      { requestId: 'after-drain', content: 'after-drain' }
+    );
+    expect(afterDrainAcknowledgement).toMatchObject({
+      success: true,
+      delivery: 'queued',
+    });
+    expect(targetHandle.receiver.drainPending().map((entry) => entry.request.content)).toEqual([
+      'after-drain',
+    ]);
   });
 
   test('isolates malformed and fragmented low-level clients from a healthy receiver', async () => {
@@ -375,11 +410,57 @@ describe('agent messaging transport integration', () => {
     expect(
       await sendRawChunks(fragmentedTarget.registration.socketPath, [Buffer.from('not-json\n')])
     ).toBe(undefined);
+    const recoverableMalformed = Buffer.from(
+      JSON.stringify({
+        protocolVersion: 1,
+        kind: 'message',
+        requestId: 'recoverable-malformed',
+      }) + '\n',
+      'utf8'
+    );
+    expect(
+      await sendRawChunks(fragmentedTarget.registration.socketPath, [recoverableMalformed])
+    ).toMatchObject({
+      requestId: 'recoverable-malformed',
+      success: false,
+      error: { code: 'invalid_message' },
+    });
+    expect(
+      await sendRawChunks(
+        fragmentedTarget.registration.socketPath,
+        [Buffer.from('{"protocolVersion":1,"kind":"message"', 'utf8')],
+        5_000,
+        true
+      )
+    ).toBeUndefined();
+    expect(
+      await sendRawChunks(fragmentedTarget.registration.socketPath, [Buffer.from([0xc3, 0x0a])])
+    ).toBeUndefined();
     expect(
       await sendRawChunks(fragmentedTarget.registration.socketPath, [
         Buffer.alloc(MAX_MAILBOX_FRAME_BYTES + 1, 0x78),
       ])
     ).toBeUndefined();
+
+    const spoofedRequest = buildMailboxMessageRequest(
+      { id: 'spoofed-source', name: 'spoofed-source' },
+      {
+        requestId: 'spoofed-source-request',
+        targetId: healthyTarget.registration.id,
+        targetName: healthyTarget.registration.name,
+        content: 'must not be delivered',
+      }
+    );
+    expect(
+      await sendRawChunks(healthyTarget.registration.socketPath, [
+        Buffer.from(encodeMailboxFrame(spoofedRequest), 'utf8'),
+      ])
+    ).toMatchObject({
+      requestId: 'spoofed-source-request',
+      success: false,
+      error: { code: 'unknown_source' },
+    });
+    expect(healthyMessages).toHaveLength(0);
 
     const healthyAcknowledgement = await session.sendMessage(
       identity(root),
@@ -398,9 +479,21 @@ describe('agent messaging transport integration', () => {
   test('maps a closed receiver to a stale target and removes all session resources', async () => {
     const session = await createSession();
     const root = await register(session, orchestratorDraft('cleanup-root'), async () => 'steered');
+    await expectProtocolError(
+      session.sendMessage(identity(root), target('missing-target'), {
+        requestId: 'missing-send',
+        content: 'must fail promptly',
+      }),
+      'unknown_target'
+    );
     const staleTarget = await register(
       session,
       subagentDraft('stale-target', 'stale-target'),
+      async () => 'steered'
+    );
+    const malformedTarget = await register(
+      session,
+      subagentDraft('malformed-target', 'malformed-target'),
       async () => 'steered'
     );
     const healthyTarget = await register(
@@ -413,12 +506,26 @@ describe('agent messaging transport integration', () => {
       rootPath,
       session.runtime.registrationPath(root.registration.id),
       session.runtime.registrationPath(staleTarget.registration.id),
+      session.runtime.registrationPath(malformedTarget.registration.id),
       session.runtime.registrationPath(healthyTarget.registration.id),
       root.registration.socketPath,
       staleTarget.registration.socketPath,
+      malformedTarget.registration.socketPath,
       healthyTarget.registration.socketPath,
     ];
 
+    await fs.writeFile(
+      session.runtime.registrationPath(malformedTarget.registration.id),
+      '{malformed registration\n',
+      'utf8'
+    );
+    await expectProtocolError(
+      session.sendMessage(identity(root), target('malformed-target'), {
+        requestId: 'malformed-target-send',
+        content: 'must fail promptly',
+      }),
+      'target_stale'
+    );
     await staleTarget.receiver.close();
     await expectProtocolError(
       session.sendMessage(identity(root), target('stale-target'), {
