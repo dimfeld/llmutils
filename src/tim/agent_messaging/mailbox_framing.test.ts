@@ -6,6 +6,7 @@ import {
   MAX_MAILBOX_FRAME_BYTES,
   MailboxProtocolError,
   buildMailboxMessageRequest,
+  buildMailboxSuccessAcknowledgement,
   encodeMailboxFrame,
   parseMailboxFrame,
 } from './mailbox_protocol.js';
@@ -88,14 +89,57 @@ describe('bounded mailbox JSONL framing', () => {
     expectMailboxError(() => decoder.push(Buffer.from([0xc3, 0x0a])), 'invalid_utf8');
   });
 
+  test('rejects invalid UTF-8 split across chunks and closes the decoder', () => {
+    const decoder = new MailboxJsonlDecoder();
+    expect(decoder.push(Buffer.from([0xe2]))).toEqual([]);
+    expect(decoder.push(Buffer.from([0x28]))).toEqual([]);
+    expectMailboxError(() => decoder.push(Buffer.from([0xa1, 0x0a])), 'invalid_utf8');
+    expect(decoder.pendingBytes).toBe(0);
+    expectMailboxError(() => decoder.push(Buffer.from(requestLine, 'utf8')), 'runtime_closed');
+  });
+
   test('rejects invalid UTF-8 and incomplete valid frames at connection close', () => {
     const invalidDecoder = new MailboxJsonlDecoder();
     invalidDecoder.push(Buffer.from([0xc3]));
     expectMailboxError(() => invalidDecoder.finish(), 'invalid_utf8');
+    expectMailboxError(() => invalidDecoder.finish(), 'runtime_closed');
+    expectMailboxError(
+      () => invalidDecoder.push(Buffer.from(requestLine, 'utf8')),
+      'runtime_closed'
+    );
 
     const incompleteDecoder = new MailboxJsonlDecoder();
     incompleteDecoder.push(Buffer.from('{"kind":"message"}', 'utf8'));
     expectMailboxError(() => incompleteDecoder.finish(), 'incomplete_frame');
+    expect(incompleteDecoder.pendingBytes).toBe(0);
+    expectMailboxError(() => incompleteDecoder.finish(), 'runtime_closed');
+    expectMailboxError(
+      () => incompleteDecoder.push(Buffer.from(requestLine, 'utf8')),
+      'runtime_closed'
+    );
+  });
+
+  test('supports an explicitly documented empty-line policy', () => {
+    const decoder = new MailboxJsonlDecoder({ rejectEmptyLines: false });
+    expect(decoder.push(Buffer.from('\n', 'utf8'))).toEqual(['']);
+    expect(decoder.decodedFrameCount).toBe(1);
+    decoder.finish();
+  });
+
+  test('accepts a frame exactly at the configured byte limit and rejects an impossible partial frame', () => {
+    const decoder = new MailboxJsonlDecoder({ maxFrameBytes: 8 });
+    expect(decoder.push(Buffer.from('1234567', 'utf8'))).toEqual([]);
+    expect(decoder.pendingBytes).toBe(7);
+    expect(decoder.push(Buffer.from('\n', 'utf8'))).toEqual(['1234567']);
+    decoder.finish();
+
+    const oversizedPartialDecoder = new MailboxJsonlDecoder({ maxFrameBytes: 8 });
+    expectMailboxError(
+      () => oversizedPartialDecoder.push(Buffer.from('12345678', 'utf8')),
+      'frame_too_large'
+    );
+    expect(oversizedPartialDecoder.pendingBytes).toBe(0);
+    expectMailboxError(() => oversizedPartialDecoder.finish(), 'runtime_closed');
   });
 
   test('rejects oversized complete and partial frames before retaining unbounded data', () => {
@@ -129,5 +173,20 @@ describe('bounded mailbox JSONL framing', () => {
     const ackPolicy = new MailboxConnectionFramePolicy('ack');
     expectMailboxError(() => ackPolicy.accept(parsedRequest), 'invalid_ack');
     expectMailboxError(() => ackPolicy.complete(), 'incomplete_frame');
+
+    const acceptedAckPolicy = new MailboxConnectionFramePolicy('ack');
+    acceptedAckPolicy.accept(buildMailboxSuccessAcknowledgement('request-1', 'steered'));
+    expect(acceptedAckPolicy.hasAcceptedFrame).toBe(true);
+    acceptedAckPolicy.complete();
+  });
+
+  test('rejects invalid decoder options and frame-policy kinds', () => {
+    expect(() => new MailboxJsonlDecoder({ maxFrameBytes: 1 })).toThrow(RangeError);
+    expect(() => new MailboxJsonlDecoder({ maxFrameBytes: MAX_MAILBOX_FRAME_BYTES + 1 })).toThrow(
+      RangeError
+    );
+    expect(() => new MailboxJsonlDecoder({ maxFrames: 0 })).toThrow(RangeError);
+    expect(() => new MailboxJsonlDecoder({ rejectEmptyLines: 'no' as never })).toThrow(TypeError);
+    expect(() => new MailboxConnectionFramePolicy('other' as never)).toThrow(TypeError);
   });
 });

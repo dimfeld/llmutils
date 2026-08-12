@@ -131,7 +131,10 @@ export class MailboxJsonlDecoder {
       }
 
       const remainder = chunk.subarray(segmentStart);
-      if (this.pending.byteLength + remainder.byteLength > this.maxFrameBytes) {
+      // A partial frame must still have room for its required newline
+      // delimiter. Reject it before retaining bytes that can never form a
+      // frame within the configured bound.
+      if (this.pending.byteLength + remainder.byteLength + 1 > this.maxFrameBytes) {
         throw this.fail(
           new MailboxProtocolError(
             'frame_too_large',

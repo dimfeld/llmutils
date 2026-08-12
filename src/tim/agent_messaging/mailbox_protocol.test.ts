@@ -83,6 +83,22 @@ describe('mailbox protocol schemas', () => {
     );
   });
 
+  test('rejects every missing request field and unknown nested request data', () => {
+    const request = buildMailboxMessageRequest(source, requestInput);
+
+    for (const field of Object.keys(request)) {
+      const missingField: Record<string, unknown> = { ...request };
+      delete missingField[field];
+      expectMailboxError(() => parseMailboxMessageRequest(missingField), 'invalid_message');
+    }
+
+    expectMailboxError(
+      () =>
+        parseMailboxMessageRequest({ ...request, source: { id: source.id, name: source.name } }),
+      'invalid_message'
+    );
+  });
+
   test('accepts every canonical successful delivery disposition', () => {
     for (const delivery of ['steered', 'queued', 'started-idle-turn'] as const) {
       const acknowledgement = buildMailboxSuccessAcknowledgement('request-1', delivery);
@@ -131,9 +147,49 @@ describe('mailbox protocol schemas', () => {
     expect(MAILBOX_ERROR_CODES).toContain('invalid_ack');
   });
 
+  test('rejects every missing acknowledgement field and unsupported ack versions', () => {
+    const success = buildMailboxSuccessAcknowledgement('request-1', 'steered');
+    for (const field of Object.keys(success)) {
+      const missingField: Record<string, unknown> = { ...success };
+      delete missingField[field];
+      expectMailboxError(() => parseMailboxAcknowledgement(missingField), 'invalid_ack');
+    }
+
+    const failure = buildMailboxFailureAcknowledgement(
+      'request-1',
+      'target_stale',
+      'The target is no longer ready.'
+    );
+    for (const field of Object.keys(failure)) {
+      const missingField: Record<string, unknown> = { ...failure };
+      delete missingField[field];
+      expectMailboxError(() => parseMailboxAcknowledgement(missingField), 'invalid_ack');
+    }
+    expectMailboxError(
+      () => parseMailboxAcknowledgement({ ...failure, protocolVersion: 2 }),
+      'unsupported_version'
+    );
+    expectMailboxError(
+      () => parseMailboxAcknowledgement({ ...failure, protocolVersion: undefined }),
+      'unsupported_version'
+    );
+    expectMailboxError(
+      () => parseMailboxAcknowledgement({ ...failure, error: { ...failure.error, extra: true } }),
+      'invalid_ack'
+    );
+
+    const missingErrorMessage: Record<string, unknown> = {
+      ...failure,
+      error: { code: failure.error.code },
+    };
+    expectMailboxError(() => parseMailboxAcknowledgement(missingErrorMessage), 'invalid_ack');
+  });
+
   test('accepts exact UTF-8 message content and rejects one byte above it', () => {
     const asciiAtLimit = 'a'.repeat(MAX_AGENT_MESSAGE_BYTES);
     const emojiAtLimit = '🚀'.repeat(MAX_AGENT_MESSAGE_BYTES / 4);
+    const twoByteAtLimit = 'é'.repeat(MAX_AGENT_MESSAGE_BYTES / 2);
+    const threeByteAtLimit = `${'€'.repeat(Math.floor(MAX_AGENT_MESSAGE_BYTES / 3))}a`;
 
     expect(
       buildMailboxMessageRequest(source, { ...requestInput, content: asciiAtLimit }).content
@@ -141,12 +197,27 @@ describe('mailbox protocol schemas', () => {
     expect(
       buildMailboxMessageRequest(source, { ...requestInput, content: emojiAtLimit }).content
     ).toBe(emojiAtLimit);
+    expect(
+      buildMailboxMessageRequest(source, { ...requestInput, content: twoByteAtLimit }).content
+    ).toBe(twoByteAtLimit);
+    expect(Buffer.byteLength(threeByteAtLimit, 'utf8')).toBe(MAX_AGENT_MESSAGE_BYTES);
+    expect(
+      buildMailboxMessageRequest(source, { ...requestInput, content: threeByteAtLimit }).content
+    ).toBe(threeByteAtLimit);
 
     expectMailboxError(
       () =>
         buildMailboxMessageRequest(source, {
           ...requestInput,
           content: `${emojiAtLimit}a`,
+        }),
+      'message_too_large'
+    );
+    expectMailboxError(
+      () =>
+        buildMailboxMessageRequest(source, {
+          ...requestInput,
+          content: `${'€'.repeat(Math.floor(MAX_AGENT_MESSAGE_BYTES / 3))}aa`,
         }),
       'message_too_large'
     );
@@ -173,5 +244,16 @@ describe('mailbox protocol schemas', () => {
   test('rejects oversized complete JSON lines before JSON parsing', () => {
     const oversizedLine = 'a'.repeat(MAX_MAILBOX_FRAME_BYTES);
     expectMailboxError(() => parseMailboxFrame(oversizedLine), 'frame_too_large');
+  });
+
+  test('measures complete frame limits in UTF-8 bytes including the delimiter', () => {
+    const exactLimitLine = 'a'.repeat(MAX_MAILBOX_FRAME_BYTES - 1);
+    expectMailboxError(() => parseMailboxFrame(exactLimitLine), 'invalid_message');
+
+    const multibyteLine = `"${'é'.repeat(Math.floor((MAX_MAILBOX_FRAME_BYTES - 3) / 2))}"`;
+    expect(Buffer.byteLength(`${multibyteLine}\n`, 'utf8')).toBeLessThanOrEqual(
+      MAX_MAILBOX_FRAME_BYTES
+    );
+    expectMailboxError(() => parseMailboxFrame(multibyteLine), 'invalid_message');
   });
 });
