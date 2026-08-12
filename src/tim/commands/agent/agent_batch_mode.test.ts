@@ -2054,6 +2054,10 @@ describe('timAgent - Batch Mode Execution Loop', () => {
         models: { execution: 'test-model' },
         postApplyCommands: [],
         planAutocompleteStatus: 'done',
+        proofGeneration: {
+          mode: 'after-completion',
+          instructions: 'Capture proof artifacts.',
+        },
       });
       // Stubbed result standing in for a completion review that saved issues
       // (the real severity partitioning is covered in review.test.ts). What
@@ -2100,6 +2104,10 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
       expect(finalPlan.status).toBe('needs_review');
       expect(removePlanAssignment).not.toHaveBeenCalled();
+      expect(runProofGenerationSpy).not.toHaveBeenCalled();
+      expect(logSpy).toHaveBeenCalledWith(
+        'Skipping proof generation: final review saved 1 non-rejected review issue.'
+      );
     });
   });
 

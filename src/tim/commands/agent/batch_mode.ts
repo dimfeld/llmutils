@@ -554,6 +554,7 @@ Available tasks:\n\n${taskDescriptions}`,
           finalReview === false || (initialCompletedTaskCount === 0 && iteration === 1);
         let planStillCompleteAfterReview = true;
         let finalReviewSavedIssues = false;
+        let finalReviewSavedIssueCount = 0;
         if (!shouldSkipFinalReview) {
           const isNonInteractiveReview = terminalInput === false;
           sendStructured({
@@ -584,6 +585,7 @@ Available tasks:\n\n${taskDescriptions}`,
 
             if (isNonInteractiveReview && (reviewResult?.issuesSaved ?? 0) > 0) {
               finalReviewSavedIssues = true;
+              finalReviewSavedIssueCount = reviewResult?.issuesSaved ?? 0;
               planStillCompleteAfterReview = false;
               await setPlanStatusById(updatedPlanData.id, 'needs_review', baseDir, currentPlanFile);
             } else if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
@@ -702,6 +704,16 @@ Available tasks:\n\n${taskDescriptions}`,
               warn(`Proof generation failed: ${err as Error}`);
             }
           }
+        } else if (
+          !planStillCompleteAfterReview &&
+          finalReviewSavedIssues &&
+          config.proofGeneration?.mode === 'after-completion'
+        ) {
+          log(
+            `Skipping proof generation: final review saved ${
+              finalReviewSavedIssueCount
+            } non-rejected review issue${finalReviewSavedIssueCount === 1 ? '' : 's'}.`
+          );
         }
 
         if (isShuttingDown()) {
