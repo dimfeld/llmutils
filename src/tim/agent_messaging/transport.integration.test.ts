@@ -119,6 +119,23 @@ async function sendRawChunks(
       connected = true;
       void (async (): Promise<void> => {
         try {
+          if (closeAfterWrites) {
+            if (chunks.length !== 1) {
+              throw new Error('Half-close test client requires one chunk');
+            }
+            await new Promise<void>((resolveWrite, rejectWrite) => {
+              socket.write(chunks[0], (error?: Error) => {
+                if (error !== undefined && error !== null) {
+                  rejectWrite(error);
+                } else {
+                  resolveWrite();
+                }
+              });
+            });
+            await new Promise<void>((resolveTurn) => setTimeout(resolveTurn, 20));
+            socket.end();
+            return;
+          }
           for (const chunk of chunks) {
             await new Promise<void>((resolveWrite, rejectWrite) => {
               socket.write(chunk, (error?: Error) => {
@@ -130,9 +147,6 @@ async function sendRawChunks(
               });
             });
             await new Promise<void>((resolveTurn) => setImmediate(resolveTurn));
-          }
-          if (closeAfterWrites && !settled) {
-            socket.end();
           }
         } catch (error) {
           socket.destroy();
@@ -293,6 +307,37 @@ describe('agent messaging transport integration', () => {
         content: 'reply from worker-two',
       })
     );
+  });
+
+  test('returns an acknowledgement after a client half-closes its request', async () => {
+    const session = await createSession();
+    const source = await register(session, orchestratorDraft('half-close-root'), () => 'steered');
+    const targetHandle = await register(
+      session,
+      subagentDraft('half-close-target', 'half-close-target'),
+      () => 'steered'
+    );
+    const request = buildMailboxMessageRequest(identity(source), {
+      requestId: 'half-close-request',
+      targetId: targetHandle.registration.id,
+      targetName: targetHandle.registration.name,
+      content: 'request before half-close',
+    });
+
+    const acknowledgement = await sendRawChunks(
+      targetHandle.registration.socketPath,
+      [Buffer.from(encodeMailboxFrame(request), 'utf8')],
+      1_000,
+      true
+    );
+
+    expect(acknowledgement).toMatchObject({
+      protocolVersion: 1,
+      kind: 'ack',
+      requestId: 'half-close-request',
+      success: true,
+      delivery: 'steered',
+    });
   });
 
   test('enforces exact UTF-8 and pending FIFO boundaries through the session client', async () => {

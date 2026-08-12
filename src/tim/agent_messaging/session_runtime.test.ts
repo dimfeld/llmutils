@@ -565,6 +565,51 @@ describe('agent messaging session runtime', () => {
     expect(newTarget.registration.id).not.toBe(oldTarget.registration.id);
   });
 
+  test('does not let a stale registration handle deregister a same-ID replacement', async () => {
+    const session = await createSession();
+    const oldHandle = await register(
+      session,
+      subagentDraft('reused-id-handle', 'reused-handle'),
+      () => 'steered'
+    );
+    await oldHandle.deregister();
+    const replacement = await register(
+      session,
+      subagentDraft('reused-id-handle', 'reused-handle'),
+      () => 'steered'
+    );
+
+    await oldHandle.deregister();
+
+    expect(await session.runtime.readRegistration(replacement.registration.id)).toEqual(
+      replacement.registration
+    );
+    expect(replacement.receiver.isClosed).toBe(false);
+  });
+
+  test('does not let a stale AgentRegistration deregister a same-ID replacement', async () => {
+    const session = await createSession();
+    const oldHandle = await register(
+      session,
+      subagentDraft('reused-id-record', 'reused-record'),
+      () => 'steered'
+    );
+    const staleRegistration = oldHandle.registration;
+    await oldHandle.deregister();
+    const replacement = await register(
+      session,
+      subagentDraft('reused-id-record', 'reused-record'),
+      () => 'steered'
+    );
+
+    await session.deregister(staleRegistration);
+
+    expect(await session.runtime.readRegistration(replacement.registration.id)).toEqual(
+      replacement.registration
+    );
+    expect(replacement.receiver.isClosed).toBe(false);
+  });
+
   test('keeps a send bound to the target snapshot across name replacement', async () => {
     const session = await createSession();
     const source = await register(session, orchestratorDraft('snapshot-root'), () => 'steered');

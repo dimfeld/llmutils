@@ -5,13 +5,14 @@ import { createServer } from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CleanupRegistry } from '../../common/cleanup_registry.js';
 import { MAILBOX_PROTOCOL_VERSION, MAX_MAILBOX_AGENT_ID_LENGTH } from './mailbox_protocol.js';
 import {
   AGENT_MESSAGING_RUNTIME_PREFIX,
   MAX_REGISTRATION_FILE_BYTES,
+  MAX_REGISTRATION_TEMP_FILE_ATTEMPTS,
   MAX_REGISTRATION_SOCKET_PATH_BYTES,
   MAX_UNIX_SOCKET_PATH_BYTES,
   REGISTRATION_FILE_MODE,
@@ -484,6 +485,66 @@ describe('agent_messaging/runtime_dir', () => {
     expect(names).toEqual(['worker-id.json']);
     expect((await fs.promises.lstat(registrationPath)).isDirectory()).toBe(true);
     expect(names.some((name) => name.includes('.tmp.'))).toBe(false);
+  });
+
+  test('closes an opened temporary file and removes it when publication fails', async () => {
+    const runtime = await createRuntime();
+    const registration = subagentRegistration(runtime);
+    const originalOpen = fs.promises.open.bind(fs.promises);
+    let openedHandle: Awaited<ReturnType<typeof fs.promises.open>> | undefined;
+    const openSpy = vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => {
+      openedHandle = await originalOpen(...args);
+      vi.spyOn(openedHandle, 'close');
+      return openedHandle;
+    });
+    const renameSpy = vi
+      .spyOn(fs.promises, 'rename')
+      .mockRejectedValueOnce(new Error('simulated rename failure'));
+
+    try {
+      await expect(runtime.writeRegistration(registration)).rejects.toThrow(
+        'simulated rename failure'
+      );
+      expect(openSpy).toHaveBeenCalledTimes(1);
+      expect(openedHandle).toBeDefined();
+      expect(openedHandle?.close).toHaveBeenCalledTimes(1);
+      expect(renameSpy).toHaveBeenCalledTimes(1);
+      expect(
+        (await readdir(runtime.agentsDirectory)).filter((name) => name.includes('.tmp.'))
+      ).toEqual([]);
+    } finally {
+      renameSpy.mockRestore();
+      openSpy.mockRestore();
+    }
+  });
+
+  test('reports stable exhaustion when temporary registration names cannot be opened', async () => {
+    const runtime = await createRuntime();
+    const registration = subagentRegistration(runtime);
+    const originalOpen = fs.promises.open.bind(fs.promises);
+    let temporaryAttempts = 0;
+    const openSpy = vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => {
+      if (args[1] === 'wx') {
+        temporaryAttempts += 1;
+        const error = new Error('simulated temporary name collision') as NodeJS.ErrnoException;
+        error.code = 'EEXIST';
+        throw error;
+      }
+      return originalOpen(...args);
+    });
+
+    try {
+      await expect(runtime.writeRegistration(registration)).rejects.toMatchObject({
+        name: 'AgentMessagingRuntimeDirectoryError',
+        code: 'temporary_file_exhausted',
+      });
+      expect(temporaryAttempts).toBe(MAX_REGISTRATION_TEMP_FILE_ATTEMPTS);
+      expect(
+        (await readdir(runtime.agentsDirectory)).filter((name) => name.includes('.tmp.'))
+      ).toEqual([]);
+    } finally {
+      openSpy.mockRestore();
+    }
   });
 
   test('removes registrations and sockets idempotently', async () => {

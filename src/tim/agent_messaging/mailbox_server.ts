@@ -330,7 +330,7 @@ export class MailboxReceiver {
   }
 
   private async start(): Promise<void> {
-    const server = net.createServer((socket: net.Socket) => {
+    const server = net.createServer({ allowHalfOpen: true }, (socket: net.Socket) => {
       this.acceptConnection(socket);
     });
     this.server = server;
@@ -667,14 +667,30 @@ export class MailboxReceiver {
       state.socket.destroy();
       return;
     }
-    if (!state.socket.destroyed) {
-      state.socket.write(encoded, () => {
-        this.activeConnections.delete(state.socket);
-        if (!state.socket.destroyed) {
-          state.socket.end();
-        }
-      });
+    if (state.socket.destroyed) {
+      this.activeConnections.delete(state.socket);
+      return;
     }
+
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = (): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        this.activeConnections.delete(state.socket);
+        resolve();
+      };
+      state.socket.once('error', (error: Error) => {
+        debugLog('[agent mailbox] acknowledgement write failed:', error);
+        if (!state.socket.destroyed) {
+          state.socket.destroy();
+        }
+        finish();
+      });
+      state.socket.end(encoded, finish);
+    });
   }
 
   private async closeInternal(): Promise<void> {

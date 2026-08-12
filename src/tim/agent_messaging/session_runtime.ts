@@ -497,7 +497,10 @@ export class AgentMessagingSessionRuntime {
     }
     const registration = 'registration' in reference ? reference.registration : reference;
     const entry = this.byId.get(registration.id);
-    return entry?.registration.id === registration.id ? entry : undefined;
+    // Object references are handles to one registration generation. Matching
+    // only the ID would let a stale handle deregister a replacement that
+    // reused that ID.
+    return entry?.registration === registration ? entry : undefined;
   }
 
   private unpublish(entry: RegistrationEntry): void {

@@ -42,7 +42,7 @@ export const RUNTIME_DIRECTORY_MODE = 0o700;
 
 const REGISTRATION_FILE_SUFFIX = '.json';
 const TEMP_FILE_MARKER = '.tmp.';
-const MAX_REGISTRATION_TEMP_FILE_ATTEMPTS = 100;
+export const MAX_REGISTRATION_TEMP_FILE_ATTEMPTS = 100;
 
 const boundedAgentIdSchema = agentIdSchema
   .max(MAX_MAILBOX_AGENT_ID_LENGTH)
@@ -118,7 +118,8 @@ export type RuntimeDirectoryErrorCode =
   | 'unexpected_path_entry'
   | 'socket_path_too_long'
   | 'registration_not_found'
-  | 'invalid_registration_path';
+  | 'invalid_registration_path'
+  | 'temporary_file_exhausted';
 
 /** An error raised at a filesystem or registration boundary. */
 export class AgentMessagingRuntimeDirectoryError extends Error {
@@ -633,7 +634,10 @@ export class AgentMessagingRuntimeDirectory {
       }
 
       if (fileHandle === undefined || temporaryPath === undefined) {
-        throw new Error('Could not allocate a unique temporary registration file');
+        throw new AgentMessagingRuntimeDirectoryError(
+          'temporary_file_exhausted',
+          `Could not allocate a unique temporary registration file after ${MAX_REGISTRATION_TEMP_FILE_ATTEMPTS} attempts`
+        );
       }
 
       await fileHandle.writeFile(payload, { encoding: 'utf8' });

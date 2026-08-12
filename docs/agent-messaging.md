@@ -1,148 +1,150 @@
-# Agent Messaging Foundation
+# Agent Messaging Transport
 
-Contributor guidance for the agent-messaging domain: the shared vocabulary that
-lets an orchestrator address, message, and stop its subagents.
+This document describes the provider-neutral session storage and Unix-socket
+mailbox transport in `src/tim/agent_messaging/`. It does not describe agent
+tools, provider sessions, provider adapters, or lifecycle-manager behavior.
 
-**Status: dormant.** This layer currently holds only configuration, contracts,
-and identity helpers. No tool, socket, registry, temporary directory, prompt,
-provider session, or process label uses it yet. A run with the flag on behaves
-exactly like a run with it off. Later plans add the runtime on top of these
-contracts; keep the contracts as the single source of truth instead of
-redefining enums, names, or limits in a provider adapter.
+The transport gives one trusted session runtime a private namespace and one
+mailbox receiver per registered identity. It provides bounded, acknowledged
+message delivery for the later lifecycle layer.
 
-Relevant code:
+## Modules
 
-- `src/tim/agent_messaging/contracts.ts` — provider-neutral constants, enums,
-  Zod schemas, inferred types, and lifecycle classification helpers.
-- `src/tim/agent_messaging/environment.ts` — internal per-process identity
-  variables, the identity union, and pure read/write helpers.
-- `src/tim/configSchema.ts` — the `experimental.agentMessaging` flag.
-- `src/tim/configLoader.ts` — nested merge of the `experimental` block.
+- `runtime_dir.ts` creates the owner-private temporary root, contained
+  `agents` and `sockets` directories, opaque-ID paths, atomic registration
+  files, strict reads, and idempotent cleanup.
+- `mailbox_protocol.ts` defines the validated request and acknowledgement
+  envelopes, stable protocol errors, UTF-8 content limits, and frame encoding.
+- `mailbox_framing.ts` decodes bounded JSONL bytes without corrupting
+  multibyte UTF-8 characters split across chunks.
+- `mailbox_server.ts` implements one Unix receiver, source validation,
+  acknowledgement handling, duplicate request replay, and the pending FIFO.
+- `mailbox_client.ts` resolves and validates a target snapshot, sends one
+  request, waits for its acknowledgement, and maps connection races to stable
+  protocol errors.
+- `session_runtime.ts` owns registrations and receiver startup order. It
+  starts a receiver before publishing its registration and closes receivers
+  before removing the runtime root.
 
-## The experimental flag
+The shared identity, name, lifecycle, disposition, and environment contracts
+remain in `contracts.ts` and `environment.ts`. The mailbox modules consume
+those contracts and do not define provider-specific alternatives.
 
-`experimental.agentMessaging` is an optional boolean with **no schema default**.
-The canonical enabled check is exact:
+## Private runtime and registrations
 
-```ts
-const agentMessagingEnabled = config.experimental?.agentMessaging === true;
-```
+`AgentMessagingRuntimeDirectory.create()` creates a short `fs.mkdtemp()` root
+under the platform temporary directory. On Unix, the root and both child
+directories use mode `0700`. Registration files use mode `0600`.
 
-`mergeConfigs()` merges `experimental` as a nested object, so a local layer can
-override `agentMessaging` without dropping unrelated experimental keys.
+Registration and socket filenames contain only opaque agent IDs. Human names
+never enter a Unix socket path. Every derived path is checked as a strict
+descendant of the exact root created by the runtime. Absolute escapes,
+separators in IDs, symlinked components, unexpected entry types, and socket
+paths above the conservative Unix limit are rejected.
 
-`src/tim/commands/agent/agent.ts` takes **one** snapshot of the resolved boolean
-per root session and puts it in `ExecutorCommonOptions.agentMessagingEnabled`
-(`src/tim/executors/types.ts`). Both orchestration entry points forward it into
-`OrchestrationOptions` (`src/tim/executors/shared/orchestration_options.ts`):
-`claude_code.ts` and `codex_cli/orchestrator_mode.ts`. Nothing reads it. Read the
-snapshot rather than the config again in later work, so one session cannot
-change mode mid-run.
+A registration is published by writing a complete record to a unique temporary
+file in `agents`, setting its mode, and atomically renaming it to the derived
+`<id>.json` path. The receiver is already listening and its socket has been
+validated before the registration becomes visible. A failed write removes its
+temporary file and closes its handle. Temporary-name exhaustion reports the
+stable runtime-directory error code `temporary_file_exhausted`.
 
-## Contract vocabulary
+Registration records are discovery metadata. They help a transport client
+locate and validate a mailbox, but they are not authoritative lifecycle state.
+The session runtime owns active registrations in memory, and its close path is
+responsible for stopping receivers before removing registration files, sockets,
+and the exact root. Repeated deregistration and close calls are safe.
 
-Keep these words distinct; they are not interchangeable.
+## JSONL protocol
 
-| Term    | Meaning                                           |
-| ------- | ------------------------------------------------- |
-| `name`  | Model-facing address used by the tools            |
-| `id`    | Opaque runtime identity                           |
-| `type`  | Work role of a subagent                           |
-| `role`  | Authorization class: `orchestrator` or `subagent` |
-| `state` | Lifecycle state                                   |
+The mailbox uses protocol version `1`. A frame is one compact JSON object and
+one trailing newline. The encoded frame, including that newline, is limited to
+512 KiB (`MAX_MAILBOX_FRAME_BYTES`). The limit applies while buffering a
+partial line, so an untrusted connection cannot grow parser memory without
+bound.
 
-- Agent types: `implementer`, `tester`, `tdd-tests`, `reviewer`. The
-  orchestrator is **not** a fifth type — it is a role.
-- Executors: `claude-code`, `codex-cli`.
-- Lifecycle states: nonterminal `starting`, `running-active`, `running-idle`,
-  `finishing`, `stopping`; terminal `exited`, `failed`. Use
-  `isNonterminalAgentLifecycleState()` / `isTerminalAgentLifecycleState()` for
-  classification (for example, the subagent limit and `ListAgents` filtering
-  count only nonterminal agents).
-- Send acknowledgements: `steered`, `queued`, `started-idle-turn`.
-- Stop acknowledgements: `graceful-requested`, `forced`, `already-stopping`.
+The decoder is byte-oriented and validates UTF-8 across chunk boundaries. It
+supports a frame split across chunks, multiple chunks for one character, and
+the normal complete-frame path. Empty lines are rejected. A connection that
+closes with an incomplete frame is rejected. Invalid UTF-8, invalid JSON,
+unsupported protocol versions, unknown fields, invalid identities, wrong
+target fields, oversized content, and oversized frames are rejected without
+affecting other connections.
 
-### Names
+Each connection has a strict one-request/one-acknowledgement policy:
 
-An agent name is 1 to 48 characters of lowercase ASCII letters, digits, and
-hyphens, with alphanumeric first and last characters. Consecutive hyphens are
-allowed. Comparison is exact and case-sensitive: uppercase input is invalid, and
-validation never lowercases or trims silently.
+1. The client sends exactly one complete `message` request frame.
+2. The receiver validates and processes that request once.
+3. The receiver sends exactly one correlated `ack` frame.
+4. The receiver finishes its write and closes the connection.
 
-Two schemas share the grammar:
+Additional frames are rejected. Request IDs are retained in a bounded recent-ID
+map. Reusing an ID with the same request fingerprint replays the original
+acknowledgement; reusing it for different content returns
+`duplicate_message_id`.
 
-- `agentAddressSchema` — any target, including the reserved `orchestrator`
-  address. Used by `SendAgentMessage`.
-- `agentNameSchema` — rejects `orchestrator`. Used where a custom subagent name
-  is required (`StartAgent`, `StopAgent`).
+## Trusted delivery and dispositions
 
-Default `<type>-<short-slug>` name generation and collision reservation belong
-to the later registry, not to this module.
+The wire request contains the protocol version, request ID, source ID and name,
+target ID and name, content, and timestamp. The client builds source fields
+from a caller-bound trusted identity. A model-facing message input cannot
+provide or replace them.
 
-### Limits
+The receiver resolves the source against the active session registrations and
+checks the source ID and name before invoking its delivery callback. The target
+ID and name must match the receiver that accepted the connection.
 
-| Constant                             | Value  | Meaning                                |
-| ------------------------------------ | ------ | -------------------------------------- |
-| `MAX_AGENT_NAME_LENGTH`              | 48     | Name characters                        |
-| `MAX_SUBAGENTS_PER_SESSION`          | 8      | Nonterminal subagents per root session |
-| `MAX_AGENT_MESSAGE_BYTES`            | 65,536 | Message content, in UTF-8 **bytes**    |
-| `MAX_PENDING_MESSAGES_PER_RECIPIENT` | 100    | Queued messages for one recipient      |
+The delivery callback returns one of these results:
 
-The reserved orchestrator identity does not count against the subagent limit.
-`agentMessageContentSchema` measures UTF-8 bytes with `utf8ByteLength()`, not
-JavaScript string length; exactly 65,536 bytes is accepted and one more byte is
-rejected without truncation. Mailbox framing and any JSONL frame limit belong to
-the transport layer and must build on this message limit.
+- `steered`: the active recipient accepted the message for its current turn.
+- `started-idle-turn`: the recipient accepted the message to start an idle
+  turn.
+- `temporarily-unavailable`: immediate provider delivery is not available.
 
-## Tool schemas
+For `temporarily-unavailable`, the receiver stores the validated message in its
+per-recipient FIFO and returns `queued` only after the entry is retained. The
+FIFO holds at most 100 messages. The 101st message returns `queue_full`; no
+older message is evicted or truncated. `drainPending()` removes messages in
+send order and releases their queue slots.
 
-Strict, provider-neutral schemas and inferred types exist for the arguments and
-success results of `StartAgent`, `ListAgents`, `SendAgentMessage`, `StopAgent`,
-and `FinishAgent`. They carry no MCP or JSON-RPC wrapper and no provider result
-blocks, so the Claude MCP adapter and the Codex dynamic-tool adapter can
-serialize the same values. Provider adapters convert Zod failures into their own
-tool-error format.
+Message content is measured with UTF-8 byte length. Exactly 65,536 bytes is
+accepted. Larger content is rejected before socket transport or queue
+allocation.
 
-`ListAgents` returns a union discriminated on `role`: an orchestrator row has
-the literal name `orchestrator` and no `type`; a subagent row has `role:
-'subagent'` and one of the four types.
+## Stable errors and failure channels
 
-**Identity is never a model argument.** `SendAgentMessage` has no `source` /
-`sourceName` / `caller` field, `StopAgent` has no caller-role field, and
-`FinishAgent` has no target field — it acts on the calling agent only. The
-runtime binds the caller internally; putting identity in the arguments would
-make spoofing part of the public contract. All argument schemas are `.strict()`,
-so such a field fails validation.
+Mailbox protocol failures use stable codes including:
+`invalid_message`, `message_too_large`, `frame_too_large`, `unknown_source`,
+`unknown_target`, `target_not_ready`, `target_stale`, `queue_full`,
+`connection_failed`, `ack_timeout`, `invalid_ack`, `runtime_closed`,
+`duplicate_message_id`, `unsupported_version`, `invalid_utf8`,
+`incomplete_frame`, and `unexpected_frame`.
 
-## Internal identity environment
+There are two failure channels. If the receiver can safely recover a valid
+request ID, it sends a correlated failure acknowledgement with a stable code.
+If no safe ID exists, it closes the connection. The client also reports typed
+errors for lookup failures, invalid or stale registration snapshots, refused
+connections, premature closes, acknowledgement timeouts, and invalid
+acknowledgements. These channels keep malformed input local to one connection
+while giving callers prompt, model-convertible results when correlation is
+safe.
 
-Five internal variables carry per-process identity:
-`TIM_AGENT_MESSAGING_DIR`, `TIM_AGENT_ID`, `TIM_AGENT_NAME`, `TIM_AGENT_TYPE`,
-`TIM_AGENT_ROLE`. The orchestrator uses name `orchestrator`, role
-`orchestrator`, and no type; a subagent adds one of the four types.
+Missing registrations, malformed or outside-root records, replaced sockets,
+refused connections, and a target removed during a send are treated as stale
+or connection failures. A send is bound to the exact validated target ID,
+registration snapshot, socket path, and socket identity used for that attempt;
+the transport does not silently redirect it to a replacement with the same
+human name.
 
-- `withAgentEnvironmentIdentity(inheritedEnv, identity)` returns a **copy** with
-  the identity applied. It drops a stale `TIM_AGENT_TYPE` when writing an
-  orchestrator identity.
-- `readAgentEnvironmentIdentity(env)` returns `undefined` when all five values
-  are absent, the typed identity when the combination is complete, and throws
-  when any value is present but the combination is incomplete or contradictory
-  (for example role `subagent` without a type).
-- Neither helper mutates global `process.env`. Compose env per process.
+## Cleanup and scope
 
-These names are **reserved but not public**: they join
-`RESERVED_TIM_ENVIRONMENT_VARIABLES` so project `environment` config cannot
-spoof them, and they stay out of `TIM_ENVIRONMENT_CONTEXT_DEFINITIONS` and
-`renderBuiltInTimEnvironment()`. See
-[project-environment.md](project-environment.md#reserved-built-ins-vs-process-control-variables).
-No process receives these variables yet.
+Receiver cleanup first stops acceptance and closes active connections. It then
+removes the owned socket. Session cleanup closes all receivers before removing
+registrations, child directories, and the exact runtime root. An emergency
+cleanup hook provides best-effort removal, while normal callers must await the
+session close promise.
 
-## Boundaries to keep
-
-- Do not import Claude MCP types, Codex app-server types, tunnel protocol types,
-  session-server types, or provider implementations into
-  `src/tim/agent_messaging/`.
-- Do not give the config flag a Zod default, and do not shallow-replace the
-  whole `experimental` object during merge.
-- Do not add conditional prompt text, tool installation, or provider lifetime
-  changes while the flag is dormant.
+This layer does not start provider processes, keep provider sessions alive,
+install tools, change prompts, assign lifecycle states, or decide how a
+provider steers a turn. It exposes the validated transport callbacks and
+handles needed by the later lifecycle and provider plans.
