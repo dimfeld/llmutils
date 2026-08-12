@@ -366,10 +366,10 @@ describe('createAppServerFormatter', () => {
     const formatter = createAppServerFormatter();
 
     expect(
-      formatter.handleNotification('llm.guardianWarning', {
+      formatter.handleNotification('llm/guardianWarning', {
         message: 'Automatic approval review approved.',
       })
-    ).toEqual({ type: 'llm.guardianWarning' });
+    ).toEqual({ type: 'llm/guardianWarning' });
   });
 
   test('formats in-progress collab agent tool call items as tool use', () => {
