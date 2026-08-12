@@ -25,7 +25,7 @@ description of the structured review output schema
 (`src/tim/formatters/review_output_schema.ts`). Change the definitions there and
 every consumer follows.
 
-| Severity   | Meaning                                                                                                    | Gate         |
+| Severity   | Meaning                                                                                                    | Default      |
 | ---------- | ---------------------------------------------------------------------------------------------------------- | ------------ |
 | `critical` | The change is broken or dangerous as-is: data loss, security vulnerability, crash, silently wrong results. | blocking     |
 | `major`    | A real correctness, regression, or missing-coverage problem; a reviewer would block a merge on it.         | blocking     |
@@ -37,17 +37,17 @@ findings to `major`, and do not downgrade correctness problems to `minor`
 because the fix is small. Fix effort is not part of severity; only impact is.
 Pre-existing issues are always `info`, so they are automatically non-blocking.
 
-## Severity gate
+## Severity decision
 
-For findings from ordinary reviews inside the iteration loop:
+For findings from ordinary reviews inside the iteration loop, severity is a default signal, not a fixed gate. The orchestrator decides whether a finding blocks completion from its actual impact, evidence, scope, and plan context. Normally critical and major findings block, and minor and info findings do not; the orchestrator can override either default when it gives a concrete reason.
 
-- `critical` and `major` are **blocking**. They are fixed in-loop.
-- `minor` and `info` are **non-blocking**. They are rejected with a concrete
-  reason or captured immediately as follow-up tasks through the bounded handoff.
+- Findings that the orchestrator decides are **blocking** are fixed in-loop.
+- Findings that the orchestrator decides are **non-blocking** are recorded with
+  the `non-blocking` state and a concrete reason, or captured immediately as follow-up tasks through the bounded handoff.
   They never by themselves trigger an implementer round or a review rerun. A
   rejection is recorded on the plan — see the rejected-findings ledger below.
-- Legacy free-text reviewer output maps `CRITICAL`/`MAJOR` to blocking and
-  `MINOR` to non-blocking.
+- Legacy free-text reviewer output uses `CRITICAL`/`MAJOR` as a default blocking
+  signal and `MINOR` as a default non-blocking signal.
 - When the orchestrator reviews a batch itself instead of running the reviewer
   command, it assigns its own findings one of the same four severities first.
 
@@ -72,21 +72,23 @@ Sources: `src/tim/commands/review.ts` (`rejectReviewIssue`,
 
 ### Schema
 
-Review-issue objects take three optional disposition fields: `rejected`
-(boolean), `rejectedReason` (string), and `rejectedAt` (ISO timestamp). They are
-declared in `src/tim/planSchema.ts` and mirrored in `SyncReviewIssueValueSchema`
-(`src/tim/sync/types.ts`), so rejections sync between nodes like any other
+Review-issue objects take a `state` disposition field with `rejected` and
+`non-blocking` values, plus `rejectedReason` (string) and `rejectedAt` (ISO
+timestamp). The older `rejected` boolean remains supported for existing plan
+files and means `state: rejected`. These fields are declared in
+`src/tim/planSchema.ts` and mirrored in `SyncReviewIssueValueSchema`
+(`src/tim/sync/types.ts`), so dispositions sync between nodes like any other
 review issue. The change is additive and needs no DB migration: `review_issues`
 is a JSON TEXT column, and older nodes drop the unknown keys instead of failing.
 
 `reviewIssueKey()` builds an issue's identity from `category`, `content`,
-`file`, and `line` only. The rejection fields are disposition, not identity, so
-rejecting an issue does not change which issue it is.
+`file`, and `line` only. Disposition fields are not identity, so changing a
+finding's disposition does not change which issue it is.
 
 ### Lifecycle
 
-- `applyReviewIssueSave()` never overwrites the rejection ledger. Existing
-  rejected entries stay, and a new finding whose key matches a rejected entry is
+- `applyReviewIssueSave()` never overwrites the disposition ledger. Existing
+  dispositioned entries stay, and a new finding whose key matches one is
   dropped. It has two modes, selected by the disposition
   `persistReviewIssueDisposition()` is given: a `save` disposition replaces the
   open queue with this review's findings, while an `append` disposition merges
@@ -94,7 +96,7 @@ rejecting an issue does not change which issue it is.
   review's complete issue set; merge is right for a partial subset, which would
   otherwise delete open issues it never looked at.
 - `clearSavedReviewIssues()` — used by the clean-review path — removes only the
-  open entries and keeps the rejected ones. `{ all: true }` clears everything.
+  open entries and keeps dispositioned ones. `{ all: true }` clears everything.
   It returns the number of entries removed so callers report a no-op honestly.
 - `resolveSavedReviewIssues()` is unchanged. Fixed findings are verified by the
   diff-scoped rerun, so they need no ledger memory.
@@ -102,10 +104,11 @@ rejecting an issue does not change which issue it is.
   varies between runs. The dependable suppression mechanism is the prompt
   section below, not the key merge.
 
-### Recording a rejection
+### Recording a disposition
 
 ```bash
 tim review-issues reject <planId> --from-review <output.json> --issue <n> --reason "..."
+tim review-issues reject <planId> --from-review <output.json> --issue <n> --state non-blocking --reason "..."
 tim review-issues reject <planId> --content "..." --file <path> --line <n> --reason "..."
 tim review-issues clear <planId> [--all]
 ```
@@ -116,26 +119,27 @@ then comes from that file, combining `--from-review` with `--file`, `--line`,
 `--severity`, `--category`, or `--suggestion` is an error rather than a silent
 drop. The `--content` form supplies the finding explicitly and is the path for
 findings the orchestrator raised itself. `--reason` is always required. The
-command upserts through the routed plan write, so a second rejection of the same
-finding refreshes the reason and timestamp instead of adding a duplicate.
+command upserts through the routed plan write, so a second disposition of the
+same finding refreshes the reason and timestamp instead of adding a duplicate.
 
-`tim review-issues list` marks rejected entries with their reason and timestamp.
+`tim review-issues list` marks rejected and non-blocking entries with their reason and timestamp.
 `tim review --issues` acts on open issues only; when a plan has nothing but
-rejected entries it says so and points at `review-issues list`.
+dispositioned entries it says so and points at `review-issues list`.
 
 ### How later reviews see it
 
-`buildReviewPrompt()` emits a `# Previously Rejected Findings` section from the
-plan's rejected entries: each finding, its rejection reason, and the instruction
-"do not re-raise these absent new evidence; if you believe a rejection is wrong,
-say why explicitly." The section is omitted when no rejections exist.
+`buildReviewPrompt()` emits a `# Previously Dispositioned Findings` section from
+the plan's rejected and non-blocking entries. It includes each finding, its
+reason, and an instruction not to re-raise it without new evidence. The section
+is omitted when no dispositioned entries exist.
 
 The orchestrator prompt therefore no longer tells the orchestrator to re-type
-rejected findings into `--input-file`. Every review phase instructs it to run
+dispositioned findings into `--input-file`. Every review phase instructs it to run
 `tim review-issues reject ... --from-review <output.json> --issue <n>` right
 after each rejection. The orchestrator-owned batch review produces no reviewer
 output file, so that phase points at the explicit `--content/--file/--line`
-form instead. `--input-file` remains available as a fallback.
+form instead. For a valid non-blocking finding, it adds `--state non-blocking`.
+`--input-file` remains available as a fallback.
 
 ## Structural-review marker
 

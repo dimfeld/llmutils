@@ -378,6 +378,36 @@ describe('review issue disposition persistence', () => {
     expect(refreshedPlan.reviewIssues?.[0]?.rejectedAt).toEqual(expect.any(String));
   });
 
+  test('rejectReviewIssue records a non-blocking state without using the legacy rejection flag', async () => {
+    await writePlanToDb(
+      {
+        id: 303,
+        title: 'Non-blocking review issue',
+        goal: 'Record a valid deferred finding',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    await expect(
+      rejectReviewIssue(
+        303,
+        { severity: 'minor', category: 'style', content: 'Prefer the shared helper.' },
+        'This is useful cleanup but does not block the plan.',
+        testDir,
+        'non-blocking'
+      )
+    ).resolves.toEqual({ created: true });
+
+    expect((await resolvePlanByNumericId(303, testDir)).plan.reviewIssues).toEqual([
+      expect.objectContaining({
+        state: 'non-blocking',
+        rejectedReason: 'This is useful cleanup but does not block the plan.',
+      }),
+    ]);
+  });
+
   test('handleReviewIssuesRejectCommand reads an issue from structured review output', async () => {
     await writePlanToDb(
       {
@@ -943,7 +973,7 @@ describe('review issue disposition persistence', () => {
       { fromReview: outputPath, issue: '1', reason: 'Confirmed intentional.' },
       { parent: { opts: () => ({}) } }
     );
-    expect(logSpy.mock.calls.at(-1)?.[0]).toContain('Refreshed an existing rejection');
+    expect(logSpy.mock.calls.at(-1)?.[0]).toContain('Refreshed an existing disposition (rejected)');
 
     const updatedPlan = (await resolvePlanByNumericId(38, testDir)).plan;
     expect(updatedPlan.reviewIssues).toHaveLength(2);
@@ -976,7 +1006,7 @@ describe('review issue disposition persistence', () => {
       { fromReview: brandNewOutputPath, issue: '1', reason: 'Not applicable here.' },
       { parent: { opts: () => ({}) } }
     );
-    expect(logSpy.mock.calls.at(-1)?.[0]).toContain('Recorded a new rejection');
+    expect(logSpy.mock.calls.at(-1)?.[0]).toContain('Recorded a new disposition (rejected)');
     expect((await resolvePlanByNumericId(38, testDir)).plan.reviewIssues).toHaveLength(3);
   });
 
@@ -1519,20 +1549,20 @@ describe('review issue disposition persistence', () => {
     await handleReviewIssuesClearCommand(42, {}, { parent: { opts: () => ({}) } });
     expect((await resolvePlanByNumericId(42, testDir)).plan.reviewIssues).toHaveLength(1);
     expect(logSpy.mock.calls.at(-1)?.[0]).toContain(
-      'Cleared 1 open saved review issue for plan 42. Rejected entries were kept.'
+      'Cleared 1 open saved review issue for plan 42. Dispositioned entries were kept.'
     );
 
     logSpy.mockClear();
     await handleReviewIssuesClearCommand(42, { all: true }, { parent: { opts: () => ({}) } });
     expect((await resolvePlanByNumericId(42, testDir)).plan.reviewIssues).toBeUndefined();
     expect(logSpy.mock.calls.at(-1)?.[0]).toContain(
-      'Cleared 1 saved review issue for plan 42, including rejected entries.'
+      'Cleared 1 saved review issue for plan 42, including dispositioned entries.'
     );
 
     logSpy.mockClear();
     await handleReviewIssuesClearCommand(42, {}, { parent: { opts: () => ({}) } });
     expect(logSpy.mock.calls.at(-1)?.[0]).toContain(
-      'No open saved review issues to clear for plan 42. Use --all to clear rejected entries too.'
+      'No open saved review issues to clear for plan 42. Use --all to clear dispositioned entries too.'
     );
 
     logSpy.mockClear();

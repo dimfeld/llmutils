@@ -333,14 +333,14 @@ describe('orchestrator_prompt rejected finding recording guidance', () => {
       expect(out).toContain(
         `tim review-issues reject ${planId} --from-review <output.json> --issue <n> --reason "..."`
       );
+      expect(out).toContain(
+        `tim review-issues reject ${planId} --from-review <output.json> --issue <n> --state non-blocking --reason "..."`
+      );
       expect(out).toContain(`tim review-issues list ${planId}`);
       expect(out).toContain(`tim review-issues resolve ${planId} <issue-index>`);
+      expect(out).toContain('For every saved `Non-blocking` finding');
       expect(out).toContain(
-        'The resolve command removes the selected entry, including rejected entries'
-      );
-      expect(out).toContain('use the specific index and do not use `--all`');
-      expect(out).toContain(
-        'Later reviews load these rejections automatically, so do not re-type them.'
+        'Later reviews load these dispositions automatically, so do not re-type them.'
       );
       expect(out).not.toContain(
         'not relevant or acceptable to leave as-is, so the reviewer knows not to flag them again'
@@ -561,19 +561,20 @@ describe('orchestrator_prompt review iteration policy (plan 394 task 8)', () => 
       // The gate itself is ordinary-review policy and applies in both modes.
       for (const batchMode of [false, true]) {
         const out = call(batchMode);
-        expect(out).toContain('findings with severity `critical` or `major` are **blocking**');
-        expect(out).toContain('must be fixed in-loop');
-        expect(out).toContain('findings with severity `minor` or `info` are **non-blocking**');
+        expect(out).toContain('severity as a default signal');
+        expect(out).toContain('not a fixed gate');
+        expect(out).toContain('normally blocks');
+        expect(out).toContain('normally does not');
         expect(out).toContain(
-          'must be rejected with a concrete reason or captured immediately as follow-up tasks'
+          'Record valid findings you decide are non-blocking with the `non-blocking` state'
         );
         expect(out).toContain(
-          'Non-blocking findings must NEVER by themselves trigger an implementer round or another review rerun'
+          'Findings that you decide are non-blocking must NEVER by themselves trigger an implementer round or another review rerun'
         );
         expect(out).toContain(
           "reviewer's JSON output already carries a `severity` field per issue"
         );
-        expect(out).toContain('map `CRITICAL`/`MAJOR` to blocking and `MINOR` to non-blocking');
+        expect(out).toContain('use `CRITICAL`/`MAJOR` as a default blocking signal');
       }
     });
 
@@ -593,7 +594,7 @@ describe('orchestrator_prompt review iteration policy (plan 394 task 8)', () => 
       for (const batchMode of [false, true]) {
         const out = call(batchMode);
         expect(out).toContain(
-          'When you perform a review yourself rather than running the reviewer command, assign each of your own findings one of the same four severities before applying this gate'
+          'When you perform a review yourself rather than running the reviewer command, assign one of the same four severities before making the context-based decision'
         );
         expect(out).toContain('Fix effort is not part of severity; only impact is.');
       }
@@ -707,7 +708,7 @@ describe('orchestrator_prompt review iteration policy (plan 394 task 8)', () => 
       expect(out).toContain(
         'The closing full-scope review is the last ordinary review inside the four-review budget, never an extra review.'
       );
-      expect(out).toContain('findings with severity `critical` or `major` are **blocking**');
+      expect(out).toContain('A `critical` or `major` finding normally blocks');
       expect(out).toContain(
         'targeted checks pass and a complete ordinary review produces no new blocking findings'
       );

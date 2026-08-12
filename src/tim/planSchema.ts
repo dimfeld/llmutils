@@ -117,6 +117,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
           file: z.string().optional(),
           line: z.union([z.number(), z.string()]).optional(),
           suggestion: z.string().optional(),
+          state: z.enum(['rejected', 'non-blocking']).optional(),
           rejected: z.boolean().optional(),
           rejectedReason: z.string().optional(),
           rejectedAt: z.string().datetime().optional(),

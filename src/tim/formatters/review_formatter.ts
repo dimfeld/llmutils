@@ -9,6 +9,7 @@ import type { ReviewSeverityLevel, StoredReviewSeverity } from '../review_severi
 
 // Aliased from the canonical rubric definitions so the four levels are declared in one place.
 export type ReviewSeverity = ReviewSeverityLevel;
+export type ReviewIssueState = 'rejected' | 'non-blocking';
 
 type ReviewIssueLike = Omit<ReviewIssue, 'severity'> & { severity: StoredReviewSeverity };
 
@@ -21,6 +22,9 @@ export interface ReviewIssue {
   line?: number | string;
   suggestion?: string;
   source?: 'claude-code' | 'codex-cli';
+  /** A durable disposition applied after the review. */
+  state?: ReviewIssueState;
+  /** @deprecated Use `state: 'rejected'` for new records. */
   rejected?: boolean;
   rejectedReason?: string;
   rejectedAt?: string;

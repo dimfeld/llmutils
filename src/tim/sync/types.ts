@@ -64,6 +64,7 @@ export const SyncReviewIssueValueSchema = z.object({
   line: z.union([z.number(), z.string()]).optional(),
   suggestion: z.string().optional(),
   source: z.enum(['claude-code', 'codex-cli']).optional(),
+  state: z.enum(['rejected', 'non-blocking']).optional(),
   rejected: z.boolean().optional(),
   rejectedReason: z.string().optional(),
   rejectedAt: SyncIsoTimestampSchema.optional(),

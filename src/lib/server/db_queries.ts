@@ -998,16 +998,19 @@ function getReviewIssueCount(reviewIssues: string | null): number {
   try {
     const parsed: unknown = JSON.parse(reviewIssues);
     return Array.isArray(parsed)
-      ? parsed.filter((issue) => !isRejectedReviewIssue(issue)).length
+      ? parsed.filter((issue) => !hasReviewIssueDisposition(issue)).length
       : 0;
   } catch {
     return 0;
   }
 }
 
-function isRejectedReviewIssue(issue: unknown): boolean {
+function hasReviewIssueDisposition(issue: unknown): boolean {
   return (
-    typeof issue === 'object' && issue !== null && 'rejected' in issue && issue.rejected === true
+    typeof issue === 'object' &&
+    issue !== null &&
+    (('state' in issue && (issue.state === 'rejected' || issue.state === 'non-blocking')) ||
+      ('rejected' in issue && issue.rejected === true))
   );
 }
 

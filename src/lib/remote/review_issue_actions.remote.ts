@@ -51,7 +51,7 @@ const reviewIssueTaskSchema = z.object({
 });
 
 function isBulkTaskReviewIssue(issue: NonNullable<PlanSchema['reviewIssues']>[number]): boolean {
-  return issue.severity !== 'info';
+  return issue.severity !== 'info' && issue.rejected !== true && issue.state === undefined;
 }
 
 /**

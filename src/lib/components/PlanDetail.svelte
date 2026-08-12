@@ -477,7 +477,7 @@
   let errorMessage: string | null = $state(null);
   let successMessage: { text: string; connectionId?: string } | null = $state(null);
   let reviewIssueSubmitting: number | 'all' | 'clear' | null = $state(null);
-  let hideRejectedReviewIssues = $state(false);
+  let hideDispositionedReviewIssues = $state(false);
   let editingNote = $state(false);
   let noteDraft = $state(untrack(() => plan.note ?? ''));
   let savingNote = $state(false);
@@ -886,6 +886,10 @@
     return parseInt(line, 10) || Infinity;
   }
 
+  function getReviewIssueState(issue: { state?: string; rejected?: boolean }): string | undefined {
+    return issue.state ?? (issue.rejected === true ? 'rejected' : undefined);
+  }
+
   let sortedReviewIssues = $derived(
     plan.reviewIssues
       ? plan.reviewIssues
@@ -902,19 +906,20 @@
       : []
   );
   let displayedReviewIssues = $derived(
-    hideRejectedReviewIssues
-      ? sortedReviewIssues.filter(({ issue }) => issue.rejected !== true)
+    hideDispositionedReviewIssues
+      ? sortedReviewIssues.filter(({ issue }) => getReviewIssueState(issue) === undefined)
       : sortedReviewIssues
   );
-  let hasHiddenRejectedReviewIssues = $derived(
-    hideRejectedReviewIssues &&
-      (plan.reviewIssues?.some((issue) => issue.rejected === true) ?? false)
+  let hasHiddenDispositionedReviewIssues = $derived(
+    hideDispositionedReviewIssues &&
+      (plan.reviewIssues?.some((issue) => getReviewIssueState(issue) !== undefined) ?? false)
   );
   let reviewIssueCounts = $derived.by(() => {
     const issues = plan.reviewIssues ?? [];
     return {
-      nonRejected: issues.filter((issue) => issue.rejected !== true).length,
-      rejected: issues.filter((issue) => issue.rejected === true).length,
+      open: issues.filter((issue) => getReviewIssueState(issue) === undefined).length,
+      rejected: issues.filter((issue) => getReviewIssueState(issue) === 'rejected').length,
+      nonBlocking: issues.filter((issue) => getReviewIssueState(issue) === 'non-blocking').length,
     };
   });
 
@@ -1719,20 +1724,21 @@
       <div>
         <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-            Review Issues ({reviewIssueCounts.nonRejected}/{reviewIssueCounts.rejected})
+            Review Issues ({reviewIssueCounts.open} open, {reviewIssueCounts.nonBlocking} non-blocking,
+            {reviewIssueCounts.rejected} rejected)
           </h3>
           <div class="flex items-center gap-1.5">
             <label
-              for="hide-rejected-review-issues"
+              for="hide-dispositioned-review-issues"
               class="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
             >
               <input
-                id="hide-rejected-review-issues"
+                id="hide-dispositioned-review-issues"
                 type="checkbox"
-                bind:checked={hideRejectedReviewIssues}
+                bind:checked={hideDispositionedReviewIssues}
                 class="rounded border-gray-300 text-amber-600 focus:ring-amber-500 dark:border-gray-600 dark:bg-gray-800"
               />
-              Hide rejected
+              Hide dispositioned
             </label>
             <Button
               type="button"
@@ -1759,7 +1765,9 @@
         {#if displayedReviewIssues.length > 0}
           <ul class="space-y-2">
             {#each displayedReviewIssues as { issue, originalIndex } (originalIndex)}
-              {@const isRejected = issue.rejected === true}
+              {@const reviewIssueState = getReviewIssueState(issue)}
+              {@const isRejected = reviewIssueState === 'rejected'}
+              {@const isNonBlocking = reviewIssueState === 'non-blocking'}
               {@const severityClass =
                 issue.severity === 'critical'
                   ? 'border-red-500 bg-red-50 dark:bg-red-950/30'
@@ -1797,6 +1805,14 @@
                       title={issue.rejectedReason ?? 'No rejection reason recorded'}
                     >
                       Rejected
+                    </span>
+                  {/if}
+                  {#if isNonBlocking}
+                    <span
+                      class="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-semibold text-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
+                      title={issue.rejectedReason ?? 'No reason recorded'}
+                    >
+                      Non-blocking
                     </span>
                   {/if}
                   {#if issue.source}
@@ -1857,12 +1873,16 @@
                 <div class="plan-rendered-content mt-1 text-foreground">
                   {@html renderMarkdown(issue.content)}
                 </div>
-                {#if isRejected}
+                {#if reviewIssueState}
                   <div
-                    class="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
+                    class="mt-2 rounded px-2 py-1 text-xs {isRejected
+                      ? 'bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200'
+                      : 'bg-blue-50 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200'}"
                   >
-                    <span class="font-semibold">Rejection reason:</span>
-                    {issue.rejectedReason ?? 'No rejection reason recorded'}
+                    <span class="font-semibold"
+                      >{isRejected ? 'Rejection reason:' : 'Non-blocking reason:'}</span
+                    >
+                    {issue.rejectedReason ?? 'No reason recorded'}
                   </div>
                 {/if}
                 {#if issue.suggestion}
@@ -1876,9 +1896,9 @@
               </li>
             {/each}
           </ul>
-        {:else if hasHiddenRejectedReviewIssues}
+        {:else if hasHiddenDispositionedReviewIssues}
           <p class="text-xs text-muted-foreground">
-            All saved review issues are rejected. Turn off “Hide rejected” to show them.
+            All saved review issues have a disposition. Turn off “Hide dispositioned” to show them.
           </p>
         {/if}
       </div>

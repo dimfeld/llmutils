@@ -111,6 +111,8 @@ const FIX_ACTION_LABELS: Record<FixAction, string> = {
 import { createCleanupPlan, type CleanupPlanOptions } from '../utils/cleanup_plan_creator.js';
 import {
   filterActionableReviewIssues,
+  getReviewIssueState,
+  hasReviewIssueDisposition,
   partitionReviewIssues,
 } from '../utils/review_issue_filters.js';
 
@@ -372,6 +374,7 @@ export interface ReviewIssuePersistenceResult {
 
 export interface ReviewIssuesRejectOptions {
   reason?: string;
+  state?: string;
   fromReview?: string;
   issue?: string;
   file?: string;
@@ -515,7 +518,8 @@ export async function rejectReviewIssue(
   planId: number,
   issue: ReviewIssue,
   reason: string,
-  repoRoot: string
+  repoRoot: string,
+  state: 'rejected' | 'non-blocking' = 'rejected'
 ): Promise<{ created: boolean }> {
   if (reason.trim().length === 0) {
     throw new Error('--reason is required.');
@@ -525,7 +529,8 @@ export async function rejectReviewIssue(
   const rejectedIssue = validateReviewIssueForWrite(
     {
       ...issue,
-      rejected: true,
+      ...(state === 'non-blocking' ? { state } : {}),
+      rejected: state === 'rejected' ? true : undefined,
       rejectedReason: reason,
       rejectedAt,
     },
@@ -543,7 +548,8 @@ export async function rejectReviewIssue(
     reviewIssues[existingIndex] = validateReviewIssueForWrite(
       {
         ...existingIssue,
-        rejected: true,
+        ...(state === 'non-blocking' ? { state } : {}),
+        rejected: state === 'rejected' ? true : undefined,
         rejectedReason: reason,
         rejectedAt,
       },
@@ -566,25 +572,25 @@ function applyReviewIssueSave(
   mode: ReviewIssueSaveMode
 ): number {
   // Key-based merge deduplication is best-effort: content is LLM free text and can vary between
-  // runs. The robust suppression mechanism is the Previously Rejected Findings prompt section.
-  const rejectedIssues = (plan.reviewIssues ?? [])
-    .filter((issue) => issue.rejected === true)
+  // runs. The robust suppression mechanism is the previously dispositioned findings prompt section.
+  const dispositionedIssues = (plan.reviewIssues ?? [])
+    .filter((issue) => hasReviewIssueDisposition(issue))
     .map((issue) => ({ ...issue }));
-  const rejectedKeys = new Set(rejectedIssues.map((issue) => reviewIssueKey(issue)));
+  const dispositionedKeys = new Set(dispositionedIssues.map((issue) => reviewIssueKey(issue)));
   const refreshedIssues = filterActionableReviewIssues(issues)
     .map((issue) => ({ ...issue }))
-    .filter((issue) => issue.rejected !== true)
-    .filter((issue) => !rejectedKeys.has(reviewIssueKey(issue)));
+    .filter((issue) => !hasReviewIssueDisposition(issue))
+    .filter((issue) => !dispositionedKeys.has(reviewIssueKey(issue)));
 
   if (mode === 'replace') {
-    plan.reviewIssues = [...rejectedIssues, ...refreshedIssues];
+    plan.reviewIssues = [...dispositionedIssues, ...refreshedIssues];
     return refreshedIssues.length;
   }
 
   const openIssues: ReviewIssue[] = [];
   const openIssueIndexes = new Map<string, number>();
   for (const issue of plan.reviewIssues ?? []) {
-    if (issue.rejected === true) {
+    if (hasReviewIssueDisposition(issue)) {
       continue;
     }
 
@@ -606,7 +612,7 @@ function applyReviewIssueSave(
     }
   }
 
-  plan.reviewIssues = [...rejectedIssues, ...openIssues];
+  plan.reviewIssues = [...dispositionedIssues, ...openIssues];
   // Counts findings from THIS review that are now recorded on the plan, not rows added: a
   // re-found finding replaces its existing entry rather than appending a duplicate, and it is
   // still one of the findings this review saved.
@@ -614,7 +620,7 @@ function applyReviewIssueSave(
 }
 
 /**
- * Drops non-rejected review issues from `plan`, keeping the rejection ledger. Returns the number
+ * Drops open review issues from `plan`, keeping the disposition ledger. Returns the number
  * of entries removed. Shared by `clearSavedReviewIssues` and the disposition write so the two
  * cannot drift on what a clear preserves.
  */
@@ -627,14 +633,14 @@ function applyReviewIssueClear(plan: PlanSchema): number {
     return 0;
   }
 
-  const rejectedIssues = savedIssues.filter((issue) => issue.rejected === true);
-  const clearedCount = savedIssues.length - rejectedIssues.length;
+  const dispositionedIssues = savedIssues.filter((issue) => hasReviewIssueDisposition(issue));
+  const clearedCount = savedIssues.length - dispositionedIssues.length;
   if (clearedCount === 0) {
     return 0;
   }
 
-  if (rejectedIssues.length > 0) {
-    plan.reviewIssues = rejectedIssues;
+  if (dispositionedIssues.length > 0) {
+    plan.reviewIssues = dispositionedIssues;
   } else {
     delete plan.reviewIssues;
   }
@@ -642,8 +648,8 @@ function applyReviewIssueClear(plan: PlanSchema): number {
 }
 
 /**
- * Clears saved review issues. By default rejected entries are kept, because they are the plan's
- * rejection ledger rather than outstanding work; `{ all: true }` removes those too.
+ * Clears saved review issues. By default dispositioned entries are kept, because they are the
+ * plan's review ledger rather than outstanding work; `{ all: true }` removes those too.
  *
  * Returns the number of entries removed so callers can report a no-op honestly instead of claiming
  * a clear that did not happen.
@@ -712,8 +718,8 @@ export async function resolveSavedReviewIssues(
   }
 
   // The two branches are deliberately asymmetric. Explicit indexes address the same list
-  // `listSavedReviewIssues` prints, rejected entries included, so the numbering a user reads stays
-  // valid — and `formatSavedReviewIssue` marks rejected entries, so removing one is a deliberate
+  // `listSavedReviewIssues` prints dispositioned entries included, so the numbering a user reads stays
+  // valid — and `formatSavedReviewIssue` marks those entries, so removing one is a deliberate
   // act. `--all` means "clear the outstanding queue" and must not silently discard the ledger.
   const issuesToResolve =
     issueIndexes === 'all'
@@ -769,8 +775,8 @@ async function writeRemainingReviewIssues(
 }
 
 /**
- * Removes each issue that matches one of `issues` by identity, skipping rejected entries so the
- * ledger is never consumed by a resolve. Pure so the standalone resolver and the consolidated
+ * Removes each issue that matches one of `issues` by identity, skipping dispositioned entries so
+ * the ledger is never consumed by a resolve. Pure so the standalone resolver and the consolidated
  * disposition write share one definition of "resolved by identity" instead of two copies.
  */
 function removeReviewIssuesByIdentity(
@@ -783,7 +789,7 @@ function removeReviewIssuesByIdentity(
   for (const issue of issues) {
     const key = reviewIssueKey(issue);
     const index = remainingIssues.findIndex(
-      (candidate) => candidate.rejected !== true && reviewIssueKey(candidate) === key
+      (candidate) => !hasReviewIssueDisposition(candidate) && reviewIssueKey(candidate) === key
     );
     if (index >= 0) {
       remainingIssues.splice(index, 1);
@@ -801,13 +807,14 @@ function formatSavedReviewIssue(index: number, issue: ReviewIssue): string {
   const suggestion = issue.suggestion
     ? `\n    ${chalk.gray(`Suggestion: ${issue.suggestion}`)}`
     : '';
-  const rejection =
-    issue.rejected === true
-      ? `\n    ${chalk.yellow('Rejected')}: ${issue.rejectedReason ?? 'No reason recorded'}${
+  const state = getReviewIssueState(issue);
+  const disposition =
+    state !== undefined
+      ? `\n    ${chalk.yellow(state === 'rejected' ? 'Rejected' : 'Non-blocking')}: ${issue.rejectedReason ?? 'No reason recorded'}${
           issue.rejectedAt ? ` (${issue.rejectedAt})` : ''
         }`
       : '';
-  return `${index}. ${chalk.bold(issue.severity)} ${chalk.gray(issue.category)}${location}\n   ${issue.content}${suggestion}${rejection}`;
+  return `${index}. ${chalk.bold(issue.severity)} ${chalk.gray(issue.category)}${location}\n   ${issue.content}${suggestion}${disposition}`;
 }
 
 function parseReviewIssueIndexes(values: readonly string[] | undefined): number[] | 'all' {
@@ -883,7 +890,7 @@ export async function handleReviewIssuesClearCommand(
       chalk.yellow(
         options.all === true
           ? `No saved review issues to clear for plan ${planId}.`
-          : `No open saved review issues to clear for plan ${planId}. Use --all to clear rejected entries too.`
+          : `No open saved review issues to clear for plan ${planId}. Use --all to clear dispositioned entries too.`
       )
     );
     return;
@@ -893,8 +900,8 @@ export async function handleReviewIssuesClearCommand(
   log(
     chalk.green(
       options.all === true
-        ? `Cleared ${clearedCount} saved ${issueLabel} for plan ${planId}, including rejected entries.`
-        : `Cleared ${clearedCount} open saved ${issueLabel} for plan ${planId}. Rejected entries were kept.`
+        ? `Cleared ${clearedCount} saved ${issueLabel} for plan ${planId}, including dispositioned entries.`
+        : `Cleared ${clearedCount} open saved ${issueLabel} for plan ${planId}. Dispositioned entries were kept.`
     )
   );
 }
@@ -953,9 +960,15 @@ export async function handleReviewIssuesRejectCommand(
 
   const globalOpts = command.parent?.opts?.() ?? command.opts?.() ?? {};
   const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
-  const result = await rejectReviewIssue(planId, issue, reason, repoRoot);
-  const action = result.created ? 'Recorded a new rejection' : 'Refreshed an existing rejection';
-  log(chalk.green(`${action} for review issue on plan ${planId}. Reason: ${reason}`));
+  const state = options.state ?? 'rejected';
+  if (state !== 'rejected' && state !== 'non-blocking') {
+    throw new Error('Invalid --state. Expected "rejected" or "non-blocking".');
+  }
+  const result = await rejectReviewIssue(planId, issue, reason, repoRoot, state);
+  const action = result.created
+    ? 'Recorded a new disposition'
+    : 'Refreshed an existing disposition';
+  log(chalk.green(`${action} (${state}) for review issue on plan ${planId}. Reason: ${reason}`));
 }
 
 function summarizeReviewIssues(issues: readonly ReviewIssue[]): string {
@@ -3441,22 +3454,23 @@ export function formatReviewIssueForPrompt(issue: ReviewIssue, index: number): s
 export function buildPreviouslyRejectedFindingsSection(
   reviewIssues: readonly ReviewIssue[] | undefined
 ): string[] {
-  const rejectedIssues = reviewIssues?.filter((issue) => issue.rejected === true) ?? [];
-  if (rejectedIssues.length === 0) {
+  const dispositionedIssues =
+    reviewIssues?.filter((issue) => hasReviewIssueDisposition(issue)) ?? [];
+  if (dispositionedIssues.length === 0) {
     return [];
   }
 
   return [
-    `# Previously Rejected Findings`,
+    `# Previously Dispositioned Findings`,
     ``,
-    `The following findings were rejected in an earlier review:`,
+    `The following findings were either rejected or marked non-blocking in an earlier review:`,
     ``,
-    ...rejectedIssues.flatMap((issue, index) => [
+    ...dispositionedIssues.flatMap((issue, index) => [
       formatReviewIssueForPrompt(issue, index + 1),
-      `Rejection reason: ${issue.rejectedReason?.trim() || 'No rejection reason recorded.'}`,
+      `${getReviewIssueState(issue) === 'non-blocking' ? 'Non-blocking reason' : 'Rejection reason'}: ${issue.rejectedReason?.trim() || 'No reason recorded.'}`,
       ``,
     ]),
-    `Do not re-raise these absent new evidence; if you believe a rejection is wrong, say why explicitly.`,
+    `Do not re-raise these absent new evidence; if you believe a disposition is wrong, say why explicitly.`,
     ``,
   ];
 }

@@ -249,7 +249,7 @@ describe('PlanDetail action selection', () => {
       })
     );
 
-    const hideRejected = page.getByLabelText('Hide rejected');
+    const hideRejected = page.getByLabelText('Hide dispositioned');
     await expect.element(hideRejected).not.toBeChecked();
     await expect.element(page.getByText('Open finding')).toBeInTheDocument();
     await expect.element(page.getByText('Rejected finding')).toBeInTheDocument();
@@ -260,7 +260,7 @@ describe('PlanDetail action selection', () => {
     await expect.element(page.getByText('Rejected finding')).not.toBeInTheDocument();
   });
 
-  test('does not show the rejected empty state when no rejected issues exist', async () => {
+  test('does not show the dispositioned empty state when no dispositioned issues exist', async () => {
     renderPlan(
       makePlanDetail({
         reviewIssues: [
@@ -274,12 +274,12 @@ describe('PlanDetail action selection', () => {
       })
     );
 
-    await page.getByLabelText('Hide rejected').click();
+    await page.getByLabelText('Hide dispositioned').click();
 
     await expect
       .element(
         page.getByText(
-          'All saved review issues are rejected. Turn off “Hide rejected” to show them.'
+          'All saved review issues have a disposition. Turn off “Hide dispositioned” to show them.'
         )
       )
       .not.toBeInTheDocument();

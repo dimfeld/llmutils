@@ -1768,8 +1768,9 @@ reviewIssuesCommand
 
 reviewIssuesCommand
   .command('reject <planId>')
-  .description('Record a rejection for a saved or newly supplied review issue')
-  .requiredOption('--reason <reason>', 'Why this review issue is rejected')
+  .description('Record a disposition for a saved or newly supplied review issue')
+  .requiredOption('--reason <reason>', 'Why this review issue has this disposition')
+  .option('--state <state>', 'Disposition: rejected (default) or non-blocking')
   .option('--from-review <path>', 'Read the issue from a structured review output JSON file')
   .option('--issue <index>', 'One-based issue index in --from-review output')
   .option('--file <path>', 'File path for an explicitly supplied review issue')
@@ -1789,7 +1790,7 @@ reviewIssuesCommand
 reviewIssuesCommand
   .command('clear <planId>')
   .description("Clear a plan's open saved review issues")
-  .option('--all', 'Clear rejected review issues too')
+  .option('--all', 'Clear rejected and non-blocking review issues too')
   .action(async (planIdArg, options, command) => {
     const planId = parsePlanIdFromCliArg(planIdArg);
     await runWithCommandTunnelAdapter(async () => {

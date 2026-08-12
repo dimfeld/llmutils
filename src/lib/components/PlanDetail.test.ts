@@ -749,7 +749,7 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('Review Issues (1/0)');
+    expect(body).toMatch(/Review Issues \(1 open, 0 non-blocking,\s+0 rejected\)/);
     expect(body).toContain('Add all as tasks');
   });
 
@@ -771,10 +771,33 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('Review Issues (0/1)');
+    expect(body).toMatch(/Review Issues \(0 open, 0 non-blocking,\s+1 rejected\)/);
     expect(body).toContain('Rejected');
     expect(body).toContain('Rejection reason:');
     expect(body).toContain('Required for compatibility with the external API.');
+  });
+
+  test('shows non-blocking saved review issues separately from rejected issues', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          reviewIssues: [
+            {
+              severity: 'minor',
+              category: 'style',
+              content: 'Use the shared helper.',
+              state: 'non-blocking',
+              rejectedReason: 'Useful cleanup, but it does not block this plan.',
+            },
+          ],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toMatch(/Review Issues \(0 open, 1 non-blocking,\s+0 rejected\)/);
+    expect(body).toContain('Non-blocking');
+    expect(body).toContain('Non-blocking reason:');
   });
 
   test('shows the rejected issue filter disabled by default', () => {
@@ -799,8 +822,8 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('Review Issues (1/1)');
-    expect(body).toContain('Hide rejected');
+    expect(body).toMatch(/Review Issues \(1 open, 0 non-blocking,\s+1 rejected\)/);
+    expect(body).toContain('Hide dispositioned');
     expect(body).toContain('Open finding');
     expect(body).toContain('Rejected finding');
     expect(body).not.toMatch(/id="hide-rejected-review-issues"[^>]*checked/);
