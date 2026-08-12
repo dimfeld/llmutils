@@ -1,3 +1,5 @@
+import { promises as fs } from 'node:fs';
+
 import {
   MailboxClient,
   type MailboxClientOptions,
@@ -63,12 +65,99 @@ interface RegistrationEntry {
   readonly registration: AgentRegistration;
   receiver: MailboxReceiver | undefined;
   published: boolean;
+  cancelled: boolean;
   cleanupPromise: Promise<void> | undefined;
   startupPromise: Promise<SessionRegistrationHandle> | undefined;
 }
 
+interface FileIdentity {
+  readonly dev: number;
+  readonly ino: number;
+}
+
+const SESSION_RUNTIME_OPTION_KEYS = new Set(['connectionTimeoutMs', 'acknowledgementTimeoutMs']);
+const REGISTER_MAILBOX_OPTION_KEYS = new Set([
+  'registration',
+  'deliver',
+  'maxConnections',
+  'recentRequestIdLimit',
+]);
+const DEFAULT_MAX_CONNECTIONS = 64;
+const DEFAULT_RECENT_REQUEST_ID_LIMIT = 256;
+const MAX_RECEIVER_CONNECTIONS = 1024;
+const MAX_RECENT_REQUEST_ID_LIMIT = 4096;
+const MAX_MAILBOX_TIMEOUT_MS = 120_000;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function assertKnownKeys(
+  value: Record<string, unknown>,
+  allowedKeys: ReadonlySet<string>,
+  label: string
+): void {
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.has(key)) {
+      throw new AgentMessagingSessionRuntimeError(
+        'invalid_options',
+        `${label} contains an unsupported field: ${key}`
+      );
+    }
+  }
+}
+
+function validateBoundedInteger(value: unknown, label: string, maximum: number): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > maximum) {
+    throw new AgentMessagingSessionRuntimeError(
+      'invalid_options',
+      `${label} must be a safe integer from 1 through ${maximum}`
+    );
+  }
+  return value as number;
+}
+
+function validateSessionOptions(options: Record<string, unknown>): void {
+  assertKnownKeys(options, SESSION_RUNTIME_OPTION_KEYS, 'Session runtime options');
+  for (const [key, value] of Object.entries(options)) {
+    if (value !== undefined) {
+      validateBoundedInteger(value, key, MAX_MAILBOX_TIMEOUT_MS);
+    }
+  }
+}
+
+function validateRegisterOptions(options: Record<string, unknown>): void {
+  assertKnownKeys(options, REGISTER_MAILBOX_OPTION_KEYS, 'Mailbox registration options');
+  const maxConnections = validateBoundedInteger(
+    options.maxConnections === undefined ? DEFAULT_MAX_CONNECTIONS : options.maxConnections,
+    'maxConnections',
+    MAX_RECEIVER_CONNECTIONS
+  );
+  const recentRequestIdLimit = validateBoundedInteger(
+    options.recentRequestIdLimit === undefined
+      ? DEFAULT_RECENT_REQUEST_ID_LIMIT
+      : options.recentRequestIdLimit,
+    'recentRequestIdLimit',
+    MAX_RECENT_REQUEST_ID_LIMIT
+  );
+  if (recentRequestIdLimit < maxConnections) {
+    throw new AgentMessagingSessionRuntimeError(
+      'invalid_options',
+      'recentRequestIdLimit must be at least maxConnections so in-flight requests remain deduplicated'
+    );
+  }
+}
+
+function isNotFoundError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
+}
+
+function fileIdentity(stats: { dev: number; ino: number }): FileIdentity {
+  return { dev: stats.dev, ino: stats.ino };
+}
+
+function sameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
 }
 
 function registrationMatches(left: AgentRegistration, right: AgentRegistration): boolean {
@@ -104,6 +193,7 @@ export class AgentMessagingSessionRuntime {
 
   private readonly byId = new Map<string, RegistrationEntry>();
   private readonly byName = new Map<string, RegistrationEntry>();
+  private readonly entries = new Set<RegistrationEntry>();
   private closed = false;
   private closePromise: Promise<void> | undefined;
 
@@ -130,6 +220,7 @@ export class AgentMessagingSessionRuntime {
         'Agent messaging session runtime options must be an object'
       );
     }
+    validateSessionOptions(options);
     const runtime = await AgentMessagingRuntimeDirectory.create();
     try {
       return new AgentMessagingSessionRuntime(runtime, options);
@@ -157,13 +248,19 @@ export class AgentMessagingSessionRuntime {
         'Mailbox registration options must include a delivery callback'
       );
     }
+    validateRegisterOptions(options);
 
     // This validates all identity and derived-path fields before the local
     // reservation or receiver allocates a socket.
     const registration = this.runtime.createRegistration(options.registration);
-    await this.assertNoExistingRegistration(registration);
-    this.ensureOpen();
     const entry = this.reserve(registration);
+    try {
+      await this.assertNoExistingRegistrationOnDisk(registration);
+      this.ensureOpen();
+    } catch (error) {
+      this.releaseReservation(entry);
+      throw error;
+    }
     const startupPromise = this.startRegistration(entry, options);
     entry.startupPromise = startupPromise;
     return startupPromise;
@@ -175,6 +272,7 @@ export class AgentMessagingSessionRuntime {
   ): Promise<SessionRegistrationHandle> {
     const registration = entry.registration;
     let receiver: MailboxReceiver | undefined;
+    let publishedFile: FileIdentity | undefined;
     try {
       receiver = await createMailboxReceiver({
         runtime: this.runtime,
@@ -186,17 +284,15 @@ export class AgentMessagingSessionRuntime {
         recentRequestIdLimit: options.recentRequestIdLimit,
       });
       entry.receiver = receiver;
-      if (this.closed) {
-        throw new AgentMessagingSessionRuntimeError(
-          'runtime_closed',
-          'The agent messaging session runtime was closed during registration'
-        );
-      }
+      this.assertEntryActive(entry);
       await this.runtime.validateSocketPath(registration.socketPath, {
         allowMissing: false,
         requireSocket: true,
       });
+      this.assertEntryActive(entry);
       await this.runtime.writeRegistration(registration, { requireSocket: true });
+      publishedFile = await this.readRegistrationFileIdentity(registration.id);
+      this.assertEntryActive(entry);
       const published = await this.runtime.readRegistration(registration.id);
       if (!registrationMatches(published, registration)) {
         throw new AgentMessagingSessionRuntimeError(
@@ -211,6 +307,7 @@ export class AgentMessagingSessionRuntime {
           'Mailbox registration reservation was lost before publication'
         );
       }
+      this.assertEntryActive(entry);
       entry.published = true;
       const handle: SessionRegistrationHandle = {
         registration,
@@ -223,8 +320,8 @@ export class AgentMessagingSessionRuntime {
       if (receiver !== undefined) {
         await receiver.close().catch(() => undefined);
       }
-      await this.removeRegistrationIfOwned(registration).catch(() => undefined);
-      this.releaseReservation(registration, receiver);
+      await this.removeRegistrationIfOwned(registration, publishedFile).catch(() => undefined);
+      this.releaseReservation(entry);
       if (error instanceof AgentMessagingSessionRuntimeError) {
         throw error;
       }
@@ -268,7 +365,7 @@ export class AgentMessagingSessionRuntime {
       return this.closePromise;
     }
     this.closed = true;
-    const entries = [...new Set(this.byId.values())];
+    const entries = [...this.entries];
     for (const entry of entries) {
       this.unpublish(entry);
     }
@@ -285,13 +382,7 @@ export class AgentMessagingSessionRuntime {
     }
   }
 
-  private async assertNoExistingRegistration(registration: AgentRegistration): Promise<void> {
-    if (this.byId.has(registration.id) || this.byName.has(registration.name)) {
-      throw new AgentMessagingSessionRuntimeError(
-        'identity_reserved',
-        `Agent identity is already reserved: ${registration.name}`
-      );
-    }
+  private async assertNoExistingRegistrationOnDisk(registration: AgentRegistration): Promise<void> {
     try {
       await this.runtime.readRegistration(registration.id);
       throw new AgentMessagingSessionRuntimeError(
@@ -316,28 +407,52 @@ export class AgentMessagingSessionRuntime {
   }
 
   private reserve(registration: AgentRegistration): RegistrationEntry {
+    if (this.byId.has(registration.id) || this.byName.has(registration.name)) {
+      throw new AgentMessagingSessionRuntimeError(
+        'identity_reserved',
+        `Agent identity is already reserved: ${registration.name}`
+      );
+    }
     const placeholder = {
       registration,
       receiver: undefined,
       published: false,
+      cancelled: false,
       cleanupPromise: undefined,
       startupPromise: undefined,
     };
     this.byId.set(registration.id, placeholder);
     this.byName.set(registration.name, placeholder);
+    this.entries.add(placeholder);
     return placeholder;
   }
 
-  private releaseReservation(
-    registration: AgentRegistration,
-    receiver: MailboxReceiver | undefined
-  ): void {
-    const entry = this.byId.get(registration.id);
-    if (entry !== undefined && (receiver === undefined || entry.receiver === receiver)) {
-      this.byId.delete(registration.id);
-      if (this.byName.get(registration.name) === entry) {
-        this.byName.delete(registration.name);
-      }
+  private releaseReservation(entry: RegistrationEntry): void {
+    if (this.byId.get(entry.registration.id) === entry) {
+      this.byId.delete(entry.registration.id);
+    }
+    if (this.byName.get(entry.registration.name) === entry) {
+      this.byName.delete(entry.registration.name);
+    }
+    this.entries.delete(entry);
+  }
+
+  private assertEntryActive(entry: RegistrationEntry): void {
+    if (this.closed) {
+      throw new AgentMessagingSessionRuntimeError(
+        'runtime_closed',
+        'The agent messaging session runtime was closed during registration'
+      );
+    }
+    if (
+      entry.cancelled ||
+      this.byId.get(entry.registration.id) !== entry ||
+      this.byName.get(entry.registration.name) !== entry
+    ) {
+      throw new AgentMessagingSessionRuntimeError(
+        'registration_failed',
+        'Mailbox registration was cancelled before publication'
+      );
     }
   }
 
@@ -386,6 +501,7 @@ export class AgentMessagingSessionRuntime {
   }
 
   private unpublish(entry: RegistrationEntry): void {
+    entry.cancelled = true;
     entry.published = false;
     if (this.byId.get(entry.registration.id) === entry) {
       this.byId.delete(entry.registration.id);
@@ -400,23 +516,56 @@ export class AgentMessagingSessionRuntime {
       return entry.cleanupPromise;
     }
     this.unpublish(entry);
-    entry.cleanupPromise = this.cleanupEntry(entry);
+    return this.cleanupEntryOnce(entry);
+  }
+
+  private cleanupEntryOnce(entry: RegistrationEntry): Promise<void> {
+    if (entry.cleanupPromise === undefined) {
+      entry.cleanupPromise = this.cleanupEntry(entry);
+    }
     return entry.cleanupPromise;
   }
 
   private async cleanupEntry(entry: RegistrationEntry): Promise<void> {
-    if (entry.receiver === undefined && entry.startupPromise !== undefined) {
-      await entry.startupPromise.catch(() => undefined);
+    try {
+      if (entry.receiver === undefined && entry.startupPromise !== undefined) {
+        await entry.startupPromise.catch(() => undefined);
+      }
+      // The receiver owns the socket. It must stop accepting messages before
+      // discovery metadata is removed.
+      if (entry.receiver !== undefined) {
+        await entry.receiver.close();
+      }
+      await this.removeRegistrationIfOwned(entry.registration);
+    } finally {
+      this.entries.delete(entry);
     }
-    // The receiver owns the socket. It must stop accepting messages before
-    // discovery metadata is removed.
-    if (entry.receiver !== undefined) {
-      await entry.receiver.close();
-    }
-    await this.removeRegistrationIfOwned(entry.registration);
   }
 
-  private async removeRegistrationIfOwned(registration: AgentRegistration): Promise<void> {
+  private async readRegistrationFileIdentity(id: string): Promise<FileIdentity | undefined> {
+    let stats;
+    try {
+      stats = await fs.lstat(this.runtime.registrationPath(id));
+    } catch (error) {
+      if (isNotFoundError(error)) {
+        return undefined;
+      }
+      throw error;
+    }
+    return fileIdentity(stats);
+  }
+
+  private async removeRegistrationIfOwned(
+    registration: AgentRegistration,
+    expectedFile?: FileIdentity
+  ): Promise<void> {
+    const initialFile = await this.readRegistrationFileIdentity(registration.id);
+    if (
+      initialFile === undefined ||
+      (expectedFile !== undefined && !sameFileIdentity(initialFile, expectedFile))
+    ) {
+      return;
+    }
     let published: AgentRegistration;
     try {
       published = await this.runtime.readRegistration(registration.id);
@@ -432,13 +581,21 @@ export class AgentMessagingSessionRuntime {
       }
       return;
     }
+    const finalFile = await this.readRegistrationFileIdentity(registration.id);
+    if (
+      finalFile === undefined ||
+      !sameFileIdentity(initialFile, finalFile) ||
+      (expectedFile !== undefined && !sameFileIdentity(finalFile, expectedFile))
+    ) {
+      return;
+    }
     if (registrationMatches(published, registration)) {
       await this.runtime.removeRegistration(registration.id);
     }
   }
 
   private async closeInternal(entries: RegistrationEntry[]): Promise<void> {
-    const results = await Promise.allSettled(entries.map((entry) => this.cleanupEntry(entry)));
+    const results = await Promise.allSettled(entries.map((entry) => this.cleanupEntryOnce(entry)));
     let firstError: unknown;
     for (const result of results) {
       if (result.status === 'rejected' && firstError === undefined) {
@@ -453,6 +610,7 @@ export class AgentMessagingSessionRuntime {
     }
     this.byId.clear();
     this.byName.clear();
+    this.entries.clear();
     if (firstError !== undefined) {
       throw firstError;
     }
