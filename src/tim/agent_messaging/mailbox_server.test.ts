@@ -845,7 +845,9 @@ describe('agent mailbox receiver', () => {
 
   test('rejects oversized, incomplete, and invalid frames without harming healthy clients', async () => {
     const delivered: string[] = [];
+    let callbackCount = 0;
     const mailbox = await createMailbox((request: MailboxMessageRequest): 'steered' => {
+      callbackCount += 1;
       delivered.push(request.content);
       return 'steered';
     });
@@ -873,6 +875,8 @@ describe('agent mailbox receiver', () => {
         Buffer.from(encodeMailboxFrame(incompleteRequest).slice(0, -1), 'utf8')
       )
     ).toBeUndefined();
+    expect(callbackCount).toBe(0);
+    expect(mailbox.receiver.pendingCount).toBe(0);
 
     const unsupportedVersion = Buffer.from(
       `${JSON.stringify({

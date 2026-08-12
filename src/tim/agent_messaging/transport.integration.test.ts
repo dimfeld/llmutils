@@ -123,17 +123,7 @@ async function sendRawChunks(
             if (chunks.length !== 1) {
               throw new Error('Half-close test client requires one chunk');
             }
-            await new Promise<void>((resolveWrite, rejectWrite) => {
-              socket.write(chunks[0], (error?: Error) => {
-                if (error !== undefined && error !== null) {
-                  rejectWrite(error);
-                } else {
-                  resolveWrite();
-                }
-              });
-            });
-            await new Promise<void>((resolveTurn) => setTimeout(resolveTurn, 20));
-            socket.end();
+            socket.end(chunks[0]);
             return;
           }
           for (const chunk of chunks) {
@@ -309,13 +299,17 @@ describe('agent messaging transport integration', () => {
     );
   });
 
-  test('returns an acknowledgement after a client half-closes its request', async () => {
+  test('does not accept a request when the client half-closes immediately', async () => {
     const session = await createSession();
     const source = await register(session, orchestratorDraft('half-close-root'), () => 'steered');
+    let callbackCount = 0;
     const targetHandle = await register(
       session,
       subagentDraft('half-close-target', 'half-close-target'),
-      () => 'steered'
+      () => {
+        callbackCount += 1;
+        return 'temporarily-unavailable';
+      }
     );
     const request = buildMailboxMessageRequest(identity(source), {
       requestId: 'half-close-request',
@@ -331,13 +325,45 @@ describe('agent messaging transport integration', () => {
       true
     );
 
+    expect(acknowledgement).toBeUndefined();
+    expect(callbackCount).toBe(0);
+    expect(targetHandle.receiver.pendingCount).toBe(0);
+  });
+
+  test('keeps a normal mailbox client connection open until the acknowledgement', async () => {
+    const session = await createSession();
+    const source = await register(
+      session,
+      orchestratorDraft('normal-client-root'),
+      () => 'steered'
+    );
+    let callbackCount = 0;
+    const targetHandle = await register(
+      session,
+      subagentDraft('normal-client-target', 'normal-client-target'),
+      () => {
+        callbackCount += 1;
+        return 'steered';
+      }
+    );
+
+    const acknowledgement = await session.sendMessage(
+      identity(source),
+      {
+        name: targetHandle.registration.name,
+      },
+      {
+        requestId: 'normal-client-request',
+        content: 'normal client request',
+      }
+    );
+
     expect(acknowledgement).toMatchObject({
-      protocolVersion: 1,
-      kind: 'ack',
-      requestId: 'half-close-request',
+      requestId: 'normal-client-request',
       success: true,
       delivery: 'steered',
     });
+    expect(callbackCount).toBe(1);
   });
 
   test('enforces exact UTF-8 and pending FIFO boundaries through the session client', async () => {

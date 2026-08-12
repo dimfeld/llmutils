@@ -502,9 +502,11 @@ describe('agent_messaging/runtime_dir', () => {
       .mockRejectedValueOnce(new Error('simulated rename failure'));
 
     try {
-      await expect(runtime.writeRegistration(registration)).rejects.toThrow(
-        'simulated rename failure'
-      );
+      await expect(runtime.writeRegistration(registration)).rejects.toMatchObject({
+        name: 'AgentMessagingRuntimeDirectoryError',
+        code: 'filesystem_error',
+        message: expect.stringContaining('simulated rename failure'),
+      });
       expect(openSpy).toHaveBeenCalledTimes(1);
       expect(openedHandle).toBeDefined();
       expect(openedHandle?.close).toHaveBeenCalledTimes(1);
@@ -514,6 +516,36 @@ describe('agent_messaging/runtime_dir', () => {
       ).toEqual([]);
     } finally {
       renameSpy.mockRestore();
+      openSpy.mockRestore();
+    }
+  });
+
+  test('closes an opened temporary file after a write-stage failure and removes it', async () => {
+    const runtime = await createRuntime();
+    const registration = subagentRegistration(runtime);
+    const originalOpen = fs.promises.open.bind(fs.promises);
+    let openedHandle: Awaited<ReturnType<typeof fs.promises.open>> | undefined;
+    const openSpy = vi.spyOn(fs.promises, 'open').mockImplementation(async (...args) => {
+      openedHandle = await originalOpen(...args);
+      vi.spyOn(openedHandle, 'close');
+      vi.spyOn(openedHandle, 'chmod').mockRejectedValueOnce(new Error('simulated chmod failure'));
+      return openedHandle;
+    });
+
+    try {
+      await expect(runtime.writeRegistration(registration)).rejects.toMatchObject({
+        name: 'AgentMessagingRuntimeDirectoryError',
+        code: 'filesystem_error',
+        message: expect.stringContaining('simulated chmod failure'),
+      });
+      expect(openSpy).toHaveBeenCalledTimes(1);
+      expect(openedHandle).toBeDefined();
+      expect(openedHandle?.close).toHaveBeenCalledTimes(1);
+      expect(
+        (await readdir(runtime.agentsDirectory)).filter((name) => name.includes('.tmp.'))
+      ).toEqual([]);
+      expect(fs.existsSync(runtime.registrationPath(registration.id))).toBe(false);
+    } finally {
       openSpy.mockRestore();
     }
   });

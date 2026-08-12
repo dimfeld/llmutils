@@ -582,6 +582,9 @@ export class MailboxClient {
                 )
               );
             }, this.acknowledgementTimeoutMs);
+            // Keep the request connection open until the receiver sends its
+            // acknowledgement. Bun does not reliably support peer FIN before
+            // the response on an accepted Unix socket.
             socket.write(encodedRequest);
           } catch (error) {
             if (settled) {

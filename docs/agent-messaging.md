@@ -1,12 +1,155 @@
-# Agent Messaging Transport
+# Agent Messaging
 
-This document describes the provider-neutral session storage and Unix-socket
-mailbox transport in `src/tim/agent_messaging/`. It does not describe agent
-tools, provider sessions, provider adapters, or lifecycle-manager behavior.
+This document describes the provider-neutral agent-messaging contracts and the
+session storage and Unix-socket mailbox transport in
+`src/tim/agent_messaging/`. It does not describe provider sessions, provider
+adapters, or lifecycle-manager behavior.
 
-The transport gives one trusted session runtime a private namespace and one
-mailbox receiver per registered identity. It provides bounded, acknowledged
-message delivery for the later lifecycle layer.
+The shared contracts let an orchestrator address, message, and later stop its
+subagents. The transport gives one trusted session runtime a private namespace
+and one mailbox receiver per registered identity. It provides bounded,
+acknowledged message delivery for the later lifecycle layer.
+
+The contracts and environment helpers are the single source of truth for names,
+limits, identity, and lifecycle vocabulary. The transport consumes those
+contracts and does not define provider-specific alternatives.
+
+Relevant code:
+
+- `src/tim/agent_messaging/contracts.ts` — provider-neutral constants, enums,
+  Zod schemas, inferred types, and lifecycle classification helpers.
+- `src/tim/agent_messaging/environment.ts` — internal per-process identity
+  variables, the identity union, and pure read/write helpers.
+- `src/tim/agent_messaging/runtime_dir.ts` — private session directories,
+  registrations, path validation, and cleanup.
+- `src/tim/agent_messaging/mailbox_protocol.ts` — mailbox envelopes, limits,
+  errors, and JSONL frame encoding.
+
+## The experimental flag
+
+`experimental.agentMessaging` is an optional boolean with **no schema default**.
+The canonical enabled check is exact:
+
+```ts
+const agentMessagingEnabled = config.experimental?.agentMessaging === true;
+```
+
+`mergeConfigs()` merges `experimental` as a nested object, so a local layer can
+override `agentMessaging` without dropping unrelated experimental keys.
+
+`src/tim/commands/agent/agent.ts` takes **one** snapshot of the resolved
+boolean per root session and puts it in
+`ExecutorCommonOptions.agentMessagingEnabled`
+(`src/tim/executors/types.ts`). Both orchestration entry points forward it into
+`OrchestrationOptions` (`src/tim/executors/shared/orchestration_options.ts`):
+`claude_code.ts` and `codex_cli/orchestrator_mode.ts`. The transport itself
+does not reread configuration. A running session therefore cannot change mode
+mid-run.
+
+## Contract vocabulary
+
+Keep these words distinct; they are not interchangeable.
+
+| Term    | Meaning                                           |
+| ------- | ------------------------------------------------- |
+| `name`  | Model-facing address used by the tools            |
+| `id`    | Opaque runtime identity                           |
+| `type`  | Work role of a subagent                           |
+| `role`  | Authorization class: `orchestrator` or `subagent` |
+| `state` | Lifecycle state                                   |
+
+- Agent types: `implementer`, `tester`, `tdd-tests`, `reviewer`. The
+  orchestrator is **not** a fifth type — it is a role.
+- Executors: `claude-code`, `codex-cli`.
+- Lifecycle states: nonterminal `starting`, `running-active`, `running-idle`,
+  `finishing`, `stopping`; terminal `exited`, `failed`. Use
+  `isNonterminalAgentLifecycleState()` /
+  `isTerminalAgentLifecycleState()` for classification.
+- Send acknowledgements: `steered`, `queued`, `started-idle-turn`.
+- Stop acknowledgements: `graceful-requested`, `forced`, `already-stopping`.
+
+### Names
+
+An agent name is 1 to 48 characters of lowercase ASCII letters, digits, and
+hyphens, with alphanumeric first and last characters. Consecutive hyphens are
+allowed. Comparison is exact and case-sensitive: uppercase input is invalid,
+and validation never lowercases or trims silently.
+
+Two schemas share the grammar:
+
+- `agentAddressSchema` — any target, including the reserved `orchestrator`
+  address. Used by `SendAgentMessage`.
+- `agentNameSchema` — rejects `orchestrator`. Used where a custom subagent
+  name is required.
+
+Default `<type>-<short-slug>` name generation and collision reservation belong
+to the lifecycle layer. Filesystem objects use opaque IDs, not these names.
+
+### Limits
+
+| Constant                             | Value  | Meaning                                |
+| ------------------------------------ | ------ | -------------------------------------- |
+| `MAX_AGENT_NAME_LENGTH`              | 48     | Name characters                        |
+| `MAX_SUBAGENTS_PER_SESSION`          | 8      | Nonterminal subagents per root session |
+| `MAX_AGENT_MESSAGE_BYTES`            | 65,536 | Message content, in UTF-8 **bytes**    |
+| `MAX_PENDING_MESSAGES_PER_RECIPIENT` | 100    | Queued messages for one recipient      |
+
+The reserved orchestrator identity does not count against the subagent limit.
+`agentMessageContentSchema` measures UTF-8 bytes with `utf8ByteLength()`, not
+JavaScript string length; exactly 65,536 bytes is accepted and one more byte is
+rejected without truncation. Mailbox framing has a separate limit that includes
+the validated JSON envelope and newline.
+
+## Tool schemas
+
+Strict, provider-neutral schemas and inferred types exist for the arguments and
+success results of `StartAgent`, `ListAgents`, `SendAgentMessage`, `StopAgent`,
+and `FinishAgent`. They carry no MCP or JSON-RPC wrapper and no provider result
+blocks, so later adapters can serialize the same values.
+
+`ListAgents` returns a union discriminated on `role`: an orchestrator row has
+the literal name `orchestrator` and no `type`; a subagent row has
+`role: 'subagent'` and one of the four types.
+
+**Identity is never a model argument.** `SendAgentMessage` has no `source`,
+`sourceName`, or `caller` field, `StopAgent` has no caller-role field, and
+`FinishAgent` has no target field — it acts on the calling agent only. The
+runtime binds the caller internally; putting identity in the arguments would
+make spoofing part of the public contract. All argument schemas are strict, so
+such a field fails validation.
+
+## Internal identity environment
+
+Five internal variables carry per-process identity:
+`TIM_AGENT_MESSAGING_DIR`, `TIM_AGENT_ID`, `TIM_AGENT_NAME`, `TIM_AGENT_TYPE`,
+and `TIM_AGENT_ROLE`. The orchestrator uses name `orchestrator`, role
+`orchestrator`, and no type; a subagent adds one of the four types.
+
+- `withAgentEnvironmentIdentity(inheritedEnv, identity)` returns a **copy** with
+  the identity applied. It drops a stale `TIM_AGENT_TYPE` when writing an
+  orchestrator identity.
+- `readAgentEnvironmentIdentity(env)` returns `undefined` when all five values
+  are absent, the typed identity when the combination is complete, and throws
+  when any value is present but the combination is incomplete or contradictory.
+- Neither helper mutates global `process.env`. Compose environment values per
+  process.
+
+These names are **reserved but not public**: they join
+`RESERVED_TIM_ENVIRONMENT_VARIABLES` so project environment config cannot
+spoof them, and they stay out of `TIM_ENVIRONMENT_CONTEXT_DEFINITIONS` and
+`renderBuiltInTimEnvironment()`.
+
+## Boundaries to keep
+
+- Do not import Claude MCP types, Codex app-server types, tunnel protocol
+  types, session-server types, or provider implementations into
+  `src/tim/agent_messaging/`.
+- Do not give the config flag a Zod default, and do not shallow-replace the
+  whole `experimental` object during merge.
+- Do not add prompt text, tool installation, or provider lifetime changes to
+  this transport layer.
+- Keep agent mailbox types separate from Claude MCP, Codex JSON-RPC, logging
+  tunnel, provider lifetime, and lifecycle-manager logic.
 
 ## Modules
 
@@ -55,6 +198,13 @@ The session runtime owns active registrations in memory, and its close path is
 responsible for stopping receivers before removing registration files, sockets,
 and the exact root. Repeated deregistration and close calls are safe.
 
+`SessionRegistrationHandle.deregister()` is bound to that handle's registration
+generation. If `session.deregister()` receives an `AgentRegistration` object,
+it must be the exact object returned by the active handle; a structurally equal
+record reread from disk or returned by a listing is intentionally not allowed
+to remove a replacement that reused the same ID. Use the handle, name, or ID
+when a generation-bound object is not available.
+
 ## JSONL protocol
 
 The mailbox uses protocol version `1`. A frame is one compact JSON object and
@@ -82,6 +232,15 @@ Additional frames are rejected. Request IDs are retained in a bounded recent-ID
 map. Reusing an ID with the same request fingerprint replays the original
 acknowledgement; reusing it for different content returns
 `duplicate_message_id`.
+
+The mailbox client must keep the connection open after writing the request until
+it receives the acknowledgement. In particular, it must not call
+`socket.end(frame)` or otherwise send a peer FIN with the request. Bun does not
+provide a reliable half-open accepted socket for this protocol. If the receiver
+observes peer FIN before source validation and delivery completes, it closes the
+connection without an acknowledgement and does not invoke delivery or add the
+message to the pending FIFO. `MailboxClient` follows the required write-then-
+wait sequence and closes only after the acknowledgement or a bounded failure.
 
 ## Trusted delivery and dispositions
 

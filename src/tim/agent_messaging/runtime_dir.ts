@@ -119,7 +119,8 @@ export type RuntimeDirectoryErrorCode =
   | 'socket_path_too_long'
   | 'registration_not_found'
   | 'invalid_registration_path'
-  | 'temporary_file_exhausted';
+  | 'temporary_file_exhausted'
+  | 'filesystem_error';
 
 /** An error raised at a filesystem or registration boundary. */
 export class AgentMessagingRuntimeDirectoryError extends Error {
@@ -291,6 +292,14 @@ function isNotFoundError(error: unknown): boolean {
 
 function isAlreadyExistsError(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'EEXIST';
+}
+
+function wrapFilesystemError(error: unknown, context: string): AgentMessagingRuntimeDirectoryError {
+  if (error instanceof AgentMessagingRuntimeDirectoryError) {
+    return error;
+  }
+  const message = error instanceof Error ? error.message : 'unexpected filesystem failure';
+  return new AgentMessagingRuntimeDirectoryError('filesystem_error', `${context}: ${message}`);
 }
 
 async function removeExactRoot(rootPath: string): Promise<void> {
@@ -580,19 +589,23 @@ export class AgentMessagingRuntimeDirectory {
     );
     const parsed = this.validateRegistrationForRuntime(registration);
     const registrationPath = this.getContainedRegistrationPath(parsed.id);
-    await this.validateRegistrationTarget(
-      parsed,
-      registrationPath,
-      true,
-      parsedOptions.requireSocket ?? false
-    );
+    try {
+      await this.validateRegistrationTarget(
+        parsed,
+        registrationPath,
+        true,
+        parsedOptions.requireSocket ?? false
+      );
+    } catch (error) {
+      throw wrapFilesystemError(error, 'Could not validate the registration target');
+    }
 
     let existingStats: fsSync.Stats | undefined;
     try {
       existingStats = await fs.lstat(registrationPath);
     } catch (error) {
       if (!isNotFoundError(error)) {
-        throw error;
+        throw wrapFilesystemError(error, 'Could not inspect the registration path');
       }
     }
     if (existingStats?.isSymbolicLink()) {
@@ -655,7 +668,7 @@ export class AgentMessagingRuntimeDirectory {
       if (temporaryPath !== undefined) {
         await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
       }
-      throw error;
+      throw wrapFilesystemError(error, 'Could not publish the agent registration');
     }
   }
 

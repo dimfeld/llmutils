@@ -88,12 +88,13 @@ interface ConnectionState {
   readonly decoder: MailboxJsonlDecoder;
   readonly framePolicy: MailboxConnectionFramePolicy;
   frameReceived: boolean;
+  peerEnded: boolean;
   responseSent: boolean;
 }
 
 interface RecentRequest {
   readonly fingerprint: string;
-  readonly completion: Promise<MailboxAcknowledgement>;
+  readonly completion: Promise<MailboxAcknowledgement | undefined>;
   completed: boolean;
 }
 
@@ -330,7 +331,7 @@ export class MailboxReceiver {
   }
 
   private async start(): Promise<void> {
-    const server = net.createServer({ allowHalfOpen: true }, (socket: net.Socket) => {
+    const server = net.createServer((socket: net.Socket) => {
       this.acceptConnection(socket);
     });
     this.server = server;
@@ -381,6 +382,7 @@ export class MailboxReceiver {
       decoder: new MailboxJsonlDecoder({ maxFrames: 1 }),
       framePolicy: new MailboxConnectionFramePolicy('message'),
       frameReceived: false,
+      peerEnded: false,
       responseSent: false,
     };
     this.connections.add(socket);
@@ -402,7 +404,7 @@ export class MailboxReceiver {
   }
 
   private handleData(state: ConnectionState, chunk: Buffer): void {
-    if (state.responseSent || state.frameReceived) {
+    if (state.peerEnded || state.responseSent || state.frameReceived) {
       state.socket.destroy();
       return;
     }
@@ -425,7 +427,12 @@ export class MailboxReceiver {
   }
 
   private handleEnd(state: ConnectionState): void {
+    state.peerEnded = true;
+    this.activeConnections.delete(state.socket);
     if (state.frameReceived || state.responseSent) {
+      if (!state.responseSent && !state.socket.destroyed) {
+        state.socket.destroy();
+      }
       return;
     }
 
@@ -454,11 +461,19 @@ export class MailboxReceiver {
       return;
     }
 
-    const acknowledgement = await this.acceptRequest(request);
-    await this.sendAcknowledgement(state, acknowledgement);
+    const acknowledgement = await this.acceptRequest(state, request);
+    if (acknowledgement !== undefined) {
+      await this.sendAcknowledgement(state, acknowledgement);
+    }
   }
 
-  private async acceptRequest(request: MailboxMessageRequest): Promise<MailboxAcknowledgement> {
+  private async acceptRequest(
+    state: ConnectionState,
+    request: MailboxMessageRequest
+  ): Promise<MailboxAcknowledgement | undefined> {
+    if (state.peerEnded) {
+      return undefined;
+    }
     const fingerprint = requestFingerprint(request);
     const existing = this.recentRequests.get(request.requestId);
     if (existing !== undefined) {
@@ -472,7 +487,7 @@ export class MailboxReceiver {
       return existing.completion;
     }
 
-    const completion = this.deliverRequest(request).catch((error: unknown) =>
+    const completion = this.deliverRequest(state, request).catch((error: unknown) =>
       buildMailboxFailureAcknowledgement(
         request.requestId,
         'connection_failed',
@@ -493,7 +508,10 @@ export class MailboxReceiver {
     return acknowledgement;
   }
 
-  private async deliverRequest(request: MailboxMessageRequest): Promise<MailboxAcknowledgement> {
+  private async deliverRequest(
+    state: ConnectionState,
+    request: MailboxMessageRequest
+  ): Promise<MailboxAcknowledgement | undefined> {
     if (this.closed) {
       return buildMailboxFailureAcknowledgement(
         request.requestId,
@@ -511,6 +529,9 @@ export class MailboxReceiver {
         'Mailbox request target does not match this receiver'
       );
     }
+    if (state.peerEnded) {
+      return undefined;
+    }
 
     let sourceRegistration: AgentRegistration | undefined;
     try {
@@ -520,6 +541,9 @@ export class MailboxReceiver {
       );
     } catch (error) {
       debugLog('[agent mailbox] source registration resolver failed:', error);
+    }
+    if (state.peerEnded) {
+      return undefined;
     }
     if (this.closed) {
       return buildMailboxFailureAcknowledgement(
@@ -555,12 +579,19 @@ export class MailboxReceiver {
         'Mailbox source identity does not match its active registration'
       );
     }
+    if (state.peerEnded) {
+      return undefined;
+    }
     if (this.closed) {
       return buildMailboxFailureAcknowledgement(
         request.requestId,
         'runtime_closed',
         'Mailbox receiver is closed'
       );
+    }
+
+    if (state.peerEnded) {
+      return undefined;
     }
 
     const trustedRequest = parseMailboxMessageRequest({
@@ -578,6 +609,9 @@ export class MailboxReceiver {
         `Mailbox delivery failed: ${validationErrorMessage(error, 'delivery callback failed')}`
       );
     }
+    if (state.peerEnded) {
+      return undefined;
+    }
 
     if (delivery === 'steered' || delivery === 'started-idle-turn') {
       return buildMailboxSuccessAcknowledgement(request.requestId, delivery);
@@ -588,6 +622,9 @@ export class MailboxReceiver {
         'connection_failed',
         'Mailbox delivery callback returned an invalid result'
       );
+    }
+    if (state.peerEnded) {
+      return undefined;
     }
     if (this.closed) {
       return buildMailboxFailureAcknowledgement(
@@ -629,6 +666,10 @@ export class MailboxReceiver {
     error: unknown,
     requestId: string | undefined
   ): Promise<void> {
+    if (state.peerEnded) {
+      state.socket.destroy();
+      return;
+    }
     if (requestId === undefined) {
       state.socket.end();
       return;
@@ -655,7 +696,10 @@ export class MailboxReceiver {
     state: ConnectionState,
     acknowledgement: MailboxAcknowledgement
   ): Promise<void> {
-    if (state.responseSent) {
+    if (state.peerEnded || state.responseSent) {
+      if (state.peerEnded && !state.responseSent && !state.socket.destroyed) {
+        state.socket.destroy();
+      }
       return;
     }
     state.responseSent = true;

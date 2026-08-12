@@ -42,6 +42,11 @@ export interface SessionRegistrationHandle {
   deregister(): Promise<void>;
 }
 
+/**
+ * A registration record reference is generation-bound: an AgentRegistration
+ * object must be the exact object returned by its SessionRegistrationHandle.
+ * Use a handle or name when the reference was not obtained from registration.
+ */
 export type SessionRegistrationReference = string | SessionRegistrationHandle | AgentRegistration;
 
 export type SessionRuntimeErrorCode =
@@ -349,6 +354,11 @@ export class AgentMessagingSessionRuntime {
     return this.sendMessage(trustedSource, target, input);
   }
 
+  /**
+   * Deregister one active generation. An AgentRegistration reference is an
+   * exact-object handle, not a structural lookup, so a reread or listed copy
+   * is intentionally treated as already gone to protect replacement entries.
+   */
   public deregister(reference: SessionRegistrationReference): Promise<void> {
     if (this.closePromise !== undefined) {
       return this.closePromise;
