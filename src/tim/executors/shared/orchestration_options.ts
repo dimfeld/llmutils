@@ -18,6 +18,11 @@ export interface OrchestrationOptions {
   reviewerInstructionsPath?: string;
   simpleMode?: boolean;
   /**
+   * Root-session snapshot of the experimental agent-messaging setting.
+   * This is dormant until a later activation plan consumes it.
+   */
+  agentMessagingEnabled?: boolean;
+  /**
    * Which executor to use for subagents: 'codex-cli', 'claude-code', or 'dynamic'.
    * When 'dynamic', the orchestrator decides per-task based on dynamicSubagentInstructions.
    * When undefined, defaults to 'dynamic' behavior.

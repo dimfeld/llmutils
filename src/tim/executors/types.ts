@@ -28,6 +28,11 @@ export interface ExecutorCommonOptions {
    */
   simpleMode?: boolean;
   /**
+   * Root-session snapshot of the experimental agent-messaging setting.
+   * This is dormant until a later activation plan consumes it.
+   */
+  agentMessagingEnabled?: boolean;
+  /**
    * Optional override for which executor to use during external review phases.
    */
   reviewExecutor?: string;

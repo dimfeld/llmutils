@@ -606,6 +606,7 @@ export class ClaudeCodeExecutor implements Executor {
         reviewExecutor: this.sharedOptions.reviewExecutor,
         reviewerInstructionsPath: this.timConfig.agents?.reviewer?.instructions,
         simpleMode: this.sharedOptions.simpleMode,
+        agentMessagingEnabled: this.sharedOptions.agentMessagingEnabled,
         subagentExecutor: this.sharedOptions.subagentExecutor,
         dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
         useJj,

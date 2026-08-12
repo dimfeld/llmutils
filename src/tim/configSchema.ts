@@ -562,6 +562,15 @@ export const timConfigSchema = z
     githubWebhooks: githubWebhooksConfigSchema
       .optional()
       .describe('Machine-local GitHub webhook ingestion behavior'),
+    /** Experimental features that are disabled unless explicitly enabled. */
+    experimental: z
+      .object({
+        /** Enable the dormant agent-messaging session snapshot for new agent runs. */
+        agentMessaging: z.boolean().optional(),
+      })
+      .strict()
+      .optional()
+      .describe('Experimental features'),
     /** Pull request inbox notification behavior. */
     inbox: inboxConfigSchema.optional().describe('PR inbox notification behavior (repo-settable)'),
     /** Project-level environment variables rendered at process launch time. */

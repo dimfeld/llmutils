@@ -577,6 +577,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     delete (defaultConfig as any).dynamicSubagentInstructions;
     delete (defaultConfig as any).orchestrator;
     delete (defaultConfig as any).tdd;
+    delete (defaultConfig as any).experimental;
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-simple-flag-test-'));
     await Bun.$`git init`.cwd(tempDir).quiet();
@@ -668,12 +669,35 @@ describe('timAgent - simple mode flag plumbing', () => {
       baseDir: tempDir,
       model: 'default-model',
       simpleMode: undefined,
+      agentMessagingEnabled: false,
     });
     expect(config).toBe(defaultConfig);
     expect(executorOptions).toBeUndefined();
     expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
     const [batchOptions] = executeBatchModeSpy.mock.calls[0];
     expect(batchOptions).toMatchObject({ executor: testExecutor, executionMode: 'normal' });
+  });
+
+  test('snapshots an enabled experimental agentMessaging value in shared executor options', async () => {
+    (defaultConfig as any).experimental = { agentMessaging: true };
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(123, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions).toMatchObject({ agentMessagingEnabled: true });
+  });
+
+  test('resolves an explicitly disabled experimental agentMessaging value to false', async () => {
+    (defaultConfig as any).experimental = { agentMessaging: false };
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(123, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions).toMatchObject({ agentMessagingEnabled: false });
   });
 
   test('passes review executor override through to executor builder', async () => {

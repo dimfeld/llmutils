@@ -689,6 +689,7 @@ export async function timAgent(
       process.stdin.isTTY === true &&
       options.terminalInput !== false &&
       config.terminalInput !== false;
+    const agentMessagingEnabled = config.experimental?.agentMessaging === true;
 
     const sharedExecutorOptions: ExecutorCommonOptions = {
       baseDir: currentBaseDir,
@@ -696,6 +697,7 @@ export async function timAgent(
       noninteractive: noninteractive ? true : undefined,
       terminalInput: terminalInputEnabled,
       simpleMode: simpleModeEnabled ? true : undefined,
+      agentMessagingEnabled,
       reviewExecutor: options.reviewExecutor,
       subagentExecutor,
       dynamicSubagentInstructions,

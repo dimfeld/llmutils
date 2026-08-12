@@ -63,6 +63,19 @@ describe('wrapForExecutionMode', () => {
     }
   });
 
+  test('dormant agentMessagingEnabled does not change prompt output', () => {
+    for (const mode of ['normal', 'simple', 'tdd'] as OrchestrationExecutionMode[]) {
+      const disabled = wrapForExecutionMode(mode, 'context', 'plan-1', {
+        agentMessagingEnabled: false,
+      });
+      const enabled = wrapForExecutionMode(mode, 'context', 'plan-1', {
+        agentMessagingEnabled: true,
+      });
+
+      expect(enabled).toBe(disabled);
+    }
+  });
+
   test('throws on an unsupported execution mode', () => {
     expect(() =>
       wrapForExecutionMode('bogus' as OrchestrationExecutionMode, 'context', 'plan-1', {})

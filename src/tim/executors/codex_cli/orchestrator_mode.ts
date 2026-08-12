@@ -46,6 +46,7 @@ export async function executeOrchestratorMode(
       reviewExecutor: sharedOptions.reviewExecutor,
       reviewerInstructionsPath: timConfig.agents?.reviewer?.instructions,
       simpleMode,
+      agentMessagingEnabled: sharedOptions.agentMessagingEnabled,
       subagentExecutor: sharedOptions.subagentExecutor,
       dynamicSubagentInstructions: sharedOptions.dynamicSubagentInstructions,
       useJj,

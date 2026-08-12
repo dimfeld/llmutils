@@ -1135,6 +1135,28 @@ autoexamples:
       expect(config.subagents?.tester?.model?.claude).toBe('local-haiku'); // from local
     });
 
+    test('loadEffectiveConfig applies local experimental agentMessaging override', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        `experimental:
+  agentMessaging: false
+`
+      );
+      await fs.writeFile(
+        localConfigPath,
+        `experimental:
+  agentMessaging: true
+`
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.experimental).toEqual({ agentMessaging: true });
+    });
+
     test('loadEffectiveConfig concatenates subprocess monitor rules and overrides poll interval', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       const localConfigPath = path.join(configDir, 'tim.local.yml');
