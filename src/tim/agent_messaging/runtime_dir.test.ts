@@ -11,12 +11,15 @@ import { CleanupRegistry } from '../../common/cleanup_registry.js';
 import { MAILBOX_PROTOCOL_VERSION, MAX_MAILBOX_AGENT_ID_LENGTH } from './mailbox_protocol.js';
 import {
   AGENT_MESSAGING_RUNTIME_PREFIX,
+  MAX_REGISTRATION_FILE_BYTES,
+  MAX_REGISTRATION_SOCKET_PATH_BYTES,
   MAX_UNIX_SOCKET_PATH_BYTES,
   REGISTRATION_FILE_MODE,
   RUNTIME_DIRECTORY_MODE,
   AgentMessagingRuntimeDirectoryError,
   createAgentMessagingRuntimeDirectory,
   isStrictPathDescendant,
+  parseAgentRegistration,
   type AgentMessagingRuntimeDirectory,
   type AgentRegistration,
 } from './runtime_dir.js';
@@ -96,6 +99,39 @@ describe('agent_messaging/runtime_dir', () => {
     expect(() => runtime.socketPath('a'.repeat(MAX_MAILBOX_AGENT_ID_LENGTH + 1))).toThrow(
       AgentMessagingRuntimeDirectoryError
     );
+
+    const socketPathPrefixBytes = Buffer.byteLength(
+      `${runtime.socketsDirectory}${path.sep}`,
+      'utf8'
+    );
+    const exactLengthId = 'a'.repeat(
+      MAX_UNIX_SOCKET_PATH_BYTES - socketPathPrefixBytes - Buffer.byteLength('.sock', 'utf8')
+    );
+    expect(Buffer.byteLength(runtime.socketPath(exactLengthId), 'utf8')).toBe(
+      MAX_UNIX_SOCKET_PATH_BYTES
+    );
+    expect(() => runtime.socketPath(`${exactLengthId}a`)).toThrow(
+      AgentMessagingRuntimeDirectoryError
+    );
+
+    for (const invalidId of [
+      '',
+      '.',
+      '..',
+      '../outside',
+      '/absolute-id',
+      'nested/id',
+      'nested\\id',
+      'line\nbreak',
+      'null\0byte',
+    ]) {
+      expect(() => runtime.registrationPath(invalidId), invalidId).toThrow(
+        AgentMessagingRuntimeDirectoryError
+      );
+    }
+
+    const dotPrefixedId = '..opaque-id';
+    expect(isStrictPathDescendant(runtime.rootPath, runtime.socketPath(dotPrefixedId))).toBe(true);
   });
 
   test('uses the correct strict descendant test for dot-prefixed child names', async () => {
@@ -150,6 +186,46 @@ describe('agent_messaging/runtime_dir', () => {
     await expect(
       runtime.writeRegistration({ ...subagent, unexpected: true } as never)
     ).rejects.toThrow(AgentMessagingRuntimeDirectoryError);
+  });
+
+  test('strictly validates registration fields and byte-sized boundaries', async () => {
+    const runtime = await createRuntime();
+    const valid = subagentRegistration(runtime);
+
+    expect(parseAgentRegistration(valid)).toEqual(valid);
+    expect(() => parseAgentRegistration({ ...valid, unexpected: true })).toThrow(
+      AgentMessagingRuntimeDirectoryError
+    );
+    expect(() => parseAgentRegistration({ ...valid, type: undefined })).toThrow(
+      AgentMessagingRuntimeDirectoryError
+    );
+    expect(() => parseAgentRegistration({ ...valid, role: 'orchestrator' })).toThrow(
+      AgentMessagingRuntimeDirectoryError
+    );
+    expect(() => parseAgentRegistration({ ...valid, socketPath: 'relative.sock' })).toThrow(
+      AgentMessagingRuntimeDirectoryError
+    );
+    expect(() =>
+      parseAgentRegistration({ ...valid, id: 'a'.repeat(MAX_MAILBOX_AGENT_ID_LENGTH + 1) })
+    ).toThrow(AgentMessagingRuntimeDirectoryError);
+
+    const maxSocketPath = `/${'a'.repeat(MAX_REGISTRATION_SOCKET_PATH_BYTES - 1)}`;
+    expect(parseAgentRegistration({ ...valid, socketPath: maxSocketPath }).socketPath).toBe(
+      maxSocketPath
+    );
+    expect(() =>
+      parseAgentRegistration({
+        ...valid,
+        socketPath: `/${'a'.repeat(MAX_REGISTRATION_SOCKET_PATH_BYTES)}`,
+      })
+    ).toThrow(AgentMessagingRuntimeDirectoryError);
+
+    const oversizedPath = runtime.registrationPath(valid.id);
+    await writeFile(oversizedPath, 'x'.repeat(MAX_REGISTRATION_FILE_BYTES + 1), 'utf8');
+    await fs.promises.chmod(oversizedPath, REGISTRATION_FILE_MODE);
+    await expect(runtime.readRegistration(valid.id)).rejects.toMatchObject({
+      code: 'invalid_registration',
+    });
   });
 
   test('writes registration files with owner-only mode and atomically replaces them', async () => {
@@ -208,6 +284,47 @@ describe('agent_messaging/runtime_dir', () => {
     );
   });
 
+  test('never exposes a partial record while readers overlap atomic rewrites', async () => {
+    const runtime = await createRuntime();
+    const versions = Array.from({ length: 40 }, (_, index) =>
+      runtime.createRegistration({
+        id: 'worker-id',
+        name: 'worker-one',
+        role: 'subagent',
+        type: index % 2 === 0 ? 'tester' : 'implementer',
+        executor: index % 2 === 0 ? 'codex-cli' : 'claude-code',
+        state: index % 2 === 0 ? 'running-idle' : 'running-active',
+      })
+    );
+    await runtime.writeRegistration(versions[0]);
+
+    const writer = (async (): Promise<void> => {
+      for (const [index, registration] of versions.entries()) {
+        await runtime.writeRegistration(registration);
+        if (index % 4 === 0) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      }
+    })();
+    const reader = (async (): Promise<AgentRegistration[]> => {
+      const observed: AgentRegistration[] = [];
+      for (let index = 0; index < 120; index += 1) {
+        observed.push(await runtime.readRegistration('worker-id'));
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      return observed;
+    })();
+
+    const [, observed] = await Promise.all([writer, reader]);
+    expect(observed).not.toHaveLength(0);
+    for (const registration of observed) {
+      expect(versions).toContainEqual(registration);
+    }
+    expect(
+      (await readdir(runtime.agentsDirectory)).filter((name) => name.includes('.tmp.'))
+    ).toEqual([]);
+  });
+
   test('lists valid final files, ignores temporary and malformed files, and can report malformed files', async () => {
     const runtime = await createRuntime();
     const valid = subagentRegistration(runtime);
@@ -220,6 +337,7 @@ describe('agent_messaging/runtime_dir', () => {
       'utf8'
     );
     await writeFile(path.join(runtime.agentsDirectory, 'temporary.json.tmp.1'), '{}', 'utf8');
+    await writeFile(path.join(runtime.agentsDirectory, 'temporary.tmp.1.json'), '{}', 'utf8');
     await fs.promises.mkdir(path.join(runtime.agentsDirectory, 'directory.json'));
 
     expect(await runtime.listRegistrations()).toEqual([valid]);
@@ -257,6 +375,59 @@ describe('agent_messaging/runtime_dir', () => {
     await expect(runtime.validateSocketPath(socketPath, { allowMissing: true })).rejects.toThrow(
       AgentMessagingRuntimeDirectoryError
     );
+  });
+
+  test('does not overwrite or remove symlinked final entries', async () => {
+    const runtime = await createRuntime();
+    const registration = subagentRegistration(runtime);
+    const outsideDirectory = await mkdtemp(path.join(os.tmpdir(), 'tm-agent-outside-'));
+    const outsideFile = path.join(outsideDirectory, 'outside.txt');
+    await writeFile(outsideFile, 'preserve me', 'utf8');
+
+    const registrationPath = runtime.registrationPath(registration.id);
+    await fs.promises.symlink(outsideFile, registrationPath);
+    await expect(runtime.writeRegistration(registration)).rejects.toMatchObject({
+      code: 'symlink_path',
+    });
+    await expect(runtime.removeRegistration(registration)).rejects.toMatchObject({
+      code: 'symlink_path',
+    });
+    expect(await readFile(outsideFile, 'utf8')).toBe('preserve me');
+    expect((await fs.promises.lstat(registrationPath)).isSymbolicLink()).toBe(true);
+
+    await fs.promises.unlink(registrationPath);
+    const socketPath = runtime.socketPath(registration.id);
+    await fs.promises.symlink(outsideFile, socketPath);
+    await expect(runtime.removeSocket(registration.id)).rejects.toMatchObject({
+      code: 'symlink_path',
+    });
+    expect(await readFile(outsideFile, 'utf8')).toBe('preserve me');
+    expect((await fs.promises.lstat(socketPath)).isSymbolicLink()).toBe(true);
+
+    await rm(outsideDirectory, { recursive: true, force: true });
+  });
+
+  test('does not follow a symlinked runtime root during validation or close', async () => {
+    const runtime = await createRuntime();
+    const originalRoot = runtime.rootPath;
+    const movedRoot = `${originalRoot}-real`;
+
+    await fs.promises.rename(originalRoot, movedRoot);
+    await fs.promises.symlink(movedRoot, originalRoot);
+    try {
+      await expect(
+        runtime.validateSocketPath(path.join(runtime.socketsDirectory, 'missing.sock'), {
+          allowMissing: true,
+        })
+      ).rejects.toMatchObject({ code: 'symlink_path' });
+
+      await runtime.close();
+      expect((await fs.promises.lstat(originalRoot)).isSymbolicLink()).toBe(true);
+      expect((await fs.promises.lstat(movedRoot)).isDirectory()).toBe(true);
+    } finally {
+      await fs.promises.unlink(originalRoot).catch(() => undefined);
+      await rm(movedRoot, { recursive: true, force: true });
+    }
   });
 
   test('rejects outside and redirected registration socket paths before publication', async () => {
@@ -309,29 +480,44 @@ describe('agent_messaging/runtime_dir', () => {
   test('emergency cleanup removes only the exact created root', async () => {
     const runtime = await createRuntime();
     const sibling = await mkdtemp(path.join(os.tmpdir(), 'tm-sibling-'));
+    const outsideDirectory = await mkdtemp(path.join(os.tmpdir(), 'tm-agent-outside-'));
+    const outsideFile = path.join(outsideDirectory, 'outside.txt');
+    await writeFile(outsideFile, 'preserve me', 'utf8');
+    await fs.promises.symlink(outsideDirectory, path.join(runtime.rootPath, 'outside-link'));
     const rootPath = runtime.rootPath;
 
     CleanupRegistry.getInstance().executeAll();
 
     expect(fs.existsSync(rootPath)).toBe(false);
     expect(fs.existsSync(sibling)).toBe(true);
+    expect(fs.existsSync(outsideFile)).toBe(true);
     await rm(sibling, { recursive: true, force: true });
+    await rm(outsideDirectory, { recursive: true, force: true });
   });
 
   test('normal close is awaited, idempotent, and removes only its exact root', async () => {
+    const cleanupRegistry = CleanupRegistry.getInstance();
+    const handlersBeforeRuntime = cleanupRegistry.size;
     const runtime = await createRuntime();
     const sibling = await mkdtemp(path.join(os.tmpdir(), 'tm-sibling-'));
+    const outsideDirectory = await mkdtemp(path.join(os.tmpdir(), 'tm-agent-outside-'));
+    const outsideFile = path.join(outsideDirectory, 'outside.txt');
+    await writeFile(outsideFile, 'preserve me', 'utf8');
+    await fs.promises.symlink(outsideDirectory, path.join(runtime.rootPath, 'outside-link'));
     const rootPath = runtime.rootPath;
+    expect(cleanupRegistry.size).toBe(handlersBeforeRuntime + 1);
 
-    const firstClose = runtime.close();
-    const secondClose = runtime.close();
-    expect(firstClose).toBe(secondClose);
-    await Promise.all([firstClose, secondClose]);
+    const closes = Array.from({ length: 8 }, () => runtime.close());
+    expect(new Set(closes).size).toBe(1);
+    await Promise.all(closes);
     await runtime.close();
 
     expect(fs.existsSync(rootPath)).toBe(false);
     expect(fs.existsSync(sibling)).toBe(true);
+    expect(fs.existsSync(outsideFile)).toBe(true);
+    expect(cleanupRegistry.size).toBe(handlersBeforeRuntime);
     await rm(sibling, { recursive: true, force: true });
+    await rm(outsideDirectory, { recursive: true, force: true });
     await expect(runtime.readRegistration('worker-id')).rejects.toMatchObject({
       code: 'runtime_closed',
     });
