@@ -78,6 +78,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   private readonly serverSessionId?: string;
   private readonly serverStartedAt?: string;
   private readonly onDestroy?: () => void;
+  private readonly agentName: string;
   private readonly processRegistry?: SessionProcessRegistry;
   private readonly processOwner?: SessionProcessOwner;
   private readonly processEnvironmentBefore: Record<string, string | undefined> = {};
@@ -123,6 +124,7 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.bearerToken = options?.bearerToken;
     this.serverHostname = options?.serverHostname;
     this.onDestroy = options?.onDestroy;
+    this.agentName = process.env.TIM_AGENT_NAME ?? 'orchestrator';
 
     if (options && 'serverPort' in options && options.serverPort != null) {
       this.serverSessionId = crypto.randomUUID();
@@ -193,27 +195,49 @@ export class HeadlessAdapter implements LoggerAdapter {
 
   log(...args: any[]): void {
     this.wrappedAdapter.log(...args);
-    this.enqueueTunnelMessage({ type: 'log', args: serializeArgs(args) });
+    this.enqueueTunnelMessage({
+      type: 'log',
+      args: serializeArgs(args),
+      agentName: this.agentName,
+    });
   }
 
   error(...args: any[]): void {
     this.wrappedAdapter.error(...args);
-    this.enqueueTunnelMessage({ type: 'error', args: serializeArgs(args) });
+    this.enqueueTunnelMessage({
+      type: 'error',
+      args: serializeArgs(args),
+      agentName: this.agentName,
+    });
   }
 
   warn(...args: any[]): void {
     this.wrappedAdapter.warn(...args);
-    this.enqueueTunnelMessage({ type: 'warn', args: serializeArgs(args) });
+    this.enqueueTunnelMessage({
+      type: 'warn',
+      args: serializeArgs(args),
+      agentName: this.agentName,
+    });
   }
 
   writeStdout(data: string, options?: WriteOptions): void {
     this.wrappedAdapter.writeStdout(data, options);
-    this.enqueueTunnelMessage({ type: 'stdout', data, origin: options?.origin });
+    this.enqueueTunnelMessage({
+      type: 'stdout',
+      data,
+      origin: options?.origin,
+      agentName: this.agentName,
+    });
   }
 
   writeStderr(data: string, options?: WriteOptions): void {
     this.wrappedAdapter.writeStderr(data, options);
-    this.enqueueTunnelMessage({ type: 'stderr', data, origin: options?.origin });
+    this.enqueueTunnelMessage({
+      type: 'stderr',
+      data,
+      origin: options?.origin,
+      agentName: this.agentName,
+    });
   }
 
   debugLog(...args: any[]): void {
@@ -222,12 +246,16 @@ export class HeadlessAdapter implements LoggerAdapter {
       return;
     }
 
-    this.enqueueTunnelMessage({ type: 'debug', args: serializeArgs(args) });
+    this.enqueueTunnelMessage({
+      type: 'debug',
+      args: serializeArgs(args),
+      agentName: this.agentName,
+    });
   }
 
   sendStructured(message: StructuredMessage): void {
     this.wrappedAdapter.sendStructured(message);
-    this.enqueueTunnelMessage({ type: 'structured', message });
+    this.enqueueTunnelMessage({ type: 'structured', message, agentName: this.agentName });
   }
 
   sendPlanContent(content: string, tasks: HeadlessPlanTask[] = []): void {
@@ -340,6 +368,7 @@ export class HeadlessAdapter implements LoggerAdapter {
             `Headless prompt error for ${message.requestId}: ${message.error}`
           );
           this.pendingPrompts.delete(message.requestId);
+          pending.reject(new Error(message.error));
           return;
         }
         this.pendingPrompts.delete(message.requestId);
@@ -655,12 +684,13 @@ export class HeadlessAdapter implements LoggerAdapter {
       reject = rej;
     });
 
-    this.pendingPrompts.set(requestId, { resolve, reject });
+    const pending: PendingPromptRequest = { resolve, reject };
+    this.pendingPrompts.set(requestId, pending);
 
     const cancel = () => {
-      if (this.pendingPrompts.delete(requestId)) {
-        reject(new Error('Prompt cancelled'));
-      }
+      if (this.pendingPrompts.get(requestId) !== pending) return;
+      this.pendingPrompts.delete(requestId);
+      reject(new Error('Prompt cancelled'));
     };
 
     return { promise, cancel };

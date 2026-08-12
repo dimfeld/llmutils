@@ -34,7 +34,9 @@ const mocks = vi.hoisted(() => ({
   createLineSplitter: vi.fn(),
   extractStructuredMessages: vi.fn(),
   formatJsonMessage: vi.fn(),
-  resetToolUseCache: vi.fn(),
+  createClaudeMessageFormatter: vi.fn(() => ({
+    formatJsonMessage: mocks.formatJsonMessage,
+  })),
   executeWithTerminalInput: vi.fn(),
   createPromptRequestHandler: vi.fn(),
 }));
@@ -83,8 +85,7 @@ vi.mock('../../common/process.js', () => ({
 }));
 vi.mock('../executors/claude_code/format.js', () => ({
   extractStructuredMessages: mocks.extractStructuredMessages,
-  formatJsonMessage: mocks.formatJsonMessage,
-  resetToolUseCache: mocks.resetToolUseCache,
+  createClaudeMessageFormatter: mocks.createClaudeMessageFormatter,
 }));
 vi.mock('../executors/claude_code/terminal_input_lifecycle.js', () => ({
   executeWithTerminalInput: mocks.executeWithTerminalInput,
@@ -233,7 +234,6 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
         return { type: 'unknown' };
       }
     });
-    mocks.resetToolUseCache.mockImplementation(() => {});
     mocks.spawnWithStreamingIO.mockImplementation(async (args: string[], opts: any) => {
       capturedClaudeSpawnArgs = args;
       capturedSpawnEnv = opts?.env;

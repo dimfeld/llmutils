@@ -86,6 +86,12 @@ import { clearTmpDir } from '../../batch_review_cache.js';
 import { autoCreatePrForPlan } from '../create_pr.js';
 import { autoUploadArtifactsToPr } from '../upload_artifacts.js';
 import { withPlanAutoSync } from '../../plan_materialize.js';
+import { isCodexAppServerEnabled } from '../../executors/codex_cli/app_server_mode.js';
+import { CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE } from '../../executors/codex_cli/app_server_dynamic_tools.js';
+import {
+  CollaborativeAgentSession,
+  isCollaborativeAgentExecutor,
+} from './collaborative_session.js';
 
 interface AgentCommandOptions {
   nextReady?: number;
@@ -462,6 +468,9 @@ export async function timAgent(
   let summaryFilePath: string | undefined;
   let summaryCollector!: SummaryCollector;
   let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
+  let unregisterAgentMessagingCleanup: (() => void) | undefined;
+  let collaborativeAgentSession: CollaborativeAgentSession | undefined;
+  let agentMessagingShutdownError: Error | undefined;
   const recordFailure = (err: unknown): void => {
     if (failureReason) return;
     if (err instanceof Error) {
@@ -476,6 +485,22 @@ export async function timAgent(
     // Must be inside try so the finally block always resets it
     setDeferSignalExit(true);
     config = await loadEffectiveConfig(globalCliOptions.config);
+    const agentMessagingEnabled = config.experimental?.agentMessaging === true;
+    if (agentMessagingEnabled) {
+      log('Experimental agent messaging is enabled');
+    }
+    const executorName = options.orchestrator || config.defaultOrchestrator || DEFAULT_EXECUTOR;
+    const collaborativeOrchestratorExecutor = isCollaborativeAgentExecutor(executorName)
+      ? executorName
+      : undefined;
+    if (agentMessagingEnabled && collaborativeOrchestratorExecutor === undefined) {
+      throw new Error(
+        `Experimental agent messaging requires the Claude or Codex orchestrator executor; received ${executorName}`
+      );
+    }
+    if (agentMessagingEnabled && executorName === 'codex-cli' && !isCodexAppServerEnabled()) {
+      throw new Error(CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE);
+    }
     currentBaseDir = await getGitRoot();
     let initialResolvedPlan = await resolvePlanByNumericId(planId, currentBaseDir);
     let initialPlanData = initialResolvedPlan.plan;
@@ -553,9 +578,7 @@ export async function timAgent(
       }
     }
 
-    // Use orchestrator from CLI options, fallback to config defaultOrchestrator, or fallback to DEFAULT_EXECUTOR
-    // Note: defaultOrchestrator and defaultExecutor are independent - agent command uses defaultOrchestrator
-    const executorName = options.orchestrator || config.defaultOrchestrator || DEFAULT_EXECUTOR;
+    // Use the validated orchestrator selected before workspace setup.
     const agentExecutionModel = resolveAgentExecutionModel(executorName, options, config);
 
     // Determine subagent executor: CLI --executor flag -> config defaultSubagentExecutor -> 'dynamic'
@@ -690,16 +713,36 @@ export async function timAgent(
       options.terminalInput !== false &&
       config.terminalInput !== false;
 
+    if (agentMessagingEnabled) {
+      collaborativeAgentSession = await CollaborativeAgentSession.create({
+        planId: planData.id ?? planId,
+        repositoryRoot: currentBaseDir,
+        configPath: globalCliOptions.config,
+        orchestratorExecutor: collaborativeOrchestratorExecutor!,
+        noninteractive,
+      });
+      unregisterAgentMessagingCleanup = cleanupRegistry.register(() =>
+        collaborativeAgentSession?.close()
+      );
+    }
+
     const sharedExecutorOptions: ExecutorCommonOptions = {
       baseDir: currentBaseDir,
       model: agentExecutionModel,
       noninteractive: noninteractive ? true : undefined,
       terminalInput: terminalInputEnabled,
       simpleMode: simpleModeEnabled ? true : undefined,
+      agentMessagingEnabled,
+      claudePermissionPromptCoordinator:
+        collaborativeAgentSession?.claudePermissionPromptCoordinator,
+      claudeAgentToolContext: collaborativeAgentSession?.claudeAgentToolContext,
+      codexDynamicToolProvider: collaborativeAgentSession?.codexDynamicToolProvider,
+      orchestratorInputAdapter: collaborativeAgentSession?.orchestratorInputAdapter,
       reviewExecutor: options.reviewExecutor,
       subagentExecutor,
       dynamicSubagentInstructions,
       timEnvironment,
+      agentEnvironmentIdentity: collaborativeAgentSession?.orchestratorEnvironmentIdentity,
     };
 
     const orchestratorExecutorOptions = buildOrchestratorExecutorOptions(
@@ -1539,6 +1582,25 @@ export async function timAgent(
     await planWatcher?.closeAndFlush();
     planWatcher = undefined;
 
+    // Stop all collaborative agents before plan write-back, workspace sync,
+    // artifact publication, or lifecycle daemon shutdown can observe or alter
+    // the shared working directory.
+    try {
+      if (collaborativeAgentSession !== undefined) {
+        await collaborativeAgentSession.close();
+      }
+    } catch (err) {
+      agentMessagingShutdownError = err instanceof Error ? err : new Error(String(err));
+      if (!executionError) {
+        executionError = agentMessagingShutdownError;
+      } else {
+        error(`Agent messaging shutdown failed: ${agentMessagingShutdownError}`);
+      }
+    } finally {
+      unregisterAgentMessagingCleanup?.();
+      unregisterAgentMessagingCleanup = undefined;
+    }
+
     let workspaceSyncError: Error | undefined;
     if (currentPlanFile && !isShuttingDown()) {
       try {
@@ -1686,6 +1748,9 @@ export async function timAgent(
     }
     if (!hadExecutionFailure && !postExecutionError && lifecycleShutdownError) {
       postExecutionError = lifecycleShutdownError;
+    }
+    if (!hadExecutionFailure && !postExecutionError && agentMessagingShutdownError) {
+      postExecutionError = agentMessagingShutdownError;
     }
 
     // Disable deferred exit — no more async cleanup to do

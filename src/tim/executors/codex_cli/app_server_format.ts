@@ -1,5 +1,7 @@
 import type { FormattedCodexMessage } from './format';
 import type { StructuredMessage } from '../../../logging/structured_messages';
+import { formatDynamicToolCall } from './app_server_dynamic_tool_format.js';
+import { normalizeCodexAppServerNotification } from './app_server_notifications.js';
 import {
   buildCommandResult,
   buildSessionStart,
@@ -321,14 +323,6 @@ function normalizeThreadTokenUsage(payload: Record<string, unknown>): {
   };
 }
 
-function extractThreadStatusType(payload: Record<string, unknown>): string | undefined {
-  const status =
-    payload.status && typeof payload.status === 'object'
-      ? (payload.status as Record<string, unknown>)
-      : undefined;
-  return typeof status?.type === 'string' ? status.type : undefined;
-}
-
 function mergeUsage(
   existing: FormatterState['latestUsage'],
   next: FormatterState['latestUsage']
@@ -390,20 +384,6 @@ function extractRateLimitKey(rateLimit: Record<string, unknown>): string {
   const normalized = normalizeRateLimitPayload(rateLimit);
   const limitId = normalized.limitId;
   return typeof limitId === 'string' && limitId.length > 0 ? limitId : 'unknown';
-}
-
-function extractThreadId(params: Record<string, unknown>): string | undefined {
-  if (typeof params.threadId === 'string') {
-    return params.threadId;
-  }
-  const thread = params.thread;
-  if (thread && typeof thread === 'object') {
-    const threadId = (thread as Record<string, unknown>).id;
-    if (typeof threadId === 'string') {
-      return threadId;
-    }
-  }
-  return undefined;
 }
 
 function extractSessionId(params: Record<string, unknown>): string | undefined {
@@ -655,6 +635,10 @@ export function createAppServerFormatter(model?: string) {
       };
     }
 
+    if (itemType === 'dynamictoolcall') {
+      return formatDynamicToolCall(item, method, ts);
+    }
+
     if (itemType === 'collabagenttoolcall') {
       const toolName = extractTextField(item.tool) ?? 'unknown';
       const structured = {
@@ -755,7 +739,7 @@ export function createAppServerFormatter(model?: string) {
       }
 
       if (lowerMethod === 'thread/status/changed') {
-        const statusType = extractThreadStatusType(payload);
+        const statusType = normalizeCodexAppServerNotification(method, payload).threadStatusType;
         return statusType
           ? {
               type: method,
@@ -816,7 +800,8 @@ export function createAppServerFormatter(model?: string) {
       }
 
       if (method === 'thread/started') {
-        state.threadId = extractThreadId(payload) ?? state.threadId;
+        state.threadId =
+          normalizeCodexAppServerNotification(method, payload).threadId ?? state.threadId;
         state.sessionId = extractSessionId(payload) ?? state.sessionId;
         return {
           type: method,

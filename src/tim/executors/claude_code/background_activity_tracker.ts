@@ -81,6 +81,11 @@ export class BackgroundActivityTracker {
     return this.hasRunningBackgroundTasks;
   }
 
+  /** True while a result is waiting for background settlement or grace. */
+  hasPendingResult(): boolean {
+    return this.pendingResultSuccessful !== undefined;
+  }
+
   onResultMessage(resultWasSuccessful: boolean): void {
     if (this.closed) {
       return;

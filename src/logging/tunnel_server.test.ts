@@ -2,10 +2,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import net from 'node:net';
 import path from 'node:path';
 import fs from 'node:fs';
-import { mkdtemp, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises';
 import { createTunnelServer, type TunnelServer, structuredMessageTypes } from './tunnel_server.ts';
 import { structuredMessageTypeList } from './structured_messages.ts';
 import { runWithLogger } from './adapter.ts';
+import { closeLogFile, openLogFile } from './common.ts';
+import { SilentAdapter } from './silent.ts';
 import type { TunnelMessage } from './tunnel_protocol.ts';
 import { createRecordingAdapter, type RecordingAdapterCall } from './test_helpers.ts';
 
@@ -97,6 +99,25 @@ describe('createTunnelServer', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].method).toBe('log');
     expect(calls[0].args).toEqual(['hello', 'world']);
+  });
+
+  it('uses the tunneled agent name for log file writes', async () => {
+    const sp = uniqueSocketPath();
+    const logPath = path.join(testDir, 'agent.log');
+    openLogFile(logPath);
+
+    try {
+      await runWithLogger(new SilentAdapter(), async () => {
+        tunnelServer = await createTunnelServer(sp);
+        await connectAndSend(sp, [{ type: 'log', args: ['from worker'], agentName: 'worker-a' }]);
+      });
+    } finally {
+      await closeLogFile();
+    }
+
+    await expect(readFile(logPath, 'utf8')).resolves.toMatch(
+      /^\[\d{2}:\d{2}:\d{2}\] \[worker-a\] 'from worker'\n$/
+    );
   });
 
   it('should re-emit error messages through the logging system', async () => {

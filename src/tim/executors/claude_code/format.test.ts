@@ -1,5 +1,13 @@
 import { test, describe, expect, beforeEach } from 'vitest';
-import { applyTaskUpdateToList, formatJsonMessage, resetToolUseCache } from './format.ts';
+import {
+  applyTaskUpdateToList,
+  createClaudeMessageFormatter,
+  extractStructuredMessagesFromLines,
+} from './format.ts';
+
+let formatter = createClaudeMessageFormatter();
+const formatJsonMessage = (input: string, model?: string) =>
+  formatter.formatJsonMessage(input, model);
 
 function toolUseMessage({
   id,
@@ -57,7 +65,31 @@ function toolResultMessage({
 
 describe('formatJsonMessage', () => {
   beforeEach(() => {
-    resetToolUseCache();
+    formatter = createClaudeMessageFormatter();
+  });
+
+  test('extractStructuredMessagesFromLines reuses the supplied formatter across a batch', () => {
+    const batchFormatter = createClaudeMessageFormatter();
+    const lines = [
+      toolUseMessage({
+        id: 'batch-task-create',
+        name: 'TaskCreate',
+        input: { subject: 'Batch task' },
+        sessionId: 'batch-session',
+      }),
+      toolResultMessage({
+        toolUseId: 'batch-task-create',
+        content: 'Task #1 created successfully: Batch task',
+        sessionId: 'batch-session',
+      }),
+    ];
+
+    expect(extractStructuredMessagesFromLines(lines, batchFormatter)).toEqual([
+      expect.objectContaining({
+        type: 'todo_update',
+        items: [{ label: 'Batch task', status: 'pending' }],
+      }),
+    ]);
   });
 
   describe('file path extraction', () => {
@@ -880,7 +912,7 @@ describe('formatJsonMessage', () => {
 
     describe('Task management tools', () => {
       beforeEach(() => {
-        resetToolUseCache();
+        formatter.reset();
       });
 
       test('applyTaskUpdateToList mutates a known task status', () => {
@@ -1334,7 +1366,7 @@ describe('formatJsonMessage', () => {
         ]);
       });
 
-      test('resetToolUseCache clears pending creates and session task lists', () => {
+      test('reset clears pending creates and session task lists for this formatter only', () => {
         formatJsonMessage(
           toolUseMessage({
             id: 'pending-create',
@@ -1342,7 +1374,7 @@ describe('formatJsonMessage', () => {
             input: { subject: 'Pending task' },
           })
         );
-        resetToolUseCache();
+        formatter.reset();
 
         const pendingResult = formatJsonMessage(
           toolResultMessage({
@@ -1370,7 +1402,7 @@ describe('formatJsonMessage', () => {
             content: 'Task #1 created successfully: Tracked task',
           })
         );
-        resetToolUseCache();
+        formatter.reset();
 
         const updateAfterReset = formatJsonMessage(
           toolUseMessage({
@@ -1383,6 +1415,114 @@ describe('formatJsonMessage', () => {
           expect.objectContaining({
             type: 'llm_tool_use',
             toolName: 'TaskUpdate',
+          }),
+        ]);
+      });
+
+      test('interleaved formatter instances isolate identical tool and task IDs', () => {
+        const formatterA = createClaudeMessageFormatter();
+        const formatterB = createClaudeMessageFormatter();
+
+        const sharedSessionId = 'shared-session';
+        const sharedToolUseId = 'shared-tool-use';
+
+        formatterA.formatJsonMessage(
+          toolUseMessage({
+            id: sharedToolUseId,
+            name: 'Bash',
+            input: { command: 'printf A' },
+            sessionId: sharedSessionId,
+          })
+        );
+        formatterB.formatJsonMessage(
+          toolUseMessage({
+            id: sharedToolUseId,
+            name: 'Read',
+            input: { file_path: '/tmp/B' },
+            sessionId: sharedSessionId,
+          })
+        );
+
+        const resultA = formatterA.formatJsonMessage(
+          toolResultMessage({
+            toolUseId: sharedToolUseId,
+            content: 'A result',
+            sessionId: sharedSessionId,
+          })
+        );
+        const resultB = formatterB.formatJsonMessage(
+          toolResultMessage({
+            toolUseId: sharedToolUseId,
+            content: 'B result',
+            sessionId: sharedSessionId,
+          })
+        );
+
+        expect(resultA.structured).toEqual([
+          expect.objectContaining({ type: 'llm_tool_result', toolName: 'Bash' }),
+        ]);
+        expect(resultB.structured).toEqual([
+          expect.objectContaining({ type: 'llm_tool_result', toolName: 'Read' }),
+        ]);
+
+        const sharedTaskId = '1';
+        const sharedTaskUseId = 'shared-task-create';
+        formatterA.formatJsonMessage(
+          toolUseMessage({
+            id: sharedTaskUseId,
+            name: 'TaskCreate',
+            input: { subject: 'Task A' },
+            sessionId: sharedSessionId,
+          })
+        );
+        formatterB.formatJsonMessage(
+          toolUseMessage({
+            id: sharedTaskUseId,
+            name: 'TaskCreate',
+            input: { subject: 'Task B' },
+            sessionId: sharedSessionId,
+          })
+        );
+
+        formatterA.reset();
+
+        const taskBResult = formatterB.formatJsonMessage(
+          toolResultMessage({
+            toolUseId: sharedTaskUseId,
+            content: `Task #${sharedTaskId} created successfully: Task B`,
+            sessionId: sharedSessionId,
+          })
+        );
+        const taskAResult = formatterA.formatJsonMessage(
+          toolResultMessage({
+            toolUseId: sharedTaskUseId,
+            content: `Task #${sharedTaskId} created successfully: Task A`,
+            sessionId: sharedSessionId,
+          })
+        );
+
+        expect(taskBResult.structured).toEqual([
+          expect.objectContaining({
+            type: 'todo_update',
+            items: [{ label: 'Task B', status: 'pending' }],
+          }),
+        ]);
+        expect(taskAResult.structured).toEqual([
+          expect.objectContaining({ type: 'llm_tool_result', toolName: '' }),
+        ]);
+
+        const taskBUpdate = formatterB.formatJsonMessage(
+          toolUseMessage({
+            id: 'shared-task-update',
+            name: 'TaskUpdate',
+            input: { taskId: sharedTaskId, status: 'completed' },
+            sessionId: sharedSessionId,
+          })
+        );
+        expect(taskBUpdate.structured).toEqual([
+          expect.objectContaining({
+            type: 'todo_update',
+            items: [{ label: 'Task B', status: 'completed' }],
           }),
         ]);
       });

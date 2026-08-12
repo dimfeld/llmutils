@@ -171,3 +171,83 @@ describe('executeOrchestratorMode structuralReviewCompleted threading', () => {
     );
   });
 });
+
+describe('executeOrchestratorMode dormant agent messaging threading', () => {
+  const mockSharedOptions: ExecutorCommonOptions = {
+    baseDir: '/test/base',
+  };
+
+  const mockConfig: TimConfig = {
+    paths: { tasks: 'tasks' },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getGitRoot.mockResolvedValue('/test/base');
+    mocks.getUsingJj.mockResolvedValue(false);
+    mocks.wrapWithOrchestration.mockImplementation((content: string) => content);
+    mocks.wrapWithOrchestrationSimple.mockImplementation((content: string) => content);
+    mocks.wrapWithOrchestrationTdd.mockImplementation((content: string) => content);
+    mocks.executeCodexStep.mockResolvedValue('mock codex output');
+  });
+
+  test.each([true, false])(
+    'passes agentMessagingEnabled=%s to orchestration options without changing Codex options',
+    async (agentMessagingEnabled) => {
+      await executeOrchestratorMode(
+        'context',
+        {
+          planId: '123',
+          planTitle: 'Test Plan',
+          planFilePath: '/test/base/123.plan.md',
+          executionMode: 'normal',
+        },
+        '/test/base',
+        undefined,
+        mockConfig,
+        { ...mockSharedOptions, agentMessagingEnabled }
+      );
+
+      expect(mocks.wrapWithOrchestration).toHaveBeenCalledWith(
+        'context',
+        '123',
+        expect.objectContaining({ agentMessagingEnabled })
+      );
+      expect(mocks.executeCodexStep).toHaveBeenCalledWith('context', '/test/base', mockConfig, {
+        model: undefined,
+        reasoningLevel: 'medium',
+        appServerMode: 'single-turn-with-steering',
+        terminalInput: undefined,
+        timEnvironment: undefined,
+      });
+    }
+  );
+
+  test('passes the root dynamic tool provider to the Codex app-server step', async () => {
+    const dynamicToolProvider = {
+      definitions: [],
+      handler: vi.fn(),
+    } as unknown as NonNullable<ExecutorCommonOptions['codexDynamicToolProvider']>;
+
+    await executeOrchestratorMode(
+      'context',
+      {
+        planId: '123',
+        planTitle: 'Test Plan',
+        planFilePath: '/test/base/123.plan.md',
+        executionMode: 'normal',
+      },
+      '/test/base',
+      undefined,
+      mockConfig,
+      { ...mockSharedOptions, codexDynamicToolProvider: dynamicToolProvider }
+    );
+
+    expect(mocks.executeCodexStep).toHaveBeenCalledWith(
+      'context',
+      '/test/base',
+      mockConfig,
+      expect.objectContaining({ dynamicToolProvider })
+    );
+  });
+});

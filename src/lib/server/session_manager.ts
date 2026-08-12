@@ -117,6 +117,8 @@ export interface DisplayMessage {
   rawType: StructuredMessage['type'] | TunnelMessage['type'] | string;
   /** Where raw stdout/stderr output originated (e.g. a workspace lifecycle command). */
   origin?: OutputOrigin;
+  /** Agent or orchestrator that produced this message. */
+  agentName?: string;
   triggersNotification?: boolean;
 }
 
@@ -353,6 +355,7 @@ export function formatTunnelMessage(
               text: `[malformed structured message]`,
             },
             rawType: 'unknown' as StructuredMessage['type'],
+            agentName: message.agentName,
           };
         }
         const triggersNotification =
@@ -372,6 +375,7 @@ export function formatTunnelMessage(
             message: stripped,
           },
           rawType: structured.type,
+          agentName: message.agentName,
           triggersNotification,
         };
       } catch {
@@ -388,6 +392,7 @@ export function formatTunnelMessage(
           rawType:
             (message.message as { type?: string })?.type ??
             ('unknown' as StructuredMessage['type']),
+          agentName: message.agentName,
         };
       }
     }
@@ -405,6 +410,7 @@ export function formatTunnelMessage(
         },
         rawType: message.type,
         origin: message.origin,
+        agentName: message.agentName,
       };
     case 'log':
     case 'error':
@@ -420,6 +426,7 @@ export function formatTunnelMessage(
           text: message.args.join(' '),
         },
         rawType: message.type,
+        agentName: message.agentName,
       };
     case 'process_register':
     case 'process_update':

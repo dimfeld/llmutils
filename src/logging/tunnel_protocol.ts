@@ -21,6 +21,8 @@ export const TIM_OUTPUT_SOCKET = 'TIM_OUTPUT_SOCKET';
 export interface TunnelArgsMessage {
   type: 'log' | 'error' | 'warn' | 'debug';
   args: string[];
+  /** Agent name that produced this message. Omitted by older clients. */
+  agentName?: string;
 }
 
 /**
@@ -46,11 +48,15 @@ export interface TunnelDataMessage {
   data: string;
   /** Where this output originated. Omitted for ordinary process output. */
   origin?: OutputOrigin;
+  /** Agent name that produced this message. Omitted by older clients. */
+  agentName?: string;
 }
 
 export interface StructuredTunnelMessage {
   type: 'structured';
   message: StructuredMessage;
+  /** Agent name that produced this message. Omitted by older clients. */
+  agentName?: string;
 }
 
 /** Registers a tim or executor node in the root session process registry. */

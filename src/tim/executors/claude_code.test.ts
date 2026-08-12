@@ -4,6 +4,16 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 
+async function waitFor(condition: () => boolean, timeoutMs: number = 2000): Promise<void> {
+  const startedAt = Date.now();
+  while (!condition()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error('Timed out waiting for condition');
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 function createStreamingProcessMock(overrides?: {
   pid?: number;
   exitCode?: number;
@@ -40,6 +50,29 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+function doMockClaudeFormat(factory: () => Record<string, unknown>): void {
+  vi.doMock('./claude_code/format.ts', () => {
+    const formatModule = factory();
+    if (typeof formatModule.createClaudeMessageFormatter === 'function') {
+      const module = { ...formatModule };
+      delete module.formatLine;
+      return module;
+    }
+
+    const formatLine = formatModule.formatLine;
+    if (typeof formatLine !== 'function') {
+      throw new Error('Claude format test mock must provide a formatter line function');
+    }
+
+    const module = { ...formatModule };
+    delete module.formatLine;
+    return {
+      ...module,
+      createClaudeMessageFormatter: vi.fn(() => ({ formatJsonMessage: formatLine })),
+    };
+  });
+}
+
 describe('ClaudeCodeExecutor - failure detection integration', () => {
   let tempDir = '/tmp/claude-failure-test';
 
@@ -58,7 +91,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     vi.doMock('../../common/process.ts', () => ({
       spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
-          // Feed any line; formatJsonMessage is mocked below
+          // Feed any line; the formatter line function is mocked below
           opts.formatStdout('{}\n');
         }
         return createStreamingProcessMock();
@@ -69,8 +102,8 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     // Mock formatter to produce an assistant message with FAILED
     const failureRaw = `FAILED: Cannot proceed due to conflicting requirements\n\nRequirements:\n- A\nProblems:\n- B\nPossible solutions:\n- C`;
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn((_line: string) => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn((_line: string) => ({
         type: 'assistant',
         message: 'Model output...',
         rawMessage: failureRaw,
@@ -78,8 +111,6 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         failedSummary: 'Cannot proceed due to conflicting requirements',
       })),
       extractStructuredMessages: vi.fn((_messages: any[]) => []),
-
-      resetToolUseCache: vi.fn(),
     }));
 
     // Import after mocks
@@ -130,8 +161,8 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     // Mock formatter to produce an assistant message with an agent-tagged FAILED summary
     const failureRaw = `FAILED: Reviewer reported a failure — Blocked by policy\n\nRequirements:\n- A\nProblems:\n- B\nPossible solutions:\n- C`;
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn((_line: string) => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn((_line: string) => ({
         type: 'assistant',
         message: 'Model output...',
         rawMessage: failureRaw,
@@ -139,8 +170,6 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         failedSummary: 'Reviewer reported a failure — Blocked by policy',
       })),
       extractStructuredMessages: vi.fn((_messages: any[]) => []),
-
-      resetToolUseCache: vi.fn(),
     }));
 
     const { ClaudeCodeExecutor } = await import('./claude_code.js');
@@ -182,8 +211,8 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     const failureRaw =
       'FAILED: Reviewer detected blocking issues\n\nRequirements:\n- Ensure tests pass\nProblems:\n- bun run test failed\nPossible solutions:\n- Investigate test logs';
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn((_line: string) => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn((_line: string) => ({
         type: 'assistant',
         message: 'Model output...',
         rawMessage: failureRaw,
@@ -191,8 +220,6 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         failedSummary: 'Reviewer detected blocking issues',
       })),
       extractStructuredMessages: vi.fn((_messages: any[]) => []),
-
-      resetToolUseCache: vi.fn(),
     }));
 
     const { ClaudeCodeExecutor } = await import('./claude_code.js');
@@ -233,16 +260,14 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     }));
 
     const failureRaw = `PREFACE\nSome lines first\n\nFAILED: Could not proceed due to constraints\nProblems:\n- X`;
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn((_line: string) => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn((_line: string) => ({
         type: 'assistant',
         message: 'Model output...',
         rawMessage: failureRaw,
         // failed flag missing to force executor to detect using parseFailedReportAnywhere
       })),
       extractStructuredMessages: vi.fn((_messages: any[]) => []),
-
-      resetToolUseCache: vi.fn(),
     }));
 
     const { ClaudeCodeExecutor } = await import('./claude_code.js');
@@ -284,8 +309,8 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     }));
 
     let callIndex = 0;
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn((_line: string) => {
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn((_line: string) => {
         if (callIndex++ === 0) {
           return {
             type: 'assistant',
@@ -300,8 +325,6 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         };
       }),
       extractStructuredMessages: vi.fn((_messages: any[]) => []),
-
-      resetToolUseCache: vi.fn(),
     }));
 
     const { ClaudeCodeExecutor } = await import('./claude_code.js');
@@ -356,15 +379,13 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED_TDD'),
       }));
 
-      vi.doMock('./claude_code/format.ts', () => ({
-        formatJsonMessage: vi.fn(() => ({
+      doMockClaudeFormat(() => ({
+        formatLine: vi.fn(() => ({
           type: 'assistant',
           message: 'Model output...',
           rawMessage: 'Model output...',
         })),
         extractStructuredMessages: vi.fn((_messages: any[]) => []),
-
-        resetToolUseCache: vi.fn(),
       }));
 
       vi.doMock('./claude_code/agent_generator.ts', () => ({
@@ -429,11 +450,9 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn(() => ({})),
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn(() => ({})),
       extractStructuredMessages: vi.fn((_messages: any[]) => []),
-
-      resetToolUseCache: vi.fn(),
     }));
 
     const { ClaudeCodeExecutor } = await import('./claude_code.js');
@@ -480,11 +499,9 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn(() => ({})),
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn(() => ({})),
       extractStructuredMessages: vi.fn((_messages: any[]) => []),
-
-      resetToolUseCache: vi.fn(),
     }));
 
     const { ClaudeCodeExecutor } = await import('./claude_code.js');
@@ -532,18 +549,48 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     streaming?: ReturnType<typeof createStreamingProcessMock>;
     normalizeThrows?: Error;
     tunnelActive?: boolean;
+    claudeOptions?: Record<string, unknown>;
+    sharedOptions?: Record<string, unknown>;
+    executionMode?: 'normal' | 'simple' | 'tdd' | 'review' | 'planning' | 'bare';
+    setupThrows?: Error;
+    cleanupEvents?: string[];
+    inputCleanupError?: Error;
+    planId?: string;
+    planFilePath?: string;
   }) {
     const streaming = options?.streaming ?? createStreamingProcessMock({ pid: 24680 });
-    const spawnWithStreamingIOMock = vi.fn(async () => streaming);
-    const startSubprocessMonitorMock = vi.fn(() => ({ stop: vi.fn() }));
+    const spawnWithStreamingIOMock = vi.fn(async (_args: string[], spawnOptions: any) => {
+      if (options?.cleanupEvents !== undefined) {
+        spawnOptions.onSessionProcessReady?.({
+          setGracefulEndHandler: vi.fn((handler: (() => void) | undefined) => {
+            if (handler === undefined) options.cleanupEvents?.push('process');
+          }),
+        });
+      }
+      return streaming;
+    });
+    const startSubprocessMonitorMock = vi.fn(() => ({
+      stop: vi.fn(() => {
+        options?.cleanupEvents?.push('monitor');
+      }),
+    }));
     const normalizeSubprocessMonitorRulesMock = vi.fn(() => []);
     const getGitRootMock = vi.fn(async () => tempDir);
-    const createTunnelServerMock = vi.fn(async () => ({ close: vi.fn() }));
-    const setupPermissionsMcpMock = vi.fn(async () => ({
-      tempDir: `${tempDir}/mcp`,
-      mcpConfigFile: `${tempDir}/mcp/config.json`,
-      cleanup: vi.fn(async () => {}),
+    const createTunnelServerMock = vi.fn(async () => ({
+      close: vi.fn(() => {
+        options?.cleanupEvents?.push('tunnel');
+      }),
     }));
+    const setupPermissionsMcpMock = vi.fn(async () => {
+      if (options?.setupThrows) throw options.setupThrows;
+      return {
+        tempDir: `${tempDir}/mcp`,
+        mcpConfigFile: `${tempDir}/mcp/config.json`,
+        cleanup: vi.fn(async () => {
+          options?.cleanupEvents?.push('mcp');
+        }),
+      };
+    });
     const executeWithTerminalInputMock = vi.fn(({ streaming: spawnedStreaming }: any) => {
       let acceptedFinalResult = false;
       const onResultMessage = vi.fn((resultWasSuccessful: boolean) => {
@@ -551,7 +598,10 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
       });
       return {
         resultPromise: spawnedStreaming.result,
-        cleanup: vi.fn(),
+        cleanup: vi.fn(() => {
+          options?.cleanupEvents?.push('input');
+          if (options?.inputCleanupError !== undefined) throw options.inputCleanupError;
+        }),
         sendFollowUpForInterceptedResult: vi.fn(),
         acceptedSuccessfulFinalResult: vi.fn(() => acceptedFinalResult),
         onResultMessage,
@@ -610,17 +660,21 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
 
     const { ClaudeCodeExecutor } = await import('./claude_code.js');
     const executor = new ClaudeCodeExecutor(
-      { permissionsMcp: { enabled: false } } as any,
-      { baseDir: tempDir, timEnvironment: options?.timEnvironment } as any,
+      { permissionsMcp: { enabled: false }, ...options?.claudeOptions } as any,
+      {
+        baseDir: tempDir,
+        timEnvironment: options?.timEnvironment,
+        ...options?.sharedOptions,
+      } as any,
       options?.timConfig ?? ({} as any)
     );
 
     const execute = () =>
       executor.execute('CTX', {
-        planId: '',
+        planId: options?.planId ?? '',
         planTitle: 'T',
-        planFilePath: '',
-        executionMode: 'normal',
+        planFilePath: options?.planFilePath ?? '',
+        executionMode: options?.executionMode ?? 'normal',
       });
 
     return {
@@ -655,6 +709,422 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     expect(harness.createTunnelServerMock).not.toHaveBeenCalled();
     expect(harness.spawnWithStreamingIOMock).not.toHaveBeenCalled();
   });
+
+  test('continues executor cleanup in order when input cleanup fails', async () => {
+    const cleanupEvents: string[] = [];
+    const inputCleanupError = new Error('input cleanup failed');
+    const harness = await setupHarness({
+      tunnelActive: false,
+      cleanupEvents,
+      inputCleanupError,
+      claudeOptions: { permissionsMcp: { enabled: true } },
+      timConfig: {
+        subprocessMonitor: {
+          rules: [{ match: { contains: 'child' }, timeoutSeconds: 60 }],
+        },
+      },
+    });
+
+    await expect(harness.execute()).rejects.toBe(inputCleanupError);
+    expect(cleanupEvents).toEqual(['input', 'process', 'monitor', 'tunnel', 'mcp']);
+  });
+
+  test('installs trusted agent tools in noninteractive mode without approval prompting', async () => {
+    const context = {
+      caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+      allowedTools: new Set([
+        'StartTimAgent',
+        'ListTimAgents',
+        'SendTimAgentMessage',
+        'StopTimAgent',
+      ]),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+    const harness = await setupHarness({
+      sharedOptions: {
+        noninteractive: true,
+        claudeAgentToolContext: context,
+      },
+    });
+
+    await harness.execute();
+
+    const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+    expect(harness.setupPermissionsMcpMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interactiveApprovalEnabled: false,
+        agentToolContext: context,
+      })
+    );
+    expect(args).toContain('--mcp-config');
+    expect(args).not.toContain('--permission-prompt-tool');
+    const allowedToolsIndex = args.indexOf('--allowedTools');
+    expect(allowedToolsIndex).toBeGreaterThan(-1);
+    expect(args[allowedToolsIndex + 1]).toContain('mcp__tim__StartTimAgent');
+    expect(args[allowedToolsIndex + 1]).toContain('mcp__tim__ListTimAgents');
+    expect(args[allowedToolsIndex + 1]).toContain('mcp__tim__SendTimAgentMessage');
+    expect(args[allowedToolsIndex + 1]).toContain('mcp__tim__StopTimAgent');
+  });
+
+  test('passes the root-owned permission coordinator to the Claude MCP bridge', async () => {
+    const coordinator = {
+      enqueue: vi.fn(),
+      cancelRequester: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const harness = await setupHarness({
+      claudeOptions: { permissionsMcp: { enabled: true } },
+      sharedOptions: { claudePermissionPromptCoordinator: coordinator },
+    });
+
+    await harness.execute();
+
+    expect(harness.setupPermissionsMcpMock).toHaveBeenCalledWith(
+      expect.objectContaining({ permissionPromptCoordinator: coordinator })
+    );
+  });
+
+  test('keeps trusted agent tools in allow-all mode without approval prompting', async () => {
+    const context = {
+      caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+      allowedTools: new Set([
+        'StartTimAgent',
+        'ListTimAgents',
+        'SendTimAgentMessage',
+        'StopTimAgent',
+      ]),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+    const harness = await setupHarness({
+      claudeOptions: {
+        allowAllTools: true,
+        permissionsMcp: { enabled: true },
+      },
+      sharedOptions: { claudeAgentToolContext: context },
+    });
+
+    await harness.execute();
+
+    const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+    expect(harness.setupPermissionsMcpMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interactiveApprovalEnabled: false,
+        agentToolContext: context,
+      })
+    );
+    expect(args).toContain('--mcp-config');
+    expect(args).not.toContain('--permission-prompt-tool');
+    expect(args).toContain('--dangerously-skip-permissions');
+  });
+
+  test('fails before spawning Claude when required agent tool setup fails', async () => {
+    const context = {
+      caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+      allowedTools: new Set([
+        'StartTimAgent',
+        'ListTimAgents',
+        'SendTimAgentMessage',
+        'StopTimAgent',
+      ]),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+    const harness = await setupHarness({
+      setupThrows: new Error('bridge setup failed'),
+      sharedOptions: { claudeAgentToolContext: context, noninteractive: true },
+    });
+
+    await expect(harness.execute()).rejects.toThrow('bridge setup failed');
+    expect(harness.spawnWithStreamingIOMock).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    {
+      role: 'orchestrator' as const,
+      tools: ['StartTimAgent', 'ListTimAgents', 'SendTimAgentMessage', 'StopTimAgent'],
+    },
+    {
+      role: 'subagent' as const,
+      tools: ['ListTimAgents', 'SendTimAgentMessage', 'FinishTimAgent'],
+    },
+  ])('passes exactly the $role MCP agent tool IDs to Claude', async ({ role, tools }) => {
+    const context = {
+      caller: { id: `${role}-id`, name: role, role },
+      allowedTools: new Set(tools),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+    const harness = await setupHarness({
+      sharedOptions: { claudeAgentToolContext: context, noninteractive: true },
+    });
+
+    await harness.execute();
+
+    const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+    const allowedToolsIndex = args.indexOf('--allowedTools');
+    expect(allowedToolsIndex).toBeGreaterThan(-1);
+    const mcpToolIds = args[allowedToolsIndex + 1]
+      .split(',')
+      .filter((toolName) => toolName.startsWith('mcp__tim__'));
+    expect(mcpToolIds).toEqual(tools.map((toolName) => `mcp__tim__${toolName}`));
+  });
+
+  test.each([
+    {
+      name: 'not installed',
+      claudeOptions: {},
+      sharedOptions: { noninteractive: true },
+      setupExpected: false,
+      approvalExpected: false,
+    },
+    {
+      name: 'permission-only',
+      claudeOptions: { permissionsMcp: { enabled: true } },
+      sharedOptions: {},
+      setupExpected: true,
+      approvalExpected: true,
+    },
+    {
+      name: 'requested-approval-noninteractive',
+      claudeOptions: { permissionsMcp: { enabled: true } },
+      sharedOptions: { noninteractive: true },
+      setupExpected: false,
+      approvalExpected: false,
+    },
+    {
+      name: 'requested-approval-allow-all',
+      claudeOptions: {
+        allowAllTools: true,
+        permissionsMcp: { enabled: true },
+      },
+      sharedOptions: {},
+      setupExpected: false,
+      approvalExpected: false,
+    },
+    {
+      name: 'tools-only',
+      claudeOptions: {},
+      sharedOptions: {
+        noninteractive: true,
+        claudeAgentToolContext: {
+          caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+          allowedTools: new Set([
+            'StartTimAgent',
+            'ListTimAgents',
+            'SendTimAgentMessage',
+            'StopTimAgent',
+          ]),
+          dispatcher: {
+            startAgent: vi.fn(),
+            listAgents: vi.fn(),
+            sendAgentMessage: vi.fn(),
+            stopAgent: vi.fn(),
+            finishAgent: vi.fn(),
+          },
+        },
+      },
+      setupExpected: true,
+      approvalExpected: false,
+    },
+    {
+      name: 'combined',
+      claudeOptions: { permissionsMcp: { enabled: true } },
+      sharedOptions: {
+        claudeAgentToolContext: {
+          caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+          allowedTools: new Set([
+            'StartTimAgent',
+            'ListTimAgents',
+            'SendTimAgentMessage',
+            'StopTimAgent',
+          ]),
+          dispatcher: {
+            startAgent: vi.fn(),
+            listAgents: vi.fn(),
+            sendAgentMessage: vi.fn(),
+            stopAgent: vi.fn(),
+            finishAgent: vi.fn(),
+          },
+        },
+      },
+      setupExpected: true,
+      approvalExpected: true,
+    },
+  ])(
+    'installs the $name Claude MCP capability state with independent approval flags',
+    async ({ claudeOptions, sharedOptions, setupExpected, approvalExpected }) => {
+      const harness = await setupHarness({ claudeOptions, sharedOptions });
+
+      await harness.execute();
+
+      const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+      expect(harness.setupPermissionsMcpMock).toHaveBeenCalledTimes(setupExpected ? 1 : 0);
+      expect(args.includes('--mcp-config')).toBe(setupExpected);
+      const permissionFlagIndex = args.indexOf('--permission-prompt-tool');
+      expect(permissionFlagIndex >= 0).toBe(approvalExpected);
+      if (approvalExpected) {
+        expect(args[permissionFlagIndex + 1]).toBe('mcp__tim__approval_prompt');
+      }
+      if (setupExpected) {
+        expect(harness.setupPermissionsMcpMock).toHaveBeenCalledWith(
+          expect.objectContaining({ interactiveApprovalEnabled: approvalExpected })
+        );
+      }
+    }
+  );
+
+  test('passes the original user MCP config directly when no internal bridge is needed', async () => {
+    const harness = await setupHarness({
+      claudeOptions: { mcpConfigFile: '/path/to/user-mcp-config.json' },
+      sharedOptions: { noninteractive: true },
+    });
+
+    await harness.execute();
+
+    const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+    const mcpConfigIndex = args.indexOf('--mcp-config');
+    expect(mcpConfigIndex).toBeGreaterThan(-1);
+    expect(args[mcpConfigIndex + 1]).toBe('/path/to/user-mcp-config.json');
+    expect(harness.setupPermissionsMcpMock).not.toHaveBeenCalled();
+  });
+
+  test('resolves a relative user MCP config against the executor working directory', async () => {
+    const harness = await setupHarness({
+      claudeOptions: {
+        mcpConfigFile: 'config/user-mcp.json',
+        permissionsMcp: { enabled: true },
+      },
+    });
+
+    await harness.execute();
+
+    expect(harness.setupPermissionsMcpMock).toHaveBeenCalledWith(
+      expect.objectContaining({ mcpConfigFile: `${tempDir}/config/user-mcp.json` })
+    );
+  });
+
+  test('rejects disallowed agent tools before the executor allocates the bridge or provider', async () => {
+    const context = {
+      caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+      allowedTools: new Set(['StartTimAgent']),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+    const harness = await setupHarness({
+      claudeOptions: { disallowedTools: ['mcp__tim__StartTimAgent'] },
+      sharedOptions: { claudeAgentToolContext: context, noninteractive: true },
+    });
+
+    await expect(harness.execute()).rejects.toThrow('mcp__tim__StartTimAgent');
+    expect(harness.setupPermissionsMcpMock).not.toHaveBeenCalled();
+    expect(harness.spawnWithStreamingIOMock).not.toHaveBeenCalled();
+  });
+
+  test.each(['review', 'planning', 'bare'] as const)(
+    'keeps %s execution without a trusted agent context free of the internal MCP bridge',
+    async (executionMode) => {
+      const harness = await setupHarness({ executionMode });
+
+      await harness.execute();
+
+      const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+      expect(harness.setupPermissionsMcpMock).not.toHaveBeenCalled();
+      expect(args).not.toContain('--mcp-config');
+      expect(args).not.toContain('--permission-prompt-tool');
+    }
+  );
+
+  test.each(['review', 'planning', 'bare'] as const)(
+    'keeps enabled %s execution free of messaging tools',
+    async (executionMode) => {
+      const harness = await setupHarness({
+        executionMode,
+        sharedOptions: { agentMessagingEnabled: true },
+      });
+
+      await harness.execute();
+
+      const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+      expect(harness.setupPermissionsMcpMock).not.toHaveBeenCalled();
+      expect(args).not.toContain('--mcp-config');
+      expect(args.join(' ')).not.toContain('StartTimAgent');
+      expect(args.join(' ')).not.toContain('ListTimAgents');
+      expect(args.join(' ')).not.toContain('SendTimAgentMessage');
+      expect(args.join(' ')).not.toContain('StopTimAgent');
+      expect(args.join(' ')).not.toContain('FinishTimAgent');
+    }
+  );
+
+  test.each([
+    ['normal', true],
+    ['simple', true],
+    ['tdd', true],
+    ['normal', false],
+    ['simple', false],
+    ['tdd', false],
+    ['normal', undefined],
+    ['simple', undefined],
+    ['tdd', undefined],
+  ] as const)(
+    'uses the real %s orchestration prompt for agentMessagingEnabled=%s',
+    async (executionMode, agentMessagingEnabled) => {
+      vi.doUnmock('./shared/orchestrator_prompt.ts');
+      const harness = await setupHarness({
+        executionMode,
+        planId: '421',
+        planFilePath: `${tempDir}/421.plan.md`,
+        sharedOptions: { agentMessagingEnabled, subagentExecutor: 'dynamic' },
+      });
+
+      await harness.execute();
+
+      const prompt = harness.executeWithTerminalInputMock.mock.calls[0]?.[0]?.prompt as string;
+      expect(prompt).toEqual(expect.any(String));
+      if (agentMessagingEnabled === true) {
+        expect(prompt).toContain('StartTimAgent');
+        expect(prompt).toContain('ListTimAgents');
+        expect(prompt).toContain('SendTimAgentMessage');
+        expect(prompt).toContain('StopTimAgent');
+        expect(prompt).toContain('FinishTimAgent is self-only');
+        expect(prompt).toContain('tim review 421 --print --output-file <output_path>');
+        expect(prompt).not.toMatch(/tim subagent (implementer|tester|tdd-tests|reviewer)/);
+      } else {
+        expect(prompt).toContain('tim subagent');
+        expect(prompt).not.toContain('StartTimAgent');
+        expect(prompt).not.toContain('ListTimAgents');
+        expect(prompt).not.toContain('SendTimAgentMessage');
+        expect(prompt).not.toContain('StopTimAgent');
+        expect(prompt).not.toContain('FinishTimAgent');
+      }
+    }
+  );
 
   test('starts and stops monitor with spawned Claude PID when rules are configured', async () => {
     const monitorStop = vi.fn();
@@ -823,16 +1293,14 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       actionItems: ['Fix SQL injection'],
     };
 
-    // Mock formatJsonMessage to return structured output
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn(() => ({
+    // Mock the formatter line function to return structured output
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn(() => ({
         type: 'assistant',
         message: 'Review completed',
         structuredOutput: mockStructuredOutput,
       })),
       extractStructuredMessages: vi.fn((_messages: any[]) => []),
-
-      resetToolUseCache: vi.fn(),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -1043,16 +1511,14 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn(() => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn(() => ({
         type: 'assistant',
         message: '',
         rawMessage: '',
         failed: false,
       })),
       extractStructuredMessages: vi.fn((_messages: any[]) => []),
-
-      resetToolUseCache: vi.fn(),
     }));
 
     const { ClaudeCodeExecutor } = await import('./claude_code.js');
@@ -1091,15 +1557,14 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn(() => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn(() => ({
         type: 'assistant',
         message: '',
         rawMessage: '',
         failed: false,
       })),
       extractStructuredMessages: vi.fn(() => []),
-      resetToolUseCache: vi.fn(() => {}),
     }));
 
     vi.doMock('./shared/orchestrator_prompt.ts', () => ({
@@ -1152,14 +1617,13 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn(() => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn(() => ({
         type: 'assistant',
         message: '',
         rawMessage: '',
       })),
       extractStructuredMessages: vi.fn(() => []),
-      resetToolUseCache: vi.fn(() => {}),
     }));
 
     const { ClaudeCodeExecutor } = await import('./claude_code.js');
@@ -1219,14 +1683,13 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn(() => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
         rawMessage: 'Output',
       })),
       extractStructuredMessages: vi.fn(() => []),
-      resetToolUseCache: vi.fn(() => {}),
     }));
 
     vi.doMock('./shared/orchestrator_prompt.ts', () => ({
@@ -1282,14 +1745,13 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn(() => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
         rawMessage: 'Output',
       })),
       extractStructuredMessages: vi.fn(() => []),
-      resetToolUseCache: vi.fn(() => {}),
     }));
 
     vi.doMock('./shared/orchestrator_prompt.ts', () => ({
@@ -1346,14 +1808,13 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn(() => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
         rawMessage: 'Output',
       })),
       extractStructuredMessages: vi.fn(() => []),
-      resetToolUseCache: vi.fn(() => {}),
     }));
 
     vi.doMock('./shared/orchestrator_prompt.ts', () => ({
@@ -1374,6 +1835,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
         baseDir: tempDir,
         subagentExecutor: 'codex-cli',
         dynamicSubagentInstructions: 'Use codex for Rust.',
+        agentMessagingEnabled: true,
       },
       {} as any
     );
@@ -1389,6 +1851,93 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     const [, , options] = wrapNormalSpy.mock.calls[0];
     expect(options.subagentExecutor).toBe('codex-cli');
     expect(options.dynamicSubagentInstructions).toBe('Use codex for Rust.');
+    expect(options.agentMessagingEnabled).toBe(true);
+  });
+
+  test('dormant agentMessagingEnabled does not change Claude prompt input or provider arguments', async () => {
+    const recordedArgs: string[][] = [];
+    const promptWrites: string[] = [];
+    const wrapNormalSpy = vi.fn(
+      (_content: string, _planId: string, _options: any) => 'WRAPPED_NORMAL'
+    );
+
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
+    }));
+
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (args: string[], opts: any) => {
+        recordedArgs.push([...args]);
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return createStreamingProcessMock({
+          stdin: {
+            write: vi.fn((value: string) => {
+              promptWrites.push(value);
+            }),
+            end: vi.fn(async () => {}),
+          },
+        });
+      }),
+      createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      debug: false,
+    }));
+
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn(() => ({
+        type: 'assistant',
+        message: 'Output',
+        rawMessage: 'Output',
+      })),
+      extractStructuredMessages: vi.fn(() => []),
+    }));
+
+    vi.doMock('./shared/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: wrapNormalSpy,
+      wrapWithOrchestrationSimple: vi.fn((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED'),
+    }));
+
+    vi.doMock('./claude_code/agent_generator.ts', () => ({
+      buildAgentsArgument: vi.fn(() => '{}'),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
+
+    for (const agentMessagingEnabled of [false, true]) {
+      const exec = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        {
+          baseDir: tempDir,
+          agentMessagingEnabled,
+        },
+        {} as any
+      );
+
+      await exec.execute('CTX', {
+        planId: 'p1',
+        planTitle: 'Plan',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+      });
+    }
+
+    expect(recordedArgs).toHaveLength(2);
+    expect(recordedArgs[1]).toEqual(recordedArgs[0]);
+    expect(recordedArgs[0]).not.toContain('--agents');
+    expect(promptWrites).toHaveLength(2);
+    expect(promptWrites[1]).toBe(promptWrites[0]);
+
+    expect(wrapNormalSpy).toHaveBeenCalledTimes(2);
+    const firstOptions = wrapNormalSpy.mock.calls[0]?.[2];
+    const secondOptions = wrapNormalSpy.mock.calls[1]?.[2];
+    expect(firstOptions).toMatchObject({ agentMessagingEnabled: false });
+    expect(secondOptions).toMatchObject({ agentMessagingEnabled: true });
+    const { agentMessagingEnabled: _firstEnabled, ...firstWithoutFlag } = firstOptions;
+    const { agentMessagingEnabled: _secondEnabled, ...secondWithoutFlag } = secondOptions;
+    expect(secondWithoutFlag).toEqual(firstWithoutFlag);
   });
 
   test('passes subagentExecutor and dynamicSubagentInstructions to orchestration wrapper in simple mode', async () => {
@@ -1412,14 +1961,13 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn(() => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
         rawMessage: 'Output',
       })),
       extractStructuredMessages: vi.fn(() => []),
-      resetToolUseCache: vi.fn(() => {}),
     }));
 
     vi.doMock('./shared/orchestrator_prompt.ts', () => ({
@@ -1476,14 +2024,13 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn(() => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
         rawMessage: 'Output',
       })),
       extractStructuredMessages: vi.fn(() => []),
-      resetToolUseCache: vi.fn(() => {}),
     }));
 
     vi.doMock('./shared/orchestrator_prompt.ts', () => ({
@@ -1546,14 +2093,13 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
         debug: false,
       }));
 
-      vi.doMock('./claude_code/format.ts', () => ({
-        formatJsonMessage: vi.fn(() => ({
+      doMockClaudeFormat(() => ({
+        formatLine: vi.fn(() => ({
           type: 'assistant',
           message: 'Output',
           rawMessage: 'Output',
         })),
         extractStructuredMessages: vi.fn(() => []),
-        resetToolUseCache: vi.fn(() => {}),
       }));
 
       vi.doMock('./shared/orchestrator_prompt.ts', () => ({
@@ -1614,15 +2160,13 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn(() => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
         rawMessage: 'Output',
       })),
       extractStructuredMessages: vi.fn((_messages: any[]) => []),
-
-      resetToolUseCache: vi.fn(),
     }));
 
     vi.doMock('../../logging/tunnel_server.ts', () => ({
@@ -1770,6 +2314,140 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     }
 
     expect(executeWithTerminalInputSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('queues root messages after result-close and drains them on the next execute turn', async () => {
+    vi.doUnmock('./claude_code/terminal_input_lifecycle.ts');
+    vi.doUnmock('./claude_code/format.ts');
+    vi.doUnmock('./claude_code/output_stream_formatter.ts');
+    vi.doUnmock('./claude_code/streaming_input.ts');
+    const { createAgentManager } = await import('../agent_messaging/agent_manager.js');
+    const { DeferredAgentInputAdapter } = await import('../agent_messaging/agent_input_adapter.js');
+
+    let formatStdout: ((output: string) => unknown) | undefined;
+    let resolveStreamingResult: ((value: SpawnAndLogOutputResult) => void) | undefined;
+    const stdinWrites: string[][] = [];
+    const resultLine =
+      '{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":1,"duration_api_ms":1,"is_error":false,"num_turns":1,"result":"done","session_id":"session"}';
+
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
+      getWorkingCopyStatus: vi.fn(async () => ''),
+    }));
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], options: any) => {
+        formatStdout = options.formatStdout;
+        const write = vi.fn((value: string) => {
+          stdinWrites.push([value]);
+        });
+        const end = vi.fn(async () => {});
+        return {
+          pid: 12345,
+          stdin: { write, end },
+          result: new Promise<SpawnAndLogOutputResult>((resolve) => {
+            resolveStreamingResult = resolve;
+          }),
+          kill: vi.fn(() => {}),
+        };
+      }),
+      createLineSplitter: () => (value: string) => value.split('\n').filter(Boolean),
+      debug: false,
+    }));
+    vi.doMock('../../logging/tunnel_client.js', () => ({
+      isTunnelActive: vi.fn(() => true),
+      TunnelAdapter: class {},
+    }));
+
+    const rootInput = new DeferredAgentInputAdapter();
+    const manager = await createAgentManager({
+      orchestratorExecutor: 'claude-code',
+      orchestratorInputAdapter: rootInput,
+    });
+    const execute = async (): Promise<void> => {
+      const { ClaudeCodeExecutor } = await import('./claude_code.js');
+      const executor = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        {
+          baseDir: tempDir,
+          noninteractive: true,
+          orchestratorInputAdapter: rootInput,
+        } as any,
+        {} as any
+      );
+      await executor.execute('CTX', {
+        planId: 'root-adapter',
+        planTitle: 'Root adapter',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'bare',
+      });
+    };
+
+    try {
+      const firstExecution = execute();
+      let firstExecutionError: unknown;
+      void firstExecution.catch((error: unknown) => {
+        firstExecutionError = error;
+      });
+      await waitFor(() => rootInput.activity === 'active' || firstExecutionError !== undefined);
+      if (firstExecutionError !== undefined) throw firstExecutionError;
+      expect(formatStdout).toBeDefined();
+
+      formatStdout?.(`${resultLine}\n`);
+      await waitFor(() => rootInput.activity === 'temporarily-unavailable');
+      expect(
+        rootInput.deliver({
+          messageId: 'direct-late-message',
+          source: manager.orchestratorIdentity,
+          content: 'directly unavailable after result close',
+        })
+      ).toBe('temporarily-unavailable');
+
+      const queuedAcknowledgement = await manager.sessionRuntime.sendMessage(
+        { id: manager.orchestratorIdentity.id, name: manager.orchestratorIdentity.name },
+        { id: manager.orchestratorIdentity.id, name: manager.orchestratorIdentity.name },
+        { requestId: 'queued-root-message', content: 'deliver on next turn' }
+      );
+      if (!queuedAcknowledgement.success) {
+        throw new Error(JSON.stringify(queuedAcknowledgement));
+      }
+      expect(queuedAcknowledgement).toMatchObject({
+        success: true,
+        delivery: 'queued',
+      });
+      resolveStreamingResult?.({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      });
+      await firstExecution;
+
+      stdinWrites.length = 0;
+      formatStdout = undefined;
+      resolveStreamingResult = undefined;
+      const secondExecution = execute();
+      await waitFor(() => rootInput.activity === 'active');
+      await waitFor(() => stdinWrites.some(([value]) => value.includes('deliver on next turn')));
+      expect(
+        stdinWrites.some(([value]) =>
+          value.includes('Agent message from orchestrator:\\ndeliver on next turn')
+        )
+      ).toBe(true);
+
+      formatStdout?.(`${resultLine}\n`);
+      resolveStreamingResult?.({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      });
+      await secondExecution;
+    } finally {
+      await manager.close();
+    }
   });
 
   test('logs terminal input hint when lifecycle controller reports started', async () => {
@@ -1972,18 +2650,20 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     vi.doMock('./claude_code/streaming_input.ts', () => ({}));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn((line: string) => {
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.type === 'result') {
-            return { type: 'result', message: parsed.result ?? '', resultInfo: parsed };
-          }
-        } catch {}
-        return { type: 'assistant', message: line, rawMessage: line };
-      }),
+    const formatJsonMessage = vi.fn((line: string) => {
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.type === 'result') {
+          return { type: 'result', message: parsed.result ?? '', resultInfo: parsed };
+        }
+      } catch {}
+      return { type: 'assistant', message: line, rawMessage: line };
+    });
+    const createClaudeMessageFormatter = vi.fn(() => ({ formatJsonMessage }));
+
+    doMockClaudeFormat(() => ({
+      createClaudeMessageFormatter,
       extractStructuredMessages: vi.fn(() => []),
-      resetToolUseCache: vi.fn(() => {}),
     }));
 
     vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
@@ -2011,8 +2691,11 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       // Wait for executeWithTerminalInput to be called so terminalInputResult is set
       await executeWithTerminalInputCalledPromise;
 
-      // Send the result line to trigger onResultMessage via the formatStdout callback
+      // Send separate output chunks to verify that one formatter serves the whole execution.
+      formatStdout?.('{"type":"assistant"}\n');
       formatStdout?.(`${resultLine}\n`);
+      // A follow-up provider turn must use the same formatter instance.
+      formatStdout?.('{"type":"assistant","message":"continuation"}\n');
 
       // Now resolve the resultPromise so the executor can finish
       resolveStreamingResult?.({
@@ -2033,6 +2716,8 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     // onResultMessage should be called from the formatStdout callback when result line is processed
     expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
+    expect(createClaudeMessageFormatter).toHaveBeenCalledTimes(1);
+    expect(formatJsonMessage).toHaveBeenCalledTimes(3);
   });
 
   test('does not force-close stdin when closeTerminalInputOnResult is false', async () => {
@@ -2088,8 +2773,8 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn((_line: string) => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn((_line: string) => ({
         type: 'result',
         message: 'done',
         resultInfo: {
@@ -2099,7 +2784,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
         },
       })),
       extractStructuredMessages: vi.fn(() => []),
-      resetToolUseCache: vi.fn(() => {}),
     }));
 
     vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
@@ -2180,8 +2864,8 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn((_line: string) => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn((_line: string) => ({
         type: 'result',
         message: 'maximum turns reached',
         resultInfo: {
@@ -2191,7 +2875,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
         },
       })),
       extractStructuredMessages: vi.fn(() => []),
-      resetToolUseCache: vi.fn(() => {}),
     }));
 
     vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
@@ -2268,8 +2951,8 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn((_line: string) => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn((_line: string) => ({
         type: 'result',
         message: 'done',
         resultInfo: {
@@ -2279,7 +2962,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
         },
       })),
       extractStructuredMessages: vi.fn(() => []),
-      resetToolUseCache: vi.fn(() => {}),
     }));
 
     vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
@@ -2372,8 +3054,8 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn((_line: string) => ({
+    doMockClaudeFormat(() => ({
+      formatLine: vi.fn((_line: string) => ({
         type: 'result',
         message: 'done',
         resultInfo: {
@@ -2383,7 +3065,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
         },
       })),
       extractStructuredMessages: vi.fn(() => []),
-      resetToolUseCache: vi.fn(() => {}),
     }));
 
     vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
@@ -2670,7 +3351,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
   });
 });
 
-describe('ClaudeCodeExecutor - background activity integration (real formatJsonMessage + real executeWithTerminalInput)', () => {
+describe('ClaudeCodeExecutor - background activity integration (real formatter + real executeWithTerminalInput)', () => {
   const tempDir = '/tmp/claude-bg-integration-test';
 
   beforeEach(async () => {
@@ -2742,8 +3423,11 @@ describe('ClaudeCodeExecutor - background activity integration (real formatJsonM
         };
       });
 
+      // Keep this path tunnel-active so the integration test exercises the same
+      // tunnel-aware terminal-input behavior as a live executor run.
+      const isTunnelActiveMock = vi.fn(() => true);
       vi.doMock('../../logging/tunnel_client.js', () => ({
-        isTunnelActive: () => false,
+        isTunnelActive: isTunnelActiveMock,
         TunnelAdapter: class {},
       }));
 
@@ -2798,6 +3482,7 @@ describe('ClaudeCodeExecutor - background activity integration (real formatJsonM
       });
       await vi.runAllTimersAsync();
       await executePromise;
+      expect(isTunnelActiveMock).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

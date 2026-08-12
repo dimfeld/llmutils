@@ -1135,6 +1135,77 @@ autoexamples:
       expect(config.subagents?.tester?.model?.claude).toBe('local-haiku'); // from local
     });
 
+    test('loadEffectiveConfig applies local experimental agentMessaging override', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        `experimental:
+  agentMessaging: false
+`
+      );
+      await fs.writeFile(
+        localConfigPath,
+        `experimental:
+  agentMessaging: true
+`
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.experimental).toEqual({ agentMessaging: true });
+    });
+
+    test('loadEffectiveConfig keeps the main experimental value without a local override', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        `experimental:
+  agentMessaging: false
+`
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.experimental).toEqual({ agentMessaging: false });
+    });
+
+    test('loadEffectiveConfig accepts an experimental value from the local layer alone', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(mainConfigPath, 'defaultExecutor: direct-call\n');
+      await fs.writeFile(
+        localConfigPath,
+        `experimental:
+  agentMessaging: true
+`
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.experimental).toEqual({ agentMessaging: true });
+    });
+
+    test('loadEffectiveConfig preserves the main experimental object when the local object is empty', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        `experimental:
+  agentMessaging: true
+`
+      );
+      await fs.writeFile(localConfigPath, 'experimental: {}\n');
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.experimental).toEqual({ agentMessaging: true });
+    });
+
     test('loadEffectiveConfig concatenates subprocess monitor rules and overrides poll interval', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       const localConfigPath = path.join(configDir, 'tim.local.yml');

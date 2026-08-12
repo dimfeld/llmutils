@@ -204,6 +204,7 @@ describe('lib/server/session_manager', () => {
 
     const structured = formatTunnelMessage('conn-1', 1, {
       type: 'structured',
+      agentName: 'worker-a',
       message: {
         type: 'token_usage',
         timestamp: '2026-03-17T10:00:59.000Z',
@@ -222,6 +223,7 @@ describe('lib/server/session_manager', () => {
       category: 'structured',
       bodyType: 'structured',
       rawType: 'token_usage',
+      agentName: 'worker-a',
       triggersNotification: false,
       body: {
         type: 'structured',

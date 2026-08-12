@@ -7,7 +7,12 @@ import { mergeConsecutiveOutputMessages } from './merge_output_messages.js';
 
 let seq = 0;
 
-function output(rawType: 'stdout' | 'stderr', text: string, origin?: OutputOrigin): DisplayMessage {
+function output(
+  rawType: 'stdout' | 'stderr',
+  text: string,
+  origin?: OutputOrigin,
+  agentName?: string
+): DisplayMessage {
   seq += 1;
   return {
     id: `conn:${seq}`,
@@ -18,6 +23,7 @@ function output(rawType: 'stdout' | 'stderr', text: string, origin?: OutputOrigi
     body: { type: 'monospaced', text },
     rawType,
     origin,
+    agentName,
   };
 }
 
@@ -74,6 +80,15 @@ describe('mergeConsecutiveOutputMessages', () => {
     const result = mergeConsecutiveOutputMessages([
       output('stdout', 'a', 'lifecycle'),
       output('stdout', 'b'),
+    ]);
+
+    expect(result).toHaveLength(2);
+  });
+
+  test('does not merge output from different agents', () => {
+    const result = mergeConsecutiveOutputMessages([
+      output('stdout', 'agent one', undefined, 'worker-a'),
+      output('stdout', 'agent two', undefined, 'worker-b'),
     ]);
 
     expect(result).toHaveLength(2);

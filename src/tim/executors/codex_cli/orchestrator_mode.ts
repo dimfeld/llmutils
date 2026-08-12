@@ -46,6 +46,7 @@ export async function executeOrchestratorMode(
       reviewExecutor: sharedOptions.reviewExecutor,
       reviewerInstructionsPath: timConfig.agents?.reviewer?.instructions,
       simpleMode,
+      agentMessagingEnabled: sharedOptions.agentMessagingEnabled,
       subagentExecutor: sharedOptions.subagentExecutor,
       dynamicSubagentInstructions: sharedOptions.dynamicSubagentInstructions,
       useJj,
@@ -77,6 +78,9 @@ export async function executeOrchestratorMode(
     appServerMode: 'single-turn-with-steering',
     terminalInput: sharedOptions.terminalInput,
     timEnvironment: sharedOptions.timEnvironment,
+    agentEnvironmentIdentity: sharedOptions.agentEnvironmentIdentity,
+    dynamicToolProvider: sharedOptions.codexDynamicToolProvider,
+    orchestratorInputAdapter: sharedOptions.orchestratorInputAdapter,
   });
 
   const parsed = parseFailedReportAnywhere(output);

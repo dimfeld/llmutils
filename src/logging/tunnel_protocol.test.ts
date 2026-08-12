@@ -84,6 +84,7 @@ describe('tunnel_protocol', () => {
       const message: TunnelArgsMessage = {
         type: 'log',
         args: ['hello', 'world'],
+        agentName: 'worker-a',
       };
       const json = JSON.stringify(message);
       const parsed = JSON.parse(json) as TunnelMessage;
@@ -94,6 +95,7 @@ describe('tunnel_protocol', () => {
       const message: TunnelDataMessage = {
         type: 'stdout',
         data: 'output data\n',
+        agentName: 'worker-a',
       };
       const json = JSON.stringify(message);
       const parsed = JSON.parse(json) as TunnelMessage;
@@ -150,6 +152,7 @@ describe('tunnel_protocol', () => {
           timestamp: '2026-02-08T00:00:00.000Z',
           message: 'Running',
         },
+        agentName: 'orchestrator',
       };
       const json = JSON.stringify(message);
       const parsed = JSON.parse(json) as TunnelMessage;

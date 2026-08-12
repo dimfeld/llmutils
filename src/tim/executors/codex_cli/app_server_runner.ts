@@ -9,7 +9,13 @@ import { isTunnelActive, TunnelAdapter } from '../../../logging/tunnel_client.js
 import { createExecutorTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
-import { CodexAppServerConnection } from './app_server_connection';
+import {
+  AppServerRequestError,
+  CodexAppServerConnection,
+  type ThreadResult,
+  type ThreadStartParams,
+} from './app_server_connection';
+import { normalizeCodexAppServerNotification } from './app_server_notifications.js';
 import {
   normalizeSubprocessMonitorRules,
   startSubprocessMonitor,
@@ -18,6 +24,13 @@ import {
 import { createApprovalHandler } from './app_server_approval';
 import { createAppServerFormatter } from './app_server_format';
 import type { CodexStepOptions } from './codex_runner';
+import {
+  CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE,
+  CodexDynamicToolsCompatibilityError,
+  validateCodexDynamicToolProvider,
+  type CodexDynamicToolProvider,
+} from './app_server_dynamic_tools.js';
+import { isCodexAppServerEnabled } from './app_server_mode.js';
 import {
   buildOutputSchemaConversionPrompt,
   buildOutputSchemaCorrectionPrompt,
@@ -28,10 +41,55 @@ import {
   getCurrentSessionProcessOwner,
   type SessionLogicalExecutorLifecycle,
 } from '../../../common/session_process_control.js';
+import { CodexRootSteeringBridge } from './codex_root_steering_bridge.js';
 
 class SessionEndedError extends Error {
   constructor() {
     super('Session ended');
+  }
+}
+
+type AppServerRequestHandler = (method: string, id: number, params: unknown) => Promise<unknown>;
+
+interface CodexTurnAttemptHooks {
+  readonly onTurnStarted?: (turnId: string) => void | Promise<void>;
+  readonly onAttemptSettled?: (status: string) => void | Promise<void>;
+}
+
+export function createAppServerRequestHandler(
+  dynamicToolProvider: CodexDynamicToolProvider | undefined,
+  approvalHandler: AppServerRequestHandler
+): AppServerRequestHandler {
+  return async (method, id, params) => {
+    if (method === 'item/tool/call') {
+      if (!dynamicToolProvider) {
+        throw new AppServerRequestError(
+          'Codex dynamic tool calls are not supported in this session.',
+          -32601
+        );
+      }
+      return await dynamicToolProvider.handler(params);
+    }
+
+    return await approvalHandler(method, id, params);
+  };
+}
+
+export async function startInitialThread(
+  connection: CodexAppServerConnection,
+  params: ThreadStartParams,
+  dynamicToolProvider: CodexDynamicToolProvider | undefined
+): Promise<ThreadResult> {
+  try {
+    return await connection.threadStart(params);
+  } catch (error) {
+    if (dynamicToolProvider) {
+      if (error instanceof CodexDynamicToolsCompatibilityError) {
+        throw error;
+      }
+      throw new CodexDynamicToolsCompatibilityError(error);
+    }
+    throw error;
   }
 }
 
@@ -43,33 +101,6 @@ function getInactivityTimeoutMs(options?: CodexStepOptions): number {
       ? inactivityOverride
       : 10 * 60 * 1000)
   );
-}
-
-function extractTurnStatus(params: unknown): string {
-  const payload = params && typeof params === 'object' ? (params as Record<string, unknown>) : {};
-  const turn =
-    payload.turn && typeof payload.turn === 'object'
-      ? (payload.turn as Record<string, unknown>)
-      : payload;
-  return typeof turn.status === 'string' ? turn.status : 'completed';
-}
-
-function extractTurnId(params: unknown): string | undefined {
-  const payload = params && typeof params === 'object' ? (params as Record<string, unknown>) : {};
-  const turn =
-    payload.turn && typeof payload.turn === 'object'
-      ? (payload.turn as Record<string, unknown>)
-      : payload;
-  return typeof turn.id === 'string' ? turn.id : undefined;
-}
-
-function extractThreadStatusType(params: unknown): string | undefined {
-  const payload = params && typeof params === 'object' ? (params as Record<string, unknown>) : {};
-  const status =
-    payload.status && typeof payload.status === 'object'
-      ? (payload.status as Record<string, unknown>)
-      : undefined;
-  return typeof status?.type === 'string' ? status.type : undefined;
 }
 
 class UserInputQueue {
@@ -128,6 +159,14 @@ export async function executeCodexStepViaAppServer(
   timConfig: TimConfig,
   options?: CodexStepOptions
 ): Promise<string> {
+  const dynamicToolProvider = options?.dynamicToolProvider;
+  if (dynamicToolProvider) {
+    validateCodexDynamicToolProvider(dynamicToolProvider);
+    if (!isCodexAppServerEnabled()) {
+      throw new Error(CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE);
+    }
+  }
+
   // Validate subprocess monitor rules up front, before any resource allocation,
   // so a bad regex fails cleanly without leaking tunnel servers or temp dirs.
   const subprocessMonitorRules = timConfig?.subprocessMonitor?.rules;
@@ -161,9 +200,11 @@ export async function executeCodexStepViaAppServer(
   const headlessForwardingEnabled = loggerAdapter instanceof HeadlessAdapter;
   const hasInteractiveInputSource =
     terminalInputEnabled || tunnelForwardingEnabled || headlessForwardingEnabled;
+  const rootInputRequested = options?.orchestratorInputAdapter !== undefined;
   const keepSessionOpen = appServerMode === 'chat-session' && hasInteractiveInputSource;
   const singleTurnSteeringEnabled =
-    appServerMode === 'single-turn-with-steering' && hasInteractiveInputSource;
+    appServerMode === 'single-turn-with-steering' &&
+    (hasInteractiveInputSource || rootInputRequested);
   const hasOutputSchema = !!(options?.outputSchema || options?.outputSchemaPath);
   const outputSchemaForValidation =
     options?.outputSchema ??
@@ -199,6 +240,7 @@ export async function executeCodexStepViaAppServer(
   });
 
   let connection: CodexAppServerConnection | undefined;
+  let connectionClosePromise: Promise<void> | undefined;
   let logicalExecutorLifecycle: SessionLogicalExecutorLifecycle | undefined;
   let monitorHandle: SubprocessMonitorHandle | undefined;
   let activeInputQueue: UserInputQueue | undefined;
@@ -223,6 +265,12 @@ export async function executeCodexStepViaAppServer(
       clearTimeout(inactivityTimer);
       inactivityTimer = undefined;
     }
+  };
+
+  const closeAppServerConnection = async (): Promise<void> => {
+    if (!connection) return;
+    connectionClosePromise ??= connection.close();
+    await connectionClosePromise;
   };
 
   const resolveCurrentTurnStatus = (status: string) => {
@@ -352,8 +400,9 @@ export async function executeCodexStepViaAppServer(
   };
 
   try {
-    connection = await CodexAppServerConnection.create({
+    const connectionPromise = CodexAppServerConnection.create({
       cwd,
+      ...(dynamicToolProvider ? { experimentalApi: true } : {}),
       sessionProcessLabel: 'Codex app-server',
       env: {
         TIM_EXECUTOR: 'codex',
@@ -362,10 +411,12 @@ export async function executeCodexStepViaAppServer(
         ...tunnelEnv,
       },
       timEnvironment: options?.timEnvironment,
+      agentEnvironmentIdentity: options?.agentEnvironmentIdentity,
       onExit: ({ exitCode, signal }) => {
         handleUnexpectedConnectionExit(exitCode, signal);
       },
       onNotification: (method, params) => {
+        const notification = normalizeCodexAppServerNotification(method, params);
         const message = formatter.handleNotification(method, params);
         if (message.structured) {
           if (Array.isArray(message.structured)) {
@@ -389,12 +440,12 @@ export async function executeCodexStepViaAppServer(
 
         if (method === 'turn/completed') {
           chatTurnCompleted = true;
-          chatTurnId = extractTurnId(params) ?? chatTurnId;
-          resolveCurrentTurnStatus(extractTurnStatus(params));
+          chatTurnId = notification.turnId ?? chatTurnId;
+          resolveCurrentTurnStatus(notification.turnStatus);
           currentAttemptActive = false;
           clearInactivityTimer();
         } else if (keepSessionOpen && method === 'thread/status/changed') {
-          if (extractThreadStatusType(params) === 'idle') {
+          if (notification.threadStatusType === 'idle') {
             emitChatTurnReady();
             chatTurnCompleted = true;
             resolveCurrentTurnStatus('completed');
@@ -402,13 +453,15 @@ export async function executeCodexStepViaAppServer(
             clearInactivityTimer();
           }
         } else if (method === 'turn/started') {
-          currentTurnId = extractTurnId(params) ?? currentTurnId;
+          currentTurnId = notification.turnId ?? currentTurnId;
           chatTurnCompleted = false;
           chatTurnId = currentTurnId ?? chatTurnId;
         }
       },
-      onServerRequest: approvalHandler,
+      onServerRequest: createAppServerRequestHandler(dynamicToolProvider, approvalHandler),
     });
+
+    connection = await connectionPromise;
 
     connection.setGracefulEndHandler(endActiveSession);
 
@@ -430,12 +483,17 @@ export async function executeCodexStepViaAppServer(
       });
     }
 
-    const threadResult = await connection.threadStart({
-      cwd,
-      approvalPolicy,
-      sandbox,
-      model,
-    });
+    const threadResult = await startInitialThread(
+      connection,
+      {
+        cwd,
+        approvalPolicy,
+        sandbox,
+        model,
+        ...(dynamicToolProvider ? { dynamicTools: dynamicToolProvider.definitions } : {}),
+      },
+      dynamicToolProvider
+    );
     threadId = threadResult.threadId;
     connection.updateMetadata({ threadId });
     const activeConnection = connection;
@@ -451,9 +509,18 @@ export async function executeCodexStepViaAppServer(
       logicalExecutorLifecycle?.markStarted();
     }
 
-    const executeTurnWithRetry = async (initialInput: string): Promise<void> => {
+    const executeTurnWithRetry = async (
+      initialInput: string,
+      hooks: CodexTurnAttemptHooks = {}
+    ): Promise<void> => {
       let promptForAttempt = initialInput;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        let attemptSettlementReported = false;
+        const reportAttemptSettlement = async (status: string): Promise<void> => {
+          if (attemptSettlementReported) return;
+          attemptSettlementReported = true;
+          await hooks.onAttemptSettled?.(status);
+        };
         try {
           throwIfConnectionExited();
           throwIfSessionEndRequested();
@@ -483,6 +550,7 @@ export async function executeCodexStepViaAppServer(
               }
               currentTurnId = turnResult.turnId;
               resetInactivityTimer();
+              void hooks.onTurnStarted?.(turnResult.turnId);
             })
             .catch((err) => {
               if (!currentAttemptActive) {
@@ -502,17 +570,14 @@ export async function executeCodexStepViaAppServer(
           throwIfSessionEndRequested();
           currentAttemptActive = false;
           clearInactivityTimer();
-
-          if (status.toLowerCase() === 'completed') {
-            if (turnStartError != null) {
-              throw turnStartError;
-            }
-            successfulTurns += 1;
-            return;
-          }
-
           if (turnStartError != null) {
             throw turnStartError;
+          }
+          await reportAttemptSettlement(status);
+
+          if (status.toLowerCase() === 'completed') {
+            successfulTurns += 1;
+            return;
           }
 
           const inactivitySuffix = interruptedByInactivity ? ' (after inactivity timeout)' : '';
@@ -528,6 +593,7 @@ export async function executeCodexStepViaAppServer(
         } catch (err) {
           currentAttemptActive = false;
           clearInactivityTimer();
+          await reportAttemptSettlement('failed');
 
           throwIfSessionEndRequested();
 
@@ -546,6 +612,7 @@ export async function executeCodexStepViaAppServer(
     } else if (singleTurnSteeringEnabled) {
       const inputQueue = new UserInputQueue();
       activeInputQueue = inputQueue;
+      let rootSteeringBridge: CodexRootSteeringBridge | undefined;
       let terminalInputReader: TerminalInputReader | undefined;
       let clearTunnelUserInputHandler: () => void = () => {};
       let clearHeadlessUserInputHandler: () => void = () => {};
@@ -610,25 +677,17 @@ export async function executeCodexStepViaAppServer(
         throw new Error('Prompt is required when appServerMode is single-turn-with-steering.');
       }
 
-      currentTurnId = undefined;
-      sawFirstNotification = false;
-      interruptedByInactivity = false;
-      currentAttemptActive = true;
-      resetTurnTracking();
-      resetInactivityTimer();
-
-      const startResult = await activeConnection.turnStart({
-        threadId: activeThreadId,
-        input: [{ type: 'text', text: normalizedPrompt }],
-        model,
-        effort: reasoningLevel,
-        ...(options?.outputSchema ? { outputSchema: options.outputSchema } : {}),
-      });
-      currentTurnId = startResult.turnId;
-      if (sessionEndRequested) {
-        interruptActiveTurn();
+      if (options?.orchestratorInputAdapter !== undefined) {
+        rootSteeringBridge = new CodexRootSteeringBridge({
+          orchestratorInputAdapter: options.orchestratorInputAdapter,
+          connection: activeConnection,
+          threadId: () => activeThreadId,
+          turnId: () => currentTurnId,
+          isAttemptActive: () => currentAttemptActive,
+          closeConnection: closeAppServerConnection,
+        });
+        rootSteeringBridge.start();
       }
-      resetInactivityTimer();
 
       const steeringPump = (async () => {
         while (true) {
@@ -656,21 +715,18 @@ export async function executeCodexStepViaAppServer(
       })();
 
       try {
-        if (!turnCompletedPromise) {
-          throw new Error('Codex app-server turn tracking was not initialized.');
-        }
-
-        const status = (await turnCompletedPromise) || 'completed';
-        throwIfConnectionExited();
-        throwIfSessionEndRequested();
-        currentAttemptActive = false;
-        clearInactivityTimer();
-
-        if (status.toLowerCase() !== 'completed') {
-          throw new Error(`codex single-turn session ended with status "${status}".`);
-        }
-        successfulTurns += 1;
+        await executeTurnWithRetry(normalizedPrompt, {
+          onTurnStarted: (): void => {
+            rootSteeringBridge?.setActive();
+            resetInactivityTimer();
+          },
+          onAttemptSettled: async (): Promise<void> => {
+            rootSteeringBridge?.setTemporarilyUnavailable();
+            await rootSteeringBridge?.waitForPending();
+          },
+        });
       } finally {
+        await rootSteeringBridge?.close();
         inputQueue.close();
         activeInputQueue = undefined;
         await steeringPump;
@@ -846,6 +902,7 @@ export async function executeCodexStepViaAppServer(
           approvalPolicy,
           sandbox,
           model,
+          ...(dynamicToolProvider ? { dynamicTools: dynamicToolProvider.definitions } : {}),
         });
         activeThreadId = conversionThreadResult.threadId;
         threadId = activeThreadId;
@@ -894,7 +951,7 @@ export async function executeCodexStepViaAppServer(
 
     if (connection) {
       try {
-        await connection.close();
+        await closeAppServerConnection();
       } catch (err) {
         debugLog('Error while closing codex app-server connection:', err);
       }

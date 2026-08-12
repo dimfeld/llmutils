@@ -233,13 +233,16 @@
   );
 
   // Only show a message's timestamp when its rendered value differs from the
-  // previous visible message, to cut down on repetitive timestamps.
+  // previous visible message from the same agent, to keep source changes clear.
   let timestampVisibility = $derived.by(() => {
-    let previous: string | null = null;
+    let previous: { timestamp: string; agentName?: string } | null = null;
     return visibleMessages.map((message) => {
       const formatted = formatMessageTimestamp(message.timestamp);
-      const show = formatted !== previous;
-      previous = formatted;
+      const show =
+        previous === null ||
+        formatted !== previous.timestamp ||
+        message.agentName !== previous.agentName;
+      previous = { timestamp: formatted, agentName: message.agentName };
       return show;
     });
   });

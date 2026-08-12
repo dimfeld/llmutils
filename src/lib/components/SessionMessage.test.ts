@@ -32,6 +32,20 @@ function createStructuredMessage(
 }
 
 describe('SessionMessage', () => {
+  test('renders the source agent name', () => {
+    const { body } = render(SessionMessage, {
+      props: {
+        message: createStructuredMessage(
+          { type: 'llm_response', text: 'Response' },
+          { agentName: 'worker-a' }
+        ),
+      },
+    });
+
+    expect(body.indexOf('worker-a')).toBeGreaterThan(body.indexOf('10:00:00'));
+    expect(body).toContain('aria-label="Message source: worker-a"');
+  });
+
   test('does not truncate llmOutput messages (structured)', () => {
     const text = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join('\n');
     const { body } = render(SessionMessage, {

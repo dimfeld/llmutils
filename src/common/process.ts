@@ -120,6 +120,8 @@ export type SpawnAndLogOutputOptions = {
   cwd?: string;
   env?: Record<string, string>;
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+  /** Apply trusted process-specific values after workspace environment rendering. */
+  transformEnvironment?: (env: Record<string, string>) => Record<string, string>;
   quiet?: boolean;
   stdin?: string;
   formatStdout?: (output: string) => StructuredMessage | StructuredMessage[] | string;
@@ -138,6 +140,14 @@ export type SpawnAndLogOutputOptions = {
   initialInactivityTimeoutMs?: number;
   /** Callback invoked when the process is killed due to inactivity. */
   onInactivityKill?: (signal: NodeJS.Signals) => void;
+  /** Callback invoked for every stdout or stderr chunk. */
+  onOutputActivity?: () => void | Promise<void>;
+  /** Keep captured stdout in the result. Defaults to true. */
+  captureStdout?: boolean;
+  /** Keep captured stderr in the result. Defaults to true. */
+  captureStderr?: boolean;
+  /** Disable the inactivity kill while keeping output streaming enabled. */
+  disableInactivityKill?: boolean;
   /** Callback invoked immediately after the process has been spawned. */
   onSpawn?: (pid: number) => void;
   /** Display label used when this process is registered as a session executor. */
@@ -175,7 +185,9 @@ function setupOutputProcessing(
   proc: Bun.Subprocess<SpawnOptions.Writable, 'pipe', 'pipe'>,
   options?: SpawnAndLogOutputOptions
 ): SpawnOutputProcessingState {
-  const inactivityTimeoutMs = options?.inactivityTimeoutMs;
+  const inactivityTimeoutMs = options?.disableInactivityKill
+    ? undefined
+    : options?.inactivityTimeoutMs;
   const initialInactivityTimeoutMs = options?.initialInactivityTimeoutMs ?? inactivityTimeoutMs;
   const inactivitySignal: NodeJS.Signals = 'SIGTERM';
   let inactivityTimer: ReturnType<typeof setTimeout> | undefined;
@@ -196,6 +208,18 @@ function setupOutputProcessing(
       proc.kill(inactivitySignal);
       options?.onInactivityKill?.(inactivitySignal);
     }, timeout);
+  };
+
+  const notifyOutputActivity = (): void => {
+    if (options?.onOutputActivity === undefined) return;
+    try {
+      const result = options.onOutputActivity();
+      void Promise.resolve(result).catch((error: unknown) => {
+        debugLog('Process output activity callback failed: %s', error);
+      });
+    } catch (error) {
+      debugLog('Process output activity callback failed: %s', error);
+    }
   };
 
   const clearInactivityTimer = () => {
@@ -250,6 +274,8 @@ function setupOutputProcessing(
   const result = (async (): Promise<SpawnAndLogOutputResult> => {
     const stdout: string[] = [];
     const stderr: string[] = [];
+    const captureStdout = options?.captureStdout !== false;
+    const captureStderr = options?.captureStderr !== false;
 
     async function readStdout() {
       const stdoutDecoder = new TextDecoder();
@@ -259,14 +285,14 @@ function setupOutputProcessing(
         if (options?.formatStdout) {
           const formatted = options.formatStdout(rawOutput);
           if (typeof formatted === 'string') {
-            stdout.push(formatted);
+            if (captureStdout) stdout.push(formatted);
             if (!options?.quiet) {
               writeStdout(formatted);
             }
           } else {
             const messages = Array.isArray(formatted) ? formatted : [formatted];
             // Keep returned stdout as raw process output for downstream parsers.
-            stdout.push(rawOutput);
+            if (captureStdout) stdout.push(rawOutput);
             for (const message of messages) {
               if (!options?.quiet) {
                 sendStructured(message);
@@ -274,7 +300,7 @@ function setupOutputProcessing(
             }
           }
         } else {
-          stdout.push(rawOutput);
+          if (captureStdout) stdout.push(rawOutput);
           if (!options?.quiet) {
             writeStdout(rawOutput);
           }
@@ -283,6 +309,7 @@ function setupOutputProcessing(
         // Activity observed; mark output seen and reset inactivity timer
         hasSeenOutput = true;
         resetInactivityTimer();
+        notifyOutputActivity();
       }
     }
 
@@ -295,7 +322,7 @@ function setupOutputProcessing(
           output = options.formatStderr(output);
         }
 
-        stderr.push(output);
+        if (captureStderr) stderr.push(output);
         if (!options?.quiet) {
           writeStderr(output);
         }
@@ -303,6 +330,7 @@ function setupOutputProcessing(
         // Activity observed; mark output seen and reset inactivity timer
         hasSeenOutput = true;
         resetInactivityTimer();
+        notifyOutputActivity();
       }
     }
 
@@ -403,6 +431,7 @@ async function spawnTrackedProcess<T>(
       },
       {
         timEnvironment: options?.timEnvironment,
+        transformEnvironment: options?.transformEnvironment,
       }
     );
     const proc = Bun.spawn(cmd, {

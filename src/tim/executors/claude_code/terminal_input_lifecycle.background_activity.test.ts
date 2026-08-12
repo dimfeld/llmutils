@@ -138,6 +138,8 @@ function makeController(
     tunnelForwardingEnabled?: boolean;
     keepInteractiveInputOpenOnResult?: boolean;
     pendingResult?: Promise<SpawnAndLogOutputResult>;
+    setTimeoutFn?: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>;
+    clearTimeoutFn?: (handle: ReturnType<typeof setTimeout>) => void;
     readerFactory?: (options: TerminalInputReaderOpts) => {
       start: () => boolean;
       stop: () => void;
@@ -174,6 +176,8 @@ function makeController(
     terminalInputEnabled,
     tunnelForwardingEnabled,
     keepInteractiveInputOpenOnResult: opts.keepInteractiveInputOpenOnResult,
+    setTimeoutFn: opts.setTimeoutFn,
+    clearTimeoutFn: opts.clearTimeoutFn,
   });
 
   return { controller, stdinEndSpy };
@@ -411,12 +415,21 @@ describe('terminal_input_lifecycle - background activity', () => {
   });
 
   it('cancels a pending grace timer during cleanup', () => {
-    vi.useFakeTimers();
-
     mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
     mockSendFollowUpMessage.mockImplementation(vi.fn(() => {}));
 
-    const { controller, stdinEndSpy } = makeController();
+    const timerHandles: Array<{ readonly callback: () => void; readonly ms: number }> = [];
+    const setTimeoutFn = vi.fn((callback: () => void, ms: number) => {
+      const handle = { callback, ms };
+      timerHandles.push(handle);
+      return handle as unknown as ReturnType<typeof setTimeout>;
+    });
+    const clearTimeoutFn = vi.fn((handle: ReturnType<typeof setTimeout>) => {
+      const index = timerHandles.indexOf(handle as unknown as (typeof timerHandles)[number]);
+      if (index >= 0) timerHandles.splice(index, 1);
+    });
+
+    const { controller, stdinEndSpy } = makeController({ setTimeoutFn, clearTimeoutFn });
 
     controller.observeFormattedMessage({
       type: 'system',
@@ -428,10 +441,14 @@ describe('terminal_input_lifecycle - background activity', () => {
       backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: false },
     });
 
-    controller.cleanup();
-    vi.advanceTimersByTime(10_000);
+    const graceTimer = timerHandles.find((handle) => handle.ms === 10_000);
+    expect(graceTimer).toBeDefined();
 
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+    controller.cleanup();
+
+    expect(clearTimeoutFn).toHaveBeenCalledWith(graceTimer);
+    expect(timerHandles).not.toContain(graceTimer);
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
   });
 
   it('follow-up interception clears accepted final result before a continuation finishes', () => {
@@ -661,14 +678,17 @@ describe('terminal_input_lifecycle - background activity', () => {
     });
     controller.onResultMessage(true);
     expect(controller.acceptedSuccessfulFinalResult()).toBe(false);
+    expect(controller.inputIsClosed()).toBe(false);
 
     controller.observeFormattedMessage({
       type: 'system',
       backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: false },
     });
+    expect(controller.inputIsClosed()).toBe(false);
     vi.advanceTimersByTime(10_000);
 
     expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+    expect(controller.inputIsClosed()).toBe(true);
     expect(controller.acceptedSuccessfulFinalResult()).toBe(true);
 
     controller.cleanup();

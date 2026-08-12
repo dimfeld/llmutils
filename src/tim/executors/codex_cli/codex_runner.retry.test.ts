@@ -517,4 +517,53 @@ describe('executeCodexStep subprocess monitor wiring', () => {
       expect.objectContaining({ timEnvironment })
     );
   });
+
+  test('keeps one-shot steering separate from the persistent agent launcher', async () => {
+    process.env.CODEX_USE_APP_SERVER = 'true';
+    vi.mocked(executeCodexStepViaAppServer).mockResolvedValue('one-shot-output');
+
+    await expect(
+      executeCodexStep('prompt', '/tmp', {} as any, {
+        appServerMode: 'single-turn-with-steering',
+      })
+    ).resolves.toBe('one-shot-output');
+
+    expect(vi.mocked(executeCodexStepViaAppServer)).toHaveBeenCalledWith(
+      'prompt',
+      '/tmp',
+      {},
+      expect.objectContaining({ appServerMode: 'single-turn-with-steering' })
+    );
+    expect(vi.mocked(executeCodexStepViaAppServer).mock.calls[0]?.[3]).not.toHaveProperty(
+      'dynamicToolProvider'
+    );
+    expect(spawnAndLogOutput).not.toHaveBeenCalled();
+  });
+
+  test('rejects dynamic tools before schema reads or codex exec fallback', async () => {
+    const dynamicToolProvider = {
+      context: { trusted: true },
+      definitions: [
+        {
+          type: 'function' as const,
+          name: 'ListTimAgents',
+          description: 'List agents.',
+          inputSchema: { type: 'object', additionalProperties: false },
+        },
+      ],
+      handler: vi.fn(async () => ({
+        contentItems: [{ type: 'inputText' as const, text: 'ok' }],
+        success: true,
+      })),
+    };
+
+    await expect(
+      executeCodexStep('prompt', '/tmp', {} as any, {
+        dynamicToolProvider,
+        outputSchemaPath: '/path/that/must/not/be/read.json',
+      })
+    ).rejects.toThrow(/require Codex app-server mode/i);
+    expect(spawnAndLogOutput).not.toHaveBeenCalled();
+    expect(executeCodexStepViaAppServer).not.toHaveBeenCalled();
+  });
 });

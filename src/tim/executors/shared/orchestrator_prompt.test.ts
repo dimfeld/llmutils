@@ -188,6 +188,32 @@ describe('orchestrator_prompt failure protocol', () => {
     );
   });
 
+  it('supports persistent subagent handoffs across workflow phases', () => {
+    const out = wrapWithOrchestration('Context', '123', {
+      agentMessagingEnabled: true,
+      batchMode: false,
+    });
+
+    expect(out).toContain(
+      'Any subagent may send progress and remain active while another phase runs'
+    );
+    expect(out).toContain(
+      'For a multi-phase assignment, state that the agent should remain available'
+    );
+    expect(out).toContain(
+      'Keep subagent assignments active across implementation, review, and follow-up turns'
+    );
+    expect(out).toContain(
+      'Prefer sending accepted review findings to the existing active implementer'
+    );
+    expect(out).toContain(
+      'An advisory StartTimAgent reviewer may also remain active while the implementer fixes feedback'
+    );
+    expect(out).toContain(
+      'send it directly to that reviewer for another read-only verification pass'
+    );
+  });
+
   it('includes progress section guidance in non-batch mode as well', () => {
     const out = wrapWithOrchestration('Context', '999', { batchMode: false });
     expect(out).toContain('Progress Updates (Plan File)');
@@ -309,6 +335,227 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('Progress Updates (Plan File)');
     expect(out).toContain('## Current Progress');
     expect(out).toContain('### Remaining');
+  });
+});
+
+describe('orchestrator_prompt collaborative activation', () => {
+  const wrappers = [
+    {
+      name: 'normal',
+      build: (
+        batchMode: boolean,
+        subagentExecutor?: 'codex-cli' | 'claude-code' | 'dynamic',
+        agentMessagingEnabled: boolean = true
+      ) =>
+        wrapWithOrchestration('Context', '421', {
+          agentMessagingEnabled,
+          batchMode,
+          subagentExecutor,
+        }),
+    },
+    {
+      name: 'simple',
+      build: (
+        batchMode: boolean,
+        subagentExecutor?: 'codex-cli' | 'claude-code' | 'dynamic',
+        agentMessagingEnabled: boolean = true
+      ) =>
+        wrapWithOrchestrationSimple('Context', '421', {
+          agentMessagingEnabled,
+          batchMode,
+          subagentExecutor,
+        }),
+    },
+    {
+      name: 'tdd',
+      build: (
+        batchMode: boolean,
+        subagentExecutor?: 'codex-cli' | 'claude-code' | 'dynamic',
+        agentMessagingEnabled: boolean = true
+      ) =>
+        wrapWithOrchestrationTdd('Context', '421', {
+          agentMessagingEnabled,
+          batchMode,
+          simpleMode: false,
+          subagentExecutor,
+        }),
+    },
+  ] as const;
+
+  it.each(
+    wrappers.flatMap((wrapper) => [
+      { ...wrapper, batchMode: false },
+      { ...wrapper, batchMode: true },
+    ])
+  )(
+    '$name enabled mode keeps collaborative delegation and formal review separate (batch=$batchMode)',
+    ({ build, batchMode }) => {
+      const output = build(batchMode, 'codex-cli');
+
+      for (const tool of [
+        'StartTimAgent',
+        'ListTimAgents',
+        'SendTimAgentMessage',
+        'StopTimAgent',
+      ]) {
+        expect(output).toContain(tool);
+      }
+      expect(output).toContain('FinishTimAgent is self-only');
+      expect(output).toContain('implementer');
+      expect(output).toContain('tester');
+      expect(output).toContain('tdd-tests');
+      expect(output).toContain('reviewer');
+      expect(output).toContain('claude-code');
+      expect(output).toContain('codex-cli');
+      expect(output).toContain('eight nonterminal subagents');
+      expect(output).toContain('starting');
+      expect(output).toContain('running-active');
+      expect(output).toContain('running-idle');
+      expect(output).toContain('finishing');
+      expect(output).toContain('stopping');
+      expect(output).toContain('steered');
+      expect(output).toContain('queued');
+      expect(output).toContain('started-idle-turn');
+      expect(output).toContain('trusted source attribution');
+      expect(output).toContain('All agents share one working directory');
+      expect(output).toContain('## Agent Autonomy');
+      expect(output).toContain('work independently');
+      expect(output).toContain('do not poll it for routine progress updates');
+      expect(output).toContain(
+        'Do not stop an agent just because its expected work appears complete'
+      );
+      expect(output).toContain('file scope');
+      expect(output).toContain('read-only and advisory');
+      expect(output).toContain('tim review 421 --print --output-file <output_path>');
+      expect(output).not.toMatch(/tim subagent (implementer|tester|tdd-tests|reviewer)/);
+    }
+  );
+
+  it.each(wrappers)(
+    '$name enabled mode supports fixed and dynamic executor selection',
+    ({ build }) => {
+      const fixed = build(false, 'claude-code');
+      const dynamic = build(false, 'dynamic');
+
+      expect(fixed).toContain(
+        'Use `claude-code` as the executor value for every StartTimAgent call.'
+      );
+      expect(fixed).not.toContain(' -x claude-code');
+      expect(dynamic).toContain('Choose `codex-cli` or `claude-code` in the executor field');
+      expect(dynamic).toContain('Prefer claude-code for frontend tasks');
+      expect(dynamic).not.toContain(' -x codex-cli');
+    }
+  );
+
+  it('enabled TDD mode requires verified red evidence before each implementation scope', () => {
+    const output = wrapWithOrchestrationTdd('Context', '421', {
+      agentMessagingEnabled: true,
+      batchMode: true,
+      simpleMode: false,
+      subagentExecutor: 'dynamic',
+    });
+
+    expect(output).toContain('Independent scopes may run their red phases concurrently');
+    expect(output).toContain(
+      "Do not start the implementer for a scope until that scope's red evidence is verified."
+    );
+    expect(output).toContain('expected failure reason');
+    expect(output).toContain('expected behavioral reason');
+    expect(output.indexOf('TDD Test Phase')).toBeLessThan(output.indexOf('Implementation Phase'));
+    expect(output).not.toMatch(/tim subagent (tdd-tests|implementer|tester|reviewer)/);
+  });
+
+  it.each([
+    {
+      name: 'normal non-batch fixed',
+      batchMode: false,
+      simpleMode: false,
+      subagentExecutor: 'codex-cli',
+    },
+    {
+      name: 'normal batch fixed',
+      batchMode: true,
+      simpleMode: false,
+      subagentExecutor: 'claude-code',
+    },
+    {
+      name: 'simple non-batch dynamic',
+      batchMode: false,
+      simpleMode: true,
+      subagentExecutor: 'dynamic',
+    },
+    {
+      name: 'simple batch dynamic',
+      batchMode: true,
+      simpleMode: true,
+      subagentExecutor: 'dynamic',
+    },
+  ] as const)(
+    'enabled TDD matrix case $name preserves red-before-green ordering',
+    (caseOptions) => {
+      const output = wrapWithOrchestrationTdd('Context', '421', {
+        agentMessagingEnabled: true,
+        ...caseOptions,
+      });
+
+      expect(output).toContain('StartTimAgent with type `tdd-tests`');
+      expect(output).toContain('StartTimAgent with type `implementer`');
+      expect(output).toContain('red evidence is verified');
+      expect(output).toContain('tim review 421 --print --output-file <output_path>');
+      expect(output).not.toMatch(/tim subagent (tdd-tests|implementer|tester|reviewer)/);
+      expect(output.indexOf('TDD Test Phase')).toBeLessThan(output.indexOf('Implementation Phase'));
+    }
+  );
+
+  it.each(
+    wrappers.flatMap((wrapper) => [
+      { ...wrapper, batchMode: false },
+      { ...wrapper, batchMode: true },
+    ])
+  )(
+    '$name disabled matrix case keeps all messaging tools absent (batch=$batchMode)',
+    ({ build, batchMode }) => {
+      const output = build(batchMode, undefined, false);
+      for (const tool of [
+        'StartTimAgent',
+        'ListTimAgents',
+        'SendTimAgentMessage',
+        'StopTimAgent',
+        'FinishTimAgent',
+      ]) {
+        expect(output).not.toContain(tool);
+      }
+    }
+  );
+
+  it('enabled formal review guidance preserves the ordinary review policy', () => {
+    const output = wrapWithOrchestration('Context', '421', {
+      agentMessagingEnabled: true,
+      batchMode: false,
+    });
+
+    expect(output).toContain('full declared scope');
+    expect(output).toContain('--since <that commit>');
+    expect(output).toContain('closing full-scope review');
+    expect(output).toContain('critical` or `major`');
+    expect(output).toContain('minor` or `info`');
+    expect(output).toContain('at most 4 ordinary review runs');
+    expect(output).not.toContain('tim subagent reviewer');
+  });
+
+  it('renders enabled full-plan and structural gates through tim review', () => {
+    const output = wrapWithOrchestration('Context', '421', {
+      agentMessagingEnabled: true,
+      batchMode: true,
+      structuralReviewCompleted: false,
+      reviewExecutor: 'codex-cli',
+    });
+
+    expect(output).toContain('tim review 421 --print --output-file <output_path>');
+    expect(output).toContain(
+      'tim review 421 --print --output-file <output_path> --structural-only'
+    );
+    expect(output).not.toContain('tim subagent reviewer');
   });
 });
 
@@ -516,7 +763,9 @@ describe('orchestrator_prompt review iteration policy (plan 394 task 8)', () => 
         'run `tim subagent reviewer 123 --print --output-file <output_path>` with `--since <that commit>`'
       );
       expect(out).toContain('plus the same `--task-index` scope');
-      expect(out).toContain('enumerate in `--input` the specific findings being re-checked');
+      expect(out).toContain(
+        'enumerate in `--input` (or provide through `--input-file <paths...>`) the specific findings being re-checked'
+      );
     });
 
     it('scopes subagent review fixes without changing initial implementation runs', () => {
@@ -645,7 +894,7 @@ describe('orchestrator_prompt review iteration policy (plan 394 task 8)', () => 
       // The batch branch renders the shared fix-verification helper; assert its full
       // contribution so the helper cannot regress silently on this path.
       expect(out).toContain(
-        'record the current commit hash with `git rev-parse HEAD` (or `jj log --no-graph -r @- -T commit_id` in a Jujutsu workspace) and then run `tim subagent reviewer 123 --print --output-file <output_path>` with `--since <that commit>` and the same full-plan scope (no `--task-index`), and enumerate in `--input` the specific findings being re-checked.'
+        'record the current commit hash with `git rev-parse HEAD` (or `jj log --no-graph -r @- -T commit_id` in a Jujutsu workspace) and then run `tim subagent reviewer 123 --print --output-file <output_path>` with `--since <that commit>` and the same full-plan scope (no `--task-index`), and enumerate in `--input` (or provide through `--input-file <paths...>`) the specific findings being re-checked.'
       );
     });
 

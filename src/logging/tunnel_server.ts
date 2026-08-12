@@ -11,6 +11,7 @@ import {
 } from '../logging.js';
 import { CleanupRegistry } from '../common/cleanup_registry.js';
 import { getLoggerAdapter } from './adapter.js';
+import { runWithLogWriter } from './common.js';
 import { ConsoleAdapter } from './console.js';
 import { indentEveryLine } from './console_formatter.js';
 import type {
@@ -451,20 +452,32 @@ export function isValidTunnelMessage(message: unknown): message is TunnelMessage
   }
 
   const msg = message as Record<string, unknown>;
+  const hasValidAgentName =
+    msg.agentName === undefined ||
+    (typeof msg.agentName === 'string' &&
+      msg.agentName.length > 0 &&
+      msg.agentName.length <= 256 &&
+      !/[\r\n]/.test(msg.agentName));
 
   switch (msg.type) {
     case 'log':
     case 'error':
     case 'warn':
     case 'debug':
-      return Array.isArray(msg.args) && msg.args.every((a: unknown) => typeof a === 'string');
+      return (
+        hasValidAgentName &&
+        Array.isArray(msg.args) &&
+        msg.args.every((a: unknown) => typeof a === 'string')
+      );
     case 'stdout':
     case 'stderr':
       return (
-        typeof msg.data === 'string' && (msg.origin === undefined || msg.origin === 'lifecycle')
+        hasValidAgentName &&
+        typeof msg.data === 'string' &&
+        (msg.origin === undefined || msg.origin === 'lifecycle')
       );
     case 'structured':
-      return isValidStructuredMessagePayload(msg.message);
+      return hasValidAgentName && isValidStructuredMessagePayload(msg.message);
     case 'process_register':
     case 'process_update':
     case 'process_exit':
@@ -485,43 +498,51 @@ function dispatchMessage(message: TunnelMessage): void {
     return;
   }
 
-  const shouldIndent = shouldIndentForTerminalOutput();
+  const dispatch = (): void => {
+    const shouldIndent = shouldIndentForTerminalOutput();
 
-  if (isStructuredTunnelMessage(message)) {
-    sendStructured(
-      shouldIndent
-        ? {
-            ...message.message,
-            transportSource: 'tunnel',
-          }
-        : message.message
-    );
-    return;
-  }
-
-  switch (message.type) {
-    case 'log':
-      log(...indentArgs(message.args, shouldIndent));
-      break;
-    case 'error':
-      error(...indentArgs(message.args, shouldIndent));
-      break;
-    case 'warn':
-      warn(...indentArgs(message.args, shouldIndent));
-      break;
-    case 'debug':
-      debugLog(...indentArgs(message.args, shouldIndent));
-      break;
-    case 'stdout':
-      writeStdout(indentText(message.data, shouldIndent), { origin: message.origin });
-      break;
-    case 'stderr':
-      writeStderr(indentText(message.data, shouldIndent), { origin: message.origin });
-      break;
-    default: {
-      const _exhaustive: never = message;
-      void _exhaustive;
+    if (isStructuredTunnelMessage(message)) {
+      sendStructured(
+        shouldIndent
+          ? {
+              ...message.message,
+              transportSource: 'tunnel',
+            }
+          : message.message
+      );
+      return;
     }
+
+    switch (message.type) {
+      case 'log':
+        log(...indentArgs(message.args, shouldIndent));
+        break;
+      case 'error':
+        error(...indentArgs(message.args, shouldIndent));
+        break;
+      case 'warn':
+        warn(...indentArgs(message.args, shouldIndent));
+        break;
+      case 'debug':
+        debugLog(...indentArgs(message.args, shouldIndent));
+        break;
+      case 'stdout':
+        writeStdout(indentText(message.data, shouldIndent), { origin: message.origin });
+        break;
+      case 'stderr':
+        writeStderr(indentText(message.data, shouldIndent), { origin: message.origin });
+        break;
+      default: {
+        const _exhaustive: never = message;
+        void _exhaustive;
+      }
+    }
+  };
+
+  if ('agentName' in message && message.agentName !== undefined) {
+    runWithLogWriter(message.agentName, dispatch);
+  } else {
+    dispatch();
   }
 }
 
@@ -819,7 +840,11 @@ export function createTunnelServer(
           ) {
             const promptMessage = parsed.message;
             // Still dispatch for logging/visibility
-            sendStructured(promptMessage);
+            if (parsed.agentName !== undefined) {
+              runWithLogWriter(parsed.agentName, () => sendStructured(promptMessage));
+            } else {
+              sendStructured(promptMessage);
+            }
             const { requestId } = promptMessage;
             // Call the prompt handler with a respond function bound to this socket.
             // Handle both sync throws and async rejections so that handler errors

@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { debugLog, log, sendStructured, error, warn } from '../../logging.ts';
-import { createLineSplitter, debug, spawnWithStreamingIO } from '../../common/process.ts';
+import { debug, spawnWithStreamingIO } from '../../common/process.ts';
 import { getGitRoot, getUsingJj, getWorkingCopyStatus } from '../../common/git.ts';
 import {
   normalizeSubprocessMonitorRules,
@@ -12,11 +12,7 @@ import {
 } from '../../common/subprocess_monitor.js';
 import type { TimConfig } from '../configSchema.ts';
 import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types.ts';
-import {
-  extractStructuredMessages,
-  formatJsonMessage,
-  resetToolUseCache,
-} from './claude_code/format.ts';
+import { createClaudeOutputStreamFormatter } from './claude_code/output_stream_formatter.ts';
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
 import { promptPrefixSelect } from '../../common/input.ts';
@@ -37,13 +33,22 @@ import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { createExecutorTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
-import { setupPermissionsMcp } from './claude_code/permissions_mcp_setup.js';
+import type { SessionExecutorLifecycle } from '../../common/session_process_control.js';
 import { runClaudeSubprocess, buildAllowedToolsList } from './claude_code/run_claude_subprocess.js';
+import {
+  applyClaudeMcpLaunchArgs,
+  prepareClaudeMcpLaunch,
+  type ClaudeMcpLaunchResult,
+} from './claude_code/claude_mcp_launch.js';
 import { executeWithTerminalInput } from './claude_code/terminal_input_lifecycle.ts';
+import { createOrderedClaudeCleanup } from './claude_code/claude_execution_cleanup.js';
 import {
   FAST_NOOP_ORCHESTRATOR_RETRY_MS,
   shouldRetryFastNoopOrchestratorTurn,
 } from './claude_code/fast_noop_retry.ts';
+import { CallbackAgentInputAdapter } from '../agent_messaging/agent_input_adapter.js';
+import { withAgentEnvironmentIdentity } from '../agent_messaging/environment.js';
+import { formatAgentInputForProvider } from '../agent_messaging/provider_input.js';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -496,6 +501,7 @@ export class ClaudeCodeExecutor implements Executor {
       cwd: gitRoot,
       timConfig: this.timConfig,
       timEnvironment: this.sharedOptions.timEnvironment,
+      agentEnvironmentIdentity: this.sharedOptions.agentEnvironmentIdentity,
       claudeCodeOptions: {
         ...this.options,
         reasoningEffort:
@@ -606,6 +612,7 @@ export class ClaudeCodeExecutor implements Executor {
         reviewExecutor: this.sharedOptions.reviewExecutor,
         reviewerInstructionsPath: this.timConfig.agents?.reviewer?.instructions,
         simpleMode: this.sharedOptions.simpleMode,
+        agentMessagingEnabled: this.sharedOptions.agentMessagingEnabled,
         subagentExecutor: this.sharedOptions.subagentExecutor,
         dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
         useJj,
@@ -630,9 +637,10 @@ export class ClaudeCodeExecutor implements Executor {
     // Get git root for agent instructions and other operations
     const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
 
-    let isPermissionsMcpEnabled = this.options.permissionsMcp?.enabled === true;
+    const interactiveApprovalRequested = this.options.permissionsMcp?.enabled === true;
+    let interactiveApprovalEnabled = interactiveApprovalRequested;
     if (process.env.CLAUDE_CODE_MCP) {
-      isPermissionsMcpEnabled = process.env.CLAUDE_CODE_MCP === 'true';
+      interactiveApprovalEnabled = process.env.CLAUDE_CODE_MCP === 'true';
     }
 
     if (allowAllTools == null) {
@@ -641,19 +649,10 @@ export class ClaudeCodeExecutor implements Executor {
       allowAllTools = envAllowAllTools;
     }
 
-    if (this.sharedOptions.noninteractive) {
-      // permissions MCP doesn't make sense in noninteractive mode
-      isPermissionsMcpEnabled = false;
-    }
-
-    let tempMcpConfigDir: string | undefined = undefined;
-    let dynamicMcpConfigFile: string | undefined;
-    let permissionsMcpCleanup: (() => Promise<void>) | undefined;
-
     // Load shared permissions from cross-worktree storage
     const sharedPermissions = await this.loadSharedPermissions();
 
-    let allowedTools = buildAllowedToolsList({
+    const baseAllowedTools = buildAllowedToolsList({
       includeDefaultTools: this.options.includeDefaultTools,
       configAllowedTools: this.options.allowedTools,
       extraAllowedTools: this.sharedOptions.extraAllowedTools,
@@ -661,46 +660,82 @@ export class ClaudeCodeExecutor implements Executor {
       sharedPermissions,
     });
 
+    const agentToolContext = this.sharedOptions.claudeAgentToolContext;
+    const mcpLaunch: ClaudeMcpLaunchResult = await prepareClaudeMcpLaunch({
+      cwd: gitRoot,
+      allowedTools: baseAllowedTools,
+      mcpConfigFile,
+      interactiveApprovalRequested: interactiveApprovalEnabled,
+      allowAllTools,
+      noninteractive: this.sharedOptions.noninteractive === true,
+      disallowedTools,
+      permissionsMcp: this.options.permissionsMcp,
+      trackedFiles: this.trackedFiles,
+      agentToolContext,
+      permissionPromptCoordinator: this.sharedOptions.claudePermissionPromptCoordinator,
+    });
+    interactiveApprovalEnabled = mcpLaunch.capabilities.interactiveApprovalEnabled;
+    const tempMcpConfigDir = mcpLaunch.tempDir;
+    const permissionsMcpCleanup = mcpLaunch.cleanup;
+    const allowedTools = mcpLaunch.allowedTools;
+
     // Parse allowedTools into efficient lookup structure for auto-approval
     this.parseAllowedTools(allowedTools);
 
-    if (isPermissionsMcpEnabled) {
-      const result = await setupPermissionsMcp({
-        allowedTools,
-        defaultResponse: this.options.permissionsMcp?.defaultResponse,
-        timeout: this.options.permissionsMcp?.timeout,
-        autoApproveCreatedFileDeletion: this.options.permissionsMcp?.autoApproveCreatedFileDeletion,
-        trackedFiles: this.trackedFiles,
-        workingDirectory: gitRoot,
-      });
-      tempMcpConfigDir = result.tempDir;
-      dynamicMcpConfigFile = result.mcpConfigFile;
-      permissionsMcpCleanup = result.cleanup;
-    }
-
     // Create tunnel server for output forwarding from child processes
     let tunnelServer: TunnelServer | undefined;
-    const tunnelTempDir =
-      tempMcpConfigDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-')));
-    const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
-    if (!isTunnelActive()) {
-      try {
-        const promptHandler = createPromptRequestHandler();
-        tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
-          onPromptRequest: promptHandler,
-        });
-      } catch (err) {
-        debugLog('Could not create tunnel server for output forwarding:', err);
-      }
-    }
+    let tunnelTempDir: string | undefined;
 
     // Agent definitions (--agents flag) are no longer used in normal/simple orchestration modes.
     // The orchestrator prompt references `tim subagent` Bash commands instead.
     // Other modes (bare, planning, review) also don't use agent definitions.
 
     let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
+    let rootInputAdapter: CallbackAgentInputAdapter | undefined;
     let monitorHandle: SubprocessMonitorHandle | undefined;
+    let sessionProcessLifecycle: SessionExecutorLifecycle | undefined;
+    const cleanupState = createOrderedClaudeCleanup([
+      async (): Promise<void> => {
+        // Close the shared input owner before removing the process and
+        // transport handlers. Late provider output must not enqueue input
+        // while the rest of this execution is being torn down.
+        rootInputAdapter?.setActivity('temporarily-unavailable');
+        terminalInputResult?.cleanup();
+        if (rootInputAdapter !== undefined) {
+          this.sharedOptions.orchestratorInputAdapter?.unbind(rootInputAdapter);
+          await rootInputAdapter.release();
+          rootInputAdapter = undefined;
+        }
+      },
+      (): void => sessionProcessLifecycle?.setGracefulEndHandler(undefined),
+      (): void => monitorHandle?.stop(),
+      (): void => tunnelServer?.close(),
+      async (): Promise<void> => {
+        if (!tempMcpConfigDir && tunnelTempDir !== undefined) {
+          await fs.rm(tunnelTempDir, { recursive: true, force: true });
+        }
+      },
+      async (): Promise<void> => {
+        await permissionsMcpCleanup?.();
+      },
+    ]);
+    const cleanup = (): Promise<void> => cleanupState.cleanup();
+    const inputIsClosed = (): boolean => terminalInputResult?.inputIsClosed?.() ?? true;
+
     try {
+      tunnelTempDir = tempMcpConfigDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-')));
+      const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
+      if (!isTunnelActive()) {
+        try {
+          const promptHandler = createPromptRequestHandler();
+          tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
+            onPromptRequest: promptHandler,
+          });
+        } catch (err) {
+          debugLog('Could not create tunnel server for output forwarding:', err);
+        }
+      }
+
       const args = ['claude', '--permission-mode', 'auto'];
 
       const extraAccessDirs = new Set<string>();
@@ -724,12 +759,7 @@ export class ClaudeCodeExecutor implements Executor {
         args.push('--disallowedTools', disallowedTools.join(','));
       }
 
-      if (isPermissionsMcpEnabled && dynamicMcpConfigFile) {
-        args.push('--mcp-config', dynamicMcpConfigFile);
-        args.push('--permission-prompt-tool', 'mcp__permissions__approval_prompt');
-      } else if (mcpConfigFile) {
-        args.push('--mcp-config', mcpConfigFile);
-      }
+      applyClaudeMcpLaunchArgs(args, mcpLaunch, mcpConfigFile);
 
       // Automatic model selection for review and planning modes
       let modelToUse = this.sharedOptions.model;
@@ -751,7 +781,6 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       args.push('--verbose', '--output-format', 'stream-json', '--input-format', 'stream-json');
-      let splitter = createLineSplitter();
       let capturedOutputLines: string[] = [];
       let lastAssistantRaw: string | undefined;
       let failureSummary: string | undefined;
@@ -772,15 +801,16 @@ export class ClaudeCodeExecutor implements Executor {
         ? await getWorkingCopyStatus(gitRoot)
         : undefined;
 
-      log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
+      log(`Interactive permissions MCP is`, interactiveApprovalEnabled ? 'enabled' : 'disabled');
       const disableInactivityTimeout = this.sharedOptions.disableInactivityTimeout !== false;
       const executionTimeoutMs = 60 * 60 * 1000; // 60 minutes
       let killedByTimeout = false;
-      resetToolUseCache();
+      const streamFormatter = createClaudeOutputStreamFormatter();
       const streaming = await spawnWithStreamingIO(args, {
         sessionProcessLabel: 'Claude execution',
         sessionProcessControl: 'both',
         onSessionProcessReady: (lifecycle) => {
+          sessionProcessLifecycle = lifecycle;
           lifecycle.setGracefulEndHandler(() => terminalInputResult?.endSession?.());
         },
         env: {
@@ -793,6 +823,10 @@ export class ClaudeCodeExecutor implements Executor {
           CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
         },
         timEnvironment: this.sharedOptions.timEnvironment,
+        transformEnvironment: this.sharedOptions.agentEnvironmentIdentity
+          ? (env: Record<string, string>): Record<string, string> =>
+              withAgentEnvironmentIdentity(env, this.sharedOptions.agentEnvironmentIdentity!)
+          : undefined,
         cwd: gitRoot,
         inactivityTimeoutMs: disableInactivityTimeout ? undefined : executionTimeoutMs,
         initialInactivityTimeoutMs: disableInactivityTimeout ? undefined : 2 * 60 * 1000,
@@ -803,9 +837,7 @@ export class ClaudeCodeExecutor implements Executor {
           );
         },
         formatStdout: (output) => {
-          let lines = splitter(output);
-          const formattedResults = lines.map((line) => formatJsonMessage(line));
-          const structuredMessages = extractStructuredMessages(formattedResults);
+          const { formattedResults, structuredMessages } = streamFormatter.formatChunk(output);
           // Capture output based on the specified mode
           const captureMode = planInfo?.captureOutput;
 
@@ -819,7 +851,7 @@ export class ClaudeCodeExecutor implements Executor {
               if (followUpIndex < followUpPrompts.length && terminalInputResult) {
                 const nextPrompt = followUpPrompts[followUpIndex];
                 followUpIndex++;
-                terminalInputResult.sendFollowUpForInterceptedResult(nextPrompt);
+                void terminalInputResult.sendFollowUpForInterceptedResult(nextPrompt);
               } else if (
                 fastNoopOrchestratorRetryEnabled &&
                 resultMessageCount === 1 &&
@@ -850,7 +882,7 @@ export class ClaudeCodeExecutor implements Executor {
                         message:
                           'Claude orchestrator finished a single short turn without working copy changes; sending "continue".',
                       });
-                      terminalInputResult.sendFollowUpForInterceptedResult('continue');
+                      void terminalInputResult.sendFollowUpForInterceptedResult('continue');
                       return;
                     }
                   } catch (err) {
@@ -861,9 +893,17 @@ export class ClaudeCodeExecutor implements Executor {
                   }
 
                   terminalInputResult.onResultMessage(resultWasSuccessful);
+                  rootInputAdapter?.setActivity(
+                    inputIsClosed() ? 'temporarily-unavailable' : 'active'
+                  );
                 })();
               } else {
                 terminalInputResult?.onResultMessage(resultWasSuccessful);
+                if (terminalInputResult !== undefined) {
+                  rootInputAdapter?.setActivity(
+                    inputIsClosed() ? 'temporarily-unavailable' : 'active'
+                  );
+                }
               }
             }
             if (result.filePaths) {
@@ -925,7 +965,23 @@ export class ClaudeCodeExecutor implements Executor {
           (this.sharedOptions.closeTerminalInputOnResult ?? true) === false,
       });
 
+      if (this.sharedOptions.orchestratorInputAdapter !== undefined) {
+        rootInputAdapter = new CallbackAgentInputAdapter({
+          onDeliver: async (message) => {
+            if (terminalInputResult === undefined) return 'temporarily-unavailable';
+            return (await terminalInputResult.sendFollowUpForInterceptedResult(
+              formatAgentInputForProvider(message)
+            ))
+              ? 'steered'
+              : 'temporarily-unavailable';
+          },
+        });
+        rootInputAdapter.start();
+        this.sharedOptions.orchestratorInputAdapter.bind(rootInputAdapter);
+      }
+
       const result = await terminalInputResult.resultPromise;
+      rootInputAdapter?.setActivity(inputIsClosed() ? 'temporarily-unavailable' : 'active');
       await resultHandlingPromise;
       acceptedFinalResult = terminalInputResult.acceptedSuccessfulFinalResult();
 
@@ -991,20 +1047,7 @@ export class ClaudeCodeExecutor implements Executor {
 
       return; // Explicitly return void for 'none' or undefined captureOutput
     } finally {
-      monitorHandle?.stop();
-      terminalInputResult?.cleanup();
-
-      // Close the tunnel server if it was created
-      tunnelServer?.close();
-
-      if (permissionsMcpCleanup) {
-        await permissionsMcpCleanup();
-      }
-
-      // Clean up tunnel temp directory if we created a separate one
-      if (!tempMcpConfigDir) {
-        await fs.rm(tunnelTempDir, { recursive: true, force: true });
-      }
+      await cleanup();
     }
   }
 }

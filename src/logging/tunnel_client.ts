@@ -35,6 +35,7 @@ interface PendingPromptRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer?: ReturnType<typeof setTimeout>;
+  removeAbortListener?: () => void;
 }
 
 /**
@@ -102,6 +103,7 @@ export function isTunnelActive(): boolean {
  */
 export class TunnelAdapter implements LoggerAdapter {
   private socket: net.Socket;
+  private readonly agentName?: string;
   private connected: boolean = true;
   private pendingPrompts: Map<string, PendingPromptRequest> = new Map();
   private userInputHandler?: (content: string) => void;
@@ -109,8 +111,9 @@ export class TunnelAdapter implements LoggerAdapter {
     message: TunnelTerminateExecutorMessage
   ) => SessionProcessTerminationResult | void;
 
-  constructor(socket: net.Socket) {
+  constructor(socket: net.Socket, agentName: string | undefined = process.env.TIM_AGENT_NAME) {
     this.socket = socket;
+    this.agentName = agentName;
 
     // Set up incoming data handler for server->client messages (prompt responses)
     const splitLines = createLineSplitter();
@@ -146,14 +149,10 @@ export class TunnelAdapter implements LoggerAdapter {
   private handleServerMessage(message: ServerTunnelMessage): void {
     switch (message.type) {
       case 'prompt_response': {
-        const pending = this.pendingPrompts.get(message.requestId);
+        const pending = this.takePendingPrompt(message.requestId);
         if (!pending) {
           // Unknown requestId - silently ignore (may have already timed out)
           return;
-        }
-        this.pendingPrompts.delete(message.requestId);
-        if (pending.timer) {
-          clearTimeout(pending.timer);
         }
         if (message.error) {
           pending.reject(new Error(message.error));
@@ -218,13 +217,33 @@ export class TunnelAdapter implements LoggerAdapter {
    * Called when the socket connection is lost.
    */
   private rejectAllPending(error: Error): void {
-    for (const [requestId, pending] of this.pendingPrompts) {
-      if (pending.timer) {
-        clearTimeout(pending.timer);
-      }
-      pending.reject(error);
-      this.pendingPrompts.delete(requestId);
+    for (const requestId of this.pendingPrompts.keys()) {
+      this.takePendingPrompt(requestId)?.reject(error);
     }
+  }
+
+  /**
+   * Removes one pending prompt and releases every resource owned by it.
+   * When expectedEntry is supplied, cleanup only occurs if the map still
+   * points at that exact entry. This protects replacement and abort races.
+   */
+  private takePendingPrompt(
+    requestId: string,
+    expectedEntry?: PendingPromptRequest
+  ): PendingPromptRequest | undefined {
+    const pending = this.pendingPrompts.get(requestId);
+    if (!pending || (expectedEntry !== undefined && pending !== expectedEntry)) {
+      return undefined;
+    }
+
+    this.pendingPrompts.delete(requestId);
+    if (pending.timer) {
+      clearTimeout(pending.timer);
+      pending.timer = undefined;
+    }
+    pending.removeAbortListener?.();
+    pending.removeAbortListener = undefined;
+    return pending;
   }
 
   /**
@@ -236,10 +255,18 @@ export class TunnelAdapter implements LoggerAdapter {
    *   this time, the promise rejects with a timeout error.
    * @returns The prompt result value from the server
    */
-  sendPromptRequest(message: PromptRequestMessage, timeoutMs?: number): Promise<unknown> {
+  sendPromptRequest(
+    message: PromptRequestMessage,
+    timeoutMs?: number,
+    signal?: AbortSignal
+  ): Promise<unknown> {
     return new Promise<unknown>((resolve, reject) => {
       if (!this.connected) {
         reject(new Error('Tunnel is not connected'));
+        return;
+      }
+      if (signal?.aborted) {
+        reject(new Error('Prompt request cancelled'));
         return;
       }
 
@@ -247,11 +274,28 @@ export class TunnelAdapter implements LoggerAdapter {
 
       if (timeoutMs != null && timeoutMs > 0) {
         entry.timer = setTimeout(() => {
-          this.pendingPrompts.delete(message.requestId);
-          reject(new Error(`Prompt request timed out after ${timeoutMs}ms`));
+          this.takePendingPrompt(message.requestId, entry)?.reject(
+            new Error(`Prompt request timed out after ${timeoutMs}ms`)
+          );
         }, timeoutMs);
       }
 
+      if (signal !== undefined) {
+        const onAbort = () => {
+          this.takePendingPrompt(message.requestId, entry)?.reject(
+            new Error('Prompt request cancelled')
+          );
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        entry.removeAbortListener = () => signal.removeEventListener('abort', onAbort);
+      }
+
+      const previous = this.pendingPrompts.get(message.requestId);
+      if (previous !== undefined) {
+        this.takePendingPrompt(message.requestId, previous)?.reject(
+          new Error(`Prompt request ${message.requestId} was superseded`)
+        );
+      }
       this.pendingPrompts.set(message.requestId, entry);
 
       // Send the message as a structured tunnel message.
@@ -259,11 +303,9 @@ export class TunnelAdapter implements LoggerAdapter {
       // the pending entry immediately so the promise doesn't hang forever.
       const sent = this.send({ type: 'structured', message });
       if (!sent) {
-        this.pendingPrompts.delete(message.requestId);
-        if (entry.timer) {
-          clearTimeout(entry.timer);
-        }
-        reject(new Error('Failed to send prompt request over tunnel'));
+        this.takePendingPrompt(message.requestId, entry)?.reject(
+          new Error('Failed to send prompt request over tunnel')
+        );
       }
     });
   }
@@ -329,42 +371,42 @@ export class TunnelAdapter implements LoggerAdapter {
 
   log(...args: any[]): void {
     const serialized = serializeArgs(args);
-    this.send({ type: 'log', args: serialized });
+    this.send({ type: 'log', args: serialized, agentName: this.agentName });
     writeToLogFile(serialized.join(' ') + '\n');
   }
 
   error(...args: any[]): void {
     const serialized = serializeArgs(args);
-    this.send({ type: 'error', args: serialized });
+    this.send({ type: 'error', args: serialized, agentName: this.agentName });
     writeToLogFile(serialized.join(' ') + '\n');
   }
 
   warn(...args: any[]): void {
     const serialized = serializeArgs(args);
-    this.send({ type: 'warn', args: serialized });
+    this.send({ type: 'warn', args: serialized, agentName: this.agentName });
     writeToLogFile(serialized.join(' ') + '\n');
   }
 
   writeStdout(data: string, options?: WriteOptions): void {
-    this.send({ type: 'stdout', data, origin: options?.origin });
+    this.send({ type: 'stdout', data, origin: options?.origin, agentName: this.agentName });
     writeToLogFile(data);
   }
 
   writeStderr(data: string, options?: WriteOptions): void {
-    this.send({ type: 'stderr', data, origin: options?.origin });
+    this.send({ type: 'stderr', data, origin: options?.origin, agentName: this.agentName });
     writeToLogFile(data);
   }
 
   debugLog(...args: any[]): void {
     if (debug) {
       const serialized = serializeArgs(args);
-      this.send({ type: 'debug', args: serialized });
+      this.send({ type: 'debug', args: serialized, agentName: this.agentName });
       writeToLogFile('[DEBUG] ' + serialized.join(' ') + '\n');
     }
   }
 
   sendStructured(message: StructuredMessage): void {
-    this.send({ type: 'structured', message });
+    this.send({ type: 'structured', message, agentName: this.agentName });
     const formatted = formatStructuredMessage(message);
     if (formatted.length > 0) {
       writeToLogFile(formatted + '\n');
@@ -503,7 +545,10 @@ export function createTunnelSessionProcessLifecycleSink(
  * @returns A connected TunnelAdapter instance
  * @throws If the connection fails (caller should handle this gracefully)
  */
-export function createTunnelAdapter(socketPath: string): Promise<TunnelAdapter> {
+export function createTunnelAdapter(
+  socketPath: string,
+  agentName: string | undefined = process.env.TIM_AGENT_NAME
+): Promise<TunnelAdapter> {
   return new Promise<TunnelAdapter>((resolve, reject) => {
     const socket = new net.Socket();
 
@@ -514,7 +559,7 @@ export function createTunnelAdapter(socketPath: string): Promise<TunnelAdapter> 
     });
 
     socket.connect(socketPath, () => {
-      resolve(new TunnelAdapter(socket));
+      resolve(new TunnelAdapter(socket, agentName));
     });
   });
 }

@@ -1,6 +1,13 @@
 import type { z } from 'zod/v4';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
 import type { TimConfig } from '../configSchema';
+import type {
+  ClaudeAgentToolContext,
+  ClaudePermissionPromptCoordinator,
+} from './claude_code/claude_mcp_protocol.js';
+import type { CodexDynamicToolProvider } from './codex_cli/app_server_dynamic_tools.js';
+import type { DeferredAgentInputAdapter } from '../agent_messaging/agent_input_adapter.js';
+import type { AgentEnvironmentIdentity } from '../agent_messaging/environment.js';
 
 /**
  * Shared options/state from the agent command, passed to the executor.
@@ -28,6 +35,11 @@ export interface ExecutorCommonOptions {
    */
   simpleMode?: boolean;
   /**
+   * Root-session snapshot of the experimental agent-messaging setting.
+   * Prompt and provider-tool activation consume this immutable value.
+   */
+  agentMessagingEnabled?: boolean;
+  /**
    * Optional override for which executor to use during external review phases.
    */
   reviewExecutor?: string;
@@ -51,6 +63,16 @@ export interface ExecutorCommonOptions {
    * Explicit executor env values remain the final override layer.
    */
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+  /** Trusted process identity applied to the root provider environment. */
+  agentEnvironmentIdentity?: AgentEnvironmentIdentity;
+  /** Trusted Claude agent-tool context installed for this execution, when enabled. */
+  claudeAgentToolContext?: ClaudeAgentToolContext;
+  /** Root-owned coordinator shared by Claude permission bridges in one session. */
+  claudePermissionPromptCoordinator?: ClaudePermissionPromptCoordinator;
+  /** Root-session Codex dynamic tools, installed only for orchestration modes. */
+  codexDynamicToolProvider?: CodexDynamicToolProvider;
+  /** Deferred root input bound by the active orchestrator provider turn. */
+  orchestratorInputAdapter?: DeferredAgentInputAdapter;
 }
 
 /**

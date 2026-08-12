@@ -1,5 +1,10 @@
-import { test, expect, vi } from 'vitest';
-import { wrapWithOrchestration } from './orchestrator_prompt.ts';
+import { test, expect } from 'vitest';
+import {
+  wrapWithOrchestration,
+  wrapWithOrchestrationSimple,
+  wrapWithOrchestrationTdd,
+} from './orchestrator_prompt.ts';
+import { wrapForExecutionMode } from './orchestration_wrapper.ts';
 
 test('wrapWithOrchestration integrates batch mode properly', () => {
   const contextContent = 'Test context content for implementation';
@@ -85,4 +90,67 @@ test('wrapWithOrchestration includes batch mode workflow instructions', () => {
   expect(result).toContain('**Be selective**');
   expect(result).toContain("Don't attempt all tasks at once");
   expect(result).toContain('choose a reasonable subset that works well together');
+});
+
+test.each([
+  { provider: 'Claude', useAtPrefix: true },
+  { provider: 'Codex', useAtPrefix: false },
+])('$provider receives the same enabled collaborative workflow semantics', ({ useAtPrefix }) => {
+  for (const mode of ['normal', 'simple', 'tdd'] as const) {
+    const prompt = wrapForExecutionMode(mode, 'provider-neutral context', '421', {
+      agentMessagingEnabled: true,
+      batchMode: mode === 'tdd',
+      simpleMode: mode === 'simple',
+      subagentExecutor: 'dynamic',
+      useAtPrefix,
+    });
+
+    expect(prompt).toContain('StartTimAgent');
+    expect(prompt).toContain('ListTimAgents');
+    expect(prompt).toContain('SendTimAgentMessage');
+    expect(prompt).toContain('StopTimAgent');
+    expect(prompt).toContain('FinishTimAgent is self-only');
+    expect(prompt).toContain('claude-code');
+    expect(prompt).toContain('codex-cli');
+    expect(prompt).toContain('one working directory');
+    expect(prompt).toContain('tim review 421 --print --output-file <output_path>');
+    expect(prompt).not.toMatch(/tim subagent (implementer|tester|tdd-tests|reviewer)/);
+  }
+});
+
+test('the Claude and Codex prompt compositions differ only in provider file-prefix semantics', () => {
+  const commonOptions = {
+    agentMessagingEnabled: true,
+    batchMode: true,
+    planFilePath: '/path/to/plan.md',
+    subagentExecutor: 'claude-code' as const,
+  };
+  const claudePrompt = wrapForExecutionMode('normal', 'context', '421', {
+    ...commonOptions,
+    useAtPrefix: true,
+  });
+  const codexPrompt = wrapForExecutionMode('normal', 'context', '421', {
+    ...commonOptions,
+    useAtPrefix: false,
+  });
+
+  expect(claudePrompt.replaceAll('@/path/to/plan.md', '/path/to/plan.md')).toBe(codexPrompt);
+});
+
+test.each([
+  ['normal', wrapWithOrchestration],
+  ['simple', wrapWithOrchestrationSimple],
+  ['tdd', wrapWithOrchestrationTdd],
+] as const)('$s retains one-shot delegation when messaging is disabled', (mode, build) => {
+  const prompt = build('provider-neutral context', '421', {
+    agentMessagingEnabled: false,
+    batchMode: mode === 'tdd',
+  });
+
+  expect(prompt).not.toContain('StartTimAgent');
+  expect(prompt).not.toContain('ListTimAgents');
+  expect(prompt).not.toContain('SendTimAgentMessage');
+  expect(prompt).not.toContain('StopTimAgent');
+  expect(prompt).not.toContain('FinishTimAgent');
+  expect(prompt).toContain('tim subagent');
 });

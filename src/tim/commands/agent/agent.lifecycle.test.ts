@@ -29,6 +29,7 @@ const summaryOrder: string[] = [];
 // Declare with vi.hoisted so they're available inside vi.mock() factory functions
 const {
   buildExecutorAndLogSpy,
+  logSpy,
   getWorkspaceInfoByPathSpy,
   touchWorkspaceInfoSpy,
   sendNotificationSpy,
@@ -43,28 +44,38 @@ const {
   trackFileChangesSpy,
   writeOrDisplaySummarySpy,
   purgeArtifactsSpy,
-} = vi.hoisted(() => ({
-  buildExecutorAndLogSpy: vi.fn(() => ({
-    execute: vi.fn(async () => ({ success: true })),
-    filePathPrefix: '',
-  })),
-  getWorkspaceInfoByPathSpy: vi.fn(() => ({
-    workspaceType: 'auto' as const,
-  })),
-  touchWorkspaceInfoSpy: vi.fn(() => {}),
-  sendNotificationSpy: vi.fn(async () => {}),
-  closeLogFileSpy: vi.fn(async () => {}),
-  openLogFileSpy: vi.fn(() => {}),
-  loadEffectiveConfigSpy: vi.fn(async () => ({}) as Record<string, unknown>),
-  markStepDoneSpy: vi.fn(async () => ({ message: 'Step marked', planComplete: false })),
-  markTaskDoneSpy: vi.fn(async () => ({ message: 'Task marked', planComplete: false })),
-  runUpdateDocsSpy: vi.fn(async () => {}),
-  runUpdateLessonsSpy: vi.fn(async () => true),
-  executePostApplyCommandSpy: vi.fn(async () => true),
-  trackFileChangesSpy: vi.fn(async () => {}),
-  writeOrDisplaySummarySpy: vi.fn(async () => {}),
-  purgeArtifactsSpy: vi.fn(async () => ({})),
-}));
+  createClaudePermissionPromptCoordinatorSpy,
+  claudePermissionCoordinatorDisposeSpy,
+} = vi.hoisted(() => {
+  const claudePermissionCoordinatorDisposeSpy = vi.fn(async () => {});
+  return {
+    buildExecutorAndLogSpy: vi.fn(() => ({
+      execute: vi.fn(async () => ({ success: true })),
+      filePathPrefix: '',
+    })),
+    logSpy: vi.fn(() => {}),
+    getWorkspaceInfoByPathSpy: vi.fn(() => ({
+      workspaceType: 'auto' as const,
+    })),
+    touchWorkspaceInfoSpy: vi.fn(() => {}),
+    sendNotificationSpy: vi.fn(async () => {}),
+    closeLogFileSpy: vi.fn(async () => {}),
+    openLogFileSpy: vi.fn(() => {}),
+    loadEffectiveConfigSpy: vi.fn(async () => ({}) as Record<string, unknown>),
+    markStepDoneSpy: vi.fn(async () => ({ message: 'Step marked', planComplete: false })),
+    markTaskDoneSpy: vi.fn(async () => ({ message: 'Task marked', planComplete: false })),
+    runUpdateDocsSpy: vi.fn(async () => {}),
+    runUpdateLessonsSpy: vi.fn(async () => true),
+    executePostApplyCommandSpy: vi.fn(async () => true),
+    trackFileChangesSpy: vi.fn(async () => {}),
+    writeOrDisplaySummarySpy: vi.fn(async () => {}),
+    purgeArtifactsSpy: vi.fn(async () => ({})),
+    createClaudePermissionPromptCoordinatorSpy: vi.fn(() => ({
+      dispose: claudePermissionCoordinatorDisposeSpy,
+    })),
+    claudePermissionCoordinatorDisposeSpy,
+  };
+});
 
 vi.mock('../../../logging.js', () => ({
   boldMarkdownHeaders: (text: string) => text,
@@ -73,7 +84,7 @@ vi.mock('../../../logging.js', () => ({
     await closeLogFileSpy();
   }),
   error: vi.fn(() => {}),
-  log: vi.fn(() => {}),
+  log: logSpy,
   openLogFile: openLogFileSpy,
   sendStructured: vi.fn(() => {}),
   warn: vi.fn(() => {}),
@@ -96,6 +107,10 @@ vi.mock('../../configLoader.js', () => ({
 vi.mock('../../configSchema.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../configSchema.js')>()),
   getDefaultConfig: vi.fn(() => ({})),
+}));
+
+vi.mock('../../executors/claude_code/claude_permission_prompt_coordinator.js', () => ({
+  createClaudePermissionPromptCoordinator: createClaudePermissionPromptCoordinatorSpy,
 }));
 
 vi.mock('../../executors/index.js', () => ({
@@ -309,6 +324,8 @@ describe('timAgent lifecycle integration', () => {
     trackFileChangesSpy.mockClear();
     writeOrDisplaySummarySpy.mockClear();
     purgeArtifactsSpy.mockClear();
+    createClaudePermissionPromptCoordinatorSpy.mockClear();
+    claudePermissionCoordinatorDisposeSpy.mockClear();
 
     // Reset per-test behavior
     findNextActionableItemImpl = () => null;
@@ -428,6 +445,163 @@ describe('timAgent lifecycle integration', () => {
     );
     expect(summaryOrder).toEqual(['close-log']);
     expect(CleanupRegistry.getInstance().size).toBe(0);
+  });
+
+  test('owns one Claude permission coordinator for the enabled root session and disposes it at teardown', async () => {
+    effectiveConfig = {
+      ...effectiveConfig,
+      defaultOrchestrator: 'claude-code',
+      experimental: { agentMessaging: true },
+    };
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(1, { log: false, summary: false }, {});
+
+    expect(createClaudePermissionPromptCoordinatorSpy).toHaveBeenCalledTimes(1);
+    expect(claudePermissionCoordinatorDisposeSpy).toHaveBeenCalledTimes(1);
+    const coordinator = createClaudePermissionPromptCoordinatorSpy.mock.results[0]?.value;
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        agentMessagingEnabled: true,
+        claudePermissionPromptCoordinator: coordinator,
+        claudeAgentToolContext: expect.objectContaining({
+          caller: expect.objectContaining({ name: 'orchestrator', role: 'orchestrator' }),
+          allowedTools: new Set([
+            'StartTimAgent',
+            'ListTimAgents',
+            'SendTimAgentMessage',
+            'StopTimAgent',
+          ]),
+        }),
+        codexDynamicToolProvider: expect.objectContaining({
+          definitions: expect.arrayContaining([
+            expect.objectContaining({ name: 'StartTimAgent' }),
+            expect.objectContaining({ name: 'ListTimAgents' }),
+            expect.objectContaining({ name: 'SendTimAgentMessage' }),
+            expect.objectContaining({ name: 'StopTimAgent' }),
+          ]),
+        }),
+      }),
+      expect.anything()
+    );
+    expect(logSpy).toHaveBeenCalledWith('Experimental agent messaging is enabled');
+  });
+
+  test('does not create a Claude permission coordinator for a disabled root session', async () => {
+    const { timAgent } = await import('./agent.js');
+    await timAgent(1, { log: false, summary: false }, {});
+
+    expect(createClaudePermissionPromptCoordinatorSpy).not.toHaveBeenCalled();
+    expect(claudePermissionCoordinatorDisposeSpy).not.toHaveBeenCalled();
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        agentMessagingEnabled: false,
+        claudePermissionPromptCoordinator: undefined,
+      }),
+      expect.anything()
+    );
+  });
+
+  test('disposes the enabled coordinator when executor construction fails', async () => {
+    effectiveConfig = {
+      ...effectiveConfig,
+      defaultOrchestrator: 'claude-code',
+      experimental: { agentMessaging: true },
+    };
+    const startupError = new Error('executor construction failed');
+    buildExecutorAndLogSpy.mockImplementationOnce(() => {
+      throw startupError;
+    });
+
+    const { timAgent } = await import('./agent.js');
+
+    await expect(timAgent(1, { log: false, summary: false }, {})).rejects.toBe(startupError);
+    expect(createClaudePermissionPromptCoordinatorSpy).toHaveBeenCalledTimes(1);
+    expect(claudePermissionCoordinatorDisposeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('preserves an execution failure when coordinator disposal also fails', async () => {
+    effectiveConfig = {
+      ...effectiveConfig,
+      defaultOrchestrator: 'claude-code',
+      experimental: { agentMessaging: true },
+    };
+    const executionError = new Error('executor execution failed');
+    const disposalError = new Error('coordinator disposal failed');
+    const executionEvents: string[] = [];
+    let itemReturned = false;
+    findNextActionableItemImpl = () => {
+      if (itemReturned) return null;
+      itemReturned = true;
+      return {
+        type: 'step',
+        taskIndex: 0,
+        stepIndex: 0,
+        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+      };
+    };
+    buildExecutorAndLogSpy.mockImplementationOnce(() => ({
+      execute: vi.fn(async () => {
+        executionEvents.push('executor-started');
+        throw executionError;
+      }),
+      filePathPrefix: '',
+    }));
+    claudePermissionCoordinatorDisposeSpy.mockRejectedValueOnce(disposalError);
+
+    const { timAgent } = await import('./agent.js');
+
+    await expect(
+      timAgent(1, { log: false, summary: false, serialTasks: true }, {})
+    ).rejects.toThrow('Agent stopped due to error.');
+    expect(executionEvents).toEqual(['executor-started']);
+    expect(claudePermissionCoordinatorDisposeSpy).toHaveBeenCalledTimes(1);
+    expect(sendNotificationSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ errorMessage: executionError.message })
+    );
+  });
+
+  test('reports a coordinator cleanup failure after successful execution', async () => {
+    effectiveConfig = {
+      ...effectiveConfig,
+      defaultOrchestrator: 'claude-code',
+      experimental: { agentMessaging: true },
+    };
+    const disposalError = new Error('coordinator disposal failed');
+    const executionEvents: string[] = [];
+    let itemReturned = false;
+    findNextActionableItemImpl = () => {
+      if (itemReturned) return null;
+      itemReturned = true;
+      return {
+        type: 'step',
+        taskIndex: 0,
+        stepIndex: 0,
+        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+      };
+    };
+    buildExecutorAndLogSpy.mockImplementationOnce(() => ({
+      execute: vi.fn(async () => {
+        executionEvents.push('executor-complete');
+        return { success: true };
+      }),
+      filePathPrefix: '',
+    }));
+    claudePermissionCoordinatorDisposeSpy.mockImplementationOnce(async () => {
+      executionEvents.push('coordinator-dispose');
+      throw disposalError;
+    });
+
+    const { timAgent } = await import('./agent.js');
+
+    await expect(
+      timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {})
+    ).rejects.toBe(disposalError);
+    expect(executionEvents).toEqual(['executor-complete', 'coordinator-dispose']);
+    expect(claudePermissionCoordinatorDisposeSpy).toHaveBeenCalledTimes(1);
   });
 
   test('passes selected workspace and plan environment context to lifecycle commands', async () => {

@@ -218,6 +218,16 @@
       },
       "additionalProperties": false
     },
+    "experimental": {
+      "description": "Experimental features",
+      "type": "object",
+      "properties": {
+        "agentMessaging": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "inbox": {
       "description": "PR inbox notification behavior (repo-settable)",
       "type": "object",

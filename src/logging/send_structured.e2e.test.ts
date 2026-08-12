@@ -97,6 +97,7 @@ describe('logging sendStructured end-to-end', () => {
     expect(structuredOutput).toBeDefined();
     expect(structuredOutput?.message).toEqual({
       type: 'structured',
+      agentName: 'orchestrator',
       message: {
         type: 'workflow_progress',
         timestamp: '2026-02-08T00:00:00.000Z',

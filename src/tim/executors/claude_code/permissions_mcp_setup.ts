@@ -5,11 +5,10 @@
  * the ClaudeCodeExecutor class and the standalone `tim subagent` command. It handles:
  * - Parsing allowed tools into an efficient lookup structure
  * - Creating a Unix socket server for permission request handling
- * - Generating the MCP config file pointing to the permissions_mcp.ts script
+ * - Generating the MCP config file pointing to the tim_mcp.ts script
  * - Interactive user prompting for non-allowed tools
  */
 
-import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as net from 'net';
@@ -25,11 +24,29 @@ import {
 import { getGitRoot } from '../../../common/git.js';
 import { extractCommandAfterCd } from '../../../common/prefix_prompt_utils.js';
 import { debugLog, log } from '../../../logging.js';
-import { createLineSplitter } from '../../../common/process.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
 import { getDatabase } from '../../db/database.js';
 import { getOrCreateProject } from '../../db/project.js';
 import { addPermission } from '../../db/permission.js';
+import {
+  CLAUDE_AGENT_TOOL_NAMES,
+  getClaudeAgentToolNames,
+  permissionRequestSchema,
+  type ClaudeAgentToolContext,
+  type ClaudePermissionPromptCoordinator,
+} from './claude_mcp_protocol.js';
+import { isClaudePermissionPromptCancelledError } from './claude_permission_prompt_coordinator.js';
+import type { AgentIdentity } from '../../agent_messaging/agent_manager_types.js';
+import { isRecord } from '../../../common/type_guards.js';
+import {
+  setupClaudeMcpBridge,
+  type ClaudeMcpBridgeSetupResult,
+} from './setup_claude_mcp_bridge.js';
+import { writeClaudeMcpSocketMessage } from './claude_mcp_parent_server.js';
+
+export { mergeClaudeMcpConfig, readUserMcpConfig } from './claude_mcp_config.js';
+export type { ClaudeMcpConfig, ClaudeMcpServerDefinition } from './claude_mcp_config.js';
+export { resolvePermissionsMcpPath } from './setup_claude_mcp_bridge.js';
 
 const BASH_TOOL_NAME = 'Bash';
 const FREE_TEXT_VALUE = '__free_text__';
@@ -39,20 +56,9 @@ const USER_CHOICE_SESSION_ALLOW = 'session_allow';
 const USER_CHOICE_DISALLOW = 'disallow';
 export const ALWAYS_ALLOWED_BASH_SUFFIXES: string[] = ['tim tools update-plan-tasks'];
 
-interface PermissionsMcpSetupResult {
-  /** Path to the generated MCP config file */
-  mcpConfigFile: string;
-  /** The temporary directory created for MCP config and socket */
-  tempDir: string;
-  /** Path to the permissions MCP log file */
-  logFile: string;
-  /** The Unix socket server handling permission requests */
-  socketServer: net.Server;
-  /** Cleanup function to tear down all resources */
-  cleanup: () => Promise<void>;
-}
+export type PermissionsMcpSetupResult = ClaudeMcpBridgeSetupResult;
 
-interface PermissionsMcpOptions {
+export interface PermissionsMcpOptions {
   /** List of allowed tool patterns (e.g., 'Edit', 'Bash(git status:*)') */
   allowedTools: string[];
   /** Default response when permission prompt times out */
@@ -65,35 +71,78 @@ interface PermissionsMcpOptions {
   trackedFiles?: Set<string>;
   /** Base directory used to resolve relative paths in rm commands */
   workingDirectory?: string;
+  /** Enable the approval_prompt child tool. Defaults to true for compatibility. */
+  interactiveApprovalEnabled?: boolean;
+  /** Trusted parent-bound context for role-scoped agent tools. */
+  agentToolContext?: ClaudeAgentToolContext;
+  /** Shared root-session coordinator for interactive prompt cancellation. */
+  permissionPromptCoordinator?: ClaudePermissionPromptCoordinator;
+  /** Optional user MCP config to preserve when installing the internal bridge. */
+  mcpConfigFile?: string;
 }
 
-export async function resolvePermissionsMcpPath(
-  executableDir: string = path.dirname(process.execPath)
-): Promise<string> {
-  // Resolve the path to the permissions MCP script
-  // Prefer the compiled script relative to the executable, then fall back to the local source file.
-  // Use import.meta.dir (Bun) or import.meta.dirname (Node.js v20+) or URL-based fallback
-  const currentDir =
-    (import.meta as { dir?: string; dirname?: string }).dir ??
-    (import.meta as { dirname?: string }).dirname ??
-    path.dirname(new URL(import.meta.url).pathname);
-  const distPath = './claude_code/permissions_mcp.js';
-  const candidates: string[] = [
-    path.resolve(executableDir, distPath),
-    path.resolve(path.dirname(process.argv0), distPath),
-    path.resolve(currentDir, './permissions_mcp.ts'),
-  ];
+function validateAgentIdentity(identity: AgentIdentity): void {
+  if (!isRecord(identity) || (identity.role !== 'orchestrator' && identity.role !== 'subagent')) {
+    throw new TypeError('Claude agent tool caller identity is invalid');
+  }
+  if (typeof identity.id !== 'string' || typeof identity.name !== 'string') {
+    throw new TypeError('Claude agent tool caller identity must include id and name');
+  }
+}
 
-  for (const candidate of candidates) {
-    try {
-      await fs.access(candidate);
-      return candidate;
-    } catch {
-      // Try the next candidate.
+export function validateClaudeAgentToolContext(context: ClaudeAgentToolContext): void {
+  if (!isRecord(context)) throw new TypeError('Claude agent tool context must be an object');
+  validateAgentIdentity(context.caller);
+  if (!(context.allowedTools instanceof Set)) {
+    throw new TypeError('Claude agent tool context allowedTools must be a Set');
+  }
+  if (!isRecord(context.dispatcher)) {
+    throw new TypeError('Claude agent tool context dispatcher must be an object');
+  }
+  for (const method of [
+    'startAgent',
+    'listAgents',
+    'sendAgentMessage',
+    'stopAgent',
+    'finishAgent',
+  ]) {
+    if (typeof context.dispatcher[method] !== 'function') {
+      throw new TypeError(`Claude agent tool dispatcher ${method} must be a function`);
     }
   }
 
-  return candidates.at(-1) as string;
+  const roleTools = new Set(getClaudeAgentToolNames(context.caller.role));
+  for (const toolName of context.allowedTools) {
+    if (!(CLAUDE_AGENT_TOOL_NAMES as readonly string[]).includes(toolName)) {
+      throw new TypeError(`Unknown Claude agent tool in context: ${String(toolName)}`);
+    }
+    if (!roleTools.has(toolName)) {
+      throw new TypeError(
+        `Claude agent tool ${toolName} is not allowed for ${context.caller.role} callers`
+      );
+    }
+  }
+}
+
+function getRequestId(value: unknown): string | undefined {
+  return isRecord(value) && typeof value.requestId === 'string' ? value.requestId : undefined;
+}
+
+async function enqueueInteractivePrompt<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  options: Pick<PermissionsMcpOptions, 'permissionPromptCoordinator'>,
+  requester: { readonly name: string; readonly token: string },
+  requestId: string
+): Promise<T> {
+  if (options.permissionPromptCoordinator === undefined) {
+    return operation(new AbortController().signal);
+  }
+  return options.permissionPromptCoordinator.enqueue({
+    requesterName: requester.name,
+    requesterToken: requester.token,
+    requestId,
+    run: operation,
+  });
 }
 
 function parseCommandTokens(command: string): string[] {
@@ -326,7 +375,8 @@ async function handleBashPrefixApproval(
   sessionMessage: string,
   persistentMessage: string,
   timeout?: number,
-  workingDirectory?: string
+  workingDirectory?: string,
+  signal?: AbortSignal
 ): Promise<void> {
   const command = input.command as string;
   const selectedPrefix = await promptPrefixSelect({
@@ -335,6 +385,7 @@ async function handleBashPrefixApproval(
       : 'Select the command prefix to allow for this session:',
     command,
     timeoutMs: timeout,
+    signal,
   });
 
   const wasAdded = addBashPrefixSafely(allowedToolsMap, selectedPrefix.command);
@@ -351,10 +402,12 @@ async function handleBashPrefixApproval(
 }
 
 async function handleAskUserQuestion(
-  message: { requestId?: string; tool_name?: string; input?: any },
-  socket: net.Socket
+  message: { requestId: string; tool_name: string; input: Record<string, unknown> },
+  socket: net.Socket,
+  requesterName: string,
+  signal: AbortSignal
 ): Promise<void> {
-  const requestId = message.requestId!;
+  const requestId = message.requestId;
   const questions = Array.isArray(message.input?.questions) ? message.input.questions : [];
 
   if (questions.length === 0) {
@@ -363,11 +416,14 @@ async function handleAskUserQuestion(
       requestId,
       approved: false,
     };
-    socket.write(JSON.stringify(response) + '\n');
+    writeClaudeMcpSocketMessage(socket, response);
     return;
   }
 
   process.stdout.write('\x07');
+  if (requesterName) {
+    console.log(`\nClaude agent ${requesterName} wants to answer questions:`);
+  }
   const answers: Record<string, string> = {};
 
   try {
@@ -408,12 +464,14 @@ async function handleAskUserQuestion(
           header: promptHeader,
           question: promptQuestion,
           choices,
+          signal,
         });
 
         const selectedAnswers = selectedValues.filter((value) => value !== FREE_TEXT_VALUE);
         if (selectedValues.includes(FREE_TEXT_VALUE)) {
           const freeTextValue = await promptInput({
             message: 'Enter custom answer',
+            signal,
           });
           selectedAnswers.push(freeTextValue);
         }
@@ -425,11 +483,13 @@ async function handleAskUserQuestion(
           header: promptHeader,
           question: promptQuestion,
           choices,
+          signal,
         });
 
         if (selectedValue === FREE_TEXT_VALUE) {
           answers[promptQuestion] = await promptInput({
             message: 'Enter custom answer',
+            signal,
           });
         } else {
           answers[promptQuestion] = selectedValue;
@@ -437,6 +497,9 @@ async function handleAskUserQuestion(
       }
     }
   } catch (err) {
+    if (signal.aborted) {
+      throw err;
+    }
     if (isPromptTimeoutError(err)) {
       log('\nAskUserQuestion prompt timed out; denying request');
     } else {
@@ -448,8 +511,12 @@ async function handleAskUserQuestion(
       requestId,
       approved: false,
     };
-    socket.write(JSON.stringify(response) + '\n');
+    writeClaudeMcpSocketMessage(socket, response);
     return;
+  }
+
+  if (signal.aborted) {
+    throw new Error('Claude permission prompt was cancelled');
   }
 
   const response = {
@@ -461,13 +528,14 @@ async function handleAskUserQuestion(
       answers,
     },
   };
-  socket.write(JSON.stringify(response) + '\n');
+  writeClaudeMcpSocketMessage(socket, response);
 }
 
 async function handlePermissionLine(
-  line: string,
+  rawMessage: unknown,
   socket: net.Socket,
   allowedToolsMap: Map<string, true | string[]>,
+  requester: { readonly name: string; readonly token: string },
   options: Pick<
     PermissionsMcpOptions,
     | 'defaultResponse'
@@ -475,31 +543,42 @@ async function handlePermissionLine(
     | 'autoApproveCreatedFileDeletion'
     | 'trackedFiles'
     | 'workingDirectory'
+    | 'permissionPromptCoordinator'
   >
 ): Promise<void> {
-  let message: { type?: string; requestId?: string; tool_name?: string; input?: any };
-  try {
-    message = JSON.parse(line);
-  } catch (err) {
-    debugLog('Failed to parse permission request JSON:', err);
+  if (!isRecord(rawMessage) || rawMessage.type !== 'permission_request') {
     return;
   }
 
-  if (message.type !== 'permission_request') {
+  const parsed = permissionRequestSchema.safeParse(rawMessage);
+  const requestId = getRequestId(rawMessage);
+  if (!parsed.success) {
+    debugLog('Invalid permission request:', parsed.error.issues);
+    if (requestId !== undefined) {
+      writeClaudeMcpSocketMessage(socket, {
+        type: 'permission_response',
+        requestId,
+        approved: false,
+      });
+    }
     return;
   }
-
-  const { requestId, tool_name, input } = message;
-
-  if (!requestId || !tool_name) {
-    debugLog('Permission request missing requestId or tool_name');
-    return;
-  }
+  const message = parsed.data;
+  const { tool_name, input } = message;
 
   try {
     if (tool_name === 'AskUserQuestion') {
       // AskUserQuestion must always wait for explicit user input and never auto-timeout.
-      await handleAskUserQuestion(message, socket);
+      if (!Array.isArray(input.questions) || input.questions.length === 0) {
+        await handleAskUserQuestion(message, socket, requester.name, new AbortController().signal);
+        return;
+      }
+      await enqueueInteractivePrompt(
+        (signal) => handleAskUserQuestion(message, socket, requester.name, signal),
+        options,
+        requester,
+        message.requestId
+      );
       return;
     }
 
@@ -520,7 +599,7 @@ async function handlePermissionLine(
               requestId,
               approved: true,
             };
-            socket.write(JSON.stringify(response) + '\n');
+            writeClaudeMcpSocketMessage(socket, response);
             return;
           }
         }
@@ -530,7 +609,7 @@ async function handlePermissionLine(
           requestId,
           approved: true,
         };
-        socket.write(JSON.stringify(response) + '\n');
+        writeClaudeMcpSocketMessage(socket, response);
         return;
       }
     }
@@ -543,7 +622,7 @@ async function handlePermissionLine(
           requestId,
           approved: true,
         };
-        socket.write(JSON.stringify(response) + '\n');
+        writeClaudeMcpSocketMessage(socket, response);
         return;
       }
     }
@@ -565,7 +644,7 @@ async function handlePermissionLine(
           requestId,
           approved: true,
         };
-        socket.write(JSON.stringify(response) + '\n');
+        writeClaudeMcpSocketMessage(socket, response);
         return;
       }
     }
@@ -576,72 +655,87 @@ async function handlePermissionLine(
       formattedInput = formattedInput.substring(0, 500) + '...';
     }
 
-    // Alert the user
-    process.stdout.write('\x07');
-
     let approved: boolean;
     try {
-      const userChoice = await promptSelect({
-        message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
-        choices: [
-          { name: 'Allow', value: USER_CHOICE_ALLOW },
-          { name: 'Allow for Session', value: USER_CHOICE_SESSION_ALLOW },
-          { name: 'Always Allow', value: USER_CHOICE_ALWAYS_ALLOW },
-          { name: 'Disallow', value: USER_CHOICE_DISALLOW },
-        ],
-        timeoutMs: options.timeout,
-      });
+      approved = await enqueueInteractivePrompt(
+        async (signal: AbortSignal): Promise<boolean> => {
+          process.stdout.write('\x07');
+          try {
+            const userChoice = await promptSelect({
+              message: `${requester.name ? `Claude agent ${requester.name}` : 'Claude'} wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
+              choices: [
+                { name: 'Allow', value: USER_CHOICE_ALLOW },
+                { name: 'Allow for Session', value: USER_CHOICE_SESSION_ALLOW },
+                { name: 'Always Allow', value: USER_CHOICE_ALWAYS_ALLOW },
+                { name: 'Disallow', value: USER_CHOICE_DISALLOW },
+              ],
+              timeoutMs: options.timeout,
+              signal,
+            });
 
-      approved =
-        userChoice === USER_CHOICE_ALLOW ||
-        userChoice === USER_CHOICE_SESSION_ALLOW ||
-        userChoice === USER_CHOICE_ALWAYS_ALLOW;
+            const promptApproved =
+              userChoice === USER_CHOICE_ALLOW ||
+              userChoice === USER_CHOICE_SESSION_ALLOW ||
+              userChoice === USER_CHOICE_ALWAYS_ALLOW;
 
-      if (userChoice === USER_CHOICE_ALWAYS_ALLOW) {
-        if (tool_name === BASH_TOOL_NAME && typeof input.command === 'string') {
-          await handleBashPrefixApproval(
-            input,
-            allowedToolsMap,
-            true,
-            '',
-            `${BASH_TOOL_NAME} prefix "{prefix}" added to always allowed list`,
-            options.timeout,
-            options.workingDirectory
-          );
-        } else {
-          allowedToolsMap.set(tool_name, true);
-          log(chalk.blue(`Tool ${tool_name} added to always allowed list`));
-          await addPermissionToFile(tool_name, undefined, options.workingDirectory);
-        }
-      }
+            if (userChoice === USER_CHOICE_ALWAYS_ALLOW) {
+              if (tool_name === BASH_TOOL_NAME && typeof input.command === 'string') {
+                await handleBashPrefixApproval(
+                  input,
+                  allowedToolsMap,
+                  true,
+                  '',
+                  `${BASH_TOOL_NAME} prefix "{prefix}" added to always allowed list`,
+                  options.timeout,
+                  options.workingDirectory,
+                  signal
+                );
+              } else {
+                allowedToolsMap.set(tool_name, true);
+                log(chalk.blue(`Tool ${tool_name} added to always allowed list`));
+                await addPermissionToFile(tool_name, undefined, options.workingDirectory);
+              }
+            }
 
-      if (userChoice === USER_CHOICE_SESSION_ALLOW) {
-        if (tool_name === BASH_TOOL_NAME && typeof input.command === 'string') {
-          await handleBashPrefixApproval(
-            input,
-            allowedToolsMap,
-            false,
-            `${BASH_TOOL_NAME} prefix "{prefix}" added to allowed list for current session only`,
-            '',
-            options.timeout,
-            options.workingDirectory
-          );
-        } else {
-          allowedToolsMap.set(tool_name, true);
-          log(chalk.blue(`Tool ${tool_name} added to allowed list for current session only`));
-        }
-      }
-    } catch (err) {
-      if (isPromptTimeoutError(err)) {
-        // Prompt was aborted due to timeout - apply configured default
-        const defaultResp = options.defaultResponse ?? 'no';
-        approved = defaultResp === 'yes';
-        log(`\nPermission prompt timed out, using default: ${defaultResp}`);
-      } else {
-        // Transport error, tunnel disconnect, or unexpected failure - deny for safety
-        approved = false;
-        debugLog('Permission prompt failed with non-timeout error:', err);
-      }
+            if (userChoice === USER_CHOICE_SESSION_ALLOW) {
+              if (tool_name === BASH_TOOL_NAME && typeof input.command === 'string') {
+                await handleBashPrefixApproval(
+                  input,
+                  allowedToolsMap,
+                  false,
+                  `${BASH_TOOL_NAME} prefix "{prefix}" added to allowed list for current session only`,
+                  '',
+                  options.timeout,
+                  options.workingDirectory,
+                  signal
+                );
+              } else {
+                allowedToolsMap.set(tool_name, true);
+                log(chalk.blue(`Tool ${tool_name} added to allowed list for current session only`));
+              }
+            }
+            return promptApproved;
+          } catch (error) {
+            if (signal.aborted) {
+              throw error;
+            }
+            if (isPromptTimeoutError(error)) {
+              const defaultResp = options.defaultResponse ?? 'no';
+              log(`\nPermission prompt timed out, using default: ${defaultResp}`);
+              return defaultResp === 'yes';
+            }
+            debugLog('Permission prompt failed with non-timeout error:', error);
+            return false;
+          }
+        },
+        options,
+        requester,
+        message.requestId
+      );
+    } catch (error) {
+      if (isClaudePermissionPromptCancelledError(error)) return;
+      approved = false;
+      debugLog('Permission prompt coordination failed:', error);
     }
 
     const response = {
@@ -649,115 +743,50 @@ async function handlePermissionLine(
       requestId,
       approved,
     };
-    socket.write(JSON.stringify(response) + '\n');
+    writeClaudeMcpSocketMessage(socket, response);
   } catch (err) {
+    if (isClaudePermissionPromptCancelledError(err)) return;
     debugLog('Permission handler failed:', err);
     const response = {
       type: 'permission_response',
       requestId,
       approved: false,
     };
-    socket.write(JSON.stringify(response) + '\n');
+    writeClaudeMcpSocketMessage(socket, response);
   }
 }
 
-/**
- * Creates a Unix socket server that handles permission requests from the
- * permissions MCP script. Auto-approves tools in the allowed list and
- * prompts the user interactively for others.
- */
-function createPermissionSocketServer(
-  socketPath: string,
-  allowedToolsMap: Map<string, true | string[]>,
-  options: Pick<
-    PermissionsMcpOptions,
-    | 'defaultResponse'
-    | 'timeout'
-    | 'autoApproveCreatedFileDeletion'
-    | 'trackedFiles'
-    | 'workingDirectory'
-  >
-): Promise<net.Server> {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer((socket) => {
-      const splitLines = createLineSplitter();
-
-      socket.on('data', (data) => {
-        const lines = splitLines(data.toString());
-        for (const line of lines) {
-          if (!line) continue;
-          void handlePermissionLine(line, socket, allowedToolsMap, options).catch((err) => {
-            debugLog('Permission handler failed:', err);
-          });
-        }
-      });
-    });
-
-    server.on('error', reject);
-    server.listen(socketPath, () => resolve(server));
-  });
-}
-
-/**
- * Sets up the full permissions MCP infrastructure for a Claude Code subprocess.
- *
- * Creates a temporary directory with:
- * - A Unix socket for permission request handling
- * - An MCP config file pointing to the permissions_mcp.ts script
- *
- * Returns the config file path and a cleanup function.
- */
+/** Sets up the generalized Claude MCP bridge while keeping permission policy local. */
 export async function setupPermissionsMcp(
   options: PermissionsMcpOptions
 ): Promise<PermissionsMcpSetupResult> {
+  if (options.agentToolContext !== undefined) {
+    validateClaudeAgentToolContext(options.agentToolContext);
+  }
+  const trustedAgentToolContext: ClaudeAgentToolContext | undefined =
+    options.agentToolContext === undefined
+      ? undefined
+      : {
+          caller: Object.freeze({ ...options.agentToolContext.caller }),
+          allowedTools: new Set(options.agentToolContext.allowedTools),
+          dispatcher: options.agentToolContext.dispatcher,
+        };
   const allowedToolsMap = parseAllowedToolsList(options.allowedTools);
 
-  // Create a temporary directory for the MCP config and socket
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-subagent-mcp-'));
-  const socketPath = path.join(tempDir, 'permissions.sock');
-  const logFile = path.join(tempDir, 'permissions-mcp.log');
-
-  // Create the socket server
-  const socketServer = await createPermissionSocketServer(socketPath, allowedToolsMap, {
-    defaultResponse: options.defaultResponse,
-    timeout: options.timeout,
-    autoApproveCreatedFileDeletion: options.autoApproveCreatedFileDeletion,
-    trackedFiles: options.trackedFiles,
-    workingDirectory: options.workingDirectory,
+  return setupClaudeMcpBridge({
+    allowedToolsMap,
+    interactiveApprovalEnabled: options.interactiveApprovalEnabled,
+    agentToolContext: trustedAgentToolContext,
+    permissionPromptCoordinator: options.permissionPromptCoordinator,
+    mcpConfigFile: options.mcpConfigFile,
+    handlePermissionRequest: (rawMessage, socket, requester) =>
+      handlePermissionLine(rawMessage, socket, allowedToolsMap, requester, {
+        defaultResponse: options.defaultResponse,
+        timeout: options.timeout,
+        autoApproveCreatedFileDeletion: options.autoApproveCreatedFileDeletion,
+        trackedFiles: options.trackedFiles,
+        workingDirectory: options.workingDirectory,
+        permissionPromptCoordinator: options.permissionPromptCoordinator,
+      }),
   });
-
-  const permissionsMcpPath = await resolvePermissionsMcpPath();
-
-  // Build the MCP config
-  const mcpConfig = {
-    mcpServers: {
-      permissions: {
-        type: 'stdio',
-        command: 'bun',
-        args: [permissionsMcpPath, socketPath, logFile],
-      },
-    },
-  };
-
-  // Write the config file
-  const mcpConfigFile = path.join(tempDir, 'mcp-config.json');
-  const mcpConfigContent = JSON.stringify(mcpConfig, null, 2);
-  debugLog('MCP config file content:', mcpConfigContent);
-  log(`Permissions MCP log file: ${logFile}`);
-  await fs.writeFile(mcpConfigFile, mcpConfigContent);
-
-  const cleanup = async () => {
-    await new Promise<void>((resolve) => {
-      socketServer.close(() => resolve());
-    });
-    await fs.rm(tempDir, { recursive: true, force: true });
-  };
-
-  return {
-    mcpConfigFile,
-    tempDir,
-    logFile,
-    socketServer,
-    cleanup,
-  };
 }

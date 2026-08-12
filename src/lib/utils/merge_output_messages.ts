@@ -3,8 +3,8 @@ import type { DisplayMessage, MonospacedMessageBody } from '$lib/types/session.j
 /**
  * Raw process output (stdout/stderr) arrives in transport-sized chunks, so a
  * single logical line is frequently split across multiple messages. Merge
- * consecutive runs of the same stream (same rawType and origin) into a single
- * message so the rendered text reflects the real line boundaries.
+ * consecutive runs of the same stream (same rawType, origin, and agent) into a
+ * single message so the rendered text reflects the real line boundaries.
  *
  * Chunks are concatenated verbatim — the chunk boundary itself carries no
  * separator, so joining with an empty string reconstructs the original stream.
@@ -42,5 +42,5 @@ function isMergeableOutput(
 
 /** Two output messages may merge only if they come from the same stream. */
 function canMerge(a: DisplayMessage, b: DisplayMessage): boolean {
-  return a.rawType === b.rawType && a.origin === b.origin;
+  return a.rawType === b.rawType && a.origin === b.origin && a.agentName === b.agentName;
 }

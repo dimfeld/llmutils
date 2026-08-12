@@ -56,6 +56,10 @@ describePlatform('CodexAppServerConnection project environment', () => {
         'TIM_DATABASE_NAME=dotenv_database',
         'TIM_HIGH_PRIORITY=dotenv_high',
         'TIM_PLAN_ID=dotenv_plan',
+        'TIM_AGENT_ID=stale-id',
+        'TIM_AGENT_NAME=stale-name',
+        'TIM_AGENT_TYPE=reviewer',
+        'TIM_AGENT_ROLE=subagent',
       ].join('\n')
     );
 
@@ -75,6 +79,11 @@ fs.writeFileSync(process.env.MOCK_ENV_LOG, JSON.stringify({
   TIM_NOTIFY_SUPPRESS: process.env.TIM_NOTIFY_SUPPRESS,
   TMPDIR: process.env.TMPDIR,
   TIM_CODEX_APP_SERVER_SOCKET: process.env.TIM_CODEX_APP_SERVER_SOCKET,
+  TIM_AGENT_MESSAGING_DIR: process.env.TIM_AGENT_MESSAGING_DIR,
+  TIM_AGENT_ID: process.env.TIM_AGENT_ID,
+  TIM_AGENT_NAME: process.env.TIM_AGENT_NAME,
+  TIM_AGENT_TYPE: process.env.TIM_AGENT_TYPE,
+  TIM_AGENT_ROLE: process.env.TIM_AGENT_ROLE,
 }) + '\\n');
 
 const listenArgIndex = process.argv.indexOf('--listen');
@@ -100,7 +109,7 @@ const server = Bun.serve({
 `
     );
     await chmod(serverPath, 0o755);
-    await writeFile(codexPath, `#!/bin/sh\nexec bun "${serverPath}" "$@"\n`);
+    await writeFile(codexPath, `#!/bin/sh\nexec bun --no-env-file "${serverPath}" "$@"\n`);
     await chmod(codexPath, 0o755);
 
     const registry = new SessionProcessRegistry({ sessionId: 'app-server-session' });
@@ -140,6 +149,12 @@ const server = Bun.serve({
             planId: '374',
           },
         },
+        agentEnvironmentIdentity: {
+          messagingDirectory: '/tmp/tim-agent-session',
+          id: 'root-id',
+          name: 'orchestrator',
+          role: 'orchestrator',
+        },
       })
     );
 
@@ -164,7 +179,12 @@ const server = Bun.serve({
         TIM_NOTIFY_SUPPRESS: '1',
         TMPDIR: '/tmp/codex-app-server/',
         TIM_CODEX_APP_SERVER_SOCKET: expect.stringContaining('codex.sock'),
+        TIM_AGENT_MESSAGING_DIR: '/tmp/tim-agent-session',
+        TIM_AGENT_ID: 'root-id',
+        TIM_AGENT_NAME: 'orchestrator',
+        TIM_AGENT_ROLE: 'orchestrator',
       });
+      expect(capturedEnv.TIM_AGENT_TYPE).toBeUndefined();
       expect(process.env.TIM_DATABASE_NAME).toBe(previousDatabaseName);
       expect(process.env.TIM_HIGH_PRIORITY).toBe(previousHighPriority);
 

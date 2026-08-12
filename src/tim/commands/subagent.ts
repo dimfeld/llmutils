@@ -1,226 +1,69 @@
 /**
- * @fileoverview Implementation of the `tim subagent` command.
+ * @fileoverview Compatibility adapter for the `tim subagent` command.
  *
- * This command runs a subagent (implementer, tester, or tdd-tests) for the orchestrator.
- * It loads plan context, builds the appropriate agent prompt, and executes using either
- * claude-code or codex-cli. Intermediate output goes through the tunnel to the terminal,
- * while the final agent message is printed to stdout for the orchestrator to capture.
+ * Reusable preparation and one-shot provider execution live in
+ * `src/tim/subagents`. This module keeps the Commander-facing output policy:
+ * optional output-file writing, final stdout, and tunnel byte-count logging.
  */
 
 import * as fs from 'fs/promises';
 import * as path from 'node:path';
-import { loadEffectiveConfig } from '../configLoader.js';
-import { resolvePlanByNumericId } from '../plans.js';
-import { getAllIncompleteTasks } from '../plans/find_next.js';
-import { resolveSubagentTaskScope } from '../plans/task_scope.js';
-import { buildExecutionPromptWithoutSteps } from '../prompt_builder.js';
-import {
-  getImplementerPrompt,
-  getTddTestsPrompt,
-  getTesterPrompt,
-} from '../executors/claude_code/agent_prompts.js';
-import { loadAgentInstructionsFor } from '../executors/codex_cli/agent_helpers.js';
-import { executeCodexStep } from '../executors/codex_cli/codex_runner.js';
-import { parseCodexModel } from '../executors/codex_cli/model.js';
-import { getGitRoot, getUsingJj } from '../../common/git.js';
-import { runClaudeSubprocess } from '../executors/claude_code/run_claude_subprocess.js';
-import type { TimConfig } from '../configSchema.js';
-import type { PlanSchema } from '../planSchema.js';
-import type { Executor } from '../executors/types.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { log } from '../../logging.js';
-import { resolveOrchestratorInput } from '../utils/orchestrator_input.js';
-import { resolveRepoRoot } from '../plan_repo_root.js';
-import { materializePlan } from '../plan_materialize.js';
-import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
-import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
-import { tryMaterializeReferenceArtifactPathsForExecution } from '../reference_artifacts.js';
+import { launchPreparedSubagent, prepareSubagentExecution } from '../subagents/index.js';
+import type { SubagentPreparationRequest, SubagentType } from '../subagents/index.js';
 
-export type SubagentType = 'implementer' | 'tester' | 'tdd-tests';
+export type { SubagentType } from '../subagents/index.js';
+export { buildSubagentTaskContext } from '../subagents/index.js';
 
 interface SubagentOptions {
-  executor: string;
+  executor?: string;
   model?: string;
   input?: string;
   inputFile?: string | string[];
-  outputFile?: string;
   taskIndex?: string | string[];
+  outputFile?: string;
 }
 
-type SubagentExecutorModelKey = 'claude' | 'codex';
-type SubagentConfigKey = 'implementer' | 'tester' | 'tddTests' | 'reviewer';
-
-/**
- * Builds the body of a subagent's task section.
- *
- * With no task-index filter, every incomplete plan task is listed under the
- * standard intro. With a filter, only the named tasks are listed and the intro
- * states that other plan work is out of scope. Both branches number tasks with
- * their plan-absolute 1-based index, so the numbering an orchestrator reads
- * from a review matches the numbering it passes back in `--task-index`.
- *
- * Throws when a supplied index is invalid, out of range, or already done.
- */
-export function buildSubagentTaskContext(
-  planData: PlanSchema,
-  taskIndex: string | string[] | undefined
-): string {
-  const taskScope =
-    taskIndex !== undefined ? resolveSubagentTaskScope(planData, { taskIndex }) : undefined;
-  const contextTasks =
-    taskScope?.tasks ??
-    getAllIncompleteTasks(planData).map(({ taskIndex: index, task }) => ({
-      index: index + 1,
-      task,
-    }));
-  const taskDescriptions = contextTasks
-    .map(({ index, task }) => {
-      let description = `Task ${index}: ${task.title}`;
-      if (task.description) {
-        description += `\nDescription: ${task.description}`;
-      }
-      return description;
-    })
-    .join('\n\n');
-
-  if (taskScope) {
-    return `${taskScope.scopeNote}\n\n${taskDescriptions}`;
-  }
-
-  // Every plan task can already be done when the orchestrator dispatches an
-  // unscoped fix round during the final full-plan review. Say so, rather than
-  // emitting a bare "Available tasks:" header with nothing under it.
-  if (contextTasks.length === 0) {
-    return 'All plan tasks are complete. Work only on the findings supplied in the instructions below.';
-  }
-
-  return `Available tasks:\n\n${taskDescriptions}`;
+interface GlobalCliOptions {
+  config?: string;
 }
-
-/**
- * A minimal executor-like object that satisfies the Executor interface
- * requirements for buildExecutionPromptWithoutSteps. The subagent command
- * does not need a real executor for prompt building; it only needs the
- * filePathPrefix and todoDirections properties.
- */
-const minimalExecutor: Pick<Executor, 'filePathPrefix' | 'todoDirections' | 'execute'> = {
-  filePathPrefix: '@',
-  todoDirections: '- Use the TodoWrite tool to maintain your TODO list.',
-  execute: async () => {
-    throw new Error('minimalExecutor.execute should not be called');
-  },
-};
 
 /**
  * Handles the `tim subagent <type> <planFile>` command.
  *
- * Loads plan context, builds the subagent prompt with the appropriate role,
- * and executes using either claude-code or codex-cli. The final agent message
- * is printed to stdout.
+ * This wrapper explicitly preserves the legacy stdin fallback and all command
+ * output behavior. Preparation and provider execution do not depend on a
+ * Commander command object.
  */
 export async function handleSubagentCommand(
   agentType: SubagentType,
   planId: number,
   options: SubagentOptions,
-  globalCliOptions: any
+  globalCliOptions: GlobalCliOptions
 ): Promise<void> {
-  const config = await loadEffectiveConfig(globalCliOptions.config);
-  const repoRoot = await resolveRepoRoot(
-    globalCliOptions.config,
-    (await getGitRoot()) || process.cwd()
-  );
-  const { plan: planData, planPath } = await resolvePlanByNumericId(planId, repoRoot);
-  // Resolve the scope before anything is materialized or executed so that an
-  // invalid index fails with no side effects.
-  const taskContext = buildSubagentTaskContext(planData, options.taskIndex);
-  const planFilePath = planPath ?? (await materializePlan(planData.id, repoRoot));
-  const gitRoot = await getGitRoot(path.dirname(planFilePath));
-  const useJj = await getUsingJj(gitRoot);
-  const executorType = options.executor || resolveDefaultSubagentExecutor(config);
-  const selectedModel = resolveSubagentModel(agentType, executorType, options.model, config);
-
-  const referenceArtifactPaths = await tryMaterializeReferenceArtifactPathsForExecution(
-    gitRoot,
-    planData.id
-  );
-
-  const contextContent = await buildExecutionPromptWithoutSteps({
-    executor: minimalExecutor as Executor,
-    planData,
-    planFilePath,
-    baseDir: gitRoot,
-    config,
-    task: {
-      // Batch mode renders only the description; the title is required by the
-      // prompt-builder type but never emitted.
-      title: 'Remaining Tasks',
-      description: taskContext,
-      files: [],
-    },
-    filePathPrefix: '@',
-    includeCurrentPlanContext: true,
-    batchMode: true,
-    referenceArtifactPaths,
-  });
-
-  // Load custom agent instructions
-  const agentInstructionsType: Parameters<typeof loadAgentInstructionsFor>[0] =
-    agentType === 'tdd-tests' ? 'tddTests' : agentType;
-  const customInstructions = await loadAgentInstructionsFor(agentInstructionsType, gitRoot, config);
-
-  const orchestratorInput = await resolveOrchestratorInput({
-    ...options,
-    fallbackToStdin: true,
-  });
-
-  // Combine custom instructions with orchestrator-provided input.
-  const allInstructions = [customInstructions, orchestratorInput]
-    .filter((s): s is string => Boolean(s?.trim()))
-    .join('\n\n');
-
-  const planIdLabel = planData.id?.toString() ?? 'unknown';
-  const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(config, gitRoot, {
-    planId: planData.id,
-    planUuid: planData.uuid,
-    planFilePath,
-    branch: planData.branch,
-  });
-
-  // Build the agent prompt using the appropriate function
-  const agentDefinition = buildAgentDefinition(
+  const preparationRequest: SubagentPreparationRequest = {
     agentType,
-    contextContent,
-    planIdLabel,
-    allInstructions || undefined,
-    selectedModel,
-    useJj
-  );
-
-  // Execute using the selected executor
-  let finalMessage: string;
-  if (executorType === 'codex-cli') {
-    finalMessage = await executeWithCodex(
-      agentDefinition.prompt,
-      gitRoot,
-      config,
-      selectedModel,
-      timEnvironment
-    );
-  } else {
-    finalMessage = await executeWithClaude(
-      agentDefinition.prompt,
-      gitRoot,
-      config,
-      selectedModel,
-      timEnvironment
-    );
-  }
+    planId,
+    executor: options.executor,
+    model: options.model,
+    inputPolicy: {
+      type: 'orchestrator',
+      input: options.input,
+      inputFile: options.inputFile,
+      fallbackToStdin: true,
+    },
+    taskIndex: options.taskIndex,
+    configPath: globalCliOptions.config,
+  };
+  const prepared = await prepareSubagentExecution(preparationRequest);
+  const handle = launchPreparedSubagent(prepared);
+  const { finalMessage } = await handle.completion;
 
   if (options.outputFile) {
     await writeSubagentOutput(options.outputFile, finalMessage);
   }
 
-  // Print final message to stdout for orchestrator to capture
   console.log(finalMessage);
 
   if (isTunnelActive()) {
@@ -231,174 +74,4 @@ export async function handleSubagentCommand(
 async function writeSubagentOutput(outputFilePath: string, finalMessage: string): Promise<void> {
   await fs.mkdir(path.dirname(outputFilePath), { recursive: true });
   await fs.writeFile(outputFilePath, finalMessage, 'utf8');
-}
-
-/**
- * Builds the agent definition (prompt) for the given subagent type.
- */
-function buildAgentDefinition(
-  agentType: SubagentType,
-  contextContent: string,
-  planId: string,
-  customInstructions: string | undefined,
-  model: string | undefined,
-  useJj: boolean
-) {
-  switch (agentType) {
-    case 'implementer':
-      return getImplementerPrompt(contextContent, planId, customInstructions, model, {
-        mode: 'report',
-        useJj,
-      });
-    case 'tester':
-      return getTesterPrompt(contextContent, planId, customInstructions, model, {
-        mode: 'report',
-        useJj,
-      });
-    case 'tdd-tests':
-      return getTddTestsPrompt(contextContent, planId, customInstructions, model, {
-        mode: 'report',
-        useJj,
-      });
-  }
-}
-
-/**
- * Executes the subagent prompt using Codex CLI.
- * Follows the pattern from codex_runner.ts for tunneling setup.
- */
-async function executeWithCodex(
-  prompt: string,
-  cwd: string,
-  timConfig: TimConfig,
-  model?: string,
-  timEnvironment?: TimWorkspaceCommandEnvironmentOptions
-): Promise<string> {
-  const parsedModel = parseCodexModel(model);
-  return executeCodexStep(prompt, cwd, timConfig, {
-    appServerMode: 'single-turn-with-steering',
-    model: parsedModel.model,
-    reasoningLevel: parsedModel.reasoningLevel,
-    timEnvironment,
-  });
-}
-
-/**
- * Executes the subagent prompt using Claude Code.
- */
-async function executeWithClaude(
-  prompt: string,
-  cwd: string,
-  timConfig: TimConfig,
-  model?: string,
-  timEnvironment?: TimWorkspaceCommandEnvironmentOptions
-): Promise<string> {
-  const claudeCodeOptions = (timConfig.executors as Record<string, any>)?.['claude-code'] ?? {};
-  const isNoninteractive = process.env.TIM_NONINTERACTIVE === 'true';
-
-  let lastResultText: string | undefined;
-  let lastAssistantRaw: string | undefined;
-
-  const timeoutMs = 30 * 60 * 1000;
-  const result = await runClaudeSubprocess({
-    prompt,
-    cwd,
-    timConfig,
-    timEnvironment,
-    claudeCodeOptions,
-    noninteractive: isNoninteractive,
-    model,
-    label: 'subagent',
-    inactivityTimeoutMs: timeoutMs,
-    extraAccessDirs:
-      timConfig.isUsingExternalStorage && timConfig.externalRepositoryConfigDir
-        ? [timConfig.externalRepositoryConfigDir]
-        : undefined,
-    processFormattedMessages: (messages) => {
-      for (const formatted of messages) {
-        if (formatted.type === 'result' && formatted.resultText) {
-          lastResultText = formatted.resultText;
-        }
-        if (formatted.type === 'assistant' && formatted.rawMessage) {
-          lastAssistantRaw = formatted.rawMessage;
-        }
-      }
-    },
-  });
-
-  if ((result.killedByTimeout || result.killedByInactivity) && !result.acceptedFinalResult) {
-    throw new Error(`Claude subagent timed out after ${Math.round(timeoutMs / 60000)} minutes`);
-  }
-
-  if (result.exitCode !== 0 && !result.acceptedFinalResult) {
-    throw new Error(`Claude subagent exited with non-zero exit code: ${result.exitCode}`);
-  }
-
-  const finalMessage = lastResultText || lastAssistantRaw;
-  if (!finalMessage) {
-    throw new Error('No final agent message found in Claude subagent output.');
-  }
-
-  return finalMessage;
-}
-
-function resolveSubagentModel(
-  agentType: SubagentType,
-  executorType: string,
-  cliModel: string | undefined,
-  config: TimConfig
-): string | undefined {
-  if (cliModel?.trim()) {
-    return cliModel;
-  }
-
-  const normalizedExecutor = normalizeSubagentExecutor(executorType);
-  const subagentKey = toSubagentConfigKey(agentType);
-  const configuredModel =
-    config.subagents?.[subagentKey]?.model?.[normalizedExecutor] ||
-    config.subagents?.[subagentKey]?.model?.[executorType as SubagentExecutorModelKey];
-  if (configuredModel?.trim()) {
-    return configuredModel;
-  }
-
-  // Backward compatibility for previous claude-only model settings.
-  if (normalizedExecutor === 'claude') {
-    const claudeAgents = (config.executors as Record<string, any> | undefined)?.['claude-code']
-      ?.agents as Record<string, { model?: string } | undefined> | undefined;
-    const legacyAgentKeys = toLegacyClaudeAgentKeys(agentType);
-    for (const key of legacyAgentKeys) {
-      const legacyModel = claudeAgents?.[key]?.model;
-      if (legacyModel?.trim()) {
-        return legacyModel;
-      }
-    }
-  }
-
-  return undefined;
-}
-
-function normalizeSubagentExecutor(executorType: string): SubagentExecutorModelKey {
-  return executorType === 'codex-cli' ? 'codex' : 'claude';
-}
-
-function resolveDefaultSubagentExecutor(config: TimConfig): 'codex-cli' | 'claude-code' {
-  return config.defaultExecutor === 'codex-cli' || config.defaultExecutor === 'claude-code'
-    ? config.defaultExecutor
-    : 'claude-code';
-}
-
-function toSubagentConfigKey(agentType: SubagentType): SubagentConfigKey {
-  if (agentType === 'tdd-tests') {
-    return 'tddTests';
-  }
-  return agentType;
-}
-
-function toLegacyClaudeAgentKeys(agentType: SubagentType): SubagentConfigKey[] {
-  switch (agentType) {
-    case 'tdd-tests':
-      return ['tddTests'];
-    default:
-      return [agentType];
-  }
 }

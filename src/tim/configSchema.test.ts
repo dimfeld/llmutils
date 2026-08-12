@@ -24,6 +24,27 @@ describe('configSchema', () => {
     });
   });
 
+  describe('experimental configuration', () => {
+    test('accepts an optional agentMessaging boolean without applying a default', () => {
+      expect(timConfigSchema.parse({}).experimental).toBeUndefined();
+      expect(timConfigSchema.parse({ experimental: {} }).experimental).toEqual({});
+      expect(
+        timConfigSchema.parse({ experimental: { agentMessaging: true } }).experimental
+      ).toEqual({ agentMessaging: true });
+      expect(
+        timConfigSchema.parse({ experimental: { agentMessaging: false } }).experimental
+      ).toEqual({ agentMessaging: false });
+    });
+
+    test('rejects invalid values and unknown nested properties', () => {
+      for (const value of ['true', 1, null, [], {}]) {
+        expect(() => timConfigSchema.parse({ experimental: { agentMessaging: value } })).toThrow();
+      }
+
+      expect(() => timConfigSchema.parse({ experimental: { unknownFeature: true } })).toThrow();
+    });
+  });
+
   describe('chat', () => {
     test('accepts executor and model choices without applying a default', () => {
       const result = timConfigSchema.parse({

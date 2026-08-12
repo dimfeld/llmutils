@@ -63,6 +63,40 @@ describe('wrapForExecutionMode', () => {
     }
   });
 
+  test('false and undefined agentMessagingEnabled preserve the legacy prompt output', () => {
+    for (const mode of ['normal', 'simple', 'tdd'] as OrchestrationExecutionMode[]) {
+      const disabled = wrapForExecutionMode(mode, 'context', 'plan-1', {
+        agentMessagingEnabled: false,
+      });
+      const absent = wrapForExecutionMode(mode, 'context', 'plan-1', {});
+
+      expect(absent).toBe(disabled);
+      expect(disabled).not.toContain('StartTimAgent');
+      expect(disabled).not.toContain('ListTimAgents');
+      expect(disabled).not.toContain('SendTimAgentMessage');
+      expect(disabled).not.toContain('StopTimAgent');
+      expect(disabled).not.toContain('FinishTimAgent');
+    }
+  });
+
+  test.each(['normal', 'simple', 'tdd'] as OrchestrationExecutionMode[])(
+    'selects collaborative prompt semantics for enabled %s mode',
+    (mode) => {
+      const output = wrapForExecutionMode(mode, 'context', 'plan-1', {
+        agentMessagingEnabled: true,
+        batchMode: mode === 'tdd',
+        simpleMode: mode === 'simple',
+      });
+
+      expect(output).toContain('StartTimAgent');
+      expect(output).toContain('ListTimAgents');
+      expect(output).toContain('SendTimAgentMessage');
+      expect(output).toContain('StopTimAgent');
+      expect(output).toContain('FinishTimAgent');
+      expect(output).not.toContain('tim subagent');
+    }
+  );
+
   test('throws on an unsupported execution mode', () => {
     expect(() =>
       wrapForExecutionMode('bogus' as OrchestrationExecutionMode, 'context', 'plan-1', {})

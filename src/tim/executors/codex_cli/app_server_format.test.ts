@@ -1,5 +1,24 @@
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { createAppServerFormatter } from './app_server_format';
+
+function objectWithOwnProto(value: unknown): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  Object.defineProperty(result, '__proto__', {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+  return result;
+}
+
+function deeplyNestedObject(depth: number): Record<string, unknown> {
+  let value: unknown = { leaf: 'done' };
+  for (let index = 0; index < depth; index += 1) {
+    value = { next: value };
+  }
+  return value as Record<string, unknown>;
+}
 
 describe('createAppServerFormatter', () => {
   test('captures thread/session ids from thread/started and emits session start message', () => {
@@ -281,13 +300,16 @@ describe('createAppServerFormatter', () => {
     const mcp = formatter.handleNotification('item/started', {
       item: { type: 'mcpToolCall', toolName: 'tim.manage-plan-task', status: 'completed' },
     });
-    expect(mcp.structured).toEqual(
-      expect.objectContaining({
+    expect(mcp).toEqual({
+      type: 'item/started',
+      structured: {
         type: 'llm_status',
+        timestamp: expect.any(String),
+        source: 'codex',
         status: 'codex.mcp_tool.completed',
         detail: 'tim.manage-plan-task',
-      })
-    );
+      },
+    });
 
     const web = formatter.handleNotification('item/started', {
       item: { type: 'webSearch', query: 'codex app-server' },
@@ -372,6 +394,405 @@ describe('createAppServerFormatter', () => {
     ).toEqual({ type: 'llm/guardianWarning' });
   });
 
+  test('formats started dynamic tool calls with safe arguments and namespace display', () => {
+    const formatter = createAppServerFormatter();
+    const circularArguments: Record<string, unknown> = { task: 'inspect' };
+    circularArguments.self = circularArguments;
+
+    const namespaced = formatter.handleNotification('item/started', {
+      item: {
+        type: 'dynamicToolCall',
+        namespace: 'tim',
+        tool: 'StartTimAgent',
+        arguments: circularArguments,
+        futureField: { retained: true },
+      },
+    });
+
+    expect(namespaced.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_use',
+        toolName: 'tim.StartTimAgent',
+        inputSummary: 'Arguments: {"self":"[Circular]","task":"inspect"}',
+        input: { task: 'inspect', self: '[Circular]' },
+      })
+    );
+
+    const topLevel = formatter.handleNotification('item/started', {
+      item: {
+        type: 'dynamicToolCall',
+        namespace: null,
+        tool: 'ListTimAgents',
+        arguments: {},
+      },
+    });
+    expect(topLevel.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_use',
+        toolName: 'ListTimAgents',
+        inputSummary: 'Arguments: {}',
+        input: {},
+      })
+    );
+
+    const omittedArguments = formatter.handleNotification('item/started', {
+      item: {
+        type: 'dynamicToolCall',
+        namespace: '   ',
+        tool: 'ListTimAgents',
+      },
+    });
+    expect(omittedArguments.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_use',
+        toolName: 'ListTimAgents',
+        inputSummary: 'Arguments were not provided.',
+        input: null,
+      })
+    );
+  });
+
+  test('formats completed dynamic tool calls without expanding media or future content', () => {
+    const formatter = createAppServerFormatter();
+    const imageData = 'data:image/png;base64,inline-image';
+    const audioData = 'data:audio/wav;base64,inline-audio';
+    const message = formatter.handleNotification('item/completed', {
+      item: {
+        type: 'dynamicToolCall',
+        tool: 'SendTimAgentMessage',
+        status: 'completed',
+        success: true,
+        contentItems: [
+          { type: 'inputText', text: 'Message delivered.' },
+          { type: 'inputImage', imageUrl: imageData },
+          { type: 'inputAudio', audioUrl: audioData },
+          { type: 'futureContent', value: 'future payload' },
+        ],
+        result: { delivery: 'steered' },
+      },
+    });
+
+    expect(message.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_result',
+        toolName: 'SendTimAgentMessage',
+        resultSummary: [
+          'Status: completed',
+          'Success: true',
+          'Result:',
+          'Message delivered.',
+          '(3 non-text content item(s) omitted.)',
+        ].join('\n'),
+        result: {
+          status: 'completed',
+          success: true,
+          contentItems: [
+            { type: 'inputText', text: 'Message delivered.' },
+            { type: 'inputImage', imageUrl: imageData },
+            { type: 'inputAudio', audioUrl: audioData },
+            { type: 'futureContent', value: 'future payload' },
+          ],
+          result: { delivery: 'steered' },
+        },
+      })
+    );
+    expect(message.structured).toEqual(
+      expect.objectContaining({
+        resultSummary: expect.not.stringContaining(imageData),
+      })
+    );
+    expect(message.structured).toEqual(
+      expect.objectContaining({
+        resultSummary: expect.not.stringContaining(audioData),
+      })
+    );
+    expect(message.structured).toEqual(
+      expect.objectContaining({
+        result: expect.objectContaining({
+          contentItems: expect.arrayContaining([
+            { type: 'inputImage', imageUrl: imageData },
+            { type: 'inputAudio', audioUrl: audioData },
+          ]),
+        }),
+      })
+    );
+  });
+
+  test('preserves __proto__ in dynamic tool input and result data', () => {
+    const formatter = createAppServerFormatter();
+    const input = objectWithOwnProto({ enabled: true });
+    input.child = objectWithOwnProto(null);
+    const result = objectWithOwnProto({ completed: true });
+    result.child = objectWithOwnProto(null);
+
+    const started = formatter.handleNotification('item/started', {
+      item: {
+        type: 'dynamicToolCall',
+        tool: 'StartTimAgent',
+        arguments: input,
+      },
+    });
+    const startedInput = (started.structured as { input: Record<string, unknown> }).input;
+    expect(Object.getPrototypeOf(startedInput)).toBeNull();
+    expect(Object.hasOwn(startedInput, '__proto__')).toBe(true);
+    expect(startedInput['__proto__']).toEqual({ enabled: true });
+    expect((startedInput.child as Record<string, unknown>)['__proto__']).toBeNull();
+
+    const completed = formatter.handleNotification('item/completed', {
+      item: {
+        type: 'dynamicToolCall',
+        tool: 'StartTimAgent',
+        status: 'completed',
+        success: true,
+        contentItems: [{ type: 'inputText', text: 'Started.' }],
+        result,
+      },
+    });
+    const completedResult = (
+      completed.structured as { result: { result: Record<string, unknown> } }
+    ).result.result;
+    expect(Object.getPrototypeOf(completedResult)).toBeNull();
+    expect(Object.hasOwn(completedResult, '__proto__')).toBe(true);
+    expect(completedResult['__proto__']).toEqual({ completed: true });
+    expect((completedResult.child as Record<string, unknown>)['__proto__']).toBeNull();
+    expect(Object.getPrototypeOf({})).toBe(Object.prototype);
+    expect(() => JSON.stringify(completed.structured)).not.toThrow();
+  });
+
+  test('tolerates malformed dynamic tool lifecycle fields and preserves safe result data', () => {
+    const formatter = createAppServerFormatter();
+    const circularResult: Record<string, unknown> = { ok: true };
+    circularResult.self = circularResult;
+
+    expect(() =>
+      formatter.handleNotification('item/started', {
+        item: {
+          type: 'dynamicToolCall',
+          namespace: 42,
+          tool: null,
+          arguments: undefined,
+        },
+      })
+    ).not.toThrow();
+
+    const message = formatter.handleNotification('item/completed', {
+      item: {
+        type: 'dynamicToolCall',
+        tool: null,
+        status: { future: true },
+        success: 'yes',
+        contentItems: null,
+        result: circularResult,
+        futureField: { ignoredByFormatter: true },
+      },
+    });
+
+    expect(message.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_result',
+        toolName: 'unknown',
+        resultSummary: [
+          'Status: unknown',
+          'Success: unknown',
+          'Result:',
+          'No text result was provided.',
+        ].join('\n'),
+        result: {
+          status: 'unknown',
+          success: null,
+          contentItems: null,
+          result: { ok: true, self: '[Circular]' },
+        },
+      })
+    );
+    expect(() => JSON.stringify(message.structured)).not.toThrow();
+  });
+
+  test('concatenates text results and gives stable fallbacks for incomplete calls', () => {
+    const formatter = createAppServerFormatter();
+    const failed = formatter.handleNotification('item/completed', {
+      item: {
+        type: 'dynamicToolCall',
+        tool: 'SendTimAgentMessage',
+        status: 'failed',
+        success: false,
+        contentItems: [
+          { type: 'inputText', text: 'First line.' },
+          { type: 'inputText', text: 'Second line.' },
+          { type: 'inputImage' },
+          { type: 'inputAudio' },
+          { type: 'futureContent', payload: { value: 1 } },
+        ],
+      },
+    });
+
+    expect(failed.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_result',
+        toolName: 'SendTimAgentMessage',
+        resultSummary: [
+          'Status: failed',
+          'Success: false',
+          'Result:',
+          'First line.',
+          'Second line.',
+          '(3 non-text content item(s) omitted.)',
+        ].join('\n'),
+        result: {
+          status: 'failed',
+          success: false,
+          contentItems: [
+            { type: 'inputText', text: 'First line.' },
+            { type: 'inputText', text: 'Second line.' },
+            { type: 'inputImage' },
+            { type: 'inputAudio' },
+            { type: 'futureContent', payload: { value: 1 } },
+          ],
+        },
+      })
+    );
+
+    const incomplete = formatter.handleNotification('item/completed', {
+      item: {
+        type: 'dynamicToolCall',
+        tool: 'ListTimAgents',
+        status: 'incomplete',
+      },
+    });
+    expect(incomplete.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_result',
+        toolName: 'ListTimAgents',
+        resultSummary: [
+          'Status: incomplete',
+          'Success: unknown',
+          'Result:',
+          'No text result was provided.',
+        ].join('\n'),
+        result: {
+          status: 'incomplete',
+          success: null,
+          contentItems: [],
+        },
+      })
+    );
+  });
+
+  test('converts malformed nested input values to bounded JSON-safe display data', () => {
+    const formatter = createAppServerFormatter();
+    const throwingNested: Record<string, unknown> = {};
+    Object.defineProperty(throwingNested, 'bad', {
+      enumerable: true,
+      get(): never {
+        throw new Error('getter should not escape the formatter');
+      },
+    });
+    const malformedArguments: Record<string, unknown> = {
+      bigint: 9n,
+      fn: (): string => 'not JSON',
+      infinity: Number.POSITIVE_INFINITY,
+      nan: Number.NaN,
+      nested: throwingNested,
+      symbol: Symbol('not JSON'),
+      undefined: undefined,
+    };
+
+    const message = formatter.handleNotification('item/started', {
+      item: {
+        type: 'dynamicToolCall',
+        tool: 'StartTimAgent',
+        arguments: malformedArguments,
+      },
+    });
+
+    expect(message.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_use',
+        input: {
+          bigint: '9',
+          fn: null,
+          infinity: null,
+          nan: null,
+          nested: { bad: '[Unreadable]' },
+          symbol: null,
+          undefined: null,
+        },
+      })
+    );
+    expect(message.structured).toEqual(
+      expect.objectContaining({
+        inputSummary: expect.stringContaining('"bigint":"9"'),
+      })
+    );
+    expect(() => JSON.stringify(message.structured)).not.toThrow();
+  });
+
+  test('bounds deeply nested formatter input without overflowing the sanitizer', () => {
+    const formatter = createAppServerFormatter();
+    const message = formatter.handleNotification('item/started', {
+      item: {
+        type: 'dynamicToolCall',
+        tool: 'StartTimAgent',
+        arguments: deeplyNestedObject(10_000),
+      },
+    });
+
+    expect(message.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_use',
+        input: expect.objectContaining({ next: expect.any(Object) }),
+      })
+    );
+    expect(message.structured).toEqual(
+      expect.objectContaining({
+        inputSummary: expect.stringContaining('[MaxDepth]'),
+      })
+    );
+    expect(() => JSON.stringify(message.structured)).not.toThrow();
+  });
+
+  test('bounds readable dynamic tool summaries without truncating raw JSON-safe data', () => {
+    const formatter = createAppServerFormatter();
+    const hugeText = 'x'.repeat(20_000);
+    const hugeArguments = { message: hugeText };
+
+    const started = formatter.handleNotification('item/started', {
+      item: {
+        type: 'dynamicToolCall',
+        tool: 'SendTimAgentMessage',
+        arguments: hugeArguments,
+      },
+    });
+    expect(started.structured).toEqual(
+      expect.objectContaining({
+        input: hugeArguments,
+        inputSummary: expect.any(String),
+      })
+    );
+    const startedStructured = started.structured as { inputSummary?: string };
+    expect(startedStructured.inputSummary?.length).toBeLessThanOrEqual(4_096);
+
+    const completed = formatter.handleNotification('item/completed', {
+      item: {
+        type: 'dynamicToolCall',
+        tool: 'SendTimAgentMessage',
+        status: 'completed',
+        success: true,
+        contentItems: [{ type: 'inputText', text: hugeText }],
+      },
+    });
+    expect(completed.structured).toEqual(
+      expect.objectContaining({
+        result: expect.objectContaining({
+          contentItems: [{ type: 'inputText', text: hugeText }],
+        }),
+        resultSummary: expect.any(String),
+      })
+    );
+    const completedStructured = completed.structured as { resultSummary?: string };
+    expect(completedStructured.resultSummary?.length).toBeLessThanOrEqual(4_096);
+  });
+
   test('formats in-progress collab agent tool call items as tool use', () => {
     const formatter = createAppServerFormatter();
     const message = formatter.handleNotification('item/started', {
@@ -389,12 +810,18 @@ describe('createAppServerFormatter', () => {
       },
     });
 
-    expect(message.structured).toEqual(
-      expect.objectContaining({
+    expect(message).toEqual({
+      type: 'item/started',
+      structured: {
         type: 'llm_tool_use',
+        timestamp: expect.any(String),
         toolName: 'spawnAgent',
-        inputSummary: expect.stringContaining('status: inProgress'),
-        input: expect.objectContaining({
+        inputSummary: [
+          'status: inProgress',
+          'sender: 019e8604-87f5-7053-9ac7-92453886d7f8',
+          'reasoning: medium',
+        ].join('\n'),
+        input: {
           id: 'call_kd4QFNWL9HhJbFC62SdMqhmR',
           status: 'inProgress',
           senderThreadId: '019e8604-87f5-7053-9ac7-92453886d7f8',
@@ -402,9 +829,9 @@ describe('createAppServerFormatter', () => {
           model: '',
           reasoningEffort: 'medium',
           agentStatuses: [],
-        }),
-      })
-    );
+        },
+      },
+    });
   });
 
   test('formats completed collab agent tool call items as tool results', () => {
@@ -429,24 +856,34 @@ describe('createAppServerFormatter', () => {
       },
     });
 
-    expect(message.structured).toEqual(
-      expect.objectContaining({
+    expect(message).toEqual({
+      type: 'item/completed',
+      structured: {
         type: 'llm_tool_result',
+        timestamp: expect.any(String),
         toolName: 'spawnAgent',
-        resultSummary: expect.not.stringContaining('019e8604-cb34-79f0-ab36-9af1a9bf47ac'),
-        result: expect.objectContaining({
+        resultSummary: [
+          'status: completed',
+          'sender: 019e8604-87f5-7053-9ac7-92453886d7f8',
+          'model: gpt-5.5',
+          'reasoning: medium',
+        ].join('\n'),
+        result: {
           id: 'call_kd4QFNWL9HhJbFC62SdMqhmR',
           status: 'completed',
+          senderThreadId: '019e8604-87f5-7053-9ac7-92453886d7f8',
+          prompt: 'Review the diff.',
           model: 'gpt-5.5',
+          reasoningEffort: 'medium',
           agentStatuses: [
             {
               status: 'pendingInit',
               message: null,
             },
           ],
-        }),
-      })
-    );
+        },
+      },
+    });
     expect(JSON.stringify(message.structured)).not.toContain(
       '019e8604-cb34-79f0-ab36-9af1a9bf47ac'
     );

@@ -117,6 +117,13 @@
   {#if showTimestamp}
     <span class="mr-2 text-xs text-gray-400">{timeStr}</span>
   {/if}
+  {#if message.agentName}
+    <span
+      class="mr-2 text-xs text-cyan-300"
+      aria-label={`Message source: ${message.agentName}`}
+      title={`Message source: ${message.agentName}`}>{message.agentName}</span
+    >
+  {/if}
   {#if message.body.type === 'structured' && message.body.message.type === 'review_result'}
     <ReviewResultDisplay message={message.body.message} />
   {:else if message.body.type === 'structured' && message.body.message.type === 'execution_summary'}

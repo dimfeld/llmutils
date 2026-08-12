@@ -7,10 +7,20 @@ import type { TunnelServer } from '../../../logging/tunnel_server.ts';
 import { getLoggerAdapter } from '../../../logging/adapter.js';
 import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
 import { TunnelAdapter } from '../../../logging/tunnel_client.js';
-import { safeEndStdin, sendFollowUpMessage, sendInitialPrompt } from './streaming_input.ts';
+import {
+  safeEndStdin,
+  sendFollowUpMessage,
+  sendFollowUpMessageAndWait,
+  sendInitialPrompt,
+} from './streaming_input.ts';
 import { TerminalInputReader } from './terminal_input.ts';
 import { BackgroundActivityTracker } from './background_activity_tracker.ts';
 import type { BackgroundActivitySignal, FormattedClaudeMessage } from './format.ts';
+import type {
+  PersistentClaudeTurnController,
+  PersistentClaudeTurnControllerOptions,
+} from './persistent_agent_lifecycle.ts';
+import { executePersistentWithTerminalInput } from './persistent_terminal_input_lifecycle.ts';
 
 /** Shared guard for stdin lifecycle management. Ensures stdin is only closed once. */
 export interface StdinGuard {
@@ -139,16 +149,25 @@ export interface ExecuteWithTerminalInputOptions {
   tunnelForwardingEnabled: boolean;
   /** Keep stdin open on result only when an interactive input source is active. */
   keepInteractiveInputOpenOnResult?: boolean;
+  /** Explicit persistent-agent policy. Omitted means the existing one-shot path. */
+  persistentAgent?: Omit<PersistentClaudeTurnControllerOptions, 'stdin' | 'debugLog'>;
+  /** Timer hooks used by the one-shot background-activity tracker. */
+  setTimeoutFn?: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimeoutFn?: (handle: ReturnType<typeof setTimeout>) => void;
 }
 
 export interface ExecuteWithTerminalInputResult {
   resultPromise: Promise<SpawnAndLogOutputResult>;
-  onResultMessage: (resultWasSuccessful: boolean) => void;
+  /** True after this execution has closed its provider input or started cleanup. */
+  inputIsClosed: () => boolean;
+  onResultMessage: (resultWasSuccessful: boolean, resultText?: string) => void;
   observeFormattedMessage: (formatted: FormattedClaudeMessage) => void;
-  sendFollowUpForInterceptedResult: (content: string) => void;
+  /** Resolves true only when the provider accepted the input write. */
+  sendFollowUpForInterceptedResult: (content: string) => boolean | Promise<boolean>;
   acceptedSuccessfulFinalResult: () => boolean;
   endSession: () => void;
   cleanup: () => void;
+  persistentAgent?: PersistentClaudeTurnController;
 }
 
 /**
@@ -164,6 +183,19 @@ export interface ExecuteWithTerminalInputResult {
 export function executeWithTerminalInput(
   options: ExecuteWithTerminalInputOptions
 ): ExecuteWithTerminalInputResult {
+  if (options.persistentAgent !== undefined) {
+    return executePersistentWithTerminalInput(
+      options as ExecuteWithTerminalInputOptions & {
+        readonly persistentAgent: NonNullable<ExecuteWithTerminalInputOptions['persistentAgent']>;
+      }
+    );
+  }
+  return executeOneShotWithTerminalInput(options);
+}
+
+function executeOneShotWithTerminalInput(
+  options: Omit<ExecuteWithTerminalInputOptions, 'persistentAgent'>
+): ExecuteWithTerminalInputResult {
   const {
     streaming,
     prompt,
@@ -176,17 +208,19 @@ export function executeWithTerminalInput(
     terminalInputEnabled,
     tunnelForwardingEnabled,
     keepInteractiveInputOpenOnResult = false,
+    setTimeoutFn,
+    clearTimeoutFn,
   } = options;
-
-  // Single shared guard for stdin lifecycle, used across all three paths
-  // (terminal input, tunnel forwarding, single prompt) and the tunnel handler.
   const stdinGuard = createStdinGuard(streaming.stdin, debugLog);
   let terminalInputController: TerminalInputController | undefined;
   let handleProcessSigterm: (() => void) | undefined;
   let tunnelUserInputHandlerRegistered = false;
   let headlessUserInputHandlerRegistered = false;
+  let cleanupStarted = false;
   let clearTunnelUserInputHandler = (): void => {};
   let clearHeadlessUserInputHandler = (): void => {};
+
+  const inputIsClosed = (): boolean => stdinGuard.isClosed;
 
   const closeInputNow = (): void => {
     if (terminalInputController) {
@@ -204,6 +238,8 @@ export function executeWithTerminalInput(
 
   const backgroundActivityTracker = new BackgroundActivityTracker({
     onClose: closeForResult,
+    setTimeoutFn,
+    clearTimeoutFn,
   });
 
   const forceCloseInputNow = (): void => {
@@ -223,13 +259,12 @@ export function executeWithTerminalInput(
   };
   process.on('SIGTERM', handleProcessSigterm);
 
-  // Wire tunnel user input handler if running as a tunnel client
   const loggerAdapter = getLoggerAdapter();
   if (tunnelForwardingEnabled && loggerAdapter instanceof TunnelAdapter) {
     let tunnelHandlerActive = true;
     tunnelUserInputHandlerRegistered = true;
     loggerAdapter.setUserInputHandler((content) => {
-      if (!tunnelHandlerActive || stdinGuard.isClosed) {
+      if (!tunnelHandlerActive || inputIsClosed()) {
         return;
       }
       try {
@@ -250,7 +285,7 @@ export function executeWithTerminalInput(
     let headlessHandlerActive = true;
     headlessUserInputHandlerRegistered = true;
     loggerAdapter.setUserInputHandler((content) => {
-      if (!headlessHandlerActive || stdinGuard.isClosed) {
+      if (!headlessHandlerActive || inputIsClosed()) {
         return;
       }
 
@@ -296,7 +331,8 @@ export function executeWithTerminalInput(
     headlessUserInputHandlerRegistered;
 
   // onResultMessage is called by the formatStdout callback when a result message is detected
-  const onResultMessage = (resultWasSuccessful: boolean): void => {
+  const onResultMessage = (resultWasSuccessful: boolean, _resultText?: string): void => {
+    if (cleanupStarted) return;
     if (keepInteractiveInputOpenOnResult && hasInteractiveInputSource()) {
       backgroundActivityTracker.acceptResultWithoutClosing(resultWasSuccessful);
       return;
@@ -305,12 +341,13 @@ export function executeWithTerminalInput(
   };
 
   const dispatchBackgroundActivity = (signal: BackgroundActivitySignal): void => {
-    backgroundActivityTracker.backgroundTasksChanged(signal.hasRunningTasks);
+    backgroundActivityTracker?.backgroundTasksChanged(signal.hasRunningTasks);
   };
 
   // Lifecycle classification of a formatted stream message: concrete facts are
   // dispatched to the tracker, and an assistant/user message counts as turn activity.
   const observeFormattedMessage = (formatted: FormattedClaudeMessage): void => {
+    if (cleanupStarted) return;
     if (formatted.backgroundActivity) {
       dispatchBackgroundActivity(formatted.backgroundActivity);
       return;
@@ -321,16 +358,30 @@ export function executeWithTerminalInput(
     }
   };
 
-  const sendFollowUp = (content: string): void => {
-    if (stdinGuard.isClosed) {
-      return;
+  const sendFollowUp = (content: string): boolean => {
+    if (cleanupStarted || stdinGuard.isClosed) return false;
+    try {
+      sendFollowUpMessage(streaming.stdin, content);
+    } catch (error) {
+      debugLog('Failed to send follow-up input to subprocess:', error);
+      return false;
     }
-    sendFollowUpMessage(streaming.stdin, content);
     backgroundActivityTracker.onContinuationStarted();
+    return true;
   };
 
-  const sendFollowUpForInterceptedResult = (content: string): void => {
-    sendFollowUp(content);
+  const sendFollowUpForInterceptedResult = (content: string): boolean | Promise<boolean> => {
+    if (cleanupStarted || stdinGuard.isClosed) return false;
+    return (async (): Promise<boolean> => {
+      try {
+        await sendFollowUpMessageAndWait(streaming.stdin, content);
+      } catch (error) {
+        debugLog('Failed to send follow-up input to subprocess:', error);
+        return false;
+      }
+      backgroundActivityTracker.onContinuationStarted();
+      return true;
+    })();
   };
 
   // Branching: terminal input vs. non-terminal input (tunnel/headless/pure non-interactive).
@@ -375,17 +426,25 @@ export function executeWithTerminalInput(
 
   return {
     resultPromise,
+    inputIsClosed,
     onResultMessage,
     observeFormattedMessage,
     sendFollowUpForInterceptedResult,
     acceptedSuccessfulFinalResult: (): boolean =>
       backgroundActivityTracker.acceptedSuccessfulFinalResult(),
     endSession: () => {
+      if (cleanupStarted) return;
       clearTunnelUserInputHandler();
       clearHeadlessUserInputHandler();
       forceCloseInputNow();
     },
     cleanup: () => {
+      if (cleanupStarted) return;
+      // Mark the execution closed before removing handlers or stopping the
+      // monitor. Late formatter, tunnel, headless, and lifecycle callbacks
+      // must not be able to enqueue another stdin write during teardown.
+      cleanupStarted = true;
+      closeInputNow();
       backgroundActivityTracker.cancel();
       clearTunnelUserInputHandler();
       clearHeadlessUserInputHandler();

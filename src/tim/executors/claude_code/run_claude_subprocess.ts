@@ -13,20 +13,27 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { debugLog, error, log, sendStructured, warn } from '../../../logging.js';
-import { createLineSplitter, spawnWithStreamingIO } from '../../../common/process.js';
+import { spawnWithStreamingIO, type StreamingProcess } from '../../../common/process.js';
+import {
+  getCurrentSessionProcessOwner,
+  type SessionExecutorLifecycle,
+} from '../../../common/session_process_control.js';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../../common/env.js';
+import {
+  withAgentEnvironmentIdentity,
+  type AgentEnvironmentIdentity,
+} from '../../agent_messaging/environment.js';
 import {
   normalizeSubprocessMonitorRules,
   startSubprocessMonitor,
   type SubprocessMonitorHandle,
 } from '../../../common/subprocess_monitor.js';
-import {
-  extractStructuredMessages,
-  formatJsonMessage,
-  resetToolUseCache,
-  type FormattedClaudeMessage,
-} from './format.js';
+import type { FormattedClaudeMessage } from './format.js';
+import { createClaudeOutputStreamFormatter } from './output_stream_formatter.js';
 import { executeWithTerminalInput } from './terminal_input_lifecycle.js';
+import { createOrderedClaudeCleanup } from './claude_execution_cleanup.js';
+import { PersistentClaudeSessionRuntime } from './persistent_claude_session.js';
+import { safeEndStdin } from './streaming_input.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { createExecutorTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
@@ -35,9 +42,22 @@ import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js
 import { getDatabase } from '../../db/database.js';
 import { getPermissions } from '../../db/permission.js';
 import { getOrCreateProject } from '../../db/project.js';
-import { setupPermissionsMcp } from './permissions_mcp_setup.js';
+import type { AgentProviderLifecycleObserver } from '../../agent_messaging/agent_manager_types.js';
+import type {
+  ClaudeAgentToolContext,
+  ClaudePermissionPromptCoordinator,
+} from './claude_mcp_protocol.js';
+import {
+  applyClaudeMcpLaunchArgs,
+  prepareClaudeMcpLaunch,
+  type ClaudeMcpLaunchResult,
+} from './claude_mcp_launch.js';
 import type { TimConfig } from '../../configSchema.js';
-
+import type { AgentProcessLabel } from '../../agent_messaging/agent_process_labels.js';
+import type {
+  ClaudePersistentAgentLaunchHandle,
+  ClaudePersistentAgentMode,
+} from './persistent_agent_contract.js';
 const DEFAULT_CLAUDE_MODEL = 'opus';
 
 const JS_TASK_RUNNERS = ['npm', 'pnpm', 'yarn', 'bun'];
@@ -147,9 +167,16 @@ export interface ClaudeCodeSubprocessOptions {
     timeout?: number;
     autoApproveCreatedFileDeletion?: boolean;
   };
+  /** Trusted parent-bound Claude agent tools for this execution. */
+  agentToolContext?: ClaudeAgentToolContext;
+  /** Root-owned coordinator for interactive permission requests. */
+  permissionPromptCoordinator?: ClaudePermissionPromptCoordinator;
 }
 
 export interface RunClaudeSubprocessOptions {
+  /** Existing one-shot behavior. Omitted means one-shot for compatibility. */
+  mode?: 'one-shot';
+
   /** The prompt to send to Claude */
   prompt: string;
 
@@ -164,6 +191,9 @@ export interface RunClaudeSubprocessOptions {
 
   /** Project environment rendering options for the subprocess. */
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+
+  /** Trusted agent identity applied after all workspace environment layers. */
+  agentEnvironmentIdentity?: AgentEnvironmentIdentity;
 
   /** Whether the caller is running in non-interactive mode */
   noninteractive: boolean;
@@ -209,7 +239,38 @@ export interface RunClaudeSubprocessOptions {
 
   /** Whether to log model selection. Defaults to false. */
   logModelSelection?: boolean;
+
+  /**
+   * Optional Claude executable path used by local stream-json integration
+   * tests. Production callers leave this unset and continue to run `claude`.
+   */
+  claudeExecutable?: string;
 }
+
+/**
+ * Explicit persistent-agent options. This is kept separate from
+ * RunClaudeSubprocessOptions so existing one-shot callers do not receive a
+ * persistent-handle union as the runner is migrated in a later task.
+ */
+export interface ClaudePersistentAgentRunOptions extends Omit<RunClaudeSubprocessOptions, 'mode'> {
+  readonly mode: ClaudePersistentAgentMode;
+  /** Provider output activity callback consumed by the lifecycle owner. */
+  readonly onOutputActivity?: () => void | Promise<void>;
+  /** Optional named process-tree label supplied by AgentManager. */
+  readonly processLabel?: AgentProcessLabel;
+  /** Observer installed before provider startup so AgentManager sees lifecycle events. */
+  readonly lifecycleObserver?: AgentProviderLifecycleObserver;
+  /** Optional short drain grace used by deterministic local integration tests. */
+  readonly persistentTurnGraceMs?: number;
+}
+
+/** The complete Claude option surface used by the future provider launcher. */
+export type ClaudeSubprocessExecutionOptions =
+  | RunClaudeSubprocessOptions
+  | ClaudePersistentAgentRunOptions;
+
+/** The result type returned by the future persistent launch branch. */
+export type ClaudePersistentAgentLaunchResult = ClaudePersistentAgentLaunchHandle;
 
 export interface RunClaudeSubprocessResult {
   /** Whether a successful result message was accepted as final completion. */
@@ -243,9 +304,15 @@ async function loadSharedPermissions(): Promise<string[]> {
  * Runs a Claude Code subprocess with the standard setup pattern:
  * permissions MCP, tunnel server, CLI args, streaming stdout parsing, and cleanup.
  */
-export async function runClaudeSubprocess(
+export function runClaudeSubprocess(
   options: RunClaudeSubprocessOptions
-): Promise<RunClaudeSubprocessResult> {
+): Promise<RunClaudeSubprocessResult>;
+export function runClaudeSubprocess(
+  options: ClaudePersistentAgentRunOptions
+): Promise<ClaudePersistentAgentLaunchResult>;
+export async function runClaudeSubprocess(
+  options: ClaudeSubprocessExecutionOptions
+): Promise<RunClaudeSubprocessResult | ClaudePersistentAgentLaunchResult> {
   const {
     prompt,
     cwd,
@@ -259,10 +326,15 @@ export async function runClaudeSubprocess(
     processFormattedMessages,
     logModelSelection,
   } = options;
+  const persistentAgent = options.mode === 'persistent-agent';
 
   const inactivityTimeoutMs = options.inactivityTimeoutMs ?? 30 * 60 * 1000;
   const initialInactivityTimeoutMs = options.initialInactivityTimeoutMs ?? 2 * 60 * 1000;
   const trackedFiles = options.trackedFiles ?? new Set<string>();
+  // Capture the owner that created this exact executor before any asynchronous
+  // setup. Force control must use this owner and the lifecycle's opaque
+  // process ID; it must never fall back to the child PID or display label.
+  const sessionProcessOwner = persistentAgent ? getCurrentSessionProcessOwner() : undefined;
 
   // Validate subprocess monitor rules up front, before any resource allocation,
   // so a bad regex fails cleanly without leaking permissions MCP or tunnel resources.
@@ -280,7 +352,7 @@ export async function runClaudeSubprocess(
 
   // Load shared permissions and build final tools list
   const sharedPermissions = await loadSharedPermissions();
-  const allowedTools = buildAllowedToolsList({
+  const baseAllowedTools = buildAllowedToolsList({
     includeDefaultTools: claudeCodeOptions.includeDefaultTools,
     configAllowedTools: claudeCodeOptions.allowedTools,
     extraAllowedTools: claudeCodeOptions.extraAllowedTools,
@@ -288,72 +360,104 @@ export async function runClaudeSubprocess(
     sharedPermissions,
   });
 
-  // Determine if permissions MCP should be enabled
-  let isPermissionsMcpEnabled = claudeCodeOptions.permissionsMcp?.enabled === true;
+  // Approval prompting and trusted agent tools are independent capabilities.
+  let interactiveApprovalEnabled = claudeCodeOptions.permissionsMcp?.enabled === true;
   if (process.env.CLAUDE_CODE_MCP) {
-    isPermissionsMcpEnabled = process.env.CLAUDE_CODE_MCP === 'true';
+    interactiveApprovalEnabled = process.env.CLAUDE_CODE_MCP === 'true';
   }
-  if (allowAllTools || noninteractive) {
-    isPermissionsMcpEnabled = false;
+  const agentToolContext = claudeCodeOptions.agentToolContext;
+  let mcpLaunch: ClaudeMcpLaunchResult;
+  try {
+    mcpLaunch = await prepareClaudeMcpLaunch({
+      cwd,
+      allowedTools: baseAllowedTools,
+      mcpConfigFile: claudeCodeOptions.mcpConfigFile,
+      interactiveApprovalRequested: interactiveApprovalEnabled,
+      allowAllTools,
+      noninteractive,
+      disallowedTools: claudeCodeOptions.disallowedTools,
+      permissionsMcp: claudeCodeOptions.permissionsMcp,
+      trackedFiles,
+      agentToolContext,
+      permissionPromptCoordinator: claudeCodeOptions.permissionPromptCoordinator,
+    });
+  } catch (err) {
+    if (agentToolContext !== undefined || claudeCodeOptions.mcpConfigFile !== undefined) throw err;
+    error(`Could not set up permissions MCP for ${label}:`, err);
+    mcpLaunch = {
+      capabilities: {
+        interactiveApprovalEnabled: false,
+        agentToolsEnabled: false,
+        internalMcpNeeded: false,
+        agentToolIds: [],
+      },
+      allowedTools: baseAllowedTools,
+    };
   }
-
-  // Set up permissions MCP if enabled
-  let permissionsMcpCleanup: (() => Promise<void>) | undefined;
-  let permissionsMcpConfigFile: string | undefined;
-  let permissionsMcpTempDir: string | undefined;
-
-  if (isPermissionsMcpEnabled) {
-    try {
-      const result = await setupPermissionsMcp({
-        allowedTools,
-        defaultResponse: claudeCodeOptions.permissionsMcp?.defaultResponse,
-        timeout: claudeCodeOptions.permissionsMcp?.timeout,
-        autoApproveCreatedFileDeletion:
-          claudeCodeOptions.permissionsMcp?.autoApproveCreatedFileDeletion,
-        trackedFiles,
-        workingDirectory: cwd,
-      });
-      permissionsMcpConfigFile = result.mcpConfigFile;
-      permissionsMcpTempDir = result.tempDir;
-      permissionsMcpCleanup = result.cleanup;
-    } catch (err) {
-      error(`Could not set up permissions MCP for ${label}:`, err);
-      isPermissionsMcpEnabled = false;
-    }
-  }
+  const { capabilities } = mcpLaunch;
+  interactiveApprovalEnabled = capabilities.interactiveApprovalEnabled;
+  const allowedTools = mcpLaunch.allowedTools;
+  const permissionsMcpCleanup = mcpLaunch.cleanup;
+  const permissionsMcpTempDir = mcpLaunch.tempDir;
 
   // Set up tunneling for intermediate output
-  let tunnelServer: TunnelServer | undefined;
-  // Reuse permissions MCP temp dir if available, otherwise create a new one
-  const tunnelTempDir =
-    permissionsMcpTempDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), `tim-${label}-`)));
-  const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
-  if (!isTunnelActive()) {
-    try {
-      const promptHandler = createPromptRequestHandler();
-      tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
-        onPromptRequest: promptHandler,
-      });
-    } catch (err) {
-      debugLog(`Could not create tunnel server for ${label} output forwarding:`, err);
-    }
-  }
-
   let acceptedFinalResult = false;
   let killedByTimeout = false;
   let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
   let monitorHandle: SubprocessMonitorHandle | undefined;
+  let streaming: StreamingProcess | undefined;
+  let tunnelServer: TunnelServer | undefined;
+  let tunnelTempDir: string | undefined;
+  let sessionProcessLifecycle: SessionExecutorLifecycle | undefined;
+  let persistentRuntime: PersistentClaudeSessionRuntime | undefined;
+  const cleanupState = createOrderedClaudeCleanup([
+    (): void => terminalInputResult?.cleanup(),
+    (): void => {
+      if (persistentRuntime !== undefined) {
+        persistentRuntime.clearProcessLifecycleHandler();
+      } else {
+        sessionProcessLifecycle?.setGracefulEndHandler(undefined);
+      }
+    },
+    (): void => monitorHandle?.stop(),
+    (): void => tunnelServer?.close(),
+    async (): Promise<void> => {
+      if (!permissionsMcpTempDir && tunnelTempDir !== undefined) {
+        await fs.rm(tunnelTempDir, { recursive: true, force: true });
+      }
+    },
+    async (): Promise<void> => {
+      await permissionsMcpCleanup?.();
+    },
+  ]);
+  const cleanup = (): Promise<void> => cleanupState.cleanup();
 
   try {
-    const args = ['claude', '--no-session-persistence', '--permission-mode', 'auto'];
-
-    // Add MCP config: permissions MCP takes priority, then user's mcpConfigFile
-    if (isPermissionsMcpEnabled && permissionsMcpConfigFile) {
-      args.push('--mcp-config', permissionsMcpConfigFile);
-      args.push('--permission-prompt-tool', 'mcp__permissions__approval_prompt');
-    } else if (claudeCodeOptions.mcpConfigFile) {
-      args.push('--mcp-config', claudeCodeOptions.mcpConfigFile);
+    // Reuse the permissions MCP temp dir if available, otherwise create a
+    // separate output tunnel directory. This is inside the guarded setup so a
+    // failure here still releases a successfully-created MCP bridge.
+    tunnelTempDir =
+      permissionsMcpTempDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), `tim-${label}-`)));
+    const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
+    if (!isTunnelActive()) {
+      try {
+        const promptHandler = createPromptRequestHandler();
+        tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
+          onPromptRequest: promptHandler,
+        });
+      } catch (err) {
+        debugLog(`Could not create tunnel server for ${label} output forwarding:`, err);
+      }
     }
+
+    const args = [
+      options.claudeExecutable ?? 'claude',
+      '--no-session-persistence',
+      '--permission-mode',
+      'auto',
+    ];
+
+    applyClaudeMcpLaunchArgs(args, mcpLaunch, claudeCodeOptions.mcpConfigFile);
 
     // Add allowed tools
     if (allowedTools.length && !allowAllTools) {
@@ -406,18 +510,37 @@ export async function runClaudeSubprocess(
       args.push(...extraArgs);
     }
 
-    const splitter = createLineSplitter();
-    resetToolUseCache();
-
     if (logModelSelection) {
-      log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
+      log(`Interactive permissions MCP is`, interactiveApprovalEnabled ? 'enabled' : 'disabled');
     }
 
-    const streaming = await spawnWithStreamingIO(args, {
-      sessionProcessLabel: `Claude ${label}`,
+    const sessionProcessLabel =
+      persistentAgent && options.processLabel !== undefined
+        ? options.processLabel
+        : `Claude ${label}`;
+    persistentRuntime = persistentAgent
+      ? new PersistentClaudeSessionRuntime({
+          label,
+          processLabel: sessionProcessLabel as AgentProcessLabel,
+          debugLog,
+          sendStructured,
+          onOutputActivity: options.onOutputActivity,
+          sessionProcessOwner,
+          lifecycleObserver: options.lifecycleObserver,
+        })
+      : undefined;
+    const streamFormatter = createClaudeOutputStreamFormatter(modelToUse);
+
+    streaming = await spawnWithStreamingIO(args, {
+      sessionProcessLabel,
       sessionProcessControl: 'both',
       onSessionProcessReady: (lifecycle) => {
-        lifecycle.setGracefulEndHandler(() => terminalInputResult?.endSession?.());
+        if (persistentRuntime !== undefined) {
+          persistentRuntime.attachProcessLifecycle(lifecycle);
+        } else {
+          sessionProcessLifecycle = lifecycle;
+          lifecycle.setGracefulEndHandler(() => terminalInputResult?.endSession?.());
+        }
       },
       env: {
         CLAUDECODE: '',
@@ -429,26 +552,40 @@ export async function runClaudeSubprocess(
         CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
       },
       timEnvironment: options.timEnvironment,
+      transformEnvironment: options.agentEnvironmentIdentity
+        ? (env: Record<string, string>): Record<string, string> =>
+            withAgentEnvironmentIdentity(env, options.agentEnvironmentIdentity!)
+        : undefined,
       cwd,
       inactivityTimeoutMs,
       initialInactivityTimeoutMs,
+      disableInactivityKill: persistentAgent,
       onInactivityKill: () => {
         killedByTimeout = true;
         error(
           `Claude ${label} timed out after ${Math.round(inactivityTimeoutMs / 60000)} minutes; terminating.`
         );
       },
+      onOutputActivity: persistentRuntime
+        ? () => persistentRuntime?.notifyOutputActivity()
+        : undefined,
+      ...(persistentAgent ? { captureStdout: false, captureStderr: false } : {}),
       formatStdout: (output) => {
-        const lines = splitter(output);
-        const formattedResults = lines.map((line) => formatJsonMessage(line, modelToUse));
-        const structuredMessages = extractStructuredMessages(formattedResults);
+        if (cleanupState.started || persistentRuntime?.isReleasing) return '';
+        const { formattedResults, structuredMessages } = streamFormatter.formatChunk(output);
 
-        // Track result messages and file paths
+        // Track complete lifecycle messages and file paths for this execution.
         for (const formatted of formattedResults) {
-          terminalInputResult?.observeFormattedMessage(formatted);
-
-          if (formatted.type === 'result') {
-            terminalInputResult?.onResultMessage(formatted.resultInfo?.success !== false);
+          if (persistentRuntime !== undefined) {
+            persistentRuntime.observeFormattedMessage(formatted);
+          } else {
+            terminalInputResult?.observeFormattedMessage(formatted);
+            if (formatted.type === 'result') {
+              terminalInputResult?.onResultMessage(
+                formatted.resultInfo?.success !== false,
+                formatted.resultText
+              );
+            }
           }
           if (formatted.filePaths) {
             for (const filePath of formatted.filePaths) {
@@ -463,7 +600,8 @@ export async function runClaudeSubprocess(
         // Let the caller extract mode-specific data
         processFormattedMessages(formattedResults);
 
-        return structuredMessages.length > 0 ? structuredMessages : '';
+        if (!persistentAgent) return structuredMessages.length > 0 ? structuredMessages : '';
+        return persistentRuntime?.filterStructuredMessages(structuredMessages) ?? '';
       },
     });
 
@@ -487,10 +625,43 @@ export async function runClaudeSubprocess(
       tunnelServer,
       terminalInputEnabled: terminalInput === true,
       tunnelForwardingEnabled: isTunnelActive(),
+      persistentAgent: persistentAgent
+        ? {
+            initialPrompt: prompt,
+            onTurnComplete: (successful, generation, resultText): void => {
+              persistentRuntime?.notifyTurnComplete(successful, generation, resultText);
+            },
+            ...(options.persistentTurnGraceMs === undefined
+              ? {}
+              : { graceMs: options.persistentTurnGraceMs }),
+          }
+        : undefined,
     });
+
+    if (persistentAgent) {
+      if (persistentRuntime === undefined) {
+        throw new Error('Persistent Claude runner did not create its session runtime');
+      }
+      const persistentStreaming = streaming;
+      persistentRuntime.attach(terminalInputResult, cleanup, async (): Promise<void> => {
+        persistentStreaming.kill('SIGTERM');
+        await persistentStreaming.result;
+      });
+      persistentRuntime.startCompletion(terminalInputResult.resultPromise);
+      await persistentRuntime.ready;
+      if (persistentRuntime.providerState === 'failed') {
+        const launchError = persistentRuntime.input.inputWriter.lastError;
+        throw launchError instanceof Error
+          ? launchError
+          : new Error(`Claude ${label} persistent input failed during launch`);
+      }
+      return persistentRuntime.createHandle();
+    }
 
     const result = await terminalInputResult.resultPromise;
     acceptedFinalResult = terminalInputResult.acceptedSuccessfulFinalResult();
+
+    await cleanup();
 
     return {
       acceptedFinalResult,
@@ -498,16 +669,29 @@ export async function runClaudeSubprocess(
       exitCode: result.exitCode,
       killedByInactivity: result.killedByInactivity ?? false,
     };
-  } finally {
-    monitorHandle?.stop();
-    terminalInputResult?.cleanup();
-    tunnelServer?.close();
-    // Clean up tunnel temp dir if we created a separate one (not reusing permissions MCP dir)
-    if (!permissionsMcpTempDir) {
-      await fs.rm(tunnelTempDir, { recursive: true, force: true });
+  } catch (error) {
+    if (streaming !== undefined && terminalInputResult === undefined) {
+      try {
+        safeEndStdin(streaming.stdin, debugLog);
+        streaming.kill('SIGTERM');
+      } catch (cleanupError) {
+        debugLog(`Claude ${label} startup cleanup failed:`, cleanupError);
+      }
+    } else if (streaming !== undefined && persistentAgent) {
+      try {
+        // The persistent input controller owns stdin once it exists. Its
+        // cleanup path has already closed the sink; only terminate the child
+        // here so a failed launch cannot leave a live provider behind.
+        streaming.kill('SIGTERM');
+      } catch (cleanupError) {
+        debugLog(`Claude ${label} startup process termination failed:`, cleanupError);
+      }
     }
-    if (permissionsMcpCleanup) {
-      await permissionsMcpCleanup();
+    try {
+      await cleanup();
+    } catch (cleanupError) {
+      debugLog(`Claude ${label} cleanup after failure failed:`, cleanupError);
     }
+    throw error;
   }
 }

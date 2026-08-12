@@ -772,6 +772,7 @@ Important config areas:
 - `mediaHost.baseUrl` - origin-only media host URL used by `tim pr upload-artifacts`
 - `inbox.prs` - PR inbox behavior; `enabled` plus an `ignoreUsers` list that concatenates across config layers (see [PR inbox](#pr-inbox))
 - `environment` - project-level variables rendered at process launch time with plan/workspace context
+- `experimental` - opt-in flags for features not yet on by default; currently only `agentMessaging`, which is disabled unless set to `true`
 
 PR creation and dual-review issue merging share the `smallTasks` defaults. Override both
 in one place when you want to swap the lightweight model or executor:
@@ -805,6 +806,15 @@ simplify:
   exclude:
     - Generated files
 ```
+
+The `experimental` block holds opt-in flags for features that are not yet on by default. Every flag is optional and disabled when absent:
+
+```yaml
+experimental:
+  agentMessaging: true
+```
+
+`agentMessaging` enables collaborative orchestration for `tim agent` sessions. When `true`, the orchestrator uses `StartTimAgent`, `ListTimAgents`, `SendTimAgentMessage`, and `StopTimAgent` tools to manage persistent subagents instead of synchronous `tim subagent` shell commands. Subagents can message each other and the orchestrator directly. Supported agent types are `implementer`, `tester`, `tdd-tests`, and `reviewer` (read-only, advisory). Both `claude-code` and `codex-cli` executors are supported. The formal review gate remains a separate one-shot `tim review` command with fresh context and no messaging tools. When the flag is absent or `false`, all prompts and execution paths keep the current synchronous behavior. Config changes affect new `tim agent` sessions only; already running sessions keep their original mode. See [docs/agent-messaging.md](docs/agent-messaging.md) for the full operational reference, and [docs/agent-manager.md](docs/agent-manager.md), [docs/claude-mcp-bridge.md](docs/claude-mcp-bridge.md), [docs/persistent-claude-agent.md](docs/persistent-claude-agent.md), and [docs/persistent-codex-agent.md](docs/persistent-codex-agent.md) for internal details.
 
 The web UI **Settings** tab stores per-project settings in SQLite. The project-level branch prefix there takes precedence over the config file value.
 
@@ -868,6 +878,8 @@ tim automatically provides these environment variables to child processes when t
 | `TIM_BRANCH`         | `branch`                   |
 
 Built-ins are tim-owned: they override same-named values from inherited shell env and workspace `.env`. Explicit per-command/per-executor `env` overrides are the only way to replace a reserved built-in.
+
+The `environment` block also rejects the internal agent-identity variables `TIM_AGENT_MESSAGING_DIR`, `TIM_AGENT_ID`, `TIM_AGENT_NAME`, `TIM_AGENT_TYPE`, and `TIM_AGENT_ROLE`. These are set by tim for its own processes and have no template placeholder. See [docs/agent-messaging.md](docs/agent-messaging.md).
 
 **Precedence (from lowest to highest):**
 
@@ -1038,3 +1050,6 @@ Use a unique prefix per developer to prevent accidental PR-to-plan matching from
 - [`docs/web-interface.md`](docs/web-interface.md) - web architecture and UI workflow details
 - [`docs/database.md`](docs/database.md) - SQLite-backed plan storage and materialization
 - [`docs/proof-generation.md`](docs/proof-generation.md) - capturing demo artifacts for completed plans
+- [`docs/agent-messaging.md`](docs/agent-messaging.md) - central reference for collaborative orchestration: flag, tool sets, agent types, naming, capacity, delivery, lifecycle, workspace coordination, TDD ordering, advisory vs formal review, and the mailbox transport
+- [`docs/agent-manager.md`](docs/agent-manager.md) - the orchestrator-owned agent manager: naming, capacity, start, list, send, and the finish/stop/terminal lifecycle
+- [`docs/claude-mcp-bridge.md`](docs/claude-mcp-bridge.md) - the internal `tim` MCP server for Claude: permission approval, role-scoped agent tools, and prompt serialization

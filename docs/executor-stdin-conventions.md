@@ -11,6 +11,42 @@ Claude Code reads stdin until EOF when using `--input-format stream-json`. This 
 - **Tunnel children need multi-message lifecycle.** When a child process receives input via tunnel (not TTY), stdin must be kept open using `sendInitialPrompt()` and closed only through the shared result-time or forced-shutdown paths.
 - **Background keep-alive depends on stdin staying open until the result-time decision.** Claude Code can end a turn while a background task is pending, then resume later through the same stream-json session. `executeWithTerminalInput()` therefore sends non-interactive prompts with `sendInitialPrompt()` and keeps stdin open until `onResultMessage()` consults the background-activity tracker. Normal turns still close stdin immediately on the first result; deferred turns close only after pending activity drains and the grace window elapses. The `streaming.result.finally(...)` close is only a cleanup backstop, not the primary close decision.
 
+## Explicit Persistent Claude Agent Mode
+
+The full provider design is in [persistent-claude-agent.md](persistent-claude-agent.md). The stdin rules below are binding for both documents.
+
+The AgentManager can select `mode: 'persistent-agent'` for a Claude provider launch. This is an explicit provider mode. An input source, MCP configuration, process label, or environment variable must not enable it by accident.
+
+- The runner returns a launch handle after the subprocess is ready and the initial stream-json prompt write has settled successfully. An asynchronous startup exit or pipe failure must reject launch instead of returning a live handle. The handle's `completion` promise settles only when the Claude provider later exits or fails. A Claude `result` record completes one turn; it does not complete the provider session.
+- One persistent execution has one stdin owner. Initial and follow-up messages use the same serialized stream-json writer. The shared AgentManager mailbox is the only message queue. If the writer is starting, busy, closing, or failed, the provider reports temporary unavailability so the mailbox keeps the message in its bounded FIFO. The provider must not add a second queue.
+- A successful settled result changes the provider input boundary to idle while stdin and the subprocess stay open. The next accepted mailbox message claims idle synchronously, starts one continuation, and changes the boundary to active before its write can await. Two concurrent idle sends cannot start two independent turns.
+- A result with active background work is provisional. Later assistant, user, or background activity can invalidate that result and return the provider to active. The provider becomes idle only after the existing background drain and grace rules settle the turn.
+- A healthy idle persistent provider is not killed by the ordinary one-shot output-inactivity timer. Each stdout and stderr event is still reported to the AgentManager lifecycle owner, which applies its per-agent graceful-stop inactivity policy.
+- Lifecycle metadata records only complete assistant messages and settled result text. Partial decoder data, tool traces, status messages, stderr text, and other incomplete output are not completed assistant results.
+- FinishTimAgent marks the current turn to close after its settled result. The MCP call and final assistant response must finish before stdin closes. Graceful StopTimAgent sends one shutdown instruction through the same writer and closes after that turn. Force stop uses the captured safe session-process capability for the exact child; it never accepts an arbitrary PID or display label.
+- Persistent providers never register or clear the process-global tunnel or headless user-input and end-session handler slots. Those slots belong to the root orchestrator. Per-agent End and Terminate controls use the captured session-process lifecycle handler.
+- Persistent cleanup marks input closed before tearing down handlers, monitors, tunnel/MCP resources, and the per-execution temporary directory. Cleanup and provider completion are idempotent and settle once.
+
+All other Claude paths remain one-shot. When persistent mode is not selected, a normal result still closes stdin before the process result is awaited, existing background grace and timeout behavior remains in force, and review, planning, proof, terminal, tunnel, headless, and legacy subagent executions do not receive a persistent handle.
+
+## Persistent Codex app-server input
+
+Persistent Codex agents do not use stdin for AgentManager messages. The
+app-server connection and Codex thread remain open between turns.
+
+- The AgentManager mailbox is the only pending input queue. The Codex adapter
+  does not create a second user-message queue.
+- A message for an active turn is sent with `turn/steer` after a turn ID is
+  known. A message for an idle thread starts a new turn on the existing thread.
+  Messages that arrive during startup or an unsafe transition remain in the
+  manager FIFO.
+- A completed turn changes the provider to idle; it does not close a stream or
+  process. `FinishTimAgent` and graceful StopTimAgent close after the required final
+  turn. Forced stop uses the owned app-server connection close path.
+- Persistent Codex mode does not install terminal, tunnel-user-input, or
+  headless-user-input callbacks. Existing Codex app-server chat and
+  single-turn-with-steering modes keep their current input and close behavior.
+
 ## Background-Activity Keep-Alive
 
 Claude Code can end a turn (emit a `result` message) while work is still pending in the background, then **re-invoke itself** through the same stream-json session when a background task posts an update. Closing stdin on the first `result` would kill Claude Code before it resumes, truncating single-turn commands like `tim agent`. `BackgroundActivityTracker` (`background_activity_tracker.ts`) gates the stdin-close decision so deferred turns stay alive.
@@ -18,7 +54,7 @@ Claude Code can end a turn (emit a `result` message) while work is still pending
 ### Two unrelated "task" concepts — do not conflate
 
 - **Background tasks** (this tracker's subject): Claude Code's own subprocess/subagent jobs, represented authoritatively by `type:"system", subtype:"background_tasks_changed"` messages.
-- **Agent todo tasks**: the `TaskCreate`/`TaskUpdate` tool calls Claude makes to manage its display todo list (`pendingTaskCreates`, `sessionTaskLists` in `format.ts`). These are display-only and out of scope for lifecycle decisions — never reuse their state maps for background-task tracking.
+- **Agent todo tasks**: the `TaskCreate`/`TaskUpdate` tool calls Claude makes to manage its display todo list (`pendingTaskCreates`, `sessionTaskLists`, owned by each `ClaudeMessageFormatter` instance in `format.ts`). These are display-only and out of scope for lifecycle decisions — never reuse their state maps for background-task tracking.
 
 ### Lifecycle signals from `format.ts`
 
@@ -101,7 +137,7 @@ The handler also clears tunnel and headless user input handlers, rejects pending
 
 ### Codex App-Server Headless End Session
 
-Codex app-server sessions do not use stdin closure or subprocess `SIGTERM` as their graceful end path. In app-server mode, the `HeadlessAdapter` `end_session` handler closes the local input queue and sends `turn/interrupt` for the active Codex turn when a turn id is known. If `end_session` arrives while `turn/start` is still pending, the runner sends `turn/interrupt` as soon as the turn id is returned.
+Legacy Codex app-server sessions do not use stdin closure or subprocess `SIGTERM` as their graceful end path. In those modes, the `HeadlessAdapter` `end_session` handler closes the local input queue and sends `turn/interrupt` for the active Codex turn when a turn id is known. If `end_session` arrives while `turn/start` is still pending, the runner sends `turn/interrupt` as soon as the turn id is returned. Persistent AgentManager sessions use their provider-neutral lifecycle controls instead.
 
 The normal and force web UI end-session actions both use this app-server path for Codex so the Codex side can shut down the turn cleanly instead of relying on subprocess stdin or signals.
 

@@ -370,6 +370,20 @@ describe('TunnelAdapter', () => {
       // 42 should be serialized via util.inspect
       expect(msg.args[1]).toBe('42');
     });
+
+    it('should include the agent name when one is provided', async () => {
+      testServer = await createTestServer(socketPath);
+      adapter = await createTunnelAdapter(socketPath, 'worker-a');
+
+      adapter.log('hello');
+
+      await waitForMessages(testServer.getMessages, 1);
+      expect(testServer.getMessages()[0]).toEqual({
+        type: 'log',
+        args: ['hello'],
+        agentName: 'worker-a',
+      });
+    });
   });
 
   describe('error()', () => {
@@ -794,6 +808,73 @@ describe('TunnelAdapter bidirectional transport', () => {
     const resultPromise = adapter.sendPromptRequest(promptMsg, 100);
 
     await expect(resultPromise).rejects.toThrow(/timed out/i);
+  });
+
+  it('should reject and remove a pending prompt when an external signal aborts', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const controller = new AbortController();
+    const resultPromise = adapter.sendPromptRequest(
+      makePromptRequest('req-external-cancel'),
+      undefined,
+      controller.signal
+    );
+
+    await waitForMessages(testServer.getMessages, 1);
+    controller.abort();
+
+    await expect(resultPromise).rejects.toThrow(/cancelled/i);
+    expect(
+      (adapter as unknown as { pendingPrompts: Map<string, unknown> }).pendingPrompts.size
+    ).toBe(0);
+
+    // A late answer must not resolve another request or recreate the cancelled entry.
+    const sockets = testServer.getSockets();
+    sockets[0]?.write(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId: 'req-external-cancel',
+        value: 'late answer',
+      }) + '\n'
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(
+      (adapter as unknown as { pendingPrompts: Map<string, unknown> }).pendingPrompts.size
+    ).toBe(0);
+  });
+
+  it('does not let an older timeout remove a newer prompt with the same request ID', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const requestId = 'req-reused-id';
+    const first = adapter
+      .sendPromptRequest(makePromptRequest(requestId), 50)
+      .catch((error) => error);
+    await waitForMessages(testServer.getMessages, 1);
+
+    const second = adapter.sendPromptRequest(makePromptRequest(requestId));
+    await waitForMessages(testServer.getMessages, 2);
+
+    const firstResult = await first;
+    expect(firstResult).toBeInstanceOf(Error);
+    expect((firstResult as Error).message).toMatch(/superseded/i);
+    expect(
+      (adapter as unknown as { pendingPrompts: Map<string, unknown> }).pendingPrompts.size
+    ).toBe(1);
+
+    const sockets = testServer.getSockets();
+    expect(sockets).toHaveLength(1);
+    sockets[0].write(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId,
+        value: 'new answer',
+      }) + '\n'
+    );
+
+    await expect(second).resolves.toBe('new answer');
   });
 
   it('should reject all pending requests when connection is lost', async () => {

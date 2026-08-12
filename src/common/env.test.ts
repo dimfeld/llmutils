@@ -62,6 +62,29 @@ describe('buildWorkspaceCommandEnv', () => {
     expect(env.NODE_ENV).toBeUndefined();
   });
 
+  test('applies a trusted environment transform after dotenv and explicit overrides', async () => {
+    await fs.writeFile(
+      path.join(tempDir, '.env'),
+      'TIM_AGENT_NAME=dotenv-name\nTIM_AGENT_TYPE=stale-type\n'
+    );
+
+    const env = await buildWorkspaceCommandEnv(
+      tempDir,
+      { TIM_AGENT_NAME: 'explicit-name' },
+      {
+        inheritedEnv: { TIM_AGENT_NAME: 'inherited-name' },
+        transformEnvironment: (builtEnv: Record<string, string>): Record<string, string> => {
+          const transformed = { ...builtEnv, TIM_AGENT_NAME: 'orchestrator' };
+          delete transformed.TIM_AGENT_TYPE;
+          return transformed;
+        },
+      }
+    );
+
+    expect(env.TIM_AGENT_NAME).toBe('orchestrator');
+    expect(env.TIM_AGENT_TYPE).toBeUndefined();
+  });
+
   test('composes project env, dotenv, override-dotenv entries, built-ins, and explicit overrides', async () => {
     await fs.writeFile(
       path.join(tempDir, '.env'),

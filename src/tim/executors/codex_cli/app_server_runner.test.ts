@@ -1,7 +1,31 @@
 import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 
+import type {
+  AgentIdentity,
+  AgentInputMessage,
+} from '../../agent_messaging/agent_manager_types.js';
+import type { CodexDynamicToolProvider } from './app_server_dynamic_tools.js';
+
 type NotificationHandler = (method: string, params: unknown) => void;
 type ServerRequestHandler = (method: string, id: number, params: unknown) => Promise<unknown>;
+
+type TestAdapter = {
+  readonly activity: string;
+  deliver(message: AgentInputMessage): string | Promise<string>;
+};
+
+function rootInputMessage(messageId: string, content: string): AgentInputMessage {
+  return {
+    messageId,
+    content,
+    source: {
+      id: 'root-test-id' as AgentIdentity['id'],
+      name: 'orchestrator' as AgentIdentity['name'],
+      role: 'orchestrator',
+      executor: 'codex-cli',
+    },
+  };
+}
 
 async function waitFor(condition: () => boolean, timeoutMs: number = 2000): Promise<void> {
   const start = Date.now();
@@ -11,6 +35,26 @@ async function waitFor(condition: () => boolean, timeoutMs: number = 2000): Prom
     }
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+}
+
+function createDynamicToolProvider(
+  handler: ReturnType<typeof vi.fn> = vi.fn(async () => ({
+    contentItems: [{ type: 'inputText' as const, text: 'ok' }],
+    success: true,
+  }))
+): CodexDynamicToolProvider {
+  return {
+    context: { trusted: true },
+    definitions: [
+      {
+        type: 'function',
+        name: 'ListTimAgents',
+        description: 'List agents.',
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+    ],
+    handler,
+  };
 }
 
 interface Harness {
@@ -70,6 +114,7 @@ async function createHarness(options?: {
   failedMessage?: string | undefined;
   terminalInputLines?: string[];
   loggerAdapterKind?: 'headless' | 'tunnel';
+  connectionCreateError?: Error;
 }): Promise<Harness> {
   vi.resetModules();
 
@@ -80,7 +125,9 @@ async function createHarness(options?: {
   } = {};
 
   const tunnelCloseMock = vi.fn();
-  const createTunnelServerMock = vi.fn(async () => ({ close: tunnelCloseMock }));
+  const createTunnelServerMock = vi.fn(async () => ({
+    close: tunnelCloseMock,
+  }));
   const createPromptRequestHandlerMock = vi.fn(() => vi.fn(async () => ({ action: 'cancel' })));
   const isTunnelActiveMock = vi.fn(() => options?.tunnelActive ?? true);
 
@@ -122,6 +169,9 @@ async function createHarness(options?: {
     connectionCreateOptions.current = createOptions;
     connectionHandlers.onNotification = createOptions.onNotification;
     connectionHandlers.onServerRequest = createOptions.onServerRequest;
+    if (options?.connectionCreateError) {
+      throw options.connectionCreateError;
+    }
     return connection;
   });
 
@@ -176,6 +226,14 @@ async function createHarness(options?: {
   }));
 
   vi.doMock('./app_server_connection.ts', () => ({
+    AppServerRequestError: class extends Error {
+      readonly code: number;
+
+      constructor(message: string, code: number) {
+        super(message);
+        this.code = code;
+      }
+    },
     CodexAppServerConnection: {
       create: connectionCreateMock,
     },
@@ -247,10 +305,12 @@ async function createHarness(options?: {
 describe('executeCodexStepViaAppServer', () => {
   const originalAllowAllTools = process.env.ALLOW_ALL_TOOLS;
   const originalOutputTimeout = process.env.CODEX_OUTPUT_TIMEOUT_MS;
+  const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
 
   beforeEach(() => {
     delete process.env.ALLOW_ALL_TOOLS;
     delete process.env.CODEX_OUTPUT_TIMEOUT_MS;
+    delete process.env.CODEX_USE_APP_SERVER;
   });
 
   afterEach(() => {
@@ -264,6 +324,11 @@ describe('executeCodexStepViaAppServer', () => {
     } else {
       process.env.CODEX_OUTPUT_TIMEOUT_MS = originalOutputTimeout;
     }
+    if (originalCodexUseAppServer === undefined) {
+      delete process.env.CODEX_USE_APP_SERVER;
+    } else {
+      process.env.CODEX_USE_APP_SERVER = originalCodexUseAppServer;
+    }
     vi.resetModules();
   });
 
@@ -275,7 +340,10 @@ describe('executeCodexStepViaAppServer', () => {
         item: { type: 'agentMessage', text: 'task complete' },
       });
       harness.connectionHandlers.onNotification?.('turn/completed', {
-        turn: { status: 'completed', usage: { inputTokens: 10, outputTokens: 5 } },
+        turn: {
+          status: 'completed',
+          usage: { inputTokens: 10, outputTokens: 5 },
+        },
       });
       return { turnId: 'turn-1' };
     });
@@ -358,7 +426,9 @@ describe('executeCodexStepViaAppServer', () => {
     });
 
     harness.connection.turnStart.mockImplementationOnce(async () => {
-      harness.connectionHandlers.onNotification?.('item/started', { item: { type: 'reasoning' } });
+      harness.connectionHandlers.onNotification?.('item/started', {
+        item: { type: 'reasoning' },
+      });
       return { turnId: 'turn-timeout' };
     });
 
@@ -392,7 +462,9 @@ describe('executeCodexStepViaAppServer', () => {
     const harness = await createHarness();
 
     harness.connection.turnStart.mockImplementationOnce(async () => {
-      harness.connectionHandlers.onNotification?.('item/started', { item: { type: 'reasoning' } });
+      harness.connectionHandlers.onNotification?.('item/started', {
+        item: { type: 'reasoning' },
+      });
       return await new Promise<never>(() => {});
     });
 
@@ -566,6 +638,57 @@ describe('executeCodexStepViaAppServer', () => {
     expect(correctionInput).toContain('"status"');
     expect(correctionInput).not.toContain('Previous invalid final output');
     expect(correctionInput).not.toContain('\nnot json');
+  });
+
+  test('keeps the connection open for schema correction after an unanswered root steer', async () => {
+    const harness = await createHarness();
+    const outputSchema = {
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+      },
+    };
+    let boundAdapter: TestAdapter | undefined;
+    const rootInput = {
+      bind: (adapter: TestAdapter): void => {
+        boundAdapter = adapter;
+      },
+      unbind: (adapter: TestAdapter): void => {
+        if (boundAdapter === adapter) boundAdapter = undefined;
+      },
+    };
+
+    harness.formatter.getFinalAgentMessage
+      .mockReturnValueOnce('not json')
+      .mockReturnValueOnce('{"status":"ok"}');
+    harness.connection.turnSteer.mockImplementationOnce(() => new Promise(() => {}));
+
+    const execution = harness.executeCodexStepViaAppServer(
+      'prompt',
+      '/repo',
+      {},
+      {
+        appServerMode: 'single-turn-with-steering',
+        orchestratorInputAdapter: rootInput,
+        outputSchema,
+      }
+    );
+
+    await waitFor(() => boundAdapter?.activity === 'active');
+    void boundAdapter?.deliver(rootInputMessage('unanswered', 'steer before completion'));
+    await waitFor(() => harness.connection.turnSteer.mock.calls.length === 1);
+    harness.connectionHandlers.onNotification?.('turn/completed', {
+      turn: { id: 'turn-1', status: 'completed' },
+    });
+
+    await waitFor(() => harness.connection.turnStart.mock.calls.length === 2);
+    expect(harness.connection.close).not.toHaveBeenCalled();
+    harness.connectionHandlers.onNotification?.('turn/completed', {
+      turn: { id: 'turn-1', status: 'completed' },
+    });
+
+    await expect(execution).resolves.toBe('{"status":"ok"}');
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
   });
 
   test('starts a correction turn when schema-backed JSON fails schema validation', async () => {
@@ -748,7 +871,335 @@ describe('executeCodexStepViaAppServer', () => {
       writableRoots: ['/repo'],
     });
 
-    expect(harness.connectionCreateOptions.current?.onServerRequest).toBe(harness.approvalHandler);
+    expect(harness.connectionCreateOptions.current?.onServerRequest).not.toBe(
+      harness.approvalHandler
+    );
+    await harness.connectionHandlers.onServerRequest?.('item/commandExecution/requestApproval', 1, {
+      command: 'git status',
+    });
+    expect(harness.approvalHandler).toHaveBeenCalledWith(
+      'item/commandExecution/requestApproval',
+      1,
+      { command: 'git status' }
+    );
+  });
+
+  test('routes dynamic tool calls before approvals, including permissive approvals', async () => {
+    process.env.ALLOW_ALL_TOOLS = '1';
+    const dynamicHandler = vi.fn(async () => ({
+      contentItems: [{ type: 'inputText' as const, text: 'dynamic result' }],
+      success: true,
+    }));
+    const harness = await createHarness();
+    const provider = createDynamicToolProvider(dynamicHandler);
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    await harness.executeCodexStepViaAppServer(
+      'prompt',
+      '/repo',
+      {},
+      {
+        dynamicToolProvider: provider,
+      }
+    );
+
+    const result = await harness.connectionHandlers.onServerRequest?.('item/tool/call', 42, {
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      callId: 'call-1',
+      tool: 'ListTimAgents',
+      arguments: {},
+    });
+    expect(result).toEqual({
+      contentItems: [{ type: 'inputText', text: 'dynamic result' }],
+      success: true,
+    });
+    expect(dynamicHandler).toHaveBeenCalledTimes(1);
+    expect(harness.approvalHandler).not.toHaveBeenCalledWith(
+      'item/tool/call',
+      42,
+      expect.anything()
+    );
+
+    await harness.connectionHandlers.onServerRequest?.(
+      'item/commandExecution/requestApproval',
+      43,
+      { command: 'git status' }
+    );
+    expect(harness.approvalHandler).toHaveBeenCalledWith(
+      'item/commandExecution/requestApproval',
+      43,
+      { command: 'git status' }
+    );
+  });
+
+  test('routes dynamic tool calls before normal approval handling', async () => {
+    const dynamicHandler = vi.fn(async () => ({
+      contentItems: [{ type: 'inputText' as const, text: 'validation failed' }],
+      success: false,
+    }));
+    const harness = await createHarness();
+    const provider = createDynamicToolProvider(dynamicHandler);
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    await harness.executeCodexStepViaAppServer(
+      'prompt',
+      '/repo',
+      {},
+      { dynamicToolProvider: provider }
+    );
+
+    await expect(
+      harness.connectionHandlers.onServerRequest?.('item/tool/call', 44, {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        callId: 'call-1',
+        tool: 'ListTimAgents',
+        arguments: {},
+      })
+    ).resolves.toEqual({
+      contentItems: [{ type: 'inputText', text: 'validation failed' }],
+      success: false,
+    });
+    expect(dynamicHandler).toHaveBeenCalledTimes(1);
+    expect(harness.approvalHandler).not.toHaveBeenCalledWith(
+      'item/tool/call',
+      44,
+      expect.anything()
+    );
+  });
+
+  test('rejects dynamic calls as unsupported when no provider is installed', async () => {
+    const harness = await createHarness();
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    await harness.executeCodexStepViaAppServer('prompt', '/repo', {});
+
+    await expect(
+      harness.connectionHandlers.onServerRequest?.('item/tool/call', 42, {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        callId: 'call-1',
+        tool: 'ListTimAgents',
+        arguments: {},
+      })
+    ).rejects.toMatchObject({ code: -32601 });
+    expect(harness.approvalHandler).not.toHaveBeenCalledWith(
+      'item/tool/call',
+      42,
+      expect.anything()
+    );
+  });
+
+  test('installs dynamic definitions and preserves them on schema conversion threads', async () => {
+    const harness = await createHarness();
+    const provider = createDynamicToolProvider();
+    const outputSchema = {
+      type: 'object',
+      required: ['status'],
+      properties: { status: { type: 'string' } },
+      additionalProperties: false,
+    };
+    harness.formatter.getFinalAgentMessage
+      .mockReturnValueOnce('{"status":404}')
+      .mockReturnValueOnce('{"status":404}')
+      .mockReturnValueOnce('{"status":"ok"}');
+    harness.connection.threadStart
+      .mockResolvedValueOnce({ threadId: 'thread-1' })
+      .mockResolvedValueOnce({ threadId: 'thread-2' });
+    harness.connection.turnStart.mockImplementation(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    const output = await harness.executeCodexStepViaAppServer(
+      'prompt',
+      '/repo',
+      {},
+      {
+        outputSchema,
+        dynamicToolProvider: provider,
+      }
+    );
+
+    expect(output).toBe('{"status":"ok"}');
+    expect(harness.connection.threadStart).toHaveBeenCalledTimes(2);
+    expect(harness.connectionCreateOptions.current).toEqual(
+      expect.objectContaining({ experimentalApi: true })
+    );
+    expect(harness.connection.threadStart.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ dynamicTools: provider.definitions })
+    );
+    expect(harness.connection.threadStart.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({ dynamicTools: provider.definitions })
+    );
+  });
+
+  test('rejects dynamic tools before tunnel or connection allocation when app-server is disabled', async () => {
+    process.env.CODEX_USE_APP_SERVER = 'false';
+    const harness = await createHarness({ tunnelActive: false });
+    const provider = createDynamicToolProvider();
+
+    await expect(
+      harness.executeCodexStepViaAppServer(
+        'prompt',
+        '/repo',
+        {},
+        {
+          dynamicToolProvider: provider,
+          outputSchemaPath: '/path/that/must/not/be/read.json',
+        }
+      )
+    ).rejects.toThrow(/require Codex app-server mode/i);
+    expect(harness.connectionCreateMock).not.toHaveBeenCalled();
+    expect(harness.createTunnelServerMock).not.toHaveBeenCalled();
+  });
+
+  test('wraps dynamic thread-start rejection without starting a turn', async () => {
+    const harness = await createHarness();
+    const provider = createDynamicToolProvider();
+    harness.connection.threadStart.mockRejectedValueOnce(new Error('dynamicTools rejected'));
+
+    const compatibilityError = await harness
+      .executeCodexStepViaAppServer(
+        'prompt',
+        '/repo',
+        {},
+        {
+          dynamicToolProvider: provider,
+        }
+      )
+      .catch((error: unknown) => error);
+
+    expect(compatibilityError).toMatchObject({
+      name: 'CodexDynamicToolsCompatibilityError',
+      message: expect.stringContaining('does not support experimental dynamic tools'),
+      cause: expect.objectContaining({ message: 'dynamicTools rejected' }),
+    });
+    expect(harness.connection.turnStart).not.toHaveBeenCalled();
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+  });
+
+  test('preserves connection-create failures with a dynamic provider', async () => {
+    const initializationError = new Error('experimentalApi rejected');
+    const harness = await createHarness({
+      connectionCreateError: initializationError,
+    });
+    const provider = createDynamicToolProvider();
+
+    const connectionError = await harness
+      .executeCodexStepViaAppServer(
+        'prompt',
+        '/repo',
+        {},
+        {
+          dynamicToolProvider: provider,
+        }
+      )
+      .catch((error: unknown) => error);
+
+    expect(connectionError).toBe(initializationError);
+    expect(harness.connection.turnStart).not.toHaveBeenCalled();
+  });
+
+  test('preserves conversion-thread failures after dynamic negotiation succeeds', async () => {
+    const harness = await createHarness();
+    const provider = createDynamicToolProvider();
+    const conversionError = new Error('conversion thread transport failed');
+    const outputSchema = {
+      type: 'object',
+      required: ['status'],
+      properties: { status: { type: 'string' } },
+      additionalProperties: false,
+    };
+
+    harness.formatter.getFinalAgentMessage
+      .mockReturnValueOnce('Status: ok')
+      .mockReturnValueOnce('Still not JSON');
+    harness.connection.threadStart
+      .mockResolvedValueOnce({ threadId: 'thread-1' })
+      .mockRejectedValueOnce(conversionError);
+    harness.connection.turnStart.mockImplementation(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    await expect(
+      harness.executeCodexStepViaAppServer(
+        'prompt',
+        '/repo',
+        {},
+        { outputSchema, dynamicToolProvider: provider }
+      )
+    ).rejects.toBe(conversionError);
+    expect(harness.connection.threadStart).toHaveBeenCalledTimes(2);
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+  });
+
+  test('passes dynamic definitions only when a provider is installed', async () => {
+    const harness = await createHarness();
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    await harness.executeCodexStepViaAppServer('prompt', '/repo', {});
+
+    expect(harness.connectionCreateOptions.current).not.toHaveProperty('experimentalApi');
+    expect(harness.connection.threadStart).toHaveBeenCalledWith(
+      expect.not.objectContaining({ dynamicTools: expect.anything() })
+    );
+  });
+
+  test('does not retry after a dynamic thread-start compatibility failure', async () => {
+    const harness = await createHarness();
+    const provider = createDynamicToolProvider();
+    harness.connection.threadStart.mockRejectedValue(new Error('dynamicTools rejected'));
+
+    await expect(
+      harness.executeCodexStepViaAppServer(
+        'prompt',
+        '/repo',
+        {},
+        {
+          dynamicToolProvider: provider,
+        }
+      )
+    ).rejects.toThrow(/does not support experimental dynamic tools/i);
+    expect(harness.connection.turnStart).not.toHaveBeenCalled();
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+  });
+
+  test('preserves initialization errors when no dynamic provider is installed', async () => {
+    const error = new Error('ordinary app-server initialization failure');
+    const harness = await createHarness({ connectionCreateError: error });
+
+    await expect(harness.executeCodexStepViaAppServer('prompt', '/repo', {})).rejects.toBe(error);
   });
 
   test('includes external config directory in writable roots passed to approval handler', async () => {
@@ -779,7 +1230,10 @@ describe('executeCodexStepViaAppServer', () => {
 
     harness.connection.turnStart.mockImplementationOnce(async (params: any) => {
       harness.connectionHandlers.onNotification?.('item/completed', {
-        item: { type: 'agentMessage', text: `reply for ${params.input[0].text}` },
+        item: {
+          type: 'agentMessage',
+          text: `reply for ${params.input[0].text}`,
+        },
       });
       harness.connectionHandlers.onNotification?.('turn/started', {
         turn: { id: 'turn-1' },
@@ -789,7 +1243,10 @@ describe('executeCodexStepViaAppServer', () => {
 
     harness.connection.turnSteer.mockImplementationOnce(async (params: any) => {
       harness.connectionHandlers.onNotification?.('item/completed', {
-        item: { type: 'agentMessage', text: `reply for ${params.input[0].text}` },
+        item: {
+          type: 'agentMessage',
+          text: `reply for ${params.input[0].text}`,
+        },
       });
       harness.connectionHandlers.onNotification?.('turn/completed', {
         turn: { id: 'turn-1', status: 'completed' },
@@ -871,7 +1328,9 @@ describe('executeCodexStepViaAppServer', () => {
   test('headless end session interrupts an active default single-turn', async () => {
     const harness = await createHarness({ loggerAdapterKind: 'headless' });
 
-    harness.connection.turnStart.mockImplementationOnce(async () => ({ turnId: 'turn-single' }));
+    harness.connection.turnStart.mockImplementationOnce(async () => ({
+      turnId: 'turn-single',
+    }));
 
     const result = harness.executeCodexStepViaAppServer('generate the plan', '/repo', {});
 
@@ -895,6 +1354,155 @@ describe('executeCodexStepViaAppServer', () => {
       expect.any(Function)
     );
     expect(harness.loggerAdapter?.setForceEndSessionHandler).toHaveBeenLastCalledWith(undefined);
+  });
+
+  test('acknowledges root steering only while the provider accepts the turn', async () => {
+    const harness = await createHarness();
+    let boundAdapter: TestAdapter | undefined;
+    const rootInput = {
+      bind: (adapter: TestAdapter): void => {
+        boundAdapter = adapter;
+      },
+      unbind: (adapter: TestAdapter): void => {
+        if (boundAdapter === adapter) boundAdapter = undefined;
+      },
+    };
+
+    const execution = harness.executeCodexStepViaAppServer(
+      'initial prompt',
+      '/repo',
+      {},
+      {
+        appServerMode: 'single-turn-with-steering',
+        orchestratorInputAdapter: rootInput,
+      }
+    );
+
+    await waitFor(() => boundAdapter?.activity === 'active');
+    const activeAdapter = boundAdapter;
+    expect(activeAdapter).toBeDefined();
+    await expect(
+      activeAdapter!.deliver(rootInputMessage('accepted', 'accepted while active'))
+    ).resolves.toBe('steered');
+    expect(harness.connection.turnSteer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: [{ type: 'text', text: 'Agent message from orchestrator:\naccepted while active' }],
+        expectedTurnId: 'turn-1',
+      })
+    );
+
+    harness.connectionHandlers.onNotification?.('turn/completed', {
+      turn: { id: 'turn-1', status: 'completed' },
+    });
+    await waitFor(() => activeAdapter!.activity === 'temporarily-unavailable');
+    expect(activeAdapter!.deliver(rootInputMessage('late', 'queue after result close'))).toBe(
+      'temporarily-unavailable'
+    );
+
+    await expect(execution).resolves.toBe('final agent message');
+
+    const nextHarness = await createHarness();
+    const nextExecution = nextHarness.executeCodexStepViaAppServer(
+      'next orchestrator turn',
+      '/repo',
+      {},
+      {
+        appServerMode: 'single-turn-with-steering',
+        orchestratorInputAdapter: rootInput,
+      }
+    );
+    await waitFor(() => boundAdapter?.activity === 'active');
+    await expect(
+      boundAdapter!.deliver(rootInputMessage('late', 'queue after result close'))
+    ).resolves.toBe('steered');
+    expect(nextHarness.connection.turnSteer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: [
+          { type: 'text', text: 'Agent message from orchestrator:\nqueue after result close' },
+        ],
+      })
+    );
+    nextHarness.connectionHandlers.onNotification?.('turn/completed', {
+      turn: { id: 'turn-1', status: 'completed' },
+    });
+    await expect(nextExecution).resolves.toBe('final agent message');
+  });
+
+  test('keeps the connection open for a continue retry after an unanswered root steer', async () => {
+    const harness = await createHarness();
+    let boundAdapter: TestAdapter | undefined;
+    const rootInput = {
+      bind: (adapter: TestAdapter): void => {
+        boundAdapter = adapter;
+      },
+      unbind: (adapter: TestAdapter): void => {
+        if (boundAdapter === adapter) boundAdapter = undefined;
+      },
+    };
+    harness.connection.turnSteer.mockImplementationOnce(() => new Promise(() => {}));
+    const execution = harness.executeCodexStepViaAppServer(
+      'initial prompt',
+      '/repo',
+      {},
+      {
+        appServerMode: 'single-turn-with-steering',
+        orchestratorInputAdapter: rootInput,
+      }
+    );
+
+    await waitFor(() => boundAdapter?.activity === 'active');
+    void boundAdapter?.deliver(rootInputMessage('unanswered', 'steer before retry'));
+    await waitFor(() => harness.connection.turnSteer.mock.calls.length === 1);
+    harness.connectionHandlers.onNotification?.('turn/completed', {
+      turn: { id: 'turn-1', status: 'failed' },
+    });
+
+    await waitFor(() => harness.connection.turnStart.mock.calls.length === 2);
+    expect(harness.connection.close).not.toHaveBeenCalled();
+    harness.connectionHandlers.onNotification?.('turn/completed', {
+      turn: { id: 'turn-2', status: 'completed' },
+    });
+
+    await expect(execution).resolves.toBe('final agent message');
+    expect(harness.connection.turnStart).toHaveBeenCalledTimes(2);
+    expect(harness.connection.turnStart.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({ input: [{ type: 'text', text: 'continue' }] })
+    );
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not hang teardown when a root turn/steer request never answers', async () => {
+    const harness = await createHarness();
+    harness.connection.turnSteer.mockImplementationOnce(() => new Promise(() => {}));
+    let boundAdapter: TestAdapter | undefined;
+    const rootInput = {
+      bind: (adapter: TestAdapter): void => {
+        boundAdapter = adapter;
+      },
+      unbind: (adapter: TestAdapter): void => {
+        if (boundAdapter === adapter) boundAdapter = undefined;
+      },
+    };
+
+    const execution = harness.executeCodexStepViaAppServer(
+      'initial prompt',
+      '/repo',
+      {},
+      {
+        appServerMode: 'single-turn-with-steering',
+        orchestratorInputAdapter: rootInput,
+      }
+    );
+
+    await waitFor(() => boundAdapter?.activity === 'active');
+    void boundAdapter?.deliver(rootInputMessage('unanswered', 'race the teardown'));
+    await waitFor(() => harness.connection.turnSteer.mock.calls.length === 1);
+    harness.connectionHandlers.onNotification?.('turn/completed', {
+      turn: { id: 'turn-1', status: 'completed' },
+    });
+
+    await expect(execution).resolves.toBe('final agent message');
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
   });
 
   test('does not emit duplicate structured gui input messages in headless chat sessions', async () => {
@@ -934,7 +1542,9 @@ describe('executeCodexStepViaAppServer', () => {
 
   test('registers a logical executor node for a shared app-server connection', async () => {
     const harness = await createHarness({ sharedAppServer: true });
-    harness.connection.turnStart.mockImplementationOnce(async () => ({ turnId: 'turn-1' }));
+    harness.connection.turnStart.mockImplementationOnce(async () => ({
+      turnId: 'turn-1',
+    }));
     harness.connection.turnInterrupt.mockImplementationOnce(async () => {
       harness.connectionHandlers.onNotification?.('turn/completed', {
         turn: { status: 'interrupted' },
@@ -945,7 +1555,9 @@ describe('executeCodexStepViaAppServer', () => {
       await import('../../../common/session_process_control.js');
     const { SessionProcessRegistry, SessionProcessRegistryLifecycleSink, toProcessId } =
       await import('../../../common/session_process.js');
-    const registry = new SessionProcessRegistry({ sessionId: 'shared-session' });
+    const registry = new SessionProcessRegistry({
+      sessionId: 'shared-session',
+    });
     const ownerProcessId = toProcessId('shared-owner');
     if (!ownerProcessId) {
       throw new Error('Invalid test owner process ID');
@@ -989,7 +1601,9 @@ describe('executeCodexStepViaAppServer', () => {
       });
       expect(logicalNode?.pid).toBeUndefined();
       expect(harness.connection.setGracefulEndHandler).toHaveBeenCalledTimes(1);
-      expect(harness.connection.updateMetadata).toHaveBeenCalledWith({ threadId: 'thread-1' });
+      expect(harness.connection.updateMetadata).toHaveBeenCalledWith({
+        threadId: 'thread-1',
+      });
     } finally {
       owner.dispose();
     }
@@ -998,7 +1612,9 @@ describe('executeCodexStepViaAppServer', () => {
   test('headless end session interrupts an active chat turn', async () => {
     const harness = await createHarness({ loggerAdapterKind: 'headless' });
 
-    harness.connection.turnStart.mockImplementationOnce(async () => ({ turnId: 'turn-1' }));
+    harness.connection.turnStart.mockImplementationOnce(async () => ({
+      turnId: 'turn-1',
+    }));
 
     const result = harness.executeCodexStepViaAppServer(
       'generate the plan',
@@ -1070,7 +1686,9 @@ describe('executeCodexStepViaAppServer', () => {
   test('headless force end session also interrupts an active app-server turn', async () => {
     const harness = await createHarness({ loggerAdapterKind: 'headless' });
 
-    harness.connection.turnStart.mockImplementationOnce(async () => ({ turnId: 'turn-force' }));
+    harness.connection.turnStart.mockImplementationOnce(async () => ({
+      turnId: 'turn-force',
+    }));
 
     const result = harness.executeCodexStepViaAppServer(
       'generate the plan',
@@ -1113,7 +1731,9 @@ describe('executeCodexStepViaAppServer', () => {
       });
 
       const monitorStop = vi.fn();
-      harness.startSubprocessMonitorMock.mockReturnValueOnce({ stop: monitorStop });
+      harness.startSubprocessMonitorMock.mockReturnValueOnce({
+        stop: monitorStop,
+      });
 
       await harness.executeCodexStepViaAppServer('do work', '/repo', {
         subprocessMonitor: {

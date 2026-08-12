@@ -2,6 +2,19 @@
 
 This tutorial guides you through implementing a Model Context Protocol (MCP) permissions server for the Claude Code SDK using the FastMCP framework in TypeScript, configured to use stdio transport for direct communication with Claude Code. The permissions MCP will handle tool permission prompts, allowing or denying tool invocations based on user confirmation via Unix sockets.
 
+> **Note:** In this repository, the permission server is now one capability of the shared `tim` MCP bridge, which also carries role-scoped agent-management tools. The bridge has four installation states:
+>
+> | State           | Registered tools                       | When                                            |
+> | --------------- | -------------------------------------- | ----------------------------------------------- |
+> | Not installed   | none                                   | no capability needed                            |
+> | Permission-only | `approval_prompt`                      | interactive approval, no agent tools            |
+> | Tools-only      | role-scoped agent tools                | collaborative session, noninteractive/allow-all |
+> | Combined        | `approval_prompt` + role-scoped agents | collaborative session with interactive approval |
+>
+> The MCP config uses the reserved `mcpServers.tim` key. If a user MCP config already defines a `tim` server, setup fails with a collision error. User MCP servers are merged verbatim; the user's config file is never modified. One shared root `ClaudePermissionPromptCoordinator` serializes interactive prompts across concurrent agents, labeling each prompt with the requesting agent name. The coordinator is disposed **after** the `AgentManager` shuts down, so permission prompts for in-flight stop sequences can still complete.
+>
+> For the full bridge architecture, four-state table, role-scoped tool sets (orchestrator: `StartTimAgent`/`ListTimAgents`/`SendTimAgentMessage`/`StopTimAgent`; subagent: `ListTimAgents`/`SendTimAgentMessage`/`FinishTimAgent`), wire protocol, config merge, allowed-tool expansion, and cleanup, read [../claude-mcp-bridge.md](../claude-mcp-bridge.md). This tutorial remains the background explanation of the approval protocol itself.
+
 ## Prerequisites
 
 - Node.js and npm installed
@@ -203,7 +216,7 @@ Create a `mcp-config.json` file to define the MCP server for stdio:
 ```json
 {
   "mcpServers": {
-    "permissions": {
+    "tim": {
       "type": "stdio",
       "command": ["node", "dist/permissions-server.js", "/path/to/unix/socket"]
     }
@@ -242,7 +255,7 @@ Run Claude Code with the permissions MCP, specifying the `approval_prompt` tool:
 ```bash
 claude -p "Test tool invocation with allow in input" \
   --mcp-config mcp-config.json \
-  --permission-prompt-tool mcp__permissions__approval_prompt \
+  --permission-prompt-tool mcp__tim__approval_prompt \
   --allowedTools "mcp__test__sample_tool"
 ```
 
@@ -261,7 +274,7 @@ To demonstrate with a filesystem MCP server, ensure your `mcp-config.json` inclu
 ```json
 {
   "mcpServers": {
-    "permissions": {
+    "tim": {
       "type": "stdio",
       "command": ["node", "dist/permissions-server.js", "/path/to/unix/socket"]
     }
@@ -274,7 +287,7 @@ Run Claude Code to use a filesystem tool with permission checks:
 ```bash
 claude -p "Read file with allow in input" \
   --mcp-config mcp-config.json \
-  --permission-prompt-tool mcp__permissions__approval_prompt \
+  --permission-prompt-tool mcp__tim__approval_prompt \
   --allowedTools "mcp__filesystem__read_file"
 ```
 
@@ -514,7 +527,7 @@ socket.on('data', (data) => {
 
 ### Testing the MCP Server
 
-The `permissions_mcp.ts` MCP server side is hard to unit test directly because it requires a full FastMCP setup. The most practical coverage comes from testing through the Unix socket protocol on the `permissions_mcp_setup.ts` side — mock the prompt functions, send messages through the socket, and verify the response messages. This validates the full request/response flow without needing to stand up the MCP transport.
+The `tim_mcp.ts` MCP server side is hard to unit test directly because it requires a full FastMCP setup. The most practical coverage comes from testing through the Unix socket protocol on the `permissions_mcp_setup.ts` side — mock the prompt functions, send messages through the socket, and verify the response messages. This validates the full request/response flow without needing to stand up the MCP transport.
 
 ## Conclusion
 

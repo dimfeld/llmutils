@@ -19,6 +19,8 @@ export interface TimWorkspaceCommandEnvironmentOptions {
 export interface BuildWorkspaceCommandEnvOptions {
   inheritedEnv?: Record<string, string | undefined>;
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+  /** Apply trusted process-specific values after every other environment layer. */
+  transformEnvironment?: (env: Record<string, string>) => Record<string, string>;
 }
 
 export async function loadEnv() {
@@ -97,7 +99,7 @@ export async function buildWorkspaceCommandEnv(
     } as Record<string, string>;
     env.PATH = filterBunNodeFromPath(env.PATH) ?? env.PATH;
     env.PATH = prependToPath(env.PATH, resolveTimBinaryDirectory(env));
-    return env;
+    return options?.transformEnvironment?.(env) ?? env;
   }
 
   const renderedProjectEnv = renderProjectTimEnvironment(options.timEnvironment);
@@ -111,7 +113,7 @@ export async function buildWorkspaceCommandEnv(
   } as Record<string, string>;
   env.PATH = filterBunNodeFromPath(env.PATH) ?? env.PATH;
   env.PATH = prependToPath(env.PATH, resolveTimBinaryDirectory(env));
-  return env;
+  return options.transformEnvironment?.(env) ?? env;
 }
 
 function renderProjectTimEnvironment(options: TimWorkspaceCommandEnvironmentOptions): {

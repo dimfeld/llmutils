@@ -356,6 +356,17 @@ describe('subagent command - prompt construction and executor delegation', () =>
     expect(stdoutWriteCalls.join('')).toContain('Codex execution complete.');
   });
 
+  test('prints exactly one final message and logs tunnel byte count after it', async () => {
+    mocks.isTunnelActive.mockReturnValue(true);
+
+    await handleSubagentCommand('implementer', 42, { executor: 'codex-cli' }, {});
+
+    expect(stdoutWriteCalls).toEqual(['Codex execution complete.']);
+    expect(mocks.log).toHaveBeenCalledWith(
+      `Subagent produced ${'Codex execution complete.'.length} bytes of output`
+    );
+  });
+
   test('writes final message to --output-file when provided', async () => {
     const outputFilePath = path.join(tempDir, 'subagent-output', 'implementer.txt');
 
@@ -369,6 +380,23 @@ describe('subagent command - prompt construction and executor delegation', () =>
     const fileOutput = await fs.readFile(outputFilePath, 'utf8');
     expect(fileOutput).toBe('Codex execution complete.');
     expect(stdoutWriteCalls.join('')).toContain('Codex execution complete.');
+  });
+
+  test('does not write output or stdout when the provider rejects', async () => {
+    const outputFilePath = path.join(tempDir, 'subagent-output', 'failed.txt');
+    mocks.executeCodexStep.mockRejectedValueOnce(new Error('Codex execution failed'));
+
+    await expect(
+      handleSubagentCommand(
+        'implementer',
+        42,
+        { executor: 'codex-cli', outputFile: outputFilePath },
+        {}
+      )
+    ).rejects.toThrow('Codex execution failed');
+
+    expect(stdoutWriteCalls).toEqual([]);
+    await expect(fs.access(outputFilePath)).rejects.toThrow();
   });
 
   test('includes all incomplete tasks in the context description', async () => {

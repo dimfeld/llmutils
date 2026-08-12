@@ -79,3 +79,5 @@ vite.config.ts.timestamp-*
 
 # vitest-browser-svelte screenshot artifacts (regenerated on failing runs)
 __screenshots__/
+
+current_progress.md

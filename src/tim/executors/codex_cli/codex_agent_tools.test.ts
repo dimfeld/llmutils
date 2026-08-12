@@ -1,0 +1,581 @@
+import { describe, expect, test, vi } from 'vitest';
+import * as z from 'zod/v4';
+import { warn } from '../../../logging.js';
+
+import {
+  AgentManagerError,
+  type AgentIdentity,
+} from '../../agent_messaging/agent_manager_types.js';
+import {
+  AGENT_ARGUMENT_SCHEMAS,
+  AGENT_TOOL_DESCRIPTIONS,
+} from '../../agent_messaging/contracts.js';
+import {
+  CODEX_ORCHESTRATOR_TOOL_NAMES,
+  CODEX_SUBAGENT_TOOL_NAMES,
+  CODEX_AGENT_ARGUMENT_SCHEMAS,
+  createCodexAgentToolProvider,
+  getCodexAgentToolNames,
+  validateCodexAgentToolProvider,
+  type CodexAgentToolContext,
+  type CodexAgentToolName,
+} from './codex_agent_tools.js';
+
+vi.mock('../../../logging.js', () => ({ warn: vi.fn() }));
+
+function identity(role: AgentIdentity['role']): AgentIdentity {
+  return role === 'orchestrator'
+    ? {
+        id: 'root-id' as never,
+        name: 'orchestrator' as never,
+        role: 'orchestrator',
+        executor: 'codex-cli',
+      }
+    : {
+        id: 'worker-id' as never,
+        name: 'worker-a' as never,
+        role: 'subagent',
+        type: 'tester',
+        executor: 'codex-cli',
+      };
+}
+
+function createContext(role: AgentIdentity['role']): {
+  readonly context: CodexAgentToolContext;
+  readonly calls: Record<string, ReturnType<typeof vi.fn>>;
+} {
+  const calls = {
+    startAgent: vi.fn(async () => ({
+      name: 'worker-b',
+      id: 'worker-b-id',
+      type: 'tester',
+      executor: 'codex-cli',
+      state: 'starting',
+    })),
+    listAgents: vi.fn(async () => ({ agents: [] })),
+    sendAgentMessage: vi.fn(async () => ({
+      name: 'worker-a',
+      messageId: 'message-id',
+      delivery: 'steered',
+    })),
+    stopAgent: vi.fn(async () => ({ name: 'worker-a', mode: 'forced', state: 'stopping' })),
+    finishAgent: vi.fn(async () => ({ state: 'finishing' })),
+  };
+  return {
+    context: { caller: identity(role), dispatcher: calls },
+    calls,
+  };
+}
+
+function call(tool: CodexAgentToolName, args: unknown): Record<string, unknown> {
+  return {
+    threadId: 'thread-1',
+    turnId: 'turn-1',
+    callId: `call-${tool}`,
+    tool,
+    arguments: args,
+  };
+}
+
+function deeplyNestedObject(depth: number): Record<string, unknown> {
+  let value: unknown = { leaf: 'done' };
+  for (let index = 0; index < depth; index += 1) {
+    value = { next: value };
+  }
+  return value as Record<string, unknown>;
+}
+
+const validArguments: Record<CodexAgentToolName, unknown> = {
+  StartTimAgent: {
+    type: 'tester',
+    executor: 'codex-cli',
+    initialMessage: 'Run the tests.',
+  },
+  ListTimAgents: {},
+  SendTimAgentMessage: { name: 'orchestrator', message: 'The tests are ready.' },
+  StopTimAgent: { name: 'worker-a' },
+  FinishTimAgent: { message: 'Done.' },
+};
+
+describe('Codex role-bound agent tool provider', () => {
+  test.each([
+    ['orchestrator', CODEX_ORCHESTRATOR_TOOL_NAMES, ['FinishTimAgent']],
+    ['subagent', CODEX_SUBAGENT_TOOL_NAMES, ['StartTimAgent', 'StopTimAgent']],
+  ] as const)('advertises the exact %s role tool set', (role, expected, forbidden) => {
+    const { context } = createContext(role);
+    const provider = createCodexAgentToolProvider(context);
+    expect(provider.definitions.map((definition) => definition.name)).toEqual(expected);
+    expect(getCodexAgentToolNames(role)).toEqual(expected);
+    expect(provider.definitions.every((definition) => definition.type === 'function')).toBe(true);
+    expect(provider.definitions.map((definition) => definition.name)).not.toEqual(
+      expect.arrayContaining(forbidden)
+    );
+    expect(provider.definitions[0]?.inputSchema).toMatchObject({ type: 'object' });
+    for (const definition of provider.definitions) {
+      expect(definition.inputSchema.additionalProperties).toBe(false);
+    }
+    expect(() => validateCodexAgentToolProvider(provider)).not.toThrow();
+
+    for (const definition of provider.definitions) {
+      const schema = CODEX_AGENT_ARGUMENT_SCHEMAS[definition.name];
+      expect(definition.description).toBe(AGENT_TOOL_DESCRIPTIONS[definition.name]);
+      expect(definition.inputSchema).toEqual(
+        z.toJSONSchema(schema, { target: 'draft-7', io: 'input' })
+      );
+      expect(Object.keys(definition.inputSchema.properties ?? {})).toEqual(
+        Object.keys(AGENT_ARGUMENT_SCHEMAS[definition.name].shape)
+      );
+    }
+  });
+
+  test.each([
+    ['orchestrator', CODEX_ORCHESTRATOR_TOOL_NAMES],
+    ['subagent', CODEX_SUBAGENT_TOOL_NAMES],
+  ] as const)('dispatches each authorized %s tool with trusted identity', async (role, allowed) => {
+    const { context, calls } = createContext(role);
+    const provider = createCodexAgentToolProvider(context);
+    for (const toolName of allowed) {
+      const result = await provider.handler(call(toolName, validArguments[toolName]));
+      expect(result.success).toBe(true);
+      expect(result.contentItems).toHaveLength(1);
+      expect(result.contentItems[0]?.type).toBe('inputText');
+    }
+
+    const caller = { id: context.caller.id, role: context.caller.role };
+    expect(calls.listAgents).toHaveBeenCalledWith(caller);
+    if (role === 'orchestrator') {
+      expect(calls.startAgent).toHaveBeenCalledWith(caller, validArguments.StartTimAgent);
+      expect(calls.sendAgentMessage).toHaveBeenCalledWith(
+        caller,
+        validArguments.SendTimAgentMessage
+      );
+      expect(calls.stopAgent).toHaveBeenCalledWith(caller, validArguments.StopTimAgent);
+    } else {
+      expect(calls.sendAgentMessage).toHaveBeenCalledWith(
+        caller,
+        validArguments.SendTimAgentMessage
+      );
+      expect(calls.finishAgent).toHaveBeenCalledWith(caller, validArguments.FinishTimAgent);
+    }
+  });
+
+  test.each([
+    ['orchestrator', 'FinishTimAgent', { message: 'not allowed' }],
+    ['subagent', 'StartTimAgent', validArguments.StartTimAgent],
+    ['subagent', 'StopTimAgent', validArguments.StopTimAgent],
+  ] as const)('rejects fabricated %s call to %s before dispatch', async (role, toolName, args) => {
+    const { context, calls } = createContext(role);
+    const provider = createCodexAgentToolProvider(context);
+    const result = await provider.handler(call(toolName, args));
+    expect(result).toEqual({
+      contentItems: [
+        {
+          type: 'inputText',
+          text: `Agent tool ${toolName} is not allowed for ${role} callers.`,
+        },
+      ],
+      success: false,
+    });
+    expect(Object.values(calls).every((mock) => mock.mock.calls.length === 0)).toBe(true);
+  });
+
+  test('rejects unknown tools, namespaces, malformed arguments, and spoofing fields', async () => {
+    const { context, calls } = createContext('subagent');
+    const provider = createCodexAgentToolProvider(context);
+
+    const cases = [
+      [
+        { ...call('ListTimAgents', {}), tool: 'UnknownTool' },
+        undefined,
+        'Unknown agent tool UnknownTool.',
+      ],
+      [
+        { ...call('ListTimAgents', {}), namespace: 'tim' },
+        undefined,
+        'does not accept namespace tim',
+      ],
+      [
+        call('SendTimAgentMessage', { name: 'orchestrator', message: 'hello', source: 'forged' }),
+        undefined,
+        'source is not accepted',
+      ],
+      [call('FinishTimAgent', { target: 'worker-a' }), undefined, 'does not accept a target'],
+      [
+        call('SendTimAgentMessage', { name: 'orchestrator', message: 'hello', callerId: 'forged' }),
+        undefined,
+        'invalid',
+      ],
+    ] as const;
+
+    for (const [params, _unused, expectedText] of cases) {
+      const result = await provider.handler(params);
+      expect(result.success).toBe(false);
+      expect(result.contentItems[0]?.text).toContain(expectedText);
+    }
+    expect(calls.sendAgentMessage).not.toHaveBeenCalled();
+    expect(calls.finishAgent).not.toHaveBeenCalled();
+  });
+
+  test('derives unexpected-key rejection from the canonical AGENT_ARGUMENT_SCHEMAS shape', async () => {
+    // Task 8 regression: allowed argument keys must come from AGENT_ARGUMENT_SCHEMAS[toolName].shape
+    // at call time, not a separately maintained key list that could drift out of sync with the
+    // schema. This proves both directions: a key absent from the schema is flagged as unexpected,
+    // and every key present in the schema is accepted as a known field (even when its value is the
+    // wrong type, the failure names it "invalid", never "not accepted").
+    const roleForTool: Record<CodexAgentToolName, 'orchestrator' | 'subagent'> = {
+      StartTimAgent: 'orchestrator',
+      ListTimAgents: 'orchestrator',
+      SendTimAgentMessage: 'orchestrator',
+      StopTimAgent: 'orchestrator',
+      FinishTimAgent: 'subagent',
+    };
+
+    for (const toolName of Object.keys(AGENT_ARGUMENT_SCHEMAS) as CodexAgentToolName[]) {
+      const { context } = createContext(roleForTool[toolName]);
+      const provider = createCodexAgentToolProvider(context);
+      const schemaKeys = Object.keys(AGENT_ARGUMENT_SCHEMAS[toolName].shape);
+
+      const bogusResult = await provider.handler(
+        call(toolName, { ...validArguments[toolName], zzNotARealArgument: true })
+      );
+      expect(bogusResult.success).toBe(false);
+      expect(bogusResult.contentItems[0]?.text).toBe(
+        `Arguments for ${toolName} are invalid: zzNotARealArgument is not accepted.`
+      );
+
+      for (const key of schemaKeys) {
+        const probeResult = await provider.handler(
+          call(toolName, { ...validArguments[toolName], [key]: 42 })
+        );
+        expect(probeResult.success).toBe(false);
+        expect(probeResult.contentItems[0]?.text).not.toContain('is not accepted');
+      }
+    }
+  });
+
+  test('rejects every malformed envelope before dispatch', async () => {
+    const { context, calls } = createContext('orchestrator');
+    const provider = createCodexAgentToolProvider(context);
+    const malformedCalls: unknown[] = [
+      null,
+      {},
+      { ...call('ListTimAgents', {}), threadId: '' },
+      { ...call('ListTimAgents', {}), turnId: '' },
+      { ...call('ListTimAgents', {}), callId: '' },
+      { ...call('ListTimAgents', {}), tool: '' },
+      { ...call('ListTimAgents', {}), namespace: 1 },
+      { ...call('ListTimAgents', {}), arguments: undefined },
+      { ...call('ListTimAgents', {}), arguments: () => undefined },
+      { ...call('ListTimAgents', {}), arguments: { self: undefined } },
+    ];
+
+    for (const params of malformedCalls) {
+      const result = await provider.handler(params);
+      expect(result.success).toBe(false);
+      expect(result.contentItems).toHaveLength(1);
+      expect(result.contentItems[0]?.type).toBe('inputText');
+      expect(result.contentItems[0]?.text).not.toContain('ZodError');
+    }
+    expect(Object.values(calls).every((mock) => mock.mock.calls.length === 0)).toBe(true);
+  });
+
+  test('returns a model-visible failure for deeply nested arguments without dispatching', async () => {
+    const { context, calls } = createContext('orchestrator');
+    const provider = createCodexAgentToolProvider(context);
+    const result = await provider.handler(call('ListTimAgents', deeplyNestedObject(10_000)));
+
+    expect(result).toEqual({
+      contentItems: [
+        {
+          type: 'inputText',
+          text: 'Arguments for ListTimAgents are invalid: arguments must be JSON.',
+        },
+      ],
+      success: false,
+    });
+    expect(Object.values(calls).every((mock) => mock.mock.calls.length === 0)).toBe(true);
+  });
+
+  test('accepts the UTF-8 message limit and rejects the next byte', async () => {
+    const { context, calls } = createContext('subagent');
+    const provider = createCodexAgentToolProvider(context);
+    const atLimit = '🙂'.repeat(16_384);
+    const overLimit = `${atLimit}a`;
+
+    const accepted = await provider.handler(
+      call('SendTimAgentMessage', { name: 'orchestrator', message: atLimit })
+    );
+    expect(accepted.success).toBe(true);
+    expect(calls.sendAgentMessage).toHaveBeenCalledTimes(1);
+
+    const rejected = await provider.handler(
+      call('SendTimAgentMessage', { name: 'orchestrator', message: overLimit })
+    );
+    expect(rejected.success).toBe(false);
+    expect(rejected.contentItems[0]?.text).toBe(
+      'Arguments for SendTimAgentMessage are invalid: message is invalid.'
+    );
+    expect(calls.sendAgentMessage).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    [
+      'invalid name',
+      'SendTimAgentMessage' as const,
+      { name: 'Invalid Name', message: 'hello' },
+      'name',
+    ],
+    [
+      'wrong enum',
+      'StartTimAgent' as const,
+      { type: 'unknown', executor: 'codex-cli', initialMessage: 'hello' },
+      'type',
+    ],
+    ['non-boolean force', 'StopTimAgent' as const, { name: 'worker-a', force: 'yes' }, 'force'],
+  ])('names the first invalid field for %s', async (_label, toolName, argumentsValue, field) => {
+    const { context, calls } = createContext('orchestrator');
+    const provider = createCodexAgentToolProvider(context);
+
+    const result = await provider.handler(call(toolName, argumentsValue));
+
+    expect(result).toEqual({
+      contentItems: [
+        {
+          type: 'inputText',
+          text: `Arguments for ${toolName} are invalid: ${field} is invalid.`,
+        },
+      ],
+      success: false,
+    });
+    expect(Object.values(calls).every((mock) => mock.mock.calls.length === 0)).toBe(true);
+  });
+
+  test('accepts an empty namespace as top-level compatibility syntax', async () => {
+    const { context } = createContext('subagent');
+    const provider = createCodexAgentToolProvider(context);
+    const result = await provider.handler({ ...call('ListTimAgents', {}), namespace: '' });
+    expect(result.success).toBe(true);
+  });
+
+  test('returns safe manager failures and a bounded generic unexpected failure', async () => {
+    const { context, calls } = createContext('orchestrator');
+    calls.sendAgentMessage.mockRejectedValueOnce(
+      new AgentManagerError('unknown_target', 'Unknown or inactive target agent: worker-a')
+    );
+    calls.stopAgent.mockRejectedValueOnce(
+      new Error('secret stack /private/session/socket-path and environment-value')
+    );
+    calls.startAgent.mockRejectedValueOnce(
+      new AgentManagerError('launch_failed', 'provider socket /private/session/socket-path')
+    );
+    const provider = createCodexAgentToolProvider(context);
+
+    const expectedFailure = await provider.handler(
+      call('SendTimAgentMessage', validArguments.SendTimAgentMessage)
+    );
+    expect(expectedFailure).toMatchObject({ success: false });
+    expect(expectedFailure.contentItems[0]?.text).toContain('Unknown or inactive target agent');
+    expect(expectedFailure.contentItems[0]?.text).not.toContain('stack');
+
+    calls.sendAgentMessage.mockRejectedValueOnce(
+      new AgentManagerError(
+        'unknown_target',
+        'secret stack /private/session/socket-path trusted-caller-id'
+      )
+    );
+    const leakedManagerFailure = await provider.handler(
+      call('SendTimAgentMessage', validArguments.SendTimAgentMessage)
+    );
+    expect(leakedManagerFailure.success).toBe(false);
+    expect(leakedManagerFailure.contentItems[0]?.text).not.toContain('secret stack');
+    expect(leakedManagerFailure.contentItems[0]?.text).not.toContain('/private/session');
+    expect(leakedManagerFailure.contentItems[0]?.text).not.toContain('trusted-caller-id');
+
+    const unexpectedFailure = await provider.handler(
+      call('StopTimAgent', validArguments.StopTimAgent)
+    );
+    expect(unexpectedFailure).toEqual({
+      contentItems: [
+        {
+          type: 'inputText',
+          text: 'Agent tool StopTimAgent failed unexpectedly. Try the request again.',
+        },
+      ],
+      success: false,
+    });
+    expect(warn).toHaveBeenCalledWith(
+      'Unexpected Codex agent tool failure in StopTimAgent:',
+      expect.any(Error)
+    );
+    expect(unexpectedFailure.contentItems[0]?.text).not.toContain('/private/session');
+
+    const launchFailure = await provider.handler(
+      call('StartTimAgent', validArguments.StartTimAgent)
+    );
+    expect(launchFailure.contentItems[0]).toEqual({
+      type: 'inputText',
+      text: 'Agent tool StartTimAgent could not complete the request.',
+    });
+  });
+
+  test.each([
+    'invalid_options',
+    'invalid_request',
+    'manager_closed',
+    'not_authorized',
+    'invalid_name',
+    'reserved_name',
+    'name_in_use',
+    'name_generation_exhausted',
+    'identity_generation_exhausted',
+    'agent_limit_reached',
+    'launch_failed',
+    'unknown_sender',
+    'unknown_target',
+    'target_not_accepting_messages',
+    'transport_error',
+    'root_registration_failed',
+    'unknown_agent',
+    'finish_not_available',
+    'force_failed',
+  ] as const)('keeps %s manager failures model-safe', async (code) => {
+    const { context, calls } = createContext('subagent');
+    calls.listAgents.mockRejectedValueOnce(
+      new AgentManagerError(
+        code,
+        'SECRET /private/session/socket-path stack trace trusted-caller-id'
+      )
+    );
+    const provider = createCodexAgentToolProvider(context);
+    const result = await provider.handler(call('ListTimAgents', {}));
+    const text = result.contentItems[0]?.type === 'inputText' ? result.contentItems[0].text : '';
+    expect(result.success).toBe(false);
+    expect(text).toContain('Agent tool ListTimAgents');
+    expect(text).not.toContain('SECRET');
+    expect(text).not.toContain('/private/session');
+    expect(text).not.toContain('stack trace');
+    expect(text).not.toContain('trusted-caller-id');
+    expect(text.length).toBeLessThanOrEqual(2_048);
+  });
+
+  test('keeps an unknown runtime manager failure model-safe', async () => {
+    const { context, calls } = createContext('subagent');
+    calls.listAgents.mockRejectedValueOnce(
+      new AgentManagerError(
+        'future_manager_code' as AgentManagerError['code'],
+        'SECRET /private/session/socket-path stack trace trusted-caller-id'
+      )
+    );
+    const provider = createCodexAgentToolProvider(context);
+
+    const result = await provider.handler(call('ListTimAgents', {}));
+    expect(result).toEqual({
+      contentItems: [
+        {
+          type: 'inputText',
+          text: 'Agent tool ListTimAgents could not complete the request.',
+        },
+      ],
+      success: false,
+    });
+    expect(result.contentItems[0]?.type).toBe('inputText');
+    expect(result.contentItems[0]?.text).not.toContain('SECRET');
+    expect(result.contentItems[0]?.text).not.toContain('/private/session');
+    expect(result.contentItems[0]?.text).not.toContain('stack trace');
+    expect(result.contentItems[0]?.text).not.toContain('trusted-caller-id');
+  });
+
+  test('serializes a provider result safely when it contains cycles and unsupported values', async () => {
+    const { context, calls } = createContext('subagent');
+    const circular: Record<string, unknown> = {
+      callback: () => undefined,
+      missing: undefined,
+      bigint: BigInt(7),
+    };
+    circular.self = circular;
+    calls.listAgents.mockResolvedValueOnce(circular as never);
+    const provider = createCodexAgentToolProvider(context);
+
+    const result = await provider.handler(call('ListTimAgents', {}));
+    expect(result.success).toBe(true);
+    expect(result.contentItems[0]).toEqual({
+      type: 'inputText',
+      text: '{"bigint":"7","callback":null,"missing":null,"self":"[Circular]"}',
+    });
+  });
+
+  test('rejects tampered role definitions, including deferred or extra fields', () => {
+    const { context } = createContext('orchestrator');
+    const provider = createCodexAgentToolProvider(context);
+    const listDefinition = provider.definitions.find(
+      (definition) => definition.name === 'ListTimAgents'
+    );
+    expect(listDefinition).toBeDefined();
+
+    expect(() =>
+      validateCodexAgentToolProvider({
+        ...provider,
+        definitions: provider.definitions.map((definition) =>
+          definition.name === 'ListTimAgents' ? { ...definition, deferLoading: true } : definition
+        ),
+      })
+    ).toThrow('do not match');
+    expect(() =>
+      validateCodexAgentToolProvider({
+        ...provider,
+        definitions: provider.definitions.map((definition) =>
+          definition.name === 'ListTimAgents'
+            ? { ...definition, futureField: 'not part of the built-in definition' }
+            : definition
+        ),
+      })
+    ).toThrow('do not match');
+  });
+
+  test('validates the concrete trusted caller in the agent adapter', () => {
+    const { context } = createContext('orchestrator');
+    const provider = createCodexAgentToolProvider(context);
+
+    expect(() =>
+      validateCodexAgentToolProvider({
+        ...provider,
+        context: {
+          ...provider.context,
+          caller: { ...provider.context.caller, name: 'worker' as never },
+        },
+      })
+    ).toThrow('orchestrator caller identity');
+
+    expect(() =>
+      validateCodexAgentToolProvider({
+        ...provider,
+        context: {
+          ...provider.context,
+          caller: { ...provider.context.caller, executor: 'unknown' as never },
+        },
+      })
+    ).toThrow('caller executor');
+  });
+
+  test('uses canonical strict schemas and rejects model identity fields', async () => {
+    const { context, calls } = createContext('orchestrator');
+    const provider = createCodexAgentToolProvider(context);
+    const start = provider.definitions.find((definition) => definition.name === 'StartTimAgent');
+    expect(start?.inputSchema).toMatchObject({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        type: { type: 'string' },
+        executor: { type: 'string' },
+        initialMessage: { type: 'string' },
+      },
+    });
+
+    const result = await provider.handler(
+      call('StartTimAgent', { ...validArguments.StartTimAgent, caller: 'forged' })
+    );
+    expect(result.success).toBe(false);
+    expect(result.contentItems[0]?.text).toContain('caller is trusted');
+    expect(calls.startAgent).not.toHaveBeenCalled();
+  });
+});

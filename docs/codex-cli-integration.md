@@ -17,11 +17,169 @@ itself and may use its native subagent mechanism for help. It invokes
 `tim subagent reviewer ...` only for the final full-plan review after every task
 is complete.
 
-Both executors set `supportsSubagents = true`. Codex has native subagent support,
-but the orchestration prompts still delegate through `tim subagent` so each role
-gets tim-provided plan context, repository instructions, custom subagent
-instructions, model selection, and output routing that the top-level orchestrator
-could not reliably reconstruct on its own.
+Both executors set `supportsSubagents = true`. When `experimental.agentMessaging`
+is absent or `false`, the orchestration prompts delegate through `tim subagent`
+shell commands so each role gets tim-provided plan context, repository
+instructions, custom subagent instructions, model selection, and output routing.
+When the flag is `true` for a new session, the prompts use collaborative agent
+tools (`StartTimAgent`, `ListTimAgents`, `SendTimAgentMessage`, `StopTimAgent`) instead.
+Subagent launches are persistent and messageable rather than synchronous. See
+[agent-messaging.md](agent-messaging.md) for the full collaborative mode
+reference.
+
+## Codex dynamic tools
+
+The low-level Codex runner (`executeCodexStep()`) does not read
+`experimental.agentMessaging` and does not enable the app-server dynamic-tool
+protocol on its own. A trusted caller must pass one cohesive
+`dynamicToolProvider` to `CodexStepOptions`. The provider contains the trusted
+caller identity, the role-scoped definitions, and the handler. Definitions and a
+handler cannot be supplied as separate options.
+
+The provider is not installed unless the caller supplies it. This keeps formal
+reviews, planning, chat, and bare execution unchanged. When
+`experimental.agentMessaging` is `true` for a new root `tim agent` session,
+`CollaborativeAgentSession` (`src/tim/commands/agent/collaborative_session.ts`)
+builds one `codexDynamicToolProvider` for the session and passes it through
+`ExecutorCommonOptions.codexDynamicToolProvider`. The Codex root orchestrator
+(`orchestrator_mode.ts`) installs it for the root process, and the same session
+launches it for every StartTimAgent-created persistent Codex subagent. When the
+flag is absent or `false`, no `CollaborativeAgentSession` is created and no
+provider reaches `CodexStepOptions`, so ordinary Codex runs keep no agent
+tools.
+
+Relevant code:
+
+- `src/tim/executors/codex_cli/app_server_dynamic_tools.ts` — tolerant wire
+  types, envelope and provider validation, result helpers, and the request
+  composer. It is generic: the provider context is opaque here, and this module
+  does not import the agent manager.
+- `src/tim/executors/codex_cli/codex_agent_tools.ts` — the agent adapter that
+  binds trusted identity, builds the role definitions, authorizes each call, and
+  invokes the shared manager operations.
+- `src/tim/executors/codex_cli/app_server_dynamic_tool_format.ts` —
+  `dynamicToolCall` display formatting, called from `app_server_format.ts`.
+
+Tool names, role allowlists, descriptions, and argument schemas are not defined
+here. They come from `AGENT_TOOL_NAMES`, `getAgentToolNames()`,
+`AGENT_TOOL_DESCRIPTIONS`, and `AGENT_ARGUMENT_SCHEMAS` in
+`src/tim/agent_messaging/contracts.ts`, so Codex and the Claude MCP bridge
+advertise identical tool metadata ([agent-messaging.md](agent-messaging.md)).
+
+### Disabled wire behavior
+
+When no provider is supplied, `initialize.params` contains exactly the existing
+`clientInfo` object. It has no `capabilities` field. The first `thread/start`
+request has no `dynamicTools` field. Tim does not send an empty capabilities
+object, `experimentalApi: false`, or an empty tool list.
+
+Codex app-server selection also stays unchanged. Without a provider, an explicit
+`CODEX_USE_APP_SERVER=false` value still selects the existing `codex exec`
+fallback. With a provider, app-server mode is required. Tim rejects the request
+before reading an output-schema file or allocating tunnel, process, or other
+execution resources; it never falls back to `codex exec` for a dynamic-tool run.
+The app-server-required error is:
+
+> Codex dynamic tools require Codex app-server mode; enable CODEX_USE_APP_SERVER or disable experimental agent tools.
+
+### Negotiation and role tool sets
+
+When a provider is present, Tim sends
+`initialize.params.capabilities.experimentalApi: true`. It sends the provider's
+top-level function definitions in `thread/start.params.dynamicTools`. If output
+schema conversion starts a replacement thread in the same execution, that thread
+receives the same definitions. The app-server wire responses, not a Codex version
+string, decide whether the installed server supports the protocol.
+
+The built-in provider uses the following definitions:
+
+| Trusted caller role | Installed tools                                                         |
+| ------------------- | ----------------------------------------------------------------------- |
+| `orchestrator`      | `StartTimAgent`, `ListTimAgents`, `SendTimAgentMessage`, `StopTimAgent` |
+| `subagent`          | `ListTimAgents`, `SendTimAgentMessage`, `FinishTimAgent`                |
+
+Each definition is a top-level function. Its input schema is generated from the
+same strict Zod schema that validates the call at runtime. The handler keeps an
+independent role allowlist, so hiding a definition is not the authorization
+boundary. Trusted identity and role are bound when the provider is created and
+cannot be supplied in model arguments. `FinishTimAgent` has no target, and
+`SendTimAgentMessage` does not accept a model-supplied source.
+
+If the server rejects the experimental capability or the `dynamicTools` field,
+Tim fails before the first turn with a compatibility error:
+
+> Codex app-server does not support experimental dynamic tools. Update Codex CLI or disable experimental.agentMessaging.
+
+Tim does not retry the unsupported thread without tools. Existing connection and
+resource cleanup still runs.
+
+The compatibility message covers only the two wire points that establish
+support: `initialize` and the first `thread/start`. Process spawn, socket,
+transport, and later replacement-thread failures keep their real errors, so a
+crashed or unreachable app-server is not misreported as an out-of-date Codex
+CLI. The original error is preserved as the `cause` for diagnostics.
+
+### Dynamic call dispatch and results
+
+The app-server sends a dynamic call as an `item/tool/call` server request. Tim
+routes this method to the dynamic-tool handler before the approval handler. This
+priority is required even when `ALLOW_ALL_TOOLS` is enabled. Other server
+requests keep the existing approval behavior. A dynamic call without a provider
+is an unsupported-method JSON-RPC error; it is never treated as an approval.
+
+The request envelope accepts the documented optional or null top-level namespace
+and tolerates future fields. Tim requires non-empty thread, turn, call, and tool
+IDs, JSON arguments, and a top-level Tim tool name. The selected strict agent
+schema then validates the arguments. Validation, role, authorization, and normal
+manager failures return a bounded `inputText` result with `success: false`, so the
+model can correct the call. Successful manager results return JSON text in an
+`inputText` item with `success: true`. Unexpected failures are logged for
+diagnostics and return a generic bounded message without stack traces, paths, or
+trusted identity values. An unknown or future manager error code also returns
+the generic message rather than the raw manager text.
+
+Every value that leaves the handler passes a shared JSON-safety boundary before
+it reaches JSON-RPC encoding or the formatter. The sanitizer keeps `__proto__`
+and similar keys as ordinary data, drops functions and other unsupported
+values, breaks cycles, and bounds nesting depth. It cannot throw, so a hostile
+or deeply nested model result cannot turn into a transport-level failure.
+
+The formatter treats app-server `dynamicToolCall` items as ordinary structured
+tool activity. `item/started` becomes `llm_tool_use` with the tool name, a readable
+argument summary, and JSON-safe input. `item/completed` becomes
+`llm_tool_result` with status, success, readable text content, and JSON-safe
+content items. Namespaces appear only when the server sends a non-empty
+namespace. Image and audio data are retained as structured data but are not
+expanded into the display summary. Unknown status and future content shapes use
+stable fallback text.
+
+Persistent Codex agent turns, idle mailbox delivery, stop/finalization lifetime,
+and other provider lifetime changes are provided by the AgentManager Codex
+launcher described below. When `experimental.agentMessaging` is `true`, the
+collaborative orchestration prompts use `StartTimAgent` with the `executor` field
+instead of `tim subagent` shell commands. The dynamic-tool provider is installed
+for both root orchestrators and StartTimAgent-created persistent subagents.
+Ordinary one-shot Codex execution still has no agent tools and keeps its
+existing lifetime.
+
+## Persistent Codex agent sessions
+
+`AgentManager` uses a separate persistent launch path for Codex subagents. It
+does not change `executeCodexStep()` or the existing single-turn, steering, and
+chat modes. In short:
+
+- Each persistent agent owns one private `codex app-server` process and one
+  Codex thread, and ignores an inherited `TIM_CODEX_APP_SERVER_SOCKET`.
+- The process tree shows `Codex app-server (<agent-name>)` and
+  `Codex thread (<agent-name>)` as sibling nodes.
+- The AgentManager mailbox is the only pending-message queue. Active turns take
+  input through `turn/steer`; an idle thread starts another `turn/start`.
+- A completed turn leaves the process and thread alive and idle. FinishTimAgent,
+  graceful stop, and forced stop close through provider-neutral controls.
+
+Persistent sessions require app-server experimental dynamic-tool support; the
+`codex exec` fallback cannot host one. The full contract, state machine, and
+cleanup order are in [persistent-codex-agent.md](persistent-codex-agent.md).
 
 ## Shared orchestration prompt
 
@@ -35,9 +193,12 @@ It exports three wrappers:
 
 - `wrapWithOrchestration()` — normal mode: implementer → tester → reviewer.
 - `wrapWithOrchestrationSimple()` — simple mode: implementer → reviewer.
-- `wrapWithOrchestrationTdd()` — TDD mode: `tim subagent tdd-tests` before
-  implementation, then the tester/reviewer path, or the reviewer path when simple
-  TDD is enabled.
+- `wrapWithOrchestrationTdd()` — TDD mode: flag off runs
+  `tim subagent tdd-tests` before implementation, then the tester/reviewer
+  path, or the reviewer path when simple TDD is enabled. Flag on starts a
+  `StartTimAgent` `tdd-tests` agent per scope before that scope's implementer,
+  then `implementer`/`tester`/advisory `reviewer` agents; independent scopes
+  can run their red phases concurrently.
 
 Neither executor calls those wrappers directly. Both build one
 `OrchestrationOptions` object — the interface lives in
@@ -57,9 +218,12 @@ command examples. The wrappers support `batchMode`, `planFilePath`,
 executor-selection guidance, `useJj` guidance, progress-section guidance, the
 failure protocol, and batch task selection / marking guidance.
 
-All three wrappers also teach the review-fix scope rule: a fix-round
-implementer / tester / `tdd-tests` run passes `--task-index` for the tasks that
-own the findings, while the first run of a batch passes no `--task-index`. See
+All three wrappers also teach the review-fix scope rule, in the spelling that
+matches the mode. With `experimental.agentMessaging` absent or `false`, a
+fix-round implementer / tester / `tdd-tests` run passes `--task-index` for the
+tasks that own the findings. With the flag `true`, the same scope travels in the
+`StartTimAgent` or `SendTimAgentMessage` assignment instead of CLI flags. In both
+modes the first run of a batch is not a fix round and carries no fix scope. See
 `docs/review-iteration-policy.md`.
 
 > **Gotcha — wording ≠ runtime config.** When "generalizing wording" in this
@@ -84,7 +248,7 @@ own the findings, while the first run of a batch passes no `--task-index`. See
 
 For the orchestration modes, the wrapped prompt is sent to Codex once via
 `executeCodexStep(...)` with `appServerMode: 'single-turn-with-steering'`,
-matching the Codex subagent path in `src/tim/commands/subagent.ts`. The runner
+matching the Codex subagent path in `src/tim/subagents/service.ts`. The runner
 behaves like a regular single-turn call when no interactive input source is
 available.
 
@@ -94,18 +258,42 @@ Claude's `retryFastNoopOrchestratorTurn` continuation workaround.
 
 ### Prompt contents by mode
 
+#### Flag off (disabled, default)
+
 - **Normal** — `tim subagent implementer`, `tim subagent tester`, and review.
 - **Simple** — `tim subagent implementer` and review.
 - **TDD** — `tim subagent tdd-tests` before implementation, then tester/reviewer or
   reviewer depending on simple mode.
 
-For non-batch execution, review still uses `tim subagent reviewer`. For batch
+For non-batch execution, review uses `tim subagent reviewer`. For batch
 execution, selected-task reviews are performed directly by the orchestrator; it
 may start a native review subagent if useful. `tim subagent reviewer` is reserved
 for the ordinary and structural full-plan review sequence after the last tasks
 are finished. When `agents.reviewer.instructions` is configured, the batch
 review prompt references that configured path verbatim and directs the
 orchestrator to read and apply the file.
+
+#### Flag on (collaborative mode)
+
+- **Normal** — `StartTimAgent` for `implementer`, `tester`, and advisory `reviewer`
+  agents. Concurrent same-type agents are allowed for safely separable scopes.
+- **Simple** — `StartTimAgent` for `implementer` and optional advisory `reviewer`.
+  Smaller team, same safety rules.
+- **TDD** — `StartTimAgent` for `tdd-tests` before implementation per scope, then
+  `implementer`, optional `tester`, and advisory `reviewer`. Independent scopes
+  can run parallel red-green pipelines.
+
+Formal review uses `tim review` (not `tim subagent reviewer`) in every
+execution mode, including the standalone `--structural-only` pass. The review
+iteration policy is unchanged. StartTimAgent reviewers are advisory and read-only.
+`SendTimAgentMessage` replaces shell `--input` for follow-up context to persistent
+agents, but the formal review command keeps its own `--input` / `--input-file`
+notes.
+
+Batch review ownership is also unchanged: the orchestrator still performs the
+selected-task batch review itself and owns its result. An advisory StartTimAgent
+reviewer may contribute read-only findings, and the final full-plan sequence
+after the last task still runs through `tim review`.
 
 ### Option pass-through
 

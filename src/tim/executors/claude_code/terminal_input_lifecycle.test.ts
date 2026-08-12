@@ -63,12 +63,13 @@ const { executeWithTerminalInput, setupTerminalInput } =
 function makeStreaming(
   overrides: Partial<{
     stdinEnd: () => Promise<void>;
+    stdinWrite: (content: string) => number | Promise<number>;
     result: Promise<SpawnAndLogOutputResult>;
   }> = {}
 ): StreamingProcess {
   return {
     stdin: {
-      write: vi.fn(() => 0),
+      write: vi.fn(overrides.stdinWrite ?? (() => 0)),
       end: overrides.stdinEnd ?? vi.fn(async () => {}),
     },
     result:
@@ -565,6 +566,90 @@ describe('terminal_input_lifecycle', () => {
     controller.cleanup();
   });
 
+  it('reports intercepted input as unavailable after result-close cleanup', () => {
+    const stdinEndSpy = vi.fn(async () => {});
+    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+    mockSendFollowUpMessage.mockImplementation(vi.fn(() => {}));
+
+    const controller = executeWithTerminalInput({
+      streaming: makeStreaming({ stdinEnd: stdinEndSpy, result: new Promise(() => {}) }),
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: false,
+    });
+
+    controller.onResultMessage(true);
+
+    expect(controller.sendFollowUpForInterceptedResult('late message')).toBe(false);
+    expect(mockSendFollowUpMessage).not.toHaveBeenCalled();
+
+    controller.cleanup();
+  });
+
+  it('waits for intercepted input writes before it reports delivery', async () => {
+    let resolveWrite: ((value: number) => void) | undefined;
+    const controller = executeWithTerminalInput({
+      streaming: makeStreaming({
+        result: new Promise(() => {}),
+        stdinWrite: () =>
+          new Promise<number>((resolve) => {
+            resolveWrite = resolve;
+          }),
+      }),
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: false,
+    });
+
+    const delivery = controller.sendFollowUpForInterceptedResult('accepted later');
+    expect(resolveWrite).toBeDefined();
+    let settled = false;
+    void Promise.resolve(delivery).then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    resolveWrite?.(1);
+    await expect(delivery).resolves.toBe(true);
+    controller.cleanup();
+  });
+
+  it('reports rejected intercepted input writes as unavailable', async () => {
+    const debugLogSpy = vi.fn(() => {});
+    const controller = executeWithTerminalInput({
+      streaming: makeStreaming({
+        result: new Promise(() => {}),
+        stdinWrite: () => Promise.reject(new Error('stdin rejected the write')),
+      }),
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: debugLogSpy,
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: false,
+    });
+
+    await expect(controller.sendFollowUpForInterceptedResult('lost message')).resolves.toBe(false);
+    expect(debugLogSpy).toHaveBeenCalledWith(
+      'Failed to send follow-up input to subprocess:',
+      expect.any(Error)
+    );
+    controller.cleanup();
+  });
+
   it('non-interactive runs close on first result even when keepInteractiveInputOpenOnResult is true', () => {
     vi.useFakeTimers();
     const stdinEndSpy = vi.fn(async () => {});
@@ -682,6 +767,77 @@ describe('terminal_input_lifecycle', () => {
 
     expect(stdinEndSpy).toHaveBeenCalledTimes(0);
     expect(controller.acceptedSuccessfulFinalResult()).toBe(false);
+
+    controller.cleanup();
+  });
+
+  it('uses the explicit persistent policy as the only stdin owner', () => {
+    const stdinEndSpy = vi.fn(async () => {});
+    const pendingResult = new Promise<SpawnAndLogOutputResult>(() => {});
+    const streaming = makeStreaming({ stdinEnd: stdinEndSpy, result: pendingResult });
+
+    const controller = executeWithTerminalInput({
+      streaming,
+      prompt: 'legacy prompt should be used as the fallback only',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude worker',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: false,
+      persistentAgent: {},
+    });
+
+    expect(controller.persistentAgent?.state).toBe('active');
+    expect(streaming.stdin.write).toHaveBeenCalledTimes(1);
+    expect(mockSendInitialPrompt).not.toHaveBeenCalled();
+
+    controller.onResultMessage(true);
+    expect(controller.persistentAgent?.state).toBe('idle');
+    expect(stdinEndSpy).not.toHaveBeenCalled();
+
+    expect(
+      controller.persistentAgent?.deliver({
+        messageId: 'next',
+        source: {} as never,
+        content: 'next turn',
+      })
+    ).toBe('started-idle-turn');
+    expect(controller.persistentAgent?.state).toBe('active');
+
+    controller.cleanup();
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not settle a persistent turn after endSession closes input', () => {
+    const stdinEndSpy = vi.fn(async () => {});
+    const turnComplete = vi.fn();
+    const streaming = makeStreaming({
+      stdinEnd: stdinEndSpy,
+      result: new Promise<SpawnAndLogOutputResult>(() => {}),
+    });
+
+    const controller = executeWithTerminalInput({
+      streaming,
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude worker',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: false,
+      persistentAgent: { onTurnComplete: turnComplete },
+    });
+
+    controller.endSession();
+    controller.onResultMessage(true, 'late result');
+    controller.observeFormattedMessage({ type: 'assistant' });
+
+    expect(controller.persistentAgent?.state).toBe('closing');
+    expect(turnComplete).not.toHaveBeenCalled();
+    expect(stdinEndSpy).toHaveBeenCalledOnce();
 
     controller.cleanup();
   });

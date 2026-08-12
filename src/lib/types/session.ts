@@ -106,6 +106,8 @@ export interface DisplayMessage {
   rawType: string;
   /** Where raw stdout/stderr output originated (e.g. a workspace lifecycle command). */
   origin?: OutputOrigin;
+  /** Agent or orchestrator that produced this message. */
+  agentName?: string;
   triggersNotification?: boolean;
 }
 

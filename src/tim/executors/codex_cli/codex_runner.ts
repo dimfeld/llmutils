@@ -19,10 +19,29 @@ import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
 import { executeCodexStepViaAppServer } from './app_server_runner';
 import { isCodexAppServerEnabled } from './app_server_mode';
 import {
+  CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE,
+  validateCodexDynamicToolProvider,
+  type CodexDynamicToolProvider,
+} from './app_server_dynamic_tools.js';
+import {
   buildOutputSchemaConversionPrompt,
   buildOutputSchemaCorrectionPrompt,
   validateJsonOutputAgainstSchema,
 } from './schema_output';
+import type { DeferredAgentInputAdapter } from '../../agent_messaging/agent_input_adapter.js';
+import {
+  withAgentEnvironmentIdentity,
+  type AgentEnvironmentIdentity,
+} from '../../agent_messaging/environment.js';
+
+export {
+  startPersistentCodexAgent,
+  validateCodexPersistentAgentLaunchOptions,
+} from './persistent_codex_session.js';
+export type { CodexPersistentAgentLaunchOptions } from './persistent_codex_session.js';
+export { createCodexAgentLauncher } from './codex_agent_launcher.js';
+export type { CodexAgentLauncherOptions } from './codex_agent_launcher.js';
+export { createCodexAgentToolDispatcher } from './codex_agent_tools.js';
 
 export type CodexAppServerMode = 'single-turn' | 'chat-session' | 'single-turn-with-steering';
 
@@ -43,6 +62,12 @@ export interface CodexStepOptions {
   terminalInput?: boolean;
   /** Project environment rendering options for Codex subprocesses. */
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+  /** Trusted agent identity applied after all workspace environment layers. */
+  agentEnvironmentIdentity?: AgentEnvironmentIdentity;
+  /** One trusted, role-bound provider for experimental Codex dynamic tools. */
+  dynamicToolProvider?: CodexDynamicToolProvider;
+  /** Deferred root input bound by the active orchestrator app-server turn. */
+  orchestratorInputAdapter?: DeferredAgentInputAdapter;
 }
 
 /**
@@ -59,6 +84,14 @@ export async function executeCodexStep(
     typeof outputSchemaPathOrOptions === 'string'
       ? { outputSchemaPath: outputSchemaPathOrOptions }
       : (outputSchemaPathOrOptions ?? {});
+
+  if (options.dynamicToolProvider) {
+    validateCodexDynamicToolProvider(options.dynamicToolProvider);
+    if (!isCodexAppServerEnabled()) {
+      throw new Error(CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE);
+    }
+  }
+
   const hasOutputSchema = !!(options.outputSchemaPath || options.outputSchema);
   const outputSchemaForValidation =
     options.outputSchema ??
@@ -181,6 +214,10 @@ export async function executeCodexStep(
             ...tunnelEnv,
           },
           timEnvironment: options.timEnvironment,
+          transformEnvironment: options.agentEnvironmentIdentity
+            ? (env: Record<string, string>): Record<string, string> =>
+                withAgentEnvironmentIdentity(env, options.agentEnvironmentIdentity!)
+            : undefined,
           formatStdout: formatter ? (chunk: string) => formatter.formatChunk(chunk) : undefined,
           inactivityTimeoutMs,
           initialInactivityTimeoutMs: 60 * 1000, // 1 minute before first output
